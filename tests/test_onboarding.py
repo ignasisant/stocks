@@ -144,17 +144,6 @@ def test_unreadable_ledger_reads_as_nothing_imported(monkeypatch):
     assert onboarding._has_ledger({}) is False
 
 
-# ------------------------------------------------------------------- gating
-def test_bank_step_is_hidden_when_the_feature_is_off(monkeypatch):
-    monkeypatch.setattr(onboarding, "_bank_available", lambda: False)
-    assert "bank" not in {s.id for s in onboarding.visible_steps()}
-
-
-def test_bank_step_shows_when_the_feature_is_on(monkeypatch):
-    monkeypatch.setattr(onboarding, "_bank_available", lambda: True)
-    assert "bank" in {s.id for s in onboarding.visible_steps()}
-
-
 # ----------------------------------------------------------------- releases
 def test_unseen_releases_are_everything_for_a_new_account():
     assert onboarding.unseen_releases({}) == onboarding.RELEASES
@@ -223,8 +212,8 @@ def app(monkeypatch):
     """Factory for an AppTest over the tour, backed by a prefs dict.
 
     Everything the tour persists lands in the dict the test passes in, so
-    "did it stamp the version" is a plain assertion. The bank feature and the
-    ledger are off unless a test says otherwise.
+    "did it stamp the version" is a plain assertion. The ledger is off unless
+    a test says otherwise.
     """
 
     def make(prefs: dict, *, logged_in: bool = True) -> AppTest:
@@ -233,7 +222,6 @@ def app(monkeypatch):
         monkeypatch.setattr(
             auth, "save_prefs", lambda p, path=None: prefs.update(p)
         )
-        monkeypatch.setattr(onboarding, "_bank_available", lambda: False)
         monkeypatch.setattr(onboarding, "_has_ledger", lambda p: False)
         return AppTest.from_function(_script, default_timeout=15)
 

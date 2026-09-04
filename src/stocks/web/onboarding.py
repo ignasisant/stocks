@@ -111,33 +111,6 @@ def _has_ai_key(prefs: dict) -> bool:
     )
 
 
-def _has_bank(_prefs: dict) -> bool:
-    try:
-        # stocks.bank ships separately from the tour (see _bank_available),
-        # so a checkout without the feature has no module to resolve.
-        from stocks.bank import store  # ty: ignore[unresolved-import]
-
-        return bool(store.connections(auth.user_paths().bank))
-    except Exception:
-        return False
-
-
-def _bank_available() -> bool:
-    """Whether the bank feature exists for this session at all.
-
-    Imported lazily and defensively: bank_ui reaches into st.secrets and the
-    Enable Banking client, this module is imported by app.py before either is
-    needed, and a deploy built without the bank feature must still get a tour
-    rather than an ImportError. A checkout without the feature is the normal
-    case — hence the suppression, not a missing dependency.
-    """
-    try:
-        from stocks.web import bank_ui  # ty: ignore[unresolved-import]
-    except ImportError:
-        return False
-    return bank_ui.available()
-
-
 # The tour, in order. Sequenced as the work actually flows — get the ledger in,
 # read what it derives, then the market tools, then the things that run without
 # you (assistant, notifications) — rather than following the nav.
@@ -149,13 +122,6 @@ STEPS: tuple[Step, ...] = (
         page="app_pages/import_transactions.py",
         gated=True,
         done=_has_ledger,
-    ),
-    Step(
-        id="bank",
-        icon="account_balance",
-        page="app_pages/bank.py",
-        gated=True,
-        done=_has_bank,
     ),
     Step(
         id="positions",
@@ -259,7 +225,6 @@ RELEASES: tuple[Release, ...] = (
         date="2026-09",
         items=(
             "tour.news_2026_09_tax",
-            "tour.news_2026_09_bank",
             "tour.news_2026_09_daily",
             "tour.news_2026_09_chat",
             "tour.news_2026_09_askai",
@@ -268,7 +233,7 @@ RELEASES: tuple[Release, ...] = (
             "tour.news_2026_09_pulse",
             "tour.news_2026_09_profile",
         ),
-        steps=("tax", "bank", "daily", "assistant", "market", "income",
+        steps=("tax", "daily", "assistant", "market", "income",
                "pulse", "prefs", "import"),
     ),
 )
@@ -339,9 +304,14 @@ def setup_state(prefs: dict | None = None) -> dict[str, bool]:
 
 
 def visible_steps() -> tuple[Step, ...]:
-    """The steps this session may see. The bank step only exists where Enable
-    Banking is configured and the account is allowlisted (see bank_ui)."""
-    return tuple(s for s in STEPS if s.id != "bank" or _bank_available())
+    """The steps this session may see.
+
+    Every step ships on every deploy today, so this is the whole registry.
+    The indirection stays because the tour renders and indexes through it:
+    a step that only some deploys carry is filtered here, once, rather than
+    at each call site.
+    """
+    return STEPS
 
 
 def by_id(step_id: str) -> Step | None:
