@@ -1059,11 +1059,12 @@ landing.consume_params()
 # reason — the profile is one of its own steps, and a nag over a walkthrough
 # in progress is worse than a nag next session.
 # All three are no-ops for guests; the guide is still reachable by hand.
+_profile_modal = False
 if not guide.maybe_start() and not onboarding.maybe_open():
     # Nudge the user to set up their investor profile so the assistant tailors
     # its analysis. Skippable; nags again next session until set (or filled
     # from the Profile page).
-    auth.maybe_prompt_profile()
+    _profile_modal = auth.maybe_prompt_profile()
 
 ticker_page = st.Page(
     "app_pages/ticker.py",
@@ -1223,11 +1224,23 @@ if chat_core.covers_viewport(_drawer_open):
 # to stay sticky) and before page.run(), so the strip sits between the two and
 # every page gets it for free — including pages that st.stop() at their login
 # gate.
-onboarding.render(page)
+_tour_modal = onboarding.render(page)
 # The guide's parked state: on a phone the panel is the whole viewport, so a
 # "take me there" collapses it and leaves this one line behind. A no-op on
 # desktop, where the panel is a rail beside the page and never parks.
 guide.render_strip()
+
+# Same trap as the drawer above, at every width this time: a Streamlit dialog
+# is a viewport-wide overlay (stDialog, z-index 1000059), so the page drawn
+# behind it is both invisible and in the way — its run is blocking network I/O
+# with no yield point, and the Skip pressed on the modal's first paint waited
+# out the whole thing. Measured 40s on a phone, 29s on a cold desktop.
+#
+# So the page stands down while a modal is up. Dismissing one — Skip, X or ESC
+# — reruns the app, and the page draws on that run instead.
+if _tour_modal or _profile_modal:
+    obs.event("page.skipped", reason="modal_blocks_the_page", page=page.title)
+    st.stop()
 
 with obs.timed("page.render", passthrough=telemetry.CONTROL_FLOW, page=page.title):
     try:

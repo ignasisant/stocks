@@ -325,7 +325,9 @@ def _script() -> None:
 
     st.session_state["claimed"] = _onb.maybe_open()
     _onb.consume_goto(_Page())
-    _onb.render(_Page())
+    # app.py skips the page while this is True — a modal is a viewport-wide
+    # overlay, so the page behind it is invisible work that eats its taps.
+    st.session_state["blocking"] = _onb.render(_Page())
 
 
 @pytest.fixture
@@ -372,6 +374,34 @@ def test_a_finished_and_up_to_date_account_is_left_alone(app):
     at = app(prefs).run()
     assert at.session_state["claimed"] is False
     assert not _flag(at, onboarding._OPEN)
+
+
+def test_an_open_modal_tells_app_py_to_stand_the_page_down(app):
+    """The page rendering behind a dialog is not just wasted — it is what ate
+    the presses meant for the modal: 23s before Next moved a step."""
+    at = app({}).run()
+
+    assert at.session_state["blocking"] is True
+
+
+def test_the_resume_strip_is_not_blocking(app):
+    """The strip sits in the page flow and covers nothing, so the page behind
+    it still has to render — it is the only thing under it."""
+    prefs = {onboarding.PREF_DONE: True,
+             onboarding.PREF_SEEN_VERSION: onboarding.CURRENT_VERSION}
+    at = app(prefs)
+    at.session_state[onboarding._RESUME] = True
+    at.run()
+
+    assert at.session_state["blocking"] is False
+
+
+def test_a_quiet_run_never_stands_the_page_down(app):
+    prefs = {onboarding.PREF_DONE: True,
+             onboarding.PREF_SEEN_VERSION: onboarding.CURRENT_VERSION}
+    at = app(prefs).run()
+
+    assert at.session_state["blocking"] is False
 
 
 def test_a_guest_is_never_auto_opened(app):

@@ -4,6 +4,7 @@ import re
 
 import pytest
 import yaml
+from streamlit.testing.v1 import AppTest
 
 from stocks.config import DATA_DIR, PROJECT_ROOT, load_watchlist
 from stocks.portfolio import demo
@@ -479,3 +480,76 @@ def test_a_checkout_with_no_secrets_reads_as_signed_out(monkeypatch):
 
     monkeypatch.setattr(st, "secrets", NoSecrets())
     assert auth.is_logged_in() is False
+
+
+# ------------------------------------------------- the investor-profile nudge
+# It reports whether it opened, because app.py stands the page down while a
+# modal is up: a dialog is a viewport-wide overlay, so the page rendering
+# behind it is invisible work that swallows the presses meant for the modal.
+
+
+def _profile_script() -> None:
+    """What app.py does with the nudge, and nothing else. At module level
+    because AppTest re-executes the function's own source as a script."""
+    import streamlit as st
+
+    from stocks.web import auth as _auth
+
+    st.session_state["opened"] = _auth.maybe_prompt_profile()
+
+
+@pytest.fixture
+def nudge(monkeypatch, tmp_path):
+    def make(*, logged_in: bool = True, profile_set: bool = False,
+             configured: bool = True) -> AppTest:
+        import streamlit as st
+
+        monkeypatch.setattr(st, "secrets", {"auth": {}} if configured else {})
+        monkeypatch.setattr(auth, "is_logged_in", lambda: logged_in)
+        monkeypatch.setattr(auth, "profile_is_set", lambda: profile_set)
+        # The dialog body draws the real profile form, which reads the
+        # account's files; point them at the sandbox.
+        monkeypatch.setattr(auth, "user_paths",
+                            lambda: paths_for("jane@example.com",
+                                              users_dir=tmp_path))
+        return AppTest.from_function(_profile_script, default_timeout=15)
+
+    return make
+
+
+def test_the_nudge_reports_the_modal_it_opened(nudge):
+    at = nudge().run()
+
+    assert not at.exception
+    assert at.session_state["opened"] is True
+
+
+def test_a_filled_profile_opens_nothing(nudge):
+    at = nudge(profile_set=True).run()
+
+    assert at.session_state["opened"] is False
+
+
+def test_a_guest_is_never_nudged(nudge):
+    at = nudge(logged_in=False).run()
+
+    assert at.session_state["opened"] is False
+
+
+def test_a_checkout_with_no_idp_opens_nothing(nudge):
+    at = nudge(configured=False).run()
+
+    assert at.session_state["opened"] is False
+
+
+def test_the_nudge_fires_once_per_session(nudge):
+    """The seen flag is what keeps a Skip closed for the rest of the session —
+    and it must also stop the *second* run reporting a modal that is not
+    there, or app.py would skip the page for nothing."""
+    at = nudge()
+    at.run()
+    assert at.session_state["opened"] is True
+
+    at.run()
+
+    assert at.session_state["opened"] is False
