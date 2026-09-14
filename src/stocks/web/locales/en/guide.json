@@ -1,0 +1,14 @@
+{
+  "guide.thread_title": "Getting started",
+  "guide.progress": "Step {n} of {total}",
+  "guide.goto": "Take me there",
+  "guide.next": "Next",
+  "guide.done_it": "Done, next",
+  "guide.finish": "Finish",
+  "guide.skip": "Skip the guide",
+  "guide.step_done": ":material/check_circle: **{title}** is set up. Moving on.",
+  "guide.finished": "That is the whole tour. I am here whenever you need me — ask me anything about your book, or drop a statement on the box below to import it.",
+  "guide.strip_progress": "Guide {n}/{total} · {title}",
+  "guide.strip_open": "Open the guide",
+  "guide.strip_exit": "Exit"
+}

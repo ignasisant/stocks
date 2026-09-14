@@ -69,6 +69,14 @@ def test_turns_that_are_not_the_conversation_are_skipped(tmp_path):
     assert memory.remember(tmp_path / memory.FILE, system, "t1") == 0
 
 
+def test_the_onboarding_walkthrough_is_not_a_memory(tmp_path):
+    """Its steps are app copy shown to the reader, not something they said or
+    were told about their book — indexed, they would answer "what have we
+    talked about" with the tutorial."""
+    tour = [{"role": "assistant", "content": "x" * 200, "guide": {"step": "import"}}]
+    assert memory.remember(tmp_path / memory.FILE, tour, "t1") == 0
+
+
 def test_a_long_turn_is_indexed_up_to_its_share(tmp_path):
     path = tmp_path / memory.FILE
     memory.remember(path, [{"role": "user", "content": "palabra " * 5000}], "t1")

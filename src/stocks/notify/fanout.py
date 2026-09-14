@@ -22,6 +22,7 @@ overlap window is a single turn.
 
 from __future__ import annotations
 
+import html
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -34,8 +35,9 @@ import pandas as pd
 from stocks import storage
 from stocks.config import DATA_DIR, WATCHLIST_FILE, Holding, load_watchlist
 from stocks.data.fetch import fetch_history
-from stocks.notify import telegram
+from stocks.notify import links, telegram
 from stocks.notify.alerts import ALERT_PERIOD, check_holdings
+from stocks.notify.render import esc
 from stocks.notify.state import (
     fingerprint,
     is_blocked,
@@ -66,6 +68,12 @@ class NotifyUser:
     @property
     def lang(self) -> str:
         return self.prefs.get("language") or "en"
+
+    @property
+    def import_path(self) -> Path:
+        """last_import.json sibling of prefs — when the account last uploaded
+        a statement, which is the only honest measure of a stale book."""
+        return self.prefs_path.with_name("last_import.json")
 
     @property
     def chat_path(self) -> Path:
@@ -116,7 +124,10 @@ def iter_all_users() -> list[NotifyUser]:
         prefs_path = root / "prefs.json"
         watchlist = root / "watchlist.yaml"
         db = root / "portfolio.db"
-        _restore_user_files(prefs_path, watchlist, db, root / "alerts_state.json")
+        _restore_user_files(
+            prefs_path, watchlist, db,
+            root / "alerts_state.json", root / "last_import.json",
+        )
         users.append(
             NotifyUser(
                 label=slug_name,
@@ -131,7 +142,7 @@ def iter_all_users() -> list[NotifyUser]:
     owner_prefs = DATA_DIR / "prefs.json"
     _restore_user_files(
         owner_prefs, WATCHLIST_FILE, DATA_DIR / "portfolio.db",
-        DATA_DIR / "alerts_state.json",
+        DATA_DIR / "alerts_state.json", DATA_DIR / "last_import.json",
     )
     if owner_prefs.exists():
         users.append(
@@ -211,6 +222,41 @@ def _fetch_frames(tickers: set[str], max_workers: int = 4) -> dict[str, pd.DataF
     return {t: df for t, df in results if df is not None and not df.empty}
 
 
+def _alert_line(
+    hit,
+    holdings: list[Holding],
+    frames: dict[str, pd.DataFrame],
+    origin: str | None,
+    lang: str = "en",
+) -> str:
+    """One fired rule as a line: what happened, and what it happened to.
+
+    A rule firing on a name you hold 42 shares of, 38% up on cost, is a
+    different message from the same rule firing on a name you are only
+    watching — and both arrive in the same list. Size and P/L come from the
+    watchlist entry and the price frame the run already fetched, in the
+    ticker's own currency, so the context costs no extra request and no FX
+    conversion that could be wrong.
+    """
+    safe = esc(hit.ticker)
+    url = links.ticker_url(hit.ticker, origin) if origin else None
+    label = f'<a href="{html.escape(url, quote=True)}">{safe}</a>' if url else safe
+    line = f"{label}: {esc(hit.message)}"
+
+    holding = next((h for h in holdings if h.ticker == hit.ticker), None)
+    if holding is None or not holding.is_position:
+        return line
+    from stocks.web.i18n import translate
+
+    context = [translate("notify.shares", lang, n=f"{holding.shares:g}")]
+    frame = frames.get(hit.ticker)
+    if holding.cost and frame is not None and "Close" in frame:
+        close = frame["Close"].dropna()
+        if not close.empty:
+            context.append(f"{float(close.iloc[-1]) / holding.cost - 1:+.1%}")
+    return f"{line} · {' · '.join(context)}"
+
+
 def run_alerts_fanout(now: datetime | None = None) -> dict[str, str]:
     """Evaluate every subscriber's watchlist alerts and message the new hits.
 
@@ -253,18 +299,34 @@ def run_alerts_fanout(now: datetime | None = None) -> dict[str, str]:
                 should_send(state, fp, fired=False, now=now)  # re-arm cleared rules
 
             if to_send:
-                header = translate("notify.alerts_subject", user.lang)
-                lines = [f"{h.ticker}: {h.message}" for h in to_send]
+                origin = links.app_base()
+                subject = translate("notify.alerts_subject", user.lang)
+                header = f"<b>{esc(subject)}</b>"
+                lines = [
+                    _alert_line(hit, holdings, frames, origin, user.lang)
+                    for hit in to_send
+                ]
                 # One LLM call per account per run, and only when something is
                 # actually going out — the rising-edge/cooldown state above is
                 # what keeps that rare enough to sit on a free tier. None (no
                 # key, no quota, timeout) just ships the plain rule lines.
                 note = narrative.alerts_line(to_send, user.prefs, user.lang)
                 if note:
-                    lines.append(f"\n💡 {note}")
+                    lines.append(f"\n💡 {esc(note)}")
+                # No configured origin means no link: the button is dropped
+                # rather than shipped pointing at nowhere (stocks.notify.links).
+                portfolio = links.page_url(links.PORTFOLIO, origin)
+                buttons: list[telegram.Button] = (
+                    [(translate("notify.btn_portfolio", user.lang), portfolio)]
+                    if portfolio
+                    else []
+                )
                 try:
                     telegram.send_message(
-                        "\n".join([header, *lines]), user.chat_id, parse_mode=None
+                        "\n".join([header, *lines]),
+                        user.chat_id,
+                        parse_mode="HTML",
+                        buttons=buttons,
                     )
                     status[user.label] = f"sent {len(to_send)}"
                 except telegram.TelegramBlocked:

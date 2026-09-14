@@ -176,10 +176,13 @@ def test_no_page_renders_a_bare_dataframe(path):
 
 
 def test_the_watchlist_editor_stays_editable_but_narrows():
-    """A card list can't add or retag a holding, so profile keeps the grid and
-    drops the two columns that carry no edit."""
-    src = (WEB / "app_pages" / "profile.py").read_text()
-    assert "st.data_editor(" in src and "column_order=" in src
+    """The watchlist grid is the one table a card list cannot replace — a read
+    only card can't retag a holding — so it keeps the editor and drops the
+    columns that carry no edit on a phone. The phone path renders control rows
+    instead (watchlist_ui._phone_rows), which is covered where it lives."""
+    src = (WEB / "watchlist_ui.py").read_text()
+    # Drawn into the group's own container, so not necessarily on `st.`.
+    assert ".data_editor(" in src and "column_order=" in src
 
 
 def test_the_comps_matrix_transposes_on_a_phone():

@@ -133,7 +133,10 @@ def test_the_thread_title_opens_the_list_instead_of_a_popover(app, paths):
     # The list carries the date group and the message count, which is what a
     # 380px popover had no room for.
     assert [h.body for h in app.get("html") if "ts-chat-group" in h.body]
-    assert any("2 messages" in b.label for b in app.button)
+    # The count rides under the title, inside the thread's card, so the title
+    # itself can be the one bold line the eye lands on.
+    assert [h.body for h in app.get("html")
+            if "ts-chat-thmeta" in h.body and "2 messages" in h.body]
 
 
 def test_deleting_a_thread_takes_two_presses(app, paths):
@@ -485,6 +488,33 @@ def test_a_settled_drawer_does_not_rewrite_prefs_every_run(shell, paths,
 
     assert not shell.exception
     assert writes == []
+
+
+# covers_viewport is the one thing app.py asks before it runs the page, so it
+# gets its own tests: getting it wrong either freezes a phone (the bug) or
+# blanks the page on desktop.
+
+
+def test_an_open_drawer_owns_a_phone_viewport(monkeypatch):
+    """On a phone the drawer is 100vw x 100vh, so the page behind it is work
+    nobody can see — and blocking work, which is what ate the Close tap."""
+    monkeypatch.setattr(chat_core, "is_mobile", lambda: True)
+
+    assert chat_core.covers_viewport(True) is True
+
+
+def test_a_closed_drawer_never_owns_the_viewport(monkeypatch):
+    monkeypatch.setattr(chat_core, "is_mobile", lambda: True)
+
+    assert chat_core.covers_viewport(False) is False
+
+
+def test_a_desktop_drawer_is_a_rail_beside_the_page(monkeypatch):
+    """Wide screens reserve room for the panel and keep rendering the page —
+    skipping it there would blank everything the panel sits next to."""
+    monkeypatch.setattr(chat_core, "is_mobile", lambda: False)
+
+    assert chat_core.covers_viewport(True) is False
 
 
 def test_an_unnamed_thread_reads_as_a_placeholder_in_the_header(app, paths):

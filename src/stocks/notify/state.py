@@ -110,6 +110,26 @@ def remember_highlight(state: dict, line: str, keep: int = HIGHLIGHTS_KEPT) -> N
     state["highlights"] = [*recent_highlights(state), line][-keep:]
 
 
+def previous_top_weight(state: dict) -> float | None:
+    """Last week's top-5 concentration, or None the first time round.
+
+    The weekly review's concentration line is only worth reading as a *drift* —
+    "top 5 is 68% of the book" is a fact that barely changes and quickly stops
+    being read, while "68%, up 3 points in a week" is news. One number is all
+    that is kept: the review needs the delta, not a history.
+    """
+    got = state.get("weekly", {}).get("top_weight")
+    try:
+        return float(got)
+    except (TypeError, ValueError):
+        return None
+
+
+def remember_top_weight(state: dict, weight: float, now: datetime) -> None:
+    """Record this week's concentration for next week's comparison."""
+    state["weekly"] = {"top_weight": float(weight), "at": now.isoformat()}
+
+
 def mark_blocked(state: dict, now: datetime) -> None:
     state["delivery"] = {"blocked": True, "blocked_at": now.isoformat()}
 

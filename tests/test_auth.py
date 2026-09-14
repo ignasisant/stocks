@@ -6,6 +6,8 @@ import pytest
 import yaml
 
 from stocks.config import DATA_DIR, PROJECT_ROOT, load_watchlist
+from stocks.portfolio import demo
+from stocks.portfolio.ledger import all_transactions
 from stocks.web import auth
 from stocks.web.auth import (
     DEFAULT_PREFS,
@@ -215,6 +217,82 @@ def test_resolve_user_does_not_stamp_a_guest(monkeypatch, tmp_path):
     _signed_in(monkeypatch, tmp_path, email="")
     paths = auth.resolve_user()
     assert not paths.prefs.exists()
+
+
+# ------------------------------------------------ the guest demo gate
+# The Portfolio page is the one page the whole app is about, and everything on
+# it derives from a ledger — so an anonymous visitor used to find a login
+# screen there. require_login_or_demo() lets them in on the shared guest dir
+# with the demo book in it instead; these tests keep that from turning into
+# either of the two ways it could go wrong: a half-signed-in identity silently
+# downgraded to invented numbers, or a rerun writing to a dir every other
+# visitor is reading.
+
+
+def test_the_portfolio_gate_lets_a_guest_in_on_the_demo_book(monkeypatch, tmp_path):
+    _signed_in(monkeypatch, tmp_path, email="")
+    monkeypatch.setattr(
+        auth, "require_login", lambda: pytest.fail("a guest must not be stopped")
+    )
+
+    paths = auth.require_login_or_demo()
+
+    assert paths.root == paths_for("_guest", users_dir=tmp_path).root
+    rows = all_transactions(paths.db)
+    assert rows and all(demo.is_demo(t) for t in rows), "every row marked as demo"
+
+
+def test_the_guest_book_is_seeded_once_per_session(monkeypatch, tmp_path):
+    """The guest dir is shared and the gate runs on every rerun, so a seed per
+    run would be a pointless sqlite hit on a file other visitors are reading."""
+    _signed_in(monkeypatch, tmp_path, email="")
+    auth.require_login_or_demo()
+
+    monkeypatch.setattr(
+        auth.demo, "seed", lambda *a: pytest.fail("re-seeded on a rerun")
+    )
+    auth.require_login_or_demo()
+
+
+def test_the_gate_still_stops_a_half_signed_in_identity(monkeypatch, tmp_path):
+    """An identity with no email claim, or an unverified one, must reach the
+    error require_login() renders — not be quietly downgraded to a guest
+    session reading a fabricated book."""
+    _signed_in(monkeypatch, tmp_path, email="")
+    monkeypatch.setattr(auth.st, "secrets", {"auth": {}}, raising=False)
+    monkeypatch.setattr(
+        auth.st, "user", type("U", (), {"is_logged_in": True})(), raising=False
+    )
+    monkeypatch.setattr(auth, "require_login", lambda: "stopped")
+
+    assert auth.require_login_or_demo() == "stopped"
+
+
+def test_a_guest_seed_that_fails_still_leaves_the_page_standing(monkeypatch, tmp_path):
+    """A read-only disk is not worth a crash page: the Portfolio page falls
+    back to its empty state, which is what a guest saw before all this."""
+    _signed_in(monkeypatch, tmp_path, email="")
+
+    def boom(*_a):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(auth.demo, "seed", boom)
+    paths = auth.require_login_or_demo()
+    assert paths.root == paths_for("_guest", users_dir=tmp_path).root
+    assert not all_transactions(paths.db)  # empty state, not a crash page
+
+
+def test_auth_configured_survives_a_checkout_with_no_secrets(monkeypatch):
+    """Same guard is_logged_in() needs, now that both read it from one place."""
+    import streamlit as st
+    from streamlit.errors import StreamlitSecretNotFoundError
+
+    class NoSecrets:
+        def __contains__(self, key):
+            raise StreamlitSecretNotFoundError("No secrets found.")
+
+    monkeypatch.setattr(st, "secrets", NoSecrets())
+    assert auth.auth_configured() is False
 
 
 def test_prefs_roundtrip_and_corrupt_fallback(tmp_path):

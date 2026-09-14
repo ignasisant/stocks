@@ -91,18 +91,41 @@ def _split(text: str) -> list[str]:
     return chunks
 
 
+Button = tuple[str, str]  # (label, url)
+
+
+def _keyboard(buttons: list[Button] | None) -> str | None:
+    """`reply_markup` for a single row of URL buttons, or None for none.
+
+    URL buttons only: a callback button would need something listening for the
+    press, and the chat job runs on a cron rather than sitting on the socket.
+    A label with no URL (the origin isn't configured) is dropped rather than
+    shipped as a dead button.
+    """
+    row = [
+        {"text": label, "url": url} for label, url in (buttons or []) if label and url
+    ]
+    return json.dumps({"inline_keyboard": [row]}) if row else None
+
+
 def send_message(
     text: str,
     chat_id: int | str,
     parse_mode: str | None = "HTML",
     disable_web_page_preview: bool = True,
+    buttons: list[Button] | None = None,
 ) -> None:
     """Send `text` to `chat_id`, splitting when over the 4096-char limit.
+
+    `buttons` become one row of link buttons under the message — under the
+    *last* chunk, so a split digest carries them where the reader ends up.
 
     Raises TelegramBlocked when the user blocked the bot, RuntimeError on any
     other API failure.
     """
-    for chunk in _split(text):
+    chunks = _split(text)
+    markup = _keyboard(buttons)
+    for index, chunk in enumerate(chunks):
         _call(
             "sendMessage",
             {
@@ -110,6 +133,7 @@ def send_message(
                 "text": chunk,
                 "parse_mode": parse_mode,
                 "disable_web_page_preview": "true" if disable_web_page_preview else None,
+                "reply_markup": markup if index == len(chunks) - 1 else None,
             },
         )
 

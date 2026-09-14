@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import pandas as pd
 import streamlit as st
 
 from stocks import storage
@@ -30,7 +29,7 @@ from stocks.web import (
     i18n,
     onboarding,
     tax_ui,
-    widgets,
+    watchlist_ui,
 )
 from stocks.web.i18n import t as tr
 from stocks.web.markup import esc
@@ -83,7 +82,7 @@ _CSS = """
 }
 /* The canvas's spacing: 20px between cards, 4px between a label and its
    explanation. Streamlit's own block gap is one value for the whole page. */
-[class*="st-key-prefs_body"] [data-testid="stColumn"]
+[class*="st-key-pbody_"] [data-testid="stColumn"]
   > [data-testid="stVerticalBlock"] { gap: 20px; }
 [class*="st-key-prow_"] [data-testid="stColumn"]
   > [data-testid="stVerticalBlock"] { gap: 4px; }
@@ -115,6 +114,36 @@ _CSS = """
 [class*="st-key-pccy_row"] .stPopover button p {
   color: var(--ag-text-secondary); font-weight: 500;
 }
+/* --------------------------------------------- watchlist: chips + editor */
+/* The pcard_ rule above zeroes card padding (each row carries its own), so
+   this card puts the gap back rather than leaning on the global main-area
+   block gap of 0.55rem — which is what left the Add button sitting on the
+   disclaimer's descenders. Same specificity as that rule, and later. */
+[data-testid="stMainBlockContainer"]
+  [data-testid="stVerticalBlock"][class*="st-key-pcard_sugg"] {
+  gap: 14px; padding-bottom: 18px;
+}
+/* The watchlist tab has no rail, so it has no column to hang the 20px card
+   gap on — it goes on the body itself, at app.py's own specificity. */
+[data-testid="stMainBlockContainer"]
+  [data-testid="stVerticalBlock"][class*="st-key-pbody_watch"] { gap: 20px; }
+.ag-ticks { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 24px; }
+.ag-tick {
+  border: 1px solid var(--ag-border); border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-page); padding: 4px 11px;
+  font-family: "Martian Mono", monospace; font-size: var(--ag-fs-xs);
+  font-weight: 500; color: var(--ag-text-primary);
+}
+[class*="st-key-pcard_sugg"] .stButton { padding: 0 24px; }
+[class*="st-key-prow_watchsave"] { gap: 10px; }
+/* ------------------------------------------------ notifications: the rail */
+/* The rail is prose, not figures: it reads at the row caption's size rather
+   than the body's. */
+[class*="st-key-prail_nhow"] p,
+[class*="st-key-prail_nhow"] li {
+  font-size: var(--ag-fs-sm); line-height: 1.6; color: var(--ag-text-secondary);
+}
+[class*="st-key-prail_nhow"] ul { margin: 0; padding-left: 18px; }
 /* The jurisdiction's own rules, as facts rather than prose. */
 .ag-rules {
   display: flex; flex-wrap: wrap; gap: 22px; margin-top: 12px;
@@ -166,7 +195,7 @@ _CSS = """
 }
 .ag-ident-note { font-size: var(--ag-fs-sm); color: var(--ag-text-muted); }
 /* -------------------------------------------------------------- the rail */
-[class*="st-key-prefs_body"] > [data-testid="stHorizontalBlock"]
+[class*="st-key-pbody_"] > [data-testid="stHorizontalBlock"]
   > [data-testid="stColumn"]:last-child {
   flex: 0 0 320px; align-self: flex-start; position: sticky; top: 4.5rem;
 }
@@ -215,8 +244,11 @@ _CSS = """
    rather than a ::after on the tab list: the list is a scroll container on
    phones and clipped generated content there. */
 [class*="st-key-profile_tabbar"] { position: relative; }
+/* left:auto and width:auto are load-bearing: Streamlit's block carries its own
+   width:100%, so an absolute box with right:0 alone still spans the strip and
+   leaves its flex content sitting on the tab labels. */
 [class*="st-key-psavehint"] {
-  position: absolute; right: 0; top: 6px; z-index: 1;
+  position: absolute; right: 0; left: auto; top: 6px; width: auto; z-index: 1;
 }
 .ag-savehint {
   display: flex; align-items: center; gap: 6px; white-space: nowrap;
@@ -238,7 +270,7 @@ _CSS = """
   .ag-cardhead { padding: 14px 16px 12px; }
   .ag-ident { flex-wrap: wrap; gap: 12px; }
   .ag-ident-r { margin-left: 0; align-items: flex-start; width: 100%; }
-  [class*="st-key-prefs_body"] > [data-testid="stHorizontalBlock"]
+  [class*="st-key-pbody_"] > [data-testid="stHorizontalBlock"]
     > [data-testid="stColumn"]:last-child { position: static; flex: 1 1 auto; }
 }
 """
@@ -403,7 +435,7 @@ tab_prefs, tab_iv, tab_watch, tab_notify = _tabbar.tabs(
 
 # -------------------------------------------------------------- preferences
 with tab_prefs:
-    _body = st.container(key="prefs_body")
+    _body = st.container(key="pbody_prefs")
     _main, _rail = _body.columns([32, 10], gap="medium", vertical_alignment="top")
 
     # ------------------------------------------------------------ interface
@@ -781,31 +813,102 @@ with tab_prefs:
     )
 
 # --------------------------------------------------------- investor profile
-# What the AI assistant is told about the user. Same form as the first-login
-# dialog (auth.render_profile_form); chat_core reads it to build the persona.
+# What the AI assistant is told about the user. Same widgets as the first-login
+# dialog (auth.render_profile_form), drawn into this page's setting rows rather
+# than stacked; chat_core reads the saved profile to build the persona.
 with tab_iv:
-    st.caption(tr("profile.iv_caption"))
-    _profile = auth.render_profile_form("iv_page")
-    if st.button(
-        tr("profile.iv_save"), type="primary", icon=":material/save:", key="iv_page_save"
-    ):
+    _iv_body = st.container(key="pbody_iv")
+    _iv_main, _iv_rail = _iv_body.columns(
+        [32, 10], gap="medium", vertical_alignment="top"
+    )
+
+    # Three cards instead of one flat stack: the two scales that colour every
+    # answer, the lists that narrow it, then the free text. Which card a field
+    # belongs to is decided here, not in auth — the dialog has no cards.
+    _iv_how = _iv_main.container(border=True, key="pcard_ivhow")
+    _iv_how.html(_card_head(tr("profile.iv_how_title"), tr("profile.iv_how_sub")))
+    _iv_what = _iv_main.container(border=True, key="pcard_ivwhat")
+    _iv_what.html(_card_head(tr("profile.iv_what_title"), tr("profile.iv_what_sub")))
+    _iv_notes = _iv_main.container(border=True, key="pcard_ivnotes")
+    _iv_notes.html(_card_head(tr("profile.iv_notes_title"), tr("profile.iv_caption")))
+    _IV_CARDS = {
+        "risk": _iv_how,
+        "horizon": _iv_how,
+        "focus": _iv_what,
+        "constraints": _iv_what,
+        "notes": _iv_notes,
+    }
+
+    _profile = auth.render_profile_form(
+        "iv_page",
+        cell=lambda field, label, help_text: _row(
+            _IV_CARDS[field], f"iv_{field}", label, help_text
+        ),
+    )
+
+    # Autosave, like every row on the Preferences tab — the tab strip promises
+    # it and a Save button here would be the one place that broke the promise.
+    # The comparison is against the *stored* profile, field by field: an
+    # untouched form collects exactly what is stored (render_profile_form
+    # normalises the two lists' order), so a plain rerun writes nothing and
+    # never trips the `set` flag the first-login prompt reads.
+    _iv_stored = auth.load_profile()
+    if any(_profile[k] != _iv_stored[k] for k in _profile):
         auth.save_profile(_profile)
         st.toast(tr("profile.iv_saved"), icon=":material/check:")
 
+    # ----------------------------------------------------------------- rail
+    # What is set, in the same shape as the Preferences summary, plus the one
+    # thing this tab can show that no control can: the sentence the assistant
+    # actually receives.
+    def _iv_short(keys: list[str], prefix: str) -> str:
+        """Selected options as one line, or "Not set"."""
+        labels = [tr(f"{prefix}{k}") for k in keys]
+        return ", ".join(labels) if labels else tr("profile.iv_sum_none")
+
+    _iv_risk_lbl = tr("profile.iv_risk_" + _profile["risk"])
+    _iv_hz_lbl = tr("profile.iv_horizon_" + _profile["horizon"])
+    _iv_rail.container(border=True, key="prail_ivsum").html(
+        '<div class="ag-sum">'
+        f'<span class="ag-sum-t">{esc(tr("profile.iv_sum_title"))}</span>'
+        f'<div class="ag-sum-row"><span>{esc(tr("profile.iv_risk"))}</span>'
+        f"<b>{esc(_iv_risk_lbl)}</b></div>"
+        f'<div class="ag-sum-row"><span>{esc(tr("profile.iv_horizon"))}</span>'
+        f"<b>{esc(_iv_hz_lbl)}</b></div>"
+        f'<div class="ag-sum-row"><span>{esc(tr("profile.iv_focus"))}</span>'
+        f'<b>{esc(_iv_short(_profile["focus"], "profile.iv_focus_"))}</b></div>'
+        f'<div class="ag-sum-row"><span>{esc(tr("profile.iv_constraints"))}</span>'
+        f'<b>{esc(_iv_short(_profile["constraints"], "profile.iv_constraints_"))}'
+        "</b></div>"
+        '<div class="ag-sum-rule"></div>'
+        f'<span class="ag-sum-note">{esc(tr("profile.iv_privacy"))}</span>'
+        "</div>"
+    )
+    # Local import: the chat engine is a heavy module and this page has no
+    # other reason to pull it (same reasoning as auth.focus_suggestions').
+    with _iv_rail.popover(
+        tr("profile.iv_persona_open"), icon=":material/robot_2:", width="stretch"
+    ):
+        from stocks.chat.engine import persona
+
+        st.caption(tr("profile.iv_persona_help"))
+        st.code(persona(auth.load_profile()).strip(), language=None, wrap_lines=True)
+
 # ---------------------------------------------------------------- watchlist
 with tab_watch:
-    st.caption(tr("profile.watchlist_caption"))
+    _wbody = st.container(key="pbody_watch")
 
     # Loaded once at the top of the script — the tab label carries its count.
     if not holdings:
         # Already on the page that fixes it, so no CTA — the body says which
         # control to reach for instead.
-        empty.state(
-            tr("profile.empty_watchlist_title"),
-            tr("profile.empty_watchlist_body"),
-            event="profile.watchlist",
-            icon="list_alt",
-        )
+        with _wbody:
+            empty.state(
+                tr("profile.empty_watchlist_title"),
+                tr("profile.empty_watchlist_body"),
+                event="profile.watchlist",
+                icon="list_alt",
+            )
     # Shortcut for the areas the account said it follows: append the examples
     # it does not have yet. Additive and never destructive — an edited
     # watchlist keeps every row it already has, which is why this can sit here
@@ -816,102 +919,40 @@ with tab_watch:
     # block stays off the page.
     _suggested = auth.focus_suggestions(path=paths.watchlist)
     if _suggested:
-        with st.container(border=True):
-            names = ", ".join(f"**{e['ticker']}**" for e in _suggested)
-            st.markdown(
-                f"{tr('profile.focus_suggest_title')}\n\n{names}"
+        # The tickers are chips, not a bold comma blob, and the card carries
+        # its own 14px gap: the global main-area block gap is 0.55rem, which
+        # left the Add button sitting on the disclaimer's descenders.
+        _sug = _wbody.container(border=True, key="pcard_sugg")
+        _sug.html(
+            _card_head(
+                tr("profile.focus_suggest_title"), tr("profile.focus_suggest_help")
             )
-            st.caption(tr("profile.focus_suggest_help"))
-            if st.button(
-                tr("profile.focus_suggest_add", n=len(_suggested)),
-                icon=":material/playlist_add:",
-                key="focus_suggest_add",
-            ):
-                auth.save_watchlist_entries(
-                    [
-                        {"ticker": h.ticker, "name": h.name, "favorite": h.favorite,
-                         "shares": h.shares or None, "cost": h.cost, "tags": h.tags}
-                        for h in holdings
-                    ]
-                    + _suggested,
-                    paths.watchlist,
-                )
-                st.rerun()
+            + '<div class="ag-ticks">'
+            + "".join(
+                f'<span class="ag-tick">{esc(e["ticker"])}</span>' for e in _suggested
+            )
+            + "</div>"
+        )
+        if _sug.button(
+            tr("profile.focus_suggest_add", n=len(_suggested)),
+            icon=":material/playlist_add:",
+            key="focus_suggest_add",
+        ):
+            auth.save_watchlist_entries(
+                [
+                    {"ticker": h.ticker, "name": h.name, "favorite": h.favorite,
+                     "shares": h.shares or None, "cost": h.cost, "tags": h.tags}
+                    for h in holdings
+                ]
+                + _suggested,
+                paths.watchlist,
+            )
+            st.rerun()
 
-    frame = pd.DataFrame(
-        [
-            {
-                "logo": widgets.logo(h.ticker),
-                "ticker": h.ticker,
-                "name": h.name,
-                "favorite": h.favorite,
-                "shares": h.shares or None,
-                "cost": h.cost,
-                "tags": ", ".join(h.tags),
-            }
-            for h in holdings
-        ],
-        columns=["logo", "ticker", "name", "favorite", "shares", "cost", "tags"],
-    )
-    # The grid stays editable on phones — a read-only card list can't add or
-    # retag a holding — but seven columns pan, so the two that carry no edit
-    # (the logo) or repeat the symbol (the name) drop out of the view there.
-    # Hidden columns still come back in `edited`, so saving is unaffected.
-    edited = st.data_editor(
-        frame,
-        num_rows="dynamic",
-        hide_index=True,
-        key="watchlist_editor",
-        disabled=("logo",),
-        column_order=(
-            ("ticker", "favorite", "shares", "cost", "tags")
-            if widgets.is_mobile()
-            else None
-        ),
-        column_config={
-            "logo": st.column_config.ImageColumn("", width=40),
-            "ticker": st.column_config.TextColumn(
-                tr("profile.col_ticker"), required=True, max_chars=12
-            ),
-            "name": st.column_config.TextColumn(tr("profile.col_name")),
-            "favorite": st.column_config.CheckboxColumn(
-                tr("profile.col_favorite"), default=False
-            ),
-            "shares": st.column_config.NumberColumn(
-                tr("profile.col_shares"), min_value=0.0
-            ),
-            "cost": st.column_config.NumberColumn(
-                tr("profile.col_avg_cost"),
-                min_value=0.0,
-                help=tr("profile.col_avg_cost_help"),
-            ),
-            "tags": st.column_config.TextColumn(
-                tr("profile.col_tags"),
-                help=tr("profile.col_tags_help"),
-            ),
-        },
-    )
-
-    if st.button(tr("profile.save_watchlist"), type="primary", icon=":material/save:"):
-        entries = [
-            {
-                "ticker": row.get("ticker"),
-                "name": None if pd.isna(row.get("name")) else row.get("name"),
-                "favorite": bool(row.get("favorite"))
-                and not pd.isna(row.get("favorite")),
-                "shares": None if pd.isna(row.get("shares")) else row.get("shares"),
-                "cost": None if pd.isna(row.get("cost")) else row.get("cost"),
-                "tags": (
-                    []
-                    if pd.isna(row.get("tags"))
-                    else [s for s in str(row.get("tags")).split(",")]
-                ),
-            }
-            for row in edited.to_dict("records")
-        ]
-        auth.save_watchlist_entries(entries, paths.watchlist)
-        saved = load_watchlist(paths.watchlist)
-        st.success(tr("profile.saved", n=len(saved)))
+    # The list itself: search-to-add, tag groups and per-row actions, all of
+    # it writing as it is edited (stocks.web.watchlist_ui). It is the widest
+    # thing on the page, so this tab gets no rail — the cards keep full width.
+    watchlist_ui.render(_wbody, paths.watchlist)
 
 # ------------------------------------------------------------ notifications
 # Telegram linking + digest/alert toggles. The linking flow: a one-time code
@@ -922,33 +963,76 @@ with tab_watch:
 # watches its own prefs until the id appears. The crons (notify/fanout.py)
 # read the resulting prefs headless.
 with tab_notify:
-    st.caption(tr("profile.notify_caption"))
+    _nbody = st.container(key="pbody_notify")
+    _nmain, _nrail = _nbody.columns([32, 10], gap="medium", vertical_alignment="top")
 
     from stocks.notify import telegram as _tg  # noqa: E402
 
+    # The channel card is the gate: unconfigured deployment, linked account or
+    # a pending link all render inside it, so the state of the connection is
+    # always in the same place on the page.
+    _nchan = _nmain.container(border=True, key="pcard_nchan")
+    _nchan.html(
+        _card_head(tr("profile.notify_channel_title"), tr("profile.notify_channel_sub"))
+    )
+    _nchan_body = _nchan.container(key="prow_nchan")
+
+    # The rail carries the explanation the linking flow used to print above its
+    # own button: how the digest and the alerts work, and what linking stores.
+    _nrail.container(border=True, key="prail_nhow").markdown(
+        f"**{tr('profile.notify_caption')}**\n\n{tr('profile.tg_how_body')}"
+    )
+
     if not _tg.configured():
-        st.info(tr("profile.tg_not_configured"), icon=":material/notifications_off:")
+        _nchan_body.info(
+            tr("profile.tg_not_configured"), icon=":material/notifications_off:"
+        )
     elif prefs.get("telegram_chat_id"):
         handle = prefs.get("telegram_username") or ""
-        st.markdown(
-            f":green-badge[:material/check: Telegram] "
+        _nchan_body.markdown(
+            f":green-badge[:material/check: {tr('profile.notify_connected')}] "
             f"{tr('profile.tg_linked_as', handle=f'@{handle}' if handle else '')}"
+        )
+
+        # Each delivery is a setting row like everywhere else on the page: the
+        # label says what arrives, the explanation says when, and the toggle
+        # autosaves.
+        _nwhat = _nmain.container(border=True, key="pcard_nwhat")
+        _nwhat.html(
+            _card_head(tr("profile.notify_what_title"), tr("profile.notify_what_sub"))
         )
         for pref_key, label_key in (
             ("notify_digest", "profile.notify_digest"),
+            ("notify_weekly", "profile.notify_weekly"),
             ("notify_alerts", "profile.notify_alerts"),
         ):
-            val = st.toggle(
+            val = _row(
+                _nwhat,
+                f"n_{pref_key}",
+                tr(label_key),
+                tr(f"profile.{pref_key}_help"),
+                align="center",
+            ).toggle(
                 tr(label_key),
                 value=bool(prefs.get(pref_key, True)),
                 key=f"pref_{pref_key}",
+                label_visibility="collapsed",
             )
             if val != bool(prefs.get(pref_key, True)):
                 prefs[pref_key] = val
                 auth.save_prefs(prefs)
                 st.toast(tr(label_key), icon=":material/check:")
 
-        with st.container(horizontal=True):
+        # Check and disconnect are actions on the link, not settings, so they
+        # stay on the channel card — each in its own row, because a bare pair
+        # of buttons gives no clue what the second one costs.
+        with _row(
+            _nchan,
+            "n_test",
+            tr("profile.notify_test_row"),
+            tr("profile.notify_test_help"),
+            align="center",
+        ):
             if st.button(tr("profile.tg_test"), icon=":material/send:"):
                 try:
                     _tg.send_message(
@@ -961,6 +1045,13 @@ with tab_notify:
                     st.toast(
                         tr("profile.tg_test_failed", error=exc), icon=":material/error:"
                     )
+        with _row(
+            _nchan,
+            "n_unlink",
+            tr("profile.notify_unlink_row"),
+            tr("profile.notify_unlink_help"),
+            align="center",
+        ):
             if st.button(tr("profile.tg_unlink"), icon=":material/link_off:"):
                 for k in ("telegram_chat_id", "telegram_username", "telegram_linked_at"):
                     prefs.pop(k, None)
@@ -969,81 +1060,80 @@ with tab_notify:
                 st.toast(tr("profile.tg_unlinked"), icon=":material/link_off:")
                 st.rerun()
     else:
-        import secrets as _secrets
-        import time as _time
+        # Every widget of the pending-link flow lands inside the
+        # channel card, the fragment included — the state of the
+        # connection has one place on the page.
+        with _nchan_body:
+            import secrets as _secrets
+            import time as _time
 
-        _LINK_TTL = 600  # seconds a pending link code stays valid
+            _LINK_TTL = 600  # seconds a pending link code stays valid
 
-        st.markdown(tr("profile.tg_how_body"))
-
-        link = st.session_state.get("tg_link")
-        if link and _time.time() - link["ts"] > _LINK_TTL:
-            link = None
-            st.session_state.pop("tg_link", None)
-            # Retire the code server-side too — a stale code must not stay
-            # matchable in prefs after the page stopped waiting for it.
-            fresh = auth.load_prefs()
-            if fresh.pop("tg_link_code", None) is not None:
-                fresh.pop("tg_link_ts", None)
-                auth.save_prefs(fresh)
-            st.warning(tr("profile.tg_expired"))
-
-        if link is None:
-            st.space("small")
-            if st.button(
-                tr("profile.tg_connect"), type="primary", icon=":material/send:"
-            ):
-                # Random, session-scoped one-time code: an attacker sending
-                # "/start <guess>" from their own Telegram can only ever match
-                # their own session. Never derive this from the email.
-                code = _secrets.token_urlsafe(12)
-                st.session_state["tg_link"] = {"code": code, "ts": _time.time()}
-                # The code goes into prefs (mirrored to the bucket) so the
-                # Actions chat job can match the incoming "/start <code>".
-                fresh = auth.load_prefs()
-                fresh["tg_link_code"] = code
-                fresh["tg_link_ts"] = int(_time.time())
-                auth.save_prefs(fresh)
-                st.rerun()
-        else:
-            st.space("small")
-            st.link_button(
-                tr("profile.tg_open"),
-                _tg.deep_link(link["code"]),
-                type="primary",
-                icon=":material/open_in_new:",
-            )
-            st.caption(
-                tr(
-                    "profile.tg_manual",
-                    bot=f"@{_tg.bot_username()}",
-                    code=link["code"],
-                )
-            )
-            st.space("small")
-
-            @st.fragment(run_every="3s")
-            def _tg_poll() -> None:
-                # The "/start <code>" arrives via the webhook queue; the
-                # Actions chat job matches it and writes telegram_chat_id
-                # into this account's prefs.json in the bucket. Poll our own
-                # prefs (bucket first) until the id appears — the job also
-                # sends the in-chat confirmation.
-                pending = st.session_state.get("tg_link")
-                if not pending or _time.time() - pending["ts"] > _LINK_TTL:
-                    st.rerun(scope="app")  # expired mid-poll: let the page re-gate
-                    return
-                try:
-                    if storage.enabled():
-                        storage.restore(paths.prefs)
-                except Exception:  # noqa: BLE001 — transient; next 3s tick retries
-                    st.caption(f":material/error: {tr('profile.tg_poll_error')}")
-                    return
-                fresh = auth.load_prefs()
-                if not fresh.get("telegram_chat_id"):
-                    st.caption(f":material/hourglass_top: {tr('profile.tg_waiting')}")
-                    return
+            link = st.session_state.get("tg_link")
+            if link and _time.time() - link["ts"] > _LINK_TTL:
+                link = None
                 st.session_state.pop("tg_link", None)
-                st.rerun(scope="app")
+                # Retire the code server-side too — a stale code must not stay
+                # matchable in prefs after the page stopped waiting for it.
+                fresh = auth.load_prefs()
+                if fresh.pop("tg_link_code", None) is not None:
+                    fresh.pop("tg_link_ts", None)
+                    auth.save_prefs(fresh)
+                st.warning(tr("profile.tg_expired"))
 
-            _tg_poll()
+            if link is None:
+                if st.button(
+                    tr("profile.tg_connect"), type="primary", icon=":material/send:"
+                ):
+                    # Random, session-scoped one-time code: an attacker sending
+                    # "/start <guess>" from their own Telegram can only ever match
+                    # their own session. Never derive this from the email.
+                    code = _secrets.token_urlsafe(12)
+                    st.session_state["tg_link"] = {"code": code, "ts": _time.time()}
+                    # The code goes into prefs (mirrored to the bucket) so the
+                    # Actions chat job can match the incoming "/start <code>".
+                    fresh = auth.load_prefs()
+                    fresh["tg_link_code"] = code
+                    fresh["tg_link_ts"] = int(_time.time())
+                    auth.save_prefs(fresh)
+                    st.rerun()
+            else:
+                st.link_button(
+                    tr("profile.tg_open"),
+                    _tg.deep_link(link["code"]),
+                    type="primary",
+                    icon=":material/open_in_new:",
+                )
+                st.caption(
+                    tr(
+                        "profile.tg_manual",
+                        bot=f"@{_tg.bot_username()}",
+                        code=link["code"],
+                    )
+                )
+
+                @st.fragment(run_every="3s")
+                def _tg_poll() -> None:
+                    # The "/start <code>" arrives via the webhook queue; the
+                    # Actions chat job matches it and writes telegram_chat_id
+                    # into this account's prefs.json in the bucket. Poll our own
+                    # prefs (bucket first) until the id appears — the job also
+                    # sends the in-chat confirmation.
+                    pending = st.session_state.get("tg_link")
+                    if not pending or _time.time() - pending["ts"] > _LINK_TTL:
+                        st.rerun(scope="app")  # expired mid-poll: let the page re-gate
+                        return
+                    try:
+                        if storage.enabled():
+                            storage.restore(paths.prefs)
+                    except Exception:  # noqa: BLE001 — transient; next 3s tick retries
+                        st.caption(f":material/error: {tr('profile.tg_poll_error')}")
+                        return
+                    fresh = auth.load_prefs()
+                    if not fresh.get("telegram_chat_id"):
+                        st.caption(f":material/hourglass_top: {tr('profile.tg_waiting')}")
+                        return
+                    st.session_state.pop("tg_link", None)
+                    st.rerun(scope="app")
+
+                _tg_poll()

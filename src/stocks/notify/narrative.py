@@ -49,7 +49,11 @@ def _persona(lang: str, task: str) -> str:
 def _prompt(data, lang: str, recent: list[str]) -> tuple[str, list[dict]]:
     system = _persona(
         lang, "Given today's portfolio numbers, write exactly 1-2 sentences of insight"
-    ) + " Mention what drove the day and anything worth watching."
+    ) + (
+        " Lead with what moved the book in money terms (contribution_to_day),"
+        " not with the biggest percentage, and say how the day compares to the"
+        " benchmark when one is given. Mention anything worth watching."
+    )
     if recent:
         # Cheaper than any dedupe after the fact: the model that can see what it
         # already said usually says something else. _similar() is the backstop.
@@ -57,7 +61,13 @@ def _prompt(data, lang: str, recent: list[str]) -> tuple[str, list[dict]]:
             " You wrote these lines on previous days — say something new, and do"
             " not restate them: " + " | ".join(recent)
         )
+    # Ranked by money, not by percent: the line should be about what moved the
+    # book, and the biggest percentage is regularly the smallest position.
+    contributions = sorted(
+        getattr(data, "contrib", {}).items(), key=lambda kv: abs(kv[1]), reverse=True
+    )
     facts = {
+        "currency": getattr(data, "currency", "EUR"),
         "date": data.date.isoformat(),
         "total": data.total,
         "day_change": data.day and {"eur": round(data.day[0], 2),
@@ -65,10 +75,108 @@ def _prompt(data, lang: str, recent: list[str]) -> tuple[str, list[dict]]:
         "week_change": data.week and {"eur": round(data.week[0], 2),
                                       "pct": round(data.week[1] * 100, 2)},
         "session_moves_pct": {t: round(v * 100, 2) for t, v in data.movers[:10]},
+        "contribution_to_day": {t: round(v, 2) for t, v in contributions[:10]},
+        "benchmark": _benchmark_facts(data),
+        "currency_effect_on_day": getattr(data, "fx_effect", None),
+        "just_reported": [
+            {
+                "ticker": r.ticker,
+                "date": r.date.isoformat(),
+                "beat": r.beat,
+                "reported_eps": r.reported_eps,
+                "eps_estimate": r.eps_estimate,
+                "move_pct": getattr(data, "result_moves", {}).get(r.ticker),
+            }
+            for r in getattr(data, "results", [])
+        ],
         "earnings_next_7d": [
             {"ticker": e.ticker, "date": e.date.isoformat(), "in_days": e.days_until}
             for e in data.earnings
             if e.date
+        ],
+        "ex_dividends_next_7d": [
+            {
+                "ticker": e.ticker,
+                "date": e.ex_date.isoformat(),
+                "in_days": e.days_until,
+                "estimated_cash": round(cash, 2)
+                if (cash := getattr(data, "dividend_cash", {}).get(e.ticker))
+                else None,
+            }
+            for e in getattr(data, "ex_dividends", [])
+        ],
+        "dividends_received_7d": getattr(data, "dividends_received", None)
+        and {
+            "amount": round(data.dividends_received[0], 2),
+            "payments": data.dividends_received[1],
+        },
+    }
+    return system, [{"role": "user", "content": json.dumps(facts)}]
+
+
+def _benchmark_facts(data) -> dict | None:
+    """The index leg of the prompt: how the book did *relative* to the market.
+
+    A -1.2% day reads very differently when the index is -2.5%, and the line is
+    only worth writing if it can tell those apart.
+    """
+    bench = getattr(data, "benchmark", None)
+    if not bench:
+        return None
+    from stocks.notify.digest import BENCHMARK_LABEL
+
+    day, week = bench
+    return {
+        "name": BENCHMARK_LABEL,
+        "day_pct": None if day is None else round(day * 100, 2),
+        "week_pct": None if week is None else round(week * 100, 2),
+    }
+
+
+def _weekly_prompt(data, lang: str) -> tuple[str, list[dict]]:
+    system = _persona(
+        lang,
+        "Given this week's portfolio numbers, write exactly 1-2 sentences of "
+        "review",
+    ) + (
+        " Say what the week came down to and what the coming week sets up."
+        " The figures are already in the message above yours, so interpret"
+        " rather than restate them. Never recommend buying, selling or holding"
+        " anything."
+    )
+    facts = {
+        "currency": data.currency,
+        "date": data.date.isoformat(),
+        "total": data.total,
+        "week": data.week and {"amount": round(data.week[0], 2),
+                               "pct": round(data.week[1] * 100, 2)},
+        "month": data.month and {"amount": round(data.month[0], 2),
+                                 "pct": round(data.month[1] * 100, 2)},
+        "ytd": data.ytd and {"amount": round(data.ytd[0], 2),
+                             "pct": round(data.ytd[1] * 100, 2)},
+        "benchmark_pct": {
+            str(days): None if pct is None else round(pct * 100, 2)
+            for days, pct in (data.benchmark or {}).items()
+        },
+        "best_of_week": [
+            {"ticker": t, "amount": round(v, 2),
+             "pct": None if p is None else round(p * 100, 2)}
+            for t, v, p in data.best
+        ],
+        "worst_of_week": [
+            {"ticker": t, "amount": round(v, 2),
+             "pct": None if p is None else round(p * 100, 2)}
+            for t, v, p in data.worst
+        ],
+        "top5_weight_pct": None if data.top_weight is None
+        else round(data.top_weight * 100, 1),
+        "top5_weight_drift_pts": None if data.drift is None
+        else round(data.drift * 100, 1),
+        "earnings_next_week": [
+            {"ticker": e.ticker, "in_days": e.days_until} for e in data.earnings
+        ],
+        "ex_dividends_next_week": [
+            {"ticker": e.ticker, "in_days": e.days_until} for e in data.ex_dividends
         ],
     }
     return system, [{"role": "user", "content": json.dumps(facts)}]
@@ -178,6 +286,20 @@ def highlight(
     if out and recent and _similar(out, recent):
         return None
     return out
+
+
+def weekly_line(data, prefs: dict, lang: str, timeout_s: float = 45.0) -> str | None:
+    """1-2 sentence review line for the weekly message, or None. Never raises.
+
+    No repetition guard, unlike the daily `highlight`: this runs once a week
+    over a different set of numbers each time, so the failure that guard exists
+    for — yesterday's sentence with today's figures — has no room to happen.
+    """
+    try:
+        system, messages = _weekly_prompt(data, lang)
+    except Exception:
+        return None
+    return _complete(prefs, system, messages, timeout_s)
 
 
 def alerts_line(hits, prefs: dict, lang: str, timeout_s: float = 45.0) -> str | None:

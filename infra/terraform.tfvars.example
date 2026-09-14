@@ -18,6 +18,9 @@ github_token = ""
 # Telegram — @BotFather /newbot. NEVER set a webhook on this bot.
 telegram_bot_token = ""
 
+# Optional — the app's public origin, so notifications can link back into it
+app_public_url = "" # e.g. https://topstocks.example
+
 # Optional — digest highlight LLM chain
 chat_enc_key        = "" # must equal Streamlit [chat] enc_key
 free_llm_groq       = ""

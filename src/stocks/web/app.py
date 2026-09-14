@@ -30,7 +30,9 @@ from stocks.web import (  # noqa: E402
     auth,
     chat_core,
     css,
+    empty,
     feedback,
+    guide,
     i18n,
     landing,
     notices,
@@ -545,6 +547,11 @@ stroke-linecap='round' stroke-linejoin='round'%3E\
 # runs, and once per rerun rather than once per skeleton.
 css.inject(skeletons.CSS)
 
+# Empty states (stocks.web.empty) — same deal: the card's stylesheet ships
+# with the card, injected here so it is on the page before any page body draws
+# one, and once per rerun rather than once per card.
+css.inject(empty.CSS)
+
 # Mobile KPI figures. metric_cells packs the headline numbers into ~110px
 # fixed-width tiles on phones, where the 1.35rem base value (€112,432) overruns
 # the box and Streamlit truncates it with an ellipsis. is_mobile() is a
@@ -1044,12 +1051,15 @@ i18n.set_active_language()
 # redirects and nothing after it runs.
 landing.consume_params()
 
-# Signed-in first load: the guided tour for a brand-new account, "what's new"
-# for one that has already taken it and missed a release. Only one modal can be
-# open per run, so the tour claims the run when it fires and the investor-
-# profile nudge stands down — the profile is one of the tour's own steps.
-# Both are no-ops for guests; the tour itself is still reachable by hand.
-if not onboarding.maybe_open():
+# Signed-in first load, in priority order: the walkthrough for a brand-new
+# account (stocks.web.guide — the assistant panel, not a modal), then "what's
+# new" for one that has already taken it and missed a release, then the
+# investor-profile nudge. Only one *modal* can be open per run, which is why
+# the last two are exclusive; the guide is exclusive with them for a softer
+# reason — the profile is one of its own steps, and a nag over a walkthrough
+# in progress is worse than a nag next session.
+# All three are no-ops for guests; the guide is still reachable by hand.
+if not guide.maybe_start() and not onboarding.maybe_open():
     # Nudge the user to set up their investor profile so the assistant tailors
     # its analysis. Skippable; nags again next session until set (or filled
     # from the Profile page).
@@ -1180,8 +1190,23 @@ if is_mobile():
 # account's real book. Rendered BEFORE page.run(): the launcher is position:
 # fixed (DOM order irrelevant) and must survive pages that crash or st.stop()
 # mid-run — an uncaught page exception used to eat the button entirely.
-if auth.is_logged_in():
-    chat_core.render_side_panel(page.title)
+_drawer_open = auth.is_logged_in() and chat_core.render_side_panel(page.title)
+
+# A phone's open drawer IS the viewport, so everything below draws where
+# nobody can see it — and drawing it is what made the drawer unusable. The
+# page's cost is blocking network I/O, not st.* calls, so Streamlit never
+# reaches a yield point at which to honour a tap that arrived mid-run: Close
+# pressed on the first paint sat dead for the whole 17-24s page render (worse
+# on a cold container with Yahoo throttling) before the panel moved. Nothing
+# about that is visible as waiting, so it reads as a frozen screen.
+#
+# Skip the page instead. Closing the drawer hands the run back and the page
+# draws then — the modals too, which stack ABOVE the panel (stDialog is
+# z-index 1000059 to the panel's 1000000) and on a phone would otherwise be a
+# full-screen tap-eater over a drawer the reader cannot reach past.
+if chat_core.covers_viewport(_drawer_open):
+    obs.event("page.skipped", reason="drawer_covers_viewport", page=page.title)
+    st.stop()
 
 # Yahoo throttles datacenter egress IPs; when the fetch layer's
 # backoff (stocks.data.fetch._retry) is exhausted the error would otherwise
@@ -1199,6 +1224,10 @@ if auth.is_logged_in():
 # every page gets it for free — including pages that st.stop() at their login
 # gate.
 onboarding.render(page)
+# The guide's parked state: on a phone the panel is the whole viewport, so a
+# "take me there" collapses it and leaves this one line behind. A no-op on
+# desktop, where the panel is a rail beside the page and never parks.
+guide.render_strip()
 
 with obs.timed("page.render", passthrough=telemetry.CONTROL_FLOW, page=page.title):
     try:

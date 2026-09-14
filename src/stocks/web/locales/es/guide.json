@@ -1,0 +1,14 @@
+{
+  "guide.thread_title": "Primeros pasos",
+  "guide.progress": "Paso {n} de {total}",
+  "guide.goto": "Llévame allí",
+  "guide.next": "Siguiente",
+  "guide.done_it": "Hecho, sigamos",
+  "guide.finish": "Terminar",
+  "guide.skip": "Saltar la guía",
+  "guide.step_done": ":material/check_circle: **{title}** ya está listo. Seguimos.",
+  "guide.finished": "Con esto has visto todo. Estoy aquí cuando me necesites: pregúntame lo que quieras sobre tu cartera, o suelta un extracto en la caja de abajo para importarlo.",
+  "guide.strip_progress": "Guía {n}/{total} · {title}",
+  "guide.strip_open": "Abrir la guía",
+  "guide.strip_exit": "Salir"
+}

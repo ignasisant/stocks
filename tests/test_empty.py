@@ -97,7 +97,11 @@ def test_a_preview_shows_the_shape_instead_of_an_icon():
         'empty.state("No transactions yet", "Import a statement.",'
         ' preview="chart", preview_kw={"height": 240})'
     )
-    shape = at.get("html")[0].body
+    blocks = [h.body for h in at.get("html")]
+    # The card opens with its layout marker (the CSS hook that keeps the text
+    # from being squeezed under the CTA); the shape follows it.
+    assert blocks[0] == '<span class="ts-empty-card"></span>'
+    shape = blocks[1]
     # Faded and still: a sheen would read as a load about to resolve, and
     # nothing arrives here without the reader importing something.
     assert shape.startswith('<div class="topstocks-gh">')
@@ -215,3 +219,13 @@ def test_a_first_visit_gets_a_card_with_a_way_out(
     assert f"**{title}**" in rendered
     assert at.caption, "a card with no body does not say why it is blank"
     assert [p for p, _ in links] == [target]
+
+
+def test_the_stylesheet_survives_the_sanitizer_and_ships_with_the_app():
+    """DOMPurify drops a whole style element whose text holds a "<", and the
+    card's rules are useless if the page never carries them."""
+    from stocks.web import empty
+
+    inner = empty.CSS.split("<style>")[1].split("</style>")[0]
+    assert "<" not in inner
+    assert "css.inject(empty.CSS)" in (WEB / "app.py").read_text()

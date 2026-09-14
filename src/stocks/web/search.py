@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v2  # noqa: F401 — lazy submodule
@@ -665,3 +666,71 @@ def _world_label(t: str, name: str, exch: str) -> str:
     short = name if len(name) <= 34 else name[:33].rstrip() + "…"
     tail = f"{short} · {exch}" if exch else short
     return f"🌐 **{t}**  {tail}"
+
+
+# ------------------------------------------------------------- adder lookup
+# The top-bar dropdown navigates; the Watchlist tab's adder puts a symbol on
+# the list. Both want the same tiers (own list, coins, funds, SEC map,
+# worldwide), so the catalog walk lives here once and the adder renders it.
+
+def add_candidates(
+    query: str, *, path: Path | None = None, limit: int = 8
+) -> list[dict]:
+    """What typing `query` could put on the watchlist, best tier first.
+
+    Rows are `{"ticker", "name", "kind", "listed"}` where `kind` names the
+    tier ("watch", "crypto", "fund", "sec", "world", "raw") and `listed` says
+    the account already follows the symbol —
+    surfaced rather than filtered, so a duplicate query answers "you have
+    this" instead of coming up empty. `raw` is the escape hatch the dropdown
+    spells "Analyze <SYMBOL>": a plausible symbol no catalog knows, which the
+    account may still want to track.
+
+    The network tier (worldwide) is cached and hard-capped inside
+    `world_matches`, and every tier is exception-swallowing there too: a dead
+    Yahoo degrades the adder to the local catalogs instead of breaking it.
+    """
+    from stocks.data.crypto import search_crypto
+    from stocks.data.funds import search_funds
+
+    q = query.strip().upper()
+    if not q:
+        return []
+    holdings = load_watchlist(path or auth.watchlist_path())
+    listed = {h.ticker.upper(): (h.name or "") for h in holdings}
+    tag_map = {h.ticker.upper(): h.tags for h in holdings}
+    rows: list[dict] = []
+    seen: set[str] = set()
+
+    def push(ticker: str, name: str, kind: str) -> None:
+        t = str(ticker).strip().upper()
+        if not t or t in seen:
+            return
+        seen.add(t)
+        rows.append(
+            {
+                "ticker": t,
+                "name": (name or listed.get(t) or "").strip(),
+                "kind": kind,
+                "listed": t in listed,
+            }
+        )
+
+    for t, name in listed.items():
+        if (
+            q in t
+            or q in name.upper()
+            or any(q in tag.upper() for tag in tag_map.get(t, ()))
+        ):
+            push(t, name, "watch")
+    for t, name in search_crypto(q):
+        push(t, name, "crypto")
+    for t, name in search_funds(q):
+        push(t, name, "fund")
+    for t, name in sec_matches(q):
+        push(t, name, "sec")
+    for t, name, exch in world_matches(q):
+        push(t, f"{name} · {exch}" if exch else name, "world")
+    if q not in seen and re.fullmatch(r"[A-Z0-9.\-]{1,12}", q):
+        push(q, "", "raw")
+    return rows[:limit]

@@ -167,9 +167,38 @@ def test_the_portfolio_empty_card_offers_the_demo_book_under_its_cta():
     the click just seeded. What matters here is that the offer is on the empty
     path and that it is the card's `extra`, not a second way out."""
     src = open(PORTFOLIO_PAGE).read()
-    assert "extra=_demo_offer" in src
+    assert "else _demo_offer" in src  # the card's `extra`, guests excepted
     assert "demo.seed(auth.db_path())" in src
     assert 'tr("portfolio.demo_banner")' in src  # and the page says whose
+
+
+def test_a_guest_gets_the_portfolio_page_instead_of_a_login_screen():
+    """Everything on that page derives from a ledger, so without this a
+    visitor who has not signed in met a login screen on the one page the app
+    is about. Source-level for the same reason as the test above: running it
+    would price whatever the guest ledger holds.
+
+    Both of the page's writes stay behind an account — the guest dir is shared
+    by every anonymous visitor, so a "remove demo data" click there would
+    empty the page for all of them at once."""
+    src = open(PORTFOLIO_PAGE).read()
+    assert "auth.require_login_or_demo()" in src
+    assert "GUEST = not auth.is_logged_in()" in src
+    assert 'tr("portfolio.guest_demo_banner")' in src  # and says whose numbers
+    assert "extra=None if GUEST else _demo_offer" in src  # no seeding either
+    # The remove button hangs off the signed-in branch, never the guest one.
+    assert "elif demo.active(auth.db_path()):" in src
+
+
+def test_the_tour_no_longer_locks_the_portfolio_steps_for_guests():
+    """Those four steps land on a page a guest can now read, so a disabled
+    "take me there" would be the tour lying about its own app."""
+    from stocks.web import onboarding
+
+    steps = {s.id: s for s in onboarding.STEPS}
+    assert not any(steps[i].gated for i in ("positions", "risk", "tax", "income"))
+    # Import and Profile still write personal data: those stay gated.
+    assert steps["import"].gated and steps["notify"].gated
 
 
 def test_a_demo_only_ledger_is_still_offered_the_example_statement(

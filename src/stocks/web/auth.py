@@ -6,10 +6,11 @@ section for the required keys.
 
 Browsing is public: app.py calls resolve_user() before building the
 navigation, which maps anonymous visitors to a shared read-only guest dir
-(data/users/_guest/) seeded with the starter watchlist. Login is required
-only where personal data is read or written — the Portfolio, Import and
-Profile pages call require_login() at the top, and mutating widgets
-(favorites, tags, watchlist editor) check is_logged_in().
+(data/users/_guest/) seeded with the starter watchlist and the demo ledger.
+Login is required only where personal data is read or written — the Import
+and Profile pages call require_login() at the top, the Portfolio page calls
+require_login_or_demo() (own book signed in, demo book as a guest), and
+mutating widgets (favorites, tags, watchlist editor) check is_logged_in().
 
 Every account gets its own data under data/users/<slug>/ — watchlist.yaml,
 portfolio.db, last_import.json, prefs.json — keyed by the verified OIDC
@@ -44,6 +45,7 @@ from stocks.config import (
     yaml_dump,
     yaml_load,
 )
+from stocks.portfolio import demo
 from stocks.web import css
 from stocks.web.i18n import t as tr
 
@@ -210,7 +212,9 @@ def guest_paths() -> UserPaths:
 
     Read-only through the UI: every write path (favorites, tags, watchlist
     editor, imports, prefs) sits behind require_login()/is_logged_in(), so
-    guests only ever read the starter watchlist and an empty ledger.
+    guests only ever read the starter watchlist and the demo ledger
+    seed_guest_demo() puts here — one book, identical for every visitor,
+    which is what makes sharing one dir safe.
     """
     return UserPaths(
         root=GUEST_DIR,
@@ -348,16 +352,12 @@ def is_logged_in() -> bool:
     otherwise let anyone claim someone else's account. Google always sends
     email_verified=true for its accounts.
     """
-    try:
-        configured = "auth" in st.secrets
-    except Exception:
-        # No secrets file at all — a fresh clone, a CI checkout. Membership on
-        # st.secrets *raises* there rather than answering False, and this
-        # accessor is called by every page, so an unguarded read takes the
-        # whole app down instead of degrading to "nobody is signed in".
-        configured = False
+    # auth_configured() carries the guard: membership on st.secrets *raises*
+    # without a secrets file, and this accessor is called by every page, so an
+    # unguarded read takes the whole app down instead of degrading to "nobody
+    # is signed in".
     return bool(
-        configured
+        auth_configured()
         and st.user.is_logged_in
         and bool(str(getattr(st.user, "email", "") or "").strip())
         and bool(getattr(st.user, "email_verified", False))
@@ -463,9 +463,80 @@ def login() -> None:
     st.stop()
 
 
+def auth_configured() -> bool:
+    """Whether an IdP is configured ([auth] in secrets).
+
+    Membership on st.secrets *raises* when there is no secrets file at all —
+    a fresh clone, a CI checkout — so every caller needs this guard, not a
+    bare `in`.
+    """
+    try:
+        return "auth" in st.secrets
+    except Exception:
+        return False
+
+
+def _partially_signed_in() -> bool:
+    """An OIDC identity that is present but not usable: no email claim, or an
+    unverified one. is_logged_in() says False for both, and they must not be
+    quietly downgraded to a guest session — require_login() names them."""
+    if not auth_configured():
+        return False
+    try:
+        return bool(st.user.is_logged_in)
+    except Exception:
+        return False
+
+
+def seed_guest_demo(paths: UserPaths) -> None:
+    """Put the demo book in the guest ledger, so the app can be tried without
+    an account.
+
+    Everything on the Portfolio page derives from a ledger, so the page the
+    app is *about* used to be a login screen for anyone who had not signed in
+    yet. The demo book (stocks.portfolio.demo) answers that: invented trades
+    on roughly the real closes, every row stamped `demo`, under a banner that
+    says whose they are.
+
+    The guest dir is shared by every anonymous visitor, which is precisely why
+    this is the only thing ever written there: no import, no clear button, no
+    prefs writes — the demo book is identical for everyone, so one shared copy
+    is the same page for all of them. seed() is a no-op on a ledger that holds
+    anything, so concurrent guests cannot stack a second copy, and a failure
+    here is not worth a crash: the page falls back to its empty state.
+    """
+    if st.session_state.get("_guest_demo_seeded"):
+        return
+    try:
+        demo.seed(paths.db)
+    except Exception:
+        pass
+    st.session_state["_guest_demo_seeded"] = True
+
+
+def require_login_or_demo() -> UserPaths:
+    """The Portfolio page's gate: this account's own book, or the demo one.
+
+    A signed-in visitor goes through require_login() unchanged. An anonymous
+    one is not stopped: they get the shared guest dir with the demo book in
+    it (seed_guest_demo), because "look at it before you hand over a real
+    statement" is worth more than a login screen on the app's main page. The
+    page tells them whose numbers those are, and every write it offers stays
+    behind is_logged_in().
+    """
+    if is_logged_in() or _partially_signed_in():
+        return require_login()
+    # app.py resolves the session's paths before the nav; standalone runs
+    # (AppTest, a direct page run) have not, so fall back to resolving here.
+    paths = st.session_state.get("user_paths") or resolve_user()
+    seed_guest_demo(paths)
+    return paths
+
+
 def require_login() -> UserPaths:
-    """Auth gate for pages that touch personal data (Portfolio, Import,
-    Profile) — public pages never call it.
+    """Auth gate for pages that write personal data (Import, Profile) —
+    public pages never call it, and the Portfolio page goes through
+    require_login_or_demo() so a guest reads the demo book instead.
 
     Renders the sign-in screen (or setup help while [auth] secrets are
     missing) and st.stop()s until an authenticated identity with an email is
@@ -697,8 +768,11 @@ def push_recent_search(ticker: str) -> None:
 # notes field. chat_core reads it to build the assistant persona; empty ->
 # chat_core falls back to its historical default line.
 
-PROFILE_RISK = ("aggressive", "very_aggressive", "balanced", "conservative")
-PROFILE_HORIZON = ("5y_plus", "3_5y", "1_3y", "under_1y")
+# Both tuples are the order the controls draw in, and both run low to high in
+# the same direction: a row of chips only reads as a scale when its two halves
+# agree on which end is "more".
+PROFILE_RISK = ("conservative", "balanced", "aggressive", "very_aggressive")
+PROFILE_HORIZON = ("under_1y", "1_3y", "3_5y", "5y_plus")
 PROFILE_FOCUS = ("tech", "em", "crypto", "dividends_value")
 PROFILE_CONSTRAINTS = ("spain_tax", "us_tax", "eur", "no_leverage", "esg")
 
@@ -738,8 +812,11 @@ FOCUS_EXAMPLES: dict[str, tuple[tuple[str, str, str], ...]] = {
     ),
 }
 
+# What an account that never opened the form pre-selects. The middle of the
+# risk scale rather than one end: this is a guess about someone we know
+# nothing about, and the form is the place to correct it.
 _PROFILE_DEFAULTS = {
-    "risk": "aggressive",
+    "risk": "balanced",
     "horizon": "5y_plus",
     "focus": [],
     "constraints": [],
@@ -769,56 +846,105 @@ def save_profile(profile: dict) -> None:
     save_prefs(prefs)
 
 
-def render_profile_form(key_prefix: str) -> dict:
+def render_profile_form(key_prefix: str, *, cell=None) -> dict:
     """Draw the investor-profile widgets and return the collected values.
 
-    Shared by the Profile page and the first-login dialog; the caller renders
-    its own Save button and calls save_profile(). Does not persist on its own.
+    Shared by the Profile page and the first-login dialog, in two layouts from
+    one implementation. `cell` is a callable `(field_id, label, help) ->
+    container` naming where a field's control goes: the Profile page hands
+    back a setting row (label and explanation in the left gutter, control on
+    the right), so the widgets draw with their own labels collapsed. Left at
+    None — the first-login dialog, which is too narrow for a 260px label
+    gutter — each widget draws its own label and the fields stack.
+
+    Does not persist: the Profile page autosaves on a real difference, the
+    dialog has its own Save button. Both call save_profile().
     """
     cur = load_profile()
-    risk = st.radio(
+
+    def _slot(field: str, label: str, help_text: str = ""):
+        """Where one field draws, and whether it carries its own label.
+
+        In a setting row the explanation is already printed under the label,
+        so the widget collapses both; stacked in the dialog it keeps its label
+        and the explanation rides in the tooltip.
+        """
+        if cell is None:
+            return st, {"help": help_text}
+        return cell(field, label, help_text), {"label_visibility": "collapsed"}
+
+    # The two scales are segmented controls rather than radios: a row of chips
+    # reads as one axis, and it is the control the Preferences tab already
+    # uses. required=True keeps a selection at all times — clicking the active
+    # chip off would otherwise hand back None, a state this profile has no
+    # meaning for.
+    _risk_at, _risk_kw = _slot("risk", tr("profile.iv_risk"), tr("profile.iv_risk_help"))
+    risk = _risk_at.segmented_control(
         tr("profile.iv_risk"),
         PROFILE_RISK,
-        index=PROFILE_RISK.index(cur["risk"]) if cur["risk"] in PROFILE_RISK else 0,
+        default=cur["risk"] if cur["risk"] in PROFILE_RISK else _PROFILE_DEFAULTS["risk"],
+        required=True,
         format_func=lambda k: tr(f"profile.iv_risk_{k}"),
-        horizontal=True,
         key=f"{key_prefix}_risk",
+        **_risk_kw,
     )
-    horizon = st.radio(
+    _hz_at, _hz_kw = _slot(
+        "horizon", tr("profile.iv_horizon"), tr("profile.iv_horizon_help")
+    )
+    horizon = _hz_at.segmented_control(
         tr("profile.iv_horizon"),
         PROFILE_HORIZON,
-        index=PROFILE_HORIZON.index(cur["horizon"])
+        default=cur["horizon"]
         if cur["horizon"] in PROFILE_HORIZON
-        else 0,
+        else _PROFILE_DEFAULTS["horizon"],
+        required=True,
         format_func=lambda k: tr(f"profile.iv_horizon_{k}"),
-        horizontal=True,
         key=f"{key_prefix}_horizon",
+        **_hz_kw,
     )
-    focus = st.multiselect(
+    _focus_at, _focus_kw = _slot(
+        "focus", tr("profile.iv_focus"), tr("profile.iv_focus_help")
+    )
+    focus = _focus_at.multiselect(
         tr("profile.iv_focus"),
         PROFILE_FOCUS,
         default=[f for f in cur["focus"] if f in PROFILE_FOCUS],
         format_func=lambda k: tr(f"profile.iv_focus_{k}"),
+        placeholder=tr("profile.iv_pick_ph"),
         key=f"{key_prefix}_focus",
+        **_focus_kw,
     )
-    constraints = st.multiselect(
+    _cons_at, _cons_kw = _slot(
+        "constraints", tr("profile.iv_constraints"), tr("profile.iv_constraints_help")
+    )
+    constraints = _cons_at.multiselect(
         tr("profile.iv_constraints"),
         PROFILE_CONSTRAINTS,
         default=[c for c in cur["constraints"] if c in PROFILE_CONSTRAINTS],
         format_func=lambda k: tr(f"profile.iv_constraints_{k}"),
+        placeholder=tr("profile.iv_pick_ph"),
         key=f"{key_prefix}_constraints",
+        **_cons_kw,
     )
-    notes = st.text_area(
+    _notes_at, _notes_kw = _slot(
+        "notes", tr("profile.iv_notes"), tr("profile.iv_notes_help")
+    )
+    notes = _notes_at.text_area(
         tr("profile.iv_notes"),
         value=cur["notes"],
         placeholder=tr("profile.iv_notes_ph"),
         key=f"{key_prefix}_notes",
+        **_notes_kw,
     )
+    # Both lists come back in click order. Normalising them to the option
+    # order makes an untouched form compare equal to what is stored, which is
+    # what lets the Profile page autosave on a difference without writing (and
+    # toasting) on every rerun.
     return {
         "risk": risk,
         "horizon": horizon,
-        "focus": focus,
-        "constraints": constraints,
+        "focus": [f for f in PROFILE_FOCUS if f in focus],
+        "constraints": [c for c in PROFILE_CONSTRAINTS if c in constraints],
         "notes": notes.strip(),
     }
 
@@ -1253,6 +1379,61 @@ def set_tags(ticker: str, tags: list[str], path: Path | None = None) -> list[str
 
     _update_entry(ticker, _set, path)
     return clean
+
+
+def set_name(ticker: str, name: str, path: Path | None = None) -> None:
+    """Set (or clear, with an empty string) a ticker's display label."""
+
+    def _set(entry: dict) -> None:
+        if name.strip():
+            entry["name"] = name.strip()
+        else:
+            entry.pop("name", None)
+
+    _update_entry(ticker, _set, path)
+
+
+def rename_tag(old: str, new: str, path: Path | None = None) -> int:
+    """Rename a tag group across every holding that carries it.
+
+    A group only exists as the tag repeated on its members, so renaming one is
+    a rewrite of each member's tag list — in place, so the group keeps its
+    position in a holding's tags. Merging into an existing group (renaming
+    "semis" to "tech" when both exist) de-dups through `_clean_tags`. Returns
+    how many holdings were touched; 0 when `new` is blank or nothing carries
+    `old`.
+    """
+    from stocks.config import load_watchlist  # local: same reason as all_tags
+
+    new = new.strip()
+    if not new or new.lower() == old.strip().lower():
+        return 0
+    p = path or watchlist_path()
+    touched = 0
+    for h in load_watchlist(p):
+        if not any(t.lower() == old.lower() for t in h.tags):
+            continue
+        set_tags(h.ticker, [new if t.lower() == old.lower() else t for t in h.tags], p)
+        touched += 1
+    return touched
+
+
+def delete_tag(tag: str, path: Path | None = None) -> int:
+    """Drop a tag group, keeping its members on the watchlist.
+
+    Ungrouping is not un-following: the tickers stay listed, they just stop
+    being a group. Returns how many holdings lost the tag.
+    """
+    from stocks.config import load_watchlist
+
+    p = path or watchlist_path()
+    touched = 0
+    for h in load_watchlist(p):
+        if not any(t.lower() == tag.lower() for t in h.tags):
+            continue
+        set_tags(h.ticker, [t for t in h.tags if t.lower() != tag.lower()], p)
+        touched += 1
+    return touched
 
 
 def set_alerts(ticker: str, alerts: list[dict], path: Path | None = None) -> None:

@@ -29,8 +29,11 @@ closes it, a dialog is a fragment) and the code is shaped by them.
   new broker in the importer, a new jurisdiction) → edit that step's `_body`
   copy, and add a release item pointing at the existing step. Do **not** add
   a second step for it.
-- **Something with no user-visible surface** (a refactor, a perf fix, an
-  infrastructure change) → nothing here. The tour is not a git log.
+- **A refactor a user can see** (a page rebuilt, a panel reorganised, a flow
+  moved) → no new step, but it does need a release item: the screen the user
+  knows has changed under them.
+- **Something with no user-visible surface** (an internal refactor, a perf
+  fix, an infrastructure change) → nothing here. The tour is not a git log.
 - **A feature that was removed or renamed** → delete or rename its step *and*
   its copy in every locale. A test fails on orphaned copy, which is the point.
 
@@ -71,29 +74,44 @@ Rules that matter:
 - If the capability is one of the four the Home setup card shows, wire it
   through `setup_state()` rather than computing it twice.
 
-## Step 3 — add the release entry
+## Step 3 — announce it in the release registry
 
 Versions are date-based `YYYY.MM` and have nothing to do with
 `pyproject.toml` — the tour's "new" means "new to look at". Append a
 `Release` (oldest first; `CURRENT_VERSION` is derived from the last one), or
-extend the newest entry if it has not shipped yet.
+add a `News` item to the newest entry if it has not shipped yet.
 
 ```python
     Release(
         version="2026.10",
         date="2026-10",
-        items=("tour.news_2026_10_myfeature",),   # copy keys
-        steps=("my_feature",),                     # steps that explain them
+        items=(
+            News(slug="myfeature",        # copy-key suffix, unique per release
+                 icon="rocket_launch",    # Material Symbols ligature, no colons
+                 step="my_feature"),      # the step that explains it, or omit
+        ),
     ),
 ```
 
-`items` are catalog keys, never literal strings — the modal is bilingual. The
-key convention is `tour.news_<version with dots as underscores>_<slug>`.
-Every id in `steps` must exist in `STEPS`; a test enforces it.
+One `News` is one card: the modal pages through the unseen ones a feature at
+a time, newest release first, so how much a returning account reads is how
+much shipped while it was away. That is why an item is a feature and not a
+sentence about several — two things worth reading are two items.
+
+- `slug` is half the copy key (`tour.news_<version with dots as underscores>_<slug>_title`
+  / `_body`), so it must be unique inside its release. A test enforces both.
+- `step` must exist in `STEPS`; the card's button hands the reader to that
+  step, which is what makes the announcement actionable. Omit it only for
+  something with no tour stop of its own — a card with a `step` that this
+  deploy filters out of `visible_steps()` is dropped from the list entirely,
+  announcement and all.
+- `icon` sits next to the title. Reuse the step's icon unless the feature is
+  narrower than the step.
 
 Appending a new version means every account that had already caught up sees
-the "what's new" modal on its next session. That is the intent — do not add a
-version for a change with no item worth reading.
+"what's new" on its next session, once: every way out of the modal stamps
+`tour_seen_version`. Do not add a version for a change with no card worth
+reading.
 
 ## Step 4 — write the copy, both languages
 
@@ -106,7 +124,12 @@ For each new step, in **both** `en/tour.json` and `es/tour.json`:
 - `tour.<id>_cta` — optional, overrides the generic "take me there"
   ("Open Import", "Set up Telegram"). Skip it and the generic label is used.
 
-For each release item: one sentence, opening with `**A bold label.**`
+For each `News` item, in both catalogs:
+
+- `tour.news_<version>_<slug>_title` — the feature's name, sentence case, no
+  trailing period. It is the card's heading, not a sentence.
+- `tour.news_<version>_<slug>_body` — one to three sentences on what it does
+  and the one thing worth knowing. `**bold**` for sub-features being named.
 
 Keep the two catalogs in the same key order, and keep placeholders identical
 between languages — `tests/test_i18n_parity.py` fails on a mismatch. Write

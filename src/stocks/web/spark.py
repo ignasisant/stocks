@@ -13,17 +13,25 @@ design constraint:
   Adding a tooltip would also mean adding it on touch, where a `title` never
   fires.
 
-The markup is a bare `svg` with a `polyline` and an optional baseline `line`,
-which is inside DOMPurify's default allowlist — Streamlit sanitises everything
-`st.html` renders, so anything more exotic (a `use`, a gradient `defs`, a
-`foreignObject`) would be dropped silently and the tile would just look empty.
+**The SVG travels as a data URI, and it has to.** Streamlit runs everything
+`st.html` renders through DOMPurify configured `USE_PROFILES: {html: true}`,
+and that profile has no SVG in it: an inline `svg` element is removed, silently
+and completely, leaving an empty cell where the shape should be. A background
+image is not markup, so a `background-image: url("data:image/svg+xml;base64,…")`
+on a plain `span` survives the same sanitiser untouched. Hence the split below:
+`sparkline_svg` builds the picture, `sparkline` wraps it in the one container
+that reaches the page.
 """
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Sequence
 
 from stocks.web.ds import CANDLE_DOWN, CANDLE_UP, TEXT_FAINT, TEXT_MUTED
+
+# A data-URI SVG is a standalone document, so it carries its own namespace.
+SVG_NS = "http://www.w3.org/2000/svg"
 
 # Tile-sized by default: wide enough to read a shape, short enough to sit on
 # one line beside a number without changing the row height.
@@ -56,6 +64,24 @@ def _points(values: Sequence[float], width: float, height: float) -> str:
     return " ".join(coords)
 
 
+def embed(svg: str, *, css: str) -> str:
+    """`svg` as a `span` the sanitiser keeps, sized and stretched by `css`.
+
+    Base64 rather than percent-encoding: the payload then contains no quote,
+    angle bracket or `#` for the style attribute, the CSS parser or DOMPurify
+    to disagree about, and one round of guessing about escaping is one round
+    too many for something that fails invisibly.
+    """
+    if not svg:
+        return ""
+    uri = base64.b64encode(svg.encode()).decode()
+    return (
+        f'<span class="ag-spark" style="{css};'
+        f'background-image:url(&quot;data:image/svg+xml;base64,{uri}&quot;);'
+        'background-repeat:no-repeat;background-size:100% 100%"></span>'
+    )
+
+
 def sparkline(
     values: Sequence[float],
     *,
@@ -64,7 +90,28 @@ def sparkline(
     color: str | None = None,
     baseline: float | None = None,
 ) -> str:
-    """One sparkline as an inline `svg` string, empty when there is nothing to draw.
+    """One sparkline, ready to drop into a block of HTML.
+
+    Empty when there is nothing to draw, so a caller can leave the cell out
+    rather than draw a dot and imply a trend.
+    """
+    return embed(
+        sparkline_svg(
+            values, width=width, height=height, color=color, baseline=baseline
+        ),
+        css=f"display:inline-block;width:{width}px;height:{height}px",
+    )
+
+
+def sparkline_svg(
+    values: Sequence[float],
+    *,
+    width: int = WIDTH,
+    height: int = HEIGHT,
+    color: str | None = None,
+    baseline: float | None = None,
+) -> str:
+    """The sparkline's own markup, empty when there is nothing to draw.
 
     Args:
         values: the series, oldest first. Two points is the minimum; anything
@@ -82,9 +129,8 @@ def sparkline(
         return ""
     stroke = color or (CANDLE_UP if series[-1] >= series[0] else CANDLE_DOWN)
     parts = [
-        f'<svg class="ag-spark" viewBox="0 0 {width} {height}" '
-        f'width="{width}" height="{height}" preserveAspectRatio="none" '
-        'aria-hidden="true">'
+        f'<svg xmlns="{SVG_NS}" viewBox="0 0 {width} {height}" '
+        f'width="{width}" height="{height}" preserveAspectRatio="none">'
     ]
     if baseline is not None:
         lo, hi = min(series), max(series)
@@ -112,10 +158,11 @@ def flat_rule(*, width: int = WIDTH, height: int = HEIGHT) -> str:
     every sparkline beside it.
     """
     y = height / 2
-    return (
-        f'<svg class="ag-spark" viewBox="0 0 {width} {height}" '
-        f'width="{width}" height="{height}" preserveAspectRatio="none" '
-        f'aria-hidden="true"><line x1="0" y1="{y:.1f}" x2="{width}" '
+    return embed(
+        f'<svg xmlns="{SVG_NS}" viewBox="0 0 {width} {height}" '
+        f'width="{width}" height="{height}" preserveAspectRatio="none">'
+        f'<line x1="0" y1="{y:.1f}" x2="{width}" '
         f'y2="{y:.1f}" stroke="{TEXT_MUTED}" stroke-width="1" '
-        'stroke-dasharray="2 3"/></svg>'
+        'stroke-dasharray="2 3"/></svg>',
+        css=f"display:inline-block;width:{width}px;height:{height}px",
     )
