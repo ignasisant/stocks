@@ -560,12 +560,17 @@ def _dismiss_news(reason: str = "dismissed") -> None:
 
 
 # ------------------------------------------------------------------ rendering
-def render(page) -> None:
+def render(page) -> bool:
     """The tour's visible half: the modal, or the resume strip.
 
     Call once from app.py after the topbar (which has to be the main column's
     first element to stay sticky) and before `page.run()`. Navigation is *not*
     done here — see `consume_goto`.
+
+    Returns whether a *modal* went up (the resume strip does not count — it is
+    one line in the page flow and blocks nothing). app.py skips the page while
+    it is True: a dialog covers the viewport at every width, so the page behind
+    it is invisible work that swallows the taps meant for the modal.
     """
     # The toast belongs to the run *after* the modal closed — one emitted
     # inside the dialog dies with the rerun that shuts it.
@@ -573,8 +578,10 @@ def render(page) -> None:
         st.toast(tr("tour.finished"), icon=":material/check_circle:")
     if st.session_state.get(_OPEN):
         _render_modal()
-    elif st.session_state.get(_RESUME):
+        return True
+    if st.session_state.get(_RESUME):
         _resume_strip()
+    return False
 
 
 def consume_goto(page) -> None:

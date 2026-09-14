@@ -949,22 +949,27 @@ def render_profile_form(key_prefix: str, *, cell=None) -> dict:
     }
 
 
-def maybe_prompt_profile() -> None:
+def maybe_prompt_profile() -> bool:
     """First load per session: pop the investor-profile setup dialog.
 
     Fires once per session for a signed-in account that hasn't saved a profile
     yet; "Skip for now" just closes it (the session flag stops it re-popping),
     so it nudges again next session until the profile is filled or the user
     completes it from the Profile page. No-op otherwise.
+
+    Returns whether the dialog was opened — app.py stands the page down while
+    it is up, because a modal is a full-screen tap blocker and the page
+    rendering behind it takes the presses meant for Skip with it.
     """
     if "auth" not in st.secrets or not is_logged_in():
-        return
+        return False
     if profile_is_set() or st.session_state.get("_profile_prompt_seen"):
-        return
+        return False
     st.session_state["_profile_prompt_seen"] = True
     # Built at call time (not @st.dialog) so the title resolves in the run's
     # active language rather than freezing at import — same as the login modal.
     st.dialog(tr("profile.iv_dialog_title"))(_profile_dialog_body)()
+    return True
 
 
 def _profile_dialog_body() -> None:
