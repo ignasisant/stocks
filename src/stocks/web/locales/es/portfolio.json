@@ -78,9 +78,6 @@
   "portfolio.alloc_sector": "Sector",
   "portfolio.alloc_geography": "Geografía",
   "portfolio.alloc_other": "Otros",
-  "portfolio.geo_view_chart": "Gráfico",
-  "portfolio.geo_view_map": "Mapa",
-  "portfolio.geo_unmapped": "Sin país asignado: {pct}%",
   "portfolio.alloc_currency": "Divisa",
   "portfolio.alloc_broker": "Bróker",
   "portfolio.no_alloc_data": "No hay datos de {kind}.",
@@ -357,5 +354,6 @@
   "portfolio.demo_offer_button": "Usar transacciones de prueba",
   "portfolio.demo_seeded_toast": "Transacciones de prueba añadidas: todas las pestañas se han rellenado con ellas.",
   "portfolio.demo_banner": "Son transacciones de prueba, no las tuyas. Tu primera importación real las borra.",
+  "portfolio.guest_demo_banner": "Son transacciones de prueba de una cuenta de ejemplo compartida, no las tuyas: precios reales, operaciones inventadas. Inicia sesión para importar tu extracto y ver aquí tu cartera real.",
   "portfolio.demo_remove": "Quitar los datos de prueba"
 }

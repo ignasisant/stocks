@@ -203,8 +203,13 @@ def _fingerprint(thread: str, text: str) -> str:
 
 
 def _keepable(turn: dict) -> str:
-    """The indexable text of a turn, or "" when it is not worth remembering."""
-    if turn.get("role") not in ("user", "assistant"):
+    """The indexable text of a turn, or "" when it is not worth remembering.
+
+    A step of the guided walkthrough (stocks.web.guide) is app copy that the
+    reader was shown, not something they said or were told about their book —
+    indexing it would answer "what have we talked about" with the tutorial.
+    """
+    if turn.get("role") not in ("user", "assistant") or turn.get("guide"):
         return ""
     text = " ".join(str(turn.get("content") or "").split())
     return text[:MAX_CHARS] if len(text) >= MIN_CHARS else ""

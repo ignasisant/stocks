@@ -468,6 +468,66 @@ def test_ticker_changes_window_not_covered():
     assert ticker_changes(pd.DataFrame(), 1).empty
 
 
+from stocks.analysis.portfolio import ticker_money_changes  # noqa: E402
+
+
+def test_ticker_money_changes_sum_to_the_basket_change():
+    """The contribution figures are only honest if they add up: the digest
+    prints them under a header that already reported the basket's move, so a
+    per-name breakdown that summed to something else would be visibly wrong."""
+    idx = pd.date_range("2024-01-01", periods=10, freq="D")
+    vals = pd.DataFrame(
+        {
+            "BIG": [float(10_000 + 10 * i) for i in range(10)],  # +0.1%/day, +€10
+            "SMALL": [float(500 + 20 * i) for i in range(10)],   # +4%/day, +€20
+        },
+        index=idx,
+    )
+    day = ticker_money_changes(vals, 1)
+    assert abs(day["BIG"] - 10.0) < 1e-9
+    assert abs(day["SMALL"] - 20.0) < 1e-9
+    change, _ = basket_change(vals, 1)
+    assert abs(day.sum() - change) < 1e-9
+
+    week = ticker_money_changes(vals, 7)
+    assert abs(week.sum() - basket_change(vals, 7)[0]) < 1e-9
+
+
+def test_ticker_money_changes_rank_differs_from_percent_rank():
+    """The whole point of the money view: the loudest percentage is regularly
+    the smallest position."""
+    idx = pd.date_range("2024-01-01", periods=2, freq="D")
+    vals = pd.DataFrame(
+        {"BIG": [10_000.0, 10_150.0], "SMALL": [400.0, 440.0]}, index=idx
+    )
+    assert ticker_changes(vals, 1).idxmax() == "SMALL"   # +10% vs +1.5%
+    assert ticker_money_changes(vals, 1).idxmax() == "BIG"  # +150 vs +40
+
+
+def test_ticker_money_changes_keeps_new_positions_and_drops_unpriced():
+    """Unlike the percentage view a zero start is fine here — a position opened
+    yesterday genuinely added its value to the book — but a name unpriced at
+    either endpoint contributed nothing measurable."""
+    idx = pd.date_range("2024-01-01", periods=2, freq="D")
+    vals = pd.DataFrame(
+        {
+            "NEW": [0.0, 300.0],
+            "GHOST": [float("nan"), 500.0],
+        },
+        index=idx,
+    )
+    money = ticker_money_changes(vals, 1)
+    assert list(money.index) == ["NEW"]
+    assert abs(money["NEW"] - 300.0) < 1e-9
+
+
+def test_ticker_money_changes_window_not_covered():
+    idx = pd.date_range("2024-01-01", periods=5, freq="D")
+    vals = pd.DataFrame({"A": [1.0] * 5}, index=idx)
+    assert ticker_money_changes(vals, 30).empty
+    assert ticker_money_changes(pd.DataFrame(), 1).empty
+
+
 from datetime import UTC, datetime  # noqa: E402
 
 from stocks.analysis.portfolio import (  # noqa: E402
@@ -634,3 +694,72 @@ def test_a_premarket_move_belongs_to_today_not_to_the_last_close(monkeypatch):
 def test_session_quote_none_when_quote_missing(monkeypatch):
     _patch_quote(monkeypatch, {"marketState": "PRE"})
     assert session_quote("AAPL") is None
+
+
+from stocks.analysis.portfolio import (  # noqa: E402
+    fx_share,
+    position_value_frames,
+)
+
+
+def test_fx_share_isolates_the_currency_leg():
+    """The digest tells a EUR investor how much of a US-heavy day was the
+    dollar rather than the companies, so the split has to be exact: what the
+    book actually did, minus what it would have done at today's rate."""
+    idx = pd.date_range("2024-01-01", periods=2, freq="D")
+    lived = pd.DataFrame({"A": [1000.0, 1100.0]}, index=idx)     # +100 as lived
+    at_todays_rate = pd.DataFrame({"A": [1000.0, 1070.0]}, index=idx)  # +70 price
+    assert abs(fx_share(lived, at_todays_rate, 1) - 30.0) < 1e-9
+    # A currency that went the other way shows up negative.
+    assert abs(fx_share(at_todays_rate, lived, 1) + 30.0) < 1e-9
+
+
+def test_fx_share_is_none_when_the_window_is_not_covered():
+    idx = pd.date_range("2024-01-01", periods=2, freq="D")
+    vals = pd.DataFrame({"A": [1.0, 2.0]}, index=idx)
+    assert fx_share(vals, vals, 30) is None
+    assert fx_share(pd.DataFrame(), vals, 1) is None
+    assert fx_share(vals, pd.DataFrame(), 1) is None
+
+
+class _Pos:
+    def __init__(self, ticker, quantity, currency):
+        self.ticker, self.quantity, self.currency = ticker, quantity, currency
+
+
+def test_position_value_frames_freezes_fx_at_the_last_rate(monkeypatch):
+    """One fetch, two readings: the second frame must move only when a price
+    moves, so a same-price/different-rate day reads as flat in it."""
+    idx = pd.to_datetime(["2024-01-01", "2024-01-02"])
+    monkeypatch.setattr(
+        "stocks.analysis.portfolio.load_closes",
+        lambda tickers, period="1y": {
+            "US": pd.Series([100.0, 110.0], index=idx),
+            "EU": pd.Series([50.0, 50.0], index=idx),
+        },
+    )
+    monkeypatch.setattr(
+        "stocks.data.fx.rates_range",
+        lambda start, end, base, quote: {"2024-01-01": 0.90, "2024-01-02": 1.00},
+    )
+    positions = [_Pos("US", 10, "USD"), _Pos("EU", 4, "EUR")]
+    values, frozen = position_value_frames(positions, base="EUR")
+
+    # Lived: 10 * 100 * 0.90 = 900 -> 10 * 110 * 1.00 = 1100.
+    assert abs(values["US"].iloc[0] - 900.0) < 1e-9
+    assert abs(values["US"].iloc[1] - 1100.0) < 1e-9
+    # At today's rate throughout: 1000 -> 1100, so only the price shows.
+    assert abs(frozen["US"].iloc[0] - 1000.0) < 1e-9
+    assert abs(frozen["US"].iloc[1] - 1100.0) < 1e-9
+    # A base-currency position is identical in both frames.
+    assert list(frozen["EU"]) == list(values["EU"]) == [200.0, 200.0]
+    # 200 of the 300 the book gained was the dollar.
+    assert abs(fx_share(values, frozen, 1) - 100.0) < 1e-9
+
+
+def test_position_value_frames_empty_without_prices(monkeypatch):
+    monkeypatch.setattr(
+        "stocks.analysis.portfolio.load_closes", lambda tickers, period="1y": {}
+    )
+    values, frozen = position_value_frames([_Pos("X", 1, "EUR")])
+    assert values.empty and frozen.empty

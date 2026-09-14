@@ -84,6 +84,7 @@ locals {
   }
 
   optional_secrets = {
+    APP_PUBLIC_URL      = var.app_public_url
     CHAT_ENC_KEY        = var.chat_enc_key
     FREE_LLM_GROQ       = var.free_llm_groq
     FREE_LLM_CEREBRAS   = var.free_llm_cerebras

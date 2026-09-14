@@ -77,7 +77,7 @@ def _first_run_banner() -> None:
     if not auth.is_logged_in():
         if st.session_state.get("guest_banner_dismissed"):
             return
-        if "auth" in st.secrets:
+        if auth.auth_configured():
             st.info(
                 tr("home.guest_banner"),
                 icon=":material/waving_hand:",
@@ -95,6 +95,15 @@ def _first_run_banner() -> None:
                 icon=":material/waving_hand:",
             )
             row = st.container(horizontal=True)
+        # Where the guest session is actually worth something: the Portfolio
+        # page runs on the demo book (auth.seed_guest_demo), so the app can be
+        # read end to end before an account exists. Said here because Home
+        # itself stays empty for guests — its glance is per-account.
+        row.page_link(
+            "app_pages/portfolio.py",
+            label=tr("home.guest_try_demo"),
+            icon=":material/science:",
+        )
         if row.button(tr("home.dismiss"), key="guest_banner_dismiss", type="tertiary"):
             st.session_state["guest_banner_dismissed"] = True
             st.rerun()
@@ -115,12 +124,26 @@ def _first_run_banner() -> None:
             st.rerun()
 
 
+def _pill(on: bool, icon: str, label: str) -> str:
+    """One checklist pill's label.
+
+    Done pills recede to a gray check: the progress badge already counts
+    them, and four bold green rows bury the one row that still needs doing.
+    Pending pills keep the feature's own icon at full strength — paired with
+    the border their button type gives them, the thing left to do is also the
+    only thing on the strip that looks like a control.
+    """
+    if on:
+        return f":gray[:material/check_circle:] :gray[{label}]"
+    return f":material/{icon}: {label}"
+
+
 def _setup_card() -> None:
     """Feature-activation checklist — which of the four connectable
     capabilities (Google sign-in, ledger import, a BYOK provider key,
     Telegram) this account has switched on. Pending rows carry their
-    activation entry point; once everything is active the card offers a
-    one-time dismiss persisted in prefs.json.
+    activation entry point; once everything is active the card collapses to
+    its heading and offers a one-time dismiss persisted in prefs.json.
     """
     prefs = auth.load_prefs()
     # One detector for the whole app: the guided tour badges the same four
@@ -132,112 +155,136 @@ def _setup_card() -> None:
 
     states = (signed_in, imported, has_ai_key, tg_linked)
     done = sum(states)
-    if done == len(states) and prefs.get("setup_card_dismissed"):
+    complete = done == len(states)
+    if complete and prefs.get("setup_card_dismissed"):
         return
 
-    def _label(on: bool, icon: str, label: str) -> str:
-        """Pill label: the feature's own icon, green + bold when active,
-        gray when pending."""
-        return (f":green[:material/{icon}:] **{label}**" if on
-                else f":gray[:material/{icon}:] :gray[{label}]")
-
-    # Dense single-strip card: title + progress badge + one uniform tertiary
-    # pill per feature, all in a wrapping horizontal row. Same element type
-    # everywhere keeps the pills aligned; page pills navigate via
-    # st.switch_page. Guests get disabled pills — the target pages sit behind
-    # require_login() — except sign-in, which is the pending action itself.
-    with st.container(border=True):
-        row = st.container(horizontal=True, vertical_alignment="center",
-                           gap="small")
-        row.markdown(
+    # Two stacked groups, each a heading line over its own pill row. They used
+    # to share one wrapping strip at a single gap, which set the headings and
+    # the pills at the same level and read as one wall of text; the gap
+    # between the groups is now wider than the gap inside one, so the grouping
+    # carries itself without a rule. Page pills navigate via st.switch_page;
+    # guests get disabled pills — the target pages sit behind require_login()
+    # — except sign-in, which is the pending action itself.
+    with st.container(border=True, gap="medium"):
+        setup = st.container(gap="small")
+        head = setup.container(horizontal=True, vertical_alignment="center",
+                               horizontal_alignment="distribute")
+        head.markdown(
             f"{tr('home.setup_title')} "
             f":gray-badge[{tr('home.setup_progress', done=done, total=len(states))}]"
         )
 
-        # Google pill: pending = the sign-in action; done = Profile (log-out
-        # and account settings live there).
-        if signed_in:
-            if row.button(_label(True, "account_circle", tr("home.setup_google")),
-                          key="setup_card_google", type="tertiary"):
-                st.switch_page("app_pages/profile.py")
-        else:
-            row.button(_label(False, "account_circle", tr("home.setup_google")),
-                       key="setup_card_login", type="tertiary",
-                       on_click=auth.login, disabled="auth" not in st.secrets)
-
-        if row.button(_label(imported, "upload_file", tr("home.setup_import")),
-                      key="setup_card_import", type="tertiary",
-                      disabled=not signed_in):
-            st.switch_page("app_pages/import_transactions.py")
-
-        # AI pill: the key gate lives in the assistant side panel, not a nav
-        # page, so it opens the panel in place (signed-in only — app.py gates
-        # render_side_panel on is_logged_in()). auto_awesome = the launcher
-        # FAB's icon, so the pill points at the thing it opens.
-        if row.button(_label(has_ai_key, "auto_awesome", tr("home.setup_ai")),
-                      key="setup_card_ai", type="tertiary",
-                      disabled=not signed_in):
-            st.session_state["chat_panel_open"] = True
-            st.rerun()
-
-        if row.button(_label(tg_linked, "send", tr("home.setup_tg")),
-                      key="setup_card_tg", type="tertiary",
-                      disabled=not signed_in):
-            # Land on the Notifications tab, where the linking flow lives.
-            st.session_state["profile_tab"] = "notify"
-            st.switch_page("app_pages/profile.py")
-
         # The tour explains all four of these plus every other feature, so the
-        # card that lists them is the obvious way into it.
+        # card that lists them is the obvious way into it — but it is an
+        # action, not a fifth capability, so it sits on the heading line
+        # rather than inline with the state pills. Dismiss joins it there.
+        acts = head.container(horizontal=True, vertical_alignment="center")
         onboarding.render_launcher(
-            "setup_card_tour", row, button_type="tertiary",
+            "setup_card_tour", acts, button_type="tertiary",
             label=f":material/menu_book: {tr('tour.launch')}",
         )
-
-        if done == len(states):
-            if row.button(f":material/close: {tr('home.dismiss')}",
-                          key="setup_card_dismiss", type="tertiary"):
+        if complete:
+            if acts.button(f":material/close: {tr('home.dismiss')}",
+                           key="setup_card_dismiss", type="tertiary"):
                 prefs["setup_card_dismissed"] = True
                 auth.save_prefs(prefs)
                 st.rerun()
+        else:
+            row = setup.container(horizontal=True, vertical_alignment="center",
+                                  gap="small")
 
-        # Second strip: the things that need none of the four above. An
+            # Google pill: pending = the sign-in action; done = Profile
+            # (log-out and account settings live there).
+            google = _pill(signed_in, "account_circle", tr("home.setup_google"))
+            if signed_in:
+                if row.button(google, key="setup_card_google",
+                              type="tertiary"):
+                    st.switch_page("app_pages/profile.py")
+            else:
+                row.button(google, key="setup_card_login", type="secondary",
+                           on_click=auth.login,
+                           disabled="auth" not in st.secrets)
+
+            if row.button(_pill(imported, "upload_file",
+                                tr("home.setup_import")),
+                          key="setup_card_import",
+                          type="tertiary" if imported else "secondary",
+                          disabled=not signed_in):
+                st.switch_page("app_pages/import_transactions.py")
+
+            # AI pill: the key gate lives in the assistant side panel, not a
+            # nav page, so it opens the panel in place (signed-in only —
+            # app.py gates render_side_panel on is_logged_in()). auto_awesome
+            # = the launcher FAB's icon, so the pill points at the thing it
+            # opens.
+            if row.button(_pill(has_ai_key, "auto_awesome",
+                                tr("home.setup_ai")),
+                          key="setup_card_ai",
+                          type="tertiary" if has_ai_key else "secondary",
+                          disabled=not signed_in):
+                st.session_state["chat_panel_open"] = True
+                st.rerun()
+
+            if row.button(_pill(tg_linked, "send", tr("home.setup_tg")),
+                          key="setup_card_tg",
+                          type="tertiary" if tg_linked else "secondary",
+                          disabled=not signed_in):
+                # Land on the Notifications tab, where the linking flow lives.
+                st.session_state["profile_tab"] = "notify"
+                st.switch_page("app_pages/profile.py")
+
+        # Second group: the things that need none of the four above. An
         # account that has connected nothing can still complete all three
-        # today, which is the point — the row above is a list of what is
+        # today, which is the point — the group above is a list of what is
         # missing, and this one is a list of what already works. It never
         # gates the dismiss: this is an invitation, not a chore.
         _explore_row(signed_in)
 
 
 def _explore_row(signed_in: bool) -> None:
-    """The try-it-out strip inside the setup card."""
+    """The try-it-out group inside the setup card."""
     explored = onboarding.explore_state()
-    tried = tr("home.explore_progress", done=sum(explored.values()),
-               total=len(explored))
-    row = st.container(horizontal=True, vertical_alignment="center", gap="small")
-    row.markdown(f"{tr('home.explore_title')} :gray-badge[{tried}]")
+    total = len(explored)
+    tried = sum(explored.values())
+    badge = tr("home.explore_progress", done=tried, total=total)
 
-    def _label(on: bool, icon: str, label: str) -> str:
-        return (f":green[:material/{icon}:] **{label}**" if on
-                else f":gray[:material/{icon}:] :gray[{label}]")
+    if tried == total:
+        # Nothing left to invite. One line of receipt instead of three pills
+        # that lead nowhere the user hasn't already been.
+        st.markdown(
+            f":gray[:material/check_circle:] {tr('home.explore_title')} "
+            f":gray-badge[{badge}]"
+        )
+        return
+
+    group = st.container(gap="small")
+    group.markdown(f"{tr('home.explore_title')} :gray-badge[{badge}]")
+    row = group.container(horizontal=True, vertical_alignment="center",
+                          gap="small")
 
     # Search lives in the top bar on every page, so this one points at the
     # page where a ticker's analysis lands rather than at a field it cannot
     # focus from here.
-    if row.button(_label(explored["search"], "search", tr("home.explore_search")),
-                  key="explore_search", type="tertiary"):
+    if row.button(_pill(explored["search"], "search",
+                        tr("home.explore_search")),
+                  key="explore_search",
+                  type="tertiary" if explored["search"] else "secondary"):
         st.switch_page("app_pages/ticker.py")
 
     # The assistant answers keyless on the shared chain, so this is completable
     # without the AI pill above it ever turning green.
-    if row.button(_label(explored["ask"], "forum", tr("home.explore_ask")),
-                  key="explore_ask", type="tertiary", disabled=not signed_in):
+    if row.button(_pill(explored["ask"], "forum", tr("home.explore_ask")),
+                  key="explore_ask",
+                  type="tertiary" if explored["ask"] else "secondary",
+                  disabled=not signed_in):
         st.session_state["chat_panel_open"] = True
         st.rerun()
 
-    if row.button(_label(explored["watchlist"], "list_alt",
-                         tr("home.explore_watchlist")),
-                  key="explore_watchlist", type="tertiary",
+    if row.button(_pill(explored["watchlist"], "list_alt",
+                        tr("home.explore_watchlist")),
+                  key="explore_watchlist",
+                  type="tertiary" if explored["watchlist"] else "secondary",
                   disabled=not signed_in):
         st.switch_page("app_pages/profile.py")
 

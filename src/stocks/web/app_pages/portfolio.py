@@ -59,7 +59,6 @@ from stocks.web.portfolio_data import (
     trade_bars,
 )
 from stocks.web.widgets import (
-    BORDER,
     CANDLE_DOWN,
     CANDLE_UP,
     CATEGORICAL_COLORS,
@@ -70,14 +69,10 @@ from stocks.web.widgets import (
     LOSS_COLOR,
     PROFIT_BAND,
     PROFIT_COLOR,
-    SEQUENTIAL_SCALE,
     SURFACE_CARD,
-    SURFACE_PAGE,
-    SURFACE_SUNKEN,
     TEXT_FAINT,
     TEXT_MUTED,
     TEXT_SECONDARY,
-    TRANSPARENT,
     WARN_ORANGE,
     broker_name,
     chart_layout,
@@ -93,8 +88,14 @@ from stocks.web.widgets import (
 
 _MOBILE = is_mobile()
 
-# Everything below derives from the personal transaction ledger.
-auth.require_login()
+# Everything below derives from the personal transaction ledger — with one
+# public exception: an anonymous visitor is let in on the shared guest dir,
+# whose ledger holds the demo book and nothing else, so the page the app is
+# about can be read before an account exists. Every write this page offers
+# (seeding, removing) checks GUEST first; the guest dir is shared, so a
+# visitor's click there would land on everyone else's page.
+auth.require_login_or_demo()
+GUEST = not auth.is_logged_in()
 
 st.title(tr("nav.portfolio"))
 
@@ -136,7 +137,7 @@ if not txs:
         page="app_pages/import_transactions.py",
         label=tr("common.cta_import"),
         cta_icon="upload_file",
-        extra=_demo_offer,
+        extra=None if GUEST else _demo_offer,
         preview="chart",
         preview_kw={"height": 240, "legend": True},
     )
@@ -146,7 +147,20 @@ if st.session_state.pop("portfolio_demo_seeded", False):
 # Figures below are only worth reading if it is clear whose they are. Loud on
 # purpose: this app also files tax reports, and a fabricated cost basis read
 # as a real one is the one mistake here that costs money.
-if demo.active(auth.db_path()):
+if GUEST:
+    # A guest's book is only ever the demo one, so there is nothing here to
+    # remove — and the dir is shared, so a delete button would empty the page
+    # for every other visitor too. The way out of the demo is an account.
+    with st.container(horizontal=True, vertical_alignment="center"):
+        st.info(tr("portfolio.guest_demo_banner"), icon=":material/science:")
+        if auth.auth_configured():
+            st.button(
+                tr("common.sign_in_google"),
+                key="portfolio_guest_login",
+                icon=":material/login:",
+                on_click=auth.login,
+            )
+elif demo.active(auth.db_path()):
     with st.container(horizontal=True, vertical_alignment="center"):
         st.warning(tr("portfolio.demo_banner"), icon=":material/science:")
         if st.button(
@@ -443,84 +457,6 @@ def _alloc_pie(alloc: pd.Series, title: str) -> go.Figure:
         legend=dict(font=dict(size=12, color=TEXT_SECONDARY)),
     )
     return fig
-
-
-# The Geography allocation cell offers two views — the classic donut and a
-# rotatable orthographic globe. Its own fragment so flipping the toggle
-# repaints this one cell instead of rerunning the whole history section. The
-# chart draws from session state and the toggle renders below it, keeping the
-# three allocation charts top-aligned across their columns.
-@st.fragment
-def _geography_cell(alloc: pd.Series, title: str) -> None:
-    view = st.session_state.get("geo_alloc_view", "map")
-    if view == "map":
-        pct = alloc[alloc > 0] / alloc.sum() * 100
-        # "Unknown" is allocation()'s bucket for tickers with no country in
-        # meta; it has no polygon, so it leaves the map for the caption below.
-        mapped = pct.drop("Unknown", errors="ignore")
-        fig = go.Figure(
-            go.Choropleth(
-                locations=list(mapped.index),
-                locationmode="country names",
-                # Log-spaced color: a 70% home market would otherwise pin
-                # every other holding onto the ramp's first step.
-                z=[math.log10(v) for v in mapped.values],
-                customdata=list(mapped.values),
-                hovertemplate=(
-                    "<b>%{location}</b><br>%{customdata:.1f}%<extra></extra>"),
-                colorscale=SEQUENTIAL_SCALE,
-                showscale=False,
-                marker_line_color=BORDER,
-                marker_line_width=0.5,
-            )
-        )
-        fig.update_layout(
-            **chart_layout(title=title, height=300),
-            geo=dict(
-                projection_type="orthographic",
-                # Start over the Atlantic: US and Europe (the usual bulk of
-                # the book) both on the visible hemisphere.
-                projection_rotation=dict(lon=-40, lat=25),
-                bgcolor=TRANSPARENT,
-                # The sphere must read as a circle: hairline frame around
-                # the disc, ocean one step darker than the card behind it,
-                # land lifted slightly off the ocean.
-                showframe=True,
-                framecolor=BORDER,
-                framewidth=1,
-                showcoastlines=False,
-                showland=True,
-                landcolor=SURFACE_SUNKEN,
-                showocean=True,
-                oceancolor=SURFACE_PAGE,
-                showcountries=True,
-                countrycolor=BORDER,
-            ),
-        )
-        # Default dragmode is "zoom" (a rectangle select on geo axes); "pan"
-        # is what spins an orthographic globe under the pointer. Mobile keeps
-        # drag off entirely — a rotating globe would swallow page scrolling.
-        fig.update_layout(dragmode=False if _MOBILE else "pan")
-        show_chart(fig, key="alloc_geo")
-        unmapped = 100 - mapped.sum()
-        if unmapped >= 0.05:
-            st.caption(tr("portfolio.geo_unmapped", pct=f"{unmapped:.1f}"))
-    else:
-        show_chart(_alloc_pie(alloc, title), key="alloc_geo")
-    st.segmented_control(
-        title,
-        options=("map", "chart"),
-        default="map",
-        format_func=lambda v: (
-            f":material/public: {tr('portfolio.geo_view_map')}" if v == "map"
-            else f":material/donut_small: {tr('portfolio.geo_view_chart')}"
-        ),
-        key="geo_alloc_view",
-        label_visibility="collapsed",
-        required=True,
-    )
-
-
 
 
 @st.fragment(parallel=True)
@@ -890,10 +826,6 @@ if tab_risk.open:
                         )
                         if alloc.empty:
                             col.caption(tr("portfolio.no_alloc_data", kind=title.lower()))
-                            continue
-                        if key == "country":
-                            with col:
-                                _geography_cell(alloc, title)
                             continue
                         show_chart(_alloc_pie(alloc, title), container=col)
                     if len(by_broker) > 1:

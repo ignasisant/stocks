@@ -51,6 +51,7 @@ with open(".streamlit/secrets.toml", "rb") as f:
 EOF
 }
 
+APP_PUBLIC_URL="$(harvest app public_url)"
 CHAT_ENC_KEY="$(harvest chat enc_key)"
 FREE_LLM_GROQ="$(harvest free_llm groq)"
 FREE_LLM_CEREBRAS="$(harvest free_llm cerebras)"
@@ -71,6 +72,7 @@ set_secret STOCKS_STORAGE_ENDPOINT_URL "$STOCKS_STORAGE_ENDPOINT_URL"
 set_secret STOCKS_STORAGE_BUCKET "$STOCKS_STORAGE_BUCKET"
 set_secret STOCKS_STORAGE_ACCESS_KEY_ID "$STOCKS_STORAGE_ACCESS_KEY_ID"
 set_secret STOCKS_STORAGE_SECRET_ACCESS_KEY "$STOCKS_STORAGE_SECRET_ACCESS_KEY"
+set_secret APP_PUBLIC_URL "$APP_PUBLIC_URL"
 set_secret CHAT_ENC_KEY "$CHAT_ENC_KEY"
 set_secret FREE_LLM_GROQ "$FREE_LLM_GROQ"
 set_secret FREE_LLM_CEREBRAS "$FREE_LLM_CEREBRAS"

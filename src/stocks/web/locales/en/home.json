@@ -1,7 +1,8 @@
 {
   "home.portfolio_title": "Portfolio",
-  "home.guest_banner": "Browsing as a guest with a starter watchlist. Sign in to build your own watchlist and import your broker history.",
-  "home.guest_banner_short": "Browsing as a guest with a starter watchlist.",
+  "home.guest_banner": "Browsing as a guest with a starter watchlist and a demo portfolio. Sign in to build your own watchlist and import your broker history.",
+  "home.guest_banner_short": "Browsing as a guest with a starter watchlist and a demo portfolio.",
+  "home.guest_try_demo": "See the app with demo data",
   "home.dismiss": "Dismiss",
   "home.onboarding_md": ":material/waving_hand: **New here? Three steps to a live portfolio**\n\n1. **Profile** — add the tickers you follow. You start with ten examples spread across sectors, Europe and crypto; replace them with your own.\n2. **Import** — drop a broker statement (Revolut, Trading 212, DEGIRO, Interactive Brokers, ClickTrade or a generic CSV) to fill your transaction ledger; every row is previewed before committing.\n3. **Portfolio** — positions, P/L, risk and your tax residence's report then derive from the ledger automatically.\n\nNo broker statement? The watchlist below, the **Screener** and **Valuation** work without one — click any ticker for its full analysis page.",
   "home.onboarding_dismiss": "Got it — don't show this again",

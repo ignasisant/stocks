@@ -20,6 +20,7 @@ state; the rest are pure.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -65,12 +66,23 @@ def test_home_page_maps_to_the_root_url_path():
 
 def test_releases_reference_real_steps():
     unknown = [
-        (r.version, sid)
+        (r.version, item.slug)
         for r in onboarding.RELEASES
-        for sid in r.steps
-        if onboarding.by_id(sid) is None
+        for item in r.items
+        if item.step is not None and onboarding.by_id(item.step) is None
     ]
-    assert not unknown, f"release entries naming no step: {unknown}"
+    assert not unknown, f"announced features naming no step: {unknown}"
+
+
+def test_news_slugs_are_unique_within_a_release():
+    """The slug is half the copy key, so a duplicate silently shows one
+    feature's card twice and never shows the other's."""
+    dupes = [
+        r.version
+        for r in onboarding.RELEASES
+        if len({i.slug for i in r.items}) != len(r.items)
+    ]
+    assert not dupes, f"releases with a repeated news slug: {dupes}"
 
 
 def test_current_version_is_the_last_release():
@@ -90,12 +102,45 @@ def test_every_step_has_copy(lang):
 
 
 @pytest.mark.parametrize("lang", sorted(i18n.LANGUAGES))
-def test_every_release_item_has_copy(lang):
+def test_every_announced_feature_has_copy(lang):
+    """Every card the news modal can page to needs a title and a body: it
+    shows one feature at a time, so a missing key is the whole card."""
     cat = _catalog(lang)
     missing = [
-        key for r in onboarding.RELEASES for key in r.items if key not in cat
+        key
+        for r in onboarding.RELEASES
+        for item in r.items
+        for key in (
+            onboarding.NewsCard(r.version, r.date, item).title_key,
+            onboarding.NewsCard(r.version, r.date, item).body_key,
+        )
+        if key not in cat
     ]
-    assert not missing, f"{lang}: release items with no copy: {missing}"
+    assert not missing, f"{lang}: announced features with no copy: {missing}"
+
+
+def test_catalog_has_no_copy_for_news_that_is_gone():
+    """Same trap as an orphaned step: a release item that was renamed leaves
+    its old copy translated in every locale and nothing pointing at it."""
+    live = {
+        key
+        for r in onboarding.RELEASES
+        for item in r.items
+        for key in (
+            onboarding.NewsCard(r.version, r.date, item).title_key,
+            onboarding.NewsCard(r.version, r.date, item).body_key,
+        )
+    }
+    # `tour.news_<YYYY>_<MM>_…` is the card namespace; the modal's own chrome
+    # (tour.news_title, tour.news_progress) shares the prefix and is not copy
+    # for a feature.
+    orphans = sorted(
+        key
+        for key in _catalog(i18n.DEFAULT_LANG)
+        if re.fullmatch(r"tour\.news_\d{4}_\d{2}_.+_(title|body)", key)
+        and key not in live
+    )
+    assert not orphans, f"copy for features no longer announced: {orphans}"
 
 
 def test_catalog_has_no_copy_for_steps_that_are_gone():
@@ -106,6 +151,9 @@ def test_catalog_has_no_copy_for_steps_that_are_gone():
         key
         for key in _catalog(i18n.DEFAULT_LANG)
         if key.endswith("_body")
+        # The release cards own the `tour.news_*` half of the namespace, and
+        # have their own orphan check above.
+        and not key.startswith("tour.news_")
         and key.removeprefix("tour.").removesuffix("_body") not in ids
     )
     assert not orphans, f"copy for steps no longer in the registry: {orphans}"
@@ -144,17 +192,6 @@ def test_unreadable_ledger_reads_as_nothing_imported(monkeypatch):
     assert onboarding._has_ledger({}) is False
 
 
-# ------------------------------------------------------------------- gating
-def test_bank_step_is_hidden_when_the_feature_is_off(monkeypatch):
-    monkeypatch.setattr(onboarding, "_bank_available", lambda: False)
-    assert "bank" not in {s.id for s in onboarding.visible_steps()}
-
-
-def test_bank_step_shows_when_the_feature_is_on(monkeypatch):
-    monkeypatch.setattr(onboarding, "_bank_available", lambda: True)
-    assert "bank" in {s.id for s in onboarding.visible_steps()}
-
-
 # ----------------------------------------------------------------- releases
 def test_unseen_releases_are_everything_for_a_new_account():
     assert onboarding.unseen_releases({}) == onboarding.RELEASES
@@ -180,6 +217,79 @@ def test_an_unknown_stamp_shows_everything(monkeypatch):
     """A downgrade or a hand-edited prefs.json must not crash the app."""
     prefs = {onboarding.PREF_SEEN_VERSION: "not-a-version"}
     assert onboarding.unseen_releases(prefs) == onboarding.RELEASES
+
+
+# ---------------------------------------------------------------- news cards
+
+# What the modal actually pages through: one card per announced feature, so
+# how much a returning account reads is how much shipped while it was away.
+
+
+def test_news_copy_keys_are_built_from_the_version_and_slug():
+    card = onboarding.NewsCard(
+        "2026.10", "2026-10", onboarding.News(slug="thing", icon="rocket")
+    )
+    assert card.title_key == "tour.news_2026_10_thing_title"
+    assert card.body_key == "tour.news_2026_10_thing_body"
+
+
+def test_unseen_news_is_one_card_per_feature_newest_release_first(monkeypatch):
+    releases = (
+        onboarding.Release(
+            version="1.0", date="2026-01",
+            items=(onboarding.News(slug="old", icon="x"),),
+        ),
+        onboarding.Release(
+            version="1.1", date="2026-02",
+            items=(
+                onboarding.News(slug="a", icon="x"),
+                onboarding.News(slug="b", icon="x"),
+            ),
+        ),
+    )
+    monkeypatch.setattr(onboarding, "RELEASES", releases)
+    cards = onboarding.unseen_news({})
+    assert [(c.version, c.item.slug) for c in cards] == [
+        ("1.1", "a"), ("1.1", "b"), ("1.0", "old"),
+    ]
+
+
+def test_unseen_news_stops_at_the_stamp(monkeypatch):
+    releases = (
+        onboarding.Release(
+            version="1.0", date="2026-01",
+            items=(onboarding.News(slug="old", icon="x"),),
+        ),
+        onboarding.Release(
+            version="1.1", date="2026-02",
+            items=(onboarding.News(slug="new", icon="x"),),
+        ),
+    )
+    monkeypatch.setattr(onboarding, "RELEASES", releases)
+    prefs = {onboarding.PREF_SEEN_VERSION: "1.0"}
+    assert [c.item.slug for c in onboarding.unseen_news(prefs)] == ["new"]
+
+
+def test_unseen_news_drops_a_feature_this_deploy_does_not_carry(monkeypatch):
+    """A step filtered out of `visible_steps()` is a page that is not in the
+    nav — announcing it would send the reader to a wall."""
+    releases = (
+        onboarding.Release(
+            version="1.0", date="2026-01",
+            items=(
+                onboarding.News(slug="here", icon="x", step="welcome"),
+                onboarding.News(slug="absent", icon="x", step="import"),
+                onboarding.News(slug="stepless", icon="x"),
+            ),
+        ),
+    )
+    monkeypatch.setattr(onboarding, "RELEASES", releases)
+    monkeypatch.setattr(
+        onboarding, "visible_steps", lambda: (onboarding.by_id("welcome"),)
+    )
+    got = [c.item.slug for c in onboarding.unseen_news({})]
+    # A card with no step of its own is not gated on one.
+    assert got == ["here", "stepless"]
 
 
 # ----------------------------------------------------------------- auto-open
@@ -223,8 +333,8 @@ def app(monkeypatch):
     """Factory for an AppTest over the tour, backed by a prefs dict.
 
     Everything the tour persists lands in the dict the test passes in, so
-    "did it stamp the version" is a plain assertion. The bank feature and the
-    ledger are off unless a test says otherwise.
+    "did it stamp the version" is a plain assertion. The ledger is off unless
+    a test says otherwise.
     """
 
     def make(prefs: dict, *, logged_in: bool = True) -> AppTest:
@@ -233,7 +343,6 @@ def app(monkeypatch):
         monkeypatch.setattr(
             auth, "save_prefs", lambda p, path=None: prefs.update(p)
         )
-        monkeypatch.setattr(onboarding, "_bank_available", lambda: False)
         monkeypatch.setattr(onboarding, "_has_ledger", lambda p: False)
         return AppTest.from_function(_script, default_timeout=15)
 
@@ -341,6 +450,87 @@ def test_the_tour_query_param_opens_at_a_named_step(app):
     steps = [s.id for s in onboarding.visible_steps()]
     assert at.session_state[onboarding._MODE] == "tour"
     assert steps[at.session_state[onboarding._STEP]] == "notify"
+
+
+# ------------------------------------------------------------- what's new
+
+# The modal a returning account gets: paged, once, and stamped by the ways
+# out of it — but not by going off to look at one of the features.
+
+
+def test_whats_new_pages_one_feature_at_a_time(app):
+    at = app({onboarding.PREF_DONE: True}).run()
+    cards = onboarding.unseen_news({})
+    assert len(cards) > 1, "this test needs a release with more than one item"
+    first, second = (i18n.translate(c.title_key, "en") for c in cards[:2])
+    assert any(first in m.value for m in at.markdown)
+    assert not any(second in m.value for m in at.markdown)
+    at.button(key="tour_news_next").click().run()
+    assert any(second in m.value for m in at.markdown)
+    assert not any(first in m.value for m in at.markdown)
+
+
+def test_the_card_count_is_how_much_shipped_while_the_account_was_away(app):
+    """The modal is as long as the backlog, which is the whole point: nothing
+    is batched into one page and nothing is dropped off the end."""
+    at = app({onboarding.PREF_DONE: True}).run()
+    pages = 1
+    while _button(at, "tour_news_next"):
+        at.button(key="tour_news_next").click().run()
+        pages += 1
+    assert pages == len(onboarding.unseen_news({}))
+    assert _button(at, "tour_news_close") is not None  # the last card ends it
+
+
+def test_reading_the_last_card_stamps_the_version_once(app):
+    prefs = {onboarding.PREF_DONE: True}
+    at = app(prefs).run()
+    while _button(at, "tour_news_next"):
+        at.button(key="tour_news_next").click().run()
+    at.button(key="tour_news_close").click().run()
+    assert prefs[onboarding.PREF_SEEN_VERSION] == onboarding.CURRENT_VERSION
+    assert not _flag(at, onboarding._OPEN)
+    # And it is gone for good — the point of the whole surface.
+    assert app(prefs).run().session_state["claimed"] is False
+
+
+def test_skipping_the_rest_still_counts_as_read(app):
+    prefs = {onboarding.PREF_DONE: True}
+    at = app(prefs).run()
+    at.button(key="tour_news_skip").click().run()
+    assert prefs[onboarding.PREF_SEEN_VERSION] == onboarding.CURRENT_VERSION
+
+
+def test_going_to_look_at_a_feature_keeps_the_rest_of_the_list(app):
+    """Parking must not stamp: the reader has seen one card out of several,
+    and the strip is what hands them the others back."""
+    prefs = {onboarding.PREF_DONE: True}
+    at = app(prefs).run()
+    at.button(key="tour_news_goto").click().run()
+    assert _flag(at, onboarding._RESUME) is True
+    assert onboarding.PREF_SEEN_VERSION not in prefs
+    assert at.session_state["claimed"] is True  # still owns the run
+    at.button(key="tour_news_strip_next").click().run()
+    assert at.session_state[onboarding._NEWS] == 1
+    assert _flag(at, onboarding._OPEN) is True
+
+
+def test_closing_from_the_strip_stamps_the_version(app):
+    prefs = {onboarding.PREF_DONE: True}
+    at = app(prefs).run()
+    at.button(key="tour_news_goto").click().run()
+    at.button(key="tour_news_strip_close").click().run()
+    assert prefs[onboarding.PREF_SEEN_VERSION] == onboarding.CURRENT_VERSION
+    assert not _flag(at, onboarding._RESUME)
+
+
+def test_the_full_tour_button_leaves_news_for_the_tour(app):
+    prefs = {onboarding.PREF_DONE: True}
+    at = app(prefs).run()
+    at.button(key="tour_news_full").click().run()
+    assert at.session_state[onboarding._MODE] == "tour"
+    assert at.session_state[onboarding._STEP] == 0
+    assert prefs[onboarding.PREF_SEEN_VERSION] == onboarding.CURRENT_VERSION
 
 
 # ------------------------------------------------------ explore_state (Home)

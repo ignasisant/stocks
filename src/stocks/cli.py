@@ -92,6 +92,35 @@ def cmd_digest(args: argparse.Namespace) -> None:
     print("digest sent")
 
 
+def cmd_weekly(args: argparse.Namespace) -> None:
+    if args.all_users:
+        from stocks.notify.weekly import run_weekly_fanout
+
+        status = run_weekly_fanout(dry_run=args.dry_run)
+        if not status:
+            print("no weekly subscribers")
+            return
+        for label, result in status.items():
+            print(f"{label}: {result}")
+        return
+
+    # Single-user smoke path: owner root files, env TELEGRAM_CHAT_ID channel.
+    import os
+
+    from stocks.config import DATA_DIR, WATCHLIST_FILE
+    from stocks.notify.weekly import compute_weekly_data, render_weekly
+
+    data = compute_weekly_data(WATCHLIST_FILE, DATA_DIR / "portfolio.db")
+    text = render_weekly(data, "en")
+    if args.dry_run or not os.getenv("TELEGRAM_CHAT_ID"):
+        print(text)
+        return
+    from stocks.notify import telegram
+
+    telegram.send_message(text, os.environ["TELEGRAM_CHAT_ID"], parse_mode="HTML")
+    print("weekly review sent")
+
+
 def cmd_notify_test(args: argparse.Namespace) -> None:
     """Send a test message down the real notification paths.
 
@@ -132,7 +161,7 @@ def cmd_notify_test(args: argparse.Namespace) -> None:
             text = translate("notify.test_message", user.lang)
             muted = [
                 kind
-                for kind in ("digest", "alerts")
+                for kind in ("digest", "weekly", "alerts")
                 if not user.prefs.get(f"notify_{kind}", True)
             ]
             note = f" (notify_{'/'.join(muted)} off)" if muted else ""
@@ -1047,6 +1076,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="print the rendered digest(s) instead of sending",
     )
     p_digest.set_defaults(func=cmd_digest)
+
+    p_weekly = sub.add_parser(
+        "weekly",
+        help="weekly portfolio review (week/month/YTD, best and worst, week ahead)",
+    )
+    p_weekly.add_argument(
+        "--all-users", action="store_true",
+        help="cron mode: send every Telegram-linked account its own review",
+    )
+    p_weekly.add_argument(
+        "--dry-run", action="store_true",
+        help="print the rendered review(s) instead of sending",
+    )
+    p_weekly.set_defaults(func=cmd_weekly)
 
     p_ntest = sub.add_parser(
         "notify-test",

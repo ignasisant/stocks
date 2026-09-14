@@ -62,11 +62,21 @@ def page(monkeypatch, paths):
 def test_the_page_renders_for_an_account_with_nothing_set(page):
     page.run()
     assert not page.exception
-    # Identity, the three setting cards and both rail cards.
+    # Identity, one card per group of settings, and both rail cards. Every tab
+    # renders on every run (see the tabs comment on the page), so all four
+    # tabs' cards are in this markup — asserted by title rather than by count,
+    # which turns into a chore every time a card is added.
     body = _html(page)
     assert "ag-ident" in body
-    # Interface, Tax residence, Data and account.
-    assert body.count("ag-cardtitle") == 3
+    for title in (
+        "Interface",        # Preferences
+        "Tax residence",
+        "How you invest",   # Investor profile
+        "What you follow",
+        "Find a ticker",    # Watchlist
+        "Telegram",         # Notifications — the channel card is always up
+    ):
+        assert f">{title}<" in body, title
     assert "ag-prog-fill" in body and "ag-sum" in body
 
 
@@ -187,3 +197,139 @@ def test_the_folder_chip_shows_the_tail_and_keeps_the_full_path(page, paths):
     body = _html(page)
     assert f'title="{paths.root}"' in body
     assert f">{paths.root.parent.name}/{paths.root.name}<" in body
+
+
+# ------------------------------------------------------- investor profile
+# The tab was rebuilt on the same canvas primitives as Preferences: three
+# cards of setting rows, a sticky rail with the summary and the persona
+# popover, and no Save button — the tab strip promises the page saves itself.
+
+
+def test_the_investor_tab_is_setting_rows_in_cards(page):
+    page.run()
+    sheet = _stylesheet(page)
+    body = _html(page)
+    assert "How you invest" in body and "What you follow" in body
+    # The rail states what is set and what the assistant is handed.
+    assert "Your profile" in body and "Nothing here leaves your account" in body
+    # The new body inherits the card gap and the sticky rail, which are keyed
+    # off the shared pbody_ prefix rather than the Preferences tab's own key.
+    assert '[class*="st-key-pbody_"]' in sheet
+
+
+def test_the_investor_tab_has_no_save_button(page):
+    """The tab strip says changes save instantly; a Save button here was the
+    one place on the page that contradicted it."""
+    page.run()
+    assert not any("profile" in (b.label or "").lower() for b in page.get("button"))
+
+
+def test_flipping_a_scale_persists_without_a_button(page, paths):
+    page.run()
+    assert not paths.prefs.exists()  # nothing collected, nothing written
+    page.segmented_control(key="iv_page_risk").set_value("very_aggressive").run()
+    stored = json.loads(paths.prefs.read_text())["investor_profile"]
+    assert stored["risk"] == "very_aggressive"
+    assert stored["set"] is True
+
+
+def test_an_untouched_form_writes_nothing(page, paths):
+    """Autosave compares against the stored profile, so a plain rerun must not
+    write — otherwise the first-login prompt's `set` flag trips on its own."""
+    page.run()
+    page.run()
+    assert not paths.prefs.exists()
+
+
+def test_neither_list_ships_streamlits_english_placeholder(page):
+    # The two investor lists specifically — the Watchlist tab's own group
+    # pickers carry their own placeholders (see test_watchlist_ui.py).
+    page.run()
+    lists = [m for m in page.get("multiselect") if m.key.startswith("iv_page_")]
+    assert len(lists) == 2
+    assert all(m.proto.placeholder == "Pick one or more" for m in lists)
+
+
+def test_the_save_hint_clears_the_tab_labels(page):
+    """Streamlit's block carries width:100%, so right:0 alone leaves the hint's
+    flex content sitting on top of the tab labels."""
+    page.run()
+    rule = _stylesheet(page).split('[class*="st-key-psavehint"]')[1].split("}")[0]
+    assert "left: auto" in rule and "width: auto" in rule
+
+
+def test_the_risk_scale_reads_low_to_high(page):
+    """Both scales run in the same direction, or the chips don't read as one."""
+    assert auth.PROFILE_RISK == (
+        "conservative", "balanced", "aggressive", "very_aggressive"
+    )
+    assert auth.PROFILE_HORIZON == ("under_1y", "1_3y", "3_5y", "5y_plus")
+
+
+# ------------------------------------------------- watchlist + notifications
+# Both tabs were rebuilt on the same primitives: the editor lives in a card
+# whose head says what the list feeds and that it needs an explicit Save, the
+# focus-suggestion offer became a head plus ticker chips, and the Telegram tab
+# became a channel card with the deliveries as setting rows.
+
+
+def test_the_watchlist_tab_leads_with_the_search(page):
+    """The tab used to open on a blank grid row: adding meant spelling a
+    symbol from memory. It opens on the adder now, empty list or not."""
+    page.run()
+    body = _html(page)
+    assert ">Find a ticker<" in body
+    assert "Search your list, coins, funds" in body
+    # And the tab no longer claims an exception to the page's autosave hint.
+    assert "Needs Save" not in body
+
+
+def test_the_long_watchlist_prose_moved_off_the_reading_path(page, paths):
+    """Three lines of rules above the grid pushed the grid off the fold; they
+    are one popover in the list card's footer now."""
+    paths.watchlist.write_text("watchlist:\n  - ticker: AAPL\n")
+    page.run()
+    how = [b for b in page.get("popover") if "How it works" in b.proto.popover.label]
+    assert how, [b.proto.popover.label for b in page.get("popover")]
+    # The rules live inside it — a collapsed popover, not three lines above the
+    # grid — so they are that block's children and nothing else's.
+    assert any("Yahoo pair symbol" in m.value for m in how[0].markdown)
+
+
+def test_the_suggestion_offer_is_chips_with_room_for_its_button(page, paths, monkeypatch):
+    """The global main-area block gap is 0.55rem, which left the Add button
+    sitting on the disclaimer's descenders — the card carries its own gap."""
+    paths.watchlist.write_text("watchlist:\n  - ticker: AAPL\n")
+    auth.save_profile({"risk": "balanced", "horizon": "5y_plus",
+                       "focus": ["tech"], "constraints": [], "notes": ""})
+    page.run()
+    body, sheet = _html(page), _stylesheet(page)
+    assert 'class="ag-tick"' in body  # tickers are chips, not a bold blob
+    assert "Examples for the areas you follow" in body
+    gap = sheet.split('[class*="st-key-pcard_sugg"]')[1].split("}")[0]
+    assert "gap: 14px" in gap
+
+
+def test_the_notifications_tab_states_the_channel_first(page):
+    page.run()
+    body = _html(page)
+    assert ">Telegram<" in body
+    assert "Where the digest, the review and the alerts are delivered." in body
+    # The how-it-works prose sits in the rail, not above the connect button.
+    assert "st-key-prail_nhow" in _stylesheet(page)
+
+
+def test_the_deliveries_are_setting_rows_once_linked(page, paths, monkeypatch):
+    # The card is gated on a configured bot: without the token the page shows
+    # the "not configured" notice instead, and CI has no secrets.toml.
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "TOKEN")
+    paths.prefs.write_text(json.dumps({"telegram_chat_id": 42}))
+    page.run()
+    body = _html(page)
+    assert ">What you get<" in body
+    # The badge is markdown, not one of the page's html blocks.
+    assert any("Connected" in m.value for m in page.get("markdown"))
+    # Both toggles, each with its own explanation, and the two link actions.
+    assert len(page.get("toggle")) == 3
+    assert any("Disconnect" in m.value for m in page.get("markdown"))
+    assert any("Check the connection" in m.value for m in page.get("markdown"))

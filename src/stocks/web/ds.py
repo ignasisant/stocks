@@ -95,6 +95,15 @@ SMA_FAST = "#F2A33C"     # SMA20 overlay — DS chart amber (softer than WARN_OR
 SMA_SLOW = "#6E8FF0"     # SMA50 overlay + results markers — DS chart blue
 EVENT_LINE = TEXT_FAINT  # dashed corporate-event verticals + crosshair — neutral-600
 
+# Caution fills, from the Pulse canvas. WARN_COLOR is a text hue and burns on a
+# dark surface as a fill, so a caution badge needs its own opaque steps: a deep
+# amber ground, its one-step-lighter edge, and a near-black wash for the badge
+# that must read as caution without competing with the solid green/red pills
+# beside it.
+WARN_FILL = "#3D3000"       # caution badge ground (turning-down pill)
+WARN_EDGE = "#6B5C00"       # its border, one step up
+WARN_FILL_SOFT = "#241F04"  # softer ground — turning-up pill, warning panels
+
 # Alpha variants. Written as rgba() because Plotly's SVG attributes predate
 # 8-digit hex; the base hue is always the token named in the comment.
 PROFIT_COLOR_MUTED = "rgba(219,255,210,0.45)"  # UP_COLOR @ 45%
@@ -227,6 +236,8 @@ def ds_vars_css() -> str:
         "success-fill": SUCCESS_FILL, "down-fill": DOWN_FILL,
         "critical-fill": CRITICAL_FILL,
         "warn": WARN_COLOR, "warn-orange": WARN_ORANGE,
+        "warn-fill": WARN_FILL, "warn-edge": WARN_EDGE,
+        "warn-fill-soft": WARN_FILL_SOFT,
         "info": INFO_COLOR, "info-deep": INFO_DEEP,
         # color — brand
         "purple-900": PURPLE_900, "purple-800": PURPLE_800,

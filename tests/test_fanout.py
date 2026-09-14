@@ -21,6 +21,7 @@ def no_llm(monkeypatch):
     """
     monkeypatch.setattr(narrative, "alerts_line", lambda *a, **kw: None)
     monkeypatch.setattr(narrative, "highlight", lambda *a, **kw: None)
+    monkeypatch.setattr(narrative, "weekly_line", lambda *a, **kw: None)
 
 
 def _user(tmp_path, slug, prefs, watchlist=None):
@@ -165,7 +166,7 @@ def test_run_alerts_fanout_sends_once_then_dedupes(local, monkeypatch):
     monkeypatch.setattr(
         fanout.telegram,
         "send_message",
-        lambda text, chat_id, parse_mode=None: sent.append((text, chat_id)),
+        lambda text, chat_id, parse_mode=None, buttons=None: sent.append((text, chat_id)),
     )
 
     status = fanout.run_alerts_fanout()
@@ -188,7 +189,7 @@ def test_run_alerts_fanout_blocked_user_skipped(local, monkeypatch):
         lambda tickers, max_workers=4: {"NVDA": _frame([90, 150])},
     )
 
-    def blocked(text, chat_id, parse_mode=None):
+    def blocked(text, chat_id, parse_mode=None, buttons=None):
         raise fanout.telegram.TelegramBlocked("blocked")
 
     monkeypatch.setattr(fanout.telegram, "send_message", blocked)
@@ -208,7 +209,7 @@ def test_run_alerts_fanout_isolates_user_errors(local, monkeypatch):
     )
     calls = []
 
-    def flaky(text, chat_id, parse_mode=None):
+    def flaky(text, chat_id, parse_mode=None, buttons=None):
         if chat_id == 222:
             raise RuntimeError("boom")
         calls.append(chat_id)
@@ -234,7 +235,7 @@ def test_alert_note_is_appended_when_the_llm_answers(local, monkeypatch):
     sent = []
     monkeypatch.setattr(
         fanout.telegram, "send_message",
-        lambda text, chat_id, parse_mode=None: sent.append(text),
+        lambda text, chat_id, parse_mode=None, buttons=None: sent.append(text),
     )
 
     assert fanout.run_alerts_fanout() == {"jane_ab12cd34": "sent 1"}
@@ -252,7 +253,7 @@ def test_alert_note_absent_never_blocks_the_alert(local, monkeypatch):
     sent = []
     monkeypatch.setattr(
         fanout.telegram, "send_message",
-        lambda text, chat_id, parse_mode=None: sent.append(text),
+        lambda text, chat_id, parse_mode=None, buttons=None: sent.append(text),
     )
 
     assert fanout.run_alerts_fanout() == {"jane_ab12cd34": "sent 1"}
@@ -271,7 +272,7 @@ def test_no_hits_never_calls_the_llm(local, monkeypatch):
     )
     monkeypatch.setattr(
         fanout.telegram, "send_message",
-        lambda text, chat_id, parse_mode=None: None,
+        lambda text, chat_id, parse_mode=None, buttons=None: None,
     )
     assert fanout.run_alerts_fanout() == {"jane_ab12cd34": "no hits"}
     assert calls == []
@@ -289,7 +290,7 @@ def _digest_env(local, monkeypatch, highlight):
     _user(local, "jane_ab12cd34", LINKED)
     monkeypatch.setattr(
         digest, "compute_digest_data",
-        lambda watchlist, db, base: digest.DigestData(
+        lambda watchlist, db, base, import_record=None: digest.DigestData(
             date=date(2026, 9, 3), total=1000.0, day=(10.0, 0.01)
         ),
     )
@@ -306,7 +307,9 @@ def test_digest_highlight_is_remembered_for_the_next_run(local, monkeypatch):
 
     digest = _digest_env(local, monkeypatch, highlight)
     monkeypatch.setattr(
-        fanout.telegram, "send_message", lambda text, chat_id, parse_mode=None: None
+        fanout.telegram,
+        "send_message",
+        lambda text, chat_id, parse_mode=None, buttons=None: None,
     )
 
     assert digest.run_digest_fanout() == {"jane_ab12cd34": "sent"}
@@ -326,7 +329,7 @@ def test_undelivered_highlight_is_not_remembered(local, monkeypatch):
 
     digest = _digest_env(local, monkeypatch, highlight)
 
-    def blocked(text, chat_id, parse_mode=None):
+    def blocked(text, chat_id, parse_mode=None, buttons=None):
         raise fanout.telegram.TelegramBlocked("blocked")
 
     monkeypatch.setattr(fanout.telegram, "send_message", blocked)
@@ -339,7 +342,186 @@ def test_undelivered_highlight_is_not_remembered(local, monkeypatch):
 def test_digest_without_a_highlight_writes_no_state(local, monkeypatch):
     digest = _digest_env(local, monkeypatch, lambda *a, **kw: None)
     monkeypatch.setattr(
-        fanout.telegram, "send_message", lambda text, chat_id, parse_mode=None: None
+        fanout.telegram,
+        "send_message",
+        lambda text, chat_id, parse_mode=None, buttons=None: None,
     )
     assert digest.run_digest_fanout() == {"jane_ab12cd34": "sent"}
     assert not (local / "users" / "jane_ab12cd34" / "alerts_state.json").exists()
+
+
+# ------------------------------------------------- alert lines with context
+
+WATCHLIST_HELD = """\
+watchlist:
+  - ticker: NVDA
+    shares: 42
+    cost: 100
+    alerts:
+      - type: above
+        price: 120
+"""
+
+
+def _hit(ticker="NVDA", message="above 120 (last 150.00)"):
+    from stocks.notify.alerts import AlertHit
+
+    return AlertHit(ticker, "above", message)
+
+
+def load_watchlist_from(text: str, tmp_path):
+    from stocks.config import load_watchlist
+
+    path = tmp_path / "watchlist.yaml"
+    path.write_text(text)
+    return load_watchlist(path)
+
+
+def test_alert_line_carries_size_and_pl_for_a_held_name(tmp_path):
+    """The same rule firing on a name you hold 42 shares of is a different
+    message from one firing on a name you are only watching."""
+    holdings = load_watchlist_from(WATCHLIST_HELD, tmp_path)
+    frames = {"NVDA": _frame([100.0, 138.2])}
+    line = fanout._alert_line(_hit(), holdings, frames, None, "en")
+    assert line.startswith("NVDA: above 120 (last 150.00)")
+    assert "42 shares" in line and "+38.2%" in line
+
+
+def test_alert_line_stays_bare_for_a_watched_name(tmp_path):
+    holdings = load_watchlist_from(WATCHLIST_WITH_ALERT, tmp_path)  # no shares
+    line = fanout._alert_line(_hit(), holdings, {}, None, "en")
+    assert line == "NVDA: above 120 (last 150.00)"
+
+
+def test_alert_line_drops_the_pl_when_there_is_no_cost_or_price(tmp_path):
+    holdings = load_watchlist_from(
+        WATCHLIST_HELD.replace("    cost: 100\n", ""), tmp_path
+    )
+    line = fanout._alert_line(_hit(), holdings, {"NVDA": _frame([138.2])}, None, "en")
+    assert "42 shares" in line and "%" not in line.split("·")[-1]
+
+
+def test_alert_line_links_the_ticker_and_escapes_the_message(tmp_path):
+    holdings = load_watchlist_from(WATCHLIST_HELD, tmp_path)
+    line = fanout._alert_line(
+        _hit(message="crossed <above> & held"), holdings, {}, "https://x.example", "en"
+    )
+    assert '<a href="https://x.example/ticker?ticker=NVDA">NVDA</a>' in line
+    assert "&lt;above&gt; &amp; held" in line
+
+
+def test_alert_line_is_translated(tmp_path):
+    holdings = load_watchlist_from(WATCHLIST_HELD, tmp_path)
+    line = fanout._alert_line(_hit(), holdings, {}, None, "es")
+    assert "42 acciones" in line
+
+
+def test_alerts_message_is_html_with_a_portfolio_button(local, monkeypatch):
+    _user(local, "jane_ab12cd34", LINKED, watchlist=WATCHLIST_HELD)
+    monkeypatch.setattr(
+        fanout, "_fetch_frames",
+        lambda tickers, max_workers=4: {"NVDA": _frame([100.0, 150.0])},
+    )
+    monkeypatch.setattr(fanout.links, "app_base", lambda: "https://x.example")
+    sent = []
+    monkeypatch.setattr(
+        fanout.telegram,
+        "send_message",
+        lambda text, chat_id, parse_mode=None, buttons=None: sent.append(
+            (text, parse_mode, buttons)
+        ),
+    )
+
+    assert fanout.run_alerts_fanout() == {"jane_ab12cd34": "sent 1"}
+    text, parse_mode, buttons = sent[0]
+    assert parse_mode == "HTML"
+    assert text.startswith("<b>⚠️ Alertas de precio</b>")
+    assert '<a href="https://x.example/ticker?ticker=NVDA">NVDA</a>' in text
+    assert "42 acciones" in text
+    assert buttons == [("Cartera", "https://x.example/portfolio")]
+
+
+# ----------------------------------------------------------- weekly review
+
+
+def _weekly_data(monkeypatch, **over):
+    """Point the fan-out at a fixed review, whatever the account's files say."""
+    from datetime import date
+
+    from stocks.notify import weekly
+
+    base = dict(date=date(2026, 9, 13), total=1000.0, week=(10.0, 0.01),
+                top_weight=0.68)
+    base.update(over)
+    monkeypatch.setattr(
+        weekly, "compute_weekly_data",
+        lambda watchlist, db, base_ccy="EUR", **kw: weekly.WeeklyData(**base),
+    )
+    return weekly
+
+
+def _weekly_env(local, monkeypatch, **over):
+    _user(local, "jane_ab12cd34", LINKED)
+    return _weekly_data(monkeypatch, **over)
+
+
+def test_weekly_subscribers_honour_their_own_toggle(local):
+    _user(local, "jane_ab12cd34", LINKED)
+    _user(local, "bob_ef56ab78", {"telegram_chat_id": 222, "notify_weekly": False})
+    assert [u.label for u in fanout.iter_notify_users("weekly")] == ["jane_ab12cd34"]
+
+
+def test_weekly_drift_is_measured_against_the_last_delivered_review(
+    local, monkeypatch
+):
+    """The baseline moves only when a review actually went out, so a failed
+    send does not make next Sunday's drift measure from a week nobody saw."""
+    weekly = _weekly_env(local, monkeypatch)
+    sent = []
+    monkeypatch.setattr(
+        fanout.telegram,
+        "send_message",
+        lambda text, chat_id, parse_mode=None, buttons=None: sent.append(text),
+    )
+    assert weekly.run_weekly_fanout() == {"jane_ab12cd34": "sent"}
+    assert len(sent) == 1
+
+    state = json.loads(
+        (local / "users" / "jane_ab12cd34" / "alerts_state.json").read_text()
+    )
+    assert state["weekly"]["top_weight"] == pytest.approx(0.68)
+
+    # Next week, more concentrated: the review says by how much.
+    rendered = []
+    monkeypatch.setattr(
+        weekly, "render_weekly",
+        lambda data, lang, base=None: rendered.append(data.drift) or "text",
+    )
+    _weekly_data(monkeypatch, top_weight=0.71)
+    assert weekly.run_weekly_fanout() == {"jane_ab12cd34": "sent"}
+    assert rendered == [pytest.approx(0.03)]
+
+
+def test_weekly_skips_an_account_with_no_book(local, monkeypatch):
+    weekly = _weekly_env(local, monkeypatch, total=None, top_weight=None)
+    monkeypatch.setattr(
+        fanout.telegram, "send_message",
+        lambda *a, **kw: pytest.fail("nothing to review, nothing to send"),
+    )
+    assert weekly.run_weekly_fanout() == {"jane_ab12cd34": "skipped: no book"}
+
+
+def test_weekly_blocked_user_is_marked_and_skipped(local, monkeypatch):
+    weekly = _weekly_env(local, monkeypatch)
+
+    def blocked(text, chat_id, parse_mode=None, buttons=None):
+        raise fanout.telegram.TelegramBlocked("blocked")
+
+    monkeypatch.setattr(fanout.telegram, "send_message", blocked)
+    assert weekly.run_weekly_fanout() == {"jane_ab12cd34": "blocked"}
+    state = json.loads(
+        (local / "users" / "jane_ab12cd34" / "alerts_state.json").read_text()
+    )
+    assert state["delivery"]["blocked"] is True
+    # A blocked account keeps no concentration baseline it never received.
+    assert "weekly" not in state

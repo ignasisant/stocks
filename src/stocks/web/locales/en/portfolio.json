@@ -78,9 +78,6 @@
   "portfolio.alloc_sector": "Sector",
   "portfolio.alloc_geography": "Geography",
   "portfolio.alloc_other": "Others",
-  "portfolio.geo_view_chart": "Chart",
-  "portfolio.geo_view_map": "Map",
-  "portfolio.geo_unmapped": "No country data: {pct}%",
   "portfolio.alloc_currency": "Currency",
   "portfolio.alloc_broker": "Broker",
   "portfolio.no_alloc_data": "No {kind} data.",
@@ -357,5 +354,6 @@
   "portfolio.demo_offer_button": "Use demo transactions",
   "portfolio.demo_seeded_toast": "Demo transactions added — every tab is filled with them.",
   "portfolio.demo_banner": "These are demo transactions, not yours. Your first real import removes them.",
+  "portfolio.guest_demo_banner": "These are demo transactions on a shared example account, not yours — real prices, invented trades. Sign in to import your own statement and see your real portfolio here.",
   "portfolio.demo_remove": "Remove demo data"
 }

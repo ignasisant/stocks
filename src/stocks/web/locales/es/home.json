@@ -1,7 +1,8 @@
 {
   "home.portfolio_title": "Cartera",
-  "home.guest_banner": "Navegando como invitado con una lista de seguimiento inicial. Inicia sesión para crear tu propia lista e importar el historial de tu bróker.",
-  "home.guest_banner_short": "Navegando como invitado con una lista de seguimiento inicial.",
+  "home.guest_banner": "Estás navegando como invitado, con una lista inicial y una cartera de prueba. Inicia sesión para crear tu propia lista e importar tu historial del bróker.",
+  "home.guest_banner_short": "Estás navegando como invitado, con una lista inicial y una cartera de prueba.",
+  "home.guest_try_demo": "Ver la app con datos de prueba",
   "home.dismiss": "Descartar",
   "home.onboarding_md": ":material/waving_hand: **¿Nuevo por aquí? Tres pasos hasta una cartera en vivo**\n\n1. **Perfil** — añade los valores que sigues. Empiezas con diez ejemplos repartidos entre sectores, Europa y cripto; sustitúyelos por los tuyos.\n2. **Importar** — sube un extracto del bróker (Revolut, Trading 212, DEGIRO, Interactive Brokers, ClickTrade o un CSV genérico) para rellenar tu libro de transacciones; cada fila se previsualiza antes de confirmar.\n3. **Cartera** — las posiciones, el P/L, el riesgo y el informe de tu residencia fiscal se derivan del libro automáticamente.\n\n¿Sin extracto del bróker? La lista de seguimiento de abajo, el **Filtro** y la **Valoración** funcionan sin él — haz clic en cualquier valor para ver su página de análisis completa.",
   "home.onboarding_dismiss": "Entendido — no volver a mostrar",

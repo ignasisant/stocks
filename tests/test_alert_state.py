@@ -133,3 +133,27 @@ def test_highlight_memory_survives_fingerprint_pruning(tmp_path, monkeypatch):
     reloaded = st_mod.load_state(path)
     assert reloaded["alerts"] == {}
     assert st_mod.recent_highlights(reloaded) == ["kept line"]
+
+
+# ------------------------------------------------ weekly concentration mark
+
+
+def test_top_weight_round_trips_and_survives_junk():
+    from datetime import UTC, datetime
+
+    from stocks.notify.state import previous_top_weight, remember_top_weight
+
+    state = {"alerts": {}}
+    assert previous_top_weight(state) is None  # first review has no baseline
+
+    remember_top_weight(state, 0.68, datetime(2026, 9, 13, tzinfo=UTC))
+    assert previous_top_weight(state) == 0.68
+    assert state["weekly"]["at"].startswith("2026-09-13")
+
+    # Only the latest matters: the review needs a delta, not a history.
+    remember_top_weight(state, 0.71, datetime(2026, 9, 20, tzinfo=UTC))
+    assert previous_top_weight(state) == 0.71
+
+    for junk in ({"weekly": {}}, {"weekly": {"top_weight": "soon"}},
+                 {"weekly": {"top_weight": None}}):
+        assert previous_top_weight(junk) is None

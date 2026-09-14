@@ -51,6 +51,12 @@ variable "telegram_bot_token" {
   sensitive   = true
 }
 
+variable "app_public_url" {
+  description = "Optional. The app's public origin (e.g. https://topstocks.example) — lets notifications link back into it. Empty = secret not created, messages ship link-free."
+  type        = string
+  default     = ""
+}
+
 variable "chat_enc_key" {
   description = "Optional. Fernet key, must equal Streamlit [chat] enc_key — lets the digest use BYOK LLM keys. Empty = secret not created."
   type        = string

@@ -41,6 +41,7 @@ from typing import Literal
 import streamlit as st
 
 from stocks import obs
+from stocks.config import load_watchlist
 from stocks.portfolio.ledger import has_transactions
 from stocks.web import auth, i18n
 from stocks.web.i18n import t as tr
@@ -58,6 +59,7 @@ PREF_DONE = "tour_done"
 _OPEN = "_tour_open"  # modal renders this run
 _MODE = "_tour_mode"  # "tour" | "news"
 _STEP = "_tour_step"  # index into visible_steps()
+_NEWS = "_tour_news"  # index into unseen_news()
 _GOTO = "_tour_goto"  # step id queued for navigation on the next full run
 _RESUME = "_tour_resume"  # tour minimized: show the resume strip
 _SEEN = "_tour_auto_seen"  # auto-open evaluated once per session
@@ -100,6 +102,19 @@ def _has_ledger(_prefs: dict) -> bool:
         return False  # unreadable/missing ledger reads as "nothing imported"
 
 
+def _has_watchlist(_prefs: dict) -> bool:
+    """Whether this account follows anything yet.
+
+    Reads the list rather than prefs: the watchlist is a YAML file, and it is
+    filled by the Watchlist tab, the assistant and the focus examples alike —
+    any of which should tick the step off.
+    """
+    try:
+        return bool(load_watchlist(auth.watchlist_path()))
+    except Exception:
+        return False  # unreadable/missing list reads as "nothing followed"
+
+
 def _has_ai_key(prefs: dict) -> bool:
     """A BYOK provider key saved to prefs (encrypted) or entered this session.
 
@@ -109,33 +124,6 @@ def _has_ai_key(prefs: dict) -> bool:
     return any(k.endswith("_key_enc") for k in prefs) or any(
         k.startswith("llm_key::") and st.session_state[k] for k in st.session_state
     )
-
-
-def _has_bank(_prefs: dict) -> bool:
-    try:
-        # stocks.bank ships separately from the tour (see _bank_available),
-        # so a checkout without the feature has no module to resolve.
-        from stocks.bank import store  # ty: ignore[unresolved-import]
-
-        return bool(store.connections(auth.user_paths().bank))
-    except Exception:
-        return False
-
-
-def _bank_available() -> bool:
-    """Whether the bank feature exists for this session at all.
-
-    Imported lazily and defensively: bank_ui reaches into st.secrets and the
-    Enable Banking client, this module is imported by app.py before either is
-    needed, and a deploy built without the bank feature must still get a tour
-    rather than an ImportError. A checkout without the feature is the normal
-    case — hence the suppression, not a missing dependency.
-    """
-    try:
-        from stocks.web import bank_ui  # ty: ignore[unresolved-import]
-    except ImportError:
-        return False
-    return bank_ui.available()
 
 
 # The tour, in order. Sequenced as the work actually flows — get the ledger in,
@@ -151,19 +139,11 @@ STEPS: tuple[Step, ...] = (
         done=_has_ledger,
     ),
     Step(
-        id="bank",
-        icon="account_balance",
-        page="app_pages/bank.py",
-        gated=True,
-        done=_has_bank,
-    ),
-    Step(
         id="positions",
         icon="pie_chart",
         page="app_pages/portfolio.py",
         query={"tab": "positions"},
         reset_keys=("portfolio_tab",),
-        gated=True,
     ),
     Step(
         id="risk",
@@ -171,7 +151,6 @@ STEPS: tuple[Step, ...] = (
         page="app_pages/portfolio.py",
         query={"tab": "risk"},
         reset_keys=("portfolio_tab",),
-        gated=True,
     ),
     Step(
         id="tax",
@@ -179,7 +158,6 @@ STEPS: tuple[Step, ...] = (
         page="app_pages/portfolio.py",
         query={"tab": "tax"},
         reset_keys=("portfolio_tab",),
-        gated=True,
         done=lambda prefs: bool(prefs.get("tax_residence")),
     ),
     Step(
@@ -188,13 +166,20 @@ STEPS: tuple[Step, ...] = (
         page="app_pages/portfolio.py",
         query={"tab": "dividends"},
         reset_keys=("portfolio_tab",),
-        gated=True,
     ),
     Step(
         id="daily",
         icon="tips_and_updates",
         page="app_pages/home.py",
         gated=True,
+    ),
+    Step(
+        id="watchlist",
+        icon="format_list_bulleted",
+        page="app_pages/profile.py",
+        session={"profile_tab": "watch"},
+        gated=True,
+        done=_has_watchlist,
     ),
     Step(id="pulse", icon="speed", page="app_pages/sentiment.py"),
     Step(id="market", icon="query_stats", page="app_pages/ticker.py"),
@@ -234,21 +219,60 @@ STEPS: tuple[Step, ...] = (
 
 # ------------------------------------------------------------------ releases
 @dataclass(frozen=True)
+class News:
+    """One shipped feature, as one card in the "what's new" modal.
+
+    Copy comes from the catalog by convention, keyed off the release version
+    and this slug — `tour.news_<version with dots as underscores>_<slug>_title`
+    and `_body` — so announcing a feature is one registry line plus its copy in
+    every locale. `step` names the tour step that explains it, which is what
+    turns an announcement into somewhere to go; a feature whose step this
+    deploy does not carry is not announced at all (see `unseen_news`).
+    """
+
+    slug: str
+    icon: str
+    step: str | None = None
+
+
+@dataclass(frozen=True)
 class Release:
-    """One shipped version, as the "what's new" modal shows it.
+    """One shipped version, as the "what's new" modal pages through it.
 
     Versions are date-based (`YYYY.MM`) on purpose: the tour's notion of "new"
     is about what the user can see change, which has no relation to the package
-    version in pyproject.toml. `items` are catalog keys
-    (`tour.news_<version with dots as underscores>_<slug>`); `steps` name the
-    tour steps that explain those items, so an announcement can hand the reader
-    straight to the walkthrough.
+    version in pyproject.toml. `items` are the features announced, one card
+    each, in the order the modal shows them.
     """
 
     version: str
     date: str
-    items: tuple[str, ...]
-    steps: tuple[str, ...] = ()
+    items: tuple[News, ...]
+
+
+def _news_key(version: str, slug: str, part: str) -> str:
+    return f"tour.news_{version.replace('.', '_')}_{slug}_{part}"
+
+
+@dataclass(frozen=True)
+class NewsCard:
+    """A `News` bound to the release it shipped in — one card of the modal.
+
+    Built by `unseen_news`, which is the only thing that decides how many
+    cards an account is owed and in what order.
+    """
+
+    version: str
+    date: str
+    item: News
+
+    @property
+    def title_key(self) -> str:
+        return _news_key(self.version, self.item.slug, "title")
+
+    @property
+    def body_key(self) -> str:
+        return _news_key(self.version, self.item.slug, "body")
 
 
 # Oldest first; the newest entry's version is what an account gets stamped
@@ -258,18 +282,21 @@ RELEASES: tuple[Release, ...] = (
         version="2026.09",
         date="2026-09",
         items=(
-            "tour.news_2026_09_tax",
-            "tour.news_2026_09_bank",
-            "tour.news_2026_09_daily",
-            "tour.news_2026_09_chat",
-            "tour.news_2026_09_askai",
-            "tour.news_2026_09_fees",
-            "tour.news_2026_09_demo",
-            "tour.news_2026_09_pulse",
-            "tour.news_2026_09_profile",
+            News(slug="tax", icon="receipt_long", step="tax"),
+            News(slug="daily", icon="tips_and_updates", step="daily"),
+            News(slug="chat", icon="auto_awesome", step="assistant"),
+            News(slug="askai", icon="smart_toy", step="market"),
+            News(slug="fees", icon="percent", step="income"),
+            News(slug="demo", icon="science", step="import"),
+            News(slug="guest", icon="lock_open", step="positions"),
+            News(slug="pulse", icon="speed", step="pulse"),
+            News(slug="profile", icon="tune", step="prefs"),
+            News(slug="digest", icon="insights", step="notify"),
+            News(slug="digestcal", icon="event_available", step="notify"),
+            News(slug="digestlinks", icon="link", step="notify"),
+            News(slug="weekly", icon="calendar_view_week", step="notify"),
+            News(slug="watchlist", icon="playlist_add", step="watchlist"),
         ),
-        steps=("tax", "bank", "daily", "assistant", "market", "income",
-               "pulse", "prefs", "import"),
     ),
 )
 
@@ -339,9 +366,14 @@ def setup_state(prefs: dict | None = None) -> dict[str, bool]:
 
 
 def visible_steps() -> tuple[Step, ...]:
-    """The steps this session may see. The bank step only exists where Enable
-    Banking is configured and the account is allowlisted (see bank_ui)."""
-    return tuple(s for s in STEPS if s.id != "bank" or _bank_available())
+    """The steps this session may see.
+
+    Every step ships on every deploy today, so this is the whole registry.
+    The indirection stays because the tour renders and indexes through it:
+    a step that only some deploys carry is filtered here, once, rather than
+    at each call site.
+    """
+    return STEPS
 
 
 def by_id(step_id: str) -> Step | None:
@@ -361,6 +393,27 @@ def unseen_releases(prefs: dict | None = None) -> tuple[Release, ...]:
     if seen not in versions:
         return RELEASES
     return RELEASES[versions.index(seen) + 1 :]
+
+
+def unseen_news(prefs: dict | None = None) -> tuple[NewsCard, ...]:
+    """Every feature shipped since this account's stamp, newest first.
+
+    The modal pages through these one card at a time, so how much a returning
+    account reads is simply how much shipped while it was away — one card for
+    one feature, nine for three releases missed — instead of one wall of
+    bullets that grows silently with every version.
+
+    A card whose step is not in `visible_steps()` is dropped: a deploy that
+    does not carry the feature must not announce it. A card with no step at
+    all (something with no tour stop of its own) is always shown.
+    """
+    shown = {s.id for s in visible_steps()}
+    return tuple(
+        NewsCard(version=rel.version, date=rel.date, item=item)
+        for rel in reversed(unseen_releases(prefs))
+        for item in rel.items
+        if item.step is None or item.step in shown
+    )
 
 
 def _save(prefs: dict) -> None:
@@ -386,9 +439,11 @@ def open_tour(step_id: str | None = None) -> None:
     st.session_state[_RESUME] = False
 
 
-def open_news() -> None:
+def open_news(index: int = 0) -> None:
+    """Open "what's new" at `index` — the newest unseen feature by default."""
     st.session_state[_OPEN] = True
     st.session_state[_MODE] = "news"
+    st.session_state[_NEWS] = index
     st.session_state[_RESUME] = False
 
 
@@ -441,7 +496,10 @@ def maybe_open() -> bool:
     if not prefs.get(PREF_DONE):
         open_tour(step_id=visible_steps()[0].id)
         return True
-    if unseen_releases(prefs):
+    # Asked over the release list, not the release stamp: a version whose
+    # every feature this deploy filters out is nothing to announce, and an
+    # empty modal is worse than no modal.
+    if unseen_news(prefs):
         open_news()
         return True
     return False
@@ -477,7 +535,23 @@ def _exit_tour(reason: str = "exit") -> None:
     st.session_state[_RESUME] = False
 
 
-def _dismiss_news() -> None:
+def _dismiss_news(reason: str = "dismissed") -> None:
+    """Stamp the account as caught up, and close the list.
+
+    Stamping here is what makes "what's new" a once-only surface: every way
+    out of the modal — the last card's button, skipping the rest, the X — ends
+    up in this function, and the stamp is the newest release rather than the
+    card the reader stopped on. The one path that deliberately does *not*
+    stamp is parking the list to go and look at a feature (`_news_strip`):
+    a list abandoned half-read is still owed.
+
+    `reason` separates reading it through from bailing on card one, which is
+    the only feedback the modal can give about its own copy.
+    """
+    cards = unseen_news()
+    idx = min(max(int(st.session_state.get(_NEWS, 0)), 0), max(len(cards) - 1, 0))
+    obs.event("news.close", reason=reason, index=idx + 1, of=len(cards),
+              version=CURRENT_VERSION)
     prefs = auth.load_prefs()
     prefs[PREF_SEEN_VERSION] = CURRENT_VERSION
     _save(prefs)
@@ -642,44 +716,157 @@ def _tour_body() -> None:
         st.rerun()
 
 
-def _news_body() -> None:
-    """Everything that shipped since this account last looked, newest first.
+def _news_current(cards: tuple[NewsCard, ...]) -> int:
+    """The card index, clamped and written back. Read inside the dialog body
+    for the same reason as `_current`: a fragment rerun re-executes the body
+    with its *original* arguments, so a passed-in index would freeze."""
+    idx = min(max(int(st.session_state.get(_NEWS, 0)), 0), len(cards) - 1)
+    st.session_state[_NEWS] = idx
+    return idx
 
-    Each release's items get a jump into the tour steps that explain them, so
-    "what changed" and "how it works" are never two different documents.
+
+def _news_back() -> None:
+    st.session_state[_NEWS] = max(int(st.session_state.get(_NEWS, 0)) - 1, 0)
+
+
+def _news_next() -> None:
+    st.session_state[_NEWS] = int(st.session_state.get(_NEWS, 0)) + 1
+
+
+def _news_park(step_id: str) -> None:
+    """Queue the feature's page and park the list in the strip.
+
+    The modal cannot survive `st.switch_page` (design point 2), so a card's
+    "take me there" hands the step to `consume_goto` and leaves the reader the
+    strip — which still knows which card they were on, so the rest of the
+    list survives the trip.
     """
-    releases = unseen_releases()
-    if not releases:
-        releases = RELEASES[-1:]
+    st.session_state[_GOTO] = step_id
+    st.session_state[_OPEN] = False
+    st.session_state[_RESUME] = True
+
+
+def _news_body() -> None:
+    """One shipped feature per card, newest first.
+
+    Paged rather than listed, because the list is not a fixed length: an
+    account that has been away for three releases gets the same cards as one
+    that missed a single feature, just more of them, and each card carries the
+    way into the tour step that explains it. Back/Next are `on_click`
+    callbacks — a dialog is a fragment, so they rerun the modal alone; the
+    buttons that have to leave it call `st.rerun()`.
+    """
+    cards = unseen_news()
+    if not cards:
+        # Nothing unseen: the modal was opened by hand, or the account was
+        # stamped between runs. Show the last release rather than an empty
+        # dialog.
+        last = RELEASES[-1]
+        cards = tuple(
+            NewsCard(version=last.version, date=last.date, item=item)
+            for item in last.items
+        )
+    idx = _news_current(cards)
+    card = cards[idx]
+    step = by_id(card.item.step or "")
+
     st.caption(tr("tour.news_intro"))
-    shown = {s.id for s in visible_steps()}
-    for rel in reversed(releases):
-        st.markdown(f"**{rel.version}** :gray-badge[{rel.date}]")
-        for key in rel.items:
-            st.markdown(f"- {tr(key)}")
-        jumps = [s for s in (by_id(i) for i in rel.steps if i in shown) if s]
-        if jumps:
-            row = st.container(horizontal=True)
-            for step in jumps:
-                if row.button(
-                    tr(f"tour.{step.id}_title"),
-                    key=f"tour_news_{rel.version}_{step.id}",
-                    icon=f":material/{step.icon}:",
-                    type="tertiary",
-                ):
-                    _dismiss_news()  # stamped: the reader has seen this list
-                    open_tour(step_id=step.id)
-                    st.rerun()
-    nav = st.container(horizontal=True)
-    if nav.button(tr("tour.full_tour"), key="tour_news_full",
-                  icon=":material/play_circle:"):
-        _dismiss_news()
+    st.markdown(
+        f":material/{card.item.icon}: **{tr(card.title_key)}** "
+        f":gray-badge[{card.date}]"
+    )
+    st.markdown(tr(card.body_key))
+    st.progress(
+        (idx + 1) / len(cards),
+        text=tr("tour.news_progress", n=idx + 1, total=len(cards)),
+    )
+
+    nav = st.container(horizontal=True, vertical_alignment="center")
+    nav.button(
+        tr("tour.back"),
+        key="tour_news_back",
+        icon=":material/chevron_left:",
+        disabled=idx == 0,
+        on_click=_news_back,
+    )
+    locked = step is not None and step.gated and not auth.is_logged_in()
+    if step is not None and nav.button(
+        _cta_label(step),
+        key="tour_news_goto",
+        icon=":material/open_in_new:",
+        disabled=locked,
+    ):
+        _news_park(step.id)
+        st.rerun()  # full run: closes the modal, consume_goto() navigates
+    last_card = idx == len(cards) - 1
+    if last_card:
+        if nav.button(tr("tour.close"), key="tour_news_close", type="primary",
+                      icon=":material/check:"):
+            _dismiss_news("read")
+            st.rerun()
+    else:
+        nav.button(
+            tr("tour.next"),
+            key="tour_news_next",
+            type="primary",
+            icon=":material/chevron_right:",
+            on_click=_news_next,
+        )
+    if locked:
+        st.caption(tr("tour.locked"))
+
+    foot = st.container(horizontal=True, vertical_alignment="center")
+    if foot.button(tr("tour.full_tour"), key="tour_news_full", type="tertiary",
+                   icon=":material/play_circle:"):
+        _dismiss_news("full_tour")  # the list counts as read either way
         open_tour(step_id=visible_steps()[0].id)
         st.rerun()
-    if nav.button(tr("tour.close"), key="tour_news_close", type="primary",
-                  icon=":material/check:"):
-        _dismiss_news()
+    if not last_card and foot.button(
+        tr("tour.news_skip"), key="tour_news_skip", type="tertiary"
+    ):
+        _dismiss_news("skipped")
         st.rerun()
+
+
+def _news_strip() -> None:
+    """The minimized "what's new": the reader is on the page a card sent them
+    to, and this is the way back into the rest of the list.
+
+    Parking does not stamp the version — only the ways *out* of the modal do
+    (`_dismiss_news`) — so a reader who closes the tab three cards in is still
+    owed the other six on the next session.
+    """
+    cards = unseen_news()
+    if not cards:  # stamped from elsewhere (the guided tour finishing)
+        st.session_state[_RESUME] = False
+        return
+    idx = min(max(int(st.session_state.get(_NEWS, 0)), 0), len(cards) - 1)
+    card = cards[idx]
+    with st.container(border=True):
+        row = st.container(horizontal=True, vertical_alignment="center")
+        row.markdown(
+            f":material/{card.item.icon}: "
+            + tr(
+                "tour.news_strip_progress",
+                n=idx + 1,
+                total=len(cards),
+                title=tr(card.title_key),
+            )
+        )
+        if row.button(tr("tour.news_resume"), key="tour_news_strip_resume",
+                      icon=":material/auto_awesome:"):
+            open_news(idx)
+            st.rerun()
+        if idx < len(cards) - 1 and row.button(
+            tr("tour.next"), key="tour_news_strip_next",
+            icon=":material/chevron_right:",
+        ):
+            open_news(idx + 1)
+            st.rerun()
+        if row.button(tr("tour.news_dismiss"), key="tour_news_strip_close",
+                      type="tertiary"):
+            _dismiss_news("strip_close")
+            st.rerun()
 
 
 def _resume_strip() -> None:
@@ -687,8 +874,12 @@ def _resume_strip() -> None:
 
     Deliberately not a modal — the point of "take me there" is that the user
     is looking at the real page. The strip says which step they are on and
-    holds the two ways out: back into the modal, or done with it.
+    holds the two ways out: back into the modal, or done with it. "What's new"
+    parks the same way, on its own card list — `_news_strip`.
     """
+    if st.session_state.get(_MODE) == "news":
+        _news_strip()
+        return
     steps = visible_steps()
     idx = min(max(int(st.session_state.get(_STEP, 0)), 0), len(steps) - 1)
     step = steps[idx]
@@ -740,5 +931,14 @@ def render_launcher(
         icon=None if label else ":material/menu_book:",
         type=button_type,
     ):
-        open_tour(step_id=visible_steps()[0].id)
+        # Which surface the button opens is the deploy's choice, not the call
+        # site's — every launcher (Profile, the Home setup card) follows the
+        # same flag. Imported here rather than at module scope: guide reads
+        # this registry, so a top-level import would close the cycle.
+        from stocks.web import guide
+
+        if guide.surface() == "chat":
+            guide.start()
+        else:
+            open_tour(step_id=visible_steps()[0].id)
         st.rerun()

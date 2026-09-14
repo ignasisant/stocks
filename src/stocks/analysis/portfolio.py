@@ -514,8 +514,7 @@ def _profile(ticker: str) -> dict:
     # with no equity sectors at all (a bond or commodity ETF). Country is left
     # unknown on purpose: Yahoo publishes no geographic breakdown for funds,
     # inventing one from the top ten holdings would be a guess dressed as
-    # data, and "Unknown" is the bucket the globe already accounts for out
-    # loud (portfolio.geo_unmapped).
+    # data, and "Unknown" is a bucket the geography donut names out loud.
     if fund := fetch_profile(ticker, info=info):
         return {
             "sector": "Funds",
@@ -712,16 +711,18 @@ def positions_frame(
     return pd.DataFrame(rows).set_index("ticker") if rows else pd.DataFrame()
 
 
-def position_values_history(
+def position_value_frames(
     positions, period: str = "3mo", base: str = "EUR"
-) -> pd.DataFrame:
-    """Daily `base` value per open position at *today's* quantities.
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(values at the daily FX, values at the window's closing FX).
 
-    Current shares × daily native close × daily ECB FX, forward-filled onto the
-    price index. Powers the day/week/month change chips and the per-ticker day
-    change, so a position's move includes its FX move — the book is judged in
-    EUR. Flows inside the window are NOT adjusted (that's the TWR view's job).
-    Tickers without a usable price (or FX) series are absent.
+    One fetch, two readings of it. The first frame is what the book was worth
+    each day and is what every caller wants; the second holds every exchange
+    rate fixed at the last one in the window, so it moves only when a *price*
+    moves. Subtracting one from the other separates the two things a EUR
+    investor in US names sees blended into a single number — how the companies
+    did, and how the dollar did — which is the question behind every "why is
+    my portfolio down when the market was up".
     """
     from datetime import date
 
@@ -729,7 +730,7 @@ def position_values_history(
 
     closes = load_closes([p.ticker for p in positions], period=period)
     if not closes:
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
     px = pd.DataFrame(closes).sort_index()
     px.index = naive_dates(px.index)
     px = px.ffill()
@@ -747,14 +748,72 @@ def position_values_history(
             fx[ccy] = s.reindex(px.index).ffill().bfill()
 
     values: dict[str, pd.Series] = {}
+    frozen: dict[str, pd.Series] = {}
     for p in positions:
         if p.ticker not in px.columns:
             continue
         if p.currency == base:
             values[p.ticker] = p.quantity * px[p.ticker]
+            frozen[p.ticker] = values[p.ticker]
         elif p.currency in fx:
-            values[p.ticker] = p.quantity * px[p.ticker] * fx[p.currency]
-    return pd.DataFrame(values)
+            rate = fx[p.currency]
+            values[p.ticker] = p.quantity * px[p.ticker] * rate
+            frozen[p.ticker] = p.quantity * px[p.ticker] * float(rate.iloc[-1])
+    return pd.DataFrame(values), pd.DataFrame(frozen)
+
+
+def position_values_history(
+    positions, period: str = "3mo", base: str = "EUR"
+) -> pd.DataFrame:
+    """Daily `base` value per open position at *today's* quantities.
+
+    Current shares × daily native close × daily ECB FX, forward-filled onto the
+    price index. Powers the day/week/month change chips and the per-ticker day
+    change, so a position's move includes its FX move — the book is judged in
+    EUR. Flows inside the window are NOT adjusted (that's the TWR view's job).
+    Tickers without a usable price (or FX) series are absent.
+    """
+    return position_value_frames(positions, period, base)[0]
+
+
+def benchmark_changes(
+    windows: list[int], ticker: str = "SPY", period: str = "1y"
+) -> dict[int, float | None]:
+    """{days: % change} for one index, read off daily closes. Empty on failure.
+
+    The comparison the notifications make when they say a book "lagged": same
+    anchoring as `basket_change`, so the two numbers in the sentence were
+    measured between the same two dates. Deliberately in the index's own
+    currency — a EUR reader asking whether they beat the S&P means the index,
+    not the index plus the dollar, and the currency leg is reported separately
+    (see `fx_share`).
+    """
+    series = load_closes([ticker], period=period).get(ticker)
+    if series is None or series.empty:
+        return {}
+    frame = pd.DataFrame({ticker: series}).sort_index()
+    out: dict[int, float | None] = {}
+    for days in windows:
+        change = basket_change(frame, days)
+        out[days] = change[1] if change else None
+    return out
+
+
+def fx_share(values: pd.DataFrame, frozen: pd.DataFrame, days: int) -> float | None:
+    """How much of the basket's `days`-window move was currency, in `base` money.
+
+    The difference between the move as lived and the move the same prices would
+    have produced at today's rates. Positive means the currency helped. None
+    when either frame can't cover the window — and, deliberately, when the book
+    is single-currency, where the answer is always a meaningless zero.
+    """
+    if values.empty or frozen.empty:
+        return None
+    lived = basket_change(values, days)
+    at_todays_rate = basket_change(frozen, days)
+    if lived is None or at_todays_rate is None:
+        return None
+    return lived[0] - at_todays_rate[0]
 
 
 def basket_change(values: pd.DataFrame, days: int) -> tuple[float, float] | None:
@@ -805,6 +864,31 @@ def ticker_changes(values: pd.DataFrame, days: int) -> pd.Series:
     first, last = values.loc[start], values.loc[end]
     both = first.notna() & last.notna() & (first != 0)
     return last[both] / first[both] - 1
+
+
+def ticker_money_changes(values: pd.DataFrame, days: int) -> pd.Series:
+    """Per-ticker change in `base` money over the last ~`days` calendar days.
+
+    The percentage a name moved is not what it did to the book: a 5% pop on a
+    1% position is worth less than a 1.5% drift on a 30% one. This reads the
+    same frame `ticker_changes` does, with the same anchoring, and returns the
+    contribution in currency — so the sum over tickers is the basket change
+    `basket_change` reports for the same window. A ticker priced at only one
+    endpoint is dropped (it contributed nothing measurable, not a windfall).
+    """
+    if len(values) < 2:
+        return pd.Series(dtype=float)
+    end = values.index[-1]
+    if days <= 1:
+        start = values.index[-2]
+    else:
+        prior = values.index[values.index <= end - pd.Timedelta(days=days)]
+        if prior.empty:
+            return pd.Series(dtype=float)
+        start = prior[-1]
+    first, last = values.loc[start], values.loc[end]
+    both = first.notna() & last.notna()
+    return last[both] - first[both]
 
 
 # --------------------------------------------------------------- market clock

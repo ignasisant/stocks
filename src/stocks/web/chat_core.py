@@ -38,6 +38,7 @@ from stocks.web import (
     chat_skills,
     chat_web,
     css,
+    guide,
     llm,
     ratelimit,
     skeletons,
@@ -47,6 +48,7 @@ from stocks.web.portfolio_data import enriched_positions, ledger_state
 from stocks.web.widgets import (
     data_table,
     db_mtime,
+    is_mobile,
     viewer_tz,
 )
 
@@ -508,7 +510,8 @@ def _retire_on_first_chunk(work, chunks):
 
 def _stream_with_fallback(work, provider: llm.Provider, api_key: str,
                           model: str, system: str, msgs: list[dict],
-                          prefs: dict, *, spent: list[int] | None = None) -> str:
+                          prefs: dict, *, spent: list[int] | None = None,
+                          markers: list[str] | None = None) -> str:
     """The answer stream, retried down the provider chain when the chosen
     provider dies: chosen first, then the other saved keys, then the keyless
     free chain — the same resolution order as the Telegram bot
@@ -524,6 +527,11 @@ def _stream_with_fallback(work, provider: llm.Provider, api_key: str,
     A free unit spent on a fallback candidate is appended to `spent`, so a
     chain that ends in an exception can be refunded whole by the caller
     rather than only for the unit the turn opened with.
+
+    `markers`, when given, turns on the guided walkthrough's jump marker: it
+    is withheld from the stream as it arrives (it must never be painted, since
+    write_stream does not repaint) and the ids seen land in the list for the
+    caller to validate.
     """
     cands = [(provider, api_key, model or provider.default_model)]
     for p, k, m in engine.attempts(prefs):
@@ -547,11 +555,15 @@ def _stream_with_fallback(work, provider: llm.Provider, api_key: str,
                 seen.append(True)
                 yield c
 
+        def _guarded(chunks, found=markers):
+            """The walkthrough's marker filter, or the stream untouched."""
+            return chunks if found is None else guide.hide_markers(chunks, found)
+
         try:
             # write_stream hands back a list when a chunk isn't a string;
             # every provider here yields text, so join rather than branch.
             streamed = st.write_stream(_retire_on_first_chunk(
-                work, _tap(p.stream(k, m, system, msgs))))
+                work, _guarded(_tap(p.stream(k, m, system, msgs)))))
             answer = (
                 streamed if isinstance(streamed, str)
                 else "".join(str(c) for c in streamed)
@@ -625,7 +637,12 @@ def _system_prompt(skill_ids: list[str] | None = None) -> str:
     Assembled by the shared engine (stocks/chat/engine.py) — the Telegram bot
     builds the same prompt from the same pieces."""
     return engine.system_prompt(
-        auth.load_profile(), _view_context() + _portfolio_context(), skill_ids
+        auth.load_profile(),
+        # The walkthrough's fence, and empty for every other thread: while the
+        # guide is running the model may only describe steps that exist, and
+        # gets one marker with which to offer a jump (stocks.web.guide).
+        _view_context() + _portfolio_context() + guide.prompt_fence(),
+        skill_ids,
     )
 
 
@@ -736,17 +753,27 @@ def _render_thread_row(ns: str, c: dict) -> None:
                     st.rerun()
         return
 
+    # A card per thread rather than a flat row: stacked rows gave the title and
+    # its stamp the same weight, so a list of ten was a wall of text with
+    # nothing to land on. The card carries the hover and the open-thread mark;
+    # the title is the pressable part and the stamp sits under it as a fact.
     # The open thread keeps a fixed container key so the CSS can mark it the
     # way the sidebar marks the current page — it stays pressable (re-picking
     # the open thread is simply a way back to it from here).
     with st.container(horizontal=True, vertical_alignment="center",
-                      key=f"{ns}_row_active" if c["active"] else f"{ns}_row_{cid}"):
-        meta = tr("chat.thread_meta", when=_thread_when(c), n=c["messages"])
-        if st.button(f"{_conv_label(c, 26)}  \n{meta}", key=f"{ns}_pick_{cid}",
-                     type="tertiary", width="stretch"):
-            auth.set_active_conversation(cid)
-            _open_view("thread")
-        with st.popover("", icon=":material/more_vert:", key=f"{ns}_menu_{cid}",
+                      key=f"{ns}_card_active" if c["active"]
+                      else f"{ns}_card_{cid}"):
+        # Title over stamp on the left, the menu on the right: the stamp is
+        # part of the title's block, not a line running under the menu too.
+        with st.container(key=f"{ns}_row_{cid}", width="stretch"):
+            if st.button(_conv_label(c, 26), key=f"{ns}_pick_{cid}",
+                         type="tertiary", width="stretch"):
+                auth.set_active_conversation(cid)
+                _open_view("thread")
+            meta = tr("chat.thread_meta", when=_thread_when(c), n=c["messages"])
+            st.html('<div class="ts-chat-thmeta">' + escape(meta) + "</div>")
+        with st.popover("", icon=":material/more_vert:",
+                        key=f"{ns}_menu_{cid}",
                         help=tr("chat.thread_menu")):
             if st.button(tr("chat.rename"), icon=":material/edit:",
                          type="tertiary", key=f"{ns}_ren_{cid}"):
@@ -1451,9 +1478,18 @@ def _render_turn(ns: str, msg: dict, index: int) -> None:
     """One stored turn, drawn the way it will be re-drawn on every reload."""
     with st.chat_message(msg["role"]):
         if msg["role"] == "assistant":
+            # A step of the guided walkthrough (stocks.web.guide): scripted
+            # copy plus its own controls, and none of the answer chrome — the
+            # model never wrote it, so there is nothing to retry, re-route or
+            # cite, and a Regenerate here would replace the step with prose.
+            if msg.get("guide"):
+                st.markdown(msg["content"])
+                guide.render_card(ns, msg, index)
+                return
             _render_turn_head(ns, msg, index)
             st.markdown(msg["content"])
             _render_files(msg)
+            guide.render_jump(ns, msg, index)
             _render_turn_foot(ns, msg, index)
         else:
             st.markdown(msg["content"])
@@ -1788,6 +1824,14 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
         st.session_state[hist_key] = auth.load_chat()
     history: list[dict] = st.session_state[hist_key]
 
+    # The walkthrough, in its own thread: append the step the account is on,
+    # and walk past the ones it has since switched on elsewhere. Before the
+    # box below, so a card added here is drawn on this run rather than after
+    # a rerun the reader would see as a flash of the previous step.
+    guided = guide.owns(conv)
+    if guided:
+        guide.sync(history)
+
     # The message list is its own fixed-height scroll region so older turns stay
     # reachable (a plain container would just grow past the panel and clip).
     # autoscroll keeps the newest turn in view; the input renders below it. The
@@ -1799,6 +1843,12 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
             _render_empty_state(ns)
         for index, msg in enumerate(history):
             _render_turn(ns, msg, index)
+
+    # One generated line about the step just reached, once per account. After
+    # the history so the card it comments on is already painted, and inside a
+    # container that stays empty when there is no provider to ask.
+    if guided:
+        guide.narrate(ns, history, box)
 
     _render_rail(ns)
     text, files = _submitted(st.chat_input(
@@ -1994,12 +2044,17 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
                     # in the request (chat/tokens.py).
                     msgs = tokens.fit(msgs, system=system)
                     work.phase("writing")
+                    markers: list[str] = []
                     answer = _stream_with_fallback(
                         work, provider, api_key, model, system, msgs, prefs,
-                        spent=spent)
+                        spent=spent, markers=markers if guided else None)
                     web_sources = chat_web.sources(hits) or evidence.sources()
                     answered = _stamp({"role": "assistant", "content": answer},
                                       time.time() - started)
+                    # An answer that ended in a valid jump marker earns a
+                    # button; an invented step id is dropped without a trace.
+                    if guided:
+                        guide.claim_goto(answered, markers)
                     if skills:
                         answered["skills"] = skills
                     if steps:  # redrawn with the turn on every reload
@@ -2008,6 +2063,7 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
                         answered["web"] = web_sources
                     with head:
                         _render_turn_head(ns, answered, len(history))
+                    guide.render_jump(ns, answered, len(history))
                     _render_turn_foot(ns, answered, len(history))
                 except Exception as exc:  # classified per provider; unknown -> re-raise
                     work.clear()
@@ -2612,6 +2668,13 @@ body:has(.st-key-chatpanel) .st-key-topbar_search {
 @media (max-width: 1099px) { .st-key-chatpanel .st-key-panel_w_wide { display: none; } }
 @media (max-width: 640px) {
   .st-key-chatpanel [class*="st-key-panel_w_"] { display: none; }
+  /* DS 44px touch targets, like the launcher above. The desktop head packs
+     four icons into a 380px rail, so they are square and tight; dropping the
+     presets here leaves room for the two that stay to be hit with a thumb.
+     Close measured 22px wide before this, which is a miss waiting to happen
+     on the one control that gets the reader out of a full-screen drawer. */
+  .st-key-chatpanel .st-key-panel_new button,
+  .st-key-chatpanel .st-key-panel_close button { width: 44px; height: 44px; }
 }
 
 .st-key-chatpanel .st-key-panel_status {
@@ -2685,18 +2748,65 @@ body:has(.st-key-chatpanel) .st-key-topbar_search {
   gap: 0.5rem; padding: 0.5rem 0.75rem 0.25rem;
 }
 .st-key-chatpanel .st-key-panel_view { padding-inline: 0.75rem; overflow: auto; }
+/* Stored threads are cards, not rows: at 380px a flat list gave the title and
+   the stamp the same weight, so ten of them read as one block of text. The
+   card is the unit that hovers, and the title inside it is the target. */
+.st-key-chatpanel [class*="st-key-panel_card_"] {
+  gap: 0.4rem; margin-bottom: 0.4rem; padding: 0.5rem 0.6rem;
+  background: var(--ag-surface-card); border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.st-key-chatpanel [class*="st-key-panel_card_"]:hover {
+  background: var(--ag-surface-hover); border-color: var(--ag-border-focus);
+}
 /* The open thread is marked the way the sidebar marks the current page: a
-   filled row with an accent edge. It stays pressable — from this view,
+   filled card with an accent edge. It stays pressable — from this view,
    pressing it is the way back to it. */
-.st-key-chatpanel .st-key-panel_row_active {
-  background: var(--ag-purple-900); border-left: 2px solid var(--ag-brand-accent);
-  border-radius: var(--ag-radius-nav);
+.st-key-chatpanel .st-key-panel_card_active {
+  background: var(--ag-purple-900); border-color: var(--ag-purple-800);
+  border-left: 2px solid var(--ag-brand-accent);
 }
-.st-key-chatpanel [class*="st-key-panel_row_"] { padding: 0.1rem 0.25rem; }
-.st-key-chatpanel [class*="st-key-panel_row_"] button {
-  justify-content: flex-start; text-align: left;
+/* The card is title-over-stamp on the left and the menu on the right, so the
+   text column takes the width the menu does not. */
+.st-key-chatpanel [class*="st-key-panel_row_"] { gap: 0.1rem; min-width: 0; }
+/* The title is a button only in behaviour: no chrome, no padding of its own,
+   and hard left against the card's edge. Every level has to be told — the
+   button centres its label, and the label block centres its own text. */
+.st-key-chatpanel [class*="st-key-panel_pick_"] button {
+  justify-content: flex-start !important; text-align: left !important;
+  min-height: 0; padding: 0; background: transparent;
+  border-color: transparent;
 }
-.st-key-chatpanel [class*="st-key-panel_menu_"] { width: max-content !important; }
+.st-key-chatpanel [class*="st-key-panel_pick_"] button > div,
+.st-key-chatpanel [class*="st-key-panel_pick_"]
+  button [data-testid="stMarkdownContainer"] {
+  width: 100%; text-align: left !important;
+}
+.st-key-chatpanel [class*="st-key-panel_pick_"] button p {
+  text-align: left !important; font-size: var(--ag-fs-sm); font-weight: 600;
+  color: var(--ag-text-primary); line-height: 1.35;
+}
+/* The stamp under the title: instrumentation, one step below a caption. */
+.ts-chat-thmeta {
+  font-family: "Martian Mono", monospace; font-size: var(--ag-fs-2xs);
+  color: var(--ag-text-faint); letter-spacing: -0.02em; text-align: left;
+}
+/* The menu reads as a mark on the card rather than a second button beside the
+   title: no box, no popover chevron, and it keeps its own hover. */
+.st-key-chatpanel [class*="st-key-panel_menu_"] {
+  width: max-content !important; flex: 0 0 auto;
+}
+.st-key-chatpanel [class*="st-key-panel_menu_"] button {
+  min-height: 0; padding: 0.15rem 0.2rem; background: transparent;
+  border-color: transparent; color: var(--ag-text-faint) !important;
+}
+.st-key-chatpanel [class*="st-key-panel_menu_"] button:hover {
+  background: var(--ag-surface-hover); color: var(--ag-text-secondary) !important;
+}
+.st-key-chatpanel [class*="st-key-panel_menu_"] button div[aria-hidden="true"] {
+  display: none;
+}
 /* A confirmation is not an error block: it is the row, raised. */
 .st-key-chatpanel .st-key-panel_confirm,
 .st-key-chatpanel .st-key-panel_clearconfirm {
@@ -2936,11 +3046,16 @@ def ask(question: str) -> None:
     st.rerun(scope="app")
 
 
-def render_side_panel(view_label: str) -> None:
+def render_side_panel(view_label: str) -> bool:
     """Overlay assistant: launcher icon + slide-in panel. Call from app.py
     BEFORE page.run() — the launcher is position: fixed, so DOM order doesn't
     matter, and rendering first keeps it alive when a page raises or calls
-    st.stop(). Every page, signed-in users only."""
+    st.stop(). Every page, signed-in users only.
+
+    Returns whether the panel ended up open. app.py needs the answer before it
+    decides to run the page: on a phone the panel is the whole viewport, so
+    the page behind it is work nobody can see — see covers_viewport().
+    """
     st.session_state["_chat_view"] = view_label  # read by _view_context()
     css.inject(_PANEL_CSS)
 
@@ -2952,7 +3067,7 @@ def render_side_panel(view_label: str) -> None:
                          type="primary", help=tr("chat.title")):
                 st.session_state["chat_panel_open"] = True
                 st.rerun()
-        return
+        return False
 
     # No title row of its own: the panel's first row is the header the
     # fragment draws (thread name, new, widths, close), so a rerun that
@@ -2962,3 +3077,20 @@ def render_side_panel(view_label: str) -> None:
     # Emitted after the panel exists so the handle can attach. Outside the
     # fragment, so sending a chat message does not re-run this script.
     st.html(_RESIZE_JS, unsafe_allow_javascript=True)
+    return True
+
+
+# Whether the panel is a rail beside the page or the page itself is decided by
+# the @media (max-width: 640px) block in _PANEL_CSS, which stretches it to
+# 100vw; is_mobile() is the server-side half of that same split.
+def covers_viewport(is_open: bool) -> bool:
+    """Whether an open panel is hiding the whole page behind it (phones).
+
+    The reason this is a question app.py has to ask, rather than a detail of
+    the CSS: a page rendered under a full-screen panel is not just invisible,
+    it is *blocking*. Its work is network I/O, not st.* calls, so Streamlit
+    has no yield point at which to honour the tap that arrived while it ran —
+    a Close pressed on the first paint waited out the entire 17-24s page run
+    before anything moved, which reads as a frozen phone.
+    """
+    return is_open and is_mobile()

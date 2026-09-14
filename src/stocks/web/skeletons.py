@@ -465,6 +465,11 @@ def reserve(
     return reserve_html(html(kind, **kw), container=container, border=border)
 
 
+# The public name for the reserved position `reserve()` hands back. Pages that
+# hold a whole screen's worth of them keep a dict of these and want to say so.
+Slot = _Slot
+
+
 @contextmanager
 def slot(kind: str = "text", **kw) -> Iterator[_Slot]:
     """Reserve a slot, shimmer it, and yield it for the loaded content.

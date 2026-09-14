@@ -83,6 +83,34 @@ def test_send_message_splits_over_4096_on_lines(api):
     assert rejoined == long
 
 
+def test_send_message_attaches_url_buttons(api):
+    telegram.send_message(
+        "hi", chat_id=1, buttons=[("Portfolio", "https://x.example/portfolio")]
+    )
+    markup = json.loads(api.calls[0]["params"]["reply_markup"])
+    assert markup == {
+        "inline_keyboard": [[{"text": "Portfolio", "url": "https://x.example/portfolio"}]]
+    }
+
+
+def test_send_message_without_buttons_sends_no_markup(api):
+    telegram.send_message("hi", chat_id=1)
+    assert "reply_markup" not in api.calls[0]["params"]
+    # A label whose URL never resolved is dropped, not shipped dead.
+    telegram.send_message("hi", chat_id=1, buttons=[("Portfolio", "")])
+    assert "reply_markup" not in api.calls[1]["params"]
+
+
+def test_buttons_ride_the_last_chunk_of_a_split_message(api):
+    """The reader ends up at the bottom of a long digest, which is where the
+    keyboard has to be."""
+    long = "\n".join(f"line {i} " + "x" * 100 for i in range(60))
+    telegram.send_message(long, chat_id=1, buttons=[("Portfolio", "https://x/p")])
+    assert len(api.calls) == 2
+    assert "reply_markup" not in api.calls[0]["params"]
+    assert "reply_markup" in api.calls[1]["params"]
+
+
 def test_send_message_blocked_raises_typed(api):
     api.responses.append(http_error(403, "Forbidden: bot was blocked by the user"))
     with pytest.raises(telegram.TelegramBlocked):

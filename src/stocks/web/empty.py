@@ -46,6 +46,104 @@ from stocks.web import skeletons
 _SEEN = "_empty_state_seen"
 
 
+# Class on the marker span every card emits as its first child; the stylesheet
+# below hangs off it (:has), so no call site needs a widget key and two cards
+# on one page can never collide over one.
+_MARKER = "ts-empty-card"
+
+# Injected once per rerun by app.py, before any page body runs.
+#
+# The shrink rule is the load-bearing one. Streamlit hands a vertical block
+# `flex: 1 1 0%`, so a card that is the only thing left on a page (which is
+# exactly what an empty state is — the page calls this and stops) is stretched
+# to the leftover viewport height, and its children, which all shrink, are
+# squeezed below the height their own text needs. Nothing clips: the text
+# overflows its box and the link or button under it paints straight over the
+# last line. Sizing the card to its content and freezing the children's height
+# is what keeps the stack readable at any window height.
+#
+# NOTE: never write a left angle bracket anywhere inside this style block, not
+# even in a comment — DOMPurify silently drops the WHOLE block when its text
+# contains one (the same trap documented on app.py's base style block).
+CSS = """
+<style>
+  /* The marker carries no content: unwrap its box so it costs no height and
+     no flex gap above the preview. */
+  [data-testid="stElementContainer"]:has(.ts-empty-card) {display: none;}
+
+  [data-testid="stVerticalBlock"]:has(
+      > [data-testid="stElementContainer"] .ts-empty-card) {
+    flex: 0 0 auto;
+    min-height: fit-content;
+    text-align: center;
+    gap: 0.6rem;
+  }
+  /* Children keep the height their content asks for. */
+  [data-testid="stVerticalBlock"]:has(
+      > [data-testid="stElementContainer"] .ts-empty-card)
+    [data-testid="stElementContainer"] {
+    flex: 0 0 auto;
+    min-height: fit-content;
+  }
+  /* Roomier than a data card: this one is mostly whitespace by design, and
+     the generic 1.1rem card padding reads as cramped around a lone CTA.
+     !important beats app.py's trailing mobile block, which sets a tighter
+     .topstocks-card padding and must stay last in that stylesheet. */
+  [data-testid="stVerticalBlock"].topstocks-card:has(
+      > [data-testid="stElementContainer"] .ts-empty-card) {
+    padding: 2.2rem 1.75rem 2rem !important;
+  }
+  /* Prose stops well short of the card edge — a 1000px measure is unreadable
+     and makes the centered CTA look unrelated to the text above it. */
+  [data-testid="stVerticalBlock"]:has(
+      > [data-testid="stElementContainer"] .ts-empty-card)
+    [data-testid="stMarkdown"] {
+    max-width: 56ch; margin-left: auto; margin-right: auto;
+  }
+  /* Centered with the CTA under it: the block is centered by Streamlit, but
+     the paragraph inside it keeps the page's left alignment, which leaves the
+     card reading as two different layouts stacked. */
+  [data-testid="stVerticalBlock"]:has(
+      > [data-testid="stElementContainer"] .ts-empty-card)
+    [data-testid="stMarkdown"] :is(p, h1, h2, h3, h4, h5, h6),
+  [data-testid="stVerticalBlock"]:has(
+      > [data-testid="stElementContainer"] .ts-empty-card)
+    [data-testid="stCaptionContainer"] {
+    text-align: center;
+  }
+  /* The ghost preview is a picture, not a paragraph: give the title room. */
+  [data-testid="stVerticalBlock"]:has(
+      > [data-testid="stElementContainer"] .ts-empty-card)
+    [data-testid="stElementContainer"]:has(.topstocks-gh) {
+    margin-bottom: 0.7rem;
+  }
+  /* The call to action gets its own band. Streamlit centers a page link with
+     a negative block margin, which pulls it back into the caption above it. */
+  [data-testid="stVerticalBlock"]:has(
+      > [data-testid="stElementContainer"] .ts-empty-card)
+    [data-testid="stElementContainer"]:has([data-testid="stPageLink"]),
+  [data-testid="stVerticalBlock"]:has(
+      > [data-testid="stElementContainer"] .ts-empty-card)
+    [data-testid="stElementContainer"]:has([data-testid="stButton"]) {
+    margin: 0.5rem 0 0 !important;
+  }
+  /* The second answer (extra=) sits under the CTA and stays quieter: a rule
+     of its own would compete, so it gets air instead. */
+  [data-testid="stVerticalBlock"]:has(
+      > [data-testid="stElementContainer"] .ts-empty-card)
+    [data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"]) {
+    margin-top: 0.5rem;
+  }
+  @media (max-width: 640px) {
+    [data-testid="stVerticalBlock"].topstocks-card:has(
+        > [data-testid="stElementContainer"] .ts-empty-card) {
+      padding: 1.6rem 1.1rem 1.5rem !important;
+    }
+  }
+</style>
+"""
+
+
 def state(
     title: str,
     body: str = "",
@@ -118,6 +216,11 @@ def state(
         obs.event("empty_state", where=event, cta=bool(page or on_click))
     host = container if container is not None else st
     with host.container(border=border, horizontal_alignment="center"):
+        # Layout hook for CSS above — a marker element rather than a widget
+        # key, so a page may draw as many of these as it has empty sections
+        # without the call sites having to agree on unique keys. Its own box
+        # is hidden, so it costs no height and no flex gap.
+        st.html(f'<span class="{_MARKER}"></span>')
         if preview:
             # Still and faded, not shimmering: a sheen would read as a load in
             # progress, and nothing is going to arrive without the reader.
