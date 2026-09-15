@@ -309,6 +309,9 @@ RELEASES: tuple[Release, ...] = (
             News(slug="divest", icon="savings", step="income"),
             News(slug="tickerlinks", icon="link", step="market"),
             News(slug="ibkr", icon="photo_camera", step="import"),
+            News(slug="amount", icon="price_change", step="import"),
+            News(slug="tgtext", icon="voice_over_off", step="notify"),
+            News(slug="hover", icon="show_chart", step="market"),
         ),
     ),
 )
