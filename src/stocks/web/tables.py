@@ -53,7 +53,7 @@ from stocks.web.ds import (
     WARN_COLOR,
     is_mobile,
 )
-from stocks.web.logos import company_name, logo
+from stocks.web.logos import company_name, display_symbol, logo
 
 # One look for every HTML-rendered ticker table (Positions, Realized & tax,
 # earnings lists, screener, import previews) — keep them identical.
@@ -369,7 +369,10 @@ def ticker_cell(ticker: str, *, name: bool = True, link: bool = True) -> str:
     tail = (
         f' <span style="opacity:.65">— {html.escape(label)}</span>' if label else ""
     )
-    body = f"{img}<b>{html.escape(ticker)}</b>{tail}"
+    # Printed symbol, not the stored one: a row the ledger keys by ISIN still
+    # reads "DUOL". The link below keeps the stored label — that is what the
+    # Ticker page matches positions and trades against.
+    body = f"{img}<b>{html.escape(display_symbol(ticker))}</b>{tail}"
     if not link:
         return body
     return (
@@ -385,14 +388,15 @@ def ticker_pill_md(ticker: str, max_name: int = 18) -> str:
     options as plain text — this helper is wasted on them."""
     src = logo(ticker)
     img = f"![logo]({src}) " if src else ""
+    symbol = display_symbol(ticker)
     name = company_name(ticker)
-    if name and name.upper() != ticker.upper():
+    if name and name.upper() != symbol.upper():
         if len(name) > max_name:
             name = name[: max_name - 1].rstrip() + "…"
         tail = f" :gray[{name}]"
     else:
         tail = ""
-    return f"{img}**{ticker}**{tail}"
+    return f"{img}**{symbol}**{tail}"
 
 
 
@@ -518,7 +522,7 @@ def _ticker_rows_html(
                 text(badge_col, bv),
                 muted=(tick in muted and badge_col in muted_cols),
             )
-        left = f'<div class="agr-l1">{html.escape(tick)}{badge}</div>'
+        left = f'<div class="agr-l1">{html.escape(display_symbol(tick))}{badge}</div>'
         if parts:
             left += f'<div class="agr-l2{wrap}">{" · ".join(parts)}</div>'
         right = (

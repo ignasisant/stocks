@@ -98,6 +98,7 @@ from stocks.web.widgets import (
     company_name,
     data_table,
     db_mtime,
+    display_symbol,
     hover_wrap,
     is_mobile,
     kpi_grid_html,
@@ -963,7 +964,12 @@ def _price_section(ticker: str) -> None:
 # Off-watchlist symbols (SEC search / held-only) fall back to the map name.
 # One flex row per the design: logo chip · bold symbol · muted name ·
 # "in portfolio" badge, with the actions pinned to the right edge.
-label = labels.get(ticker) or company_name(ticker) or ticker
+# The URL (and the ledger) keep whatever the broker wrote; the page prints
+# the symbol that string resolves to, so an ISIN-keyed holding still reads
+# as its ticker in the header — and falls back to that symbol, never to the
+# ISIN, when no source knows a company name.
+symbol = display_symbol(ticker)
+label = labels.get(ticker) or company_name(ticker) or symbol
 src = _logo(ticker)
 
 
@@ -980,7 +986,7 @@ def _header_html() -> str:
             f"border:1px solid {BORDER};box-sizing:border-box;"
             f'padding:{4 if _MOBILE else 5}px;object-fit:contain">'
         )
-    show_name = label.upper() != ticker
+    show_name = label.upper() != symbol.upper()
     if _MOBILE:
         # Phones stack symbol over the name (the design's compact app bar);
         # min-width:0 + ellipsis keep long names from pushing the badge off.
@@ -993,14 +999,14 @@ def _header_html() -> str:
         parts.append(
             '<div style="display:flex;flex-direction:column;min-width:0">'
             f'<span style="font-size:{FS_LG};font-weight:600">'
-            f"{html.escape(ticker)}</span>"
+            f"{html.escape(symbol)}</span>"
             + name_line
             + "</div>"
         )
     else:
         parts.append(
             f'<h1 style="font-size:{FS_3XL};font-weight:600;line-height:1.21;'
-            f'padding:0;margin:0">{html.escape(ticker)}</h1>'
+            f'padding:0;margin:0">{html.escape(symbol)}</h1>'
         )
         if show_name:
             parts.append(

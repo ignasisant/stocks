@@ -137,6 +137,7 @@ from stocks.web.logos import (  # noqa: F401 — facade re-export
     broker_chips_html,
     broker_name,
     company_name,
+    display_symbol,
     logo,
 )
 from stocks.web.markup import slug

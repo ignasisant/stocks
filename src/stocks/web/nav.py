@@ -18,7 +18,7 @@ from stocks.web.ds import (
     is_mobile,
 )
 from stocks.web.i18n import t as tr
-from stocks.web.logos import asset_logo, company_name, logo
+from stocks.web.logos import asset_logo, company_name, display_symbol, logo
 from stocks.web.search import topbar_search_panel
 
 # Bottom tab bar (phones) — the DS mobile spec replaces the sidebar with a
@@ -109,6 +109,7 @@ def render_topbar(page_title: str, ticker: str | None = None) -> None:
     ]
     if ticker:
         name = company_name(ticker)
+        symbol = display_symbol(ticker)
         src = logo(ticker)
         img = (
             f'<img class="tb-logo" src="{html.escape(src, quote=True)}" loading="lazy">'
@@ -117,12 +118,12 @@ def render_topbar(page_title: str, ticker: str | None = None) -> None:
         )
         tail = (
             f'<span class="tb-name">{html.escape(name)}</span>'
-            if name and name.upper() != ticker.upper()
+            if name and name.upper() != symbol.upper()
             else ""
         )
         crumbs += [
             '<span class="tb-sep">›</span>',
-            f'<span class="tb-ticker">{img}<b>{html.escape(ticker)}</b>{tail}</span>',
+            f'<span class="tb-ticker">{img}<b>{html.escape(symbol)}</b>{tail}</span>',
         ]
     # The top strip is two independent pieces so all its controls line up on
     # ONE row at every width:
