@@ -28,7 +28,6 @@ from stocks import obs
 from stocks.analysis.portfolio import (
     flow_series,
     injected_vs_value,
-    load_closes,
     market_live,
     position_values_history,
     positions_frame,
@@ -101,13 +100,73 @@ def positions_table(db: str, mtime: float, base: str = "EUR") -> pd.DataFrame:
     return positions_frame(positions, base=base, values=latest)
 
 
+def ledger_period(first: str) -> str:
+    """The yfinance period that covers a ledger whose first trade is `first`.
+
+    One rule for every loader that prices the book across its whole life, so
+    they all ask for the same span and share the download below.
+    """
+    span = (date.today() - date.fromisoformat(first)).days
+    return "2y" if span <= 700 else "5y" if span <= 1780 else "max"
+
+
+@st.cache_data(ttl=900, show_spinner=False, max_entries=16)
+def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
+    """Daily closes for every ticker the ledger ever traded, ONE bulk download.
+
+    The price side of the whole book, shared: the 3-month basket behind the
+    chips and the day-change cells, the full-span value-vs-injected history,
+    the Pulse page's book tab and the ticker page's position weights each used
+    to download the same names over their own window — four requests per
+    symbol per cold page for one fact. Fetched once over the ledger's span
+    (`ledger_period`) and sliced by the readers; a symbol's request costs the
+    same whatever the period, so the long window is free.
+
+    Keyed by (db, mtime) like `ledger_state`: a new import may add a name or
+    push the first trade back. The ttl is what ages intraday prices; the
+    readers that cache their derived frames longer (an hour for the TWR
+    history) pick up a fresh download when they next rebuild.
+    """
+    from stocks.analysis import portfolio as _analysis
+
+    # The raw rows, not `ledger_state`: only tickers and dates are needed, and
+    # the replay there is keyed by reporting currency — reading it with the
+    # default would replay a USD account's book a second time in EUR.
+    txs = all_transactions(Path(db))
+    trades = [t for t in txs if t.action in ("buy", "sell")]
+    if not trades:
+        return {}
+    tickers = sorted({t.ticker for t in trades})
+    period = ledger_period(min(t.date for t in trades))
+    return _analysis.load_closes(tickers, period=period)
+
+
+def _window(closes: dict[str, pd.Series], months: int) -> dict[str, pd.Series]:
+    """The last `months` of each series — a `period="<n>mo"` download, sliced."""
+    cutoff = pd.Timestamp.today().normalize() - pd.DateOffset(months=months)
+    out: dict[str, pd.Series] = {}
+    for t, s in closes.items():
+        idx = s.index
+        if getattr(idx, "tz", None) is not None:
+            idx = idx.tz_localize(None)
+        tail = s[idx >= cutoff]
+        if not tail.empty:
+            out[t] = tail
+    return out
+
+
 @st.cache_data(ttl=900, show_spinner=False)
 def basket_history(db: str, mtime: float, base: str = "EUR") -> pd.DataFrame:
     """Fixed-basket daily values in `base` (3mo of closes × daily ECB FX at
     today's quantities) — feeds the day/week/month chips and per-ticker day
-    change, so a position's move includes its FX move."""
+    change, so a position's move includes its FX move.
+
+    Prices are the last three months of `held_closes`, not a download of
+    their own."""
+    positions = ledger_state(db, mtime, base)[1]
     return position_values_history(
-        ledger_state(db, mtime, base)[1], period="3mo", base=base
+        positions, period="3mo", base=base,
+        closes=_window(held_closes(db, mtime), 3),
     )
 
 
@@ -210,9 +269,11 @@ def ledger_history(fingerprint: tuple, db: str, base: str = "EUR"):
     ledger = all_transactions(Path(db))
     tickers = sorted({t.ticker for t in ledger if t.action in ("buy", "sell")})
     first = min(t.date for t in ledger)
-    span = (date.today() - date.fromisoformat(first)).days
-    period = "2y" if span <= 700 else "5y" if span <= 1780 else "max"
-    closes = load_closes(tickers, period=period)
+    # The shared book download (same names, same span) rather than one of its
+    # own — hot already whenever the Home glance or the Pulse page ran first.
+    closes = {
+        t: s for t, s in held_closes(db, db_mtime(db)).items() if t in set(tickers)
+    }
     fx = {
         ccy: pd.Series(rates_range(first, date.today().isoformat(), ccy, base))
         for ccy in {t.currency for t in ledger if t.action in ("buy", "sell")}
@@ -250,9 +311,7 @@ def trade_bars(db: str, mtime: float) -> dict[str, pd.DataFrame]:
     if not trades:
         return {}
     tickers = sorted({t.ticker for t in trades})
-    first = min(t.date for t in trades)
-    span = (date.today() - date.fromisoformat(first)).days
-    period = "2y" if span <= 700 else "5y" if span <= 1780 else "max"
+    period = ledger_period(min(t.date for t in trades))
     return fetch_many(tickers, period=period, auto_adjust=False)
 
 
@@ -311,6 +370,32 @@ def watchlist_closes(tickers: tuple[str, ...]) -> dict[str, list[float]]:
         close = df["Close"].dropna() if "Close" in df else None
         if close is not None and len(close):
             out[t] = [float(v) for v in close]
+    return out
+
+
+def year_closes(
+    tickers: tuple[str, ...], db: str | None = None, mtime: float = 0.0
+) -> dict[str, list[float]]:
+    """A year of daily closes per ticker, oldest first, from the downloads the
+    page already pays for.
+
+    Names the ledger holds are sliced out of `held_closes` (the book's own
+    download, hot after the glance card); only the rest go through
+    `watchlist_closes`. On a book whose positions are also on the watchlist —
+    the common case — that halves the symbols the Home page asks Yahoo for.
+    Guests (`db` None) read the watchlist download alone.
+    """
+    out: dict[str, list[float]] = {}
+    if db:
+        wanted = set(tickers)
+        for t, s in _window(held_closes(db, mtime), 12).items():
+            if t in wanted:
+                close = s.dropna()
+                if len(close):
+                    out[t] = [float(v) for v in close]
+    rest = tuple(t for t in tickers if t not in out)
+    if rest:
+        out.update(watchlist_closes(rest))
     return out
 
 

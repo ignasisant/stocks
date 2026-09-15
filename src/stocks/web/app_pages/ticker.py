@@ -344,16 +344,19 @@ def _custody(db: str, mtime: float) -> dict[str, dict[str, Custody]]:
         return {}
 
 
-@st.cache_data(ttl=300, show_spinner=False)
 def _position_values(db: str, mtime: float, base: str = "EUR") -> dict[str, float]:
-    """Live market value per open position in `base` (price × spot).
+    """Market value per open position in `base`, off the book's shared pricing.
 
-    Keeps a TTL as well as the ledger fingerprint: prices age on a timer even
-    when the book doesn't change."""
-    from stocks.analysis.portfolio import market_values
+    Reads `portfolio_data.positions_table` — the same cached frame the Home
+    glance and the Portfolio page print — instead of a five-day download of
+    its own: the weight tile here and the value tile there now come from one
+    fetch, and a Home visit leaves this page nothing to download."""
+    from stocks.web.portfolio_data import positions_table
 
-    held = _held(db, mtime)
-    return market_values(list(held.values()), base=base) if held else {}
+    tbl = positions_table(db, mtime, base)
+    if tbl.empty or "value" not in tbl:
+        return {}
+    return {str(t): float(v) for t, v in tbl["value"].items() if pd.notna(v)}
 
 
 def _position_values_safe(db: str, mtime: float, base: str = "EUR") -> dict[str, float]:

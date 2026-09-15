@@ -15,6 +15,7 @@ from yfinance.exceptions import YFRateLimitError
 
 from stocks import obs
 from stocks.config import DATA_DIR, ticker_aliases
+from stocks.data import profiles
 
 # ---------------------------------------------------------------- the breaker
 # One verdict about Yahoo for the whole process, because there is only one
@@ -94,6 +95,13 @@ def _retry[T](fn: Callable[[], T], attempts: int = 3, base_delay: float = 1.5) -
 # to hurry a slow day.
 BULK_BUDGET_S = 60.0
 
+# Concurrent requests inside one bulk download. yfinance's default is
+# `cpu_count() * 2`, which on the 1-vCPU Cloud Run service is two: a 34-name
+# watchlist became seventeen sequential round-trips, and with Yahoo timing
+# out at 10s each that alone overran the budget above. The work is network
+# wait, not CPU, so the host's core count is the wrong dial — fix it here.
+DOWNLOAD_THREADS = 8
+
 
 def _budgeted[T](fn: Callable[[], T], *, budget: float, **fields) -> T:
     """Run `fn` on a worker and give up on it after `budget` seconds.
@@ -165,6 +173,10 @@ def info(ticker: str) -> dict:
             return hit[1]
     fetched = yf.Ticker(key).info
     blob = fetched if isinstance(fetched, dict) else {}
+    # The facts in it that never move (sector, country, currency, quoteType)
+    # go to the on-disk profile memo, so the allocation splits stop paying a
+    # quoteSummary per holding on every cold process (stocks.data.profiles).
+    profiles.remember(key, blob)
     with _info_lock:
         _info_memo[key] = (time.monotonic(), blob)
         # Bounded: a long-lived server would otherwise accumulate an entry per
@@ -268,7 +280,7 @@ def fetch_many(
                 group_by="ticker",
                 auto_adjust=auto_adjust,
                 progress=False,
-                threads=True,
+                threads=min(DOWNLOAD_THREADS, len(symbols)),
             )
         ),
         budget=budget,

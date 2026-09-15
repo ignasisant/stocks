@@ -97,7 +97,7 @@ from stocks.web.ds import (
     is_mobile,
 )
 from stocks.web.i18n import t as tr
-from stocks.web.portfolio_data import db_mtime, ledger_state
+from stocks.web.portfolio_data import _window, db_mtime, held_closes, ledger_state
 from stocks.web.trend_ui import TrendRow
 
 REPORT_CCY = "EUR"
@@ -199,7 +199,13 @@ def _book(tickers: tuple[str, ...], db: str, mtime: float):
         return None
     holdings = holdings_from_positions(positions)
     held = [h.ticker for h in holdings]
-    closes = load_closes(held, period="2y")
+    # The book's shared download (portfolio_data.held_closes) — hot whenever
+    # Home ran first — cut to the two years this tab has always read, so the
+    # return frame and its beta are the same numbers as before.
+    closes = {
+        t: s for t, s in _window(held_closes(db, mtime), 24).items()
+        if t in set(held) and not s.empty
+    }
     prices = {t: float(s.iloc[-1]) for t, s in closes.items() if not s.empty}
     meta = load_meta(held)
     weights = market_value_weights_base(positions, prices, meta, REPORT_CCY)

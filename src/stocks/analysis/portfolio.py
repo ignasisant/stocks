@@ -503,6 +503,21 @@ def _profile(ticker: str) -> dict:
     # allocation bucket directly and skip the profile fetch.
     if pair := split_pair(ticker):
         return {"sector": "Crypto", "country": None, "currency": pair[1]}
+    # Seen before: the four fields this needs never change, so a stock the
+    # memo knows costs no request at all (data.profiles). Funds fall through —
+    # their split is a look-through of holdings that `.info` alone lacks.
+    from stocks.data.fetch import resolve
+    from stocks.data.funds import is_fund_type
+    from stocks.data.profiles import known
+
+    stored = known(resolve(ticker))
+    if stored and not is_fund_type(stored.get("quoteType")):
+        remember(ticker, stored.get("quoteType"))
+        return {
+            "sector": stored.get("sector"),
+            "country": stored.get("country"),
+            "currency": stored.get("currency"),
+        }
     try:
         info = quote_info(ticker)
     except Exception:
@@ -712,9 +727,16 @@ def positions_frame(
 
 
 def position_value_frames(
-    positions, period: str = "3mo", base: str = "EUR"
+    positions,
+    period: str = "3mo",
+    base: str = "EUR",
+    closes: dict[str, pd.Series] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """(values at the daily FX, values at the window's closing FX).
+
+    `closes` lets a caller hand in price series it already holds (the web
+    layer's shared ledger download, sliced to the window) instead of paying a
+    bulk request for the same names; `period` is then only the window label.
 
     One fetch, two readings of it. The first frame is what the book was worth
     each day and is what every caller wants; the second holds every exchange
@@ -728,7 +750,8 @@ def position_value_frames(
 
     from stocks.data.fx import rates_range
 
-    closes = load_closes([p.ticker for p in positions], period=period)
+    if closes is None:
+        closes = load_closes([p.ticker for p in positions], period=period)
     if not closes:
         return pd.DataFrame(), pd.DataFrame()
     px = pd.DataFrame(closes).sort_index()
@@ -763,7 +786,10 @@ def position_value_frames(
 
 
 def position_values_history(
-    positions, period: str = "3mo", base: str = "EUR"
+    positions,
+    period: str = "3mo",
+    base: str = "EUR",
+    closes: dict[str, pd.Series] | None = None,
 ) -> pd.DataFrame:
     """Daily `base` value per open position at *today's* quantities.
 
@@ -773,7 +799,7 @@ def position_values_history(
     EUR. Flows inside the window are NOT adjusted (that's the TWR view's job).
     Tickers without a usable price (or FX) series are absent.
     """
-    return position_value_frames(positions, period, base)[0]
+    return position_value_frames(positions, period, base, closes=closes)[0]
 
 
 def benchmark_changes(

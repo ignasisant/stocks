@@ -158,13 +158,6 @@ def fetch_earnings(ticker: str) -> tuple[list[date], list[EarningsResult]]:
         return [], []
     found: set[date] = set()
     results: dict[date, EarningsResult] = {}
-    with obs.swallow("earnings.calendar", ticker=ticker):
-        cal = t.calendar
-        raw = cal.get("Earnings Date") if isinstance(cal, dict) else None
-        if raw is not None:
-            for d in raw if isinstance(raw, (list, tuple)) else [raw]:
-                if (dd := _to_date(d)) is not None:
-                    found.add(dd)
     with obs.swallow("earnings.dates", ticker=ticker):
         df = t.get_earnings_dates(limit=12)
         if df is not None and not df.empty:
@@ -181,6 +174,19 @@ def fetch_earnings(ticker: str) -> tuple[list[date], list[EarningsResult]]:
                         reported_eps=reported,
                         surprise_pct=_to_float(row.get("Surprise(%)")),
                     )
+    # The dates table is read from the future backwards, so it normally
+    # carries the next print already. `calendar` is a second request for the
+    # same fact; it is only worth paying when the table came back without one
+    # — a name Yahoo lists no upcoming row for, or an empty table.
+    today = date.today()
+    if not any(d >= today for d in found):
+        with obs.swallow("earnings.calendar", ticker=ticker):
+            cal = t.calendar
+            raw = cal.get("Earnings Date") if isinstance(cal, dict) else None
+            if raw is not None:
+                for d in raw if isinstance(raw, (list, tuple)) else [raw]:
+                    if (dd := _to_date(d)) is not None:
+                        found.add(dd)
     return sorted(found), sorted(results.values(), key=lambda r: r.date)
 
 
