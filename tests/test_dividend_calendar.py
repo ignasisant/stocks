@@ -99,3 +99,83 @@ def test_upcoming_ex_dividends_deduplicates_and_needs_no_network_when_empty(
 
     calls.clear()
     assert dv.upcoming_ex_dividends([], ref=REF) == [] and not calls
+
+
+# ------------------------------------------------------------------- history
+
+
+class _FakeTicker:
+    """Enough of yfinance.Ticker for fetch_history: a series and metadata."""
+
+    def __init__(self, symbol: str):
+        self.symbol = symbol
+
+    @property
+    def dividends(self):
+        import pandas as pd
+
+        idx = pd.to_datetime(["2025-03-14", "2025-06-13", "2025-09-12"])
+        return pd.Series([0.51, 0.51, 0.0], index=idx)  # a 0 is not a payment
+
+    @property
+    def history_metadata(self):
+        return {"currency": "usd"}
+
+
+def test_fetch_history_reads_ex_dates_amounts_and_currency(monkeypatch):
+    dv.clear_history_cache()
+    monkeypatch.setattr("yfinance.Ticker", _FakeTicker)
+    history = dv.fetch_history("KO")
+    assert history.payments == (("2025-03-14", 0.51), ("2025-06-13", 0.51))
+    assert history.currency == "USD"
+    assert history.ticker == "KO"
+
+
+def test_fetch_history_memoizes_and_never_asks_a_throttled_yahoo(monkeypatch):
+    dv.clear_history_cache()
+    built: list[str] = []
+
+    class Counting(_FakeTicker):
+        def __init__(self, symbol):
+            built.append(symbol)
+            super().__init__(symbol)
+
+    monkeypatch.setattr("yfinance.Ticker", Counting)
+    dv.fetch_history("KO")
+    dv.fetch_history("KO")
+    assert built == ["KO"]  # second read came from the memo
+
+    from stocks.data.fetch import clear_throttle, trip_throttle
+
+    dv.clear_history_cache()
+    built.clear()
+    trip_throttle()
+    try:
+        assert dv.fetch_history("KO").payments == ()
+        assert built == []  # the cooldown is respected without a request
+    finally:
+        clear_throttle()
+
+
+def test_fetch_history_swallows_a_dead_symbol(monkeypatch):
+    dv.clear_history_cache()
+
+    class Broken:
+        def __init__(self, symbol):
+            raise ValueError("no such ticker")
+
+    monkeypatch.setattr("yfinance.Ticker", Broken)
+    assert dv.fetch_history("NOPE") == dv.DividendHistory("NOPE")
+
+
+def test_histories_drops_the_names_with_nothing_to_estimate_from(monkeypatch):
+    dv.clear_history_cache()
+
+    def fake(ticker: str):
+        if ticker == "KO":
+            return dv.DividendHistory("KO", (("2025-03-14", 0.51),), "USD")
+        return dv.DividendHistory(ticker)
+
+    monkeypatch.setattr(dv, "fetch_history", fake)
+    assert list(dv.histories(["KO", "NVDA", "KO"])) == ["KO"]
+    assert dv.histories([]) == {}

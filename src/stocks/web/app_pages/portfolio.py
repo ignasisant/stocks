@@ -51,6 +51,7 @@ from stocks.web.i18n import t as tr
 from stocks.web.portfolio_data import (
     basket_history,
     custody_map,
+    dividend_estimates,
     enriched_positions,
     eur_spot,
     ledger_history,
@@ -1257,8 +1258,30 @@ if tab_tax.open:
 # ------------------------------------------------------------------- Dividends
 if tab_div.open:
     with tab_div:
-        years = dividends.by_year(txs)
-        if not years:
+        # The ledger's own dividends, in the reporting currency (each payment
+        # at its own date's rate) — the figures the tax tab is allowed to use.
+        years = dividends.by_year(txs, base=REPORT_CCY)
+        # …and the estimate beside them: what the shares were entitled to,
+        # whether or not a row for it was ever imported. Network, so it
+        # degrades like every other fetch on this page.
+        est_years: dict[int, dividends.EstimatedYear] = {}
+        forward: list[dividends.ForwardIncome] = []
+        forward_base: dict[str, float] = {}
+        unrecorded: dict[int, float] = {}
+        try:
+            # One history request per name ever held — seconds on a cold cache,
+            # so the tab shows the shape of what is coming instead of freezing.
+            # The block renders nothing itself: leaving it clears the shimmer
+            # and the real tables below take over.
+            with skeletons.slot("table", rows=4, cols=4):
+                est_years, forward, forward_base, unrecorded = dividend_estimates(
+                    DB, db_mtime(DB), REPORT_CCY
+                )
+        except (YFRateLimitError, URLError) as exc:
+            notices.data_toast(exc)
+        except Exception:
+            st.warning(tr("portfolio.data_unavailable"))
+        if not years and not est_years and not forward:
             empty.state(
                 tr("portfolio.empty_dividends_title"),
                 tr("portfolio.empty_dividends_body"),
@@ -1266,8 +1289,49 @@ if tab_div.open:
                 preview="table",
                 preview_kw={"rows": 3, "cols": 5},
             )
-        else:
+        if years or est_years or forward:
+            # The three numbers the tab exists to answer, before any table:
+            # what this book has been paid, what it has been paid this year,
+            # and what it pays next if nothing is sold. The first two are the
+            # ledger's own, with the estimate riding as a chip beside them —
+            # a booked figure and a guess must not add up into one number.
+            _this_year = date.today().year
+            booked_total = sum(d.gross for d in years.values())
+            booked_ytd = years[_this_year].gross if _this_year in years else 0.0
+            est_total = sum(e.gross for e in est_years.values())
+            est_ytd = est_years[_this_year].gross if _this_year in est_years else 0.0
+            next_year = sum(forward_base.values())
+
+            def _est_chip(amount: float, booked: float):
+                """The estimate beside a booked figure, only when it adds
+                something: a gap under a unit of currency is rounding."""
+                if amount - booked < 1:
+                    return None
+                return (
+                    tr("portfolio.div_kpi_est_chip",
+                       val=f"{REPORT_SYM}{amount:,.0f}"),
+                    "gray",
+                )
+
+            st.html(kpi_grid_html([
+                (tr("portfolio.div_kpi_total"),
+                 f"{REPORT_SYM}{booked_total:,.0f}",
+                 _est_chip(est_total, booked_total),
+                 tr("portfolio.div_kpi_total_help")),
+                (tr("portfolio.div_kpi_ytd"),
+                 f"{REPORT_SYM}{booked_ytd:,.0f}",
+                 _est_chip(est_ytd, booked_ytd),
+                 tr("portfolio.div_kpi_ytd_help")),
+                (tr("portfolio.div_kpi_next"),
+                 f"{REPORT_SYM}{next_year:,.0f}" if forward
+                 else tr("portfolio.na"),
+                 None,
+                 tr("portfolio.div_kpi_next_help")),
+            ]))
+
+        if years:
             with st.container(border=True):
+                st.subheader(tr("portfolio.dividends_ledger_title"))
                 rows = [
                     {
                         "year": yr, "gross": d.gross,
@@ -1297,6 +1361,102 @@ if tab_div.open:
                     fmt=dict.fromkeys(div_frame.columns, f"{REPORT_SYM}{{:,.0f}}"),
                 )
                 st.caption(tr("portfolio.dividends_caption"))
+        elif est_years or forward:
+            # No dividend row was ever imported, yet the shares were paid:
+            # say so before the estimates, so nothing below reads as a receipt.
+            st.info(tr("portfolio.div_est_only"), icon=":material/savings:")
+
+        # --------------------------------------------------- forward estimate
+        if forward:
+            with st.container(border=True):
+                st.subheader(tr("portfolio.div_forward_title"))
+                annual = sum(forward_base.values())
+                invested = sum(p.cost for p in positions)
+                # No annual total here: it is the "Next year" KPI at the top
+                # of the tab, and the same number twice reads as two numbers.
+                st.html(kpi_grid_html([
+                    (tr("portfolio.div_monthly"),
+                     f"{REPORT_SYM}{annual / 12:,.0f}", None,
+                     tr("portfolio.div_monthly_help")),
+                    (tr("portfolio.div_yield_on_cost"),
+                     f"{annual / invested:.2%}" if invested else tr("portfolio.na"),
+                     None, tr("portfolio.div_yield_on_cost_help")),
+                ]))
+                # Per-share amounts stay in the name's own currency — averaging
+                # a US quarterly dividend with a Spanish one into the reporting
+                # currency would invent a number no company ever declared — so
+                # that column carries its symbol and is a string, not a metric.
+                fwd_frame = pd.DataFrame([
+                    {
+                        "ticker": f.ticker,
+                        "shares": f.shares,
+                        "per_share": (
+                            f"{currency_symbol(f.currency)}{f.per_share:,.2f}"
+                        ),
+                        "payments": f.payments,
+                        "annual": forward_base.get(f.ticker, 0.0),
+                    }
+                    for f in forward
+                ])
+                fwd_labels = {
+                    "shares": tr("portfolio.col_shares"),
+                    "per_share": tr("portfolio.col_per_share_ttm"),
+                    "payments": tr("portfolio.col_payments_year"),
+                    "annual": tr("portfolio.col_est_next12"),
+                }
+                # A symbol is a link to the company, logo and all — the same
+                # cell the Positions table uses, so a payer can be opened from
+                # the row that says what it pays.
+                st.html(responsive_ticker_table_html(
+                    fwd_frame,
+                    fmt={
+                        "shares": "{:,.4g}",
+                        "payments": "{:,.0f}",
+                        "annual": f"{REPORT_SYM}{{:,.0f}}",
+                    },
+                    labels=fwd_labels,
+                    sortable="div_forward",
+                    mobile={
+                        "value": "annual",
+                        "sub": ("shares", "per_share", "payments"),
+                        "sub_labels": fwd_labels,
+                    },
+                ))
+                st.caption(tr("portfolio.div_forward_caption"))
+
+        # ------------------------------------------- what the ledger missed
+        if est_years:
+            with st.container(border=True):
+                st.subheader(tr("portfolio.div_history_title"))
+                est_rows = [
+                    {
+                        "year": yr,
+                        "estimated": ey.gross,
+                        "imported": years[yr].gross if yr in years else 0.0,
+                        "unrecorded": unrecorded.get(yr, 0.0),
+                    }
+                    for yr, ey in sorted(est_years.items())
+                ]
+                est_frame = (
+                    pd.DataFrame(est_rows)
+                    .set_index("year")
+                    .rename_axis(tr("portfolio.col_year"))
+                    .rename(columns={
+                        "estimated": tr("portfolio.col_estimated"),
+                        "imported": tr("portfolio.col_imported"),
+                        "unrecorded": tr("portfolio.col_unrecorded"),
+                    })
+                )
+                data_table(
+                    est_frame,
+                    index_title=True,
+                    fmt=dict.fromkeys(est_frame.columns, f"{REPORT_SYM}{{:,.0f}}"),
+                )
+                missing = sum(unrecorded.values())
+                if missing > 0.5:
+                    st.caption(tr("portfolio.div_unrecorded_hint",
+                                  val=f"{REPORT_SYM}{missing:,.0f}"))
+                st.caption(tr("portfolio.div_history_caption"))
 
 # ------------------------------------------------------------------- Fees
 if tab_fees.open:

@@ -349,3 +349,36 @@ def held_tickers(db: str, mtime: float) -> list[str]:
         return [p.ticker for p in positions]
     except Exception:
         return []  # empty/inconsistent ledger must never break search
+
+
+@st.cache_data(ttl=21600, show_spinner=False, max_entries=8)
+def dividend_estimates(db: str, mtime: float, base: str = "EUR") -> tuple:
+    """(estimated years, forward income, forward totals in `base`, unrecorded).
+
+    What the book was entitled to, from Yahoo's per-share history and the
+    ledger's own share timeline — the half no statement can be asked for, since
+    a dividend is owed to whoever held the share the day before it went ex
+    whether or not the import carried a row for it. Six-hour ttl: a payment
+    goes ex once a quarter and this is one request per name ever held.
+
+    Raises YFRateLimitError when Yahoo is in cooldown and nothing came back, so
+    a throttled minute is never cached as "this book pays nothing" — the call
+    site toasts it the way every other fetch here degrades.
+    """
+    from yfinance.exceptions import YFRateLimitError
+
+    from stocks.data.dividends import histories
+    from stocks.data.fetch import throttle_remaining
+    from stocks.portfolio import dividends as div
+
+    txs = ledger_state(db, mtime, base)[0]
+    tickers = sorted({t.ticker for t in txs if t.action in ("buy", "sell")})
+    history = histories(tickers)
+    if not history and (tickers and throttle_remaining()):
+        raise YFRateLimitError
+    payments = div.estimate_payments(txs, history)
+    estimated = div.estimate_by_year(payments, base=base)
+    forward = div.forward_income(txs, history)
+    totals = div.forward_totals(forward, base=base)
+    unrecorded = div.unrecorded_by_year(div.by_year(txs, base=base), estimated)
+    return estimated, forward, totals, unrecorded
