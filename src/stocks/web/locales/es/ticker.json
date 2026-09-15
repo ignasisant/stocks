@@ -32,6 +32,7 @@
   "ticker.history_failed": "No se pudo cargar el histórico de precios de este valor — vuelve a intentarlo en un momento.",
   "ticker.history_empty": "No hay histórico de precios para este valor — puede estar excluido de cotización o negociarse muy poco.",
   "ticker.price": "Precio",
+  "ticker.hover_ohlc": "apertura {open} · máximo {high} · mínimo {low}",
   "ticker.period_change": "{pct} en {period}",
   "ticker.range_change": "{pct} de {start} a {end}",
   "ticker.rsi_help": "<30 sobreventa · 30–70 neutral · >70 sobrecompra",

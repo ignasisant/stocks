@@ -897,10 +897,10 @@ def data_table(
 ) -> None:
     """st.dataframe on desktop, `stacked_table_html` cards on phones.
 
-    The mobile-only arguments mirror stacked_table_html; `fmt` doubles as the
-    desktop number format (applied through a Styler) unless the caller drives
-    that with its own `column_config`. Everything else is forwarded to
-    st.dataframe untouched.
+    The card arguments mirror stacked_table_html; `fmt` doubles as the desktop
+    number format (applied through a Styler) and `labels` as its headers (via
+    column_config), unless the caller drives that with its own
+    `column_config`. Everything else is forwarded to st.dataframe untouched.
     """
     target = container if container is not None else st
     if is_mobile():
@@ -922,5 +922,13 @@ def data_table(
         show = frame.style.format(
             {k: v for k, v in fmt.items() if k in frame.columns}, na_rep="n/a"
         )
+    if labels and "column_config" not in kwargs:
+        # Relabel through column_config rather than renaming the frame: fmt
+        # keys, and every caller's title/hide spec, key on the raw names.
+        kwargs["column_config"] = {
+            c: st.column_config.Column(text)
+            for c, text in labels.items()
+            if c in frame.columns
+        }
     target.dataframe(show, **kwargs)
 

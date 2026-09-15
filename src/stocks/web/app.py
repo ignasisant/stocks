@@ -232,14 +232,21 @@ css.inject(
          they ride here. st.plotly_chart renders inline (not iframed), so this
          top-document CSS reaches the .hoverlayer. rx rounds the unified-hover
          rect; the drop-shadow lifts both the rect and the closest-hover
-         path bubble off the plot. NOTE: never write a left angle bracket
+         path bubble off the plot. The two selectors are not the same box:
+         a per-trace label is g.hovertext with a rect plus a pointer path, but
+         hovermode "x unified" (the price, portfolio and fundamentals charts)
+         is drawn by Plotly's legend module instead — g.legend with rect.bg —
+         so it took neither radius nor shadow while only .hovertext was
+         listed. NOTE: never write a left angle bracket
          anywhere inside this style block, not even in a comment — DOMPurify
          silently drops the WHOLE block when its text contains one. */
-      .js-plotly-plot .hoverlayer .hovertext > rect {
+      .js-plotly-plot .hoverlayer .hovertext > rect,
+      .js-plotly-plot .hoverlayer g.legend rect.bg {
         rx: var(--ag-radius-md); ry: var(--ag-radius-md);
       }
       .js-plotly-plot .hoverlayer .hovertext > rect,
-      .js-plotly-plot .hoverlayer .hovertext > path {
+      .js-plotly-plot .hoverlayer .hovertext > path,
+      .js-plotly-plot .hoverlayer g.legend rect.bg {
         filter: drop-shadow(var(--ag-shadow-hover));
       }
       /* Left-menu rows per the design: 6px radius, 13px/500 labels in muted

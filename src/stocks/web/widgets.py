@@ -123,6 +123,8 @@ from stocks.web.ds import (  # noqa: F401 — facade re-export
     calendar_css,
     chart_layout,
     ds_vars_css,
+    hover_delta,
+    hover_dim,
     hover_wrap,
     is_mobile,
     metric_cells,

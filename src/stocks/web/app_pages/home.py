@@ -971,6 +971,11 @@ if _spark_slot is not None:
             ]
             if len(win) < 2:
                 win = _hist  # book younger than the window — show the full span
+            # Axis ticks pinned to the data extremes so the window's high (and
+            # low) carry a label, instead of plotly's round auto-ticks.
+            _lo = float(min(win["value"].min(), win["injected"].min()))
+            _hi = float(max(win["value"].max(), win["injected"].max()))
+            _ticks = [_lo, _hi] if _hi > _lo else [_hi]
             _custom = [
                 [inj, _pl_span(val - inj, p), _spark_date(ts)]
                 for ts, val, inj, p in zip(
@@ -1055,8 +1060,9 @@ if _spark_slot is not None:
                     fixedrange=True, automargin=True,
                 ),
                 yaxis=dict(
-                    nticks=3, tickfont=dict(size=10), tickprefix=REPORT_SYM,
-                    tickformat="~s", showgrid=False, fixedrange=True,
+                    tickmode="array", tickvals=_ticks,
+                    tickfont=dict(size=10), tickprefix=REPORT_SYM,
+                    tickformat=".3~s", showgrid=False, fixedrange=True,
                     automargin=True,
                 ),
                 hoverlabel=HOVERLABEL,

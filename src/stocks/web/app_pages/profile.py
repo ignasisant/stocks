@@ -33,6 +33,7 @@ from stocks.web import (
 )
 from stocks.web.i18n import t as tr
 from stocks.web.markup import esc
+from stocks.web.widgets import ticker_cell
 
 # Account identity, prefs and the watchlist editor are all per-account.
 auth.require_login()
@@ -130,10 +131,18 @@ _CSS = """
 .ag-ticks { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 24px; }
 .ag-tick {
   border: 1px solid var(--ag-border); border-radius: var(--ag-radius-pill);
-  background: var(--ag-surface-page); padding: 4px 11px;
+  background: var(--ag-surface-page); padding: 3px 11px;
   font-family: "Martian Mono", monospace; font-size: var(--ag-fs-xs);
   font-weight: 500; color: var(--ag-text-primary);
+  display: inline-flex; align-items: center;
 }
+/* The chip wraps a ticker_cell, whose logo is sized for a table row: shrink
+   it to the pill and drop the baseline nudge that centring makes wrong. */
+.ag-tick img {
+  height: 16px; width: 16px; margin-right: 6px; vertical-align: 0;
+}
+.ag-tick span { display: none; }  /* the no-logo spacer, not needed in a pill */
+.ag-tick b { font-weight: 500; }
 [class*="st-key-pcard_sugg"] .stButton { padding: 0 24px; }
 [class*="st-key-prow_watchsave"] { gap: 10px; }
 /* ------------------------------------------------ notifications: the rail */
@@ -928,8 +937,11 @@ with tab_watch:
                 tr("profile.focus_suggest_title"), tr("profile.focus_suggest_help")
             )
             + '<div class="ag-ticks">'
+            # A symbol carries its logo and opens the company, chip or not:
+            # the offer is worth reading before it is accepted.
             + "".join(
-                f'<span class="ag-tick">{esc(e["ticker"])}</span>' for e in _suggested
+                f'<span class="ag-tick">{ticker_cell(e["ticker"], name=False)}</span>'
+                for e in _suggested
             )
             + "</div>"
         )
