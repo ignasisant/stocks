@@ -127,12 +127,70 @@ def test_drain_unknown_chat_gets_link_hint(local, users, sent):
     assert chat_id == 999 and "isn't linked" in text
 
 
-def test_drain_ignores_groups_and_non_text(local, users, sent):
+def test_drain_ignores_groups_and_contentless_updates(local, users, sent):
     _queue(local, _update(12, 111, "hey", chat_type="group"),
            {"update_id": 13, "message": {"chat": {"id": 111}}})
     status = bot.drain()
     assert status[bot.queue_key(12)] == "ignored: group chat"
     assert status[bot.queue_key(13)] == "ignored: no text"
+    assert sent == []
+
+
+def _media(uid: int, chat_id: int, kind: str, chat_type: str = "private") -> dict:
+    """An update carrying something other than text — a voice note, a photo."""
+    return {
+        "update_id": uid,
+        "message": {
+            "chat": {"id": chat_id, "type": chat_type, "username": "jane"},
+            "from": {"language_code": "en"},
+            kind: {"file_id": "AwACAgQAAx", "duration": 4},
+        },
+    }
+
+
+def test_a_voice_note_is_answered_instead_of_swallowed(local, users, sent):
+    """The silence this replaces: no text meant no answer and a deleted
+    update, so a voice note left the sender waiting on nothing."""
+    _queue(local, _media(30, 111, "voice"))
+    status = bot.drain()
+    assert status[bot.queue_key(30)] == "text only: voice"
+    text, chat_id = sent[0]
+    assert chat_id == 111
+    # The linked account's own language, like every other reply it gets.
+    assert "solo leo mensajes de texto" in text
+
+
+def test_the_same_goes_for_a_photo_or_a_file(local, users, sent):
+    _queue(local, _media(31, 111, "photo"), _media(32, 111, "document"))
+    status = bot.drain()
+    assert status[bot.queue_key(31)] == "text only: photo"
+    assert status[bot.queue_key(32)] == "text only: document"
+    assert len(sent) == 2
+
+
+def test_an_unlinked_sender_hears_about_the_medium_not_the_link(
+        local, users, sent):
+    """What is wrong with the message is that nothing can read it, and that
+    is true before any account is linked."""
+    _queue(local, _media(33, 999, "voice"))
+    status = bot.drain()
+    assert status[bot.queue_key(33)] == "text only: voice"
+    text, _ = sent[0]
+    assert "only read text" in text
+    assert "linked" not in text
+
+
+def test_a_voice_note_in_a_group_stays_silent(local, users, sent):
+    _queue(local, _media(34, 111, "voice", chat_type="group"))
+    status = bot.drain()
+    assert status[bot.queue_key(34)] == "ignored: group chat"
+    assert sent == []
+
+
+def test_an_update_with_no_message_at_all_answers_nobody(local, users, sent):
+    _queue(local, {"update_id": 35, "edited_message": {"text": "typo fixed"}})
+    status = bot.drain()
+    assert status[bot.queue_key(35)] == "ignored: no chat"
     assert sent == []
 
 

@@ -34,6 +34,16 @@ from stocks.notify import fanout, telegram
 QUEUE_PREFIX = "data/tg_updates/"
 LINK_TTL = 600  # seconds a pending link code stays valid — matches profile.py
 
+# Message parts that mean "the sender meant to say something we cannot read".
+# A voice note used to be dropped in silence: no text, so no answer, and the
+# queue object deleted like any handled update — nothing to retry and nothing
+# to explain it. These get told so. Deliberately *not* every textless update:
+# a pin, a join or an edited-message event is not somebody waiting for a
+# reply, and answering those would be noise in a chat the bot shares with its
+# own digests.
+_UNREADABLE = ("voice", "audio", "video_note", "video", "photo", "document",
+               "sticker", "animation")
+
 
 def queue_key(update_id: int) -> str:
     """Zero-padded so lexicographic key order == chronological order."""
@@ -153,8 +163,8 @@ def handle_update(update: dict, users: list[fanout.NotifyUser],
     chat = msg.get("chat") or {}
     chat_id = chat.get("id")
     text = (msg.get("text") or "").strip()
-    if not chat_id or not text:
-        return "ignored: no text"
+    if not chat_id:
+        return "ignored: no chat"
     if chat.get("type", "private") != "private":
         return "ignored: group chat"
 
@@ -163,6 +173,17 @@ def handle_update(update: dict, users: list[fanout.NotifyUser],
     # language for pre-link replies.
     lang = user.lang if user else (
         (msg.get("from") or {}).get("language_code") or "en")
+
+    if not text:
+        # Said before the link check on purpose: what is wrong with the
+        # message is that nothing here can read it, which is true whoever
+        # sent it, and an unlinked sender being told to link an account it
+        # cannot read the answer of is the wrong first sentence.
+        medium = next((k for k in _UNREADABLE if msg.get(k)), None)
+        if medium is None:
+            return "ignored: no text"
+        _send(translate("notify.chat_text_only", lang), chat_id, dry_run)
+        return f"text only: {medium}"
 
     if text.startswith("/start"):
         parts = text.split(maxsplit=1)

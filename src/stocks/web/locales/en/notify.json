@@ -31,6 +31,7 @@
   "notify.chat_help": "Ask me anything about your portfolio or the markets — same assistant as the app's chat panel, same conversation thread. Replies can take a minute. Commands: /clear resets the conversation, /help shows this.",
   "notify.chat_cleared": "🧹 Conversation cleared — same thread as the app, so it's cleared there too.",
   "notify.chat_error": "Something went wrong answering that — please try again in a moment.",
+  "notify.chat_text_only": "I can only read text messages for now — I can't listen to a voice note or open a photo or file here. Type the question and I'll answer it.",
   "notify.weekly_title": "TopStocks — week in review",
   "notify.month": "Month",
   "notify.ytd": "YTD",

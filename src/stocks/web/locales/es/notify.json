@@ -31,6 +31,7 @@
   "notify.chat_help": "Pregúntame lo que quieras sobre tu cartera o los mercados — el mismo asistente que el panel de chat de la app, el mismo hilo de conversación. Las respuestas pueden tardar un minuto. Comandos: /clear reinicia la conversación, /help muestra esto.",
   "notify.chat_cleared": "🧹 Conversación borrada — es el mismo hilo que en la app, así que allí también.",
   "notify.chat_error": "Algo ha fallado al responder — inténtalo de nuevo en un momento.",
+  "notify.chat_text_only": "De momento solo leo mensajes de texto — aquí no puedo escuchar una nota de voz ni abrir una foto o un archivo. Escribe la pregunta y te respondo.",
   "notify.weekly_title": "TopStocks — la semana en revisión",
   "notify.month": "Mes",
   "notify.ytd": "Año",
