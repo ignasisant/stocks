@@ -1,0 +1,13 @@
+{
+  "validate.bad_date": "fecha ilegible {date}",
+  "validate.future_date": "la fecha {date} está en el futuro",
+  "validate.ancient_date": "la fecha {date} es anterior a cualquier histórico de mercado plausible",
+  "validate.missing_ticker": "falta el ticker",
+  "validate.malformed_ticker": "ticker mal formado {ticker}",
+  "validate.unknown_ticker": "{ticker} no aparece en {sources} — ¿código de bróker europeo o OTC? mapéalo a un símbolo de Yahoo bajo `aliases:` en watchlist.yaml o los precios no resolverán",
+  "validate.zero_price_sell": "vendido a 0 — ¿baja por quiebra o exclusión de cotización? esto realiza la pérdida completa de la posición",
+  "validate.duplicate": "fila idéntica ya en el libro — reimportar un extracto solapado duplica la posición",
+  "validate.near_duplicate": "una {action} de {quantity} {ticker} el {date} ya está en el libro a otro precio — ¿la misma operación leída dos veces?",
+  "validate.oversell": "venta de {quantity} sobre {held} en cartera el {date} — ¿faltan compras anteriores o un split?",
+  "validate.split_added": "split {ratio}:1 del {date}, de las operaciones societarias de Yahoo — el extracto no lo trae, y sin él las ventas posteriores no cuadran"
+}

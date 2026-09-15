@@ -304,6 +304,11 @@ RELEASES: tuple[Release, ...] = (
         items=(
             News(slug="tips", icon="info", step="pulse"),
             News(slug="voice", icon="mic", step="assistant"),
+            News(slug="stop", icon="stop_circle", step="assistant"),
+            News(slug="splits", icon="call_split", step="import"),
+            News(slug="divest", icon="savings", step="income"),
+            News(slug="tickerlinks", icon="link", step="market"),
+            News(slug="ibkr", icon="photo_camera", step="import"),
         ),
     ),
 )

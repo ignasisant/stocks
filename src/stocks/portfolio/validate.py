@@ -71,12 +71,64 @@ _QUANTIFIED = ("buy", "sell")
 # lookup(ticker) -> True (exists), False (doesn't), None (couldn't check)
 Lookup = Callable[[str], bool | None]
 
+# splits(ticker) -> [(YYYY-MM-DD, ratio), …] forward splits Yahoo knows about,
+# [] when it knows none and when it can't be asked (see data.fetch.splits).
+SplitLookup = Callable[[str], list[tuple[str, float]]]
+
+
+# Issue text in English, keyed the way the web catalogs key it. The CLI
+# prints `Issue.message` (this table); the web app translates `key`/`params`
+# through locales/<lang>/validate.json, whose keys mirror this dict exactly —
+# tests/test_i18n_parity.py fails if the two drift apart.
+#
+# Numbers arrive pre-formatted: a catalog string carrying a `{q:.4f}` spec
+# would have to repeat that spec in every language to stay in step.
+ISSUE_TEXT = {
+    "validate.bad_date": "unparseable date {date}",
+    "validate.future_date": "date {date} is in the future",
+    "validate.ancient_date": "date {date} predates plausible trading history",
+    "validate.missing_ticker": "missing ticker",
+    "validate.malformed_ticker": "malformed ticker {ticker}",
+    "validate.unknown_ticker": (
+        "{ticker} not in {sources} — EU or OTC broker code? map it to a Yahoo "
+        "symbol under `aliases:` in watchlist.yaml or prices won't resolve"
+    ),
+    "validate.zero_price_sell": (
+        "sold at 0 — worthless disposal/delisting? this realizes the full "
+        "loss of the position"
+    ),
+    "validate.duplicate": (
+        "identical row already in ledger — re-importing an overlapping export "
+        "doubles the position"
+    ),
+    "validate.near_duplicate": (
+        "a {action} of {quantity} {ticker} on {date} is already in the ledger "
+        "at a different price — the same trade read twice?"
+    ),
+    "validate.oversell": (
+        "sell of {quantity} exceeds {held} held on {date} — missing earlier "
+        "buys or a split?"
+    ),
+    "validate.split_added": (
+        "{ratio}:1 split on {date}, from Yahoo's corporate actions — the "
+        "statement doesn't carry it, and the sells after it don't add up "
+        "without it"
+    ),
+}
+
 
 @dataclass
 class Issue:
     severity: str  # "error" | "warning"
     field: str
-    message: str
+    key: str  # catalog key, e.g. "validate.oversell"
+    params: dict = field(default_factory=dict)
+
+    @property
+    def message(self) -> str:
+        """English rendering — what the CLI prints and what tests read. The
+        web app renders the same issue through its own catalog instead."""
+        return ISSUE_TEXT.get(self.key, self.key).format(**self.params)
 
 
 @dataclass
@@ -168,12 +220,20 @@ def validate(
     *,
     known: set[str] | None = None,
     lookup: Lookup | None = None,
+    splits: SplitLookup | None = None,
     today: date | None = None,
 ) -> Validation:
     """Check a parsed batch against itself and the existing ledger.
 
     Mutates `result.skipped` only by resolving split rows into transactions
     (they move from skipped to checked). `prior` is the current ledger.
+
+    `splits` is consulted only when a sell overshoots the position: most
+    statements print trades and nothing else, so a share count that grew 20x
+    on one day in 2022 is a corporate action the file never mentions, not a
+    missing buy. Asked for the ticker that actually overshot, the split it
+    names joins the batch as a row of its own — the ledger needs it too, or
+    positions.py replays the same shortfall after the commit.
     """
     known = known_tickers() if known is None else known
     today = today or date.today()
@@ -187,16 +247,10 @@ def validate(
         _check_date(c, today)
         _check_ticker(c, known, lookup)
         if c.tx.action == "sell" and c.tx.price == 0:
-            c.issues.append(
-                Issue(
-                    "warning",
-                    "price",
-                    "sold at 0 — worthless disposal/delisting? this realizes "
-                    "the full loss of the position",
-                )
-            )
+            c.issues.append(Issue("warning", "price", "validate.zero_price_sell"))
         _check_duplicate(c, seen, similar)
-    _check_oversells(checked, prior)
+    _rescue_fills(checked, prior)
+    _check_oversells(checked, prior, splits)
     return Validation(checked=checked)
 
 
@@ -271,23 +325,27 @@ def _check_date(c: Checked, today: date) -> None:
     try:
         parsed = date.fromisoformat(d)
     except ValueError:
-        c.issues.append(Issue("error", "date", f"unparseable date {c.tx.date!r}"))
+        c.issues.append(
+            Issue("error", "date", "validate.bad_date", {"date": repr(c.tx.date)})
+        )
         return
     if parsed > today:
-        c.issues.append(Issue("error", "date", f"date {d} is in the future"))
+        c.issues.append(Issue("error", "date", "validate.future_date", {"date": d}))
     elif d < _MIN_DATE:
         c.issues.append(
-            Issue("error", "date", f"date {d} predates plausible trading history")
+            Issue("error", "date", "validate.ancient_date", {"date": d})
         )
 
 
 def _check_ticker(c: Checked, known: set[str], lookup: Lookup | None) -> None:
     t = c.tx.ticker
     if not t:
-        c.issues.append(Issue("error", "ticker", "missing ticker"))
+        c.issues.append(Issue("error", "ticker", "validate.missing_ticker"))
         return
     if not _TICKER_RE.match(t):
-        c.issues.append(Issue("error", "ticker", f"malformed ticker {t!r}"))
+        c.issues.append(
+            Issue("error", "ticker", "validate.malformed_ticker", {"ticker": repr(t)})
+        )
         return
     if t in known:
         return
@@ -295,14 +353,15 @@ def _check_ticker(c: Checked, known: set[str], lookup: Lookup | None) -> None:
     if found:
         known.add(t)  # don't re-look-up the same symbol within a batch
         return
+    sources = "EDGAR/watchlist/aliases" + (
+        "/yfinance" if lookup and found is False else ""
+    )
     c.issues.append(
         Issue(
             "warning",
             "ticker",
-            f"{t} not in EDGAR/watchlist/aliases"
-            + ("/yfinance" if lookup and found is False else "")
-            + " — EU or OTC broker code? map it to a Yahoo symbol under "
-            "`aliases:` in watchlist.yaml or prices won't resolve",
+            "validate.unknown_ticker",
+            {"ticker": t, "sources": sources},
         )
     )
 
@@ -318,22 +377,19 @@ def _check_duplicate(c: Checked, seen: set, similar: set) -> None:
     """
     key = _dupe_key(c.tx)
     if key in seen:
-        c.issues.append(
-            Issue(
-                "warning",
-                DUPLICATE,
-                "identical row already in ledger — re-importing an "
-                "overlapping export doubles the position",
-            )
-        )
+        c.issues.append(Issue("warning", DUPLICATE, "validate.duplicate"))
     elif _quantified(c.tx) and _loose_key(c.tx) in similar:
         c.issues.append(
             Issue(
                 "warning",
                 NEAR_DUPLICATE,
-                f"a {c.tx.action} of {c.tx.quantity:g} {c.tx.ticker} on "
-                f"{c.tx.date} is already in the ledger at a different price "
-                "— the same trade read twice?",
+                "validate.near_duplicate",
+                {
+                    "action": c.tx.action,
+                    "quantity": f"{c.tx.quantity:g}",
+                    "ticker": c.tx.ticker,
+                    "date": c.tx.date,
+                },
             )
         )
     seen.add(key)
@@ -341,10 +397,87 @@ def _check_duplicate(c: Checked, seen: set, similar: set) -> None:
         similar.add(_loose_key(c.tx))
 
 
+def _rescue_fills(checked: list[Checked], prior: list[Transaction]) -> None:
+    """Hand back a row dropped as a duplicate that the book cannot do without.
+
+    One order filled in parts on a single day — two 1-share buys a minute
+    apart at 248.6450 and 248.4450 — is indistinguishable from a page read
+    twice at a mis-mapped price, so the duplicate check flags the second fill
+    and `fresh` would drop it. Arithmetic is the arbiter: replay what is
+    actually about to be committed, and any flagged row whose ticker comes up
+    short was a real fill, so its duplicate warning is withdrawn. A genuine
+    repeat is never restored by this — dropping it leaves the book closing
+    exactly as it did before.
+
+    Without this the shortfall is silent: the row vanishes at commit time and
+    the ledger only fails later, when positions.py replays the sale it can no
+    longer cover.
+    """
+    spare = [c for c in checked if not c.errors and c.duplicate]
+    # Near-duplicates first: a row that matched on everything *but* its price
+    # is the likelier of the two tiers to be a separate fill.
+    spare.sort(key=lambda c: 0 if _near_duplicate(c) else 1)
+    while spare:
+        short = _replay(checked, prior)
+        if not short:
+            return
+        tickers = {c.tx.ticker for c, _ in short}
+        fill = next((c for c in spare if c.tx.ticker in tickers), None)
+        if fill is None:
+            return  # the shortfall is elsewhere — a real oversell
+        spare.remove(fill)
+        fill.issues = [i for i in fill.issues if i.field not in _DUPE_FIELDS]
+
+
+def _near_duplicate(c: Checked) -> bool:
+    return any(i.field == NEAR_DUPLICATE for i in c.issues)
+
+
 # ------------------------------------------------------------------ cross-row checks
-def _check_oversells(checked: list[Checked], prior: list[Transaction]) -> None:
-    """Replay quantities per ticker over prior + new rows in date order; a sell
-    exceeding the running position marks that row as an error."""
+def _check_oversells(
+    checked: list[Checked],
+    prior: list[Transaction],
+    splits: SplitLookup | None = None,
+) -> None:
+    """Mark every sell that overshoots the position it is selling from.
+
+    Two replays when a shortfall turns up and a split lookup is available:
+    the first names the tickers whose arithmetic doesn't close, the second
+    checks it again with whatever corporate splits Yahoo knows about those
+    tickers added to the batch. A statement that prints trades only (a bank
+    PDF, most CSV exports) is the common case, and there the missing 20:1 is
+    the whole shortfall — see `_market_splits`.
+    """
+    short = _replay(checked, prior)
+    if short and splits is not None:
+        added = _market_splits(short, checked, prior, splits)
+        if added:
+            checked.extend(added)
+            short = _replay(checked, prior)
+    for c, q in short:
+        c.issues.append(
+            Issue(
+                "error",
+                "quantity",
+                "validate.oversell",
+                {
+                    "quantity": f"{c.tx.quantity:g}",
+                    "held": f"{q:.4f}",
+                    "date": c.tx.date,
+                },
+            )
+        )
+
+
+def _replay(
+    checked: list[Checked], prior: list[Transaction]
+) -> list[tuple[Checked, float]]:
+    """Replay quantities per ticker over prior + new rows in date order.
+
+    Returns (row, held) for every batch sell larger than the position at that
+    point — nothing is mutated, so the caller can replay again after adding
+    rows.
+    """
     events: list[tuple[str, int, Transaction, Checked | None]] = [
         (t.date, t.id or 0, t, None) for t in prior
     ]
@@ -353,26 +486,81 @@ def _check_oversells(checked: list[Checked], prior: list[Transaction]) -> None:
     events += [(c.tx.date, 10**9 + i, c.tx, c) for i, c in enumerate(checked)]
 
     held: dict[str, float] = defaultdict(float)
+    short: list[tuple[Checked, float]] = []
     for _, _, tx, c in sorted(events, key=lambda e: (e[0], e[1])):
-        if c and c.errors:  # quarantined rows won't be committed — don't count them
+        # Neither a quarantined row nor one dropped as a duplicate reaches the
+        # ledger, so neither may prop up a sale here (Validation.fresh).
+        if c and (c.errors or c.duplicate):
             continue
         q = held[tx.ticker]
         if tx.action == "buy":
             held[tx.ticker] = q + tx.quantity
         elif tx.action == "sell":
             if tx.quantity - q > 1e-6 and c is not None:
-                c.issues.append(
-                    Issue(
-                        "error",
-                        "quantity",
-                        f"sell of {tx.quantity:g} exceeds {q:.4f} held on "
-                        f"{tx.date} — missing earlier buys or a split?",
-                    )
-                )
+                short.append((c, q))
                 continue
             held[tx.ticker] = q - tx.quantity
         elif tx.action == "split" and tx.quantity > 0:
             held[tx.ticker] = q * tx.quantity
+    return short
+
+
+def _market_splits(
+    short: list[tuple[Checked, float]],
+    checked: list[Checked],
+    prior: list[Transaction],
+    splits: SplitLookup,
+) -> list[Checked]:
+    """Split rows the shortfall tickers need, from Yahoo's corporate actions.
+
+    Only splits dated inside the window the book already covers for that
+    ticker — from its first row (ledger or batch) to the sell that overshot —
+    are taken: a split that predates the first buy changed nothing the user
+    holds, and one after the last sell can't be what made it overshoot. Rows
+    the ledger or the batch already carries for that day are left alone, so
+    re-importing an overlapping export doesn't stack two 20:1s.
+
+    Reverse splits are skipped: they shrink a position, so they can never be
+    the reason a sell came up short.
+    """
+    have = {(t.date, t.ticker) for t in prior if t.action == "split"}
+    have |= {(c.tx.date, c.tx.ticker) for c in checked if c.tx.action == "split"}
+    rows: list[Checked] = []
+    for ticker in sorted({c.tx.ticker for c, _ in short}):
+        mine = [t for t in prior if t.ticker == ticker]
+        mine += [c.tx for c in checked if c.tx.ticker == ticker]
+        first = min(t.date for t in mine)
+        last = max(c.tx.date for c, _ in short if c.tx.ticker == ticker)
+        try:
+            events = splits(ticker) or []
+        except Exception:  # a lookup that can't answer leaves the error standing
+            continue
+        currency = next((t.currency for t in mine if t.currency), "USD")
+        for raw_day, raw_ratio in events:
+            day, ratio = _iso_date(str(raw_day)), float(raw_ratio)
+            if ratio <= 1 or not (first <= day <= last) or (day, ticker) in have:
+                continue
+            rows.append(
+                Checked(
+                    tx=Transaction(
+                        date=day,
+                        ticker=ticker,
+                        action="split",
+                        quantity=ratio,
+                        currency=currency,
+                        note=f"{ratio:g}:1 split (Yahoo corporate action)",
+                    ),
+                    issues=[
+                        Issue(
+                            "warning",
+                            "split",
+                            "validate.split_added",
+                            {"ratio": f"{ratio:g}", "date": day},
+                        )
+                    ],
+                )
+            )
+    return rows
 
 
 def _dupe_key(t: Transaction) -> tuple:

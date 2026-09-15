@@ -28,10 +28,11 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from stocks.data import fetch
 from stocks.portfolio import demo, last_import, platforms
 from stocks.portfolio.ledger import add_many, all_transactions, clear, delete_many
 from stocks.portfolio.validate import known_tickers, validate
-from stocks.web import auth, skeletons
+from stocks.web import auth, skeletons, tx_text
 from stocks.web.i18n import t as tr
 from stocks.web.widgets import (
     brand_logo,
@@ -83,9 +84,12 @@ if demo_rows:
 
 
 def _tx_frame(txs) -> pd.DataFrame:
+    # Display only — the rows committed below come from `validation`, so the
+    # translated verb never reaches the ledger.
     return pd.DataFrame(
         {
-            "date": t.date, "ticker": t.ticker, "action": t.action,
+            "date": t.date, "ticker": t.ticker,
+            "action": tx_text.action_label(t.action),
             "quantity": t.quantity, "price": t.price, "fee": t.fee,
             "currency": t.currency, "note": t.note,
         }
@@ -96,6 +100,8 @@ def _tx_frame(txs) -> pd.DataFrame:
 # Shared Positions-style table look for the previews.
 _TX_FMT = {"quantity": "{:,.4f}", "price": "{:,.2f}", "fee": "{:,.2f}"}
 _TX_LEFT = ("date", "action", "currency", "note")
+_TX_COLS = ("date", "ticker", "action", "quantity", "price", "fee",
+            "currency", "note", "warnings", "errors")
 
 
 def _tx_table(frame: pd.DataFrame, *, rich: bool = True) -> None:
@@ -106,12 +112,18 @@ def _tx_table(frame: pd.DataFrame, *, rich: bool = True) -> None:
     # dim line); rejected rows have no symbol to hang a dense row off, so they
     # stack as label/value cards instead.
     if not rich and is_mobile():
-        st.html(stacked_table_html(frame, title="ticker", fmt=_TX_FMT))
+        st.html(
+            stacked_table_html(
+                frame, title="ticker", fmt=_TX_FMT,
+                labels=tx_text.labels(*_TX_COLS),
+            )
+        )
         return
     st.html(
         ticker_table_html(
             frame,
             fmt=_TX_FMT,
+            labels=tx_text.labels(*_TX_COLS),
             ticker_col="ticker" if rich else None,
             left_cols=_TX_LEFT + ("warnings", "errors"),
             mobile={
@@ -295,6 +307,10 @@ validation = validate(
     [] if wipe else demo.without(ledger),
     known=known_tickers(paths.watchlist, paths.db),
     lookup=_ticker_exists,
+    # Only consulted for a ticker whose sells overshoot: a statement that
+    # prints trades and no corporate actions is missing the split, not the
+    # buys (stocks.portfolio.validate._market_splits).
+    splits=fetch.splits,
 )
 
 importable = validation.importable
@@ -310,9 +326,10 @@ if validation.flagged:
     _tx_table(
         pd.DataFrame(
             {
-                "date": c.tx.date, "ticker": c.tx.ticker, "action": c.tx.action,
+                "date": c.tx.date, "ticker": c.tx.ticker,
+                "action": tx_text.action_label(c.tx.action),
                 "quantity": c.tx.quantity, "price": c.tx.price,
-                "warnings": "; ".join(i.message for i in c.warnings),
+                "warnings": tx_text.issues_text(c.warnings),
             }
             for c in validation.flagged
         )
@@ -323,9 +340,10 @@ if validation.rejected:
     _tx_table(
         pd.DataFrame(
             {
-                "date": c.tx.date, "ticker": c.tx.ticker, "action": c.tx.action,
+                "date": c.tx.date, "ticker": c.tx.ticker,
+                "action": tx_text.action_label(c.tx.action),
                 "quantity": c.tx.quantity, "price": c.tx.price,
-                "errors": "; ".join(i.message for i in c.errors),
+                "errors": tx_text.issues_text(c.errors),
             }
             for c in validation.rejected
         ),
@@ -335,7 +353,11 @@ if validation.rejected:
 
 if result.skipped:
     with st.expander(tr("import.skipped_rows", n=len(result.skipped))):
-        data_table(pd.DataFrame(result.skipped), hide_index=True)
+        data_table(
+            pd.DataFrame(result.skipped),
+            labels=tx_text.labels("row", "type", "reason"),
+            hide_index=True,
+        )
         if platform.key == "revolut":
             st.caption(tr("import.skipped_caption_revolut"))
         else:
