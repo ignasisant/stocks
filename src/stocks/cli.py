@@ -647,7 +647,11 @@ def _tx_revolut(path: Path, *, commit: bool) -> None:
     else:
         result = revolut.parse_csv(path.read_text(encoding="utf-8-sig"))
 
-    v = validate(result, all_transactions(), known=known_tickers())
+    from stocks.data import fetch
+
+    v = validate(
+        result, all_transactions(), known=known_tickers(), splits=fetch.splits
+    )
     print(f"{path.name}: {v.summary}, {len(result.skipped)} skipped by design")
     for c in v.rejected:
         why = "; ".join(i.message for i in c.errors)

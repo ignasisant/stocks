@@ -30,11 +30,15 @@ def replying(answers, calls=None):
     return ask
 
 
-def test_a_bare_symbol_needs_no_call():
+def test_a_symbol_shaped_label_is_still_asked_about():
+    """"AIRBUS" is six characters of a name column and "GOOGL" is a ticker;
+    nothing in the strings tells them apart, so both are asked about."""
     calls = []
-    out = instruments.resolve(["AAPL", "BRK-B"], None, ask=replying({}, calls))
-    assert out == {"AAPL": "AAPL", "BRK-B": "BRK-B"}
-    assert calls == []  # nothing to ask about
+    out = instruments.resolve(
+        ["AAPL", "AIRBUS"], None,
+        ask=replying({"AAPL": "AAPL", "AIRBUS": "AIR.PA"}, calls))
+    assert out == {"AAPL": "AAPL", "AIRBUS": "AIR.PA"}
+    assert calls == [["AAPL", "AIRBUS"]]  # one call, both labels
 
 
 def test_us_venue_codes_are_stripped_locally():
@@ -53,6 +57,38 @@ def test_a_foreign_venue_code_goes_to_the_model():
         ["TEF:XMCE"], None, ask=replying({"TEF:XMCE": "TEF.MC"}, calls))
     assert out == {"TEF:XMCE": "TEF.MC"}
     assert calls == [["TEF:XMCE"]]
+
+
+def test_a_broker_suffix_is_not_taken_for_a_yahoo_one():
+    """XTB's PLTR.US and SHEL.UK look Yahoo-shaped and are not.
+
+    Yahoo has no .US at all, and that London line is SHEL.L. Accepted
+    verbatim they book a ticker that prices as nothing, so a dotted suffix is
+    always the model's to judge.
+    """
+    calls = []
+    labels = ["PLTR.US", "SHEL.UK"]
+    out = instruments.resolve(
+        labels, None, ask=replying({"PLTR.US": "PLTR", "SHEL.UK": "SHEL.L"},
+                                   calls))
+    assert out == {"PLTR.US": "PLTR", "SHEL.UK": "SHEL.L"}
+    assert calls == [labels]
+
+
+def test_a_yahoo_suffix_is_confirmed_rather_than_assumed():
+    """Already correct, but only the model knows that — and it is free to
+    confirm: unresolved labels travel in the one batch there already is."""
+    calls = []
+    out = instruments.resolve(
+        ["MC.PA"], None, ask=replying({"MC.PA": "MC.PA"}, calls))
+    assert out == {"MC.PA": "MC.PA"} and calls == [["MC.PA"]]
+
+
+def test_a_suffix_the_model_declines_stays_unresolved():
+    """A model that declines must not downgrade a symbol that was right:
+    None leaves llm_map's row holding the label the document wrote."""
+    out = instruments.resolve(["MC.PA"], None, ask=replying({}))
+    assert out == {"MC.PA": None}
 
 
 def test_names_isins_and_codes_are_resolved_by_the_model():
@@ -119,5 +155,7 @@ def test_more_labels_than_one_call_carries_are_left_unresolved(monkeypatch):
 
 
 def test_without_a_model_only_the_obvious_resolves():
-    out = instruments.resolve(["AAPL", "Tesla Inc."], None, ask=None)
-    assert out == {"AAPL": "AAPL"}
+    """Only the US venue form; everything else keeps the document's label."""
+    out = instruments.resolve(["ZBRA:xnas", "AAPL", "Tesla Inc."], None,
+                              ask=None)
+    assert out == {"ZBRA:xnas": "ZBRA"}

@@ -71,7 +71,7 @@ def test_an_unrecognised_file_falls_through_to_column_mapping():
     found = autodetect.detect("extracto.csv", UNKNOWN_CSV.encode(), provider)
 
     assert found.platform == autodetect.LLM_KEY
-    assert len(provider.calls) == 1
+    assert len(provider.calls) == 2  # columns mapped, then symbols resolved
     tx = found.result.transactions[0]
     assert (tx.date, tx.ticker, tx.action, tx.price) == (
         "2024-01-02", "AAPL", "buy", 180.5)
