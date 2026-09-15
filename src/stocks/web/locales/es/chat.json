@@ -164,5 +164,13 @@
   "chat.starter_summary": "Resume mi cartera en cinco líneas",
   "chat.starter_concentration": "¿Dónde estoy demasiado concentrado?",
   "chat.starter_earnings_week": "Qué presenta resultados esta semana",
-  "chat.web_chip": "Internet"
+  "chat.web_chip": "Internet",
+  "chat.stopped_badge": "has parado esta respuesta",
+  "chat.stopped_note": "Parado antes de empezar la respuesta.",
+  "chat.voice_badge": "nota de voz",
+  "chat.voice_empty": "Esa grabación es demasiado corta para entenderla — mantén el botón mientras hablas.",
+  "chat.voice_silent": "No se ha dicho nada en esa grabación. Inténtalo otra vez algo más cerca del micrófono.",
+  "chat.voice_too_long": "Una nota de voz puede durar hasta {seconds} segundos. Graba una más corta, o escribe la pregunta.",
+  "chat.voice_failed": "No se ha podido transcribir la nota de voz. Inténtalo otra vez, o escribe la pregunta.",
+  "chat.voice_unavailable": "Las notas de voz no están configuradas en este despliegue."
 }

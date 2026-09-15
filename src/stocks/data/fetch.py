@@ -5,6 +5,8 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from pathlib import Path
 
 import pandas as pd
@@ -13,6 +15,44 @@ from yfinance.exceptions import YFRateLimitError
 
 from stocks import obs
 from stocks.config import DATA_DIR, ticker_aliases
+from stocks.data import profiles
+
+# ---------------------------------------------------------------- the breaker
+# One verdict about Yahoo for the whole process, because there is only one
+# thing it can be angry at: this host's egress IP. Without it every caller
+# rediscovers the throttle on its own and pays the full `_retry` ladder to do
+# it — and yfinance itself charges three or four round trips for a rejected
+# request (it re-mints the cookie and crumb, flips its cookie strategy and
+# replays the call). A Home render is ~50 symbols; one throttled Yahoo used to
+# cost the page all of that, on every rerun.
+#
+# 300s is `data.symbols.COOLDOWN`, for the same reason it picked it: long
+# enough that the host stops making the throttle worse, short enough that a
+# transient one clears without anybody noticing.
+COOLDOWN_S = 300.0
+_blocked_until = 0.0
+_throttle_lock = threading.Lock()
+
+
+def throttle_remaining() -> float:
+    """Seconds left on the cooldown, 0.0 when Yahoo may be asked again."""
+    with _throttle_lock:
+        return max(0.0, _blocked_until - time.monotonic())
+
+
+def trip_throttle(cooldown: float = COOLDOWN_S) -> None:
+    """Declare this host throttled for `cooldown` seconds."""
+    global _blocked_until
+    with _throttle_lock:
+        _blocked_until = max(_blocked_until, time.monotonic() + cooldown)
+
+
+def clear_throttle() -> None:
+    """Forget the cooldown — for tests, and for anything that wants the next
+    read to actually go to Yahoo."""
+    global _blocked_until
+    with _throttle_lock:
+        _blocked_until = 0.0
 
 
 def _retry[T](fn: Callable[[], T], attempts: int = 3, base_delay: float = 1.5) -> T:
@@ -21,7 +61,16 @@ def _retry[T](fn: Callable[[], T], attempts: int = 3, base_delay: float = 1.5) -
     Hosted deploys hit Yahoo from datacenter IPs, so transient rate limits
     are routine; a short backoff usually clears them. The final attempt re-raises so
     callers (the app-level guard) can degrade gracefully.
+
+    Once that ladder has been climbed and lost, the cooldown opens and the next
+    call raises `YFRateLimitError` without touching the network at all. Callers
+    already handle that exception — it is what the "prices unavailable" cards
+    are made of — so a throttled window now costs a page one instant
+    degradation instead of one slow one per block.
     """
+    if throttle_remaining() > 0:
+        obs.event("yahoo.cooling_off", remaining_s=round(throttle_remaining(), 1))
+        raise YFRateLimitError()
     for i in range(attempts - 1):
         try:
             return fn()
@@ -34,8 +83,42 @@ def _retry[T](fn: Callable[[], T], attempts: int = 3, base_delay: float = 1.5) -
     try:
         return fn()
     except YFRateLimitError:
-        obs.warn("yahoo.rate_limit_exhausted", attempts=attempts)
+        trip_throttle()
+        obs.warn(
+            "yahoo.rate_limit_exhausted", attempts=attempts, cooldown_s=COOLDOWN_S
+        )
         raise
+
+
+# Wall clock for one bulk download. Fifty symbols over two years measures ~6s
+# warm, so this is ten times the honest cost: it is here to catch a hang, not
+# to hurry a slow day.
+BULK_BUDGET_S = 60.0
+
+# Concurrent requests inside one bulk download. yfinance's default is
+# `cpu_count() * 2`, which on the 1-vCPU Cloud Run service is two: a 34-name
+# watchlist became seventeen sequential round-trips, and with Yahoo timing
+# out at 10s each that alone overran the budget above. The work is network
+# wait, not CPU, so the host's core count is the wrong dial — fix it here.
+DOWNLOAD_THREADS = 8
+
+
+def _budgeted[T](fn: Callable[[], T], *, budget: float, **fields) -> T:
+    """Run `fn` on a worker and give up on it after `budget` seconds.
+
+    No `with` on the pool: `shutdown(wait=True)` would block on exactly the
+    hung call the timeout just escaped, which is how the budget gets defeated.
+    The abandoned thread finishes into nothing (yfinance bounds each request,
+    so it does terminate) — the same trade `chat.market.quotes` makes.
+    """
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        return pool.submit(fn).result(timeout=budget)
+    except FuturesTimeout:
+        obs.warn("yahoo.bulk_budget_spent", budget_s=budget, **fields)
+        raise YFRateLimitError() from None
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def resolve(ticker: str) -> str:
@@ -90,6 +173,10 @@ def info(ticker: str) -> dict:
             return hit[1]
     fetched = yf.Ticker(key).info
     blob = fetched if isinstance(fetched, dict) else {}
+    # The facts in it that never move (sector, country, currency, quoteType)
+    # go to the on-disk profile memo, so the allocation splits stop paying a
+    # quoteSummary per holding on every cold process (stocks.data.profiles).
+    profiles.remember(key, blob)
     with _info_lock:
         _info_memo[key] = (time.monotonic(), blob)
         # Bounded: a long-lived server would otherwise accumulate an entry per
@@ -100,6 +187,49 @@ def info(ticker: str) -> dict:
             for stale in [k for k, (at, _) in _info_memo.items() if at < cutoff]:
                 del _info_memo[stale]
     return blob
+
+
+# Corporate splits, memoized for the life of the process: a split that
+# happened is a fact that never changes, and the one caller (import
+# validation, when a sell overshoots its position) asks about one symbol at a
+# time. A throttled or unreachable Yahoo answers "no splits" rather than
+# raising — the caller's fallback is the plain oversell error it would have
+# shown anyway.
+_splits_memo: dict[str, list[tuple[str, float]]] = {}
+_splits_lock = threading.Lock()
+
+
+def splits(ticker: str) -> list[tuple[str, float]]:
+    """[(YYYY-MM-DD, ratio), …] for `ticker`, oldest first; [] when unknown.
+
+    Ratios are Yahoo's: 20.0 for a 20-for-1 forward split, 0.1 for a 1-for-10
+    reverse one.
+    """
+    key = resolve(ticker)
+    with _splits_lock:
+        hit = _splits_memo.get(key)
+    if hit is not None:
+        return hit
+    if throttle_remaining():
+        return []
+    try:
+        series = yf.Ticker(key).splits
+    except YFRateLimitError:
+        trip_throttle()
+        obs.warn("yahoo.splits_rate_limited", ticker=key)
+        return []
+    except Exception as exc:
+        obs.warn("yahoo.splits_failed", ticker=key, error=str(exc))
+        return []
+    events = [
+        (str(pd.Timestamp(when).date()), float(ratio))
+        for when, ratio in getattr(series, "items", lambda: [])()
+        if ratio and float(ratio) > 0
+    ]
+    events.sort()
+    with _splits_lock:
+        _splits_memo[key] = events
+    return events
 
 
 def fetch_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
@@ -116,6 +246,7 @@ def fetch_many(
     period: str = "1y",
     interval: str = "1d",
     auto_adjust: bool = True,
+    budget: float = BULK_BUDGET_S,
 ) -> dict[str, pd.DataFrame]:
     """OHLCV history for many tickers in ONE bulk request (yf.download).
 
@@ -124,21 +255,36 @@ def fetch_many(
     the shared bulk path for the updater, portfolio analytics and the
     dashboard picker. auto_adjust=False keeps dividend-unadjusted bars —
     needed when comparing against as-traded ledger prices (portfolio.fees).
+
+    `budget` is the wall clock the whole download gets. yfinance bounds each
+    *request* (10s) but not the set, and a page asks for ~50 symbols: a Yahoo
+    that times out every one of them turned a Home render into a nineteen-
+    minute one. Over budget raises `YFRateLimitError`, which every caller
+    already degrades on — but it does NOT open the cooldown, because slow is
+    not the same claim as refused, and the next rerun should try again.
     """
     if not tickers:
         return {}
     symbol_of = {t: resolve(t) for t in tickers}
     symbols = list(dict.fromkeys(symbol_of.values()))
-    data = _retry(
-        lambda: yf.download(
-            symbols,
-            period=period,
-            interval=interval,
-            group_by="ticker",
-            auto_adjust=auto_adjust,
-            progress=False,
-            threads=True,
-        )
+    # The budget is OUTSIDE the retry ladder, not inside it: wrapped the other
+    # way each of the three attempts would get its own 60s and a hung Yahoo
+    # would cost three minutes plus the backoff — the budget has to bound the
+    # whole thing, sleeps included.
+    data = _budgeted(
+        lambda: _retry(
+            lambda: yf.download(
+                symbols,
+                period=period,
+                interval=interval,
+                group_by="ticker",
+                auto_adjust=auto_adjust,
+                progress=False,
+                threads=min(DOWNLOAD_THREADS, len(symbols)),
+            )
+        ),
+        budget=budget,
+        symbols=len(symbols),
     )
     out: dict[str, pd.DataFrame] = {}
     for t in tickers:

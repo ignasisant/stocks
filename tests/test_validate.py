@@ -106,6 +106,51 @@ def test_a_batch_repeating_itself_flags_its_own_repeat():
     assert len(v.duplicates) == 1
 
 
+def test_partial_fills_of_one_order_survive_the_duplicate_check():
+    """Two 1-share fills a minute apart price the same order differently, so
+    the loose key calls the second a near-duplicate. Dropping it leaves the
+    later sale short, which is the proof it was a real fill."""
+    v = validate(
+        _result([
+            _buy(qty=1.0, price=248.645),
+            _buy(qty=1.0, price=248.445),
+            _sell(qty=2.0),
+        ]),
+        [],
+        known=KNOWN,
+        today=TODAY,
+    )
+    assert not v.duplicates
+    assert not v.rejected
+    assert len(v.fresh) == 3
+
+
+def test_a_true_repeat_is_still_dropped_when_the_book_closes_without_it():
+    """The rescue is arithmetic, not amnesty: a repeat the sale does not need
+    stays a duplicate."""
+    v = validate(
+        _result([_buy(qty=1.0, price=248.645), _buy(qty=1.0, price=248.445)]),
+        [],
+        known=KNOWN,
+        today=TODAY,
+    )
+    assert len(v.duplicates) == 1
+    assert len(v.fresh) == 1
+
+
+def test_oversell_survives_a_dropped_duplicate_that_cannot_cover_it():
+    """Restoring the duplicate still leaves the sale short, so the error stands."""
+    v = validate(
+        _result([_buy(qty=1.0, price=100.5), _buy(qty=1.0, price=100.0),
+                 _sell(qty=9.0)]),
+        [],
+        known=KNOWN,
+        today=TODAY,
+    )
+    assert len(v.rejected) == 1
+    assert "exceeds" in v.rejected[0].errors[0].message
+
+
 def test_two_same_day_dividends_are_not_duplicates():
     """No share count to key on, and a broker paying twice in a day is
     ordinary — only the exact check applies to these."""
@@ -170,3 +215,82 @@ def test_sell_after_derived_split_not_flagged_as_oversell():
     ]
     v = validate(_result(txs, skipped), [], known=KNOWN, today=TODAY)
     assert not v.rejected  # 6.2 held × 6 = 37.2 covers the 20-share sell
+
+
+# ---------------------------------------------------------------- market splits
+def _amzn_splits(ticker):
+    return [("1999-09-02", 2.0), ("2022-06-06", 20.0)]
+
+
+def test_oversell_rescued_by_a_market_split():
+    """The statement prints the pre-split buy and the post-split sell and no
+    corporate action between them — Yahoo's split is what closes the gap."""
+    batch = [
+        _buy(ticker="AMZN", day="2022-05-24", qty=1, price=2050),
+        _sell(ticker="AMZN", day="2024-12-31", qty=20, price=221),
+    ]
+    v = validate(
+        _result(batch), [], known={"AMZN"}, splits=_amzn_splits, today=TODAY
+    )
+    assert not v.rejected
+    added = [c for c in v.checked if c.tx.action == "split"]
+    assert len(added) == 1
+    assert (added[0].tx.date, added[0].tx.quantity) == ("2022-06-06", 20.0)
+    # It travels with the batch: the ledger needs it too, or positions.py
+    # replays the same shortfall after the commit.
+    assert added[0].tx in v.fresh
+    assert "2022-06-06" in added[0].warnings[0].message
+
+
+def test_split_outside_the_held_window_is_not_applied():
+    """A split that predates the first buy changed nothing the user holds."""
+    batch = [
+        _buy(ticker="AMZN", day="2023-01-03", qty=1, price=100),
+        _sell(ticker="AMZN", day="2023-06-01", qty=20, price=120),
+    ]
+    v = validate(
+        _result(batch), [], known={"AMZN"}, splits=_amzn_splits, today=TODAY
+    )
+    assert len(v.rejected) == 1
+    assert "exceeds" in v.rejected[0].errors[0].message
+    assert not [c for c in v.checked if c.tx.action == "split"]
+
+
+def test_split_already_in_the_ledger_is_not_added_twice():
+    prior = [
+        Transaction(date="2022-05-24", ticker="AMZN", action="buy",
+                    quantity=1, price=2050),
+        Transaction(date="2022-06-06", ticker="AMZN", action="split",
+                    quantity=20),
+    ]
+    v = validate(
+        _result([_sell(ticker="AMZN", day="2024-12-31", qty=20, price=221)]),
+        prior,
+        known={"AMZN"},
+        splits=_amzn_splits,
+        today=TODAY,
+    )
+    assert not v.rejected
+    assert not [c for c in v.checked if c.tx.action == "split"]
+
+
+def test_split_lookup_that_cannot_answer_leaves_the_error_standing():
+    def boom(ticker):
+        raise RuntimeError("yahoo said no")
+
+    v = validate(
+        _result([_sell(qty=5)]), [_buy(qty=1)], known=KNOWN, splits=boom,
+        today=TODAY,
+    )
+    assert len(v.rejected) == 1
+    assert "exceeds" in v.rejected[0].errors[0].message
+
+
+def test_issues_carry_a_catalog_key_and_its_parameters():
+    """The web app translates key/params; `message` is the English fallback."""
+    v = validate(
+        _result([_sell(qty=5)]), [_buy(qty=1)], known=KNOWN, today=TODAY
+    )
+    issue = v.rejected[0].errors[0]
+    assert issue.key == "validate.oversell"
+    assert issue.params["quantity"] == "5" and issue.params["held"] == "1.0000"

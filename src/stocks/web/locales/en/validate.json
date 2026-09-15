@@ -1,0 +1,13 @@
+{
+  "validate.bad_date": "unparseable date {date}",
+  "validate.future_date": "date {date} is in the future",
+  "validate.ancient_date": "date {date} predates plausible trading history",
+  "validate.missing_ticker": "missing ticker",
+  "validate.malformed_ticker": "malformed ticker {ticker}",
+  "validate.unknown_ticker": "{ticker} not in {sources} — EU or OTC broker code? map it to a Yahoo symbol under `aliases:` in watchlist.yaml or prices won't resolve",
+  "validate.zero_price_sell": "sold at 0 — worthless disposal/delisting? this realizes the full loss of the position",
+  "validate.duplicate": "identical row already in ledger — re-importing an overlapping export doubles the position",
+  "validate.near_duplicate": "a {action} of {quantity} {ticker} on {date} is already in the ledger at a different price — the same trade read twice?",
+  "validate.oversell": "sell of {quantity} exceeds {held} held on {date} — missing earlier buys or a split?",
+  "validate.split_added": "{ratio}:1 split on {date}, from Yahoo's corporate actions — the statement doesn't carry it, and the sells after it don't add up without it"
+}

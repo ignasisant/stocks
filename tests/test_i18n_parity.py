@@ -78,3 +78,16 @@ def test_keys_are_namespaced(name):
         k for k in _catalog(DEFAULT_LANG, name) if "." not in k or k.startswith(".")
     ]
     assert not stray, f"{name}: keys with no namespace prefix: {stray}"
+
+
+def test_validation_issue_keys_match_the_catalog():
+    """`validate.ISSUE_TEXT` is the English source for the issue catalog.
+
+    The CLI prints it and the web app translates the same keys, so a new issue
+    added in one place and not the other ships as a raw key on the page.
+    """
+    from stocks.portfolio.validate import ISSUE_TEXT
+
+    catalog = _catalog(DEFAULT_LANG, "validate.json")
+    assert set(catalog) == set(ISSUE_TEXT)
+    assert catalog == ISSUE_TEXT, "English catalog has drifted from ISSUE_TEXT"

@@ -3,27 +3,53 @@
 IBKR's activity statement (Performance & Reports → Statements → Activity →
 CSV) is not one table: it concatenates many sections, each row prefixed with
 its section name and a row kind (``Trades,Header,…`` / ``Trades,Data,…``).
-This parser is deliberately strict: it refuses the whole file unless it finds
-a ``Trades`` or ``Dividends`` header row with the exact columns IBKR emits,
-so a statement from another broker can never be half-imported by accident.
+Every section carries its own header row, so the columns only mean anything
+relative to the most recent ``Header`` line for that section.
+
+The statement is emitted in the account's own language. IBKR translates both
+the section names and the column names ("Trades" → "Operaciones", "Symbol" →
+"Símbolo") but not the row kinds (``Header``/``Data``/``Total``) nor
+``DataDiscriminator``, so the skeleton is stable and only the vocabulary
+moves. Sections and columns are therefore matched through alias tables,
+accent- and case-insensitively (see `_SECTIONS` and the per-section column
+aliases). The Spanish names for the sections this parser reads are taken from
+a real es-ES statement; other locales fall through to the English names.
+
+This parser stays strict about shape: it refuses the whole file unless some
+section it understands turns up with the columns IBKR emits, so a statement
+from another broker can never be half-imported by accident.
 
 What imports, and how:
 
-* ``Trades`` section, ``DataDiscriminator == Order``, asset category Stocks —
-  buys (positive quantity) and sells (negative). Per-share price is
+* ``Trades``/``Operaciones``, ``DataDiscriminator == Order``, asset category
+  Stocks — buys (positive quantity) and sells (negative). Per-share price is
   ``T. Price`` in the row's currency; ``Comm/Fee`` (always negative in the
   statement) becomes the fee — IBKR charges commission in the trade currency.
   ``SubTotal``/``Total``/``ClosedLot`` rows are derived lines, not events,
   and are dropped without comment.
 * Other asset categories (Forex, Options, CFDs…) are skipped with a reason —
   the ledger models stock/ETF positions only.
-* ``Dividends`` section — the ticker is parsed from the description prefix
-  ("AAPL(US03…) Cash Dividend…"); amount is the gross payment. Per-currency
-  ``Total`` summary rows are dropped.
-* ``Withholding Tax`` rows are listed as skipped with a pointer to set the
-  tax as the fee on the matching dividend row (the Spanish double-tax credit
-  convention) — pairing them automatically across sections is not reliable
-  when corrections restate an earlier payment.
+* ``Dividends``/``Dividendos`` — the ticker is parsed from the description
+  prefix ("AAPL(US03…) Cash Dividend…"); amount is the gross payment.
+  Per-currency ``Total`` summary rows are dropped.
+* ``Withholding Tax``/``Retención de impuestos`` rows are listed as skipped
+  with a pointer to set the tax as the fee on the matching dividend row (the
+  Spanish double-tax credit convention) — pairing them automatically across
+  sections is not reliable when corrections restate an earlier payment.
+* ``Open Positions``/``Posiciones abiertas`` — **only when the file holds no
+  movements at all**. A one-day statement, or any statement covering a period
+  with no activity, has no Trades section whatsoever; what it does carry is
+  the holding: ticker, quantity, average cost price, currency. Each holding
+  becomes one buy at that average cost, dated the statement's end date, noted
+  ``ibkr snapshot``. The cost basis is the broker's own and is exact; the
+  date is not — every lot lands on the same day, so FIFO tax lots and holding
+  periods derived from these rows are a placeholder until a statement with
+  real trades is imported over them. When the file *does* carry trades, the
+  positions section is ignored: importing both would double the book.
+* ``Change in Dividend Accruals``/``Modificación en los dividendos
+  devengados`` — an accrual, not a payment. Listed as skipped so the reader
+  sees it was read and deliberately left out; the cash dividend shows up in
+  the Dividends section on the statement that covers its pay date.
 
 Nothing here writes to the ledger; the Import page previews and commits.
 """
@@ -33,46 +59,181 @@ from __future__ import annotations
 import csv
 import io
 import re
+import unicodedata
+from dataclasses import dataclass, field
 
 from stocks.portfolio.ledger import Transaction
 from stocks.portfolio.statement import ParseResult, money, parse_date
 
-_TRADE_COLS = (
-    "DataDiscriminator", "Asset Category", "Currency", "Symbol",
-    "Date/Time", "Quantity", "T. Price",
-)
-_DIVIDEND_COLS = ("Currency", "Date", "Description", "Amount")
-
 # "AAPL(US0378331005) Cash Dividend USD 0.24 per Share" -> AAPL
 _DESC_TICKER = re.compile(r"^([A-Z0-9.\- ]+?)\s*\(")
+
+# Logical section -> the names IBKR prints for it, normalised by `_norm`.
+_SECTIONS: dict[str, tuple[str, ...]] = {
+    "statement": ("statement", "extracto"),
+    "trades": ("trades", "operaciones"),
+    "dividends": ("dividends", "dividendos"),
+    "withholding": ("withholding tax", "retencion de impuestos"),
+    "positions": ("open positions", "posiciones abiertas"),
+    "accruals": (
+        "change in dividend accruals",
+        "modificacion en los dividendos devengados",
+    ),
+}
+
+# Column aliases, per section: one section's "Cantidad" is a share count and
+# another's is a cash amount, so these can never share one table.
+_TRADE_ALIASES: dict[str, tuple[str, ...]] = {
+    "discriminator": ("datadiscriminator",),
+    "category": ("asset category", "categoria de activo"),
+    "currency": ("currency", "divisa"),
+    "symbol": ("symbol", "simbolo"),
+    "date": ("date/time", "fecha/hora"),
+    "quantity": ("quantity", "cantidad"),
+    "price": ("t price", "t precio", "precio t"),
+    "fee": ("comm/fee", "comm/fee in eur", "tarifa/com", "comision", "tarifa/comision"),
+    "proceeds": ("proceeds", "productos", "beneficios"),
+}
+_DIVIDEND_ALIASES: dict[str, tuple[str, ...]] = {
+    "currency": ("currency", "divisa"),
+    "date": ("date", "fecha"),
+    "description": ("description", "descripcion"),
+    "amount": ("amount", "cantidad", "importe"),
+}
+_POSITION_ALIASES: dict[str, tuple[str, ...]] = {
+    "discriminator": ("datadiscriminator",),
+    "category": ("asset category", "categoria de activo"),
+    "currency": ("currency", "divisa"),
+    "symbol": ("symbol", "simbolo"),
+    "quantity": ("quantity", "cantidad"),
+    "price": ("cost price", "precio de coste"),
+    "basis": ("cost basis", "base de coste"),
+}
+_ACCRUAL_ALIASES: dict[str, tuple[str, ...]] = {
+    "category": ("asset category", "categoria de activo"),
+    "currency": ("currency", "divisa"),
+    "symbol": ("symbol", "simbolo"),
+    "date": ("pay date", "fecha de pago", "date", "fecha"),
+    "quantity": ("quantity", "cantidad"),
+    "amount": ("gross amount", "cantidad bruta", "net amount", "cantidad neta"),
+}
+_ALIASES = {
+    "trades": _TRADE_ALIASES,
+    "dividends": _DIVIDEND_ALIASES,
+    "positions": _POSITION_ALIASES,
+    "accruals": _ACCRUAL_ALIASES,
+    "withholding": _DIVIDEND_ALIASES,
+}
+
+# What each section must name before the file counts as an IBKR statement.
+_REQUIRED = {
+    "trades": ("category", "symbol", "quantity", "price"),
+    "dividends": ("date", "description", "amount"),
+    "positions": ("symbol", "quantity"),
+}
+
+# Asset categories the ledger models. IBKR files ETFs under "Stocks" in
+# English and under "Acciones" in Spanish, so one word covers both here.
+_EQUITY = ("stocks", "acciones", "etfs")
+
+_MONTHS = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+    "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10,
+    "noviembre": 11, "diciembre": 12,
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11,
+    "december": 12,
+}
+# "Septiembre 14, 2026" / "September 14, 2026"
+_LONG_DATE = re.compile(r"([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})")
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _norm(text: str | None) -> str:
+    """Lowercase, unaccented, dot- and space-collapsed — the matching key.
+
+    Accents go because a statement may be re-encoded on its way here, and
+    dots because IBKR writes "T. Price" and "Mult." with them but its own
+    translations do not agree on where they land.
+    """
+    stripped = unicodedata.normalize("NFKD", (text or "").strip().lower())
+    bare = "".join(c for c in stripped if not unicodedata.combining(c))
+    return " ".join(bare.replace(".", " ").split())
+
+
+@dataclass
+class _Section:
+    """One section's current header: where each logical column sits."""
+
+    key: str
+    cols: dict[str, int] = field(default_factory=dict)
+
+    def get(self, row: list[str], name: str) -> str:
+        i = self.cols.get(name)
+        if i is None or i >= len(row):
+            return ""
+        return row[i].strip()
+
+
+def _section_key(name: str) -> str:
+    n = _norm(name)
+    for key, names in _SECTIONS.items():
+        if n in names:
+            return key
+    return ""
+
+
+def _columns(key: str, header: list[str]) -> dict[str, int]:
+    """Logical column -> index, from this section's header row."""
+    names = [_norm(c) for c in header]
+    cols: dict[str, int] = {}
+    for logical, aliases in _ALIASES.get(key, {}).items():
+        for alias in aliases:
+            if alias in names:
+                cols[logical] = names.index(alias)
+                break
+    return cols
 
 
 def parse_csv(text: str) -> ParseResult:
     """Parse IBKR activity-statement CSV text into a ParseResult (no writes)."""
     result = ParseResult()
-    headers: dict[str, list[str]] = {}  # section name -> current column list
+    sections: dict[str, _Section] = {}  # raw section name -> resolved header
     recognised = False
+    positions: list[tuple[int, _Section, list[str]]] = []
+    dates: dict[str, str] = {}  # "period" / "generated" -> ISO day
 
     for i, row in enumerate(csv.reader(io.StringIO(text)), start=1):
         if len(row) < 3:
             continue
-        section, kind, rest = row[0], row[1], row[2:]
+        name, kind, rest = row[0], row[1], row[2:]
+        key = _section_key(name)
         if kind == "Header":
-            headers[section] = rest
-            if section == "Trades" and all(c in rest for c in _TRADE_COLS):
+            section = _Section(key, _columns(key, rest))
+            sections[name] = section
+            need = _REQUIRED.get(key)
+            # A section can appear more than once with different headers (the
+            # NAV block has two); the one that names what we need wins.
+            if need and all(c in section.cols for c in need):
                 recognised = True
-            if section == "Dividends" and all(c in rest for c in _DIVIDEND_COLS):
-                recognised = True
+            elif need:
+                sections[name] = _Section(key)  # header we cannot read
             continue
-        if kind != "Data" or section not in headers:
+        if kind != "Data" or name not in sections:
             continue
-        cells = dict(zip(headers[section], rest, strict=False))
-        if section == "Trades":
-            _trade_row(i, cells, result)
-        elif section == "Dividends":
-            _dividend_row(i, cells, result)
-        elif section == "Withholding Tax":
-            _withholding_row(i, cells, result)
+        section = sections[name]
+        if section.key == "statement":
+            _statement_date(rest, dates)
+        elif section.key == "trades":
+            _trade_row(i, section, rest, result)
+        elif section.key == "dividends":
+            _dividend_row(i, section, rest, result)
+        elif section.key == "withholding":
+            _withholding_row(i, section, rest, result)
+        elif section.key == "accruals":
+            _accrual_row(i, section, rest, result)
+        elif section.key == "positions":
+            positions.append((i, section, rest))
 
     if not recognised:
         return ParseResult(
@@ -80,27 +241,58 @@ def parse_csv(text: str) -> ParseResult:
                 "row": 1,
                 "type": "header",
                 "reason": (
-                    "not an IBKR activity statement — no Trades/Dividends "
-                    "section with the expected columns"
+                    "not an IBKR activity statement — no Trades/Dividends/"
+                    "Open Positions section with the expected columns"
                 ),
             }]
         )
+    # The period the statement covers is what the holdings are valued on; the
+    # moment the file was generated is a fallback, and it is a day later when
+    # the statement is cut overnight.
+    _positions(positions, result, dates.get("period") or dates.get("generated", ""))
     return result
 
 
-def _trade_row(line: int, cells: dict[str, str], result: ParseResult) -> None:
-    if cells.get("DataDiscriminator") != "Order":
+# ------------------------------------------------------------------- sections
+def _statement_date(row: list[str], into: dict[str, str]) -> None:
+    """Record the statement's Period and WhenGenerated days, when readable.
+
+    Both are free text ("Septiembre 14, 2026", or a range), so the *last*
+    date in the line is taken: a period that spans months ends on the day the
+    positions were valued, which is the one an opening snapshot belongs on.
+    """
+    which = {
+        "period": "period", "periodo": "period", "whengenerated": "generated",
+    }.get(_norm(row[0]))
+    if not which:
+        return
+    value = " ".join(row[1:])
+    iso = _ISO_DATE.findall(value)
+    if iso:
+        into[which] = iso[-1]
+        return
+    for month_name, day, year in reversed(_LONG_DATE.findall(value)):
+        month = _MONTHS.get(_norm(month_name))
+        if month:
+            into[which] = f"{int(year):04d}-{month:02d}-{int(day):02d}"
+            return
+
+
+def _trade_row(
+    line: int, section: _Section, row: list[str], result: ParseResult
+) -> None:
+    if "discriminator" in section.cols and section.get(row, "discriminator") != "Order":
         return  # ClosedLot / SubTotal / Total — derived lines, not events
-    category = (cells.get("Asset Category") or "").strip()
-    ticker = (cells.get("Symbol") or "").strip()
-    qty = money(cells.get("Quantity"))
+    category = section.get(row, "category")
+    ticker = section.get(row, "symbol")
+    qty = money(section.get(row, "quantity"))
     try:
-        if category not in ("Stocks", "ETFs"):
+        if _norm(category) not in _EQUITY:
             raise ValueError(f"asset category {category or '?'} — not auto-imported")
         if not ticker:
             raise ValueError("missing symbol")
-        date = parse_date((cells.get("Date/Time") or "").split(",", 1)[0])
-        price = money(cells.get("T. Price"))
+        date = parse_date(section.get(row, "date").split(",", 1)[0])
+        price = money(section.get(row, "price"))
         if qty == 0:
             raise ValueError("trade row has no quantity")
         if price <= 0:
@@ -112,32 +304,34 @@ def _trade_row(line: int, cells: dict[str, str], result: ParseResult) -> None:
                 action="buy" if qty > 0 else "sell",
                 quantity=abs(qty),
                 price=price,
-                currency=(cells.get("Currency") or "USD").strip(),
-                fee=abs(money(cells.get("Comm/Fee"))),
+                currency=section.get(row, "currency") or "USD",
+                fee=abs(money(section.get(row, "fee"))),
                 note="ibkr",
             )
         )
     except ValueError as exc:
         result.skipped.append(
-            _skip(line, category or "trade", str(exc), cells, ticker, qty)
+            _skip(line, section, row, category or "trade", str(exc), ticker, qty)
         )
 
 
-def _dividend_row(line: int, cells: dict[str, str], result: ParseResult) -> None:
-    currency = (cells.get("Currency") or "").strip()
-    if not currency or currency.startswith("Total"):
-        return  # per-currency summary line, not an event
-    desc = (cells.get("Description") or "").strip()
+def _dividend_row(
+    line: int, section: _Section, row: list[str], result: ParseResult
+) -> None:
+    currency = section.get(row, "currency")
+    if not currency or _norm(currency).startswith("total"):
+        return  # per-currency summary line
+    desc = section.get(row, "description")
     try:
         m = _DESC_TICKER.match(desc)
         if not m:
             raise ValueError(f"cannot read ticker from description {desc!r}")
-        amount = money(cells.get("Amount"))
+        amount = money(section.get(row, "amount"))
         if amount <= 0:
             raise ValueError(f"dividend amount {amount:g} is not positive")
         result.transactions.append(
             Transaction(
-                date=parse_date(cells.get("Date")),
+                date=parse_date(section.get(row, "date")),
                 ticker=m.group(1).strip(),
                 action="dividend",
                 price=amount,
@@ -146,15 +340,18 @@ def _dividend_row(line: int, cells: dict[str, str], result: ParseResult) -> None
             )
         )
     except ValueError as exc:
-        result.skipped.append(_skip(line, "dividend", str(exc), cells, "", 0.0))
+        result.skipped.append(
+            _skip(line, section, row, "dividend", str(exc), "", 0.0)
+        )
 
 
-def _withholding_row(line: int, cells: dict[str, str], result: ParseResult) -> None:
-    currency = (cells.get("Currency") or "").strip()
-    if not currency or currency.startswith("Total"):
+def _withholding_row(
+    line: int, section: _Section, row: list[str], result: ParseResult
+) -> None:
+    currency = section.get(row, "currency")
+    if not currency or _norm(currency).startswith("total"):
         return
-    desc = (cells.get("Description") or "").strip()
-    m = _DESC_TICKER.match(desc)
+    m = _DESC_TICKER.match(section.get(row, "description"))
     result.skipped.append({
         "row": line,
         "type": "withholding tax",
@@ -162,24 +359,123 @@ def _withholding_row(line: int, cells: dict[str, str], result: ParseResult) -> N
             "withholding tax — set it as the fee on the matching dividend "
             "row for the double-tax credit"
         ),
-        "date": (cells.get("Date") or "").strip(),
+        "date": section.get(row, "date"),
         "ticker": m.group(1).strip() if m else "",
         "quantity": 0.0,
-        "amount": money(cells.get("Amount")),
+        "amount": money(section.get(row, "amount")),
         "currency": currency,
     })
 
 
+def _accrual_row(
+    line: int, section: _Section, row: list[str], result: ParseResult
+) -> None:
+    """An accrued dividend: announced, not yet paid. Read, then left out."""
+    ticker = section.get(row, "symbol")
+    category = section.get(row, "category")
+    if not ticker or _norm(category).startswith("total"):
+        return  # the section's own opening/closing balance lines
+    result.skipped.append({
+        "row": line,
+        "type": "accrued dividend",
+        "reason": (
+            "accrued dividend — not cash yet; it imports from the Dividends "
+            "section of the statement covering its pay date"
+        ),
+        "date": section.get(row, "date"),
+        "ticker": ticker.upper(),
+        "quantity": money(section.get(row, "quantity")),
+        "amount": money(section.get(row, "amount")),
+        "currency": section.get(row, "currency").upper(),
+    })
+
+
+def _positions(
+    rows: list[tuple[int, _Section, list[str]]], result: ParseResult, as_of: str
+) -> None:
+    """Open holdings as opening buys — only for a statement with no movements.
+
+    A statement that covers a period with activity carries those trades, and
+    the same shares must not arrive twice; there, the holdings are the closing
+    balance of what was just imported and are dropped silently. It is the
+    statement with nothing in it — a single day, a quiet week — where the
+    positions block is the only thing that says what is held, and turning it
+    into dated lots is the only way that file can enter the ledger at all.
+    """
+    if not rows:
+        return
+    if result.transactions:
+        result.skipped.append({
+            "row": rows[0][0],
+            "type": "open positions",
+            "reason": (
+                f"{len(rows)} holdings listed — this statement carries its own "
+                "trades, so the positions block is their closing balance, not "
+                "a separate purchase"
+            ),
+            "date": as_of, "ticker": "", "quantity": 0.0,
+            "amount": 0.0, "currency": "",
+        })
+        return
+    for line, section, row in rows:
+        if "discriminator" in section.cols:
+            if section.get(row, "discriminator") != "Summary":
+                continue  # Lot / Total breakdowns of the same holding
+        category = section.get(row, "category")
+        ticker = section.get(row, "symbol")
+        qty = money(section.get(row, "quantity"))
+        try:
+            if not as_of:
+                raise ValueError(
+                    "statement has no period date to put the opening lot on"
+                )
+            if _norm(category) not in _EQUITY:
+                raise ValueError(
+                    f"asset category {category or '?'} — not auto-imported"
+                )
+            if not ticker:
+                raise ValueError("missing symbol")
+            if qty <= 0:
+                raise ValueError(f"holding has no positive quantity ({qty:g})")
+            price = money(section.get(row, "price"))
+            if price <= 0:
+                # Some locales round the per-share cost away; the basis is
+                # always there and divides back to the same number.
+                price = money(section.get(row, "basis")) / qty
+            if price <= 0:
+                raise ValueError("holding has no cost price")
+            result.transactions.append(
+                Transaction(
+                    date=parse_date(as_of),
+                    ticker=ticker,
+                    action="buy",
+                    quantity=qty,
+                    price=price,
+                    currency=section.get(row, "currency") or "USD",
+                    note="ibkr snapshot",
+                )
+            )
+        except ValueError as exc:
+            result.skipped.append(
+                _skip(line, section, row, category or "open position", str(exc),
+                      ticker, qty)
+            )
+
+
 def _skip(
-    line: int, rtype: str, reason: str, cells: dict[str, str], ticker: str, qty: float
+    line: int, section: _Section, row: list[str], rtype: str, reason: str,
+    ticker: str, qty: float,
 ) -> dict:
     return {
         "row": line,
         "type": rtype,
         "reason": reason,
-        "date": (cells.get("Date/Time") or cells.get("Date") or "").split(",", 1)[0],
+        "date": section.get(row, "date").split(",", 1)[0],
         "ticker": ticker.upper(),
         "quantity": qty,
-        "amount": money(cells.get("Amount") or cells.get("Proceeds")),
-        "currency": (cells.get("Currency") or "").strip().upper(),
+        "amount": money(
+            section.get(row, "amount") or section.get(row, "proceeds")
+            or section.get(row, "basis")
+        ),
+        "currency": section.get(row, "currency").upper(),
     }

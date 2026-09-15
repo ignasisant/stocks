@@ -21,7 +21,8 @@ shows the user what it could not place. A wrong ticker is far worse than a
 rejected row: it silently books someone else's shares into the ledger.
 
 One call per import, distinct labels only, memoised for the process — a
-statement that names the same five holdings on nine pages asks once.
+statement that names the same five holdings on nine pages asks once, and a
+second file naming them again asks not at all.
 """
 
 from __future__ import annotations
@@ -79,10 +80,22 @@ _memo: dict[str, str | None] = {}
 def obvious(label: str) -> str | None:
     """The ticker `label` already is, when no knowledge is needed to see it.
 
-    Only textual forms: a bare symbol, and Saxo's "SYMBOL:mic" (the exchange
-    code is dropped, not translated — a venue suffix is knowledge, so
-    "TEF:xmce" goes to the model like any other label). Everything else,
-    ISINs included, returns None and is resolved.
+    One form qualifies: Saxo's "SYMBOL:mic" on a US venue, where the exchange
+    code is dropped rather than translated because a US listing takes no Yahoo
+    suffix. Any other venue is knowledge, so "TEF:xmce" goes to the model.
+
+    Nothing else is, symbol-shaped or not. A label that *looks* like a bare
+    ticker is regularly not one: "AIRBUS" and "NVIDIA" are six characters of
+    a name column, "TESLA" and "ADOBE" five, and no length tells them from
+    "GOOGL". A dotted suffix lies the same way — XTB writes "PLTR.US" and
+    "SHEL.UK", while Yahoo has no .US at all and spells that London line
+    SHEL.L. Booked verbatim, each of those is a holding that prices as
+    nothing, and validation cannot fault it. Which strings are tickers is
+    exactly the knowledge this module delegates.
+
+    Delegating is nearly free: the unresolved labels of an import go up in
+    one batch, on a path (llm_map) that has already called the model to read
+    the file at all.
     """
     text = (label or "").strip()
     if not text:
@@ -92,11 +105,7 @@ def obvious(label: str) -> str | None:
         # US venues have no Yahoo suffix, so the bare symbol is already right.
         if mic in ("xnas", "xngs", "xnys", "xase", "arcx", "bats"):
             return symbol if SYMBOL_RE.match(symbol) else None
-        return None
-    upper = text.upper()
-    if _ISIN_RE.match(upper):
-        return None
-    return upper if SYMBOL_RE.match(upper) else None
+    return None
 
 
 def _parse_reply(raw: str, labels: list[str]) -> dict[str, str | None]:

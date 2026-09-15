@@ -298,6 +298,22 @@ RELEASES: tuple[Release, ...] = (
             News(slug="watchlist", icon="playlist_add", step="watchlist"),
         ),
     ),
+    Release(
+        version="2026.09.1",
+        date="2026-09",
+        items=(
+            News(slug="tips", icon="info", step="pulse"),
+            News(slug="voice", icon="mic", step="assistant"),
+            News(slug="stop", icon="stop_circle", step="assistant"),
+            News(slug="splits", icon="call_split", step="import"),
+            News(slug="divest", icon="savings", step="income"),
+            News(slug="tickerlinks", icon="link", step="market"),
+            News(slug="ibkr", icon="photo_camera", step="import"),
+            News(slug="amount", icon="price_change", step="import"),
+            News(slug="tgtext", icon="voice_over_off", step="notify"),
+            News(slug="hover", icon="show_chart", step="market"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

@@ -8,7 +8,8 @@ back is a **mapping**, not data:
 
     {"header_row": 3,
      "columns": {"date": 0, "ticker": 2, "action": 4, "quantity": 5,
-                 "price": 6, "currency": 7, "fee": 8, "note": null},
+                 "price": 6, "amount": 9, "currency": 7, "fee": 8,
+                 "note": null},
      "date_format": "%d/%m/%Y", "decimal": ",", "thousands": ".",
      "action_map": {"Compra": "buy", "Venta": "sell", "Dividendo": "dividend"}}
 
@@ -62,7 +63,8 @@ MAX_CELL = 40
 # enough that a real outage does not hold the preview open.
 RESOLVE_RETRY_SECONDS = 8
 
-FIELDS = ("date", "ticker", "action", "quantity", "price", "currency", "fee", "note")
+FIELDS = ("date", "ticker", "action", "quantity", "price", "amount",
+          "currency", "fee", "note")
 _REQUIRED = ("date", "ticker", "action")
 
 # Tried in order when the model's date_format doesn't parse a cell — brokers
@@ -258,8 +260,8 @@ Reply with ONLY a JSON object, no prose, no code fences:
 {"header_row": <index of the row holding the column headers>,
  "columns": {"date": <column index>, "ticker": <index>, "action": <index>,
              "quantity": <index or null>, "price": <index or null>,
-             "currency": <index or null>, "fee": <index or null>,
-             "note": <index or null>},
+             "amount": <index or null>, "currency": <index or null>,
+             "fee": <index or null>, "note": <index or null>},
  "date_format": "<strftime format of the date cells, e.g. %d/%m/%Y>",
  "decimal": "<the decimal separator, '.' or ','>",
  "thousands": "<the thousands separator, or an empty string>",
@@ -273,12 +275,18 @@ Rules:
 - "ticker": the symbol column. Failing that, the ISIN column, failing that
   the instrument-name column — a name is resolved to its symbol later. Never
   an id column (position id, transaction id, order reference).
-- "price" is per share. For a dividend row, map the total amount column to
-  "price". For a split, "quantity" is the ratio.
+- "price" is the per-share price column, "amount" the row's total cash column
+  — the one that is negative for a purchase and positive for a sale or a
+  dividend. Many exports carry both: map both. Never map one column to the
+  other's name, and leave "amount" null when the file has no total column.
+- For a split, "quantity" is the ratio.
 - "action_map" needs one entry per distinct value you can see in the action
   column, including the ones you would ignore — map those to the closest of
   buy/sell/dividend/fee/split, and leave out only values that are clearly not
   transactions (cash top-ups, transfers, balance lines).
+- When that column is a sentence that differs in every row ("YOU BOUGHT
+  PROSHARES ULTRAPRO QQQ (TQQQ) (Cash)"), key the map on the phrase that
+  names the action ("you bought"), never on the whole sentence.
 - Never invent values from the sample rows; you are only naming columns.
 """
 
@@ -394,11 +402,40 @@ def _date(text: str, fmt: str) -> str | None:
     return None
 
 
+def _action_phrases(actions: dict[str, str]) -> list[tuple[re.Pattern, str]]:
+    """The action vocabulary as whole-word patterns, longest phrase first.
+
+    Some brokers write the action as a sentence that is different in every
+    row — Fidelity's column reads "YOU BOUGHT PROSHARES ULTRAPRO QQQ (TQQQ)
+    (Cash)" — so an exact lookup matches nothing and the whole file imports as
+    zero rows. The model's vocabulary is not wrong there, it is simply a
+    phrase inside the sentence, so its keys are searched for as phrases too.
+
+    Longest key first, so a broker that spells out "sell to close" alongside
+    "sell" keeps the distinction. The canonical verbs come last, as the
+    fallback for a row type the sample never showed the model.
+    """
+    ordered = sorted(actions.items(), key=lambda kv: -len(kv[0]))
+    ordered += [(a, a) for a in sorted(ACTIONS)]
+    return [(re.compile(rf"(?<![a-z0-9]){re.escape(key)}(?![a-z0-9])"), value)
+            for key, value in ordered if key]
+
+
+def _phrase_action(text: str, phrases: list[tuple[re.Pattern, str]]) -> str:
+    """The action named inside a free-text cell, or "" when none is."""
+    low = text.lower()
+    for pattern, action in phrases:
+        if pattern.search(low):
+            return action
+    return ""
+
+
 def apply_mapping(grid: list[list[str]], mapping: dict) -> ParseResult:
     """Turn every data row into a Transaction using the mapping. No LLM here."""
     result = ParseResult()
     cols = mapping["columns"]
     actions = mapping["action_map"]
+    phrases = _action_phrases(actions)
     decimal, thousands = mapping["decimal"], mapping["thousands"]
 
     def cell(row: list[str], field: str) -> str:
@@ -412,7 +449,7 @@ def apply_mapping(grid: list[list[str]], mapping: dict) -> ParseResult:
             continue  # separator / totals line
         action = actions.get(raw_action.lower()) or (
             raw_action.lower() if raw_action.lower() in ACTIONS else ""
-        )
+        ) or _phrase_action(raw_action, phrases)
         if not action:
             result.skipped.append({
                 "row": lineno, "type": raw_action or "?",
@@ -448,7 +485,21 @@ def apply_mapping(grid: list[list[str]], mapping: dict) -> ParseResult:
 
         quantity = _number(cell(row, "quantity"), decimal, thousands) or 0.0
         price = _number(cell(row, "price"), decimal, thousands) or 0.0
+        amount = _number(cell(row, "amount"), decimal, thousands) or 0.0
         fee = _number(cell(row, "fee"), decimal, thousands) or 0.0
+        if not price and amount:
+            # One column index has to serve every row, so a file with both a
+            # per-share price and a row total cannot have "price" mean the
+            # right thing for a buy *and* for a dividend: the dividend prints
+            # its value in the total column and leaves the per-share one at
+            # zero. The halves are reconciled here rather than by asking the
+            # model for a row-dependent mapping it cannot express.
+            #
+            # For a trade this divides the total, which carries the fee with
+            # it — a cent or two per share, and only ever when the export
+            # gave no unit price at all.
+            price = amount if action in ("dividend", "fee") else (
+                amount / quantity if quantity else 0.0)
         try:
             result.transactions.append(Transaction(
                 date=day, ticker=ticker, action=action,

@@ -41,11 +41,13 @@ from stocks.web.i18n import t as tr
 from stocks.web.portfolio_data import (
     basket_history,
     enriched_positions,
+    held_closes,
     last_session_moves,
     ledger_history,
     ledger_state,
     native_base_rates,
     positions_table,
+    year_closes,
 )
 from stocks.web.widgets import (
     HOVERLABEL,
@@ -60,7 +62,6 @@ from stocks.web.widgets import (
     kpi_delta_chip,
     kpi_grid_html,
     logo,
-    recent_closes,
     ticker_table_html,
     watchlist_closes,
 )
@@ -785,10 +786,19 @@ _xt_slot = skeletons.reserve(
 )
 
 
+# One tuple for the page's whole year-of-closes download: the watchlist rows
+# and the 52-week scan (held + favourites) read the same cache entry, so a
+# held name that is not on the list rides along instead of costing a second
+# bulk request. Crypto is skipped by the scan and has no place in the rows.
+_wl_tickers = tuple(sorted(
+    {h.ticker for h in holdings} | {t for t in _held if not is_crypto(t)}
+))
+
+
 # Defined above the refresh button so its clear() call can reference it; the
 # actual fetch still only runs in the deferred fill at the bottom.
 def _year_extremes(
-    tickers: tuple[str, ...],
+    tickers: tuple[str, ...], year: dict[str, list[float]]
 ) -> list[tuple[str, float, str, float | None]]:
     """(ticker, last close, "high"/"low", distance) for names within 2% of
     their 52-week high or low.
@@ -801,7 +811,11 @@ def _year_extremes(
     carries a fixed-language string.
     """
     out: list[tuple[str, float, str, float | None]] = []
-    for t, closes in watchlist_closes(tickers).items():
+    # `year` is the page's one year-of-closes read (see `_year_closes` below);
+    # keying a download on the scan's own tuple was a second bulk request
+    # over the same symbols.
+    for t in tickers:
+        closes = year.get(t) or []
         if len(closes) < 2:
             continue
         last, hi, lo = closes[-1], max(closes), min(closes)
@@ -831,10 +845,19 @@ if not holdings:
 # miss isn't cached (st.cache_data skips exceptions), so a rerun retries; the
 # toast tells the reader why the rows are blank.
 try:
-    closes = recent_closes(tuple(h.ticker for h in holdings)) if holdings else {}
+    _year_closes = (
+        year_closes(
+            _wl_tickers,
+            DB if auth.is_logged_in() else None,
+            db_mtime(DB) if auth.is_logged_in() else 0.0,
+        )
+        if _wl_tickers
+        else {}
+    )
+    closes = {t: c[-2:] for t, c in _year_closes.items()}
 except (YFRateLimitError, URLError) as exc:
     notices.data_toast(exc)
-    closes = {}
+    _year_closes, closes = {}, {}
 
 
 def _watch_table(tickers: list[str]) -> None:
@@ -897,6 +920,7 @@ if holdings or positions:
     # scan) and rerun; ledger caches stay hot.
     if st.button(tr("home.refresh_prices"), icon=":material/refresh:"):
         watchlist_closes.clear()  # watchlist rows + the 52-week scan
+        held_closes.clear()  # the book's prices behind every loader below
         positions_table.clear()
         basket_history.clear()
         ledger_history.clear()
@@ -971,6 +995,11 @@ if _spark_slot is not None:
             ]
             if len(win) < 2:
                 win = _hist  # book younger than the window — show the full span
+            # Axis ticks pinned to the data extremes so the window's high (and
+            # low) carry a label, instead of plotly's round auto-ticks.
+            _lo = float(min(win["value"].min(), win["injected"].min()))
+            _hi = float(max(win["value"].max(), win["injected"].max()))
+            _ticks = [_lo, _hi] if _hi > _lo else [_hi]
             _custom = [
                 [inj, _pl_span(val - inj, p), _spark_date(ts)]
                 for ts, val, inj, p in zip(
@@ -1055,8 +1084,9 @@ if _spark_slot is not None:
                     fixedrange=True, automargin=True,
                 ),
                 yaxis=dict(
-                    nticks=3, tickfont=dict(size=10), tickprefix=REPORT_SYM,
-                    tickformat="~s", showgrid=False, fixedrange=True,
+                    tickmode="array", tickvals=_ticks,
+                    tickfont=dict(size=10), tickprefix=REPORT_SYM,
+                    tickformat=".3~s", showgrid=False, fixedrange=True,
                     automargin=True,
                 ),
                 hoverlabel=HOVERLABEL,
@@ -1262,7 +1292,7 @@ else:
     with _xt_slot.container(border=True):
         st.markdown(tr("home.extremes_52w"))
         try:
-            _extremes = _year_extremes(_xt_tickers)
+            _extremes = _year_extremes(_xt_tickers, _year_closes)
         except (YFRateLimitError, URLError) as exc:
             notices.data_toast(exc)
             _extremes = None  # card shows its unavailable stub

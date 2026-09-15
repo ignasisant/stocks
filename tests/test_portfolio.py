@@ -563,20 +563,19 @@ def test_market_active_covers_us_extended_hours_but_not_foreign():
     assert not market_active("AAPL", shut)
 
 
-class _FakeQuote:
-    def __init__(self, info):
-        self.info = info
+def _patch_quote(monkeypatch, quote):
+    """Make the batch quote endpoint answer `quote` for whatever is asked.
 
+    Patched at `data.quotes._fetch` — below the cooldown and the budget, above
+    the network — so these tests exercise the real keying and chunking.
+    """
+    from stocks.data import quotes as q
 
-def _patch_quote(monkeypatch, info):
-    import yfinance
-
-    from stocks.data.fetch import clear_info_cache
-
-    monkeypatch.setattr(yfinance, "Ticker", lambda symbol: _FakeQuote(info))
-    # `.info` is memoized per symbol (data.fetch.info), so a test that swaps
-    # the quote mid-function has to drop the memo or it re-reads the old blob.
-    clear_info_cache()
+    q._blocked_until = 0.0
+    monkeypatch.setattr(
+        q, "_fetch",
+        lambda symbols, timeout: [{**quote, "symbol": s} for s in symbols],
+    )
 
 
 def test_session_move_uses_premarket_against_last_close(monkeypatch):

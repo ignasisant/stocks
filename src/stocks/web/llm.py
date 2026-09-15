@@ -490,6 +490,24 @@ def _free_secrets() -> dict:
     return cfg
 
 
+def free_secret(name: str) -> str:
+    """One [free_llm] value, stripped, with the same FREE_LLM_* env overlay.
+
+    The chat chain is no longer the only thing these keys fund — the
+    assistant's speech-to-text (web/stt.py) rides the groq key too — so the
+    section gets one public reader instead of a second copy of the secrets
+    lookup and its env fallback. Unlike _free_secrets this takes any name, so
+    a key the chain itself never reads ("groq_stt_model") still honours its
+    environment variable.
+    """
+    import os
+
+    env = os.environ.get(f"FREE_LLM_{name.upper()}")
+    if env:
+        return env.strip()
+    return str(_free_secrets().get(name) or "").strip()
+
+
 def _free_backends() -> list[_FreeBackend]:
     """The configured slice of the chain, in fixed fallback order.
 

@@ -98,6 +98,9 @@ from stocks.web.widgets import (
     company_name,
     data_table,
     db_mtime,
+    display_symbol,
+    hover_delta,
+    hover_dim,
     hover_wrap,
     is_mobile,
     kpi_grid_html,
@@ -341,16 +344,19 @@ def _custody(db: str, mtime: float) -> dict[str, dict[str, Custody]]:
         return {}
 
 
-@st.cache_data(ttl=300, show_spinner=False)
 def _position_values(db: str, mtime: float, base: str = "EUR") -> dict[str, float]:
-    """Live market value per open position in `base` (price × spot).
+    """Market value per open position in `base`, off the book's shared pricing.
 
-    Keeps a TTL as well as the ledger fingerprint: prices age on a timer even
-    when the book doesn't change."""
-    from stocks.analysis.portfolio import market_values
+    Reads `portfolio_data.positions_table` — the same cached frame the Home
+    glance and the Portfolio page print — instead of a five-day download of
+    its own: the weight tile here and the value tile there now come from one
+    fetch, and a Home visit leaves this page nothing to download."""
+    from stocks.web.portfolio_data import positions_table
 
-    held = _held(db, mtime)
-    return market_values(list(held.values()), base=base) if held else {}
+    tbl = positions_table(db, mtime, base)
+    if tbl.empty or "value" not in tbl:
+        return {}
+    return {str(t): float(v) for t, v in tbl["value"].items() if pd.notna(v)}
 
 
 def _position_values_safe(db: str, mtime: float, base: str = "EUR") -> dict[str, float]:
@@ -741,6 +747,13 @@ def _price_section(ticker: str) -> None:
             if my_pos:
                 _position_metrics(cols[3:], my_pos, last)
 
+    # Every price row in the tooltip reads as a DS metric: muted label, bold
+    # value, signed change in the market pair. The change is the bar's move on
+    # the previous close — the same figure the metric above the chart shows —
+    # and is pre-rendered per bar into customdata, since a hovertemplate is one
+    # string for the whole trace and Plotly has no per-point color of its own.
+    price_lbl = hover_dim(tr("ticker.price"))
+    step_pct = df["Close"].pct_change() * 100
     fig = go.Figure()
     if chart_type == "line":
         # DS line-chart spec: 2px accent price line over a vertical gradient
@@ -765,10 +778,34 @@ def _price_section(ticker: str) -> None:
                     type="vertical",
                     colorscale=[(0.0, TRANSPARENT), (1.0, ACCENT_AREA)],
                 ),
-                hovertemplate=tr("ticker.price") + "  <b>%{y:,.2f}</b><extra></extra>",
+                customdata=[
+                    f"{price_lbl}  <b>{c:,.2f}</b>"
+                    + ("" if pd.isna(chg) else "  " + hover_delta(float(chg)))
+                    for c, chg in zip(df["Close"], step_pct, strict=True)
+                ],
+                hovertemplate="%{customdata}<extra></extra>",
             )
         )
     else:
+        # Without a template Plotly prints its own four-line OHLC dump
+        # ("Precio : open: 25.53<br>high: …"), which carries none of the DS
+        # type hierarchy and buries the close among three equals. One metric
+        # row instead — close and its change — over a muted open/high/low line
+        # that keeps the bar's detail a step down.
+        ohlc_rows = []
+        for o, h, lo_, c, chg in zip(
+            df["Open"], df["High"], df["Low"], df["Close"], step_pct, strict=True
+        ):
+            head = f"{price_lbl}  <b>{c:,.2f}</b>"
+            if not pd.isna(chg):
+                head += "  " + hover_delta(float(chg))
+            detail = tr(
+                "ticker.hover_ohlc",
+                open=f"{o:,.2f}",
+                high=f"{h:,.2f}",
+                low=f"{lo_:,.2f}",
+            )
+            ohlc_rows.append(f"{head}<br>{hover_dim(detail)}")
         fig.add_trace(
             go.Candlestick(
                 x=df.index,
@@ -782,20 +819,22 @@ def _price_section(ticker: str) -> None:
                 increasing_fillcolor=CANDLE_UP,
                 decreasing_line_color=CANDLE_DOWN,
                 decreasing_fillcolor=CANDLE_DOWN,
+                customdata=ohlc_rows,
+                hovertemplate="%{customdata}<extra></extra>",
             )
         )
     fig.add_trace(
         go.Scatter(
             x=df.index, y=df["SMA20"], name="SMA20",
             line=dict(color=SMA_FAST, width=1.5),
-            hovertemplate="SMA20  <b>%{y:,.2f}</b><extra></extra>",
+            hovertemplate=hover_dim("SMA20") + "  <b>%{y:,.2f}</b><extra></extra>",
         )
     )
     fig.add_trace(
         go.Scatter(
             x=df.index, y=df["SMA50"], name="SMA50",
             line=dict(color=SMA_SLOW, width=1.5),
-            hovertemplate="SMA50  <b>%{y:,.2f}</b><extra></extra>",
+            hovertemplate=hover_dim("SMA50") + "  <b>%{y:,.2f}</b><extra></extra>",
         )
     )
 
@@ -908,7 +947,16 @@ def _price_section(ticker: str) -> None:
         # together, instead of chasing each trace with the cursor.
         hovermode="x unified",
     )
-    fig.update_xaxes(rangebreaks=_rangebreaks(df, PERIODS[sel][1]))
+    # The unified box titles itself from the x-axis tick format, which on a
+    # multi-year window collapses to "Aug 2024" — a month name, in English
+    # whatever the interface language, over a bar that is one day. Pin the
+    # title to the bar's own stamp, in the same locale-free shape the trade
+    # and event rows below it already print.
+    interval = PERIODS[sel][1]
+    fig.update_xaxes(
+        rangebreaks=_rangebreaks(df, interval),
+        hoverformat="%Y-%m-%d" if interval == "1d" else "%Y-%m-%d %H:%M",
+    )
     if _MOBILE:
         # DS mobile chart spec: the date axis thins to ~3 labels on a phone.
         fig.update_xaxes(nticks=3)
@@ -963,7 +1011,12 @@ def _price_section(ticker: str) -> None:
 # Off-watchlist symbols (SEC search / held-only) fall back to the map name.
 # One flex row per the design: logo chip · bold symbol · muted name ·
 # "in portfolio" badge, with the actions pinned to the right edge.
-label = labels.get(ticker) or company_name(ticker) or ticker
+# The URL (and the ledger) keep whatever the broker wrote; the page prints
+# the symbol that string resolves to, so an ISIN-keyed holding still reads
+# as its ticker in the header — and falls back to that symbol, never to the
+# ISIN, when no source knows a company name.
+symbol = display_symbol(ticker)
+label = labels.get(ticker) or company_name(ticker) or symbol
 src = _logo(ticker)
 
 
@@ -980,7 +1033,7 @@ def _header_html() -> str:
             f"border:1px solid {BORDER};box-sizing:border-box;"
             f'padding:{4 if _MOBILE else 5}px;object-fit:contain">'
         )
-    show_name = label.upper() != ticker
+    show_name = label.upper() != symbol.upper()
     if _MOBILE:
         # Phones stack symbol over the name (the design's compact app bar);
         # min-width:0 + ellipsis keep long names from pushing the badge off.
@@ -993,14 +1046,14 @@ def _header_html() -> str:
         parts.append(
             '<div style="display:flex;flex-direction:column;min-width:0">'
             f'<span style="font-size:{FS_LG};font-weight:600">'
-            f"{html.escape(ticker)}</span>"
+            f"{html.escape(symbol)}</span>"
             + name_line
             + "</div>"
         )
     else:
         parts.append(
             f'<h1 style="font-size:{FS_3XL};font-weight:600;line-height:1.21;'
-            f'padding:0;margin:0">{html.escape(ticker)}</h1>'
+            f'padding:0;margin:0">{html.escape(symbol)}</h1>'
         )
         if show_name:
             parts.append(

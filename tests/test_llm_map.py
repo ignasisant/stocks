@@ -262,6 +262,146 @@ def test_the_extracted_label_is_kept_verbatim_for_resolution():
     assert tx is not None and tx.ticker == "PDD HOLDINGS INC - ADR"
 
 
+# Fidelity writes the action as a sentence that is unique to every row, so an
+# exact-match vocabulary matches nothing below the sampled rows.
+SENTENCE_CSV = (
+    "Run Date,Action,Symbol,Quantity,Price ($),Fees ($),Amount ($)\n"
+    "01/16/2025,YOU BOUGHT PROSHARES ULTRAPRO QQQ (TQQQ) (Cash),TQQQ,"
+    "50,78.4200,0.02,-3921.02\n"
+    "04/22/2025,DIVIDEND RECEIVED VANGUARD TOTAL STOCK MKT (VTI),VTI,"
+    "0,0.0000,0.00,22.15\n"
+    "08/07/2025,YOU SOLD PROSHARES ULTRAPRO QQQ (TQQQ) (Cash),TQQQ,"
+    "-20,96.3300,0.03,1926.57\n"
+    "09/01/2025,ELECTRONIC FUNDS TRANSFER RECEIVED,,0,0.0000,0.00,500.00\n"
+)
+
+SENTENCE_MAPPING = {
+    "header_row": 0,
+    "columns": {"date": 0, "action": 1, "ticker": 2, "quantity": 3,
+                "price": 4, "fee": 5, "amount": 6, "currency": None,
+                "note": None},
+    "date_format": "%m/%d/%Y",
+    "decimal": ".",
+    "thousands": "",
+    "action_map": {"you bought": "buy", "you sold": "sell",
+                   "dividend received": "dividend"},
+}
+
+
+def test_an_action_written_as_a_sentence_is_read_by_its_phrase():
+    grid = llm_map.read_grid("x.csv", SENTENCE_CSV.encode())
+    result = llm_map.apply_mapping(grid, SENTENCE_MAPPING)
+
+    assert [t.action for t in result.transactions] == [
+        "buy", "dividend", "sell"]
+    buy, div, sell = result.transactions
+    assert (buy.quantity, buy.price) == (50.0, 78.42)
+    assert div.price == 22.15  # the total column, the per-share cell is 0
+    assert sell.quantity == 20.0  # exported negative
+    # The cash line names no action of ours and is still reported, not dropped.
+    assert result.skipped[0]["reason"] == "action not recognised"
+
+
+def test_a_phrase_only_counts_as_a_whole_word():
+    """"buy" inside "buyback" is not a buy."""
+    grid = [["date", "action", "ticker"], ["2025-01-02", "Buyback offer", "X"]]
+    mapping = {**SENTENCE_MAPPING, "action_map": {"buy": "buy"},
+               "columns": {"date": 0, "action": 1, "ticker": 2,
+                           "quantity": None, "price": None, "amount": None,
+                           "fee": None, "currency": None, "note": None},
+               "date_format": "%Y-%m-%d"}
+    result = llm_map.apply_mapping(grid, mapping)
+    assert not result.transactions
+    assert result.skipped[0]["reason"] == "action not recognised"
+
+
+def test_the_longest_phrase_wins():
+    """A broker that spells out both keeps its own distinction."""
+    grid = [["date", "action", "ticker"],
+            ["2025-01-02", "Sell to close position", "X"]]
+    mapping = {**SENTENCE_MAPPING,
+               "action_map": {"sell": "sell", "sell to close": "fee"},
+               "columns": {"date": 0, "action": 1, "ticker": 2,
+                           "quantity": None, "price": None, "amount": None,
+                           "fee": None, "currency": None, "note": None},
+               "date_format": "%Y-%m-%d"}
+    assert llm_map.apply_mapping(grid, mapping).transactions[0].action == "fee"
+
+
+def test_a_canonical_verb_inside_a_sentence_is_the_last_resort():
+    """A row type the sample never showed the model still reads."""
+    grid = [["date", "action", "ticker"],
+            ["2025-01-02", "Stock split 10:1 applied", "X"]]
+    mapping = {**SENTENCE_MAPPING, "action_map": {"you bought": "buy"},
+               "columns": {"date": 0, "action": 1, "ticker": 2,
+                           "quantity": None, "price": None, "amount": None,
+                           "fee": None, "currency": None, "note": None},
+               "date_format": "%Y-%m-%d"}
+    assert llm_map.apply_mapping(grid, mapping).transactions[0].action == "split"
+
+
+# A file that prints both a per-share price and a row total — the shape that
+# makes one "price" column index unable to serve every row: the dividend's
+# value is in the total column and its per-share cell is zero.
+TOTALS_CSV = (
+    "Date,Type,Symbol,Units,Unit Price,Fees,Amount\n"
+    "12/03/2025,Open Position,NVDA,30,151.00,1.50,-4530.00\n"
+    "01/03/2026,Dividend,MSFT,0,0.00,0.00,6.64\n"
+    "01/09/2026,Fee,MSFT,0,0.00,0.00,-2.50\n"
+)
+
+TOTALS_MAPPING = {
+    "header_row": 0,
+    "columns": {"date": 0, "action": 1, "ticker": 2, "quantity": 3,
+                "price": 4, "amount": 6, "fee": 5, "currency": None,
+                "note": None},
+    "date_format": "%m/%d/%Y",
+    "decimal": ".",
+    "thousands": "",
+    "action_map": {"open position": "buy", "dividend": "dividend",
+                   "fee": "fee"},
+}
+
+
+def test_a_dividend_takes_its_value_from_the_total_column():
+    """The per-share cell is 0 on a dividend row; the total is the amount."""
+    grid = llm_map.read_grid("x.csv", TOTALS_CSV.encode())
+    buy, div, fee = llm_map.apply_mapping(grid, TOTALS_MAPPING).transactions
+
+    assert div.price == 6.64
+    assert fee.price == 2.50  # a fee row prints its value in the same column
+    # The trade keeps its own per-share price; the total is not divided in.
+    assert buy.price == 151.00
+
+
+def test_a_trade_with_no_unit_price_divides_the_total():
+    """Some exports carry only a total — better a derived price than zero."""
+    csv = ("Date,Type,Symbol,Units,Amount\n"
+           "12/03/2025,Buy,NVDA,30,-4530.00\n")
+    grid = llm_map.read_grid("x.csv", csv.encode())
+    mapping = {**TOTALS_MAPPING, "action_map": {"buy": "buy"},
+               "columns": {"date": 0, "action": 1, "ticker": 2, "quantity": 3,
+                           "amount": 4, "price": None, "fee": None,
+                           "currency": None, "note": None}}
+    assert llm_map.apply_mapping(grid, mapping).transactions[0].price == 151.0
+
+
+def test_a_total_never_overrides_a_price_the_file_stated():
+    grid = llm_map.read_grid("x.csv", TOTALS_CSV.encode())
+    mapping = {**TOTALS_MAPPING,
+               "columns": {**TOTALS_MAPPING["columns"], "amount": 6}}
+    buy = llm_map.apply_mapping(grid, mapping).transactions[0]
+    assert buy.price == 151.00 and buy.quantity == 30.0
+
+
+def test_a_mapping_without_an_amount_column_still_applies():
+    """Every stored mapping predates the amount column; none may break."""
+    legacy = {**MAPPING}
+    legacy["columns"] = {k: v for k, v in MAPPING["columns"].items()
+                         if k != "amount"}
+    assert len(llm_map.apply_mapping(_grid(), legacy).transactions) == 3
+
+
 def test_apply_mapping_accepts_an_already_canonical_action():
     """A file that already says "buy" needs no action_map entry."""
     grid = [["date", "ticker", "action"], ["2024-01-02", "AAPL", "BUY"]]
@@ -559,7 +699,9 @@ def test_parse_maps_once_however_long_the_file_is():
     result = llm_map.parse("big.csv", data, provider, "key")
 
     assert len(result.transactions) == 500
-    assert len(provider.calls) == 1  # the model saw a sample, not the file
+    # Two calls whatever the length: one maps the columns from a sample, one
+    # resolves the file's distinct labels. Neither grows with the row count.
+    assert len(provider.calls) == 2
     _, model, _, messages = provider.calls[0]
     assert model == "stub-mini"
     assert messages[0]["content"].count("row ") <= llm_map.SAMPLE_ROWS

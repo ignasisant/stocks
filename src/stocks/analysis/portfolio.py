@@ -503,6 +503,21 @@ def _profile(ticker: str) -> dict:
     # allocation bucket directly and skip the profile fetch.
     if pair := split_pair(ticker):
         return {"sector": "Crypto", "country": None, "currency": pair[1]}
+    # Seen before: the four fields this needs never change, so a stock the
+    # memo knows costs no request at all (data.profiles). Funds fall through —
+    # their split is a look-through of holdings that `.info` alone lacks.
+    from stocks.data.fetch import resolve
+    from stocks.data.funds import is_fund_type
+    from stocks.data.profiles import known
+
+    stored = known(resolve(ticker))
+    if stored and not is_fund_type(stored.get("quoteType")):
+        remember(ticker, stored.get("quoteType"))
+        return {
+            "sector": stored.get("sector"),
+            "country": stored.get("country"),
+            "currency": stored.get("currency"),
+        }
     try:
         info = quote_info(ticker)
     except Exception:
@@ -712,9 +727,16 @@ def positions_frame(
 
 
 def position_value_frames(
-    positions, period: str = "3mo", base: str = "EUR"
+    positions,
+    period: str = "3mo",
+    base: str = "EUR",
+    closes: dict[str, pd.Series] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """(values at the daily FX, values at the window's closing FX).
+
+    `closes` lets a caller hand in price series it already holds (the web
+    layer's shared ledger download, sliced to the window) instead of paying a
+    bulk request for the same names; `period` is then only the window label.
 
     One fetch, two readings of it. The first frame is what the book was worth
     each day and is what every caller wants; the second holds every exchange
@@ -728,7 +750,8 @@ def position_value_frames(
 
     from stocks.data.fx import rates_range
 
-    closes = load_closes([p.ticker for p in positions], period=period)
+    if closes is None:
+        closes = load_closes([p.ticker for p in positions], period=period)
     if not closes:
         return pd.DataFrame(), pd.DataFrame()
     px = pd.DataFrame(closes).sort_index()
@@ -763,7 +786,10 @@ def position_value_frames(
 
 
 def position_values_history(
-    positions, period: str = "3mo", base: str = "EUR"
+    positions,
+    period: str = "3mo",
+    base: str = "EUR",
+    closes: dict[str, pd.Series] | None = None,
 ) -> pd.DataFrame:
     """Daily `base` value per open position at *today's* quantities.
 
@@ -773,7 +799,7 @@ def position_values_history(
     EUR. Flows inside the window are NOT adjusted (that's the TWR view's job).
     Tickers without a usable price (or FX) series are absent.
     """
-    return position_value_frames(positions, period, base)[0]
+    return position_value_frames(positions, period, base, closes=closes)[0]
 
 
 def benchmark_changes(
@@ -1043,7 +1069,7 @@ def session_quote(ticker: str) -> dict | None:
     """Yahoo quote snapshot: `{"price", "pct", "session"}`, or None if missing.
 
     `pct` is the move since the previous regular close, extended hours
-    included. Reads Yahoo's quote (`.info`): during premarket
+    included. Reads Yahoo's batch quote (`data.quotes`): during premarket
     `regularMarketPrice` is still the last close, so `preMarketPrice /
     regularMarketPrice - 1` is the move so far today; after the close
     `postMarketPrice / regularMarketPreviousClose - 1` compounds the session
@@ -1063,10 +1089,18 @@ def session_quote(ticker: str) -> dict | None:
     a weekend). Premarket stamps today; every other branch stamps the regular
     session the quote closed. None when the quote carries no timestamp.
     """
-    from stocks.data.fetch import info as quote_info
+    from stocks.data.quotes import quote as live_quote
 
-    with obs.swallow("quote.session", ticker=ticker):
-        quote = quote_info(ticker)
+    return _snapshot(live_quote(ticker))
+
+
+def _snapshot(quote: dict) -> dict | None:
+    """`session_quote`'s reading of one raw Yahoo quote row — pure, no network.
+
+    Split out because the batch path parses the same rows: one place decides
+    which price a day change is measured from, whoever fetched it.
+    """
+    with obs.swallow("quote.session"):
         state = str(quote.get("marketState") or "")
         regular = quote.get("regularMarketPrice")
         prev = quote.get("regularMarketPreviousClose")
@@ -1104,22 +1138,30 @@ def _session_move(ticker: str) -> float | None:
     return quote["pct"] if quote else None
 
 
-def session_quotes(tickers: list[str], max_workers: int = 8) -> dict[str, dict]:
-    """`session_quote` per ticker, concurrent. Missing quotes are absent.
+def session_quotes(tickers: list[str]) -> dict[str, dict]:
+    """`session_quote` for every ticker, in ONE request. Missing quotes absent.
 
     The full snapshot rather than the bare percentage, because a day move is
     only half a fact: `as_of` says which session it is, and a caller that
     prints it as "today" without looking is how a Wednesday card ends up
     quoting Monday's close.
+
+    This used to fan `.info` out over a thread pool — two requests per ticker,
+    eight at a time, and a `with` block that waited on whatever hung. Off-
+    session that is the whole book, and a throttled Yahoo turned a Home render
+    into a nineteen-minute one. `data.quotes` asks once, under one budget.
     """
+    from stocks.data.quotes import quotes as live_quotes
+
     if not tickers:
         return {}
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        pairs = pool.map(lambda t: (t, session_quote(t)), tickers)
-    return {t: q for t, q in pairs if q and q.get("pct") is not None}
+    snapshots = (
+        (t, _snapshot(row)) for t, row in live_quotes(list(tickers)).items()
+    )
+    return {t: q for t, q in snapshots if q and q.get("pct") is not None}
 
 
-def session_moves(tickers: list[str], max_workers: int = 8) -> dict[str, float]:
+def session_moves(tickers: list[str]) -> dict[str, float]:
     """Day % move per ticker (native), extended hours included, concurrent.
 
     Feeds the off-session day-change cells: premarket / after-hours while those
@@ -1128,9 +1170,7 @@ def session_moves(tickers: list[str], max_workers: int = 8) -> dict[str, float]:
     unavailable are absent (caller falls back to the basket value). Callers
     that will *write* the number into prose want `session_quotes` instead, for
     the `as_of` that says which session it is."""
-    return {
-        t: q["pct"] for t, q in session_quotes(tickers, max_workers).items()
-    }
+    return {t: q["pct"] for t, q in session_quotes(tickers).items()}
 
 
 def analyze(

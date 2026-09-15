@@ -148,8 +148,21 @@ def asset_logo(name: str) -> str | None:
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def _company_name(ticker: str, watchlist: str) -> str | None:
+    # A ledger keeps the label the broker wrote — an ISIN ("US4131971040") or
+    # a local code (RCF) — while every name source below keys on the Yahoo
+    # symbol, so resolve the watchlist.yaml alias first or those holdings
+    # render as a raw ISIN everywhere a name is shown. The account's own
+    # entry still wins: it is matched under both spellings, so a custom name
+    # set on the broker code is not lost by resolving past it.
+    try:
+        from stocks.data.fetch import resolve
+
+        resolved = resolve(ticker)
+    except Exception:
+        resolved = ticker
+    wanted = {ticker.upper(), resolved.upper()}
     for h in load_watchlist(Path(watchlist)):
-        if h.ticker.upper() == ticker.upper() and h.name:
+        if h.ticker.upper() in wanted and h.name:
             return h.name
     # Both fallbacks hit the network on a cold cache (coin list, SEC ticker
     # map) and render pre-page.run, outside the app-level guard — a dead or
@@ -158,25 +171,47 @@ def _company_name(ticker: str, watchlist: str) -> str | None:
     try:
         from stocks.data.crypto import crypto_name
 
-        if name := crypto_name(ticker):
+        if name := crypto_name(resolved):
             return name
         from stocks.data.funds import fund_name
 
         # The fund catalog is local and covers the lines a EUR investor holds;
         # the SEC map below knows US filers, so a UCITS ETF would otherwise
         # render as a bare symbol everywhere a name is shown.
-        if name := fund_name(ticker):
+        if name := fund_name(resolved):
             return name
         from stocks.data.edgar import title_for
 
-        return title_for(ticker)
+        return title_for(resolved)
     except Exception:
         return None
+
+
+def display_symbol(ticker: str) -> str:
+    """What to PRINT for a ledger label: the Yahoo symbol, never the ISIN.
+
+    Importers keep whatever the broker wrote — Revolut's local codes, and an
+    ISIN whenever the statement had no symbol we could place — because that
+    string is the ledger's audit trail and the key positions are booked under.
+    It is a terrible thing to read: "US26483E1001" tells nobody it is Duolingo.
+    Every screen therefore prints the resolved symbol (watchlist.yaml
+    `aliases`, identity when unmapped) while links, lookups and the stored
+    rows keep the original label.
+    """
+    try:
+        from stocks.data.fetch import resolve
+
+        return resolve(ticker)
+    except Exception:
+        return ticker
 
 
 def company_name(ticker: str) -> str | None:
     """Human name: the session account's watchlist name first, then the coin
     map for crypto pairs, then the SEC ticker map (offline once cached). None
-    for symbols no source knows. The cache keys on the account's watchlist
-    path — custom names one user sets must never render for another."""
+    for symbols no source knows. Broker codes and ISINs are resolved through
+    watchlist.yaml `aliases` before any source is asked, so a holding the
+    ledger stores as "US4131971040" reads as its company name. The cache keys
+    on the account's watchlist path — custom names one user sets must never
+    render for another."""
     return _company_name(ticker, str(auth.watchlist_path()))

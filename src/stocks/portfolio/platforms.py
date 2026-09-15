@@ -121,9 +121,12 @@ PLATFORMS: tuple[Platform, ...] = (
         file_types=("csv",),
         hint=(
             "Export from IBKR → Performance & Reports → Statements → "
-            "Activity (CSV). Only imported if the Trades/Dividends sections "
-            "have the exact IBKR columns; stock orders and dividends import, "
-            "withholding-tax rows are listed for manual review."
+            "Activity (CSV), in English or Spanish. Stock orders and "
+            "dividends import; withholding-tax and accrued-dividend rows are "
+            "listed for manual review. A statement covering a period with no "
+            "trades has no movements at all — there the open-positions block "
+            "imports instead, one buy per holding at the broker's average "
+            "cost, all dated the statement day."
         ),
         parse=lambda filename, data: ibkr.parse_csv(
             data.decode("utf-8-sig")

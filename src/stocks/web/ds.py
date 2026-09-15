@@ -328,6 +328,24 @@ def hover_wrap(template: str) -> str:
     """
     return template.replace(" · ", "<br>") if is_mobile() else template
 
+
+def hover_dim(text: str) -> str:
+    """Mute a hover row's label so the value beside it carries the row.
+
+    The DS tooltip reads as a stack of metric rows: label in neutral-500,
+    value in bold neutral-50. Plotly's `hoverlabel.font` is one color for the
+    whole box, so the second tone rides as inline HTML inside the
+    hovertemplate — the same channel the trade and event rows already use.
+    """
+    return f"<span style='color:{TEXT_MUTED}'>{text}</span>"
+
+
+def hover_delta(pct: float) -> str:
+    """A hover row's signed change, in the DS market pair (gain / loss)."""
+    color = UP_COLOR if pct >= 0 else DOWN_COLOR
+    return f"<span style='color:{color}'><b>{pct:+.2f}%</b></span>"
+
+
 # Trimmed Plotly modebar: keep box zoom + reset, drop the rest.
 PLOTLY_CONFIG = {
     "displaylogo": False,

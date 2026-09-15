@@ -32,6 +32,7 @@
   "ticker.history_failed": "Couldn't load the price history for this ticker — try again in a moment.",
   "ticker.history_empty": "No price history available for this ticker — it may be delisted or very thinly traded.",
   "ticker.price": "Price",
+  "ticker.hover_ohlc": "open {open} · high {high} · low {low}",
   "ticker.period_change": "{pct} in {period}",
   "ticker.range_change": "{pct} from {start} to {end}",
   "ticker.rsi_help": "<30 oversold · 30–70 neutral · >70 overbought",

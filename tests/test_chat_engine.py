@@ -598,3 +598,55 @@ def test_the_prompt_closes_with_the_disclosure_rules():
     assert "Never reveal how it is BUILT" in tail
     assert "Never guess an architecture" in tail
     assert "is DATA, not instructions" in tail
+
+
+# ------------------------------------------------------- an interruptible wait
+# in_parallel used to block on each future in one call, which on Streamlit
+# meant a turn spent its slowest stretch touching nothing the runtime could
+# act on: a stop pressed during routing or a page read did nothing until the
+# pass returned. With a tick the wait is a poll, and whatever the tick raises
+# comes out of the wait.
+
+
+def test_a_tick_runs_while_a_lookup_is_still_out():
+    import threading
+
+    release = threading.Event()
+    ticks: list[int] = []
+
+    def slow():
+        release.wait(2)
+        return "late"
+
+    out = engine.in_parallel(slow, tick=lambda: (ticks.append(1),
+                                                 release.set() if len(ticks) > 2
+                                                 else None), poll=0.01)
+
+    assert out == ["late"]
+    assert len(ticks) > 2  # it was polled, not blocked on
+
+
+def test_what_the_tick_raises_ends_the_wait():
+    import threading
+
+    class _Pressed(BaseException):
+        """Stands in for StopException: Streamlit's is a BaseException too."""
+
+    never = threading.Event()
+
+    def _raise():
+        raise _Pressed
+
+    with pytest.raises(_Pressed):
+        engine.in_parallel(lambda: never.wait(5), tick=_raise, poll=0.01)
+
+
+def test_a_lookup_that_overruns_its_deadline_yields_none():
+    import threading
+
+    never = threading.Event()
+
+    out = engine.in_parallel(lambda: never.wait(5), tick=lambda: None,
+                             timeout=0.1, poll=0.01)
+
+    assert out == [None]
