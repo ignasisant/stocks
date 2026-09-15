@@ -113,7 +113,7 @@ def transcribe(audio: bytes, *, language: str | None = None,
     if not key:
         raise TranscriptionFailed("chat.voice_unavailable")
 
-    from openai import OpenAI
+    from openai import OpenAI, omit
 
     model = _model()
     t0 = time.perf_counter()
@@ -122,7 +122,10 @@ def transcribe(audio: bytes, *, language: str | None = None,
         resp = client.audio.transcriptions.create(
             model=model,
             file=(filename, audio, "audio/wav"),
-            language=language or None,
+            # `omit`, not None: the field is optional, and the SDK sends None
+            # as a JSON null rather than leaving the key out — which is a
+            # different request, and one Whisper backends are free to reject.
+            language=language or omit,
         )
     except Exception as exc:
         obs.warn("stt.failed", backend=_BACKEND, model=model,

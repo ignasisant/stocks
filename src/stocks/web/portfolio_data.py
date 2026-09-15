@@ -25,6 +25,7 @@ import pandas as pd
 import streamlit as st
 
 from stocks import obs
+from stocks.analysis import naive_dates
 from stocks.analysis.portfolio import (
     flow_series,
     injected_vs_value,
@@ -146,10 +147,9 @@ def _window(closes: dict[str, pd.Series], months: int) -> dict[str, pd.Series]:
     cutoff = pd.Timestamp.today().normalize() - pd.DateOffset(months=months)
     out: dict[str, pd.Series] = {}
     for t, s in closes.items():
-        idx = s.index
-        if getattr(idx, "tz", None) is not None:
-            idx = idx.tz_localize(None)
-        tail = s[idx >= cutoff]
+        # Series arrive naive or stamped in the exchange's zone depending on
+        # the market; `naive_dates` is where the app flattens that.
+        tail = s[naive_dates(s.index) >= cutoff]
         if not tail.empty:
             out[t] = tail
     return out
