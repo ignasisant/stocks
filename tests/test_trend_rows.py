@@ -179,6 +179,25 @@ def test_the_label_is_its_own_tooltip_without_a_hint():
     assert 'title="US 10y"' in _row(rows=[TrendRow(label="US 10y", value="4.79%")])
 
 
+def test_the_hint_also_opens_a_dot_beside_the_name():
+    """A native title needs a hover and a second of patience. The dot is the
+    affordance: visible, focusable, and readable on a phone with a tap."""
+    markup = _row(rows=[TrendRow(label="VIX", value="17.7", hint="Fear, priced")])
+    assert 'class="ag-trend-i" tabindex="0" data-tip="Fear, priced"' in markup
+    # Outside the label span, which clips its own overflow for the ellipsis.
+    assert '</span><span class="ag-trend-i"' in markup
+
+
+def test_a_row_with_nothing_to_explain_gets_no_dot():
+    """A dot on every row teaches the reader to stop looking at dots."""
+    assert "ag-trend-i" not in _row(rows=[TrendRow(label="Spain", value="4.5%")])
+
+
+def test_the_dot_text_is_escaped():
+    markup = _row(rows=[TrendRow(label="X", value="1", hint='S&P "puts"')])
+    assert "S&amp;P &quot;puts&quot;" in markup
+
+
 def test_a_row_without_a_state_still_fills_the_state_cell():
     markup = _row(rows=[TrendRow(label="Spain", value="4.5%")])
     assert markup.count('class="ag-trend-st"') == 2  # header plus the empty cell

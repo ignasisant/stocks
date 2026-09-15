@@ -319,9 +319,16 @@ def _script() -> None:
 
     from stocks.web import onboarding as _onb
 
-    class _Page:  # stand-in for the StreamlitPage app.py passes in
-        url_path = "portfolio"
-        title = "Portfolio"
+    # Stand-in for the StreamlitPage app.py passes in. It claims to be
+    # whatever page the newest announcement points at, so "take me there"
+    # parks instead of navigating: st.switch_page needs a real st.navigation,
+    # which a harness of one script does not have, and which card ships first
+    # is not this file's business.
+    _first = _onb.by_id(_onb.unseen_news({})[0].item.step or "")
+
+    class _Page:
+        url_path = _onb._url_path(_first.page) if _first and _first.page else ""
+        title = "Page"
 
     st.session_state["claimed"] = _onb.maybe_open()
     _onb.consume_goto(_Page())

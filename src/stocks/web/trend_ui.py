@@ -46,7 +46,9 @@ from stocks.web.ds import (
     RADIUS_PILL,
     RADIUS_SM,
     RADIUS_XS,
+    SHADOW_OVERLAY,
     SUCCESS_FILL,
+    SURFACE_CARD,
     SURFACE_HOVER,
     SURFACE_SUNKEN,
     TEXT_FAINT,
@@ -104,10 +106,10 @@ class TrendRow:
 
     label: str
     value: str
-    # Hover text for the label — what this series actually is. The rows
-    # replaced KPI tiles that carried a help tooltip each, and a 10-year TIPS
-    # yield is not self-explanatory from its name, so the explanation rides
-    # here rather than being dropped.
+    # What this series actually is, in a sentence. It rides twice: as the
+    # label's own `title`, which is what a truncated name needs, and as the
+    # panel behind the info dot beside the name — a row called VIX or MOVE or
+    # 2s10s says nothing at all to a reader who has not already been told.
     hint: str | None = None
     # A second line under the label, always visible. What the row means to
     # THIS reader ("38% de tu cartera cotiza aquí") or what the series is when
@@ -160,6 +162,34 @@ def css(*, chip_labels: Sequence[str]) -> str:
     .ag-trend-lc {{ display: flex; flex-direction: column; gap: 0.05rem;
                     min-width: 0; }}
     .ag-trend-lc .ag-trend-l {{ color: {TEXT_PRIMARY}; font-weight: 500; }}
+    .ag-trend-n {{ display: flex; align-items: center; gap: 0.3rem;
+                   min-width: 0; }}
+    /* The info dot. It sits outside .ag-trend-l on purpose: that span clips
+       its overflow to draw the ellipsis, and a panel anchored inside it would
+       be cut off at the name. Focusable so a phone, which has no hover, opens
+       the same panel with a tap. */
+    .ag-trend-i {{ position: relative; flex: none; box-sizing: border-box;
+                   width: 13px; height: 13px; border-radius: {RADIUS_PILL};
+                   border: 1px solid {BORDER_FOCUS}; color: {TEXT_MUTED};
+                   font-size: 9px; line-height: 11px; font-weight: 700;
+                   text-align: center; cursor: help; }}
+    .ag-trend-i:hover, .ag-trend-i:focus {{ color: {TEXT_PRIMARY};
+                                            border-color: {TEXT_MUTED};
+                                            outline: none; }}
+    .ag-trend-i::after {{
+      content: attr(data-tip); position: absolute; z-index: 60;
+      left: -0.5rem; top: calc(100% + 0.4rem);
+      width: max-content; max-width: min(24rem, 70vw);
+      white-space: normal; text-align: left; letter-spacing: 0;
+      font-size: {FS_XS}; line-height: 1.5; font-weight: 400;
+      color: {TEXT_SECONDARY}; background: {SURFACE_CARD};
+      border: 1px solid {BORDER_FOCUS}; border-radius: {RADIUS_SM};
+      box-shadow: {SHADOW_OVERLAY}; padding: 0.5rem 0.65rem;
+      opacity: 0; visibility: hidden; pointer-events: none;
+    }}
+    .ag-trend-i:hover::after, .ag-trend-i:focus::after {{
+      opacity: 1; visibility: visible;
+    }}
     .ag-trend-sub {{ font-size: {FS_2XS}; line-height: 1.35; color: {TEXT_MUTED};
                      overflow: hidden; text-overflow: ellipsis;
                      white-space: nowrap; }}
@@ -206,6 +236,7 @@ def css(*, chip_labels: Sequence[str]) -> str:
       .ag-trend-st {{ grid-column: {cols + 1} / {cols + 2}; grid-row: 1;
                       justify-self: end; }}
       .ag-trend-sub {{ white-space: normal; }}
+      .ag-trend-i::after {{ max-width: 76vw; }}
       /* The header is gone, so each change cell labels its own horizon. */
       .ag-trend-c {{ text-align: left; }}
       .ag-trend-c::before {{ content: attr(data-h); display: block;
@@ -262,10 +293,19 @@ def rows_html(
     body = []
     for row in rows:
         tip = row.hint or row.label
-        label = (
+        name = (
             f'<span class="ag-trend-l" title="{html.escape(tip, quote=True)}">'
             f"{html.escape(row.label)}</span>"
         )
+        # The dot only appears where there is something to say. A row whose
+        # name is its own explanation ("Spain") would gain nothing from one,
+        # and a dot on every row teaches the reader to stop looking.
+        if row.hint:
+            name += (
+                '<span class="ag-trend-i" tabindex="0" '
+                f'data-tip="{html.escape(row.hint, quote=True)}">i</span>'
+            )
+        label = f'<span class="ag-trend-n">{name}</span>'
         if row.sub:
             label += f'<span class="ag-trend-sub">{html.escape(row.sub)}</span>'
         cells = [

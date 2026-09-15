@@ -298,6 +298,14 @@ RELEASES: tuple[Release, ...] = (
             News(slug="watchlist", icon="playlist_add", step="watchlist"),
         ),
     ),
+    Release(
+        version="2026.09.1",
+        date="2026-09",
+        items=(
+            News(slug="tips", icon="info", step="pulse"),
+            News(slug="voice", icon="mic", step="assistant"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

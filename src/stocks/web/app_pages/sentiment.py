@@ -451,6 +451,26 @@ def _num(v: float, digits: int = 2) -> str:
     return "n/a" if v != v else f"{v:.{digits}f}"
 
 
+def _slug(ticker: str) -> str:
+    """A ticker as an i18n key fragment: `^GSPC` to `gspc`, `GC=F` to `gc_f`."""
+    return "".join(
+        c if c.isalnum() else "_" for c in ticker.lower().lstrip("^")
+    ).strip("_")
+
+
+def _tip(*parts: str) -> str | None:
+    """The hover explanation for one row, or None when there is no copy for it.
+
+    Every detail table names things a reader is assumed to already know — VIX,
+    2s10s, MOVE, RSP over SPY — and the page assumed it too. These say what the
+    row is in one sentence, and a row the catalogs have nothing to say about
+    simply gets no dot rather than a key printed as text.
+    """
+    key = "sentiment.tip_" + "_".join(parts)
+    text = tr(key)
+    return None if text == key else text
+
+
 def _label(key: str, fallback: str) -> str:
     """Translation for `key`, or `fallback` when the catalogs have no entry.
 
@@ -1443,6 +1463,7 @@ def render_indices(
         rows.append(
             TrendRow(
                 label=idx.name,
+                hint=_tip("index", _slug(idx.ticker)),
                 sub=(
                     tr("sentiment.index_weight", pct=f"{share:.0%}")
                     if share >= 0.01
@@ -1513,6 +1534,7 @@ def render_gauges(box, closes: dict[str, pd.Series]) -> None:
         rows.append(
             TrendRow(
                 label=gauge.name,
+                hint=_tip("gauge", _slug(gauge.ticker)),
                 sub=tr(f"sentiment.gauge_{gauge.ticker.lstrip('^').lower()}_sub"),
                 value=gauge.fmt.format(float(clean.iloc[-1])),
                 chips=chips,
@@ -1563,6 +1585,7 @@ def render_rates(box, rates: dict[str, pd.Series]) -> None:
         rows.append(
             TrendRow(
                 label=tr(f"sentiment.{suffix}"),
+                hint=_tip("rate", suffix),
                 # The explanation was a hover tooltip and is now a line: a
                 # phone has no hover, and a 10-year TIPS yield is not
                 # self-explanatory from its name on any device.
@@ -1643,6 +1666,7 @@ def render_inflation(box, infl: pd.DataFrame) -> None:
         rows.append(
             TrendRow(
                 label=_label(f"sentiment.area_{area}", area),
+                hint=_tip("area", area),
                 value=f"{headline:.1f}%",
                 chips=chips,
                 spark=[float(v) for v in row["path"]],
@@ -1734,6 +1758,7 @@ def render_rotation(
                 label=_label(
                     f"sentiment.sector_{name.lower().replace(' ', '_')}", name
                 ),
+                hint=_tip("sector", name.lower().replace(" ", "_")),
                 sub=sub,
                 value=f"{float(excess_m[name]):+.2%}",
                 chips=chips,
@@ -1771,6 +1796,7 @@ def render_rotation(
         pair_rows.append(
             TrendRow(
                 label=tr(f"sentiment.pair_{key}"),
+                hint=_tip("pair", key),
                 value=f"{float(ratio.iloc[-1]):.3f}",
                 chips=_pct_chips(ratio),
                 spark=_tail(ratio),
@@ -1802,6 +1828,7 @@ def render_cross(box, closes: dict[str, pd.Series]) -> None:
         rows.append(
             TrendRow(
                 label=name,
+                hint=_tip("asset", _slug(ticker)),
                 sub=(
                     tr("sentiment.fx_base")
                     if ticker == "EURUSD=X"

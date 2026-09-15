@@ -125,6 +125,10 @@ def test_every_slot_resolves_when_all_sources_answer(page):
     # 0-100 meter it is scored against.
     assert markup.count('class="ag-comp-row"') == len(sm.COMPONENT_KEYS)
     assert 'class="ag-meter-pin"' in markup
+    # Every row says what it is on hover. The names here are jargon — VIX,
+    # 2s10s, RSP over SPY — so a registry entry shipped without tip copy is a
+    # row the reader cannot read, and that is what this count catches.
+    assert markup.count('class="ag-trend-i"') == _rows(markup)
 
 
 def test_a_throttled_price_host_names_the_source_it_lost(page, monkeypatch):
