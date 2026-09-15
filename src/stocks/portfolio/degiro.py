@@ -13,10 +13,10 @@ exports never have one).
 Shape notes this parser absorbs:
 
 * There is no ticker column — rows import with the **ISIN as the ticker**
-  and the product name in the note. Validation flags each unknown ISIN with
-  instructions to map it to a Yahoo symbol under ``aliases:`` in
-  watchlist.yaml (the established EU-broker-code mechanism); prices won't
-  resolve until then.
+  and the product name in the note. That is the label the ledger keeps; the
+  web layer resolves it to a symbol for display (``stocks.web.logos
+  .yahoo_symbol``) and Yahoo prices an ISIN directly, so an ``aliases:``
+  entry in watchlist.yaml is now only how you pin a different listing.
 * Numbers are locale-formatted ("1.234,56" in the Spanish export) and dates
   are DD-MM-YYYY — both normalised here.
 * Buy vs sell is the sign of the quantity column.

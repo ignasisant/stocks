@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+from stocks.data import symbols
 from stocks.portfolio import last_import
 from stocks.portfolio.ledger import all_transactions
 from stocks.web import chat_core
@@ -32,6 +33,14 @@ UNKNOWN_CSV = (
     "Fecha;Valor;Operación;Títulos;Precio;Divisa\n"
     "02/01/2024;AAPL;Compra;10;180,50;USD\n"
     "05/03/2024;AAPL;Traspaso;1;1,00;USD\n"
+)
+
+# DEGIRO exports no symbol: the rows import under the ISIN.
+DEGIRO_CSV = (
+    "Date,Time,Product,ISIN,Exchange,Venue,Quantity,Price,,Local value,,"
+    "Value,,Exchange rate,Transaction costs,,Total,,Order ID\n"
+    "03-01-2024,14:30,SERVICENOW INC,US81762P1021,NSY,XNYS,"
+    "10,125.00,USD,-1250.00,USD,-1151.65,EUR,1.0854,-2.50,EUR,-1154.15,EUR,a1\n"
 )
 
 MAPPING = {
@@ -332,3 +341,53 @@ def test_preview_markup_is_built_before_it_is_drawn(account, monkeypatch):
     markup = chat_core._preview_html(rows)
     assert isinstance(markup, str) and "AAPL" in markup
     assert drawn == []
+
+
+# ------------------------------------------------------- ISINs in the preview
+
+
+@pytest.fixture
+def isin_lookup(tmp_path, monkeypatch):
+    """Yahoo's ISIN lookup, offline: it answers for ServiceNow and nothing else.
+
+    The alias map goes with it: this developer's own watchlist.yaml maps these
+    ISINs by hand, and a test that reads it passes for the wrong reason.
+    """
+    monkeypatch.setattr("stocks.portfolio.validate.ticker_aliases", dict)
+    monkeypatch.setattr(symbols, "ISIN_CACHE", tmp_path / "isin_symbols.json")
+    monkeypatch.setattr(symbols, "_isin_memo", None)
+    monkeypatch.setattr(symbols, "_isin_misses", set())
+    monkeypatch.setattr(
+        symbols,
+        "_quotes",
+        lambda query, count: (
+            [{"symbol": "NOW", "quoteType": "EQUITY", "exchDisp": "NYSE"}]
+            if query == "US81762P1021"
+            else []
+        ),
+    )
+
+
+def _ticker_warnings(pending) -> list[str]:
+    return [row["why"] for row in pending["flagged"]]
+
+
+def test_a_resolvable_isin_is_not_flagged_as_an_unknown_ticker(
+    account, isin_lookup
+):
+    """A DEGIRO statement is 200 rows of ISIN. Warning on each one that it
+    needs mapping in watchlist.yaml is advice the app no longer needs."""
+    pending = chat_core._prepare_import("Transactions.csv", DEGIRO_CSV.encode(),
+                                        _StubProvider(), "key")
+
+    assert [t.ticker for t in pending["transactions"]] == ["US81762P1021"]
+    assert _ticker_warnings(pending) == []
+
+
+def test_an_isin_nothing_resolves_still_warns(account, isin_lookup, monkeypatch):
+    """The warning is what puts a row nobody can price in front of the user."""
+    monkeypatch.setattr(symbols, "_quotes", lambda query, count: [])
+    pending = chat_core._prepare_import("Transactions.csv", DEGIRO_CSV.encode(),
+                                        _StubProvider(), "key")
+
+    assert "not in EDGAR/watchlist/aliases" in _ticker_warnings(pending)[0]

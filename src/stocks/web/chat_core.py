@@ -32,6 +32,7 @@ from stocks import obs
 from stocks.chat import agent, engine, market, tokens, toolbox, tools
 from stocks.config import load_watchlist
 from stocks.data import fetch
+from stocks.data.symbols import is_isin, symbol_for_isin
 from stocks.portfolio import autodetect, demo, last_import, llm_map, platforms
 from stocks.portfolio.ledger import add_many, all_transactions
 from stocks.portfolio.validate import known_tickers, validate
@@ -1291,10 +1292,12 @@ def _prepare_import(name: str, data: bytes, provider: llm.Provider,
                     api_key: str) -> dict:
     """Detect, validate and package one uploaded statement for preview.
 
-    Read-only. Unlike the Import page this passes no live symbol lookup: that
-    costs a network round-trip per unknown symbol against an API that already
-    rate-limits us, and it can only ever downgrade a warning — never keep a
-    bad row out. Unknown symbols are simply shown as warnings.
+    Read-only. Unlike the Import page this passes no live symbol *existence*
+    check: that costs a network round-trip per unknown symbol against an API
+    that already rate-limits us, and it can only ever downgrade a warning —
+    never keep a bad row out. Unknown symbols are simply shown as warnings.
+    The one exception is an ISIN, which is resolved off the cached map the
+    preview needs anyway to print it.
 
     The batch staged here is `fresh`, not `importable`: rows the ledger
     already holds are held back rather than imported with a warning the way
@@ -1311,6 +1314,12 @@ def _prepare_import(name: str, data: bytes, provider: llm.Provider,
         # duplicates that will not exist (stocks.portfolio.demo).
         demo.without(all_transactions(paths.db)),
         known=known_tickers(paths.watchlist, paths.db),
+        # ISINs only, and off the same cached lookup the preview is about to
+        # make to print the symbol: a DEGIRO statement is otherwise 200 rows
+        # each warning "map this ISIN under `aliases:`", advice the app no
+        # longer needs (stocks.web.logos.yahoo_symbol). None, never False, for
+        # everything else — an unchecked symbol is not a symbol Yahoo denied.
+        lookup=lambda t: True if is_isin(t) and symbol_for_isin(t) else None,
         # Asked about one symbol, and only when a sell overshoots: a bank PDF
         # prints trades and leaves the 20:1 out, and rejecting that sell is
         # the rejection nobody can act on.

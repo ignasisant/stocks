@@ -312,6 +312,7 @@ RELEASES: tuple[Release, ...] = (
             News(slug="amount", icon="price_change", step="import"),
             News(slug="tgtext", icon="voice_over_off", step="notify"),
             News(slug="hover", icon="show_chart", step="market"),
+            News(slug="isin", icon="badge", step="import"),
         ),
     ),
 )

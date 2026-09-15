@@ -56,7 +56,12 @@ def logo(ticker: str) -> str | None:
     displays. The external URL is the fallback when this host can't validate
     or download the image (logo CDNs block datacenter IPs — the browser gets
     a chance instead); None when no source knows the ticker.
+
+    Resolved first (`yahoo_symbol`): every logo source is keyed by symbol, so
+    a row the ledger stores as an ISIN would otherwise probe with a string no
+    source knows — and mirror its result under a second file name.
     """
+    ticker = yahoo_symbol(ticker)
     if name := mirror_logo(ticker, _STATIC_LOGO_DIR):
         return _static_logo_src(name)
     return logo_url(ticker)
@@ -150,16 +155,11 @@ def asset_logo(name: str) -> str | None:
 def _company_name(ticker: str, watchlist: str) -> str | None:
     # A ledger keeps the label the broker wrote — an ISIN ("US4131971040") or
     # a local code (RCF) — while every name source below keys on the Yahoo
-    # symbol, so resolve the watchlist.yaml alias first or those holdings
-    # render as a raw ISIN everywhere a name is shown. The account's own
-    # entry still wins: it is matched under both spellings, so a custom name
-    # set on the broker code is not lost by resolving past it.
-    try:
-        from stocks.data.fetch import resolve
-
-        resolved = resolve(ticker)
-    except Exception:
-        resolved = ticker
+    # symbol, so resolve the broker label first or those holdings render as a
+    # raw ISIN everywhere a name is shown. The account's own entry still wins:
+    # it is matched under both spellings, so a custom name set on the broker
+    # code is not lost by resolving past it.
+    resolved = yahoo_symbol(ticker)
     wanted = {ticker.upper(), resolved.upper()}
     for h in load_watchlist(Path(watchlist)):
         if h.ticker.upper() in wanted and h.name:
@@ -187,23 +187,51 @@ def _company_name(ticker: str, watchlist: str) -> str | None:
         return None
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def yahoo_symbol(ticker: str) -> str:
+    """The Yahoo symbol a stored broker label stands for (itself, unmapped).
+
+    Two tiers, cheapest first: watchlist.yaml `aliases`, the hand-written map
+    that covers the local codes Revolut prints; then, for a label that is
+    ISIN-shaped and unmapped, Yahoo's own ISIN lookup — one search per ISIN
+    ever, cached on disk (stocks.data.symbols.symbol_for_isin). Without the
+    second tier a DEGIRO import reads as twelve rows of "US81762P1021" until
+    somebody hand-edits a mapping file, which is not a thing to ask of a
+    reader looking at their own trades.
+
+    Never raises and never blocks a render on a dead Yahoo: an unresolvable
+    label comes back exactly as it was stored.
+    """
+    try:
+        from stocks.data.fetch import resolve
+
+        resolved = resolve(ticker)
+    except Exception:
+        return ticker
+    if resolved.upper() != ticker.upper():
+        return resolved
+    try:
+        from stocks.data.symbols import is_isin, symbol_for_isin
+
+        if is_isin(resolved) and (symbol := symbol_for_isin(resolved)):
+            return symbol
+    except Exception:
+        pass
+    return resolved
+
+
 def display_symbol(ticker: str) -> str:
     """What to PRINT for a ledger label: the Yahoo symbol, never the ISIN.
 
     Importers keep whatever the broker wrote — Revolut's local codes, and an
     ISIN whenever the statement had no symbol we could place — because that
     string is the ledger's audit trail and the key positions are booked under.
-    It is a terrible thing to read: "US26483E1001" tells nobody it is Duolingo.
-    Every screen therefore prints the resolved symbol (watchlist.yaml
-    `aliases`, identity when unmapped) while links, lookups and the stored
-    rows keep the original label.
+    It is a terrible thing to read: "US81762P1021" tells nobody it is
+    ServiceNow. Every screen therefore prints the resolved symbol
+    (`yahoo_symbol`) while links, lookups and the stored rows keep the
+    original label.
     """
-    try:
-        from stocks.data.fetch import resolve
-
-        return resolve(ticker)
-    except Exception:
-        return ticker
+    return yahoo_symbol(ticker)
 
 
 def company_name(ticker: str) -> str | None:
