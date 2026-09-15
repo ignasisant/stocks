@@ -15,7 +15,9 @@ choices, and one "chat_history::<watchlist_path>" thread per account.
 
 from __future__ import annotations
 
+import queue
 import re
+import threading
 import time
 from datetime import UTC, datetime
 from html import escape
@@ -29,6 +31,7 @@ from cryptography.fernet import Fernet
 from stocks import obs
 from stocks.chat import agent, engine, market, tokens, toolbox, tools
 from stocks.config import load_watchlist
+from stocks.data import fetch
 from stocks.portfolio import autodetect, demo, last_import, llm_map, platforms
 from stocks.portfolio.ledger import add_many, all_transactions
 from stocks.portfolio.validate import known_tickers, validate
@@ -42,13 +45,17 @@ from stocks.web import (
     llm,
     ratelimit,
     skeletons,
+    stt,
+    tx_text,
 )
+from stocks.web.i18n import active_language
 from stocks.web.i18n import t as tr
 from stocks.web.portfolio_data import enriched_positions, ledger_state
 from stocks.web.widgets import (
     data_table,
     db_mtime,
     is_mobile,
+    ticker_table_html,
     viewer_tz,
 )
 
@@ -480,7 +487,13 @@ def _try_action(provider: llm.Provider, api_key: str,
     answers normally, so a broken action path never blocks the chat."""
     if not tools.maybe_action(message):
         return None
-    act = tools.detect(provider, api_key, message, _action_context())
+    # The context first, here on the script thread: it reads the current view
+    # and the account's paths out of session state, which the worker below
+    # cannot. Only the model call goes off-thread, so the wait on it is one
+    # the reader can stop.
+    context = _action_context()
+    act = _interruptible(lambda: tools.detect(provider, api_key, message,
+                                              context))
     if act is None:
         return None
     try:
@@ -488,6 +501,103 @@ def _try_action(provider: llm.Provider, api_key: str,
     except Exception:
         return None
     return act
+
+
+def _mirror(chunks, kept: list[str]):
+    """Yield `chunks`, keeping a copy of every one of them in `kept`.
+
+    st.write_stream accumulates the answer inside the call, so a Stop pressed
+    mid-answer takes the text with it: the exception unwinds the script and
+    the value is never returned. Mirrored out here, the half-written answer
+    outlives the run that wrote it and the next one can commit it.
+    """
+    for chunk in chunks:
+        kept.append(str(chunk))
+        yield chunk
+
+
+# Streamlit services a pending Stop only where the script touches the runtime
+# — a rendered element, or a session-state read. A turn spends most of its
+# wall clock touching neither: the action probe, the two gather passes and the
+# wait on the first token are all network, on this thread, with nothing
+# enqueued for tens of seconds. Pressed in there, stop did nothing at all
+# until the next phase line landed. These three give the runtime its chance.
+
+_TICK = "_chat_stop_tick"
+
+# How long a gather pass may hold the turn. The agent loop stops itself at
+# agent.TIMEOUT and the page reads at six seconds each, but the router and
+# planner calls in the same pass have no deadline of their own: one provider
+# that accepts a request and never answers used to leave the turn in
+# "gathering" for as long as the reader was willing to watch it. Overrun
+# yields None, which every caller already reads as "that lookup found
+# nothing" — the turn goes on without it.
+GATHER_DEADLINE = 35.0
+
+
+def _checkpoint() -> None:
+    """Let the runtime act on a stop (or a rerun) the reader has asked for.
+
+    Reading one session-state key is the cheapest touch there is — no element,
+    no traffic to the browser — and a pending stop raises StopException out of
+    the read (SafeSessionState's yield callback).
+    """
+    st.session_state.get(_TICK)
+
+
+def _interruptible(call, *, poll: float = 0.2):
+    """Run `call` off the script thread, checkpointing while it works.
+
+    Anything reading session state has to be resolved before the closure is
+    handed over — the worker has no script context.
+    """
+    return engine.in_parallel(call, tick=_checkpoint, poll=poll)[0]
+
+
+_DONE = object()
+
+
+def _pump(chunks, *, poll: float = 0.2):
+    """Yield `chunks` off a worker thread, checkpointing between them.
+
+    The wait on a provider's first token is the last stretch of a turn that
+    holds the script still: write_stream renders nothing until the token
+    lands, so a stop pressed in there took effect only once the model finally
+    answered — a minute of "Writing" with a dead stop button. Read on a
+    worker, the wait becomes a poll the script can be stopped out of.
+
+    The worker is told to drop the stream at its next chunk when this
+    generator is closed, so a stopped turn leaves no provider call running
+    behind it.
+    """
+    out: queue.Queue = queue.Queue()
+    cancelled = threading.Event()
+
+    def read() -> None:
+        try:
+            for chunk in chunks:
+                if cancelled.is_set():
+                    break
+                out.put(chunk)
+            out.put(_DONE)
+        except BaseException as exc:  # re-raised on the script thread below
+            out.put(exc)
+
+    threading.Thread(target=read, daemon=True, name="chat-stream").start()
+    try:
+        while True:
+            try:
+                item = out.get(timeout=poll)
+            except queue.Empty:
+                _checkpoint()
+                continue
+            if item is _DONE:
+                return
+            if isinstance(item, BaseException):
+                raise item
+            yield item
+    finally:
+        cancelled.set()
 
 
 def _retire_on_first_chunk(work, chunks):
@@ -511,7 +621,8 @@ def _retire_on_first_chunk(work, chunks):
 def _stream_with_fallback(work, provider: llm.Provider, api_key: str,
                           model: str, system: str, msgs: list[dict],
                           prefs: dict, *, spent: list[int] | None = None,
-                          markers: list[str] | None = None) -> str:
+                          markers: list[str] | None = None,
+                          parts: list[str] | None = None) -> str:
     """The answer stream, retried down the provider chain when the chosen
     provider dies: chosen first, then the other saved keys, then the keyless
     free chain — the same resolution order as the Telegram bot
@@ -527,6 +638,10 @@ def _stream_with_fallback(work, provider: llm.Provider, api_key: str,
     A free unit spent on a fallback candidate is appended to `spent`, so a
     chain that ends in an exception can be refunded whole by the caller
     rather than only for the unit the turn opened with.
+
+    `parts`, when given, collects the answer as it streams, so a turn the
+    reader stops mid-sentence still has its text somewhere when the script
+    unwinds (see _mirror and _recover_stopped).
 
     `markers`, when given, turns on the guided walkthrough's jump marker: it
     is withheld from the stream as it arrives (it must never be painted, since
@@ -559,11 +674,22 @@ def _stream_with_fallback(work, provider: llm.Provider, api_key: str,
             """The walkthrough's marker filter, or the stream untouched."""
             return chunks if found is None else guide.hide_markers(chunks, found)
 
+        def _kept(chunks, kept=parts):
+            """The stop-safe copy of the answer, after the marker filter so
+            what is kept is what was painted. Cleared per candidate: a
+            fallback only runs while nothing has streamed, and it restarts
+            the answer from the top."""
+            if kept is None:
+                return chunks
+            kept.clear()
+            return _mirror(chunks, kept)
+
         try:
             # write_stream hands back a list when a chunk isn't a string;
             # every provider here yields text, so join rather than branch.
             streamed = st.write_stream(_retire_on_first_chunk(
-                work, _guarded(_tap(p.stream(k, m, system, msgs)))))
+                work, _kept(_guarded(_tap(_pump(
+                    p.stream(k, m, system, msgs)))))))
             answer = (
                 streamed if isinstance(streamed, str)
                 else "".join(str(c) for c in streamed)
@@ -872,6 +998,15 @@ def _seed_key(ns: str) -> str:
     return f"{ns}_seed"
 
 
+def _gen_key(ns: str) -> str:
+    return f"{ns}_generating"
+
+
+def _done_generating(ns: str) -> None:
+    """The turn reached the thread (or was refused): nothing left to recover."""
+    st.session_state.pop(_gen_key(ns), None)
+
+
 # The opening screen's suggestions, in two sets of three.
 #
 # With a ledger behind it the assistant's best trick is the reader's own book,
@@ -1070,24 +1205,72 @@ def _failure(history: list[dict]) -> tuple[str, str] | None:
     return (err[0], err[1]) if err else None
 
 
-def _submitted(value) -> tuple[str, list]:
-    """(text, files) out of st.chat_input, which returns a bare string only
-    when uploads are switched off."""
+def _submitted(value) -> tuple[str, list, object | None]:
+    """(text, files, recording) out of st.chat_input, which returns a bare
+    string only when uploads and the microphone are both switched off.
+
+    `audio` raises AttributeError rather than answering None when the widget
+    was drawn with accept_audio=False, which is every deploy without a
+    transcription key — hence getattr and not value.audio.
+    """
     if value is None:
-        return "", []
+        return "", [], None
     if isinstance(value, str):
-        return value, []
-    return (value.text or ""), list(value.files or [])
+        return value, [], None
+    return ((value.text or ""), list(value.files or []),
+            getattr(value, "audio", None))
 
 
-# Number formats for the phone cards of the import previews (desktop keeps
-# st.dataframe's own rendering).
+# Number formats for the import previews — the phone cards and, since the
+# symbols render as logo+link cells, the desktop table too.
 _PREVIEW_FMT = {"quantity": "{:,.4f}", "price": "{:,.2f}", "fee": "{:,.2f}"}
+_PREVIEW_COLS = ("date", "ticker", "action", "quantity", "price", "fee",
+                 "currency", "why")
+_SKIPPED_COLS = ("row", "type", "reason")
+# Columns that read as text, not as figures, in the preview's own table.
+_PREVIEW_LEFT = ("date", "action", "currency", "why", "note", "warnings")
+
+
+def _preview_html(rows: list[dict], *, rich: bool = True) -> str:
+    """One import-preview grid, symbols as logo+link cells.
+
+    Returns the markup rather than drawing it: every symbol here resolves a
+    logo and a company name, which on a cold cache is a mirrored image plus
+    the coin list, the fund catalog and the SEC map over the network. A
+    statement with twenty holdings therefore takes seconds to lay out, and
+    the caller wants that time spent behind a skeleton rather than behind an
+    empty bubble (see `_render_pending_import`).
+
+    Same rendering as the Import page's own preview (_tx_table there): a
+    ticker on screen opens the company, in a chat bubble as anywhere else.
+    `rich=False` for rejected rows — their symbols are malformed by
+    definition, so there is nothing to resolve a logo or a page from.
+    """
+    frame = pd.DataFrame(rows)
+    return (
+        ticker_table_html(
+            frame,
+            fmt=_PREVIEW_FMT,
+            labels=tx_text.labels(*_PREVIEW_COLS),
+            ticker_col="ticker" if rich else None,
+            left_cols=_PREVIEW_LEFT,
+            mobile={
+                "value": "quantity",
+                "delta": "price",
+                "sub": ("date", "action")
+                + tuple(c for c in ("why", "currency") if c in frame.columns),
+                "wrap": True,
+            },
+        )
+    )
 
 
 def _tx_rows(txs: list) -> list[dict]:
+    """Display rows — the batch that gets committed is `transactions`, so the
+    verbs may be translated here without touching what lands in the ledger."""
     return [
-        {"date": t.date, "ticker": t.ticker, "action": t.action,
+        {"date": t.date, "ticker": t.ticker,
+         "action": tx_text.action_label(t.action),
          "quantity": t.quantity, "price": t.price, "fee": t.fee,
          "currency": t.currency}
         for t in txs
@@ -1096,9 +1279,10 @@ def _tx_rows(txs: list) -> list[dict]:
 
 def _issue_rows(checked: list) -> list[dict]:
     return [
-        {"date": c.tx.date, "ticker": c.tx.ticker, "action": c.tx.action,
+        {"date": c.tx.date, "ticker": c.tx.ticker,
+         "action": tx_text.action_label(c.tx.action),
          "quantity": c.tx.quantity, "price": c.tx.price,
-         "why": "; ".join(i.message for i in (c.errors or c.warnings))}
+         "why": tx_text.issues_text(c.errors or c.warnings)}
         for c in checked
     ]
 
@@ -1127,6 +1311,10 @@ def _prepare_import(name: str, data: bytes, provider: llm.Provider,
         # duplicates that will not exist (stocks.portfolio.demo).
         demo.without(all_transactions(paths.db)),
         known=known_tickers(paths.watchlist, paths.db),
+        # Asked about one symbol, and only when a sell overshoots: a bank PDF
+        # prints trades and leaves the 20:1 out, and rejecting that sell is
+        # the rejection nobody can act on.
+        splits=fetch.splits,
     )
     dupes = [c.tx for c in checked.duplicates]
     return {
@@ -1287,25 +1475,46 @@ def _render_pending_import(ns: str, history: list[dict], box) -> bool:
     with box, st.chat_message("assistant"):
         st.caption(tr("chat.import_preview", filename=pending["filename"],
                       label=pending["label"]))
+        dupes = pending.get("duplicates") or []
+        tiers = (
+            ("chat.import_warnings", pending["flagged"], True),
+            ("chat.import_rejected", pending["rejected"], False),
+        )
+        # Laying these grids out resolves a logo and a company name per
+        # symbol, which on a cold cache means network (see `_preview_html`) —
+        # long enough on a twenty-holding statement that the bubble would sit
+        # there as a caption and nothing else, buttons included, with no sign
+        # that anything is coming. Hold the table's shape while the markup is
+        # built, then drop the skeleton and draw the card in one go.
+        shimmer = skeletons.reserve(
+            "table",
+            rows=min(len(pending["rows"]) or len(dupes) or 3, 6),
+            # The grid the rows themselves will make, so the fill is a swap
+            # and not a relayout: "why" is only there on a flagged tier.
+            cols=len((pending["rows"] or dupes or [{}])[0]) or 7,
+        )
+        try:
+            main = _preview_html(pending["rows"]) if pending["rows"] else ""
+            tier_html = [
+                (key, rows, _preview_html(rows, rich=rich))
+                for key, rows, rich in tiers if rows
+            ]
+            dupes_html = _preview_html(dupes) if dupes else ""
+        finally:
+            shimmer.clear()
         # Seven columns in a chat bubble already crowd a desktop; on a phone
         # they pan, so every preview grid stacks into per-row cards there
         # (the symbol heads the card, the rest read as label/value lines).
-        if pending["rows"]:
-            data_table(pd.DataFrame(pending["rows"]), title="ticker",
-                       fmt=_PREVIEW_FMT, hide_index=True,
-                       height=200, width="stretch")
-        dupes = pending.get("duplicates") or []
-        for key, rows in (("chat.import_warnings", pending["flagged"]),
-                          ("chat.import_rejected", pending["rejected"])):
-            if rows:
-                with st.expander(tr(key, n=len(rows))):
-                    data_table(pd.DataFrame(rows), title="ticker",
-                               fmt=_PREVIEW_FMT, hide_index=True,
-                               width="stretch")
+        if main:
+            st.html(main)
+        for key, rows, markup in tier_html:
+            with st.expander(tr(key, n=len(rows))):
+                st.html(markup)
         if pending["skipped"]:
             with st.expander(tr("chat.import_skipped",
                                 n=len(pending["skipped"]))):
                 data_table(pd.DataFrame(pending["skipped"]),
+                           labels=tx_text.labels(*_SKIPPED_COLS),
                            hide_index=True, width="stretch")
         # The duplicates are the one tier that is *not* about to be written,
         # so it opens by itself: the count in the message above only makes
@@ -1316,9 +1525,7 @@ def _render_pending_import(ns: str, history: list[dict], box) -> bool:
         if dupes:
             with st.expander(tr("chat.import_duplicates", n=len(dupes)),
                              expanded=not pending["rows"]):
-                data_table(pd.DataFrame(dupes), title="ticker",
-                           fmt=_PREVIEW_FMT, hide_index=True,
-                           width="stretch")
+                st.html(dupes_html)
                 include = st.checkbox(tr("chat.import_duplicates_anyway"),
                                       key=f"{ns}_import_dupes")
         n = len(pending["rows"]) + (len(dupes) if include else 0)
@@ -1488,10 +1695,22 @@ def _render_turn(ns: str, msg: dict, index: int) -> None:
                 return
             _render_turn_head(ns, msg, index)
             st.markdown(msg["content"])
+            if msg.get("stopped"):
+                # An answer that breaks off mid-sentence reads as the model
+                # losing the thread. Said plainly, it reads as what it was.
+                st.html('<span class="ts-chat-cause">'
+                        + escape(tr("chat.stopped_badge")) + "</span>")
             _render_files(msg)
             guide.render_jump(ns, msg, index)
             _render_turn_foot(ns, msg, index)
         else:
+            if msg.get("voice"):
+                # A transcript is the reader's words at one remove: Whisper
+                # mishears a ticker now and then, and a question that reads
+                # oddly on reload should say why before its author blames the
+                # assistant for answering something else.
+                st.html('<span class="ts-chat-file">'
+                        + escape(tr("chat.voice_badge")) + "</span>")
             st.markdown(msg["content"])
             _render_files(msg)
             _render_meta(msg)
@@ -1808,6 +2027,36 @@ _CONV_CSS = """
 _recent = engine.recent
 
 
+def _recover_stopped(ns: str, history: list[dict]) -> None:
+    """Commit the answer a Stop cut short, before anything else reads history.
+
+    Stopping raises through the script at its next Streamlit call, so none of
+    the code that files an answer on the thread runs: the question is left
+    trailing with no reply, which is exactly the shape the generate block
+    treats as "answer this" — the stopped turn would start over on the next
+    run. What the stream had written is mirrored into session state as it
+    arrives (_mirror), and this files it as the answer it is, stopped and
+    done, so the thread moves on.
+
+    Only within the session that stopped it: a reload starts a new session
+    with no marker, and the trailing question regenerates as it always has.
+    """
+    cut = st.session_state.pop(_gen_key(ns), None)
+    if cut is None:
+        return
+    if not (history and history[-1]["role"] == "user"):
+        return  # the stop landed after the turn was already filed
+    text = "".join(cut.get("parts") or []).strip()
+    if not text:
+        # Stopped before the first token: the reader got no answer, so the
+        # free units this turn opened with are owed back — the same debt the
+        # provider-failure path settles.
+        _refund_free_quota(sum(cut.get("spent") or []))
+    history.append(_stamp({"role": "assistant", "stopped": True,
+                           "content": text or tr("chat.stopped_note")}))
+    auth.save_chat(history)
+
+
 def render_conversation(ns: str, provider: llm.Provider, model: str,
                         api_key: str) -> None:
     """Draw the history, take input, and stream the next answer.
@@ -1823,6 +2072,10 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
     if hist_key not in st.session_state:
         st.session_state[hist_key] = auth.load_chat()
     history: list[dict] = st.session_state[hist_key]
+    # Before anything else touches the thread: an answer the reader stopped
+    # belongs under the question it was answering, not after whatever this
+    # run appends to the thread first.
+    _recover_stopped(ns, history)
 
     # The walkthrough, in its own thread: append the step the account is on,
     # and walk past the ones it has since switched on elsewhere. Before the
@@ -1851,11 +2104,36 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
         guide.narrate(ns, history, box)
 
     _render_rail(ns)
-    text, files = _submitted(st.chat_input(
+    # The microphone is the composer's own, beside the paperclip, rather than
+    # a chip of ours next to it: accept_audio puts it inside the input bar
+    # where the reader already looks for ways to attach something, and the
+    # recording arrives with the message instead of ahead of it. Drawn only
+    # when a transcription backend is configured — a mute button that answers
+    # "not available" on press is worse than no button.
+    text, files, clip = _submitted(st.chat_input(
         tr("chat.placeholder"), key=f"{ns}_input",
         accept_file="multiple", file_type=list(autodetect.supported_types()),
-        max_upload_size=MAX_UPLOAD_MB,
+        max_upload_size=MAX_UPLOAD_MB, accept_audio=stt.available(),
+        audio_sample_rate=stt.SAMPLE_RATE,
+        # Send becomes stop while the answer is being written. A turn runs
+        # through routing, searches and a stream — long enough to see it going
+        # the wrong way — and the one control on screen was a send button that
+        # queued a second question behind the first. Pressing stop halts the
+        # script; _recover_stopped files what was written and the field opens
+        # again for the next question.
+        submit_mode="stop",
     ))
+    # A voice note is a question like any other: transcribed here, then sent
+    # down the same path typed text takes. A note recorded *with* something
+    # typed reads as one message, so the two are joined rather than raced.
+    spoken = False
+    if clip is not None:
+        said = _transcribe(ns, clip, box)
+        if said is None:
+            text = ""  # the failure is already drawn; there is nothing to ask
+        else:
+            text = f"{text} {said}".strip() if text else said
+            spoken = True
     # A suggestion clicked on the opening screen. Popped, not read: it must
     # fire once, and typed text always wins if both land on the same run.
     seed = st.session_state.pop(_seed_key(ns), None)
@@ -1883,6 +2161,8 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
             history.pop()
         turn: dict = _stamp(
             {"role": "user", "content": text or tr("chat.import_ask")})
+        if spoken:
+            turn["voice"] = True
         if files:
             # Only the names go on the thread; the bytes ride in session state
             # and are consumed by the ingest below on this same run.
@@ -1936,6 +2216,12 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
         # replacing a row above it with a bubble — no layout jump at the one
         # moment the reader is staring at the spot.
         started = time.time()
+        # Where this turn survives being stopped. Everything below runs inside
+        # the script run the stop button ends, so the answer as it streams and
+        # the free units it spends are kept out here, in session state, for
+        # _recover_stopped to settle on the next run.
+        cut: dict = {"parts": [], "spent": []}
+        st.session_state[_gen_key(ns)] = cut
         with box:
             bubble = st.chat_message("assistant")
         work = _Working(bubble)
@@ -1946,6 +2232,7 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
         act = _try_action(provider, api_key, history[-1]["content"])
         if act is not None:
             work.clear()
+            _done_generating(ns)
             note = _action_reply(act)
             answered = _stamp({"role": "assistant", "content": note,
                                "action": act.kind}, time.time() - started)
@@ -1962,10 +2249,11 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
             # model is called (the last moment the turn can be refused), and
             # without the refund a dead provider costs the reader a message it
             # never wrote — then costs another one on Retry.
-            spent: list[int] = []
+            spent: list[int] = cut["spent"]
             if provider.id == "free":
                 if not _spend_free_quota():
                     work.clear()
+                    _done_generating(ns)
                     history.pop()  # drop the turn we won't answer
                     auth.save_chat(history)
                     with _notice(box, f"{ns}_notice_quota",
@@ -2008,6 +2296,7 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
                         lambda: _gather(provider, api_key, msgs, prefs,
                                         watchlist, db, memory_db, conv["id"],
                                         focus),
+                        tick=_checkpoint, timeout=GATHER_DEADLINE,
                     )
                     skills = skills or []
                     evidence = evidence or agent.Evidence(ok=False)
@@ -2019,6 +2308,7 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
                                                 prefs, view),
                             lambda: _live_quotes(history[-1]["content"],
                                                  watchlist, focus),
+                            tick=_checkpoint, timeout=GATHER_DEADLINE,
                         )
                         hits, live = hits or [], live or []
                     # Reserved now, written after the answer: the row states
@@ -2047,7 +2337,8 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
                     markers: list[str] = []
                     answer = _stream_with_fallback(
                         work, provider, api_key, model, system, msgs, prefs,
-                        spent=spent, markers=markers if guided else None)
+                        spent=spent, markers=markers if guided else None,
+                        parts=cut["parts"])
                     web_sources = chat_web.sources(hits) or evidence.sources()
                     answered = _stamp({"role": "assistant", "content": answer},
                                       time.time() - started)
@@ -2067,6 +2358,7 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
                     _render_turn_foot(ns, answered, len(history))
                 except Exception as exc:  # classified per provider; unknown -> re-raise
                     work.clear()
+                    _done_generating(ns)
                     # Nothing was answered, so nothing was owed: both the unit
                     # this turn opened with and any spent falling down the
                     # chain go back before the failure is pinned.
@@ -2091,6 +2383,9 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
                     history[-1]["error"] = [err, failed.label]
                     auth.save_chat(history)
                     st.rerun()
+            # Last, so a stop landing on the chrome under the answer still
+            # recovers the text: from here the turn is on the thread.
+            _done_generating(ns)
             history.append(answered)  # already carries lens, trace and sources
             auth.save_chat(history)  # persist the completed user+assistant turn
             if _maybe_autotitle(conv, history, provider, api_key):
@@ -2314,6 +2609,34 @@ def _render_rail(ns: str) -> None:
         with st.popover(tr("chat.skills_chip", mode=tr(f"chat.skills_{mode}")),
                         icon=":material/auto_awesome:", key=f"{ns}_rail_skills"):
             _pick_skills()
+
+
+def _transcribe(ns: str, clip, box) -> str | None:
+    """The words in a voice note, or None once its failure has been drawn.
+
+    The wait is held by a skeleton in the shape of the line about to appear,
+    inside the bubble the transcript will be read in — a spinner is what the
+    rest of this app replaced (skeletons.py), and a voice note is the one turn
+    whose text does not exist yet when its bubble does.
+
+    An st.empty holds the place rather than a container, because the
+    placeholder has to be *removed* on both exits: the real turn is drawn by
+    the same code that draws a typed one, and an abandoned bubble would sit
+    above it forever.
+    """
+    with box:
+        holder = st.empty()
+    with holder.container(), st.chat_message("user"):
+        st.html(skeletons.html("text", lines=1, width="60%"))
+    try:
+        text = stt.transcribe(clip.getvalue(), language=active_language())
+    except stt.TranscriptionFailed as exc:
+        holder.empty()
+        with _notice(box, f"{ns}_notice_voice", ":material/mic_off:"):
+            st.markdown(tr(exc.key, **exc.fields))
+        return None
+    holder.empty()
+    return text
 
 
 # ------------------------------------------------------------- settings view
@@ -2558,7 +2881,9 @@ body:has(.st-key-chatpanel) .st-key-topbar_search {
    upload group first (order -1), which left the paperclip at the far left of
    the row with the placeholder pushed off it. */
 .st-key-chatpanel [data-testid="stChatInput"]
-  div:has(> button[data-testid="stChatInputSubmitButton"]) { order: 2; }
+  div:has(> button[data-testid="stChatInputSubmitButton"]),
+.st-key-chatpanel [data-testid="stChatInput"]
+  div:has(> button[data-testid="stChatInputStopButton"]) { order: 2; }
 .st-key-chatpanel [data-testid="stChatInput"]
   div:has(> [data-testid="stChatInputFileUploadButton"]) { order: 1; }
 /* The artboard's attach affordance is a paperclip; Streamlit draws a plus,

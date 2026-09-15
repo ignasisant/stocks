@@ -164,5 +164,13 @@
   "chat.starter_summary": "Summarise my portfolio in five lines",
   "chat.starter_concentration": "Where am I too concentrated?",
   "chat.starter_earnings_week": "What reports earnings this week",
-  "chat.web_chip": "Internet"
+  "chat.web_chip": "Internet",
+  "chat.stopped_badge": "you stopped this answer",
+  "chat.stopped_note": "Stopped before the answer started.",
+  "chat.voice_badge": "voice note",
+  "chat.voice_empty": "That recording was too short to make out — hold the button while you speak.",
+  "chat.voice_silent": "Nothing was said in that recording. Try again a little closer to the microphone.",
+  "chat.voice_too_long": "A voice note can run up to {seconds} seconds. Record a shorter one, or type the question.",
+  "chat.voice_failed": "The voice note could not be transcribed. Try again, or type the question.",
+  "chat.voice_unavailable": "Voice notes are not configured on this deployment."
 }

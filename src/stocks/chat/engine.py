@@ -20,6 +20,7 @@ import json
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -909,8 +910,42 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
                         timeout=timeout or agent.TIMEOUT)
 
 
+def _settle(future, timeout: float | None,
+            tick: Callable[[], None] | None, poll: float) -> object:
+    """One lookup's result, None if it raises or overruns `timeout`.
+
+    With a `tick`, the wait is a poll rather than one long block: the caller
+    gets the thread back every `poll` seconds to do something with it — on
+    Streamlit, to let the runtime act on a stop the reader has pressed — and
+    whatever `tick` raises comes out of here.
+    """
+    left = timeout
+    while True:
+        step = poll if tick is not None else left
+        if left is not None and (step is None or step > left):
+            step = left
+        try:
+            return future.result(timeout=step)
+        except FutureTimeout:
+            if left is not None:
+                left -= step or 0
+                if left <= 0:
+                    obs.warn("chat.engine.completion_timeout",
+                             error_type="TimeoutError", error="timed out")
+                    return None
+            if tick is None:  # no deadline and nothing to do while waiting
+                return None
+            tick()
+        except Exception as exc:
+            obs.warn("chat.engine.completion_timeout",
+                     error_type=type(exc).__name__, error=str(exc)[:300])
+            return None
+
+
 def in_parallel(*calls: Callable[[], object],
-                timeout: float | None = None) -> list:
+                timeout: float | None = None,
+                tick: Callable[[], None] | None = None,
+                poll: float = 0.2) -> list:
     """Run this turn's independent lookups at once, in order of the results.
 
     Skill routing, search planning + page reading and quote fetching share no
@@ -919,19 +954,16 @@ def in_parallel(*calls: Callable[[], object],
     raises or overruns yields None: one dead lookup must not take the answer
     with it. Callers on Streamlit must resolve session state *before* handing
     a closure over — these run off the script thread.
+
+    `tick` is called every `poll` seconds while a lookup is still out. It is
+    what makes the wait interruptible: Streamlit only acts on a pending stop
+    where the script touches it, and these are the seconds in which a turn
+    touches nothing at all.
     """
     pool = ThreadPoolExecutor(max_workers=max(1, len(calls)))
     try:
         futures = [pool.submit(c) for c in calls]
-        out: list = []
-        for f in futures:
-            try:
-                out.append(f.result(timeout=timeout))
-            except Exception as exc:
-                obs.warn("chat.engine.completion_timeout",
-                         error_type=type(exc).__name__, error=str(exc)[:300])
-                out.append(None)
-        return out
+        return [_settle(f, timeout, tick, poll) for f in futures]
     finally:
         # No wait: shutdown would block on whatever the timeout just escaped.
         pool.shutdown(wait=False, cancel_futures=True)

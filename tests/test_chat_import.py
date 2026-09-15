@@ -312,3 +312,23 @@ def test_commit_without_an_origin_writes_the_notes_as_parsed(account):
                                         _StubProvider(), "")
     chat_core._commit_import("panel", pending, [])
     assert {t.note for t in all_transactions(account.db)} == {"trading212"}
+
+
+def test_preview_markup_is_built_before_it_is_drawn(account, monkeypatch):
+    """The grid comes back as a string, not as a draw.
+
+    Every symbol in a preview resolves a logo and a company name, which on a
+    cold cache is network; the card can only hold a skeleton over that cost
+    if building the markup is separable from rendering it. A `_preview_table`
+    that drew as it went would put the whole bubble — buttons included —
+    behind a blank.
+    """
+    drawn: list[str] = []
+    monkeypatch.setattr(chat_core.st, "html", lambda m, **kw: drawn.append(m))
+    rows = chat_core._tx_rows(
+        chat_core._prepare_import("t212.csv", T212_CSV.encode(), None, "")
+        ["transactions"]
+    )
+    markup = chat_core._preview_html(rows)
+    assert isinstance(markup, str) and "AAPL" in markup
+    assert drawn == []
