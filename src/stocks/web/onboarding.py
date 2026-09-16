@@ -315,6 +315,15 @@ RELEASES: tuple[Release, ...] = (
             News(slug="isin", icon="badge", step="import"),
         ),
     ),
+    Release(
+        version="2026.09.2",
+        date="2026-09",
+        items=(
+            News(slug="splitfix", icon="call_split", step="import"),
+            News(slug="peersearch", icon="search", step="market"),
+            News(slug="transfers", icon="swap_horiz", step="import"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

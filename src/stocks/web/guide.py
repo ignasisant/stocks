@@ -24,10 +24,11 @@ choice, and they are the whole reason this module exists:
    statement in another tab is enough — come back and the guide has already
    moved on and says so. That is the part a modal cannot do at all.
 
-Navigation is not implemented here: "take me there" queues the step on
-`onboarding._GOTO` and the next full run is handled by `onboarding.consume_goto`
-in app.py, which already knows how to switch page, seed session state and drop
-widget keys. One navigation path, not two.
+Navigation is not implemented here: advancing a step (on desktop) and "take
+me there" both queue the step on `onboarding._GOTO`, and the next full run is
+handled by `onboarding.consume_goto` in app.py, which already knows how to
+switch page, seed session state and drop widget keys. One navigation path, not
+two.
 
 Progress lives in prefs.json, and only for signed-in accounts — the guest data
 dir is shared by every anonymous visitor (`onboarding._save`), and the panel is
@@ -340,8 +341,23 @@ def sync(history: list[dict]) -> bool:
 
 # ------------------------------------------------------------------ actions
 def advance() -> None:
-    """Move to the next step (or finish). The card appears on the rerun, via
-    `sync` — this only moves the marker."""
+    """Move to the next step and, on desktop, take the reader with it.
+
+    The card itself appears on the rerun, via `sync` — this moves the marker
+    and queues the jump `onboarding.consume_goto` makes early in app.py.
+
+    Walking the reader over is the difference between a walkthrough and a
+    leaflet: a card describing Pulso while the account is still looking at
+    Home is describing something that is not on screen, and the reader has to
+    work out that the button under the text was not optional. The card keeps
+    its "take me there" — for re-following an older step, and for the jump
+    this one declines to make.
+
+    Phones decline it: there the panel *is* the viewport, so `goto` parks the
+    tour to uncover the page (see its docstring), and an automatic jump on
+    every Next would spend the walkthrough reopening the drawer. On desktop
+    the panel is a rail beside the page, which is the entire point.
+    """
     prefs = auth.load_prefs()
     step = current(prefs)
     if step is None:
@@ -354,6 +370,8 @@ def advance() -> None:
         return
     prefs[PREF_STEP] = nxt.id
     onboarding._save(prefs)
+    if not is_mobile():
+        goto(nxt)
 
 
 def goto(step: onboarding.Step) -> None:

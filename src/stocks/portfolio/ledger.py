@@ -19,7 +19,8 @@ from stocks.config import DATA_DIR
 
 DB_PATH = DATA_DIR / "portfolio.db"
 
-ACTIONS = {"buy", "sell", "dividend", "fee", "split"}
+ACTIONS = {"buy", "sell", "dividend", "fee", "split",
+           "transfer_in", "transfer_out"}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS transactions (
@@ -27,6 +28,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     date     TEXT    NOT NULL,          -- ISO YYYY-MM-DD (trade/settlement date)
     ticker   TEXT    NOT NULL,
     action   TEXT    NOT NULL,          -- buy | sell | dividend | fee | split
+                                        -- | transfer_in | transfer_out (see
+                                        -- portfolio/transfers.py)
     quantity REAL    NOT NULL DEFAULT 0,-- shares (split: ratio, e.g. 4 for 4:1)
     price    REAL    NOT NULL DEFAULT 0,-- per-share native ccy (dividend: total)
     currency TEXT    NOT NULL DEFAULT 'USD',
@@ -196,6 +199,51 @@ def delete_many(tx_ids: list[int], path: Path = DB_PATH) -> int:
         removed = cur.rowcount
     storage.persist(path)
     return removed
+
+
+def set_action(tx_ids: list[str | int], action: str, path: Path = DB_PATH) -> int:
+    """Restate what the given rows *were*, leaving every other field alone.
+
+    The one edit the ledger allows on a committed row, because it is the one
+    the row can be wrong about in a way nothing else can fix: a statement that
+    prints a custody transfer as a sale (see stocks.portfolio.transfers) writes
+    a real trade the account never made, and deleting it would take the shares
+    with it. Returns rows changed.
+    """
+    if action not in ACTIONS:
+        raise ValueError(f"unknown action {action!r}; expected one of {ACTIONS}")
+    if not tx_ids:
+        return 0
+    with closing(connect(path)) as conn, conn:
+        cur = conn.execute(
+            f"UPDATE transactions SET action = ? "
+            f"WHERE id IN ({','.join('?' * len(tx_ids))})",
+            [action, *tx_ids],
+        )
+        changed = cur.rowcount
+    storage.persist(path)
+    return changed
+
+
+def retag(old_ticker: str, new_ticker: str, path: Path = DB_PATH) -> int:
+    """Re-label every row of one security. Returns rows changed.
+
+    Brokers disagree about what to call the same thing — a DEGIRO export has
+    no ticker column and books under the ISIN, IBKR uses its own symbol — and
+    two labels for one security are two positions to every replay downstream.
+    Unifying them is a relabelling, never a merge of different things: the
+    caller establishes that both names are the same security first.
+    """
+    old, new = old_ticker.upper(), new_ticker.upper()
+    if old == new:
+        return 0
+    with closing(connect(path)) as conn, conn:
+        cur = conn.execute(
+            "UPDATE transactions SET ticker = ? WHERE ticker = ?", (new, old)
+        )
+        changed = cur.rowcount
+    storage.persist(path)
+    return changed
 
 
 def import_csv(csv_path: Path, path: Path = DB_PATH) -> int:

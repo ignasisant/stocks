@@ -272,6 +272,29 @@ def test_take_me_there_queues_the_step_for_app_pys_navigator(app):
     assert at.session_state[onboarding._GOTO] == "notify"
 
 
+def test_next_walks_the_app_to_the_step_it_just_opened(app):
+    """A card describing Pulso while the reader is still on Home describes
+    something that is not on screen. Advancing queues the same jump the
+    button does, so the page follows the conversation."""
+    prefs = {guide.PREF_STEP: "watchlist"}
+    at = app(prefs).run()
+    at.button(key="panel_guide_next_0").click().run()
+    assert prefs[guide.PREF_STEP] == "pulse"
+    assert at.session_state[onboarding._GOTO] == "pulse"
+
+
+def test_a_phone_is_not_dragged_along_by_next(app, monkeypatch):
+    """On a phone the panel is the viewport: a jump parks the tour to uncover
+    the page, so one per Next would spend the walkthrough reopening it. The
+    card's own button still offers the trip."""
+    monkeypatch.setattr(guide, "is_mobile", lambda: True)
+    prefs = {guide.PREF_STEP: "watchlist"}
+    at = app(prefs).run()
+    at.button(key="panel_guide_next_0").click().run()
+    assert prefs[guide.PREF_STEP] == "pulse"
+    assert onboarding._GOTO not in at.session_state
+
+
 def test_skipping_ends_it_without_walking_it(app):
     prefs: dict = {}
     at = app(prefs).run()

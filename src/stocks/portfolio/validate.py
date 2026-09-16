@@ -35,6 +35,7 @@ from datetime import date
 from pathlib import Path
 
 from stocks.config import DATA_DIR, WATCHLIST_FILE, load_watchlist, ticker_aliases
+from stocks.portfolio import transfers
 from stocks.portfolio.ledger import DB_PATH, Transaction
 from stocks.portfolio.statement import ParseResult
 
@@ -485,6 +486,11 @@ def _replay(
     # on the same date, matching how positions.py will replay them post-commit.
     events += [(c.tx.date, 10**9 + i, c.tx, c) for i, c in enumerate(checked)]
 
+    # Same rule positions.build replays under (stocks.portfolio.transfers): a
+    # transfer out that has its arrival somewhere in the book moved the shares
+    # rather than disposing of them, so neither leg changes what is held and
+    # only an arrival nothing accounts for adds shares.
+    arriving = transfers.unmatched_arrivals([e[2] for e in events])
     held: dict[str, float] = defaultdict(float)
     short: list[tuple[Checked, float]] = []
     for _, _, tx, c in sorted(events, key=lambda e: (e[0], e[1])):
@@ -500,6 +506,10 @@ def _replay(
                 short.append((c, q))
                 continue
             held[tx.ticker] = q - tx.quantity
+        elif tx.action == transfers.TRANSFER_IN:
+            opens = min(tx.quantity, arriving.get(tx.ticker, 0.0))
+            arriving[tx.ticker] = arriving.get(tx.ticker, 0.0) - opens
+            held[tx.ticker] = q + opens
         elif tx.action == "split" and tx.quantity > 0:
             held[tx.ticker] = q * tx.quantity
     return short

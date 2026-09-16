@@ -232,6 +232,54 @@ def splits(ticker: str) -> list[tuple[str, float]]:
     return events
 
 
+# Split-adjusted closes on single past days, memoized like `splits` and for the
+# same caller: the missing-split detector (stocks.portfolio.corporate) asks for
+# one day per candidate, and only for a ticker that already has a candidate.
+_close_memo: dict[tuple[str, str], float | None] = {}
+_close_lock = threading.Lock()
+
+
+def close_on(ticker: str, day: str) -> float | None:
+    """Close on `day`, or the last session before it; None when Yahoo can't say.
+
+    Split-adjusted and dividend-UNadjusted (auto_adjust=False), which is the
+    scale ledger prices are compared against everywhere in this codebase
+    (see portfolio.fees): a pre-split execution divided by this close gives
+    the split factor the ledger is missing, and a dividend adjustment would
+    blur that ratio by years of yield.
+    """
+    key = (resolve(ticker), day)
+    with _close_lock:
+        if key in _close_memo:
+            return _close_memo[key]
+    if throttle_remaining():
+        return None  # not cached: a throttle is temporary, an answer is forever
+    start = (pd.Timestamp(day) - pd.Timedelta(days=10)).date().isoformat()
+    end = (pd.Timestamp(day) + pd.Timedelta(days=1)).date().isoformat()
+    try:
+        df = _retry(
+            lambda: yf.Ticker(key[0]).history(
+                start=start, end=end, interval="1d", auto_adjust=False
+            )
+        )
+    except YFRateLimitError:
+        trip_throttle()
+        obs.warn("yahoo.close_on_rate_limited", ticker=key[0])
+        return None
+    except Exception as exc:
+        obs.warn("yahoo.close_on_failed", ticker=key[0], error=str(exc))
+        return None
+    close = None
+    if df is not None and not df.empty and "Close" in df:
+        series = df["Close"].dropna()
+        series = series[series.index.map(lambda ts: str(pd.Timestamp(ts).date()) <= day)]
+        if not series.empty:
+            close = float(series.iloc[-1])
+    with _close_lock:
+        _close_memo[key] = close
+    return close
+
+
 def fetch_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
     """Download OHLCV history for one ticker."""
     df = _retry(

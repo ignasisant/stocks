@@ -91,10 +91,13 @@ def _live_search_component():
     .lsi:focus { border-color: var(--ag-brand-accent); }
     @media (max-width: 640px) {
       .lsi { height: 44px; }
-      /* Collapsed 44px icon state (host width is set by the page CSS):
-         magnifier glyph, no visible text until focus expands the field.
+      /* Collapsed 44px icon state, for the top bar only (`collapse` in data,
+         host width set by the page CSS): magnifier glyph, no visible text
+         until focus expands the field. A field mounted in the page body
+         keeps its placeholder instead — it has room, and nothing there
+         explains what a lone magnifier would be for.
          var() can't reach inside a data URI — stroke is TEXT_MUTED. */
-      .lsi:not(:focus):placeholder-shown {
+      .lsi.lsc:not(:focus):placeholder-shown {
         color: transparent;
         /* Drop the spinner gutter while collapsed: background-position centers
            on the PADDING box, so the asymmetric padding would sit the
@@ -106,7 +109,7 @@ def _live_search_component():
         background-position: center;
         background-size: 18px 18px;
       }
-      .lsi:not(:focus):placeholder-shown::placeholder { color: transparent; }
+      .lsi.lsc:not(:focus):placeholder-shown::placeholder { color: transparent; }
     }
     """.replace("/*SEARCH-GLYPH*/", _SEARCH_GLYPH_CSS),
         js="""
@@ -122,6 +125,7 @@ export default function (component) {
   const spin = parentElement.querySelector("#spin")
   const busy = (on) => spin && spin.classList.toggle("on", !!on)
   input.placeholder = (data && data.placeholder) || ""
+  input.classList.toggle("lsc", !!(data && data.collapse))
   const nextValue = (data && data.value) ?? ""
   // Only overwrite the field when the user isn't typing in it — a render whose
   // run started before the last keystroke echoes the stale value and would
@@ -205,12 +209,19 @@ export default function (component) {
   // Streamlit's own button handler dispatches its click event FIRST — hiding
   // before that would race the navigation. Re-attached every render so the
   // closure always points at the live input/setStateValue.
+  //
+  // Only a field that owns a results container asks for this ("results" in
+  // data), and the listener is parked under that name: a second field on the
+  // same page (the comparables picker) must not unregister the top bar's.
   const doc = input.ownerDocument
-  if (doc.__lsRowCloser) doc.removeEventListener("click", doc.__lsRowCloser)
-  doc.__lsRowCloser = (e) => {
+  const rkey = (data && data.results) || ""
+  if (!rkey) return
+  const prop = "__lsRowCloser_" + rkey
+  if (doc[prop]) doc.removeEventListener("click", doc[prop])
+  doc[prop] = (e) => {
     // The container's key carries a generation counter (see _go_ticker), so
     // match on the prefix and take whichever one holds the clicked row.
-    const results = [...doc.querySelectorAll('[class*="st-key-topbar_results"]')]
+    const results = [...doc.querySelectorAll('[class*="st-key-' + rkey + '"]')]
       .find((el) => el.contains(e.target))
     if (!results) return
     clearTimeout(input._timer)
@@ -227,15 +238,22 @@ export default function (component) {
     setStateValue("focused", false)
     input.blur()
   }
-  doc.addEventListener("click", doc.__lsRowCloser)
+  doc.addEventListener("click", doc[prop])
 }
 """,
     )
     return _LIVE_SEARCH
 
 
-def _live_search_input(*, key: str, placeholder: str) -> tuple[str, bool]:
-    """Mount the live-search field; return its (stripped value, focused?)."""
+def _live_search_input(
+    *, key: str, placeholder: str, collapse: bool = False, results: str = ""
+) -> tuple[str, bool]:
+    """Mount the live-search field; return its (stripped value, focused?).
+
+    `collapse` opts into the phone-width magnifier state and `results` names
+    the container key whose rows close the field on a click — both are top-bar
+    wants, and both are off for a field mounted in the page body.
+    """
     state = st.session_state.get(key)
     value = state.get("value", "") if isinstance(state, dict) else ""
     focused = bool(state.get("focused")) if isinstance(state, dict) else False
@@ -246,7 +264,13 @@ def _live_search_input(*, key: str, placeholder: str) -> tuple[str, bool]:
         value = ""
     result = _live_search_component()(
         key=key,
-        data={"value": value, "placeholder": placeholder, "blur": blur},
+        data={
+            "value": value,
+            "placeholder": placeholder,
+            "blur": blur,
+            "collapse": collapse,
+            "results": results,
+        },
         width="stretch",
         on_value_change=lambda: None,
         on_focused_change=lambda: None,
@@ -479,7 +503,10 @@ def topbar_search_panel() -> None:
         st.rerun(scope="app")
     with st.container(key="topbar_search"):
         q, focused = _live_search_input(
-            key="topbar_q", placeholder=tr("widgets.search_placeholder")
+            key="topbar_q",
+            placeholder=tr("widgets.search_placeholder"),
+            collapse=True,
+            results="topbar_results",
         )
         if not q and is_mobile():
             # DS mobile header: an empty field is a 44px magnifier button.
@@ -734,3 +761,49 @@ def add_candidates(
     if q not in seen and re.fullmatch(r"[A-Z0-9.\-]{1,12}", q):
         push(q, "", "raw")
     return rows[:limit]
+
+
+# ----------------------------------------------------- picker for other pages
+# The top bar owns the live field, but it is the only as-you-type ticker input
+# in the app, so any other place that asks for a symbol it does not already
+# have (comparables on the Ticker page) mounts the same component through
+# these two calls rather than falling back to a plain text_input, which only
+# reruns on Enter.
+
+KIND_ICONS = {
+    "watch": "check_circle",
+    "crypto": "currency_bitcoin",
+    "fund": "donut_small",
+    "sec": "business",
+    "world": "public",
+    "raw": "help",
+}
+
+
+def candidate_label(row: Mapping[str, object]) -> str:
+    """Button label for one `add_candidates` row: tier icon, symbol, name."""
+    icon = KIND_ICONS.get(str(row.get("kind")), "help")
+    name = str(row.get("name") or "")
+    return f":material/{icon}: **{row['ticker']}**" + (f" — {name}" if name else "")
+
+
+def picker_field(*, key: str, placeholder: str) -> str:
+    """Mount the live search field on its own; return the stripped query.
+
+    Caller-owned state: the results and what a click on one does are the
+    caller's, so this returns the query and nothing else. Mount it inside a
+    fragment — every keystroke reruns whatever scope holds it.
+    """
+    query, _focused = _live_search_input(key=key, placeholder=placeholder)
+    return query
+
+
+def clear_picker(key: str) -> None:
+    """Empty a `picker_field` after its offer was taken.
+
+    Clearing session state is not enough: the frontend re-sends its stored
+    value on the next rerun, so the query would come back. This raises the
+    blur flag the component reads, which clears the DOM input and its widget
+    state together.
+    """
+    st.session_state[f"{key}_blur"] = True

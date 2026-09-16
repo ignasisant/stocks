@@ -40,12 +40,20 @@ What imports, and how:
   movements at all**. A one-day statement, or any statement covering a period
   with no activity, has no Trades section whatsoever; what it does carry is
   the holding: ticker, quantity, average cost price, currency. Each holding
-  becomes one buy at that average cost, dated the statement's end date, noted
-  ``ibkr snapshot``. The cost basis is the broker's own and is exact; the
-  date is not — every lot lands on the same day, so FIFO tax lots and holding
-  periods derived from these rows are a placeholder until a statement with
-  real trades is imported over them. When the file *does* carry trades, the
-  positions section is ignored: importing both would double the book.
+  becomes one ``transfer_in`` at that average cost, dated the statement's end
+  date, noted ``ibkr snapshot <ISIN>``. A balance is not a purchase: the
+  shares were owned before the file was written, and if they arrived from a
+  broker this book already covers, the two legs net out instead of booking a
+  sale that never happened (see stocks.portfolio.transfers). The cost basis is
+  the broker's own and is exact; the date is not — shares with no departure to
+  pair with land as one lot on one day, so FIFO tax lots and holding periods
+  derived from them are a placeholder until a statement with real trades is
+  imported over them. When the file *does* carry trades, the positions section
+  is ignored: importing both would double the book.
+* ``Financial Instrument Information``/``Información de instrumento
+  financiero`` — not events, just the ISIN behind each symbol. It is what lets
+  a holding IBKR calls ``ASML`` be recognised as the one DEGIRO booked under
+  ``NL0010273215``.
 * ``Change in Dividend Accruals``/``Modificación en los dividendos
   devengados`` — an accrual, not a payment. Listed as skipped so the reader
   sees it was read and deliberately left out; the cash dividend shows up in
@@ -64,9 +72,13 @@ from dataclasses import dataclass, field
 
 from stocks.portfolio.ledger import Transaction
 from stocks.portfolio.statement import ParseResult, money, parse_date
+from stocks.portfolio.transfers import TRANSFER_IN
 
 # "AAPL(US0378331005) Cash Dividend USD 0.24 per Share" -> AAPL
 _DESC_TICKER = re.compile(r"^([A-Z0-9.\- ]+?)\s*\(")
+
+# Two-letter country code, nine alphanumerics, check digit.
+_ISIN = re.compile(r"[A-Z]{2}[A-Z0-9]{9}[0-9]")
 
 # Logical section -> the names IBKR prints for it, normalised by `_norm`.
 _SECTIONS: dict[str, tuple[str, ...]] = {
@@ -78,6 +90,10 @@ _SECTIONS: dict[str, tuple[str, ...]] = {
     "accruals": (
         "change in dividend accruals",
         "modificacion en los dividendos devengados",
+    ),
+    "instruments": (
+        "financial instrument information",
+        "informacion de instrumento financiero",
     ),
 }
 
@@ -117,12 +133,17 @@ _ACCRUAL_ALIASES: dict[str, tuple[str, ...]] = {
     "quantity": ("quantity", "cantidad"),
     "amount": ("gross amount", "cantidad bruta", "net amount", "cantidad neta"),
 }
+_INSTRUMENT_ALIASES: dict[str, tuple[str, ...]] = {
+    "symbol": ("symbol", "simbolo"),
+    "isin": ("security id", "id. de seguridad", "id de seguridad"),
+}
 _ALIASES = {
     "trades": _TRADE_ALIASES,
     "dividends": _DIVIDEND_ALIASES,
     "positions": _POSITION_ALIASES,
     "accruals": _ACCRUAL_ALIASES,
     "withholding": _DIVIDEND_ALIASES,
+    "instruments": _INSTRUMENT_ALIASES,
 }
 
 # What each section must name before the file counts as an IBKR statement.
@@ -202,6 +223,7 @@ def parse_csv(text: str) -> ParseResult:
     recognised = False
     positions: list[tuple[int, _Section, list[str]]] = []
     dates: dict[str, str] = {}  # "period" / "generated" -> ISO day
+    isins: dict[str, str] = {}  # symbol -> ISIN, from the instrument table
 
     for i, row in enumerate(csv.reader(io.StringIO(text)), start=1):
         if len(row) < 3:
@@ -234,6 +256,10 @@ def parse_csv(text: str) -> ParseResult:
             _accrual_row(i, section, rest, result)
         elif section.key == "positions":
             positions.append((i, section, rest))
+        elif section.key == "instruments":
+            symbol, isin = section.get(rest, "symbol"), section.get(rest, "isin")
+            if symbol and _ISIN.fullmatch(isin):
+                isins[symbol.upper()] = isin.upper()
 
     if not recognised:
         return ParseResult(
@@ -249,7 +275,9 @@ def parse_csv(text: str) -> ParseResult:
     # The period the statement covers is what the holdings are valued on; the
     # moment the file was generated is a fallback, and it is a day later when
     # the statement is cut overnight.
-    _positions(positions, result, dates.get("period") or dates.get("generated", ""))
+    _positions(
+        positions, result, dates.get("period") or dates.get("generated", ""), isins
+    )
     return result
 
 
@@ -391,9 +419,12 @@ def _accrual_row(
 
 
 def _positions(
-    rows: list[tuple[int, _Section, list[str]]], result: ParseResult, as_of: str
+    rows: list[tuple[int, _Section, list[str]]],
+    result: ParseResult,
+    as_of: str,
+    isins: dict[str, str] | None = None,
 ) -> None:
-    """Open holdings as opening buys — only for a statement with no movements.
+    """Open holdings as arriving shares — only for a statement with no movements.
 
     A statement that covers a period with activity carries those trades, and
     the same shares must not arrive twice; there, the holdings are the closing
@@ -401,6 +432,17 @@ def _positions(
     statement with nothing in it — a single day, a quiet week — where the
     positions block is the only thing that says what is held, and turning it
     into dated lots is the only way that file can enter the ledger at all.
+
+    They import as `transfer_in`, not as buys, because that is what a balance
+    is: shares that were already owned before this file was written. Nobody
+    bought them on the statement date, and a book that already holds them —
+    because the broker they came from *was* imported — must not gain a second
+    copy. stocks.portfolio.transfers nets those against the departure and
+    promotes the rest to opening lots, so a first-ever import still behaves
+    exactly as it used to. `price` is IBKR's own average cost, which is the
+    basis the shares carry in; the ISIN from the instrument table rides along
+    in the note so the same security can be recognised under a broker label
+    that spells it differently.
     """
     if not rows:
         return
@@ -444,15 +486,16 @@ def _positions(
                 price = money(section.get(row, "basis")) / qty
             if price <= 0:
                 raise ValueError("holding has no cost price")
+            isin = (isins or {}).get(ticker.upper(), "")
             result.transactions.append(
                 Transaction(
                     date=parse_date(as_of),
                     ticker=ticker,
-                    action="buy",
+                    action=TRANSFER_IN,
                     quantity=qty,
                     price=price,
                     currency=section.get(row, "currency") or "USD",
-                    note="ibkr snapshot",
+                    note=f"ibkr snapshot {isin}".strip(),
                 )
             )
         except ValueError as exc:

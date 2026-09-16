@@ -14,6 +14,13 @@ A sell stamped with a broker that never held the shares (shares transferred in
 kind between brokers, a hand-edited note) would otherwise drive that pair
 negative: the remainder falls back to the oldest lots of any broker, so the
 totals always reconcile with `positions.build`.
+
+Transfer legs are the one thing this module reads that `positions.build` does
+not. There, a matched pair nets out — moving your own shares is not a disposal
+and the security-level replay must not see one. Here it is the entire event:
+`transfer_out` lifts the lots off the sending broker and `transfer_in` puts
+them down at the receiving one, carrying their basis across, so the share
+counts follow the shares. See stocks.portfolio.transfers.
 """
 
 from __future__ import annotations
@@ -22,6 +29,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from stocks.data.fx import ToBase, converter, prefetch
+from stocks.portfolio import transfers
 from stocks.portfolio.fees import broker_of
 from stocks.portfolio.ledger import Transaction
 
@@ -62,6 +70,9 @@ def by_position(
         prefetch((t.date, t.currency) for t in transactions)
         to_base = converter(base)
     lots: dict[str, list[_Lot]] = defaultdict(list)
+    # Shares that left a broker and have not been claimed by an arrival yet,
+    # holding the basis they carried out so the receiving broker inherits it.
+    in_flight: dict[str, list[_Lot]] = defaultdict(list)
     for tx in sorted(transactions, key=lambda t: (t.date, t.id or 0)):
         if tx.action == "buy":
             cost_native = tx.quantity * tx.price + tx.fee
@@ -74,6 +85,10 @@ def by_position(
             )
         elif tx.action == "sell":
             _sell(lots[tx.ticker], broker_of(tx), tx.quantity)
+        elif tx.action == transfers.TRANSFER_OUT:
+            _sell(lots[tx.ticker], broker_of(tx), tx.quantity, in_flight[tx.ticker])
+        elif tx.action == transfers.TRANSFER_IN:
+            _arrive(lots[tx.ticker], tx, broker_of(tx), in_flight[tx.ticker], to_base)
         elif tx.action == "split" and tx.quantity > 0:
             # N:1 forward split: every open lot of the ticker scales, at every
             # broker — total cost basis unchanged (same as positions._split).
@@ -96,10 +111,19 @@ def by_position(
     return out
 
 
-def _sell(queue: list[_Lot], broker: str, quantity: float) -> None:
+def _sell(
+    queue: list[_Lot],
+    broker: str,
+    quantity: float,
+    into: list[_Lot] | None = None,
+) -> None:
     """FIFO inside the selling broker's own lots; whatever it can't cover
     (a transfer in kind, a mislabelled note) comes off the oldest lots of any
-    broker so the ticker's total still matches the tax replay."""
+    broker so the ticker's total still matches the tax replay.
+
+    `into` collects what was taken, basis and all — that is a transfer out,
+    where the shares are not gone but on their way to another custodian.
+    """
     remaining = quantity
     for own_only in (True, False):
         for lot in queue:
@@ -108,9 +132,51 @@ def _sell(queue: list[_Lot], broker: str, quantity: float) -> None:
             if lot.quantity <= 1e-9 or (own_only and lot.broker != broker):
                 continue
             take = min(lot.quantity, remaining)
-            lot.cost -= lot.cost * (take / lot.quantity)
+            cost = lot.cost * (take / lot.quantity)
+            lot.cost -= cost
             lot.quantity -= take
             remaining -= take
+            if into is not None:
+                into.append(_Lot(broker=lot.broker, quantity=take, cost=cost))
+
+
+def _arrive(
+    queue: list[_Lot],
+    tx: Transaction,
+    broker: str,
+    in_flight: list[_Lot],
+    to_base: ToBase,
+) -> None:
+    """Shares landing at `broker`, off the in-flight queue where possible.
+
+    Claiming the lots that left another broker is what keeps the cost basis
+    whole: the receiving statement reports a basis too, but only for shares
+    the book has never seen — before that it is the same money, and running it
+    through the arrival price would re-state every transferred position at
+    whatever the destination broker rounded its average cost to.
+    """
+    remaining = tx.quantity
+    while remaining > 1e-9 and in_flight:
+        lot = in_flight[0]
+        take = min(lot.quantity, remaining)
+        cost = lot.cost * (take / lot.quantity) if lot.quantity else 0.0
+        queue.append(_Lot(broker=broker, quantity=take, cost=cost))
+        lot.quantity -= take
+        lot.cost -= cost
+        remaining -= take
+        if lot.quantity <= 1e-9:
+            in_flight.pop(0)
+    if remaining > 1e-9:
+        # An opening balance: nothing left a broker we know of, so the basis
+        # the statement reports is the only one there is.
+        native = remaining * tx.price + tx.fee
+        queue.append(
+            _Lot(
+                broker=broker,
+                quantity=remaining,
+                cost=to_base(native, tx.currency, tx.date),
+            )
+        )
 
 
 def mix(row: dict[str, Custody]) -> list[tuple[str, float]]:
