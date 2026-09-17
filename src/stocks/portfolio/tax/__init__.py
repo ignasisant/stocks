@@ -22,7 +22,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from stocks.portfolio.positions import POOLED_MODES, RealizedSale
-from stocks.portfolio.tax import au, ca, de, es, fr, ie, it, pt, uk, us
+from stocks.portfolio.tax import ae, au, ca, ch, de, es, fr, ie, it, pt, uk, us
 from stocks.portfolio.tax.base import (
     Kpi,
     Note,
@@ -233,6 +233,27 @@ JURISDICTIONS: dict[str, Jurisdiction] = {
         settings_fields=("other_income",),
         _year_label=au.year_label,
         _long_term=au.is_long_term,
+    ),
+    ae.CODE: Jurisdiction(
+        code=ae.CODE,
+        currency=ae.CURRENCY,
+        _period=ae.fiscal_period,
+        _flags=ae.reporting_flags,
+        # Nothing carries: a carryforward offsets future tax and there is none.
+        carryforward_years=ae.CARRYFORWARD_YEARS,
+        # No statutory rule — FIFO is a bookkeeping convention here, and every
+        # figure it produces is untaxed either way.
+        matching="fifo",
+    ),
+    ch.CODE: Jurisdiction(
+        code=ch.CODE,
+        currency=ch.CURRENCY,
+        _period=ch.fiscal_period,
+        _flags=ch.reporting_flags,
+        # Nothing carries: an exempt gain faces a non-deductible loss.
+        carryforward_years=ch.CARRYFORWARD_YEARS,
+        # No statutory rule — FIFO is a bookkeeping convention here.
+        matching="fifo",
     ),
 }
 

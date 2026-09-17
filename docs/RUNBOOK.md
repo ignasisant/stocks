@@ -8,7 +8,7 @@ project `topstocks-507209`, region `europe-west1`, service `topstocks`
 First three commands of any incident:
 
 ```bash
-curl -s https://<service-url>/status        # revision, uptime, storage on?
+curl -s https://<service-url>/status        # revision, commit, uptime, storage on?
 uv run stocks logs errors --since 2h        # what is actually failing
 uv run stocks logs stats --since 2h         # which events, how slow
 ```
@@ -50,14 +50,39 @@ Known shapes:
 
 ## Bad deploy / rollback
 
+A deploy that fails to boot never reaches users: `scripts/deploy.sh` puts the
+new revision up with 0% traffic under the `candidate` tag, smoke-tests it on
+its own URL, and promotes it only if `/livez` and `/status` answer with the
+expected revision name. What needs a rollback is the other kind — the revision
+that boots fine and is wrong.
+
+```bash
+./scripts/rollback.sh prod --list          # ready revisions, * marks the serving one
+./scripts/rollback.sh prod                 # -> previous ready revision (confirms first)
+./scripts/rollback.sh prod topstocks-00018-h6r   # -> that exact revision
+```
+
+It shifts traffic and then reads `/status` back to prove the rollback took.
+The manual equivalent, if the script is unavailable:
+
 ```bash
 gcloud run revisions list --service topstocks --region europe-west1
 gcloud run services update-traffic topstocks --region europe-west1 \
   --to-revisions <last-good-revision>=100
 ```
 
-Rollback is traffic-only and instant; the bad revision keeps existing. Fix
-forward on a branch, let CI go green, then `./scripts/deploy.sh prod`.
+`/status` also names the commit the serving revision was built from, so
+"is prod on the last version?" is `curl .../status` against `git log`, not a
+comparison of build timestamps. Revisions deployed before commit stamping
+answer `"commit": "dev"`; for those, `gcloud run revisions describe <rev>
+--format='value(metadata.labels.commit)'` is empty too and the build-source
+timestamp is the only clue left.
+
+Rollback is traffic-only and instant; the bad revision keeps existing. It can
+only reach back as far as the images Artifact Registry still holds — the
+cleanup policy (`infra/registry-cleanup-policy.json`) keeps the 5 newest
+unconditionally. Fix forward on a branch, let CI go green, then
+`./scripts/deploy.sh prod`.
 
 ## Data: corrupt or lost user data
 

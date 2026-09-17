@@ -4,6 +4,10 @@ Spot rates for live sizing; historical rates for cost-basis / tax reporting.
 Spanish tax law converts every foreign-currency transaction to EUR at the ECB
 rate published for the transaction date, so historical lookups are cached and
 resolve weekends/holidays to the prior business day (frankfurter's behaviour).
+
+A currency the ECB does not quote but that is hard-pegged to one it does (see
+`PEGS`) resolves through its anchor at the fixed parity, so every entry point
+here accepts it as a base or a quote.
 """
 
 from __future__ import annotations
@@ -21,6 +25,23 @@ LATEST_URL = "https://api.frankfurter.dev/v1/latest?base={base}&symbols={quote}"
 HISTORICAL_URL = "https://api.frankfurter.dev/v1/{date}?base={base}&symbols={quote}"
 RANGE_URL = "https://api.frankfurter.dev/v1/{start}..{end}?base={base}&symbols={quote}"
 FX_CACHE = DATA_DIR / "fx_history.json"
+
+# Currencies the ECB does not quote, but which are hard-pegged to one it does:
+# {pegged: (anchor, units of pegged per unit of anchor)}. The UAE dirham has
+# been fixed at 3.6725 to the dollar since 1997 (Central Bank of the UAE), so
+# an AED figure is a USD figure times a constant — no series to fetch and no
+# date to resolve. Without this a UAE filer's ledger could not be replayed at
+# all, because frankfurter answers 404 for a base it has no series for.
+PEGS: dict[str, tuple[str, float]] = {"AED": ("USD", 3.6725)}
+
+
+def _peg(ccy: str) -> tuple[str, float]:
+    """(a currency the ECB quotes, units of `ccy` per unit of it).
+
+    Identity for a currency that is quoted directly, so callers can resolve
+    unconditionally and only branch when something actually moved.
+    """
+    return PEGS.get(ccy, (ccy, 1.0))
 
 # (amount, currency, iso_date) -> reporting currency. The injectable-converter
 # signature used by positions / dividends / portfolio so tests run without
@@ -43,6 +64,10 @@ def spot(base: str, quote: str) -> tuple[float, str]:
     base, quote = base.upper(), quote.upper()
     if base == quote:
         return 1.0, "spot"
+    (base_anchor, per_base), (quote_anchor, per_quote) = _peg(base), _peg(quote)
+    if (base_anchor, quote_anchor) != (base, quote):
+        rate, as_of = spot(base_anchor, quote_anchor)
+        return rate / per_base * per_quote, as_of
     hit = _SPOT_CACHE.get((base, quote))
     if hit and time.monotonic() - hit[0] < _SPOT_TTL_S:
         return hit[1]
@@ -96,6 +121,11 @@ def rate_on(day: str | _date, base: str, quote: str) -> float:
     base, quote = base.upper(), quote.upper()
     if base == quote:
         return 1.0
+    (base_anchor, per_base), (quote_anchor, per_quote) = _peg(base), _peg(quote)
+    if (base_anchor, quote_anchor) != (base, quote):
+        # A pegged leg is its anchor's rate scaled by the fixed parity. Both
+        # anchors are quoted, so this recurses exactly once.
+        return rate_on(day, base_anchor, quote_anchor) / per_base * per_quote
     day = day.isoformat() if isinstance(day, _date) else day
     key = f"{day}:{base}:{quote}"
     cache = _cache()
@@ -117,6 +147,13 @@ def rates_range(start: str, end: str, base: str, quote: str) -> dict[str, float]
     base, quote = base.upper(), quote.upper()
     if base == quote:
         return {}
+    (base_anchor, per_base), (quote_anchor, per_quote) = _peg(base), _peg(quote)
+    if (base_anchor, quote_anchor) != (base, quote):
+        scale = per_quote / per_base
+        return {
+            d: r * scale
+            for d, r in rates_range(start, end, base_anchor, quote_anchor).items()
+        }
     url = RANGE_URL.format(start=start, end=end, base=base, quote=quote)
     data = get_json(url, timeout=30)
     return {d: float(v[quote]) for d, v in data["rates"].items()}

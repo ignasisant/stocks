@@ -547,9 +547,10 @@ _BOOTED = datetime.now(UTC)
 async def status(request: Request) -> Response:
     """`/status` — a shade more than liveness, still zero round trips.
 
-    What it adds over `/healthz`: which revision is answering, how long this
-    container has been up (a suspiciously young uptime during an incident
-    means crash-looping), and whether persistence is configured. Deliberately
+    What it adds over `/healthz`: which revision is answering and the commit it
+    was built from, how long this container has been up (a suspiciously young
+    uptime during an incident means crash-looping), and whether persistence is
+    configured. Deliberately
     no storage or market-data probe — this must stay cheap enough to curl in
     a loop mid-incident. See docs/RUNBOOK.md.
     """
@@ -558,6 +559,10 @@ async def status(request: Request) -> Response:
     body = {
         "status": "ok",
         "revision": os.getenv("K_REVISION", "dev"),
+        # The commit the revision was built from — scripts/deploy.sh sets it.
+        # Without it, "is prod running the last version?" is archaeology on
+        # build timestamps; with it, it is one curl against one `git log`.
+        "commit": os.getenv("STOCKS_COMMIT", "dev"),
         "uptime_s": int((datetime.now(UTC) - _BOOTED).total_seconds()),
         "storage": storage.enabled(),
     }

@@ -36,7 +36,6 @@ import streamlit as st
 
 from stocks.data import fetch
 from stocks.portfolio import corporate, demo, last_import, platforms, transfers
-from stocks.portfolio import ledger as ledger_mod
 from stocks.portfolio.ledger import add_many, all_transactions, clear, delete_many
 from stocks.portfolio.validate import known_tickers, validate
 from stocks.web import auth, logos, skeletons, tx_text
@@ -266,15 +265,10 @@ if _moves:
         type="primary",
         icon=":material/swap_horiz:",
     ):
-        for m in _moves:
-            # The departure stops being a sale, and both labels become one
-            # security so the replay can see that the shares never left.
-            ledger_mod.set_action(list(m.out_ids), transfers.TRANSFER_OUT, paths.db)
-            if m.in_id is not None:
-                ledger_mod.set_action([m.in_id], transfers.TRANSFER_IN, paths.db)
-            if m.rekey:
-                ledger_mod.retag(m.ticker_out, m.ticker_in, paths.db)
-        st.session_state["moves_applied"] = len(_moves)
+        # The departure stops being a sale, and both labels become one
+        # security so the replay can see that the shares never left. Shared
+        # with the assistant's copy of this offer (transfers.accept).
+        st.session_state["moves_applied"] = transfers.accept(_moves, paths.db)
         st.rerun()
     st.caption(tr("import.apply_moves_help"))
 

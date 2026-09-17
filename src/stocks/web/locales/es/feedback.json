@@ -5,11 +5,17 @@
   "feedback.kind_bug": "Error",
   "feedback.kind_idea": "Idea",
   "feedback.kind_other": "Otro",
-  "feedback.text": "Tu comentario",
   "feedback.placeholder": "¿Qué ha pasado, o qué lo mejoraría?",
-  "feedback.send": "Enviar",
+  "feedback.shot": "Adjuntar una captura",
+  "feedback.shot_help": "Envía una imagen de la pantalla que hay detrás de esta ventana, tal como está ahora — esta ventana no sale. Va con todo lo que muestre la página, tus cifras incluidas.",
+  "feedback.shot_working": "Haciendo la captura…",
+  "feedback.shot_ready": "Adjuntada — {kb} KB",
+  "feedback.shot_failed": "No se pudo capturar esta pantalla; tu comentario se enviará sin imagen.",
+  "feedback.shot_big": "La imagen ha salido demasiado pesada para enviarla; tu comentario se enviará sin ella.",
+  "feedback.shot_wait": "Un segundo — todavía se está haciendo la captura.",
   "feedback.sent": "¡Gracias — recibido!",
   "feedback.empty": "Escribe algo primero.",
   "feedback.rate_limited": "Suficiente por ahora — inténtalo más tarde.",
-  "feedback.failed": "No se pudo guardar tu comentario. Inténtalo más tarde."
+  "feedback.failed": "No se pudo guardar tu comentario. Inténtalo más tarde.",
+  "feedback.unsent": "No se ha enviado — cópialo antes de cerrar."
 }

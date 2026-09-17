@@ -61,7 +61,6 @@
   "chat.import_positions": "📄 **{filename}** — this is a *portfolio report*: it lists what you hold right now, with no dated buys or sells in it. There is nothing to add to your ledger from it.",
   "chat.import_positions_help": "Export your trade history instead — ClickTrade/Saxo: Informes históricos → Operaciones ejecutadas → Excel; Revolut: Stocks → statement. Those carry real dates and prices. Meanwhile you can set a holding by just telling me, e.g. \"I hold 112 InMode at 18.16\".",
   "chat.import_unavailable": "📄 **{filename}** — I couldn't read it because the AI backend didn't answer just now. Nothing was changed. Try again in a moment, or add your own API key in AI settings.",
-  "chat.import_one_at_a_time": "I only imported the first file; send {files} separately.",
   "chat.import_source_llm": "an unknown format (columns matched automatically)",
   "chat.import_preview": "{filename} · {label}",
   "chat.import_broker": "Which broker is this from?",
@@ -172,5 +171,6 @@
   "chat.voice_silent": "Nothing was said in that recording. Try again a little closer to the microphone.",
   "chat.voice_too_long": "A voice note can run up to {seconds} seconds. Record a shorter one, or type the question.",
   "chat.voice_failed": "The voice note could not be transcribed. Try again, or type the question.",
-  "chat.voice_unavailable": "Voice notes are not configured on this deployment."
+  "chat.voice_unavailable": "Voice notes are not configured on this deployment.",
+  "chat.moves_applied": "↔️ Recorded {n} position(s) as transfers between brokers. No gain is realized, the original purchase dates and cost basis carry across, and both broker labels for the security are now one."
 }

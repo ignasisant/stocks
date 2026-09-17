@@ -302,7 +302,15 @@ def injected_vs_value(
         return pd.DataFrame()
     idx = shares.index
     fx = fx or {}
-    ccy_of = {t.ticker: t.currency for t in transactions if t.action in ("buy", "sell")}
+    # Normalised like `shares_frame` above, and for the same reason: a holding
+    # that only ever arrived — an opening snapshot, shares moved in kind — has
+    # no trade row to read a currency from, and falling back to the base
+    # prices a USD position as if its closes were already in EUR.
+    ccy_of = {
+        t.ticker: t.currency
+        for t in transfers.normalize(transactions)
+        if t.action in ("buy", "sell")
+    }
 
     value = pd.Series(0.0, index=idx)
     carried: list[str] = []
@@ -733,6 +741,48 @@ def positions_frame(
             }
         )
     return pd.DataFrame(rows).set_index("ticker") if rows else pd.DataFrame()
+
+
+def priced_totals(tbl: pd.DataFrame) -> tuple[float, float, int]:
+    """(cost, value, unpriced) over only the rows carrying a live value.
+
+    `value` is NaN for any position the price pass had no series for — a
+    throttled burst, a symbol Yahoo drops, a broker code with no alias yet.
+    Summing the whole `cost` column against that partial `value` mixes
+    denominators: the book's entire basis over a fraction of its market value,
+    which prints an intact book at -60%. Both sums here come from the same
+    rows, so the percentage between them is like-for-like, and `unpriced` is
+    how many positions were left out — for the caller to disclose, because a
+    total that quietly drops a third of the book is the same lie in smaller
+    print.
+    """
+    if tbl.empty or "value" not in tbl:
+        return 0.0, 0.0, len(tbl)
+    priced = tbl[tbl["value"].notna()]
+    cost = float(priced["cost"].sum()) if "cost" in priced else 0.0
+    return cost, float(priced["value"].sum()), int(len(tbl) - len(priced))
+
+
+def value_weights(tbl: pd.DataFrame) -> pd.Series:
+    """Each priced row's share of the book, unpriced rows held at their cost.
+
+    A weight is a share of market value, and a position the price pass missed
+    has none — so it reads NaN and the column stops summing to 1. What it must
+    not do is drop out of the denominator too: dividing by the priced slice
+    alone hands the names that did price the missing ones' share, which is how
+    a 6% ETF renders as 50% of a throttled book. The absent rows stand in the
+    denominator at their ledger cost — stale, but far closer to their value
+    than the zero they contribute otherwise.
+    """
+    if tbl.empty or "value" not in tbl:
+        return pd.Series(dtype=float, index=tbl.index)
+    priced = tbl["value"].notna()
+    total = float(tbl.loc[priced, "value"].sum())
+    if "cost" in tbl:
+        total += float(tbl.loc[~priced, "cost"].sum())
+    if not total:
+        return pd.Series(float("nan"), index=tbl.index)
+    return tbl["value"] / total
 
 
 def position_value_frames(

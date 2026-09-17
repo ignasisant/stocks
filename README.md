@@ -448,14 +448,19 @@ computed in it rather than converted at the end (`positions.build(base=…)`,
 takes `-c/--currency` on the money commands. The **Realized & tax** tab is the
 exception — it follows the tax residence, which is a legal fact, not a taste.
 
-Tax is per **jurisdiction** (`src/stocks/portfolio/tax/`). Ten ship today:
+Tax is per **jurisdiction** (`src/stocks/portfolio/tax/`). Twelve ship today:
 Spain (IRPF), the United States (federal capital gains), the United Kingdom
 (CGT), Germany (Abgeltungsteuer), France (PFU), Italy (imposta sostitutiva),
-Ireland (CGT + fund exit tax), Portugal (IRS), Canada (CRA) and Australia
-(ATO). A jurisdiction also owns two things beyond its rates:
+Ireland (CGT + fund exit tax), Portugal (IRS), Canada (CRA), Australia (ATO)
+the United Arab Emirates and Switzerland — the last two tax a private
+portfolio at 0%, and are modelled precisely so the tab can say so with your own
+numbers instead of leaving those residents reading Spanish brackets. A
+jurisdiction whose answer is "nothing" still owns the boundary that would
+change it: the UAE's 9% corporate tax on a licensed entity, Switzerland's KS 36
+professional-dealer test. A jurisdiction also owns two things beyond its rates:
 
 - the **share-matching rule** the replay uses (`positions.build(matching=…)`) —
-  `fifo` (ES, US, DE, IE, PT, AU), `lifo` (IT), `average` for a moving
+  `fifo` (ES, US, DE, IE, PT, AU, AE, CH), `lifo` (IT), `average` for a moving
   weighted-average cost base (FR's prix moyen pondéré, CA's ACB), or `s104` for
   the UK's same-day → 30-day → pool identification. The same trades give
   different gains under each, which is why this is not a display choice;
@@ -464,12 +469,18 @@ Ireland (CGT + fund exit tax), Portugal (IRS), Canada (CRA) and Australia
   ("2025", "2025/26", "2025-26") follow the country rather than the calendar.
 
 Pick yours on the Profile page — *Tax residence*, defaulting to your browser's
-region and falling back to Spain — or pass `-j ES|US|UK|DE|FR|IT|IE|PT|CA|AU`
-to `stocks tax`. The choice sets the rules, the reporting currency and the
+region and falling back to Spain — or pass
+`-j ES|US|UK|DE|FR|IT|IE|PT|CA|AU|AE|CH` to `stocks tax`. That fallback is not
+silent: when the browser names a country the app does not model, the tab says
+the gains are yours but the rules on top of them are borrowed
+(`tax_ui.resolve()` returns *how* the jurisdiction was arrived at, and only
+`UNMODELLED` warns — a locale with no region at all does not). The choice sets the rules, the reporting currency and the
 wording: the ledger is replayed **at** that currency (EUR at the ECB rate of
 each transaction date for Spain, USD at that date's rate for the US, CAD for
 Canada), because a cost basis is a per-transaction conversion and not something
-you can convert once at the end. Jurisdictions that read your other income or a
+you can convert once at the end. The ECB publishes no dirham series, so AED
+resolves through its fixed 3.6725 peg to the dollar (`fx.PEGS`) rather than a
+fetch. Jurisdictions that read your other income or a
 sub-national rate ask for it on the Profile page, and only there — an ES
 account never sees a bracket input. Adding a country means one module plus its
 `portfolio.<code>_*` catalog keys — no page edits.
@@ -892,17 +903,42 @@ wraps the source deploy:
 
 ```bash
 ./scripts/deploy.sh                 # staging — try the change on a real URL
-./scripts/deploy.sh prod            # gated: clean tree + green CI + confirm
+./scripts/deploy.sh prod            # gated: clean tree + on origin/main + green CI
+./scripts/deploy.sh prod --allow-unmerged    # ship a branch tip anyway
 ./scripts/deploy.sh prod --min-instances 0   # accept cold starts, save money
+./scripts/rollback.sh prod          # undo: traffic back to the previous revision
 ```
+
+Every deploy is a canary. The new revision goes up with **0% traffic** under
+the `candidate` tag and is smoke-tested on its own URL — `/livez`, then
+`/status` checked against the revision name it should be reporting — before
+any traffic moves. A revision that fails to boot is never promoted and nobody
+sees it. `--no-canary` restores the old straight-to-traffic behaviour.
+
+The prod gate reads `git status --untracked-files=all`, not `git diff`: the
+deploy uploads the working tree, so a file that was never `git add`-ed ships
+exactly like a modified one. Commit it or `.gitignore` it.
+
+It also refuses a commit that is not on `origin/main`. A green branch tip
+otherwise passes every check, and prod ends up serving work that main's history
+does not contain — until the next deploy, cut from main and just as green,
+quietly takes it away again. Every revision is stamped with its commit (a
+`commit` label, and `STOCKS_COMMIT` that `/status` reports), so when the commit
+being deployed does not contain the one prod is serving, the gate lists exactly
+which commits would disappear and asks for the service name, not a `y`.
+`--allow-unmerged` skips the ancestry refusal; it does not skip that list.
 
 Prod keeps one instance warm by default (`--min-instances 1`) so first paint
 never eats a container boot. `/status` on either service reports the serving
-revision, uptime and whether persistence is configured. Cost backstops: a GCP
-budget alert (`./scripts/setup_budget.sh <billing-account>`) and a global
-daily cap on the free LLM chain (`FREE_LLM_GLOBAL_DAILY_CAP`, default 400,
-on top of the per-account cap). Incidents: see `docs/RUNBOOK.md` — triage
-commands, rollback, restore, secrets rotation.
+revision, the commit it was built from, uptime and whether persistence is
+configured. Cost backstops: a GCP
+budget alert (`./scripts/setup_budget.sh <billing-account>`), an Artifact
+Registry cleanup policy so deploy images stop accumulating
+(`./scripts/setup_registry_cleanup.sh --dry-run` first — it keeps the 5 newest
+and deletes untagged images older than 14 days), and a global daily cap on the
+free LLM chain (`FREE_LLM_GLOBAL_DAILY_CAP`, default 400, on top of the
+per-account cap). Incidents: see `docs/RUNBOOK.md` — triage commands,
+rollback, restore, secrets rotation.
 
 ## CI & security
 

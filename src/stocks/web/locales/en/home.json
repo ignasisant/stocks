@@ -23,6 +23,7 @@
   "home.col_reports": "Reports",
   "home.col_52week": "52-week",
   "home.prices_unavailable": "Prices unavailable right now — try Refresh prices below.",
+  "home.unpriced_note": "Positions with no live price: {n} of {total} — the cost basis and market value above both leave them out.",
   "home.data_unavailable": "Portfolio data unavailable right now — reload to retry.",
   "home.cost_basis": "Cost basis",
   "home.market_value": "Market value",

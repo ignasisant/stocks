@@ -61,7 +61,6 @@
   "chat.import_positions": "📄 **{filename}** — esto es un *informe de cartera*: lista lo que tienes ahora mismo, sin ninguna compra ni venta con fecha. No hay nada que añadir a tu histórico desde aquí.",
   "chat.import_positions_help": "Exporta el histórico de operaciones — ClickTrade/Saxo: Informes históricos → Operaciones ejecutadas → Excel; Revolut: Stocks → statement. Esos sí traen fechas y precios reales. Mientras tanto puedes fijar una posición diciéndomelo, por ejemplo «tengo 112 de InMode a 18,16».",
   "chat.import_unavailable": "📄 **{filename}** — no he podido leerlo porque el motor de IA no ha respondido ahora mismo. No se ha cambiado nada. Prueba en un momento, o añade tu propia clave API en Ajustes de IA.",
-  "chat.import_one_at_a_time": "Solo he importado el primer fichero; envía {files} por separado.",
   "chat.import_source_llm": "un formato desconocido (columnas emparejadas automáticamente)",
   "chat.import_preview": "{filename} · {label}",
   "chat.import_broker": "¿De qué bróker viene?",
@@ -172,5 +171,6 @@
   "chat.voice_silent": "No se ha dicho nada en esa grabación. Inténtalo otra vez algo más cerca del micrófono.",
   "chat.voice_too_long": "Una nota de voz puede durar hasta {seconds} segundos. Graba una más corta, o escribe la pregunta.",
   "chat.voice_failed": "No se ha podido transcribir la nota de voz. Inténtalo otra vez, o escribe la pregunta.",
-  "chat.voice_unavailable": "Las notas de voz no están configuradas en este despliegue."
+  "chat.voice_unavailable": "Las notas de voz no están configuradas en este despliegue.",
+  "chat.moves_applied": "↔️ Registradas {n} posición(es) como traspasos entre brókers. No se realiza ninguna ganancia, se conservan las fechas y el coste de compra originales, y las dos etiquetas con que cada bróker nombra el valor pasan a ser una."
 }

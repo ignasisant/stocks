@@ -32,10 +32,15 @@ What imports, and how:
 * ``Dividends``/``Dividendos`` — the ticker is parsed from the description
   prefix ("AAPL(US03…) Cash Dividend…"); amount is the gross payment.
   Per-currency ``Total`` summary rows are dropped.
-* ``Withholding Tax``/``Retención de impuestos`` rows are listed as skipped
-  with a pointer to set the tax as the fee on the matching dividend row (the
-  Spanish double-tax credit convention) — pairing them automatically across
-  sections is not reliable when corrections restate an earlier payment.
+* ``Withholding Tax``/``Retención de impuestos`` — the tax withheld at source
+  belongs on its dividend as the fee (the Spanish double-tax credit
+  convention), so a row that can only mean one payment is put there: exactly
+  one dividend and exactly one withholding row for the same ticker, day and
+  currency. Anything else — a restatement, two payments on one day, a
+  correction that reverses an earlier line — is left for the reader with the
+  pointer it always had, because guessing which payment a second tax line
+  belongs to is how a year's withholding silently doubles. Either way the row
+  stays in the skipped list, so the statement can be reconciled line by line.
 * ``Open Positions``/``Posiciones abiertas`` — **only when the file holds no
   movements at all**. A one-day statement, or any statement covering a period
   with no activity, has no Trades section whatsoever; what it does carry is
@@ -51,9 +56,14 @@ What imports, and how:
   imported over them. When the file *does* carry trades, the positions section
   is ignored: importing both would double the book.
 * ``Financial Instrument Information``/``Información de instrumento
-  financiero`` — not events, just the ISIN behind each symbol. It is what lets
-  a holding IBKR calls ``ASML`` be recognised as the one DEGIRO booked under
-  ``NL0010273215``.
+  financiero`` — not events: the ISIN and the listing venue behind each
+  symbol. The ISIN is what lets a holding IBKR calls ``ASML`` be recognised as
+  the one DEGIRO booked under ``NL0010273215``. The venue is what stops that
+  same holding being priced as something else entirely — IBKR prints the bare
+  local symbol on every market it lists, and a bare ``ASML`` is the Nasdaq ADR
+  in dollars, not the Amsterdam share in euros the statement is reporting. A
+  venue the map knows adds its Yahoo suffix (``ASML.AS``); one it does not
+  leaves the symbol exactly as written.
 * ``Change in Dividend Accruals``/``Modificación en los dividendos
   devengados`` — an accrual, not a payment. Listed as skipped so the reader
   sees it was read and deliberately left out; the cash dividend shows up in
@@ -136,6 +146,27 @@ _ACCRUAL_ALIASES: dict[str, tuple[str, ...]] = {
 _INSTRUMENT_ALIASES: dict[str, tuple[str, ...]] = {
     "symbol": ("symbol", "simbolo"),
     "isin": ("security id", "id. de seguridad", "id de seguridad"),
+    "exchange": ("listing exch", "merc de cotizacion", "mercado de cotizacion"),
+}
+
+# IBKR listing venue -> Yahoo suffix. IBKR prints a bare local symbol for every
+# market it lists, and Yahoo reads a bare symbol as the US line: `ASML` is the
+# Nasdaq ADR in dollars, not the Amsterdam share in euros the statement is
+# reporting. Booked unqualified, that holding is priced off the ADR and read as
+# EUR — a silent ~15% on a position nothing in the numbers flags. US venues map
+# to no suffix because there the bare symbol is right, and a code not listed
+# here keeps the symbol as IBKR wrote it (the same as before this map existed).
+_VENUE_SUFFIX: dict[str, str] = {
+    "nasdaq": "", "nasdaq nms": "", "nyse": "", "arca": "", "amex": "",
+    "bats": "", "iex": "", "pink": "", "value": "", "nyseam": "",
+    "aeb": ".AS", "sbf": ".PA", "enext be": ".BR", "bvl": ".LS",
+    "ibis": ".DE", "ibis2": ".DE", "fwb": ".F", "swb": ".SG", "tgate": ".DE",
+    "bm": ".MC", "mexi": ".MX",
+    "bvme": ".MI", "bvme etf": ".MI",
+    "lse": ".L", "lseetf": ".L",
+    "ebs": ".SW", "vse": ".VI",
+    "sfb": ".ST", "cph": ".CO", "hex": ".HE", "ose": ".OL",
+    "sehk": ".HK", "tsej": ".T", "tse": ".TO", "asx": ".AX",
 }
 _ALIASES = {
     "trades": _TRADE_ALIASES,
@@ -224,6 +255,7 @@ def parse_csv(text: str) -> ParseResult:
     positions: list[tuple[int, _Section, list[str]]] = []
     dates: dict[str, str] = {}  # "period" / "generated" -> ISO day
     isins: dict[str, str] = {}  # symbol -> ISIN, from the instrument table
+    venues: dict[str, str] = {}  # symbol -> Yahoo suffix for its listing
 
     for i, row in enumerate(csv.reader(io.StringIO(text)), start=1):
         if len(row) < 3:
@@ -260,6 +292,10 @@ def parse_csv(text: str) -> ParseResult:
             symbol, isin = section.get(rest, "symbol"), section.get(rest, "isin")
             if symbol and _ISIN.fullmatch(isin):
                 isins[symbol.upper()] = isin.upper()
+            if symbol:
+                suffix = _VENUE_SUFFIX.get(_norm(section.get(rest, "exchange")))
+                if suffix:
+                    venues[symbol.upper()] = suffix
 
     if not recognised:
         return ParseResult(
@@ -272,13 +308,30 @@ def parse_csv(text: str) -> ParseResult:
                 ),
             }]
         )
+    _pair_withholding(result)
     # The period the statement covers is what the holdings are valued on; the
     # moment the file was generated is a fallback, and it is a day later when
     # the statement is cut overnight.
     _positions(
         positions, result, dates.get("period") or dates.get("generated", ""), isins
     )
+    # Last, because the instrument table is at the end of the file: the trades
+    # above were booked before their listing venue was known.
+    _qualify_listings(result, venues)
     return result
+
+
+def _qualify_listings(result: ParseResult, venues: dict[str, str]) -> None:
+    """Point each booked symbol at the listing the statement actually reports.
+
+    A no-op for a US book, where the bare symbol is the right one, and for any
+    venue `_VENUE_SUFFIX` does not know. The skipped rows keep the symbol IBKR
+    printed: they are the audit trail of what the file said, not holdings.
+    """
+    for tx in result.transactions:
+        suffix = venues.get(tx.ticker.upper())
+        if suffix and not tx.ticker.upper().endswith(suffix):
+            tx.ticker += suffix
 
 
 # ------------------------------------------------------------------- sections
@@ -393,6 +446,43 @@ def _withholding_row(
         "amount": money(section.get(row, "amount")),
         "currency": currency,
     })
+
+
+def _pair_withholding(result: ParseResult) -> None:
+    """Fold each unambiguous withholding row into the dividend it taxes.
+
+    Without this the year reads its gross as its net: `dividends.by_year`
+    takes the withheld tax from the dividend row's fee, and nothing else in
+    the app ever looks at the skipped list. The pairing is deliberately timid
+    — one dividend and one tax line for the same (ticker, day, currency) — so
+    a restated payment is never netted against the wrong line; those keep the
+    pointer that asks the reader to place them.
+    """
+    taxes: dict[tuple[str, str, str], list[dict]] = {}
+    for row in result.skipped:
+        if row.get("type") != "withholding tax":
+            continue
+        key = (row.get("ticker", ""), row.get("date", ""), row.get("currency", ""))
+        if all(key):
+            taxes.setdefault(key, []).append(row)
+
+    dividends: dict[tuple[str, str, str], list[Transaction]] = {}
+    for tx in result.transactions:
+        if tx.action == "dividend":
+            dividends.setdefault((tx.ticker, tx.date, tx.currency), []).append(tx)
+
+    for key, rows in taxes.items():
+        paid = dividends.get(key, [])
+        if len(rows) != 1 or len(paid) != 1 or paid[0].fee:
+            continue
+        amount = abs(rows[0].get("amount") or 0.0)
+        if not amount:
+            continue
+        paid[0].fee = amount
+        rows[0]["reason"] = (
+            f"withholding tax — applied as the fee on that day's {key[0]} "
+            "dividend, for the double-tax credit"
+        )
 
 
 def _accrual_row(

@@ -33,7 +33,14 @@ from stocks.chat import agent, engine, market, tokens, toolbox, tools
 from stocks.config import load_watchlist
 from stocks.data import fetch
 from stocks.data.symbols import is_isin, symbol_for_isin
-from stocks.portfolio import autodetect, demo, last_import, llm_map, platforms
+from stocks.portfolio import (
+    autodetect,
+    demo,
+    last_import,
+    llm_map,
+    platforms,
+    transfers,
+)
 from stocks.portfolio.ledger import add_many, all_transactions
 from stocks.portfolio.validate import known_tickers, validate
 from stocks.secrets_env import secret
@@ -44,7 +51,9 @@ from stocks.web import (
     css,
     guide,
     llm,
+    logos,
     ratelimit,
+    reconnect,
     skeletons,
     stt,
     tx_text,
@@ -406,6 +415,23 @@ def _resolve_skills(provider: llm.Provider, api_key: str, history: list[dict],
 # Keyless DuckDuckGo search (web/chat_web.py): a planner call on the provider's
 # cheapest model decides per message whether the web is needed and with which
 # queries — the same one-extra-cheap-call shape as the skill auto-router.
+
+
+def _turn_prefs() -> dict:
+    """This account's prefs as the pending turn must read them.
+
+    One override, and only on a phone: the internet stays on. The chip that
+    toggles it is not drawn at that width (see `_render_rail`), so an account
+    that switched the web off at a desk would otherwise arrive here with no
+    internet and nothing on screen to turn it back on — the failure mode being
+    answers that are quietly worse, with no way to tell why.
+
+    Forced in the copy handed to the turn and never written back: the toggle
+    is still that account's setting, still off, and still off the next time
+    they sit at the desk where they set it.
+    """
+    prefs = auth.load_prefs()
+    return prefs | {"chat_web": True} if is_mobile() else prefs
 
 
 def _gather_web(provider: llm.Provider, api_key: str, history: list[dict],
@@ -1350,12 +1376,13 @@ def _prepare_import(name: str, data: bytes, provider: llm.Provider,
 def _ingest_uploads(ns: str, uploads: list[tuple[str, bytes]],
                     provider: llm.Provider, api_key: str,
                     history: list[dict]) -> None:
-    """Turn the just-attached files into a pending import and say so.
+    """Turn the just-attached file into a pending import and say so.
 
-    One statement at a time: several at once would need several previews and
-    several confirmations, and a second file is far more often the same export
-    twice than two different brokers. The rest are named as ignored rather
-    than silently dropped.
+    A list of one: the composer accepts a single file per message, so the
+    preview and its confirmation are always about the file that was just
+    sent. Two at once would need two previews and two confirmations, and the
+    second attachment was far more often the same export twice than a second
+    broker.
     """
     name, data = uploads[0]
     # Reading, mapping and validating a statement takes a beat; hold the space
@@ -1394,9 +1421,6 @@ def _ingest_uploads(ns: str, uploads: list[tuple[str, bytes]],
     else:
         note = tr("chat.import_none", filename=name) + "\n\n" + tr(
             "chat.import_none_help")
-    if len(uploads) > 1:
-        note += "\n\n" + tr("chat.import_one_at_a_time",
-                             files=", ".join(u[0] for u in uploads[1:]))
     history.append(_stamp(
         {"role": "assistant", "content": note, "action": "import"}))
     auth.save_chat(history)
@@ -1549,6 +1573,67 @@ def _render_pending_import(ns: str, history: list[dict], box) -> bool:
                 st.session_state.pop(_pending_key(ns), None)
                 st.rerun()
     return True
+
+
+_MOVE_COLS = ("ticker", "quantity", "from", "to", "date", "gain", "basis")
+
+
+def _render_pending_moves(ns: str, history: list[dict], box) -> None:
+    """The Import page's broker-move repair, offered where the import happened.
+
+    A statement cannot say "these shares moved": the old broker prints the
+    departure as a sale at the market price and the new one lists the arrival
+    as a balance, so the book reports a gain nobody made and restarts a
+    holding period that never stopped. The Import page has always asked about
+    it; a file imported through the assistant never goes past that page, and a
+    phantom gain nobody is told about is one that gets filed on a tax return.
+
+    Reads the ledger and nothing else (`transfers.propose`), so like the page
+    it answers the question on every run rather than hiding behind a button,
+    and it offers rather than blocks: the thread stays usable with the card up.
+    """
+    paths = auth.user_paths()
+    rows = demo.without(all_transactions(paths.db))
+    # logos.yahoo_symbol is the app's ISIN -> symbol lookup, cached on disk;
+    # propose only calls it for a row that already looks like a move.
+    moves = transfers.propose(rows, resolve=logos.yahoo_symbol) if rows else []
+    if not moves:
+        return
+    with box, st.chat_message("assistant"):
+        st.warning(tr("import.moves_found", n=len(moves)))
+        data_table(
+            pd.DataFrame(
+                {
+                    "ticker": m.ticker_in,
+                    "quantity": m.quantity,
+                    "from": m.broker_out,
+                    "to": m.broker_in,
+                    "date": m.date_out,
+                    "gain": tr("import.move_gain",
+                               amount=f"{m.phantom_gain:,.2f} {m.currency}"),
+                    "basis": tr("import.move_basis",
+                                basis=f"{m.basis_in:,.2f}",
+                                sold=f"{m.booked_at:,.2f}"),
+                }
+                for m in moves
+            ),
+            title="ticker",  # phone cards head on the symbol, like every table
+            fmt={"quantity": "{:,.4f}"},
+            labels=tx_text.labels(*_MOVE_COLS),
+            hide_index=True,
+            width="stretch",
+        )
+        if st.button(tr("import.apply_moves", n=len(moves)), type="primary",
+                     icon=":material/swap_horiz:", key=f"{ns}_apply_moves"):
+            n = transfers.accept(moves, paths.db)
+            history.append(_stamp({
+                "role": "assistant",
+                "content": tr("chat.moves_applied", n=n),
+                "action": "import",
+            }))
+            auth.save_chat(history)
+            st.rerun()
+        st.caption(tr("import.apply_moves_help"))
 
 
 # ------------------------------------------------------- clock and activity
@@ -2047,6 +2132,13 @@ def _recover_stopped(ns: str, history: list[dict]) -> None:
     arrives (_mirror), and this files it as the answer it is, stopped and
     done, so the thread moves on.
 
+    A stop the reader never asked for is the other half of this: Streamlit
+    stops the script the instant the websocket drops, so a backgrounded phone
+    unwinds a turn through the very same path as the Stop button. Those are
+    told apart by the runtime itself (reconnect.dropped) and the cut turn is
+    left unanswered instead of filed, which is what makes the generate block
+    below write it again when the reader comes back.
+
     Only within the session that stopped it: a reload starts a new session
     with no marker, and the trailing question regenerates as it always has.
     """
@@ -2055,6 +2147,17 @@ def _recover_stopped(ns: str, history: list[dict]) -> None:
         return
     if not (history and history[-1]["role"] == "user"):
         return  # the stop landed after the turn was already filed
+    if reconnect.dropped(cut.get("started")):
+        # Nobody pressed anything: the websocket went and Streamlit stopped
+        # the script with it, which on a phone is every screen lock and every
+        # app switch. Leaving the question trailing with its units handed back
+        # is what asks for the answer again — the generate block below reads
+        # the same unanswered turn Retry leaves and writes it from the top, so
+        # coming back to the app finishes the answer instead of showing a
+        # sentence that stops mid-word.
+        _refund_free_quota(sum(cut.get("spent") or []))
+        obs.event("chat.resumed_after_drop")
+        return
     text = "".join(cut.get("parts") or []).strip()
     if not text:
         # Stopped before the first token: the reader got no answer, so the
@@ -2076,6 +2179,10 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
     survives a reload, a new session, or an ephemeral redeploy.
     """
     css.inject(_CONV_CSS)
+    # Before a turn can be cut by one: the runtime records a dropped websocket
+    # only once this has wrapped it, and a first turn stopped that way would
+    # otherwise be read as the reader's own Stop (see reconnect.py).
+    reconnect.watch()
     conv = auth.active_conversation()
     hist_key = _hist_key(conv)
     if hist_key not in st.session_state:
@@ -2121,7 +2228,12 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
     # "not available" on press is worse than no button.
     text, files, clip = _submitted(st.chat_input(
         tr("chat.placeholder"), key=f"{ns}_input",
-        accept_file="multiple", file_type=list(autodetect.supported_types()),
+        # One file per message, not "multiple": an attachment is an import,
+        # and an import is a preview the reader confirms. A second file in the
+        # same message would either queue a second preview behind the first or
+        # be dropped with an apology, and neither reads as well as a composer
+        # that only ever takes the statement it is about to show.
+        accept_file=True, file_type=list(autodetect.supported_types()),
         max_upload_size=MAX_UPLOAD_MB, accept_audio=stt.available(),
         audio_sample_rate=stt.SAMPLE_RATE,
         # Send becomes stop while the answer is being written. A turn runs
@@ -2229,7 +2341,7 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
         # the script run the stop button ends, so the answer as it streams and
         # the free units it spends are kept out here, in session state, for
         # _recover_stopped to settle on the next run.
-        cut: dict = {"parts": [], "spent": []}
+        cut: dict = {"parts": [], "spent": [], "started": started}
         st.session_state[_gen_key(ns)] = cut
         with box:
             bubble = st.chat_message("assistant")
@@ -2285,7 +2397,7 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
                     # Session state is read here, on the script thread; the
                     # three lookups then run concurrently off it (routing,
                     # search + page reads, quotes — ~15s back to back).
-                    prefs = auth.load_prefs()
+                    prefs = _turn_prefs()
                     view = _view_context().strip()
                     watchlist = auth.watchlist_path()
                     db = auth.db_path()
@@ -2403,6 +2515,8 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
     if _render_pending_import(ns, history, box):
         return  # a batch is waiting on the user — regenerating makes no sense
 
+    _render_pending_moves(ns, history, box)
+
     failure = _failure(history)
     if failure:
         # A dead provider must not cost the reader their question: the error
@@ -2518,12 +2632,14 @@ def _apply_width() -> None:
 
 
 def _render_panel_head(ns: str, conv: dict) -> None:
-    """Row 1: the open thread (the way into the list), new, widths, close.
+    """Row 1: the open thread (the way into the list), new, widths.
 
     The old row spent 72% of the width on the word "Assistant" and 28% on a
     text Close button, neither of which said anything the launcher had not
     already said. Both are gone: the title is the thread, and closing is an
-    icon.
+    icon — one this row reserves space for at its right edge but does not
+    draw, because a close that works while the panel is busy cannot live
+    inside this fragment. See _render_panel_close.
     """
     with st.container(horizontal=True, vertical_alignment="center",
                       key=f"{ns}_head"):
@@ -2542,12 +2658,8 @@ def _render_panel_head(ns: str, conv: dict) -> None:
             auth.new_conversation()
             _open_view("thread")
         _render_width_presets(ns)
-        if st.button("", icon=":material/close:", type="tertiary",
-                     key=f"{ns}_close", help=tr("chat.close")):
-            st.session_state["chat_panel_open"] = False
-            # The panel container itself is created outside this fragment, so
-            # closing has to repaint the whole app to take it away.
-            st.rerun(scope="app")
+        # Close is deliberately absent: it is drawn outside this fragment and
+        # pinned back into this row by CSS (_render_panel_close).
 
 
 def _render_status_strip(ns: str, provider: llm.Provider, model: str):
@@ -2602,11 +2714,20 @@ def _render_rail(ns: str) -> None:
     the composer rather than in an account settings panel opened once a
     quarter. Both are buttons, not widgets: a press is one rerun, and the
     skill picker only pays for itself when it is opened.
+
+    On a phone the internet chip is not drawn. The panel is the whole screen
+    at that width, and a row of two chips above the composer cost roughly a
+    message of reading — while the toggle itself is one almost nobody moves
+    off its default. So the phone keeps the capability and drops the control:
+    `_turn_prefs` forces the web on there, which is why hiding the chip does
+    not strand anyone who switched it off at a desk. The skill lens stays:
+    it changes which answer you get, not merely how it is sourced.
     """
     prefs = auth.load_prefs()
+    phone = is_mobile()
     with st.container(horizontal=True, vertical_alignment="center",
                       key=f"{ns}_rail"):
-        if chat_web.available():
+        if chat_web.available() and not phone:
             on = bool(prefs.get("chat_web", True))
             if st.button(tr("chat.web_chip"), icon=":material/language:",
                          type="primary" if on else "secondary",
@@ -2615,8 +2736,13 @@ def _render_rail(ns: str) -> None:
                 auth.save_prefs(prefs)
                 st.rerun()
         mode = _skill_mode(prefs)
-        with st.popover(tr("chat.skills_chip", mode=tr(f"chat.skills_{mode}")),
-                        icon=":material/auto_awesome:", key=f"{ns}_rail_skills"):
+        # Phone: the lens word alone ("auto", "portfolio"), because the row it
+        # sits in is now one control wide and "Skills:" is a label for a thing
+        # already obvious from its icon.
+        label = (tr(f"chat.skills_{mode}") if phone
+                 else tr("chat.skills_chip", mode=tr(f"chat.skills_{mode}")))
+        with st.popover(label, icon=":material/auto_awesome:",
+                        key=f"{ns}_rail_skills"):
             _pick_skills()
 
 
@@ -2951,8 +3077,21 @@ body:has(.st-key-chatpanel) .st-key-topbar_search {
    Together they cost ~70px and answer what the expander only answered once
    opened. */
 .st-key-chatpanel .st-key-panel_head {
-  gap: 0.35rem; padding: 0.5rem 0.6rem 0.5rem 0.75rem;
+  /* The right pad is the close button's seat: it is drawn outside this row's
+     fragment and positioned over it, so the row has to leave the space rather
+     than lay it out. */
+  gap: 0.35rem; padding: 0.5rem 2.4rem 0.5rem 0.75rem;
   border-bottom: 1px solid var(--ag-rule-panel);
+}
+/* Close, pinned into row 1 from outside the fragment (_render_panel_close).
+   Above the panel's own chrome so a streaming answer can never paint over the
+   one control that gets the reader out. */
+.st-key-chatpanel .st-key-chatclose {
+  position: absolute; top: 0.5rem; right: 0.6rem; z-index: 1000002;
+  width: max-content !important; min-width: 0 !important;
+}
+.st-key-chatpanel .st-key-chatclose button {
+  min-width: 0; padding: 0.3rem; border-radius: var(--ag-radius-nav);
 }
 /* The thread name is the row's only stretchy element, and it must truncate
    rather than wrap: two lines here would shove the conversation down. */
@@ -2980,7 +3119,6 @@ body:has(.st-key-chatpanel) .st-key-topbar_search {
   min-width: 0; padding: 0.3rem; border-radius: var(--ag-radius-nav);
 }
 .st-key-chatpanel .st-key-panel_new,
-.st-key-chatpanel .st-key-panel_close,
 .st-key-chatpanel [class*="st-key-panel_w_"] { width: max-content !important; }
 /* Width presets read as one segmented group: a track behind three squares,
    the active one filled with the nav-active purple. */
@@ -3008,7 +3146,9 @@ body:has(.st-key-chatpanel) .st-key-topbar_search {
      Close measured 22px wide before this, which is a miss waiting to happen
      on the one control that gets the reader out of a full-screen drawer. */
   .st-key-chatpanel .st-key-panel_new button,
-  .st-key-chatpanel .st-key-panel_close button { width: 44px; height: 44px; }
+  .st-key-chatpanel .st-key-chatclose button { width: 44px; height: 44px; }
+  /* A 44px seat needs 44px of reserved row. */
+  .st-key-chatpanel .st-key-panel_head { padding-right: 3.4rem; }
 }
 
 .st-key-chatpanel .st-key-panel_status {
@@ -3058,6 +3198,11 @@ body:has(.st-key-chatpanel) .st-key-topbar_search {
   button[data-testid="stBaseButton-primary"] { font-weight: 600; }
 .st-key-chatpanel .st-key-panel_rail_web,
 .st-key-chatpanel .st-key-panel_rail_skills { width: max-content !important; }
+/* Phone: the rail carries one control, so it needs less room to say so. The
+   border-top still does the work of separating composer from conversation. */
+@media (max-width: 640px) {
+  .st-key-chatpanel .st-key-panel_rail { padding: 0.35rem 0.6rem 0; }
+}
 .st-key-chatpanel .st-key-panel_rail
   button[data-testid="stBaseButton-primary"] {
   background: var(--ag-purple-900) !important;
@@ -3380,6 +3525,71 @@ def ask(question: str) -> None:
     st.rerun(scope="app")
 
 
+# Pressing Close asks Streamlit for a rerun, and the frontend scopes that
+# request to whatever fragment the widget sits in. Streamlit only lets a
+# *full* rerun preempt a run already in flight — a fragment rerun that nobody
+# asked for with st.rerun(scope="fragment") is held back until the current run
+# ends (script_requests._fragment_run_should_not_preempt_script). So a Close
+# rendered inside _panel_body, which is where it used to live, could not
+# interrupt anything: pressed while the panel was streaming an answer, or
+# while the page behind it was still loading, it sat dead for the whole turn
+# or the whole page render. That is the same wall the composer's Stop had to
+# be routed around, and it is why Stop goes through the runtime's stop request
+# (submit_mode="stop") instead of a button of ours.
+#
+# Out here the button belongs to no fragment, so its rerun is a full one and
+# preempts at the next yield point: 200ms into a stream (_checkpoint polls one
+# on every phase of a turn) or the page's next st.* call. CSS puts it back in
+# the header row it looks like it is in.
+_CLOSE_JS = """
+<script>
+(function () {
+  function wire() {
+    var box = document.querySelector('.st-key-chatclose');
+    var panel = document.querySelector('.st-key-chatpanel');
+    if (!box || !panel) return false;
+    // A press hides the panel below; this run is drawing it open again, so
+    // whatever a previous close left behind is cleared first.
+    panel.style.display = '';
+    if (box.dataset.tsClose) return true;
+    box.dataset.tsClose = '1';
+    box.addEventListener('click', function () {
+      // Optimistic, and only ever optimistic about something already
+      // guaranteed: the rerun the press asked for is never dropped, it is
+      // only serviced at the script's next yield point, which can still be a
+      // moment away. Hiding here makes the press land at the speed of the tap
+      // and the rerun behind it takes the panel away for real. Deferred a
+      // tick so Streamlit's own handler has sent the message first.
+      setTimeout(function () { panel.style.display = 'none'; }, 0);
+    }, true);
+    return true;
+  }
+  if (!wire()) {
+    var iv = setInterval(function () { if (wire()) clearInterval(iv); }, 120);
+    setTimeout(function () { clearInterval(iv); }, 3000);
+  }
+})();
+</script>
+"""
+
+
+def _render_panel_close() -> None:
+    """The way out of the panel, drawn before its body and outside its
+    fragment — see the note above _CLOSE_JS for why that is the whole point.
+
+    Drawn first so a press is answered before the body is built: the rerun
+    leaves this run without ever reaching _panel_body. A turn cut off
+    mid-answer is left exactly as Stop leaves one — the text written so far is
+    mirrored into session state and _recover_stopped files it under its
+    question the next time the panel opens.
+    """
+    with st.container(key="chatclose"):
+        if st.button("", icon=":material/close:", type="tertiary",
+                     key="chat_panel_close", help=tr("chat.close")):
+            st.session_state[_OPEN_PREF] = False
+            st.rerun()
+
+
 def render_side_panel(view_label: str) -> bool:
     """Overlay assistant: launcher icon + slide-in panel. Call from app.py
     BEFORE page.run() — the launcher is position: fixed, so DOM order doesn't
@@ -3407,10 +3617,14 @@ def render_side_panel(view_label: str) -> bool:
     # fragment draws (thread name, new, widths, close), so a rerun that
     # switches view or thread repaints it too.
     with st.container(key="chatpanel"):
+        _render_panel_close()
         _panel_body()
     # Emitted after the panel exists so the handle can attach. Outside the
-    # fragment, so sending a chat message does not re-run this script.
+    # fragment, so sending a chat message does not re-run this script — and
+    # outside the panel container, because a script-only st.html keeps its
+    # place in the flow and would open a gap in the drawer.
     st.html(_RESIZE_JS, unsafe_allow_javascript=True)
+    st.html(_CLOSE_JS, unsafe_allow_javascript=True)
     return True
 
 

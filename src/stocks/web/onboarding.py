@@ -322,6 +322,22 @@ RELEASES: tuple[Release, ...] = (
             News(slug="splitfix", icon="call_split", step="import"),
             News(slug="peersearch", icon="search", step="market"),
             News(slug="transfers", icon="swap_horiz", step="import"),
+            # No step: the feedback button is sidebar chrome on every page, not
+            # a tour stop, and its modal is a dialog — a step that opened it
+            # from inside the tour's own dialog would be two at once.
+            News(slug="fbvoice", icon="mic"),
+            News(slug="fbshot", icon="screenshot_monitor"),
+            News(slug="mobilechat", icon="smartphone", step="assistant"),
+            News(slug="uae", icon="receipt_long", step="tax"),
+            News(slug="swiss", icon="receipt_long", step="tax"),
+            News(slug="taxfallback", icon="public_off", step="tax"),
+            News(slug="kpimatch", icon="balance", step="positions"),
+            News(slug="onebook", icon="merge", step="import"),
+            News(slug="wht", icon="receipt_long", step="income"),
+            News(slug="pricedmoves", icon="price_check", step="positions"),
+            News(slug="venue", icon="public", step="import"),
+            News(slug="chatmoves", icon="swap_horiz", step="assistant"),
+            News(slug="resume", icon="replay", step="assistant"),
         ),
     ),
 )

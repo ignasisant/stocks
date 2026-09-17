@@ -5,11 +5,17 @@
   "feedback.kind_bug": "Bug",
   "feedback.kind_idea": "Idea",
   "feedback.kind_other": "Other",
-  "feedback.text": "Your feedback",
   "feedback.placeholder": "What happened, or what would make this better?",
-  "feedback.send": "Send",
+  "feedback.shot": "Attach a screenshot",
+  "feedback.shot_help": "Sends a picture of the screen behind this window, exactly as it is now — this box is left out of it. Whatever the page shows, your figures included, goes with it.",
+  "feedback.shot_working": "Taking the picture…",
+  "feedback.shot_ready": "Attached — {kb} KB",
+  "feedback.shot_failed": "This screen could not be captured; your comment will be sent without a picture.",
+  "feedback.shot_big": "The picture came out too heavy to send; your comment will be sent without it.",
+  "feedback.shot_wait": "One second — the picture is still being taken.",
   "feedback.sent": "Thanks — received!",
   "feedback.empty": "Write something first.",
   "feedback.rate_limited": "That's plenty for now — try again in a while.",
-  "feedback.failed": "Could not save your feedback. Please try again later."
+  "feedback.failed": "Could not save your feedback. Please try again later.",
+  "feedback.unsent": "Not sent — copy this before you close."
 }
