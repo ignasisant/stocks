@@ -35,10 +35,20 @@ from stocks.analysis.portfolio import (
     session_quote,
     session_quotes,
     time_weighted_returns,
+    value_weights,
 )
+from stocks.portfolio import transfers
 from stocks.portfolio.custody import Custody, by_position
 from stocks.portfolio.ledger import all_transactions
 from stocks.portfolio.positions import build
+
+# The actions that say the book held a security. A transfer leg is not a
+# trade, but a holding that only ever arrived — an IBKR snapshot, shares moved
+# from another broker — is held all the same, and every loader below exists to
+# price what is held. Reading trades alone leaves those positions with no
+# price series, no FX rate and no dividend history, which the UI can only
+# render as "n/a".
+_HELD = ("buy", "sell", *transfers.TRANSFERS)
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
@@ -113,7 +123,7 @@ def ledger_period(first: str) -> str:
 
 @st.cache_data(ttl=900, show_spinner=False, max_entries=16)
 def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
-    """Daily closes for every ticker the ledger ever traded, ONE bulk download.
+    """Daily closes for every ticker the ledger ever held, ONE bulk download.
 
     The price side of the whole book, shared: the 3-month basket behind the
     chips and the day-change cells, the full-span value-vs-injected history,
@@ -133,12 +143,17 @@ def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     # The raw rows, not `ledger_state`: only tickers and dates are needed, and
     # the replay there is keyed by reporting currency — reading it with the
     # default would replay a USD account's book a second time in EUR.
-    txs = all_transactions(Path(db))
-    trades = [t for t in txs if t.action in ("buy", "sell")]
-    if not trades:
+    # `relabel` first: the replay gives a security that two brokers spell
+    # differently ONE label (stocks.portfolio.transfers), and the value frames
+    # are keyed on it. Downloading the other spelling prices nothing — a
+    # DEGIRO→IBKR book asks for ISINs and holds symbols, and every transferred
+    # position reads n/a with the whole book's cost still in the tile.
+    txs = transfers.relabel(all_transactions(Path(db)))
+    held = [t for t in txs if t.action in _HELD]
+    if not held:
         return {}
-    tickers = sorted({t.ticker for t in trades})
-    period = ledger_period(min(t.date for t in trades))
+    tickers = sorted({t.ticker for t in held})
+    period = ledger_period(min(t.date for t in held))
     return _analysis.load_closes(tickers, period=period)
 
 
@@ -212,8 +227,7 @@ def enriched_positions(db: str, mtime: float, base: str = "EUR") -> pd.DataFrame
     tbl = positions_table(db, mtime, base)
     if tbl.empty:
         return tbl
-    value = tbl["value"].dropna().sum()
-    tbl["weight"] = tbl["value"] / value if value else float("nan")
+    tbl["weight"] = value_weights(tbl)
     vals = basket_history(db, mtime, base)
     tbl["day_asof"] = None
     if len(vals) >= 2:
@@ -266,8 +280,10 @@ def ledger_history(fingerprint: tuple, db: str, base: str = "EUR"):
     """
     from stocks.data.fx import rates_range
 
-    ledger = all_transactions(Path(db))
-    tickers = sorted({t.ticker for t in ledger if t.action in ("buy", "sell")})
+    # Relabelled like `held_closes`, or the filter below throws away every
+    # series it just shared: the download is keyed by the replay's label.
+    ledger = transfers.relabel(all_transactions(Path(db)))
+    tickers = sorted({t.ticker for t in ledger if t.action in _HELD})
     first = min(t.date for t in ledger)
     # The shared book download (same names, same span) rather than one of its
     # own — hot already whenever the Home glance or the Pulse page ran first.
@@ -276,7 +292,7 @@ def ledger_history(fingerprint: tuple, db: str, base: str = "EUR"):
     }
     fx = {
         ccy: pd.Series(rates_range(first, date.today().isoformat(), ccy, base))
-        for ccy in {t.currency for t in ledger if t.action in ("buy", "sell")}
+        for ccy in {t.currency for t in ledger if t.action in _HELD}
         if ccy != base
     }
     hist = injected_vs_value(ledger, closes, fx, base=base)
@@ -307,7 +323,7 @@ def trade_bars(db: str, mtime: float) -> dict[str, pd.DataFrame]:
     from stocks.data.fetch import fetch_many
 
     txs = ledger_state(db, mtime)[0]  # bars are native-currency: base is moot
-    trades = [t for t in txs if t.action in ("buy", "sell")]
+    trades = [t for t in transfers.relabel(txs) if t.action in _HELD]
     if not trades:
         return {}
     tickers = sorted({t.ticker for t in trades})
@@ -457,7 +473,9 @@ def dividend_estimates(db: str, mtime: float, base: str = "EUR") -> tuple:
     from stocks.portfolio import dividends as div
 
     txs = ledger_state(db, mtime, base)[0]
-    tickers = sorted({t.ticker for t in txs if t.action in ("buy", "sell")})
+    tickers = sorted(
+        {t.ticker for t in transfers.relabel(txs) if t.action in _HELD}
+    )
     history = histories(tickers)
     if not history and (tickers and throttle_remaining()):
         raise YFRateLimitError

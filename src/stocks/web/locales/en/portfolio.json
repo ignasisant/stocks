@@ -4,6 +4,7 @@
   "portfolio.ledger_no_positions": "Ledger has rows but no positions could be built. Check the Import preview.",
   "portfolio.data_unavailable": "Market data unavailable right now — switch tabs or reload to retry.",
   "portfolio.prices_unavailable": "Prices unavailable right now — reload to retry.",
+  "portfolio.unpriced_note": "Positions with no live price: {n} of {total} — the cost basis and market value above both leave them out.",
   "portfolio.tab_positions": "Positions",
   "portfolio.tab_alloc_risk": "Allocation & risk",
   "portfolio.tab_realized_tax": "Realized & tax",

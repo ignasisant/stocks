@@ -4,6 +4,7 @@
   "portfolio.ledger_no_positions": "El libro tiene filas pero no se pudieron construir posiciones. Revisa la vista previa de Importar.",
   "portfolio.data_unavailable": "Datos de mercado no disponibles ahora mismo — cambia de pestaña o recarga para reintentar.",
   "portfolio.prices_unavailable": "Precios no disponibles ahora mismo — recarga para reintentar.",
+  "portfolio.unpriced_note": "Posiciones sin precio en vivo: {n} de {total} — el coste base y el valor de mercado de arriba las excluyen.",
   "portfolio.tab_positions": "Posiciones",
   "portfolio.tab_alloc_risk": "Asignación y riesgo",
   "portfolio.tab_realized_tax": "Realizado y fiscal",

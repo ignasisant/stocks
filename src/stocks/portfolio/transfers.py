@@ -51,6 +51,7 @@ from dataclasses import dataclass, replace
 from datetime import date as _date
 from datetime import timedelta as _timedelta
 
+from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
 
 TRANSFER_IN = "transfer_in"
@@ -97,8 +98,42 @@ def unmatched_arrivals(transactions: list[Transaction]) -> dict[str, float]:
     }
 
 
+def relabel(transactions: list[Transaction]) -> list[Transaction]:
+    """One label per security, so the same shares cannot be two positions.
+
+    Two brokers spell one holding differently — a DEGIRO export has no ticker
+    column and books under the ISIN, IBKR uses the symbol and stamps the ISIN
+    into the note — and a replay keyed on the ticker then holds those shares
+    twice: the departure leaves its lot open under one name while the arrival
+    opens a second under the other. The cost basis is counted twice, the
+    weights are computed over a book that does not exist, and nothing in the
+    numbers says so. `security_id` already knows the two rows are one
+    security; this is where that reaches the replay.
+
+    The label that survives is a tradeable symbol whenever any row carries
+    one — it is what prices, what the ticker page links to and what the user
+    reads. A book whose every row says ISIN keeps the ISIN, and rows that
+    share no security id are never merged.
+    """
+    labels: dict[str, str] = {}
+    for tx in transactions:
+        sid = security_id(tx)
+        current = labels.get(sid)
+        if current is None or (
+            _ISIN.fullmatch(current) and not _ISIN.fullmatch(tx.ticker)
+        ):
+            labels[sid] = tx.ticker
+    if all(labels[security_id(t)] == t.ticker for t in transactions):
+        return transactions  # nothing to rename; hand back the same rows
+    return [
+        t if labels[security_id(t)] == t.ticker
+        else replace(t, ticker=labels[security_id(t)])
+        for t in transactions
+    ]
+
+
 def normalize(transactions: list[Transaction]) -> list[Transaction]:
-    """`transactions` with transfer legs resolved into ordinary rows.
+    """`transactions` with one label per security and transfer legs resolved.
 
     Matched legs disappear, an unmatched `transfer_in` becomes the `buy` that
     opens its position, an unmatched `transfer_out` disappears too (see the
@@ -106,6 +141,7 @@ def normalize(transactions: list[Transaction]) -> list[Transaction]:
     the (date, id) order every replay sorts into anyway; nothing is mutated,
     and a book with no transfer legs is handed straight back.
     """
+    transactions = relabel(transactions)
     if not has_transfers(transactions):
         return transactions
 
@@ -234,6 +270,25 @@ def propose(
     moves += _pair_across_labels(spare_departures, spare_arrivals, resolve)
     moves.sort(key=lambda m: -abs(m.phantom_gain))
     return moves
+
+
+def accept(moves: list[Move], path) -> int:
+    """Book each proposed move as what it was, and return how many were.
+
+    The departure stops being a disposal and the arrival stops being a
+    purchase; when the two brokers spelled the security differently, both
+    labels become one so the replay can see that the shares never left. Every
+    surface that offers this repair goes through here — the Import page and
+    the assistant both do, and two surfaces offering one repair must not come
+    to mean two slightly different things by it.
+    """
+    for m in moves:
+        ledger.set_action(list(m.out_ids), TRANSFER_OUT, path)
+        if m.in_id is not None:
+            ledger.set_action([m.in_id], TRANSFER_IN, path)
+        if m.rekey:
+            ledger.retag(m.ticker_out, m.ticker_in, path)
+    return len(moves)
 
 
 def _pair(

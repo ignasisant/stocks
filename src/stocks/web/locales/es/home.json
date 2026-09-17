@@ -23,6 +23,7 @@
   "home.col_reports": "Publica",
   "home.col_52week": "52 semanas",
   "home.prices_unavailable": "Precios no disponibles ahora mismo — prueba «Actualizar precios» abajo.",
+  "home.unpriced_note": "Posiciones sin precio en vivo: {n} de {total} — el coste base y el valor de mercado de arriba las excluyen.",
   "home.data_unavailable": "Datos de la cartera no disponibles ahora mismo — recarga para reintentar.",
   "home.cost_basis": "Coste base",
   "home.market_value": "Valor de mercado",

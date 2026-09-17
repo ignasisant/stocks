@@ -25,6 +25,7 @@ from stocks.analysis.portfolio import (
     basket_change,
     market_active,
     market_live,
+    priced_totals,
     ticker_changes,
     us_extended_session,
     us_market_open,
@@ -414,8 +415,8 @@ if auth.is_logged_in():
             glance.container().caption(tr("home.prices_unavailable"))
             movers_slot.clear()
         else:
-            cost = tbl["cost"].sum()
-            value = tbl["value"].dropna().sum()
+            # Same rows on both sides of the chip — see priced_totals.
+            cost, value, unpriced = priced_totals(tbl)
             ccy, sym = REPORT_CCY, REPORT_SYM
             try:
                 hist = basket_history(DB, db_mtime(DB), REPORT_CCY)
@@ -482,6 +483,10 @@ if auth.is_logged_in():
                         tr("home.realised_pl_help"),
                     ),
                 ]))
+                if unpriced:
+                    kcol.caption(
+                        tr("home.unpriced_note", n=unpriced, total=len(tbl))
+                    )
 
                 # Delta row — Today / 1 week / 1 month, mirroring the Portfolio
                 # page's second metric row, in the KPI column beside the

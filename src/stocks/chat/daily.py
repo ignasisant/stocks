@@ -239,7 +239,7 @@ def build_facts(
         extremes: Home's 52-week scan rows, (ticker, price, kind, distance).
         signals: the Signal list from signals.candidates().
     """
-    from stocks.analysis.portfolio import basket_change
+    from stocks.analysis.portfolio import basket_change, priced_totals
 
     facts: dict = {
         "date": (today or date.today()).isoformat(),
@@ -248,8 +248,12 @@ def build_facts(
     if signals:
         facts["actions"] = [s.to_dict() for s in signals]
     if tbl is not None and not tbl.empty:
-        value = finite(tbl["value"].dropna().sum())
-        cost = finite(tbl["cost"].dropna().sum()) if "cost" in tbl else None
+        # Cost over the priced rows only: against the full basis a partly
+        # priced book reads as a crash, and the briefing would open on it.
+        _cost, _value, unpriced = priced_totals(tbl)
+        value, cost = finite(_value), finite(_cost)
+        if unpriced:
+            facts["unpriced_positions"] = unpriced
         facts["total_value"] = None if value is None else round(value, 2)
         if value is not None and cost:
             facts["unrealised_pl_pct"] = round((value / cost - 1) * 100, 2)

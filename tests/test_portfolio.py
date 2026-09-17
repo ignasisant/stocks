@@ -16,8 +16,10 @@ from stocks.analysis.portfolio import (
     max_drawdown,
     portfolio_returns,
     position_table,
+    priced_totals,
     returns_frame,
     top_n_weight,
+    value_weights,
     weights_from_holdings,
 )
 from stocks.config import Holding
@@ -126,6 +128,35 @@ def test_position_table_pnl():
     assert tbl.loc["A", "value"] == 1000.0
     assert abs(tbl.loc["A", "pnl"] - 100.0) < 1e-9
     assert abs(tbl.loc["A", "pnl_pct"] - (1000 / 900 - 1)) < 1e-9
+
+
+def test_priced_totals_measure_the_same_rows_on_both_sides():
+    # B's price download came back empty: its cost must leave the basis too,
+    # or the tile divides the whole book's cost by part of its value.
+    tbl = pd.DataFrame(
+        [
+            {"ticker": "A", "cost": 100.0, "value": 120.0},
+            {"ticker": "B", "cost": 900.0, "value": float("nan")},
+        ]
+    ).set_index("ticker")
+    assert priced_totals(tbl) == (100.0, 120.0, 1)
+
+
+def test_priced_totals_on_an_empty_frame():
+    assert priced_totals(pd.DataFrame()) == (0.0, 0.0, 0)
+
+
+def test_value_weights_keep_unpriced_rows_in_the_denominator():
+    # B never priced: A holds 120 of a ~9,120 book, not all of a 120 one.
+    tbl = pd.DataFrame(
+        [
+            {"ticker": "A", "cost": 100.0, "value": 120.0},
+            {"ticker": "B", "cost": 9000.0, "value": float("nan")},
+        ]
+    ).set_index("ticker")
+    w = value_weights(tbl)
+    assert abs(w["A"] - 120 / 9120) < 1e-9
+    assert math.isnan(w["B"])
 
 
 def test_position_table_empty_without_shares():

@@ -13,7 +13,14 @@ FIFO-consistent cost basis in the reporting currency.
 A sell stamped with a broker that never held the shares (shares transferred in
 kind between brokers, a hand-edited note) would otherwise drive that pair
 negative: the remainder falls back to the oldest lots of any broker, so the
-totals always reconcile with `positions.build`.
+*share counts* always reconcile with `positions.build`.
+
+The cost basis deliberately does not. The two replays match different lots by
+design — `positions.build` takes the oldest lot of any broker, this one takes
+the selling broker's own first — so after a sale that crosses brokers the
+per-broker basis and the tax basis are different numbers about the same
+shares. The broker views are a map of where the shares sit, never a second
+opinion on the tax figures.
 
 Transfer legs are the one thing this module reads that `positions.build` does
 not. There, a matched pair nets out — moving your own shares is not a disposal
@@ -69,6 +76,9 @@ def by_position(
     if to_base is None:
         prefetch((t.date, t.currency) for t in transactions)
         to_base = converter(base)
+    # Same one-label-per-security pass the tax replay runs, or a move between
+    # brokers would show the shares at both of them (stocks.portfolio.transfers).
+    transactions = transfers.relabel(transactions)
     lots: dict[str, list[_Lot]] = defaultdict(list)
     # Shares that left a broker and have not been claimed by an arrival yet,
     # holding the basis they carried out so the receiving broker inherits it.

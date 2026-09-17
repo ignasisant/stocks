@@ -39,6 +39,7 @@ from stocks.analysis.portfolio import (
     max_drawdown,
     money_weighted_return,
     portfolio_returns,
+    priced_totals,
     top_n_weight,
     us_extended_session,
     us_market_open,
@@ -261,8 +262,10 @@ def _positions_section() -> None:
             # reading as a wiped-out book. Say what's actually missing.
             st.caption(tr("portfolio.prices_unavailable"))
         else:
-            cost = tbl["cost"].sum()
-            value = tbl["value"].dropna().sum()
+            # Both tiles over the same rows: a position the price pass missed
+            # is out of the cost basis too, or the chip below divides the whole
+            # book's basis by part of its value (analysis.portfolio).
+            cost, value, unpriced = priced_totals(tbl)
             sym = REPORT_SYM
             realized_gain = sum(s.gain for s in realized)
             realized_cost = sum(s.cost for s in realized)
@@ -291,6 +294,12 @@ def _positions_section() -> None:
                     tr("portfolio.realised_pl_help"),
                 ),
             ]))
+            if unpriced:
+                # Say what the two tiles above leave out — the rows read n/a in
+                # the table below, but the totals would look complete.
+                st.caption(
+                    tr("portfolio.unpriced_note", n=unpriced, total=len(tbl))
+                )
 
             try:
                 vals = basket_history(DB, db_mtime(DB), REPORT_CCY)

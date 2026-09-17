@@ -659,6 +659,7 @@ def book_snapshot(
     (shares/cost only) are the fallback. Watchlist-but-not-held names are
     appended either way.
     """
+    from stocks.analysis.portfolio import priced_totals
     from stocks.config import load_watchlist
     from stocks.config import positions as load_positions
 
@@ -675,12 +676,17 @@ def book_snapshot(
                 + (f" | weight {wt:.0%}" if wt == wt else "")
                 + (f" | today {day_pct:+.1%}" if day_pct == day_pct else "")
             )
-        total = tbl["value"].dropna().sum()
+        _cost, total, unpriced = priced_totals(tbl)
         total_pnl = tbl["pnl"].dropna().sum()
         book = (
             f"Holdings (live market data, {currency}). Total book "
             f"{_fmt_money(total, currency)}, unrealised P/L "
-            f"{_fmt_money(total_pnl, currency)}:\n" + "\n".join(lines)
+            f"{_fmt_money(total_pnl, currency)}"
+            # Otherwise the model reads a partly priced book as a shrunken one
+            # and answers "you are down" about a download, not a market.
+            + (f" — {unpriced} of {len(tbl)} positions have no live price and"
+               " are excluded from both totals" if unpriced else "")
+            + ":\n" + "\n".join(lines)
         )
         held = set(tbl.index)
     else:
@@ -714,6 +720,7 @@ def enriched_frame(db: Path, base: str = "EUR") -> pd.DataFrame | None:
     from stocks.analysis.portfolio import (
         position_values_history,
         positions_frame,
+        value_weights,
     )
     from stocks.portfolio.ledger import all_transactions
     from stocks.portfolio.positions import build
@@ -733,8 +740,7 @@ def enriched_frame(db: Path, base: str = "EUR") -> pd.DataFrame | None:
         return None
     if tbl.empty:
         return None
-    value = tbl["value"].dropna().sum()
-    tbl["weight"] = tbl["value"] / value if value else float("nan")
+    tbl["weight"] = value_weights(tbl)
     vals = position_values_history(positions, period="1mo", base=base)
     if len(vals) >= 2:
         last, prev = vals.iloc[-1], vals.iloc[-2]
