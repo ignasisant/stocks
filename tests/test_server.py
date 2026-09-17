@@ -365,10 +365,14 @@ def test_liveness_answers_without_touching_the_app(client, path):
 
 def test_status_reports_revision_uptime_and_storage(client, monkeypatch):
     monkeypatch.setenv("K_REVISION", "topstocks-00042-abc")
+    monkeypatch.setenv("STOCKS_COMMIT", "3ea8bbf0")
     r = client.get("/status")
     body = r.json()
     assert body["status"] == "ok"
     assert body["revision"] == "topstocks-00042-abc"
+    # The deploy stamps the commit, so the answer to "what is prod running"
+    # is served by the app itself rather than guessed from build times.
+    assert body["commit"] == "3ea8bbf0"
     assert body["uptime_s"] >= 0
     assert body["storage"] is False  # no [storage] in the test env
     assert "set-cookie" not in r.headers
