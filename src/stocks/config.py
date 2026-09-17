@@ -57,6 +57,10 @@ CURRENCY_SYMBOL = {
     "EUR": "€", "USD": "$", "GBP": "£", "CHF": "CHF ",
     "SEK": "SEK ", "NOK": "NOK ", "DKK": "DKK ", "PLN": "zł",
     "CZK": "Kč", "CAD": "CA$", "AUD": "A$",
+    # Not in CURRENCIES: the dirham is a tax jurisdiction's currency (the UAE
+    # files in it) but not a reporting currency you can pick, because the ECB
+    # publishes no AED series — fx reaches it through its dollar peg instead.
+    "AED": "AED ",
 }
 
 

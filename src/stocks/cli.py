@@ -1258,7 +1258,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_tax.add_argument("--year", type=int, required=True, help="fiscal year, e.g. 2025")
     p_tax.add_argument(
         "-j", "--jurisdiction", default=None,
-        help="tax residence: ES, US, UK, DE, FR, IT, IE, PT, CA or AU "
+        help="tax residence: ES, US, UK, DE, FR, IT, IE, PT, CA, AU, AE or CH "
              "(see stocks.portfolio.tax)",
     )
     p_tax.add_argument(

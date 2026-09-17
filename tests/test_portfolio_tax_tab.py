@@ -233,6 +233,27 @@ def test_an_australian_filer_gets_the_discount_and_a_july_year(page):
     assert "A$" in body and "FBAR" not in body
 
 
+def test_a_swiss_filer_gets_francs_and_the_dealer_test_with_the_zero(page):
+    body = _text(page("CH"))
+    assert "CHF" in body
+    assert "Tax due" in body and "Net result" in body
+    assert "art. 16" in body  # the exemption is cited, not asserted
+    # The 0% must never render without what would take it away.
+    assert "KS 36" in body
+    assert "Wertschriftenverzeichnis" in body
+    assert "Carryforward" not in body
+
+
+def test_an_emirati_filer_gets_dirhams_and_an_honest_zero(page):
+    body = _text(page("AE"))
+    assert "AED" in body
+    assert "Tax due" in body and "Net result" in body
+    # The two claims that matter, and the tile that must not be there.
+    assert "no personal tax on this" in body
+    assert "375,000" in body  # the corporate boundary, named rather than implied
+    assert "Carryforward" not in body
+
+
 # ------------------------------------------------- reporting currency (Profile)
 # The tax tab follows the tax residence; everything else follows the account's
 # reporting currency, and the ledger is replayed in it either way.

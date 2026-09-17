@@ -111,6 +111,8 @@
   "profile.tax_residence_pt": "Portugal — IRS",
   "profile.tax_residence_ca": "Canada — CRA",
   "profile.tax_residence_au": "Australia — ATO",
+  "profile.tax_residence_ae": "United Arab Emirates — no personal tax",
+  "profile.tax_residence_ch": "Switzerland — exempt for private investors",
   "profile.tax_other_income_caption_pt": "Your other taxable income for the year. It only matters at the top: once it reaches the last IRS bracket (€83,696 for 2025), gains on holdings under 365 days must be aggregated at your marginal rate instead of paying the flat 28%.",
   "profile.tax_other_income_caption_ca": "Your other taxable income for the year. The taxable half of your gains stacks on top of it, which decides the federal bracket it lands in.",
   "profile.tax_other_income_caption_au": "Your other taxable income for the income year (1 July to 30 June). The net capital gain stacks on top of it at your marginal rate.",

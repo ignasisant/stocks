@@ -111,6 +111,8 @@
   "profile.tax_residence_pt": "Portugal — IRS",
   "profile.tax_residence_ca": "Canadá — CRA",
   "profile.tax_residence_au": "Australia — ATO",
+  "profile.tax_residence_ae": "Emiratos Árabes Unidos — sin impuesto personal",
+  "profile.tax_residence_ch": "Suiza — exenta para inversores privados",
   "profile.tax_other_income_caption_pt": "Tus demás rentas gravables del año. Solo importan arriba: en cuanto alcanzan el último tramo del IRS (83.696 € en 2025), las ganancias de tenencias menores de 365 días deben englobarse a tu tipo marginal en lugar de pagar el 28% plano.",
   "profile.tax_other_income_caption_ca": "Tus demás rentas gravables del año. La mitad gravable de tus ganancias se apila encima, y eso decide en qué tramo federal cae.",
   "profile.tax_other_income_caption_au": "Tus demás rentas gravables del año fiscal (1 de julio a 30 de junio). La ganancia de capital neta se apila encima a tu tipo marginal.",

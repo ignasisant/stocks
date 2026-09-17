@@ -229,7 +229,7 @@ def test_reporting_flags_cover_fbar_and_8938():
 
 def test_registry_exposes_every_jurisdiction():
     assert tax.codes() == (
-        "ES", "US", "UK", "DE", "FR", "IT", "IE", "PT", "CA", "AU",
+        "ES", "US", "UK", "DE", "FR", "IT", "IE", "PT", "CA", "AU", "AE", "CH",
     )
     assert tax.get("US").currency == "USD"
     assert tax.get("es").code == "ES"

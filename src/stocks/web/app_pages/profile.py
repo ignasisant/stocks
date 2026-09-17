@@ -541,8 +541,11 @@ with tab_prefs:
     _res_current = prefs.get(tax_ui.PREF_RESIDENCE) or tax_ui.AUTO
 
     def _res_label(code: str) -> str:
+        # Every country carries its flag (tax_ui.label); "auto" is not one, so
+        # it takes a globe rather than dropping out of the column the eye
+        # scans down.
         return (
-            tr("profile.tax_residence_auto")
+            f'🌐 {tr("profile.tax_residence_auto")}'
             if code == tax_ui.AUTO
             else tax_ui.label(code)
         )

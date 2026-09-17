@@ -945,7 +945,7 @@ if tab_tax.open:
         # edits this page. The ledger is replayed *at* the jurisdiction's
         # currency rather than converted afterwards — a US filer's basis is
         # USD at each trade date, which is two rates, not one.
-        _jur = tax_ui.jurisdiction()
+        _jur, _how = tax_ui.active()
         _code, _ccy = _jur.code, _jur.currency
         # Germany exempts 30% of a fund's result, so the settings carry which
         # holdings are funds (from the learned quoteType cache, no fetch).
@@ -1122,6 +1122,18 @@ if tab_tax.open:
                     tax_ui.t(_code, "tax_header", year=_jur.year_label(year))
                 )
                 st.caption(tax_ui.t(_code, "tax_caption"))
+                # The browser named a country this app does not model, so
+                # everything above and below is another country's law applied
+                # to this book. Say it here, where the wrong numbers are, not
+                # only on the page where it is fixed.
+                if _how == tax_ui.UNMODELLED:
+                    st.warning(
+                        tr("portfolio.tax_unmodelled",
+                           region=tax_ui.region_of(
+                               getattr(st.context, "locale", None)) or "",
+                           label=tax_ui.label(_code)),
+                        icon=":material/public_off:",
+                    )
                 # The tiles are whatever the jurisdiction thinks matter: Spain
                 # has one base, the US adds its short- and long-term nets.
                 st.html(kpi_grid_html([
