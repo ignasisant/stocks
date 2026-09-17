@@ -44,9 +44,12 @@ def test_dividend_from_description_and_withholding_listed():
     assert (div.ticker, div.price, div.currency, div.date) == (
         "AAPL", 2.40, "USD", "2024-02-16",
     )
+    # One dividend, one tax line, same day and currency: the tax goes on the
+    # dividend as its fee, which is where dividends.by_year reads it from.
+    assert div.fee == 0.36
     wht = [s for s in result.skipped if s["type"] == "withholding tax"]
     assert len(wht) == 1 and wht[0]["ticker"] == "AAPL"
-    assert "fee on the matching dividend" in wht[0]["reason"]
+    assert "applied as the fee" in wht[0]["reason"]
 
 
 def test_forex_skipped_closedlot_and_subtotals_dropped():
@@ -146,10 +149,30 @@ def test_instrument_table_puts_each_holdings_isin_in_its_note():
     DEGIRO booked under NL0010273215."""
     result = ibkr.parse_csv(IBKR_ES_CSV + _INSTRUMENTS_ES)
     notes = {t.ticker: t.note for t in result.transactions}
-    assert notes["ASML"] == "ibkr snapshot NL0010273215"
+    assert notes["ASML.AS"] == "ibkr snapshot NL0010273215"
     assert notes["MSFT"] == "ibkr snapshot US5949181045"
     # A holding the table never names keeps the bare note rather than a blank.
     assert notes["EMXC"] == "ibkr snapshot"
+
+
+def test_the_listing_venue_qualifies_a_symbol_yahoo_would_read_as_the_adr():
+    """`ASML` on Yahoo is the Nasdaq ADR in dollars; the statement is
+    reporting the Amsterdam share in euros. Booked bare, that holding prices
+    off the ADR and is read as EUR."""
+    result = ibkr.parse_csv(IBKR_ES_CSV + _INSTRUMENTS_ES)
+    held = {t.ticker: t for t in result.transactions}
+    assert held["ASML.AS"].currency == "EUR"  # AEB -> .AS
+    assert "MSFT" in held  # NASDAQ: the bare symbol is already the right one
+    # A holding the instrument table never names is left exactly as IBKR
+    # wrote it — guessing a venue is how a position starts pricing off the
+    # wrong listing, which is the failure this map exists to stop.
+    assert "EMXC" in held
+
+
+def test_an_unknown_listing_venue_leaves_the_symbol_alone():
+    table = _INSTRUMENTS_ES.replace("NL0010273215,ASML,AEB", "NL0010273215,ASML,XXX")
+    held = {t.ticker for t in ibkr.parse_csv(IBKR_ES_CSV + table).transactions}
+    assert "ASML" in held and "ASML.AS" not in held
 
 
 _INSTRUMENTS_ES = (
