@@ -319,12 +319,17 @@ def _script() -> None:
 
     from stocks.web import onboarding as _onb
 
-    # Stand-in for the StreamlitPage app.py passes in. It claims to be
-    # whatever page the newest announcement points at, so "take me there"
+    # Stand-in for the StreamlitPage app.py passes in. It claims to be the
+    # page the first announcement *with a step* points at, so "take me there"
     # parks instead of navigating: st.switch_page needs a real st.navigation,
     # which a harness of one script does not have, and which card ships first
-    # is not this file's business.
-    _first = _onb.by_id(_onb.unseen_news({})[0].item.step or "")
+    # is not this file's business. Newest-first is not enough — a release may
+    # lead with a change to chrome that has no tour stop at all.
+    _first = next(
+        (step for card in _onb.unseen_news({})
+         if (step := _onb.by_id(card.item.step or "")) is not None),
+        None,
+    )
 
     class _Page:
         url_path = _onb._url_path(_first.page) if _first and _first.page else ""
@@ -538,7 +543,32 @@ def test_skipping_the_rest_still_counts_as_read(app):
     assert prefs[onboarding.PREF_SEEN_VERSION] == onboarding.CURRENT_VERSION
 
 
-def test_going_to_look_at_a_feature_keeps_the_rest_of_the_list(app):
+@pytest.fixture
+def two_cards(monkeypatch):
+    """A release of exactly two announced features, both with a tour step.
+
+    The strip tests below are about what parking does to the rest of the list,
+    not about what happened to ship — and shipped content moves under them: a
+    release whose newest item is a change to chrome (no tour step, so no "take
+    me there" button) used to break them, and which card is newest is nobody's
+    contract. Two known cards make the arithmetic exact.
+    """
+    releases = (
+        onboarding.Release(
+            version="2999.01",
+            date="2999-01",
+            items=(
+                onboarding.News(slug="alpha", icon="star", step="pulse"),
+                onboarding.News(slug="beta", icon="star", step="market"),
+            ),
+        ),
+    )
+    monkeypatch.setattr(onboarding, "RELEASES", releases)
+    monkeypatch.setattr(onboarding, "CURRENT_VERSION", "2999.01")
+    return releases
+
+
+def test_going_to_look_at_a_feature_keeps_the_rest_of_the_list(app, two_cards):
     """Parking must not stamp: the reader has seen one card out of several,
     and the strip is what hands them the others back."""
     prefs = {onboarding.PREF_DONE: True}
@@ -552,7 +582,7 @@ def test_going_to_look_at_a_feature_keeps_the_rest_of_the_list(app):
     assert _flag(at, onboarding._OPEN) is True
 
 
-def test_closing_from_the_strip_stamps_the_version(app):
+def test_closing_from_the_strip_stamps_the_version(app, two_cards):
     prefs = {onboarding.PREF_DONE: True}
     at = app(prefs).run()
     at.button(key="tour_news_goto").click().run()
@@ -640,3 +670,4 @@ def test_explore_state_is_kept_apart_from_the_four_setup_capabilities(account):
     assert explore == {"search", "ask", "watchlist"}
     assert setup == {"login", "import", "ai", "telegram"}
     assert not explore & setup
+
