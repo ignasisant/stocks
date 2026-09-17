@@ -957,6 +957,11 @@ def cmd_feedback(args: argparse.Namespace) -> None:
         print(head)
         for line in str(it.get("text", "")).splitlines():
             print(f"    {line}")
+        # The picture, when one came with it — fetched out of the bucket on
+        # demand, so this works on a checkout that has never seen the file.
+        shot = feedback.shot_path(str(it.get("shot", "")))
+        if shot:
+            print(f"    [screenshot] {shot}")
         print()
     print(f"{len(items)} submissions")
 
