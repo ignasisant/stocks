@@ -93,9 +93,15 @@ _HOST_RE = re.compile(r"^[A-Za-z0-9.\-]+(:\d+)?$")
 _HTML = "text/html; charset=utf-8"
 
 # Paths the canonical-host redirect must leave alone: Streamlit's transport
-# (an in-flight session moves with it and breaks) and the OIDC return (the
-# hostname is registered with Google and is not ours to change mid-flight).
-_NEVER_REDIRECT = ("/_stcore/", "/oauth2callback")
+# (an in-flight session moves with it and breaks), the OIDC return (the
+# hostname is registered with Google and is not ours to change mid-flight),
+# and the health probes. Those three answer *about the container handling the
+# request*, so sending them to the canonical host defeats their whole purpose:
+# a canary lives at a tagged hostname (candidate---<service>…), and redirecting
+# its /status hands back the revision already serving 100% of traffic. That is
+# how scripts/deploy.sh came to smoke-test the old revision and refuse to
+# promote a healthy candidate.
+_NEVER_REDIRECT = ("/_stcore/", "/oauth2callback", "/livez", "/healthz", "/status")
 
 
 def _is_marketing_path(path: str) -> bool:
