@@ -13,10 +13,10 @@ exports never have one).
 Shape notes this parser absorbs:
 
 * There is no ticker column — rows import with the **ISIN as the ticker**
-  and the product name in the note. Validation flags each unknown ISIN with
-  instructions to map it to a Yahoo symbol under ``aliases:`` in
-  watchlist.yaml (the established EU-broker-code mechanism); prices won't
-  resolve until then.
+  and the product name in the note. That is the label the ledger keeps; the
+  web layer resolves it to a symbol for display (``stocks.web.logos
+  .yahoo_symbol``) and Yahoo prices an ISIN directly, so an ``aliases:``
+  entry in watchlist.yaml is now only how you pin a different listing.
 * Numbers are locale-formatted ("1.234,56" in the Spanish export) and dates
   are DD-MM-YYYY — both normalised here.
 * Buy vs sell is the sign of the quantity column.
@@ -30,6 +30,11 @@ Shape notes this parser absorbs:
   pair of them whenever it moves a holding between its tradeable and "NON
   TRADEABLE" listings. They net to nothing, so they are non-events rather
   than skips worth reporting.
+* Shares transferred to another broker (or between two listings of the same
+  security) are printed as a *sale at the market price*, which would book a
+  capital gain the account never made. Those rows carry no order id, no
+  execution venue and no charge — nobody traded — and import as
+  ``transfer_out``/``transfer_in`` instead (see stocks.portfolio.transfers).
 * A product name DEGIRO wrapped onto a second line (a row with no date and no
   ISIN) is dropped rather than reported as a broken row.
 * Each row is cross-checked against its own "Local value" column (qty × price
@@ -49,6 +54,7 @@ import io
 
 from stocks.portfolio.ledger import Transaction
 from stocks.portfolio.statement import ParseResult
+from stocks.portfolio.transfers import TRANSFER_IN, TRANSFER_OUT
 
 # Logical key -> accepted header names (lowercased), English and Spanish.
 _HEADERS = {
@@ -59,6 +65,9 @@ _HEADERS = {
     "price": ("price", "precio"),
     "local_value": ("local value", "valor local"),
     "fx_rate": ("exchange rate", "tipo de cambio"),
+    "venue": ("venue", "centro de ejecución", "centro de ejecucion",
+              "trading venue", "execution venue"),
+    "order_id": ("order id", "id orden", "orderid"),
 }
 # Cost columns are matched by shape, not by exact name: DEGIRO splits one
 # charge over several columns and localises each of them.
@@ -163,6 +172,28 @@ def _is_non_event(row: list[str], idx: dict[str, int]) -> bool:
     return _num(_cell(row, local)) == 0
 
 
+def _is_transfer(row: list[str], idx: dict[str, int], costs: list[int]) -> bool:
+    """Whether this priced row is a custody move rather than a trade.
+
+    DEGIRO books shares leaving for another broker — and shares moving between
+    two listings of the same security — as an ordinary sale at the day's market
+    price. Nothing in the row says "transfer"; what says it is what the row
+    lacks. Every execution DEGIRO actually sent to a market carries an order
+    id, an execution venue and a charge for the privilege. A custody move
+    carries none of the three, because nobody traded: the price is a valuation
+    printed for the paperwork, and the shares are the same shares afterwards.
+
+    All three must be missing, and both columns must exist in this export, so
+    an older file that never had an order-id column reads every row as the
+    trade it is rather than turning a whole statement into transfers.
+    """
+    if "order_id" not in idx or "venue" not in idx:
+        return False
+    if _cell(row, idx["order_id"]) or _cell(row, idx["venue"]):
+        return False
+    return not any(_num(_cell(row, pos)) for pos in costs)
+
+
 def _cell(row: list[str], pos: int | None) -> str:
     return row[pos].strip() if pos is not None and pos < len(row) else ""
 
@@ -248,10 +279,15 @@ def _build_tx(
                 f"but local value is {local:.2f}"
             )
 
+    if _is_transfer(row, idx, costs):
+        action = TRANSFER_IN if qty > 0 else TRANSFER_OUT
+    else:
+        action = "buy" if qty > 0 else "sell"
+
     return Transaction(
         date=date,
         ticker=isin,
-        action="buy" if qty > 0 else "sell",
+        action=action,
         quantity=abs(qty),
         price=price,
         currency=currency,

@@ -3,7 +3,8 @@
 An ISIN or a local broker code prices correctly (fetch.resolve maps it through
 watchlist.yaml `aliases`), but every *name* source keys on the Yahoo symbol —
 so without the same resolution a real position renders as "US4131971040"
-in the header, the tables and the sidebar.
+in the header, the tables and the sidebar. An ISIN nobody mapped by hand is
+resolved the second way, through Yahoo's own ISIN lookup.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ import json
 
 import pytest
 
-from stocks.data import edgar, fetch
+from stocks.data import edgar, fetch, symbols
 from stocks.web import logos
 
 FIXTURE = {
@@ -41,7 +42,13 @@ def offline(tmp_path, monkeypatch):
     monkeypatch.setattr("stocks.data.crypto.crypto_name", lambda t: None)
     monkeypatch.setattr("stocks.data.funds.fund_name", lambda t: None)
     monkeypatch.setattr(fetch, "ticker_aliases", lambda: {"US4131971040": "HRMY"})
+    # No ISIN lookup reaches Yahoo from a test; the cases that want one say so.
+    monkeypatch.setattr(symbols, "ISIN_CACHE", tmp_path / "isin_symbols.json")
+    monkeypatch.setattr(symbols, "_isin_memo", None)
+    monkeypatch.setattr(symbols, "_isin_misses", set())
+    monkeypatch.setattr(symbols, "_quotes", lambda query, count: [])
     logos._company_name.clear()
+    logos.yahoo_symbol.clear()
 
 
 def _watchlist(tmp_path, body: str = WATCHLIST) -> str:
@@ -99,3 +106,51 @@ def test_an_unmapped_label_prints_itself(monkeypatch):
     monkeypatch.setattr(tables, "logo", lambda t: None)
     monkeypatch.setattr(tables, "company_name", lambda t: None)
     assert "<b>NVDA</b>" in tables.ticker_cell("NVDA")
+
+
+# ------------------------------------------------------- ISINs nobody mapped
+
+
+def quotes(*rows):
+    """Yahoo search rows, as `_quotes` hands them over."""
+    return [
+        {"symbol": sym, "quoteType": "EQUITY", "exchDisp": exch}
+        for sym, exch in rows
+    ]
+
+
+def test_an_unmapped_isin_resolves_through_yahoos_isin_lookup(monkeypatch):
+    """The DEGIRO case: no alias exists, so the reader would see the ISIN."""
+    monkeypatch.setattr(
+        symbols, "_quotes", lambda query, count: quotes(("NOW", "NYSE"))
+    )
+    assert logos.display_symbol("US81762P1021") == "NOW"
+
+
+def test_an_alias_wins_and_costs_no_lookup(monkeypatch):
+    """The hand-written map is the cheap tier and the account's own answer."""
+    def boom(query, count):
+        raise AssertionError("resolved by alias — Yahoo must not be asked")
+
+    monkeypatch.setattr(symbols, "_quotes", boom)
+    assert logos.display_symbol("US4131971040") == "HRMY"
+
+
+def test_an_isin_yahoo_cannot_place_prints_itself():
+    """Nothing is invented: the label the ledger stores is what shows."""
+    assert logos.display_symbol("XX0000000000") == "XX0000000000"
+
+
+def test_the_logo_is_probed_under_the_resolved_symbol(monkeypatch):
+    """Every logo source keys on the symbol, so an ISIN probes nothing —
+    and mirrors its result under a second file name when it does."""
+    asked = []
+    monkeypatch.setattr(
+        symbols, "_quotes", lambda query, count: quotes(("NOW", "NYSE"))
+    )
+    monkeypatch.setattr(
+        logos, "mirror_logo", lambda ticker, d: asked.append(ticker) or "NOW.png"
+    )
+    logos.logo.clear()
+    logos.logo("US81762P1021")
+    assert asked == ["NOW"]

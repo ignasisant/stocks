@@ -36,6 +36,7 @@ from datetime import date as _date
 from datetime import timedelta as _timedelta
 
 from stocks.data.fx import ToBase, converter, prefetch
+from stocks.portfolio import transfers
 from stocks.portfolio.ledger import Transaction
 
 
@@ -127,6 +128,9 @@ def build(
     100 @ 1 plus 100 @ 3, FIFO leaves 100 shares carrying 300 and an averaged
     holding leaves them carrying 200.
     """
+    # Shares moving between brokers are not a disposal: matched legs net out
+    # here and never reach an engine, so no rule below has to know they exist.
+    transactions = transfers.normalize(transactions)
     if to_base is None:
         prefetch(((t.date, t.currency) for t in transactions), quote=base)
         to_base = converter(base)

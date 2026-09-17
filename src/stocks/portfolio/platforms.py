@@ -106,9 +106,10 @@ PLATFORMS: tuple[Platform, ...] = (
         hint=(
             "Export from DEGIRO → Activity → Transactions → Export (CSV). "
             "Only imported if it has the exact DEGIRO columns (EN/ES). Rows "
-            "import with the ISIN as ticker — map each ISIN to a Yahoo "
-            "symbol under `aliases:` in watchlist.yaml. Dividends are in the "
-            "Account statement, not this file; add them separately."
+            "import with the ISIN as ticker; the app resolves it to the "
+            "symbol it prints and prices — map it under `aliases:` in "
+            "watchlist.yaml only to pin a different listing. Dividends are in "
+            "the Account statement, not this file; add them separately."
         ),
         parse=lambda filename, data: degiro.parse_csv(
             data.decode("utf-8-sig")
@@ -142,9 +143,9 @@ PLATFORMS: tuple[Platform, ...] = (
             "Operaciones ejecutadas (Trades executed) → Excel. Spanish and "
             "English headers are recognised; symbols map from the Saxo "
             "exchange code (TEF:xmce → TEF.MC), unknown ones import under "
-            "the ISIN — map those in watchlist.yaml `aliases:`. Dividends "
-            "are in the account statement, not this report; add them "
-            "separately."
+            "the ISIN, which resolves to a symbol on screen (pin another "
+            "listing in watchlist.yaml `aliases:`). Dividends are in the "
+            "account statement, not this report; add them separately."
         ),
         parse=clicktrade.parse,
         domain="clicktrade.es",

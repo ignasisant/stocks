@@ -55,12 +55,15 @@ from stocks.data.insiders import (
     transactions_frame,
 )
 from stocks.formatting import compact_money
+from stocks.portfolio import corporate
 from stocks.portfolio.custody import Custody, by_position, mix
 from stocks.portfolio.ledger import all_transactions
 from stocks.portfolio.positions import build as build_positions
-from stocks.web import auth, frames, notices, range_readout, skeletons
+from stocks.web import auth, frames, notices, range_readout, search, skeletons
+from stocks.web import css as css_util
 from stocks.web.i18n import t as tr
 from stocks.web.kpi_text import kpi_desc, sources_table
+from stocks.web.markup import slug
 from stocks.web.widgets import (
     ACCENT_AREA,
     ACCENT_BAND,
@@ -678,6 +681,10 @@ def _price_section(ticker: str) -> None:
     my_trades = [
         t for t in ledger_txs if t.ticker == ticker and t.action in ("buy", "sell")
     ]
+    # Ledger prices are as-traded, Yahoo's bars are split-adjusted. Every use of
+    # a trade against this chart goes through corporate.on_market_scale first,
+    # or a pre-split buy plots twenty times above the candles it belongs on.
+    split_factors = corporate.split_factors(ledger_txs)
     my_pos = _held(db, db_mt).get(ticker)
 
     last = float(df["Close"].iloc[-1])
@@ -860,17 +867,18 @@ def _price_section(ticker: str) -> None:
             ]
             if not pts:
                 continue
+            scaled = [corporate.on_market_scale(t, split_factors) for t, _ in pts]
             if action == "buy":
                 # Per-buy return vs today's close, plus the position's average
                 # cost so each lot can be compared against the blended entry.
                 hover = []
-                for t, _ in pts:
-                    pct = (last / t.price - 1) * 100 if t.price else 0.0
+                for (t, _), (price, qty) in zip(pts, scaled, strict=True):
+                    pct = (last / price - 1) * 100 if price else 0.0
                     pct_color = UP_COLOR if pct >= 0 else DOWN_COLOR
                     text = tr(
                         "ticker.hover_buy",
-                        qty=f"{t.quantity:.4f}",
-                        price=f"{t.price:,.2f}",
+                        qty=f"{qty:.4f}",
+                        price=f"{price:,.2f}",
                         date=t.date,
                         color=pct_color,
                         pct=f"{pct:+.2f}",
@@ -882,12 +890,12 @@ def _price_section(ticker: str) -> None:
                 customdata = hover
                 hovertemplate = "%{customdata}<extra></extra>"
             else:
-                customdata = [t.quantity for t, _ in pts]
+                customdata = [qty for _, qty in scaled]
                 hovertemplate = hover_wrap(tr("ticker.hover_sell_tmpl"))
             fig.add_trace(
                 go.Scatter(
                     x=[x for _, x in pts],
-                    y=[t.price for t, _ in pts],
+                    y=[price for price, _ in scaled],
                     mode="markers",
                     name=(
                         tr("ticker.my_buys")
@@ -967,7 +975,8 @@ def _price_section(ticker: str) -> None:
     buys = [t for t in my_trades if t.action == "buy" and t.price]
     if buys:
         last_buy = max(buys, key=lambda t: t.date)
-        pct = (last / last_buy.price - 1) * 100
+        buy_price, buy_qty = corporate.on_market_scale(last_buy, split_factors)
+        pct = (last / buy_price - 1) * 100 if buy_price else 0.0
         if _MOBILE:
             pct_md = (
                 f'<span style="color:{UP_COLOR if pct >= 0 else DOWN_COLOR};'
@@ -977,8 +986,8 @@ def _price_section(ticker: str) -> None:
             pct_md = f":{'green' if pct >= 0 else 'red'}[**{pct:+.2f}%**]"
         line = tr(
             "ticker.last_buy",
-            qty=f"{last_buy.quantity:.4f}",
-            price=f"{last_buy.price:,.2f}",
+            qty=f"{buy_qty:.4f}",
+            price=f"{buy_price:,.2f}",
             date=last_buy.date,
             pct=pct_md,
             last=f"{last:,.2f}",
@@ -2045,6 +2054,65 @@ def _peer_label(t: str) -> str:
     return f"{t} — {name}" if name and name.upper() != t.upper() else t
 
 
+def _extra_store(t: str) -> str:
+    """Session key holding the searched comparables for ticker `t`."""
+    return f"xpeers_{t}"
+
+
+@st.fragment
+def _extra_peers(ticker: str, taken: list[str]) -> None:
+    """Live symbol search for comparables the watchlist doesn't carry.
+
+    Same catalogs as the top-bar search — own list, coins, funds, the SEC map
+    and a worldwide Yahoo lookup — because a real competitor is often a
+    foreign listing the account never followed, and a comma-typed symbol had
+    to be known by heart before it could be compared. A fragment so a
+    keystroke redraws the field and its matches alone; taking an offer reruns
+    the page, where the comps table reads the picks back.
+    """
+    store, qkey = _extra_store(ticker), f"xpeerq_{ticker}"
+    chosen = [p for p in st.session_state.get(store, []) if p not in taken]
+    # The live field is a component, so it carries no Streamlit label of its
+    # own — this one is styled to sit like the widget labels above it.
+    css_util.inject(
+        ".xpeer-lbl {font-size: var(--ag-fs-sm);"
+        " color: var(--ag-text-primary); margin-bottom: 0.25rem;}"
+    )
+    st.html(f'<div class="xpeer-lbl">{html.escape(tr("ticker.extra_peers"))}</div>')
+    query = search.picker_field(key=qkey, placeholder=tr("ticker.extra_search"))
+    if chosen:
+        chips = st.container(horizontal=True, key=f"xpeer_chips_{slug(ticker)}")
+        for p in chosen:
+            if chips.button(
+                f":material/close: **{p}**",
+                key=f"xpeer_drop_{slug(p)}",
+                help=tr("ticker.extra_drop"),
+            ):
+                st.session_state[store] = [x for x in chosen if x != p]
+                st.rerun(scope="app")
+    # Crypto pairs have none of the KPIs the table ranks, and the viewed
+    # ticker is already its own first column.
+    hits = [
+        r
+        for r in (search.add_candidates(query, limit=6) if query else [])
+        if r["ticker"] != ticker
+        and r["ticker"] not in taken
+        and r["ticker"] not in chosen
+        and not is_crypto(r["ticker"])
+    ]
+    for r in hits:
+        if st.button(
+            search.candidate_label(r),
+            key=f"xpeer_add_{slug(r['ticker'])}",
+            width="stretch",
+        ):
+            st.session_state.setdefault(store, []).append(r["ticker"])
+            search.clear_picker(qkey)
+            st.rerun(scope="app")
+    if query and not hits:
+        st.caption(tr("ticker.extra_none"))
+
+
 with st.container(border=True):
     st.subheader(tr("ticker.comparables"))
     # Related tickers stay pills (Markdown labels render logo + symbol + name)
@@ -2076,12 +2144,10 @@ with st.container(border=True):
         if suggested
         else []
     )
-    extra = st.text_input(tr("ticker.extra_peers"), "")
     peers += [p for p in picked if p not in peers]
+    _extra_peers(ticker, peers)
     peers += [
-        p.strip().upper()
-        for p in extra.split(",")
-        if p.strip() and p.strip().upper() not in peers
+        p for p in st.session_state.get(_extra_store(ticker), []) if p not in peers
     ]
     if peers:
         # One metrics pull per peer, serial — the table shimmers with a column

@@ -48,17 +48,6 @@ GROUP_BY = "wl_group_by"  # "tags" | "favorites" | "flat"
 
 GROUP_MODES = ("tags", "favorites", "flat")
 
-# Which catalog a candidate came from, as an icon: the tier is the difference
-# between "you already follow this" and "Yahoo has never heard of it".
-_KIND_ICONS = {
-    "watch": "check_circle",
-    "crypto": "currency_bitcoin",
-    "fund": "donut_small",
-    "sec": "business",
-    "world": "public",
-    "raw": "help",
-}
-
 # Phones render one control row per holding instead of a grid, so a 200-name
 # watchlist would be a thousand widgets. Past this the list asks for a filter.
 MOBILE_ROWS = 40
@@ -286,9 +275,10 @@ def add_card(container, path: Path) -> None:
     res = card.container(key="wl_res")
     for row in rows:
         t, name, kind = row["ticker"], row["name"], row["kind"]
-        icon = f":material/{_KIND_ICONS.get(kind, 'help')}:"
-        tail = f" — {name}" if name else ""
-        label = f"{icon} **{t}**{tail}"
+        # The tier icon is the difference between "you already follow this"
+        # and "Yahoo has never heard of it" — shared with the comparables
+        # picker so the same symbol reads the same in both.
+        label = search.candidate_label(row)
         if row["listed"]:
             res.button(
                 label,

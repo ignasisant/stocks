@@ -111,18 +111,56 @@ IBKR_ES_CSV = (
 )
 
 
-def test_spanish_open_positions_import_as_opening_lots():
+def test_spanish_open_positions_import_as_arriving_shares():
     result = ibkr.parse_csv(IBKR_ES_CSV)
-    buys = {t.ticker: t for t in result.transactions}
-    assert set(buys) == {"ASML", "EMXC", "MSFT"}
-    assert all(t.action == "buy" for t in buys.values())
+    held = {t.ticker: t for t in result.transactions}
+    assert set(held) == {"ASML", "EMXC", "MSFT"}
+    # A balance is shares already owned, not a purchase made on the statement
+    # date — so they arrive, and a book that already holds them nets them out.
+    assert all(t.action == "transfer_in" for t in held.values())
     # The average cost the broker itself reports, in the holding's currency.
-    assert (buys["EMXC"].quantity, buys["EMXC"].currency) == (96.9398, "EUR")
-    assert round(buys["EMXC"].price, 6) == 26.733268
-    assert buys["MSFT"].currency == "USD" and buys["MSFT"].quantity == 8
+    assert (held["EMXC"].quantity, held["EMXC"].currency) == (96.9398, "EUR")
+    assert round(held["EMXC"].price, 6) == 26.733268
+    assert held["MSFT"].currency == "USD" and held["MSFT"].quantity == 8
     # The period the statement covers, not the day the file was generated.
-    assert all(t.date == "2026-09-14" for t in buys.values())
-    assert all(t.note == "ibkr snapshot" for t in buys.values())
+    assert all(t.date == "2026-09-14" for t in held.values())
+    assert all(t.note.startswith("ibkr snapshot") for t in held.values())
+
+
+def test_an_arriving_balance_with_no_departure_still_opens_the_position():
+    """First-ever import: nothing to pair with, so the lots are the book."""
+    from stocks.portfolio import positions
+
+    result = ibkr.parse_csv(IBKR_ES_CSV)
+    open_lots, realized = positions.build(
+        result.transactions, to_base=lambda amount, ccy, day: amount
+    )
+    assert not realized
+    assert {p.ticker: p.quantity for p in open_lots} == {
+        "ASML": 1.0, "EMXC": 96.9398, "MSFT": 8.0
+    }
+
+
+def test_instrument_table_puts_each_holdings_isin_in_its_note():
+    """The ISIN is how a holding IBKR calls ASML is recognised as the one
+    DEGIRO booked under NL0010273215."""
+    result = ibkr.parse_csv(IBKR_ES_CSV + _INSTRUMENTS_ES)
+    notes = {t.ticker: t.note for t in result.transactions}
+    assert notes["ASML"] == "ibkr snapshot NL0010273215"
+    assert notes["MSFT"] == "ibkr snapshot US5949181045"
+    # A holding the table never names keeps the bare note rather than a blank.
+    assert notes["EMXC"] == "ibkr snapshot"
+
+
+_INSTRUMENTS_ES = (
+    "Información de instrumento financiero,Header,Categoría de activo,Símbolo,"
+    "Descripción,Conid,Id. de seguridad,Underlying,Merc. de cotización,"
+    "Multiplicador,Tipo,Código\n"
+    "Información de instrumento financiero,Data,Acciones,ASML,ASML HOLDING NV,"
+    "117589399,NL0010273215,ASML,AEB,1,COMMON,\n"
+    "Información de instrumento financiero,Data,Acciones,MSFT,MICROSOFT CORP,"
+    "272093,US5949181045,MSFT,NASDAQ,1,COMMON,\n"
+)
 
 
 def test_spanish_forex_holding_and_total_rows_left_out():

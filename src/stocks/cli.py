@@ -1216,7 +1216,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("date", help="ISO date YYYY-MM-DD")
     p_add.add_argument("ticker")
     p_add.add_argument(
-        "action", choices=sorted({"buy", "sell", "dividend", "fee", "split"}))
+        "action",
+        choices=sorted({"buy", "sell", "dividend", "fee", "split",
+                        "transfer_in", "transfer_out"}))
     p_add.add_argument("--qty", type=float, default=0.0, help="shares (split: ratio)")
     p_add.add_argument("--price", type=float, default=0.0,
                        help="per-share native ccy (dividend: gross total)")

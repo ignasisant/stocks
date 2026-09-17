@@ -25,6 +25,7 @@ from stocks import obs
 from stocks.analysis import naive_dates
 from stocks.config import Holding, load_watchlist
 from stocks.data.fx import ToBase, converter
+from stocks.portfolio import transfers
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -215,9 +216,12 @@ def shares_frame(transactions, end: str | None = None) -> pd.DataFrame:
     losses in the flow-adjusted return.
 
     Calendar-daily index from the first transaction to `end` (default today),
-    forward-filled between events; 0 before a ticker's first buy.
+    forward-filled between events; 0 before a ticker's first buy. Moving shares
+    between brokers changes no share count, so a matched pair of transfer legs
+    nets out before the replay and only an unmatched arrival steps the path
+    (see stocks.portfolio.transfers).
     """
-    txs = sorted(transactions, key=lambda t: (t.date, t.id or 0))
+    txs = sorted(transfers.normalize(transactions), key=lambda t: (t.date, t.id or 0))
     if not txs:
         return pd.DataFrame()
     splits: dict[str, list[tuple[str, float]]] = {}
@@ -254,11 +258,13 @@ def injected_series(
     """Cumulative net cash put in, in `base` at each transaction date's rate.
 
     Buys add cost incl. commission; sells subtract net proceeds. Dividends and
-    standalone fees don't move contributed capital. Index = transaction dates.
+    standalone fees don't move contributed capital, and neither does a transfer
+    between brokers — only shares arriving from a book that never held them
+    count, at the basis their statement reports. Index = transaction dates.
     """
     to_base = to_base or converter(base)
     flows: dict[str, float] = {}
-    for t in sorted(transactions, key=lambda t: (t.date, t.id or 0)):
+    for t in sorted(transfers.normalize(transactions), key=lambda t: (t.date, t.id or 0)):
         if t.action == "buy":
             amt = to_base(t.quantity * t.price + t.fee, t.currency, t.date)
         elif t.action == "sell":
@@ -347,14 +353,17 @@ def flow_series(
     """Net external cash flow per date in `base`: buys +, sells −, dividends −.
 
     Dividends count as withdrawals so the time-weighted return gets credit for
-    them (the market value path never includes cash). Leave `tickers` unset when
+    them (the market value path never includes cash). A broker transfer is not
+    cash at all: matched legs net out (stocks.portfolio.transfers) so the
+    return is untouched by the move, and an unmatched arrival reads as the
+    contribution it is. Leave `tickers` unset when
     the value path carries unpriced names at cost (injected_vs_value); only
     restrict it when those names are absent from the value entirely, otherwise
     their buys read as instant losses in the TWR.
     """
     to_base = to_base or converter(base)
     flows: dict[str, float] = {}
-    for t in transactions:
+    for t in transfers.normalize(transactions):
         if tickers is not None and t.ticker not in tickers:
             continue
         if t.action == "buy":

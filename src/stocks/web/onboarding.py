@@ -312,6 +312,16 @@ RELEASES: tuple[Release, ...] = (
             News(slug="amount", icon="price_change", step="import"),
             News(slug="tgtext", icon="voice_over_off", step="notify"),
             News(slug="hover", icon="show_chart", step="market"),
+            News(slug="isin", icon="badge", step="import"),
+        ),
+    ),
+    Release(
+        version="2026.09.2",
+        date="2026-09",
+        items=(
+            News(slug="splitfix", icon="call_split", step="import"),
+            News(slug="peersearch", icon="search", step="market"),
+            News(slug="transfers", icon="swap_horiz", step="import"),
         ),
     ),
 )

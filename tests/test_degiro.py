@@ -162,3 +162,60 @@ def test_wrapped_product_name_is_not_a_broken_row():
     result = degiro.parse_csv(text)
     assert result.skipped == []
     assert len(result.transactions) == 1
+
+
+# A real DEGIRO row for shares leaving for another broker: priced at the day's
+# market close, but with no order id, no execution venue and no charge.
+TRANSFER_CSV = (
+    "Fecha,Hora,Producto,ISIN,Bolsa de,Centro de ejecución,Número,Precio,,"
+    "Valor local,,Valor EUR,Tipo de cambio,Comisión AutoFX,"
+    "Costes de transacción y/o externos EUR,Total EUR,ID Orden\n"
+    "18-07-2025,17:08,ASML HOLDING N.V.,NL0010273215,EAM,MESI,"
+    '1,"633,9000",EUR,"-633,90",EUR,"-633,90",,"0,00","-4,90","-638,80",c0b9\n'
+    "06-08-2026,00:00,ASML HOLDING N.V.,NL0010273215,EAM,,"
+    '-1,"1465,8000",EUR,"1465,80",EUR,"1465,80",,"0,00",,"1465,80",\n'
+)
+
+
+def test_shares_leaving_for_another_broker_are_not_a_sale():
+    """DEGIRO prints the move at the market price. Booking it as a sale would
+    realize a gain nobody made — the missing order id says nobody traded."""
+    buy, moved = degiro.parse_csv(TRANSFER_CSV).transactions
+    assert buy.action == "buy"
+    assert moved.action == "transfer_out"
+    assert (moved.quantity, moved.price) == (1.0, 1465.8)
+
+
+def test_a_transfer_realizes_no_gain():
+    from stocks.portfolio import positions
+
+    _, realized = positions.build(
+        degiro.parse_csv(TRANSFER_CSV).transactions,
+        to_base=lambda amount, currency, day: amount,
+    )
+    assert realized == []
+
+
+def test_an_ordinary_sale_is_still_a_sale():
+    """Same shape, one order id: a trade DEGIRO actually sent to a market."""
+    text = TRANSFER_CSV.replace('"1465,80",\n', '"1465,80",7eb679c3\n')
+    assert [t.action for t in degiro.parse_csv(text).transactions] == ["buy", "sell"]
+
+
+def test_a_charge_means_somebody_traded():
+    text = TRANSFER_CSV.replace('"1465,80",EUR,"1465,80",,"0,00",,', 
+                                '"1465,80",EUR,"1465,80",,"0,00","-2,00",')
+    assert [t.action for t in degiro.parse_csv(text).transactions] == ["buy", "sell"]
+
+
+def test_an_export_without_an_order_id_column_reads_every_row_as_a_trade():
+    """Older exports have no order-id column at all; absence of evidence there
+    is not evidence that a whole statement is transfers."""
+    text = (
+        "Fecha,Hora,Producto,ISIN,Bolsa de,Centro de ejecución,Número,Precio,,"
+        "Valor local,,Valor EUR,Tipo de cambio,Comisión AutoFX,Total EUR\n"
+        "06-08-2026,00:00,ASML HOLDING N.V.,NL0010273215,EAM,,"
+        '-1,"1465,8000",EUR,"1465,80",EUR,"1465,80",,"0,00","1465,80"\n'
+    )
+    (row,) = degiro.parse_csv(text).transactions
+    assert row.action == "sell"

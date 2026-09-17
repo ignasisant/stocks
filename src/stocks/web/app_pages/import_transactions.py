@@ -18,6 +18,12 @@ cost basis silently:
 Rows the parser skips by design (cash movements, fees, tax corrections) are
 listed separately; stock splits are auto-resolved to a ratio when the held
 quantity at the split date makes the ratio unambiguous.
+
+Two repairs run beside the import, because a statement cannot carry what they
+fix: splits the book never heard about (`stocks.portfolio.corporate`, on
+request — it prices every holding against Yahoo) and shares that only changed
+broker but read as a sale (`stocks.portfolio.transfers`, every run — it reads
+the ledger alone). Both propose; neither writes until the reader says so.
 """
 
 from __future__ import annotations
@@ -29,10 +35,11 @@ import pandas as pd
 import streamlit as st
 
 from stocks.data import fetch
-from stocks.portfolio import demo, last_import, platforms
+from stocks.portfolio import corporate, demo, last_import, platforms, transfers
+from stocks.portfolio import ledger as ledger_mod
 from stocks.portfolio.ledger import add_many, all_transactions, clear, delete_many
 from stocks.portfolio.validate import known_tickers, validate
-from stocks.web import auth, skeletons, tx_text
+from stocks.web import auth, logos, skeletons, tx_text
 from stocks.web.i18n import t as tr
 from stocks.web.widgets import (
     brand_logo,
@@ -137,6 +144,142 @@ def _tx_table(frame: pd.DataFrame, *, rich: bool = True) -> None:
             },
         )
     )
+
+
+# ------------------------------------------------- corporate actions the book missed
+# A statement prints trades and not the 20:1 split between them, so a position
+# bought before one and never sold keeps a pre-split share count and a pre-split
+# cost basis forever — the import-time rescue in validate.py only fires when a
+# *sell* comes up short, and a position nobody sold never comes up short.
+# stocks.portfolio.corporate finds them from the buy price instead.
+#
+# The scan costs a Yahoo round-trip per ticker, so it runs on request and the
+# answer is held for the session rather than re-priced on every rerun.
+_SPLIT_SCAN = "corporate_split_scan"
+_SPLIT_COLS = ("ticker", "date", "ratio", "held_before", "held_after", "evidence")
+
+real_rows = demo.without(ledger)
+
+with st.container(horizontal=True, vertical_alignment="center"):
+    _scan_now = st.button(
+        tr("import.scan_splits"),
+        icon=":material/troubleshoot:",
+        disabled=not real_rows,
+    )
+    st.caption(tr("import.scan_splits_help"))
+
+if _scan_now:
+    # The shimmer takes the shape of the findings table, in the place it will
+    # appear — a Yahoo round-trip per holding is seconds, not milliseconds.
+    with skeletons.slot("table", rows=3, cols=5, title=True):
+        st.session_state[_SPLIT_SCAN] = corporate.missing_splits(
+            real_rows, splits=fetch.splits, close_on=fetch.close_on
+        )
+    st.rerun()
+
+_gaps = st.session_state.get(_SPLIT_SCAN)
+if _gaps is not None and not _gaps:
+    st.success(tr("import.scan_splits_clean"))
+elif _gaps:
+    st.warning(tr("import.splits_found", n=len(_gaps)))
+    data_table(
+        pd.DataFrame(
+            {
+                "ticker": m.ticker,
+                "date": m.tx.date,
+                "ratio": f"{m.ratio:g}:1",
+                "held_before": m.held_before,
+                "held_after": m.held_after,
+                "evidence": tr(
+                    "import.split_evidence",
+                    price=f"{m.priced_at:,.2f}",
+                    date=m.priced_on,
+                    close=f"{m.market_close:,.2f}",
+                ),
+            }
+            for m in _gaps
+        ),
+        title="ticker",  # phone cards head on the symbol, like every other table
+        fmt={"held_before": "{:,.4f}", "held_after": "{:,.4f}"},
+        labels=tx_text.labels(*_SPLIT_COLS),
+        hide_index=True,
+    )
+    if st.button(
+        tr("import.apply_splits", n=len(_gaps)),
+        type="primary",
+        icon=":material/call_split:",
+    ):
+        add_many([m.tx for m in _gaps], paths.db)
+        st.session_state.pop(_SPLIT_SCAN, None)
+        st.session_state["splits_applied"] = len(_gaps)
+        st.rerun()
+    st.caption(tr("import.apply_splits_help"))
+
+if n_applied := st.session_state.pop("splits_applied", 0):
+    st.toast(tr("import.toast_splits_applied", n=n_applied), icon=":material/call_split:")
+
+
+# ------------------------------------------------ shares that only changed broker
+# A statement cannot say "these shares moved" — DEGIRO prints the departure as
+# a sale at the market price, and the receiving broker prints the arrival as a
+# balance. Left alone the book reports a gain nobody made and restarts a
+# holding period that never stopped. stocks.portfolio.transfers finds the pairs
+# from the one thing a sale-and-repurchase could not produce: an arrival
+# carrying the basis the shares already had. It reads the ledger and nothing
+# else, so unlike the split scan there is no network call and no button — the
+# question is answered on every run.
+_MOVE_COLS = ("ticker", "quantity", "from", "to", "date", "gain", "basis")
+
+# logos.yahoo_symbol is the app's own ISIN -> symbol lookup: watchlist
+# aliases first, then Yahoo's, cached on disk and in session. transfers only
+# calls it for a row that already looks like a move in every other way.
+_moves = transfers.propose(real_rows, resolve=logos.yahoo_symbol)
+if _moves:
+    st.warning(tr("import.moves_found", n=len(_moves)))
+    data_table(
+        pd.DataFrame(
+            {
+                "ticker": m.ticker_in,
+                "quantity": m.quantity,
+                "from": m.broker_out,
+                "to": m.broker_in,
+                "date": m.date_out,
+                "gain": tr(
+                    "import.move_gain",
+                    amount=f"{m.phantom_gain:,.2f} {m.currency}",
+                ),
+                "basis": tr(
+                    "import.move_basis",
+                    basis=f"{m.basis_in:,.2f}",
+                    sold=f"{m.booked_at:,.2f}",
+                ),
+            }
+            for m in _moves
+        ),
+        title="ticker",
+        fmt={"quantity": "{:,.4f}"},
+        labels=tx_text.labels(*_MOVE_COLS),
+        hide_index=True,
+    )
+    if st.button(
+        tr("import.apply_moves", n=len(_moves)),
+        type="primary",
+        icon=":material/swap_horiz:",
+    ):
+        for m in _moves:
+            # The departure stops being a sale, and both labels become one
+            # security so the replay can see that the shares never left.
+            ledger_mod.set_action(list(m.out_ids), transfers.TRANSFER_OUT, paths.db)
+            if m.in_id is not None:
+                ledger_mod.set_action([m.in_id], transfers.TRANSFER_IN, paths.db)
+            if m.rekey:
+                ledger_mod.retag(m.ticker_out, m.ticker_in, paths.db)
+        st.session_state["moves_applied"] = len(_moves)
+        st.rerun()
+    st.caption(tr("import.apply_moves_help"))
+
+if n_moves := st.session_state.pop("moves_applied", 0):
+    st.toast(tr("import.toast_moves_applied", n=n_moves), icon=":material/swap_horiz:")
 
 
 def _platform_option_md(key: str) -> str:
