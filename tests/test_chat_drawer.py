@@ -72,6 +72,11 @@ def _labelled(at, label):
     return [b for b in at.button if b.label == label]
 
 
+def _button(at, key):
+    """The button with this key, or None — `at.button(key=…)` raises."""
+    return next((b for b in at.button if b.key == key), None)
+
+
 def _mode_control(at):
     """The skill-mode segmented control (a button group, keyed like the pref)."""
     return next(b for b in at.get("button_group") if b.key == "panel_skills_mode")
@@ -517,6 +522,62 @@ def test_a_desktop_drawer_is_a_rail_beside_the_page(monkeypatch):
     assert chat_core.covers_viewport(True) is False
 
 
+# The close icon sits in the header row but is not drawn with it. A widget
+# inside a fragment asks Streamlit for a fragment rerun, and Streamlit holds
+# those back until the run in flight finishes — so a Close drawn by
+# _panel_body did nothing at all while the panel was streaming an answer or
+# the page behind it was still loading. Out of the fragment its rerun is a
+# full one, which preempts.
+
+CLOSE_SCRIPT = """
+import streamlit as st
+from stocks.web import chat_core
+
+with st.container(key="chatpanel"):
+    chat_core._render_panel_close()
+st.write("open" if st.session_state.get("chat_panel_open", True) else "closed")
+"""
+
+
+def test_the_close_icon_is_not_drawn_inside_the_panel_fragment(app, paths):
+    """The whole point of the control: a fragment widget cannot interrupt a
+    fragment that is busy, and the panel is busy for most of a turn."""
+    _seed(paths)
+    app.run()
+
+    assert not app.exception
+    keys = [b.key for b in app.button]
+    assert "chat_panel_close" not in keys
+    assert "panel_close" not in keys  # the old, un-pressable one
+
+
+def test_the_close_icon_shuts_the_drawer_from_outside_the_fragment(
+        monkeypatch, paths):
+    """Pressed, it clears the open flag on the run it is pressed on — the
+    panel body never gets built again."""
+    monkeypatch.setattr(auth, "user_paths", lambda: paths)
+    at = AppTest.from_string(CLOSE_SCRIPT, default_timeout=30)
+    at.run()
+    assert at.markdown[0].value == "open"
+
+    at.button(key="chat_panel_close").click().run()
+
+    assert not at.exception
+    assert at.session_state["chat_panel_open"] is False
+    assert at.markdown[0].value == "closed"
+
+
+def test_the_header_row_leaves_the_pinned_close_its_seat(app, paths):
+    """Positioned over the row rather than laid out in it, so the row has to
+    reserve the space or the width presets end up underneath it."""
+    css = chat_core._PANEL_CSS
+
+    assert ".st-key-chatclose {" in css
+    assert "position: absolute" in css.split(".st-key-chatclose {", 1)[1][:120]
+    head = css.split(".st-key-chatpanel .st-key-panel_head {", 1)[1][:240]
+    assert "padding: 0.5rem 2.4rem 0.5rem 0.75rem" in head
+
+
 def test_an_unnamed_thread_reads_as_a_placeholder_in_the_header(app, paths):
     """A thread with no title yet is greyed; a named one is not."""
     app.run()
@@ -525,3 +586,113 @@ def test_an_unnamed_thread_reads_as_a_placeholder_in_the_header(app, paths):
     _seed(paths, title="Semis concentration")
     app.run()
     assert app.button(key="panel_open_threads").label == "Semis concentration"
+
+
+# ------------------------------------------------- the composer rail on a phone
+
+# The panel is the whole screen on a phone, so the row of chips above the
+# composer is charged against the conversation. The internet chip goes; the
+# capability it toggles does not (`_turn_prefs`), which is the only reason
+# dropping a control is safe.
+
+
+def test_a_phone_drops_the_internet_chip_but_keeps_the_skill_lens(
+        app, paths, monkeypatch):
+    monkeypatch.setattr(chat_core.chat_web, "available", lambda: True)
+    monkeypatch.setattr(chat_core, "is_mobile", lambda: True)
+    _seed(paths)
+    app.run()
+
+    assert not app.exception
+    assert _button(app, "panel_rail_web") is None
+    # The lens stays: it changes which answer you get, not how it is sourced,
+    # and its picker is still reachable in the rail's popover.
+    assert _mode_control(app) is not None
+
+
+def test_the_desk_keeps_the_internet_chip(app, paths, monkeypatch):
+    monkeypatch.setattr(chat_core.chat_web, "available", lambda: True)
+    monkeypatch.setattr(chat_core, "is_mobile", lambda: False)
+    _seed(paths)
+    app.run()
+
+    assert _button(app, "panel_rail_web") is not None
+
+
+def test_a_phone_answers_with_the_internet_on_whatever_the_desk_chose(
+        monkeypatch):
+    """The chip is not drawn on a phone, so the pref behind it must not be
+    able to leave that screen with no internet and no way to ask for it."""
+    stored = {"chat_web": False}
+    monkeypatch.setattr(chat_core.auth, "load_prefs", lambda *a, **kw: dict(stored))
+    monkeypatch.setattr(chat_core, "is_mobile", lambda: True)
+
+    assert chat_core._turn_prefs()["chat_web"] is True
+    assert stored["chat_web"] is False  # the setting itself is untouched
+
+
+def test_the_desk_answers_with_the_setting_the_desk_chose(monkeypatch):
+    stored = {"chat_web": False}
+    monkeypatch.setattr(chat_core.auth, "load_prefs", lambda *a, **kw: dict(stored))
+    monkeypatch.setattr(chat_core, "is_mobile", lambda: False)
+
+    assert chat_core._turn_prefs()["chat_web"] is False
+
+
+def _asml_move(paths):
+    """A DEGIRO departure booked as a sale, and the IBKR balance that is the
+    same shares arriving — the pair `transfers.propose` recognises."""
+    from stocks.portfolio.ledger import Transaction, add_many
+
+    add_many(
+        [
+            Transaction(date="2025-07-18", ticker="NL0010273215", action="buy",
+                        quantity=1, price=633.9, fee=4.9, currency="EUR",
+                        note="degiro ASML HOLDING N.V."),
+            Transaction(date="2026-08-06", ticker="NL0010273215", action="sell",
+                        quantity=1, price=1465.8, currency="EUR",
+                        note="degiro ASML HOLDING N.V."),
+            Transaction(date="2026-09-14", ticker="ASML.AS", action="buy",
+                        quantity=1, price=633.9, currency="EUR",
+                        note="ibkr snapshot NL0010273215"),
+        ],
+        paths.db,
+    )
+
+
+def test_shares_that_only_changed_broker_are_raised_in_the_chat_too(app, paths):
+    """The Import page has always asked about this; a statement imported
+    through the assistant never goes past that page, and the phantom gain it
+    leaves behind is one that gets filed on a tax return."""
+    _asml_move(paths)
+    at = app.run()
+    assert any("only changed broker" in w.value for w in at.warning), (
+        "the chat says nothing about shares that only changed custodian"
+    )
+    assert _button(at, "panel_apply_moves"), "no way to accept the repair here"
+
+
+def test_accepting_the_repair_in_the_chat_rewrites_the_two_legs(app, paths):
+    from stocks.portfolio.ledger import all_transactions
+
+    _asml_move(paths)
+    at = app.run()
+    _button(at, "panel_apply_moves").click().run()
+
+    rows = all_transactions(paths.db)
+    # The sale is a departure, the balance is an arrival, and both brokers'
+    # spellings of the security have become one label.
+    assert {t.ticker for t in rows} == {"ASML.AS"}
+    assert sorted(t.action for t in rows) == ["buy", "transfer_in", "transfer_out"]
+
+
+def test_a_book_with_nothing_to_repair_says_nothing(app, paths):
+    from stocks.portfolio.ledger import Transaction, add_many
+
+    add_many(
+        [Transaction(date="2025-07-18", ticker="ASML.AS", action="buy",
+                     quantity=1, price=633.9, currency="EUR", note="degiro")],
+        paths.db,
+    )
+    at = app.run()
+    assert not _button(at, "panel_apply_moves")
