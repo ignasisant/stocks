@@ -287,6 +287,16 @@ def test_a_live_session_is_not_redirected_out_from_under_itself(pinned_client):
     assert pinned_client.get("/_stcore/health").status_code == 200
 
 
+def test_the_health_probes_answer_on_any_host(pinned_client):
+    # A canary is reachable only at its tagged hostname, so a redirect to the
+    # canonical host would smoke the revision already serving and report its
+    # revision name — which is exactly how a healthy candidate gets rejected.
+    for path in ("/livez", "/healthz", "/status"):
+        r = pinned_client.get(path, follow_redirects=False)
+        assert r.status_code == 200, path
+        assert r.json()["status"] == "ok"
+
+
 def test_the_canonical_host_itself_is_served_not_redirected(monkeypatch):
     monkeypatch.setattr(server, "secret", lambda *a, **k: "https://topstocks.example")
 

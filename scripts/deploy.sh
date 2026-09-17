@@ -207,26 +207,51 @@ REVISION="$(describe status.latestCreatedRevisionName)"
 #
 # Staging is a private service — an unauthenticated curl gets a Google 403 at
 # the edge — so fall back to an identity token when the open request bounces.
+#
+# `curl -f` does not fail on a 3xx — it returns success with an empty body, so
+# a redirected probe shows up as a blank line and looks like silence. The HTTP
+# code is read explicitly, and a redirect is reported as what it is: the app
+# bouncing the tagged candidate hostname to the canonical one, where the
+# revision already serving would answer. Exit 2 means that; retrying cannot fix
+# it, so smoke() gives up immediately instead of sleeping ten times.
 probe() {
-    local target="$1" out
-    if out="$(curl -fsS --max-time 20 "$target" 2>/dev/null)"; then
-        printf '%s' "$out"
-        return 0
-    fi
-    out="$(curl -fsS --max-time 20 \
-        -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
-        "$target" 2>/dev/null)" || return 1
-    printf '%s' "$out"
+    local target="$1" raw code body
+    raw="$(curl -sS --max-time 20 -w '\n%{http_code}' "$target" 2>/dev/null || true)"
+    code="${raw##*$'\n'}"
+    case "$code" in
+        401|403)
+            raw="$(curl -sS --max-time 20 -w '\n%{http_code}' \
+                -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+                "$target" 2>/dev/null || true)"
+            code="${raw##*$'\n'}"
+            ;;
+    esac
+    body="${raw%$'\n'*}"
+    case "$code" in
+        200) printf '%s' "$body"; return 0 ;;
+        3??) echo "  $target answered $code — redirected off the candidate host." >&2
+             echo "  The canonical-host redirect must exempt this path (server.py" >&2
+             echo "  _NEVER_REDIRECT), or the smoke test reads the old revision." >&2
+             return 2 ;;
+        *)   return 1 ;;
+    esac
 }
 
 # Retry: a scale-to-zero service has to cold-start before it can answer, and
 # a freshly tagged URL takes a moment to route.
 smoke() {
-    local base="$1" i out
+    local base="$1" i out rc
     for i in 1 2 3 4 5 6 7 8 9 10; do
-        if out="$(probe "$base/livez")"; then
+        rc=0
+        out="$(probe "$base/livez")" || rc=$?
+        if [ "$rc" = 2 ]; then
+            return 1
+        fi
+        if [ "$rc" = 0 ]; then
             echo "  /livez  $out"
-            out="$(probe "$base/status")" || return 1
+            rc=0
+            out="$(probe "$base/status")" || rc=$?
+            [ "$rc" = 0 ] || return 1
             echo "  /status $out"
             case "$out" in
                 *"\"$REVISION\""*) return 0 ;;
