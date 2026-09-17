@@ -338,6 +338,7 @@ RELEASES: tuple[Release, ...] = (
             News(slug="venue", icon="public", step="import"),
             News(slug="chatmoves", icon="swap_horiz", step="assistant"),
             News(slug="resume", icon="replay", step="assistant"),
+            News(slug="dailymarket", icon="insights", step="daily"),
         ),
     ),
 )

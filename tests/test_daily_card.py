@@ -74,7 +74,19 @@ def free(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-def page(monkeypatch, free, stored):
+def offline(monkeypatch):
+    """No market download. The card's index and sector lines are the one part
+    with a fetch behind them; every test here is about the card's own rules,
+    and `test_a_throttled_market_still_leaves_a_card` covers the fetch failing
+    on purpose."""
+    from stocks.web import market_data
+
+    monkeypatch.setattr(market_data, "card_closes", dict)
+    monkeypatch.setattr(market_data, "benchmark_sectors", dict)
+
+
+@pytest.fixture
+def page(monkeypatch, free, stored, offline):
     """The card with a signed-in account whose files live in memory."""
     monkeypatch.setattr(auth, "is_logged_in", lambda: True)
     monkeypatch.setattr(auth, "load_prefs", lambda *a, **k: {})
@@ -432,3 +444,31 @@ def test_the_style_block_has_no_left_angle_bracket():
     card with none of its own chrome (badge, tight list, chips, buttons)."""
     body = daily_ui._CSS.split("<style>")[1].split("</style>")[0]
     assert "<" not in body
+
+
+def test_a_throttled_market_still_leaves_a_card(page, free, monkeypatch):
+    """Yahoo throttles the hosted deploy's IP routinely. The index and sector
+    lines are the only part of the card with a download behind them, so they
+    are the only part allowed to go missing — the card itself is not."""
+    from stocks.web import market_data
+
+    def dead():
+        raise RuntimeError("429 Too Many Requests")
+
+    monkeypatch.setattr(market_data, "card_closes", dead)
+    page.run()
+    assert not page.exception
+    assert "Nvidia carries the day" in _card(page)
+
+
+def test_the_market_block_is_asked_for_once_per_run(page, free, monkeypatch):
+    """The fetch is cached process-wide, but the card must not lean on that:
+    building the facts twice in a run would be two downloads on a cold cache."""
+    from stocks.web import market_data
+
+    calls = []
+    monkeypatch.setattr(
+        market_data, "card_closes", lambda: calls.append(1) or {}
+    )
+    page.run()
+    assert len(calls) == 1

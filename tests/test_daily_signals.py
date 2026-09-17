@@ -238,3 +238,198 @@ def test_urgency_order_and_cap():
 
 def test_an_empty_book_raises_no_actions():
     assert signals.candidates(tbl=pd.DataFrame(), today=TODAY) == []
+
+
+# ----------------------------------------------------- rotation: caps and decay
+
+
+def harvests(*tickers: str) -> list[signals.Signal]:
+    """One harvest candidate per ticker — the shape a book of losers raises."""
+    return [
+        signals.Signal(signals.HARVEST, t, signals._URGENCY[signals.HARVEST],
+                       {"loss": 900.0, "gain_ytd": 2000.0, "offset": 900.0})
+        for t in tickers
+    ]
+
+
+def test_one_crowded_kind_cannot_take_the_whole_card():
+    """The complaint this cap exists for: five losing positions and a booked
+    gain used to produce five harvest lines and nothing else."""
+    out = signals.candidates(
+        market=[
+            *harvests("AAA", "BBB", "CCC", "DDD", "EEE"),
+            signals.Signal(signals.DRAWDOWN, "ZZZ", 55, {"pnl_pct": -31.0}),
+            signals.Signal(signals.MARKET, "", 58, {"index": "S&P 500"}),
+        ],
+        today=TODAY,
+    )
+    kinds = [s.kind for s in out]
+    assert kinds.count(signals.HARVEST) == 1
+    assert {signals.MARKET, signals.DRAWDOWN} <= set(kinds)
+
+
+def test_a_trigger_offered_for_days_sinks_below_a_fresh_one():
+    shown = {"harvest:AAA": {"last": "2026-09-02", "run": 3}}
+    out = signals.candidates(
+        market=[
+            *harvests("AAA"),
+            signals.Signal(signals.DRAWDOWN, "ZZZ", 55, {"pnl_pct": -31.0}),
+        ],
+        shown=shown,
+        today=TODAY,
+    )
+    # Harvest starts above drawdown (75 against 55) and ends under it.
+    assert [s.kind for s in out] == [signals.DRAWDOWN, signals.HARVEST]
+
+
+def test_an_event_never_decays():
+    """A fired alert is today's news however long the level has been near."""
+    alert = signals.Signal(signals.ALERT_HIT, "NVDA", 90, {"level": 150.0})
+    shown = {"alert_hit:NVDA": {"last": "2026-09-02", "run": 9}}
+    assert signals.decay(alert, shown, TODAY) == 90
+
+
+def test_a_streak_that_stopped_is_forgotten():
+    old = {"harvest:AAA": {"last": "2026-08-01", "run": 5}}
+    assert signals.decay(harvests("AAA")[0], old, TODAY) == 75
+
+
+def test_decay_stops_at_its_floor():
+    forever = {"harvest:AAA": {"last": "2026-09-02", "run": 40}}
+    assert signals.decay(harvests("AAA")[0], forever, TODAY) == 75 - signals.DECAY_MAX
+
+
+def test_an_unreadable_memory_is_no_memory():
+    for junk in ({"harvest:AAA": "yesterday"}, {"harvest:AAA": {"last": "nope"}}):
+        assert signals.decay(harvests("AAA")[0], junk, TODAY) == 75
+
+
+# ------------------------------------------------- the market, against the book
+
+
+SESSIONS = pd.bdate_range("2024-01-01", periods=520)
+
+
+def line(start: float, end: float, tail: tuple[float, float] | None = None):
+    """A straight price series, optionally with a different last month glued on
+    — enough shape for a trend, a drawdown and a monthly return."""
+    import numpy as np
+
+    s = pd.Series(np.linspace(start, end, len(SESSIONS)), index=SESSIONS)
+    if tail:
+        s.iloc[-25:] = np.linspace(*tail, 25)
+    return s
+
+
+def market_closes(**over):
+    """SPY plus the eleven sector ETFs, all quietly rising unless overridden."""
+    from stocks.analysis import sentiment as sm
+
+    closes = {"SPY": line(400, 460), "EURUSD=X": line(1.10, 1.12)}
+    closes |= {etf: line(100, 120) for etf in sm.SECTOR_ETFS.values()}
+    return closes | over
+
+
+def test_a_quiet_market_making_highs_says_nothing():
+    """The card refuses to be a market summary: a broad market in an uptrend
+    is not something the reader has to do anything about."""
+    assert signals.market_candidates(market_closes()) == []
+
+
+def test_an_index_off_its_high_is_the_backdrop():
+    out = signals.market_candidates(market_closes(SPY=line(400, 460, (460, 400))))
+    assert [s.kind for s in out] == [signals.MARKET]
+    data = out[0].data
+    assert data["trend"] == "down" and data["from_high_pct"] < -signals.INDEX_DIP_PCT
+    assert data["sectors_read"] == 11
+
+
+def test_a_narrow_market_fires_on_breadth_alone():
+    """The index itself is fine; most sectors are not. That gap is the reading
+    the index level cannot give on its own."""
+    from stocks.analysis import sentiment as sm
+
+    sagging = {etf: line(100, 80) for etf in list(sm.SECTOR_ETFS.values())[:8]}
+    out = signals.market_candidates(market_closes(**sagging))
+    assert [s.kind for s in out] == [signals.MARKET]
+    assert out[0].data["breadth_pct"] < signals.BREADTH_LOW_PCT
+
+
+def test_the_largest_sector_bet_is_one_line_with_its_month():
+    out = signals.market_candidates(
+        market_closes(),
+        book_sectors=pd.Series({"Technology": 0.55, "Energy": 0.45}),
+        bench_sectors={"Technology": 0.32, "Energy": 0.04, "Utilities": 0.08},
+    )
+    tilt = [s for s in out if s.kind == signals.SECTOR_TILT]
+    assert len(tilt) == 1
+    assert tilt[0].data["sector"] == "Energy"  # +41pp beats Technology's +23
+    assert tilt[0].data["excess_month_pct"] is not None
+    assert tilt[0].key == "sector_tilt:Energy"  # keyed on the bet, not a ticker
+
+
+def test_a_sector_bet_inside_the_noise_is_not_a_bet():
+    out = signals.market_candidates(
+        market_closes(),
+        book_sectors=pd.Series({"Technology": 0.35, "Energy": 0.65}),
+        bench_sectors={"Technology": 0.32, "Energy": 0.60},
+    )
+    assert not [s for s in out if s.kind == signals.SECTOR_TILT]
+
+
+def test_the_unreadable_buckets_are_not_a_sector_bet():
+    """"Unknown" is a failed metadata lookup and crypto has no equity sector —
+    neither is a decision the reader made."""
+    out = signals.market_candidates(
+        market_closes(),
+        book_sectors=pd.Series({"Unknown": 0.6, "Crypto": 0.3, "Energy": 0.1}),
+        bench_sectors={"Energy": 0.04, "Technology": 0.32},
+    )
+    assert not [s for s in out if s.kind == signals.SECTOR_TILT]
+
+
+def test_the_book_beside_the_index_only_when_they_parted():
+    apart = signals.market_candidates(
+        market_closes(), book_month_pct=1.0, bench_month_pct=-6.0
+    )
+    gap = [s for s in apart if s.kind == signals.VS_BENCH]
+    assert gap and gap[0].data["gap_pp"] == 7.0
+    together = signals.market_candidates(
+        market_closes(), book_month_pct=1.0, bench_month_pct=0.5
+    )
+    assert not [s for s in together if s.kind == signals.VS_BENCH]
+
+
+def test_currency_counts_when_it_moved_and_the_book_is_exposed():
+    moved = market_closes(**{"EURUSD=X": line(1.10, 1.12, (1.12, 1.06))})
+    out = signals.market_candidates(
+        moved, currency_weights=pd.Series({"USD": 0.72, "EUR": 0.28})
+    )
+    fx = [s for s in out if s.kind == signals.FX]
+    assert fx and fx[0].data["currency"] == "USD"
+    # EURUSD quotes dollars per euro: a falling pair is a RISING dollar, and
+    # the sign of this number is the whole point of the line.
+    assert fx[0].data["move_month_pct"] > 0
+    assert fx[0].data["drag_month_pct"] > 0
+
+
+def test_a_flat_month_is_not_a_currency_action():
+    out = signals.market_candidates(
+        market_closes(), currency_weights=pd.Series({"USD": 0.72, "EUR": 0.28})
+    )
+    assert not [s for s in out if s.kind == signals.FX]
+
+
+def test_a_home_currency_book_carries_no_currency_line():
+    moved = market_closes(**{"EURUSD=X": line(1.10, 1.12, (1.12, 1.06))})
+    out = signals.market_candidates(
+        moved, currency_weights=pd.Series({"EUR": 1.0})
+    )
+    assert not [s for s in out if s.kind == signals.FX]
+
+
+def test_no_market_data_is_no_market_lines():
+    """Yahoo throttles the hosted deploy routinely; the card degrades to the
+    book's own triggers rather than to an error."""
+    assert signals.market_candidates({}) == []
+    assert signals.market_candidates(None, book_sectors=None) == []
