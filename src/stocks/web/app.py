@@ -1094,7 +1094,11 @@ _portfolio_pages = [
 ]
 # Grouped like the design's left menu: Inicio on top, then the Cartera and
 # Mercado sections, with the account entry in its own bottom group.
-page = st.navigation(
+# The ignore is a checker limitation, not a doubt about the call: `streamlit`
+# ships both a `navigation` function and a `streamlit.navigation` submodule, and
+# ty (since 0.0.82) binds the attribute to the submodule and calls it non-
+# callable. Runtime resolves the function, as every page load proves.
+page = st.navigation(  # ty: ignore[call-non-callable]
     {
         "": [
             st.Page(

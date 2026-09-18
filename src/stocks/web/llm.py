@@ -25,7 +25,13 @@ from typing import Any, cast
 
 from stocks import obs
 
-MAX_TOKENS = 4096
+# Output ceiling per turn. It has to leave room for reasoning tokens as well as
+# the answer: on Opus 5 and Sonnet 5 adaptive thinking is on whenever `thinking`
+# is omitted, and what the model thinks is drawn from this same budget. At 4096
+# a long answer after a long think came back cut off mid-sentence; the models
+# only bill what they actually produce, so a roomier cap costs nothing on the
+# short turns that are most of them.
+MAX_TOKENS = 16000
 
 # Rounds of "model asks for tools, we run them" before the loop is cut off. The
 # gather step is a means to an answer, not the answer: three rounds is enough
@@ -626,7 +632,7 @@ PROVIDERS: dict[str, Provider] = {
         ),
         Provider(
             "anthropic", "Claude",
-            ("claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"),
+            ("claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"),
             "sk-ant-...", "https://console.anthropic.com/settings/keys",
             "anthropic", _anthropic_stream, _anthropic_error,
             _tools=_anthropic_tools,

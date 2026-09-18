@@ -1,5 +1,11 @@
-# Weekly dependency bumps: Python (uv.lock) and the Actions pins.
-# Small groups keep the PR count sane; CI (ci.yml) gates every bump.
+# Weekly dependency bumps: Python (uv.lock), the frontend (frontend/ticker) and
+# the Actions pins. CI (ci.yml) gates every bump.
+#
+# Minors and patches travel together — one PR, one review, and a red CI names
+# the culprit among a handful of harmless bumps. Majors are deliberately left
+# OUT of the groups so each one arrives as its own PR: a breaking major inside
+# the group PR (anthropic 0.x -> 1.x, plotly 6 -> 7) turns forty trivial bumps
+# into a blocked merge.
 version: 2
 updates:
   - package-ecosystem: "uv"
@@ -8,8 +14,22 @@ updates:
       interval: "weekly"
       day: "monday"
     groups:
-      python-deps:
+      python-minor:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 5
+
+  # The React Ticker page. Its bundle is committed (see frontend/README.md), so
+  # without this the lockfile rots silently — nothing else here would notice.
+  - package-ecosystem: "npm"
+    directory: "/frontend/ticker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      frontend-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
     open-pull-requests-limit: 5
 
   - package-ecosystem: "github-actions"
