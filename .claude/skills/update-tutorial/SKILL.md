@@ -1,6 +1,6 @@
 ---
 name: update-tutorial
-description: "Update the in-app guided tour and \"what's new\" (stocks.web.onboarding) after shipping a feature. Use whenever a user-visible feature is added, renamed, moved, gated or removed — a new page, a new tab, a new setting, a new importer, a new jurisdiction — or when the user asks to announce a release, refresh the tutorial, or add a step. Triggers: onboarding, tutorial, tour, guided tour, what's new, changelog, release notes, announce, RELEASES, tour.json, new feature."
+description: "Update the in-app guided tour and \"what's new\" (stocks.web.onboarding) after shipping a feature, and decide whether it rates a \"what's new\" card at all or only a line of step copy. Use whenever a user-visible feature is added, renamed, moved, gated or removed — a new page, a new tab, a new setting, a new importer, a new jurisdiction — or when the user asks to announce a release, refresh the tutorial, or add a step. Triggers: onboarding, tutorial, tour, guided tour, what's new, changelog, release notes, announce, RELEASES, tour.json, new feature."
 ---
 
 # Updating the tutorial
@@ -23,19 +23,32 @@ closes it, a dialog is a fragment) and the code is shaped by them.
 
 ## Step 1 — decide what the change is
 
-- **A feature a user can look at or switch on** → it needs a `Step`, and a
-  release item pointing at that step.
-- **A change to a feature that already has a step** (a new tab inside it, a
-  new broker in the importer, a new jurisdiction) → edit that step's `_body`
-  copy, and add a release item pointing at the existing step. Do **not** add
-  a second step for it.
-- **A refactor a user can see** (a page rebuilt, a panel reorganised, a flow
-  moved) → no new step, but it does need a release item: the screen the user
-  knows has changed under them.
+The "what's new" modal interrupts someone who opened the app to look at their
+portfolio, so most work does not belong in it. Take the first line that
+matches and stop:
+
+- **Somewhere new to go** — a new section, page or tab → it needs a `Step`,
+  and a release item pointing at that step.
+- **A screen rebuilt under the user** (a page redesigned, a flow moved, a
+  panel reorganised) → no new step, but it does need a release item: what
+  they knew has changed shape.
+- **A capability they did not have at all**, reached from a screen that
+  already has a step → edit that step's `_body` copy, and add a release item
+  pointing at the existing step. Do **not** add a second step for it.
+- **One more of a kind that already ships** — another broker in the importer,
+  another jurisdiction in the tax engine, another chat skill, another column
+  or field → edit the step's `_body` copy and stop. **No release item.** This
+  is the line that quietly turns the registry into a changelog.
+- **Smaller, faster, more accurate, or simply fixed** → nothing here, however
+  much work it was. The user did not lose anything they had to be told about.
 - **Something with no user-visible surface** (an internal refactor, a perf
-  fix, an infrastructure change) → nothing here. The tour is not a git log.
+  fix, an infrastructure change) → nothing here either.
 - **A feature that was removed or renamed** → delete or rename its step *and*
   its copy in every locale. A test fails on orphaned copy, which is the point.
+
+The test for a card: can its title name something the reader can now go and
+do, with a button that lands them where they do it? If the honest title is
+"X now also supports Y", it is `_body` copy on the step that already covers X.
 
 ## Step 2 — add or edit the step
 
@@ -95,8 +108,10 @@ add a `News` item to the newest entry if it has not shipped yet.
 
 One `News` is one card: the modal pages through the unseen ones a feature at
 a time, newest release first, so how much a returning account reads is how
-much shipped while it was away. That is why an item is a feature and not a
-sentence about several — two things worth reading are two items.
+much shipped while it was away. Two things that both cleared Step 1 are two
+items — but a release is a handful of cards, not a list of the month's work.
+If you are writing the fifth, re-read Step 1: several of them are almost
+certainly `_body` edits on steps that already exist.
 
 - `slug` is half the copy key (`tour.news_<version with dots as underscores>_<slug>_title`
   / `_body`), so it must be unique inside its release. A test enforces both.

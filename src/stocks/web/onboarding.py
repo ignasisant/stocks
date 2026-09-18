@@ -222,6 +222,13 @@ STEPS: tuple[Step, ...] = (
 class News:
     """One shipped feature, as one card in the "what's new" modal.
 
+    The modal interrupts someone who came to look at their portfolio, so a
+    card has to be somewhere new to go: a new section, page or tab, a screen
+    rebuilt under them, or something they could not do at all before. One
+    more of a kind that already ships — another broker, another jurisdiction,
+    another field — belongs in the existing step's `_body` copy and nowhere
+    here. See the update-tutorial skill, which is where that call is made.
+
     Copy comes from the catalog by convention, keyed off the release version
     and this slug — `tour.news_<version with dots as underscores>_<slug>_title`
     and `_body` — so announcing a feature is one registry line plus its copy in
@@ -277,6 +284,16 @@ class NewsCard:
 
 # Oldest first; the newest entry's version is what an account gets stamped
 # with. Add to the end when a release ships — see the update-tutorial skill.
+#
+# A release is a handful of cards, not a list of the month's work: what a
+# returning account has to page through is exactly what is written here. The
+# three below were written before that rule and read like a changelog, three
+# months of work card by card. They were cut back in September 2026 to the ones
+# that are somewhere new to go, dropping the fixes, the polish and the
+# "one more broker / jurisdiction / column" items. What those carried is in
+# the step copy for their feature, where it is read on the way to the thing
+# itself rather than in a card: the tax step names all twelve jurisdictions,
+# the import step every broker it reads.
 RELEASES: tuple[Release, ...] = (
     Release(
         version="2026.09",
@@ -284,16 +301,10 @@ RELEASES: tuple[Release, ...] = (
         items=(
             News(slug="tax", icon="receipt_long", step="tax"),
             News(slug="daily", icon="tips_and_updates", step="daily"),
-            News(slug="chat", icon="auto_awesome", step="assistant"),
-            News(slug="askai", icon="smart_toy", step="market"),
             News(slug="fees", icon="percent", step="income"),
             News(slug="demo", icon="science", step="import"),
-            News(slug="guest", icon="lock_open", step="positions"),
             News(slug="pulse", icon="speed", step="pulse"),
             News(slug="profile", icon="tune", step="prefs"),
-            News(slug="digest", icon="insights", step="notify"),
-            News(slug="digestcal", icon="event_available", step="notify"),
-            News(slug="digestlinks", icon="link", step="notify"),
             News(slug="weekly", icon="calendar_view_week", step="notify"),
             News(slug="watchlist", icon="playlist_add", step="watchlist"),
         ),
@@ -302,17 +313,7 @@ RELEASES: tuple[Release, ...] = (
         version="2026.09.1",
         date="2026-09",
         items=(
-            News(slug="tips", icon="info", step="pulse"),
             News(slug="voice", icon="mic", step="assistant"),
-            News(slug="stop", icon="stop_circle", step="assistant"),
-            News(slug="splits", icon="call_split", step="import"),
-            News(slug="divest", icon="savings", step="income"),
-            News(slug="tickerlinks", icon="link", step="market"),
-            News(slug="ibkr", icon="photo_camera", step="import"),
-            News(slug="amount", icon="price_change", step="import"),
-            News(slug="tgtext", icon="voice_over_off", step="notify"),
-            News(slug="hover", icon="show_chart", step="market"),
-            News(slug="isin", icon="badge", step="import"),
         ),
     ),
     Release(
@@ -320,25 +321,7 @@ RELEASES: tuple[Release, ...] = (
         date="2026-09",
         items=(
             News(slug="splitfix", icon="call_split", step="import"),
-            News(slug="peersearch", icon="search", step="market"),
             News(slug="transfers", icon="swap_horiz", step="import"),
-            # No step: the feedback button is sidebar chrome on every page, not
-            # a tour stop, and its modal is a dialog — a step that opened it
-            # from inside the tour's own dialog would be two at once.
-            News(slug="fbvoice", icon="mic"),
-            News(slug="fbshot", icon="screenshot_monitor"),
-            News(slug="mobilechat", icon="smartphone", step="assistant"),
-            News(slug="uae", icon="receipt_long", step="tax"),
-            News(slug="swiss", icon="receipt_long", step="tax"),
-            News(slug="taxfallback", icon="public_off", step="tax"),
-            News(slug="kpimatch", icon="balance", step="positions"),
-            News(slug="onebook", icon="merge", step="import"),
-            News(slug="wht", icon="receipt_long", step="income"),
-            News(slug="pricedmoves", icon="price_check", step="positions"),
-            News(slug="venue", icon="public", step="import"),
-            News(slug="chatmoves", icon="swap_horiz", step="assistant"),
-            News(slug="resume", icon="replay", step="assistant"),
-            News(slug="dailymarket", icon="insights", step="daily"),
         ),
     ),
 )
