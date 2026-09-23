@@ -20,6 +20,7 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
+from stocks import session
 from stocks.web import landing_static, server
 
 STUB = "STREAMLIT-APP"
@@ -64,7 +65,7 @@ def test_a_crawler_gets_the_landing(client):
 
 
 def test_a_cta_click_goes_to_the_app(client):
-    r = client.get("/?signin=1")
+    r = client.get("/?guest=1")
     assert r.text == STUB
 
 
@@ -98,7 +99,7 @@ def test_app_pages_are_untouched_by_the_gate(client):
 
 def test_the_app_is_marked_noindex(client):
     """A JavaScript shell over somebody's positions has no business ranking."""
-    for path in ("/portfolio", "/?signin=1", "/_stcore/health"):
+    for path in ("/portfolio", "/?guest=1", "/_stcore/health"):
         assert client.get(path).headers["x-robots-tag"] == "noindex, nofollow"
 
 
@@ -327,9 +328,9 @@ def test_an_unknown_path_is_a_404_not_the_app_shell(client):
 
 @pytest.mark.parametrize(
     "path",
-    ["/portfolio", "/ticker", "/screener", "/earnings", "/profile",
-     "/import_transactions", "/home", "/oauth2callback", "/_stcore/health",
-     "/media/abc", "/component/x/y", "/app/static/logo.png", "/auth/login",
+    ["/portfolio", "/ticker", "/sector", "/earnings", "/profile",
+     "/import_transactions", "/home", "/_stcore/health",
+     "/media/abc", "/component/x/y", "/app/static/logo.png",
      "/manifest.json", "/favicon.png"],
 )
 def test_everything_that_is_really_served_survives_the_gate(client, path):
@@ -349,11 +350,56 @@ def test_the_page_list_comes_from_the_app_pages_directory():
     assert all(server._is_known_path(p) for p in seo.app_page_paths())
 
 
+@pytest.mark.parametrize(
+    "path", [session.LOGIN_PATH, session.LOGOUT_PATH, session.CALLBACK_PATH]
+)
+def test_our_auth_routes_answer_ahead_of_streamlits(client, path):
+    """The three paths Streamlit also installs handlers for. A 302 from our
+    own handler (not a 404 from the gate, not Streamlit's page) is the whole
+    cutover: user routes are matched first, so ours answer."""
+    r = client.get(path, follow_redirects=False)
+    assert r.status_code == 302
+
+
+def test_the_signin_parameter_bounces_into_the_apps_own_sign_in(client):
+    """The landing's CTA. It used to reach `st.login()` inside a Streamlit run;
+    it is answered here now, because this is the layer that can return a 302."""
+    r = client.get("/?signin=1", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"].startswith(session.LOGIN_PATH)
+
+
+def test_the_signin_parameter_is_ignored_once_signed_in(client, monkeypatch):
+    """The parameter survives the round trip; acting on it twice would loop."""
+    monkeypatch.setattr(server.session, "signed_in_email", lambda cookies: "a@b.com")
+    assert client.get("/?signin=1").text == STUB
+
+
+def test_the_signin_parameter_keeps_the_language_it_was_pressed_in(client):
+    r = client.get("/?signin=1&lang=es", follow_redirects=False)
+    assert "lang%3Des" in r.headers["location"]
+
+
+def test_streamlit_still_lets_us_own_the_auth_paths():
+    """A canary, replacing the one that guarded Streamlit's cookie codec.
+
+    Nothing stops a Streamlit upgrade from reserving these prefixes for itself,
+    and if it ever does, `st.App` raises at import and the deploy is what
+    breaks. Fail here instead."""
+    from streamlit.web.server.starlette.starlette_app import (
+        _RESERVED_ROUTE_PREFIXES,
+    )
+
+    for path in (session.LOGIN_PATH, session.LOGOUT_PATH, session.CALLBACK_PATH):
+        assert not any(path.startswith(p) for p in _RESERVED_ROUTE_PREFIXES), path
+
+
 def test_the_oidc_callback_is_never_bounced_to_another_host(pinned_client):
     # Google sends the browser to the exact URI registered with it; finishing
     # that round trip on a different origin is how a login silently breaks.
     r = pinned_client.get("/oauth2callback?code=abc&state=xyz", follow_redirects=False)
-    assert r.status_code == 200
+    assert r.status_code != 301
+    assert r.headers.get("location", "/").startswith("/")
 
 
 # ------------------------------------------------------------------ liveness
@@ -446,3 +492,211 @@ def test_hsts_is_set_on_tls_and_not_on_local_http(client, monkeypatch):
     )
     # Teaching a dev browser to refuse http://localhost would outlive the run.
     assert "strict-transport-security" not in plain.get("/").headers
+
+
+# ------------------------------------------------------------------- the API mount
+
+# The API is mounted inside this server (stocks.api at /api), which puts it
+# behind the same gate as everything else. Three things about that gate could
+# quietly break it, and none of them would show up in the API's own tests: the
+# 404 for unknown paths, the canonical-host redirect, and the app cookie.
+
+
+def test_the_api_is_reachable_through_the_gate(client):
+    """`_is_known_path` 404s anything it does not recognise, and without the
+    API prefix in it every call would be answered with a 404 page."""
+    response = client.get("/api/v1/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert STUB not in response.text, "Streamlit must not answer for the API"
+
+
+def test_an_unknown_api_path_is_the_apis_own_404(client):
+    """Not the marketing 404 page: an API client parses JSON, not HTML."""
+    response = client.get("/api/v1/nothing-here")
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/json")
+
+
+def test_the_api_never_sets_the_app_cookie(client):
+    """A cron job is not a browser that has been to the app, and a Set-Cookie
+    on its responses is a credential it never asked for."""
+    response = client.get("/api/v1/health")
+    assert server.APP_COOKIE not in response.cookies
+
+
+def test_the_api_is_kept_out_of_the_index(client):
+    response = client.get("/api/v1/health")
+    assert response.headers["X-Robots-Tag"] == "noindex, nofollow"
+
+
+def test_the_api_is_not_bounced_to_the_canonical_host(client, monkeypatch):
+    """A cross-host 301 drops the Authorization header in several clients, and
+    a canary answers about the container that took the request — which is the
+    whole point of asking it."""
+    monkeypatch.setattr(server, "public_origin", lambda: "https://topstocks.example")
+    response = client.get("/api/v1/health", follow_redirects=False)
+    assert response.status_code == 200
+
+
+# --------------------------------------------------------------- the throttle
+# One container answers everyone (--max-instances 1), so a burst from one
+# client takes the app away from real users. What is tested here is that the
+# limit counts the right things: a document and an API call are not the same
+# unit of work, and metering them together makes an ordinary reader look like
+# a flood.
+
+
+@pytest.fixture
+def metered(monkeypatch):
+    """The gate with the throttle in front of it, and small budgets."""
+    from stocks.web import ratelimit
+
+    ratelimit._events.clear()
+    monkeypatch.setattr(server, "CLIENT_MAX_DOCS", 3)
+    monkeypatch.setattr(server, "API_MAX_REQUESTS", 8)
+
+    async def stub(request):
+        return PlainTextResponse(STUB, media_type="text/html")
+
+    app = Starlette(
+        routes=[*server.routes, Route("/{path:path}", stub, methods=["GET", "POST"])],
+        middleware=[
+            Middleware(server.ClientThrottle),
+            Middleware(server.SecurityHeaders),
+            Middleware(server.LandingGate),
+        ],
+    )
+    yield TestClient(app, base_url="https://topstocks.example")
+    ratelimit._events.clear()
+
+
+def codes(client, path: str, n: int) -> list[int]:
+    return [client.get(path).status_code for _ in range(n)]
+
+
+def test_a_document_flood_is_stopped(metered):
+    assert codes(metered, "/?app=1", 5)[-1] == 429
+
+
+def test_one_screen_of_api_calls_is_not_a_flood(metered):
+    """The React ticker page asks for bars, quote, calendar, position, KPIs,
+    financials, valuation, moat, insiders, fund and peers separately: one page
+    view is around twenty requests. On the document budget, three tickers in a
+    minute would 429 a reader doing nothing unusual."""
+    assert 429 not in codes(metered, "/api/v1/health", 5)
+
+
+def test_the_api_has_a_ceiling_of_its_own(metered):
+    """Its own budget, not no budget."""
+    assert codes(metered, "/api/v1/health", 10)[-1] == 429
+
+
+def test_the_two_budgets_cannot_lock_each_other_out(metered):
+    """Separate keys, not just a bigger number: a burst of API calls must not
+    take the app shell away, and a reload loop on the shell must not take the
+    data with it."""
+    assert codes(metered, "/api/v1/health", 10)[-1] == 429
+    assert metered.get("/?app=1").status_code == 200
+
+
+def test_a_throttled_api_call_answers_in_json_like_every_other_refusal(metered):
+    """A caller that parses the API's 503 for an upstream rate limit should not
+    have to special-case this one into a text body — `reason` is the field it
+    already switches on."""
+    codes(metered, "/api/v1/health", 10)
+    response = metered.get("/api/v1/health")
+    assert response.status_code == 429
+    assert response.json()["reason"] == "throttled"
+    assert int(response.headers["Retry-After"]) >= 1
+
+
+def test_a_throttled_document_still_answers_in_plain_text(metered):
+    codes(metered, "/?app=1", 5)
+    response = metered.get("/?app=1")
+    assert response.status_code == 429
+    assert "text/plain" in response.headers["content-type"]
+
+
+def test_the_probes_an_uptime_monitor_hits_are_never_metered(metered):
+    assert 429 not in codes(metered, "/livez", 20)
+
+
+# ------------------------------------------------------------- the rebuilt shell
+# `/next` serves one document for its whole subtree so the client router can own
+# the rest. Three things about that could quietly break it: the flag, the deep
+# link, and the gate's 404 for paths it does not recognise.
+
+
+def test_the_shell_is_not_reachable_while_the_flag_is_off(client, monkeypatch):
+    """An unfinished rebuild must not be reachable by guessing the URL."""
+    monkeypatch.setattr(server, "react_app_enabled", lambda: False)
+    assert client.get("/next").status_code == 404
+
+
+@pytest.fixture
+def shell(tmp_path, monkeypatch):
+    """A built shell on disk, with the token marker in it."""
+    build = tmp_path / "app"
+    build.mkdir()
+    (build / "index.html").write_text(
+        "<html><head><!--AG-TOKENS--><!--AG-FONTS--></head></html>"
+    )
+    (build / "app.js").write_text("console.log(1)")
+    monkeypatch.setattr(server, "_APP_BUILD", build)
+    monkeypatch.setattr(server, "react_app_enabled", lambda: True)
+    server._app_document.cache_clear()
+    yield build
+    server._app_document.cache_clear()
+
+
+def test_a_deep_link_gets_the_shell_rather_than_a_404(client, shell):
+    """/next/portfolio?tab=fees has to survive a reload, and there is no server
+    route for it to match — one document for the subtree is what does that."""
+    for path in ("/next", "/next/portfolio", "/next/portfolio?tab=fees"):
+        assert client.get(path).status_code == 200, path
+
+
+def test_the_shell_carries_the_design_tokens_inlined(client, shell):
+    """Inlined so the page paints in the right colours on its first frame, and
+    so the charts read their palette from the same custom properties the
+    Streamlit app uses rather than fetching a second copy."""
+    body = client.get("/next").text
+    assert "<!--AG-TOKENS-->" not in body
+    assert "--ag-" in body
+
+
+def test_the_shell_document_is_never_cached(client, shell):
+    """It is a shell over somebody's book with their tokens inlined into it."""
+    assert client.get("/next").headers["cache-control"] == "no-store"
+
+
+def test_the_bundle_is_served_and_cached_briefly(client, shell):
+    response = client.get("/next-assets/app.js")
+    assert response.status_code == 200
+    assert "max-age" in response.headers["cache-control"]
+
+
+def test_the_bundle_route_will_not_walk_out_of_its_directory(client, shell):
+    assert client.get("/next-assets/../../../etc/passwd").status_code == 404
+
+
+def test_the_shell_is_kept_out_of_the_index(client, shell):
+    """Somebody's book behind a login has no business in a search index."""
+    assert client.get("/next").headers["X-Robots-Tag"] == "noindex, nofollow"
+
+
+def test_the_bundle_is_not_metered(client):
+    """Static files ride free, like the mirrored logos and the landing assets:
+    a page view is one document and a dozen files, and counting the files
+    makes an ordinary reader look like a flood."""
+    assert server.APP_ASSETS in server._UNMETERED
+
+
+def test_the_document_carries_the_typefaces(client, shell):
+    """Without them the CSS still names Instrument Sans and the browser paints
+    system-ui — which looks like nothing being wrong. Same stylesheet the
+    landing links, rather than a second list of faces."""
+    body = client.get("/next").text
+    assert "<!--AG-FONTS-->" not in body, "the marker was replaced"
+    assert "fonts.googleapis.com" in body and "Instrument+Sans" in body

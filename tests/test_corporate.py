@@ -7,7 +7,7 @@ statement that printed the trade and not the split.
 
 import pytest
 
-from stocks.portfolio.corporate import missing_splits
+from stocks.portfolio.corporate import missing_splits, own_fills
 from stocks.portfolio.ledger import Transaction
 
 AMZN_SPLITS = [
@@ -240,3 +240,76 @@ def test_unsplit_ticker_passes_through_untouched():
 
     factors = split_factors(RAW_LEDGER)
     assert on_market_scale(RAW_LEDGER[0], factors) == (2050.0, 1.0)
+
+
+# ------------------------------------------------------- fills drawn on a chart
+
+
+def test_fills_are_found_under_the_label_the_position_is_built_on():
+    """A book fed by two brokers spells one holding two ways: DEGIRO exports
+    have no ticker column and book under the ISIN, IBKR uses the symbol.
+    `positions.build` unifies them before replaying, so the open position and
+    the page's URL speak the unified label while the raw rows do not — and a
+    lookup by that label used to match nothing at all."""
+    fills = own_fills(
+        [
+            Transaction(
+                "2024-01-02", "US00724F1012", "buy", 5, 500.0, "USD", 1.0,
+                note="ISIN US00724F1012",
+            ),
+            Transaction(
+                "2024-06-01", "ADBE", "buy", 3, 450.0, "USD", 1.0,
+                note="ISIN US00724F1012",
+            ),
+        ],
+        "ADBE",
+    )
+    assert [f.date for f in fills] == ["2024-01-02", "2024-06-01"]
+
+
+def test_fills_come_back_on_todays_share_scale():
+    """Ledger prices are as-traded, Yahoo's bars are split-adjusted. A pre-split
+    buy plotted raw sits twenty times above the candles it belongs to."""
+    fills = own_fills(
+        [
+            Transaction("2024-01-02", "NVDA", "buy", 10, 400.0, "USD", 1.0),
+            Transaction("2024-06-10", "NVDA", "split", 10, 0.0, "USD", 0.0),
+            Transaction("2024-08-01", "NVDA", "buy", 5, 110.0, "USD", 1.0),
+        ],
+        "NVDA",
+    )
+    # Before the split: 10 @ 400 is 100 @ 40 today. The money is unchanged.
+    assert (fills[0].price, fills[0].quantity) == (40.0, 100.0)
+    # After it: untouched.
+    assert (fills[1].price, fills[1].quantity) == (110.0, 5.0)
+
+
+def test_only_buys_and_sells_are_fills():
+    """A dividend is not a trade, and a split row is an event, not an entry."""
+    kinds = {
+        f.action
+        for f in own_fills(
+            [
+                Transaction("2024-01-02", "AAPL", "buy", 1, 100.0, "USD", 1.0),
+                Transaction("2024-02-02", "AAPL", "dividend", 0, 2.0, "USD", 0.0),
+                Transaction("2024-03-02", "AAPL", "split", 4, 0.0, "USD", 0.0),
+                Transaction("2024-04-02", "AAPL", "sell", 1, 120.0, "USD", 1.0),
+            ],
+            "AAPL",
+        )
+    }
+    assert kinds == {"buy", "sell"}
+
+
+def test_a_transfer_leg_never_becomes_a_purchase_marker():
+    """`relabel`, not `normalize`: an unmatched transfer turned into a synthetic
+    buy would draw a purchase marker at a price nobody paid."""
+    fills = own_fills(
+        [Transaction("2024-05-01", "ADBE", "transfer_in", 5, 0.0, "USD", 0.0)],
+        "ADBE",
+    )
+    assert fills == []
+
+
+def test_a_name_with_no_trades_is_empty_not_an_error():
+    assert own_fills([], "AAPL") == []

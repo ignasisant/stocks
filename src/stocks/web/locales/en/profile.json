@@ -78,6 +78,7 @@
   "profile.delete_confirm": "I understand this permanently erases all my data.",
   "profile.delete_button": "Delete my account and data",
   "profile.delete_failed": "Deletion failed — nothing was removed. Try again, and contact the operator if it persists.",
+  "profile.delete_done": "Your account and data are gone. Sign out to finish.",
   "profile.tax_section": "Tax residence",
   "profile.tax_residence": "Where you file",
   "profile.tax_residence_auto": "Auto (browser region)",
@@ -157,10 +158,12 @@
   "profile.notify_weekly": "Weekly review (Sunday)",
   "profile.notify_weekly_help": "Week, month and year-to-date against the index, the names that moved the book, the week ahead and how concentrated you have become. Sunday afternoons.",
   "profile.notify_alerts_help": "Your watchlist thresholds, checked hourly on market days.",
-  "profile.notify_link_title": "Connect Telegram",
   "profile.notify_connected": "Connected",
   "profile.notify_test_row": "Check the connection",
   "profile.notify_test_help": "Sends one message to the linked chat.",
   "profile.notify_unlink_row": "Disconnect",
-  "profile.notify_unlink_help": "Stops every message. Only your chat id is deleted."
+  "profile.notify_unlink_help": "Stops every message. Only your chat id is deleted.",
+  "profile.next_app": "New app",
+  "profile.next_app_caption": "The rebuilt front end. Same account, same data, one page that never reloads — these screens stay available.",
+  "profile.next_app_open": "Open the new app"
 }

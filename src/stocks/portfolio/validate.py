@@ -35,6 +35,7 @@ from datetime import date
 from pathlib import Path
 
 from stocks.config import DATA_DIR, WATCHLIST_FILE, load_watchlist, ticker_aliases
+from stocks.data.crypto import crypto_name, is_crypto
 from stocks.portfolio import transfers
 from stocks.portfolio.ledger import DB_PATH, Transaction
 from stocks.portfolio.statement import ParseResult
@@ -44,6 +45,10 @@ EDGAR_TICKER_CACHE = DATA_DIR / "edgar_tickers.json"
 # Bare US-style symbol or one with an exchange suffix (RMS.PA, BRK-B), or an
 # ISIN (DEGIRO exports carry no ticker; rows import under the ISIN until the
 # user maps it in watchlist.yaml `aliases:`).
+#
+# A crypto pair is checked by stocks.data.crypto instead of by this shape: a
+# coin code runs past six characters often enough (CHILLGUY-EUR, MOODENG-EUR)
+# that the rule rejected rows the importer had read perfectly.
 _TICKER_RE = re.compile(
     r"^([A-Z0-9]{1,6}([.\-][A-Z0-9]{1,4})?|[A-Z]{2}[A-Z0-9]{9}[0-9])$"
 )
@@ -343,12 +348,17 @@ def _check_ticker(c: Checked, known: set[str], lookup: Lookup | None) -> None:
     if not t:
         c.issues.append(Issue("error", "ticker", "validate.missing_ticker"))
         return
-    if not _TICKER_RE.match(t):
+    if not _TICKER_RE.match(t) and not is_crypto(t):
         c.issues.append(
             Issue("error", "ticker", "validate.malformed_ticker", {"ticker": repr(t)})
         )
         return
     if t in known:
+        return
+    # A pair whose coin the app has a name for is as known as a watchlist
+    # symbol: crypto is never in EDGAR, so without this every row of a
+    # perfectly ordinary wallet export carries an "unknown ticker" warning.
+    if crypto_name(t):
         return
     found = lookup(t) if lookup else None
     if found:

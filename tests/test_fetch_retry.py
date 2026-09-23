@@ -1,4 +1,4 @@
-"""Rate-limit backoff tests — data.fetch._retry against Yahoo's 429."""
+"""Rate-limit backoff tests — data.fetch.retry against Yahoo's 429."""
 
 import pytest
 from yfinance.exceptions import YFRateLimitError
@@ -18,7 +18,7 @@ def test_retry_returns_first_success(monkeypatch):
         calls.append(1)
         return "ok"
 
-    assert fetch._retry(fn) == "ok"
+    assert fetch.retry(fn) == "ok"
     assert len(calls) == 1
 
 
@@ -32,7 +32,7 @@ def test_retry_recovers_after_rate_limit(monkeypatch):
             raise YFRateLimitError()
         return "ok"
 
-    assert fetch._retry(fn, attempts=3) == "ok"
+    assert fetch.retry(fn, attempts=3) == "ok"
     assert len(calls) == 3
 
 
@@ -45,7 +45,7 @@ def test_retry_reraises_when_exhausted(monkeypatch):
         raise YFRateLimitError()
 
     with pytest.raises(YFRateLimitError):
-        fetch._retry(fn, attempts=3)
+        fetch.retry(fn, attempts=3)
     assert len(calls) == 3
 
 
@@ -57,7 +57,7 @@ def test_retry_backoff_is_exponential(monkeypatch):
         raise YFRateLimitError()
 
     with pytest.raises(YFRateLimitError):
-        fetch._retry(fn, attempts=3, base_delay=1.5)
+        fetch.retry(fn, attempts=3, base_delay=1.5)
     assert delays == [1.5, 3.0]
 
 
@@ -70,5 +70,5 @@ def test_other_exceptions_not_retried(monkeypatch):
         raise ValueError("boom")
 
     with pytest.raises(ValueError):
-        fetch._retry(fn)
+        fetch.retry(fn)
     assert len(calls) == 1

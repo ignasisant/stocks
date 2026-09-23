@@ -87,8 +87,9 @@ _OG_LOCALE = {"en": "en_US", "es": "es_ES"}
 
 _PAGES_DIR = Path(__file__).parent / "app_pages"
 
-# Streamlit's own endpoints, and the two auth routes it installs. Transport and
-# machinery, never content — disallowed in robots.txt, and accepted by the
+# Streamlit's own endpoints, plus the app's own sign-in routes (`web/oidc.py`
+# answers `/auth/*`, shadowing the handlers Streamlit installs there). Transport
+# and machinery, never content — disallowed in robots.txt, and accepted by the
 # not-found gate in `server` so a real internal request is never turned away.
 APP_PREFIXES = (
     "/_stcore/",
@@ -99,8 +100,9 @@ APP_PREFIXES = (
     "/auth/",
 )
 
-# Exact paths Streamlit answers on: the OIDC return, and the three files its
-# frontend build serves from the root.
+# Exact paths answered outside the page list: the OIDC return (ours, see
+# `web/oidc.py`) and the three files Streamlit's frontend build serves from the
+# root.
 APP_PATHS = ("/oauth2callback", "/favicon.png", "/index.html", "/manifest.json")
 
 

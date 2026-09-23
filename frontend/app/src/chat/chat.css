@@ -1,0 +1,1275 @@
+/*
+ * The assistant drawer.
+ *
+ * Every colour is a `--ag-*` token the server inlines, so this agrees with the
+ * Streamlit panel and with both themes. The panel is an overlay: it never
+ * changes the page's own layout, and the page keeps its scroll position while
+ * the drawer is open — the conversation scrolls its own region.
+ */
+
+/* ------------------------------------------------------------- the launcher */
+
+.ag-chat-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+  box-shadow: 0 6px 18px var(--ag-cta-glow);
+  cursor: pointer;
+  /* No double-tap-to-zoom delay on a control that is pressed, not read. */
+  touch-action: manipulation;
+  /* Above the page and above the nav rail, which is the one thing on screen
+     that is also fixed. */
+  z-index: 60;
+}
+
+.ag-chat-fab:hover {
+  background: var(--ag-purple-700);
+}
+
+/* ---------------------------------------------------------------- the panel */
+
+.ag-chat-panel {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 70;
+  display: flex;
+  /* `--chat-w` is the Streamlit drawer's own custom property, set from the
+     same three presets and stored under the same localStorage key — a reader
+     who widened the panel there finds it wide here. Unset, the drawer is the
+     width it has always been. */
+  width: min(var(--chat-w, 420px), 100vw);
+  flex-direction: column;
+  border-left: 1px solid var(--ag-border);
+  background: var(--ag-surface-raised);
+  box-shadow: var(--ag-shadow-overlay);
+}
+
+/* An open drawer takes its width off the page instead of covering it: a
+   portfolio table read at half a row is worse than one that is narrower. The
+   Streamlit shell pads its main block by the same figure with the same cap —
+   60% of the viewport, past which the page would be surrendering more than it
+   keeps, and the rest of the panel simply overlaps. No transition on purpose:
+   the padding tracks `--chat-w` live while the handle is dragged. */
+:root[data-chat="open"] .ag-shell {
+  padding-right: calc(min(var(--chat-w, 420px), 60vw) + 20px);
+}
+
+/* The one fixed thing the page has left: the "thanks, sent" toast. It would
+   otherwise appear under the panel, which is where a confirmation is worth
+   nothing. The Streamlit shell moves its own the same way. */
+:root[data-chat="open"] .ag-fb-sent {
+  right: calc(min(var(--chat-w, 420px), 100vw) + 20px);
+}
+
+/* The drag handle: a grab strip straddling the panel's left border, sitting
+   over the page behind it so there is something to aim at. Invisible until it
+   is hovered or focused — the border is the affordance, the strip is the
+   target. The Streamlit drawer draws the same 6px line at the same edge. */
+.ag-chat-grip {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 1;
+  width: 10px;
+  margin-left: -5px;
+  cursor: ew-resize;
+  /* Without this a touch drag scrolls the thread instead of resizing, and the
+     pointer capture never sees a second move. */
+  touch-action: none;
+}
+
+.ag-chat-grip::before {
+  position: absolute;
+  inset: 0 auto 0 4px;
+  width: 2px;
+  background: var(--ag-brand-accent);
+  opacity: 0;
+  content: "";
+  transition: opacity 120ms ease;
+}
+
+.ag-chat-grip:hover::before,
+.ag-chat-grip:focus-visible::before {
+  opacity: 1;
+}
+
+.ag-chat-grip:focus-visible {
+  outline: none;
+}
+
+/* Set on the body for the length of a drag: the cursor stays the resize one
+   wherever it travels, and a fast drag does not select the page it crosses. */
+.ag-chat-dragging,
+.ag-chat-dragging * {
+  cursor: ew-resize !important;
+  user-select: none !important;
+}
+
+/* The width presets, in the header. The pressed one is filled rather than
+   outlined: three identical icons need something to say which is on. */
+.ag-chat-widths {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.ag-chat-width-on {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-primary);
+}
+
+.ag-chat-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--ag-border);
+}
+
+.ag-chat-status {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--ag-rule-soft);
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-chat-provider {
+  color: var(--ag-text-secondary);
+}
+
+.ag-chat-quota {
+  margin-left: auto;
+  color: var(--ag-text-muted);
+}
+
+.ag-chat-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+/* The conversation and the button that gets back to the bottom of it. The
+   stage exists to be the button's positioning context: the scroll region
+   cannot be one, because a positioned ancestor of a scrolled element is
+   scrolled with it. */
+.ag-chat-stage {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.ag-chat-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  /* The drawer is an overlay over a page that kept its own scroll position:
+     reaching the end of the conversation must not start moving what is
+     behind it. */
+  overscroll-behavior: contain;
+  padding: 12px;
+}
+
+/* `useStickToBottom` measures this element rather than the region, so it has
+   to be the thing that grows: a wrapper that collapsed to the region's height
+   would report no resize and the stream would not follow. */
+.ag-chat-stream {
+  display: flex;
+  flex-direction: column;
+}
+
+.ag-chat-down {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-raised);
+  box-shadow: var(--ag-shadow-overlay);
+  color: var(--ag-text-secondary);
+  cursor: pointer;
+  place-items: center;
+  touch-action: manipulation;
+}
+
+.ag-chat-down:hover {
+  color: var(--ag-text-primary);
+}
+
+.ag-chat-view {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px;
+}
+
+.ag-chat-thread-btn,
+.ag-chat-icon,
+.ag-chat-back,
+.ag-chat-meta-btn {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--ag-radius-sm);
+  background: none;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ag-chat-icon {
+  padding: 6px;
+}
+
+.ag-chat-thread-btn {
+  overflow: hidden;
+  max-width: 60%;
+  color: var(--ag-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-chat-thread-btn:hover,
+.ag-chat-icon:hover,
+.ag-chat-back:hover,
+.ag-chat-meta-btn:hover {
+  background: var(--ag-surface-hover);
+}
+
+.ag-chat-untitled {
+  color: var(--ag-text-muted);
+  font-style: italic;
+}
+
+.ag-chat-note {
+  margin: 12px 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+}
+
+/* ----------------------------------------------------------------- a turn */
+
+.ag-chat-turn {
+  margin-bottom: 14px;
+}
+
+.ag-chat-bubble {
+  padding: 9px 12px;
+  border-radius: var(--ag-radius-md);
+  font-size: var(--ag-fs-base);
+  line-height: 1.5;
+}
+
+/* The reader's own words sit right and tinted; the answer runs full width,
+   because it is the thing being read rather than a thing being quoted. */
+.ag-chat-mine .ag-chat-bubble {
+  margin-left: auto;
+  max-width: 85%;
+  background: var(--ag-cta-tint);
+  border: 1px solid var(--ag-cta-tint-edge);
+}
+
+.ag-chat-assistant .ag-chat-bubble {
+  background: var(--ag-surface-card);
+  border: 1px solid var(--ag-border);
+}
+
+.ag-chat-bad .ag-chat-bubble {
+  border-color: var(--ag-warn-edge);
+  background: var(--ag-warn-fill-soft);
+}
+
+.ag-chat-foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs);
+}
+
+.ag-chat-clock,
+.ag-chat-lens {
+  color: var(--ag-text-faint);
+}
+
+.ag-chat-retry {
+  border: 0;
+  background: none;
+  color: var(--ag-brand-accent);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  cursor: pointer;
+}
+
+/* `display` here would beat the browser's own `[hidden]` rule, and the list
+   is drawn closed so the button's `aria-controls` has something to point at. */
+.ag-chat-sources[hidden] {
+  display: none;
+}
+
+.ag-chat-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ag-chat-sources a {
+  padding: 2px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-2xs);
+  text-decoration: none;
+}
+
+/* The "working" line while the model has not said anything yet. */
+.ag-chat-work {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-chat-work-glyph {
+  animation: ag-chat-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes ag-chat-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-chat-work-glyph {
+    animation: none;
+  }
+}
+
+/* --------------------------------------------------- the answer's markup */
+
+.ag-chat-p {
+  margin: 0 0 8px;
+}
+
+.ag-chat-p:last-child {
+  margin-bottom: 0;
+}
+
+.ag-chat-h {
+  margin: 10px 0 6px;
+  font-size: var(--ag-fs-lg);
+}
+
+.ag-chat-list {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.ag-chat-a {
+  color: var(--ag-brand-accent);
+}
+
+.ag-chat-code {
+  padding: 1px 4px;
+  border-radius: var(--ag-radius-xs);
+  background: var(--ag-surface-sunken);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-chat-pre {
+  overflow-x: auto;
+  padding: 8px 10px;
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-sunken);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-chat-hr {
+  border: 0;
+  border-top: 1px solid var(--ag-rule-soft);
+}
+
+/* A 420px drawer is narrower than most tables an answer builds, so the table
+   scrolls inside its own box rather than widening the bubble. */
+.ag-chat-tablewrap {
+  overflow-x: auto;
+  margin: 0 0 8px;
+}
+
+.ag-chat-table {
+  border-collapse: collapse;
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-chat-table th,
+.ag-chat-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--ag-rule-soft);
+  text-align: left;
+  /* Same-width digits: a column of percentages that does not line up is a
+     column nobody can compare down. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ag-chat-table th {
+  color: var(--ag-text-secondary);
+  font-weight: 600;
+}
+
+.ag-chat-table td.ag-chat-right,
+.ag-chat-table th.ag-chat-right {
+  text-align: right;
+}
+
+.ag-chat-table td.ag-chat-center,
+.ag-chat-table th.ag-chat-center {
+  text-align: center;
+}
+
+.ag-chat-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.ag-chat-glyph {
+  flex: none;
+}
+
+/* -------------------------------------------------------------- composer */
+
+.ag-chat-composer {
+  border-top: 1px solid var(--ag-border);
+  padding: 8px 12px 12px;
+}
+
+.ag-chat-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.ag-chat-field {
+  max-height: 140px;
+  flex: 1;
+  padding: 9px 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-base);
+  resize: none;
+}
+
+.ag-chat-field:focus-visible {
+  outline: none;
+  border-color: var(--ag-border-focus);
+}
+
+.ag-chat-send {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border: 0;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+  cursor: pointer;
+  place-items: center;
+  touch-action: manipulation;
+}
+
+.ag-chat-send:disabled {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-faint);
+  cursor: default;
+}
+
+.ag-chat-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.ag-chat-hint {
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs);
+}
+
+/* Regenerate sits at the foot of the scroll region, over the conversation
+   rather than in the composer: it is about the answer above it. */
+.ag-chat-regen {
+  position: absolute;
+  z-index: 2;
+  right: 12px;
+  bottom: 8px;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-2xs);
+  cursor: pointer;
+}
+
+.ag-chat-regen:hover {
+  border-color: var(--ag-border-focus);
+  color: var(--ag-text-primary);
+}
+
+/* The drop target, drawn only while something is being dragged over the
+   conversation. Over everything and taking no pointer events of its own: the
+   drop lands on the stage underneath, which is what is listening. */
+.ag-chat-drop {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  inset: 8px;
+  margin: 0;
+  border: 2px dashed var(--ag-brand-cta);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-page-veil);
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-sm);
+  place-items: center;
+  pointer-events: none;
+  text-align: center;
+}
+
+/* The tool trace, opened from its counter: one line per call, result last. */
+.ag-chat-steps {
+  width: 100%;
+  margin: 4px 0 0;
+  padding-left: 16px;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-2xs);
+}
+
+.ag-chat-steps code {
+  color: var(--ag-text-primary);
+}
+
+.ag-chat-step-out {
+  color: var(--ag-text-faint);
+}
+
+/* What a turn was, when it was not simply typed and answered: a transcript,
+   or an answer the reader cut short. Above the bubble, where the lens is. */
+.ag-chat-badge {
+  align-self: inherit;
+  padding: 1px 6px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs);
+}
+
+/* Recording: the microphone holds the critical colour for as long as it is
+   listening, because nothing else on screen says the device is open. */
+.ag-chat-taping,
+.ag-chat-taping:hover:not(:disabled) {
+  background: var(--ag-critical-fill);
+  color: var(--ag-on-brand);
+}
+
+/* ------------------------------------------------- the attached statement */
+
+/* The clip sits inside the input bar, left of the field: the reader already
+   looks there for a way to attach something, and it is the same place the
+   Streamlit composer puts it. */
+.ag-chat-clip {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
+  color: var(--ag-text-secondary);
+  cursor: pointer;
+}
+
+.ag-chat-clip:hover:not(:disabled) {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-primary);
+}
+
+.ag-chat-clip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* The preview card. Bordered rather than bubbled: it is not something the
+   assistant said, it is an offer with two buttons on it. */
+.ag-chat-import {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+}
+
+.ag-chat-import-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: 12px;
+}
+
+.ag-chat-rows {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  /* Seven columns crowd a 380px drawer: the grid scrolls sideways inside the
+     card rather than pushing the card out of the panel. */
+  display: block;
+  overflow-x: auto;
+}
+
+.ag-chat-rows th,
+.ag-chat-rows td {
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--ag-border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ag-chat-rows th {
+  color: var(--ag-text-secondary);
+  font-weight: 500;
+}
+
+.ag-chat-rows .ag-chat-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-chat-tier > summary {
+  color: var(--ag-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ag-chat-check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.ag-chat-skipped {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--ag-text-secondary);
+  font-size: 12px;
+}
+
+.ag-chat-broker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.ag-chat-broker select,
+.ag-chat-broker input {
+  padding: 6px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+}
+
+.ag-chat-import-acts {
+  display: flex;
+  gap: 8px;
+}
+
+.ag-chat-wall {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--ag-warn-edge);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-warn-fill-soft);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-chat-wall p {
+  margin: 0;
+}
+
+.ag-chat-picker {
+  padding: 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  margin-bottom: 6px;
+}
+
+.ag-chat-modes,
+.ag-chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ag-chat-chips {
+  margin-top: 8px;
+}
+
+.ag-chat-btn,
+.ag-chat-chip {
+  padding: 3px 10px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: none;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ag-chat-btn-on,
+.ag-chat-chip-on {
+  border-color: var(--ag-brand-accent);
+  background: var(--ag-cta-tint);
+  color: var(--ag-text-primary);
+}
+
+.ag-chat-btn-bad {
+  border-color: var(--ag-critical-fill);
+  color: var(--ag-critical-fill);
+}
+
+.ag-chat-group {
+  margin-bottom: 6px;
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs);
+  letter-spacing: 0.06em;
+}
+
+/* In the thread list it separates two date groups, so it needs the air above
+   it that a label inside the skills box does not. */
+.ag-chat-view .ag-chat-group {
+  margin-top: 14px;
+}
+
+/* The first-run card. The free button leads; the key is the second choice. */
+.ag-chat-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+  padding: 16px 12px;
+}
+
+.ag-chat-setup h3 {
+  margin: 0;
+  font-size: var(--ag-fs-md, 1rem);
+}
+
+.ag-chat-setup .ag-chat-btn {
+  justify-content: center;
+}
+
+.ag-chat-or {
+  margin: 4px 0;
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs);
+  text-align: center;
+}
+
+/* The walkthrough's controls, under its card. */
+.ag-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ag-guide-progress {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs);
+}
+
+.ag-guide-on,
+.ag-guide-off {
+  padding: 1px 6px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-sunken);
+}
+
+.ag-guide-on {
+  color: var(--ag-success-fill);
+}
+
+.ag-guide-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.ag-guide-skip {
+  padding: 4px 6px;
+  border: none;
+  background: transparent;
+  color: var(--ag-text-faint);
+  font: inherit;
+  font-size: var(--ag-fs-2xs);
+  cursor: pointer;
+}
+
+.ag-guide-skip:hover {
+  color: var(--ag-text-secondary);
+}
+
+/* ---------------------------------------------------------------- settings */
+
+.ag-chat-settings {
+  overflow-y: auto;
+  padding: 12px;
+  gap: 8px;
+}
+
+/* Every group label after the first wants air above it: the screen is four
+   sections stacked, not one form. */
+.ag-chat-settings .ag-chat-group:not(:first-of-type) {
+  margin-top: 16px;
+}
+
+.ag-chat-back {
+  display: flex;
+  align-self: flex-start;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 6px 4px 2px;
+  border: none;
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  cursor: pointer;
+}
+
+.ag-chat-back:hover {
+  color: var(--ag-text-primary);
+}
+
+/* Two per row at 380px, and they wrap rather than shrink: four brand names in
+   one row is what a segmented control could not do. */
+.ag-chat-tiles {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.ag-chat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ag-chat-tile:hover:not(:disabled) {
+  border-color: var(--ag-border-focus);
+}
+
+.ag-chat-tile-on {
+  border-color: var(--ag-brand-cta);
+  background: var(--ag-surface-sunken);
+}
+
+.ag-chat-tile-name {
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-chat-tile-tag {
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs);
+}
+
+.ag-chat-select,
+.ag-chat-key input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-chat-key {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ag-chat-quota-row {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-chat-bar {
+  width: 100%;
+  height: 6px;
+  border: none;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-sunken);
+}
+
+.ag-chat-bar::-webkit-progress-bar {
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-sunken);
+}
+
+.ag-chat-bar::-webkit-progress-value {
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-brand-cta);
+}
+
+.ag-chat-bar::-moz-progress-bar {
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-brand-cta);
+}
+
+/* The confirmation reads as one block with its two buttons, not as a
+   paragraph that happens to have buttons under it. */
+.ag-chat-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--ag-critical-fill);
+  border-radius: var(--ag-radius-md);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-chat-confirm p {
+  margin: 0;
+}
+
+/* --------------------------------------------------------------- threads */
+
+/* The field is the box and the glyph sits inside it, so that the search reads
+   as one control rather than as an icon parked above an input. */
+.ag-chat-search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 7px 10px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-muted);
+}
+
+.ag-chat-search:focus-within {
+  border-color: var(--ag-border-focus);
+}
+
+/* Standalone — the rename field — this is the box itself. */
+.ag-chat-input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-chat-search .ag-chat-input {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.ag-chat-search .ag-chat-input:focus-visible {
+  outline: none;
+}
+
+/* A thread is one row: the thread itself, and the two things that can be done
+   to it. The row is not the button — three controls inside one would make the
+   whole card a target for whichever of them was pressed last. */
+.ag-chat-card {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  width: 100%;
+  padding: 2px;
+  border: 1px solid transparent;
+  border-radius: var(--ag-radius-sm);
+  color: var(--ag-text-primary);
+}
+
+.ag-chat-card:hover {
+  background: var(--ag-surface-hover);
+}
+
+.ag-chat-card-on {
+  border-color: var(--ag-brand-accent);
+  background: var(--ag-cta-tint);
+}
+
+/* `min-width: 0` is what lets the title ellipsis: a flex item's floor is its
+   content, and without this a long title pushes the two icons off the row. */
+.ag-chat-card-open {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--ag-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ag-chat-card-title {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: var(--ag-fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-chat-card-meta {
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs);
+}
+
+/* Renaming and deleting take over the row, so the row stops being one. */
+.ag-chat-editing {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+.ag-chat-confirm {
+  padding: 8px 10px;
+  border: 1px solid var(--ag-warn-edge);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-warn-fill-soft);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-chat-confirm-row {
+  display: flex;
+  gap: 6px;
+}
+
+/* The way out of the list, clear of the last thread in it. */
+.ag-chat-back {
+  margin: 16px 0 4px;
+}
+
+/* ---------------------------------------------------------- empty state */
+
+.ag-chat-empty {
+  padding: 8px 2px;
+}
+
+.ag-chat-empty-head {
+  margin-bottom: 10px;
+}
+
+.ag-chat-empty-title {
+  font-size: var(--ag-fs-lg);
+}
+
+.ag-chat-empty-body {
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-chat-starters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ag-chat-starter {
+  padding: 8px 10px;
+  touch-action: manipulation;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ag-chat-starter:hover {
+  border-color: var(--ag-border-focus);
+  background: var(--ag-surface-hover);
+}
+
+.ag-chat-caps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.ag-chat-cap {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-chat-capicon {
+  color: var(--ag-brand-accent);
+}
+
+/* ----------------------------------------------------- focus and reading */
+
+/* Every control in the drawer had a hover state and no focus state, which
+   left a keyboard reader with whatever ring the browser draws by default —
+   here, over a raised dark surface, almost nothing. Same ring the segmented
+   control on the ticker page and the fields on the import page already use. */
+.ag-chat-fab:focus-visible,
+.ag-chat-down:focus-visible,
+.ag-chat-thread-btn:focus-visible,
+.ag-chat-icon:focus-visible,
+.ag-chat-back:focus-visible,
+.ag-chat-meta-btn:focus-visible,
+.ag-chat-btn:focus-visible,
+.ag-chat-chip:focus-visible,
+.ag-chat-send:focus-visible,
+.ag-chat-retry:focus-visible,
+.ag-chat-starter:focus-visible,
+.ag-chat-card-open:focus-visible,
+.ag-chat-input:focus-visible,
+.ag-chat-a:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+
+/* The panel takes the focus when it opens so that the keyboard follows the
+   drawer, but it is a container and not a control: no ring. */
+.ag-chat-panel:focus {
+  outline: none;
+}
+
+/* Read by a screen reader, drawn for nobody: the sentence a `title` only ever
+   shows on hover. */
+.ag-sr {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------------- phone */
+
+@media (max-width: 640px) {
+  .ag-chat-panel {
+    /* The whole viewport: 420px of drawer over a 360px phone would be the
+       page, minus a sliver that only serves to make the layout look broken.
+       A stored width does not apply here — every preset is already this. */
+    width: 100vw;
+  }
+  .ag-chat-grip {
+    /* Nothing to drag when the panel is already the viewport. */
+    display: none;
+  }
+  :root[data-chat="open"] .ag-shell {
+    /* The panel is the whole viewport here, so there is no page left to make
+       room on — padding would only squeeze what is already hidden. */
+    padding-right: 0;
+  }
+  :root[data-chat="open"] .ag-fb-sent {
+    /* Same reason, and here the offset would push the toast off the screen
+       entirely rather than merely behind the panel. */
+    right: 20px;
+  }
+  .ag-chat-widths {
+    /* Three buttons that all mean "the whole screen" on a screen this size,
+       taking room from the thread's own name. The Streamlit header drops them
+       below 1100px for the same reason. */
+    display: none;
+  }
+  .ag-chat-fab {
+    /* Clear of the bottom tab bar, which is fixed at the same corner. */
+    bottom: 76px;
+  }
+}

@@ -28,14 +28,26 @@ the ledger alone). Both propose; neither writes until the reader says so.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
+from stocks import obs
 from stocks.data import fetch
-from stocks.portfolio import corporate, demo, last_import, platforms, transfers
+from stocks.portfolio import (
+    corporate,
+    demo,
+    diagnostics,
+    last_import,
+    platforms,
+    transfers,
+)
 from stocks.portfolio.ledger import add_many, all_transactions, clear, delete_many
 from stocks.portfolio.validate import known_tickers, validate
 from stocks.web import auth, logos, skeletons, tx_text
@@ -61,6 +73,14 @@ st.caption(tr("import.intro_caption"))
 ledger = all_transactions(paths.db)
 if st.session_state.pop("imports_cleared", False):
     st.toast(tr("import.toast_cleared"), icon=":material/delete_forever:")
+# A commit reruns the page with its inputs emptied (see the commit button), so
+# the outcome is carried across that rerun rather than printed under a preview
+# that no longer exists. What the reader lands on instead is the last-import
+# block below: the same numbers, plus the undo.
+_committed = st.session_state.pop("import_committed", None)
+if _committed:
+    st.success(tr("import.commit_success", **_committed))
+    st.caption(tr("import.commit_help"))
 
 demo_rows = [t for t in ledger if demo.is_demo(t)]
 
@@ -284,18 +304,41 @@ def _platform_option_md(key: str) -> str:
     return f"{img}{p.label}"
 
 
-# Options are keys, not Platform objects: Streamlit's default-value check
-# converts a dataclass default via its dataframe logic (exploding it into
-# field values), which raises "default not part of the options".
-platform = platforms.by_key(
-    st.segmented_control(
-        tr("import.importing_from"),
-        [p.key for p in platforms.PLATFORMS],
-        format_func=_platform_option_md,
-        default=platforms.PLATFORMS[0].key,
-        required=True,  # clicking the active segment must not deselect it
+def _pick_platform() -> platforms.Platform:
+    """The source-platform picker, one control per form factor.
+
+    Options are keys, not Platform objects: Streamlit's default-value check
+    converts a dataclass default via its dataframe logic (exploding it into
+    field values), which raises "default not part of the options".
+
+    Seven brands, each a logo plus a name as long as "Interactive Brokers",
+    do not fit one phone-width row: the mobile stylesheet joins segmented
+    cells edge to edge (`flex: 1 1 0`) and refuses to ellipsize their labels,
+    so the strip overruns the viewport and the brands read as a smear. Phones
+    get a dropdown instead — plain text, because a selectbox option renders
+    no markdown image, and its first entry is the same default.
+    """
+    keys = [p.key for p in platforms.PLATFORMS]
+    if is_mobile():
+        return platforms.by_key(
+            st.selectbox(
+                tr("import.importing_from"),
+                keys,
+                format_func=lambda k: platforms.by_key(k).label,
+            )
+        )
+    return platforms.by_key(
+        st.segmented_control(
+            tr("import.importing_from"),
+            keys,
+            format_func=_platform_option_md,
+            default=platforms.PLATFORMS[0].key,
+            required=True,  # clicking the active segment must not deselect it
+        )
     )
-)
+
+
+platform = _pick_platform()
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 _SAMPLE = "import_sample"  # session key: the staged example statement
@@ -337,8 +380,17 @@ def _sample_offer(platform: platforms.Platform) -> None:
         st.rerun()
 
 
-# Key the uploader by platform so switching platforms drops the staged file —
-# a statement must never be parsed by another platform's parser.
+# Both input widgets carry a nonce the commit below bumps. Streamlit keeps a
+# widget's value across reruns, so without it a committed statement stays in
+# the box: every later click re-parses it, re-enables the commit button, and
+# one stray press writes the same batch twice (flagged as duplicates, not
+# refused). Changing the key is the only way to empty a file_uploader from
+# Python — its value cannot be assigned after instantiation.
+_NONCE = "import_input_nonce"
+_nonce = st.session_state.get(_NONCE, 0)
+
+# Key the uploader by platform too, so switching platforms drops the staged
+# file — a statement must never be parsed by another platform's parser.
 uploaded = st.file_uploader(
     tr(
         "import.uploader_label",
@@ -346,8 +398,112 @@ uploaded = st.file_uploader(
         types=", ".join(t.upper() for t in platform.file_types),
     ),
     type=list(platform.file_types),
-    key=f"upload_{platform.key}",
+    key=f"upload_{platform.key}_{_nonce}",
 )
+
+XSRF_COOKIE = "_streamlit_xsrf"
+
+
+def _upload_is_blocked() -> bool:
+    """True when this browser cannot complete an upload, whatever it clicks.
+
+    Streamlit PUTs the file to /_stcore/upload_file with an XSRF header that
+    has to match the `_streamlit_xsrf` cookie, and answers 403 when it does
+    not (starlette_routes._check_xsrf). A browser that drops the cookie —
+    the app framed inside another origin, hardened privacy settings — fails
+    that check in the browser's network tab, where the page never sees it:
+    Python is handed "no file", exactly like an untouched widget. The cookie
+    itself is readable from here, so this one failure mode can be named
+    before the reader burns a click on it.
+
+    No cookies at all means no browser (AppTest, bare mode), not a blocked
+    one — a false alarm on the working path would be worse than silence.
+    """
+    try:
+        if not st.get_option("server.enableXsrfProtection"):
+            return False
+        cookies = st.context.cookies
+    except Exception:  # noqa: BLE001 — a hint, never a reason to fail the page
+        return False
+    return bool(cookies) and XSRF_COOKIE not in cookies
+
+
+# Second door into the same pipeline, for a reader whose browser will not hand
+# over a file at all: the 403 above, managed Chrome with file dialogs switched
+# off (FileSelectionDialogsAllowed), a work phone that does the same. All of
+# them reach Python as "no file", so the page cannot ask — it can only offer a
+# route that needs no dialog, no cookie and no PUT. The pasted statement
+# becomes the same `.name`/`.getvalue()` object the uploader hands back, so
+# parse, validation, preview, commit and undo are the ones already written
+# below.
+_B64 = re.compile(r"[A-Za-z0-9+/=\s]+")
+# Enough of a blob that a short CSV of pure letters can't be mistaken for one.
+_B64_MIN = 64
+_MAGIC = ((b"%PDF", "pdf"), (b"PK\x03\x04", "xlsx"))
+
+
+def _pasted_file(text: str) -> tuple[str, bytes] | str:
+    """(filename, bytes) for pasted text, or the extension it cannot be given.
+
+    A CSV pastes as itself. A PDF or XLSX has no text form at all, so the way
+    in for those is base64 (`base64 -i statement.pdf | pbcopy`) — recognised
+    by decoding it and reading the magic bytes, not by trusting a label. The
+    extension has to be one this platform parses: the filename is what picks
+    the branch inside the parser (revolut PDF vs CSV, clicktrade xlsx vs
+    csv), so handing it a PDF it does not read would fail deep in a parser
+    instead of here.
+    """
+    compact = "".join(text.split())
+    if len(compact) >= _B64_MIN and _B64.fullmatch(compact):
+        try:
+            blob = base64.b64decode(compact, validate=True)
+        except (binascii.Error, ValueError):
+            blob = b""
+        for magic, ext in _MAGIC:
+            if blob.startswith(magic):
+                if ext not in platform.file_types:
+                    return ext
+                return f"pasted.{ext}", blob
+    return "pasted.csv", text.encode("utf-8")
+
+
+_blocked = _upload_is_blocked()
+with st.expander(
+    tr("import.paste_expander"),
+    icon=":material/content_paste:",
+    expanded=_blocked,
+):
+    if _blocked:
+        st.warning(tr("import.paste_blocked"))
+    st.caption(tr("import.paste_caption"))
+    # Keyed by platform for the same reason the uploader is: switching
+    # platform must not leave one broker's statement in another's parser.
+    _pasted = st.text_area(
+        tr("import.paste_label", platform=platform.label),
+        key=f"paste_{platform.key}_{_nonce}",
+        height=160,
+        placeholder=tr("import.paste_placeholder"),
+    ).strip()
+
+# Which door it came through, recorded on the diagnostic: a reader who pastes
+# is usually a reader whose upload could not work, and that is a fact worth
+# having as a number rather than as a support message.
+_surface = "import"
+if uploaded is None and _pasted:
+    _file = _pasted_file(_pasted)
+    if isinstance(_file, str):  # a format this platform has no parser for
+        st.error(
+            tr(
+                "import.paste_wrong_type",
+                kind=_file.upper(),
+                platform=platform.label,
+                types=", ".join(t.upper() for t in platform.file_types),
+            )
+        )
+        st.stop()
+    uploaded = _Sample(*_file)
+    _surface = "paste"
+
 # Kept across reruns, not consumed on the run that staged it: there are two
 # interactions (the wipe checkbox, the commit button) between staging the
 # example and importing it, and st.file_uploader's own value survives those
@@ -420,9 +576,42 @@ def _ticker_exists(ticker: str) -> bool | None:
         return None  # network down ≠ ticker invalid
 
 
-result = platform.parse(uploaded.name, uploaded.getvalue())
+_raw = uploaded.getvalue()
+# Streamlit reruns this whole script on every click, so an unguarded report
+# would file one diagnostic per checkbox toggle. Key it on the bytes: one
+# upload, one fingerprint, however many reruns it survives.
+_DIAGNOSED = "_import_diagnosed"
+# Keyed on the platform too, not the bytes alone: picking the wrong broker,
+# failing, and picking another is the most informative thing a reader does
+# here, and a bytes-only key would record only the first attempt.
+_digest = f"{hashlib.sha256(_raw).hexdigest()[:12]}:{platform.key}"
+_upload_name = uploaded.name
+
+
+def _diagnose(**outcome) -> None:
+    """Record what this statement did, anonymised (portfolio.diagnostics)."""
+    if st.session_state.get(_DIAGNOSED) == _digest:
+        return
+    st.session_state[_DIAGNOSED] = _digest
+    diagnostics.report(
+        platform.key, _upload_name, _raw, surface=_surface, **outcome
+    )
+
+
+try:
+    result = platform.parse(uploaded.name, _raw)
+except Exception as exc:  # noqa: BLE001 — reported, then refused politely
+    # A parser that raises used to reach the reader as Streamlit's red box and
+    # reach us not at all. platforms.py decodes utf-8-sig with no fallback, so
+    # a latin-1 export dies right here; the fingerprint names the encoding.
+    _diagnose(error=exc)
+    st.error(
+        tr("import.no_rows_parsed", platform=platform.label, hint=platform.hint)
+    )
+    st.stop()
 
 if not result.transactions and not result.skipped:
+    _diagnose(result=result)
     st.error(
         tr("import.no_rows_parsed", platform=platform.label, hint=platform.hint)
     )
@@ -449,6 +638,11 @@ validation = validate(
     # buys (stocks.portfolio.validate._market_splits).
     splits=fetch.splits,
 )
+
+# Everything the parse and the validation learned, in one anonymised record:
+# what the file looked like, which rows fell out and why. This is the line
+# that turns "some brokers fail" into a queryable fact.
+_diagnose(result=result, validation=validation)
 
 importable = validation.importable
 with _preview.container():
@@ -543,11 +737,24 @@ if st.button(tr("import.commit_button"), type="primary",
         ),
         paths.last_import,
     )
-    st.success(
-        tr(
-            "import.commit_success",
-            n=len(ids),
-            total=len(all_transactions(paths.db)),
-        )
+    # The denominator for every failure rate: without it the logs say how often
+    # an import breaks but not out of how many.
+    obs.event(
+        "import.committed",
+        platform=platform.key,
+        broker=origin,
+        n=len(ids),
+        wiped=wipe,
     )
-    st.caption(tr("import.commit_help"))
+    # Empty both inputs and start the page again. A statement left in the
+    # uploader (or in the paste box) is re-parsed on every later click with
+    # the commit button live, and the ledger it would be committed against is
+    # now the one that already holds it — a second press duplicates the batch
+    # under duplicate warnings rather than being refused. The rerun lands on
+    # the last-import block: the same numbers, plus the undo for them.
+    st.session_state[_NONCE] = _nonce + 1
+    st.session_state["import_committed"] = {
+        "n": len(ids),
+        "total": len(all_transactions(paths.db)),
+    }
+    st.rerun()

@@ -15,63 +15,66 @@ decides tax; it decides wording, currency symbols and where the setting lives.
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 import streamlit as st
 
 from stocks.config import currency_symbol
 from stocks.portfolio import tax
+from stocks.portfolio.tax import prefs as tax_prefs
+from stocks.portfolio.tax.prefs import (
+    AUTO,
+    CHOSEN,
+    PREF_CHURCH_TAX,
+    PREF_FILING_STATUS,
+    PREF_NIIT,
+    PREF_OTHER_INCOME,
+    PREF_RESIDENCE,
+    PREF_SUBNATIONAL,
+    REGION,
+    UNKNOWN,
+    UNMODELLED,
+    region_of,
+    with_funds,
+)
 from stocks.web import auth, i18n
 
-# prefs.json keys. tax_residence None = auto (from the browser locale's region).
-PREF_RESIDENCE = "tax_residence"
-PREF_FILING_STATUS = "tax_filing_status"
-PREF_OTHER_INCOME = "tax_other_income"
-PREF_NIIT = "tax_niit"
-PREF_CHURCH_TAX = "tax_church_rate"
-PREF_SUBNATIONAL = "tax_subnational_rate"
-
-AUTO = "auto"
-
-# How the active jurisdiction was arrived at, because the honest UI depends on
-# it: only one of these four means "this app does not model where you are".
-CHOSEN = "chosen"  # the filer picked it on the Profile page
-REGION = "region"  # the browser's region is one we model
-UNMODELLED = "unmodelled"  # the browser named a region we do NOT model
-UNKNOWN = "unknown"  # the browser named no region at all
-
-
-def region_of(locale: str | None) -> str | None:
-    """Region subtag of a browser locale: 'en-US' -> 'US', 'es' -> None."""
-    if not locale:
-        return None
-    parts = str(locale).replace("_", "-").split("-")
-    return parts[1].upper() if len(parts) > 1 and len(parts[1]) == 2 else None
+__all__ = [
+    "AUTO",
+    "CHOSEN",
+    "PREF_CHURCH_TAX",
+    "PREF_FILING_STATUS",
+    "PREF_NIIT",
+    "PREF_OTHER_INCOME",
+    "PREF_RESIDENCE",
+    "PREF_SUBNATIONAL",
+    "REGION",
+    "UNKNOWN",
+    "UNMODELLED",
+    "active",
+    "flag_caption",
+    "flag_emoji",
+    "jurisdiction",
+    "key",
+    "label",
+    "money",
+    "region_of",
+    "resolve",
+    "resolve_code",
+    "settings",
+    "symbol",
+    "t",
+    "with_funds",
+]
 
 
 def resolve(prefs: dict | None = None) -> tuple[str, str]:
-    """(active jurisdiction, how we got there): preference > region > default.
+    """The active jurisdiction for this session, and how it was arrived at.
 
-    Mirrors how the language resolves, with one difference: an unknown region
-    lands on Spain rather than on nothing, because the ledger has to be taxed
-    under *some* set of rules and this app's home jurisdiction is Spain.
-
-    The second element exists because that fallback is not harmless. A filer
-    in a country this app does not model would otherwise read Spanish
-    brackets, a Modelo 720 flag and a header saying IRPF over their own book,
-    with nothing on the page admitting the rules are somebody else's. Callers
-    use `UNMODELLED` to say so. `UNKNOWN` is kept apart from it on purpose: a
-    browser reporting plain "es" names no region, and warning that account
-    about a fallback would be noise — Spain is very likely right for it.
+    The rules live in `stocks.portfolio.tax.prefs` so the API can read the same
+    setting without Streamlit; this binding supplies the one thing only a page
+    has — the browser's region — and the account's own prefs.json.
     """
     p = prefs if prefs is not None else auth.load_prefs()
-    stored = p.get(PREF_RESIDENCE)
-    if stored and stored != AUTO:
-        return tax.normalize(stored), CHOSEN
-    region = region_of(getattr(st.context, "locale", None))
-    if region and region in tax.JURISDICTIONS:
-        return region, REGION
-    return tax.DEFAULT_CODE, UNMODELLED if region else UNKNOWN
+    return tax_prefs.resolve(p, region_of(getattr(st.context, "locale", None)))
 
 
 def resolve_code(prefs: dict | None = None) -> str:
@@ -80,46 +83,8 @@ def resolve_code(prefs: dict | None = None) -> str:
 
 
 def settings(prefs: dict | None = None) -> tax.TaxSettings:
-    """The filer's bracket inputs, straight from prefs.json."""
-    p = prefs if prefs is not None else auth.load_prefs()
-    try:
-        income = float(p.get(PREF_OTHER_INCOME) or 0.0)
-    except (TypeError, ValueError):
-        income = 0.0
-    try:
-        church = float(p.get(PREF_CHURCH_TAX) or 0.0)
-    except (TypeError, ValueError):
-        church = 0.0
-    try:
-        subnational = float(p.get(PREF_SUBNATIONAL) or 0.0)
-    except (TypeError, ValueError):
-        subnational = 0.0
-    return tax.TaxSettings(
-        filing_status=str(p.get(PREF_FILING_STATUS) or "single"),
-        other_income=income,
-        include_niit=bool(p.get(PREF_NIIT)),
-        church_tax_rate=church,
-        subnational_rate=subnational,
-    )
-
-
-def with_funds(settings: tax.TaxSettings, tickers) -> tax.TaxSettings:
-    """`settings` with the fund tickers among `tickers` classified.
-
-    Germany exempts 30% of an equity fund's result, so the engine has to know
-    which holdings are funds — and it must not guess: an unclassified book is
-    computed without the exemption and says so. The classification comes from
-    the learned quoteType cache (data.funds), never a live fetch, so a cold
-    cache degrades to "not classified" instead of blocking the page.
-    """
-    from stocks.data.funds import is_fund
-
-    return replace(
-        settings,
-        fund_tickers=frozenset(
-            t.upper() for t in tickers if is_fund(t, fetch=False)
-        ),
-    )
+    """The filer's bracket inputs, defaulting to this session's own prefs."""
+    return tax_prefs.settings(prefs if prefs is not None else auth.load_prefs())
 
 
 def jurisdiction(prefs: dict | None = None) -> tax.Jurisdiction:

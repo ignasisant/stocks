@@ -25,7 +25,7 @@ if _SRC not in sys.path:
 import streamlit as st  # noqa: E402
 from yfinance.exceptions import YFRateLimitError  # noqa: E402
 
-from stocks import obs  # noqa: E402
+from stocks import navigation, obs, session  # noqa: E402
 from stocks.web import (  # noqa: E402
     auth,
     chat_core,
@@ -1073,25 +1073,21 @@ if not guide.maybe_start() and not onboarding.maybe_open():
     # from the Profile page).
     _profile_modal = auth.maybe_prompt_profile()
 
-ticker_page = st.Page(
-    "app_pages/ticker.py",
-    title=tr("nav.ticker"),
-    icon=":material/query_stats:",
-    url_path="ticker",
-)
+# Which pages exist, in which order and under which heading is
+# `stocks.navigation` — the same table the phone tab bar and the React shell
+# read, so a page added here appears in all three menus or in none.
+_PAGES = {
+    destination.path: st.Page(
+        f"app_pages/{destination.module}.py",
+        title=tr(destination.label),
+        icon=f":material/{destination.icon}:",
+        url_path=destination.path or None,
+        default=destination.path == "",
+    )
+    for destination in navigation.DESTINATIONS
+}
+ticker_page = _PAGES["ticker"]
 
-_portfolio_pages = [
-    st.Page(
-        "app_pages/portfolio.py",
-        title=tr("nav.portfolio"),
-        icon=":material/pie_chart:",
-    ),
-    st.Page(
-        "app_pages/import_transactions.py",
-        title=tr("nav.import"),
-        icon=":material/upload_file:",
-    ),
-]
 # Grouped like the design's left menu: Inicio on top, then the Cartera and
 # Mercado sections, with the account entry in its own bottom group.
 # The ignore is a checker limitation, not a doubt about the call: `streamlit`
@@ -1100,50 +1096,18 @@ _portfolio_pages = [
 # callable. Runtime resolves the function, as every page load proves.
 page = st.navigation(  # ty: ignore[call-non-callable]
     {
-        "": [
-            st.Page(
-                "app_pages/home.py",
-                title=tr("nav.home"),
-                icon=":material/home:",
-                default=True,
-            ),
-        ],
-        tr("nav.section_portfolio"): _portfolio_pages,
-        tr("nav.section_market"): [
-            ticker_page,
-            st.Page(
-                "app_pages/sentiment.py",
-                title=tr("nav.sentiment"),
-                icon=":material/speed:",
-            ),
-            st.Page(
-                "app_pages/screener.py",
-                title=tr("nav.screener"),
-                icon=":material/filter_alt:",
-            ),
-            st.Page(
-                "app_pages/earnings.py",
-                title=tr("nav.earnings"),
-                icon=":material/calendar_month:",
-            ),
-        ],
-        tr("nav.section_account"): [
-            st.Page(
-                "app_pages/profile.py",
-                title=tr("nav.profile"),
-                icon=":material/account_circle:",
-            ),
-        ],
+        tr(section) if section else "": [_PAGES[d.path] for d in items]
+        for section, items in navigation.sections()
     }
 )
 
 # Anonymous visitors get a sign-in entry point on every page; the gated
 # pages (Portfolio, Import, Profile) render a full login screen themselves.
 if "auth" in st.secrets and not auth.is_logged_in():
-    st.sidebar.button(
+    st.sidebar.link_button(
         tr("common.sign_in_google"),
+        session.LOGIN_PATH,
         icon=":material/login:",
-        on_click=auth.login,
         width="stretch",
     )
 
@@ -1221,7 +1185,7 @@ if chat_core.covers_viewport(_drawer_open):
     st.stop()
 
 # Yahoo throttles datacenter egress IPs; when the fetch layer's
-# backoff (stocks.data.fetch._retry) is exhausted the error would otherwise
+# backoff (stocks.data.fetch.retry) is exhausted the error would otherwise
 # surface as Streamlit's opaque crash page. Degrade to a banner instead —
 # st.cache_data never caches exceptions, so a rerun retries the failed fetches
 # while every cached section keeps rendering.

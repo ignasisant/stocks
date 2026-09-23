@@ -1,4 +1,4 @@
-# Weekly dependency bumps: Python (uv.lock), the frontend (frontend/ticker) and
+# Weekly dependency bumps: Python (uv.lock), the frontend (frontend/app) and
 # the Actions pins. CI (ci.yml) gates every bump.
 #
 # Minors and patches travel together — one PR, one review, and a red CI names
@@ -19,10 +19,10 @@ updates:
         update-types: ["minor", "patch"]
     open-pull-requests-limit: 5
 
-  # The React Ticker page. Its bundle is committed (see frontend/README.md), so
+  # The React app shell. Its bundle is committed (see frontend/README.md), so
   # without this the lockfile rots silently — nothing else here would notice.
   - package-ecosystem: "npm"
-    directory: "/frontend/ticker"
+    directory: "/frontend/app"
     schedule:
       interval: "weekly"
       day: "monday"

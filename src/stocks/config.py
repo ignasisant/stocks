@@ -76,6 +76,43 @@ HISTORY_ALERT_TYPES = frozenset(
 ALERT_TYPES = PRICE_THRESHOLD_TYPES | HISTORY_ALERT_TYPES
 
 
+@dataclass(frozen=True)
+class AlertForm:
+    """What one alert type asks a person for, and in which order to offer it.
+
+    A rule's *type* says how it is evaluated; this says how it is entered, and
+    the two are not the same table. "drawdown" needs a percentage and a window,
+    "above" needs a price and no window, and an editor that gets that wrong
+    writes a rule the evaluator will never fire.
+
+    It lives in the domain because two editors now ask the question — the app's
+    watchlist widget and the React ticker page — and a second copy of the field
+    list is a second place for a new alert type to be forgotten.
+    """
+
+    type: str
+    field: str | None  # price | pct | level; None when the type takes no number
+    default: float | None  # what the editor offers before anyone types
+    window: int | None  # default lookback in trading days; None when it takes none
+
+
+# Offering order, top to bottom: the two price thresholds anybody understands
+# first, then the ones that need a chart to explain.
+ALERT_FORMS: tuple[AlertForm, ...] = (
+    AlertForm("above", "price", None, None),
+    AlertForm("below", "price", None, None),
+    AlertForm("pct_move", "pct", 5.0, None),
+    AlertForm("drawdown", "pct", 5.0, None),
+    AlertForm("rsi_below", "level", 30.0, 14),
+    AlertForm("rsi_above", "level", 70.0, 14),
+    AlertForm("sma_cross", None, None, 50),
+    AlertForm("high_52w", None, None, 252),
+    AlertForm("low_52w", None, None, 252),
+)
+
+ALERT_FORM_BY_TYPE = {form.type: form for form in ALERT_FORMS}
+
+
 @dataclass
 class Alert:
     """A watchlist alert rule.

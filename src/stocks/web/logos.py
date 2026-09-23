@@ -14,8 +14,8 @@ from pathlib import Path
 
 import streamlit as st
 
-from stocks.config import load_watchlist
-from stocks.data.logo import brand_logo_url, logo_url, mirror_brand, mirror_logo
+from stocks import identity
+from stocks.data.logo import brand_logo_url, mirror_brand
 from stocks.portfolio import platforms
 from stocks.portfolio.custody import UNKNOWN as BROKER_UNKNOWN
 from stocks.web import auth
@@ -29,7 +29,8 @@ from stocks.web.ds import (
 from stocks.web.i18n import t as tr
 
 # Streamlit static serving root: ./static next to the entry point (app.py).
-_STATIC_LOGO_DIR = Path(__file__).parent / "static" / "logos"
+# Defined in `stocks.identity` so the API mirrors into the same directory.
+_STATIC_LOGO_DIR = identity.STATIC_LOGO_DIR
 
 
 def _static_logo_src(name: str) -> str:
@@ -44,27 +45,16 @@ def _static_logo_src(name: str) -> str:
     Page routes (".../portfolio") have no trailing slash, so the last
     segment drops out and "app/static/..." still resolves at the mount root.
     """
-    return f"app/static/logos/{name}"
+    return f"{identity.STATIC_PREFIX}{name}"
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def logo(ticker: str) -> str | None:
     """Same-origin logo URL for a ticker (cached a day — logos rarely change).
 
-    Images are mirrored into static/logos/ and served by this app, so the
-    logo hosts never see per-viewer requests revealing which tickers someone
-    displays. The external URL is the fallback when this host can't validate
-    or download the image (logo CDNs block datacenter IPs — the browser gets
-    a chance instead); None when no source knows the ticker.
-
-    Resolved first (`yahoo_symbol`): every logo source is keyed by symbol, so
-    a row the ledger stores as an ISIN would otherwise probe with a string no
-    source knows — and mirror its result under a second file name.
+    See `stocks.identity.logo_src`; this is the script-run cache around it.
     """
-    ticker = yahoo_symbol(ticker)
-    if name := mirror_logo(ticker, _STATIC_LOGO_DIR):
-        return _static_logo_src(name)
-    return logo_url(ticker)
+    return identity.logo_src(ticker, _STATIC_LOGO_DIR)
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
@@ -153,71 +143,22 @@ def asset_logo(name: str) -> str | None:
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def _company_name(ticker: str, watchlist: str) -> str | None:
-    # A ledger keeps the label the broker wrote — an ISIN ("US4131971040") or
-    # a local code (RCF) — while every name source below keys on the Yahoo
-    # symbol, so resolve the broker label first or those holdings render as a
-    # raw ISIN everywhere a name is shown. The account's own entry still wins:
-    # it is matched under both spellings, so a custom name set on the broker
-    # code is not lost by resolving past it.
-    resolved = yahoo_symbol(ticker)
-    wanted = {ticker.upper(), resolved.upper()}
-    for h in load_watchlist(Path(watchlist)):
-        if h.ticker.upper() in wanted and h.name:
-            return h.name
-    # Both fallbacks hit the network on a cold cache (coin list, SEC ticker
-    # map) and render pre-page.run, outside the app-level guard — a dead or
-    # throttled endpoint must degrade to "no name" (callers show the symbol),
-    # not crash the page. The miss isn't cached, so a rerun retries.
-    try:
-        from stocks.data.crypto import crypto_name
+    """`identity.company_name`, memoized per (ticker, account watchlist).
 
-        if name := crypto_name(resolved):
-            return name
-        from stocks.data.funds import fund_name
-
-        # The fund catalog is local and covers the lines a EUR investor holds;
-        # the SEC map below knows US filers, so a UCITS ETF would otherwise
-        # render as a bare symbol everywhere a name is shown.
-        if name := fund_name(resolved):
-            return name
-        from stocks.data.edgar import title_for
-
-        return title_for(resolved)
-    except Exception:
-        return None
+    The watchlist path is in the key because a custom name one account set
+    must never render for another.
+    """
+    return identity.company_name(ticker, watchlist)
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def yahoo_symbol(ticker: str) -> str:
-    """The Yahoo symbol a stored broker label stands for (itself, unmapped).
+    """`identity.yahoo_symbol`, memoized for a script run.
 
-    Two tiers, cheapest first: watchlist.yaml `aliases`, the hand-written map
-    that covers the local codes Revolut prints; then, for a label that is
-    ISIN-shaped and unmapped, Yahoo's own ISIN lookup — one search per ISIN
-    ever, cached on disk (stocks.data.symbols.symbol_for_isin). Without the
-    second tier a DEGIRO import reads as twelve rows of "US81762P1021" until
-    somebody hand-edits a mapping file, which is not a thing to ask of a
-    reader looking at their own trades.
-
-    Never raises and never blocks a render on a dead Yahoo: an unresolvable
-    label comes back exactly as it was stored.
+    Worth a cache here rather than only in the domain: a page that prints
+    twenty rows asks this twenty times, and the ISIN tier is a network lookup.
     """
-    try:
-        from stocks.data.fetch import resolve
-
-        resolved = resolve(ticker)
-    except Exception:
-        return ticker
-    if resolved.upper() != ticker.upper():
-        return resolved
-    try:
-        from stocks.data.symbols import is_isin, symbol_for_isin
-
-        if is_isin(resolved) and (symbol := symbol_for_isin(resolved)):
-            return symbol
-    except Exception:
-        pass
-    return resolved
+    return identity.yahoo_symbol(ticker)
 
 
 def display_symbol(ticker: str) -> str:

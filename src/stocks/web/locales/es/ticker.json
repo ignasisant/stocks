@@ -40,6 +40,7 @@
   "ticker.price_above": "precio por encima",
   "ticker.price_below": "precio por debajo",
   "ticker.hover_buy": "<b>Compra</b>  {qty} acc @ <b>{price}</b> · {date}<br><span style='color:{color}'><b>{pct}%</b></span> hasta actual {last}",
+  "ticker.hover_sell": "<b>Venta</b>  {qty} acc @ <b>{price}</b> · {date}",
   "ticker.hover_avg_buy": "<br>compra media {avg}",
   "ticker.hover_sell_tmpl": "<b>Venta</b>  %{customdata:.4f} acc @ <b>%{y:,.2f}</b> · %{x|%Y-%m-%d}<extra></extra>",
   "ticker.my_buys": "Mis compras",

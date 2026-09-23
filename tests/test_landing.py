@@ -30,7 +30,6 @@ def gate(monkeypatch):
     monkeypatch.setattr(landing.st, "session_state", state)
     monkeypatch.setattr(landing.st, "secrets", {"auth": {"client_id": "x"}})
     monkeypatch.setattr(landing.st, "login", lambda *a, **k: logins.append(True))
-    monkeypatch.setattr(landing.auth, "is_logged_in", lambda: False)
     return params, state, logins
 
 
@@ -41,28 +40,16 @@ def test_no_parameters_is_a_no_op(gate):
     assert (dict(params), state, logins) == ({}, {}, [])
 
 
-def test_signin_param_starts_the_oidc_round_trip(gate):
-    params, _, logins = gate
-    params[landing.PARAM_SIGNIN] = "1"
-    landing.consume_params()
-    assert logins == [True], "st.login() should have been called exactly once"
-
-
-def test_signin_param_is_ignored_once_signed_in(gate, monkeypatch):
-    """The parameter can survive the redirect; a second login would loop."""
-    params, _, logins = gate
-    monkeypatch.setattr(landing.auth, "is_logged_in", lambda: True)
+def test_the_signin_param_is_not_this_modules_job_any_more(gate):
+    """`?signin=1` is answered by `server.LandingGate` — see
+    `test_the_signin_parameter_bounces_into_the_apps_own_sign_in`. A request
+    only reaches `consume_params()` once the gate has declined to act, so it
+    must do nothing here rather than start a second round trip."""
+    params, state, logins = gate
     params[landing.PARAM_SIGNIN] = "1"
     landing.consume_params()
     assert logins == []
-
-
-def test_signin_param_is_ignored_without_auth_configured(gate, monkeypatch):
-    params, _, logins = gate
-    monkeypatch.setattr(landing.st, "secrets", {})
-    params[landing.PARAM_SIGNIN] = "1"
-    landing.consume_params()
-    assert logins == []
+    assert params[landing.PARAM_SIGNIN] == "1", "the CTA link stays as it is"
 
 
 def test_guest_param_is_cleared_from_the_url(gate):

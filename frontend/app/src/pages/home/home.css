@@ -1,0 +1,631 @@
+/*
+ * Home's own stylesheet. Every colour, radius and type step is an `--ag-*`
+ * custom property the server inlines, so this page and the Streamlit one it
+ * replaces cannot drift apart — and so there is no hex literal here for the
+ * design system to disagree with.
+ *
+ * The card, the KPI tile and the delta pill are deliberately the same shapes
+ * `web/tables.py` draws: a reader moving between the two front ends should not
+ * have to re-learn what a figure looks like.
+ */
+
+.hm-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.hm-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.hm-h2 {
+  margin: 0;
+  font-size: var(--ag-fs-2xl, 22px);
+  font-weight: 600;
+}
+
+.hm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg, 16px);
+  background: var(--ag-surface-card);
+}
+
+.hm-card-title {
+  margin: 0;
+  font-size: var(--ag-fs-base, 14px);
+  font-weight: 600;
+}
+
+.hm-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.hm-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.hm-note {
+  margin: 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm, 12px);
+  line-height: 1.45;
+}
+
+.hm-caption {
+  margin: 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 11px);
+  line-height: 1.45;
+}
+
+.hm-muted {
+  color: var(--ag-text-muted);
+}
+
+.hm-link {
+  align-self: flex-start;
+  color: var(--ag-brand-accent);
+  font-size: var(--ag-fs-md, 13px);
+  text-decoration: none;
+}
+
+.hm-link:hover {
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------- KPI tiles */
+
+.hm-kpis {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.hm-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md, 12px);
+  background: var(--ag-surface-page);
+}
+
+.hm-kpi-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hm-kpi-label {
+  font-size: var(--ag-fs-sm, 12px);
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--ag-text-secondary);
+}
+
+.hm-kpi-help {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill, 9999px);
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs, 10px);
+  line-height: 1;
+  cursor: help;
+}
+
+.hm-kpi-row {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.hm-kpi-value {
+  font-size: var(--ag-fs-xl, 18px);
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ag-text-primary);
+}
+
+/* ---------------------------------------------------------------- the pills */
+
+.hm-chip {
+  padding: 1px 7px;
+  border-radius: var(--ag-radius-pill, 9999px);
+  font-size: var(--ag-fs-xs, 11px);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hm-chip-up {
+  background: var(--ag-profit-band);
+  color: var(--ag-up);
+}
+
+.hm-chip-down {
+  background: var(--ag-loss-band);
+  color: var(--ag-down);
+}
+
+.hm-chip-flat {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-muted);
+}
+
+/* ------------------------------------------------------------ the selectors */
+
+.hm-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-nav, 6px);
+  background: var(--ag-surface-page);
+}
+
+.hm-seg {
+  padding: 2px 10px;
+  border: none;
+  border-radius: var(--ag-radius-xs, 4px);
+  background: none;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-md, 13px);
+  cursor: pointer;
+}
+
+.hm-seg-on {
+  background: var(--ag-purple-900);
+  color: var(--ag-text-primary);
+}
+
+/* ------------------------------------------------------------- the tables */
+
+.hm-split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.75rem;
+}
+
+.hm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ag-fs-md, 13px);
+}
+
+.hm-table th {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--ag-border);
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 11px);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.hm-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--ag-rule-soft);
+}
+
+.hm-table tr:last-child td {
+  border-bottom: none;
+}
+
+.hm-num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.hm-ticker {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.hm-ticker:hover {
+  text-decoration: underline;
+}
+
+/* -------------------------------------------------------------- the groups */
+
+.hm-group {
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  background: var(--ag-surface-card);
+}
+
+.hm-group > summary {
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  font-size: var(--ag-fs-base, 14px);
+  font-weight: 600;
+}
+
+.hm-group[open] > summary {
+  border-bottom: 1px solid var(--ag-border);
+}
+
+.hm-group > .hm-table {
+  padding: 0.25rem 0.5rem 0.5rem;
+}
+
+/* ------------------------------------------------------- the daily briefing */
+
+.hm-daily-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hm-daily-badge {
+  padding: 1px 8px;
+  border-radius: var(--ag-radius-pill, 9999px);
+  background: var(--ag-purple-800);
+  color: var(--ag-purple-300);
+  font-size: var(--ag-fs-2xs, 10px);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.hm-daily-when {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 11px);
+}
+
+.hm-daily-headline {
+  margin: 0;
+  font-size: var(--ag-fs-lg, 16px);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.hm-daily-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: var(--ag-fs-base, 14px);
+  line-height: 1.45;
+}
+
+.hm-daily-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.hm-daily-chips .hm-ticker {
+  padding: 2px 9px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill, 9999px);
+  background: var(--ag-surface-page);
+  font-size: var(--ag-fs-md, 13px);
+}
+
+/* ------------------------------------------------------- the mini calendar */
+
+.hm-cal {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.hm-cal th {
+  padding: 2px 4px;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs, 10px);
+  font-weight: 500;
+  text-align: left;
+}
+
+.hm-cal td {
+  width: 20%;
+  height: 62px;
+  vertical-align: top;
+  padding: 3px 4px;
+  border: 1px solid var(--ag-rule-soft);
+  border-radius: var(--ag-radius-xs, 4px);
+}
+
+.hm-cal td.hm-dim {
+  background: var(--ag-surface-sunken);
+}
+
+.hm-cal td.hm-today {
+  border-color: var(--ag-brand-accent);
+}
+
+.hm-cal-day {
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs, 10px);
+  line-height: 1.4;
+}
+
+.hm-cal-chip {
+  display: block;
+  margin-top: 2px;
+  padding: 1px 4px;
+  border-radius: var(--ag-radius-xs, 4px);
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-2xs, 10px);
+  font-weight: 600;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Due inside a week — the one upcoming chip that earns a colour. */
+.hm-cal-chip.hm-soon {
+  background: var(--ag-loss-band);
+  color: var(--ag-down);
+}
+
+.hm-cal-chip.hm-beat {
+  background: var(--ag-profit-band);
+  color: var(--ag-up);
+}
+
+.hm-cal-chip.hm-miss {
+  background: var(--ag-loss-band);
+  color: var(--ag-down);
+}
+
+/* The glance sparkline. Sits between the tile rows at a fixed height so the
+   card does not jump when the series lands after the figures. */
+.hm-spark {
+  display: block;
+  height: 56px;
+  margin: 12px 0 4px;
+}
+
+/* ------------------------------------------------------ the first-run card */
+
+/* Two stacked groups in one card. The gap between them is wider than the gap
+   inside one, so the grouping carries itself without a rule — the Streamlit
+   card sets the same two gaps for the same reason. */
+.hm-firstrun {
+  gap: 1.1rem;
+}
+
+/* The first-run guidance, rendered from one markdown blob: a heading line, a
+   numbered list of three, and a closing sentence. Sized down from body copy —
+   it is instructions beside the book, not the book. */
+.hm-prose {
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-base, 14px);
+  line-height: 1.55;
+}
+
+.hm-prose p {
+  margin: 0 0 0.5rem;
+}
+
+.hm-prose ol,
+.hm-prose ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.hm-prose strong {
+  color: var(--ag-text-primary);
+}
+
+.hm-firstrun-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.hm-check-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.hm-check-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.hm-check-title {
+  font-size: var(--ag-fs-base, 14px);
+  font-weight: 600;
+}
+
+.hm-check-acts {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.hm-badge {
+  padding: 1px 8px;
+  border-radius: var(--ag-radius-pill, 9999px);
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs, 10px);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* An action that is not the thing the card is asking for: readable, and never
+   competing with the row that still needs doing. */
+.hm-quiet {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-md, 13px);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.hm-quiet:hover {
+  color: var(--ag-text-primary);
+  text-decoration: underline;
+}
+
+.hm-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.hm-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 4px 11px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill, 9999px);
+  background: var(--ag-surface-page);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-md, 13px);
+  text-align: left;
+}
+
+button.hm-check {
+  cursor: pointer;
+}
+
+button.hm-check:hover {
+  background: var(--ag-surface-hover);
+}
+
+/* Done recedes to a muted tick: the badge already counts them, and four
+   emphatic rows bury the one row that still needs doing — which is also the
+   only one left carrying a border, and so the only one that looks like a
+   control. */
+.hm-check-on {
+  border-color: transparent;
+  background: none;
+  color: var(--ag-text-muted);
+}
+
+button.hm-check-on:hover {
+  background: var(--ag-surface-sunken);
+}
+
+.hm-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill, 9999px);
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs, 10px);
+  line-height: 1;
+}
+
+.hm-mark-on {
+  border-color: transparent;
+  background: var(--ag-surface-sunken);
+}
+
+/* The tick is a picture of a state that has words; this is where the words go
+   for anyone not looking at the picture. */
+.hm-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The retry under a section that could not load. Smaller than the shell's
+   wall-sized one: it sits inside a card, beside a single sentence. */
+.hm-retry {
+  align-self: flex-start;
+  padding: 0.3rem 0.7rem;
+  font-size: var(--ag-fs-md, 13px);
+}
+
+/* The sparkline's key. Small and inline: it names two lines, it is not a
+   chart legend in its own right. */
+/* The range selector sits over the chart, right-aligned, out of the way of the
+   legend under it — the Streamlit card puts its segmented control in the same
+   place. */
+.hm-spark-head {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+/* The window's own extremes, one at each end of the plot's height: the line
+   has a shape without them and no size. */
+.hm-spark-scale {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs);
+}
+
+.hm-spark-legend {
+  display: flex;
+  gap: 14px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs);
+}
+
+.hm-spark-legend li {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.hm-spark-key {
+  display: inline-block;
+  width: 14px;
+  height: 0;
+  border-top-width: 2px;
+}
+
+.hm-spark-injected {
+  border-top: 2px dashed var(--ag-text-muted);
+}
+
+.hm-spark-value {
+  border-top: 2px solid var(--ag-brand-accent);
+}

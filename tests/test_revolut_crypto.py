@@ -84,3 +84,48 @@ def test_unknown_fiat_falls_back_to_usd_pair_but_keeps_currency():
     tx = parse_csv(csv).transactions[0]
     assert tx.ticker == "BTC-USD"  # no reliable Yahoo CHF pair
     assert tx.currency == "CHF"  # cost basis stays in the real currency
+
+
+# --------------------------------------------------- an export in Spanish
+#
+# Revolut's crypto export is localised: an account set to Spanish downloads a
+# file whose type column says "Compra" and whose dates say "3 abr 2025". Both
+# used to be unreadable — the types matched `startswith("BUY")` and the dates
+# went through pandas, which knows "apr" — so a 500-row statement imported as
+# zero transactions and the app said no parser recognised the file.
+
+ES_HEADER = "Symbol,Type,Quantity,Price,Value,Fees,Date\n"
+
+
+def test_spanish_types_and_month_names_import():
+    csv = ES_HEADER + (
+        'SOL,Compra,5.144921,194.37€,"1,000.00€",9.90€,3 feb 2025 09:21:06\n'
+        'SOL,Compra,18.989931,105.32€,"2,000.00€",19.79€,3 abr 2025 19:55:12\n'
+        'SOL,Venta,15,128.65€,"1,929.70€",19.10€,23 abr 2025 04:22:04\n'
+        'BTC,Compra,0.00955534,"73,257.41€",700.00€,6.93€,21 nov 2025 12:11:14\n'
+        'ETH,Compra,1.03718945,"1,928.29€","2,000.00€",19.80€,2 feb 2026 09:55:05\n'
+    )
+    result = parse_csv(csv)
+    assert [(tx.date, tx.ticker, tx.action) for tx in result.transactions] == [
+        ("2025-02-03", "SOL-EUR", "buy"),
+        ("2025-04-03", "SOL-EUR", "buy"),
+        ("2025-04-23", "SOL-EUR", "sell"),
+        ("2025-11-21", "BTC-EUR", "buy"),
+        ("2026-02-02", "ETH-EUR", "buy"),
+    ]
+    assert not result.skipped
+
+
+def test_staking_moves_and_rewards_are_told_apart():
+    # "Staking" moves coins the account already owns; "Recompensa de staking"
+    # is new coins, taxable income. Both stay out of the ledger, but a move
+    # told as a reward sends the reader off to add a buy that never happened.
+    csv = ES_HEADER + (
+        'SOL,Staking,5.093986,194.80€,992.30€,0.00€,3 feb 2025 09:22:03\n'
+        "SOL,Recompensa de staking,0.001771,,,,6 feb 2025 13:38:21\n"
+    )
+    result = parse_csv(csv)
+    assert not result.transactions
+    moved, reward = result.skipped
+    assert "moved in or out of staking" in moved["reason"]
+    assert "reward" in reward["reason"]

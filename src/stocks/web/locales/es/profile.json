@@ -78,6 +78,7 @@
   "profile.delete_confirm": "Entiendo que esto borra todos mis datos de forma permanente.",
   "profile.delete_button": "Eliminar mi cuenta y mis datos",
   "profile.delete_failed": "El borrado ha fallado — no se ha eliminado nada. Inténtalo de nuevo y contacta con el operador si persiste.",
+  "profile.delete_done": "Tu cuenta y tus datos ya no existen. Cierra sesión para terminar.",
   "profile.tax_section": "Residencia fiscal",
   "profile.tax_residence": "Dónde declaras",
   "profile.tax_residence_auto": "Automático (región del navegador)",
@@ -157,10 +158,12 @@
   "profile.notify_weekly": "Revisión semanal (domingo)",
   "profile.notify_weekly_help": "Semana, mes y año frente al índice, los valores que movieron la cartera, la semana que viene y cuánto te has concentrado. Los domingos por la tarde.",
   "profile.notify_alerts_help": "Los umbrales de tu lista de seguimiento, comprobados cada hora en días de mercado.",
-  "profile.notify_link_title": "Conectar Telegram",
   "profile.notify_connected": "Conectado",
   "profile.notify_test_row": "Comprobar la conexión",
   "profile.notify_test_help": "Envía un mensaje al chat vinculado.",
   "profile.notify_unlink_row": "Desconectar",
-  "profile.notify_unlink_help": "Corta todos los mensajes. Solo se borra tu id de chat."
+  "profile.notify_unlink_help": "Corta todos los mensajes. Solo se borra tu id de chat.",
+  "profile.next_app": "App nueva",
+  "profile.next_app_caption": "El front end reconstruido. Misma cuenta, mismos datos, una página que no recarga — estas pantallas siguen disponibles.",
+  "profile.next_app_open": "Abrir la app nueva"
 }

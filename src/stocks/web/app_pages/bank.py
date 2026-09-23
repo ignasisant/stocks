@@ -39,9 +39,6 @@ COUNTRIES = (
     "FI", "SE", "NO", "DK", "AT", "PL",
 )
 
-BALANCE_PREFERENCE = ("CLBD", "ITAV", "CLAV", "XPCD", "OTHR")
-
-
 @st.cache_data(ttl=3600, show_spinner=False)
 def _aspsps(country: str) -> list[dict]:
     """Banks for a country. Cached: the list is reference data, identical for
@@ -49,26 +46,14 @@ def _aspsps(country: str) -> list[dict]:
     return enablebanking.aspsps(country)
 
 
-def _pick_balance(balances: list[dict]) -> dict | None:
-    """The one balance a person means by "how much is in the account" —
-    booked/available first, in that order, whatever else the bank reports."""
-    for wanted in BALANCE_PREFERENCE:
-        for b in balances:
-            if str(b.get("balance_type", "")).upper() == wanted:
-                return b
-    return balances[0] if balances else None
-
-
 def _balance_text(balances: list[dict]) -> str:
-    b = _pick_balance(balances)
-    if not b:
+    """The account's balance as a line of text. Which of the bank's balances
+    that is lives in `store`, so the shell shows the same one."""
+    money = store.balance_money(balances)
+    if money is None:
         return "—"
-    money = b.get("balance_amount") or {}
-    try:
-        amount = float(money.get("amount", 0) or 0)
-    except (TypeError, ValueError):
-        return "—"
-    return f"{amount:,.2f} {money.get('currency', '')}".strip()
+    amount, currency = money
+    return f"{amount:,.2f} {currency}".strip()
 
 
 # ------------------------------------------------------- redirect landing
@@ -159,12 +144,7 @@ for conn in _connections:
                     # The consent died before its stated date (revoked at the
                     # bank, or the ASPSP cut it short) — mark it so the card
                     # offers a reconnect instead of a button that can't work.
-                    conn["valid_until"] = "1970-01-01T00:00:00Z"
-                    data = store.load(paths.bank)
-                    for c in data["connections"]:
-                        if c.get("session_id") == session_id:
-                            c["valid_until"] = conn["valid_until"]
-                    store.save(data, paths.bank)
+                    store.mark_expired(paths.bank, session_id)
                     st.warning(tr("bank.consent_gone"), icon=":material/link_off:")
                 except BankError as exc:
                     st.error(

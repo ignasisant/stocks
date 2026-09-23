@@ -29,8 +29,10 @@ from stocks.portfolio.tax.base import (
     ReportingFlag,
     TaxPeriod,
     TaxSettings,
+    TaxTotal,
     month_range,
     tax_year_of,
+    total_of,
 )
 
 __all__ = [
@@ -42,10 +44,14 @@ __all__ = [
     "ReportingFlag",
     "TaxPeriod",
     "TaxSettings",
+    "TaxTotal",
+    "buy_dates",
     "codes",
     "get",
+    "labels",
     "month_range",
     "normalize",
+    "total_of",
 ]
 
 PeriodFn = Callable[
@@ -276,3 +282,44 @@ def normalize(code: str | None) -> str:
 
 def get(code: str | None = None) -> Jurisdiction:
     return JURISDICTIONS[normalize(code)]
+
+
+def labels(transactions) -> list[str]:
+    """Every security in the ledger, under the label a RealizedSale carries.
+
+    Same reason as `buy_dates`: anything matched against a sale's ticker — the
+    fund classification the German partial exemption needs, for one — has to be
+    keyed the way the replay keys it, not the way the broker wrote it.
+    """
+    from stocks.portfolio import transfers
+
+    return sorted({tx.ticker for tx in transfers.relabel(list(transactions))})
+
+
+def buy_dates(transactions) -> dict[str, list[str]]:
+    """Acquisition dates per security, for the repurchase rules.
+
+    Every jurisdiction that blocks a loss on a quick buy-back looks its window
+    up here — Spain's two months, the US wash sale, Ireland's four weeks,
+    Canada's superficial loss — as `buy_dates.get(sale.ticker)`.
+
+    Which is exactly why this may not be built by hand from the raw ledger.
+    `positions.build` relabels before replaying (`transfers.normalize`), so a
+    RealizedSale carries the *unified* label, while a book fed by two brokers
+    spells the same security two ways: DEGIRO exports have no ticker column and
+    book under the ISIN, IBKR uses the symbol. Key the acquisitions the raw way
+    and the lookup misses — the repurchase is invisible, the rule never fires,
+    and a disallowed loss is reported as deductible. That is an
+    under-declaration, and nothing in the output says it happened.
+
+    So: relabel first, with the same function the replay used.
+    """
+    from collections import defaultdict
+
+    from stocks.portfolio import transfers
+
+    dates: dict[str, list[str]] = defaultdict(list)
+    for tx in transfers.relabel(list(transactions)):
+        if tx.action == "buy":
+            dates[tx.ticker].append(tx.date)
+    return dict(dates)

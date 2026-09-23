@@ -169,3 +169,20 @@ def test_fingerprint_list_matches_loose_parsers():
     platform_keys = {p.key for p in platforms.PLATFORMS}
     assert set(autodetect._FINGERPRINT) <= platform_keys
     assert set(autodetect._FINGERPRINT) <= set(autodetect._LOOSE)
+
+
+def test_a_localised_crypto_export_is_claimed_by_its_own_parser():
+    """The types and the month names are Spanish; the parser still owns it.
+
+    This is the file that used to fall through every parser and then through
+    the mapping fallback too, and reached the reader as "no parser recognised
+    this file" — with 500 rows it read perfectly well.
+    """
+    csv = (
+        "Symbol,Type,Quantity,Price,Value,Fees,Date\n"
+        'SOL,Compra,5.144921,194.37€,"1,000.00€",9.90€,3 feb 2025 09:21:06\n'
+        'SOL,Venta,15,128.65€,"1,929.70€",19.10€,23 abr 2025 04:22:04\n'
+    )
+    found = autodetect.detect("statement.csv", csv.encode())
+    assert found.platform == "revolut_crypto"
+    assert [tx.ticker for tx in found.result.transactions] == ["SOL-EUR", "SOL-EUR"]

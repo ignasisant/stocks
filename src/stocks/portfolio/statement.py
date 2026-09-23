@@ -51,6 +51,30 @@ class ParseResult:
 
 
 # ------------------------------------------------------------------ primitives
+# Tried in order against an upload. utf-8-sig covers UTF-8 with or without the
+# BOM Excel writes; cp1252 is what a Windows-authored European export is, and
+# it is a superset of latin-1 over the bytes brokers actually emit (curly
+# quotes, the euro sign). The last one decodes any byte sequence, so `decode`
+# always returns.
+ENCODINGS = ("utf-8-sig", "cp1252")
+
+
+def decode(data: bytes) -> str:
+    """Statement text from upload bytes, whatever the export was saved as.
+
+    Every caller used to hard-code `utf-8-sig`, so an export in a Windows
+    codepage — a Spanish broker's "Comisión" column, a name with an accent —
+    raised UnicodeDecodeError out of the parser and reached the reader as a
+    crash page rather than as a statement.
+    """
+    for encoding in ENCODINGS:
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode(ENCODINGS[-1], errors="replace")
+
+
 def money(value: str | None) -> float:
     """Parse a money/number field: strip currency symbols and thousands commas.
 
@@ -231,9 +255,43 @@ def parse_rows(
     return result
 
 
+# Separators a broker export turns up with. Comma leads because a tie must
+# resolve the way this module always did.
+DELIMITERS = (",", ";", "\t", "|")
+
+
+def sniff_delimiter(header: str, aliases: Mapping[str, tuple[str, ...]]) -> str:
+    """The separator that resolves the most of `aliases` out of a header row.
+
+    European exports are semicolon-delimited as often as comma-delimited, and
+    reading one with the wrong separator does not fail loudly: the whole line
+    becomes a single column, nothing resolves, and every row is skipped for
+    want of a field that was there all along.
+
+    Counting separator characters is the usual trick and the wrong one here —
+    a comma file with semicolons inside a description column would be read as
+    semicolon-delimited and break a statement that parses today. Scoring by
+    how many columns each candidate actually resolves cannot regress that way:
+    the wrong separator resolves nothing, so it loses.
+    """
+    best, best_score = DELIMITERS[0], -1
+    for delimiter in DELIMITERS:
+        try:
+            names = next(csv.reader(io.StringIO(header), delimiter=delimiter))
+        except (csv.Error, StopIteration):
+            continue
+        score = len(resolve_columns(names, aliases))
+        if score > best_score:
+            best, best_score = delimiter, score
+    return best
+
+
 def parse_csv(text: str, fmt: CsvFormat) -> ParseResult:
     """Parse flat-CSV statement text into a ParseResult (no side effects)."""
-    reader = csv.DictReader(io.StringIO(text))
+    head = text.splitlines()[0] if text.strip() else ""
+    reader = csv.DictReader(
+        io.StringIO(text), delimiter=sniff_delimiter(head, fmt.columns)
+    )
     if reader.fieldnames is None:
         return ParseResult()
     col = resolve_columns(reader.fieldnames, fmt.columns)

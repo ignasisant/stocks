@@ -29,6 +29,16 @@ ES_CSV = (
     "03/04/2024;SAN;Traspaso;5;4,10;EUR;0\n"
 )
 
+# A holdings report: a table, but no date and nothing that says what
+# happened. Neither the model nor the guess can make transactions of it, and
+# that is the case where an outage is still an outage.
+POSITIONS_CSV = (
+    "Resumen de cartera;;\n"
+    "Posicion;Cantidad;Valor\n"
+    "AAPL;10;1.805,00\n"
+    "MSFT;5;2.000,00\n"
+)
+
 MAPPING = {
     "header_row": 2,
     "columns": {"date": 0, "ticker": 1, "action": 2, "quantity": 3,
@@ -658,14 +668,25 @@ def test_one_block_failing_is_not_an_outage(monkeypatch):
 
 
 def test_a_dead_provider_on_the_spreadsheet_path_too():
-    found = llm_map.extract("extracto.csv", ES_CSV.encode(),
+    """Only when the file defeats the model *and* the header/content guess."""
+    found = llm_map.extract("posiciones.csv", POSITIONS_CSV.encode(),
                             _StubProvider(boom=True), "k")
     assert found.unavailable is True
     assert "assistant is down" in found.result.skipped[0]["reason"]
 
 
-def test_a_refused_mapping_is_not_an_outage():
+def test_a_dead_provider_still_imports_a_readable_file():
+    # The columns are named in the file; nothing about reading them needs a
+    # model, so an outage must not be the end of the import.
     found = llm_map.extract("extracto.csv", ES_CSV.encode(),
+                            _StubProvider(boom=True), "k")
+    assert found.unavailable is False
+    assert [tx.ticker for tx in found.result.transactions] == ["AAPL", "AAPL",
+                                                               "MSFT"]
+
+
+def test_a_refused_mapping_is_not_an_outage():
+    found = llm_map.extract("posiciones.csv", POSITIONS_CSV.encode(),
                             _StubProvider('{"columns": null}'), "k")
     assert found.unavailable is False
 
@@ -720,14 +741,14 @@ def test_parse_reports_an_unreadable_spreadsheet():
 
 
 def test_parse_reports_a_refused_mapping():
-    result = llm_map.parse("extracto.csv", ES_CSV.encode(),
+    result = llm_map.parse("posiciones.csv", POSITIONS_CSV.encode(),
                            _StubProvider('{"columns": null}'))
     assert not result.transactions
     assert "columns could not be matched" in result.skipped[0]["reason"]
 
 
 def test_parse_survives_a_dead_provider():
-    result = llm_map.parse("extracto.csv", ES_CSV.encode(),
+    result = llm_map.parse("posiciones.csv", POSITIONS_CSV.encode(),
                            _StubProvider(boom=True))
     assert not result.transactions and result.skipped
 
@@ -750,3 +771,100 @@ def test_parse_reads_a_real_xlsx(tmp_path):
                            _StubProvider(_reply(mapping)))
     assert len(result.transactions) == 1
     assert result.transactions[0].price == 180.5
+
+
+# ------------------------------------------- mapping the file with no model
+#
+# The model call is an optimisation, not a dependency: the columns of a CSV
+# are named in the CSV. These cover the path that reads them without asking
+# anyone, which is what runs when the free chain is rate-limited.
+
+CRYPTO_CSV = (
+    "Symbol,Type,Quantity,Price,Value,Fees,Date\n"
+    'SOL,Compra,5.144921,194.37€,"1,000.00€",9.90€,3 feb 2025 09:21:06\n'
+    'BTC,Compra,0.00955534,"73,257.41€",700.00€,6.93€,21 nov 2025 12:11:14\n'
+    'ETH,Venta,1.03718945,"1,928.29€","2,000.00€",19.80€,2 feb 2026 09:55:05\n'
+    "SOL,Recompensa de staking,0.001771,,,,6 feb 2025 13:38:21\n"
+)
+
+# The same rows with the headers replaced by nothing anyone could look up.
+OPAQUE_CSV = (
+    "c1,c2,c3,c4,c5\n"
+    "0001,3 feb 2025 09:21:06,AAPL,Compra,10\n"
+    "0002,17 feb 2025 09:08:18,AAPL,Compra,4\n"
+    "0003,23 abr 2025 04:22:04,MSFT,Venta,2\n"
+)
+
+
+def test_the_columns_are_mapped_without_asking_anyone():
+    mapping = llm_map.guess_mapping(llm_map.read_grid("x.csv", ES_CSV.encode()))
+    assert mapping["header_row"] == 2
+    assert mapping["columns"]["date"] == 0
+    assert mapping["columns"]["ticker"] == 1
+    assert mapping["columns"]["action"] == 2
+    assert (mapping["decimal"], mapping["thousands"]) == (",", ".")
+
+
+def test_unnamed_columns_are_found_by_what_is_in_them():
+    mapping = llm_map.guess_mapping(llm_map.read_grid("x.csv", OPAQUE_CSV.encode()))
+    # Nothing in the header row says anything; the cells do.
+    assert mapping["columns"]["date"] == 1
+    assert mapping["columns"]["action"] == 3
+    assert mapping["columns"]["ticker"] == 2
+    result = llm_map.apply_mapping(
+        llm_map.read_grid("x.csv", OPAQUE_CSV.encode()), mapping)
+    assert [(tx.date, tx.ticker, tx.action) for tx in result.transactions] == [
+        ("2025-02-03", "AAPL", "buy"),
+        ("2025-02-17", "AAPL", "buy"),
+        ("2025-04-23", "MSFT", "sell"),
+    ]
+
+
+def test_a_file_of_coins_imports_as_pairs_not_as_shares():
+    """SOL is Emeren Group on NYSE; a coin left bare prices as that company."""
+    grid = llm_map.read_grid("wallet.csv", CRYPTO_CSV.encode())
+    result = llm_map.apply_mapping(grid, llm_map.guess_mapping(grid))
+    assert [tx.ticker for tx in result.transactions] == [
+        "SOL-EUR", "BTC-EUR", "ETH-EUR"]
+    assert result.skipped[0]["type"] == "Recompensa de staking"
+
+
+def test_a_share_statement_is_never_read_as_coins():
+    shares = (
+        "Fecha;Valor;Operación;Títulos;Precio;Divisa\n"
+        "02/01/2024;SOL;Compra;10;3,20;USD\n"
+        "05/03/2024;AAPL;Venta;4;190,00;USD\n"
+    )
+    grid = llm_map.read_grid("x.csv", shares.encode())
+    result = llm_map.apply_mapping(grid, llm_map.guess_mapping(grid))
+    assert [tx.ticker for tx in result.transactions] == ["SOL", "AAPL"]
+
+
+def test_the_model_saying_crypto_is_enough_on_its_own():
+    # Coins nobody curated a name for, so the symbols cannot vote: the
+    # mapping's own asset_class is what pairs them.
+    csv = ("Symbol,Type,Quantity,Price,Value,Fees,Date\n"
+           'CHILLGUY,Compra,"9,302.54766102",0.05€,500.00€,4.94€,8 may 2025 22:31:12\n'
+           'MOODENG,Compra,"2,079.44607002",0.24€,500.00€,4.94€,12 may 2025 11:48:56\n')
+    grid = llm_map.read_grid("wallet.csv", csv.encode())
+    mapping = llm_map.guess_mapping(grid)
+    assert [tx.ticker for tx in llm_map.apply_mapping(grid, mapping).transactions] \
+        == ["CHILLGUY", "MOODENG"]
+    mapping["asset_class"] = "crypto"
+    assert [tx.ticker for tx in llm_map.apply_mapping(grid, mapping).transactions] \
+        == ["CHILLGUY-EUR", "MOODENG-EUR"]
+
+
+def test_a_dated_cell_with_a_time_in_it_is_still_a_date():
+    """The old reader split on the first space and kept "3"."""
+    assert llm_map._date("3 feb 2025 09:21:06", "") == "2025-02-03"
+    assert llm_map._date("2025-03-04T09:12:00.000Z", "%Y-%m-%d") == "2025-03-04"
+
+
+def test_an_action_the_sample_never_showed_the_model_still_maps():
+    # The model only ever sees the first rows; "Venta" first appears deep in
+    # the file, so its absence from action_map must not drop the row.
+    grid = llm_map.read_grid("x.csv", ES_CSV.encode())
+    mapping = dict(MAPPING, action_map={"compra": "buy"})
+    result = llm_map.apply_mapping(grid, mapping)
+    assert [tx.action for tx in result.transactions] == ["buy", "sell", "dividend"]

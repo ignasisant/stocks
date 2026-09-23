@@ -33,6 +33,10 @@ if TYPE_CHECKING:
 TRADING_DAYS = 252
 # Default benchmarks: US large-cap, US tech, emerging markets.
 DEFAULT_BENCHMARKS = ("SPY", "QQQ", "EEM")
+# All three are US-listed and quoted in dollars. Named rather than assumed
+# because a reader in another currency does not hold the index, they hold the
+# index and the dollar — see `rebase_returns`.
+BENCHMARK_CCY = "USD"
 
 
 # ----------------------------------------------------------------- weighting
@@ -84,13 +88,34 @@ def portfolio_returns(returns: pd.DataFrame, weights: dict[str, float]) -> pd.Se
     return port[present > 0]
 
 
-def annualized_volatility(returns: pd.Series, periods: int = TRADING_DAYS) -> float:
+def samples_per_year(returns: pd.Series, default: int = TRADING_DAYS) -> float:
+    """How many of these samples a year holds, read off the index.
+
+    Both annualisers below used to assume 252 — right for a series taken off
+    closes, wrong for the one the book's own return is measured on. The TWR is
+    sampled on a *calendar* day (`shares_frame` reindexes to every date so a
+    flow lands on the day it happened), so a year of it is 365 samples, and
+    annualising it at 252 understated a real book's return by seven points:
+    +15.0% printed where +22.4% was earned. Reading the span instead of taking
+    a constant means neither caller has to remember which kind it holds.
+    """
+    index = getattr(returns, "index", None)
+    if isinstance(index, pd.DatetimeIndex) and len(index) > 1:
+        span = (index[-1] - index[0]).days
+        if span > 0:
+            return len(index) * 365.25 / span
+    return float(default)
+
+
+def annualized_volatility(returns: pd.Series, periods: float | None = None) -> float:
+    """Annualised standard deviation. `periods` defaults to the index's own."""
     if returns.empty:
         return float("nan")
-    return float(returns.std(ddof=0) * periods**0.5)
+    per = samples_per_year(returns) if periods is None else periods
+    return float(returns.std(ddof=0) * per**0.5)
 
 
-def annualized_return(returns: pd.Series, periods: int = TRADING_DAYS) -> float:
+def annualized_return(returns: pd.Series, periods: float | None = None) -> float:
     """Geometric annualised return from a daily-return series."""
     n = len(returns)
     if n == 0:
@@ -98,7 +123,8 @@ def annualized_return(returns: pd.Series, periods: int = TRADING_DAYS) -> float:
     growth = float((1 + returns).prod())
     if growth <= 0:
         return float("nan")
-    return growth ** (periods / n) - 1
+    per = samples_per_year(returns) if periods is None else periods
+    return growth ** (per / n) - 1
 
 
 def beta(asset: pd.Series, benchmark: pd.Series) -> float:
@@ -296,12 +322,19 @@ def injected_vs_value(
     either.
     Columns: injected, value, pnl_pct. Tickers ever carried at cost
     while held are listed in df.attrs['carried_at_cost'].
+
+    `base` is the reporting currency and is read, not assumed: this used to
+    test each holding's currency against a literal "EUR", which for a book
+    reported in anything else valued its own base-currency names at a rate of
+    1.0 and left every *other* name without a series — carried at cost, flat,
+    and listed as unpriced. A USD book of two names both up 20% read +4.8%.
     """
     shares = shares_frame(transactions)
     if shares.empty:
         return pd.DataFrame()
     idx = shares.index
     fx = fx or {}
+    base = base.upper()
     # Normalised like `shares_frame` above, and for the same reason: a holding
     # that only ever arrived — an opening snapshot, shares moved in kind — has
     # no trade row to read a currency from, and falling back to the base
@@ -322,8 +355,8 @@ def injected_vs_value(
             px = px.copy()
             px.index = naive_dates(px.index)
             px = px.reindex(idx).ffill()
-            ccy = (ccy_of.get(ticker) or "EUR").upper()
-            if ccy == "EUR":
+            ccy = (ccy_of.get(ticker) or base).upper()
+            if ccy == base:
                 rate = pd.Series(1.0, index=idx)
             else:
                 rate = fx.get(ccy)
@@ -336,14 +369,16 @@ def injected_vs_value(
         gap = held if mtm is None else (mtm.isna() & held)
         if gap.any():
             proxy = injected_series(
-                [t for t in transactions if t.ticker == ticker], to_base
+                [t for t in transactions if t.ticker == ticker], to_base, base
             ).reindex(idx).ffill().fillna(0.0)
             value += proxy.where(gap, 0.0).clip(lower=0.0)
             carried.append(ticker)
         if mtm is not None:
             value += mtm.fillna(0.0)
 
-    injected = injected_series(transactions, to_base).reindex(idx).ffill().fillna(0.0)
+    injected = (
+        injected_series(transactions, to_base, base).reindex(idx).ffill().fillna(0.0)
+    )
     pct = pd.Series(float("nan"), index=idx)
     mask = injected > 0
     pct[mask] = value[mask] / injected[mask] - 1
@@ -358,11 +393,18 @@ def flow_series(
     tickers: set[str] | None = None,
     base: str = "EUR",
 ) -> pd.Series:
-    """Net external cash flow per date in `base`: buys +, sells −, dividends −.
+    """Net external cash flow per date in `base`: buys +, sells −.
 
-    Dividends count as withdrawals so the time-weighted return gets credit for
-    them (the market value path never includes cash). A broker transfer is not
-    cash at all: matched legs net out (stocks.portfolio.transfers) so the
+    A dividend is deliberately NOT a flow here, and that is the opposite of
+    what the textbook says — because the value path these flows are measured
+    against is not a textbook one. `load_closes` fetches `auto_adjust=True`
+    bars, so every close before an ex-date is scaled down by that dividend:
+    the series is already a total return, and the payment shows up in it as a
+    drop that never happens rather than as cash leaving. Counting it as a
+    withdrawal on top credited it twice — measured on a real book, a KO close
+    six months back sits 1.25% under its traded price, and a year of that is a
+    year of return nobody earned. A broker transfer is not cash at
+    all: matched legs net out (stocks.portfolio.transfers) so the
     return is untouched by the move, and an unmatched arrival reads as the
     contribution it is. Leave `tickers` unset when
     the value path carries unpriced names at cost (injected_vs_value); only
@@ -378,8 +420,6 @@ def flow_series(
             amt = to_base(t.quantity * t.price + t.fee, t.currency, t.date)
         elif t.action == "sell":
             amt = -to_base(t.quantity * t.price - t.fee, t.currency, t.date)
-        elif t.action == "dividend":
-            amt = -to_base(t.price - t.fee, t.currency, t.date)
         else:
             continue
         flows[t.date] = flows.get(t.date, 0.0) + amt
@@ -473,6 +513,10 @@ class PortfolioReport:
     port_returns: pd.Series
     prices: dict[str, float] = field(default_factory=dict)
     bench_returns: dict[str, pd.Series] = field(default_factory=dict)
+    # The download `returns` was taken from, kept so a caller that knows what
+    # currency each name trades in can rebuild the returns on one footing
+    # without paying for the prices twice (see `api.loaders.basket_report`).
+    closes: dict[str, pd.Series] = field(default_factory=dict)
 
     @property
     def volatility(self) -> float:
@@ -496,19 +540,102 @@ class PortfolioReport:
         return allocation(self.weights, self.meta, key)
 
 
-def load_closes(tickers: list[str], period: str = "1y") -> dict[str, pd.Series]:
-    """Close series per ticker from ONE bulk download; no-data tickers drop out."""
+def load_closes(
+    tickers: list[str], period: str = "1y", adjusted: bool = True
+) -> dict[str, pd.Series]:
+    """Close series per ticker from ONE bulk download; no-data tickers drop out.
+
+    Adjusted by default, which is what every *return* here is measured on: the
+    series is then a total return and a dividend shows up as growth rather than
+    as a drop nobody lost. `adjusted=False` keeps the prices as they printed —
+    still split-corrected, because a 10-for-1 in the window would otherwise put
+    the high ten times over the price. That is the one a 52-week edge wants: an
+    adjusted high sits below the price that was actually paid, which quietly
+    promotes a name to "at its high" that is nowhere near it.
+    """
     # Imported here, not at module scope: this module is on the import chain of
     # every page (via web.portfolio_data), and pulling yfinance in costs ~150 ms
     # of a cold start for a dependency only the network functions below need.
     from stocks.data.fetch import fetch_many
 
     out: dict[str, pd.Series] = {}
-    for t, df in fetch_many(tickers, period=period).items():
+    for t, df in fetch_many(tickers, period=period, auto_adjust=adjusted).items():
         s = df["Close"].dropna() if "Close" in df else pd.Series(dtype=float)
         if not s.empty:
             out[t] = s.rename(t)
     return out
+
+
+# The actions that say the book held a security. A transfer leg is not a trade,
+# but a holding that only ever arrived — an opening snapshot, shares moved from
+# another broker — is held all the same, and every price series below exists to
+# value what is held. Reading trades alone leaves those positions with no price
+# series, no FX rate and no dividend history.
+HELD_ACTIONS = ("buy", "sell", *transfers.TRANSFERS)
+
+
+def book_history(
+    transactions,
+    base: str = "EUR",
+    closes: dict[str, pd.Series] | None = None,
+) -> tuple[pd.DataFrame, pd.Series, list[str]]:
+    """Full-span daily history of one book: injected vs value, TWR, unpriced.
+
+    The recipe every caller needs and nobody should assemble twice: relabel the
+    ledger so a broker transfer is one position and not two, download (or reuse)
+    a close series per held name, pull the daily FX path for every currency in
+    the book, mark the value to market and take the flow-adjusted daily
+    time-weighted returns of it.
+
+    `closes` lets a caller hand in a price download it already holds — the web
+    app shares one across the Home glance and the Portfolio page. Left out, the
+    prices are fetched here, keyed on the ledger's own span.
+
+    Returns (frame, twr, missing):
+
+    * frame — columns injected/value/pnl_pct, indexed daily (injected_vs_value)
+    * twr — daily time-weighted returns, flow-adjusted, so deposits and
+      withdrawals do not read as performance
+    * missing — held names with no usable price series, carried at cost in the
+      value path. The caller has to disclose them: a total that quietly drops
+      part of the book is a lie in smaller print.
+
+    Relabelling matters before the ticker set is taken, not after: the download
+    is keyed on the replay's label, and a DEGIRO→IBKR book asks for ISINs while
+    it holds symbols, which prices nothing.
+    """
+    from datetime import date
+
+    from stocks.data.fx import rates_range
+
+    ledger = transfers.relabel(list(transactions))
+    held = [t for t in ledger if t.action in HELD_ACTIONS]
+    if not held:
+        return pd.DataFrame(), pd.Series(dtype=float), []
+    tickers = sorted({t.ticker for t in held})
+    first = min(t.date for t in held)
+    if closes is None:
+        months = max(1, (pd.Timestamp.today() - pd.Timestamp(first)).days // 30 + 1)
+        closes = load_closes(tickers, period=f"{months}mo")
+    closes = {t: s for t, s in closes.items() if t in set(tickers)}
+    fx = {
+        ccy: pd.Series(rates_range(first, date.today().isoformat(), ccy, base))
+        for ccy in {t.currency for t in held}
+        if ccy != base
+    }
+    hist = injected_vs_value(ledger, closes, fx, base=base)
+    if hist.empty:
+        twr = pd.Series(dtype=float)
+    else:
+        # No ticker filter on the flows: unpriced names are carried at cost in
+        # the value path, so their buys and sells must offset those value jumps.
+        twr = time_weighted_returns(hist["value"], flow_series(ledger, base=base))
+    missing = sorted(
+        {t for t in tickers if t not in closes}
+        | set(hist.attrs.get("carried_at_cost", []) if not hist.empty else [])
+    )
+    return hist, twr, missing
+
 
 
 def _profile(ticker: str) -> dict:
@@ -689,6 +816,13 @@ def market_value_weights_base(
     footing here — the reporting currency, not necessarily EUR. Tickers without
     a price drop out and the rest renormalise. The sibling above weights raw
     shares * price and is right only for a single-currency book.
+
+    A pair whose spot cannot be fetched drops out too. It used to fall back to
+    a rate of 1.0, which is the one answer that is never right for a pair
+    anybody had to look up: a dollar book weighted at parity reads ~8% heavier
+    than it is, and that weight then carries into the volatility, the beta and
+    every allocation slice. Dropping the row renormalises the rest and is at
+    least a book somebody holds.
     """
     from stocks.data.fx import spot
 
@@ -698,10 +832,16 @@ def market_value_weights_base(
         if not px:
             continue
         ccy = (meta.get(p.ticker) or {}).get("currency") or p.currency
-        try:
-            rate, _ = spot(ccy, base)
-        except Exception:
+        if str(ccy).upper() == base.upper():
             rate = 1.0
+        else:
+            try:
+                rate, _ = spot(ccy, base)
+            except Exception as exc:
+                obs.warn("portfolio.weight_fx_failed", ticker=p.ticker, ccy=ccy,
+                         base=base, error_type=type(exc).__name__,
+                         error=str(exc)[:300])
+                continue
         values[p.ticker] = p.quantity * px * rate
     total = sum(values.values())
     return {t: v / total for t, v in values.items()} if total else {}
@@ -785,6 +925,98 @@ def value_weights(tbl: pd.DataFrame) -> pd.Series:
     return tbl["value"] / total
 
 
+def fx_frame(
+    currencies, index: pd.Index, base: str = "EUR"
+) -> dict[str, pd.Series]:
+    """{currency: daily rate into `base`} for `currencies`, aligned to `index`.
+
+    `index` is any index of dates — it is read as a `DatetimeIndex` below, and
+    the callers hand over a frame's own `.index`, which pandas only knows to be
+    an `Index` however it was built.
+
+    The base currency is not in the result — it is 1.0 by definition, and a
+    caller that looks a rate up for it has asked the wrong question. A pair
+    whose fetch fails is absent rather than 1.0: a position valued at a made-up
+    parity is worse than one the caller knows it could not value.
+
+    ffilled forwards *and* backwards, because the ECB publishes on business
+    days and a price index does not: a Monday holiday would otherwise leave the
+    first row of a window unvalued.
+    """
+    from datetime import date
+
+    from stocks.data.fx import rates_range
+
+    out: dict[str, pd.Series] = {}
+    if not len(index):
+        return out
+    stamps = pd.DatetimeIndex(index)
+    start = stamps[0].date().isoformat()
+    for ccy in {str(c).upper() for c in currencies} - {base.upper()}:
+        try:
+            rates = rates_range(start, date.today().isoformat(), ccy, base)
+        except Exception as exc:
+            obs.warn("portfolio.fx_range_failed", ccy=ccy, base=base,
+                     error_type=type(exc).__name__, error=str(exc)[:300])
+            continue
+        if rates:
+            series = pd.Series(rates, dtype=float)
+            series.index = pd.to_datetime(series.index)
+            out[ccy] = series.reindex(stamps).ffill().bfill()
+    return out
+
+
+def rebase_report(
+    report: PortfolioReport, positions, base: str = "EUR", period: str = "1y"
+) -> PortfolioReport:
+    """Re-read a watchlist-shaped report as the holder's own book, in `base`.
+
+    `analyze` measures a list of tickers: native closes, native weights. A book
+    is a different object — it has quantities, and it is read in one currency —
+    and every risk figure changes accordingly. Both sides move here or neither
+    does: weights on the reporting currency's footing (a mostly-USD book is
+    weighted wrong by native prices), returns off per-position values in the
+    same currency (a EUR reader's move in a US name includes the dollar's), and
+    the benchmarks converted to match, because a beta with the currency on one
+    side only measures nothing anybody holds.
+
+    Mutates and returns the report it was given, so a cached `analyze` result
+    stays the one download both front ends share.
+    """
+    values, _ = position_value_frames(
+        positions, period=period, base=base, closes=report.closes
+    )
+    if not values.empty:
+        # Quantities are fixed across the frame, so they cancel in the ratio:
+        # this is the price-and-FX move of each name, not a flow-adjusted one.
+        report.returns = values.pct_change().iloc[1:].dropna(how="all")
+        rate = fx_frame([BENCHMARK_CCY], values.index, base).get(BENCHMARK_CCY)
+        report.bench_returns = {
+            name: rebase_returns(series, rate)
+            for name, series in report.bench_returns.items()
+        }
+    report.weights = market_value_weights_base(
+        positions, report.prices, report.meta, base
+    )
+    report.port_returns = portfolio_returns(report.returns, report.weights)
+    return report
+
+
+def rebase_returns(returns: pd.Series, rate: pd.Series | None) -> pd.Series:
+    """A native-currency return series read from `base`'s side of the pair.
+
+    `(1 + r_native) * (1 + r_fx) - 1`. What a EUR reader earned on an S&P
+    tracker is the index's move *and* the dollar's, and a beta that measures
+    the book with the currency in it against a benchmark without it is
+    comparing two different investments. `rate` of None leaves the series
+    alone, which is what a benchmark already quoted in `base` needs.
+    """
+    if rate is None or returns.empty:
+        return returns
+    move = rate.pct_change().reindex(returns.index).fillna(0.0)
+    return (1 + returns) * (1 + move) - 1
+
+
 def position_value_frames(
     positions,
     period: str = "3mo",
@@ -805,10 +1037,6 @@ def position_value_frames(
     did, and how the dollar did — which is the question behind every "why is
     my portfolio down when the market was up".
     """
-    from datetime import date
-
-    from stocks.data.fx import rates_range
-
     if closes is None:
         closes = load_closes([p.ticker for p in positions], period=period)
     if not closes:
@@ -817,28 +1045,21 @@ def position_value_frames(
     px.index = naive_dates(px.index)
     px = px.ffill()
 
-    fx: dict[str, pd.Series] = {}
-    start = px.index[0].date().isoformat()
-    for ccy in {p.currency for p in positions if p.currency != base}:
-        try:
-            rates = rates_range(start, date.today().isoformat(), ccy, base)
-        except Exception:
-            rates = {}
-        if rates:
-            s = pd.Series(rates, dtype=float)
-            s.index = pd.to_datetime(s.index)
-            fx[ccy] = s.reindex(px.index).ffill().bfill()
+    fx = fx_frame({p.currency for p in positions}, px.index, base)
 
     values: dict[str, pd.Series] = {}
     frozen: dict[str, pd.Series] = {}
     for p in positions:
         if p.ticker not in px.columns:
             continue
-        if p.currency == base:
+        # Keyed as `fx_frame` keys it, so a ledger row carrying a lowercase
+        # code does not silently drop the position out of the frame.
+        ccy = str(p.currency).upper()
+        if ccy == base.upper():
             values[p.ticker] = p.quantity * px[p.ticker]
             frozen[p.ticker] = values[p.ticker]
-        elif p.currency in fx:
-            rate = fx[p.currency]
+        elif ccy in fx:
+            rate = fx[ccy]
             values[p.ticker] = p.quantity * px[p.ticker] * rate
             frozen[p.ticker] = p.quantity * px[p.ticker] * float(rate.iloc[-1])
     return pd.DataFrame(values), pd.DataFrame(frozen)
@@ -949,6 +1170,56 @@ def ticker_changes(values: pd.DataFrame, days: int) -> pd.Series:
     first, last = values.loc[start], values.loc[end]
     both = first.notna() & last.notna() & (first != 0)
     return last[both] / first[both] - 1
+
+
+def ticker_day_changes(
+    values: pd.DataFrame, quotes: dict[str, dict] | None = None
+) -> pd.Series:
+    """Per-ticker move over one session, with off-hours quotes taking over.
+
+    Close-to-close is the whole story only while the exchange is open. Outside
+    it the daily bar can be a stale or flat premarket one, and the basket then
+    reports a book that did not move at all — the "+0.00% today" a reader gets
+    at eight in the morning. `quotes` is `session_quotes`' snapshot for the
+    names whose own market is shut: the live pre/after-hours move while there
+    is one, the last completed session once those windows close. Pass None
+    inside the session, when the bars already are the live price.
+    """
+    changes = ticker_changes(values, 1)
+    for ticker, quote in (quotes or {}).items():
+        pct = quote.get("pct")
+        if ticker in values.columns and pct is not None:
+            changes.loc[ticker] = float(pct)
+    return changes
+
+
+def day_change(
+    values: pd.DataFrame, quotes: dict[str, dict] | None = None
+) -> tuple[float, float] | None:
+    """(change, pct change) of the basket over one session — `basket_change`'s
+    day window, able to read a quote where the daily bar says nothing yet.
+
+    Each name's prior value is backed out of its own move (`v / (1 + pct)`)
+    rather than read off the previous row, which is what lets a quoted
+    override and a close-to-close row live in the same sum. Names without a
+    move on both sides are left out of it entirely, so the percentage is
+    measured over exactly the value it was earned on.
+    """
+    if quotes is None:
+        return basket_change(values, 1)
+    if values.empty:
+        return None
+    last = values.iloc[-1]
+    moves = ticker_day_changes(values, quotes)
+    gained = opening = 0.0
+    for ticker, value in last.items():
+        pct = moves.get(ticker)
+        if pd.isna(value) or pct is None or pd.isna(pct) or pct == -1:
+            continue
+        prior = float(value) / (1 + float(pct))
+        gained += float(value) - prior
+        opening += prior
+    return (gained, gained / opening) if opening else None
 
 
 def ticker_money_changes(values: pd.DataFrame, days: int) -> pd.Series:
@@ -1257,4 +1528,5 @@ def analyze(
         port_returns=port,
         prices=latest,
         bench_returns=bench_returns,
+        closes=closes,
     )

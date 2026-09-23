@@ -109,6 +109,17 @@ def _catalog_cached(lang: str, mtimes: tuple[float, ...]) -> dict[str, str]:
     return out
 
 
+def catalog(lang: str) -> dict[str, str]:
+    """Every translated string for one language, flat and dotted.
+
+    Public because the catalogs are shipped files rather than session state,
+    and more than the pages need them: a front end that is not Streamlit fetches
+    this over HTTP (`api/routes/i18n.py`) and does its own lookups, so the two
+    read the same strings from the same fragments instead of drifting.
+    """
+    return _catalog(lang)
+
+
 def supported(lang: str | None) -> str | None:
     """Normalize a locale tag ('es-ES', 'en_US') to a supported code, or None.
 

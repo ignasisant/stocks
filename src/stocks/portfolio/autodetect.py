@@ -31,6 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from stocks import obs
 from stocks.portfolio import llm_map, platforms
 from stocks.portfolio.statement import ParseResult
 
@@ -53,6 +54,11 @@ _FINGERPRINT = {
     "revolut": {"ticker", "price per share"},
     "revolut_crypto": {"symbol", "value"},
 }
+
+
+def _summarise(declined: dict[str, str]) -> str:
+    """`degiro:KeyError, generic:no rows` — one flat log field, not a nesting."""
+    return ", ".join(f"{k}:{v}" for k, v in declined.items())
 
 
 @dataclass(frozen=True)
@@ -103,6 +109,10 @@ def detect(filename: str, data: bytes, provider: Provider | None = None,
     """
     ext = _extension(filename)
     head = _headers(filename, data)
+    # Why each parser passed on the file. A decline is ordinary — that is how
+    # the cascade works — but when *every* parser declines, this is the only
+    # record of what they each objected to, and the file itself is never kept.
+    declined: dict[str, str] = {}
     for platform in _cascade():
         if ext not in platform.file_types:
             continue
@@ -111,11 +121,18 @@ def detect(filename: str, data: bytes, provider: Provider | None = None,
             continue
         try:
             result = platform.parse(filename, data)
-        except Exception:
-            continue  # a parser that chokes has simply declined the file
+        except Exception as exc:  # noqa: BLE001 — a choking parser has declined
+            declined[platform.key] = type(exc).__name__
+            continue
         if result.transactions:
+            obs.event("import.detect", winner=platform.key, ext=ext,
+                      declined=_summarise(declined))
             return Detected(result, platform.key, platform.label,
                             llm_map.KIND_TRADES)
+        declined[platform.key] = "no rows"
+
+    obs.warn("import.detect", winner=None, ext=ext, declined=_summarise(declined),
+             fallback="llm" if provider is not None else "none")
 
     if provider is None:
         return Detected(

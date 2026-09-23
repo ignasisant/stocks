@@ -20,7 +20,7 @@ from stocks.web.markup import esc
 PATH_PRIVACY = "/legal/privacy"
 PATH_TERMS = "/legal/terms"
 
-LAST_UPDATED = "2026-09-02"
+LAST_UPDATED = "2026-09-17"
 
 _CONTACT = f"{GITHUB_URL}/issues"
 
@@ -49,6 +49,12 @@ _PRIVACY = {
                 "Server logs: page views and errors, tagged with a pseudonymous "
                 "account slug, kept for about 30 days for debugging. Periodic "
                 "backups of the storage bucket are kept for about 30 days.",
+                "Import diagnostics: when a broker statement fails to import we "
+                "record its shape — column headings, file type, encoding and "
+                "the reasons rows were rejected — so the importer can be fixed. "
+                "Values are masked before they are stored (a date becomes "
+                "99-99-9999, an amount 9.999,99); the statement itself is never "
+                "kept and never leaves your browser.",
             ]),
             ("Cookies", [
                 "One first-party cookie (ts_app) remembers that your browser "
@@ -97,6 +103,13 @@ _PRIVACY = {
                 "con un identificador seudónimo de cuenta, conservados unos "
                 "30 días para depuración. Las copias de seguridad periódicas "
                 "del bucket se conservan unos 30 días.",
+                "Diagnósticos de importación: cuando un extracto de bróker "
+                "falla al importarse registramos su forma —nombres de columna, "
+                "tipo de fichero, codificación y los motivos por los que se "
+                "descartaron filas— para poder arreglar el importador. Los "
+                "valores se enmascaran antes de guardarse (una fecha pasa a ser "
+                "99-99-9999; un importe, 9.999,99); el extracto en sí no se "
+                "guarda nunca ni sale de tu navegador.",
             ]),
             ("Cookies", [
                 "Una cookie propia (ts_app) recuerda que tu navegador ya usó "

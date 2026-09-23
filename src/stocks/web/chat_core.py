@@ -36,6 +36,7 @@ from stocks.data.symbols import is_isin, symbol_for_isin
 from stocks.portfolio import (
     autodetect,
     demo,
+    diagnostics,
     last_import,
     llm_map,
     platforms,
@@ -109,16 +110,12 @@ def _save_key(pid: str, api_key: str) -> None:
     A fresh entry restarts both clocks: the sliding window and the absolute
     cap (`_key_first_at`) that the sliding one can never outrun.
     """
-    f = _fernet()
-    if not f:
+    prefs = auth.load_prefs()
+    if not engine.save_byok(prefs, pid, api_key):
+        # No [chat] enc_key on this deployment. The engine refuses rather than
+        # storing a provider key in the clear, and the panel says so.
         st.warning(tr("chat.no_enc"))
         return
-    prefs = auth.load_prefs()
-    now = int(time.time())
-    enc_k, saved_k, first_k = engine.byok_fields(pid)
-    prefs[enc_k] = f.encrypt(api_key.encode()).decode()
-    prefs[saved_k] = now
-    prefs[first_k] = now
     auth.save_prefs(prefs)
 
 
@@ -1350,6 +1347,12 @@ def _prepare_import(name: str, data: bytes, provider: llm.Provider,
         # prints trades and leaves the 20:1 out, and rejecting that sell is
         # the rejection nobody can act on.
         splits=fetch.splits,
+    )
+    # Same anonymised record the Import page files, tagged with the surface it
+    # came through: the chat path picks the parser by guessing, so its failures
+    # break differently and are worth telling apart.
+    diagnostics.report(
+        found.platform, name, data, found.result, checked, surface="chat"
     )
     dupes = [c.tx for c in checked.duplicates]
     return {

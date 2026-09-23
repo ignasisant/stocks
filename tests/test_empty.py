@@ -177,7 +177,6 @@ def test_a_card_with_no_slug_reports_nothing(events):
 FIRST_VISIT = [
     ("portfolio.py", True, "No transactions yet", "app_pages/import_transactions.py"),
     ("earnings.py", False, "No stocks to track", "app_pages/profile.py"),
-    ("screener.py", False, "Nothing to screen", "app_pages/profile.py"),
 ]
 
 

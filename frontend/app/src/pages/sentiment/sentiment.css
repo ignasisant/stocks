@@ -1,0 +1,1122 @@
+/*
+ * The Pulse page's own sheet.
+ *
+ * No hex literals: every colour is an `--ag-*` custom property that the server
+ * inlines into the document, so this page and the Streamlit page beside it
+ * cannot drift apart. Tone lives here rather than in the markup — a component
+ * decides WHETHER a move is welcome, and this decides what welcome looks like.
+ */
+
+.sn-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sn-title {
+  margin: 0;
+  font-size: var(--ag-fs-3xl, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.sn-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  background: var(--ag-surface-card);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md, 12px);
+  padding: 1.1rem 1.2rem;
+}
+
+.sn-caption {
+  margin: 0;
+  font-size: var(--ag-fs-xs, 0.8rem);
+  line-height: 1.5;
+  color: var(--ag-text-muted);
+}
+
+.sn-help {
+  margin: 0;
+  font-size: var(--ag-fs-sm, 0.875rem);
+  line-height: 1.55;
+  color: var(--ag-text-muted);
+}
+
+.sn-mono {
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-weight: 500;
+  color: var(--ag-text-faint);
+}
+
+.sn-spacer {
+  flex: 1;
+}
+
+.sn-badge {
+  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--ag-radius-xs, 6px);
+  background: var(--ag-purple-900);
+  color: var(--ag-purple-400);
+}
+
+.sn-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--ag-text-muted);
+}
+
+.sn-kicker-own {
+  color: var(--ag-purple-400);
+}
+
+.sn-btn,
+.sn-cta {
+  align-self: flex-start;
+  display: inline-block;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-xs, 6px);
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-sm, 0.875rem);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.sn-cta {
+  background: var(--ag-brand-cta);
+  border-color: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- tone */
+/* Colour says whether a move is the welcome one, never which way it went. */
+.sn-good {
+  color: var(--ag-candle-up);
+}
+
+.sn-bad {
+  color: var(--ag-candle-down);
+}
+
+.sn-flat {
+  color: var(--ag-text-muted);
+}
+
+.sn-pill {
+  font-size: var(--ag-fs-xs, 0.8rem);
+  font-weight: 600;
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--ag-radius-pill, 999px);
+  white-space: nowrap;
+}
+
+.sn-pill-lg {
+  font-size: var(--ag-fs-md, 1rem);
+  padding: 0.25rem 0.75rem;
+}
+
+.sn-pill-flat {
+  background: var(--ag-surface-card);
+  color: var(--ag-text-secondary);
+}
+
+.sn-pill-warn {
+  background: var(--ag-warn-fill);
+  color: var(--ag-warn);
+}
+
+.sn-pill-up {
+  background: var(--ag-success-fill);
+  color: var(--ag-up);
+}
+
+.sn-pill-down {
+  background: var(--ag-down-fill);
+  color: var(--ag-down);
+}
+
+/* Regime bands. Euphoria takes the caution amber rather than a deeper green:
+   the top of the scale is a risk reading, not a better version of appetite. */
+.sn-regime-stress {
+  background: var(--ag-down-fill);
+  color: var(--ag-down);
+}
+
+.sn-regime-caution,
+.sn-regime-euphoria {
+  background: var(--ag-warn-fill);
+  color: var(--ag-warn);
+}
+
+.sn-regime-neutral {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-secondary);
+}
+
+.sn-regime-appetite {
+  background: var(--ag-success-fill);
+  color: var(--ag-up);
+}
+
+.sn-regime-unknown {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-muted);
+}
+
+/* ------------------------------------------------------------- the hero */
+.sn-hero {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 1.4rem;
+}
+
+.sn-hero-r {
+  border-left: 1px solid var(--ag-border);
+  padding-left: 1.4rem;
+}
+
+.sn-pulse {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sn-pulse-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.sn-pulse-score {
+  font-weight: 800;
+  font-size: 3.6rem;
+  line-height: 0.85;
+  letter-spacing: -0.02em;
+  color: var(--ag-text-primary);
+}
+
+.sn-pulse-band {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding-bottom: 0.2rem;
+}
+
+.sn-pulse-run {
+  font-size: var(--ag-fs-sm, 0.875rem);
+  color: var(--ag-text-secondary);
+}
+
+.sn-pulse-deltas {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
+.sn-pulse-chips {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.sn-delta {
+  display: flex;
+  gap: 0.35rem;
+  align-items: baseline;
+  background: var(--ag-surface-page);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  padding: 0.3rem 0.6rem;
+}
+
+.sn-delta i {
+  font-style: normal;
+  font-size: var(--ag-fs-xs, 0.8rem);
+  color: var(--ag-text-muted);
+}
+
+.sn-delta b {
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-weight: 500;
+  font-size: var(--ag-fs-md, 1rem);
+}
+
+/* The regime meter. The Streamlit page interpolates three literal steps
+   through this ramp; they are not tokens, so the gradient here runs between
+   the ones that are and lets the browser find the middle. */
+.sn-meter {
+  position: relative;
+  height: 16px;
+  border-radius: var(--ag-radius-pill, 999px);
+  background: linear-gradient(
+    90deg,
+    var(--ag-down-fill) 0%,
+    var(--ag-down-fill) 14%,
+    var(--ag-warn-fill) 30%,
+    var(--ag-surface-hover) 44%,
+    var(--ag-surface-hover) 56%,
+    var(--ag-success-fill) 82%,
+    var(--ag-success-fill) 100%
+  );
+}
+
+/* A score nobody could build parks its pin mid-scale, on a track with no
+   verdict on it: at zero it would read as maximum fear. */
+.sn-meter-flat {
+  background: var(--ag-surface-hover);
+}
+
+.sn-meter-pin {
+  position: absolute;
+  top: -7px;
+  bottom: -7px;
+  width: 5px;
+  border-radius: 3px;
+  background: var(--ag-text-primary);
+  box-shadow: 0 0 0 2px var(--ag-surface-card);
+}
+
+.sn-meter-ghost {
+  position: absolute;
+  top: -5px;
+  bottom: -5px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--ag-text-secondary);
+}
+
+.sn-meter-scale {
+  display: flex;
+  justify-content: space-between;
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-weight: 500;
+  color: var(--ag-text-faint);
+}
+
+.sn-sparkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--ag-surface-page);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md, 12px);
+  padding: 0.7rem 0.8rem;
+}
+
+.sn-sparkbox-l {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: none;
+  width: 6.5rem;
+}
+
+.sn-sparkbox-l span:first-child {
+  font-size: var(--ag-fs-xs, 0.8rem);
+  color: var(--ag-text-muted);
+}
+
+.sn-sparkbox-l span:last-child {
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: var(--ag-fs-xs, 0.8rem);
+  font-weight: 500;
+  color: var(--ag-text-secondary);
+}
+
+.sn-sparkbox-y {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 56px;
+  flex: none;
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-weight: 500;
+  color: var(--ag-text-faint);
+}
+
+.sn-hero-spark {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 56px;
+}
+
+.sn-hero-spark polyline {
+  fill: none;
+  stroke: var(--ag-brand-accent);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+
+.sn-hero-spark line {
+  stroke: var(--ag-border);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+/* ----------------------------------------------------- the reader's half */
+.sn-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.sn-lede {
+  margin: 0;
+  font-size: var(--ag-fs-xl, 1.25rem);
+  line-height: 1.35;
+  font-weight: 600;
+  color: var(--ag-text-primary);
+  text-wrap: pretty;
+}
+
+.sn-srow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--ag-surface-page);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  padding: 0.55rem 0.7rem;
+}
+
+.sn-srow-l {
+  flex: 1;
+  font-size: var(--ag-fs-sm, 0.875rem);
+  color: var(--ag-text-secondary);
+}
+
+.sn-srow-v {
+  font-weight: 800;
+  font-size: var(--ag-fs-lg, 1.125rem);
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sn-more {
+  font-size: var(--ag-fs-sm, 0.875rem);
+  font-weight: 600;
+  color: var(--ag-brand-accent);
+  text-decoration: none;
+}
+
+.sn-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  border: 1px dashed var(--ag-border-focus);
+  border-radius: var(--ag-radius-md, 12px);
+  padding: 1rem;
+}
+
+.sn-invite p {
+  margin: 0;
+  font-size: var(--ag-fs-lg, 1.125rem);
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--ag-text-primary);
+}
+
+/* ------------------------------------------------------------ section head */
+.sn-sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.sn-sec-t {
+  margin: 0;
+  font-size: var(--ag-fs-lg, 1.125rem);
+  font-weight: 600;
+  color: var(--ag-text-primary);
+}
+
+.sn-tcard-w {
+  font-size: var(--ag-fs-lg, 1.125rem);
+  font-weight: 600;
+  color: var(--ag-text-primary);
+}
+
+/* ------------------------------------------------------ the eight inputs */
+.sn-comp {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.sn-comp-row {
+  display: grid;
+  grid-template-columns: 13rem minmax(0, 1fr) 4.4rem;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.sn-dim {
+  opacity: 0.55;
+}
+
+.sn-comp-l {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.sn-comp-l span:first-child {
+  font-size: var(--ag-fs-md, 1rem);
+  font-weight: 500;
+  color: var(--ag-text-primary);
+}
+
+.sn-comp-sub {
+  font-size: var(--ag-fs-xs, 0.8rem);
+  line-height: 1.35;
+  color: var(--ag-text-muted);
+}
+
+.sn-comp-track {
+  position: relative;
+  height: 8px;
+  border-radius: var(--ag-radius-pill, 999px);
+  background: var(--ag-surface-hover);
+}
+
+.sn-comp-empty {
+  border: 1px dashed var(--ag-border-focus);
+  background: none;
+}
+
+.sn-comp-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--ag-radius-pill, 999px);
+}
+
+.sn-fill-good {
+  background: var(--ag-candle-up);
+}
+
+.sn-fill-flat {
+  background: var(--ag-text-secondary);
+}
+
+.sn-fill-bad {
+  background: var(--ag-candle-down);
+}
+
+.sn-comp-mark {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--ag-text-primary);
+  opacity: 0.75;
+}
+
+.sn-comp-none {
+  position: absolute;
+  left: 50%;
+  top: -6px;
+  transform: translateX(-50%);
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: var(--ag-fs-2xs, 0.7rem);
+  color: var(--ag-text-muted);
+  white-space: nowrap;
+}
+
+.sn-comp-v {
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-weight: 500;
+  font-size: var(--ag-fs-sm, 0.875rem);
+  text-align: right;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sn-strip {
+  display: flex;
+  gap: 0.5rem;
+  background: var(--ag-surface-page);
+  border: 1px solid var(--ag-border);
+  border-left: 3px solid var(--ag-candle-up);
+  border-radius: var(--ag-radius-sm, 8px);
+  padding: 0.55rem 0.7rem;
+  font-size: var(--ag-fs-sm, 0.875rem);
+  line-height: 1.5;
+  color: var(--ag-text-secondary);
+}
+
+.sn-strip-warn {
+  border-left-color: var(--ag-warn);
+}
+
+/* ------------------------------------------------------- the trend snapshot */
+.sn-tcards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.sn-tcard {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--ag-surface-page);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md, 12px);
+  padding: 0.7rem 0.85rem;
+}
+
+.sn-tcard-col {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+}
+
+.sn-tcard-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.sn-tcard-l {
+  flex: 1;
+  font-size: var(--ag-fs-sm, 0.875rem);
+  color: var(--ag-text-secondary);
+}
+
+.sn-tcard-n {
+  font-size: var(--ag-fs-xs, 0.8rem);
+  line-height: 1.4;
+  color: var(--ag-text-muted);
+}
+
+/* ------------------------------------------------------------- your book */
+.sn-bk {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+}
+
+.sn-bk-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  background: var(--ag-surface-page);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md, 12px);
+  padding: 0.8rem;
+}
+
+.sn-bk-l {
+  font-size: var(--ag-fs-sm, 0.875rem);
+  color: var(--ag-text-secondary);
+}
+
+.sn-bk-v {
+  font-weight: 800;
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sn-bk-n {
+  font-size: var(--ag-fs-xs, 0.8rem);
+  line-height: 1.45;
+  color: var(--ag-text-muted);
+}
+
+.sn-tilt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.sn-tilt-rows {
+  display: grid;
+  gap: 0.2rem 1.2rem;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+}
+
+.sn-tilt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: var(--ag-fs-sm, 0.875rem);
+  color: var(--ag-text-secondary);
+  border-bottom: 1px solid var(--ag-surface-sunken);
+  padding: 0.15rem 0;
+}
+
+.sn-tilt-row b {
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-weight: 500;
+  font-size: var(--ag-fs-xs, 0.8rem);
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sn-notes {
+  display: grid;
+  gap: 0.45rem 1.2rem;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+}
+
+.sn-note {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  font-size: var(--ag-fs-sm, 0.875rem);
+  line-height: 1.55;
+  color: var(--ag-text-secondary);
+}
+
+.sn-note::before {
+  content: "";
+  margin-top: 0.45rem;
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: var(--ag-radius-pill, 999px);
+  background: var(--ag-brand-accent);
+}
+
+/* ------------------------------------------------------- a source is down */
+.sn-down {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  border: 1px solid var(--ag-warn-edge);
+  background: var(--ag-warn-fill-soft);
+  border-radius: var(--ag-radius-md, 12px);
+  padding: 0.9rem;
+}
+
+.sn-down-t {
+  font-size: var(--ag-fs-lg, 1.125rem);
+  font-weight: 600;
+  color: var(--ag-text-primary);
+}
+
+.sn-down-b {
+  font-size: var(--ag-fs-sm, 0.875rem);
+  line-height: 1.55;
+  color: var(--ag-text-secondary);
+}
+
+/* ------------------------------------------------------------- the detail */
+.sn-tabs {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--ag-border);
+  padding-bottom: 0.4rem;
+}
+
+.sn-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: var(--ag-radius-xs, 6px);
+  background: none;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-sm, 0.875rem);
+  cursor: pointer;
+}
+
+.sn-tab:hover {
+  color: var(--ag-text-primary);
+}
+
+.sn-tab-on {
+  background: var(--ag-purple-900);
+  border-color: var(--ag-purple-800);
+  color: var(--ag-purple-400);
+  font-weight: 600;
+}
+
+.sn-tab-n {
+  font-family: "Martian Mono", ui-monospace, monospace;
+  font-size: var(--ag-fs-2xs, 0.7rem);
+  padding: 0.05rem 0.35rem;
+  border-radius: var(--ag-radius-xs, 6px);
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-secondary);
+}
+
+.sn-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.6rem;
+}
+
+/* ---------------------------------------------------------- the trend rows */
+/* `--sn-cols` is how many comparison columns this table quotes. Four is the
+   page's default and the reason the rows line up down the whole screen; the
+   inflation print has three of its own. It lives on the wrapper so the header
+   and its rows can never disagree about it. */
+.sn-trend {
+  display: flex;
+  flex-direction: column;
+  --sn-cols: 4;
+}
+
+.sn-trend-3 {
+  --sn-cols: 3;
+}
+
+.sn-trend-head,
+.sn-trend-row {
+  display: grid;
+  grid-template-columns:
+    minmax(8rem, 1.6fr) 5.4rem repeat(var(--sn-cols), 4.6rem)
+    6rem 7.4rem;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sn-trend-head {
+  font-size: var(--ag-fs-2xs, 0.7rem);
+  color: var(--ag-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--ag-border);
+}
+
+.sn-trend-row {
+  padding: 0.34rem 0.35rem;
+  border-radius: var(--ag-radius-xs, 6px);
+  border-bottom: 1px solid var(--ag-surface-sunken);
+}
+
+.sn-trend-row:last-child {
+  border-bottom: 0;
+}
+
+.sn-trend-row:hover {
+  background: var(--ag-surface-hover);
+}
+
+.sn-trend-l {
+  font-size: var(--ag-fs-sm, 0.875rem);
+  color: var(--ag-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sn-trend-lc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.sn-trend-lc .sn-trend-l {
+  color: var(--ag-text-primary);
+  font-weight: 500;
+}
+
+.sn-trend-n {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+/* The info dot. Outside .sn-trend-l on purpose: that span clips its overflow
+   to draw the ellipsis, and a panel anchored inside it would be cut off at the
+   name. Focusable so a phone, which has no hover, opens it with a tap. */
+.sn-trend-i {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: 13px;
+  height: 13px;
+  border-radius: var(--ag-radius-pill, 999px);
+  border: 1px solid var(--ag-border-focus);
+  color: var(--ag-text-muted);
+  font-size: 9px;
+  line-height: 11px;
+  font-weight: 700;
+  text-align: center;
+  cursor: help;
+}
+
+.sn-trend-i:hover,
+.sn-trend-i:focus {
+  color: var(--ag-text-primary);
+  border-color: var(--ag-text-muted);
+  outline: none;
+}
+
+.sn-trend-i::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: 60;
+  left: -0.5rem;
+  top: calc(100% + 0.4rem);
+  width: max-content;
+  max-width: min(24rem, 70vw);
+  white-space: normal;
+  text-align: left;
+  letter-spacing: 0;
+  font-size: var(--ag-fs-xs, 0.8rem);
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--ag-text-secondary);
+  background: var(--ag-surface-card);
+  border: 1px solid var(--ag-border-focus);
+  border-radius: var(--ag-radius-sm, 8px);
+  box-shadow: var(--ag-shadow-overlay);
+  padding: 0.5rem 0.65rem;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.sn-trend-i:hover::after,
+.sn-trend-i:focus::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+.sn-trend-sub {
+  font-size: var(--ag-fs-2xs, 0.7rem);
+  line-height: 1.35;
+  color: var(--ag-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sn-trend-v {
+  font-size: var(--ag-fs-sm, 0.875rem);
+  color: var(--ag-text-primary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sn-trend-c {
+  font-size: var(--ag-fs-xs, 0.8rem);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sn-trend-s {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sn-trend-st {
+  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-weight: 600;
+  text-align: center;
+  justify-self: end;
+  max-width: 100%;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--ag-radius-pill, 999px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+
+/* The two settled states are solid market pills; the two turning ones share
+   the caution amber rather than getting a green and a red of their own — a
+   turn is a turn, and painting "broke down but recovering" green would read as
+   a buy signal from a page that does not give them. They separate on border:
+   solid when a rally is losing its footing, dashed when a downtrend recovers. */
+.sn-st-up {
+  background: var(--ag-success-fill);
+  color: var(--ag-up);
+}
+
+.sn-st-down {
+  background: var(--ag-down-fill);
+  color: var(--ag-down);
+}
+
+.sn-st-turning_down {
+  background: var(--ag-warn-fill);
+  color: var(--ag-warn);
+  border: 1px solid var(--ag-warn-edge);
+}
+
+.sn-st-turning_up {
+  background: var(--ag-warn-fill-soft);
+  color: var(--ag-warn);
+  border: 1px dashed var(--ag-warn-edge);
+}
+
+.sn-st-unknown {
+  color: var(--ag-text-muted);
+}
+
+/* Not a trend state: the label a row carries when its own series stopped being
+   published, in place of a trend it can no longer claim. */
+.sn-st-stale {
+  color: var(--ag-text-secondary);
+  border: 1px dashed var(--ag-border-focus);
+}
+
+/* ------------------------------------------------------------ sparklines */
+.sn-spark {
+  display: block;
+}
+
+.sn-spark polyline {
+  fill: none;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+.sn-spark-up polyline {
+  stroke: var(--ag-candle-up);
+}
+
+.sn-spark-down polyline {
+  stroke: var(--ag-candle-down);
+}
+
+.sn-spark-flat polyline {
+  stroke: var(--ag-text-muted);
+}
+
+/* A series with no shape yet: a rule, not an empty cell. */
+.sn-spark-rule {
+  display: block;
+  height: 1px;
+  background: var(--ag-border);
+}
+
+/* ------------------------------------------------------------ jump strip */
+.sn-jump {
+  display: none;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.sn-jump a {
+  font-size: var(--ag-fs-sm, 0.875rem);
+  font-weight: 600;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--ag-radius-pill, 999px);
+  background: var(--ag-surface-card);
+  border: 1px solid var(--ag-border);
+  color: var(--ag-text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sn-jump a:first-child {
+  background: var(--ag-purple-900);
+  border-color: var(--ag-purple-800);
+  color: var(--ag-purple-400);
+}
+
+/* ----------------------------------------------------------------- phones */
+@media (max-width: 860px) {
+  .sn-hero {
+    grid-template-columns: 1fr;
+  }
+  .sn-hero-r {
+    border-left: 0;
+    border-top: 1px solid var(--ag-border);
+    padding-left: 0;
+    padding-top: 1rem;
+  }
+}
+
+@media (max-width: 720px) {
+  .sn-jump {
+    display: flex;
+  }
+  .sn-pulse-score {
+    font-size: 3rem;
+  }
+  .sn-sparkbox-l {
+    display: none;
+  }
+  .sn-comp-row {
+    grid-template-columns: minmax(0, 1fr) 4rem;
+    gap: 0.3rem 0.6rem;
+  }
+  .sn-comp-track {
+    grid-column: 1 / -1;
+  }
+
+  /* Eight columns will not fit a 390px screen, so the row becomes two lines:
+     what it is, where it stands and its trend on the first, then the four
+     horizons with the shape beside them on the second. The header row goes —
+     the change cells label themselves once the columns are gone. */
+  .sn-trend-head {
+    display: none;
+  }
+  .sn-trend-row {
+    grid-template-columns: repeat(4, 1fr) auto;
+    gap: 0.3rem 0.4rem;
+    padding: 0.55rem 0;
+  }
+  .sn-trend-lc {
+    grid-column: 1 / 4;
+    grid-row: 1;
+  }
+  .sn-trend-l {
+    font-size: var(--ag-fs-md, 1rem);
+    white-space: normal;
+  }
+  .sn-trend-sub {
+    white-space: normal;
+  }
+  .sn-trend-v {
+    grid-column: 4 / 5;
+    grid-row: 1;
+    text-align: right;
+  }
+  .sn-trend-st {
+    grid-column: 5 / 6;
+    grid-row: 1;
+  }
+  .sn-trend-c {
+    text-align: left;
+  }
+  .sn-trend-c::before {
+    content: attr(data-h);
+    display: block;
+    font-size: var(--ag-fs-2xs, 0.7rem);
+    font-weight: 500;
+    color: var(--ag-text-faint);
+  }
+  .sn-trend-i::after {
+    max-width: 76vw;
+  }
+}

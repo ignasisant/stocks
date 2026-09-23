@@ -130,6 +130,9 @@ class DailyAction:
         bullets = [str(b) for b in (raw.get("bullets") or []) if str(b).strip()]
         if not day or not bullets:
             return None
+        # Bound once: a stored card is whatever JSON was on disk, so `shown`
+        # has to be *seen* to be a dict, not asked twice and assumed.
+        shown = raw.get("shown")
         return cls(
             day=day,
             as_of=str(raw.get("as_of") or ""),
@@ -140,7 +143,7 @@ class DailyAction:
             lang=str(raw.get("lang") or "en"),
             generated=float(raw.get("generated") or 0.0),
             recent=[str(h) for h in (raw.get("recent") or []) if str(h).strip()],
-            shown=raw.get("shown") if isinstance(raw.get("shown"), dict) else {},
+            shown=shown if isinstance(shown, dict) else {},
         )
 
 
@@ -976,7 +979,8 @@ def seen(previous: DailyAction | None, facts: dict, day: date) -> dict:
     yesterday = (day - timedelta(days=1)).isoformat()
     out: dict = {}
     for key in dict.fromkeys(offered(facts)):
-        before = past.get(key) if isinstance(past.get(key), dict) else {}
+        seen = past.get(key)
+        before = seen if isinstance(seen, dict) else {}
         run = int(before.get("run") or 0) if before.get("last") == yesterday else 0
         out[key] = {"last": day.isoformat(), "run": run + 1}
     # Triggers that did not come up today keep their stamp for a few days — a

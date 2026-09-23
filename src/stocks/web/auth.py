@@ -1,8 +1,12 @@
 """Login gate and per-user data resolution for the web app.
 
-Authentication is Streamlit-native OIDC (st.login / st.user) configured in
-.streamlit/secrets.toml under [auth] — see the README "Login (web app)"
-section for the required keys.
+Authentication is the app's own Google OIDC flow (stocks.web.oidc), configured
+in .streamlit/secrets.toml under [auth] — see the README "Login (web app)"
+section for the required keys. The session it mints is a signed cookie that
+`stocks.session` owns and that both front ends read: these pages off
+`st.context.cookies`, the React shell off the API. Nothing here calls st.login
+or reads st.user, so the identity a page renders and the identity `/api/v1`
+resolves cannot disagree.
 
 Browsing is public: app.py calls resolve_user() before building the
 navigation, which maps anonymous visitors to a shared read-only guest dir
@@ -23,24 +27,20 @@ they're reference data, not personal data.
 
 from __future__ import annotations
 
-import hashlib
 import json
-import re
 import uuid
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
 import streamlit as st
 
-from stocks import storage
+from stocks import accounts, session, storage
+from stocks import watchlist as wl
 from stocks.chat import memory
 from stocks.config import (
     CURRENCIES,
-    DATA_DIR,
     PROJECT_ROOT,
-    WATCHLIST_FILE,
     stat_key,
     yaml_dump,
     yaml_load,
@@ -49,189 +49,24 @@ from stocks.portfolio import demo
 from stocks.web import css
 from stocks.web.i18n import t as tr
 
-USERS_DIR = DATA_DIR / "users"
-GUEST_DIR = USERS_DIR / "_guest"
+RECENT_SEARCHES_MAX = accounts.RECENT_SEARCHES_MAX
+DEFAULT_PREFS = accounts.DEFAULT_PREFS
 
-RECENT_SEARCHES_MAX = 5
-DEFAULT_PREFS = {  # language None = auto (browser)
-    "currency": "EUR",
-    "language": None,
-    "recent_searches": [],  # tickers clicked from the top-bar search, newest first
-    # Registration accounting, stamped by mark_login(). first_seen is the
-    # signup moment (ISO, UTC); last_seen is a date, rewritten once a day.
-    "first_seen": None,
-    "last_seen": None,
-    "first_seen_estimated": False,
-    # The signed-in address, for the jobs that have a prefs.json and no
-    # session (and for the free-chain allowlist). None until the next login.
-    "email": None,
-    # Telegram notifications: chat_id is set by the Profile linking flow; the
-    # toggles only take effect once it is. The cron (notify/fanout.py) reads
-    # these headless straight from prefs.json.
-    "telegram_chat_id": None,
-    "notify_digest": True,
-    "notify_alerts": True,
-    # Tax residence drives which jurisdiction's rules the Realized & tax tab
-    # applies and which currency the ledger is replayed in (see
-    # stocks.portfolio.tax). None = auto, resolved from the browser region.
-    # The rest are bracket inputs only some jurisdictions read.
-    "tax_residence": None,
-    "tax_filing_status": "single",
-    "tax_other_income": 0.0,
-    "tax_niit": False,
-    "tax_subnational_rate": 0.0,
-    # Whether the assistant drawer was open when the tab was last rendered, so
-    # a reload puts the reader back in the conversation instead of behind the
-    # launcher icon. Written by chat_core.render_side_panel.
-    "chat_panel_open": False,
-}
-
-# Seeded on first login so a brand-new account has a working app instead of a
-# page of empty states. Deliberately a *watchlist* and nothing more: no
-# `shares`/`cost`, so every figure the app shows for these rows is live market
-# data and nothing is ever presented as a holding the user does not own.
-#
-# The spread is the point — sectors, currencies and two asset classes — because
-# the sections that make the first visit worth anything all rank or group across
-# the list: the screener's P/E table, the earnings calendar, the 52-week
-# extremes scan, the sentiment pass, the daily AI card. Two US mega-caps gave
-# all of them one row and nothing to compare. The tags seed the dashboard's
-# group expanders and the earnings filter pills; the untagged rows keep the
-# plain "Watchlist" group populated too.
-STARTER_WATCHLIST = """\
-# Personal watchlist — managed from the Profile page.
-#
-# These are examples to explore with, not holdings: replace them with the
-# tickers you actually follow. Nothing here counts as a position.
-#
-# Per-entry fields:
-#   favorite: true   -> pinned to top of the dashboard + quick-access buttons
-#   tags: [Tech]     -> groups the dashboard expanders and the earnings filters
-#   shares: 12       -> makes it a real position (portfolio weights by value)
-#   cost: 145.30     -> average buy price/share, for unrealised P/L
-watchlist:
-  - ticker: AAPL
-    name: Apple
-    favorite: true
-    tags: [Tech]
-  - ticker: MSFT
-    name: Microsoft
-    tags: [Tech]
-  - ticker: NVDA
-    name: Nvidia
-    favorite: true
-    tags: [Tech]
-  - ticker: ASML
-    name: ASML Holding
-    tags: [Europe]
-  - ticker: NVO
-    name: Novo Nordisk
-    tags: [Europe]
-  - ticker: ITX.MC
-    name: Inditex
-    tags: [Europe]
-  - ticker: TSM
-    name: Taiwan Semiconductor
-  - ticker: JPM
-    name: JPMorgan Chase
-  - ticker: XOM
-    name: Exxon Mobil
-  - ticker: BTC-EUR
-    name: Bitcoin
-"""
-
-
-@dataclass(frozen=True)
-class UserPaths:
-    """Where one account's data lives."""
-
-    root: Path
-    watchlist: Path
-    db: Path
-    last_import: Path
-    prefs: Path
-    chat: Path
-    bank: Path
-    action: Path  # the dashboard's daily AI card (chat/daily.py)
-
-
-def slug(email: str) -> str:
-    """Filesystem-safe, collision-proof directory name for an account email.
-
-    The readable base maps every non-alphanumeric run to "_", so distinct
-    addresses can collide ("a.b@c.com" and "a@b.c.com" both give
-    "a_b_c_com"). The digest suffix ties the directory to the exact address,
-    so the second account to sign in can never land in the first one's data.
-    """
-    e = email.strip().lower()
-    base = re.sub(r"[^a-z0-9]+", "_", e).strip("_")
-    return f"{base}_{hashlib.sha256(e.encode()).hexdigest()[:8]}"
-
-
-def _legacy_slug(email: str) -> str:
-    """slug() as it was before the digest suffix — kept only so existing
-    account dirs (local or in the bucket) can be migrated on next login."""
-    return re.sub(r"[^a-z0-9]+", "_", email.lower()).strip("_")
-
-
-def paths_for(
-    email: str, owner_email: str | None = None, users_dir: Path = USERS_DIR
-) -> UserPaths:
-    """Resolve an account's data paths.
-
-    The owner account maps to the repo-root watchlist and data/portfolio.db
-    so the single-user CLI and the owner's web session share one book; every
-    other account lives under data/users/<slug>/.
-    """
-    if owner_email and email.strip().lower() == owner_email.strip().lower():
-        return UserPaths(
-            root=PROJECT_ROOT,
-            watchlist=WATCHLIST_FILE,
-            db=DATA_DIR / "portfolio.db",
-            last_import=DATA_DIR / "last_import.json",
-            prefs=DATA_DIR / "prefs.json",
-            chat=DATA_DIR / "chat.json",
-            bank=DATA_DIR / "bank.json",
-            action=DATA_DIR / "daily_action.json",
-        )
-    d = users_dir / slug(email)
-    return UserPaths(
-        root=d,
-        watchlist=d / "watchlist.yaml",
-        db=d / "portfolio.db",
-        last_import=d / "last_import.json",
-        prefs=d / "prefs.json",
-        chat=d / "chat.json",
-        bank=d / "bank.json",
-        action=d / "daily_action.json",
-    )
-
-
-def guest_paths() -> UserPaths:
-    """The anonymous visitors' shared data dir.
-
-    Read-only through the UI: every write path (favorites, tags, watchlist
-    editor, imports, prefs) sits behind require_login()/is_logged_in(), so
-    guests only ever read the starter watchlist and the demo ledger
-    seed_guest_demo() puts here — one book, identical for every visitor,
-    which is what makes sharing one dir safe.
-    """
-    return UserPaths(
-        root=GUEST_DIR,
-        watchlist=GUEST_DIR / "watchlist.yaml",
-        db=GUEST_DIR / "portfolio.db",
-        last_import=GUEST_DIR / "last_import.json",
-        prefs=GUEST_DIR / "prefs.json",
-        chat=GUEST_DIR / "chat.json",
-        bank=GUEST_DIR / "bank.json",
-        action=GUEST_DIR / "daily_action.json",
-    )
-
-
-_USER_FILES = (
-    "watchlist.yaml", "portfolio.db", "last_import.json", "prefs.json", "chat.json",
-    "bank.json", "daily_action.json", memory.FILE,
-)
+# Account identity and per-account paths live in `stocks.accounts`, which has
+# no Streamlit in it, so the HTTP API (stocks.api) and the headless jobs can
+# resolve the same directories a browser session does without importing a UI
+# framework. Re-exported here because every call site in web/ — and every test
+# — reaches for them through `auth.`.
+USERS_DIR = accounts.USERS_DIR
+GUEST_DIR = accounts.GUEST_DIR
+STARTER_WATCHLIST = accounts.STARTER_WATCHLIST
+UserPaths = accounts.UserPaths
+slug = accounts.slug
+_legacy_slug = accounts.legacy_slug
+paths_for = accounts.paths_for
+guest_paths = accounts.guest_paths
+_USER_FILES = accounts.USER_FILES
+_migrate_legacy = accounts.migrate_legacy
 
 
 def _persist(path: Path) -> None:
@@ -244,73 +79,25 @@ def _persist(path: Path) -> None:
         st.toast(tr("common.sync_failed"), icon=":material/cloud_off:")
 
 
-def _migrate_legacy(paths: UserPaths, legacy_root: Path) -> None:
-    """Move an account dir named with the pre-digest slug to its new name.
-
-    Runs once per account: a no-op as soon as paths.root exists. Covers both
-    a dir still on local disk and one that only survives in the bucket (an
-    ephemeral host after a redeploy) — bucket objects are re-keyed to the new
-    dir so the next boot restores from there directly.
-    """
-    if paths.root.exists() or legacy_root == paths.root:
-        return
-    if not legacy_root.exists() and storage.enabled():
-        # restore() only writes (and creates the dir) when the key exists,
-        # so after this loop legacy_root exists iff the bucket had the account.
-        for name in _USER_FILES:
-            storage.restore(legacy_root / name)
-    if not legacy_root.exists():
-        return
-    legacy_root.rename(paths.root)
-    # Deliberately storage.persist, not _persist: a failed push must abort
-    # (ensure_user_data fails the login closed) before the old key is
-    # deleted, or the bucket could end up holding neither copy.
-    for name in _USER_FILES:
-        storage.persist(paths.root / name)  # push under the new key
-        storage.persist(legacy_root / name)  # gone locally -> delete old key
-
-
 def ensure_user_data(paths: UserPaths, legacy_root: Path | None = None) -> bool:
-    """First login: create the account's folder and seed a starter watchlist.
+    """`accounts.restore_account` plus this app's answer to a bucket outage.
 
     Returns True when this call seeded a brand-new account — the one moment a
     signup can be dated exactly, which mark_login() records.
 
-    With [storage] configured, the account's files are pulled from the bucket
-    first (once per process), so an ephemeral redeploy starts from the
-    persisted copies instead of re-seeding. `legacy_root` is the account's
-    pre-digest-slug dir; when it still exists (locally or in the bucket) it
-    is renamed and re-keyed before anything is restored or seeded.
-
-    A bucket outage here fails closed: falling through to the seeding below
-    would show an empty book whose next save overwrites the account's real
-    cloud data, so the session halts instead and the user retries.
+    The work itself (legacy-dir migration, bucket pull, starter watchlist) is
+    in `stocks.accounts`, shared with the API and the cron jobs. What stays
+    here is the only Streamlit-shaped part of it: a restore failure fails
+    closed, and for a browser session that means saying so and halting the
+    script — falling through would show an empty book whose next save
+    overwrites the account's real cloud data. The seeded watchlist's push goes
+    through `_persist`, so a cloud blip there is a toast and not a dead page.
     """
     try:
-        if legacy_root is not None:
-            _migrate_legacy(paths, legacy_root)
-        paths.root.mkdir(parents=True, exist_ok=True)
-        storage.restore_once(
-            paths.root,
-            (
-                paths.watchlist,
-                paths.db,
-                paths.last_import,
-                paths.prefs,
-                paths.chat,
-                paths.bank,
-                paths.action,
-                memory.path_for(paths.root),
-            ),
-        )
-    except Exception:
+        return accounts.restore_account(paths, legacy_root, persist=_persist)
+    except accounts.StorageUnavailable:
         st.error(tr("common.storage_restore_failed"), icon=":material/cloud_off:")
         st.stop()
-    if paths.watchlist.exists():
-        return False
-    paths.watchlist.write_text(STARTER_WATCHLIST)
-    _persist(paths.watchlist)
-    return True
 
 
 def delete_account(paths: UserPaths) -> None:
@@ -344,6 +131,46 @@ def delete_account(paths: UserPaths) -> None:
         shutil.rmtree(root)
 
 
+def _jar() -> dict[str, str]:
+    """This session's cookies, or {} when there is no browser to have any.
+
+    Streamlit hands back the cookies from the request that opened the
+    websocket. That is not a limitation here: the session cookie only ever
+    changes on a redirect, and a redirect is a full document navigation that
+    starts a new session — so what a page reads is always current. (st.user had
+    exactly the same property; it was bound at connect too.)
+
+    No cookies at all means no browser — AppTest, bare mode — not a blocked
+    one, the same reading `import_transactions` makes of the XSRF cookie.
+    """
+    try:
+        return dict(st.context.cookies)
+    except Exception:
+        return {}
+
+
+@lru_cache(maxsize=32)
+def _verified_claims(ours: str, legacy: str, secret: str) -> dict:
+    """Verify once per distinct cookie: is_logged_in() is called per row.
+
+    `secret` is not used — it is in the signature so a rotated (or, in a test,
+    a monkeypatched) key is a different cache entry rather than a stale hit.
+    The result is shared by every caller, so nobody may mutate it.
+    """
+    del secret
+    return session.claims({session.COOKIE: ours, session.LEGACY_COOKIE: legacy}) or {}
+
+
+def current_claims() -> dict:
+    """The identity claims this session carries, or {} for a guest."""
+    jar = _jar()
+    return _verified_claims(
+        jar.get(session.COOKIE, ""),
+        jar.get(session.LEGACY_COOKIE, ""),
+        session.signing_secret(),
+    )
+
+
 def is_logged_in() -> bool:
     """True when an authenticated identity with a verified email is present.
 
@@ -351,23 +178,32 @@ def is_logged_in() -> bool:
     must never resolve to a data dir — an IdP that skips verification would
     otherwise let anyone claim someone else's account. Google always sends
     email_verified=true for its accounts.
+
+    This has to keep agreeing with `stocks.session.signed_in_email`, which is
+    what the API answers with; both now read the same cookie through the same
+    verifier, so agreeing is structural rather than a thing to remember.
     """
-    # auth_configured() carries the guard: membership on st.secrets *raises*
-    # without a secrets file, and this accessor is called by every page, so an
-    # unguarded read takes the whole app down instead of degrading to "nobody
-    # is signed in".
-    return bool(
-        auth_configured()
-        and st.user.is_logged_in
-        and bool(str(getattr(st.user, "email", "") or "").strip())
-        and bool(getattr(st.user, "email_verified", False))
-    )
+    claims = current_claims()
+    return bool(session.verified(claims.get("email_verified")) and claims.get("email"))
 
 
 def current_email() -> str:
     """The signed-in account's email, or "" for a guest. One accessor so
-    callers (and tests) never have to reach into st.user themselves."""
-    return str(getattr(st.user, "email", "") or "").strip()
+    callers (and tests) never have to reach into the cookie themselves.
+
+    Lower-cased, because the mint lower-cases: the API keys directories off
+    this string and the two must name the same account."""
+    return str(current_claims().get("email") or "").strip()
+
+
+def current_name() -> str:
+    """The display name Google gave, falling back to the address."""
+    return str(current_claims().get("name") or "").strip() or current_email()
+
+
+def current_picture() -> str:
+    """The Google avatar URL, or "" when the identity carries none."""
+    return str(current_claims().get("picture") or "").strip()
 
 
 # ------------------------------------------------------- login accounting
@@ -426,7 +262,7 @@ def resolve_user() -> UserPaths:
     logged_in = is_logged_in()
     email = ""
     if logged_in:
-        email = str(st.user.email).strip()
+        email = current_email()
         owner = str(st.secrets.get("app", {}).get("owner_email", "")).strip() or None
         paths = paths_for(email, owner)
         if paths.root != PROJECT_ROOT:  # owner uses repo-root files, no slug
@@ -448,21 +284,6 @@ def resolve_user() -> UserPaths:
     return paths
 
 
-def login() -> None:
-    """`st.login()` plus `st.stop()`, for sign-in buttons' on_click.
-
-    st.login() only enqueues the redirect message — the run then re-renders
-    the whole page while the browser is already leaving for Google, and every
-    lazy-loaded frontend chunk that navigation aborts flashes a red
-    "error loading dynamically imported module" box. Stopping right after the
-    enqueue sends the redirect with an empty delta, so the page stands still
-    until Google takes over. Safe in a callback: callbacks run in the script
-    thread and StopException is the normal early-exit there too.
-    """
-    st.login()
-    st.stop()
-
-
 def auth_configured() -> bool:
     """Whether an IdP is configured ([auth] in secrets).
 
@@ -480,12 +301,7 @@ def _partially_signed_in() -> bool:
     """An OIDC identity that is present but not usable: no email claim, or an
     unverified one. is_logged_in() says False for both, and they must not be
     quietly downgraded to a guest session — require_login() names them."""
-    if not auth_configured():
-        return False
-    try:
-        return bool(st.user.is_logged_in)
-    except Exception:
-        return False
+    return bool(current_claims()) and not is_logged_in()
 
 
 def seed_guest_demo(paths: UserPaths) -> None:
@@ -533,6 +349,18 @@ def require_login_or_demo() -> UserPaths:
     return paths
 
 
+def _log_out_button() -> None:
+    """The sign-out control, as a link rather than a callback.
+
+    Signing out is a navigation to `/auth/logout`: the server clears the cookie
+    and redirects, and the new document is what the pages read their identity
+    from. A callback could not do it — `st.context.cookies` is bound at connect,
+    so clearing without a fresh document would leave the page believing it is
+    still signed in.
+    """
+    st.link_button(tr("common.log_out"), session.LOGOUT_PATH, icon=":material/logout:")
+
+
 def require_login() -> UserPaths:
     """Auth gate for pages that write personal data (Import, Profile) —
     public pages never call it, and the Portfolio page goes through
@@ -548,21 +376,21 @@ def require_login() -> UserPaths:
         st.markdown(tr("auth.setup_help"))
         st.stop()
 
-    if not st.user.is_logged_in:
+    claims = current_claims()
+    if not claims:
         _login_screen()
         st.stop()
 
-    email = str(getattr(st.user, "email", "") or "").strip()
-    if not email:
+    if not str(claims.get("email") or "").strip():
         st.error(tr("auth.no_email"))
-        st.button(tr("common.log_out"), icon=":material/logout:", on_click=st.logout)
+        _log_out_button()
         st.stop()
 
     # Must mirror is_logged_in(): without this branch an unverified identity
     # would silently fall through resolve_user() onto the guest paths.
-    if not bool(getattr(st.user, "email_verified", False)):
+    if not session.verified(claims.get("email_verified")):
         st.error(tr("auth.email_unverified"))
-        st.button(tr("common.log_out"), icon=":material/logout:", on_click=st.logout)
+        _log_out_button()
         st.stop()
 
     return resolve_user()
@@ -591,7 +419,7 @@ _GOOGLE_G_SVG = (
 
 _LOGIN_CSS = f"""\
 <style>
-[class*="st-key-google_signin"] button::before {{
+[class*="st-key-google_signin"] :is(button, a)::before {{
     content: "";
     flex: 0 0 auto;
     width: 1.25rem;
@@ -632,11 +460,11 @@ def _login_screen() -> None:
                 tr("auth.signin_prompt"),
                 text_alignment="center",
             )
-            st.button(
+            st.link_button(
                 tr("common.sign_in_google"),
+                session.LOGIN_PATH,
                 type="primary",
                 key="google_signin",
-                on_click=login,
                 width="stretch",
             )
             st.caption(
@@ -681,11 +509,7 @@ def _prefs_stored(path: Path, _key: tuple[int, int] | None) -> dict:
     """
     if _key is None:
         return {}
-    try:
-        stored = json.loads(path.read_text())
-    except (OSError, ValueError, TypeError):
-        return {}
-    return stored if isinstance(stored, dict) else {}
+    return accounts.stored_prefs(path)
 
 
 def load_prefs(path: Path | None = None) -> dict:
@@ -702,8 +526,7 @@ def load_prefs(path: Path | None = None) -> dict:
 
 def save_prefs(prefs: dict, path: Path | None = None) -> None:
     p = path or user_paths().prefs
-    p.write_text(json.dumps(prefs, indent=2))
-    _persist(p)
+    accounts.save_prefs(p, prefs, persist=_persist)
 
 
 # ------------------------------------------------------ daily action card
@@ -736,6 +559,37 @@ def save_action(card: dict, path: Path | None = None) -> None:
     _persist(p)
 
 
+# ------------------------------------------------------ sector verdicts
+
+
+def load_verdicts(path: Path | None = None) -> dict:
+    """The stored per-sector AI reads, keyed by sector name ({} when none).
+
+    Same contract as load_action: unreadable or corrupt reads as "nothing
+    stored", which sends the page down the regenerate path, not an error page.
+    """
+    p = path or user_paths().verdicts
+    try:
+        out = json.loads(p.read_text())
+    except (OSError, ValueError, TypeError):
+        return {}
+    return out if isinstance(out, dict) else {}
+
+
+def save_verdicts(verdicts: dict, path: Path | None = None) -> None:
+    """Store every sector's verdict, mirrored to the bucket.
+
+    One file rather than one per sector: eleven of them at a few hundred bytes
+    each is still one small JSON, and one bucket key is one round trip instead
+    of eleven. A verdict costs a unit of the account's daily allowance, so
+    losing the file to a container recycle would charge the reader twice for
+    the same paragraph.
+    """
+    p = path or user_paths().verdicts
+    p.write_text(json.dumps(verdicts, indent=2))
+    _persist(p)
+
+
 # ------------------------------------------------------- recent searches
 # The top-bar search remembers the last few tickers the user clicked to
 # explore, so refocusing the empty field can offer them again (survives
@@ -751,9 +605,17 @@ def load_recent_searches(prefs: dict | None = None) -> list[str]:
 
 
 def push_recent_search(ticker: str) -> None:
-    """Move `ticker` to the front of the recent list, deduped, capped."""
+    """Move `ticker` to the front of the recent list, deduped, capped.
+
+    Signed-in accounts only. The top bar draws for everybody, so without this
+    guard an anonymous visitor's searches were written into the shared guest
+    dir's prefs.json — and read back out of it in the next anonymous visitor's
+    dropdown, on a file that is also mirrored to the bucket. A guest's recent
+    list lives nowhere, which is the same bargain the tour and the dismissed
+    banners already make (see `onboarding._save`).
+    """
     t = ticker.strip().upper()
-    if not t:
+    if not t or not is_logged_in():
         return
     prefs = load_prefs()
     rest = [x for x in load_recent_searches(prefs) if x != t]
@@ -1310,218 +1172,70 @@ def save_watchlist_entries(entries: list[dict], path: Path | None = None) -> Non
 
 
 # ------------------------------------------------------- favorites and tags
+# Bindings over `stocks.watchlist`, which holds the edits themselves with no
+# Streamlit in it so the HTTP API can make the same ones. Everything here adds
+# the two things a page needs and a headless caller does not: the session's own
+# watchlist path, and `_persist`, which turns a bucket outage into a toast
+# instead of an exception.
 
-
-def _clean_tags(tags) -> list[str]:
-    """Normalize a tag list: strip, drop empties, de-dup case-insensitively
-    (first spelling wins), keep entry order."""
-    out: list[str] = []
-    seen: set[str] = set()
-    for t in tags or []:
-        t = str(t).strip()
-        if t and t.lower() not in seen:
-            seen.add(t.lower())
-            out.append(t)
-    return out
+_clean_tags = wl.clean_tags
 
 
 def _update_entry(ticker: str, mutate, path: Path | None = None) -> dict:
-    """Apply `mutate(entry)` to a ticker's watchlist entry, creating the entry
-    (ticker only) when it isn't listed yet — favoriting or tagging a custom or
-    held-only symbol adds it to the watchlist. Everything else in the YAML
-    (other entries, alerts, aliases) is preserved. Returns the entry."""
-    p = path or watchlist_path()
-    raw = yaml_load(p.read_text()) if p.exists() else {}
-    items: list[dict] = raw.get("watchlist") or []
-    t = ticker.strip().upper()
-    entry = next(
-        (i for i in items if str(i.get("ticker", "")).upper() == t), None
-    )
-    if entry is None:
-        entry = {"ticker": t}
-        items.append(entry)
-    mutate(entry)
-    raw["watchlist"] = items
-    p.write_text(yaml_dump(raw))
-    _persist(p)
-    return entry
+    return wl.update_entry(path or watchlist_path(), ticker, mutate, persist=_persist)
 
 
 def toggle_favorite(ticker: str, path: Path | None = None) -> bool:
     """Flip a ticker's favorite flag; returns the new state."""
-
-    def _flip(entry: dict) -> None:
-        if entry.get("favorite"):
-            entry.pop("favorite", None)
-        else:
-            entry["favorite"] = True
-
-    return bool(_update_entry(ticker, _flip, path).get("favorite"))
+    return wl.toggle_favorite(path or watchlist_path(), ticker, persist=_persist)
 
 
 def set_favorite(ticker: str, value: bool, path: Path | None = None) -> None:
-    """Set (not flip) a ticker's favorite flag — chat actions need idempotent
-    semantics: "add to favorites" on an already-favorited ticker is a no-op."""
-
-    def _set(entry: dict) -> None:
-        if value:
-            entry["favorite"] = True
-        else:
-            entry.pop("favorite", None)
-
-    _update_entry(ticker, _set, path)
+    """Set (not flip) a ticker's favorite flag."""
+    wl.set_favorite(path or watchlist_path(), ticker, value, persist=_persist)
 
 
 def set_tags(ticker: str, tags: list[str], path: Path | None = None) -> list[str]:
     """Replace a ticker's tags; an empty list removes the key entirely."""
-    clean = _clean_tags(tags)
-
-    def _set(entry: dict) -> None:
-        if clean:
-            entry["tags"] = clean
-        else:
-            entry.pop("tags", None)
-
-    _update_entry(ticker, _set, path)
-    return clean
+    return wl.set_tags(path or watchlist_path(), ticker, tags, persist=_persist)
 
 
 def set_name(ticker: str, name: str, path: Path | None = None) -> None:
     """Set (or clear, with an empty string) a ticker's display label."""
-
-    def _set(entry: dict) -> None:
-        if name.strip():
-            entry["name"] = name.strip()
-        else:
-            entry.pop("name", None)
-
-    _update_entry(ticker, _set, path)
+    wl.set_name(path or watchlist_path(), ticker, name, persist=_persist)
 
 
 def rename_tag(old: str, new: str, path: Path | None = None) -> int:
-    """Rename a tag group across every holding that carries it.
-
-    A group only exists as the tag repeated on its members, so renaming one is
-    a rewrite of each member's tag list — in place, so the group keeps its
-    position in a holding's tags. Merging into an existing group (renaming
-    "semis" to "tech" when both exist) de-dups through `_clean_tags`. Returns
-    how many holdings were touched; 0 when `new` is blank or nothing carries
-    `old`.
-    """
-    from stocks.config import load_watchlist  # local: same reason as all_tags
-
-    new = new.strip()
-    if not new or new.lower() == old.strip().lower():
-        return 0
-    p = path or watchlist_path()
-    touched = 0
-    for h in load_watchlist(p):
-        if not any(t.lower() == old.lower() for t in h.tags):
-            continue
-        set_tags(h.ticker, [new if t.lower() == old.lower() else t for t in h.tags], p)
-        touched += 1
-    return touched
+    """Rename a tag group across every holding that carries it."""
+    return wl.rename_tag(path or watchlist_path(), old, new, persist=_persist)
 
 
 def delete_tag(tag: str, path: Path | None = None) -> int:
-    """Drop a tag group, keeping its members on the watchlist.
-
-    Ungrouping is not un-following: the tickers stay listed, they just stop
-    being a group. Returns how many holdings lost the tag.
-    """
-    from stocks.config import load_watchlist
-
-    p = path or watchlist_path()
-    touched = 0
-    for h in load_watchlist(p):
-        if not any(t.lower() == tag.lower() for t in h.tags):
-            continue
-        set_tags(h.ticker, [t for t in h.tags if t.lower() != tag.lower()], p)
-        touched += 1
-    return touched
+    """Drop a tag group, keeping its members on the watchlist."""
+    return wl.delete_tag(path or watchlist_path(), tag, persist=_persist)
 
 
 def set_alerts(ticker: str, alerts: list[dict], path: Path | None = None) -> None:
-    """Replace a ticker's alert rules; an empty list removes the key entirely.
-
-    Each dict is the YAML shape config.Alert accepts: {"type": ..., and one of
-    price/pct/level, optional window}. None values are dropped so the YAML
-    stays clean.
-    """
-    clean = [
-        {k: v for k, v in a.items() if v is not None and v != ""} for a in alerts
-    ]
-    clean = [a for a in clean if a.get("type")]
-
-    def _set(entry: dict) -> None:
-        if clean:
-            entry["alerts"] = clean
-        else:
-            entry.pop("alerts", None)
-
-    _update_entry(ticker, _set, path)
+    """Replace a ticker's alert rules; an empty list removes the key entirely."""
+    wl.set_alerts(path or watchlist_path(), ticker, alerts, persist=_persist)
 
 
 def add_entry(ticker: str, name: str = "", path: Path | None = None) -> None:
-    """Put a ticker on the watchlist (a no-op when it's already there).
-
-    `name` only fills a blank one — a symbol the user already labelled keeps
-    its label when the assistant re-adds it."""
-
-    def _set(entry: dict) -> None:
-        if name.strip() and not entry.get("name"):
-            entry["name"] = name.strip()
-
-    _update_entry(ticker, _set, path)
+    """Put a ticker on the watchlist (a no-op when it is already there)."""
+    wl.add_entry(path or watchlist_path(), ticker, name, persist=_persist)
 
 
 def remove_entry(ticker: str, path: Path | None = None) -> None:
-    """Drop a ticker from the watchlist, alerts and tags with it.
-
-    Unlike the other mutators this never creates the entry: removing a symbol
-    that isn't listed is a no-op, not an add-then-delete."""
-    p = path or watchlist_path()
-    if not p.exists():
-        return
-    raw = yaml_load(p.read_text())
-    items = raw.get("watchlist") or []
-    t = ticker.strip().upper()
-    kept = [i for i in items if str(i.get("ticker", "")).upper() != t]
-    if len(kept) == len(items):
-        return
-    raw["watchlist"] = kept
-    p.write_text(yaml_dump(raw))
-    _persist(p)
+    """Drop a ticker from the watchlist, alerts and tags with it."""
+    wl.remove_entry(path or watchlist_path(), ticker, persist=_persist)
 
 
 def set_position(ticker: str, shares: float | None = None,
                  cost: float | None = None, path: Path | None = None) -> None:
-    """Set a ticker's held quantity and/or average cost.
-
-    None leaves that field alone, 0 clears it — so "I hold 12 shares" can be
-    recorded without inventing a cost basis. This is the watchlist fallback
-    the app values when no ledger exists; an imported ledger still wins.
-    """
-
-    def _set(entry: dict) -> None:
-        for field, value in (("shares", shares), ("cost", cost)):
-            if value is None:
-                continue
-            if value:
-                entry[field] = float(value)
-            else:
-                entry.pop(field, None)
-
-    _update_entry(ticker, _set, path)
+    """Set a ticker's held quantity and/or average cost."""
+    wl.set_position(path or watchlist_path(), ticker, shares, cost, persist=_persist)
 
 
 def all_tags(path: Path | None = None) -> list[str]:
     """Every tag used on this account's watchlist, sorted case-insensitively."""
-    from stocks.config import load_watchlist
-
-    p = path or watchlist_path()
-    seen: dict[str, str] = {}
-    for h in load_watchlist(p):
-        for t in h.tags:
-            seen.setdefault(t.lower(), t)
-    return sorted(seen.values(), key=str.lower)
+    return wl.all_tags(path or watchlist_path())

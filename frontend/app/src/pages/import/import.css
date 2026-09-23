@@ -1,0 +1,326 @@
+/*
+ * The Import page's own stylesheet.
+ *
+ * No hex literals: every colour is an `--ag-*` custom property that server.py
+ * inlines into the document, so this page and the Streamlit page it replaces
+ * cannot drift, and dark mode stays one definition rather than two.
+ */
+
+.im-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.im-h1 {
+  font-size: var(--ag-fs-3xl);
+  margin: 0;
+}
+
+.im-h2 {
+  font-size: var(--ag-fs-2xl);
+  margin: 1.25rem 0 0.5rem;
+}
+
+.im-lede,
+.im-hint {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+  margin: 0;
+}
+
+.im-hint {
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-sunken);
+  padding: 0.7rem 0.9rem;
+}
+
+/* ------------------------------------------------------------ the controls */
+
+.im-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.im-label {
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+}
+
+.im-help {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+  margin: 0.35rem 0 0;
+}
+
+.im-code {
+  background: var(--ag-surface-sunken);
+  border-radius: var(--ag-radius-xs);
+  font-size: 0.92em;
+  padding: 0.05rem 0.3rem;
+}
+
+.im-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.im-platform {
+  background: var(--ag-surface-card);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-nav);
+  color: var(--ag-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--ag-fs-md);
+  padding: 0.4rem 0.8rem;
+}
+
+.im-platform:hover {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+}
+
+.im-platform-on {
+  border-color: var(--ag-brand-cta);
+  color: var(--ag-text-primary);
+}
+
+.im-input,
+.im-file,
+.im-paste {
+  background: var(--ag-surface-card);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-base);
+  max-width: 28rem;
+  padding: 0.45rem 0.6rem;
+}
+
+.im-paste {
+  font-family: var(--ag-font-mono, ui-monospace, monospace);
+  font-size: var(--ag-fs-sm);
+  max-width: none;
+  resize: vertical;
+  width: 100%;
+}
+
+.im-input:focus-visible,
+.im-file:focus-visible,
+.im-paste:focus-visible {
+  border-color: var(--ag-border-focus);
+  outline: none;
+}
+
+.im-primary {
+  align-self: flex-start;
+  background: var(--ag-brand-cta);
+  border-color: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+}
+
+.im-primary:disabled {
+  background: var(--ag-surface-sunken);
+  border-color: var(--ag-border);
+  color: var(--ag-text-muted);
+  cursor: not-allowed;
+}
+
+.im-details {
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  padding: 0.6rem 0.9rem;
+}
+
+.im-details > summary {
+  color: var(--ag-text-secondary);
+  cursor: pointer;
+  font-size: var(--ag-fs-sm);
+}
+
+/* --------------------------------------------------------------- the tiers */
+
+.im-tiers,
+.im-commit,
+.im-done,
+.im-last {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.im-ok,
+.im-warn,
+.im-bad {
+  border-radius: var(--ag-radius-sm);
+  font-size: var(--ag-fs-sm);
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+}
+
+.im-ok {
+  background: var(--ag-success-fill);
+  color: var(--ag-up);
+}
+
+.im-warn {
+  background: var(--ag-warn-fill);
+  border: 1px solid var(--ag-warn-edge);
+  color: var(--ag-warn);
+}
+
+.im-bad {
+  background: var(--ag-down-fill);
+  color: var(--ag-down);
+}
+
+.im-metric {
+  align-items: baseline;
+  display: flex;
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.im-metric-label {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+}
+
+.im-metric-value {
+  font-size: var(--ag-fs-xl);
+}
+
+/* -------------------------------------------------------------- the tables */
+
+.im-scroll {
+  overflow-x: auto;
+}
+
+.im-table {
+  border-collapse: collapse;
+  font-size: var(--ag-fs-md);
+  width: 100%;
+}
+
+.im-table th,
+.im-table td {
+  border-bottom: 1px solid var(--ag-border);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.im-table th {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+  font-weight: 400;
+  text-transform: uppercase;
+}
+
+.im-table tbody tr:hover {
+  background: var(--ag-surface-hover);
+}
+
+.im-table .im-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.im-table a {
+  color: var(--ag-text-primary);
+}
+
+.im-table .im-issues {
+  color: var(--ag-text-secondary);
+  max-width: 28rem;
+  white-space: normal;
+}
+
+/* Phones: the row's identity and what it did survive; the trailing detail
+   columns fold away rather than pushing the table off the screen. */
+@media (max-width: 640px) {
+  .im-table .im-wide {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------- the book, and the
+   one control that can empty it */
+
+.im-ledger,
+.im-repair,
+.im-sample {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.im-ledger-head,
+.im-repair-head,
+.im-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.im-repair-head .im-help {
+  flex: 1 1 18rem;
+  margin: 0;
+}
+
+/* What opens before a destructive control can act. Bordered in the colour the
+   rest of the app reserves for loss, because that is what this is. */
+.im-danger {
+  border: 1px solid var(--ag-down);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-critical-fill);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: var(--ag-fs-sm);
+  padding: 0.75rem 0.9rem;
+}
+
+.im-danger p {
+  margin: 0;
+}
+
+.im-destructive {
+  background: var(--ag-down);
+  border-color: var(--ag-down);
+  color: var(--ag-on-brand);
+}
+
+.im-destructive:disabled {
+  background: var(--ag-surface-sunken);
+  border-color: var(--ag-border);
+  color: var(--ag-text-muted);
+  cursor: not-allowed;
+}
+
+/* The wipe's own tick, and the per-row ticks the two repairs are named by. */
+.im-check {
+  align-items: center;
+  color: var(--ag-text-primary);
+  display: flex;
+  font-size: var(--ag-fs-sm);
+  gap: 0.45rem;
+}
+
+.im-check input,
+.im-table .im-pick input {
+  accent-color: var(--ag-brand-cta);
+  cursor: pointer;
+  margin: 0;
+}
+
+.im-table .im-pick {
+  padding-right: 0;
+  width: 1.5rem;
+}

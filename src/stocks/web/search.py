@@ -12,15 +12,15 @@ Enter/blur, which cannot drive an as-you-type dropdown.
 
 from __future__ import annotations
 
-import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v2  # noqa: F401 — lazy submodule
 
+from stocks import search as core
 from stocks.config import load_watchlist
-from stocks.fuzzy import FUZZY_CUTOFF, MIN_QUERY, fuzzy_ratio
+from stocks.fuzzy import FUZZY_CUTOFF, MIN_QUERY  # noqa: F401 — facade re-export
 from stocks.web import auth
 from stocks.web import css as css_util
 from stocks.web.ds import (
@@ -289,126 +289,77 @@ def _live_search_input(
     )
 
 
-def _fuzzy_order(
-    q: str,
-    tickers: list[str],
-    labels: dict[str, str],
-    tag_map: Mapping[str, Sequence[str]],
-) -> list[str]:
-    """Tickers whose symbol, name or tag fuzzy-matches `q`, best score first.
+# The dropdown's own alphabet for the two own-list marks. `stocks.search`
+# names them instead of drawing them, because the React page marks the same
+# rows with something else entirely.
+_MARKS = {core.FAVORITE: ":material/star:", core.HELD: ":material/work:"}
 
-    Typo fallback for the top-bar dropdown search;
-    call it only after exact substring matching came up empty.
-    """
-    if len(q) < MIN_QUERY:
-        return []
-    scored = []
-    for i, t in enumerate(tickers):  # ties keep list order (favorites first)
-        score = max(
-            fuzzy_ratio(q, t.upper()),
-            fuzzy_ratio(q, labels[t].upper()),
-            *(fuzzy_ratio(q, tag.upper()) for tag in tag_map.get(t, ())),
-        )
-        if score >= FUZZY_CUTOFF:
-            scored.append((-score, i, t))
-    return [t for _, _, t in sorted(scored)]
+
+def _crypto(q: str) -> list[tuple[str, str]]:
+    from stocks.data.crypto import search_crypto
+
+    return search_crypto(q)
+
+
+def _funds(q: str) -> list[tuple[str, str]]:
+    from stocks.data.funds import search_funds
+
+    return search_funds(q)
+
+
+def _account_catalog() -> core.Catalog:
+    """The session account's watchlist and open positions, indexed for search."""
+    db = str(auth.db_path())
+    return core.account_catalog(
+        load_watchlist(auth.watchlist_path()), held_tickers(db, db_mtime(db)), sec_title
+    )
 
 
 def _topbar_matches(raw: str):
     """Picker-parity search for the top-bar dropdown.
 
-    The watchlist is matched by symbol, company name OR tag-group (favorites
-    first, and open-but-unlisted positions from the ledger folded in), then
-    coins, then the SEC ticker map,
-    then a worldwide Yahoo lookup for everything the US-only map can't see,
-    plus an "Analyze <SYMBOL>" fallback for a symbol none of them know. Returns
-    `(watch, crypto, funds, sec, world, analyze)` where watch rows carry their
-    star/briefcase mark and world rows carry their exchange.
+    The tiers, their order and their dedup are `stocks.search`; what this adds
+    is the binding to the session account and to the caches each tier needs —
+    which is the only part that is a page's business. Returns
+    `(watch, crypto, funds, sec, world, analyze)` with watch rows carrying
+    their Material mark.
     """
-    q = raw.strip().upper()
-    if not q:
-        return [], [], [], [], [], None
-    holdings = load_watchlist(auth.watchlist_path())
-    labels = {h.ticker: (h.name or h.ticker) for h in holdings}
-    fav_set = {h.ticker for h in holdings if h.favorite}
-    tag_map = {h.ticker: h.tags for h in holdings if h.tags}
-    db = str(auth.db_path())
-    held_set = set(held_tickers(db, db_mtime(db)))
-    for t in sorted(held_set - set(labels)):
-        labels[t] = sec_title(t) or t
-    order = [t for t in labels if t in fav_set] + [t for t in labels if t not in fav_set]
-
-    watch: list[tuple[str, str, str]] = []
-    for t in order:
-        if (
-            q in t.upper()
-            or q in labels[t].upper()
-            or any(q in tag.upper() for tag in tag_map.get(t, ()))
-        ):
-            mark = (
-                ":material/star:" if t in fav_set
-                else (":material/work:" if t in held_set else "")
-            )
-            watch.append((t, labels[t], mark))
-    if not watch:
-        # Typo fallback ("oracel"): fuzzy over the same fields, best first.
-        # Only when exact substring found nothing, so it never dilutes results.
-        for t in _fuzzy_order(q, order, labels, tag_map):
-            mark = (
-                ":material/star:" if t in fav_set
-                else (":material/work:" if t in held_set else "")
-            )
-            watch.append((t, labels[t], mark))
-
-    from stocks.data.crypto import search_crypto
-    from stocks.data.funds import search_funds
-
-    crypto = [(t, n) for t, n in search_crypto(q) if t not in labels]
-    # The fund catalog is local, so this tier is the one that still answers
-    # "where is my ETF" while Yahoo has the deploy's egress IP in timeout.
-    funds = [(t, n) for t, n in search_funds(q) if t not in labels]
-    sec = [(t, n) for t, n in sec_matches(q) if t not in labels]
-    # Worldwide runs on every query, not just when the tiers above came up
-    # empty: their fuzzy fallbacks always produce SOMETHING, so "nothing found
-    # locally" is not a usable trigger — "MIPS" pulls VIPS/CMPS/MVIS out of the
-    # SEC map and would have suppressed the one real answer (MIPS.ST). It is
-    # deduped against them instead, and `_world_first` decides which of the two
-    # groups leads.
-    seen = (
-        set(labels)
-        | {t for t, _ in crypto}
-        | {t for t, _ in funds}
-        | {t for t, _ in sec}
+    watch, crypto, funds, sec, world, analyze = core.tiers(
+        raw,
+        _account_catalog(),
+        crypto=_crypto,
+        funds=_funds,
+        # Read through the module globals, not captured: the tests and
+        # scripts/bench_page.py stub these two by attribute to keep the
+        # network out of a page run.
+        sec=lambda q: sec_matches(q),
+        world=lambda q: world_matches(q),
     )
-    world = [(t, n, x) for t, n, x in world_matches(q) if t not in seen]
-    known = seen | {t for t, _, _ in world}
-    analyze = q if (q not in known and re.fullmatch(r"[A-Z0-9.\-]{1,12}", q)) else None
-    return watch[:8], crypto[:4], funds[:4], sec[:6], world[:3], analyze
+    return (
+        [(t, n, _MARKS.get(mark, "")) for t, n, mark in watch],
+        crypto,
+        funds,
+        sec,
+        world,
+        analyze,
+    )
 
 
 def _recent_rows() -> list[tuple[str, str, str]]:
     """Recently explored tickers as `(symbol, name, mark)`, newest first.
 
-    Names/marks are resolved from the current watchlist + ledger like the
-    live matches, so a recent row looks identical to its search-result twin;
-    a symbol no longer in either just shows bare.
+    Names and marks come from the same account catalog the live matches use,
+    so a recent row looks identical to its search-result twin; a symbol no
+    longer on the list or in the book just shows bare.
     """
     recents = auth.load_recent_searches()
     if not recents:
         return []
-    holdings = load_watchlist(auth.watchlist_path())
-    labels = {h.ticker: (h.name or h.ticker) for h in holdings}
-    fav_set = {h.ticker for h in holdings if h.favorite}
-    db = str(auth.db_path())
-    held_set = set(held_tickers(db, db_mtime(db)))
+    catalog = _account_catalog()
     rows = []
     for t in recents:
-        name = labels.get(t) or (sec_title(t) if t in held_set else None) or ""
-        mark = (
-                ":material/star:" if t in fav_set
-                else (":material/work:" if t in held_set else "")
-            )
-        rows.append((t, name if name != t else "", mark))
+        name = catalog.labels.get(t, "")
+        rows.append((t, name if name != t else "", _MARKS.get(catalog.mark(t), "")))
     return rows
 
 
@@ -587,7 +538,6 @@ def topbar_search_panel() -> None:
                 _render_ticker_rows(recent, key_prefix="tbrec")
 
 
-
 @st.cache_data(ttl=86400, show_spinner=False)
 def sec_title(ticker: str) -> str | None:
     """Company name for a held-but-unlisted ticker, from the SEC map.
@@ -643,43 +593,12 @@ def world_matches(query: str) -> list[tuple[str, str, str]]:
         return []
 
 
-# How close a SEC company name must be to the query to count as "nailed it".
-# Above the general FUZZY_CUTOFF: this decides which group leads, so it should
-# admit a typo ("SANDISC" vs "SANDISK" .86) but not a near-miss neighbour
-# ("MIPS" vs "VIPSHOP" .55, "IWDA" vs "IDEA" .75).
-STRONG_MATCH = 0.8
-
-
-def _norm_name(s: str) -> str:
-    return "".join(c for c in s.upper() if c.isalnum())
-
-
-def _world_first(q: str, sec: list[tuple[str, str]]) -> bool:
-    """Whether the worldwide group should render above the SEC group.
-
-    The SEC tier degrades as it goes: after its exact and prefix hits it falls
-    back to substrings and then to fuzz, so "MIPS" answers with VIPS, CMPS and
-    MVIS — six wrong US tickers that would bury the one real match (MIPS.ST).
-    It keeps the top slot only when it actually nailed the query.
-
-    "Nailed it" is an exact symbol, a company name starting with the query, or
-    a company name whose OPENING words are a near-match for it. Only the
-    opening words, because the query being buried anywhere in a longer name
-    proves nothing — "hermes" scores .92 against "Federated Hermes, Inc." and
-    would hand the lead to an asset manager over Hermès itself. Matching word
-    for word from the start instead keeps "sandisc" on Sandisk Corp and
-    "nvidia" on Nvidia Corp (above the leveraged NVDA ETFs Yahoo returns),
-    while "bank of amrica" still lands on BANK OF AMERICA CORP.
-    """
-    key = _norm_name(q)
-    for t, n in sec:
-        if t == q or (key and _norm_name(n).startswith(key)):
-            return False
-        words = re.sub(r"[^A-Z0-9 ]", " ", n.upper()).split()
-        head = " ".join(words[: len(q.split())])
-        if head and fuzzy_ratio(q, head) >= STRONG_MATCH:
-            return False
-    return True
+# Which of the SEC and worldwide groups leads, and how close a name must be
+# to earn it — the reasoning is in `stocks.search.world_first`. Re-exported
+# here because the picker tests and the widgets module reach for them by this
+# name.
+STRONG_MATCH = core.STRONG_MATCH
+_world_first = core.world_first
 
 
 def _world_label(t: str, name: str, exch: str) -> str:
@@ -700,67 +619,23 @@ def _world_label(t: str, name: str, exch: str) -> str:
 # the list. Both want the same tiers (own list, coins, funds, SEC map,
 # worldwide), so the catalog walk lives here once and the adder renders it.
 
-def add_candidates(
-    query: str, *, path: Path | None = None, limit: int = 8
-) -> list[dict]:
+
+def add_candidates(query: str, *, path: Path | None = None, limit: int = 8) -> list[dict]:
     """What typing `query` could put on the watchlist, best tier first.
 
-    Rows are `{"ticker", "name", "kind", "listed"}` where `kind` names the
-    tier ("watch", "crypto", "fund", "sec", "world", "raw") and `listed` says
-    the account already follows the symbol —
-    surfaced rather than filtered, so a duplicate query answers "you have
-    this" instead of coming up empty. `raw` is the escape hatch the dropdown
-    spells "Analyze <SYMBOL>": a plausible symbol no catalog knows, which the
-    account may still want to track.
-
-    The network tier (worldwide) is cached and hard-capped inside
-    `world_matches`, and every tier is exception-swallowing there too: a dead
-    Yahoo degrades the adder to the local catalogs instead of breaking it.
+    Thin binding over `stocks.search.candidates`: this supplies the account's
+    list and the cached, exception-swallowing tiers. A dead Yahoo therefore
+    degrades the adder to the local catalogs instead of breaking it.
     """
-    from stocks.data.crypto import search_crypto
-    from stocks.data.funds import search_funds
-
-    q = query.strip().upper()
-    if not q:
-        return []
-    holdings = load_watchlist(path or auth.watchlist_path())
-    listed = {h.ticker.upper(): (h.name or "") for h in holdings}
-    tag_map = {h.ticker.upper(): h.tags for h in holdings}
-    rows: list[dict] = []
-    seen: set[str] = set()
-
-    def push(ticker: str, name: str, kind: str) -> None:
-        t = str(ticker).strip().upper()
-        if not t or t in seen:
-            return
-        seen.add(t)
-        rows.append(
-            {
-                "ticker": t,
-                "name": (name or listed.get(t) or "").strip(),
-                "kind": kind,
-                "listed": t in listed,
-            }
-        )
-
-    for t, name in listed.items():
-        if (
-            q in t
-            or q in name.upper()
-            or any(q in tag.upper() for tag in tag_map.get(t, ()))
-        ):
-            push(t, name, "watch")
-    for t, name in search_crypto(q):
-        push(t, name, "crypto")
-    for t, name in search_funds(q):
-        push(t, name, "fund")
-    for t, name in sec_matches(q):
-        push(t, name, "sec")
-    for t, name, exch in world_matches(q):
-        push(t, f"{name} · {exch}" if exch else name, "world")
-    if q not in seen and re.fullmatch(r"[A-Z0-9.\-]{1,12}", q):
-        push(q, "", "raw")
-    return rows[:limit]
+    return core.candidates(
+        query,
+        load_watchlist(path or auth.watchlist_path()),
+        crypto=_crypto,
+        funds=_funds,
+        sec=lambda q: sec_matches(q),
+        world=lambda q: world_matches(q),
+        limit=limit,
+    )
 
 
 # ----------------------------------------------------- picker for other pages

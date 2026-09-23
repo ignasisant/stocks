@@ -122,6 +122,26 @@ def test_system_prompt_layers():
     assert "Apply these analysis frameworks" not in engine.system_prompt(prof, "x", [])
 
 
+def test_system_prompt_names_the_language_to_answer_in():
+    """A Spanish question used to come back in English: everything the model
+    read — persona, context, RULES, the fetched extracts — was English, and
+    nothing said which language to write."""
+    out = engine.system_prompt({"set": False}, "x", [], "es")
+    assert "language of the user's latest message" in out
+    assert "write in Spanish" in out
+    # last thing read, after RULES, where the small models weight hardest
+    assert out.rstrip().endswith("stay as they are.")
+
+
+def test_system_prompt_without_a_locale_is_unchanged():
+    """The caller that does not know the user's language (the Streamlit panel)
+    gets exactly the prompt it got before, byte for byte."""
+    assert engine.system_prompt({"set": False}, "x", []) == engine.system_prompt(
+        {"set": False}, "x", [], None
+    )
+    assert "latest message" not in engine.system_prompt({"set": False}, "x", [])
+
+
 def test_system_prompt_bans_inventing_an_import():
     """The chat once answered "4 transactions imported" with invented tickers
     and prices, having imported nothing. The ban is part of the persona."""
@@ -424,6 +444,15 @@ def test_answer_free_happy_path(providers, paths):
     # the brand-new thread was named from the opening question
     assert auth.active_conversation(paths["chat_path"])["title"] == "Free answer"
 
+
+
+def test_the_turns_language_rule_follows_the_callers_locale(providers, paths):
+    """The locale the API route resolved reaches the model, not just the
+    canned locale strings."""
+    engine.answer(prefs=dict(BASE_PREFS), lang="es",
+                  message="Analiza CEG", **paths)
+    _, _, system, _ = providers["free"].calls[0]
+    assert "write in Spanish" in system
 
 
 def test_answer_refuses_to_import_from_a_message(providers, paths):

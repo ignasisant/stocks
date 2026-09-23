@@ -45,7 +45,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from stocks.portfolio import instruments
+from stocks import obs
+from stocks.data import crypto
+from stocks.portfolio import instruments, lexicon
 from stocks.portfolio.ledger import ACTIONS, Transaction
 from stocks.portfolio.statement import ParseResult
 
@@ -68,7 +70,9 @@ FIELDS = ("date", "ticker", "action", "quantity", "price", "amount",
 _REQUIRED = ("date", "ticker", "action")
 
 # Tried in order when the model's date_format doesn't parse a cell — brokers
-# mix these freely and one bad guess must not reject the whole file.
+# mix these freely and one bad guess must not reject the whole file. Anything
+# these miss goes to lexicon.iso_date, which also reads the month names the
+# file's own language spells ("3 abr 2025").
 _DATE_FALLBACKS = (
     "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%d.%m.%Y",
     "%Y/%m/%d", "%d %b %Y", "%d-%b-%Y",
@@ -265,6 +269,7 @@ Reply with ONLY a JSON object, no prose, no code fences:
  "date_format": "<strftime format of the date cells, e.g. %d/%m/%Y>",
  "decimal": "<the decimal separator, '.' or ','>",
  "thousands": "<the thousands separator, or an empty string>",
+ "asset_class": "crypto" | "securities",
  "action_map": {"<the exact text in the action column>":
                 "<buy|sell|dividend|fee|split>"}}
 
@@ -287,6 +292,10 @@ Rules:
 - When that column is a sentence that differs in every row ("YOU BOUGHT
   PROSHARES ULTRAPRO QQQ (TQQQ) (Cash)"), key the map on the phrase that
   names the action ("you bought"), never on the whole sentence.
+- "asset_class" is "crypto" when the symbol column holds coin codes (BTC,
+  ETH, SOL) from an exchange or wallet export, "securities" for shares,
+  ETFs, funds and bonds. Coin codes collide with real tickers — SOL is a
+  US-listed company — so this is what stops a coin importing as a share.
 - Never invent values from the sample rows; you are only naming columns.
 """
 
@@ -335,6 +344,7 @@ def parse_mapping(raw: str, grid: list[list[str]]) -> dict | None:
 
     decimal = str(data.get("decimal") or ".")[:1] or "."
     thousands = str(data.get("thousands") or "")[:1]
+    asset_class = str(data.get("asset_class") or "").strip().lower()
     return {
         "header_row": 0 if header_row is None else header_row,
         "columns": columns,
@@ -343,6 +353,194 @@ def parse_mapping(raw: str, grid: list[list[str]]) -> dict | None:
         # A separator that is also the decimal point would eat the decimals.
         "thousands": "" if thousands == decimal else thousands,
         "action_map": actions,
+        "asset_class": asset_class if asset_class in ("crypto", "securities") else "",
+    }
+
+
+# ------------------------------------------------- mapping without a model
+
+# Header name -> field, in the languages brokers export in. Matched against
+# the header cell with its accents stripped, exactly first and then as a
+# substring, so "Fecha de operación" and "Precio unitario" both land.
+#
+# This is not a better version of the model call: it is the version that
+# still works when the model is rate-limited, out of credit or simply wrong,
+# and it is deliberately dumb enough to be predictable.
+_HEADER_WORDS: dict[str, tuple[str, ...]] = {
+    "date": ("date", "fecha", "data", "datum", "fecha valor", "trade date",
+             "completed date", "settlement date", "timestamp", "fecha hora",
+             "dia", "day"),
+    "ticker": ("symbol", "simbolo", "ticker", "asset", "activo", "isin",
+               "instrument", "instrumento", "valor", "producto", "product",
+               "security", "criptomoneda", "coin", "titulo"),
+    "action": ("type", "tipo", "action", "accion", "operacion", "operation",
+               "transaction type", "movimiento", "side", "sentido",
+               "concepto", "transaccion"),
+    "quantity": ("quantity", "cantidad", "qty", "shares", "titulos",
+                 "participaciones", "unidades", "volumen", "volume", "units",
+                 "num titulos", "numero de titulos"),
+    "price": ("price", "precio", "price per share", "price per coin",
+              "precio unitario", "cotizacion", "kurs", "prezzo", "cours",
+              "unit price"),
+    "amount": ("value", "total", "importe", "total amount", "gross amount",
+               "valor total", "importe total", "efectivo", "contravalor",
+               "montant", "betrag", "amount"),
+    "fee": ("fee", "fees", "comision", "comisiones", "commission",
+            "corretaje", "gastos", "costes", "gebuhr", "frais", "tarifa"),
+    "currency": ("currency", "divisa", "moneda", "ccy", "currency code"),
+    "note": ("note", "notes", "nota", "descripcion", "description",
+             "detalle", "comentario"),
+}
+
+# European and US number shapes, told apart by which separator comes last.
+_EU_NUMBER = re.compile(r"^\d{1,3}(\.\d{3})*,\d+$")
+_US_NUMBER = re.compile(r"^\d{1,3}(,\d{3})*\.\d+$")
+
+# A symbol column's cells: short, no spaces, not a number. Loose on purpose —
+# it only has to beat the other columns of the same file.
+_SYMBOLISH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.\-:_]{0,11}$")
+
+# Rows of the file read when guessing by content rather than by header.
+_SNIFF_ROWS = 40
+
+
+def _header_field(cell: str) -> str | None:
+    """The field a header cell names, or None."""
+    text = " ".join(lexicon.plain(cell).replace(".", " ").split())
+    if not text:
+        return None
+    for name, words in _HEADER_WORDS.items():
+        if text in words:
+            return name
+    for name, words in _HEADER_WORDS.items():
+        if any(word in text for word in words):
+            return name
+    return None
+
+
+def _guess_header_row(grid: list[list[str]]) -> int:
+    """The row that names the columns: the one most of whose cells are names.
+
+    A preamble line ("Extracto de operaciones") names nothing, and a data row
+    names at most a column or two by accident, so the real header wins on
+    count. Ties go to the earliest row, and a file whose header this cannot
+    see is read as starting at row 0 — the same assumption the model's
+    mapping falls back on.
+    """
+    best, best_score = 0, 0
+    for index, row in enumerate(grid[:10]):
+        score = sum(1 for cell in row if _header_field(cell))
+        if score > best_score:
+            best, best_score = index, score
+    return best
+
+
+def _column_scores(rows: list[list[str]], width: int, test) -> list[int]:
+    return [sum(1 for row in rows if i < len(row) and test(row[i]))
+            for i in range(width)]
+
+
+def _best_column(rows: list[list[str]], width: int, test,
+                 taken: set[int]) -> int | None:
+    """The column whose cells pass `test` most often, if any does at all."""
+    scores = _column_scores(rows, width, test)
+    ranked = sorted(
+        (i for i in range(width) if i not in taken and scores[i]),
+        key=lambda i: -scores[i],
+    )
+    if not ranked:
+        return None
+    # Half the sampled rows, so a stray date inside a note column never wins.
+    return ranked[0] if scores[ranked[0]] >= max(1, len(rows) // 2) else None
+
+
+def _sniff_separators(
+    rows: list[list[str]], indexes: list[int | None]
+) -> tuple[str, str]:
+    """(decimal, thousands) as this file writes its numbers.
+
+    `None` is an ordinary entry, not an accident: the caller passes the four
+    numeric columns it mapped, and a file with no fee column maps that one to
+    nothing. Skipped below rather than filtered by the caller, so the set of
+    columns sniffed stays the set the mapping named.
+    """
+    european = american = 0
+    for row in rows:
+        for i in indexes:
+            if i is None or i >= len(row):
+                continue
+            cell = _MONEY_JUNK.sub("", row[i]).strip("()+-")
+            if _EU_NUMBER.match(cell):
+                european += 1
+            elif _US_NUMBER.match(cell):
+                american += 1
+    if european > american:
+        return ",", "."
+    if american > european:
+        return ".", ","
+    return ".", ""
+
+
+def guess_mapping(grid: list[list[str]]) -> dict | None:
+    """A mapping worked out from the file alone, or None.
+
+    Headers first, then the cells themselves: a column whose values parse as
+    dates is the date column whatever it is called, and one whose values are
+    words lexicon.py knows is the action column. That content check is what
+    carries a file whose headers are in a language, or an abbreviation, the
+    table above never listed.
+    """
+    if len(grid) < 2:
+        return None
+    header_row = _guess_header_row(grid)
+    width = max((len(row) for row in grid), default=0)
+    rows = [r for r in grid[header_row + 1:header_row + 1 + _SNIFF_ROWS] if any(r)]
+    if not rows or not width:
+        return None
+
+    columns: dict[str, int | None] = {name: None for name in FIELDS}
+    for index, cell in enumerate(grid[header_row][:width]):
+        name = _header_field(cell)
+        if name and columns[name] is None:
+            columns[name] = index
+
+    taken = {i for i in columns.values() if i is not None}
+
+    def adopt(name: str, test) -> None:
+        index = columns[name]
+        if index is not None:
+            hits = _column_scores(rows, width, test)[index]
+            if hits >= max(1, len(rows) // 2):
+                return  # the header was right about it
+            taken.discard(index)
+        found = _best_column(rows, width, test, taken)
+        if found is not None:
+            columns[name] = found
+            taken.add(found)
+
+    adopt("date", lambda cell: lexicon.readable_date(cell) is not None)
+    adopt("action", lambda cell: lexicon.action_of(cell) is not None)
+    if columns["ticker"] is None:
+        columns["ticker"] = _best_column(
+            rows, width,
+            lambda cell: bool(_SYMBOLISH.match(cell.strip()))
+            and lexicon.readable_date(cell) is None
+            and _number(cell, ".", ",") is None,
+            taken,
+        )
+    if any(columns[name] is None for name in _REQUIRED):
+        return None
+
+    decimal, thousands = _sniff_separators(
+        rows, [columns[f] for f in ("price", "amount", "quantity", "fee")])
+    return {
+        "header_row": header_row,
+        "columns": columns,
+        "date_format": "",  # lexicon reads the cells; no one format to declare
+        "decimal": decimal,
+        "thousands": thousands,
+        "action_map": {},  # lexicon's vocabulary covers it
+        "asset_class": "",  # decided from the symbols themselves
     }
 
 
@@ -389,17 +587,29 @@ def _number(text: str, decimal: str, thousands: str) -> float | None:
 
 
 def _date(text: str, fmt: str) -> str | None:
-    """An ISO date out of a cell, trying the mapped format then the usual ones."""
+    """An ISO date out of a cell: the mapped format, the usual ones, then prose.
+
+    The cell is tried whole and again without its time half. Splitting on the
+    first space, as this used to, turns "3 feb 2025 09:21:06" into "3" and
+    rejects every row of a file that a human reads at a glance — the date is
+    not always the first word-with-no-spaces in the cell.
+    """
     text = (text or "").strip()
     if not text:
         return None
-    text = text.split("T")[0].split(" ")[0] if len(text) > 10 else text
-    for candidate in ([fmt] if fmt else []) + list(_DATE_FALLBACKS):
-        try:
-            return datetime.strptime(text, candidate).date().isoformat()
-        except (ValueError, TypeError):
-            continue
-    return None
+    candidates = [text]
+    head = text.split("T")[0].strip()
+    if head != text:
+        candidates.append(head)
+    for candidate in candidates:
+        for pattern in ([fmt] if fmt else []) + list(_DATE_FALLBACKS):
+            try:
+                return datetime.strptime(candidate, pattern).date().isoformat()
+            except (ValueError, TypeError):
+                continue
+    # Whatever no strftime pattern caught: a timestamp with a time part, a
+    # month spelled out, a locale's own month name.
+    return lexicon.readable_date(text)
 
 
 def _action_phrases(actions: dict[str, str]) -> list[tuple[re.Pattern, str]]:
@@ -416,6 +626,16 @@ def _action_phrases(actions: dict[str, str]) -> list[tuple[re.Pattern, str]]:
     fallback for a row type the sample never showed the model.
     """
     ordered = sorted(actions.items(), key=lambda kv: -len(kv[0]))
+    # Then every verb lexicon.py knows, in every language it knows them in:
+    # the model's vocabulary comes from a sample of the file, so a type that
+    # appears only on row 400 ("Venta") is not in it, and without this the
+    # row is dropped as "action not recognised".
+    ordered += sorted(
+        ((word, action)
+         for action, words in lexicon.ACTION_WORDS.items()
+         for word in words),
+        key=lambda kv: -len(kv[0]),
+    )
     ordered += [(a, a) for a in sorted(ACTIONS)]
     return [(re.compile(rf"(?<![a-z0-9]){re.escape(key)}(?![a-z0-9])"), value)
             for key, value in ordered if key]
@@ -423,17 +643,78 @@ def _action_phrases(actions: dict[str, str]) -> list[tuple[re.Pattern, str]]:
 
 def _phrase_action(text: str, phrases: list[tuple[re.Pattern, str]]) -> str:
     """The action named inside a free-text cell, or "" when none is."""
-    low = text.lower()
+    low = lexicon.plain(text)  # accents stripped: "Comisión" matches "comision"
     for pattern, action in phrases:
         if pattern.search(low):
             return action
     return ""
 
 
+# A bare coin code as an exchange writes it: BTC, SOL, CHILLGUY. Deliberately
+# the same shape a stock ticker has — which is the whole problem, and why the
+# decision below is taken per *file*, never per symbol.
+_COIN_RE = re.compile(r"^[A-Z0-9]{2,10}$")
+
+# How much of a file's symbol column has to be coins we recognise before the
+# file is read as a crypto export. Two is the floor because a single "ETH"
+# in a share portfolio is more likely Ethan Allen; the share is low because a
+# real wallet export is mostly coins nobody curated a name for (MOODENG,
+# CHILLGUY) sitting next to the two or three majors that anchor it.
+_CRYPTO_SHARE = 0.3
+
+
+def _is_crypto_file(labels: list[str], declared: str) -> bool:
+    """Whether this export's symbols are coins, decided once for the file.
+
+    The model's own reading wins when it gave one — it saw the headers and
+    the surrounding text. Otherwise the symbols vote: pairing SOL with EUR
+    when the file is a share statement would book Solana for Emeren Group,
+    and leaving a coin bare prices it as that company forever.
+    """
+    if declared:
+        return declared == "crypto"
+    distinct = {label.upper() for label in labels if label}
+    if not distinct:
+        return False
+    known = [c for c in distinct if c in crypto.CRYPTO_NAMES]
+    return len(known) >= 2 and len(known) >= _CRYPTO_SHARE * len(distinct)
+
+
+def _symbol_column(grid: list[list[str]], mapping: dict) -> list[str]:
+    """Every value the mapped symbol column holds, for the file-level checks."""
+    index = mapping["columns"].get("ticker")
+    if index is None:
+        return []
+    return [row[index].strip() for row in grid[mapping["header_row"] + 1:]
+            if index < len(row) and row[index].strip()]
+
+
+def _sniff_currency(grid: list[list[str]], mapping: dict) -> str:
+    """The currency the money columns are written in, for files without one.
+
+    Outside the US a currency column is the exception, and the only thing
+    saying "1.000,00 €" is not dollars is the € itself. Defaulting to USD
+    without looking books a euro statement as dollars, which every later
+    conversion then compounds.
+    """
+    cols = mapping["columns"]
+    indexes = [cols.get(f) for f in ("price", "amount", "fee")]
+    for row in grid[mapping["header_row"] + 1:][:_SNIFF_ROWS]:
+        for index in indexes:
+            if index is None or index >= len(row):
+                continue
+            if found := lexicon.currency_of(row[index]):
+                return found
+    return "USD"
+
+
 def apply_mapping(grid: list[list[str]], mapping: dict) -> ParseResult:
     """Turn every data row into a Transaction using the mapping. No LLM here."""
     result = ParseResult()
     cols = mapping["columns"]
+    coins = _is_crypto_file(_symbol_column(grid, mapping),
+                            mapping.get("asset_class", ""))
+    default_currency = _sniff_currency(grid, mapping)
     actions = mapping["action_map"]
     phrases = _action_phrases(actions)
     decimal, thousands = mapping["decimal"], mapping["thousands"]
@@ -475,7 +756,11 @@ def apply_mapping(grid: list[list[str]], mapping: dict) -> ParseResult:
             })
             continue
 
-        currency = (cell(row, "currency").strip().upper() or "USD")[:3]
+        currency = (cell(row, "currency").strip().upper() or default_currency)[:3]
+        if coins and _COIN_RE.match(ticker.upper()):
+            # Coin plus the row's own fiat, the pair Yahoo prices and the form
+            # the rest of the app stores crypto in (stocks.data.crypto).
+            ticker = crypto.to_pair(ticker, currency)
         if ticker == currency:  # the currency column got mapped as the symbol
             result.skipped.append({
                 "row": lineno, "type": raw_action,
@@ -734,9 +1019,14 @@ def _resolve_symbols(result: ParseResult, provider: Provider,
             time.sleep(RESOLVE_RETRY_SECONDS)
             return _ask(provider, api_key, system, content)
 
+    # A pair is already the ticker the app prices with; asking the model to
+    # "resolve" BTC-EUR invites it to answer with a company.
+    labels = [tx.ticker for tx in result.transactions
+              if not crypto.is_crypto(tx.ticker)]
+    if not labels:
+        return
     try:
-        mapping = instruments.resolve(
-            [tx.ticker for tx in result.transactions], provider, api_key, ask=ask)
+        mapping = instruments.resolve(labels, provider, api_key, ask=ask)
     except ProviderUnavailable as exc:
         # Nothing is guessed at — but every unresolved row is about to be
         # rejected as a "malformed ticker", which reads as a broken statement
@@ -768,18 +1058,40 @@ def extract(filename: str, data: bytes, provider: Provider,
             "row": 0, "type": "file",
             "reason": "no table could be read from this file",
         }]))
+
+    # Worked out from the file itself, before anything is asked of anyone.
+    # It is the answer when the model is unreachable, when it declines the
+    # file, and when its mapping turns out to convert nothing — three
+    # failures that used to be the end of the import and are now a fallback.
+    guess = guess_mapping(grid)
+
+    down = ""
     try:
         mapping = map_columns(provider, api_key, grid)
     except ProviderUnavailable as exc:
-        return Extraction(ParseResult(skipped=[{
-            "row": 0, "type": "file", "reason": f"the assistant is down: {exc}",
-        }]), unavailable=True)
-    if mapping is None:
-        return Extraction(ParseResult(skipped=[{
-            "row": 0, "type": "file",
-            "reason": "the columns could not be matched to date/symbol/action",
-        }]))
-    result = apply_mapping(grid, mapping)
+        mapping, down = None, str(exc)
+
+    result = apply_mapping(grid, mapping) if mapping else ParseResult()
+    if not result.transactions and guess and guess != mapping:
+        rescued = apply_mapping(grid, guess)
+        if rescued.transactions:
+            obs.event("import.llm_map.rescued", rows=len(rescued.transactions),
+                      reason="model_down" if down else
+                      ("no_mapping" if mapping is None else "no_rows"))
+            result = rescued
+
+    if not result.transactions:
+        if down:
+            return Extraction(ParseResult(skipped=[{
+                "row": 0, "type": "file",
+                "reason": f"the assistant is down: {down}",
+            }]), unavailable=True)
+        if mapping is None:
+            return Extraction(ParseResult(skipped=[{
+                "row": 0, "type": "file",
+                "reason": "the columns could not be matched to date/symbol/action",
+            }]))
+
     _resolve_symbols(result, provider, api_key)
     return Extraction(result, KIND_TRADES if result.transactions else KIND_NONE)
 

@@ -35,10 +35,7 @@ def session(monkeypatch) -> dict:
     """A fake Streamlit session, signed in as jane@example.com."""
     state: dict = {}
     monkeypatch.setattr(telemetry.st, "session_state", state, raising=False)
-    monkeypatch.setattr(
-        telemetry.st, "user", type("U", (), {"email": "jane@example.com"}),
-        raising=False,
-    )
+    monkeypatch.setattr(telemetry.auth, "current_email", lambda: "jane@example.com")
     monkeypatch.setattr(telemetry.auth, "is_logged_in", lambda: True)
     return state
 

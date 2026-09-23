@@ -25,7 +25,7 @@ from yfinance.exceptions import YFRateLimitError
 
 from stocks.web.i18n import t as tr
 
-# Message + icon per failure kind. Rate limits clear on their own (fetch._retry
+# Message + icon per failure kind. Rate limits clear on their own (fetch.retry
 # has already backed off); a URLError means the host is unreachable.
 _NOTICES = {
     "rate_limit": ("common.toast_rate_limited", ":material/hourglass_top:"),

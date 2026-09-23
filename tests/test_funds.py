@@ -92,10 +92,19 @@ class FakeTicker:
 def fake_yf(monkeypatch):
     import yfinance as yf
 
+    from stocks.data.fetch import clear_info_cache
+
     FakeTicker.payloads = {}
     FakeTicker.calls = []
     monkeypatch.setattr(yf, "Ticker", FakeTicker)
-    return FakeTicker
+    # `fetch_profile` reads `.info` through the two-minute memo, and a memo hit
+    # does not see a patched `yfinance.Ticker`. Any earlier test that asked
+    # Yahoo about SPY therefore answered this one, with real numbers, and the
+    # assertions here compared a fixture against the live market. Cleared on
+    # the way in and on the way out: this file's fakes must not leak either.
+    clear_info_cache()
+    yield FakeTicker
+    clear_info_cache()
 
 
 # --------------------------------------------------------------- classification

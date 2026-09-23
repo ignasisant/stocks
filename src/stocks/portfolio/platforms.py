@@ -21,6 +21,7 @@ from stocks.portfolio import (
     revolut,
     revolut_crypto,
     revolut_pdf,
+    statement,
     trading212,
 )
 from stocks.portfolio.fees import broker_of
@@ -50,11 +51,11 @@ class Platform:
 def _parse_revolut(filename: str, data: bytes) -> ParseResult:
     if filename.lower().endswith(".pdf"):
         return revolut_pdf.parse_pdf(data)
-    return revolut.parse_csv(data.decode("utf-8-sig"))
+    return revolut.parse_csv(statement.decode(data))
 
 
 def _parse_generic(filename: str, data: bytes) -> ParseResult:
-    return generic.parse_csv(data.decode("utf-8-sig"))
+    return generic.parse_csv(statement.decode(data))
 
 
 PLATFORMS: tuple[Platform, ...] = (
@@ -80,7 +81,7 @@ PLATFORMS: tuple[Platform, ...] = (
             "transfers and coin-to-coin exchanges are listed as skipped."
         ),
         parse=lambda filename, data: revolut_crypto.parse_csv(
-            data.decode("utf-8-sig")
+            statement.decode(data)
         ),
         domain="revolut.com",
     ),
@@ -95,7 +96,7 @@ PLATFORMS: tuple[Platform, ...] = (
             "as the fee when reported in that currency."
         ),
         parse=lambda filename, data: trading212.parse_csv(
-            data.decode("utf-8-sig")
+            statement.decode(data)
         ),
         domain="trading212.com",
     ),
@@ -112,7 +113,7 @@ PLATFORMS: tuple[Platform, ...] = (
             "the Account statement, not this file; add them separately."
         ),
         parse=lambda filename, data: degiro.parse_csv(
-            data.decode("utf-8-sig")
+            statement.decode(data)
         ),
         domain="degiro.com",
     ),
@@ -130,7 +131,7 @@ PLATFORMS: tuple[Platform, ...] = (
             "cost, all dated the statement day."
         ),
         parse=lambda filename, data: ibkr.parse_csv(
-            data.decode("utf-8-sig")
+            statement.decode(data)
         ),
         domain="interactivebrokers.com",
     ),

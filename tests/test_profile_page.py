@@ -333,3 +333,26 @@ def test_the_deliveries_are_setting_rows_once_linked(page, paths, monkeypatch):
     assert len(page.get("toggle")) == 3
     assert any("Disconnect" in m.value for m in page.get("markdown"))
     assert any("Check the connection" in m.value for m in page.get("markdown"))
+
+
+# ------------------------------------------------------------------- new app
+
+
+def _link_urls(at) -> list[str]:
+    return [str(getattr(el.proto, "url", "")) for el in at.get("link_button")]
+
+
+def test_the_new_app_is_offered_only_where_it_is_switched_on(page, monkeypatch):
+    """The rebuilt front end at /next is a deploy-time flag, and the row that
+    opens it has to follow it: a link to a subtree that answers 404 is worse
+    than no link, because the reader cannot tell a broken app from a disabled
+    one."""
+    from stocks.web import server
+
+    monkeypatch.setattr(server, "react_app_enabled", lambda: False)
+    page.run()
+    assert server.APP_PATH not in _link_urls(page)
+
+    monkeypatch.setattr(server, "react_app_enabled", lambda: True)
+    page.run()
+    assert server.APP_PATH in _link_urls(page)

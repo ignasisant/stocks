@@ -92,17 +92,24 @@ class Step:
     gated: bool = False
     # Whether this account has the feature switched on, given prefs. None for
     # steps that are nothing to switch on (a page is a page).
-    done: Callable[[dict], bool] | None = None
+    #
+    # The optional second argument is the account to answer for. Omitted, it is
+    # the session's own — which is every caller inside the app. The HTTP API
+    # has no session and names the account explicitly, and it has to go through
+    # these same predicates: two implementations of "has this account imported
+    # anything" is two answers to one question, and the one on screen would be
+    # whichever surface the reader happened to open.
+    done: Callable[..., bool] | None = None
 
 
-def _has_ledger(_prefs: dict) -> bool:
+def _has_ledger(_prefs: dict, paths: object | None = None) -> bool:
     try:
-        return has_transactions(auth.db_path())
+        return has_transactions(getattr(paths, "db", None) or auth.db_path())
     except Exception:
         return False  # unreadable/missing ledger reads as "nothing imported"
 
 
-def _has_watchlist(_prefs: dict) -> bool:
+def _has_watchlist(_prefs: dict, paths: object | None = None) -> bool:
     """Whether this account follows anything yet.
 
     Reads the list rather than prefs: the watchlist is a YAML file, and it is
@@ -110,20 +117,29 @@ def _has_watchlist(_prefs: dict) -> bool:
     any of which should tick the step off.
     """
     try:
-        return bool(load_watchlist(auth.watchlist_path()))
+        return bool(
+            load_watchlist(getattr(paths, "watchlist", None) or auth.watchlist_path())
+        )
     except Exception:
         return False  # unreadable/missing list reads as "nothing followed"
 
 
-def _has_ai_key(prefs: dict) -> bool:
+def _has_ai_key(prefs: dict, paths: object | None = None) -> bool:
     """A BYOK provider key saved to prefs (encrypted) or entered this session.
 
     The keyless TopStocks free chain deliberately does not count: the step is
     about connecting your own provider, which is what lifts the daily cap.
     """
-    return any(k.endswith("_key_enc") for k in prefs) or any(
-        k.startswith("llm_key::") and st.session_state[k] for k in st.session_state
-    )
+    if any(k.endswith("_key_enc") for k in prefs):
+        return True
+    try:
+        return any(
+            k.startswith("llm_key::") and st.session_state[k] for k in st.session_state
+        )
+    except Exception:
+        # No script run behind this call (the HTTP API). A key entered into a
+        # session this caller is not in is not a key this account has saved.
+        return False
 
 
 # The tour, in order. Sequenced as the work actually flows — get the ledger in,
@@ -158,7 +174,7 @@ STEPS: tuple[Step, ...] = (
         page="app_pages/portfolio.py",
         query={"tab": "tax"},
         reset_keys=("portfolio_tab",),
-        done=lambda prefs: bool(prefs.get("tax_residence")),
+        done=lambda prefs, paths=None: bool(prefs.get("tax_residence")),
     ),
     Step(
         id="income",
@@ -183,7 +199,7 @@ STEPS: tuple[Step, ...] = (
     ),
     Step(id="pulse", icon="speed", page="app_pages/sentiment.py"),
     Step(id="market", icon="query_stats", page="app_pages/ticker.py"),
-    Step(id="screener", icon="filter_alt", page="app_pages/screener.py"),
+    Step(id="sector", icon="donut_small", page="app_pages/sector.py"),
     Step(
         id="assistant",
         icon="auto_awesome",
@@ -197,7 +213,7 @@ STEPS: tuple[Step, ...] = (
         page="app_pages/profile.py",
         session={"profile_tab": "notify"},
         gated=True,
-        done=lambda prefs: bool(prefs.get("telegram_chat_id")),
+        done=lambda prefs, paths=None: bool(prefs.get("telegram_chat_id")),
     ),
     Step(
         id="investor",
@@ -205,7 +221,7 @@ STEPS: tuple[Step, ...] = (
         page="app_pages/profile.py",
         session={"profile_tab": "iv"},
         gated=True,
-        done=auth.profile_is_set,
+        done=lambda prefs, paths=None: auth.profile_is_set(prefs),
     ),
     Step(
         id="prefs",
@@ -322,6 +338,17 @@ RELEASES: tuple[Release, ...] = (
         items=(
             News(slug="splitfix", icon="call_split", step="import"),
             News(slug="transfers", icon="swap_horiz", step="import"),
+            News(slug="sectors", icon="donut_small", step="sector"),
+        ),
+    ),
+    Release(
+        version="2026.09.3",
+        date="2026-09",
+        items=(
+            # One card for eight rebuilt screens, not eight cards: to the
+            # reader this is one thing — the app looks different — and the
+            # step it hands them to is the row in Profile that opens it.
+            News(slug="newapp", icon="rocket_launch", step="prefs"),
         ),
     ),
 )
@@ -335,16 +362,16 @@ def _has_searched(prefs: dict) -> bool:
     return bool(prefs.get("recent_searches"))
 
 
-def _has_asked(_prefs: dict) -> bool:
+def _has_asked(_prefs: dict, paths: object | None = None) -> bool:
     """Whether any conversation with the assistant has a turn in it."""
     try:
-        book = auth.load_book()
+        book = auth.load_book(getattr(paths, "chat", None))
     except Exception:
         return False
     return any(c.get("messages") for c in book.get("conversations", []))
 
 
-def _watchlist_is_own(_prefs: dict) -> bool:
+def _watchlist_is_own(_prefs: dict, paths: object | None = None) -> bool:
     """Whether the watchlist has been touched since it was seeded.
 
     Compared against the seed text rather than tracked with a flag, so it is
@@ -353,12 +380,15 @@ def _watchlist_is_own(_prefs: dict) -> bool:
     untouched, which is a shrug, not a bug.
     """
     try:
-        return auth.watchlist_path().read_text() != auth.STARTER_WATCHLIST
+        target = getattr(paths, "watchlist", None) or auth.watchlist_path()
+        return target.read_text() != auth.STARTER_WATCHLIST
     except OSError:
         return False
 
 
-def explore_state(prefs: dict | None = None) -> dict[str, bool]:
+def explore_state(
+    prefs: dict | None = None, paths: object | None = None
+) -> dict[str, bool]:
     """Which of the no-setup-required things this account has actually tried.
 
     Separate from `setup_state`: those four are capabilities to switch on, and
@@ -371,22 +401,31 @@ def explore_state(prefs: dict | None = None) -> dict[str, bool]:
     p = prefs if prefs is not None else auth.load_prefs()
     return {
         "search": _has_searched(p),
-        "ask": _has_asked(p),
-        "watchlist": _watchlist_is_own(p),
+        "ask": _has_asked(p, paths),
+        "watchlist": _watchlist_is_own(p, paths),
     }
 
 
-def setup_state(prefs: dict | None = None) -> dict[str, bool]:
+def setup_state(
+    prefs: dict | None = None,
+    paths: object | None = None,
+    *,
+    signed_in: bool | None = None,
+) -> dict[str, bool]:
     """Which connectable capabilities this account has switched on.
 
     One source of truth for the Home setup card and the tour's per-step
     badges — they used to compute this twice and could disagree.
     """
     p = prefs if prefs is not None else auth.load_prefs()
+    # `signed_in` is an argument because the HTTP API's caller proved itself
+    # before this module was reached, and `auth.is_logged_in()` would answer
+    # about a Streamlit session that does not exist there.
+    here = auth.is_logged_in() if signed_in is None else signed_in
     return {
-        "login": auth.is_logged_in(),
-        "import": _has_ledger(p) if auth.is_logged_in() else False,
-        "ai": _has_ai_key(p),
+        "login": here,
+        "import": _has_ledger(p, paths) if here else False,
+        "ai": _has_ai_key(p, paths),
         "telegram": bool(p.get("telegram_chat_id")),
     }
 

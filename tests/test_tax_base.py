@@ -9,7 +9,13 @@ import pytest
 
 from stocks.portfolio.positions import RealizedSale
 from stocks.portfolio.tax import TaxSettings
-from stocks.portfolio.tax.base import TaxPeriod, open_period, sales_in
+from stocks.portfolio.tax.base import (
+    Kpi,
+    TaxPeriod,
+    open_period,
+    sales_in,
+    total_of,
+)
 from stocks.portfolio.tax.us import UsTaxPeriod
 
 
@@ -77,3 +83,72 @@ def test_a_tax_year_that_opens_in_april_spans_the_boundary():
 
 def test_nothing_in_the_period_yields_nothing():
     assert list(sales_in("2025", [sale("2024-06-01")])) == []
+
+
+# --- total_of ---
+
+def year(y, gain=0.0, loss=0.0, disallowed=0.0, recovered=0.0, sales=()):
+    return TaxPeriod(
+        jurisdiction="ES", currency="EUR", year=y,
+        realized_gain=gain, realized_loss=loss,
+        disallowed_loss=disallowed, recovered_loss=recovered,
+        sales=list(sales),
+    )
+
+
+def test_the_total_carries_the_jurisdiction_and_the_years_it_summed():
+    out = total_of([year(2024), year(2025)])
+    assert (out.jurisdiction, out.currency) == ("ES", "EUR")
+    assert out.years == (2024, 2025)
+
+
+def test_the_components_add_up_and_so_does_the_deductible_loss():
+    out = total_of([
+        year(2024, gain=1_000.0, loss=400.0, disallowed=100.0),
+        year(2025, gain=500.0, loss=200.0, recovered=50.0),
+    ])
+    assert out.realized_gain == 1_500.0
+    assert out.realized_loss == 600.0
+    assert out.disallowed_loss == 100.0
+    assert out.recovered_loss == 50.0
+    assert out.deductible_loss == 500.0
+
+
+def test_every_year_s_disposals_are_there_in_the_order_handed_over():
+    out = total_of([
+        year(2024, sales=[sale("2024-06-01", "MSFT")]),
+        year(2025, sales=[sale("2025-06-01", "AAPL")]),
+    ])
+    assert [s.ticker for s in out.sales] == ["MSFT", "AAPL"]
+
+
+def test_the_kpis_are_each_year_s_own_figures_summed_by_key():
+    # The point of the whole helper: the tiles add up what the engine already
+    # decided per year. Summing the *bases* and re-running the brackets would
+    # run two years of gains up one progressive scale.
+    out = total_of([
+        year(2024, gain=1_000.0),
+        year(2025, gain=3_000.0),
+    ])
+    tiles = {k.key: k.value for k in out.kpis()}
+    assert tiles["net_taxable"] == 4_000.0
+    assert tiles["carryforward_loss"] == 0.0
+
+
+def test_a_kpi_only_some_years_carry_still_lands_once_in_first_seen_order():
+    a, b = year(2024), year(2025)
+    a.kpis = lambda: [Kpi("net_taxable", 10.0, "h")]
+    b.kpis = lambda: [Kpi("net_taxable", 5.0, "h"), Kpi("allowance", 3_000.0, "h")]
+    out = total_of([a, b])
+    assert [(k.key, k.value) for k in out.kpis()] == [
+        ("net_taxable", 15.0), ("allowance", 3_000.0),
+    ]
+
+
+def test_notes_are_per_year_so_a_total_writes_none():
+    assert total_of([year(2024), year(2025)]).notes() == []
+
+
+def test_nothing_to_add_is_a_programming_error_not_an_empty_total():
+    with pytest.raises(ValueError):
+        total_of([])

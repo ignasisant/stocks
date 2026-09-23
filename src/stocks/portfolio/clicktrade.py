@@ -42,6 +42,7 @@ import io
 import unicodedata
 from datetime import date, datetime
 
+from stocks.portfolio import statement
 from stocks.portfolio.degiro import _num
 from stocks.portfolio.ledger import Transaction
 from stocks.portfolio.statement import ParseResult
@@ -107,7 +108,7 @@ def parse(filename: str, data: bytes) -> ParseResult:
     if filename.lower().endswith(".xlsx"):
         rows = _xlsx_rows(data)
     else:
-        rows = _csv_rows(data.decode("utf-8-sig"))
+        rows = _csv_rows(statement.decode(data))
     return _parse_rows(rows)
 
 

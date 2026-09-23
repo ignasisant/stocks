@@ -253,3 +253,55 @@ def on_market_scale(
         r for day, r in factors.get(tx.ticker, ()) if day > tx.date
     )
     return (tx.price / ratio, tx.quantity * ratio) if ratio else (tx.price, tx.quantity)
+
+
+# ------------------------------------------------------------- fills on a chart
+# Drawing somebody's own trades against a price series needs two corrections,
+# and forgetting either one is silent. They live here together so that a caller
+# cannot remember the split and forget the label.
+
+
+@dataclass(frozen=True)
+class Fill:
+    """One buy or sell, ready to plot: today's shares, today's price scale."""
+
+    date: str
+    action: str
+    price: float
+    quantity: float
+
+
+def own_fills(transactions: list[Transaction], ticker: str) -> list[Fill]:
+    """This account's buys and sells of `ticker`, oldest first, chart-ready.
+
+    Two corrections, both invisible when they are missing:
+
+    **The label.** A book fed by two brokers spells one holding two ways —
+    DEGIRO exports have no ticker column and book under the ISIN, IBKR uses the
+    symbol — and `positions.build` unifies them before replaying. So the open
+    position, the custody split and the URL of the page all speak the unified
+    label, while the raw ledger rows do not. Filtering the raw rows by that
+    label matches nothing at all, and a holding the reader can see on screen
+    draws no trades whatsoever.
+
+    **The scale.** Ledger prices are as-traded and Yahoo's bars are
+    split-adjusted, so a pre-split buy plotted raw sits twenty times above the
+    candles it belongs to. Price and quantity move inversely, so the money each
+    row represents is unchanged.
+
+    `relabel` rather than `normalize`: the labels are what a lookup needs, and
+    an unmatched transfer leg turned into a synthetic `buy` would draw a
+    purchase marker at a price nobody paid.
+    """
+    from stocks.portfolio import transfers
+
+    unified = transfers.relabel(transactions)
+    factors = split_factors(unified)
+    fills = [
+        tx for tx in unified if tx.ticker == ticker and tx.action in ("buy", "sell")
+    ]
+    scaled = []
+    for fill in sorted(fills, key=lambda tx: (tx.date, tx.id or 0)):
+        price, quantity = on_market_scale(fill, factors)
+        scaled.append(Fill(fill.date, fill.action, price, quantity))
+    return scaled

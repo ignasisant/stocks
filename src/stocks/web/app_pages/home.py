@@ -21,6 +21,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from yfinance.exceptions import YFRateLimitError
 
+from stocks import session
 from stocks.analysis.portfolio import (
     basket_change,
     market_active,
@@ -85,11 +86,11 @@ def _first_run_banner() -> None:
                 icon=":material/waving_hand:",
             )
             row = st.container(horizontal=True)
-            row.button(
+            row.link_button(
                 tr("common.sign_in_google"),
+                session.LOGIN_PATH,
                 key="guest_banner_login",
                 icon=":material/login:",
-                on_click=auth.login,
             )
         else:
             st.info(
@@ -204,9 +205,9 @@ def _setup_card() -> None:
                               type="tertiary"):
                     st.switch_page("app_pages/profile.py")
             else:
-                row.button(google, key="setup_card_login", type="secondary",
-                           on_click=auth.login,
-                           disabled="auth" not in st.secrets)
+                row.link_button(google, session.LOGIN_PATH,
+                                key="setup_card_login", type="secondary",
+                                disabled="auth" not in st.secrets)
 
             if row.button(_pill(imported, "upload_file",
                                 tr("home.setup_import")),

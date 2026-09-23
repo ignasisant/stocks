@@ -45,6 +45,11 @@ wheels/
 /data/last_import.json
 # Daily counter for the keyless assistant's global allowance (runtime state).
 /data/free_llm_global.json
+# Tonight's sector cohorts (`stocks sector-scan`) — market-wide runtime
+# state that lives in the bucket, and two hundred companies of it.
+/data/sector_scan.json
+# The owner account's per-sector AI reads, like its daily_action.json.
+/data/sector_verdict.json
 
 # Production log snapshots (`stocks logs export`) — they carry account slugs
 # and user-typed queries, and they are a copy of Cloud Logging, not source.
@@ -84,7 +89,15 @@ wheels/
 /.agents/
 .notify_secrets.env
 /data/feedback/
+# Anonymised import fingerprints: no statement data, but they carry account
+# slugs, same as /data/logs/.
+/data/imports/
 /data/chat.json
 
 # CodeGraph index (local, rebuildable with `codegraph index`)
 .codegraph/
+
+# The React front end's dependencies. Its *build output*
+# (src/stocks/web/static/ticker/) is deliberately committed — see
+# frontend/README.md for why.
+frontend/*/node_modules/

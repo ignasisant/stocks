@@ -64,12 +64,23 @@ def _sender() -> str:
 
 
 def submit(
-    text: str, kind: str, page: str = "", shot: bytes | None = None
+    text: str,
+    kind: str,
+    page: str = "",
+    shot: bytes | None = None,
+    *,
+    sender: str | None = None,
+    lang: str = "",
 ) -> Path:
     """Persist one submission (disk + bucket) and log the event.
 
     `shot` is the optional JPEG of the screen the writer was on, already
     decoded and size-checked by stocks.web.screenshot.
+
+    `sender` and `lang` are the two facts only a caller knows. The Streamlit
+    composer leaves them out and they are read off the session; the HTTP API
+    has no session and names them, which is why they are arguments rather than
+    two more things this module guesses.
     """
     kind = kind if kind in KINDS else "other"
     text = text.strip()[:MAX_CHARS]
@@ -84,8 +95,8 @@ def submit(
         "kind": kind,
         "text": text,
         "page": page,
-        "user": _sender(),
-        "lang": active_language(),
+        "user": sender if sender is not None else _sender(),
+        "lang": lang or active_language(),
     }
     if shot_name:
         payload["shot"] = shot_name

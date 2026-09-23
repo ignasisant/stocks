@@ -17,7 +17,7 @@ from datetime import datetime
 
 import streamlit as st
 
-from stocks import storage
+from stocks import session, storage
 from stocks.config import CURRENCY_SYMBOL, load_watchlist
 from stocks.portfolio import last_import, tax
 from stocks.portfolio.tax import de as tax_de
@@ -28,6 +28,7 @@ from stocks.web import (
     exports,
     i18n,
     onboarding,
+    server,
     tax_ui,
     watchlist_ui,
 )
@@ -366,7 +367,14 @@ def _delete_dialog(paths) -> None:
         except Exception:  # noqa: BLE001 — surface, never half-delete silently
             st.error(tr("profile.delete_failed"), icon=":material/error:")
         else:
-            st.logout()
+            # `st.logout()` was a navigation; with the session cookie ours, the
+            # way out is a link the reader presses. The React shell already
+            # signs out this way after its own DELETE — same shape, one screen.
+            st.success(tr("profile.delete_done"), icon=":material/check:")
+            st.link_button(
+                tr("common.log_out"), session.LOGOUT_PATH, type="primary"
+            )
+            st.stop()
 
 
 st.title(tr("nav.profile"))
@@ -383,8 +391,8 @@ with st.container(border=True, key="pident_card"):
     _ident = st.container(
         horizontal=True, vertical_alignment="center", key="pident_row"
     )
-    _name = getattr(st.user, "name", None) or st.user.email
-    _picture = getattr(st.user, "picture", None)
+    _name = auth.current_name()
+    _picture = auth.current_picture()
     _initials = "".join(p[0] for p in str(_name).split()[:2]).upper() or "?"
     _avatar = (
         f'<img src="{esc(_picture)}" alt="">' if _picture else esc(_initials)
@@ -394,7 +402,7 @@ with st.container(border=True, key="pident_card"):
         f'<div class="ag-avatar">{_avatar}</div>'
         '<div class="ag-ident-t">'
         f'<span class="ag-ident-n">{esc(_name)}</span>'
-        f'<span class="ag-ident-e">{esc(st.user.email)}</span>'
+        f'<span class="ag-ident-e">{esc(auth.current_email())}</span>'
         "</div>"
         '<div class="ag-ident-r">'
         f'<span class="ag-folder" title="{esc(str(paths.root))}">'
@@ -404,7 +412,9 @@ with st.container(border=True, key="pident_card"):
         f'<span class="ag-ident-note">{esc(tr("profile.account_scope"))}</span>'
         "</div></div>"
     )
-    _ident.button(tr("common.log_out"), icon=":material/logout:", on_click=st.logout)
+    _ident.link_button(
+        tr("common.log_out"), session.LOGOUT_PATH, icon=":material/logout:"
+    )
 
 # ------------------------------------------------------------- scope tabs
 # One tab per profile scope. Default st.tabs semantics (every tab renders on
@@ -525,6 +535,24 @@ with tab_prefs:
                 st.rerun()
         _ccy_cell.html(
             f'<span class="ag-morehint">{esc(" · ".join(_rest))}</span>'
+        )
+
+    # ------------------------------------------------------------- new app
+    # The rebuilt front end (frontend/app, served at /next). A link rather
+    # than a redirect, and only while the flag is on: the two front ends read
+    # the same API and the same files, so moving between them loses nothing,
+    # but which one a reader gets is their choice until the old one is retired.
+    if server.react_app_enabled():
+        _row(
+            _ui,
+            "nextapp",
+            tr("profile.next_app"),
+            tr("profile.next_app_caption"),
+            align="center",
+        ).link_button(
+            tr("profile.next_app_open"),
+            server.APP_PATH,
+            icon=":material/rocket_launch:",
         )
 
     # ---------------------------------------------------------- tax residence
