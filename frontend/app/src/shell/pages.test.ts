@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { PAGES, canonical, pageFor } from "./pages";
+import { PAGES, canonical, pageFor, sections } from "./pages";
 
 describe("the page registry", () => {
   it("resolves a slug to its own page", () => {
@@ -37,9 +37,32 @@ describe("the page registry", () => {
     expect(pageFor("nope").slug).toBe(PAGES[0]!.slug);
   });
 
-  it("keeps the ticker page out of the rail", () => {
-    // Reached from a ticker cell, not from the menu — it has no place in a
-    // list of sections and would be the only entry with no section.
-    expect(pageFor("ticker").hidden).toBe(true);
+  it("lists the ticker page in the rail, under Market", () => {
+    // The Streamlit menu has it (`stocks.navigation.DESTINATIONS`); without a
+    // symbol it opens on its own picker.
+    expect(pageFor("ticker").hidden).toBeFalsy();
+    expect(pageFor("ticker").section).toBe("nav.section_market");
+  });
+
+  it("groups the rail the way the Streamlit menu does", () => {
+    // `stocks.navigation.sections()`: Home alone with no header, then
+    // Portfolio, Market and Account — in that order, bank left out.
+    expect(sections().map((group) => group.section)).toEqual([
+      undefined,
+      "nav.section_portfolio",
+      "nav.section_market",
+      "nav.section_account",
+    ]);
+    expect(sections()[2]!.pages.map((page) => page.slug)).toEqual([
+      "ticker",
+      "sentiment",
+      "sector",
+      "earnings",
+    ]);
+    expect(
+      sections()
+        .flatMap((group) => group.pages)
+        .some((p) => p.hidden),
+    ).toBe(false);
   });
 });

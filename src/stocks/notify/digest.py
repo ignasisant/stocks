@@ -35,6 +35,7 @@ from stocks.notify.render import money as _money
 from stocks.notify.render import ticker_link as _ticker
 from stocks.portfolio.ledger import Transaction, all_transactions
 from stocks.portfolio.positions import build
+from stocks.portfolio.tax.deadlines import Deadline
 
 MOVERS_SHOWN = 3
 DIVIDENDS_SHOWN = 4
@@ -96,6 +97,9 @@ class DigestData:
     dividend_cash: dict[str, float] = field(default_factory=dict)
     # Dividends the ledger booked in the last WINDOW_DAYS: (net amount, count).
     dividends_received: tuple[float, int] | None = None
+    # Tax deadlines entering the 30-day window, not yet reminded of. Filled by
+    # the fan-out, which holds the prefs (residence) and the state (memory).
+    tax_deadlines: list[Deadline] = field(default_factory=list)
     highlight: str | None = None  # optional LLM line, filled by the caller
     watchlist_only: bool = False  # no ledger -> movers/earnings-only digest
     # The account's reporting currency; every figure above is in it.
@@ -114,7 +118,7 @@ class DigestData:
             return False
         if self.earnings or self.ex_dividends or self.dividends_received:
             return False
-        if self.results or self.stale_import_days:
+        if self.results or self.stale_import_days or self.tax_deadlines:
             return False
         return abs(self.day[1]) < QUIET_PCT
 
@@ -551,6 +555,15 @@ def render_digest(data: DigestData, lang: str, base: str | None = None) -> str:
                 f"<b>{esc(tr('earnings_7d'))}</b>\n" + "\n".join(rows_e)
             )
 
+    if data.tax_deadlines:
+        rows_t = [
+            "• "
+            + esc(translate(f"earnings.tax_{d.key}", lang, year=d.year_label))
+            + f" — {_date_line(d.date, lang)} (T-{d.days_until(data.date)})"
+            for d in data.tax_deadlines
+        ]
+        parts.append(f"<b>🗓 {esc(tr('tax_deadlines'))}</b>\n" + "\n".join(rows_t))
+
     if data.stale_import_days:
         parts.append(
             "📎 " + esc(tr("stale_import", days=data.stale_import_days))
@@ -575,8 +588,11 @@ def run_digest_fanout(dry_run: bool = False) -> dict[str, str]:
         mark_blocked,
         recent_highlights,
         remember_highlight,
+        remember_tax_reminders,
         save_state,
+        tax_reminders_due,
     )
+    from stocks.portfolio.tax import prefs as tax_prefs
 
     now = datetime.now(UTC)
     status: dict[str, str] = {}
@@ -590,11 +606,14 @@ def run_digest_fanout(dry_run: bool = False) -> dict[str, str]:
             data = compute_digest_data(
                 user.watchlist, user.db, base, import_record=user.import_path
             )
+            code, _ = tax_prefs.resolve(user.prefs)
+            data.tax_deadlines = tax_reminders_due(state, code, data.date)
             if (
                 data.total is None
                 and not data.movers
                 and not data.earnings
                 and not data.ex_dividends
+                and not data.tax_deadlines
             ):
                 status[user.label] = "skipped: no data"
                 continue
@@ -620,6 +639,9 @@ def run_digest_fanout(dry_run: bool = False) -> dict[str, str]:
                 # that failed does not burn the line it never showed.
                 if data.highlight:
                     remember_highlight(state, data.highlight)
+                if data.tax_deadlines:
+                    remember_tax_reminders(state, data.tax_deadlines)
+                if data.highlight or data.tax_deadlines:
                     save_state(state, user.state_path)
             except telegram.TelegramBlocked:
                 mark_blocked(state, now)

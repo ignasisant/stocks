@@ -987,7 +987,8 @@ def _maybe_autotitle(conv: dict, history: list[dict], provider: llm.Provider,
         return False
     try:
         auth.autotitle_conversation(
-            conv["id"], engine.title_for(provider, api_key, history[0]["content"])
+            conv["id"], engine.title_for(provider, api_key, history[0]["content"],
+                                        active_language())
         )
     except Exception:
         return False

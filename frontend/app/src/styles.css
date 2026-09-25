@@ -27,7 +27,10 @@ body {
   /* One column, two widths. Folding the rail is a width change and nothing
      else — the same links stay mounted, so no navigation is lost and nothing
      re-fetches on a press that was only about screen space. */
-  grid-template-columns: var(--rail, 15rem) 1fr;
+  /* `minmax(0, …)`, not a bare `1fr`: a bare fraction never shrinks below its
+     content's min-content width, so a row of tiles or a wide table held the
+     column open and slid under the chat drawer instead of making room. */
+  grid-template-columns: var(--rail, 15rem) minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -38,6 +41,12 @@ body {
 .ag-main {
   padding: 1.5rem;
   max-width: 78rem;
+  min-width: 0;
+  /* A size container, so a page can lay itself out by the room it actually
+     has. A viewport media query cannot see the chat drawer: at 1440px with the
+     drawer wide the page gets ~480px, and `@media (max-width: …)` still thinks
+     it is on a desktop. */
+  container: ag-main / inline-size;
 }
 
 .ag-nav {
@@ -211,12 +220,17 @@ body {
   display: none;
 }
 
-/* On a phone the rail is a bottom tab bar: a button in it would cost a
-   destination its place. The guest banners on the pages carry the same link. */
-@media (max-width: 640px) {
-  .ag-nav-signin {
-    display: none;
-  }
+/* The rail's foot is part of the rail on a desktop; on a phone it moves into
+   the "More" sheet, where a button does not cost a destination its place. */
+.ag-nav-foot {
+  display: contents;
+}
+
+/* "More" and its sheet are the phone bar's; a desktop rail shows everything. */
+.ag-nav-more,
+.ag-nav-sheet,
+.ag-nav-scrim {
+  display: none;
 }
 
 /* Phones: the rail becomes a bottom tab bar, as it does in the Streamlit app. */
@@ -244,6 +258,39 @@ body {
   }
   .ag-nav-label {
     display: none;
+  }
+  /* Four destinations and "More" (`BOTTOM` in pages.ts); the rest are in the
+     sheet it opens. */
+  .ag-nav-extra,
+  .ag-nav-foot {
+    display: none;
+  }
+  .ag-nav-more {
+    display: flex;
+    border: none;
+    background: none;
+    font: inherit;
+    cursor: pointer;
+  }
+  .ag-nav-more.ag-nav-on {
+    background: var(--ag-surface-sunken);
+  }
+  .ag-nav-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+  }
+  .ag-nav-sheet {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    position: absolute;
+    inset: auto 0 100% 0;
+    padding: 0.5rem 0.75rem 0.75rem;
+    border-top: 1px solid var(--ag-border);
+    background: var(--ag-surface-card);
+    box-shadow: var(--ag-shadow-overlay);
   }
 }
 
@@ -351,14 +398,23 @@ body {
 
 /* The mark beside a ticker. Square and small enough that a row's height is
    still set by its text — a logo that grew the row would relayout a table as
-   the marks arrived. */
+   the marks arrived.
+
+   On a light plate, as the Streamlit app draws every mark (ds.py: the primary
+   text neutral "also the logo plate"): most marks are drawn for a white page,
+   and a dark-blue or black one straight on this dark surface all but
+   disappears. The padding keeps the mark off the plate's edge, so the
+   rounded corner does not clip it. */
 .ag-tick-logo {
-  width: 1em;
-  height: 1em;
-  border-radius: 2px;
+  box-sizing: border-box;
+  width: 1.2em;
+  height: 1.2em;
+  padding: 1px;
+  border-radius: var(--ag-radius-xs);
+  background: var(--ag-text-primary);
   margin-right: 0.35em;
   object-fit: contain;
-  vertical-align: -0.12em;
+  vertical-align: -0.25em;
 }
 
 /* The guided tour and the what's-new modal — one dialog in two modes, the way

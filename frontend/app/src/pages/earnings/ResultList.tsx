@@ -7,15 +7,26 @@
  */
 
 import { useT } from "../../shell/i18n";
-import type { CalendarEvent, CalendarResult } from "./data";
+import type { CalendarEvent, CalendarResult, TaxDeadline } from "./data";
 import { days, eps, longDate, plain, signedPct, tone } from "./format";
-import { TickerCell } from "../../shell/tickers";
+import { TickerCell, useTickerProfile } from "../../shell/tickers";
+import { TaxTable } from "./Tax";
 
+/**
+ * Logo, symbol and — under it — the company's name, as the Streamlit list's
+ * `ticker_table_html` cell draws it. The name rides the same batched profile
+ * lookup the logo does, so it costs nothing extra, and it is simply absent
+ * while no catalog knows it rather than a placeholder.
+ */
 function Ticker({ ticker }: { ticker: string }) {
+  const profile = useTickerProfile(ticker);
   return (
-    <TickerCell className="earn-ticker" ticker={ticker}>
-      {ticker}
-    </TickerCell>
+    <>
+      <TickerCell className="earn-ticker" ticker={ticker}>
+        {ticker}
+      </TickerCell>
+      {profile?.name && <div className="earn-name">{profile.name}</div>}
+    </>
   );
 }
 
@@ -90,13 +101,16 @@ function Past({ results }: { results: CalendarResult[] }) {
 export default function ResultList({
   events,
   results,
+  deadlines,
 }: {
   events: CalendarEvent[];
   results: CalendarResult[];
+  deadlines: TaxDeadline[];
 }) {
   return (
     <>
       {events.length > 0 && <Upcoming events={events} />}
+      <TaxTable deadlines={deadlines} />
       {results.length > 0 && <Past results={results} />}
     </>
   );

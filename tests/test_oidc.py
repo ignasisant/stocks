@@ -17,7 +17,7 @@ import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from stocks import session
+from stocks import accounts, session, storage
 from stocks.web import oidc
 from tests.conftest import AUTH_COOKIE_SECRET
 
@@ -70,6 +70,22 @@ def configured(monkeypatch):
     monkeypatch.setenv("AUTH_CLIENT_SECRET", "our-client-secret")
     monkeypatch.setenv("AUTH_REDIRECT_URI", "https://app.example.com/oauth2callback")
     monkeypatch.delenv("APP_PUBLIC_URL", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def users(monkeypatch, tmp_path):
+    """Where a completed callback provisions accounts: never the checkout.
+
+    The callback creates the account it signs in (`oidc._provision`), so every
+    round trip below would otherwise leave a directory in the real
+    `data/users/`. `accounts.provision` reads `USERS_DIR` at call time for
+    exactly this reason.
+    """
+    root = tmp_path / "users"
+    monkeypatch.setattr(accounts, "USERS_DIR", root)
+    monkeypatch.setattr(accounts, "configured_owner", lambda: None)
+    monkeypatch.setattr(storage, "enabled", lambda: False)
+    return root
 
 
 @pytest.fixture
@@ -200,6 +216,43 @@ def test_a_completed_round_trip_signs_the_browser_in(client, google):
     assert signed_in_as(response) == EMAIL
 
 
+def test_a_first_sign_in_creates_the_account_and_dates_the_signup(
+    client, google, users
+):
+    """The React shell has no script run to provision in, so the callback does
+    what `web.auth.resolve_user` does for a Streamlit session — or a new address
+    signs in and meets "unknown account" (the offline screen) forever."""
+    _, flow = start(client, google)
+    come_back(client, google, flow)
+    paths = accounts.paths_for(EMAIL, None, users_dir=users)
+    assert paths.watchlist.exists()  # the starter watchlist
+    prefs = accounts.load_prefs(paths.prefs)
+    assert prefs["email"] == EMAIL
+    assert prefs["first_seen"] and prefs["first_seen_estimated"] is False
+    assert prefs["last_seen"] == prefs["first_seen"][:10]
+
+
+def test_a_returning_sign_in_is_not_a_second_signup(client, google, users):
+    _, flow = start(client, google)
+    come_back(client, google, flow)
+    paths = accounts.paths_for(EMAIL, None, users_dir=users)
+    first = accounts.load_prefs(paths.prefs)["first_seen"]
+    _, flow = start(client, google)
+    come_back(client, google, flow)
+    assert accounts.load_prefs(paths.prefs)["first_seen"] == first
+
+
+def test_a_storage_outage_does_not_refuse_the_sign_in(client, google, monkeypatch):
+    """Every identity check passed; the API heals the account on the next
+    request (and says 503 while the bucket is down), so the cookie still goes."""
+    def down(*a, **k):
+        raise accounts.StorageUnavailable("bucket down")
+
+    monkeypatch.setattr(accounts, "restore_account", down)
+    _, flow = start(client, google)
+    assert signed_in_as(come_back(client, google, flow)) == EMAIL
+
+
 def test_the_address_is_stored_lower_cased(client, google):
     _, flow = start(client, google)
     response = come_back(client, google, flow, claims={
@@ -279,13 +332,15 @@ def test_an_identity_with_no_email_is_refused(client, google):
     assert signed_in_as(response) is None
 
 
-def test_an_unverified_address_never_reaches_a_data_directory(client, google):
+def test_an_unverified_address_never_reaches_a_data_directory(client, google, users):
     """A cookie is still minted — `require_login` names the state — but it does
     not resolve to an account, which is the invariant that matters."""
     _, flow = start(client, google)
     response = come_back(client, google, flow, claims={
         "email": EMAIL, "email_verified": False, "aud": CLIENT_ID})
     assert signed_in_as(response) is None
+    # And the callback created nothing for it either.
+    assert not users.exists() or not list(users.iterdir())
 
 
 def test_a_cancelled_sign_in_comes_back_quietly_signed_out(client, google):

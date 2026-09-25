@@ -7,16 +7,27 @@
  * purging its handlers off the div. Here the range is state and the window is
  * a slice.
  *
- * The holding is folded into the hero on a phone and gets its own card on
- * desktop — the design's layout for a 390px screen, not a narrowed card.
+ * The holding is folded into the hero on a phone and into the price row on
+ * desktop — both where Streamlit puts it, beside the price it is valued at.
  */
 
 import { useState } from "react";
+import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
-import { DASH, earliest, latest, money, signed, type Translate } from "./format";
+import type { Query } from "../../shell/useApi";
+import {
+  DASH,
+  barsDayPct,
+  currencySymbol,
+  earliest,
+  latest,
+  money,
+  signed,
+  type Translate,
+} from "./format";
 import { PriceChart, type Window } from "./PriceChart";
 import { Bold, Card, Empty, Metric, Metrics, Segmented, useMobile } from "./ui";
-import type { Bars, EarningsEvent, Quote, TickerPosition } from "./types";
+import type { Bars, EarningsEvent, Quote, TickerPosition, Trade } from "./types";
 
 /** Range labels, in the order the app shows them (`analysis.history.PERIODS`). */
 const RANGES = ["1d", "1w", "1m", "3m", "6m", "1y", "2y", "5y"] as const;
@@ -33,7 +44,7 @@ export function isRange(value: string): value is Range {
 const PHONE_RANGES = RANGES.filter((one) => one !== "6m" && one !== "2y");
 
 export function PriceSection({
-  bars,
+  query,
   quote,
   events,
   position,
@@ -42,10 +53,16 @@ export function PriceSection({
   candles,
   onCandles,
 }: {
-  bars: Bars | null;
+  /**
+   * The bars as a query rather than as data, because the controls do not wait
+   * on them: Streamlit keeps the range pills and the chart toggle in place
+   * when the fetch fails and clears only the figures and the chart, so a
+   * reader can pick another range instead of facing a lone Retry.
+   */
+  query: Query<Bars | null>;
   quote: Quote | null;
   events: EarningsEvent[];
-  /** Folded into the hero on a phone; its own card on desktop. */
+  /** Folded into the hero on a phone; into the price row on desktop. */
   position: TickerPosition | null;
   range: Range;
   onRange: (range: Range) => void;
@@ -55,6 +72,13 @@ export function PriceSection({
   const t = useT();
   const mobile = useMobile();
   const [window, setWindow] = useState<Window>(null);
+  const bars = query.state === "loaded" ? query.data : null;
+  // No figures over bars that have nothing to show: Streamlit clears the
+  // metric row whenever the chart under it cannot draw.
+  const drawable = Boolean(bars && bars.dates.length > 0);
+  // The quote's move when there is one; the bars' own otherwise, so a
+  // throttled quote costs the page its live figure and not the day change.
+  const dayPct = quote?.pct ?? barsDayPct(bars);
 
   const close = bars?.series.Close;
   const last = latest(close);
@@ -104,10 +128,10 @@ export function PriceSection({
         />
       </div>
 
-      {mobile ? (
+      {!drawable ? null : mobile ? (
         <Hero
           price={live}
-          dayPct={quote?.pct ?? null}
+          dayPct={dayPct}
           dim={quote?.market_open === false}
           sessionNote={sessionNote}
           periodLine={periodLine}
@@ -116,17 +140,21 @@ export function PriceSection({
           last={last}
           rsi={rsi}
           rsiVerdict={bars?.rsi_verdict ?? null}
+          sma20={sma20}
           t={t}
         />
       ) : (
-        <Metrics>
+        // Seven cells when held, three when not — Streamlit's `metric_cells(7
+        // if my_pos else 3)`: the holding sits in the price row, beside the
+        // price it is valued at, rather than in a card further down.
+        <Metrics wide={Boolean(position?.held)}>
           <Metric
             // Extended hours are named in the label, the way the page names
             // them: "Price · pre-market". A day move printed without that reads
             // as today's session when it is not.
             label={t("ticker.price") + (sessionNote ? ` · ${sessionNote}` : "")}
             value={live === null ? DASH : money(live)}
-            delta={quote?.pct ?? null}
+            delta={dayPct}
             dim={quote?.market_open === false}
             note={periodLine}
             noteTone={periodPct === null ? null : periodPct >= 0 ? "green" : "red"}
@@ -153,10 +181,19 @@ export function PriceSection({
               last === null || sma20 === null ? null : last >= sma20 ? "green" : "red"
             }
           />
+          {position?.held ? (
+            <PositionMetrics position={position} last={last} t={t} />
+          ) : null}
         </Metrics>
       )}
 
-      {bars && bars.dates.length === 0 ? (
+      {query.state !== "loaded" ? (
+        // Loading, failed or signed out: the chart's slot says so, and the
+        // controls above stay where they are.
+        <Loaded query={query} skeleton={<Skeleton rows={8} />}>
+          {() => null}
+        </Loaded>
+      ) : bars && bars.dates.length === 0 ? (
         <Empty>{t("ticker.history_empty")}</Empty>
       ) : bars ? (
         <PriceChart
@@ -204,8 +241,14 @@ function LastBuy({
   last: number | null;
   t: Translate;
 }) {
-  const buys = (position?.trades ?? []).filter((fill) => fill.action === "buy");
-  const latestBuy = buys[buys.length - 1];
+  // The latest-DATED priced buy, as Streamlit picks it (`max(key=date)`), not
+  // the last in ledger order: an import appends an older statement's rows.
+  const latestBuy = (position?.trades ?? [])
+    .filter((fill) => fill.action === "buy" && fill.price)
+    .reduce<Trade | undefined>(
+      (best, fill) => (!best || fill.date > best.date ? fill : best),
+      undefined,
+    );
   if (!latestBuy || last === null) return null;
   const pct = latestBuy.price ? (last / latestBuy.price - 1) * 100 : null;
   const reading = pct === null ? DASH : `${signed(pct)}%`;
@@ -250,6 +293,7 @@ function Hero({
   last,
   rsi,
   rsiVerdict,
+  sma20,
   t,
 }: {
   price: number | null;
@@ -262,6 +306,7 @@ function Hero({
   last: number | null;
   rsi: number | null;
   rsiVerdict: string | null;
+  sma20: number | null;
   t: Translate;
 }) {
   const held = position?.held ? position : null;
@@ -269,6 +314,20 @@ function Hero({
     rsi === null
       ? ""
       : `${t("ticker.rsi_label")} ${rsi.toFixed(1)}${rsiVerdict ? ` · ${rsiVerdict}` : ""}`;
+  // Not held: no tiles to fold RSI into, so the momentum and trend read the
+  // desktop row carries stand on their own line under the price — Streamlit's
+  // "RSI 45.3 · neutral · SMA20 187.40 · above". Without it a phone reader of
+  // a name they do not own gets a price and nothing to read it against.
+  const trendLine =
+    last === null || sma20 === null
+      ? rsiLine
+      : [
+          rsiLine,
+          `SMA20 ${money(sma20)}`,
+          t(last >= sma20 ? "ticker.price_above" : "ticker.price_below"),
+        ]
+          .filter(Boolean)
+          .join(" · ");
 
   return (
     <div className="tk-hero">
@@ -288,33 +347,34 @@ function Hero({
           </span>
         ) : null}
       </div>
-      {held ? <PositionTiles position={held} last={last} note={rsiLine} t={t} /> : null}
+      {held ? (
+        <PositionTiles position={held} last={last} note={rsiLine} t={t} />
+      ) : trendLine ? (
+        <p className="tk-hero-trend">{trendLine}</p>
+      ) : null}
     </div>
   );
 }
 
 /**
- * The holding as four tiles: value, unrealised P/L, weight, average cost.
- *
- * One component for both layouts — the phone hero and the desktop card under
- * the chart — because the arithmetic is the part that must not differ, and it
- * is arithmetic the server deliberately does not do: `/position` reports cost
- * in the position's own currency and prices nothing, so value and P/L are the
- * last close against that basis.
+ * The "≈ €12,345.67" under the native value: the holding in the reporting
+ * currency, with its mark ahead of the figure as Streamlit's `REPORT_SYM`
+ * prints it, not the code after it.
  */
-export function PositionTiles({
-  position,
-  last,
-  note,
-  t,
-}: {
-  position: TickerPosition;
-  /** The last close the chart drew — what the holding is valued at. */
-  last: number | null;
-  /** The line under the weight tile: RSI on a phone, nothing on desktop. */
-  note?: string;
-  t: Translate;
-}) {
+function approx(value: number, base: string | null | undefined): string {
+  return `≈ ${currencySymbol(base)}${money(value)}`;
+}
+
+/**
+ * The holding's four figures: value, unrealised P/L, weight, average cost.
+ *
+ * One function for both layouts — the phone tiles and the desktop price row —
+ * because the arithmetic is the part that must not differ, and it is
+ * arithmetic the server deliberately does not do: `/position` reports cost in
+ * the position's own currency and prices nothing, so value and P/L are the last
+ * close against that basis.
+ */
+function holding(position: TickerPosition, last: number | null) {
   const shares = position.shares ?? null;
   const valueNative = shares !== null && last !== null ? shares * last : null;
   const pnlNative =
@@ -327,18 +387,80 @@ export function PositionTiles({
     last !== null && position.avg_cost_native
       ? (last / position.avg_cost_native - 1) * 100
       : null;
-  const ccy = position.currency ?? "";
+  return { shares, valueNative, pnlNative, pnlPct, ccy: position.currency ?? "" };
+}
+
+/**
+ * The holding as four cells of the desktop price row, in Streamlit's order:
+ * value, weight, P/L, average cost (`_position_metrics`).
+ */
+function PositionMetrics({
+  position,
+  last,
+  t,
+}: {
+  position: TickerPosition;
+  last: number | null;
+  t: Translate;
+}) {
+  const { shares, valueNative, pnlNative, pnlPct, ccy } = holding(position, last);
+  return (
+    <>
+      <Metric
+        label={t("ticker.position_value")}
+        value={valueNative === null ? DASH : `${money(valueNative)} ${ccy}`.trim()}
+        note={position.value === null ? "" : approx(position.value, position.base)}
+      />
+      <Metric
+        label={t("ticker.pct_portfolio")}
+        help={t("ticker.pct_portfolio_help")}
+        value={
+          position.weight === null ? DASH : `${(position.weight * 100).toFixed(1)}%`
+        }
+      />
+      <Metric
+        label={t("ticker.unrealised_pl")}
+        help={t("ticker.unrealised_pl_help")}
+        value={pnlNative === null ? DASH : `${signed(pnlNative)} ${ccy}`.trim()}
+        // A fraction, as `delta` takes it: the same pill the price's day move
+        // wears, which is what `st.metric`'s delta draws there.
+        delta={pnlPct === null ? null : pnlPct / 100}
+      />
+      <Metric
+        label={t("ticker.avg_buy_price")}
+        value={
+          position.avg_cost_native === null
+            ? DASH
+            : `${money(position.avg_cost_native)} ${ccy}`.trim()
+        }
+        note={shares === null ? "" : t("ticker.n_shares", { n: money(shares, 4) })}
+      />
+    </>
+  );
+}
+
+/** The holding as 2×2 tiles, for the phone hero. */
+function PositionTiles({
+  position,
+  last,
+  note,
+  t,
+}: {
+  position: TickerPosition;
+  /** The last close the chart drew — what the holding is valued at. */
+  last: number | null;
+  /** The line under the weight tile: the RSI read. */
+  note?: string;
+  t: Translate;
+}) {
+  const { shares, valueNative, pnlNative, pnlPct, ccy } = holding(position, last);
 
   return (
     <div className="tk-tiles">
       <Tile
         label={t("ticker.position_value")}
         value={valueNative === null ? DASH : `${money(valueNative)} ${ccy}`.trim()}
-        note={
-          position.value === null
-            ? ""
-            : `≈ ${money(position.value)} ${position.base ?? ""}`.trim()
-        }
+        note={position.value === null ? "" : approx(position.value, position.base)}
       />
       <Tile
         label={t("ticker.unrealised_pl")}

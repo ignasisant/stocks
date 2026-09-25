@@ -13,6 +13,8 @@
 /** What an uncomputable figure reads as. Never `0`. */
 export const DASH = "—";
 
+import type { Bars } from "./types";
+
 type Maybe = number | null | undefined;
 
 export function known(value: Maybe): value is number {
@@ -63,19 +65,88 @@ export function compact(value: Maybe, suffix = ""): string {
   return `${sign}${size.toPrecision(3)}${tail}`;
 }
 
-/** The same, rounded the way a money column reads: one decimal on a suffix. */
-export function amount(value: Maybe, currency: string | null): string {
+/**
+ * `config.CURRENCY_SYMBOL`, verbatim: the mark a money figure is prefixed with.
+ *
+ * The Nordic crowns and the franc keep their code with a space, as the Python
+ * table does, because three currencies all writing "kr" cannot be told apart
+ * in a tile. A currency the table does not list prints its code the same way
+ * rather than a wrong mark, and no currency at all prints nothing.
+ */
+const SYMBOLS: Record<string, string> = {
+  EUR: "€",
+  USD: "$",
+  GBP: "£",
+  CHF: "CHF ",
+  SEK: "SEK ",
+  NOK: "NOK ",
+  DKK: "DKK ",
+  PLN: "zł",
+  CZK: "Kč",
+  CAD: "CA$",
+  AUD: "A$",
+  AED: "AED ",
+};
+
+export function currencySymbol(currency: string | null | undefined): string {
+  if (!currency) return "";
+  const code = currency.toUpperCase();
+  return SYMBOLS[code] ?? `${code} `;
+}
+
+/**
+ * `stocks.formatting.compact_money`: "$394.3B", "-$1.2M", "€950".
+ *
+ * One decimal on a suffix and the sign ahead of the mark, so a market cap, an
+ * AUM and an insider net read here exactly as they do on the Streamlit page —
+ * and never `toPrecision(3)`, which prints "1.49T" beside Streamlit's "1.5T".
+ */
+export function compactMoney(
+  value: Maybe,
+  currency: string | null | undefined,
+): string {
   if (!known(value)) return DASH;
+  const sym = currencySymbol(currency);
+  const sign = value < 0 ? "-" : "";
   const size = Math.abs(value);
-  const [scaled, unit] =
-    size >= 1e12
-      ? [value / 1e12, "T"]
-      : size >= 1e9
-        ? [value / 1e9, "B"]
-        : size >= 1e6
-          ? [value / 1e6, "M"]
-          : [value, ""];
-  return `${scaled.toFixed(unit ? 1 : 0)}${unit} ${currency ?? ""}`.trim();
+  for (const [limit, unit] of [
+    [1e12, "T"],
+    [1e9, "B"],
+    [1e6, "M"],
+    [1e3, "K"],
+  ] as const) {
+    if (size >= limit) return `${sign}${sym}${(size / limit).toFixed(1)}${unit}`;
+  }
+  return `${sign}${sym}${Math.round(size).toLocaleString("en-US")}`;
+}
+
+/**
+ * The mark an insider figure is prefixed with — `config.CURRENCY_SYMBOL` for
+ * the only two currencies an insider feed arrives in (Form 4 is USD, BaFin
+ * EUR), and the code with a space for anything else rather than a wrong mark.
+ */
+function mark(currency: string | null): string {
+  if (currency === "USD" || currency === null) return "$";
+  if (currency === "EUR") return "€";
+  return `${currency} `;
+}
+
+/**
+ * An insider trade's price as Streamlit's table prints it — "$330.19" — and
+ * blank when the filing carries none: a grant has no price, and a dash in
+ * every grant row reads as thirty missing figures.
+ */
+export function insiderPrice(value: Maybe, currency: string | null): string {
+  return known(value) ? `${mark(currency)}${money(value, 2)}` : "";
+}
+
+/**
+ * …and its signed notional, whole units: "$-474,813", "$+12,000". The sign
+ * sits after the mark because that is Streamlit's `{sym}{:+,.0f}`, and the two
+ * tables should read alike. Blank with no notional.
+ */
+export function insiderValue(value: Maybe, currency: string | null): string {
+  return known(value) ? `${mark(currency)}${signed(value, 0)}` : "";
 }
 
 /**
@@ -85,6 +156,34 @@ export function amount(value: Maybe, currency: string | null): string {
 export function yoy(cur: Maybe, prev: Maybe): number | null {
   if (!known(cur) || !known(prev) || prev === 0) return null;
   return ((cur - prev) / Math.abs(prev)) * 100;
+}
+
+/**
+ * Year-over-year growth for every bar of a results series whose first
+ * `reported` values were filed and the rest are forecast.
+ *
+ * Streamlit's rule, bar for bar: a reported year is measured against the year
+ * right before it — a gap stays a gap, so the year after a missing one has no
+ * label — while the first forecast bar is measured against the last reported
+ * year that *has* a value, and each later forecast against the one before it.
+ * The forecast tail is what a reader checks "is consensus expecting growth"
+ * against, so it has to anchor on the filing, not on a hole.
+ */
+export function barGrowth(
+  values: (number | null)[],
+  reported: number,
+): (number | null)[] {
+  let anchor: number | null = null;
+  return values.map((value, index) => {
+    if (index < reported) {
+      const out = index > 0 ? yoy(value, values[index - 1]) : null;
+      if (known(value)) anchor = value;
+      return out;
+    }
+    const out = yoy(value, anchor);
+    if (known(value)) anchor = value;
+    return out;
+  });
 }
 
 /** A growth figure as a bar label, blank when there is none to show. */
@@ -153,6 +252,31 @@ export function latest(values: (number | null)[] | undefined): number | null {
 export function earliest(values: (number | null)[] | undefined): number | null {
   for (const value of values ?? []) {
     if (value !== null && value !== undefined) return value;
+  }
+  return null;
+}
+
+/**
+ * The day's move off the bars, for when there is no quote to read it from:
+ * Streamlit's `(last - prev) / prev` over the last two closes. On an intraday
+ * range the bar before the last is five minutes ago, not yesterday, so there
+ * the previous close is the last bar of the previous session instead. A
+ * fraction, as the quote's `pct` is; null when there is nothing to measure.
+ */
+export function barsDayPct(bars: Bars | null): number | null {
+  if (!bars) return null;
+  const close = bars.series.Close ?? [];
+  let at = close.length - 1;
+  while (at >= 0 && (close[at] === null || close[at] === undefined)) at--;
+  if (at < 1) return null;
+  const last = close[at] as number;
+  const intraday = bars.interval !== "1d" && /[mh]$/.test(bars.interval);
+  const today = (bars.dates[at] ?? "").slice(0, 10);
+  for (let i = at - 1; i >= 0; i--) {
+    const prev = close[i];
+    if (prev === null || prev === undefined) continue;
+    if (intraday && (bars.dates[i] ?? "").slice(0, 10) === today) continue;
+    return prev ? last / prev - 1 : null;
   }
   return null;
 }

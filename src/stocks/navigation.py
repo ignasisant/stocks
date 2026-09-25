@@ -53,6 +53,16 @@ DESTINATIONS: tuple[Destination, ...] = (
 # labels; the rest of the pages stay reachable through the drawer.
 BOTTOM_NAV: tuple[str, ...] = ("", "portfolio", "sector", "profile")
 
+# Every first path segment the React shell answers, for the server that has to
+# hand it the document. The menu's own paths, plus the shell's names for the
+# two pages Streamlit named after its files (`home` for the root, `import` for
+# `import_transactions`) and the bank page, which is reached from Portfolio
+# rather than from the menu. `tests/test_frontend_nav_parity.py` holds this to
+# the shell's registry: a slug missing here is a page that 404s on reload.
+SHELL_PATHS: tuple[str, ...] = tuple(
+    sorted({d.path for d in DESTINATIONS if d.path} | {"home", "import", "bank"})
+)
+
 
 def by_path(path: str) -> Destination | None:
     """The destination a URL path names, or None for a path that is not a page."""

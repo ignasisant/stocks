@@ -279,6 +279,62 @@ def test_fills_are_scaled_to_todays_shares(client, account, ledger, monkeypatch)
     assert body["trades"][1]["price"] == 130.0
 
 
+# An owner-shaped book: one security under two spellings across two brokers
+# (DEGIRO books the ISIN, IBKR the symbol with the ISIN in its note), bought in
+# lots and sold down in parts, still partly held.
+ASML_ISIN = "NL0010273215"
+TWO_BROKER_BOOK = (
+    Transaction("2024-01-10", ASML_ISIN, "buy", 5, 600.0, "EUR", 1.0, note="degiro"),
+    Transaction("2024-02-12", "ASML", "buy", 3, 650.0, "EUR", 1.0,
+                note=f"ibkr {ASML_ISIN}"),
+    Transaction("2024-03-15", ASML_ISIN, "sell", 2, 700.0, "EUR", 1.0, note="degiro"),
+    Transaction("2024-04-02", "ASML", "sell", 1, 720.0, "EUR", 1.0,
+                note=f"ibkr {ASML_ISIN}"),
+    Transaction("2024-02-01", "MSFT", "buy", 5, 200.0, "USD", 1.0),
+)
+
+
+def test_every_buy_and_sell_reaches_the_chart_across_brokers_and_spellings(
+    client, account, monkeypatch
+):
+    """The chart draws what this route sends, so it must send every fill of
+    the security — both sides, partial sells included, whichever broker booked
+    it and however that broker spelled it — and keep sending them when the
+    book's pricing pass fails: a 5xx there once took every marker with it."""
+    monkeypatch.setattr(
+        loaders, "ledger_state", lambda *a, **k: (list(TWO_BROKER_BOOK), [], [])
+    )
+    monkeypatch.setattr(
+        loaders, "native_positions",
+        lambda db, m: {"ASML": FakePosition("ASML", 5.0, 3150.0, "EUR")},
+    )
+    monkeypatch.setattr(loaders, "custody", lambda db, m: {})
+
+    def throttled(*a, **k):
+        raise RuntimeError("Too Many Requests")
+
+    monkeypatch.setattr(loaders, "positions_table", throttled)
+    monkeypatch.setattr(
+        "stocks.portfolio.corporate.split_factors", lambda txs: {}
+    )
+    response = client.get(
+        "/v1/ticker/ASML/position", params={"account": EMAIL}, headers=AUTH
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["held"] is True and body["shares"] == 5.0
+    # Priced nothing, and says so with nulls rather than failing or a zero.
+    assert (body["value"], body["weight"]) == (None, None)
+    assert [
+        (t["date"], t["action"], t["quantity"], t["price"]) for t in body["trades"]
+    ] == [
+        ("2024-01-10", "buy", 5.0, 600.0),
+        ("2024-02-12", "buy", 3.0, 650.0),
+        ("2024-03-15", "sell", 2.0, 700.0),
+        ("2024-04-02", "sell", 1.0, 720.0),
+    ]
+
+
 def test_a_held_position_reports_native_cost_and_the_broker_split(
     client, account, monkeypatch
 ):
@@ -608,3 +664,40 @@ def test_fills_are_found_under_the_label_the_position_is_built_on(
         "/v1/ticker/ADBE/position", params={"account": EMAIL}, headers=AUTH
     ).json()
     assert [t["date"] for t in body["trades"]] == ["2024-01-02", "2024-06-01"]
+
+
+def test_a_dollar_buy_charted_off_a_euro_listing_is_restated_onto_its_axis(
+    client, account, monkeypatch
+):
+    """Revolut's ASML is the dollar ADR, aliased to the euro ASML.AS whose bars
+    the chart draws. Basis, average and fills come back in euros — each at its
+    own trade date's rate — so the average-cost line and the buy markers sit on
+    the chart instead of an FX gap away from it."""
+    book = [
+        Transaction("2024-10-24", "ASML", "buy", 2, 720.0, "USD", 0.0),
+        Transaction("2025-11-13", "ASML", "buy", 1, 690.0, "USD", 0.0),
+    ]
+    rates = {"2024-10-24": 0.9, "2025-11-13": 0.86}
+    monkeypatch.setattr(loaders, "ledger_state", lambda *a, **k: (book, [], []))
+    monkeypatch.setattr(
+        loaders, "native_positions",
+        lambda db, m: {"ASML": FakePosition("ASML", 3.0, 2130.0, "USD")},
+    )
+    monkeypatch.setattr(loaders, "custody", lambda db, m: {})
+    monkeypatch.setattr(loaders, "positions_table", lambda db, m, base: pd.DataFrame())
+    monkeypatch.setattr("stocks.portfolio.corporate.split_factors", lambda txs: {})
+    monkeypatch.setattr(
+        "stocks.analysis.listing._lookup", lambda t: {"ASML": "EUR"}.get(t)
+    )
+    monkeypatch.setattr(
+        "stocks.data.fx.rate_on", lambda day, ccy, base: rates[str(day)]
+    )
+    body = client.get(
+        "/v1/ticker/ASML/position", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert body["currency"] == "EUR"
+    assert body["cost_native"] == pytest.approx(1440 * 0.9 + 690 * 0.86)
+    assert body["avg_cost_native"] == pytest.approx((1440 * 0.9 + 690 * 0.86) / 3)
+    assert [t["price"] for t in body["trades"]] == pytest.approx(
+        [720 * 0.9, 690 * 0.86]
+    )

@@ -14,6 +14,15 @@ the financials view) re-executes only the fragment function — app.py is not on
 the stack — so an exception raised inside one bypasses that guard entirely and
 surfaces as Streamlit's crash card. The app-level guard remains only as a
 backstop for the non-fragment page body.
+
+Parallel fragments (`st.fragment(parallel=True)`) add a second trap: during the
+initial page load they run on worker threads, and Streamlit refuses any write
+that lands outside the fragment's own container. `st.toast` writes to the
+page-level event container, so the toast itself raised StreamlitAPIException
+from inside the `except` that was meant to degrade — a Yahoo throttle crashed
+the Positions tab. `data_toast()` therefore falls back to an inline caption in
+the calling fragment when the toast is refused, so every call site is safe
+without knowing whether it runs in parallel.
 """
 
 from __future__ import annotations
@@ -21,6 +30,7 @@ from __future__ import annotations
 import time
 
 import streamlit as st
+from streamlit.errors import StreamlitAPIException
 from yfinance.exceptions import YFRateLimitError
 
 from stocks.web.i18n import t as tr
@@ -67,4 +77,11 @@ def data_toast(exc: BaseException) -> None:
     state = st.session_state.setdefault(_STATE_KEY, {})
     if _should_show(kind, state, time.monotonic()):
         key, icon = _NOTICES[kind]
-        st.toast(tr(key), icon=icon)
+        try:
+            st.toast(tr(key), icon=icon)
+        except StreamlitAPIException:
+            # A parallel fragment's first run may not write outside itself (see
+            # the module docstring). The caption lands in the fragment's own
+            # container, which is allowed, so the reason still reaches the user
+            # — just in place instead of bottom-left.
+            st.caption(f"{icon} {tr(key)}")

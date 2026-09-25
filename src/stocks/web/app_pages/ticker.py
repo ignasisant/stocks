@@ -281,6 +281,31 @@ def _held(db: str, mtime: float):
         return {}
 
 
+@st.cache_data(show_spinner=False, max_entries=64)
+def _on_listing(db: str, mtime: float, ticker: str):
+    """(fills, open position) of `ticker`, in the charted listing's quote.
+
+    The chart is the priced listing's series, and a watchlist alias can make
+    that another venue than the one the shares were bought on — Revolut's
+    dollar ASML, charted off the euro ASML.AS. The buy markers, the average
+    cost line and the value/P&L tiles beside the chart are restated into the
+    listing's currency at each trade date's rate, so none of them reads the
+    FX gap as a move (stocks.analysis.listing). Identical to the ledger's own
+    figures whenever the two currencies agree, which is nearly always.
+    Cached: the fragment reruns on every period switch.
+    """
+    from stocks.analysis.listing import (
+        listing_currencies,
+        restate_position,
+        restate_trades,
+    )
+
+    code = listing_currencies([ticker]).get(ticker)
+    ledger = _ledger(db, mtime)
+    fills = corporate.own_fills(restate_trades(ledger, ticker, code), ticker)
+    return fills, restate_position(_held(db, mtime).get(ticker), ledger, code)
+
+
 @st.cache_data(show_spinner=False, max_entries=32)
 def _custody(db: str, mtime: float) -> dict[str, dict[str, Custody]]:
     """Open shares per (ticker, broker): which broker's account holds them.
@@ -626,9 +651,9 @@ def _price_section(ticker: str) -> None:
     db = str(auth.db_path())
     db_mt = db_mtime(db)
     # Already relabelled and already split-scaled — see corporate.own_fills for
-    # why both matter and why forgetting either one draws nothing at all.
-    my_trades = corporate.own_fills(_ledger(db, db_mt), ticker)
-    my_pos = _held(db, db_mt).get(ticker)
+    # why both matter and why forgetting either one draws nothing at all — and
+    # priced in the charted listing's quote (`_on_listing`).
+    my_trades, my_pos = _on_listing(db, db_mt, ticker)
 
     last = float(df["Close"].iloc[-1])
     prev = float(df["Close"].iloc[-2])

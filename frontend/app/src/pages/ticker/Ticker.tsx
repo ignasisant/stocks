@@ -28,7 +28,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useApi } from "../../shell/useApi";
-import { Loaded, Skeleton } from "../../shell/Layout";
+import { Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { useRoute } from "../../shell/router";
@@ -51,12 +51,10 @@ import {
   getValuation,
   getWatchlist,
 } from "./data";
-import { latest } from "./format";
 import { PeerPicker } from "./Peers";
-import { PositionTiles, PriceSection, isRange, type Range } from "./Price";
+import { PriceSection, isRange, type Range } from "./Price";
 import { AssetStatsSection, KpiSourcesSection } from "./Reference";
 import { askAssistant } from "../../shell/assistant";
-import { Search } from "./Search";
 import {
   ComparablesSection,
   FundSection,
@@ -64,7 +62,7 @@ import {
   MetricsSection,
   MoatSection,
 } from "./Sections";
-import { Card, Empty, useMobile } from "./ui";
+import { Empty, useMobile } from "./ui";
 import type { Custodian, Profile, TickerPosition, WatchlistEntry } from "./types";
 import "./ticker.css";
 
@@ -175,14 +173,6 @@ export default function Page() {
 
   const ticker = asked || null;
 
-  const pick = useCallback(
-    (next: string) => {
-      setParams({ ticker: next.trim().toUpperCase() });
-      window.scrollTo(0, 0);
-    },
-    [setParams],
-  );
-
   const onRange = useCallback((next: Range) => {
     setRange(next);
     remember(RANGE_KEY, next);
@@ -218,33 +208,50 @@ export default function Page() {
       ticker ? getPosition(ticker, base) : Promise.resolve<TickerPosition | null>(null),
     [ticker, base],
   );
-  const metrics = useApi(
-    () => (ticker ? getMetrics(ticker, base) : Promise.resolve(null)),
-    [ticker, base],
-  );
-  const financials = useApi(
-    () => (ticker ? getFinancials(ticker) : Promise.resolve(null)),
-    [ticker],
-  );
-  const valuation = useApi(
-    () => (ticker ? getValuation(ticker) : Promise.resolve(null)),
-    [ticker],
-  );
-  const moat = useApi(
-    () => (ticker ? getMoat(ticker) : Promise.resolve(null)),
-    [ticker],
-  );
-  const insiders = useApi(
-    () => (ticker ? getInsiders(ticker) : Promise.resolve(null)),
-    [ticker],
-  );
   const fund = useApi(
     () => (ticker ? getFund(ticker) : Promise.resolve(null)),
     [ticker],
   );
 
-  const crypto = profile.state === "loaded" && profile.data?.is_crypto;
-  const isFund = fund.state === "loaded" && Boolean(fund.data?.is_fund);
+  // What kind of symbol this is decides which sections exist at all — the cut
+  // Streamlit makes with `st.stop()`. A coin gets its asset stats and nothing
+  // below; a fund gets its profile and nothing below. Everything under those
+  // two — results, fundamentals, valuation, moat, insiders, comps and the KPI
+  // sources — is a company's, and for the other two it would be a column of
+  // empty cards that each cost a fetch.
+  //
+  // A fund is whatever `/fund` says once it answers (Streamlit keys off the
+  // profile it fetched, and a catalog fund Yahoo returns no profile for falls
+  // through to the company sections there too); until then the profile's
+  // catalog guess stands in, so a fund page does not flash company cards. A
+  // failed profile reads as a company: the sections degrade on their own.
+  const drawn = profile.state === "loaded" ? profile.data : null;
+  const crypto = Boolean(drawn?.is_crypto);
+  const isFund =
+    fund.state === "loaded" ? Boolean(fund.data?.is_fund) : Boolean(drawn?.is_fund);
+  const company = profile.state !== "loading" && !crypto && !isFund;
+
+  const metrics = useApi(
+    () => (ticker && company ? getMetrics(ticker, base) : Promise.resolve(null)),
+    [ticker, base, company],
+  );
+  const financials = useApi(
+    () => (ticker && company ? getFinancials(ticker) : Promise.resolve(null)),
+    [ticker, company],
+  );
+  const valuation = useApi(
+    () => (ticker && company ? getValuation(ticker) : Promise.resolve(null)),
+    [ticker, company],
+  );
+  const moat = useApi(
+    () => (ticker && company ? getMoat(ticker) : Promise.resolve(null)),
+    [ticker, company],
+  );
+  const insiders = useApi(
+    () => (ticker && company ? getInsiders(ticker) : Promise.resolve(null)),
+    [ticker, company],
+  );
+
   const stats = useApi(
     () => (ticker && crypto ? getCrypto(ticker) : Promise.resolve(null)),
     [ticker, crypto],
@@ -257,11 +264,7 @@ export default function Page() {
     [ticker, peers.join(",")],
   );
 
-  const drawn = profile.state === "loaded" ? profile.data : null;
   const held = position.state === "loaded" ? position.data : null;
-  // The last close the chart drew, which is what the holding is valued at:
-  // `/position` reports cost in the position's own currency and prices nothing.
-  const lastClose = bars.state === "loaded" ? latest(bars.data?.series.Close) : null;
   const entry =
     entries.find((one) => one.ticker.toUpperCase() === (ticker ?? "")) ?? null;
   // The grid's own P/E, for the valuation card's vintage warning: the two are
@@ -322,7 +325,9 @@ export default function Page() {
             <Actions ticker={ticker} entry={entry} onEntry={onEntry} />
           </SignedInOnly>
         ) : null}
-        <Search onPick={pick} />
+        {/* No search box here: the shell's top-bar search is the one way to
+            change company, as on the Streamlit page — two boxes that both
+            navigate is one too many, and only the shell's keeps the recents. */}
       </header>
 
       {/* Nothing picked yet — the same invitation the Streamlit page opens with,
@@ -335,46 +340,38 @@ export default function Page() {
         )
       ) : (
         <>
-          <Loaded query={bars} skeleton={<Skeleton rows={8} />}>
-            {(data) => (
-              <PriceSection
-                bars={data}
-                quote={quote.state === "loaded" ? quote.data : null}
-                events={events.state === "loaded" ? (events.data?.earnings ?? []) : []}
-                position={held}
-                range={range}
-                onRange={onRange}
-                candles={candles ?? !mobile}
-                onCandles={onCandles}
-              />
-            )}
-          </Loaded>
+          {/* The bars go down as a query: the price card keeps its range and
+              chart controls through a failed fetch and shows the error in the
+              chart's slot, as Streamlit's does. */}
+          <PriceSection
+            query={bars}
+            quote={quote.state === "loaded" ? quote.data : null}
+            events={events.state === "loaded" ? (events.data?.earnings ?? []) : []}
+            position={held}
+            range={range}
+            onRange={onRange}
+            candles={candles ?? !mobile}
+            onCandles={onCandles}
+          />
 
-          {/* On a phone the holding is already in the hero, as 2×2 tiles — the
-              design's layout for a 390px screen, not a narrowed card. */}
-          {!mobile && held?.held ? (
-            <Card title={t("ticker.in_portfolio")}>
-              <PositionTiles position={held} last={lastClose} t={t} />
-            </Card>
-          ) : null}
-
-          {fund.state === "loaded" && fund.data?.is_fund ? (
+          {/* A fund stops here, as Streamlit's does. */}
+          {isFund && fund.state === "loaded" && fund.data?.is_fund ? (
             <FundSection fund={fund.data} />
           ) : null}
 
-          {/* A coin pair has no fundamentals, no insiders and nothing to compare
-              against, so it gets the block that does apply instead of a column
-              of empty cards. */}
-          {stats.state === "loaded" && stats.data ? (
+          {/* …and a coin pair here: no statements, no Form 4, no comps. */}
+          {crypto && stats.state === "loaded" && stats.data ? (
             <AssetStatsSection stats={stats.data} />
           ) : null}
 
-          {!crypto && metrics.state === "loaded" && metrics.data ? (
-            <MetricsSection metrics={metrics.data} />
-          ) : null}
-
+          {/* A company, in Streamlit's running order: annual results, then the
+              KPI grid, then the multiple against its own history. */}
           {financials.state === "loaded" && financials.data ? (
             <FinancialsChart data={financials.data} />
+          ) : null}
+
+          {metrics.state === "loaded" && metrics.data ? (
+            <MetricsSection metrics={metrics.data} />
           ) : null}
 
           {valuation.state === "loaded" && valuation.data ? (
@@ -385,11 +382,11 @@ export default function Page() {
             <MoatSection moat={moat.data} />
           ) : null}
 
-          {!crypto && insiders.state === "loaded" && insiders.data ? (
+          {insiders.state === "loaded" && insiders.data ? (
             <InsidersSection insiders={insiders.data} />
           ) : null}
 
-          {!crypto ? (
+          {company ? (
             <ComparablesSection comps={comps.state === "loaded" ? comps.data : null}>
               <PeerPicker
                 ticker={ticker}
@@ -400,7 +397,7 @@ export default function Page() {
             </ComparablesSection>
           ) : null}
 
-          <KpiSourcesSection />
+          {company ? <KpiSourcesSection /> : null}
         </>
       )}
     </div>

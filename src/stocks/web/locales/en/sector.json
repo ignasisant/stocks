@@ -27,6 +27,7 @@
   "sector.verdict_computed": "Written without the assistant — the figures, stated.",
   "sector.verdict_signin": "Sign in to have the assistant read this podium against what you hold.",
   "sector.source_down": "Yahoo would not answer for {sector}. Showing the last scan.",
+  "sector.rescan_limited": "You have refreshed sectors several times this hour. Try again in {minutes} min — the nightly scan keeps the cohort current meanwhile.",
   "sector.fb_headline": "{top} leads the {sector} screen of {cohort} companies.",
   "sector.fb_held": "Already in your book: {tickers}.",
   "sector.fb_empty": "Not enough comparable data in {sector} to rank a podium."

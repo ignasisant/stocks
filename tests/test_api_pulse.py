@@ -122,6 +122,21 @@ def test_a_component_with_no_history_reads_null_rather_than_zero(client, pulse):
     assert momentum["then"] == pytest.approx(61.0)
 
 
+def test_each_input_carries_its_reading_in_its_own_units(client, pulse):
+    """The row prints what the input read, not the 0-100 score the bar already
+    draws — formatted by the registry, because only it knows whether a raw is
+    a percent, a ratio or a spread."""
+    payload = client.get("/v1/pulse", headers=AUTH).json()
+    momentum = next(c for c in payload["components"] if c["key"] == "momentum")
+    assert momentum["text"] == Component(key="momentum", score=0, raw=0.12).text
+
+
+def test_the_loaded_stamp_is_the_servers_clock_in_utc(client, pulse):
+    payload = client.get("/v1/pulse", headers=AUTH).json()
+    assert payload["loaded_at"].endswith(" UTC")
+    assert len(payload["loaded_at"]) == len("2026-09-24 10:00 UTC")
+
+
 def test_the_quoted_row_is_named_because_it_is_not_always_today(client, pulse):
     payload = client.get("/v1/pulse", headers=AUTH).json()
     assert payload["as_of"] == str(days(200)[-1].date())
@@ -256,6 +271,24 @@ def test_the_headline_beta_is_kept_apart_from_the_rolling_one(
     assert "beta_then" not in payload
 
 
+def test_the_second_line_of_betas_is_one_entry_per_benchmark(
+    client, account, basket
+):
+    """Duration, credit and EM, in the card's order. A benchmark whose series
+    never loaded keeps its entry with nulls rather than vanishing — the tile
+    still says "n/a", which is not the same as the card being one tile short."""
+    payload = client.get(
+        "/v1/pulse/book", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    betas = {b["key"]: b for b in payload["betas"]}
+    assert [b["key"] for b in payload["betas"]] == ["duration", "credit", "em"]
+    assert betas["duration"]["ticker"] == "TLT"
+    assert betas["duration"]["beta"] is not None
+    assert betas["duration"]["rolling_then"] is not None
+    assert betas["credit"]["beta"] is None  # the fixture has no HYG
+    assert betas["em"]["beta"] is None
+
+
 def test_a_book_reads_its_own_stance_with_a_dead_band(client, account, basket):
     payload = client.get(
         "/v1/pulse/book", params={"account": EMAIL}, headers=AUTH
@@ -316,6 +349,77 @@ def test_a_dead_price_feed_leaves_the_exposure_unmeasured(
     assert payload["bond_correlation"] is None
     # The book's own shape needs no feed, so it still answers.
     assert payload["usd_share"] == pytest.approx(0.7)
+
+
+def _throttled(*_a, **_k):
+    from yfinance.exceptions import YFRateLimitError
+
+    raise YFRateLimitError
+
+
+def test_a_throttled_composite_answers_with_its_reason(client, monkeypatch):
+    """A 503 would have every block on the page drop its heading for a generic
+    failure. A null score in the unknown band, with the reason named, lets each
+    keep its title and say that Yahoo is throttling."""
+    monkeypatch.setattr(loaders, "market_pulse", _throttled)
+    response = client.get("/v1/pulse", headers=AUTH)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["unavailable"] == "rate_limited"
+    assert payload["score"] is None
+    assert payload["regime"] == "unknown"
+    assert payload["loaded_at"]
+
+
+def test_a_healthy_composite_names_no_reason(client, pulse):
+    assert client.get("/v1/pulse", headers=AUTH).json()["unavailable"] is None
+
+
+def test_a_throttled_price_burst_costs_the_betas_not_the_weights(
+    client, account, basket, monkeypatch
+):
+    """The currency split and the sector weights are read off the positions,
+    and a throttle on the benchmark closes is no reason to blank them — the
+    Streamlit card keeps them through the same outage."""
+    monkeypatch.setattr(loaders, "pulse_closes", _throttled)
+    response = client.get("/v1/pulse/book", params={"account": EMAIL}, headers=AUTH)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["unavailable"] == "rate_limited"
+    assert payload["beta"] is None
+    assert payload["bond_correlation"] is None
+    assert all(b["beta"] is None for b in payload["betas"])
+    assert payload["usd_share"] == pytest.approx(0.7)
+    assert payload["currency_weights"]["EUR"] == pytest.approx(0.3)
+    assert payload["sector_weights"] == {
+        "Technology": pytest.approx(0.8),
+        "Energy": pytest.approx(0.2),
+    }
+
+
+def test_a_throttled_replay_empties_the_card_and_says_why(
+    client, account, monkeypatch
+):
+    monkeypatch.setattr(loaders, "basket_report", _throttled)
+    response = client.get("/v1/pulse/book", params={"account": EMAIL}, headers=AUTH)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["unavailable"] == "rate_limited"
+    assert payload["beta"] is None
+    assert payload["currency_weights"] == {}
+
+
+def test_the_book_sends_its_whole_sector_split_for_the_top_three(
+    client, account, basket
+):
+    """Largest first, and not limited to the sectors a fund tracks: the note
+    about "your three largest sectors" picks from the book, then drops the ones
+    with no ETF, exactly as `sentiment.py` does."""
+    payload = client.get(
+        "/v1/pulse/book", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert list(payload["sector_weights"]) == ["Technology", "Energy"]
+    assert payload["unavailable"] is None
 
 
 # ------------------------------------------------------------- the detail blocks
@@ -398,6 +502,26 @@ def test_every_block_comes_back_by_default(client, account, sources):
         "rotation",
         "cross",
     }
+
+
+def test_each_block_carries_its_configured_count_even_when_down(
+    client, account, sources, monkeypatch
+):
+    """The tab badge is what the block holds when it is up — Streamlit draws
+    it before any fetch — so a throttled block keeps its count."""
+    monkeypatch.setattr(loaders, "pulse_closes", _throttled)
+    by_block = blocks_of(
+        client.get("/v1/pulse/tables", params={"account": EMAIL}, headers=AUTH).json()
+    )
+    assert by_block["indices"]["unavailable"] == "rate_limited"
+    assert by_block["indices"]["expected"] == len(sm.INDICES)
+    assert by_block["gauges"]["expected"] == len(sm.GAUGES)
+    assert by_block["rates"]["expected"] == len(sm.RATE_ROWS)
+    assert by_block["rotation"]["expected"] == len(sm.SECTOR_ETFS)
+    assert by_block["factors"]["expected"] == len(sm.FACTOR_PAIRS)
+    assert by_block["cross"]["expected"] == len(sm.MACRO_ASSETS)
+    # The Eurostat areas plus the US CPI row.
+    assert by_block["inflation"]["expected"] == 8
 
 
 def test_a_client_can_ask_for_one_tab(client, account, sources):
@@ -489,6 +613,24 @@ def test_rotation_reports_excess_over_the_index_not_the_raw_move(
     assert spx_only  # the cross block still answers on the same fetch
     # An excess return is small next to a raw one over the same window.
     assert abs(row["changes"]["month"]) < 1.0
+
+
+def test_rotation_measures_excess_against_spy_like_streamlit(
+    client, account, sources
+):
+    """SPY, not ^GSPC: fund against fund, and the same benchmark the Streamlit
+    table reads — the two apps must agree on which sectors led."""
+    closes = loaders.pulse_closes()
+    rotation = blocks_of(
+        client.get(
+            "/v1/pulse/tables",
+            params={"account": EMAIL, "blocks": "rotation"},
+            headers=AUTH,
+        ).json()
+    )["rotation"]
+    row = next(r for r in rotation["rows"] if r["key"] == "XLK")
+    expected = sm.pct_over(closes["XLK"], 21) - sm.pct_over(closes["SPY"], 21)
+    assert row["changes"]["month"] == pytest.approx(expected)
 
 
 def test_a_block_whose_source_died_keeps_its_place(client, account, sources,

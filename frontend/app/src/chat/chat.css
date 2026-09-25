@@ -143,6 +143,9 @@
 }
 
 .ag-chat-provider {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
   color: var(--ag-text-secondary);
 }
 
@@ -761,8 +764,13 @@
   margin-top: 8px;
 }
 
+/* Inline-flex, because a glyph left inline sits on the text's baseline and
+   reads as a few pixels high beside the label. */
 .ag-chat-btn,
 .ag-chat-chip {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
   padding: 3px 10px;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-pill);
@@ -867,6 +875,66 @@
   font: inherit;
   font-size: var(--ag-fs-2xs);
   cursor: pointer;
+}
+
+/* The parked walkthrough, in the launcher's place (`Drawer.GuideStrip`). Fixed
+   like the launcher, because it is the launcher — with the step it would
+   reopen on written beside it. */
+.ag-guide-strip {
+  position: fixed;
+  right: 12px;
+  bottom: 20px;
+  left: 12px;
+  z-index: 60;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-raised);
+  box-shadow: var(--ag-shadow-overlay);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-guide-strip-text {
+  flex: 1 1 12em;
+  min-width: 0;
+  color: var(--ag-text-primary);
+}
+
+/* Retry and Discard, side by side under a refusal. */
+.ag-chat-fail-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* Send turned Stop while an answer streams: the same place, a quieter colour,
+   so it reads as "cut this" rather than as another send. */
+.ag-chat-send.ag-chat-stop {
+  background: var(--ag-text-primary);
+  color: var(--ag-surface-card);
+}
+
+/* The key in use, masked until asked (`Settings.Shown`). */
+.ag-chat-keyshow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.ag-chat-keycode {
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-sunken);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-xs);
+  overflow-wrap: anywhere;
 }
 
 .ag-guide-skip:hover {
@@ -1147,6 +1215,8 @@
 }
 
 .ag-chat-empty-title {
+  display: block;
+  margin-bottom: 2px;
   font-size: var(--ag-fs-lg);
 }
 
@@ -1159,6 +1229,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin-top: 14px;
 }
 
 .ag-chat-starter {
@@ -1268,7 +1339,8 @@
        below 1100px for the same reason. */
     display: none;
   }
-  .ag-chat-fab {
+  .ag-chat-fab,
+  .ag-guide-strip {
     /* Clear of the bottom tab bar, which is fixed at the same corner. */
     bottom: 76px;
   }

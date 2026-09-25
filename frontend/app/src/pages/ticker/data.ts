@@ -91,11 +91,6 @@ export const getTags = () => get<{ tags: string[] }>("/watchlist/tags");
 export const searchTickers = (q: string, limit = 12) =>
   get<{ query: string; matches: SearchMatch[] }>("/search", { q, limit });
 
-export const getRecents = () => get<{ tickers: string[] }>("/search/recent");
-
-export const rememberTicker = (ticker: string) =>
-  send<{ tickers: string[] }>("POST", "/search/recent", { ticker });
-
 /**
  * An upsert, like the Streamlit app: favouriting or tagging a symbol that is
  * only held — or only searched for — lists it. PATCH would 404 on exactly the

@@ -15,6 +15,7 @@
 
 import { useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
+import { DownBody, YAHOO } from "./Down";
 import { Spark } from "./Spark";
 import {
   NA,
@@ -33,7 +34,6 @@ import {
 import type { TrendBlock, TrendRow, TrendTables } from "./types";
 
 /** Who to name when a block cannot be drawn. Not translated: they are names. */
-const YAHOO = "Yahoo Finance";
 const FRED = "FRED";
 const EUROSTAT = "Eurostat";
 
@@ -396,7 +396,13 @@ function Row({
   sub?: string;
 }) {
   const meta = describe(t, block.block, row);
-  const note = sub ?? meta.sub;
+  // A gauge its publisher stopped updating says since when, in place of its
+  // usual sub-line: dimmed alone, the row reads as "quiet", not "frozen".
+  const stale =
+    row.stale && row.as_of
+      ? t("sentiment.gauge_stale", { date: row.as_of })
+      : undefined;
+  const note = stale ?? sub ?? meta.sub;
   return (
     <div className={row.stale ? "sn-trend-row sn-dim" : "sn-trend-row"}>
       <div className="sn-trend-lc">
@@ -456,18 +462,6 @@ function Down({
   onRetry: () => void;
 }) {
   const t = useT();
-  const family =
-    spec.family === "prices"
-      ? "sentiment.prices_unavailable"
-      : "sentiment.macro_unavailable";
-  // The reason the API gave, in the reader's own terms; `no_data` has no copy
-  // of its own, so it falls back to the block's own family message.
-  const body =
-    reason === "rate_limited"
-      ? "common.rate_limited"
-      : reason === "offline"
-        ? "common.offline"
-        : family;
   return (
     <>
       <div className="sn-sec-head">
@@ -477,19 +471,12 @@ function Down({
           {spec.downSource ? t(spec.downSource) : spec.origin}
         </span>
       </div>
-      <div className="sn-down">
-        <span className="sn-down-t">{t(`${family}_title`)}</span>
-        <span className="sn-down-b">{t(body)}</span>
-      </div>
-      <button className="sn-btn" onClick={onRetry}>
-        {t("sentiment.down_retry")}
-      </button>
-      <p className="sn-caption">
-        {t("sentiment.down_stamp", {
-          time: new Date().toLocaleTimeString(),
-          source: spec.origin,
-        })}
-      </p>
+      <DownBody
+        reason={reason}
+        family={spec.family}
+        origin={spec.origin}
+        onRetry={onRetry}
+      />
     </>
   );
 }
@@ -624,7 +611,18 @@ export function Detail({
       </div>
       <div className="sn-tabs" role="tablist">
         {SPECS.map((entry) => {
-          const rows = tables.blocks.find((b) => b.block === entry.key)?.rows.length;
+          // The badge is the block's configured size, as `sentiment.py` draws
+          // it before any fetch: a tab whose count vanished while Yahoo was
+          // throttling reads as a block with nothing in it, which is the
+          // claim a down block must never make. Counted from the drawn rows
+          // only for a server too old to send `expected` — and then the
+          // financial-conditions index is left out, because the rates table
+          // lifts it into a sentence and it is not one of the rates.
+          const found = tables.blocks.find((b) => b.block === entry.key);
+          const rows =
+            found?.expected ??
+            found?.rows.filter((row) => !(entry.key === "rates" && row.key === "NFCI"))
+              .length;
           return (
             <button
               key={entry.key}

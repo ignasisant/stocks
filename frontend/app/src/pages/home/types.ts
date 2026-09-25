@@ -19,9 +19,25 @@ export type DailyCard = {
   action_day: string;
   cutoff_hour: number;
   fresh: boolean;
+  /** Epoch seconds it was written — the clock in "Today · 09:14". */
+  generated: number | null;
+  /**
+   * A briefing is being written right now. With a headline, that headline is
+   * the computed stand-in shown meanwhile; without one, the reader pressed
+   * Regenerate and the old card is already gone. Poll until it turns false.
+   */
+  pending: boolean;
 };
 
-type Mover = { ticker: string; pct: number };
+type Mover = {
+  ticker: string;
+  pct: number;
+  /**
+   * Day window only: whether the name's market is quoting now. False greys the
+   * figure — the last completed session, real but not moving. Null otherwise.
+   */
+  active?: boolean | null;
+};
 
 export type Movers = {
   window: string;
@@ -61,7 +77,11 @@ export type Extreme = {
   distance: number | null;
 };
 
-export type Extremes = { extremes: Extreme[] };
+export type Extremes = {
+  extremes: Extreme[];
+  /** Held + favourites scanned; 0 means there was nothing to scan at all. */
+  scanned: number;
+};
 
 export type Summary = {
   base: string;
@@ -120,9 +140,34 @@ export type Transaction = {
   currency: string;
   fee: number;
   note: string;
+  /**
+   * The cash moved, in `Transactions.base` at the trade date's ECB rate. Null
+   * for a split or transfer (no cash) and for a date with no rate.
+   */
+  amount?: number | null;
 };
 
-export type Transactions = { total: number; transactions: Transaction[] };
+export type Transactions = {
+  total: number;
+  transactions: Transaction[];
+  /** Currency every row's `amount` is counted in. */
+  base?: string | null;
+};
+
+/**
+ * `/home/closes` — one watchlist row: the last daily close, and the day move
+ * close-to-close (re-read from a quote only where the exchange is shut).
+ */
+export type CloseRow = {
+  ticker: string;
+  close: number | null;
+  pct: number | null;
+  as_of: string | null;
+  /** The market is quoting now; false greys the day figure. */
+  active: boolean;
+};
+
+export type Closes = { rows: CloseRow[] };
 
 export type CalendarEvent = {
   ticker: string;
@@ -157,17 +202,6 @@ export type WatchlistEntry = {
 };
 
 export type Watchlist = { entries: WatchlistEntry[] };
-
-export type Quote = {
-  ticker: string;
-  price: number | null;
-  pct: number | null;
-  session: string | null;
-  as_of: string | null;
-  market_open: boolean | null;
-};
-
-export type Quotes = { quotes: Quote[]; unavailable: string[] };
 
 /**
  * `/portfolio/history` — one point per day. Every figure is nullable and means
@@ -223,6 +257,11 @@ export type Onboarding = {
   seen_version: string | null;
   tour_done: boolean;
   steps: TourStep[];
+  /**
+   * Whether the caller is a signed-in account rather than a guest. Optional so
+   * a client talking to an API that predates it falls back to the session.
+   */
+  signed_in?: boolean;
   /** login | import | ai | telegram — the four connectable capabilities. */
   setup: Record<string, boolean>;
   /** search | ask | watchlist — the three that need no setup at all. */

@@ -118,3 +118,78 @@ describe("the settings view", () => {
     expect(out).not.toContain('type="password"');
   });
 });
+
+/**
+ * A key of your own, stored or held by this tab.
+ *
+ * The Streamlit panel's `_show_key` and "Remember" checkbox: a key in use is
+ * shown masked (its tail only) with a reveal beside it, says whether it is
+ * stored or this tab's, and a deployment that cannot store one offers the tab
+ * and nothing else — before the reader types, not as a 503 after.
+ */
+describe("a key of your own", () => {
+  const anthropic = (over: Partial<ProviderInfo>) =>
+    provider({
+      id: "anthropic",
+      label: "Anthropic",
+      models: ["claude-opus-5"],
+      model: "claude-opus-5",
+      needs_key: true,
+      ...over,
+    });
+
+  it("is shown by its tail, with a reveal, and says it is stored", () => {
+    const out = draw(
+      state({
+        preferred: "anthropic",
+        providers: [
+          provider({}),
+          anthropic({ has_key: true, key_days_left: 30, key_tail: "9f3a" }),
+        ],
+      }),
+    );
+    expect(out).toContain("••••••••9f3a");
+    expect(out).toContain("chat.key_show");
+    expect(out).toContain("chat.key_stored");
+  });
+
+  it("says a key this tab holds is gone when the tab is", () => {
+    const out = draw(
+      state({
+        preferred: "anthropic",
+        providers: [
+          provider({}),
+          anthropic({ has_key: true, key_session: true, key_tail: "1234" }),
+        ],
+      }),
+    );
+    expect(out).toContain("chat.key_session_only");
+    expect(out).not.toContain("chat.key_stored");
+  });
+
+  it("offers Remember where the server can keep a key", () => {
+    const out = draw(
+      state({
+        preferred: "anthropic",
+        key_storage: true,
+        providers: [provider({}), anthropic({})],
+      }),
+    );
+    expect(out).toContain("chat.remember");
+    expect(out).toContain("chat.byok_help");
+    expect(out).not.toContain("chat.byok_help_session");
+  });
+
+  it("offers only this tab where it cannot", () => {
+    const out = draw(
+      state({
+        preferred: "anthropic",
+        key_storage: false,
+        providers: [provider({}), anthropic({})],
+      }),
+    );
+    expect(out).not.toContain("chat.remember");
+    expect(out).toContain("chat.byok_help_session");
+    expect(out).toContain('type="password"');
+  });
+});

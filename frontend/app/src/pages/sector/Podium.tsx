@@ -16,6 +16,7 @@ import { useLabels } from "./labels";
 import { formatMetric } from "./metrics";
 import type { CohortRow } from "./types";
 import { TickerCell } from "../../shell/tickers";
+import { CompanyName } from "./Cohort";
 
 /**
  * The two figures that carry a place, in the units the verdict prints.
@@ -66,6 +67,10 @@ export function Podium({
                     {ticker}
                   </TickerCell>
                 </div>
+                {/* The name under the symbol, as the Streamlit podium's
+                    `ticker_cell` prints it: three medals over bare symbols ask
+                    the reader to know every listing in the sector by heart. */}
+                <CompanyName ticker={ticker} className="ag-sec-pod-name" />
                 <div className="ag-sec-score">
                   {typeof score === "number" ? Math.round(score * 100) : na}
                   <span>/100</span>

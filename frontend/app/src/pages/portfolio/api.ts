@@ -19,6 +19,29 @@ export type Position = {
   pnl_pct: number | null;
   /** Share of the book by market value; null when the row did not price. */
   weight: number | null;
+  /**
+   * Today's move in the reporting currency and as a fraction. Off-hours this
+   * is the pre/after-hours quote or the last completed session, never a stale
+   * flat bar; null when no two prices could be compared.
+   */
+  day: number | null;
+  day_pct: number | null;
+  /** False when no live quote exists now — the day cells are dimmed. */
+  market_active: boolean;
+  /** Which broker accounts hold the shares, largest first. */
+  custody: Custodian[];
+};
+
+/**
+ * One broker holding part of a position. `name` is empty for the two generic
+ * buckets (`manual`, `unknown`), which the client words from its catalog.
+ */
+export type Custodian = {
+  broker: string;
+  name: string;
+  logo: string | null;
+  shares: number;
+  share: number;
 };
 
 export type Positions = {
@@ -80,6 +103,8 @@ export type Transactions = {
 
 export type Performance = {
   base: string;
+  /** The window every return below was re-taken over. */
+  window: string;
   start: string | null;
   end: string | null;
   injected: number | null;
@@ -151,6 +176,20 @@ export type TaxPeriod = {
   /** Matched parcels in the period — used to slice `TaxReport.sales`. */
   sales: number;
   kpis: TaxKpi[];
+  /** How the jurisdiction writes the year ("2025/26"); empty for a month. */
+  year_label: string;
+  /** Sentences under the year's figures: catalog key + preformatted slots. */
+  notes: TaxNote[];
+};
+
+type TaxNote = { key: string; kwargs: Record<string, string> };
+
+/** A foreign-asset reporting threshold (Modelo 720, FBAR…) — a flag, not a verdict. */
+export type TaxFlag = {
+  name: string;
+  reportable: boolean;
+  total_value: number;
+  threshold: number;
 };
 
 export type TaxSale = {
@@ -162,6 +201,8 @@ export type TaxSale = {
   proceeds: number;
   gain: number;
   matched: string;
+  /** "long" | "short" where the jurisdiction splits holding periods, else null. */
+  term: string | null;
 };
 
 /**
@@ -195,6 +236,8 @@ export type TaxReport = {
   months: TaxPeriod[];
   sales: TaxSale[];
   funds_classified: boolean;
+  /** Reporting thresholds against today's open book, in `currency`. */
+  flags: TaxFlag[];
 };
 
 export type DividendYear = {
@@ -262,8 +305,14 @@ export type Fees = {
   spread_measured: boolean;
 };
 
-/** Windows `/portfolio/risk` accepts; anything else is refused with a 422. */
-export const RISK_PERIODS = ["6mo", "1y", "2y", "5y", "max"] as const;
+/**
+ * The windows the Allocation & risk tab offers — the Streamlit page's, in its
+ * order, since inception first and the default. Both `/portfolio/risk` and
+ * `/portfolio/performance` take them, so one selector drives both cards. The
+ * API still accepts "max" for older clients; the page does not offer it,
+ * because an IPO-to-date backtest describes the stock rather than the book.
+ */
+export const RISK_PERIODS = ["inception", "6mo", "1y", "2y", "5y"] as const;
 export type RiskPeriod = (typeof RISK_PERIODS)[number];
 
 /**
@@ -293,4 +342,15 @@ export type History = {
   missing: string[];
   /** Days excluded from the TWR — an unrecorded split, never a real loss. */
   dropped_days: string[];
+};
+
+/**
+ * `/market/status`, the part this page reads: whether the US session is open,
+ * and which caveat stem (`market_closed` | `premarket` | `postmarket`) to print
+ * under a day figure that is not live. The sentence stays this page's own.
+ */
+export type MarketStatus = {
+  us_open: boolean;
+  us_extended: string | null;
+  note: string | null;
 };

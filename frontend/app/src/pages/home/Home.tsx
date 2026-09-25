@@ -32,8 +32,8 @@
  * walking into.
  */
 
-import { useState } from "react";
-import { get } from "../../shell/api";
+import { useCallback, useState } from "react";
+import { get, send } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { useT } from "../../shell/i18n";
 import { GuestBanner, SignedInOnly } from "../../shell/guest";
@@ -58,11 +58,22 @@ export default function Page() {
   // the Streamlit button drops the price caches and leaves the ledger's hot.
   const [nonce, setNonce] = useState(0);
   const guest = useGuest();
+  // The server's caches go first (`POST /home/refresh`), or asking again would
+  // answer from the very entries the reader pressed the button to get past. A
+  // guest may not write, so a guest's press is the re-ask alone — which still
+  // picks up anything whose short TTL has rolled over. A refused or failed
+  // drop is not worth an error: the re-ask happens either way.
+  const refresh = useCallback(() => {
+    const drop = guest
+      ? Promise.resolve()
+      : send("POST", "/home/refresh").catch(() => undefined);
+    void drop.then(() => setNonce((n) => n + 1));
+  }, [guest]);
   // A `useGuest()` boolean rather than a `<SignedInOnly>` wrapper, because this
   // query belongs to the page and is shared by three children: not rendering
   // them cannot un-fire a hook their parent already called. So the skip goes
   // where the call is. Same idiom as the conditional fetch in `Ticker.tsx`.
-  const ledger = useApi(
+  const ledger = useApi<Transactions>(
     () =>
       guest
         ? Promise.resolve({ total: 0, transactions: [] } satisfies Transactions)
@@ -82,7 +93,11 @@ export default function Page() {
           dismiss only appears once every row is done, so a guest never sees a
           control that would need a write. */}
       {guest ? (
-        <GuestBanner text="home.guest_banner" short="home.guest_banner_short">
+        <GuestBanner
+          text="home.guest_banner"
+          short="home.guest_banner_short"
+          dismissible="home"
+        >
           {/* Where a guest session is actually worth something, and the reason
               `home.py` puts this link in the same row: Home's own glance is
               per-account and stays empty, but Portfolio runs end to end on the
@@ -119,7 +134,11 @@ export default function Page() {
           <ExtremesCard nonce={nonce} />
         </div>
       </section>
-      <WatchlistGroups nonce={nonce} onRefresh={() => setNonce((n) => n + 1)} />
+      <WatchlistGroups
+        nonce={nonce}
+        onRefresh={refresh}
+        holdsPositions={ledger.state === "loaded" && ledger.data.total > 0}
+      />
     </div>
   );
 }

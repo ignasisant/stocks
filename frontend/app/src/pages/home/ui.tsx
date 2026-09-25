@@ -153,6 +153,17 @@ export function Tile({
  * table's worth of names into one `/market/profiles` call, so the marks cost
  * one request per screen rather than one per row.
  */
-export function TickerCell({ ticker }: { ticker: string }) {
-  return <Cell ticker={ticker} className="hm-ticker" />;
+export function TickerCell({
+  ticker,
+  name = true,
+}: {
+  ticker: string;
+  /**
+   * Print the company name after the symbol — `ticker_table_html`'s `names`.
+   * Off where Streamlit turns it off (the movers and recent-transactions
+   * tables) and where the cell is a chip with no room for it.
+   */
+  name?: boolean;
+}) {
+  return <Cell ticker={ticker} className="hm-ticker" name={name} />;
 }

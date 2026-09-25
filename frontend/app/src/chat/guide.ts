@@ -9,6 +9,7 @@
  */
 
 import { get, send } from "../shell/api";
+import { keyed } from "./api";
 
 export type GuideStep = {
   id: string;
@@ -47,8 +48,13 @@ export const startGuide = (body: { step?: string; auto?: boolean; lang?: string 
 export const syncGuide = (lang: string) =>
   send<GuideState>("POST", "/guide/sync", { lang });
 
+/**
+ * Next step. Keyed like a chat turn: the first advance carries the
+ * walkthrough's one generated line, and a reader whose key lives in this tab
+ * should get it on that key rather than on a free chain that may be dry.
+ */
 export const advanceGuide = (lang: string) =>
-  send<GuideState>("POST", "/guide/advance", { lang });
+  keyed<GuideState>("POST", "/guide/advance", { lang });
 
 export const finishGuide = (reason: string) =>
   send<GuideState>("POST", "/guide/finish", { reason });

@@ -62,6 +62,8 @@
   "home.refresh_prices": "Actualizar precios",
   "home.chart_injected": "Inyectado",
   "home.chart_value": "Valor",
+  "home.chart_sma20": "SMA20",
+  "home.chart_period_max": "Máximo del período",
   "home.spark_hover_tmpl": "<b>%{customdata[2]}</b><br>Valor <b>{sym}%{y:,.0f}</b> · Inyectado {sym}%{customdata[0]:,.0f} · %{customdata[1]}<extra></extra>",
   "home.earnings_upcoming": ":material/event: **Resultados**",
   "home.earnings_unavailable": "Calendario de resultados no disponible ahora mismo — recarga para reintentar.",

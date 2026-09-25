@@ -49,14 +49,19 @@ class EntryBody(BaseModel):
     tags: list[str] | None = Field(
         default=None, description="Replaces the whole list; [] removes them all."
     )
+    # Non-negative, as the Streamlit grid's `min_value=0.0` has it: a short
+    # position is not something a hand-typed watchlist row can express.
     shares: float | None = Field(
         default=None,
+        ge=0,
         description=(
             "Held quantity, for a book with no imported ledger. 0 clears it; an "
             "imported ledger wins over this either way."
         ),
     )
-    cost: float | None = Field(default=None, description="Average cost; 0 clears it.")
+    cost: float | None = Field(
+        default=None, ge=0, description="Average cost; 0 clears it."
+    )
 
 
 class NewEntry(EntryBody):
@@ -81,6 +86,10 @@ def _entry(path, ticker: str) -> WatchlistEntry | None:
                 name=holding.name,
                 favorite=holding.favorite,
                 tags=list(holding.tags),
+                # The same "no position" spelling `GET /watchlist` uses, so a
+                # PATCH answer can replace the row it came from as-is.
+                shares=holding.shares or None,
+                cost=holding.cost or None,
                 is_crypto=is_crypto(holding.ticker),
             )
     return None

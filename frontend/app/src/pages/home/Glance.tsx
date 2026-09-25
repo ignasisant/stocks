@@ -7,13 +7,11 @@
  * prices are gone, neither card has anything to say, and letting them fail
  * apart would put a movers table under an empty glance.
  *
- * Two figures differ from the Streamlit original and are called out where they
- * are rendered: the realised P/L is the book's own FIFO figure and not the tax
- * report's, which is a different number under one label — argued at the tile
- * that is missing — so the tile row shows the book's TWR and IRR instead; and
- * the delta tiles show the basket's percentage alone, because `/movers` reports
- * the move as a fraction and the amount behind it would have to be invented
- * here.
+ * The realised P/L is the book's own FIFO figure and not the tax report's,
+ * argued at the tile; beside it the row also carries the book's TWR and IRR,
+ * which the Streamlit glance does not — kept, because they are the pair that
+ * says how the money did. The delta tiles lead with money and chip the
+ * percentage, as the Streamlit tiles do.
  */
 
 import { useState } from "react";
@@ -124,8 +122,14 @@ export function Glance({
     >
       {(book) => {
         if (book.summary.positions === 0) {
+          // Every position closed: the heading still goes up — the book has a
+          // history, which is what `home.py` keys it on (`positions or
+          // realized`) — and so does the demo caption, because an example
+          // book whose lots were all sold is still an example book.
           return everTraded ? (
             <section className="hm-section">
+              <h2 className="hm-h2">{plain(t("home.portfolio_title"))}</h2>
+              {book.summary.demo ? <Note>{t("home.demo_caption")}</Note> : null}
               <Note>{t("home.no_open_positions")}</Note>
               <PortfolioLink />
             </section>
@@ -181,103 +185,113 @@ function GlanceCard({ book, nonce }: { book: Book; nonce: number }) {
   const stale = note === "market_closed";
   const unpriced = Math.max(summary.unpriced, book.movers.day.unpriced ?? 0);
   return (
-    <Card>
-      <Tiles>
-        <Tile
-          label={t("home.cost_basis")}
-          value={money(summary.cost, currency, lang) ?? na}
-        />
-        <Tile
-          label={t("home.market_value")}
-          value={money(summary.value, currency, lang) ?? na}
-          chip={gainChip}
-        />
-        <Tile
-          label={t("home.unrealised_pl")}
-          value={money(summary.pnl, currency, lang, { signed: true }) ?? na}
-          chip={gainChip}
-        />
-        {/* The realised side of the same book, and deliberately not the tax
-            report's figure: `/portfolio/tax` replays in the *jurisdiction's*
-            currency under its own share-matching rule and reports per tax
-            year, while this label promises all-time FIFO gains in the
-            account's reporting currency. `/portfolio/summary` carries this one
-            off the same replay as its cost and value, so the tile and its hint
-            agree.
+    <>
+      <Card>
+        <Tiles>
+          <Tile
+            label={t("home.cost_basis")}
+            value={money(summary.cost, currency, lang) ?? na}
+          />
+          <Tile
+            label={t("home.market_value")}
+            value={money(summary.value, currency, lang) ?? na}
+            chip={gainChip}
+          />
+          <Tile
+            label={t("home.unrealised_pl")}
+            value={money(summary.pnl, currency, lang, { signed: true }) ?? na}
+            chip={gainChip}
+          />
+          {/* The realised side of the same book, and deliberately not the tax
+              report's figure: `/portfolio/tax` replays in the *jurisdiction's*
+              currency under its own share-matching rule and reports per tax
+              year, while this label promises all-time FIFO gains in the
+              account's reporting currency. `/portfolio/summary` carries this one
+              off the same replay as its cost and value, so the tile and its hint
+              agree.
 
-            Null means nothing has been sold. That is not a result of zero, and
-            the tile says so by not being there — the two returns below are
-            what a book with no closed sales has to show for itself. */}
-        {summary.realized === null ? null : (
+              Always on the row, as `home.py` draws it: a book that has never
+              sold reads +0 with no chip. The API sends null for that case — "no
+              sale" and "broke even" are different facts — and the difference is
+              kept where it matters, in the chip, which a zero cost basis cannot
+              carry. */}
           <Tile
             label={t("home.realised_pl")}
-            value={money(summary.realized, currency, lang, { signed: true }) ?? na}
+            value={money(summary.realized ?? 0, currency, lang, { signed: true }) ?? na}
             help={t("home.realised_pl_help")}
-            chip={chipFor(
-              summary.realized,
-              percent(
-                summary.realized_cost ? summary.realized / summary.realized_cost : null,
-                lang,
-                { signed: true, digits: 1 },
-              ),
-            )}
+            chip={
+              summary.realized === null
+                ? null
+                : chipFor(
+                    summary.realized,
+                    percent(
+                      summary.realized_cost
+                        ? summary.realized / summary.realized_cost
+                        : null,
+                      lang,
+                      { signed: true, digits: 1 },
+                    ),
+                  )
+            }
           />
-        )}
-        {/* The two returns are the pair that belongs together: the TWR strips
-            out when money went in, the IRR leaves it in. Neither stands in for
-            the other, so both, never one. */}
-        <Tile
-          label={t("portfolio.annualised_return")}
-          value={
-            percent(performance.twr_annualised, lang, { signed: true, digits: 1 }) ?? na
-          }
-          help={t("portfolio.twr_return_help")}
-        />
-        <Tile
-          label={t("portfolio.mwr")}
-          value={percent(performance.irr, lang, { signed: true, digits: 1 }) ?? na}
-          help={t("portfolio.mwr_help")}
-        />
-      </Tiles>
-      <Spark nonce={nonce} />
-      {/* The worse of the two counts: the price pass can miss a name, and the
-          basket can additionally lose one whose currency has no FX path. A
-          book reported as whole while a third of it was left out is the same
-          lie as a wrong total. */}
-      {/* Every figure above is invented while the example book is loaded, and
-          a reader who seeded it one session ago will not remember. The tiles
-          are not dressed differently — they are the real component, showing a
-          book that is not. */}
-      {summary.demo ? <Note>{t("home.demo_caption")}</Note> : null}
-      {unpriced > 0 ? (
-        <Note>
-          {t("home.unpriced_note", { n: unpriced, total: summary.positions })}
-        </Note>
-      ) : null}
-      <Tiles>
-        {WINDOWS.map(({ key, tile }) => {
-          // `basket: null` means the price history does not reach back over the
-          // window. That is "we cannot say", not "the book was flat".
-          const { basket, amount, base } = book.movers[key];
-          const figure = percent(basket, lang, { signed: true });
-          // Money leads and the percentage chips it, as the Streamlit tiles do.
-          // Printing the fraction in both slots states one fact twice and
-          // leaves out the one a reader came for: how much moved.
-          const cash = money(amount, base || currency, lang, { signed: true });
-          return (
-            <Tile
-              key={key}
-              label={t(tile)}
-              value={cash ?? figure ?? na}
-              chip={chipFor(basket, figure, key === "day" && stale)}
-            />
-          );
-        })}
-      </Tiles>
-      {/* Which session the day figure belongs to, when it is not this one.
-          The server picks the state and the stem; the sentence stays ours. */}
-      {note && MARKET_NOTES[note] ? <Note>{t(MARKET_NOTES[note])}</Note> : null}
-    </Card>
+          {/* The two returns are the pair that belongs together: the TWR strips
+              out when money went in, the IRR leaves it in. Neither stands in for
+              the other, so both, never one. */}
+          <Tile
+            label={t("portfolio.annualised_return")}
+            value={
+              percent(performance.twr_annualised, lang, { signed: true, digits: 1 }) ?? na
+            }
+            help={t("portfolio.twr_return_help")}
+          />
+          <Tile
+            label={t("portfolio.mwr")}
+            value={percent(performance.irr, lang, { signed: true, digits: 1 }) ?? na}
+            help={t("portfolio.mwr_help")}
+          />
+        </Tiles>
+        {/* Every figure above is invented while the example book is loaded, and
+            a reader who seeded it one session ago will not remember. The tiles
+            are not dressed differently — they are the real component, showing a
+            book that is not. */}
+        {summary.demo ? <Note>{t("home.demo_caption")}</Note> : null}
+      </Card>
+      <Card>
+        <Spark nonce={nonce} />
+        {/* The worse of the two counts: the price pass can miss a name, and the
+            basket can additionally lose one whose currency has no FX path. A
+            book reported as whole while a third of it was left out is the same
+            lie as a wrong total. */}
+        {unpriced > 0 ? (
+          <Note>
+            {t("home.unpriced_note", { n: unpriced, total: summary.positions })}
+          </Note>
+        ) : null}
+        <Tiles>
+          {WINDOWS.map(({ key, tile }) => {
+            // `basket: null` means the price history does not reach back over the
+            // window. That is "we cannot say", not "the book was flat".
+            const { basket, amount, base } = book.movers[key];
+            const figure = percent(basket, lang, { signed: true });
+            // Money leads and the percentage chips it, as the Streamlit tiles do.
+            // Printing the fraction in both slots states one fact twice and
+            // leaves out the one a reader came for: how much moved.
+            const cash = money(amount, base || currency, lang, { signed: true });
+            return (
+              <Tile
+                key={key}
+                label={t(tile)}
+                value={cash ?? figure ?? na}
+                chip={chipFor(basket, figure, key === "day" && stale)}
+              />
+            );
+          })}
+        </Tiles>
+        {/* Which session the day figure belongs to, when it is not this one.
+            The server picks the state and the stem; the sentence stays ours. */}
+        {note && MARKET_NOTES[note] ? <Note>{t(MARKET_NOTES[note])}</Note> : null}
+      </Card>
+    </>
   );
 }
 
@@ -345,7 +359,12 @@ function MoverTable({
   held,
 }: {
   label: string;
-  rows: { ticker: string; pct: number }[];
+  /**
+   * `active` is the day window's alone: false greys the figure, because
+   * outside its market's session it is the last completed one — real, not
+   * moving. A week is close-to-close by construction, nothing to dim.
+   */
+  rows: { ticker: string; pct: number; active?: boolean | null }[];
   held: Map<string, Position>;
 }) {
   const t = useT();
@@ -380,7 +399,9 @@ function MoverTable({
             return (
               <tr key={row.ticker}>
                 <td>
-                  <TickerCell ticker={row.ticker} />
+                  {/* Symbol alone, as `home.py` draws the movers (`names=False`):
+                      five columns in half a card have no room for a name. */}
+                  <TickerCell ticker={row.ticker} name={false} />
                 </td>
                 {/* In the currency the name trades in — a share price is
                     quoted by its own market, unlike the value beside it. */}
@@ -390,7 +411,7 @@ function MoverTable({
                   }) ?? na}
                 </td>
                 <td className="hm-num">
-                  <DeltaChip chip={chipFor(row.pct, move)} />
+                  <DeltaChip chip={chipFor(row.pct, move, row.active === false)} />
                 </td>
                 <td className="hm-num">
                   {money(position?.value, currency, lang) ?? na}

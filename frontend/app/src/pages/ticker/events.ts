@@ -15,8 +15,12 @@
 import type { Translate } from "./format";
 import type { EarningsEvent } from "./types";
 
-/** A tooltip line, and whether it reads as good or bad news. */
-export type EventLine = { text: string; tone?: "up" | "down" };
+/**
+ * A tooltip line, and whether it reads as good or bad news. `emphasis` is the
+ * figure inside it that carries the tone — Streamlit colours the surprise, not
+ * the whole EPS line — so a renderer can set only that part.
+ */
+export type EventLine = { text: string; tone?: "up" | "down"; emphasis?: string };
 
 /**
  * A sell marker's line.
@@ -97,8 +101,9 @@ export function resultsLines(
     }
     if (event.surprise_pct !== null) {
       const sign = event.surprise_pct >= 0 ? "+" : "";
-      text += ` · ${sign}${event.surprise_pct.toFixed(1)}% ${t("ticker.hover_surprise")}`;
-      lines.push({ text, tone: event.surprise_pct >= 0 ? "up" : "down" });
+      const emphasis = `${sign}${event.surprise_pct.toFixed(1)}%`;
+      text += ` · ${emphasis} ${t("ticker.hover_surprise")}`;
+      lines.push({ text, tone: event.surprise_pct >= 0 ? "up" : "down", emphasis });
     } else {
       lines.push({ text });
     }
@@ -106,12 +111,13 @@ export function resultsLines(
   const before = closes[at - 1];
   const after = closes[at + 1];
   if (daily && at > 0 && before && after !== null && after !== undefined) {
+    // Uncoloured, as Streamlit prints it: the move is context for the
+    // surprise above it, not a second verdict.
     const move = after / before - 1;
     lines.push({
       text: t("ticker.hover_move", {
         pct: `${move >= 0 ? "+" : ""}${(move * 100).toFixed(1)}`,
       }),
-      tone: move >= 0 ? "up" : "down",
     });
   }
   return lines;

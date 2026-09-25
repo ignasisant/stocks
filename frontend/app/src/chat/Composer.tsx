@@ -11,7 +11,9 @@
  * engine writes one thread, and a queued question would land inside the first
  * answer's history half-written. The field stays open the whole time, because
  * being unable to type the next question is not the same as being unable to
- * send it.
+ * send it. While an answer is being written, Send *is* Stop — the Streamlit
+ * composer's `submit_mode="stop"`: the one control a reader looks for when an
+ * answer is going the wrong way is the one their thumb is already on.
  *
  * The paperclip is the third control, and it is the one that does not change
  * the next answer but replaces it: a statement attached here is an import — a
@@ -23,13 +25,15 @@
  *
  * The microphone is the fourth, and it is drawn only where it can work: this
  * browser has to have `MediaRecorder` and the deployment has to have a
- * transcription key (`state.voice`). A spoken question is transcribed and then
- * sent down the same path typed text takes — joined to whatever was already in
- * the field, because a note recorded *with* something typed reads as one
- * message rather than two.
+ * transcription key (`state.voice`). A spoken question is transcribed into the
+ * field, not sent: Whisper mishears tickers and numbers often enough that the
+ * reader has to see the words before they become a question, and correcting a
+ * sent turn costs a whole answer. It joins whatever was already typed, because
+ * a note recorded *with* something typed reads as one message rather than two,
+ * and the turn is still badged as spoken when it goes.
  */
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useLang, useT } from "../shell/i18n";
 import { capMessage, skillName } from "./format";
 import { Glyph } from "./icons";
@@ -122,6 +126,7 @@ export function Composer({
   busy,
   reading,
   onSend,
+  onStop,
   onSave,
   onAttach,
   onSettings,
@@ -131,6 +136,8 @@ export function Composer({
   /** A statement is being read, or written. The clip and Send both wait. */
   reading: boolean;
   onSend: (text: string, spoken?: boolean) => void;
+  /** Cut the answer being written. Offered in Send's place while it streams. */
+  onStop?: () => void;
   onSave: (patch: SettingsPatch) => void;
   onAttach: (file: File) => void;
   onSettings: () => void;
@@ -140,6 +147,10 @@ export function Composer({
   const [text, setText] = useState("");
   const [picking, setPicking] = useState(false);
   const file = useRef<HTMLInputElement | null>(null);
+  const field = useRef<HTMLTextAreaElement | null>(null);
+  // The field holds a transcript, so the turn it becomes is badged as spoken.
+  // Cleared with the field: a reader who deletes it all and types has typed.
+  const spoken = useRef(false);
   const clip = useRef<Recording | null>(null);
   // "" is not recording; "…" while the clip is being turned into words.
   const [taping, setTaping] = useState(false);
@@ -148,6 +159,9 @@ export function Composer({
     key: string;
     slots: Record<string, number>;
   } | null>(null);
+  // Focus lands at the end of the transcript once it is in the field, so the
+  // reader can fix a word or press Enter without reaching for the mouse.
+  const [caret, setCaret] = useState(false);
   const uid = useId();
   const pickerId = `${uid}-skills`;
   const webHelpId = `${uid}-web`;
@@ -160,7 +174,7 @@ export function Composer({
   const wall = !byok && state.cap_reason ? state.cap_reason : null;
 
   /**
-   * Press to record, press again to send.
+   * Press to record, press again to transcribe into the field.
    *
    * Hold-to-talk was the other option and it loses the recording on every
    * scroll, drag and accidental release — on a phone especially, which is
@@ -187,9 +201,9 @@ export function Composer({
     setSaying(true);
     try {
       const said = await transcribe(await tape.stop(), lang);
-      const typed = text.trim();
-      setText("");
-      onSend(typed ? `${typed} ${said}` : said, true);
+      setText((was) => (was.trim() ? `${was.trim()} ${said}` : said));
+      spoken.current = true;
+      setCaret(true);
     } catch (failure) {
       setVoiceError(
         failure instanceof VoiceFailed
@@ -201,11 +215,21 @@ export function Composer({
     }
   };
 
+  useEffect(() => {
+    if (!caret) return;
+    setCaret(false);
+    const el = field.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [caret]);
+
   const submit = () => {
     const question = text.trim();
     if (!question || busy) return;
     setText("");
-    onSend(question);
+    onSend(question, spoken.current || undefined);
+    spoken.current = false;
   };
 
   return (
@@ -306,12 +330,16 @@ export function Composer({
           </button>
         )}
         <textarea
+          ref={field}
           className="ag-chat-field"
           value={text}
           rows={1}
           placeholder={t("chat.placeholder")}
           aria-label={t("chat.placeholder")}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value);
+            if (!event.target.value.trim()) spoken.current = false;
+          }}
           onKeyDown={(event) => {
             // Enter sends, shift-enter writes a second line — the shape every
             // chat field in this app has had.
@@ -321,14 +349,30 @@ export function Composer({
             }
           }}
         />
-        <button
-          type="submit"
-          className="ag-chat-send"
-          disabled={busy || !text.trim()}
-          aria-label={t("chat.send")}
-        >
-          <Glyph name="send" size={18} />
-        </button>
+        {busy && onStop ? (
+          // A plain button, not the form's submit: Enter in the field while an
+          // answer streams must not stop it — a reader typing the next
+          // question presses Enter out of habit, and losing the answer they
+          // are waiting for to a keystroke is worse than the send being held.
+          <button
+            type="button"
+            className="ag-chat-send ag-chat-stop"
+            title={t("chat.stop")}
+            aria-label={t("chat.stop")}
+            onClick={onStop}
+          >
+            <Glyph name="stop" size={18} />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            className="ag-chat-send"
+            disabled={busy || !text.trim()}
+            aria-label={t("chat.send")}
+          >
+            <Glyph name="send" size={18} />
+          </button>
+        )}
       </form>
     </div>
   );

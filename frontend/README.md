@@ -23,18 +23,18 @@ npm --prefix frontend/app run build    # format, types, tests, then the bundle
 `run dev` proxies `/api` to a locally running app, so the dev server talks to
 the same endpoints production does — including the session cookie, which is why
 you sign in at `localhost:8501` first. The dev URL carries Vite's `base`
-(`/next-assets/`), not `/next`.
+(`/next-assets/`); the router reads past it.
 
-## Turning it on
+## Where it is served
 
-Off by default. `[app] react_app = true` in `.streamlit/secrets.toml` (or
-`REACT_APP=1`) makes `/next` serve the shell. Every Streamlit page stays where
-it is and stays the one a visitor lands on: an unfinished rebuild must not be
-reachable by guessing a URL, and the two are meant to be read side by side at
-the same account on the same data.
+It is the app: `stocks.web.server` hands this document to `/` (once the landing
+gate lets a visitor through) and to every page in `stocks.navigation.
+SHELL_PATHS`, and the bundle to `/next-assets/`. `/next/*`, where it lived
+while it was built beside the Streamlit app, redirects to the same page at the
+root; the Streamlit app itself is at `/legacy` until it is deleted.
 
 ```bash
-REACT_APP=1 uv run streamlit run src/stocks/web/server.py --server.port 8599
+uv run stocks dashboard --reload
 ```
 
 ## Why the build output is committed

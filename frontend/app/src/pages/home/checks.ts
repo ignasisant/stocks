@@ -23,20 +23,34 @@ export type Row = {
   tab?: string;
   /** Where to go when no step owns this row at all. */
   page?: string;
+  /**
+   * Drawn disabled for a guest. `home.py` disables every pill whose target
+   * sits behind a sign-in — the import page, the assistant, Telegram, the
+   * watchlist editor — rather than hiding it: a guest should see what an
+   * account gets, and pressing into a wall is worse than a control that says
+   * plainly it is not theirs yet. Search is the one that stays live.
+   */
+  signedIn?: boolean;
 };
 
 export const SETUP: Row[] = [
-  // Sign-in has no step of its own, and needs none here: every caller of
-  // `/onboarding` is signed in already — the dependency proved it — so this
-  // row is always done. Streamlit's done pill goes to Profile, where the
-  // account settings and the log-out live, and so does this one.
+  // Sign-in has no step of its own. Done, it goes to Profile, where the
+  // account settings and the log-out live, as Streamlit's done pill does;
+  // pending — a guest — it is the sign-in link itself, which `Setup.tsx`
+  // draws in place of this destination.
   { key: "login", label: "home.setup_google", page: "profile" },
-  { key: "import", label: "home.setup_import", step: "import" },
+  { key: "import", label: "home.setup_import", step: "import", signedIn: true },
   // The key gate lives inside the assistant drawer, which is not a page: the
   // registry says so with a null path, and `target()` leaves the row inert
   // rather than sending the reader somewhere that is not it.
-  { key: "ai", label: "home.setup_ai", step: "assistant" },
-  { key: "telegram", label: "home.setup_tg", step: "notify", tab: "notify" },
+  { key: "ai", label: "home.setup_ai", step: "assistant", signedIn: true },
+  {
+    key: "telegram",
+    label: "home.setup_tg",
+    step: "notify",
+    tab: "notify",
+    signedIn: true,
+  },
 ];
 
 export const EXPLORE: Row[] = [
@@ -45,12 +59,13 @@ export const EXPLORE: Row[] = [
   { key: "search", label: "home.explore_search", step: "market" },
   // Completable without the AI row above it ever going green: the assistant
   // answers on the keyless chain.
-  { key: "ask", label: "home.explore_ask", step: "assistant" },
+  { key: "ask", label: "home.explore_ask", step: "assistant", signedIn: true },
   {
     key: "watchlist",
     label: "home.explore_watchlist",
     step: "watchlist",
     tab: "watch",
+    signedIn: true,
   },
 ];
 

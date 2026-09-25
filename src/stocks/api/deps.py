@@ -30,7 +30,8 @@ from stocks.config import CURRENCIES
 
 # Enough of an address check to keep a path traversal or a stray blank out of
 # `slug()`. Real validation happened at the OIDC login that created the dir —
-# an address this API has never seen simply has no directory and 404s.
+# for a token caller, an address this API has never seen simply has no
+# directory and 404s; only a verified session may provision one.
 _MAX_EMAIL = 254
 
 
@@ -43,6 +44,20 @@ def _valid(address: str) -> str:
     return address
 
 
+#: The 503 detail when the bucket round trip fails. An i18n key rather than a
+#: sentence, like `chat.rate_limited`: the shell renders it in the reader's
+#: language, and it is the same message the Streamlit app shows for the same
+#: outage (`web.auth.ensure_user_data`).
+STORAGE_RESTORE_FAILED = "common.storage_restore_failed"
+
+
+def _unavailable(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=STORAGE_RESTORE_FAILED,
+    )
+
+
 def _resolve(email: str) -> UserPaths:
     paths = accounts.paths_for(email, accounts.configured_owner())
     existed = paths.root.exists()
@@ -51,10 +66,7 @@ def _resolve(email: str) -> UserPaths:
         # token holder could call any address into existence by asking about it.
         accounts.restore_account(paths, seed=False)
     except accounts.StorageUnavailable as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="account storage unavailable",
-        ) from exc
+        raise _unavailable(exc) from exc
     if paths.db.exists() or paths.watchlist.exists():
         return paths
     # The restore had to mkdir before it could pull; nothing came back, so this
@@ -64,6 +76,54 @@ def _resolve(email: str) -> UserPaths:
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND, detail="unknown account"
     )
+
+
+def _session_account(email: str) -> UserPaths:
+    """The signed-in caller's account — provisioned if it does not exist yet.
+
+    The difference from `_resolve` is the whole reason this is its own function:
+    a verified session *is* a sign-in, the one act that is allowed to create an
+    account. The OIDC callback provisions too, but not every session came
+    through it — a cookie minted before this code shipped, a callback whose
+    bucket round trip failed, a data dir wiped under a live session — and each
+    of those used to answer "unknown account" forever, which the shell can only
+    render as its offline screen. So the cookie path heals instead: the same
+    `accounts.provision` + `stamp_login` the Streamlit session runs.
+
+    A token or `?account=` caller never reaches this; they go through
+    `_resolve`, which still refuses to call an address into existence.
+    """
+    from stocks import obs
+
+    owner = accounts.configured_owner()
+    try:
+        paths = accounts.paths_for(email, owner)
+        if paths.db.exists() or paths.watchlist.exists():
+            # The common case, and the only disk touch beyond the stat: the
+            # bucket restore is once per process inside `restore_account`, so
+            # an account already on disk needs nothing more from it.
+            accounts.restore_account(paths, seed=False)
+            return paths
+        paths, seeded = accounts.provision(email, owner)
+    except accounts.StorageUnavailable as exc:
+        raise _unavailable(exc) from exc
+
+    # Only here, where an account was just (re)made — not on every request.
+    # An ordinary read must not write: `/import/preview` promises it wakes no
+    # bucket, and a daily `last_seen` stamp on "the first request of the day"
+    # would break that promise for whichever request happened to be first.
+    # Returning sessions are dated at the sign-in that made them (the OIDC
+    # callback stamps too), which is the granularity `stocks users` reads.
+    try:
+        kind = accounts.stamp_login(paths, seeded=seeded, email=email)
+    except Exception as exc:  # noqa: BLE001 — bookkeeping, not the answer
+        obs.error("auth.stamp_failed", exc)
+    else:
+        # The callback normally owns this event; landing here means the account
+        # was created by the self-healing path instead, and a signup that never
+        # shows on the timeline is a signup lost.
+        obs.event(f"auth.{kind}", user=accounts.slug(email), via="api")
+    return paths
 
 
 def account(
@@ -109,7 +169,7 @@ def account(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="a session may only read its own account",
             )
-        return _resolve(caller.email)
+        return _session_account(caller.email)
 
     if caller.kind == "token":
         if not asked:

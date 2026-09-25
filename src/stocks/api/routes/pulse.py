@@ -26,6 +26,7 @@ from stocks.api import loaders
 from stocks.api.deps import Account, Base, reporting_currency
 from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
+    BookBeta,
     Breadth,
     Pulse,
     PulseBook,
@@ -35,6 +36,7 @@ from stocks.api.schemas import (
     TrendRow,
     TrendTables,
 )
+from stocks.data import macro
 
 router = APIRouter(tags=["pulse"])
 
@@ -51,6 +53,15 @@ SPARK_DAYS = 90
 # Dead band around a beta of 1. A book at 1.01 is not "leveraged to the index",
 # and calling it that is how a rounding difference becomes a trading decision.
 STANCE_BAND = 0.05
+# The second line of betas, keyed by the i18n suffix the page already carries
+# (`sentiment.beta_<key>`). Order is the card's reading order.
+FACTOR_BETAS = (("duration", "TLT"), ("credit", "HYG"), ("em", "EEM"))
+# What the sector ETFs' excess returns are measured against. SPY, not ^GSPC:
+# the sector funds are total-return-ish ETFs and SPY is the ETF of the same
+# index, so fund against fund keeps the dividend drag and the trading calendar
+# on both sides. Streamlit's rotation table and book notes both read SPY, and
+# the two apps must agree on which sectors "led".
+ROTATION_BENCH = "SPY"
 
 
 # Windows the page has always used: a year minus a quarter for the indices
@@ -59,6 +70,22 @@ STANCE_BAND = 0.05
 BREADTH_INDEX_WINDOW = 200
 ROLL = 60
 DRIFT_DAYS = 63
+
+
+def _reason(exc: Exception) -> str:
+    """Why a source died, as the key every block's `unavailable` carries.
+
+    Three answers because the page says three different things: a Yahoo
+    throttle clears in a minute, a network that is down does not, and anything
+    else is a source that answered with nothing usable.
+    """
+    from urllib.error import URLError
+
+    from yfinance.exceptions import YFRateLimitError
+
+    if isinstance(exc, YFRateLimitError):
+        return "rate_limited"
+    return "offline" if isinstance(exc, URLError | OSError) else "no_data"
 
 
 def _market_readings() -> tuple[
@@ -103,7 +130,15 @@ def pulse() -> Pulse:
     quoted from the last row that held enough of them, and this says which row
     that was.
     """
-    built = loaders.market_pulse()
+    # A throttle answers 200 with the reason, not a 503. The page draws four
+    # blocks off this one call, and an error status would have each of them
+    # drop its heading for a generic failure; a null score in the "unknown"
+    # band with `unavailable` set lets every one keep its title and say which
+    # source died — the same contract `/pulse/tables` keeps per block.
+    try:
+        built = loaders.market_pulse()
+    except Exception as exc:
+        return Pulse(regime="unknown", unavailable=_reason(exc), loaded_at=macro.as_of())
     history = built.history.dropna()
     tail = history.tail(SPARK_DAYS)
     # Three readings the composite does not contain and the page states beside
@@ -122,6 +157,11 @@ def pulse() -> Pulse:
                 key=component.key,
                 score=_num(component.score),
                 raw=_num(component.raw),
+                # The reading in its own units, formatted by the registry that
+                # knows them: the eight raws are a percent, a ratio, an index
+                # level and a spread, and a client handed only `raw` has to
+                # guess which — Streamlit prints exactly this string.
+                text=component.text if component.raw == component.raw else None,
                 then=_num(component.then),
             )
             for component in built.components
@@ -135,6 +175,11 @@ def pulse() -> Pulse:
         breadth_sectors=sectors,
         stock_bond_correlation=corr,
         stock_bond_correlation_then=corr_then,
+        # The page's "loaded …" caption, in the server's own clock and
+        # spelling — `macro.as_of()`, the same call Streamlit makes — rather
+        # than the browser's, which is neither UTC-honest on every device nor
+        # the machine that fetched the prices.
+        loaded_at=macro.as_of(),
     )
 
 
@@ -151,12 +196,40 @@ def book(account: Account, base: Base = None) -> PulseBook:
     ccy = reporting_currency(account, base)
     db = str(account.db)
     mtime = loaders.db_mtime(db)
-    report = loaders.basket_report(db, mtime, ccy, "2y")
     answer = PulseBook(base=ccy)
+    # The replay prices the ledger, so it can hit the same throttle as the
+    # benchmarks. Nothing below survives without it — not even the weights —
+    # so this is the one failure that empties the card, and it still says why.
+    try:
+        report = loaders.basket_report(db, mtime, ccy, "2y")
+    except Exception as exc:
+        answer.unavailable = _reason(exc)
+        return answer
     if report is None or not report.weights:
         return answer
 
-    closes = loaders.pulse_closes()
+    # The book's own shape first, because it needs no benchmark series: which
+    # currencies the value is priced in and which sectors it sits in are read
+    # off the positions, and a Yahoo throttle on the index closes is no reason
+    # to blank them. `sentiment.py` keeps these tiles through the same outage.
+    currency = report.allocation("currency")
+    answer.currency_weights = {
+        str(name): float(weight) for name, weight in currency.items()
+    }
+    answer.usd_share = float(answer.currency_weights.get("USD", 0.0))
+    sectors = report.allocation("sector")
+    answer.sector_weights = {
+        str(name): float(weight) for name, weight in sectors.items() if weight == weight
+    }
+
+    # The benchmarks, degrading like `_market_readings`: a failed burst costs
+    # the betas and correlations — each already null when its series is
+    # absent — and names why, instead of erroring the whole response.
+    try:
+        closes = loaders.pulse_closes()
+    except Exception as exc:
+        closes = {}
+        answer.unavailable = _reason(exc)
     returns = sm.naive_index(portfolio_returns(report.returns, report.weights))
     if returns.empty:
         return answer
@@ -179,6 +252,30 @@ def book(account: Account, base: Base = None) -> PulseBook:
                 else "track"
             )
 
+    # The other three betas the Streamlit card quotes: to the long bond, to
+    # high-yield credit and to emerging markets. The same regression as the
+    # equity one, on the same EUR-rebased basket returns — a product decision,
+    # so all five tiles read on one currency basis rather than four in euros
+    # and one in whatever each benchmark trades in. Each is its own row and
+    # each can be null on its own: a missing HYG series costs the credit tile,
+    # not the card.
+    for key, ticker in FACTOR_BETAS:
+        series = closes.get(ticker)
+        if series is None or series.dropna().empty:
+            answer.betas.append(BookBeta(key=key, ticker=ticker))
+            continue
+        bench = sm.naive_index(series.dropna().pct_change().iloc[1:])
+        now, then = sm.drift(sm.rolling_beta(returns, bench, window=ROLL), ago=QUARTER)
+        answer.betas.append(
+            BookBeta(
+                key=key,
+                ticker=ticker,
+                beta=_num(beta(returns, bench)),
+                rolling=_num(now),
+                rolling_then=_num(then),
+            )
+        )
+
     # Are the bonds still hedging the equities?
     tlt = closes.get("TLT")
     if tlt is not None and not tlt.dropna().empty:
@@ -187,13 +284,8 @@ def book(account: Account, base: Base = None) -> PulseBook:
         answer.bond_correlation = _num(now)
         answer.bond_correlation_then = _num(then)
 
-    # Currency: what share of the value is priced in a currency its owner does
-    # not spend, and what last month's move in it did to the return.
-    currency = report.allocation("currency")
-    answer.currency_weights = {
-        str(name): float(weight) for name, weight in currency.items()
-    }
-    answer.usd_share = float(answer.currency_weights.get("USD", 0.0))
+    # Currency: what last month's move in the dollar did to the return. The
+    # share itself was filled above, before any series was needed.
     moves: dict[str, float] = {}
     eurusd = closes.get("EURUSD=X")
     if eurusd is not None and not eurusd.dropna().empty:
@@ -208,8 +300,7 @@ def book(account: Account, base: Base = None) -> PulseBook:
 
     # Sectors: how much of the month's rotation the book caught, and where it
     # actually sits against the benchmark.
-    sectors = report.allocation("sector")
-    excess = sm.relative_strength(closes, sm.SECTOR_ETFS, "^GSPC", MONTH)
+    excess = sm.relative_strength(closes, sm.SECTOR_ETFS, ROTATION_BENCH, MONTH)
     if not sectors.empty and not excess.empty:
         answer.rotation_capture = _num(sm.rotation_capture(sectors, excess))
     benchmark = pd.Series(loaders.benchmark_sectors(), dtype=float)
@@ -231,6 +322,21 @@ HORIZONS = {"week": 5, "month": 21, "quarter": 63, "year": 252}
 BLOCKS = (
     "indices", "gauges", "rates", "inflation", "rotation", "cross", "factors",
 )
+# Rows each block is configured to carry — the tab badges. Read off the same
+# registries the blocks iterate, so a series added to one of them moves its
+# badge too. Fixed rather than counted from what drew: `sentiment.py` puts
+# these on the tab strip before any fetch, and a tab whose count vanished
+# during a throttle reads as a block with nothing in it. Inflation is its
+# Eurostat areas plus the US CPI row `macro.inflation()` appends.
+EXPECTED = {
+    "indices": len(sm.INDICES),
+    "gauges": len(sm.GAUGES),
+    "rates": len(sm.RATE_ROWS),
+    "inflation": len(macro.INFLATION_AREAS) + 1,
+    "rotation": len(sm.SECTOR_ETFS),
+    "factors": len(sm.FACTOR_PAIRS),
+    "cross": len(sm.MACRO_ASSETS),
+}
 # A gauge whose last bar is more than a week behind the freshest bar in its own
 # block has been dropped by its publisher. Measured against the block and not
 # the calendar: on a Monday morning every gauge is Friday's and none is stale.
@@ -438,7 +544,7 @@ def _rotation(
             continue
         clean = series.dropna()
         excess = {}
-        bench = closes.get("^GSPC")
+        bench = closes.get(ROTATION_BENCH)
         if bench is not None and not bench.dropna().empty:
             for name, days in HORIZONS.items():
                 own, base = sm.pct_over(clean, days), sm.pct_over(bench, days)
@@ -514,16 +620,6 @@ def _cross(closes: dict[str, pd.Series]) -> TrendBlock:
             continue
         rows.append(_price_row(ticker, series, name=name, welcome=0))
     return TrendBlock(block="cross", unit="percent", rows=rows)
-
-
-def _reason(exc: Exception) -> str:
-    from urllib.error import URLError
-
-    from yfinance.exceptions import YFRateLimitError
-
-    if isinstance(exc, YFRateLimitError):
-        return "rate_limited"
-    return "offline" if isinstance(exc, URLError | OSError) else "no_data"
 
 
 @router.get("/pulse/tables", response_model=TrendTables, summary="The detail blocks")
@@ -605,7 +701,7 @@ def tables(
                 out.append(_cross(loaders.pulse_closes()))
         except Exception as exc:
             out.append(TrendBlock(block=name, unit="percent", unavailable=_reason(exc)))
-            continue
-        if not out[-1].rows:
+        out[-1].expected = EXPECTED.get(name)
+        if not out[-1].rows and out[-1].unavailable is None:
             out[-1].unavailable = "no_data"
     return TrendTables(blocks=out)

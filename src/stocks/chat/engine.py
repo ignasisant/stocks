@@ -154,6 +154,17 @@ def save_byok(prefs: dict, pid: str, api_key: str) -> bool:
     return True
 
 
+def can_store_keys() -> bool:
+    """Whether this deployment can encrypt a provider key at all.
+
+    Asked before the reader types one, so a settings screen can offer "this
+    session only" as the choice it is rather than as the apology a 503 would
+    make of it — `save_byok` refuses without the secret, and a form that only
+    learned that on submit would have asked for a key it could not keep.
+    """
+    return bool(secret("CHAT_ENC_KEY", "chat", "enc_key"))
+
+
 def forget_byok(prefs: dict, pid: str) -> bool:
     """Drop one provider's stored key. True when there was one to drop.
 
@@ -327,22 +338,33 @@ def in_free_trial(prefs: dict) -> bool:
     return age is not None and age < _min_account_hours()
 
 
-def attempts(prefs: dict) -> list[tuple[Provider, str, str]]:
+def attempts(prefs: dict, session_keys: dict[str, str] | None = None,
+             ) -> list[tuple[Provider, str, str]]:
     """(provider, api_key, model) candidates in resolution order.
 
     First the user's preferred provider, then the BYOK order — each only with
-    a decryptable key — then the operator's keyless free chain, for the
+    a usable key — then the operator's keyless free chain, for the
     accounts free_eligible() lets near it. The model is the user's saved pref
     or '' (callers substitute the provider default).
+
+    `session_keys` are keys the caller holds for this one request and nothing
+    longer — the Streamlit panel's "this session only" key, and the React
+    drawer's, which travels in a request header (api/routes/chat.py). One wins
+    over a stored key for the same provider, because it is the one the reader
+    typed most recently. They are an argument, never a prefs entry: every
+    path that spends a turn saves `prefs` afterwards, and a key smuggled into
+    that dict would be written to disk in the clear by the first free unit it
+    charged — the exact promise a session-only key exists to keep.
     """
     from stocks.web import llm
 
+    held = session_keys or {}
     seen = []
     preferred = prefs.get("llm_provider")
-    for pid in dict.fromkeys([preferred, *_BYOK_ORDER]):
+    for pid in dict.fromkeys([preferred, *held, *_BYOK_ORDER]):
         if not pid or pid == "free" or pid not in llm.PROVIDERS:
             continue
-        key = decrypt_byok(prefs, pid)
+        key = (held.get(pid) or "").strip() or decrypt_byok(prefs, pid)
         if key:
             provider = llm.PROVIDERS[pid]
             seen.append((provider, key, prefs.get(f"{pid}_model") or ""))
@@ -350,6 +372,19 @@ def attempts(prefs: dict) -> list[tuple[Provider, str, str]]:
     if free.available() and free_eligible(prefs):
         seen.append((free, "", ""))
     return seen
+
+
+def chain(prefs: dict, session_keys: dict[str, str] | None = None,
+          ) -> list[tuple[Provider, str, str]]:
+    """`attempts`, called the way it has always been called when nothing is
+    held for the session.
+
+    The one-argument call is the contract a dozen tests and both front ends
+    were written against — they stub `attempts(prefs)` to put a fake backend
+    at the head of the chain — so the second argument is only passed when
+    there is something in it.
+    """
+    return attempts(prefs, session_keys) if session_keys else attempts(prefs)
 
 
 # ------------------------------------------------------------- free quota
@@ -572,6 +607,7 @@ def complete_attempts(
     *,
     spend_free: Callable[[dict], bool],
     accept: Callable[[str], object] | None = None,
+    session_keys: dict[str, str] | None = None,
 ):
     """First resolved provider whose reply `accept` keeps, or None. Never raises.
 
@@ -595,7 +631,9 @@ def complete_attempts(
     """
     keep = accept or (lambda raw: (raw or "").strip() or None)
     try:
-        candidates = attempts(prefs)
+        # `session_keys`: a key the caller holds for this request only — the
+        # walkthrough's narration for a reader whose key lives in their tab.
+        candidates = chain(prefs, session_keys)
     except Exception as exc:
         obs.warn("chat.engine.answer_candidates_failed",
                  error_type=type(exc).__name__, error=str(exc)[:300])
@@ -989,7 +1027,8 @@ def ground_web(prefs: dict, provider: Provider, api_key: str,
 def gather_evidence(prefs: dict, provider: Provider, api_key: str,
                     msgs: list[dict], watchlist: Path, db: Path,
                     chat_path: Path | None = None,
-                    timeout: float | None = None) -> agent.Evidence:
+                    timeout: float | None = None,
+                    focus: str = "") -> agent.Evidence:
     """The model-directed lookup for a Telegram turn (chat/agent.py).
 
     Gated by the same "chat_web" pref as the fixed pre-flight — the tools can
@@ -1004,8 +1043,10 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
     if chat_path is not None:
         memory_db = auth.memory_path(chat_path)
         thread = auth.active_conversation(chat_path)["id"]
+    # `focus` is what "this" and "it" mean: the ticker on the reader's screen
+    # (chat_core._gather passes the same one from the Streamlit session).
     ctx = toolbox.Context(watchlist=watchlist, db=db, memory_db=memory_db,
-                          thread=thread)
+                          thread=thread, focus=focus)
     return agent.gather(provider, api_key, msgs, ctx,
                         timeout=timeout or agent.TIMEOUT)
 
@@ -1082,6 +1123,24 @@ _TITLE_SYSTEM = (
 )
 
 
+def _title_system(lang: str | None) -> str:
+    """The title prompt, with the account's language as the tiebreak.
+
+    A greeting is the most common opener and the least telling: the small
+    models the free chain runs on read "hola" or "oi" as whichever Romance
+    language they lean to, and a Spanish account got a Portuguese thread name.
+    Same rule as `language_rule` for the answer — the message decides, the
+    locale settles what the message cannot."""
+    if not lang:
+        return _TITLE_SYSTEM
+    name = _LANG_NAME.get(lang, _LANG_NAME["en"])
+    return (
+        _TITLE_SYSTEM + " When the message is too short to tell its language — "
+        "a greeting, a bare ticker, a number — or could be either of two close "
+        f"languages (Spanish or Portuguese, say), write the title in {name}."
+    )
+
+
 def _trim(text: str) -> str:
     """Cap a title at TITLE_MAX_CHARS on a word boundary, not mid-word."""
     text = text.strip()
@@ -1093,7 +1152,8 @@ def _trim(text: str) -> str:
         " ,;:-") + "\u2026")
 
 
-def title_for(provider: Provider, api_key: str, message: str) -> str:
+def title_for(provider: Provider, api_key: str, message: str,
+              lang: str | None = None) -> str:
     """A short conversation title for `message`.
 
     One call on the provider's cheapest model — the same shape as the skill
@@ -1104,7 +1164,7 @@ def title_for(provider: Provider, api_key: str, message: str) -> str:
         raw = provider.complete(
             api_key,
             provider.classifier_model or provider.default_model,
-            _TITLE_SYSTEM,
+            _title_system(lang),
             [{"role": "user", "content": message[:500]}],
         )
     except Exception as exc:
@@ -1117,7 +1177,7 @@ def title_for(provider: Provider, api_key: str, message: str) -> str:
 
 
 def autotitle(chat_path: Path, provider: Provider, api_key: str,
-              history: list[dict]) -> None:
+              history: list[dict], lang: str | None = None) -> None:
     """Name the active thread from its opening question, once.
 
     Only fires on the first completed pair of a still-unnamed, never-renamed
@@ -1133,7 +1193,7 @@ def autotitle(chat_path: Path, provider: Provider, api_key: str,
         if conv.get("title") or not conv.get("title_auto", True):
             return
         auth.autotitle_conversation(
-            conv["id"], title_for(provider, api_key, history[0]["content"]),
+            conv["id"], title_for(provider, api_key, history[0]["content"], lang),
             chat_path,
         )
     except Exception as exc:
@@ -1212,6 +1272,40 @@ def _keep_byok(prefs: dict, prefs_path: Path, pid: str) -> None:
 # the two and the choice is visible at the call site, not defaulted into.
 MARKDOWN_CONTEXT = ""
 
+# A focused symbol as the drawer may name it: letters, digits and the four
+# punctuation marks real tickers carry (BRK.B, BTC-EUR, ^GSPC, EURUSD=X). It
+# lands in a system prompt, so anything longer or stranger is dropped rather
+# than escaped — a "ticker" with a sentence in it is an instruction, not a
+# symbol.
+_FOCUS_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-^=")
+_FOCUS_MAX = 20
+
+
+def clean_focus(raw: str | None) -> str:
+    """A ticker fit for the prompt, upper-cased, or '' when it is not one."""
+    sym = (raw or "").strip().upper()
+    if not sym or len(sym) > _FOCUS_MAX or not set(sym) <= _FOCUS_CHARS:
+        return ""
+    return sym
+
+
+def view_context(page: str = "", focus: str = "") -> str:
+    """What the reader is looking at — the headless twin of
+    `chat_core._view_context`, from values the caller already resolved.
+
+    "Is this a good entry?" means nothing without the page it was asked on,
+    and the Streamlit panel has always told the model which page and which
+    ticker; a client that has no session to read them from passes them in.
+    `page` is a human page name (already localized, as the Streamlit one is),
+    `focus` a symbol that has been through `clean_focus`.
+    """
+    bits = []
+    if page:
+        bits.append(f"The user is currently on the {page} page.")
+    if focus:
+        bits.append(f"The ticker in focus is {focus}.")
+    return ("Current view: " + " ".join(bits) + "\n\n") if bits else ""
+
 
 @dataclass
 class Turn:
@@ -1231,6 +1325,8 @@ class Turn:
     skills: list[str]
     sources: list[dict]
     steps: list[dict] = dc_field(default_factory=list)
+    #: The account's locale — the thread title's fallback language.
+    lang: str = "en"
 
 
 
@@ -1299,6 +1395,10 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             timeout_s: float = 90.0,
             staged_import: str = "",
             on_phase: Callable[[str], None] | None = None,
+            view: str = "",
+            focus: str = "",
+            fence: str = "",
+            session_keys: dict[str, str] | None = None,
             ) -> tuple[Turn | None, Reply | None]:
     """Everything before the model: history, provider chain, prompt, evidence.
 
@@ -1306,6 +1406,15 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     request and an app action (favorite, alert, group) are answered without a
     main-model call at all, and an exhausted provider chain is answered without
     one too. Exactly one of the two is not None.
+
+    `view` is the rendered "Current view" sentence (`view_context`) and `focus`
+    the symbol behind it: the first goes into the prompt, the router and the
+    action parser — "add this to favourites" has to know what "this" is — and
+    the second into the quote lookup and the gather, which fetch what the
+    reader is looking at even when the message never names it. `fence` closes
+    the prompt's context for a turn on the walkthrough's thread
+    (`guide_ai.prompt_fence`). `session_keys` are keys held for this request
+    only; see `attempts`.
     """
     from stocks.chat import tools
     from stocks.web import auth
@@ -1335,7 +1444,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         auth.save_chat(history, chat_path)
         return None, Reply(text=note)
 
-    atts = attempts(prefs)
+    atts = chain(prefs, session_keys)
     if not atts:
         return None, Reply(error="chat.free_exhausted")
     provider, key, _ = atts[0]
@@ -1343,7 +1452,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     # App actions first (favorite / alerts / groups): a deterministic
     # localized confirmation — no main-model call, no free-quota spend.
     if tools.maybe_action(message):
-        act = tools.detect(provider, key, message, action_context(watchlist))
+        act = tools.detect(provider, key, message,
+                           view + action_context(watchlist))
         if act is not None:
             try:
                 tools.execute(act, watchlist)
@@ -1356,7 +1466,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             history.append({"role": "assistant", "content": note,
                             "action": act.kind})
             auth.save_chat(history, chat_path)
-            autotitle(chat_path, provider, key, history)
+            autotitle(chat_path, provider, key, history, lang)
             _keep_byok(prefs, prefs_path, provider.id)
             return None, Reply(text=note, provider_id=provider.id)
 
@@ -1372,9 +1482,10 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     msgs = recent(history)
     say("gathering")
     skills, evidence = in_parallel(
-        lambda: resolve_skills(prefs, provider, key, history, context=context),
+        lambda: resolve_skills(prefs, provider, key, history,
+                               context=context + view),
         lambda: gather_evidence(prefs, provider, key, msgs, watchlist, db,
-                                chat_path, timeout=timeout_s),
+                                chat_path, timeout=timeout_s, focus=focus),
         timeout=timeout_s,
     )
     skills = skills or []
@@ -1383,14 +1494,16 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     if not evidence.ok:
         say("searching")
         hits, live = in_parallel(
-            lambda: ground_web(prefs, provider, key, history),
-            lambda: market.lookup_for(message, watchlist),
+            lambda: ground_web(prefs, provider, key, history, view),
+            lambda: market.lookup_for(message, watchlist, focus=focus),
             timeout=timeout_s,
         )
         hits, live = hits or [], live or []
     system = system_prompt(
         auth.load_profile(prefs),
-        context + portfolio_context(watchlist, db),
+        # The order the Streamlit panel builds it in: where the reader is,
+        # what they hold, and — on the walkthrough's thread only — the fence.
+        context + view + portfolio_context(watchlist, db) + fence,
         skills,
         lang,
     )
@@ -1416,6 +1529,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         skills=list(skills),
         sources=list(chat_web.sources(hits) or evidence.sources()),
         steps=trace(evidence, hits, live, lang),
+        lang=lang,
     ), None
 
 
@@ -1455,8 +1569,16 @@ def _provider_failed(exc: Exception, provider: Provider, model: str) -> None:
 
 
 def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
-            prefs: dict, prefs_path: Path, chat_path: Path) -> Reply:
-    """Store a served answer and build the Reply both callers hand back."""
+            prefs: dict, prefs_path: Path, chat_path: Path,
+            polish: Callable[[dict], None] | None = None) -> Reply:
+    """Store a served answer and build the Reply both callers hand back.
+
+    `polish` edits the entry before it is written — the walkthrough's jump
+    marker is scrubbed out of the text and filed as `guide_goto` there
+    (chat/guide_ai.py). Before the write, not after: a second save to move a
+    marker would race the next turn, and the Reply is built from what was
+    stored, so the client and a reload read the same words.
+    """
     from stocks.web import auth
 
     entry: dict = {"role": "assistant", "content": text}
@@ -1466,9 +1588,12 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
         entry["web"] = turn.sources
     if turn.steps:
         entry["steps"] = list(turn.steps)
+    if polish is not None:
+        polish(entry)
+        text = str(entry.get("content") or "")
     turn.history.append(entry)
     auth.save_chat(turn.history, chat_path)
-    autotitle(chat_path, provider, key, turn.history)
+    autotitle(chat_path, provider, key, turn.history, turn.lang)
     _keep_byok(prefs, prefs_path, provider.id)
     obs.event("chat.answered", provider=provider.id, model=model,
               chars=len(text), skills=list(turn.skills),
@@ -1495,7 +1620,9 @@ def _exhausted(prefs: dict, atts: list[tuple[Provider, str, str]],
 def answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
            watchlist: Path, db: Path, message: str, lang: str = "en",
            context: str = TELEGRAM_CONTEXT, timeout_s: float = 90.0,
-           staged_import: str = "") -> Reply:
+           staged_import: str = "", view: str = "", focus: str = "",
+           fence: str = "", session_keys: dict[str, str] | None = None,
+           polish: Callable[[dict], None] | None = None) -> Reply:
     """One complete chat turn: load history, resolve provider/skills, ask,
     append the completed pair, save. Mirrors the web panel's turn logic.
 
@@ -1506,7 +1633,9 @@ def answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
     turn, settled = prepare(prefs=prefs, prefs_path=prefs_path,
                             chat_path=chat_path, watchlist=watchlist, db=db,
                             message=message, lang=lang, context=context,
-                            timeout_s=timeout_s, staged_import=staged_import)
+                            timeout_s=timeout_s, staged_import=staged_import,
+                            view=view, focus=focus, fence=fence,
+                            session_keys=session_keys)
     if turn is None:
         assert settled is not None
         return settled
@@ -1535,7 +1664,8 @@ def answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
             pool.shutdown(wait=False, cancel_futures=True)
         if text:
             return _record(turn, text, provider, model, key, prefs=prefs,
-                           prefs_path=prefs_path, chat_path=chat_path)
+                           prefs_path=prefs_path, chat_path=chat_path,
+                           polish=polish)
 
     return _exhausted(prefs, turn.attempts, capped)
 
@@ -1544,7 +1674,11 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                   watchlist: Path, db: Path, message: str, lang: str = "en",
                   context: str = TELEGRAM_CONTEXT,
                   timeout_s: float = 90.0,
-                  staged_import: str = "") -> Iterator[tuple[str, object]]:
+                  staged_import: str = "", view: str = "", focus: str = "",
+                  fence: str = "",
+                  session_keys: dict[str, str] | None = None,
+                  polish: Callable[[dict], None] | None = None,
+                  ) -> Iterator[tuple[str, object]]:
     """The same turn, handed over as the model writes it.
 
     Yields `("phase", key)` while the turn is being built — `gathering`,
@@ -1575,6 +1709,7 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                 watchlist=watchlist, db=db, message=message, lang=lang,
                 context=context, timeout_s=timeout_s,
                 staged_import=staged_import, on_phase=phases.put,
+                view=view, focus=focus, fence=fence, session_keys=session_keys,
             )
         except BaseException as exc:  # noqa: BLE001 — re-raised just below
             box["exc"] = exc
@@ -1624,7 +1759,7 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
         if text:
             yield ("done", _record(turn, text, provider, model, key,
                                    prefs=prefs, prefs_path=prefs_path,
-                                   chat_path=chat_path))
+                                   chat_path=chat_path, polish=polish))
             return
 
     yield ("done", _exhausted(prefs, turn.attempts, capped))

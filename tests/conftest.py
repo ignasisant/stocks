@@ -97,6 +97,49 @@ def _own_guest_dir():
     accounts.GUEST_DIR = before
     shutil.rmtree(made, ignore_errors=True)
 
+
+@pytest.fixture(autouse=True)
+def _own_import_diagnostics():
+    """Keep the anonymised import diagnostics out of the checkout.
+
+    `portfolio.diagnostics.DIAGNOSTICS_DIR` is the real `data/imports`, and
+    since `/v1/import/preview` and `/commit` file a fingerprint for every
+    attempt the way the Streamlit page does, every API test that previews a
+    deliberately broken statement would otherwise leave a JSON file under
+    version control. Its own temporary directory for the reason
+    `_own_guest_dir` gives, restored by hand likewise.
+    """
+    import shutil
+    import tempfile
+
+    from stocks.portfolio import diagnostics
+
+    before = diagnostics.DIAGNOSTICS_DIR
+    made = tempfile.mkdtemp(prefix="imports-")
+    diagnostics.DIAGNOSTICS_DIR = pathlib.Path(made)
+    yield
+    diagnostics.DIAGNOSTICS_DIR = before
+    shutil.rmtree(made, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def _listing_at_the_ledgers_word():
+    """Answer "which currency is this price series in" with "unknown".
+
+    `analysis.listing` asks the checkout's real profile memo (`data/profiles.
+    json`) and, for an aliased name it has never seen, Yahoo — on every path
+    that turns a close into money. Unknown falls back to the ledger row's
+    currency, which is what every suite here was written against; a test about
+    listing currencies says what the listing is by patching `_lookup` itself.
+    Restored by hand for the reason `_own_free_llm_counter` gives.
+    """
+    from stocks.analysis import listing
+
+    before = listing._lookup
+    listing._lookup = lambda ticker: None
+    yield
+    listing._lookup = before
+
 # --------------------------------------------------------------- the session
 
 #: Long enough that itsdangerous is not the thing under test.

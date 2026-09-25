@@ -93,6 +93,49 @@
   gap: 0.6rem;
 }
 
+/*
+ * Rows of a known length wrap evenly instead of leaving an orphan. auto-fit
+ * alone breaks four tiles 3+1 at the widths the page takes with the chat
+ * drawer open (~1440px screen), which reads as a fourth figure that belongs
+ * to nothing. So a row of four goes 4 → 2+2 → 1, three and two go all-or-one,
+ * and six goes 3+3 → 2+2+2. The breakpoints are on the main column
+ * (`ag-main`, the shell's size container), not the viewport: the drawer takes
+ * width without the window changing. Other lengths keep auto-fit.
+ */
+.pf-kpis[data-n="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.pf-kpis[data-n="3"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.pf-kpis[data-n="4"] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.pf-kpis[data-n="6"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@container ag-main (max-width: 52rem) {
+  .pf-kpis[data-n="4"],
+  .pf-kpis[data-n="6"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container ag-main (max-width: 38rem) {
+  .pf-kpis[data-n="3"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container ag-main (max-width: 26rem) {
+  .pf-kpis[data-n="2"],
+  .pf-kpis[data-n="4"],
+  .pf-kpis[data-n="6"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .pf-kpi {
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-sm, 8px);
@@ -409,6 +452,131 @@
   line-height: 1.55;
 }
 
+/* The history chart's legend shares its row with the zoom reset. */
+.pf-chart-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.pf-zoom-reset {
+  font-size: var(--ag-fs-2xs, 0.72rem);
+  padding: 0.2rem 0.6rem;
+}
+
+/* Drag-to-zoom: a crosshair says the plot takes a drag, and no text selection
+   fights it. `touch-action` keeps a vertical swipe scrolling the page. */
+.pf-zoomable {
+  cursor: crosshair;
+  user-select: none;
+  touch-action: pan-y;
+}
+
+/* The plot and its hover box share a positioned frame, so the box can be
+   placed as a percentage of the chart's rendered width (charts.tsx ChartTip). */
+.pf-plot {
+  position: relative;
+}
+
+/* Plotly's unified hover label: date on top, one row per series with its
+   swatch, name muted and figure bold. Never takes the pointer. */
+.pf-tip {
+  position: absolute;
+  top: 8px;
+  transform: translateX(8px);
+  z-index: 5;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(280px, 60%);
+  padding: 8px 10px;
+  background: var(--ag-surface-page);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  box-shadow: var(--ag-shadow-overlay);
+  font-size: var(--ag-fs-xs, 0.78rem);
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Past the middle the box opens to the pointer's left, so it stays in the card. */
+.pf-tip-flip {
+  transform: translateX(calc(-100% - 8px));
+}
+
+.pf-tip-title {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs, 0.72rem);
+}
+
+.pf-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ag-text-primary);
+  white-space: nowrap;
+}
+
+.pf-tip-row strong {
+  margin-left: auto;
+  padding-left: 8px;
+  font-weight: 600;
+}
+
+.pf-tip-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+
+/* The correlation colour scale, −1 to +1, under the grid. */
+.pf-heat-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs, 0.72rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-heat-ramp {
+  flex: 0 1 14rem;
+  height: 0.55rem;
+  border-radius: var(--ag-radius-pill, 999px);
+}
+
+/*
+ * A cell that carries a second, dim line under its headline — the custodians
+ * under a ticker on a phone. `pf-narrow-only` / `pf-wide-only` pick which of
+ * the two renderings of the same fact shows, by live width, so a resized
+ * desktop window adapts as well as a phone does.
+ */
+.pf-stack {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.pf-sub {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs, 0.72rem);
+  font-weight: 400;
+}
+
+.pf-narrow-only {
+  display: none;
+}
+
+/* Real but not live: the last session's move while its exchange is shut. */
+.pf-dim {
+  opacity: 0.55;
+}
+
 @media (max-width: 640px) {
   .pf-card {
     padding: 0.85rem 0.8rem 0.9rem;
@@ -416,6 +584,12 @@
   .pf-tabs {
     overflow-x: auto;
     flex-wrap: nowrap;
+  }
+  .pf-narrow-only {
+    display: inline;
+  }
+  .pf-table .pf-wide-only {
+    display: none;
   }
 }
 

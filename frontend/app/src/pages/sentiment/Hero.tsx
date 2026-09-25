@@ -12,6 +12,7 @@
 import type { ReactNode } from "react";
 import { Link } from "../../shell/router";
 import { useT } from "../../shell/i18n";
+import { DownBody } from "./Down";
 import { HeroSpark } from "./Spark";
 import { NA, fixed, percent, share, signed } from "./format";
 import type { Pulse, PulseBook } from "./types";
@@ -57,9 +58,23 @@ export function DriftPill({ now, then }: { now: number | null; then: number | nu
   );
 }
 
-/** The composite: score, band, run, its own 90 sessions, and what it is missing. */
-export function Composite({ pulse }: { pulse: Pulse }) {
+/**
+ * The composite: score, band, run, its own 90 sessions, and what it is missing.
+ *
+ * A composite nobody could build (`unavailable`) keeps the kicker and says why
+ * instead of drawing a meter parked at "n/a" — a pin with no score under it
+ * reads as a market that is neutral, not as a feed that is down.
+ */
+export function Composite({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => void }) {
   const t = useT();
+  if (pulse.unavailable) {
+    return (
+      <div className="sn-pulse">
+        <div className="sn-kicker">{t("sentiment.kicker_pulse")}</div>
+        <DownBody reason={pulse.unavailable} onRetry={onRetry} />
+      </div>
+    );
+  }
   const band = regimeKey(pulse.regime);
   const scores = pulse.history.map((point) => point.score);
 
@@ -195,12 +210,35 @@ function SideRow({
  * empty ledger, so an empty book says what it would show instead of inventing
  * a beta of 1.00 and a dollar share of zero.
  */
-export function Side({ book, regime }: { book: PulseBook; regime: string }) {
+export function Side({
+  book,
+  regime,
+  onRetry,
+}: {
+  book: PulseBook;
+  regime: string;
+  onRetry?: () => void;
+}) {
   const t = useT();
   const empty =
     book.beta === null &&
     book.usd_share === null &&
     Object.keys(book.currency_weights).length === 0;
+
+  // Empty because the replay could not be priced is not an empty ledger: the
+  // invitation to import would be telling a holder they hold nothing.
+  if (empty && book.unavailable) {
+    return (
+      <div className="sn-side">
+        <div className="sn-kicker sn-kicker-own">
+          {t("sentiment.side_kicker")}
+          <span className="sn-spacer" />
+          <span className="sn-mono">{t("sentiment.src_book")}</span>
+        </div>
+        <DownBody reason={book.unavailable} onRetry={onRetry} />
+      </div>
+    );
+  }
 
   if (empty) {
     return (
@@ -268,6 +306,10 @@ export function Side({ book, regime }: { book: PulseBook; regime: string }) {
           )
         }
       />
+      {/* The dollar share survived the outage — it is read off the positions
+          — while the beta and the correlation need the index series. Say so
+          under the rows rather than letting two "n/a"s explain themselves. */}
+      {book.unavailable && <DownBody reason={book.unavailable} onRetry={onRetry} />}
       <p className="sn-help">{t("sentiment.side_help")}</p>
       <a className="sn-more" href="#ag-book">
         {t("sentiment.side_more")}

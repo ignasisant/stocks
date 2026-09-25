@@ -18,10 +18,11 @@ browser tab, and the client that owns the tab keeps them. What this router
 answers is `auto_open` — whether the account is still owed an automatic open —
 and the client decides whether *this* load is the one that spends it.
 
-**Deterministic only.** The model half of the Streamlit guide (the one
-generated opening line, the prompt fence that keeps a mid-tour question on the
-tour) rides on the Streamlit panel's own turn loop; it degrades to silence by
-design, and the walkthrough is complete without it.
+**The model half is `chat/guide_ai.py`**, shared with the Streamlit guide: the
+one generated opening line lands here, on the advance to the second step, and
+the prompt fence and the jump marker ride on the chat turn itself
+(`api/routes/chat.py`) because that is where a mid-tour question is answered.
+All of it degrades to silence by design; the walkthrough is complete without.
 
 Every route here writes except `GET`: moving the marker, stamping an open and
 appending a card are all stored state, so they are `Writer` like every other
@@ -30,12 +31,13 @@ write — a bearer token must not walk an account through its own tutorial.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from stocks import accounts, obs
 from stocks.accounts import UserPaths
 from stocks.api.deps import Account, Writer
+from stocks.chat import guide_ai
 from stocks.web import guide, onboarding
 from stocks.web.i18n import translate
 
@@ -270,6 +272,46 @@ def _sync(paths: UserPaths, prefs: dict, lang: str) -> bool:
     return changed
 
 
+def _narrate(
+    paths: UserPaths, prefs: dict, lang: str, held: dict[str, str] | None = None
+) -> bool:
+    """The one generated line of the walkthrough, under the step just reached.
+
+    `guide.narrate`, for this front end: held back until the reader has pressed
+    Next once (a wait is expected then, and it is the cheapest proof that the
+    thing talking is not a slideshow), attempted once per account whether or
+    not a provider answers, and appended after the step's card so it reads as
+    the assistant adding something rather than as part of the script. Returns
+    whether the thread changed. Blocks the advance for at most the narration's
+    own timeout per provider — the same wait the Streamlit panel shows a
+    shimmer for — and a silent chain costs the reader nothing but that.
+    """
+    from stocks.web import auth
+
+    step = guide_ai.due_narration(prefs)
+    cid = str(prefs.get(guide.PREF_THREAD) or "")
+    if step is None or not cid:
+        return False
+    line = guide_ai.generate(
+        prefs, step, lang,
+        save=lambda p: accounts.save_prefs(paths.prefs, p),
+        account_facts=guide_ai.facts(prefs, paths, signed_in=True),
+        session_keys=held,
+    )
+    prefs[guide_ai.PREF_NARRATED] = True
+    accounts.save_prefs(paths.prefs, prefs)
+    if not line:
+        obs.event("guide.narration_skipped", via="api")
+        return False
+    book = auth.load_book(paths.chat)
+    conv = next((c for c in book["conversations"] if c["id"] == cid), None)
+    if conv is None:
+        return False
+    conv["messages"].append(guide_ai.note_turn(step, line))
+    auth.save_book(book, paths.chat)
+    return True
+
+
 def _known(step_id: str) -> onboarding.Step:
     step = onboarding.by_id(step_id)
     if step is None:
@@ -339,11 +381,20 @@ def sync(body: Lang, paths: Writer) -> GuideState:
 
 
 @router.post("/advance", response_model=GuideState, summary="Next step")
-def advance(body: Lang, paths: Writer) -> GuideState:
+def advance(
+    body: Lang,
+    paths: Writer,
+    x_chat_provider: str | None = Header(default=None),
+    x_chat_key: str | None = Header(default=None),
+) -> GuideState:
     """Move the marker to the next step and draw its card — or, from the last
     one, finish. The client takes the reader to the new step's page itself: on
     a phone the drawer is the viewport, and jumping there on every Next would
-    spend the walkthrough reopening it."""
+    spend the walkthrough reopening it.
+
+    The first advance also carries the walkthrough's one generated line
+    (`_narrate`), on the account's own provider chain — including a key the
+    reader holds for this tab only, sent the way a chat turn sends it."""
     prefs = accounts.load_prefs(paths.prefs)
     lang = _lang(prefs, body.lang)
     step = guide.current(prefs)
@@ -360,7 +411,15 @@ def advance(body: Lang, paths: Writer) -> GuideState:
     prefs[guide.PREF_STEP] = nxt.id
     accounts.save_prefs(paths.prefs, prefs)
     changed = _sync(paths, prefs, lang)
-    return _state(paths, prefs, changed=changed)
+    # After the sync, so the note lands under the card it is about. The sync
+    # may also have walked past the new step (its capability was already on)
+    # or finished the guide, and `due_narration` reads the prefs it left.
+    from stocks.api.routes.chat import session_keys
+
+    narrated = _narrate(
+        paths, prefs, lang, session_keys(x_chat_provider, x_chat_key)
+    )
+    return _state(paths, prefs, changed=changed or narrated)
 
 
 @router.post("/finish", response_model=GuideState, summary="End the walkthrough")

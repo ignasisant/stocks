@@ -17,9 +17,10 @@
 
 import { ApiError, get, send } from "../../shell/api";
 
-/** Mirrors `MAX_BYTES` in `api/routes/import_statement.py`. Checked here so a
- *  file too big to send is refused before it is uploaded, not after. */
-export const MAX_BYTES = 8 * 1024 * 1024;
+/** Mirrors `MAX_BYTES` in `api/routes/import_statement.py` (50 MB — why not
+ *  Streamlit's 200 is explained there). Checked here so a file too big to send
+ *  is refused before it is uploaded, not after. */
+export const MAX_BYTES = 50 * 1024 * 1024;
 
 export type Platform = {
   key: string;
@@ -27,6 +28,8 @@ export type Platform = {
   file_types: string[];
   hint: string;
   domain: string | null;
+  /** The brand mark (same-origin mirror, else the brand's CDN); null for none. */
+  logo: string | null;
   has_sample: boolean;
 };
 
@@ -134,8 +137,19 @@ const DEMO = "demo";
 export const isDemo = (note: string): boolean =>
   note.trim().split(/\s+/)[0]?.toLowerCase() === DEMO;
 
-/** A file staged for preview: its name, its bytes as base64, and how many. */
-export type Staged = { filename: string; content: string; bytes: number };
+/**
+ * A file staged for preview: its name, its bytes as base64, and how many.
+ *
+ * `surface` is which door it came through — picked from disk or pasted as text
+ * — and only the anonymised import diagnostics read it: the two break
+ * differently, and the Streamlit page records them apart.
+ */
+export type Staged = {
+  filename: string;
+  content: string;
+  bytes: number;
+  surface?: "import" | "paste";
+};
 
 /**
  * Something the API refused, which the reader has to fix — not a defect.
@@ -206,6 +220,7 @@ export const preview = (platform: string, file: Staged, wipe: boolean) =>
       platform,
       filename: file.filename,
       content: file.content,
+      surface: file.surface ?? "import",
       wipe,
     }),
   );
@@ -230,6 +245,7 @@ export const commit = (
       platform,
       filename: file.filename,
       content: file.content,
+      surface: file.surface ?? "import",
       broker,
       expect,
       wipe: wipe.on,

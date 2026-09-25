@@ -68,6 +68,20 @@ def _cold_caches():
         fn.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _offline_prices(monkeypatch):
+    """The two price loads the tax and positions routes reach for on the side.
+
+    The tax report prices the open book for its foreign-asset lines and the
+    positions table asks the basket for today's move; both would go to Yahoo
+    from here. An unpriced book and no quotes is the offline answer — tests
+    that care about either replace them again.
+    """
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: pd.DataFrame())
+    monkeypatch.setattr(loaders, "basket_values", lambda *a, **k: pd.DataFrame())
+    monkeypatch.setattr(loaders, "quotes", lambda tickers: {})
+
+
 @pytest.fixture
 def book(monkeypatch, tmp_path):
     """An account whose ledger can be written per test, in one currency."""
@@ -157,6 +171,23 @@ def test_an_unreachable_yahoo_leaves_the_spread_null_not_zero(
     assert payload["brokers"][0]["spread"] is None
     assert payload["brokers"][0]["total"] is None
     # The half the ledger knows on its own survives the failed fetch.
+    assert payload["explicit"] == pytest.approx(4.5)
+
+
+def test_any_spread_failure_degrades_to_the_ledger_half(client, book, monkeypatch):
+    """Not just a throttle: whatever breaks the estimate (a malformed frame, an
+    FX gap) leaves the commissions standing, as the Streamlit tab does, rather
+    than 500-ing the whole tab."""
+    book(trades())
+
+    def broken(db, mtime):
+        raise KeyError("High")
+
+    monkeypatch.setattr(loaders, "trade_bars", broken)
+    body = client.get("/v1/portfolio/fees", params={"account": EMAIL}, headers=AUTH)
+    assert body.status_code == 200
+    payload = body.json()
+    assert payload["spread_measured"] is False and payload["spread"] is None
     assert payload["explicit"] == pytest.approx(4.5)
 
 
@@ -495,7 +526,8 @@ def test_risk_reports_the_shape_of_the_basket(client, book, monkeypatch):
     payload = client.get(
         "/v1/portfolio/risk", params={"account": EMAIL}, headers=AUTH
     ).json()
-    assert payload["period"] == "1y"
+    # Since inception by default, as the page opens on it.
+    assert payload["period"] == "inception"
     assert payload["top5_weight"] == pytest.approx(1.0)
     # 1 / (0.75^2 + 0.25^2) — a two-name book that behaves like 1.6 equal ones.
     assert payload["effective_names"] == pytest.approx(1.6)
@@ -586,3 +618,267 @@ def test_an_empty_book_has_no_risk_figures_rather_than_zeroed_ones(
     assert payload["volatility"] is None
     assert payload["effective_names"] is None
     assert payload["weights"] == {}
+
+
+# --------------------------------------------------- what the Streamlit tab had
+
+
+def test_tax_years_carry_their_label_and_their_notes(client, book):
+    """The UK writes a tax year as "2024/25", and a deferred loss is a sentence
+    under the figures — both were the page's and the API had neither."""
+    book(
+        [
+            Transaction("2023-01-02", "AAPL", "buy", 10, 10.0, "GBP", 0.0),
+            Transaction("2024-05-02", "AAPL", "sell", 10, 15.0, "GBP", 0.0),
+        ],
+        prefs={"currency": "GBP", "tax_residence": "UK"},
+    )
+    year = client.get(
+        "/v1/portfolio/tax", params={"account": EMAIL}, headers=AUTH
+    ).json()["years"][0]
+    assert year["year_label"] == "2024/25"
+    assert all(set(n) == {"key", "kwargs"} for n in year["notes"])
+
+
+def test_a_loss_bought_back_inside_two_months_comes_with_its_note(client, book):
+    book(
+        [
+            Transaction("2024-01-02", "AAPL", "buy", 10, 20.0, "EUR", 0.0),
+            Transaction("2024-03-01", "AAPL", "sell", 10, 10.0, "EUR", 0.0),
+            Transaction("2024-03-15", "AAPL", "buy", 10, 11.0, "EUR", 0.0),
+        ],
+        prefs={"currency": "EUR", "tax_residence": "ES"},
+    )
+    payload = client.get(
+        "/v1/portfolio/tax", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    notes = payload["years"][0]["notes"]
+    assert notes[0]["key"] == "deferred_note"
+    assert notes[0]["kwargs"] == {"deferred": "100"}
+    # A month is a breakdown, not a year: no notes of its own.
+    assert all(m["notes"] == [] and m["year_label"] == "" for m in payload["months"])
+    # Spain taxes both holding periods alike, so no term on a sale.
+    assert payload["sales"][0]["term"] is None
+
+
+def test_a_jurisdiction_that_splits_the_holding_period_marks_each_sale(client, book):
+    book(
+        [
+            Transaction("2022-01-03", "AAPL", "buy", 10, 10.0, "USD", 0.0),
+            Transaction("2024-01-02", "AAPL", "buy", 10, 10.0, "USD", 0.0),
+            Transaction("2024-06-03", "AAPL", "sell", 20, 12.0, "USD", 0.0),
+        ],
+        prefs={"currency": "USD", "tax_residence": "US"},
+    )
+    sales = client.get(
+        "/v1/portfolio/tax", params={"account": EMAIL}, headers=AUTH
+    ).json()["sales"]
+    assert sorted(s["term"] for s in sales) == ["long", "short"]
+
+
+def test_foreign_asset_lines_price_the_open_book_cost_where_unpriced(
+    client, book, monkeypatch
+):
+    """Modelo 720 against today's book: a name with no price counts at cost,
+    because a threshold measured on half the holdings is the wrong answer."""
+    book(trades(), prefs={"currency": "EUR", "tax_residence": "ES"})
+    table = pd.DataFrame(
+        {"cost": [30_000.0, 25_000.0], "value": [40_000.0, float("nan")]},
+        index=pd.Index(["AAPL", "MSFT"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    flags = client.get(
+        "/v1/portfolio/tax", params={"account": EMAIL}, headers=AUTH
+    ).json()["flags"]
+    assert flags == [
+        {
+            "name": "modelo_720",
+            "reportable": True,
+            "total_value": pytest.approx(65_000.0),
+            "threshold": pytest.approx(50_000.0),
+        }
+    ]
+
+
+def test_a_rate_that_failed_leaves_no_foreign_asset_line(client, book, monkeypatch):
+    book(trades(), prefs={"currency": "USD", "tax_residence": "ES"})
+    table = pd.DataFrame(
+        {"cost": [1.0], "value": [2.0]}, index=pd.Index(["AAPL"], name="ticker")
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    monkeypatch.setattr(loaders, "spot_rates", lambda ccys, base="EUR": {})
+    payload = client.get(
+        "/v1/portfolio/tax", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert payload["flags"] == []
+
+
+def _history(start: str, days: int):
+    index = pd.date_range(start, periods=days, freq="D")
+    hist = pd.DataFrame(
+        {"injected": 1000.0, "value": 1000.0, "pnl_pct": 0.0}, index=index
+    )
+    twr = pd.Series(0.001, index=index)
+    return hist, twr
+
+
+def test_performance_is_retaken_from_the_window_start(client, book, monkeypatch):
+    """The "real performance" tiles follow the window selector, as the page's
+    do — a one-year TWR compounds a year of days, not the book's whole life."""
+    book(trades())
+    today = pd.Timestamp.today().normalize()
+    hist, twr = _history(str((today - pd.Timedelta(days=799)).date()), 800)
+    monkeypatch.setattr(
+        loaders, "history", lambda db, mtime, base="EUR": (hist, twr, [])
+    )
+    whole = client.get(
+        "/v1/portfolio/performance", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    year = client.get(
+        "/v1/portfolio/performance",
+        params={"account": EMAIL, "window": "1y"},
+        headers=AUTH,
+    ).json()
+    assert whole["window"] == "inception" and year["window"] == "1y"
+    assert whole["twr_cumulative"] == pytest.approx(1.001**800 - 1)
+    assert year["twr_cumulative"] == pytest.approx(1.001**366 - 1, rel=1e-2)
+    assert year["start"] > whole["start"]
+    # Where the book stands is not a return over anything: same either way.
+    assert year["value"] == whole["value"]
+
+
+def test_a_performance_window_nobody_defined_is_refused(client, book):
+    book(trades())
+    response = client.get(
+        "/v1/portfolio/performance",
+        params={"account": EMAIL, "window": "3w"},
+        headers=AUTH,
+    )
+    assert response.status_code == 422
+
+
+def test_risk_since_inception_starts_at_the_first_trade(client, book, monkeypatch):
+    """Returns before the book existed are clipped off the basket, the
+    benchmarks and the correlation input alike — and the cached report the
+    other windows share is not the one that gets shortened."""
+    book(
+        [Transaction("2024-01-03", "AAPL", "buy", 10, 100.0, "EUR", 0.0)]
+    )
+    full = report()
+    asked: list[str] = []
+
+    def basket(db, mtime, base, period):
+        asked.append(period)
+        return full
+
+    monkeypatch.setattr(loaders, "basket_report", basket)
+    monkeypatch.setattr(loaders, "custody", lambda db, mtime: {})
+    monkeypatch.setattr(
+        loaders,
+        "history",
+        lambda db, mtime, base="EUR": (pd.DataFrame(), pd.Series(dtype=float), []),
+    )
+    payload = client.get(
+        "/v1/portfolio/risk", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert payload["curves"]["dates"] == ["2024-01-03", "2024-01-04"]
+    # Fetched over the shortest named window that reaches back that far.
+    assert asked and asked[0] in {"2y", "5y", "max"}
+    assert len(full.returns) == 3  # the shared report is untouched
+
+
+def test_positions_carry_todays_move_and_their_custody(client, book, monkeypatch):
+    """The Hoy and Bróker columns: the basket's last two closes while the
+    exchange is open, the session quote once it shuts — and which accounts
+    hold the shares, off the ledger."""
+    from stocks.api.routes import portfolio as route
+    from stocks.portfolio.custody import Custody
+
+    book(trades())
+    table = pd.DataFrame(
+        {
+            "shares": [10.0, 5.0],
+            "ccy": ["EUR", "EUR"],
+            "cost": [1000.0, 500.0],
+            "value": [1100.0, 600.0],
+            "pnl": [100.0, 100.0],
+            "pnl_pct": [0.1, 0.2],
+        },
+        index=pd.Index(["AAPL", "SAN.MC"], name="ticker"),
+    )
+    frame = pd.DataFrame(
+        {"AAPL": [1000.0, 1100.0], "SAN.MC": [500.0, 600.0]},
+        index=pd.to_datetime(["2024-01-02", "2024-01-03"]),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    monkeypatch.setattr(loaders, "spot_rates", lambda ccys, base="EUR": {"EUR": 1.0})
+    monkeypatch.setattr(loaders, "basket_values", lambda *a, **k: frame)
+    # AAPL's exchange is shut; SAN.MC's is trading.
+    monkeypatch.setattr(route, "market_live", lambda t: t == "SAN.MC")
+    monkeypatch.setattr(route, "market_active", lambda t: t == "SAN.MC")
+    monkeypatch.setattr(
+        loaders, "quotes", lambda tickers: {"AAPL": {"pct": 0.1, "as_of": "x"}}
+    )
+    monkeypatch.setattr(
+        loaders,
+        "custody",
+        lambda db, mtime: {
+            "AAPL": {
+                "revolut": Custody("AAPL", "revolut", quantity=6.0),
+                "clicktrade": Custody("AAPL", "clicktrade", quantity=4.0),
+            },
+            "SAN.MC": {"manual": Custody("SAN.MC", "manual", quantity=5.0)},
+        },
+    )
+    rows = {
+        r["ticker"]: r
+        for r in client.get(
+            "/v1/portfolio/positions", params={"account": EMAIL}, headers=AUTH
+        ).json()["positions"]
+    }
+    # Shut: the quote's 10%, the money backed out of today's value.
+    assert rows["AAPL"]["day_pct"] == pytest.approx(0.1)
+    assert rows["AAPL"]["day"] == pytest.approx(100.0)
+    assert rows["AAPL"]["market_active"] is False
+    # Open: close to close on the basket.
+    assert rows["SAN.MC"]["day"] == pytest.approx(100.0)
+    assert rows["SAN.MC"]["day_pct"] == pytest.approx(0.2)
+    assert rows["SAN.MC"]["market_active"] is True
+    assert [(c["broker"], c["share"]) for c in rows["AAPL"]["custody"]] == [
+        ("revolut", pytest.approx(0.6)),
+        ("clicktrade", pytest.approx(0.4)),
+    ]
+    assert rows["AAPL"]["custody"][0]["name"] == "Revolut"
+    # The generic bucket is the client's to word.
+    assert rows["SAN.MC"]["custody"][0]["name"] == ""
+
+
+def test_a_throttled_basket_leaves_todays_move_null_not_the_table(
+    client, book, monkeypatch
+):
+    book(trades())
+    table = pd.DataFrame(
+        {
+            "shares": [10.0],
+            "ccy": ["EUR"],
+            "cost": [1000.0],
+            "value": [1100.0],
+            "pnl": [100.0],
+            "pnl_pct": [0.1],
+        },
+        index=pd.Index(["AAPL"], name="ticker"),
+    )
+
+    def throttled(*a, **k):
+        raise YFRateLimitError()
+
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    monkeypatch.setattr(loaders, "spot_rates", lambda ccys, base="EUR": {"EUR": 1.0})
+    monkeypatch.setattr(loaders, "basket_values", throttled)
+    response = client.get(
+        "/v1/portfolio/positions", params={"account": EMAIL}, headers=AUTH
+    )
+    assert response.status_code == 200
+    row = response.json()["positions"][0]
+    assert row["day"] is None and row["day_pct"] is None
+    assert row["value"] == pytest.approx(1100.0)

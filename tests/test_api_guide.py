@@ -47,6 +47,29 @@ def chat_surface(monkeypatch):
     monkeypatch.setattr(guide, "surface", lambda: "chat")
 
 
+@pytest.fixture(autouse=True)
+def narrator(monkeypatch):
+    """No provider answers unless a test says what it answers.
+
+    The first Next carries the walkthrough's one generated line, and a real
+    free chain behind it would put the network into every test that advances.
+    Returns the list of lines to hand out, in order; empty means silence.
+    """
+
+    class Lines(list):
+        calls: list[dict]
+
+    lines = Lines()
+    lines.calls = []
+
+    def complete(prefs, system, messages, timeout, **kwargs):
+        lines.calls.append({"system": system, "messages": messages, **kwargs})
+        return lines.pop(0) if lines else None
+
+    monkeypatch.setattr("stocks.chat.engine.complete_attempts", complete)
+    return lines
+
+
 @pytest.fixture
 def account(monkeypatch, tmp_path):
     users = tmp_path / "users"
@@ -196,3 +219,49 @@ def test_moving_the_guide_is_a_write_so_a_token_may_not(client, account):
         "/v1/guide/start", params=WHO, headers=AUTH, json={"auto": True}
     )
     assert response.status_code == 403
+
+
+# ------------------------------------------------------------ the narration
+
+
+def test_the_first_next_adds_one_line_about_the_account(
+    client, account, signed_in, switched_on, narrator
+):
+    """`guide.narrate`, over HTTP: a note under the second step's card."""
+    narrator.append("Start with your broker statement: no ledger, no book.")
+    cid = signed_in.post("/v1/guide/start", json={}).json()["thread"]
+    body = signed_in.post("/v1/guide/advance", json={}).json()
+    assert body["changed"] is True
+    turns = thread(signed_in, cid)
+    assert turns[-1]["guide"] == {"step": guide.steps()[1].id, "state": "note"}
+    assert turns[-1]["content"].startswith("Start with your broker statement")
+    assert prefs(account)[guide.PREF_NARRATED] is True
+    # Counts, not holdings: the facts are what the Streamlit guide sends.
+    assert narrator.calls[0]["messages"][0]["content"].startswith(
+        "watchlist_tickers=1;"
+    )
+
+
+def test_a_silent_chain_costs_the_walkthrough_nothing_and_is_not_retried(
+    client, account, signed_in, switched_on, narrator
+):
+    cid = signed_in.post("/v1/guide/start", json={}).json()["thread"]
+    signed_in.post("/v1/guide/advance", json={})
+    assert [t["guide"].get("state") for t in thread(signed_in, cid)] == [None, None]
+    assert prefs(account)[guide.PREF_NARRATED] is True
+    signed_in.post("/v1/guide/advance", json={})
+    assert len(narrator.calls) == 1  # attempted once per account, ever
+
+
+def test_a_session_only_key_reaches_the_narration(
+    client, account, signed_in, switched_on, narrator
+):
+    """A reader whose key lives in their tab gets the line on that key."""
+    signed_in.post("/v1/guide/start", json={})
+    signed_in.post(
+        "/v1/guide/advance",
+        json={},
+        headers={"X-Chat-Provider": "anthropic", "X-Chat-Key": "sk-ant-sessiononly"},
+    )
+    assert narrator.calls[0]["session_keys"] == {"anthropic": "sk-ant-sessiononly"}
+    assert "sk-ant-sessiononly" not in account.prefs.read_text()

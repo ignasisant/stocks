@@ -106,7 +106,20 @@ function Grip({ onWidth }: { onWidth: (key: WidthKey | null) => void }) {
   );
 }
 
-export default function Panel({ chat, onClose }: { chat: Chat; onClose: () => void }) {
+export default function Panel({
+  chat,
+  onClose,
+  onPark,
+}: {
+  chat: Chat;
+  onClose: () => void;
+  /**
+   * Step aside for a page the walkthrough sent the reader to, on a phone —
+   * closing, and leaving the parked strip behind (`guide.goto`). Falls back
+   * to a plain close where the drawer has no strip to leave.
+   */
+  onPark?: () => void;
+}) {
   const t = useT();
   const [view, setView] = useState<"thread" | "threads" | "settings">("thread");
   // Opening the drawer on the guide's own thread is the moment a capability
@@ -344,12 +357,15 @@ export default function Panel({ chat, onClose }: { chat: Chat; onClose: () => vo
                               state: chat.guide,
                               onNext: chat.guideAdvance,
                               onSkip: () => void chat.guideFinish("skipped"),
-                              onLeave: onClose,
+                              onLeave: onPark ?? onClose,
                             }
                           : null
                       }
                       cap={state.free_cap}
                       onRetry={chat.retry}
+                      // Only the newest turn can be discarded: an older refusal
+                      // is history the reader has already moved past.
+                      onDrop={i === chat.turns.length - 1 ? chat.drop : undefined}
                     />
                   ))
                 ) : needsSetup(state) ? (
@@ -423,6 +439,7 @@ export default function Panel({ chat, onClose }: { chat: Chat; onClose: () => vo
             busy={chat.busy}
             reading={chat.reading}
             onSend={(text, spoken) => void chat.send(text, spoken)}
+            onStop={chat.stop}
             onSave={(patch) => void chat.settings(patch)}
             onAttach={(file) => void chat.attach(file)}
             onSettings={() => setView("settings")}

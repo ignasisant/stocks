@@ -24,6 +24,24 @@ import type { GuideState, GuideStep } from "./guide";
 const phone = () =>
   typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 640px)").matches;
 
+/**
+ * Take the reader to a step's page — the card's "take me there", and the jump
+ * an answer on the walkthrough's thread earned (`Turn`'s `Jump`).
+ *
+ * One function for both because they are one navigation in the Streamlit guide
+ * too (`guide.goto`): switch page, seed what the step needs, and on a phone
+ * step the drawer aside — it is the whole viewport there, and staying open
+ * would hide the very page the reader was sent to look at. `onLeave` is what
+ * the drawer does about that: it closes and leaves the parked strip behind.
+ */
+export function useVisit(onLeave: () => void) {
+  const { go } = useRoute();
+  return (target: GuideStep) => {
+    go(canonical(target.path ?? ""), landing(target));
+    if (phone()) onLeave();
+  };
+}
+
 export function GuideCard({
   step,
   guide,
@@ -40,15 +58,10 @@ export function GuideCard({
   onLeave: () => void;
 }) {
   const t = useT();
-  const { go } = useRoute();
   const live = guide.active && guide.step?.id === step.id;
   const last = guide.index >= guide.of;
   const reachable = step.path !== null || Object.keys(step.session).length > 0;
-
-  const visit = (target: GuideStep) => {
-    go(canonical(target.path ?? ""), landing(target));
-    if (phone()) onLeave();
-  };
+  const visit = useVisit(onLeave);
 
   return (
     <div className="ag-guide">

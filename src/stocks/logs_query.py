@@ -4,8 +4,9 @@ Cloud Run ships the container's stdout/stderr to Cloud Logging, where it is
 kept for 30 days in the _Default bucket. This module is the read side: it
 builds a Logging filter, shells out to `gcloud logging read`, and renders the
 entries as one compact line each — plus `stats` (counts and latency
-percentiles per event) and `export` (a JSONL snapshot on disk, for keeping a
-bad day past the retention window or grinding through it offline).
+percentiles per event), `funnel` (landing view to signup, by day and by
+campaign source) and `export` (a JSONL snapshot on disk, for keeping a bad day
+past the retention window or grinding through it offline).
 
 `gcloud` does the auth, so there is no key to manage: whoever is logged in with
 `gcloud auth login` and can read the project's logs can run these.
@@ -302,6 +303,89 @@ def render_usage(summary: dict) -> str:
         lines.append("\npage runs:")
         for page, count in summary["pages"]:
             lines.append(f"  {page:<28} {count:>6}")
+    return "\n".join(lines)
+
+
+# The four steps a promoted link travels, in order. `web.attribution` emits the
+# first two, the OIDC callback the third, the import API the fourth — this is
+# only the arithmetic over them.
+FUNNEL_STEPS = ("landing.view", "landing.cta", "auth.signup", "import.committed")
+
+
+def funnel(entries: Iterable[dict]) -> dict:
+    """Landing view -> app entry -> signup -> first import, per day and per source.
+
+    Crawlers are excluded everywhere (`bot` on the event, set by
+    `web.attribution.is_bot`): a conversion rate whose denominator is mostly
+    Googlebot flatters every channel equally and ranks none of them.
+
+    A source is the campaign token the link carried; requests that arrived with
+    none are grouped under "-", which is the honest answer for a bookmark, a
+    typed address, or a post that dropped the parameter.
+    """
+    days: dict[str, dict] = {}
+    sources: dict[str, dict] = {}
+    totals = dict.fromkeys(("views", "ctas", "signups", "imports"), 0)
+    step_of = {
+        "landing.view": "views",
+        "landing.cta": "ctas",
+        "auth.signup": "signups",
+        "import.committed": "imports",
+    }
+    for entry in entries:
+        body = payload(entry)
+        step = step_of.get(str(body.get("event") or ""))
+        if step is None or body.get("bot"):
+            continue
+        day = str(entry.get("timestamp", ""))[:10] or "-"
+        src = str(body.get("src") or "-")
+        for bucket, key in ((days, day), (sources, src)):
+            row = bucket.setdefault(
+                key, dict.fromkeys(("views", "ctas", "signups", "imports"), 0)
+            )
+            row[step] += 1
+        totals[step] += 1
+    return {
+        "days": [{"day": d, **row} for d, row in sorted(days.items())],
+        "sources": sorted(
+            ({"src": s, **row} for s, row in sources.items()),
+            key=lambda r: (r["signups"], r["ctas"], r["views"]),
+            reverse=True,
+        ),
+        "totals": totals,
+    }
+
+
+def _rate(part: int, whole: int) -> str:
+    """A percentage, or "-" when the denominator makes one meaningless."""
+    return f"{100 * part / whole:.1f}%" if whole else "-"
+
+
+def render_funnel(summary: dict) -> str:
+    if not summary["days"]:
+        return "(no funnel events in range)"
+    lines = []
+    head = f"{'day':<12} {'views':>7} {'entries':>8} {'signups':>8} {'imports':>8}"
+    lines += [head, "-" * len(head)]
+    for d in summary["days"]:
+        lines.append(
+            f"{d['day']:<12} {d['views']:>7} {d['ctas']:>8} "
+            f"{d['signups']:>8} {d['imports']:>8}"
+        )
+    t = summary["totals"]
+    lines.append(
+        f"\ntotal: {t['views']} views -> {t['ctas']} entries "
+        f"({_rate(t['ctas'], t['views'])}) -> {t['signups']} signups "
+        f"({_rate(t['signups'], t['ctas'])}) -> {t['imports']} imports"
+    )
+    if summary["sources"]:
+        head = f"{'source':<24} {'views':>7} {'entries':>8} {'signups':>8} {'entry%':>8}"
+        lines += ["\nby source:", head, "-" * len(head)]
+        for r in summary["sources"]:
+            lines.append(
+                f"{r['src'][:24]:<24} {r['views']:>7} {r['ctas']:>8} "
+                f"{r['signups']:>8} {_rate(r['ctas'], r['views']):>8}"
+            )
     return "\n".join(lines)
 
 

@@ -19,6 +19,8 @@ from stocks.analysis.portfolio import (
     cumulative_returns,
     effective_positions,
     flow_series,
+    market_active,
+    market_live,
     max_drawdown,
     money_weighted_return,
     priced_totals,
@@ -32,6 +34,7 @@ from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
     AllocationSlice,
     BrokerCost,
+    Custodian,
     Dividends,
     DividendYear,
     Fees,
@@ -44,7 +47,9 @@ from stocks.api.schemas import (
     RiskCurves,
     Summary,
     TaxAllYears,
+    TaxFlag,
     TaxKpi,
+    TaxNote,
     TaxReport,
     TaxSale,
     Transaction,
@@ -53,7 +58,10 @@ from stocks.api.schemas import (
 from stocks.api.schemas import TaxPeriod as TaxPeriodOut
 from stocks.api.security import Authed
 from stocks.portfolio import custody, demo, dividends, fees, last_import, tax
+from stocks.portfolio.custody import UNKNOWN as BROKER_UNKNOWN
+from stocks.portfolio.custody import mix as custody_mix
 from stocks.portfolio.ledger import all_transactions, clear
+from stocks.portfolio.platforms import broker_label
 from stocks.portfolio.tax import month_range
 from stocks.portfolio.tax import prefs as tax_prefs
 
@@ -63,7 +71,22 @@ router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 # refused rather than guessed at: yfinance takes whatever string it is handed
 # and an unknown one comes back as an empty frame, which would read as a book
 # with no risk at all.
-_RISK_PERIODS = ("6mo", "1y", "2y", "5y", "max")
+#
+# "inception" is the default and the one the Portfolio page opens on: the fetch
+# reaches back to the book's first trade and every return is clipped there, so
+# a volatility or a beta is never scored over years nobody held anything (see
+# `loaders.basket_report_since`). "max" stays accepted for a client that asked
+# for it before inception existed; the pages no longer offer it, because an
+# unclipped IPO-to-date backtest answers a question about the stock, not the
+# book.
+_RISK_PERIODS = ("inception", "6mo", "1y", "2y", "5y", "max")
+
+# The windows `/performance` measures the book's own path over — the same
+# choices the risk card offers, so one selector drives both cards on the page.
+# Counted back from today, as the page counts them, not from the series' last
+# day: "the last year" of a book is the calendar's last year.
+_PERFORMANCE_DAYS = {"6mo": 182, "1y": 365, "2y": 730, "5y": 1826}
+_PERFORMANCE_WINDOWS = ("inception", *_PERFORMANCE_DAYS)
 
 # Windows the daily series is offered over, in calendar days — the union of the
 # two range controls the app already has, under the same codes, so a client and
@@ -96,6 +119,68 @@ def _native_price(row, rates: dict[str, float]) -> float | None:
     return float(value) / float(shares) / rate
 
 
+def _day_moves(
+    db: str, ccy: str, table: pd.DataFrame
+) -> dict[str, tuple[float | None, float | None]]:
+    """{ticker: (today's move in `ccy`, as a fraction)} for the table's rows.
+
+    The Streamlit page's `enriched_positions`, on the API's loaders: the last
+    two rows of the fixed-quantity basket (so the FX move is in it, and a
+    deposit is not), then — for every name whose own exchange is shut — the
+    session quote takes over, because the newest daily bar is stale or flat
+    there and would print the "+0.00% today" a reader gets at eight in the
+    morning. The money figure is re-derived from the row's own value so the
+    amount and the percentage are always the same move.
+
+    Best effort, and never the reason the table fails: the positions are the
+    ledger's and their value is already priced; a throttled basket or quote
+    burst leaves the day columns null ("n/a"), not the whole response a 503.
+    """
+    out: dict[str, tuple[float | None, float | None]] = {}
+    with obs.swallow("api.positions_day"):
+        mtime = loaders.db_mtime(db)
+        frame = loaders.basket_values(db, mtime, ccy)
+        if len(frame) >= 2:
+            last, prev = frame.iloc[-1], frame.iloc[-2]
+            for ticker in frame.columns:
+                a, b = last.get(ticker), prev.get(ticker)
+                if pd.notna(a) and pd.notna(b) and b:
+                    out[str(ticker)] = (float(a - b), float(a / b - 1))
+        off = tuple(str(t) for t in table.index if not market_live(str(t)))
+        quotes = loaders.quotes(off) if off else {}
+        for ticker, quote in quotes.items():
+            pct = quote.get("pct")
+            if ticker not in table.index or pct is None or pd.isna(pct):
+                continue
+            value = table.at[ticker, "value"]
+            amount = (
+                float(value) * float(pct) / (1 + float(pct))
+                if pd.notna(value) and pct != -1
+                else None
+            )
+            out[ticker] = (amount, float(pct))
+    return out
+
+
+def _custodians(brokers: dict) -> list[Custodian]:
+    """One position's custody, largest share first, ready to print.
+
+    No logo: the table prints names, and resolving a brand image per row would
+    put a mirror fetch on the path of the page's first paint. `name` is empty
+    for the two generic buckets, which the client words from its catalog — the
+    same contract as the ticker header's marks.
+    """
+    return [
+        Custodian(
+            broker=key,
+            name="" if key in ("manual", BROKER_UNKNOWN) else broker_label(key),
+            shares=float(brokers[key].quantity),
+            share=float(share),
+        )
+        for key, share in custody_mix(brokers)
+    ]
+
+
 @router.get("/positions", response_model=Positions, summary="Open positions")
 def positions(account: Account, base: Base = None) -> Positions:
     ccy = reporting_currency(account, base)
@@ -110,6 +195,8 @@ def positions(account: Account, base: Base = None) -> Positions:
     rates = loaders.spot_rates(
         tuple(sorted({str(c).upper() for c in table["ccy"] if c})), ccy
     )
+    moves = _day_moves(db, ccy, table)
+    held = loaders.custody(db, loaders.db_mtime(db))
     rows = [
         Position(
             ticker=str(ticker),
@@ -121,6 +208,10 @@ def positions(account: Account, base: Base = None) -> Positions:
             pnl=_num(row["pnl"]),
             pnl_pct=_num(row["pnl_pct"]),
             weight=_num(weights.get(ticker)),
+            day=_num(moves.get(str(ticker), (None, None))[0]),
+            day_pct=_num(moves.get(str(ticker), (None, None))[1]),
+            market_active=market_active(str(ticker)),
+            custody=_custodians(held.get(str(ticker), {})),
         )
         for ticker, row in table.iterrows()
     ]
@@ -187,6 +278,7 @@ def transactions(
     page = ordered[offset : offset + limit]
     return Transactions(
         total=len(txs),
+        base=ccy,
         demo=demo.active(account.db),
         transactions=[
             Transaction(
@@ -199,39 +291,98 @@ def transactions(
                 currency=t.currency,
                 fee=t.fee,
                 note=t.note,
+                amount=_cash_in(t, ccy),
             )
             for t in page
         ],
     )
 
 
+def _cash_in(t, ccy: str) -> float | None:
+    """The cash a row moved, in `ccy` at its trade date's rate, or None.
+
+    `home.py`'s `_tx_amount`: a buy costs its shares plus the fee, a sale
+    brings them in less the fee, a dividend is its amount and a fee is itself.
+    A split or a transfer moves no cash, and a zero there would read as a free
+    trade. The rate is the one the ledger replay above already prefetched, so
+    this resolves from the on-disk FX cache; a date it cannot price is None,
+    never today's rate passed off as that day's.
+    """
+    from stocks.data.fx import rate_on
+
+    amount = {
+        "buy": t.quantity * t.price + t.fee,
+        "sell": t.quantity * t.price - t.fee,
+        "dividend": t.price,
+        "fee": t.fee,
+    }.get(t.action)
+    if amount is None:
+        return None
+    try:
+        return _num(amount * rate_on(t.date, t.currency, ccy))
+    except Exception:  # noqa: BLE001 — an unpriced row is n/a, not a 500
+        return None
+
+
 @router.get("/performance", response_model=Performance, summary="TWR and IRR")
-def performance(account: Account, base: Base = None) -> Performance:
+def performance(
+    account: Account,
+    base: Base = None,
+    window: Annotated[
+        str,
+        Query(description=f"One of {', '.join(_PERFORMANCE_WINDOWS)}."),
+    ] = "inception",
+) -> Performance:
     """How the book has done, both ways of asking.
 
     TWR strips flow timing out, so it measures the selection and is comparable
     against an index. IRR leaves flow timing in, so it measures what the money
     actually did. They answer different questions and routinely disagree —
     hence both, never one standing in for the other.
+
+    `window` re-takes every figure from its start, as the page's window
+    selector does: the TWR, its volatility and drawdown over the clipped path,
+    and the IRR with the book's value on the first day as the buy-in
+    (`money_weighted_return(start=)`). `injected` and `value` stay the latest
+    levels — they are where the book stands, not a return over anything.
     """
+    if window not in _PERFORMANCE_WINDOWS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"window must be one of {', '.join(_PERFORMANCE_WINDOWS)}",
+        )
     ccy = reporting_currency(account, base)
     db = str(account.db)
     mtime = loaders.db_mtime(db)
     hist, twr, missing = loaders.history(db, mtime, ccy)
     if hist.empty:
-        return Performance(base=ccy, missing=missing)
+        return Performance(base=ccy, window=window, missing=missing)
 
+    # Read before the clip: a slice is not guaranteed to carry `attrs` along.
+    dropped = tuple(twr.attrs.get("dropped_days", ()))
+    start: pd.Timestamp | None = None
+    if window in _PERFORMANCE_DAYS:
+        start = pd.Timestamp(date.today()) - pd.Timedelta(
+            days=_PERFORMANCE_DAYS[window]
+        )  # ty: ignore[invalid-assignment]  -- today minus days is never NaT
+        twr = twr[twr.index >= start] if not twr.empty else twr
     cumulative = float((1 + twr).prod() - 1) if not twr.empty else float("nan")
     # Over the span the return was actually measured on, not the ledger's:
     # a book that sat empty for a year has no return for it, and dividing the
     # compounding by those months understates what the money that was in did.
     annualised = annualized_return(twr) if not twr.empty else float("nan")
     txs = loaders.ledger_state(db, mtime, ccy)[0]
-    irr = money_weighted_return(hist["value"], flow_series(txs, base=ccy))
+    irr = money_weighted_return(
+        hist["value"], flow_series(txs, base=ccy), start=start
+    )
+    shown = hist[hist.index >= start] if start is not None else hist
+    if shown.empty:
+        shown = hist
 
     return Performance(
         base=ccy,
-        start=str(pd.Timestamp(hist.index[0]).date()),
+        window=window,
+        start=str(pd.Timestamp(shown.index[0]).date()),
         end=str(pd.Timestamp(hist.index[-1]).date()),
         injected=_num(hist["injected"].iloc[-1]),
         value=_num(hist["value"].iloc[-1]),
@@ -243,7 +394,9 @@ def performance(account: Account, base: Base = None) -> Performance:
         twr_volatility=_num(annualized_volatility(twr)),
         twr_max_drawdown=_num(max_drawdown(cumulative_returns(twr) + 1)),
         dropped_days=[
-            str(pd.Timestamp(day).date()) for day in twr.attrs.get("dropped_days", ())
+            str(pd.Timestamp(day).date())
+            for day in dropped
+            if start is None or pd.Timestamp(day) >= start
         ],
         irr=_num(irr),
         missing=missing,
@@ -498,7 +651,10 @@ def fees_(account: Account, base: Base = None) -> Fees:
 
     # The spread needs the trade-day bars; the commissions do not. A throttled
     # or offline Yahoo therefore degrades this endpoint to its ledger half
-    # instead of 503-ing a question the ledger can answer on its own.
+    # instead of 503-ing a question the ledger can answer on its own — and so
+    # does any other failure on that half (a malformed frame, an FX gap), as
+    # the Streamlit tab does: it is an estimate, and losing it must not take
+    # the ledger's facts down with it. Only the unexpected ones are logged.
     spreads: dict[str, fees.SpreadStats] = {}
     measured = False
     try:
@@ -508,6 +664,8 @@ def fees_(account: Account, base: Base = None) -> Fees:
         measured = True
     except (YFRateLimitError, URLError):
         pass
+    except Exception as exc:  # noqa: BLE001 — degrade, see above
+        obs.error("api.fees_spread_failed", exc)
 
     rows = []
     for name in sorted(brokers, key=lambda n: -brokers[n].volume):
@@ -679,7 +837,7 @@ def tax_(account: Account) -> TaxReport:
     # same security is invisible to every repurchase rule. See tax.buy_dates.
     buy_dates = tax.buy_dates(txs)
 
-    def period(value) -> TaxPeriodOut:
+    def period(value, year: int | None = None) -> TaxPeriodOut:
         return TaxPeriodOut(
             period=value.period,
             realized_gain=_num(value.realized_gain) or 0.0,
@@ -695,6 +853,17 @@ def tax_(account: Account) -> TaxReport:
                 TaxKpi(name=k.key, value=_num(k.value) or 0.0, help=k.help_key)
                 for k in value.kpis()
             ],
+            # Years only. A month is a breakdown of when the result was booked,
+            # and every note a jurisdiction writes is about the year it nets —
+            # repeating "your allowance used" under each of twelve months
+            # would read as twelve allowances.
+            year_label=jurisdiction.year_label(year) if year is not None else "",
+            notes=[
+                TaxNote(key=n.key, kwargs={k: str(v) for k, v in n.kwargs.items()})
+                for n in value.notes()
+            ]
+            if year is not None
+            else [],
         )
 
     # Tax years, not calendar years — the UK's open on 6 April.
@@ -704,7 +873,9 @@ def tax_(account: Account) -> TaxReport:
         jurisdiction.fiscal_year(realized, year, buy_dates, settings)
         for year in years
     ]
-    report.years = [period(value) for value in periods]
+    report.years = [
+        period(value, year) for value, year in zip(periods, years, strict=True)
+    ]
     # The years added up, which is a history and not a period: `tax.total_of`
     # sums each year's own figures rather than replaying the ledger as one long
     # one, because allowances reset and brackets restart — a decade run up a
@@ -741,10 +912,64 @@ def tax_(account: Account) -> TaxReport:
             proceeds=sale.proceeds,
             gain=sale.gain,
             matched=sale.matched,
+            # Only where the rate turns on it: a column that says "long" on
+            # every row of a Spanish report is a distinction the law does not
+            # make.
+            term=(
+                ("long" if jurisdiction.is_long_term(sale.buy_date, sale.sell_date)
+                 else "short")
+                if jurisdiction.splits_holding_period
+                else None
+            ),
         )
         for sale in sorted(realized, key=lambda s: s.sell_date)
     ]
+    report.flags = _reporting_flags(account, jurisdiction, settings)
     return report
+
+
+def _reporting_flags(account, jurisdiction, settings) -> list[TaxFlag]:
+    """Foreign-asset thresholds (Modelo 720, FBAR, Form 8938…) against the book.
+
+    The Streamlit tab's recipe: the open book marked to market off the shared
+    positions table — a name with no price counts at its cost rather than
+    vanishing from a total whose whole point is "how much is held abroad" —
+    then converted to the jurisdiction's currency at today's spot. That is a
+    threshold check and not a basis, so one live rate is the right tool (FBAR's
+    year-end Treasury rate is not worth a second replay for a line that only
+    says "may apply").
+
+    Best effort both ways: a price pass or a rate that failed leaves no line
+    at all, never a threshold measured against a total that is missing half
+    the book. Every flag the jurisdiction returns is served, crossed or not —
+    "under the line" is information too, and it is what the page prints.
+    """
+    ccy = reporting_currency(account, None)
+    db = str(account.db)
+    with obs.swallow("api.tax_flags", jurisdiction=jurisdiction.code):
+        table = loaders.positions_table(db, loaders.db_mtime(db), ccy)
+        held = (
+            float(table["value"].fillna(table["cost"]).sum())
+            if not table.empty
+            else 0.0
+        )
+        rate = (
+            1.0
+            if ccy.upper() == jurisdiction.currency.upper()
+            else loaders.spot_rates((ccy,), jurisdiction.currency).get(ccy)
+        )
+        if not rate:
+            return []
+        return [
+            TaxFlag(
+                name=flag.name,
+                reportable=bool(flag.reportable),
+                total_value=float(flag.total_value),
+                threshold=float(flag.threshold),
+            )
+            for flag in jurisdiction.reporting_flags(held * rate, settings)
+        ]
+    return []
 
 
 @router.get("/risk", response_model=Risk, summary="Risk of the current basket")
@@ -753,8 +978,13 @@ def risk(
     base: Base = None,
     period: Annotated[
         str,
-        Query(description="Return window: 6mo, 1y, 2y, 5y, max."),
-    ] = "1y",
+        Query(
+            description=(
+                "Return window: inception (the default — clipped to the "
+                "book's first trade), 6mo, 1y, 2y, 5y, max."
+            )
+        ),
+    ] = "inception",
 ) -> Risk:
     """Today's holdings backtested at fixed weights over `period`.
 
@@ -772,7 +1002,11 @@ def risk(
     ccy = reporting_currency(account, base)
     db = str(account.db)
     mtime = loaders.db_mtime(db)
-    report = loaders.basket_report(db, mtime, ccy, period)
+    report = (
+        loaders.basket_report_since(db, mtime, ccy)
+        if period == "inception"
+        else loaders.basket_report(db, mtime, ccy, period)
+    )
     if report is None or not report.weights:
         return Risk(base=ccy, period=period)
 

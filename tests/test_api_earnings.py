@@ -221,3 +221,25 @@ def test_an_unbounded_batch_of_names_is_refused(client, account):
         headers=AUTH,
     )
     assert response.status_code == 422
+
+
+def test_tax_deadlines_follow_the_chosen_residence(client, account, calendar):
+    """The calendar carries the filing dates of wherever the account is taxed."""
+    accounts.update_prefs(account.prefs, {"tax_residence": "UK"})
+    payload = client.get(
+        "/v1/earnings", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert payload["jurisdiction"] == "UK"
+    keys = {d["key"] for d in payload["tax_deadlines"]}
+    assert keys <= {"uk_self_assessment", "uk_payment_on_account"}
+    assert keys
+    for deadline in payload["tax_deadlines"]:
+        assert deadline["remind"] == (0 <= deadline["days_until"] <= 30)
+
+
+def test_an_unset_residence_gets_the_spanish_calendar(client, account, calendar):
+    payload = client.get(
+        "/v1/earnings", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert payload["jurisdiction"] == "ES"
+    assert any(d["key"] == "es_renta" for d in payload["tax_deadlines"])

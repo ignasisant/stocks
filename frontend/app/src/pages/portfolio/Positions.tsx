@@ -13,8 +13,15 @@ import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
-import type { Movers, Positions as PositionsData, Position, Summary } from "./api";
-import { moneyIn, percent, shares as formatShares } from "./format";
+import type {
+  Custodian,
+  MarketStatus,
+  Movers,
+  Positions as PositionsData,
+  Position,
+  Summary,
+} from "./api";
+import { brokerName, moneyIn, percent, shares as formatShares } from "./format";
 import { Caption, Card, Empty, Figure, Kpis, Signed, Table, TickerCell } from "./ui";
 import type { Column } from "./ui";
 import History from "./History";
@@ -30,11 +37,62 @@ const WINDOWS = [
   ["portfolio.one_month", "month"],
 ] as const;
 
+/**
+ * What to print under the day tiles when the figure is not a live one.
+ *
+ * `/market/status` decides the state and hands back a stem; the sentence is
+ * this page's own, the one `portfolio.py` prints under its delta row. Spelled
+ * out rather than templated so the catalog keys stay greppable — the parity
+ * test reads this file to decide whether the React page says what the
+ * Streamlit one says.
+ */
+const MARKET_NOTES: Record<string, string> = {
+  market_closed: "portfolio.market_closed_note",
+  premarket: "portfolio.premarket_note",
+  postmarket: "portfolio.postmarket_note",
+};
+
+/**
+ * One position's custody as the Streamlit column words it: "Revolut", or
+ * "Revolut 60% · ClickTrade 40%" when the shares sit at more than one broker.
+ * `withShares: false` is the phone's shorter line under the ticker, where the
+ * split would not fit and the name is the point.
+ */
+function custodyText(
+  custody: Custodian[],
+  t: (key: string) => string,
+  lang: string,
+  withShares = true,
+): string {
+  if (!custody.length) return t("portfolio.na");
+  const name = (c: Custodian) => c.name || brokerName(c.broker, t);
+  if (custody.length === 1 || !withShares) return custody.map(name).join(" · ");
+  return custody
+    .map((c) => `${name(c)} ${percent(lang, c.share, { digits: 0 }) ?? ""}`.trim())
+    .join(" · ");
+}
+
 /** The realised result as a share of what those sales cost, or nothing. */
-function realizedChip(summary: Summary) {
+function realizedChip(summary: Summary, lang: string) {
   if (summary.realized === null || !summary.realized_cost) return null;
   const pct = summary.realized / summary.realized_cost;
-  return { text: `${pct >= 0 ? "+" : ""}${(pct * 100).toFixed(1)}%`, value: pct };
+  return { text: percent(lang, pct, { signed: true }) ?? "", value: pct };
+}
+
+/**
+ * "Today" while the US regular session is shut, as `portfolio.py` takes it:
+ * the per-row day moves summed, over the book's value before them.
+ *
+ * The basket's close-to-close is the wrong reading then — before the open it
+ * compares yesterday's close with itself and prints a flat 0% while the
+ * premarket quotes are already moving. Each row's `day` is the live pre- or
+ * after-hours move, or the last completed session once those windows shut,
+ * which is the figure the table beside the tile shows.
+ */
+function closedDay(rows: Position[], value: number) {
+  const moved = rows.reduce((sum, row) => sum + (row.day ?? 0), 0);
+  const before = value - moved;
+  return { amount: moved, basket: before ? moved / before : 0 };
 }
 
 function Positions() {
@@ -52,10 +110,14 @@ function Positions() {
       Promise.all([
         get<PositionsData>("/portfolio/positions", { base }),
         get<Summary>("/portfolio/summary", { base }),
+        // A clock and a table of exchange hours: it only decides a caption
+        // and whether the day chip is greyed, so it never takes the card down.
+        get<MarketStatus>("/market/status").catch(() => null),
         ...WINDOWS.map(([, window]) => get<Movers>("/movers", { base, window })),
-      ]).then(([positions, summary, ...moves]) => ({
+      ]).then(([positions, summary, market, ...moves]) => ({
         positions,
         summary,
+        market: market as MarketStatus | null,
         moves: moves as Movers[],
       })),
     [base],
@@ -67,13 +129,24 @@ function Positions() {
       label: t("portfolio.col_position"),
       left: true,
       sort: (row) => row.ticker,
-      cell: (row) => <TickerCell ticker={row.ticker} />,
+      // On a phone the broker column is dropped and its custodians ride
+      // under the symbol instead — names only, the split stays on desktop.
+      cell: (row) => (
+        <span className="pf-stack">
+          <TickerCell ticker={row.ticker} />
+          <span className="pf-sub pf-narrow-only">
+            {custodyText(row.custody, t, lang, false)}
+          </span>
+        </span>
+      ),
     },
     {
       key: "shares",
       label: t("portfolio.col_shares"),
       sort: (row) => row.shares,
-      cell: (row) => <Figure value={formatShares(lang, row.shares)} />,
+      // Four decimals always, as the Streamlit table prints them: a whole
+      // share and a fractional one line up in the column.
+      cell: (row) => <Figure value={formatShares(lang, row.shares, true)} />,
     },
     {
       key: "currency",
@@ -81,6 +154,16 @@ function Positions() {
       left: true,
       sort: (row) => row.currency,
       cell: (row) => <span className="pf-muted">{row.currency}</span>,
+    },
+    {
+      key: "broker",
+      label: t("portfolio.col_broker"),
+      left: true,
+      className: "pf-wide-only",
+      sort: (row) => custodyText(row.custody, t, lang),
+      cell: (row) => (
+        <span className="pf-muted">{custodyText(row.custody, t, lang)}</span>
+      ),
     },
     {
       key: "cost",
@@ -99,6 +182,25 @@ function Positions() {
       label: t("portfolio.col_weight"),
       sort: (row) => row.weight,
       cell: (row) => <Figure value={percent(lang, row.weight)} />,
+    },
+    {
+      key: "day",
+      label: t("portfolio.today"),
+      sort: (row) => row.day,
+      // Amount and percentage of today's move in one cell, as the Streamlit
+      // table pairs them. A name with no live quote (its exchange is shut and
+      // it is not in a US extended window) keeps its figures but greys them:
+      // that is the last session's move, not today's.
+      cell: (row) => (
+        <span className={row.market_active ? "pf-pair" : "pf-pair pf-dim"}>
+          <Signed value={row.day} text={money(row.day, { signed: true })} />
+          {row.day_pct === null ? null : (
+            <span className={`pf-chip pf-chip-${row.day_pct >= 0 ? "up" : "down"}`}>
+              {percent(lang, row.day_pct, { signed: true })}
+            </span>
+          )}
+        </span>
+      ),
     },
     {
       key: "pnl",
@@ -121,7 +223,7 @@ function Positions() {
 
   return (
     <Loaded query={query} skeleton={<Skeleton rows={8} />}>
-      {({ positions, summary, moves }) => {
+      {({ positions, summary, market, moves }) => {
         if (!positions.positions.length) {
           return (
             <Empty
@@ -167,19 +269,16 @@ function Positions() {
                             value: summary.pnl_pct,
                           },
                   },
-                  // The closed side of the same book. Absent, not zero, for a
-                  // book that has never sold: the tile would otherwise claim a
-                  // result nobody has taken.
-                  ...(summary.realized === null
-                    ? []
-                    : [
-                        {
-                          label: t("portfolio.realised_pl"),
-                          value: money(summary.realized, { signed: true }),
-                          chip: realizedChip(summary),
-                          help: t("portfolio.realised_pl_help"),
-                        },
-                      ]),
+                  // The closed side of the same book. A book that never sold
+                  // reads +0 with no chip, as the Streamlit tile does: the
+                  // four-tile row keeps its shape, and the missing chip is
+                  // what says no result was taken (a 0% chip would claim one).
+                  {
+                    label: t("portfolio.realised_pl"),
+                    value: money(summary.realized ?? 0, { signed: true }),
+                    chip: realizedChip(summary, lang),
+                    help: t("portfolio.realised_pl_help"),
+                  },
                 ]}
               />
             )}
@@ -189,7 +288,10 @@ function Positions() {
             {nonePriced ? null : (
               <Kpis
                 items={WINDOWS.map(([label], index) => {
-                  const move = moves[index];
+                  const move =
+                    index === 0 && market !== null && !market.us_open
+                      ? closedDay(positions.positions, summary.value)
+                      : moves[index];
                   return {
                     label: t(label),
                     value:
@@ -206,11 +308,21 @@ function Positions() {
                                 digits: 2,
                               }) ?? "",
                             value: move.basket,
+                            // Grey only while nothing trades at all: a pre- or
+                            // after-hours quote is live data, and so is its move.
+                            off:
+                              index === 0 &&
+                              market !== null &&
+                              !market.us_open &&
+                              !market.us_extended,
                           },
                   };
                 })}
               />
             )}
+            {!nonePriced && market?.note && MARKET_NOTES[market.note] ? (
+              <Caption>{t(MARKET_NOTES[market.note]!)}</Caption>
+            ) : null}
             {/* Say what the tiles above leave out: the rows read n/a in the
                 table, but the totals would look complete. Pointless when there
                 are no tiles — the line above already says why. */}

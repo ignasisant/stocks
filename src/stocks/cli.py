@@ -405,11 +405,23 @@ def cmd_tv(args: argparse.Namespace) -> None:
 
 
 def cmd_dashboard(args: argparse.Namespace) -> None:
-    # web/server.py is the ASGI entry point: the static landing page at / plus
-    # the Streamlit app behind it. `streamlit run` finds the module-level
-    # st.App and serves that instead of running the file as a script.
-    app = Path(__file__).parent / "web" / "server.py"
-    subprocess.run([sys.executable, "-m", "streamlit", "run", str(app)], check=False)
+    # web/server.py is the ASGI entry point: the landing, the React app and the
+    # API, with the retired Streamlit app mounted at /legacy. A plain Starlette
+    # app, so any ASGI server runs it; uvicorn is the one Streamlit already
+    # brings along.
+    cmd = [sys.executable, "-m", "uvicorn", "stocks.web.server:app",
+           "--host", args.host, "--port", str(args.port),
+           # stocks.obs already logs every request, with its latency.
+           "--no-access-log"]
+    if args.reload:
+        cmd += ["--reload", "--reload-dir", str(Path(__file__).parent)]
+    print(f"TopStocks at http://{args.host}:{args.port}/  (old app at /legacy/)")
+    # From the repo root whatever the caller's directory: the secrets file is
+    # looked up as `.streamlit/secrets.toml` relative to the working directory,
+    # and a server started from `frontend/app` boots with no sign-in at all.
+    from stocks.config import PROJECT_ROOT
+
+    subprocess.run(cmd, check=False, cwd=PROJECT_ROOT)
 
 
 def _print_fund(profile) -> None:
@@ -943,6 +955,9 @@ def cmd_logs(args: argparse.Namespace) -> None:
     if args.logs_command == "usage":
         print(lq.render_usage(lq.usage(entries)))
         return
+    if args.logs_command == "funnel":
+        print(lq.render_funnel(lq.funnel(entries)))
+        return
     if getattr(args, "json", False):
         for e in entries[::-1]:
             print(json.dumps(e))
@@ -1304,7 +1319,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_tv.set_defaults(func=cmd_tv)
 
-    p_dash = sub.add_parser("dashboard", help="launch the Streamlit dashboard")
+    p_dash = sub.add_parser("dashboard", help="serve the web app locally")
+    p_dash.add_argument("--host", default="localhost")
+    p_dash.add_argument("--port", type=int, default=8501)
+    p_dash.add_argument("--reload", action="store_true",
+                        help="restart on source changes")
     p_dash.set_defaults(func=cmd_dashboard)
 
     p_etf = sub.add_parser(
@@ -1481,6 +1500,11 @@ def build_parser() -> argparse.ArgumentParser:
     _common(p_use, with_output=False)
     p_use.add_argument("--level", help="minimum severity (INFO/WARNING/ERROR)")
     p_use.set_defaults(since="7d", limit=5000)
+    p_fun = logs_sub.add_parser(
+        "funnel",
+        help="landing view -> app entry -> signup -> import, by day and source")
+    _common(p_fun, with_output=False)
+    p_fun.set_defaults(since="14d", limit=20000)
     p_exp = logs_sub.add_parser(
         "export", help="snapshot entries to JSONL (survives the 30d retention)")
     _common(p_exp, with_output=False)

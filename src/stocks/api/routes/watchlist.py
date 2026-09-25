@@ -27,6 +27,10 @@ def watchlist(account: Account) -> Watchlist:
                 name=holding.name,
                 favorite=holding.favorite,
                 tags=list(holding.tags),
+                # 0 and None are both "no position" on disk; one spelling on
+                # the wire, so the client's empty cell means one thing.
+                shares=holding.shares or None,
+                cost=holding.cost or None,
                 is_crypto=is_crypto(holding.ticker),
             )
             for holding in load_watchlist(account.watchlist)

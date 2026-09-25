@@ -111,6 +111,28 @@ describe("topSectors", () => {
     expect(result.lagging).toEqual([]);
   });
 
+  // `sentiment.py` takes the book's top three first and drops the ones with no
+  // sector fund second. Filtering to the funded sectors first would promote
+  // Energy — the fourth-largest holding — into a sentence about the largest
+  // three, because the book's second-largest bucket has no ETF.
+  it("picks the book's top three before dropping sectors with no fund", () => {
+    const result = topSectors(
+      rotation([
+        row({ key: "XLK", name: "Technology", weight: 0.4, changes: { month: 0.02 } }),
+        row({
+          key: "XLF",
+          name: "Financials",
+          weight: 0.15,
+          changes: { month: -0.01 },
+        }),
+        row({ key: "XLE", name: "Energy", weight: 0.1, changes: { month: 0.09 } }),
+      ]),
+      { Technology: 0.4, Unknown: 0.3, Financials: 0.15, Energy: 0.1 },
+    );
+    expect(result.leading.map((r) => r.name)).toEqual(["Technology"]);
+    expect(result.lagging.map((r) => r.name)).toEqual(["Financials"]);
+  });
+
   // A book nobody could price sends null weights, and a null weight is not a
   // zero one: neither belongs in a sentence about "your largest sectors".
   it("says nothing without a book", () => {

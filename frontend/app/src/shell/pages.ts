@@ -32,8 +32,14 @@ export type Page = {
   component: LazyExoticComponent<() => React.ReactNode>;
   /** Paths that also mean this page — the Streamlit URL it is replacing. */
   aliases?: string[];
-  /** Hidden from the nav — reached from a ticker cell, not from the rail. */
+  /** Hidden from the nav — reachable by URL only (the bank's allowlist). */
   hidden?: boolean;
+  /**
+   * The i18n key of the rail group this page sits under — the `section` of its
+   * `stocks.navigation.DESTINATIONS` entry. Absent is the top group (Home),
+   * which Streamlit draws with no header at all.
+   */
+  section?: string;
 };
 
 export const PAGES: Page[] = [
@@ -50,43 +56,61 @@ export const PAGES: Page[] = [
   {
     slug: "portfolio",
     label: "nav.portfolio",
+    section: "nav.section_portfolio",
     icon: "pie_chart",
     component: lazy(() => import("../pages/portfolio/Portfolio")),
   },
   {
+    slug: "import",
+    label: "nav.import",
+    section: "nav.section_portfolio",
+    icon: "upload_file",
+    component: lazy(() => import("../pages/import/Import")),
+    aliases: ["import_transactions"],
+  },
+  {
+    slug: "ticker",
+    label: "nav.ticker",
+    section: "nav.section_market",
+    icon: "query_stats",
+    component: lazy(() => import("../pages/ticker/Ticker")),
+    // In the rail, as it is in the Streamlit menu: without a ticker the page
+    // opens on its own picker, which is a destination in its own right — and
+    // hiding it left a reader with no way to look a symbol up except the
+    // search box.
+  },
+  {
     slug: "sentiment",
     label: "nav.sentiment",
+    section: "nav.section_market",
     icon: "speed",
     component: lazy(() => import("../pages/sentiment/Sentiment")),
   },
   {
     slug: "sector",
     label: "nav.sector",
+    section: "nav.section_market",
     icon: "donut_small",
     component: lazy(() => import("../pages/sector/Sector")),
   },
   {
     slug: "earnings",
     label: "nav.earnings",
+    section: "nav.section_market",
     icon: "calendar_month",
     component: lazy(() => import("../pages/earnings/Earnings")),
   },
   {
-    slug: "import",
-    label: "nav.import",
-    icon: "upload_file",
-    component: lazy(() => import("../pages/import/Import")),
-    aliases: ["import_transactions"],
-  },
-  {
     slug: "profile",
     label: "nav.profile",
+    section: "nav.section_account",
     icon: "account_circle",
     component: lazy(() => import("../pages/profile/Profile")),
   },
   {
     slug: "bank",
     label: "nav.bank",
+    section: "nav.section_account",
     icon: "account_balance",
     component: lazy(() => import("../pages/bank/Bank")),
     // Hidden for the same reason the Streamlit page is absent from
@@ -96,14 +120,31 @@ export const PAGES: Page[] = [
     // be — and the day the allowlist widens, this line is the whole change.
     hidden: true,
   },
-  {
-    slug: "ticker",
-    label: "nav.ticker",
-    icon: "query_stats",
-    component: lazy(() => import("../pages/ticker/Ticker")),
-    hidden: true,
-  },
 ];
+
+/**
+ * The phone tab bar's four, by slug — `stocks.navigation.BOTTOM_NAV`, which is
+ * what the DS mobile spec fits in a 360px row with legible labels. Every other
+ * rail entry is behind the bar's "More". `tests/test_frontend_nav_parity.py`
+ * holds the two lists together.
+ */
+export const BOTTOM = ["home", "portfolio", "sector", "profile"];
+
+/**
+ * The rail's entries under their headers, in registry order — the shape of
+ * `stocks.navigation.sections()`. Consecutive pages sharing a section form one
+ * group, so the order of `PAGES` is the order of the menu.
+ */
+export function sections(pages: Page[] = PAGES): { section?: string; pages: Page[] }[] {
+  const groups: { section?: string; pages: Page[] }[] = [];
+  for (const page of pages) {
+    if (page.hidden) continue;
+    const last = groups[groups.length - 1];
+    if (last && last.section === page.section) last.pages.push(page);
+    else groups.push({ section: page.section, pages: [page] });
+  }
+  return groups;
+}
 
 export function pageFor(slug: string): Page {
   return (

@@ -14,6 +14,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GuideCard } from "./GuideCard";
+import { Turn } from "./Turn";
 import { unshortcode, type GuideState, type GuideStep } from "./guide";
 
 const step = (id: string, over: Partial<GuideStep> = {}): GuideStep => ({
@@ -62,7 +63,7 @@ const draw = (card: GuideStep, guide: GuideState) =>
 
 beforeEach(() => {
   vi.stubGlobal("window", {
-    location: { pathname: "/next", search: "" },
+    location: { pathname: "/", search: "" },
     matchMedia: () => ({ matches: false }),
     addEventListener: () => {},
     removeEventListener: () => {},
@@ -96,5 +97,49 @@ describe("the walkthrough's cards", () => {
     expect(unshortcode(":material/check_circle: **Import** is set up.")).toBe(
       "**Import** is set up.",
     );
+  });
+});
+
+/**
+ * An answer on the walkthrough's thread that earned a jump.
+ *
+ * The server withholds the model's `[[goto:<step>]]` and files the validated
+ * step as `guide_goto`; the turn draws it as the step's "take me there" and
+ * never as text. A step the registry does not know draws nothing.
+ */
+describe("an answer's jump", () => {
+  const answer = (goto: string | null) =>
+    renderToStaticMarkup(
+      <Turn
+        turn={{
+          role: "assistant",
+          content: "Upload it on the import page.",
+          skills: [],
+          web: [],
+          action: null,
+          guide_goto: goto,
+        }}
+        skills={[]}
+        providers={[]}
+        cap={null}
+        onRetry={() => {}}
+        walk={{
+          state: state("import"),
+          onNext: async () => state("import"),
+          onSkip: () => {},
+          onLeave: () => {},
+        }}
+      />,
+    );
+
+  it("is a button to the step the answer named", () => {
+    const out = answer("import");
+    expect(out).toContain("guide.goto");
+    expect(out).not.toContain("[[");
+  });
+
+  it("is nothing at all for a step that does not exist", () => {
+    expect(answer("settings")).not.toContain("guide.goto");
+    expect(answer(null)).not.toContain("guide.goto");
   });
 });

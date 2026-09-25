@@ -21,6 +21,7 @@ import { useApi } from "../../shell/useApi";
 import type { EarningsCalendar } from "./data";
 import { isSoon } from "./data";
 import Views from "./Views";
+import { TaxReminders } from "./Tax";
 
 /**
  * Nothing came back at all — no dates, no groups, not even a skipped name.
@@ -55,20 +56,18 @@ function Body({ data }: { data: EarningsCalendar }) {
   const bare = data.upcoming.length === 0 && data.results.length === 0;
   const untracked =
     bare && Object.keys(data.groups).length === 0 && data.skipped.length === 0;
+  // A watchlist with no dates still has the tax calendar to draw, so the grid
+  // only goes when there are no deadlines either.
+  const nothing = bare && data.tax_deadlines.length === 0;
   return (
     <>
+      <TaxReminders deadlines={data.tax_deadlines} />
       {imminent > 0 && (
         <p className="earn-warn">{t("earnings.imminent_warning", { n: imminent })}</p>
       )}
-      {bare ? (
-        untracked ? (
-          <NothingTracked />
-        ) : (
-          <p className="ag-note">{t("earnings.no_dates")}</p>
-        )
-      ) : (
-        <Views data={data} />
-      )}
+      {untracked && <NothingTracked />}
+      {bare && !untracked && <p className="ag-note">{t("earnings.no_dates")}</p>}
+      {!nothing && <Views data={data} />}
       {/* The names that were dropped before the fetch, said out loud: a reader
           with their watchlist open beside this should not have to work out why
           a coin or a fund is missing from the calendar. */}

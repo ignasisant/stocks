@@ -157,8 +157,8 @@ export function WithSession({
   children: (session: Session) => ReactNode;
   /** Shown for a `signed-out` query — an unexpected state, not the guest one. */
   wall: ReactNode;
-  /** Shown when the session itself could not be fetched. */
-  offline: (retry: () => void) => ReactNode;
+  /** Shown when the session itself could not be fetched — and why. */
+  offline: (retry: () => void, error: unknown) => ReactNode;
   pending: ReactNode;
 }) {
   const query = useApi(
@@ -168,7 +168,7 @@ export function WithSession({
   const screen = screenFor(query.state);
   if (screen === "pending") return <>{pending}</>;
   if (screen === "wall") return <>{wall}</>;
-  if (query.state === "failed") return <>{offline(query.retry)}</>;
+  if (query.state === "failed") return <>{offline(query.retry, query.error)}</>;
   if (query.state !== "loaded") return <>{pending}</>; // unreachable; narrows T
   const session = sessionFrom(query.data.me, query.data.prefs, query.reload);
   return <Current.Provider value={session}>{children(session)}</Current.Provider>;

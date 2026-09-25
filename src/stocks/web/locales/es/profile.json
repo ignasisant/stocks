@@ -55,6 +55,7 @@
   "profile.iv_dialog_title": "Configura tu perfil de inversor",
   "profile.iv_dialog_intro": "Unas preguntas rápidas para que el asistente de IA adapte su análisis a ti. Puedes omitirlo y rellenarlo más tarde en la página de Perfil.",
   "profile.iv_skip": "Omitir por ahora",
+  "profile.iv_save_failed": "No se ha podido guardar tu perfil. Tus respuestas siguen aquí; vuelve a intentarlo.",
   "profile.notifications": "Notificaciones",
   "profile.notify_caption": "Recibe un resumen diario, una revisión los domingos y alertas de precio por Telegram.",
   "profile.tg_not_configured": "Las notificaciones de Telegram no están configuradas en este despliegue.",
@@ -162,8 +163,5 @@
   "profile.notify_test_row": "Comprobar la conexión",
   "profile.notify_test_help": "Envía un mensaje al chat vinculado.",
   "profile.notify_unlink_row": "Desconectar",
-  "profile.notify_unlink_help": "Corta todos los mensajes. Solo se borra tu id de chat.",
-  "profile.next_app": "App nueva",
-  "profile.next_app_caption": "El front end reconstruido. Misma cuenta, mismos datos, una página que no recarga — estas pantallas siguen disponibles.",
-  "profile.next_app_open": "Abrir la app nueva"
+  "profile.notify_unlink_help": "Corta todos los mensajes. Solo se borra tu id de chat."
 }

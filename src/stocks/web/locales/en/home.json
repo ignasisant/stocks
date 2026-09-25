@@ -62,6 +62,8 @@
   "home.refresh_prices": "Refresh prices",
   "home.chart_injected": "Injected",
   "home.chart_value": "Value",
+  "home.chart_sma20": "SMA20",
+  "home.chart_period_max": "Period max",
   "home.spark_hover_tmpl": "<b>%{customdata[2]}</b><br>Value <b>{sym}%{y:,.0f}</b> · Injected {sym}%{customdata[0]:,.0f} · %{customdata[1]}<extra></extra>",
   "home.earnings_upcoming": ":material/event: **Earnings**",
   "home.earnings_unavailable": "Earnings calendar unavailable right now — reload to retry.",

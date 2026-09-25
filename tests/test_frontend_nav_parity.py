@@ -81,3 +81,28 @@ def test_the_two_paths_that_do_not_match_are_declared(registry):
     aliases = {a for _, aliases in _entries(registry) for a in aliases}
     assert "" in aliases
     assert "import_transactions" in aliases
+
+
+def test_the_server_hands_the_shell_every_path_it_answers(registry):
+    """`navigation.SHELL_PATHS` is what the server serves the document for.
+
+    A slug the registry knows and the server does not is a page that works
+    when clicked to and 404s when reloaded — the client router got there, the
+    server never heard of it.
+    """
+    answered = {slug for slug, _ in _entries(registry)}
+    answered |= {a for _, aliases in _entries(registry) for a in aliases if a}
+    missing = answered - set(navigation.SHELL_PATHS)
+    assert not missing, f"the server 404s these on reload: {sorted(missing)}"
+
+
+def test_the_phone_bar_is_the_four_navigation_names(registry):
+    """`BOTTOM` in the registry is `navigation.BOTTOM_NAV` in the shell's slugs:
+    the Streamlit bar and the shell's must be the same four, and the DS bar is
+    four wide."""
+    listed = re.search(r"export const BOTTOM = \[([^\]]*)\]", registry)
+    assert listed, "no BOTTOM list in pages.ts"
+    bottom = _STRING.findall(listed.group(1))
+    slug_of = {a: slug for slug, aliases in _entries(registry) for a in aliases}
+    expected = [slug_of.get(path, path) for path in navigation.BOTTOM_NAV]
+    assert bottom == expected

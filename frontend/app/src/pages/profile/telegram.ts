@@ -27,6 +27,8 @@ type Telegram = {
   linked: boolean;
   /** A code was issued and has not been matched or lapsed yet. */
   pending: boolean;
+  /** The linked chat's @handle, without the @; null when it has none. */
+  username?: string | null;
 };
 
 /** `POST /notify/telegram` — `routes.notify.Link`. */

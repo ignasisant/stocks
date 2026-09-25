@@ -8,7 +8,8 @@
  */
 
 import { useT } from "../../shell/i18n";
-import { NA, fixed } from "./format";
+import { DownBody } from "./Down";
+import { NA } from "./format";
 import type { Pulse } from "./types";
 
 /**
@@ -41,8 +42,26 @@ function scoreClass(score: number): string {
   return "sn-fill-good";
 }
 
-export function Why({ pulse }: { pulse: Pulse }) {
+export function Why({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => void }) {
   const t = useT();
+  const head = (
+    <div className="sn-sec-head">
+      <h3 className="sn-sec-t" id="ag-why">
+        {t("sentiment.why_title")}
+      </h3>
+      <span className="sn-mono">{t("sentiment.why_hint")}</span>
+    </div>
+  );
+  // Nothing was built, so there are no rows to dim: eight "n/a" bars would
+  // read as eight inputs that each failed, when one feed did.
+  if (pulse.unavailable) {
+    return (
+      <>
+        {head}
+        <DownBody reason={pulse.unavailable} onRetry={onRetry} />
+      </>
+    );
+  }
   const built = new Map(pulse.components.map((c) => [c.key, c]));
   const extras = [...built.keys(), ...pulse.missing].filter(
     (key) => !ORDER.includes(key),
@@ -56,12 +75,7 @@ export function Why({ pulse }: { pulse: Pulse }) {
 
   return (
     <>
-      <div className="sn-sec-head">
-        <h3 className="sn-sec-t" id="ag-why">
-          {t("sentiment.why_title")}
-        </h3>
-        <span className="sn-mono">{t("sentiment.why_hint")}</span>
-      </div>
+      {head}
 
       <div className="sn-comp">
         {keys.map((key) => {
@@ -97,11 +111,12 @@ export function Why({ pulse }: { pulse: Pulse }) {
                   )}
                 </span>
               )}
-              {/* The score, not the raw reading: the levels behind these eight
-                  are a percentage, a ratio and a spread, and the API sends no
-                  format for them — a number printed in the wrong unit is worse
-                  than the one the bar already encodes. */}
-              <span className="sn-comp-v">{score === null ? NA : fixed(score, 0)}</span>
+              {/* The raw reading in its own units — +4.2%, 15.2, 1.19 — as the
+                  Streamlit row prints it. The bar already encodes the 0-100
+                  score; the number beside it is what the input actually read,
+                  formatted server-side by the registry that knows whether it
+                  is a percent, a ratio or a spread. */}
+              <span className="sn-comp-v">{comp?.text ?? NA}</span>
             </div>
           );
         })}

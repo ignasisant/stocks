@@ -51,9 +51,12 @@
   flex-wrap: wrap;
 }
 
+/* Every auto-fit track is floored at `min(…, 100%)`: a page beside a wide
+   chat drawer can be narrower than the nominal minimum, and a track that will
+   not go below it pushes the whole column off the side of the page. */
 .hm-pair {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
   gap: 0.75rem;
   align-items: start;
 }
@@ -92,7 +95,7 @@
 .hm-kpis {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
 }
 
 .hm-kpi {
@@ -204,8 +207,19 @@
 
 .hm-split {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
   gap: 0.75rem;
+}
+
+/* The movers' five columns in a squeezed page scroll inside their own half
+   rather than widening the card past the page. */
+.hm-pair > *,
+.hm-split > * {
+  min-width: 0;
+}
+
+.hm-split > * {
+  overflow-x: auto;
 }
 
 .hm-table {
@@ -247,6 +261,49 @@
 
 .hm-ticker:hover {
   text-decoration: underline;
+}
+
+/* A ticker in a table cell: one line, mark and symbol side by side and
+   centred on each other whatever height the mark arrives at. A row without a
+   mark keeps the mark's slot empty rather than sliding its symbol left, so the
+   symbols stay in one column down the table — the Streamlit cell reserves the
+   same space (`tables.py`, the 30px spacer). */
+.hm-table .hm-ticker {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.hm-table .hm-ticker .ag-tick-logo,
+.hm-table .hm-ticker .ag-tick-sym {
+  flex: none;
+}
+
+.hm-table .hm-ticker:not(:has(.ag-tick-logo))::before {
+  content: "";
+  flex: none;
+  width: 1.2em;
+  margin-right: 0.35em;
+}
+
+/* The company name is the part that gives: cut with an ellipsis, never
+   wrapped onto a second line under the symbol. Its leading space is gone at
+   the start of a flex item, so the gap is drawn instead. */
+.hm-table .hm-ticker .ag-tick-name {
+  min-width: 0;
+  padding-left: 0.3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The cell a name can be cut in. `max-width: 0` takes the column out of the
+   table's minimum-width sum, so the table is never widened to fit every name
+   whole; the width then claims half the row for it, which the auto layout
+   would otherwise leave at nearly nothing — a symbol and a bare ellipsis. */
+.hm-tick-cell {
+  width: 50%;
+  max-width: 0;
 }
 
 /* -------------------------------------------------------------- the groups */
@@ -326,6 +383,95 @@
   font-size: var(--ag-fs-md, 13px);
 }
 
+/* The line under a briefing that is still being written, and the wait line
+   over the shimmer. A bare shimmer over a multi-second call reads as a broken
+   page; naming who is working, with a pulse beside it, buys the patience. */
+.hm-daily-wait {
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm, 12px);
+  line-height: 1.5;
+}
+
+.hm-daily-wait b {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+}
+
+.hm-daily-pending {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 11px);
+  line-height: 1.45;
+}
+
+.hm-daily-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--ag-brand-accent);
+  animation: hm-daily-pulse 1.3s ease-in-out infinite;
+}
+
+@keyframes hm-daily-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Vestibular safety, same rule as the skeleton sheen. */
+@media (prefers-reduced-motion: reduce) {
+  .hm-daily-dot {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+.hm-daily-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Two lengths of one label: the long one where there is room, the short one
+   on a phone, where "Ask the assistant" beside "Regenerate" wraps each to two
+   lines and the pair reads as one smudge. */
+.hm-narrow {
+  display: none;
+}
+
+/* By the page's own width (`ag-main` is a size container), so the short
+   labels also take over beside a wide chat drawer, which a viewport query
+   cannot see. */
+@container ag-main (max-width: 38rem) {
+  .hm-wide {
+    display: none;
+  }
+
+  .hm-narrow {
+    display: inline;
+  }
+
+  /* Stacked full width, both under the thumb, at the DS 44px target. */
+  .hm-daily-actions {
+    flex-direction: column;
+  }
+
+  .hm-daily-actions .ag-btn {
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
 /* ------------------------------------------------------- the mini calendar */
 
 .hm-cal {
@@ -380,6 +526,20 @@
   white-space: nowrap;
 }
 
+/* A past print is a button — it opens the result dialog in place — and a
+   button brings its own border, font and centring, none of which a chip has. */
+button.hm-cal-chip {
+  width: 100%;
+  border: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.hm-cal-chip:hover {
+  box-shadow: inset 0 0 0 1px var(--ag-border);
+}
+
 /* Due inside a week — the one upcoming chip that earns a colour. */
 .hm-cal-chip.hm-soon {
   background: var(--ag-loss-band);
@@ -397,11 +557,78 @@
 }
 
 /* The glance sparkline. Sits between the tile rows at a fixed height so the
-   card does not jump when the series lands after the figures. */
+   card does not jump when the series lands after the figures. The row holds
+   the plot and its scale; the plot takes every pixel the scale leaves. */
+.hm-spark-plot {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin: 12px 0 4px;
+}
+
+.hm-spark-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .hm-spark {
   display: block;
+  width: 100%;
   height: 56px;
-  margin: 12px 0 4px;
+}
+
+/* Plotly's unified hover label, redrawn: date on top, one row per line with
+   its figure bold and the value row coloured by gain or loss. Never takes the
+   pointer, so it never fights the wrap's own pointermove. */
+.hm-spark-tip {
+  position: absolute;
+  top: 4px;
+  transform: translateX(8px);
+  z-index: 5;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(240px, 90%);
+  padding: 6px 8px;
+  background: var(--ag-surface-page);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  box-shadow: var(--ag-shadow-overlay);
+  font-size: var(--ag-fs-2xs, 0.72rem);
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Past the middle the box opens to the pointer's left, so it stays on the card. */
+.hm-spark-tip-flip {
+  transform: translateX(calc(-100% - 8px));
+}
+
+.hm-spark-tip-title {
+  color: var(--ag-text-muted);
+}
+
+.hm-spark-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ag-text-primary);
+  white-space: nowrap;
+}
+
+.hm-spark-tip-row strong {
+  margin-left: auto;
+  padding-left: 8px;
+  font-weight: 600;
+}
+
+.hm-spark-tip-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
 }
 
 /* ------------------------------------------------------ the first-run card */
@@ -525,6 +752,27 @@ button.hm-check:hover {
   background: var(--ag-surface-hover);
 }
 
+/* The guest's sign-in row is a link to the login route, drawn as the pill. */
+a.hm-check {
+  text-decoration: none;
+}
+
+a.hm-check:hover {
+  background: var(--ag-surface-hover);
+}
+
+/* Behind a sign-in: shown, so a guest sees what an account gets, and plainly
+   not pressable. */
+button.hm-check:disabled,
+.hm-check-off {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.hm-check:disabled:hover {
+  background: var(--ag-surface-page);
+}
+
 /* Done recedes to a muted tick: the badge already counts them, and four
    emphatic rows bury the one row that still needs doing — which is also the
    only one left carrying a border, and so the only one that looks like a
@@ -591,12 +839,19 @@ button.hm-check-on:hover {
 }
 
 /* The window's own extremes, one at each end of the plot's height: the line
-   has a shape without them and no size. */
+   has a shape without them and no size. A column as tall as the plot, top
+   label flush with its top edge and bottom label with its bottom one. */
 .hm-spark-scale {
+  flex: none;
   display: flex;
+  flex-direction: column;
   justify-content: space-between;
+  align-items: flex-end;
   color: var(--ag-text-muted);
   font-size: var(--ag-fs-2xs);
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .hm-spark-legend {
@@ -628,4 +883,12 @@ button.hm-check-on:hover {
 
 .hm-spark-value {
   border-top: 2px solid var(--ag-brand-accent);
+}
+
+.hm-spark-sma {
+  border-top: 2px solid var(--ag-sma-fast);
+}
+
+.hm-spark-max {
+  border-top: 2px dashed var(--ag-text-faint);
 }

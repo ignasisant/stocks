@@ -1,5 +1,6 @@
 import { Suspense, useEffect } from "react";
-import { Translations, useT } from "./shell/i18n";
+import { ApiError } from "./shell/api";
+import { pinnedLang, Translations, useT } from "./shell/i18n";
 import { Layout, Skeleton } from "./shell/Layout";
 import { pageFor } from "./shell/pages";
 import { useRoute } from "./shell/router";
@@ -15,12 +16,18 @@ import { WithSession } from "./shell/session";
  * the only state in the app where there is nothing to render around — `/me`
  * and `/prefs` are what the chrome itself is built from.
  */
-function Offline({ retry }: { retry: () => void }) {
+function Offline({ retry, error }: { retry: () => void; error?: unknown }) {
   const t = useT();
+  // The one failure worth naming: the account's cloud copy could not be read,
+  // so the API refused to serve an empty book whose next save would overwrite
+  // it. The server says so with the catalog key the Streamlit app prints for
+  // the same outage; anything else is the generic "data unavailable".
+  const storage =
+    error instanceof ApiError && error.detail === "common.storage_restore_failed";
   return (
     <div className="ag-wall">
       <h1>TopStocks</h1>
-      <p>{t("common.data_unavailable")}</p>
+      <p>{t(storage ? "common.storage_restore_failed" : "common.data_unavailable")}</p>
       <button className="ag-btn" onClick={retry}>
         {t("common.retry")}
       </button>
@@ -69,7 +76,10 @@ function Current() {
 }
 
 export default function App() {
-  const fallbackLang = navigator.language.slice(0, 2);
+  const browserLang = navigator.language.slice(0, 2);
+  // A landing CTA's `?lang=` wins over the browser for anyone without a stored
+  // preference — which is every guest, and the wall and offline screens.
+  const fallbackLang = pinnedLang(window.location.search) ?? browserLang;
   return (
     // The language is the account's preference, and the catalog cannot be
     // fetched until we know it — so the session resolves first and the
@@ -88,14 +98,20 @@ export default function App() {
           <SignInWall />
         </Translations>
       }
-      offline={(retry) => (
+      offline={(retry, error) => (
         <Translations lang={fallbackLang}>
-          <Offline retry={retry} />
+          <Offline retry={retry} error={error} />
         </Translations>
       )}
     >
       {(session) => (
-        <Translations lang={session.prefs.language ?? fallbackLang}>
+        <Translations
+          lang={
+            // A signed-in account's stored language is its own; the pinned
+            // landing language is only for somebody who has none to store.
+            session.guest ? fallbackLang : (session.prefs.language ?? browserLang)
+          }
+        >
           <Layout>
             <Current />
           </Layout>

@@ -69,6 +69,7 @@
 }
 
 .im-platform {
+  align-items: center;
   background: var(--ag-surface-card);
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-nav);
@@ -77,6 +78,16 @@
   font: inherit;
   font-size: var(--ag-fs-md);
   padding: 0.4rem 0.8rem;
+  display: inline-flex;
+  gap: 0.4rem;
+}
+
+.im-platform-logo {
+  border-radius: var(--ag-radius-sm);
+  flex: none;
+  height: 16px;
+  object-fit: contain;
+  width: 16px;
 }
 
 .im-platform:hover {
@@ -90,7 +101,6 @@
 }
 
 .im-input,
-.im-file,
 .im-paste {
   background: var(--ag-surface-card);
   border: 1px solid var(--ag-border);
@@ -111,10 +121,79 @@
 }
 
 .im-input:focus-visible,
-.im-file:focus-visible,
 .im-paste:focus-visible {
   border-color: var(--ag-border-focus);
   outline: none;
+}
+
+/* The uploader: a dashed drop zone, the words on the left and the button on
+   the right as the Streamlit one lays them — wrapping the button under the
+   words where the page is too narrow for both on one line. */
+.im-drop {
+  align-items: center;
+  background: var(--ag-surface-sunken);
+  border: 1px dashed var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  padding: 1rem 1.1rem;
+  position: relative;
+}
+
+.im-drop:hover,
+.im-drop-on {
+  background: var(--ag-surface-hover);
+  border-color: var(--ag-border-focus);
+}
+
+/* The input keeps its focus, so the ring belongs to the zone around it. */
+.im-drop:focus-within {
+  border-color: var(--ag-border-focus);
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 2px;
+}
+
+/* Out of sight and still in the tab order: the zone is what is seen, the
+   input is what the keyboard and assistive tech reach. */
+.im-file {
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.im-drop-text {
+  display: flex;
+  flex: 1 1 14rem;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.im-drop-title {
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-base);
+  overflow-wrap: anywhere;
+}
+
+.im-drop-cap {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+}
+
+.im-drop-btn {
+  background: var(--ag-surface-card);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  color: var(--ag-text-primary);
+  flex: none;
+  font-size: var(--ag-fs-md);
+  padding: 0.4rem 0.8rem;
+  white-space: nowrap;
 }
 
 .im-primary {
@@ -241,9 +320,11 @@
   white-space: normal;
 }
 
-/* Phones: the row's identity and what it did survive; the trailing detail
-   columns fold away rather than pushing the table off the screen. */
-@media (max-width: 640px) {
+/* Phones, and a page squeezed beside the chat drawer: the row's identity and
+   what it did survive; the trailing detail columns fold away rather than
+   pushing the table off the screen. A container query on `ag-main`, because
+   a viewport one cannot see the drawer. */
+@container ag-main (max-width: 38rem) {
   .im-table .im-wide {
     display: none;
   }

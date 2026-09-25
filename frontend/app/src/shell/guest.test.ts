@@ -68,12 +68,12 @@ describe("signInHref", () => {
     ({ pathname, search }) as unknown as Location;
 
   it("offers nothing when there is nowhere to sign in", () => {
-    expect(signInHref(null, at("/next/"))).toBeNull();
+    expect(signInHref(null, at("/"))).toBeNull();
   });
 
   it("comes back to the screen the reader was on", () => {
-    expect(signInHref("/auth/login", at("/next/portfolio", "?tab=fees"))).toBe(
-      "/auth/login?next=" + encodeURIComponent("/next/portfolio?tab=fees"),
+    expect(signInHref("/auth/login", at("/portfolio", "?tab=fees"))).toBe(
+      "/auth/login?next=" + encodeURIComponent("/portfolio?tab=fees"),
     );
   });
 
@@ -83,10 +83,10 @@ describe("signInHref", () => {
     // because it is the redirect URI Google has registered — is a static-file
     // route that 404s.
     expect(signInHref("/auth/login", at("/next-assets/portfolio"))).toBe(
-      "/auth/login?next=" + encodeURIComponent("/next/portfolio"),
+      "/auth/login?next=" + encodeURIComponent("/portfolio"),
     );
     expect(signInHref("/auth/login", at("/next-assets/"))).toBe(
-      "/auth/login?next=" + encodeURIComponent("/next"),
+      "/auth/login?next=" + encodeURIComponent("/"),
     );
   });
 });

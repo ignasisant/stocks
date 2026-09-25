@@ -44,5 +44,6 @@
   "notify.concentration_title": "Concentración",
   "notify.concentration": "Top {n} = {pct}% de la cartera",
   "notify.drift": "({pts} pt esta semana)",
-  "notify.effective": "se comporta como {n} posiciones iguales"
+  "notify.effective": "se comporta como {n} posiciones iguales",
+  "notify.tax_deadlines": "Plazos fiscales, próximos 30 días"
 }

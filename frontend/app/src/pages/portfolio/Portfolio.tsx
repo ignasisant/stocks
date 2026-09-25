@@ -23,9 +23,9 @@ import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
 import { GuestBanner } from "../../shell/guest";
-import { useGuest } from "../../shell/session";
-import type { Transactions } from "./api";
-import { Empty } from "./ui";
+import { useCurrency, useGuest } from "../../shell/session";
+import type { Summary, Transactions } from "./api";
+import { Empty, Warn } from "./ui";
 import Positions from "./Positions";
 import Risk from "./Risk";
 import Tax from "./Tax";
@@ -115,6 +115,18 @@ export default function Page() {
     [],
   );
 
+  // Ledger rows that never made a position — only deposits, fees or rows the
+  // replay could not match — leave every tab with nothing to say. Streamlit
+  // says so once and stops rather than drawing five empty tabs; the same
+  // cached summary the Positions tab reads answers it here. Never blocking:
+  // while it loads, or if it fails, the tabs draw as usual.
+  const base = useCurrency();
+  const summary = useApi(() => get<Summary>("/portfolio/summary", { base }), [base]);
+  const nothingHeld =
+    summary.state === "loaded" &&
+    summary.data.positions === 0 &&
+    summary.data.realized === null;
+
   const slug = params.get("tab") ?? "";
   const active = TABS.find((tab) => tab[0] === slug) ?? TABS[0];
   const Tab = active[2];
@@ -155,21 +167,27 @@ export default function Page() {
               ) : (
                 <DemoBook book={state} onChange={reload} />
               )}
-              <div className="pf-tabs" role="tablist">
-                {TABS.map(([name, label]) => (
-                  <button
-                    key={name}
-                    type="button"
-                    role="tab"
-                    aria-selected={name === active[0]}
-                    className={name === active[0] ? "pf-tab pf-tab-on" : "pf-tab"}
-                    onClick={() => setParams({ tab: name })}
-                  >
-                    {t(label)}
-                  </button>
-                ))}
-              </div>
-              <Tab />
+              {nothingHeld ? (
+                <Warn>{t("portfolio.ledger_no_positions")}</Warn>
+              ) : (
+                <>
+                  <div className="pf-tabs" role="tablist">
+                    {TABS.map(([name, label]) => (
+                      <button
+                        key={name}
+                        type="button"
+                        role="tab"
+                        aria-selected={name === active[0]}
+                        className={name === active[0] ? "pf-tab pf-tab-on" : "pf-tab"}
+                        onClick={() => setParams({ tab: name })}
+                      >
+                        {t(label)}
+                      </button>
+                    ))}
+                  </div>
+                  <Tab />
+                </>
+              )}
             </>
           )
         }

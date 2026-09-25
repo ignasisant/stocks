@@ -182,8 +182,16 @@ export function Kpi({
   );
 }
 
-export function Metrics({ children }: { children: ReactNode }) {
-  return <div className="tk-metrics">{children}</div>;
+/**
+ * A row of metrics. `wide` is the seven-cell row a held name gets on desktop:
+ * narrower minimum cells and a step smaller figure, so price, RSI, SMA20 and
+ * the four holding figures share one line on a laptop instead of wrapping to
+ * a second row that reads as a separate block.
+ */
+export function Metrics({ children, wide }: { children: ReactNode; wide?: boolean }) {
+  return (
+    <div className={wide ? "tk-metrics tk-metrics-wide" : "tk-metrics"}>{children}</div>
+  );
 }
 
 export function Metric({

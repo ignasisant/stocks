@@ -119,7 +119,9 @@ def test_reported_years_and_the_consensus_path_stay_separate(client, monkeypatch
     )
     monkeypatch.setattr(
         loaders, "estimates",
-        lambda t: SimpleNamespace(earnings_estimate=pd.DataFrame()),
+        lambda t: SimpleNamespace(
+            earnings_estimate=pd.DataFrame(), revenue_estimate=pd.DataFrame()
+        ),
     )
     monkeypatch.setattr("stocks.api.routes.ticker.estimate_currency", lambda df: "USD")
     monkeypatch.setattr(
@@ -132,6 +134,40 @@ def test_reported_years_and_the_consensus_path_stay_separate(client, monkeypatch
     assert [r["year"] for r in body["annual"]] == ["2023", "2024"]
     assert [r["period"] for r in body["projection"]] == ["2025E"]
     assert body["estimate_currency"] == "USD"
+
+
+def test_an_adr_whose_consensus_is_in_another_currency_gets_no_projection(
+    client, monkeypatch
+):
+    """TSMC files in TWD and its analysts quote per USD ADS: the forecast bar
+    would land thirty-odd times short of the reported ones. Streamlit drops
+    the whole path, and so does the route — on the server, where no client can
+    forget the check."""
+    annual = pd.DataFrame({"Revenue": [2.2e12, 2.9e12]}, index=[2023, 2024])
+    monkeypatch.setattr(
+        loaders,
+        "fundamentals",
+        lambda t: FakeRaw(info={"currency": "USD", "financialCurrency": "TWD"}),
+    )
+    monkeypatch.setattr("stocks.api.routes.ticker.annual_financials", lambda raw: annual)
+    monkeypatch.setattr(
+        "stocks.api.routes.ticker.quarterly_eps", lambda raw: pd.DataFrame()
+    )
+    monkeypatch.setattr(
+        loaders,
+        "estimates",
+        lambda t: SimpleNamespace(
+            earnings_estimate=pd.DataFrame(), revenue_estimate=pd.DataFrame()
+        ),
+    )
+    monkeypatch.setattr("stocks.api.routes.ticker.estimate_currency", lambda df: "USD")
+    monkeypatch.setattr(
+        "stocks.api.routes.ticker.projection",
+        lambda raw, last_fy, **kw: pd.DataFrame({"Revenue": [120e9]}, index=["2025E"]),
+    )
+    body = client.get("/v1/ticker/TSM/financials", headers=AUTH).json()
+    assert body["projection"] == []
+    assert [r["year"] for r in body["annual"]] == ["2023", "2024"]
 
 
 def test_the_consensus_band_and_the_extrapolation_flag_both_travel(
@@ -150,7 +186,9 @@ def test_the_consensus_band_and_the_extrapolation_flag_both_travel(
     )
     monkeypatch.setattr(
         loaders, "estimates",
-        lambda t: SimpleNamespace(earnings_estimate=pd.DataFrame()),
+        lambda t: SimpleNamespace(
+            earnings_estimate=pd.DataFrame(), revenue_estimate=pd.DataFrame()
+        ),
     )
     monkeypatch.setattr("stocks.api.routes.ticker.estimate_currency", lambda df: "USD")
     monkeypatch.setattr(
@@ -211,6 +249,8 @@ def test_the_multiple_says_which_feed_reconstructed_it(client, monkeypatch):
     body = client.get("/v1/ticker/AAPL/valuation", headers=AUTH).json()
     assert body["source"] == "SEC EDGAR"
     assert body["dates"] == ["2024-01-01", "2024-06-30"]
+    # Today's multiple on the KPI grid's own P/E bands, for the tile's chip.
+    assert (body["current_verdict"], body["current_tone"]) == ('expensive', 'red')
 
 
 def test_the_windows_offered_are_the_ones_the_page_can_select(client, monkeypatch):
@@ -286,6 +326,8 @@ def test_an_unscored_pillar_is_null_not_zero(client, monkeypatch):
     assert by_key["roic"]["score"] == 88.0
     assert by_key["dilution"]["score"] is None
     assert body["rating"] == "wide" and body["years"] == 10
+    # The chip's colour off the domain's band, not a client's copy of it.
+    assert body["rating_tone"] == "green"
 
 
 def test_too_few_pillars_means_no_composite(client, monkeypatch):
@@ -297,6 +339,7 @@ def test_too_few_pillars_means_no_composite(client, monkeypatch):
     )
     body = client.get("/v1/ticker/X/moat", headers=AUTH).json()
     assert body["score"] is None and body["rating"] is None
+    assert body["rating_tone"] is None
 
 
 # --------------------------------------------------------------------- insiders
@@ -382,6 +425,8 @@ def test_a_name_nobody_files_for_says_so(client, monkeypatch):
     are different claims and the page words them differently."""
     monkeypatch.setattr(loaders, "insiders", lambda t: [])
     monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw(info={"longName": ""}))
+    monkeypatch.setattr("stocks.api.routes.ticker._sec_filer", lambda t: False)
+    monkeypatch.setattr("stocks.api.routes.ticker._issuer_name", lambda t: None)
     body = client.get("/v1/ticker/XYZ/insiders", headers=AUTH).json()
     assert body["source"] is None and body["summary"] is None and body["trades"] == []
 
@@ -389,6 +434,7 @@ def test_a_name_nobody_files_for_says_so(client, monkeypatch):
 def test_a_german_issuer_falls_through_to_bafin(client, monkeypatch):
     """The same disclosure, published by a different regulator in EUR."""
     monkeypatch.setattr(loaders, "insiders", lambda t: [])
+    monkeypatch.setattr("stocks.api.routes.ticker._sec_filer", lambda t: False)
     monkeypatch.setattr(
         loaders, "fundamentals", lambda t: FakeRaw(info={"longName": "Nemetschek SE"})
     )
@@ -401,6 +447,63 @@ def test_a_german_issuer_falls_through_to_bafin(client, monkeypatch):
     body = client.get("/v1/ticker/NEM.DE/insiders", headers=AUTH).json()
     assert body["source"] == "BaFin"
     assert body["trades"][0]["currency"] == "EUR"
+
+
+def test_a_quiet_us_filer_is_not_sent_to_bafin(client, monkeypatch):
+    """Streamlit asks BaFin only when the SEC map has no CIK. A US filer whose
+    insiders did not trade this quarter is an empty Form 4 list, not a German
+    issuer — asking BaFin by its name spends a request and can match a
+    stranger."""
+    asked = []
+    monkeypatch.setattr(loaders, "insiders", lambda t: [])
+    monkeypatch.setattr("stocks.api.routes.ticker._sec_filer", lambda t: True)
+    monkeypatch.setattr(
+        "stocks.api.routes.ticker.bafin_transactions",
+        lambda ticker, issuer: asked.append(issuer) or [],
+    )
+    body = client.get("/v1/ticker/AAPL/insiders", headers=AUTH).json()
+    assert asked == []
+    assert body["source"] is None and body["sec_filer"] is True
+
+
+def test_no_long_name_falls_back_to_the_catalog_name(client, monkeypatch):
+    """Yahoo throttled → no `longName`. Streamlit then searches BaFin by
+    `company_name()`; the route does the same with its account-free legs."""
+    asked = []
+    monkeypatch.setattr(loaders, "insiders", lambda t: [])
+    monkeypatch.setattr("stocks.api.routes.ticker._sec_filer", lambda t: False)
+    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw(info={}))
+    monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
+    monkeypatch.setattr(loaders, "sec_title", lambda t: None)
+    monkeypatch.setattr("stocks.data.funds.fund_name", lambda t: "iShares Core DAX")
+    monkeypatch.setattr(
+        "stocks.api.routes.ticker.bafin_transactions",
+        lambda ticker, issuer: asked.append(issuer) or [],
+    )
+    client.get("/v1/ticker/EXS1.DE/insiders", headers=AUTH)
+    assert asked == ["iShares Core DAX"]
+
+
+def test_rows_come_newest_first_with_undated_last(client, monkeypatch):
+    """The table shows thirty rows; the feed's order must not pick which."""
+    txs = [
+        FakeTx(date(2024, 1, 1), "old", "CEO", "S", False, 1.0, 10.0),
+        FakeTx(None, "undated", "CEO", "S", False, 1.0, 10.0),
+        FakeTx(date(2024, 6, 1), "new", "CEO", "S", False, 1.0, 10.0),
+    ]
+    monkeypatch.setattr(loaders, "insiders", lambda t: txs)
+    rows = client.get("/v1/ticker/AAPL/insiders", headers=AUTH).json()["trades"]
+    assert [r["insider"] for r in rows] == ["New", "Old", "Undated"]
+
+
+def test_a_row_names_its_code_and_a_priceless_sale_has_no_value(client, monkeypatch):
+    """The English label rides as the client's fallback, and a disposal with
+    no notional is null — never the signed zero that reads "worth nothing"."""
+    txs = [FakeTx(date(2024, 5, 1), "tim cook", "CEO", "F", False, 50.0, None)]
+    monkeypatch.setattr(loaders, "insiders", lambda t: txs)
+    row = client.get("/v1/ticker/AAPL/insiders", headers=AUTH).json()["trades"][0]
+    assert row["code"] == "F" and row["label"] == "Tax withholding"
+    assert row["value"] is None
 
 
 # ------------------------------------------------------------------------ funds

@@ -4,16 +4,17 @@ Three small reads rather than one "home" blob, because they are three different
 facts with three different lifetimes — a briefing is written once a day, movers
 change every few minutes, and an extreme changes on a close. A client that wants
 all three asks for all three; one that only shows movers does not pay for a
-model's prose.
+model's prose. The one write here, `POST /daily`, is what asks for that prose;
+the machinery behind it is `api/briefing.py`.
 
 The rest of that page is already here: the KPI row is `/portfolio/summary` and
 `/portfolio/performance`, the transactions strip is `/portfolio/transactions`,
-the calendar is `/earnings`, and the groups are `/watchlist`.
+the calendar is `/earnings`, the groups are `/watchlist` with their closes at
+`/home/closes`.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Annotated
 
 import pandas as pd
@@ -22,17 +23,17 @@ from fastapi import APIRouter, HTTPException, Query, status
 from stocks.analysis.portfolio import (
     basket_change,
     day_change,
+    market_active,
     market_live,
     ticker_changes,
     ticker_day_changes,
     us_market_open,
 )
-from stocks.api import loaders
-from stocks.api.deps import Account, Base, reporting_currency
+from stocks.api import briefing, home, loaders
+from stocks.api.deps import Account, Base, Writer, reporting_currency
 from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import DailyCard, Extreme, Extremes, Mover, Movers
 from stocks.chat import daily
-from stocks.config import load_watchlist
 
 router = APIRouter(tags=["glance"])
 
@@ -44,53 +45,148 @@ WINDOWS = {"day": 1, "week": 7, "month": 30}
 # being a glance.
 SHOWN = 6
 
-# How close to an extreme still counts as being at it. A stock 1.4% off its
-# 52-week high is at its high in every sense a reader cares about.
-EDGE_BAND = 0.02
+# How close to an extreme still counts as being at it — `api/home.py` owns the
+# number, because the daily card's 52-week line reads the same scan.
+EDGE_BAND = home.EDGE_BAND
+
+Lang = Annotated[
+    str,
+    Query(
+        min_length=2,
+        max_length=8,
+        description="Language the card is judged, and written, in.",
+    ),
+]
 
 
 @router.get("/daily", response_model=DailyCard, summary="Today's briefing")
-def card(
-    account: Account,
-    lang: Annotated[
-        str,
-        Query(
-            min_length=2,
-            max_length=8,
-            description="Language the freshness check judges the card in.",
-        ),
-    ] = "en",
-) -> DailyCard:
-    """The stored card, and whether it is still the right one.
+def card(account: Account, lang: Lang = "en") -> DailyCard:
+    """The card on screen right now, and whether a better one is coming.
 
     Freshness is not just the date. The card is prose, so a reader who switched
     the app to Spanish should not be left with yesterday's English briefing; and
     a card written before the open quotes the previous close, so once the next
     session lands its every figure is a day behind while the calendar date has
     not moved yet. Both are checked here.
+
+    Never writes, never spends: this is what a client polls while `POST /daily`
+    has a generation out, and it reports that generation — `pending` while it
+    runs, and the computed card when the model gave nothing back.
     """
-    now = datetime.now().astimezone()
-    day = daily.action_day(now)
-    stored = daily.DailyAction.from_dict(
+    return _status(account, lang)
+
+
+@router.post("/daily", response_model=DailyCard, summary="Have today's written")
+def write_card(
+    account: Writer,
+    lang: Lang = "en",
+    force: Annotated[
+        bool,
+        Query(
+            description=(
+                "Regenerate: write a new card even when today's stands, and "
+                "abandon one already being written."
+            )
+        ),
+    ] = False,
+) -> DailyCard:
+    """Today's card, written if it has to be — `daily_ui._resolve`, over HTTP.
+
+    In order: a generation already out is reported, not doubled; a stored card
+    that still stands comes back and spends nothing; a key already tried today
+    comes back as the computed card rather than trying the same dead provider
+    again. Only then are the facts built and one generation started, and the
+    request waits `briefing.GRACE_S` for it — past that the answer is `pending`
+    with the computed card in hand, and `GET /daily` is the poll.
+
+    `force` is the Regenerate button: it outranks all of the above. A session
+    only — the generation spends this account's free allowance and writes
+    daily_action.json, neither of which a bearer token may do.
+    """
+    from stocks.web import auth
+
+    _, day = briefing.now_day()
+    key = briefing.key_for(day, lang, _last_session(account))
+    job = briefing.job_for(account, key)
+    stored = _stored(account)
+    if not force:
+        if job is not None:
+            # In flight: report it. Done: this key was tried today — the card
+            # it left (stored, or the computed stand-in) is the answer.
+            return _status(account, lang)
+        if daily.is_fresh(stored, day, lang, key[2] or None):
+            return _status(account, lang)
+
+    prefs = auth.load_prefs(account.prefs)
+    facts = briefing.build_facts(account, prefs, day, stored)
+    if facts is None:
+        # Neither a position nor a watchlist entry: nothing to brief on, and
+        # the Streamlit page clears the slot for exactly this account.
+        return _empty(day)
+    briefing.start(account, prefs, facts, lang, day, stored, key=key, forced=force)
+    return _status(account, lang)
+
+
+def _stored(account) -> daily.DailyAction | None:
+    return daily.DailyAction.from_dict(
         loaders.stored_action(str(account.action), loaders.file_mtime(account.action))
     )
-    answer = DailyCard(
+
+
+def _empty(day) -> DailyCard:
+    return DailyCard(
         action_day=day.isoformat(), cutoff_hour=daily.CUTOFF_HOUR, fresh=False
     )
-    if stored is None:
-        return answer
+
+
+def _answer(action: daily.DailyAction, day, *, fresh: bool, pending=False) -> DailyCard:
     return DailyCard(
-        day=stored.day,
-        headline=stored.headline,
-        bullets=list(stored.bullets),
-        focus=list(stored.focus),
-        as_of=stored.as_of or None,
-        lang=stored.lang,
-        source=stored.source,
+        day=action.day,
+        headline=action.headline,
+        bullets=list(action.bullets),
+        focus=list(action.focus),
+        as_of=action.as_of or None,
+        lang=action.lang,
+        source=action.source,
         action_day=day.isoformat(),
         cutoff_hour=daily.CUTOFF_HOUR,
-        fresh=daily.is_fresh(stored, day, lang, _last_session(account)),
+        fresh=fresh,
+        generated=action.generated or None,
+        pending=pending,
     )
+
+
+def _status(account, lang: str) -> DailyCard:
+    """What the card slot shows now, from the stored card and the job.
+
+    A generation out wins: a forced one has taken the old card away (the
+    reader just dismissed it) and answers with no headline; an automatic one
+    answers with the computed stand-in. Then a stored card that stands. Then a
+    finished job for this key that stored nothing — the model gave no answer —
+    whose computed card is today's, and so fresh. Last, whatever is stored,
+    marked as the older card it is.
+    """
+    _, day = briefing.now_day()
+    session = _last_session(account)
+    job = briefing.job_for(account, briefing.key_for(day, lang, session))
+    stored = _stored(account)
+    if job is not None and not job.done:
+        if job.computed is None:
+            answer = _empty(day)
+            answer.pending = True
+            return answer
+        return _answer(job.computed, day, fresh=True, pending=True)
+    if stored is not None and daily.is_fresh(stored, day, lang, session):
+        return _answer(stored, day, fresh=True)
+    if job is not None:
+        # Done, and nothing fresh on disk: the model gave nothing back (or the
+        # save failed) — its own card if it has one, else the stand-in.
+        fallback = job.action or job.computed
+        if fallback is not None:
+            return _answer(fallback, day, fresh=True)
+    if stored is None:
+        return _empty(day)
+    return _answer(stored, day, fresh=False)
 
 
 def _last_session(account) -> str | None:
@@ -169,13 +265,15 @@ def movers(
         whole = basket_change(frame, days)
     changes = changes.dropna().sort_values(ascending=False)
 
-    answer.gainers = [
-        Mover(ticker=str(t), pct=float(v))
-        for t, v in changes[changes > 0].head(SHOWN).items()
-    ]
+    def mover(ticker, pct) -> Mover:
+        # Only today's figure can be a stale close — `home.py` dims the day
+        # column alone, for names whose market is not active right now.
+        live = market_active(str(ticker)) if days <= 1 else None
+        return Mover(ticker=str(ticker), pct=float(pct), active=live)
+
+    answer.gainers = [mover(t, v) for t, v in changes[changes > 0].head(SHOWN).items()]
     answer.losers = [
-        Mover(ticker=str(t), pct=float(v))
-        for t, v in changes[changes < 0].tail(SHOWN).sort_values().items()
+        mover(t, v) for t, v in changes[changes < 0].tail(SHOWN).sort_values().items()
     ]
     if whole:
         answer.amount, answer.basket = _num(whole[0]), _num(whole[1])
@@ -198,37 +296,27 @@ def _as_of(frame: pd.DataFrame, quotes: dict[str, dict] | None) -> str | None:
 
 @router.get("/extremes", response_model=Extremes, summary="At a 52-week edge")
 def extremes(account: Account) -> Extremes:
-    """Watchlist names sitting within 2% of a 52-week high or low.
+    """Held and favourite names sitting within 2% of a 52-week high or low.
 
-    One bulk year of closes over the watchlist, shared with any other account
-    tracking the same names. `distance` is null at or beyond the edge, which is
-    a different fact from being 0% away from it.
+    `home.py`'s scope, not the whole watchlist: the book's own positions —
+    whether or not they are on the list — plus the starred names, crypto left
+    out (`home.extremes_scope`). A guest holds nothing, so theirs is the shared
+    list's favourites. The year of closes is the page's one bulk download
+    (`home.closes_tuple`), the same entry the watchlist rows read.
+
+    `distance` is null at or beyond the edge, which is a different fact from
+    being 0% away from it; `scanned: 0` means there was nothing to look at.
     """
-    tickers = tuple(sorted({h.ticker for h in load_watchlist(account.watchlist)}))
-    year = loaders.watchlist_closes(tickers)
-    out: list[Extreme] = []
-    for ticker in tickers:
-        series = year.get(ticker)
-        closes = [] if series is None else [float(v) for v in series.dropna()]
-        if len(closes) < 2:
-            continue
-        last, high, low = closes[-1], max(closes), min(closes)
-        if high and last >= high * (1 - EDGE_BAND):
-            out.append(
-                Extreme(
-                    ticker=ticker,
-                    price=last,
-                    edge="high",
-                    distance=None if last >= high else last / high - 1,
-                )
-            )
-        elif low and last <= low * (1 + EDGE_BAND):
-            out.append(
-                Extreme(
-                    ticker=ticker,
-                    price=last,
-                    edge="low",
-                    distance=None if last <= low else last / low - 1,
-                )
-            )
-    return Extremes(extremes=out)
+    entries = home.holdings(account)
+    owned = home.held(account)
+    scope = home.extremes_scope(entries, owned)
+    if not scope:
+        return Extremes(scanned=0)
+    year = home.year_closes(home.closes_tuple(entries, owned))
+    return Extremes(
+        scanned=len(scope),
+        extremes=[
+            Extreme(ticker=ticker, price=price, edge=edge, distance=distance)
+            for ticker, price, edge, distance in home.scan_extremes(scope, year)
+        ],
+    )

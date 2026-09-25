@@ -22,6 +22,7 @@
   "nav.expand": "Desplegar el menú",
   "nav.home": "Inicio",
   "nav.import": "Importar",
+  "nav.more": "Más",
   "nav.portfolio": "Asignación",
   "nav.profile": "Perfil",
   "nav.section_account": "Cuenta",
@@ -31,5 +32,6 @@
   "nav.sector": "Sectores",
   "nav.sentiment": "Pulso",
   "nav.ticker": "Ticker",
-  "common.cancel": "Cancelar"
+  "common.cancel": "Cancelar",
+  "common.legacy_banner": "Esta es la **versión anterior** de TopStocks, solo para consultar. Lee y escribe los mismos datos que la app, así que los cambios hazlos en [la app](/) y no aquí."
 }

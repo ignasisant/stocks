@@ -224,6 +224,29 @@ def test_a_provider_that_refuses_the_message_is_not_a_500(
     assert response.json()["detail"] == "chat not found"
 
 
+def test_a_linked_chat_names_its_handle(client, account, signed_in, monkeypatch):
+    """The @username the link job recorded, which the Streamlit page prints
+    beside "connected" — and nothing once the chat is gone, so the next link
+    does not come back wearing the previous chat's name."""
+    monkeypatch.setattr(telegram, "configured", lambda: True)
+    accounts.update_prefs(
+        account.prefs, {"telegram_chat_id": "42", "telegram_username": "ada"}
+    )
+    assert signed_in.get("/v1/notify/telegram").json()["username"] == "ada"
+    body = signed_in.request("DELETE", "/v1/notify/telegram").json()
+    assert body["username"] is None
+    assert prefs_of(account).get("telegram_username") is None
+
+
+def test_a_chat_without_a_public_username_names_nobody(
+    client, account, signed_in, monkeypatch
+):
+    monkeypatch.setattr(telegram, "configured", lambda: True)
+    accounts.update_prefs(account.prefs, {"telegram_chat_id": "42"})
+    body = signed_in.get("/v1/notify/telegram").json()
+    assert body["linked"] is True and body["username"] is None
+
+
 def test_unlinking_keeps_the_switches(client, account, signed_in, monkeypatch):
     """A reader who disconnects and comes back should find the three toggles
     the way they left them — clearing them here would turn notifications on

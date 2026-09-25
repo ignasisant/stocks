@@ -1,8 +1,8 @@
 """The Streamlit app — st.navigation over the app_pages/ modules.
 
-Run: uv run stocks dashboard   (which serves stocks.web.server, the ASGI entry
-point that fronts this script with the static landing page; running this file
-directly with `streamlit run` still works and simply has no landing).
+The retired app. `uv run stocks dashboard` serves stocks.web.server, which
+mounts this script at /legacy behind the React app; running this file directly
+with `streamlit run` still works and simply has no landing and no API.
 
 Page config, the dense-layout CSS and the nav are defined once here; the page
 modules under app_pages/ carry only their own content. Colors and fonts live
@@ -15,6 +15,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from urllib.error import URLError
+from urllib.parse import urlsplit
 
 # Hosts that run this file straight from the repo checkout (no editable
 # install) need src/ on sys.path; locally it pins imports to the source tree.
@@ -1151,6 +1152,13 @@ _focus = (
     else None
 )
 render_topbar(page.title, _focus)
+
+# This script is the retired app, mounted at /legacy behind the React one (see
+# stocks.web.server). It still writes the account's real files, so every page
+# says what it is and where the app is. Read off the URL rather than assumed,
+# so a bare `streamlit run` of this file — and every AppTest — is left alone.
+if urlsplit(st.context.url or "").path.startswith("/legacy"):
+    st.warning(tr("common.legacy_banner"), icon=":material/history:")
 
 # Phones swap the sidebar for the DS bottom tab bar (Inicio · Cartera ·
 # Screener · Perfil); the drawer stays behind the header's menu toggle for the

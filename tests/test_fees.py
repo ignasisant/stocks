@@ -2,7 +2,12 @@
 
 import pandas as pd
 
-from stocks.portfolio.fees import broker_of, by_broker, spread_by_broker
+from stocks.portfolio.fees import (
+    broker_of,
+    by_broker,
+    spread_by_broker,
+    stamp_listing_currency,
+)
 from stocks.portfolio.ledger import Transaction
 
 
@@ -73,13 +78,13 @@ def test_spread_vs_session_midpoint():
 
 def test_spread_outside_range_is_definite_markup():
     txs = [
-        Transaction("2024-01-02", "A", "buy", quantity=2, price=12,
+        Transaction("2024-01-02", "A", "buy", quantity=2, price=10.7,
                     currency="EUR", note="revolut"),
     ]
-    bars = {"A": _bars(["2024-01-02"], [11], [9])}
+    bars = {"A": _bars(["2024-01-02"], [10.5], [9.5])}
     s = spread_by_broker(txs, bars, to_base=_eur)["revolut"]
-    assert abs(s.spread - 4.0) < 1e-9  # (12 - 10) * 2
-    assert abs(s.outside_range - 2.0) < 1e-9  # (12 - 11) * 2
+    assert abs(s.spread - 1.4) < 1e-9  # (10.7 - 10) * 2
+    assert abs(s.outside_range - 0.4) < 1e-9  # (10.7 - 10.5) * 2
 
 
 def test_spread_split_adjusts_pre_split_trades():
@@ -104,3 +109,61 @@ def test_spread_sign_can_be_negative():
     bars = {"A": _bars(["2024-01-02"], [11], [9])}
     s = spread_by_broker(txs, bars, to_base=_eur)["degiro"]
     assert abs(s.spread - (-5.0)) < 1e-9  # bought below mid
+
+
+def test_spread_converts_bars_listed_in_another_currency():
+    """The alias bug: a dollar ADR fill (Revolut ``ASML``) priced against the
+    euro listing the alias resolves to (``ASML.AS``). Uncorrected, $720 vs a
+    EUR 360 mid read as a 100% spread; converted at the day's rate (USD = 0.5
+    EUR here, so EUR 360 = $720) it is none."""
+    txs = [
+        Transaction("2024-10-24", "ASML", "buy", quantity=2, price=720.0,
+                    currency="USD", note="revolut"),
+    ]
+    bars = stamp_listing_currency(
+        {"ASML": _bars(["2024-10-24"], [362.0], [358.0])}, {"ASML": "EUR"}
+    )
+    s = spread_by_broker(txs, bars, to_base=_eur)["revolut"]
+    assert s.measured == 1 and s.skipped == 0
+    assert abs(s.spread) < 1e-9
+    assert abs(s.measured_volume - 720.0) < 1e-9  # 1440 USD in EUR
+
+
+def test_spread_scales_minor_unit_listings():
+    # London quotes in pence: a 1000p bar is a GBP 10 share.
+    txs = [
+        Transaction("2024-01-02", "SHEL", "buy", quantity=10, price=10.1,
+                    currency="GBP", note="ibkr"),
+    ]
+    bars = stamp_listing_currency(
+        {"SHEL": _bars(["2024-01-02"], [1010.0], [990.0])}, {"SHEL": "GBp"}
+    )
+    s = spread_by_broker(txs, bars, to_base=lambda a, c, d: a)["ibkr"]
+    assert s.measured == 1
+    assert abs(s.spread - 1.0) < 1e-9  # (10.1 - 10.0) * 10
+
+
+def test_unstamped_bars_keep_the_execution_currency():
+    # No listing currency known: same arithmetic as before the conversion.
+    txs = [
+        Transaction("2024-01-02", "A", "buy", quantity=1, price=10.2,
+                    currency="USD", note="revolut"),
+    ]
+    bars = {"A": _bars(["2024-01-02"], [10.5], [9.5])}
+    s = spread_by_broker(txs, bars, to_base=_eur)["revolut"]
+    assert abs(s.spread - 0.1) < 1e-9  # (10.2 - 10) USD * 0.5
+
+
+def test_fill_far_outside_the_day_is_skipped_not_measured():
+    """A price no broker markup explains (the sample statement's made-up NVDA
+    fill, a missing split row) must not swamp the book's estimate."""
+    txs = [
+        Transaction("2024-01-02", "A", "buy", quantity=1, price=10.0,
+                    currency="EUR", note="revolut"),
+        Transaction("2024-01-03", "A", "sell", quantity=1, price=7.0,
+                    currency="EUR", note="revolut"),
+    ]
+    bars = {"A": _bars(["2024-01-02", "2024-01-03"], [10.5, 10.5], [9.5, 9.5])}
+    s = spread_by_broker(txs, bars, to_base=_eur)["revolut"]
+    assert (s.measured, s.skipped) == (1, 1)
+    assert abs(s.spread) < 1e-9 and s.outside_range == 0.0

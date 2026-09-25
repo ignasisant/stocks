@@ -45,9 +45,16 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         # --- Home ---------------------------------------------------------
         ("/v1/watchlist", "GET"),
         ("/v1/earnings", "GET"),
+        # A past chip's result dialog: the same calendar, one print deeper.
+        # Public figures about a company, nothing of the account's.
+        ("/v1/earnings/{symbol}/result", "GET"),
         ("/v1/search", "GET"),
         # The setup card and the tour read this; stamping it seen does not.
         ("/v1/onboarding", "GET"),
+        # The 52-week edges of the shared watchlist, a card the guest Home draws.
+        ("/v1/extremes", "GET"),
+        # The watchlist rows' last close and day %, over the shared list.
+        ("/v1/home/closes", "GET"),
         # --- Portfolio, all five tabs, over the shared demo book ----------
         ("/v1/portfolio/positions", "GET"),
         ("/v1/portfolio/summary", "GET"),
@@ -59,6 +66,8 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         ("/v1/portfolio/dividends", "GET"),
         ("/v1/portfolio/tax", "GET"),
         ("/v1/portfolio/risk", "GET"),
+        # The positions tab's day / week / month columns, over the same book.
+        ("/v1/movers", "GET"),
         # --- Ticker, minus favourites, tags, alerts and the assistant -----
         ("/v1/ticker/{symbol}/profile", "GET"),
         ("/v1/ticker/{symbol}/position", "GET"),
@@ -108,7 +117,6 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
 #                         would hand the next visitor this one's place in it.
 #   /v1/daily             a generated briefing on a per-account budget, stored
 #                         in a file every visitor would share.
-#   /v1/movers /extremes  the dashboard cards the guest Home does not draw.
 #   /v1/search/recent     a history a guest cannot have and must not share.
 #   /v1/watchlist/tags, /suggestions, /{ticker}/alerts   somebody's own edits.
 #   /v1/notify/*, /v1/account, /v1/bank/*, and every write but the one above.

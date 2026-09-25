@@ -134,7 +134,13 @@ def test_the_guest_list_is_not_silently_growing():
     a line that rode in on a feature branch."""
     # 43: `GET /sectors/{sector}/verdict` — the computed stand-in, which is
     # what the Streamlit card has always shown a visitor with no account.
-    assert len(guest.OPEN) == 43
+    # 45: `GET /movers` and `GET /extremes` — cards the guest's Home and
+    # Portfolio already drew, over the shared demo book and watchlist.
+    # 46: `GET /earnings/{symbol}/result` — the dialog a past calendar chip
+    # opens, which the guest calendar already offered in Streamlit.
+    # 47: `GET /home/closes` — the guest Home's watchlist rows, last close and
+    # day %, which Streamlit has always drawn over the shared list.
+    assert len(guest.OPEN) == 47
 
 
 def test_every_route_a_guest_may_read_is_a_read():

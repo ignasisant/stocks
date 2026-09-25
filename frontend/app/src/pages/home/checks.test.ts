@@ -101,3 +101,14 @@ describe("target", () => {
     expect(EXPLORE.map((entry) => entry.key)).toEqual(["search", "ask", "watchlist"]);
   });
 });
+
+describe("guests", () => {
+  it("disables every row whose target sits behind a sign-in, and only those", () => {
+    // `home.py` disables the import, AI, Telegram, ask and watchlist pills for
+    // a guest; search stays live, and sign-in is the pending action itself.
+    const gated = [...SETUP, ...EXPLORE]
+      .filter((entry) => entry.signedIn)
+      .map((entry) => entry.key);
+    expect(gated).toEqual(["import", "ai", "telegram", "ask", "watchlist"]);
+  });
+});

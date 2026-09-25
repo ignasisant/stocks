@@ -20,7 +20,7 @@
  */
 
 import { useRef, useState } from "react";
-import type { ChangeEvent, FocusEvent } from "react";
+import type { ChangeEvent, DragEvent, FocusEvent } from "react";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
@@ -89,6 +89,8 @@ function Importer({ platforms }: { platforms: Platform[] }) {
   // A pasted format this platform has no parser for, by its extension.
   const [wrongType, setWrongType] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
+  // A file held over the drop zone, which lights it up as a target.
+  const [dragging, setDragging] = useState(false);
   const [wipe, setWipe] = useState<WipeChoice>(NO_WIPE);
   // Bumped by anything that writes: the ledger count, the last-import record
   // and both repairs are stale the moment a commit, an undo or a wipe lands.
@@ -117,7 +119,11 @@ function Importer({ platforms }: { platforms: Platform[] }) {
   const nothingReal = held !== null && held.complete && real === 0;
   const noRecord = last.state === "loaded" && !last.data.filename;
 
-  const stage = async (name: string, blob: Blob) => {
+  const stage = async (
+    name: string,
+    blob: Blob,
+    surface: "import" | "paste" = "import",
+  ) => {
     setResult(null);
     if (blob.size > MAX_BYTES) {
       // Said before the upload rather than after: the API answers 413 above
@@ -127,12 +133,40 @@ function Importer({ platforms }: { platforms: Platform[] }) {
       return;
     }
     setOversize(null);
-    setStaged({ filename: name, content: await asBase64(blob), bytes: blob.size });
+    setStaged({
+      filename: name,
+      content: await asBase64(blob),
+      bytes: blob.size,
+      surface,
+    });
   };
 
   const onPick = (event: ChangeEvent<HTMLInputElement>) => {
     const picked = event.target.files?.[0];
-    if (picked) void stage(picked.name, picked);
+    if (picked) {
+      setWrongType(null);
+      void stage(picked.name, picked);
+    }
+  };
+
+  // A dropped file skips the dialog, and with it the `accept` filter the
+  // dialog applies — so the extension is checked here, and a format this
+  // platform has no parser for is named the way a pasted one is.
+  const onDrop = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setDragging(false);
+    const dropped = event.dataTransfer.files[0];
+    if (!dropped) return;
+    const kind = dropped.name.includes(".")
+      ? (dropped.name.split(".").pop() ?? "").toLowerCase()
+      : "";
+    if (!platform.file_types.includes(kind)) {
+      setWrongType(kind || "?");
+      setStaged(null);
+      return;
+    }
+    setWrongType(null);
+    void stage(dropped.name, dropped);
   };
 
   // No button: a text area commits on blur, which is the same moment the
@@ -151,7 +185,7 @@ function Importer({ platforms }: { platforms: Platform[] }) {
       return;
     }
     setWrongType(null);
-    void stage(asFile.filename, asFile.blob);
+    void stage(asFile.filename, asFile.blob, "paste");
   };
 
   const clear = () => {
@@ -209,6 +243,22 @@ function Importer({ platforms }: { platforms: Platform[] }) {
               onClick={() => choose(entry.key)}
               type="button"
             >
+              {/* The brand mark beside the name, as the Streamlit picker
+                  draws it. Decorative — the name is the label — so an image
+                  that fails to load simply goes away. */}
+              {entry.logo ? (
+                <img
+                  alt=""
+                  className="im-platform-logo"
+                  height={16}
+                  loading="lazy"
+                  onError={(event) => {
+                    event.currentTarget.style.display = "none";
+                  }}
+                  src={entry.logo}
+                  width={16}
+                />
+              ) : null}
               {entry.label}
             </button>
           ))}
@@ -216,21 +266,68 @@ function Importer({ platforms }: { platforms: Platform[] }) {
       </div>
 
       <div className="im-field">
-        <label className="im-label" htmlFor="im-file">
+        <span className="im-label" id="im-file-label">
           {t("import.uploader_label", {
             platform: platform.label,
             types: platform.file_types.map((kind) => kind.toUpperCase()).join(", "),
           })}
+        </span>
+        {/* The drop zone the Streamlit uploader draws, in this app's words: a
+            bare <input type=file> prints "Choose File / No file chosen" in the
+            browser's language rather than the reader's, and says nothing about
+            what it takes. The input is still the control — visually hidden,
+            focusable, inside the label that opens it — so the keyboard and a
+            screen reader get the native dialog, and a drop lands on the same
+            pipeline as a pick. */}
+        <label
+          className={dragging ? "im-drop im-drop-on" : "im-drop"}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={(event) => {
+            // Leaving for a child of the zone is not leaving the zone.
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+              setDragging(false);
+          }}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={onDrop}
+        >
+          <input
+            accept={platform.file_types.map((kind) => `.${kind}`).join(",")}
+            aria-describedby="im-file-cap"
+            aria-labelledby="im-file-label"
+            className="im-file"
+            id="im-file"
+            key={platform.key}
+            onChange={onPick}
+            ref={file}
+            type="file"
+          />
+          <span className="im-drop-text">
+            <span className="im-drop-title">
+              {staged && staged.surface === "import"
+                ? t("import.drop_chosen", {
+                    name: staged.filename,
+                    size: sizeLabel(staged.bytes),
+                  })
+                : t("import.drop_title")}
+            </span>
+            <span className="im-drop-cap" id="im-file-cap">
+              {staged && staged.surface === "import"
+                ? t("import.drop_replace")
+                : t("import.drop_caption", {
+                    cap: MAX_BYTES / (1024 * 1024),
+                    types: platform.file_types
+                      .map((kind) => kind.toUpperCase())
+                      .join(", "),
+                  })}
+            </span>
+          </span>
+          <span className="im-drop-btn" aria-hidden="true">
+            {t("import.drop_browse")}
+          </span>
         </label>
-        <input
-          accept={platform.file_types.map((kind) => `.${kind}`).join(",")}
-          className="im-file"
-          id="im-file"
-          key={platform.key}
-          onChange={onPick}
-          ref={file}
-          type="file"
-        />
       </div>
 
       {/* The second door into the same pipeline, for a reader whose browser
@@ -479,4 +576,14 @@ function LastBatch({
       </p>
     </section>
   );
+}
+
+/**
+ * A file's size the way the uploader caption states the cap: whole kilobytes
+ * under a megabyte, one decimal of megabytes above it. Units are symbols, the
+ * same in every catalog, so there is nothing here to translate.
+ */
+function sizeLabel(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

@@ -1,0 +1,144 @@
+/* The shell's own additions: the rail's section headers, the parked tour's
+   strip, the investor-profile nudge, the feedback dialog's attachments and the
+   ticker cell's name. Beside the components that draw them rather than in
+   styles.css, which every page shares — and written only in published --ag-*
+   tokens, like everything else here (tests/test_frontend_tokens.py). */
+
+/* A group adds a header and nothing else: its links stay direct flex items of
+   the rail (and of the phone bar), exactly as they were before there were
+   groups. */
+.ag-nav-group {
+  display: contents;
+}
+
+.ag-nav-section {
+  margin: 0.9rem 0 0.2rem;
+  padding: 0 0.7rem;
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+:root[data-nav="folded"] .ag-nav-section {
+  display: none;
+}
+
+/* The phone bar has room for four glyphs, not for headers; the "More" sheet
+   has room for both. */
+@media (max-width: 640px) {
+  .ag-nav > .ag-nav-group > .ag-nav-section {
+    display: none;
+  }
+  .ag-nav-sheet .ag-nav-section {
+    display: block;
+    margin-top: 0.5rem;
+  }
+}
+
+/* The parked tour: one line above the page body, on every page. Not a modal —
+   the point of "take me there" is that the reader is looking at the page. */
+.ag-tour-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--ag-border);
+  border-left: 3px solid var(--ag-brand-accent);
+  border-radius: var(--ag-radius-xs, 6px);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-tour-strip-text {
+  flex: 1 1 16rem;
+}
+
+.ag-tour-strip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Why the step's button is disabled — a guest on a step that reads somebody's
+   own data. */
+.ag-tour-note {
+  margin: -8px 0 14px;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-tour-cta:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* The investor-profile nudge borrows the tour's dialog; these are the rows. */
+.ag-pp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 0;
+}
+
+.ag-pp-label {
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-pp .ag-tour-foot {
+  margin-top: 16px;
+}
+
+/* Feedback: the row of optional extras under the text box, and the preview. */
+.ag-fb-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ag-fb-hint {
+  margin: 6px 0 0;
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-fb-shot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.ag-fb-shot img {
+  max-width: 160px;
+  max-height: 100px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-xs, 6px);
+}
+
+/* The guest banner's "Dismiss": the quietest thing in it. */
+.ag-guest-dismiss {
+  padding: 0.3rem 0.6rem;
+  border: none;
+  background: none;
+  color: var(--ag-text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ag-guest-dismiss:hover {
+  color: var(--ag-text-primary);
+}
+
+/* The ticker cell: the symbol reads first, the company after it in a quieter
+   voice. Inline, like the link always was — the logo keeps its own spacing
+   (styles.css) and a table's rows keep the height their text sets. */
+.ag-tick-name {
+  color: var(--ag-text-muted);
+}

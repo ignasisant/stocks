@@ -18,36 +18,97 @@
  * a key — the case this screen exists to resolve — and a tile that un-pressed
  * itself would tell the reader their choice did not take.
  *
- * Unlike the panel there is no "this session only" key: an HTTP client has no
- * session for a key to live in, so the only honest choices are store it
- * encrypted or do not send it, and the copy here says the first.
+ * A key is either stored encrypted on the account or held by this tab alone —
+ * the Streamlit panel's "Remember" checkbox, with the tab's sessionStorage in
+ * the role `st.session_state` plays there (`sessionKey.ts`). A deployment with
+ * no encryption secret offers only the second, and says so before the reader
+ * types anything rather than refusing the key on submit.
  */
 
 import { useId, useState } from "react";
 import { useT } from "../shell/i18n";
 import { ApiError } from "../shell/api";
-import { forgetKey, storeKey } from "./api";
+import { forgetKey, readState, revealKey, storeKey } from "./api";
 import { keyError, providerTag } from "./format";
 import { Glyph } from "./icons";
+import { dropSessionKey, holdSessionKey, readSessionKey } from "./sessionKey";
 import type { ChatState, ProviderInfo, SettingsPatch } from "./types";
 
 function Group({ children }: { children: string }) {
   return <p className="ag-chat-group">{children}</p>;
 }
 
-/** The key form, or what is stored and the button that forgets it. */
+/**
+ * The key in use, masked, with an opt-in reveal — `chat_core._show_key`.
+ *
+ * Masked by default because a settings screen is the one a reader opens with
+ * somebody looking over their shoulder; the tail alone is enough to tell two
+ * keys apart. Revealing a stored key is a round trip to the one route that
+ * hands a secret out (session only, never cached); revealing this tab's key
+ * needs none, because the tab already holds it. Either way the full key lives
+ * in this component's state for as long as it is on screen and is dropped the
+ * moment it is hidden again.
+ */
+function Shown({ provider }: { provider: ProviderInfo }) {
+  const t = useT();
+  const [full, setFull] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const masked = `••••••••${provider.key_tail ?? ""}`;
+
+  const toggle = async () => {
+    if (full !== null) {
+      setFull(null);
+      return;
+    }
+    setFailed(false);
+    if (provider.key_session) {
+      const held = readSessionKey();
+      if (held?.provider === provider.id) setFull(held.key);
+      return;
+    }
+    try {
+      setFull(await revealKey(provider.id));
+    } catch {
+      setFailed(true);
+    }
+  };
+
+  return (
+    <div className="ag-chat-keyshow">
+      <code className="ag-chat-keycode">{full ?? masked}</code>
+      <button
+        type="button"
+        className="ag-chat-meta-btn"
+        aria-pressed={full !== null}
+        onClick={() => void toggle()}
+      >
+        {t("chat.key_show")}
+      </button>
+      {failed && <p className="ag-chat-note">{t("chat.api_error")}</p>}
+    </div>
+  );
+}
+
+/** The key form, or what is in use and the button that forgets it. */
 function Key({
   provider,
+  storage,
   busy,
   onState,
 }: {
   provider: ProviderInfo;
+  /** Whether the deployment can keep a key at all (`state.key_storage`). */
+  storage: boolean;
   busy: boolean;
   onState: (next: ChatState) => void;
 }) {
   const t = useT();
   const uid = useId();
   const [typed, setTyped] = useState("");
+  // Remember is the default where the server can keep a key: that is what
+  // this drawer always did, and a reader who wants less ticks it off. Where
+  // it cannot, there is no box — a choice with one answer is not a choice.
+  const [remember, setRemember] = useState(true);
   const [failed, setFailed] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
 
@@ -57,7 +118,18 @@ function Key({
     setWorking(true);
     setFailed(null);
     try {
-      onState(await storeKey(provider.id, key));
+      if (storage && remember) {
+        onState(await storeKey(provider.id, key));
+        // A stored key supersedes one this tab was holding for the same
+        // provider; leaving both would make the tab's win on every request.
+        if (readSessionKey()?.provider === provider.id) dropSessionKey();
+      } else {
+        if (!holdSessionKey({ provider: provider.id, key })) {
+          setFailed("chat.key_session_blocked");
+          return;
+        }
+        onState(await readState());
+      }
       setTyped("");
     } catch (failure) {
       // The three refusals are not interchangeable: 503 is this deployment
@@ -71,31 +143,43 @@ function Key({
     }
   };
 
+  const forget = async () => {
+    setWorking(true);
+    setFailed(null);
+    try {
+      if (provider.key_session) {
+        dropSessionKey();
+        onState(await readState());
+      } else {
+        onState(await forgetKey(provider.id));
+      }
+    } catch {
+      setFailed("chat.api_error");
+    } finally {
+      setWorking(false);
+    }
+  };
+
   if (provider.has_key) {
     return (
       <>
+        {provider.key_tail && <Shown provider={provider} />}
         <p className="ag-chat-hint">
           {/* "Expires in 0 days" over a key that works is worse than saying
               nothing about its lifetime, so a key with none to report says
-              only that it is kept. */}
-          {provider.key_days_left === null
-            ? t("chat.key_kept")
-            : t("chat.key_stored", { days: provider.key_days_left })}
+              only that it is kept. A key this tab holds says where it lives,
+              because "gone when you close the tab" is the thing to know. */}
+          {provider.key_session
+            ? t("chat.key_session_only")
+            : provider.key_days_left === null
+              ? t("chat.key_kept")
+              : t("chat.key_stored", { days: provider.key_days_left })}
         </p>
         <button
           type="button"
           className="ag-chat-btn"
           disabled={busy || working}
-          onClick={async () => {
-            setWorking(true);
-            try {
-              onState(await forgetKey(provider.id));
-            } catch {
-              setFailed("chat.api_error");
-            } finally {
-              setWorking(false);
-            }
-          }}
+          onClick={() => void forget()}
         >
           <Glyph name="key" size={14} />
           {t("chat.forget")}
@@ -114,7 +198,9 @@ function Key({
       }}
     >
       <p className="ag-chat-hint">
-        {t("chat.byok_help_stored", { provider: provider.label })}
+        {t(storage ? "chat.byok_help" : "chat.byok_help_session", {
+          provider: provider.label,
+        })}
       </p>
       <label htmlFor={`${uid}-key`} className="ag-sr">
         {t("chat.key_label", { provider: provider.label })}
@@ -128,6 +214,16 @@ function Key({
         aria-label={t("chat.key_label", { provider: provider.label })}
         onChange={(event) => setTyped(event.target.value)}
       />
+      {storage && (
+        <label className="ag-chat-check">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(event) => setRemember(event.target.checked)}
+          />
+          {t("chat.remember")}
+        </label>
+      )}
       <div className="ag-chat-import-acts">
         <button
           type="submit"
@@ -241,7 +337,12 @@ export function Settings({
           {picked.needs_key ? (
             <>
               <Group>{t("chat.sec_key")}</Group>
-              <Key provider={picked} busy={busy} onState={onState} />
+              <Key
+                provider={picked}
+                storage={state.key_storage ?? true}
+                busy={busy}
+                onState={onState}
+              />
             </>
           ) : (
             // The keyless chain's pot, as a figure and as a bar: the caption

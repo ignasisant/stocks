@@ -226,6 +226,9 @@ def test_the_watchlist_comes_back_as_stored(client, token, account):
         "name": "Apple",
         "favorite": True,
         "tags": ["Tech"],
+        # No position typed in: null, not 0 — an empty cell, not "sold".
+        "shares": None,
+        "cost": None,
         "is_crypto": False,
     }
 
@@ -273,6 +276,9 @@ def test_an_unpriced_position_reads_null_and_is_counted(
         index=pd.Index(["AAPL", "MSFT"], name="ticker"),
     )
     monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    # Today's move is a basket read and a quote burst; offline here.
+    monkeypatch.setattr(loaders, "basket_values", lambda *a, **k: pd.DataFrame())
+    monkeypatch.setattr(loaders, "quotes", lambda tickers: {})
 
     body = client.get(
         "/v1/portfolio/positions", params={"account": EMAIL}, headers=AUTH
@@ -308,6 +314,8 @@ def test_a_share_price_is_reported_in_the_currency_it_trades_in(
     )
     monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
     monkeypatch.setattr(loaders, "spot_rates", lambda ccys, base="EUR": {"USD": 0.5})
+    monkeypatch.setattr(loaders, "basket_values", lambda *a, **k: pd.DataFrame())
+    monkeypatch.setattr(loaders, "quotes", lambda tickers: {})
 
     body = client.get(
         "/v1/portfolio/positions", params={"account": EMAIL}, headers=AUTH
@@ -336,6 +344,8 @@ def test_a_price_with_no_rate_to_convert_it_reads_null(
     )
     monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
     monkeypatch.setattr(loaders, "spot_rates", lambda ccys, base="EUR": {})
+    monkeypatch.setattr(loaders, "basket_values", lambda *a, **k: pd.DataFrame())
+    monkeypatch.setattr(loaders, "quotes", lambda tickers: {})
 
     body = client.get(
         "/v1/portfolio/positions", params={"account": EMAIL}, headers=AUTH
@@ -543,6 +553,18 @@ WRITES = {
     # The sector screen's written read. It spends a unit of the account's
     # allowance and stores the answer beside its prefs, so a token may not.
     ("/v1/sectors/{sector}/verdict", "post"),
+    # The daily card, written. It spends a unit of the allowance and stores
+    # the card beside the prefs — the sector read's twin, and refused to a
+    # token for the same reason.
+    ("/v1/daily", "post"),
+    # Home's "Refresh prices". It writes nothing, but it drops process-wide
+    # price caches — every account's downloads — so it is a pressed button,
+    # and only a signed-in reader presses buttons.
+    ("/v1/home/refresh", "post"),
+    # The live rescan. It writes no file, but it spends a minute of Yahoo's
+    # patience from this deployment's IP and one of the account's hourly
+    # budget — a token naming somebody must not spend either in their name.
+    ("/v1/sectors/{sector}/rescan", "post"),
     # The walkthrough. Each moves stored state — the marker, the spent
     # automatic opens, the cards on the guide's thread — so none is a token's.
     ("/v1/guide/start", "post"),
@@ -604,6 +626,10 @@ WRITES = {
     # cap. Stored encrypted; a token must not be able to plant or remove one.
     ("/v1/chat/keys/{provider}", "put"),
     ("/v1/chat/keys/{provider}", "delete"),
+    # Reading the stored key back in full. A POST that writes nothing, and on
+    # this list for the rule the list enforces: a token names nobody, and a
+    # provider key is the one secret this API would otherwise hand to it.
+    ("/v1/chat/keys/{provider}/reveal", "post"),
     # The bank consent, in three writes and a delete. None of them touches the
     # ledger — this is PSD2 account *information*, read-only at the bank — but
     # all four change stored state: the `state` that a redirect will be matched

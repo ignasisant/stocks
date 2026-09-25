@@ -10,6 +10,7 @@
 import type { ReactNode } from "react";
 import { Link } from "../../shell/router";
 import { useT } from "../../shell/i18n";
+import { DownBody } from "./Down";
 import { DriftPill } from "./Hero";
 import { fixed, maybe, percent, sectorKey, share, signed } from "./format";
 import { topSectors } from "./logic";
@@ -46,9 +47,11 @@ function Tile({
 export function Book({
   book,
   rotation,
+  onRetry,
 }: {
   book: PulseBook;
   rotation: TrendBlock | null;
+  onRetry?: () => void;
 }) {
   const t = useT();
   const empty =
@@ -66,6 +69,17 @@ export function Book({
       <span className="sn-mono">{t("sentiment.book_src")}</span>
     </div>
   );
+
+  // A replay that could not be priced is not an empty ledger, and the import
+  // invitation below would say it is.
+  if (empty && book.unavailable) {
+    return (
+      <>
+        {head}
+        <DownBody reason={book.unavailable} onRetry={onRetry} />
+      </>
+    );
+  }
 
   if (empty) {
     // The hero's right half already carries the full invitation; repeating it
@@ -100,15 +114,15 @@ export function Book({
       t("sentiment.rotation_capture", { value: percent(book.rotation_capture, 2) }),
     );
   }
-  // Which of their largest sectors is beating the index right now. Both halves
-  // are the rotation block's own: the weight is this account's allocation and
-  // the month figure is already an excess return over the benchmark, so this
-  // reads a sign rather than computing a comparison.
+  // Which of their largest sectors is beating the index right now. The three
+  // come off the book's own split and the month figure off the rotation block,
+  // where it is already an excess return over the benchmark — so this reads a
+  // sign rather than computing a comparison.
   const names = (rows: TrendRow[]) =>
     rows
       .map((row) => maybe(t, `sentiment.sector_${sectorKey(row.name)}`) ?? row.name)
       .join(", ");
-  const { leading, lagging } = topSectors(rotation);
+  const { leading, lagging } = topSectors(rotation, book.sector_weights);
   if (leading.length > 0) {
     notes.push(t("sentiment.note_leading", { names: names(leading) }));
   }
@@ -120,16 +134,25 @@ export function Book({
     <>
       {head}
       <div className="sn-bk">
-        {/* One beta, not five: `/pulse/book` regresses the basket against the
-            S&P alone. The duration, credit and emerging-market betas the
-            Streamlit card shows have no field on this endpoint, and inventing
-            them client-side would mean a second price download per reader. */}
         <Tile
           label={t("sentiment.beta_equity")}
           value={fixed(book.beta, 2)}
           note={t("sentiment.beta_equity_help")}
           pill={<DriftPill now={book.beta_rolling} then={book.beta_rolling_then} />}
         />
+        {/* Duration, credit and emerging markets: the same regression on the
+            same EUR-rebased basket, one tile each. The pill is the drift of
+            the rolling beta, as on the equity tile — the level alone cannot
+            say the book got more rate-sensitive without anyone trading. */}
+        {(book.betas ?? []).map((entry) => (
+          <Tile
+            key={entry.key}
+            label={t(`sentiment.beta_${entry.key}`)}
+            value={fixed(entry.beta, 2)}
+            note={t(`sentiment.beta_${entry.key}_help`)}
+            pill={<DriftPill now={entry.rolling} then={entry.rolling_then} />}
+          />
+        ))}
         <Tile
           label={t("sentiment.side_corr")}
           value={signed(book.bond_correlation, 2)}
@@ -178,6 +201,10 @@ export function Book({
           ))}
         </div>
       )}
+      {/* The weights answered and the betas did not: the tiles already say
+          "n/a", and this says why, with the same stamp as every other block
+          on the page. */}
+      {book.unavailable && <DownBody reason={book.unavailable} onRetry={onRetry} />}
       <p className="sn-caption">{t("sentiment.book_help")}</p>
     </>
   );

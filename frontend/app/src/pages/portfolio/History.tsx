@@ -18,7 +18,7 @@ import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import type { History as HistoryData } from "./api";
 import { BookHistory } from "./charts";
-import { moneyIn } from "./format";
+import { moneyIn, percent } from "./format";
 import { Caption, Card, Segmented } from "./ui";
 
 // The same codes the Streamlit range control offers and the API accepts, so a
@@ -65,12 +65,15 @@ export default function History() {
                   injected: t("portfolio.series_injected"),
                   profit: t("portfolio.series_value_profit"),
                   loss: t("portfolio.series_value_loss"),
+                  pnl: t("portfolio.hist_pnl"),
+                  reset: t("portfolio.zoom_reset"),
                 }}
-                money={(value) => money(value) ?? ""}
+                money={(value, signed) => money(value, { signed }) ?? ""}
+                percent={(value) => percent(lang, value, { signed: true }) ?? ""}
                 formatDate={formatDate}
               />
               <Caption>
-                {t("portfolio.hist_note_injected")}
+                {t("portfolio.hist_note_injected")} {t("portfolio.zoom_hint")}
                 {history.missing.length
                   ? ` ${t("portfolio.hist_note_missing", {
                       tickers: history.missing.join(", "),

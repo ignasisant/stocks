@@ -33,6 +33,47 @@ export const CSS = `
   overflow-wrap: anywhere;
 }
 .pf-ident-note { font-size: var(--ag-fs-sm); color: var(--ag-text-muted); }
+.pf-avatar img {
+  width: 100%; height: 100%; border-radius: var(--ag-radius-pill); object-fit: cover;
+}
+.pf-ident-n {
+  font-size: var(--ag-fs-lg); font-weight: 600; color: var(--ag-text-primary);
+  overflow-wrap: anywhere;
+}
+.pf-ident-n + .pf-ident-e {
+  font-size: var(--ag-fs-sm); font-weight: 400; color: var(--ag-text-secondary);
+}
+/* Where the files live, and what that scope means: the right-hand column of
+   the card, beside the way out. */
+.pf-ident-r {
+  margin-left: auto; display: flex; flex-direction: column; gap: 6px;
+  align-items: flex-end; min-width: 0;
+}
+.pf-folder {
+  display: inline-flex; align-items: center; gap: 8px;
+  max-width: min(420px, 100%);
+  background: var(--ag-surface-page); border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm); padding: 6px 10px;
+  font-family: var(--ag-font-mono, ui-monospace, monospace); font-size: var(--ag-fs-xs);
+  color: var(--ag-text-secondary);
+}
+/* text-overflow needs a block, not the flex chip itself. */
+.pf-folder-p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-morehint {
+  display: block; margin-top: 8px;
+  font-size: var(--ag-fs-sm); color: var(--ag-text-faint);
+}
+/* The setup progress under the tour button: capabilities on, of all of them. */
+.pf-prog { display: flex; align-items: center; gap: 8px; }
+.pf-prog-track {
+  flex: 1; height: 4px; border-radius: var(--ag-radius-pill);
+  background: var(--ag-purple-800); overflow: hidden;
+}
+.pf-prog-fill { height: 100%; background: var(--ag-purple-400); }
+.pf-prog-n {
+  font-family: var(--ag-font-mono, ui-monospace, monospace); font-size: var(--ag-fs-2xs);
+  font-weight: 500; color: var(--ag-purple-400);
+}
 
 /* ----------------------------------------------------------------- tabs */
 .pf-tabs {
@@ -89,7 +130,9 @@ export const CSS = `
 }
 .pf-row-mid { align-items: center; }
 /* Fixed label gutter, as in the canvas: the help text must not reflow with
-   the viewport, and the control takes whatever is left. */
+   the viewport, and the control takes whatever is left — until what is left
+   is too little to draw a control in, where the row stacks (see the
+   container queries at the bottom). */
 .pf-row-l { flex: 0 0 260px; display: flex; flex-direction: column; gap: 4px; }
 .pf-row-lab { font-weight: 600; font-size: var(--ag-fs-md); }
 .pf-row-help {
@@ -101,7 +144,8 @@ export const CSS = `
 .pf-select, .pf-input {
   font: inherit; font-size: var(--ag-fs-md); color: var(--ag-text-primary);
   background: var(--ag-surface-page); border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-xs); padding: 7px 10px; max-width: 340px;
+  border-radius: var(--ag-radius-xs); padding: 7px 10px;
+  max-width: min(340px, 100%);
 }
 .pf-input-sm { padding: 4px 8px; font-size: var(--ag-fs-sm); max-width: 100%; }
 .pf-input-wide { max-width: 100%; width: 100%; }
@@ -133,7 +177,7 @@ export const CSS = `
   font-size: var(--ag-fs-sm); color: var(--ag-text-secondary);
 }
 .pf-download {
-  display: inline-block; font-size: var(--ag-fs-sm); text-decoration: none;
+  display: inline-block; align-self: flex-start; white-space: nowrap; font-size: var(--ag-fs-sm); text-decoration: none;
   border: 1px solid var(--ag-border); border-radius: var(--ag-radius-pill);
   padding: 5px 12px; color: var(--ag-text-primary);
   background: var(--ag-surface-page);
@@ -183,6 +227,9 @@ export const CSS = `
 .pf-linkbtn:hover { border-color: var(--ag-border-focus); }
 /* In a column that stretches its children, a button that should not. */
 .pf-selfstart { align-self: flex-start; }
+/* The same for a lone button as a row's control: a Delete bar the width of
+   the card reads as a banner, not a button. */
+.pf-row-ctl > .pf-btn { align-self: flex-start; }
 .pf-switch { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; }
 .pf-switch input { width: 18px; height: 18px; accent-color: var(--ag-purple-400); }
 .pf-switch span { font-size: var(--ag-fs-sm); color: var(--ag-text-secondary); }
@@ -204,7 +251,9 @@ export const CSS = `
   background: var(--ag-surface-page); border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-md); padding: 12px 16px;
 }
-.pf-rule { display: flex; flex-direction: column; gap: 3px; }
+/* A basis, so a narrow box wraps a whole fact onto the next line instead of
+   squeezing all three until every word sits on a line of its own. */
+.pf-rule { display: flex; flex-direction: column; gap: 3px; flex: 1 1 9rem; min-width: 0; }
 .pf-rule-k { font-size: var(--ag-fs-xs); font-weight: 500; color: var(--ag-text-muted); }
 .pf-rule-v { font-size: var(--ag-fs-md); font-weight: 600; color: var(--ag-text-primary); }
 
@@ -286,6 +335,7 @@ export const CSS = `
 }
 .pf-wsym:hover { color: var(--ag-purple-400); }
 .pf-wname { flex: 1 1 12rem; min-width: 8rem; }
+.pf-wnum { flex: 0 1 6.5rem; min-width: 5rem; text-align: right; }
 .pf-wnum { flex: 0 0 7rem; }
 .pf-star {
   appearance: none; background: none; border: none; cursor: pointer;
@@ -323,17 +373,35 @@ export const CSS = `
 .pf-modal-confirm { display: flex; flex-direction: column; gap: 7px; }
 .pf-modal-foot { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 
-/* Phones: one column, no sticky rail, a narrower gutter. */
-@media (max-width: 640px) {
-  .pf-body { flex-direction: column; }
+/* Laid out by the room the page has, not the viewport's: \`.ag-main\` is the
+   \`ag-main\` size container, and a viewport query cannot see the chat drawer
+   — at 1440px with the drawer open wide the page gets ~480px while
+   \`@media\` still believes it is on a desktop.
+
+   First the rail goes: a 320px column beside the cards is what leaves a
+   setting row too little room to draw its control in. It follows the cards
+   instead of floating beside them, and stops being sticky — a sticky block
+   under the content would only cover it. */
+@container ag-main (max-width: 60rem) {
+  .pf-body { flex-direction: column; align-items: stretch; }
   .pf-rail { position: static; flex: 1 1 auto; width: 100%; }
+}
+
+/* Then the rows stack — control under its label, as the Streamlit page lays
+   them — with a narrower gutter, down to a phone or a page beside the
+   drawer. */
+@container ag-main (max-width: 44rem) {
   .pf-row { flex-direction: column; gap: 10px; padding: 14px 16px; }
+  .pf-row-mid { align-items: stretch; }
   .pf-row::before { left: 16px; right: 16px; }
   .pf-row-l { flex: 1 1 auto; }
   .pf-cardhead { padding: 14px 16px 12px; }
   .pf-cardbody { padding: 0 16px 16px; }
   .pf-ident { padding: 14px 16px; }
+  .pf-ident-r { margin-left: 0; align-items: flex-start; width: 100%; }
   .pf-savehint { display: none; }
-  .pf-wsym { flex: 1 1 100%; }
+  /* The symbol takes the rest of the star's line, so the star is not left on
+     a line of its own above it. */
+  .pf-wsym { flex: 1 1 calc(100% - 3rem); }
 }
 `;

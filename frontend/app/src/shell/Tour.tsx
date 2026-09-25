@@ -14,12 +14,15 @@
  * before. What's new is for the account that already finished, and the missed
  * release stays owed until then.
  *
- * Every way out stamps the account as caught up. That is the whole contract of
- * a modal that interrupts: it gets one chance, and a card shown twice is worse
- * than a card not shown at all.
+ * Every way *out* stamps the account as caught up. That is the whole contract
+ * of a modal that interrupts: it gets one chance, and a card shown twice is
+ * worse than a card not shown at all. Leaving to look at something is not a way
+ * out, though: closing the tour, or following a step or a card to its page,
+ * parks it in a strip above the page, on every page, until the reader resumes
+ * or ends it — the rules are in `tourPark.ts`, where they can be tested.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { get, send } from "./api";
 import { openAssistant } from "./assistant";
@@ -27,6 +30,16 @@ import { Icon } from "./Icon";
 import { useT } from "./i18n";
 import { canonical } from "./pages";
 import { useRoute } from "./router";
+import { useGuest } from "./session";
+import {
+  after,
+  clamp,
+  firstLoadInterrupted,
+  readPark,
+  writePark,
+  type Action,
+  type Place,
+} from "./tourPark";
 
 type Step = {
   id: string;
@@ -62,8 +75,6 @@ type State = {
   explore: Record<string, boolean>;
 };
 
-type Mode = "closed" | "news" | "tour";
-
 /**
  * The query a step lands with.
  *
@@ -97,83 +108,165 @@ function Rich({ text }: { text: string }) {
   );
 }
 
+type Guide = { surface: string; finished: boolean };
+
+/**
+ * The first-load decision, once per document: a parked strip, the tour, the
+ * news, or nothing — and whether that took the one interruption a first load
+ * gets. Pure, and exported for the test.
+ */
+export function firstLoad(
+  state: Pick<State, "steps" | "news" | "tour_done">,
+  guide: Guide,
+  guest: boolean,
+  parked: { mode: "tour" | "news"; at: number } | null,
+): { place: Place | null; interrupted: boolean; forget?: boolean } {
+  // A tour parked in this tab outlives a reload, as the strip, exactly where
+  // it was left — rather than re-opening at step one over the page the reader
+  // went to look at. A strip is not an interruption.
+  let forget = false;
+  if (parked) {
+    const length = parked.mode === "tour" ? state.steps.length : state.news.length;
+    if (length) {
+      return {
+        place: { mode: parked.mode, at: clamp(parked.at, length), open: false },
+        interrupted: false,
+      };
+    }
+    forget = true;
+  }
+  // Never automatic for a guest: the tour is a per-account place in a
+  // sequence, and the shared guest prefs would hand the next visitor this
+  // one's progress through it.
+  if (guest) return { place: null, interrupted: false, forget };
+  // The conversational guide is walking this account through in the drawer:
+  // that is the first load's interruption, and the modal stays shut.
+  if (guide.surface === "chat" && !guide.finished) {
+    return { place: null, interrupted: true, forget };
+  }
+  // The order the Streamlit modal uses: the walkthrough for an account that
+  // never finished it, "what's new" for one that did.
+  if (!state.tour_done && state.steps.length) {
+    return { place: { mode: "tour", at: 0, open: true }, interrupted: true, forget };
+  }
+  if (state.news.length) {
+    return { place: { mode: "news", at: 0, open: true }, interrupted: true, forget };
+  }
+  return { place: null, interrupted: false, forget };
+}
+
 export function Tour() {
   const t = useT();
+  const guest = useGuest();
   const { params, go, setParams } = useRoute();
   const [state, setState] = useState<State | null>(null);
-  const [mode, setMode] = useState<Mode>("closed");
-  const [at, setAt] = useState(0);
+  // Null: nothing running. `open: false`: parked in the strip above the page.
+  const [place, setPlace] = useState<Place | null>(null);
 
   const asked = params.get("tour");
+  // The automatic decisions — restore a parked strip, open for a newcomer,
+  // announce a release — are taken once per document, as `maybe_open` takes
+  // them once per Streamlit session. Re-taking them when `?tour=` leaves the
+  // URL would race the stamp that just retired the tour, and re-open it at
+  // step one because the refetch beat the write.
+  const booted = useRef(false);
 
   useEffect(() => {
     let alive = true;
+    // A guest's tour is only ever asked for (`?tour=`) or already parked in
+    // this tab; anything else would be a request per page view for a modal
+    // that is never going to open itself.
+    if (guest && !asked && !booted.current && !readPark()) {
+      booted.current = true;
+      firstLoadInterrupted(false);
+      return;
+    }
     // Which onboarding this deploy serves. With the conversational guide on
     // (`GUIDE_SURFACE` = "chat", the default) the walkthrough lives in the
     // drawer, and this modal only opens when asked for by URL — and for
     // "what's new", once the guide is behind the account. Unreadable (a
     // guest) reads as the modal, which is what a guest has always had.
-    const surface = get<{ surface: string; finished: boolean }>("/guide").catch(() => ({
-      surface: "modal",
-      finished: true,
-    }));
+    const surface: Promise<Guide> = guest
+      ? Promise.resolve({ surface: "modal", finished: true })
+      : get<Guide>("/guide").catch(() => ({
+          surface: "modal",
+          finished: true,
+        }));
     Promise.all([get<State>("/onboarding"), surface])
       .then(([next, guide]) => {
         if (!alive) return;
         setState(next);
-        if (!asked && guide.surface === "chat" && !guide.finished) return;
         // Asked for by URL (`?tour=1`, `?tour=import`) — the deep link the
         // Streamlit tour answers, so a link shared into the app still lands on
-        // the step it names.
+        // the step it names. A guest may ask too (Streamlit lets them): the
+        // steps that read somebody's own data are shown locked, not hidden.
         if (asked) {
           const index = next.steps.findIndex((s) => s.id === asked);
-          setAt(index < 0 ? 0 : index);
-          setMode("tour");
+          booted.current = true;
+          firstLoadInterrupted(true);
+          setPlace({ mode: "tour", at: index < 0 ? 0 : index, open: true });
           return;
         }
-        // The order the Streamlit modal uses: the walkthrough for an account
-        // that never finished it, "what's new" for one that did.
-        if (!next.tour_done) {
-          setAt(0);
-          setMode("tour");
-          return;
-        }
-        if (next.news.length) setMode("news");
+        if (booted.current) return;
+        booted.current = true;
+        const decided = firstLoad(next, guide, guest, readPark());
+        if (decided.forget) writePark(null);
+        firstLoadInterrupted(decided.interrupted);
+        setPlace(decided.place);
       })
       .catch(() => {
         // Nothing to draw and nothing to say: the tour is the one thing on
         // screen whose absence a reader cannot notice.
+        firstLoadInterrupted(false);
       });
     return () => {
       alive = false;
     };
-  }, [asked]);
+  }, [asked, guest]);
 
-  const stamp = useCallback(
-    (done?: boolean) =>
-      void send("POST", "/onboarding/seen", done === undefined ? {} : { done }).catch(
-        () => undefined,
-      ),
-    [],
-  );
+  // The strip's position is the tab's, so a reload finds it.
+  useEffect(() => {
+    writePark(place && !place.open ? { mode: place.mode, at: place.at } : null);
+  }, [place]);
 
-  const close = useCallback(
-    (done?: boolean) => {
-      stamp(done);
-      setMode("closed");
-      setAt(0);
+  const act = useCallback(
+    (action: Action, current: Place) => {
+      const { place: next, stamp } = after(current, action);
+      // A guest has no account to stamp: `/onboarding/seen` is a write, and a
+      // write into the shared guest prefs would be one visitor deciding what
+      // the next one has read.
+      if (stamp && !guest) {
+        void send("POST", "/onboarding/seen", stamp).catch(() => undefined);
+      }
+      setPlace(next);
       if (asked) setParams({ tour: undefined });
     },
-    [stamp, asked, setParams],
+    [guest, asked, setParams],
   );
 
-  if (!state || mode === "closed") return null;
+  if (!state || !place) return null;
+  const list = place.mode === "tour" ? state.steps : state.news;
+  if (!list.length) return null;
+  const at = clamp(place.at, list.length);
+  const move = (to: number, open = true) => setPlace({ ...place, at: to, open });
 
-  if (mode === "news") {
-    const card = state.news[at];
-    if (!card) return null;
+  if (!place.open) {
+    return (
+      <Strip
+        place={{ ...place, at }}
+        state={state}
+        onResume={() => move(at)}
+        onNext={() => move(at + 1)}
+        onExit={() => act(place.mode === "tour" ? "finish" : "news_done", place)}
+      />
+    );
+  }
+
+  if (place.mode === "news") {
+    const card = state.news[at]!;
     const step = state.steps.find((s) => s.id === card.step);
     const last = at === state.news.length - 1;
+    const locked = !!step?.gated && guest;
     return (
       <Modal
         title={t("tour.news_title")}
@@ -182,34 +275,53 @@ export function Tour() {
         heading={t(card.title_key)}
         body={t(card.body_key)}
         progress={t("tour.news_progress", { n: at + 1, total: state.news.length })}
-        onClose={() => close()}
+        onClose={() => act("dismiss", place)}
+        note={locked ? t("tour.locked") : null}
         actions={
           <>
-            {step?.path !== undefined && step?.path !== null ? (
+            {step && step.path !== null ? (
               <button
                 type="button"
                 className="ag-tour-cta"
+                disabled={locked}
                 onClick={() => {
-                  close();
+                  act("goto", place);
                   go(canonical(step.path ?? ""), landing(step));
                 }}
               >
                 {step.cta_key ? t(step.cta_key) : t("tour.goto")}
               </button>
             ) : null}
+            {at > 0 ? (
+              <button
+                type="button"
+                className="ag-tour-quiet"
+                onClick={() => move(at - 1)}
+              >
+                {t("tour.back")}
+              </button>
+            ) : null}
             {last ? (
-              <button type="button" className="ag-tour-btn" onClick={() => close()}>
+              <button
+                type="button"
+                className="ag-tour-btn"
+                onClick={() => act("news_done", place)}
+              >
                 {t("tour.news_dismiss")}
               </button>
             ) : (
               <>
-                <button type="button" className="ag-tour-quiet" onClick={() => close()}>
+                <button
+                  type="button"
+                  className="ag-tour-quiet"
+                  onClick={() => act("news_done", place)}
+                >
                   {t("tour.news_skip")}
                 </button>
                 <button
                   type="button"
                   className="ag-tour-btn"
-                  onClick={() => setAt(at + 1)}
+                  onClick={() => move(at + 1)}
                 >
                   {t("tour.next")}
                 </button>
@@ -221,9 +333,10 @@ export function Tour() {
     );
   }
 
-  const step = state.steps[at];
-  if (!step) return null;
+  const step = state.steps[at]!;
   const last = at === state.steps.length - 1;
+  const locked = step.gated && guest;
+  const cta = step.cta_key ? t(step.cta_key) : t("tour.goto");
   return (
     <Modal
       title={t("tour.launch")}
@@ -232,45 +345,55 @@ export function Tour() {
       body={t(step.body_key)}
       progress={t("tour.progress", { n: at + 1, total: state.steps.length })}
       // A capability the account has switched on, or has not. Null means the
-      // step is a place rather than a switch, and says nothing at all.
+      // step is a place rather than a switch, and says nothing at all — and a
+      // guest has switched nothing on, so the tick would be about the demo.
       badge={
-        step.done === null ? null : step.done ? t("tour.active") : t("tour.pending")
+        step.done === null || guest
+          ? null
+          : step.done
+            ? t("tour.active")
+            : t("tour.pending")
       }
       badgeOn={step.done === true}
-      onClose={() => close(true)}
+      note={locked ? t("tour.locked") : null}
+      // Parks rather than ends: the tour is what the reader came for, and the
+      // strip above the page is how they get back into it.
+      onClose={() => act("dismiss", place)}
       actions={
         <>
           {step.path !== null ? (
             <button
               type="button"
               className="ag-tour-cta"
+              disabled={locked}
               onClick={() => {
-                close(last);
+                act("goto", place);
                 go(canonical(step.path ?? ""), landing(step));
               }}
             >
-              {step.cta_key ? t(step.cta_key) : t("tour.goto")}
+              {cta}
             </button>
-          ) : step.session?.chat_panel_open ? (
+          ) : step.session?.chat_panel_open && !guest ? (
             /* The assistant is not a page: its step lands nowhere and opens
                the drawer instead. Without this the one stop on the tour that
-               explains the assistant was the one stop with no way in. */
+               explains the assistant was the one stop with no way in. A guest
+               has no drawer to open. */
             <button
               type="button"
               className="ag-tour-cta"
               onClick={() => {
-                close(last);
+                act("goto", place);
                 openAssistant();
               }}
             >
-              {step.cta_key ? t(step.cta_key) : t("tour.goto")}
+              {cta}
             </button>
           ) : null}
           {at > 0 ? (
             <button
               type="button"
               className="ag-tour-quiet"
-              onClick={() => setAt(at - 1)}
+              onClick={() => move(at - 1)}
             >
               {t("tour.back")}
             </button>
@@ -278,13 +401,71 @@ export function Tour() {
           <button
             type="button"
             className="ag-tour-btn"
-            onClick={() => (last ? close(true) : setAt(at + 1))}
+            onClick={() => (last ? act("finish", place) : move(at + 1))}
           >
             {last ? t("tour.finish") : t("tour.next")}
           </button>
         </>
       }
     />
+  );
+}
+
+/**
+ * The parked tour: one line above the page body, on every page.
+ *
+ * Deliberately not a modal — the point of "take me there" is that the reader is
+ * looking at the real page. The strip says where they are and holds the ways
+ * on: back into the modal, straight to the next item, or out for good
+ * (`_resume_strip` / `_news_strip`).
+ */
+function Strip({
+  place,
+  state,
+  onResume,
+  onNext,
+  onExit,
+}: {
+  place: Place;
+  state: State;
+  onResume: () => void;
+  onNext: () => void;
+  onExit: () => void;
+}) {
+  const t = useT();
+  const tour = place.mode === "tour";
+  const total = tour ? state.steps.length : state.news.length;
+  const item = tour ? state.steps[place.at]! : state.news[place.at]!;
+  return (
+    <div
+      className="ag-tour-strip"
+      role="region"
+      aria-label={t(tour ? "tour.launch" : "tour.news_title")}
+    >
+      <Icon name={item.icon} />
+      <span className="ag-tour-strip-text">
+        <Rich
+          text={t(tour ? "tour.strip_progress" : "tour.news_strip_progress", {
+            n: place.at + 1,
+            total,
+            title: t(item.title_key),
+          })}
+        />
+      </span>
+      <span className="ag-tour-strip-actions">
+        <button type="button" className="ag-tour-btn" onClick={onResume}>
+          {t(tour ? "tour.resume" : "tour.news_resume")}
+        </button>
+        {place.at < total - 1 ? (
+          <button type="button" className="ag-tour-quiet" onClick={onNext}>
+            {t("tour.next")}
+          </button>
+        ) : null}
+        <button type="button" className="ag-tour-quiet" onClick={onExit}>
+          {t(tour ? "tour.exit" : "tour.news_dismiss")}
+        </button>
+      </span>
+    </div>
   );
 }
 
@@ -297,6 +478,7 @@ function Modal({
   progress,
   badge,
   badgeOn,
+  note,
   actions,
   onClose,
 }: {
@@ -308,6 +490,8 @@ function Modal({
   progress: string;
   badge?: string | null;
   badgeOn?: boolean;
+  /** A line under the body — why the button beside it is disabled. */
+  note?: string | null;
   actions: React.ReactNode;
   onClose: () => void;
 }) {
@@ -350,6 +534,7 @@ function Modal({
         <p className="ag-tour-body">
           <Rich text={body} />
         </p>
+        {note ? <p className="ag-tour-note">{note}</p> : null}
         <footer className="ag-tour-foot">{actions}</footer>
       </div>
     </div>

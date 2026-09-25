@@ -23,20 +23,68 @@ import { useAssistantAsks } from "../shell/assistant";
 import { useSession } from "../shell/session";
 import { Glyph } from "./icons";
 import { useRoute } from "../shell/router";
-import { autoSeen, markAutoSeen, readGuide } from "./guide";
+import { autoSeen, markAutoSeen, readGuide, type GuideState } from "./guide";
 import { useChat } from "./useChat";
 import "./chat.css";
 
 const Panel = lazy(() => import("./Panel"));
+
+/**
+ * The parked walkthrough: one line above the tab bar, on a phone.
+ *
+ * `guide.render_strip`. On a phone the drawer is the whole viewport, so a
+ * "take me there" has to close it to show the page it points at — and closing
+ * it without a trace would leave a newcomer on an unfamiliar page with no way
+ * back into the tour but finding the launcher and remembering the thread. The
+ * strip says where the guide is and holds the two ways on: back into it, or
+ * out for good. It takes the launcher's place while it is up, because it *is*
+ * the launcher, with the context the round button cannot carry.
+ */
+function GuideStrip({
+  guide,
+  onResume,
+  onExit,
+}: {
+  guide: GuideState;
+  onResume: () => void;
+  onExit: () => void;
+}) {
+  const t = useT();
+  const step = guide.step;
+  if (!step) return null;
+  return (
+    <div className="ag-guide-strip" role="region" aria-label={t("guide.thread_title")}>
+      <span className="ag-guide-strip-text">
+        {t("guide.strip_progress", {
+          n: guide.index,
+          total: guide.of,
+          title: t(step.title_key),
+        })}
+      </span>
+      <button type="button" className="ag-chat-btn ag-chat-btn-on" onClick={onResume}>
+        <Glyph name="forum" size={14} />
+        {t("guide.strip_open")}
+      </button>
+      <button type="button" className="ag-guide-skip" onClick={onExit}>
+        {t("guide.strip_exit")}
+      </button>
+    </div>
+  );
+}
 
 export function Drawer() {
   const t = useT();
   const { prefs } = useSession();
   const [open, setOpen] = useState(prefs.chat_panel_open);
   const chat = useChat(open);
+  // The walkthrough sent the reader to a page and the drawer stepped aside
+  // (phones only — see `GuideCard.useVisit`). Per tab and in memory, like the
+  // Streamlit session flag it mirrors; any open of the drawer clears it.
+  const [parked, setParked] = useState(false);
 
   const show = useCallback((next: boolean) => {
     setOpen(next);
+    if (next) setParked(false);
     // Fire and forget: the panel has already moved, and a preference that
     // failed to save is worth exactly one lost reload — not an error in front
     // of someone who was trying to close a drawer.
@@ -153,7 +201,22 @@ export function Drawer() {
 
   return (
     <>
-      {!open && (
+      {!open && parked && chat.guide?.active && chat.guide.step ? (
+        <GuideStrip
+          guide={chat.guide}
+          onResume={() => {
+            show(true);
+            // Back on the guide's thread, which may have moved while the
+            // reader looked at the page: an import there is progress.
+            void chat.guideSync().catch(() => {});
+          }}
+          onExit={() => {
+            setParked(false);
+            void chat.guideFinish("abandoned_strip").catch(() => {});
+          }}
+        />
+      ) : null}
+      {!open && !(parked && chat.guide?.active && chat.guide.step) && (
         <button
           type="button"
           ref={fab}
@@ -186,7 +249,14 @@ export function Drawer() {
               </div>
             }
           >
-            <Panel chat={chat} onClose={() => show(false)} />
+            <Panel
+              chat={chat}
+              onClose={() => show(false)}
+              onPark={() => {
+                show(false);
+                setParked(true);
+              }}
+            />
           </Suspense>
         </aside>
       )}

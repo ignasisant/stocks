@@ -14,7 +14,17 @@ import { describe, expect, it } from "vitest";
 
 import { complete, draft, num, payload, summary } from "./alerts";
 import { dividendLine, resultsLines, snap } from "./events";
-import { compact, growthLabel, legend, orElse, signed, yoy } from "./format";
+import {
+  barGrowth,
+  compact,
+  growthLabel,
+  insiderPrice,
+  insiderValue,
+  legend,
+  orElse,
+  signed,
+  yoy,
+} from "./format";
 import type { AlertForm } from "./types";
 
 const CATALOG: Record<string, string> = {
@@ -61,6 +71,39 @@ describe("growth", () => {
     expect(growthLabel(null)).toBe("");
     expect(growthLabel(0)).toBe("+0%");
     expect(growthLabel(-12.4)).toBe("-12%");
+  });
+});
+
+describe("per-bar growth on the results chart", () => {
+  it("anchors the first forecast on the last reported year with a value", () => {
+    // Reported 100, gap, 120; forecast 132, 145. The year after the gap has no
+    // label (a gap stays a gap), and the first forecast is measured against
+    // 120 — not against the hole, and not against nothing.
+    const out = barGrowth([100, null, 120, 132, 145.2], 3);
+    expect(out[0]).toBeNull();
+    expect(out[1]).toBeNull();
+    expect(out[2]).toBeNull();
+    expect(out[3]).toBeCloseTo(10, 6);
+    expect(out[4]).toBeCloseTo(10, 6);
+  });
+
+  it("keeps the legend on filed years only", () => {
+    // What the chart passes: the reported slice. A consensus tail of 500
+    // must not become the "latest" revenue.
+    const values = [100, 200, 500];
+    expect(legend("Revenue", values.slice(0, 2), t)).toBe(
+      "Revenue \u00b7 200 latest \u00b7 +100%/yr CAGR",
+    );
+  });
+});
+
+describe("insider table cells", () => {
+  it("prints Streamlit's spelling, and nothing when there is no figure", () => {
+    expect(insiderValue(-474813, "USD")).toBe("$-474,813");
+    expect(insiderValue(12000, "EUR")).toBe("€+12,000");
+    expect(insiderPrice(330.19, "USD")).toBe("$330.19");
+    expect(insiderPrice(null, "USD")).toBe("");
+    expect(insiderValue(null, "USD")).toBe("");
   });
 });
 

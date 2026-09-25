@@ -18,8 +18,8 @@ import { useLang, useT } from "../shell/i18n";
 import { Glyph } from "./icons";
 import { Markdown } from "./markdown";
 import { capMessage, clock, host, providerLabel, skillName, took } from "./format";
-import { GuideCard } from "./GuideCard";
-import { unshortcode, type GuideState } from "./guide";
+import { GuideCard, useVisit } from "./GuideCard";
+import { unshortcode, type GuideState, type GuideStep } from "./guide";
 import type { SkillInfo, Step, Turn as Stored } from "./types";
 
 /** The line that ticks while the answer is being built, naming what it is doing. */
@@ -125,12 +125,34 @@ function Sources({ web }: { web: { title: string; url: string }[] }) {
   );
 }
 
+/**
+ * The button an answer on the walkthrough's thread earned by ending in a valid
+ * `[[goto:<step>]]` — `guide.render_jump`.
+ *
+ * A button and not a navigation: the model proposes, the reader decides. The
+ * marker itself never reaches the screen (the server withholds it while the
+ * answer streams), and an id the model invented never becomes one of these —
+ * it was checked against the registry before it was stored.
+ */
+function Jump({ step, onLeave }: { step: GuideStep; onLeave: () => void }) {
+  const t = useT();
+  const visit = useVisit(onLeave);
+  return (
+    <div className="ag-guide-acts">
+      <button type="button" className="ag-chat-btn" onClick={() => visit(step)}>
+        {t(step.cta_key ?? "guide.goto")}
+      </button>
+    </div>
+  );
+}
+
 export function Turn({
   turn,
   skills,
   providers,
   cap,
   onRetry,
+  onDrop,
   walk,
 }: {
   turn: Stored;
@@ -140,6 +162,11 @@ export function Turn({
   /** Today's free allowance, for the refusals that name it. */
   cap: number | null;
   onRetry: () => void;
+  /**
+   * Take a refused turn off the thread — the Streamlit composer's "Discard
+   * question" beside Retry. Absent: nothing to offer.
+   */
+  onDrop?: () => void;
   /** The walkthrough, for a turn it wrote. Absent: no guide on this server. */
   walk?: {
     state: GuideState;
@@ -180,9 +207,22 @@ export function Turn({
               ? t(turn.error, { seconds: turn.wait })
               : capMessage(t, turn.error, cap)}
           </p>
-          <button type="button" className="ag-chat-retry" onClick={onRetry}>
-            {t("chat.retry")}
-          </button>
+          <div className="ag-chat-fail-acts">
+            {/* A failed attachment has no question to ask again — Retry would
+                re-send the exchange above it, which was answered. Its way
+                forward is attaching the file again, so it only offers the
+                way out. */}
+            {turn.action !== "import" && (
+              <button type="button" className="ag-chat-retry" onClick={onRetry}>
+                {t("chat.retry")}
+              </button>
+            )}
+            {onDrop && (
+              <button type="button" className="ag-chat-retry" onClick={onDrop}>
+                {t("chat.error_drop")}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -223,6 +263,13 @@ export function Turn({
         {turn.pending && !turn.content && <Working phase={turn.phase} />}
       </div>
       {fallback && <p className="ag-chat-hint">{fallback}</p>}
+      {walk &&
+        turn.guide_goto &&
+        !turn.pending &&
+        (() => {
+          const step = walk.state.steps.find((s) => s.id === turn.guide_goto);
+          return step ? <Jump step={step} onLeave={walk.onLeave} /> : null;
+        })()}
       {walk &&
         turn.guide &&
         !turn.guide.state &&

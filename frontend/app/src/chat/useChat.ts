@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../shell/api";
 import { useLang } from "../shell/i18n";
+import { useRoute } from "../shell/router";
 import {
   asBase64,
   ask,
@@ -68,6 +69,17 @@ export type Chat = ReturnType<typeof useChat>;
 
 export function useChat(live: boolean) {
   const lang = useLang();
+  // Where the reader is, told to the model with every question — the
+  // Streamlit panel's `_view_context`. The Ticker page's company is its
+  // `?ticker=` (the page writes its default there when the URL has none), and
+  // no other page has a single company in focus, so no other page names one:
+  // a symbol left over in some other page's URL is not what "this" means.
+  const route = useRoute();
+  const view = route.page;
+  const focus =
+    route.page === "ticker"
+      ? (route.params.get("ticker") ?? route.params.get("symbol") ?? "").trim()
+      : "";
   const [state, setState] = useState<ChatState | null>(null);
   const [threads, setThreads] = useState<Conversation[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -116,9 +128,17 @@ export function useChat(live: boolean) {
     readGuide().then(setGuide, () => setGuide(null));
   }, [live]);
 
+  // Once per mount, and keyed on nothing the read itself changes: `refresh()`
+  // sets `state` halfway through, and an effect that depended on `state` was
+  // torn down by its own first write — `alive` went false before the thread
+  // was read, so the drawer opened on the empty state over a thread that had
+  // turns in it (the guide's welcome, most visibly).
+  const opened = useRef(false);
   useEffect(() => {
-    if (!live || state) return;
+    if (!live || opened.current) return;
+    opened.current = true;
     let alive = true;
+    let done = false;
     (async () => {
       try {
         const list = await refresh();
@@ -135,12 +155,16 @@ export function useChat(live: boolean) {
         // it is over, and nothing that switches threads may start before it
         // or the late answer would paint the wrong conversation over it.
         if (alive) setReady(true);
+        done = true;
       }
     })();
     return () => {
       alive = false;
+      // Closed (or unmounted) before the read landed: let the next open try
+      // again rather than leave a drawer that never loaded.
+      if (!done) opened.current = false;
     };
-  }, [live, state, refresh]);
+  }, [live, refresh]);
 
   const write = useCallback((edit: (turn: Turn) => Turn) => {
     setTurns((list) => {
@@ -190,14 +214,18 @@ export function useChat(live: boolean) {
         ...(again ? [] : [{ ...blank("user", message), ts: started, spoken } as Turn]),
         { ...blank("assistant", ""), pending: true },
       ]);
+      // Read when the question goes out, not when it is answered: a reader who
+      // navigates while the answer is written asked about the page they were on.
+      const where = { view, ...(focus ? { focus } : {}) };
       try {
         const done = await ask(
           again
-            ? { regenerate: true, conversation: activeId ?? undefined, lang }
+            ? { regenerate: true, conversation: activeId ?? undefined, lang, ...where }
             : {
                 message,
                 conversation: activeId ?? undefined,
                 lang,
+                ...where,
                 // A card is waiting: "import these" is answered with its button.
                 staged_import: preview?.filename,
               },
@@ -228,6 +256,8 @@ export function useChat(live: boolean) {
           skills: done.skills,
           web: done.sources,
           steps: done.steps ?? [],
+          // The walkthrough's jump, already checked against the registry.
+          guide_goto: done.goto ?? null,
           pending: false,
           phase: undefined,
           ts: Date.now(),
@@ -274,7 +304,7 @@ export function useChat(live: boolean) {
         setBusy(false);
       }
     },
-    [activeId, busy, flush, lang, preview, refresh, settle, state, write],
+    [activeId, busy, flush, focus, lang, preview, refresh, settle, state, view, write],
   );
 
   /** Cut the answer being written. Nothing is queued: the press is the abort. */
@@ -313,15 +343,26 @@ export function useChat(live: boolean) {
     void send("", false, true);
   }, [busy, send, turns]);
 
-  /** Take the unanswered question off the thread, refusal and all. */
+  /**
+   * Take the unanswered question off the thread, refusal and all — the
+   * Streamlit composer's "Discard question" beside Retry.
+   *
+   * Local only, and correctly so: a refused or stopped turn is never written
+   * (the engine saves the pair only once an answer exists), so the thread on
+   * disk already holds neither and there is nothing to delete there. A failed
+   * attachment is the exception to taking two: it has no question of its own
+   * above it, and the user turn there belongs to an exchange that was filed.
+   */
   const drop = useCallback(() => {
+    if (busy) return;
     setTurns((list) => {
-      if (!unfiled(list[list.length - 1])) return list;
-      return list[list.length - 2]?.role === "user"
+      const last = list[list.length - 1];
+      if (!unfiled(last)) return list;
+      return last?.action !== "import" && list[list.length - 2]?.role === "user"
         ? list.slice(0, -2)
         : list.slice(0, -1);
     });
-  }, []);
+  }, [busy]);
 
   const open = useCallback(async (cid: string) => {
     setActiveId(cid);

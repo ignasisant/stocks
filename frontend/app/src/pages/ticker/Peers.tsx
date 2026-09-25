@@ -14,6 +14,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useT } from "../../shell/i18n";
+import { useTickerProfile } from "../../shell/tickers";
 import { getPeers, searchTickers } from "./data";
 import { Note } from "./ui";
 import type { Peer, SearchMatch, WatchlistEntry } from "./types";
@@ -88,6 +89,15 @@ export function PeerPicker({
     return entry.ticker.includes(needle) || entry.name.toUpperCase().includes(needle);
   });
 
+  // Yahoo's suggestions minus anything the watchlist group already offers —
+  // Streamlit's `s not in peer_pool`. The same name as a chip in two groups
+  // reads as two different things to compare, and the watchlist copy is the
+  // one that carries the reader's own name for it.
+  const inPool = new Set(pool.map((entry) => entry.ticker.toUpperCase()));
+  const suggested = related.filter(
+    (peer) => !inPool.has(peer.ticker.toUpperCase()) && !peers.includes(peer.ticker),
+  );
+
   const offers = (hits ?? []).filter(
     (match) =>
       match.ticker !== ticker &&
@@ -107,6 +117,7 @@ export function PeerPicker({
               title={t("ticker.extra_drop")}
               onClick={() => onPeers(peers.filter((one) => one !== peer))}
             >
+              <ChipMark ticker={peer} />
               {peer} <span aria-hidden="true">×</span>
             </button>
           ))}
@@ -118,8 +129,9 @@ export function PeerPicker({
           <label className="tk-peers-label" htmlFor="tk-peer-filter">
             {t("ticker.peers_watchlist")}
           </label>
-          {/* Filtered rather than dumped: a long watchlist as a wall of chips is
-              exactly what the app's searchable multiselect avoids. */}
+          {/* Every name on the list, as Streamlit's multiselect offers them, with
+              the filter to narrow it; a long list scrolls inside its own box
+              rather than pushing the comparison table off the screen. */}
           <input
             id="tk-peer-filter"
             className="tk-field"
@@ -129,14 +141,15 @@ export function PeerPicker({
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
           />
-          <div className="tk-chips">
-            {listed.slice(0, 12).map((entry) => (
+          <div className="tk-chips tk-chips-scroll">
+            {listed.map((entry) => (
               <button
                 key={entry.ticker}
                 type="button"
                 className="tk-chip"
                 onClick={() => add(entry.ticker)}
               >
+                <ChipMark ticker={entry.ticker} />
                 {entry.ticker}
                 {entry.name && entry.name !== entry.ticker ? (
                   <span className="tk-chip-name">{entry.name}</span>
@@ -147,25 +160,24 @@ export function PeerPicker({
         </div>
       ) : null}
 
-      {related.length > 0 ? (
+      {suggested.length > 0 ? (
         <div className="tk-peers-group">
           <span className="tk-peers-label" title={t("ticker.related_help")}>
             {t("ticker.related_tickers")}
           </span>
           <div className="tk-chips">
-            {related
-              .filter((peer) => !peers.includes(peer.ticker))
-              .map((peer) => (
-                <button
-                  key={peer.ticker}
-                  type="button"
-                  className="tk-chip"
-                  onClick={() => add(peer.ticker)}
-                >
-                  {peer.ticker}
-                  {peer.name ? <span className="tk-chip-name">{peer.name}</span> : null}
-                </button>
-              ))}
+            {suggested.map((peer) => (
+              <button
+                key={peer.ticker}
+                type="button"
+                className="tk-chip"
+                onClick={() => add(peer.ticker)}
+              >
+                <ChipMark ticker={peer.ticker} />
+                {peer.ticker}
+                {peer.name ? <span className="tk-chip-name">{peer.name}</span> : null}
+              </button>
+            ))}
           </div>
         </div>
       ) : null}
@@ -192,6 +204,7 @@ export function PeerPicker({
                 className="tk-chip"
                 onClick={() => add(match.ticker)}
               >
+                <ChipMark ticker={match.ticker} />
                 {match.ticker}
                 {match.name ? <span className="tk-chip-name">{match.name}</span> : null}
               </button>
@@ -204,4 +217,20 @@ export function PeerPicker({
       </div>
     </div>
   );
+}
+
+/**
+ * The company's mark on a picker chip — the house rule's logo half.
+ *
+ * Only the logo: the chip is itself the control (it picks or drops a peer), so
+ * a link nested in it would be a button inside a button. The way into each
+ * company's page is its column in the comparison table, one click after the
+ * pick. The marks come from the same batched `/market/profiles` lookup every
+ * ticker cell uses, so a forty-name watchlist costs one request, not forty.
+ */
+function ChipMark({ ticker }: { ticker: string }) {
+  const profile = useTickerProfile(ticker);
+  return profile?.logo ? (
+    <img className="tk-chip-logo" src={profile.logo} alt="" loading="lazy" />
+  ) : null;
 }

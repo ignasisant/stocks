@@ -69,8 +69,20 @@ export function TickerCell({ ticker }: { ticker: string }) {
   return <Cell ticker={ticker} className="pf-ticker" />;
 }
 
-function Chip({ value, text }: { value: number | null | undefined; text: string }) {
-  return <span className={`pf-chip pf-chip-${tone(value)}`}>{text}</span>;
+function Chip({
+  value,
+  text,
+  off,
+}: {
+  value: number | null | undefined;
+  text: string;
+  off?: boolean;
+}) {
+  // `off` greys a figure that is real but not live — the day change while
+  // nothing is trading — without hiding it or dropping its sign.
+  return (
+    <span className={`pf-chip pf-chip-${off ? "flat" : tone(value)}`}>{text}</span>
+  );
 }
 
 /** A figure that could not be computed reads "n/a" — never 0, never a dash
@@ -94,13 +106,14 @@ export type KpiItem = {
   /** Already formatted, or null when the figure could not be computed. */
   value: string | null;
   help?: string;
-  chip?: { text: string; value: number | null } | null;
+  chip?: { text: string; value: number | null; off?: boolean } | null;
 };
 
 export function Kpis({ items }: { items: KpiItem[] }) {
   const t = useT();
   return (
-    <div className="pf-kpis">
+    // The count drives the wrap (portfolio.css): four tiles go 2+2, never 3+1.
+    <div className="pf-kpis" data-n={items.length}>
       {items.map((item) => (
         <div className="pf-kpi" key={item.label}>
           <div className="pf-kpi-label">
@@ -115,7 +128,9 @@ export function Kpis({ items }: { items: KpiItem[] }) {
             <span className="pf-kpi-value">
               {item.value === null ? t("portfolio.na") : item.value}
             </span>
-            {item.chip ? <Chip value={item.chip.value} text={item.chip.text} /> : null}
+            {item.chip ? (
+              <Chip value={item.chip.value} text={item.chip.text} off={item.chip.off} />
+            ) : null}
           </div>
         </div>
       ))}
@@ -131,6 +146,11 @@ export type Column<T> = {
   /** Omit to make the column unsortable. `null` always sorts last. */
   sort?: (row: T) => number | string | null;
   cell: (row: T) => ReactNode;
+  /**
+   * Extra class on the column's header and cells — `pf-wide-only` drops a
+   * column on a phone whose content already rides another cell there.
+   */
+  className?: string;
 };
 
 /**
@@ -187,6 +207,7 @@ export function Table<T>({
                 className={[
                   column.left ? "pf-left" : "",
                   column.sort ? "pf-sortable" : "",
+                  column.className ?? "",
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -211,7 +232,14 @@ export function Table<T>({
           {ordered.map((row, index) => (
             <tr key={rowKey(row, index)}>
               {columns.map((column) => (
-                <td key={column.key} className={column.left ? "pf-left" : undefined}>
+                <td
+                  key={column.key}
+                  className={
+                    [column.left ? "pf-left" : "", column.className ?? ""]
+                      .filter(Boolean)
+                      .join(" ") || undefined
+                  }
+                >
                   {column.cell(row)}
                 </td>
               ))}

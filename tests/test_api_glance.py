@@ -3,8 +3,8 @@
 Writing a briefing belongs to `chat/daily.py` and staying at a 52-week high is
 arithmetic. What is tested here is what these three routes decide:
 
-* the card is reported, never written — this API has no path that spends an
-  account's model allowance;
+* the GET reports the card and never writes one — writing is `POST /daily`,
+  tested in `test_api_home.py`;
 * freshness is not just the calendar: a language switch and a session that has
   since closed both stale a card whose date has not moved;
 * a book whose prices do not cover a window reads null, not a flat 0%;
@@ -80,7 +80,12 @@ def account(monkeypatch, tmp_path):
     users = tmp_path / "users"
     paths = accounts.paths_for(EMAIL, None, users_dir=users)
     paths.root.mkdir(parents=True)
-    paths.watchlist.write_text("watchlist:\n  - ticker: AAPL\n  - ticker: MSFT\n")
+    # Both starred: the 52-week scan reads held names plus favourites, and
+    # these tests hold nothing.
+    paths.watchlist.write_text(
+        "watchlist:\n  - ticker: AAPL\n    favorite: true\n"
+        "  - ticker: MSFT\n    favorite: true\n"
+    )
     paths.prefs.write_text(json.dumps({"currency": "EUR"}))
     monkeypatch.setattr(accounts, "configured_owner", lambda: None)
     monkeypatch.setattr(
@@ -110,7 +115,7 @@ def today_card(**over) -> dict:
 
 
 def test_the_card_is_reported_never_written(client, account, monkeypatch):
-    """No route here spends an account's model allowance; the app owns that."""
+    """A GET never spends an account's model allowance; `POST /daily` does."""
     monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: {})
     monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
     payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
@@ -378,3 +383,30 @@ def test_a_name_in_the_middle_of_its_range_is_not_reported(
     monkeypatch.setattr(loaders, "watchlist_closes", lambda tickers: {"AAPL": middle})
     payload = client.get("/v1/extremes", params=WHO, headers=AUTH).json()
     assert payload["extremes"] == []
+
+
+def test_a_held_name_is_scanned_even_off_the_watchlist(client, account, monkeypatch):
+    """`home.py` scans held ∪ favourites — a position nobody starred included."""
+    monkeypatch.setattr(loaders, "held", lambda db, mtime: ("NVDA",))
+    asked = []
+
+    def closes(tickers):
+        asked.append(tickers)
+        return year(120.0, 150.0) | {"NVDA": year(140.0, 0)["AAPL"]}
+
+    monkeypatch.setattr(loaders, "watchlist_closes", closes)
+    payload = client.get("/v1/extremes", params=WHO, headers=AUTH).json()
+    assert {e["ticker"] for e in payload["extremes"]} >= {"NVDA"}
+    assert payload["scanned"] == 3
+    assert "NVDA" in asked[0], "one download, the held name riding along"
+
+
+def test_crypto_and_unstarred_names_are_not_scanned(client, account, monkeypatch):
+    account.watchlist.write_text(
+        "watchlist:\n  - ticker: AAPL\n  - ticker: BTC-EUR\n    favorite: true\n"
+    )
+    monkeypatch.setattr(
+        loaders, "watchlist_closes", lambda tickers: pytest.fail("nothing to scan")
+    )
+    payload = client.get("/v1/extremes", params=WHO, headers=AUTH).json()
+    assert payload == {"extremes": [], "scanned": 0}

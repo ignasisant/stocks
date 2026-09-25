@@ -59,3 +59,53 @@ export function longDate(iso: string, t: T): string {
 export function plain(value: string): string {
   return value.replace(/\*\*/g, "").replace(/^:[a-z-]+\[(.*)\]$/, "$1");
 }
+
+/**
+ * Compact money — "$81.60B", "€1.24T" — the shape `earnings_ui._money` prints.
+ *
+ * `prefix` is the server's `currency_symbol`, not a code the client maps: the
+ * two runtimes then agree on every currency, including the ones it leaves
+ * bare (a yen statement prints as plain figures there, and so it does here).
+ * Share counts go through the same function with no prefix.
+ */
+export function money(value: number | null | undefined, prefix = ""): string {
+  if (value === null || value === undefined) return DASH;
+  const sign = value < 0 ? "-" : "";
+  const size = Math.abs(value);
+  for (const [div, suffix] of [
+    [1e12, "T"],
+    [1e9, "B"],
+    [1e6, "M"],
+    [1e3, "K"],
+  ] as const) {
+    if (size >= div) return `${sign}${prefix}${grouped(size / div, 2)}${suffix}`;
+  }
+  return `${sign}${prefix}${grouped(size, 0)}`;
+}
+
+function grouped(value: number, digits: number): string {
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+/** A fraction as a level: 0.183 → "18.3%". */
+export function pct(fraction: number | null | undefined, digits = 1): string {
+  return fraction === null || fraction === undefined
+    ? DASH
+    : `${(fraction * 100).toFixed(digits)}%`;
+}
+
+/** A fraction as a change, always signed: 0.052 → "+5.2%". */
+export function signedFrac(fraction: number | null | undefined, digits = 1): string {
+  return fraction === null || fraction === undefined
+    ? DASH
+    : `${signedNum(fraction * 100, digits)}%`;
+}
+
+/** The short fiscal-quarter tag axes and tables use: "Jun 26". */
+export function quarterLabel(iso: string, t: T): string {
+  const [year, month] = parts(iso);
+  return `${t(`earnings.mon_${month}`)} ${String(year % 100).padStart(2, "0")}`;
+}

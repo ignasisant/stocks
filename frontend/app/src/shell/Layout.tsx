@@ -18,9 +18,11 @@ import { Drawer } from "../chat/Drawer";
 import { useT } from "./i18n";
 import { Feedback } from "./Feedback";
 import { Search } from "./Search";
+import { ProfilePrompt } from "./ProfilePrompt";
 import { Tour } from "./Tour";
 import { Link, useRoute } from "./router";
-import { PAGES } from "./pages";
+import { BOTTOM, sections } from "./pages";
+import "./shell.css";
 import { isTransient } from "./api";
 import { Icon } from "./Icon";
 import { GUEST_CHROME, SignIn } from "./guest";
@@ -53,6 +55,10 @@ function Nav() {
   const { page } = useRoute();
   const guest = useGuest();
   const [folded, setFolded] = useState(storedFold);
+  // The phone bar's "More" sheet. Closed by any move, so it never outlives the
+  // page it was opened over.
+  const [more, setMore] = useState(false);
+  useEffect(() => setMore(false), [page]);
 
   const fold = useCallback((next: boolean) => {
     setFolded(next);
@@ -72,6 +78,9 @@ function Nav() {
   }, [folded]);
 
   const label = t(folded ? "nav.expand" : "nav.collapse");
+  // Grouped under the Streamlit menu's headers (`stocks.navigation.sections`):
+  // Home on its own, then Portfolio, Market and Account.
+  const groups = sections();
   return (
     <nav className="ag-nav" aria-label={t("nav.sections")}>
       {/* The brand, and the control that folds the rail under it. Neither
@@ -92,28 +101,98 @@ function Nav() {
           <Icon name="menu" />
         </button>
       </div>
-      {PAGES.filter((entry) => !entry.hidden).map((entry) => (
-        <Link
-          key={entry.slug}
-          page={entry.slug}
-          className={entry.slug === page ? "ag-nav-item ag-nav-on" : "ag-nav-item"}
-          // Folded, the glyph is all there is: without this the rail becomes
-          // eight unnamed icons for a pointer as well as for a reader.
-          title={folded ? t(entry.label) : undefined}
-        >
-          <Icon name={entry.icon} />
-          <span className="ag-nav-label">{t(entry.label)}</span>
-        </Link>
+      {groups.map((group) => (
+        <div className="ag-nav-group" key={group.section ?? "top"}>
+          {group.section ? (
+            // A header, not a link: it names the group for a reader scanning
+            // the rail, and it is hidden where there is no room for words
+            // (folded, and on the phone bar).
+            <span className="ag-nav-section">{t(group.section)}</span>
+          ) : null}
+          {group.pages.map((entry) => (
+            <Link
+              key={entry.slug}
+              page={entry.slug}
+              className={[
+                "ag-nav-item",
+                entry.slug === page ? "ag-nav-on" : "",
+                BOTTOM.includes(entry.slug) ? "" : "ag-nav-extra",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              // Folded, the glyph is all there is: without this the rail
+              // becomes nine unnamed icons for a pointer as well as a reader.
+              title={folded ? t(entry.label) : undefined}
+              // The label is hidden on a phone's bar, and a hidden label names
+              // nothing: this is what a reader hears there.
+              aria-label={t(entry.label)}
+            >
+              <Icon name={entry.icon} />
+              <span className="ag-nav-label">{t(entry.label)}</span>
+            </Link>
+          ))}
+        </div>
       ))}
       {/* Foot of the rail, where the Streamlit sidebar puts it: reachable from
           every page, in the way of none of them. Feedback is offered to guests
           as well — a visitor who bounced telling us why is worth more than a
-          login, which is why the API keeps one unauthenticated write. */}
-      {!guest || GUEST_CHROME.feedback ? <Feedback /> : null}
-      {/* The one thing the rail gains for a guest rather than loses: the way
-          out of the demo. At the foot, where it is reachable from every screen
-          without being the first thing on any of them. */}
-      {guest ? <SignIn className="ag-btn ag-nav-signin" /> : null}
+          login, which is why the API keeps one unauthenticated write. The
+          sign-in is the one thing the rail gains for a guest: the way out of
+          the demo. On a phone both move into the "More" sheet. */}
+      <div className="ag-nav-foot">
+        {!guest || GUEST_CHROME.feedback ? <Feedback /> : null}
+        {guest ? <SignIn className="ag-btn ag-nav-signin" /> : null}
+      </div>
+      {/* Phones only: the bar holds `BOTTOM`, and this is the way to the rest
+          — the drawer the DS spec keeps behind the bar. */}
+      <button
+        type="button"
+        className={
+          more ? "ag-nav-item ag-nav-more ag-nav-on" : "ag-nav-item ag-nav-more"
+        }
+        onClick={() => setMore(!more)}
+        aria-expanded={more}
+        aria-label={t("nav.more")}
+      >
+        <Icon name="menu" />
+        <span className="ag-nav-label">{t("nav.more")}</span>
+      </button>
+      {more ? (
+        <>
+          <div
+            className="ag-nav-scrim"
+            role="presentation"
+            onClick={() => setMore(false)}
+          />
+          <div className="ag-nav-sheet">
+            {groups.map((group) => {
+              const extra = group.pages.filter((entry) => !BOTTOM.includes(entry.slug));
+              if (!extra.length) return null;
+              return (
+                <div className="ag-nav-group" key={group.section ?? "top"}>
+                  {group.section ? (
+                    <span className="ag-nav-section">{t(group.section)}</span>
+                  ) : null}
+                  {extra.map((entry) => (
+                    <Link
+                      key={entry.slug}
+                      page={entry.slug}
+                      className={
+                        entry.slug === page ? "ag-nav-item ag-nav-on" : "ag-nav-item"
+                      }
+                    >
+                      <Icon name={entry.icon} />
+                      <span>{t(entry.label)}</span>
+                    </Link>
+                  ))}
+                </div>
+              );
+            })}
+            {!guest || GUEST_CHROME.feedback ? <Feedback /> : null}
+            {guest ? <SignIn className="ag-btn" /> : null}
+          </div>
+        </>
+      ) : null}
     </nav>
   );
 }
@@ -129,18 +208,20 @@ export function Layout({ children }: { children: ReactNode }) {
             the height the page needs. Both of these are on every screen in the
             Streamlit app too, which is the whole reason they live out here. */}
         <Search />
+        {/* Inside the page column, above the body: when the tour is parked
+            this is where its strip sits, on every page. The modal itself is
+            fixed-position, so where it mounts does not move it. Mounted for
+            guests too — `?tour=1` opens it for them — but it never opens
+            itself at somebody who has not arrived anywhere yet. */}
+        {!guest || GUEST_CHROME.tour ? <Tour /> : null}
         {children}
       </main>
       {/* What a guest does not get, read off one table rather than out of the
           JSX: the assistant spends the operator's API keys and writes a
-          `chat.json` every anonymous visitor would share, and the tour is a
-          per-account place in a sequence — stamping it seen would hand the next
-          visitor this one's progress through it. */}
+          `chat.json` every anonymous visitor would share, and the profile
+          nudge is about an account a guest does not have. */}
       {!guest || GUEST_CHROME.chat ? <Drawer /> : null}
-      {/* Last, and on top of everything: it interrupts on purpose — which is
-          exactly why it does not interrupt somebody who has not arrived
-          anywhere yet. */}
-      {!guest || GUEST_CHROME.tour ? <Tour /> : null}
+      {!guest || GUEST_CHROME.profilePrompt ? <ProfilePrompt /> : null}
     </div>
   );
 }

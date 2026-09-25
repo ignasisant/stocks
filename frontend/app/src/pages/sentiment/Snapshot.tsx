@@ -23,6 +23,7 @@
 import type { ReactNode } from "react";
 
 import { useT } from "../../shell/i18n";
+import { DownBody, YAHOO } from "./Down";
 import { signed } from "./format";
 import { quadrant } from "./logic";
 import type { Pulse, TrendTables } from "./types";
@@ -51,7 +52,15 @@ function Card({
   );
 }
 
-export function Snapshot({ pulse, tables }: { pulse: Pulse; tables: TrendTables }) {
+export function Snapshot({
+  pulse,
+  tables,
+  onRetry,
+}: {
+  pulse: Pulse;
+  tables: TrendTables;
+  onRetry?: () => void;
+}) {
   const t = useT();
   const rates = tables.blocks.find((block) => block.block === "rates") ?? null;
   const quad = quadrant(rates);
@@ -151,13 +160,28 @@ export function Snapshot({ pulse, tables }: { pulse: Pulse; tables: TrendTables 
       {cards.length === 0 ? (
         // The block keeps its heading when it has nothing to show. An absent
         // block reads as "nothing is happening here", which is a different and
-        // wrong claim from "the series this needs did not arrive".
-        <div className="sn-down">
-          <span className="sn-down-t">{t("sentiment.macro_unavailable_title")}</span>
-          <span className="sn-down-b">{t("sentiment.macro_unavailable")}</span>
-        </div>
+        // wrong claim from "the series this needs did not arrive". Which feed
+        // to blame: Yahoo when the composite's call said so, FRED when only
+        // the rates block is down.
+        pulse.unavailable ? (
+          <DownBody reason={pulse.unavailable} onRetry={onRetry} />
+        ) : (
+          <DownBody
+            reason={rates?.unavailable ?? "no_data"}
+            family="macro"
+            origin="FRED"
+            onRetry={onRetry}
+          />
+        )
       ) : (
-        <div className="sn-tcards">{cards}</div>
+        <>
+          <div className="sn-tcards">{cards}</div>
+          {/* The quadrant came from FRED and survived; the breadth counts and
+              the correlation ride on the Yahoo burst and did not. */}
+          {pulse.unavailable && (
+            <DownBody reason={pulse.unavailable} origin={YAHOO} onRetry={onRetry} />
+          )}
+        </>
       )}
     </>
   );

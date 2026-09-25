@@ -5,19 +5,26 @@ Market-wide, so these two take no account — same shape as `/quotes` and
 them against `/portfolio/positions` itself; putting an account on a cohort
 every reader shares would make a shared file look personal.
 
-The written verdict under the podium is the one write here: a generated
-answer with a per-account daily budget. `GET …/verdict` serves what is stored
-(or the computed stand-in) and never spends; `POST …/verdict` writes one.
+The written verdict under the podium is one write here: a generated answer
+with a per-account daily budget. `GET …/verdict` serves what is stored (or the
+computed stand-in) and never spends; `POST …/verdict` writes one.
+
+The other is the live rescan — the Streamlit page's "refresh this sector"
+button. `POST …/rescan` starts one sector's scan in a background thread and
+answers at once; `GET …/rescan` is what a client polls until it lands.
 """
 
 from __future__ import annotations
 
+import threading
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from stocks import accounts
+from stocks.analysis import sectors as sector_scan
 from stocks.analysis.screener import DEFAULT_COLUMNS, LOWER_IS_BETTER, METRIC_ORDER
 from stocks.analysis.sectors import SECTORS
 from stocks.analysis.sentiment import SECTOR_ETFS
@@ -54,6 +61,45 @@ def _resolve(name: str) -> str:
     )
 
 
+# ------------------------------------------------------------ the live rescan
+# One sector rebuilt on demand, held in this process beside the nightly file.
+#
+# In memory and not merged into `sector_scan.json`, which is what the Streamlit
+# button does too (its `_live` is a cache entry, never a save): the stored file
+# is the nightly job's, it is mirrored to the bucket, and a reader's click
+# should not be what publishes a cohort to every other instance. A live scan
+# wins only while it is at least as new as the stored one — the next nightly
+# run supersedes it without anybody having to evict it.
+_live: dict[str, sector_scan.SectorScan] = {}
+_jobs: dict[str, RescanStatus] = {}
+_jobs_lock = threading.Lock()
+
+# A rescan is one sector's cohort at five Yahoo requests a company — about a
+# minute, and exactly the burst that got this project throttled from a
+# datacenter IP once. A handful an hour per account is a reader checking, not
+# a loop. Keyed apart from the chat budget: spending one must not starve the
+# other.
+RESCAN_MAX = 4
+RESCAN_WINDOW_S = 3600
+
+
+def _scans() -> dict:
+    """The stored nightly scans, with any fresher live rescan laid over them.
+
+    ISO dates compare as strings, so "at least as new" needs no parsing. A tie
+    goes to the live scan: the nightly job runs before the day starts, so a
+    rescan dated the same day was fetched after it — and it carries the
+    nightly cohort's own widened peers (see `_rescan`), so it is never the
+    narrower of the two. Tomorrow's nightly file is dated later and wins.
+    """
+    stored = dict(loaders.sector_scans())
+    for name, scan in list(_live.items()):
+        kept = stored.get(name)
+        if kept is None or not kept.tickers or scan.as_of >= kept.as_of:
+            stored[name] = scan
+    return stored
+
+
 @router.get("/sectors", response_model=Sectors, summary="Every sector, scanned or not")
 def sectors() -> Sectors:
     """All eleven, including the ones the nightly scan has not reached.
@@ -62,7 +108,7 @@ def sectors() -> Sectors:
     rather than being left out: "not scanned yet" and "does not exist" are
     different answers, and a picker built from this list has to offer both.
     """
-    scans = loaders.sector_scans()
+    scans = _scans()
     return Sectors(
         sectors=[
             SectorSummary(
@@ -122,7 +168,7 @@ def cohort(
         default_columns=[c for c in DEFAULT_COLUMNS if c in METRIC_ORDER],
         lower_is_better=sorted(LOWER_IS_BETTER & set(METRIC_ORDER)),
     )
-    scan = loaders.sector_scans().get(name)
+    scan = _scans().get(name)
     if scan is None or not scan.tickers:
         return shell
 
@@ -219,7 +265,7 @@ def _stored(paths, scan, lang: str):
 
 
 def _scan_or_404(name: str):
-    scan = loaders.sector_scans().get(name)
+    scan = _scans().get(name)
     if scan is None or not scan.tickers:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -308,3 +354,140 @@ def write_verdict(
     kept[written.sector] = written.to_dict()
     auth.save_verdicts(kept, paths.verdicts)
     return _answer(written, written=True)
+
+
+# ------------------------------------------------------------ the rescan
+
+
+class RescanStatus(BaseModel):
+    """Where one sector's live rescan stands.
+
+    Shared across readers, like the cohort it rebuilds: two people pressing
+    the button on the same sector get the same job, not two bursts of Yahoo.
+    `idle` means nothing was asked since this process started — which is also
+    what a poll landing on a fresh instance sees, and the client treats it as
+    "finished, reload".
+    """
+
+    sector: str
+    state: str = Field(description="idle | running | done | failed")
+    started_at: str | None = None
+    finished_at: str | None = None
+    as_of: str | None = Field(
+        default=None, description="The rebuilt cohort's date, once it landed."
+    )
+    cohort: int = Field(default=0, description="Companies the rescan scored.")
+    reason: str | None = Field(
+        default=None,
+        description=(
+            "Why a failed rescan failed: rate_limited | offline | no_data | "
+            "error. The stored cohort still stands either way."
+        ),
+    )
+
+
+def _now() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _why(exc: Exception) -> str:
+    from urllib.error import URLError
+
+    from yfinance.exceptions import YFRateLimitError
+
+    if isinstance(exc, YFRateLimitError):
+        return "rate_limited"
+    return "offline" if isinstance(exc, URLError | OSError) else "error"
+
+
+def _rescan(name: str) -> None:
+    """The job: scan one sector and lay it over the stored one.
+
+    The stored cohort's own tickers ride along as `extra`. The Streamlit
+    button rescans the ETF basket alone, which silently drops the non-US peers
+    the nightly job validated — a refresh that shrinks the cohort is not a
+    refresh. They were validated when they were proposed, so passing them back
+    is exactly the contract `scan_sector` asks of `extra`.
+    """
+    from stocks import obs
+
+    kept = loaders.sector_scans().get(name)
+    extra = tuple(kept.tickers) if kept else ()
+    try:
+        scan = sector_scan.scan_sector(name, extra)
+    except Exception as exc:
+        obs.warn("sector.rescan_failed", sector=name,
+                 error_type=type(exc).__name__, error=str(exc)[:200])
+        outcome = {"state": "failed", "reason": _why(exc)}
+    else:
+        if scan.tickers:
+            _live[name] = scan
+            outcome = {"state": "done", "as_of": scan.as_of,
+                       "cohort": len(scan.tickers)}
+        else:
+            # Yahoo dropped the basket. Laying an empty cohort over a good one
+            # would turn a failed refresh into a missing sector.
+            outcome = {"state": "failed", "reason": "no_data"}
+    with _jobs_lock:
+        _jobs[name] = _jobs[name].model_copy(
+            update={**outcome, "finished_at": _now()}
+        )
+
+
+def _spawn(job) -> None:
+    """Run `job` off the request thread. A seam, so a test can run it inline."""
+    threading.Thread(target=job, daemon=True, name="sector-rescan").start()
+
+
+@router.get(
+    "/sectors/{sector}/rescan",
+    response_model=RescanStatus,
+    summary="Where a live rescan stands",
+)
+def rescan_status(sector: str) -> RescanStatus:
+    """What the client polls after starting one. Spends nothing."""
+    name = _resolve(sector)
+    with _jobs_lock:
+        return _jobs.get(name) or RescanStatus(sector=name, state="idle")
+
+
+@router.post(
+    "/sectors/{sector}/rescan",
+    response_model=RescanStatus,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Rescan one sector now",
+)
+def rescan(sector: str, paths: Writer) -> RescanStatus:
+    """Start a live rescan of one sector and answer at once.
+
+    A job already running for this sector is returned as it stands and costs
+    nothing: pressing twice, or two readers pressing together, is one scan.
+    Otherwise it spends one of the account's `RESCAN_MAX` an hour — a 429 with
+    `Retry-After` past that — and a session only, like every write: a bearer
+    token naming somebody could otherwise spend Yahoo's patience in their name.
+    """
+    from stocks.web import ratelimit
+
+    name = _resolve(sector)
+    with _jobs_lock:
+        current = _jobs.get(name)
+        if current is not None and current.state == "running":
+            return current
+    key = f"sector_rescan::{paths.root}"
+    if not ratelimit.allow(key, max_events=RESCAN_MAX, window_s=RESCAN_WINDOW_S):
+        wait = ratelimit.retry_after(key, window_s=RESCAN_WINDOW_S)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="sector.rescan_limited",
+            headers={"Retry-After": str(max(1, wait))},
+        )
+    with _jobs_lock:
+        # Checked again under the lock: another request may have started the
+        # job between the first look and the budget spend.
+        current = _jobs.get(name)
+        if current is not None and current.state == "running":
+            return current
+        started = RescanStatus(sector=name, state="running", started_at=_now())
+        _jobs[name] = started
+    _spawn(lambda: _rescan(name))
+    return started

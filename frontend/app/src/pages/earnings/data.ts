@@ -30,6 +30,21 @@ export type CalendarResult = {
   beat: boolean | null;
 };
 
+/** A filing date the account's tax residence imposes. */
+export type TaxDeadline = {
+  /** Catalog stem: `earnings.tax_<key>` names it, `…_body` explains it. */
+  key: string;
+  date: string;
+  /** Negative once it has passed. */
+  days_until: number;
+  /** The tax year it concerns, as the jurisdiction writes it: "2025/26". */
+  year: string;
+  /** The day varies (by département, by canton): printed as "around". */
+  approximate: boolean;
+  /** Due within the next 30 days — the page leads with it. */
+  remind: boolean;
+};
+
 export type EarningsCalendar = {
   upcoming: CalendarEvent[];
   results: CalendarResult[];
@@ -37,6 +52,91 @@ export type EarningsCalendar = {
   groups: Record<string, string[]>;
   /** Watchlist names that never report: coins and funds. */
   skipped: string[];
+  /** The tax residence the deadlines below are for. */
+  jurisdiction: string | null;
+  tax_deadlines: TaxDeadline[];
+};
+
+/**
+ * What `/api/v1/earnings/{symbol}/result` sends: one past print, broken down.
+ *
+ * Ratios are fractions (0.183 is 18.3%), as `stocks.data.earnings` computes
+ * them; `price_reaction` alone is a percentage, like `surprise_pct`. Every
+ * comparison the tiles print (YoY, bps, TTM, the GAAP gap) arrives computed,
+ * so this dialog and the Streamlit one cannot disagree about a number.
+ */
+export type QuarterFigures = {
+  /** Fiscal quarter end, ISO — not the report date. */
+  end: string;
+  revenue: number | null;
+  gross_profit: number | null;
+  operating_income: number | null;
+  net_income: number | null;
+  pretax_income: number | null;
+  tax_provision: number | null;
+  rnd: number | null;
+  diluted_eps: number | null;
+  diluted_shares: number | null;
+  gross_margin: number | null;
+  operating_margin: number | null;
+  net_margin: number | null;
+  rnd_intensity: number | null;
+  tax_rate: number | null;
+  revenue_yoy: number | null;
+  revenue_qoq: number | null;
+};
+
+export type QuarterBreakdown = {
+  quarter: QuarterFigures;
+  revenue_ttm: number | null;
+  net_income_yoy: number | null;
+  /** Up is dilution — the bad direction. */
+  shares_yoy: number | null;
+  gross_margin_bps: number | null;
+  operating_margin_bps: number | null;
+  net_margin_bps: number | null;
+};
+
+/** Sell-side consensus for one period — never company guidance. */
+export type ConsensusPeriod = {
+  /** "0q", "+1q", "0y" or "+1y". */
+  period: string;
+  eps_avg: number | null;
+  eps_low: number | null;
+  eps_high: number | null;
+  eps_growth: number | null;
+  eps_analysts: number | null;
+  rev_avg: number | null;
+  rev_low: number | null;
+  rev_high: number | null;
+  rev_growth: number | null;
+  rev_analysts: number | null;
+  currency: string | null;
+  currency_prefix: string;
+};
+
+export type ResultDetailData = {
+  ticker: string;
+  name: string;
+  logo: string | null;
+  date: string;
+  /** Null when the feed has no figures for that date. */
+  result: CalendarResult | null;
+  price_reaction: number | null;
+  /** Filed and matched / statements exist but not this quarter's / none at all. */
+  quarter_state: "matched" | "pending" | "none";
+  currency: string | null;
+  currency_prefix: string;
+  breakdown: QuarterBreakdown | null;
+  /** Newest first, up to five. */
+  trend: QuarterFigures[];
+  eps_gaap_gap: number | null;
+  /** Every print the feed carries for the name, newest first. */
+  history: CalendarResult[];
+  outlook: ConsensusPeriod | null;
+  outlook_periods: ConsensusPeriod[];
+  /** The breakdown fetch failed this time; the headline still stands. */
+  unavailable: boolean;
 };
 
 /** A print this close is the one the page warns about up front. */

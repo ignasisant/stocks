@@ -27,9 +27,11 @@
 import { useEffect, useRef, useState } from "react";
 
 import { ApiError, get, send } from "../../shell/api";
+import { SignInWall } from "../../shell/guest";
 import { useLang, useT } from "../../shell/i18n";
 import { Loaded } from "../../shell/Layout";
 import { useRoute } from "../../shell/router";
+import { useGuest } from "../../shell/session";
 import { useApi } from "../../shell/useApi";
 import type { BankAuth, BankChoice, BankConnection, BankState } from "./types";
 import "./bank.css";
@@ -327,6 +329,21 @@ function AddBank({
 }
 
 export default function Page() {
+  // `/v1/bank/*` is shut to a guest — a bank link is somebody's — so the wall
+  // comes before the first request rather than after its 401.
+  const t = useT();
+  if (useGuest()) {
+    return (
+      <div className="bk-page">
+        <h1 className="bk-title">{t("bank.title")}</h1>
+        <SignInWall text="common.sign_in" />
+      </div>
+    );
+  }
+  return <Bank />;
+}
+
+function Bank() {
   const t = useT();
   const { params, setParams } = useRoute();
   const [notice, setNotice] = useState<Notice | null>(null);

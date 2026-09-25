@@ -1,10 +1,12 @@
 /**
  * The last five ledger rows — what this book did recently, not what it holds.
  *
- * The Streamlit strip converts every row to the reporting currency at the
- * trade date's ECB rate. That rate is a server-side lookup with no route on
- * this API, and guessing it with today's would quietly misstate a two-year-old
- * buy, so each amount stays in the currency the trade was actually booked in.
+ * Every amount is in the reporting currency at the trade date's ECB rate, as
+ * the Streamlit strip prints it: `/portfolio/transactions` converts each row
+ * server-side with the rate the ledger replay already fetched. A row the
+ * server could not convert falls back to the currency it was booked in rather
+ * than to today's rate — guessing a two-year-old buy at this morning's rate
+ * would quietly misstate it.
  */
 
 import type { Query } from "../../shell/useApi";
@@ -27,7 +29,8 @@ const ACTIONS = new Set([
 ]);
 
 /**
- * The cash a row moved, in its own currency.
+ * The cash a row moved, in its own currency — the fallback for a row the
+ * server could not convert.
  *
  * A split moves no cash and a transfer moves shares rather than money, so both
  * come back null and print as "n/a" — a zero there would read as a free trade.
@@ -66,7 +69,13 @@ export function RecentTransactions({ query }: { query: Query<Transactions> }) {
                   <th>{t("home.col_date")}</th>
                   <th>{t("home.col_type")}</th>
                   <th>{t("home.col_ticker")}</th>
-                  <th className="hm-num">{t("home.col_amount")}</th>
+                  {/* The column is one currency, so the header names it —
+                      Streamlit heads it with the code alone. */}
+                  <th className="hm-num">
+                    {data.base
+                      ? `${t("home.col_amount")} (${data.base})`
+                      : t("home.col_amount")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -79,10 +88,12 @@ export function RecentTransactions({ query }: { query: Query<Transactions> }) {
                         : tx.action}
                     </td>
                     <td>
-                      <TickerCell ticker={tx.ticker} />
+                      <TickerCell ticker={tx.ticker} name={false} />
                     </td>
                     <td className="hm-num">
-                      {money(amountOf(tx), tx.currency, lang, { digits: 2 }) ?? na}
+                      {(data.base && tx.amount != null
+                        ? money(tx.amount, data.base, lang, { digits: 2 })
+                        : money(amountOf(tx), tx.currency, lang, { digits: 2 })) ?? na}
                     </td>
                   </tr>
                 ))}

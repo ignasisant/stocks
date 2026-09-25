@@ -23,15 +23,15 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 
-from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Header, HTTPException, status
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from stocks import accounts
+from stocks import accounts, navigation
 from stocks.accounts import UserPaths
 from stocks.api.deps import Account, ChatTurn, Writer
 from stocks.api.routes import chat_attach
-from stocks.chat import engine
+from stocks.chat import engine, guide_ai
 from stocks.portfolio import autodetect
 from stocks.web import chat_skills, chat_web, llm, stt
 
@@ -42,6 +42,23 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 MAX_MESSAGE = 4000
 
 _SKILL_MODES = ("auto", "manual", "off")
+
+# The two headers a session-only key travels in (see `session_keys`). Headers
+# rather than body fields because the key has to reach the read that says who
+# answers (`GET /chat/state`) as well as the turn, and a GET has no body.
+KEY_HEADER = "X-Chat-Key"
+PROVIDER_HEADER = "X-Chat-Provider"
+
+# The page slugs a drawer may say it is on, and the catalog key that names
+# each one. The shell's own names (`home`, `import`, `bank`) beside the menu's
+# — `navigation.SHELL_PATHS` is what the server hands the document for. A slug
+# outside this table is dropped rather than echoed into a system prompt.
+_VIEW_LABELS = {
+    **{d.path: d.label for d in navigation.DESTINATIONS if d.path},
+    "home": "nav.home",
+    "import": "nav.import",
+    "bank": "bank.title",
+}
 
 
 # ------------------------------------------------------------------ schemas
@@ -77,6 +94,10 @@ class Message(BaseModel):
     # Set on a turn the walkthrough wrote: `step` is the registry id the card
     # presents, `state` is "done" for a receipt and "end" for the last line.
     guide: dict[str, str] | None = None
+    # A step an answer on the guide's thread offered to take the reader to —
+    # the model's `[[goto:<id>]]`, checked against the registry and scrubbed
+    # from the text (`guide_ai.claim_goto`). The client draws it as a button.
+    guide_goto: str | None = None
 
 
 class Conversation(BaseModel):
@@ -125,6 +146,22 @@ class ProviderInfo(BaseModel):
         description="Where this provider hands out keys. Empty for a keyless one."
     )
     key_placeholder: str = ""
+    key_tail: str | None = Field(
+        default=None,
+        description=(
+            "The last four characters of the key this account would use here, "
+            "stored or held for the session — enough to tell two keys apart, "
+            "not enough to use one. The whole key is `POST "
+            "/chat/keys/{provider}/reveal`, for the signed-in owner only."
+        ),
+    )
+    key_session: bool = Field(
+        default=False,
+        description=(
+            "The key in use arrived with this request (`X-Chat-Key`) and is "
+            "not stored on the account."
+        ),
+    )
     key_days_left: int | None = Field(
         default=None,
         description=(
@@ -170,6 +207,11 @@ class State(BaseModel):
     # Whether this deployment can turn a recording into text at all. A
     # microphone that apologises on press is worse than no microphone.
     voice: bool
+    # Whether a key can be kept on the account at all (`[chat] enc_key`).
+    # False leaves "this session only" as the one way to use a key of your
+    # own, and the settings screen offers exactly that instead of a form that
+    # would be refused on submit.
+    key_storage: bool = False
 
 
 class Settings(BaseModel):
@@ -245,6 +287,14 @@ class Ask(BaseModel):
     # these" is then answered with "press the button below", not with "attach
     # the file" — the drawer knows the card is up, the engine cannot.
     staged_import: str = Field(default="", max_length=255)
+    # Where the reader is: the page slug and the ticker on screen. The
+    # Streamlit panel has always told the model both (`chat_core._view_context`)
+    # — "is this a good entry?" means nothing without the page it was asked on
+    # — and the focused symbol also feeds the quote lookup and the gather, so a
+    # price for "it" is fetched even when the message never names a ticker.
+    # Unknown slugs and anything that is not a symbol are dropped, not echoed.
+    view: str = Field(default="", max_length=40)
+    focus: str = Field(default="", max_length=40)
 
     @model_validator(mode="after")
     def _one_or_the_other(self) -> Ask:
@@ -271,6 +321,42 @@ def _prefs(paths: UserPaths) -> dict:
     return accounts.load_prefs(paths.prefs)
 
 
+def session_keys(provider: str | None, key: str | None) -> dict[str, str]:
+    """The key this one request brought with it, as `engine.attempts` takes it.
+
+    The React drawer's "this session only" key: held in the tab's
+    sessionStorage and sent on each request that needs it, used for that
+    request, and never written anywhere — not to prefs, not to a log line
+    (nothing in this API logs headers), not to the response. It is what the
+    Streamlit panel does with `st.session_state`, and it is the one way to use
+    a key of your own on a deployment with no encryption secret.
+
+    Only for a provider this deployment offers and that takes a key; anything
+    else is ignored rather than refused, because a stale tab holding a key for
+    a provider that has since been switched off should simply fall back to the
+    chain it would have had without it.
+    """
+    pid = (provider or "").strip()
+    held = (key or "").strip()
+    if not pid or not held or len(held) > 512:
+        return {}
+    known = llm.PROVIDERS.get(pid)
+    if known is None or not known.needs_key:
+        return {}
+    return {pid: held}
+
+
+def _view(view: str, focus: str, lang: str) -> tuple[str, str]:
+    """(the prompt's "Current view" sentence, the clean focused symbol)."""
+    from stocks.web.i18n import translate
+
+    slug = (view or "").strip().lower()
+    label = _VIEW_LABELS.get(slug)
+    page = translate(label, lang) if label else ""
+    sym = engine.clean_focus(focus)
+    return engine.view_context(page, sym), sym
+
+
 def _turn(raw: dict) -> Message:
     return Message(
         role=str(raw.get("role", "")),
@@ -292,21 +378,39 @@ def _turn(raw: dict) -> Message:
             if isinstance(raw.get("guide"), dict)
             else None
         ),
+        guide_goto=(str(raw["guide_goto"]) if raw.get("guide_goto") else None),
     )
 
 
+def _tail(key: str) -> str | None:
+    """The last four characters of a key long enough to spare them."""
+    return key[-4:] if len(key) > 12 else None
+
+
 @router.get("/state", response_model=State, summary="What the assistant can do")
-def state(paths: Account) -> State:
+def state(
+    paths: Account,
+    x_chat_provider: str | None = Header(default=None),
+    x_chat_key: str | None = Header(default=None),
+) -> State:
     """The drawer's opening read: who answers, on what allowance, with which lens.
 
     One call rather than four because all of it is decided together — an
     account with its own key has no free allowance to show, and a reader whose
-    allowance is gone needs the reason, not the number.
+    allowance is gone needs the reason, not the number. A session-only key
+    (`X-Chat-Provider` + `X-Chat-Key`) counts here exactly as it does on the
+    turn, so the header names the provider that will actually answer.
     """
+    return _state(paths, session_keys(x_chat_provider, x_chat_key))
+
+
+def _state(paths: UserPaths, held: dict[str, str] | None = None) -> State:
+    held = held or {}
     prefs = _prefs(paths)
     eligible = engine.free_eligible(prefs)
     left = engine.free_left(prefs) if eligible else None
-    chain = engine.attempts(prefs)
+    chain = engine.chain(prefs, held)
+    in_use = {provider.id: key for provider, key, _model in chain}
     return State(
         providers=[
             ProviderInfo(
@@ -314,7 +418,14 @@ def state(paths: Account) -> State:
                 label=provider.label,
                 models=list(provider.models),
                 needs_key=provider.needs_key,
-                has_key=engine.byok_alive(prefs, provider.id),
+                has_key=provider.id in held
+                or engine.byok_alive(prefs, provider.id),
+                key_tail=(
+                    _tail(in_use[provider.id])
+                    if provider.needs_key and in_use.get(provider.id)
+                    else None
+                ),
+                key_session=provider.id in held,
                 model=(
                     saved
                     if (saved := prefs.get(f"{provider.id}_model"))
@@ -353,6 +464,7 @@ def state(paths: Account) -> State:
         upload_types=list(autodetect.supported_types()),
         upload_max_mb=chat_attach.MAX_UPLOAD_MB,
         voice=stt.available(),
+        key_storage=engine.can_store_keys(),
     )
 
 
@@ -469,7 +581,12 @@ def drop(cid: str, paths: Writer) -> None:
 
 
 @router.patch("/settings", response_model=State, summary="Change the drawer's settings")
-def settings(body: Settings, paths: Writer) -> State:
+def settings(
+    body: Settings,
+    paths: Writer,
+    x_chat_provider: str | None = Header(default=None),
+    x_chat_key: str | None = Header(default=None),
+) -> State:
     """Who answers, on which model, with which lens. Returns the whole state,
     so one round-trip both applies the change and re-reads what it implies —
     picking a provider that needs a key changes the allowance, the wall and
@@ -498,7 +615,7 @@ def settings(body: Settings, paths: Writer) -> State:
         changes[f"{pid}_model"] = body.model
     if changes:
         accounts.update_prefs(paths.prefs, changes)
-    return state(paths)
+    return _state(paths, session_keys(x_chat_provider, x_chat_key))
 
 
 # --------------------------------------------------------------- one turn
@@ -512,14 +629,33 @@ def _frame(event: str, data: dict) -> str:
 
 def _events(
     *, prefs: dict, paths: UserPaths, message: str, lang: str,
-    staged_import: str = "",
+    staged_import: str = "", view: str = "", focus: str = "",
+    guided: bool = False, held: dict[str, str] | None = None,
 ) -> Iterator[str]:
     """The turn, as SSE frames. Never raises: a stream that dies mid-answer
     cannot be turned back into a status code, so every failure becomes a
-    `done` frame carrying the same locale key the Reply would have carried."""
+    `done` frame carrying the same locale key the Reply would have carried.
+
+    `guided` is a turn on the walkthrough's own thread. It gets the fence in
+    its prompt, and its text passes through the marker filter on the way out:
+    a `[[goto:…]]` never reaches the client's screen, not even for the one
+    frame a streamed token is painted in, and the finished answer carries the
+    validated step as `goto` — the same field a reloaded turn reads back as
+    `guide_goto`.
+    """
     # Flushes headers (and any proxy buffer) before the model is even asked, so
     # the client's reader resolves immediately instead of at the first token.
     yield ": open\n\n"
+    gate = guide_ai.MarkerFilter() if guided else None
+    claimed: dict[str, str] = {}
+
+    def polish(entry: dict) -> None:
+        # Runs inside the engine before the answer is stored, so the thread on
+        # disk holds the scrubbed words and the button, never the marker.
+        sid = guide_ai.claim_goto(entry, gate.found if gate else [])
+        if sid:
+            claimed["goto"] = sid
+
     try:
         for kind, payload in engine.answer_stream(
             prefs=prefs,
@@ -531,19 +667,32 @@ def _events(
             lang=lang,
             context=engine.MARKDOWN_CONTEXT,
             staged_import=staged_import,
+            view=view,
+            focus=focus,
+            fence=(
+                guide_ai.prompt_fence(prefs, prefs.get(guide_ai.PREF_THREAD), lang)
+                if guided
+                else ""
+            ),
+            session_keys=held,
+            polish=polish if guided else None,
         ):
             if kind == "phase":
                 # What the turn is doing before it has words: the panel's
                 # `chat.work_*` line, named by its key.
                 yield _frame("phase", {"phase": payload})
             elif kind == "text":
-                yield _frame("text", {"chunk": payload})
+                chunk = gate.feed(str(payload)) if gate else payload
+                if chunk:
+                    yield _frame("text", {"chunk": chunk})
             elif kind == "meta":
                 assert isinstance(payload, dict)
                 yield _frame("meta", payload)
             else:
                 reply = payload
                 assert isinstance(reply, engine.Reply)
+                if gate and (tail := gate.close()):
+                    yield _frame("text", {"chunk": tail})
                 yield _frame(
                     "done",
                     {
@@ -553,6 +702,9 @@ def _events(
                         "provider": reply.provider_id or None,
                         "error": reply.error,
                         "steps": list(reply.steps),
+                        # Only on an answer that earned a jump: every other
+                        # frame keeps the shape it has always had.
+                        **({"goto": claimed["goto"]} if "goto" in claimed else {}),
                     },
                 )
     except Exception:  # pragma: no cover - the engine already swallows its own
@@ -590,7 +742,12 @@ def _rewind(paths: UserPaths) -> str:
 
 
 @router.post("/messages", summary="Ask the assistant (streams the answer)")
-def ask(body: Ask, paths: ChatTurn) -> StreamingResponse:
+def ask(
+    body: Ask,
+    paths: ChatTurn,
+    x_chat_provider: str | None = Header(default=None),
+    x_chat_key: str | None = Header(default=None),
+) -> StreamingResponse:
     """One chat turn, streamed as it is written.
 
     Frames are `phase` (what the turn is doing before it has words —
@@ -627,6 +784,10 @@ def ask(body: Ask, paths: ChatTurn) -> StreamingResponse:
 
     prefs = _prefs(paths)
     lang = (body.lang or prefs.get("language") or "en").strip().lower()
+    view, focus = _view(body.view, body.focus, lang)
+    # The engine writes the active thread, so that is the one to test: a turn
+    # lands on the walkthrough's thread exactly when it is the active one.
+    guided = guide_ai.owns(auth.active_conversation(paths.chat)["id"], prefs)
     return StreamingResponse(
         _events(
             prefs=prefs,
@@ -634,6 +795,10 @@ def ask(body: Ask, paths: ChatTurn) -> StreamingResponse:
             message=message,
             lang=lang,
             staged_import=body.staged_import.strip(),
+            view=view,
+            focus=focus,
+            guided=guided,
+            held=session_keys(x_chat_provider, x_chat_key),
         ),
         media_type="text/event-stream",
         headers={
@@ -669,9 +834,10 @@ def set_key(provider: str, body: ProviderKey, paths: Writer) -> State:
     its last use — a deployment without that secret refuses rather than writing
     a provider key in the clear beside somebody's portfolio.
 
-    Unlike the Streamlit panel there is no "this session only" option: an HTTP
-    caller has no session for a key to live in, so the only honest choices are
-    store it or do not send it.
+    Not the only way to use a key: "this session only" is the client keeping
+    it (the React drawer holds it in the tab's sessionStorage) and sending it
+    per request in `X-Chat-Key` — see `session_keys`. That path writes
+    nothing, and it is the one a deployment without the secret still offers.
     """
     if provider not in llm.PROVIDERS:
         raise HTTPException(
@@ -689,7 +855,54 @@ def set_key(provider: str, body: ProviderKey, paths: Writer) -> State:
             detail="this deployment cannot store a key: no encryption secret",
         )
     accounts.save_prefs(paths.prefs, stored)
-    return state(paths)
+    return _state(paths)
+
+
+class RevealedKey(BaseModel):
+    """One stored key, in full — for the owner's own eyes only."""
+
+    provider: str
+    key: str
+
+
+@router.post(
+    "/keys/{provider}/reveal",
+    response_model=RevealedKey,
+    summary="Show your stored key",
+)
+def reveal_key(provider: str, paths: Writer) -> JSONResponse:
+    """The stored key, decrypted, for the reader who stored it.
+
+    The Streamlit panel's "Show key" toggle, and the one route in this API that
+    hands a secret *out*. Three things fence it:
+
+    * `Writer`, so a signed-in session and nothing else. A bearer token reads
+      an account but names nobody, and a key is not something any holder of a
+      shared token should be able to lift from every account it can name.
+    * POST with no body worth sending, rather than a GET: the CSRF defence
+      here is built on requests a cross-site page cannot make, a GET is the
+      one request any page can trigger, and a secret has no business in a
+      response a prefetch or an extension might cache. `no-store` says the
+      same to anything between here and the browser.
+    * 404 for a keyless provider, a provider with nothing stored, and a key
+      that no longer decrypts — the same answer for all three, because the
+      reader's next step is the same: type it again.
+    """
+    known = llm.PROVIDERS.get(provider)
+    if known is None or not known.needs_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"no provider {provider}"
+        )
+    key = engine.decrypt_byok(accounts.stored_prefs(paths.prefs), provider)
+    if not key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no key stored for {provider}",
+        )
+    return JSONResponse(
+        RevealedKey(provider=provider, key=key).model_dump(),
+        headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
 
 
 @router.delete(
@@ -712,4 +925,4 @@ def forget_key(provider: str, paths: Writer) -> State:
             detail=f"no key stored for {provider}",
         )
     accounts.save_prefs(paths.prefs, stored)
-    return state(paths)
+    return _state(paths)

@@ -14,6 +14,11 @@ type PulseComponent = {
   score: number | null;
   /** What it actually read, in its own units — which differ per input. */
   raw: number | null;
+  /**
+   * `raw` already formatted in its own units (+4.2%, 15.2, 1.19…) by the
+   * Python registry that knows them. Null exactly when `raw` is.
+   */
+  text: string | null;
   /** The same score 21 sessions ago; null when history is short. */
   then: number | null;
 };
@@ -57,6 +62,24 @@ export type Pulse = {
   stock_bond_correlation: number | null;
   /** The same correlation a quarter ago; null when history is short. */
   stock_bond_correlation_then: number | null;
+  /** Server clock at answer time, `YYYY-MM-DD HH:MM UTC` — the "loaded" caption. */
+  loaded_at: string | null;
+  /**
+   * rate_limited | offline | no_data — set when the composite could not be
+   * built at all. The server answers 200 with this rather than an error, so
+   * every block keeps its heading and says which source died.
+   */
+  unavailable?: string | null;
+};
+
+/** One secondary beta: duration (TLT), credit (HYG) or emerging markets (EEM). */
+type BookBeta = {
+  /** duration | credit | em — the suffix of `sentiment.beta_<key>`. */
+  key: string;
+  ticker: string;
+  beta: number | null;
+  rolling: number | null;
+  rolling_then: number | null;
 };
 
 export type PulseBook = {
@@ -76,6 +99,19 @@ export type PulseBook = {
   currency_weights: Record<string, number>;
   rotation_capture: number | null;
   sector_tilt: Record<string, number>;
+  /** The three betas beside the equity one, on the same EUR-rebased returns. */
+  betas: BookBeta[];
+  /**
+   * The book's whole sector split, largest first — including buckets no sector
+   * ETF tracks. What "your three largest sectors" is chosen from.
+   */
+  sector_weights?: Record<string, number>;
+  /**
+   * rate_limited | offline | no_data — why the price-derived figures are null.
+   * The weights need no feed and still arrive, so this is a partial card, not
+   * an empty one.
+   */
+  unavailable?: string | null;
 };
 
 export type TrendRow = {
@@ -109,6 +145,8 @@ export type TrendRow = {
   spy_weight: number | null;
   /** Inflation with food and energy taken out: a second level, not a change. */
   core: number | null;
+  /** Date of the row's last observation; what a stale gauge's note quotes. */
+  as_of?: string | null;
 };
 
 export type TrendBlock = {
@@ -119,6 +157,8 @@ export type TrendBlock = {
   rows: TrendRow[];
   /** rate_limited | offline | no_data — why the block is empty. */
   unavailable: string | null;
+  /** Rows the block is configured to carry: the tab badge, even while it is down. */
+  expected?: number | null;
 };
 
 export type TrendTables = { blocks: TrendBlock[] };

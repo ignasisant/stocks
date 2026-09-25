@@ -30,8 +30,9 @@
  * instead of taking the page down.
  */
 
+import type { ReactNode } from "react";
 import { get } from "../../shell/api";
-import { useApi } from "../../shell/useApi";
+import { useApi, type Query } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
@@ -42,13 +43,107 @@ import { SignInWall } from "../../shell/guest";
 import { useGuest } from "../../shell/session";
 import { Snapshot } from "./Snapshot";
 import { Detail } from "./Detail";
+import { reasonOf } from "./Down";
 import type { Pulse, PulseBook, TrendTables } from "./types";
 import "./sentiment.css";
 
-/** `macro.as_of()`'s own spelling, so the caption reads the same on both apps. */
-function stamp(): string {
-  return `${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`;
+/**
+ * The "loaded …" stamp. The server's own `macro.as_of()` when the composite
+ * has landed — the machine that fetched the prices, in its clock — and the
+ * same spelling off the browser clock only until then, so the caption is
+ * never blank while it waits.
+ */
+function stamp(served: string | null | undefined): string {
+  return served ?? `${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`;
 }
+
+/**
+ * `Loaded`, except that a failed fetch still draws the block.
+ *
+ * The shell's `Loaded` answers a failure with one generic "data unavailable"
+ * paragraph, which is right for a page that is one query and wrong for this
+ * one: it would take the block's heading with it. So a failure here is turned
+ * into the payload the server sends when it degrades on purpose — every figure
+ * null and `unavailable` naming why — and the block draws that, heading and
+ * reason and "last attempt · source" included. One path for both shapes of
+ * failure, so they cannot drift apart.
+ */
+function Resilient<T>({
+  query,
+  skeleton,
+  down,
+  children,
+}: {
+  query: Query<T>;
+  skeleton: ReactNode;
+  down: (reason: string) => T;
+  children: (data: T, reload: () => void) => ReactNode;
+}) {
+  if (query.state === "failed") {
+    return <>{children(down(reasonOf(query.error)), query.retry)}</>;
+  }
+  return (
+    <Loaded query={query} skeleton={skeleton}>
+      {children}
+    </Loaded>
+  );
+}
+
+/** What `/pulse` answers when the composite could not be built. */
+const pulseDown = (reason: string): Pulse => ({
+  score: null,
+  regime: "unknown",
+  as_of: null,
+  run: 0,
+  components: [],
+  missing: [],
+  history: [],
+  breadth_indices: null,
+  breadth_sectors: null,
+  stock_bond_correlation: null,
+  stock_bond_correlation_then: null,
+  loaded_at: null,
+  unavailable: reason,
+});
+
+/** What `/pulse/book` answers when the replay itself could not be priced. */
+const bookDown =
+  (base: string) =>
+  (reason: string): PulseBook => ({
+    base,
+    beta: null,
+    beta_rolling: null,
+    beta_rolling_then: null,
+    stance: null,
+    bond_correlation: null,
+    bond_correlation_then: null,
+    usd_share: null,
+    fx_drag: null,
+    currency_weights: {},
+    rotation_capture: null,
+    sector_tilt: {},
+    betas: [],
+    unavailable: reason,
+  });
+
+/** Every detail block, down for the same reason — the tabs keep their places. */
+const TABLE_BLOCKS = [
+  "indices",
+  "gauges",
+  "rates",
+  "inflation",
+  "rotation",
+  "factors",
+  "cross",
+];
+const tablesDown = (reason: string): TrendTables => ({
+  blocks: TABLE_BLOCKS.map((block) => ({
+    block,
+    unit: "percent",
+    rows: [],
+    unavailable: reason,
+  })),
+});
 
 /**
  * On a phone the four sections are four full screens, so a strip that jumps
@@ -120,9 +215,9 @@ export default function Page() {
 
       <section className="sn-card sn-hero" id="ag-pulse">
         <div className="sn-hero-l">
-          <Loaded query={pulse} skeleton={<Skeleton rows={6} />}>
-            {(data) => <Composite pulse={data} />}
-          </Loaded>
+          <Resilient query={pulse} skeleton={<Skeleton rows={6} />} down={pulseDown}>
+            {(data, reload) => <Composite pulse={data} onRetry={reload} />}
+          </Resilient>
         </div>
         <div className="sn-hero-r">
           {/* Where `sentiment.py` draws `_side_invite`: there is no honest
@@ -135,9 +230,15 @@ export default function Page() {
               cta="sentiment.book_signin_cta"
             />
           ) : (
-            <Loaded query={book} skeleton={<Skeleton rows={4} />}>
-              {(data) => (data ? <Side book={data} regime={regime} /> : null)}
-            </Loaded>
+            <Resilient
+              query={book}
+              skeleton={<Skeleton rows={4} />}
+              down={bookDown(base)}
+            >
+              {(data, reload) =>
+                data ? <Side book={data} regime={regime} onRetry={reload} /> : null
+              }
+            </Resilient>
           )}
         </div>
       </section>
@@ -152,16 +253,18 @@ export default function Page() {
           on the tables outside and reads the composite through its own
           `Loaded` rather than holding the eight inputs above it hostage. */}
       <section className="sn-card">
-        <Loaded query={pulse} skeleton={<Skeleton rows={8} />}>
-          {(data) => <Why pulse={data} />}
-        </Loaded>
-        <Loaded query={tables} skeleton={<Skeleton rows={3} />}>
+        <Resilient query={pulse} skeleton={<Skeleton rows={8} />} down={pulseDown}>
+          {(data, reload) => <Why pulse={data} onRetry={reload} />}
+        </Resilient>
+        <Resilient query={tables} skeleton={<Skeleton rows={3} />} down={tablesDown}>
           {(loadedTables) => (
-            <Loaded query={pulse} skeleton={<Skeleton rows={3} />}>
-              {(loadedPulse) => <Snapshot pulse={loadedPulse} tables={loadedTables} />}
-            </Loaded>
+            <Resilient query={pulse} skeleton={<Skeleton rows={3} />} down={pulseDown}>
+              {(loadedPulse, reload) => (
+                <Snapshot pulse={loadedPulse} tables={loadedTables} onRetry={reload} />
+              )}
+            </Resilient>
           )}
-        </Loaded>
+        </Resilient>
       </section>
 
       {/* Nothing at all for a guest rather than a second sign-in prompt: the
@@ -169,21 +272,31 @@ export default function Page() {
           of the same regime onto the same absent book. */}
       {guest ? null : (
         <section className="sn-card">
-          <Loaded query={book} skeleton={<Skeleton rows={5} />}>
-            {(data) => (data ? <Book book={data} rotation={rotation} /> : null)}
-          </Loaded>
+          <Resilient
+            query={book}
+            skeleton={<Skeleton rows={5} />}
+            down={bookDown(base)}
+          >
+            {(data, reload) =>
+              data ? <Book book={data} rotation={rotation} onRetry={reload} /> : null
+            }
+          </Resilient>
         </section>
       )}
 
       <section className="sn-card">
-        <Loaded query={tables} skeleton={<Skeleton rows={10} />}>
+        <Resilient query={tables} skeleton={<Skeleton rows={10} />} down={tablesDown}>
           {(data, reload) => (
             <Detail tables={data} capture={capture} onRetry={reload} />
           )}
-        </Loaded>
+        </Resilient>
       </section>
 
-      <p className="sn-caption">{t("sentiment.sources", { stamp: stamp() })}</p>
+      <p className="sn-caption">
+        {t("sentiment.sources", {
+          stamp: stamp(pulse.state === "loaded" ? pulse.data.loaded_at : null),
+        })}
+      </p>
     </div>
   );
 }

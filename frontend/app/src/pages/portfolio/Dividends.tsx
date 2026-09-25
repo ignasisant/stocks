@@ -24,7 +24,17 @@ import type {
   Positions,
 } from "./api";
 import { moneyIn, percent, shares as formatShares } from "./format";
-import { Caption, Card, Empty, Figure, Info, Kpis, Table, TickerCell } from "./ui";
+import {
+  Caption,
+  Card,
+  Empty,
+  Figure,
+  Info,
+  Kpis,
+  Table,
+  TickerCell,
+  Warn,
+} from "./ui";
 import type { Column } from "./ui";
 
 export default function Dividends() {
@@ -164,12 +174,22 @@ export default function Dividends() {
         const estimated = dividends.years.filter(
           (year) => year.estimated_gross !== null,
         );
+        // The entitlement pass never ran (Yahoo throttled or down), so every
+        // estimate below is missing rather than zero. Said up front, as the
+        // Streamlit tab warns, because an absent "Next year" or history card
+        // would otherwise read as a book that pays nothing.
+        const unavailable = dividends.estimates_available ? null : (
+          <Warn>{t("portfolio.data_unavailable")}</Warn>
+        );
         if (!booked.length && !estimated.length && !dividends.forward.length) {
           return (
-            <Empty
-              title={t("portfolio.empty_dividends_title")}
-              body={t("portfolio.empty_dividends_body")}
-            />
+            <>
+              {unavailable}
+              <Empty
+                title={t("portfolio.empty_dividends_title")}
+                body={t("portfolio.empty_dividends_body")}
+              />
+            </>
           );
         }
 
@@ -190,6 +210,7 @@ export default function Dividends() {
 
         return (
           <>
+            {unavailable}
             <Kpis
               items={[
                 {
@@ -206,7 +227,10 @@ export default function Dividends() {
                 },
                 {
                   label: t("portfolio.div_kpi_next"),
-                  value: money(forwardAnnual),
+                  // "n/a" rather than a confident zero when nothing held pays
+                  // forward — Streamlit's tile says the same; a 0 would read
+                  // as a measured answer.
+                  value: dividends.forward.length ? money(forwardAnnual) : null,
                   help: t("portfolio.div_kpi_next_help"),
                 },
               ]}
@@ -218,7 +242,7 @@ export default function Dividends() {
                   columns={yearColumns}
                   rows={booked}
                   rowKey={(row) => String(row.year)}
-                  initial={{ key: "year", desc: true }}
+                  initial={{ key: "year" }}
                 />
                 <Caption>{t("portfolio.dividends_caption")}</Caption>
               </Card>
@@ -265,7 +289,7 @@ export default function Dividends() {
                   columns={estimateColumns}
                   rows={estimated}
                   rowKey={(row) => String(row.year)}
-                  initial={{ key: "year", desc: true }}
+                  initial={{ key: "year" }}
                 />
                 {(() => {
                   const missed = estimated.reduce(

@@ -55,6 +55,7 @@
   "profile.iv_dialog_title": "Set up your investor profile",
   "profile.iv_dialog_intro": "A few quick questions so the AI assistant tailors its analysis to you. You can skip and fill this in later on the Profile page.",
   "profile.iv_skip": "Skip for now",
+  "profile.iv_save_failed": "Could not save your profile. Your answers are still here — try again.",
   "profile.notifications": "Notifications",
   "profile.notify_caption": "Get a daily portfolio digest, a Sunday review and price alerts on Telegram.",
   "profile.tg_not_configured": "Telegram notifications aren't configured on this deployment.",
@@ -162,8 +163,5 @@
   "profile.notify_test_row": "Check the connection",
   "profile.notify_test_help": "Sends one message to the linked chat.",
   "profile.notify_unlink_row": "Disconnect",
-  "profile.notify_unlink_help": "Stops every message. Only your chat id is deleted.",
-  "profile.next_app": "New app",
-  "profile.next_app_caption": "The rebuilt front end. Same account, same data, one page that never reloads — these screens stay available.",
-  "profile.next_app_open": "Open the new app"
+  "profile.notify_unlink_help": "Stops every message. Only your chat id is deleted."
 }

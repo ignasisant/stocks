@@ -93,7 +93,7 @@ def document(lang: str, base_url: str, jurisdiction: str | None = None) -> str:
     code = lang if lang in LANGUAGES else DEFAULT_LANG
     with landing.render_language(code, jurisdiction):
         body = landing.page_body()
-        script = landing.bar_script()
+        script = landing.bar_script() + landing.source_script()
         head = seo.head(code, base_url, extra_styles=_styles())
     return (
         "<!doctype html>"

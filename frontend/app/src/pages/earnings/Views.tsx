@@ -18,6 +18,7 @@ import { plain } from "./format";
 import MonthGrid from "./MonthGrid";
 import ResultDetail from "./ResultDetail";
 import ResultList from "./ResultList";
+import { TaxLegend } from "./Tax";
 
 type View = "calendar" | "list";
 
@@ -49,7 +50,9 @@ export default function Views({ data }: { data: EarningsCalendar }) {
   const names = allowed(data.groups, picked);
   const events = only(data.upcoming, names);
   const results = only(data.results, names);
-  const empty = events.length === 0 && results.length === 0;
+  // Deadlines ignore the ticker filters: they are the reader's, not a name's.
+  const deadlines = data.tax_deadlines;
+  const empty = events.length === 0 && results.length === 0 && deadlines.length === 0;
 
   const now = today();
   const [year, month] = addMonths(
@@ -111,7 +114,7 @@ export default function Views({ data }: { data: EarningsCalendar }) {
       {empty ? (
         <p className="ag-note">{t("earnings.no_match_filters")}</p>
       ) : view === "list" ? (
-        <ResultList events={events} results={results} />
+        <ResultList events={events} results={results} deadlines={deadlines} />
       ) : (
         <>
           <div className="earn-nav">
@@ -142,13 +145,22 @@ export default function Views({ data }: { data: EarningsCalendar }) {
             now={now}
             events={events}
             results={results}
+            deadlines={deadlines}
             onPick={setDetail}
           />
           <p className="earn-legend">{plain(t("earnings.calendar_legend"))}</p>
+          {deadlines.length > 0 && <TaxLegend jurisdiction={data.jurisdiction} />}
         </>
       )}
 
-      {detail && <ResultDetail result={detail} onClose={() => setDetail(null)} />}
+      {detail && (
+        <ResultDetail
+          ticker={detail.ticker}
+          date={detail.date}
+          result={detail}
+          onClose={() => setDetail(null)}
+        />
+      )}
     </>
   );
 }

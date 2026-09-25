@@ -28,6 +28,12 @@ type Message = {
    * presents; `state` is "done" for a receipt and "end" for the last line.
    */
   guide?: { step: string; state?: string } | null;
+  /**
+   * A step an answer on the walkthrough's thread offered to take the reader
+   * to — the model's `[[goto:<id>]]`, validated and scrubbed on the server.
+   * Drawn as a "take me there" button under the answer.
+   */
+  guide_goto?: string | null;
 };
 
 /**
@@ -114,6 +120,10 @@ export type ProviderInfo = {
   key_placeholder: string;
   /** Days before the stored key lapses, or null when none is stored. */
   key_days_left: number | null;
+  /** The last four characters of the key in use here, or null. Never more. */
+  key_tail?: string | null;
+  /** The key in use came with the request — this tab's, not stored. */
+  key_session?: boolean;
   domain: string | null;
 };
 
@@ -151,6 +161,12 @@ export type ChatState = {
   upload_max_mb: number;
   /** Whether this deployment can transcribe at all. No key, no microphone. */
   voice: boolean;
+  /**
+   * Whether a key can be kept on the account at all. False leaves "this tab
+   * only" as the one way to use a key of your own, and the form says so
+   * instead of offering a Remember box the server would refuse.
+   */
+  key_storage?: boolean;
 };
 
 /** One ledger row as the preview shows it, and as the commit sends it back. */
@@ -229,4 +245,6 @@ export type Done = {
   provider: string | null;
   error: string | null;
   steps?: Step[];
+  /** The walkthrough step this answer offered to take the reader to. */
+  goto?: string;
 };

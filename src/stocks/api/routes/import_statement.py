@@ -46,9 +46,13 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
@@ -69,16 +73,33 @@ from stocks.api.schemas import (
 )
 from stocks.api.security import Authed
 from stocks.data import fetch
-from stocks.portfolio import corporate, demo, last_import, platforms, transfers
+from stocks.portfolio import (
+    corporate,
+    demo,
+    diagnostics,
+    last_import,
+    platforms,
+    transfers,
+)
 from stocks.portfolio.ledger import add_many, all_transactions, clear, delete_many
 from stocks.portfolio.validate import known_tickers, validate
 
 router = APIRouter(prefix="/import", tags=["import"])
 
 # Statements are small — a Revolut CSV is tens of kilobytes and its PDF a
-# couple of megabytes. The cap is on the decoded bytes, so a caller cannot
-# spend the worker's memory by sending a gigabyte of base64.
-MAX_BYTES = 8 * 1024 * 1024
+# couple of megabytes — but not all of them: a decade of IBKR activity as a
+# PDF, or a bank's statement with a scanned page in it, runs to tens. The
+# Streamlit uploader takes 200 MB (its default; `.streamlit/config.toml` sets
+# no `maxUploadSize`), and a file that page accepts should not be one this
+# route refuses. It cannot take the same 200 MB, though: here the file is
+# base64 inside a JSON body, so one request holds the text (4/3 of the file),
+# the parsed JSON string and the decoded bytes at once — roughly three copies
+# on a 1-vCPU, memory-capped Cloud Run worker. 50 MB decoded keeps a single
+# upload well under ~250 MB of transient memory and still covers every real
+# statement seen in the import diagnostics by an order of magnitude. The cap
+# is on the decoded bytes, so a caller cannot spend the worker's memory by
+# sending a gigabyte of base64 either.
+MAX_BYTES = 50 * 1024 * 1024
 
 
 class Upload(BaseModel):
@@ -91,6 +112,16 @@ class Upload(BaseModel):
         description="The export's own name — the parser reads its extension.",
     )
     content: str = Field(description="The file's bytes, base64-encoded.")
+    surface: Literal["import", "paste"] = Field(
+        default="import",
+        description=(
+            "How the file reached the client: picked from disk, or pasted as "
+            "text into the fallback box. Only the anonymised import "
+            "diagnostics read it — the two doors break differently (a paste "
+            "loses its encoding and its line endings on the way), and the "
+            "Streamlit page records them apart for that reason."
+        ),
+    )
     wipe: bool = Field(
         default=False,
         description=(
@@ -168,7 +199,14 @@ def _platform(key: str):
     )
 
 
-def _parse(platform, filename: str, raw: bytes):
+def _parse(platform, filename: str, raw: bytes, *, surface: str | None = None):
+    """Run the platform's parser; a parser that raises is the caller's 422.
+
+    `surface` set means "report this attempt" (see `_checked`): a parser that
+    raises used to reach the reader as an error and reach us not at all, and
+    the anonymised fingerprint is what names the encoding or the header row
+    that broke it.
+    """
     try:
         return platform.parse(filename, raw)
     except Exception as exc:
@@ -180,10 +218,119 @@ def _parse(platform, filename: str, raw: bytes):
             error_type=type(exc).__name__,
             error=str(exc)[:300],
         )
+        if surface:
+            diagnostics.report(platform.key, filename, raw, surface=surface, error=exc)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"{platform.label} could not read this file: {exc}"[:300],
         ) from exc
+
+
+# ------------------------------------------------ the live lookups validation uses
+# Validation asks the market two things the ledger cannot answer, exactly as
+# the Streamlit page asks them (`import_transactions._ticker_exists` and
+# `fetch.splits`): does a symbol the EDGAR map and the watchlist have never
+# heard of trade at all — so an ordinary European listing stops arriving with
+# an "unknown ticker" warning — and did a ticker whose sells overshoot split
+# in between, so a statement that prints trades and no corporate actions is
+# rescued with the split row instead of rejected as an oversell.
+#
+# The page can afford to ask naively: a Streamlit run is one reader waiting on
+# one spinner. Here the same call holds an ASGI worker thread, so every answer
+# is bounded — per symbol, and in total per statement — and a throttled host
+# is not asked at all. Running out of budget answers None, which validation
+# already reads as "could not check": the warning stays, nothing is rejected
+# on its account, and the reader is exactly where they were before this
+# lookup existed. Only definite answers are remembered — "network down" is not
+# "ticker invalid", and caching it would make the outage outlive itself.
+
+LOOKUP_BUDGET_S = 4.0  # one symbol's existence check
+SPLITS_BUDGET_S = 8.0  # one ticker's corporate-actions history
+BATCH_BUDGET_S = 15.0  # every existence check one statement makes, together
+_EXISTS_TTL_S = 24 * 3600.0
+_EXISTS_MAX = 2048
+
+_exists_memo: dict[str, tuple[float, bool]] = {}
+_exists_lock = threading.Lock()
+
+
+def _within(fn, budget: float, default, **fields):
+    """`fn()` on a worker, or `default` once `budget` seconds have passed.
+
+    No `with` on the pool, for the reason `fetch._budgeted` gives: shutting it
+    down and waiting would block on exactly the hung call the timeout escaped.
+    The abandoned thread finishes into nothing — yfinance bounds each request.
+    """
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        return pool.submit(fn).result(timeout=max(budget, 0.0))
+    except FuturesTimeout:
+        obs.warn("api.import_lookup_budget_spent", budget_s=budget, **fields)
+        return default
+    except Exception as exc:  # a lookup that breaks is a lookup that could not say
+        obs.warn("api.import_lookup_failed", error_type=type(exc).__name__, **fields)
+        return default
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
+def _ticker_exists(ticker: str) -> bool | None:
+    """Does Yahoo quote this symbol? None when it could not be asked.
+
+    The Streamlit page's check, verbatim in what it asks: a last price means a
+    listing. A rate limit trips the host-wide cooldown (`fetch.trip_throttle`)
+    so the next statement does not ask again into a throttle and deepen it.
+    """
+    import yfinance as yf
+    from yfinance.exceptions import YFRateLimitError
+
+    try:
+        return bool(yf.Ticker(ticker).fast_info.get("lastPrice"))
+    except YFRateLimitError:
+        fetch.trip_throttle()
+        return None
+    except Exception:
+        return None  # network down ≠ ticker invalid
+
+
+class _Lookup:
+    """`validate`'s `lookup`, bounded: one instance per statement.
+
+    The batch deadline starts when the instance is made, so a statement of two
+    hundred unfamiliar symbols spends at most `BATCH_BUDGET_S` finding out
+    which of them trade, and the rest stay "could not check".
+    """
+
+    def __init__(self) -> None:
+        self.deadline = time.monotonic() + BATCH_BUDGET_S
+
+    def __call__(self, ticker: str) -> bool | None:
+        now = time.monotonic()
+        with _exists_lock:
+            hit = _exists_memo.get(ticker)
+        if hit is not None and now - hit[0] < _EXISTS_TTL_S:
+            return hit[1]
+        left = self.deadline - now
+        if left <= 0 or fetch.throttle_remaining() > 0:
+            return None
+        answer = _within(
+            lambda: _ticker_exists(ticker),
+            min(LOOKUP_BUDGET_S, left),
+            None,
+            ticker=ticker,
+        )
+        if answer is not None:
+            with _exists_lock:
+                _exists_memo[ticker] = (now, answer)
+                while len(_exists_memo) > _EXISTS_MAX:
+                    _exists_memo.pop(next(iter(_exists_memo)))
+        return answer
+
+
+def _splits(ticker: str) -> list[tuple[str, float]]:
+    """`fetch.splits`, bounded. Already memoized and throttle-aware there; the
+    budget is the one thing it lacks for a caller holding a worker thread."""
+    return _within(lambda: fetch.splits(ticker), SPLITS_BUDGET_S, [], ticker=ticker)
 
 
 def _row(checked) -> ImportRow:
@@ -223,18 +370,54 @@ def _real_rows(account) -> list:
     return demo.without(all_transactions(account.db))
 
 
-def _checked(account, platform, filename: str, raw: bytes, *, wipe: bool = False):
+def _checked(
+    account,
+    platform,
+    filename: str,
+    raw: bytes,
+    *,
+    wipe: bool = False,
+    surface: str | None = None,
+):
     """Parse and validate against this account's own ledger and watchlist.
 
     `wipe` empties the baseline rather than the book: a statement that is about
     to replace the ledger has to be read against the ledger it will leave
     behind, or every row it re-imports comes back flagged as a duplicate of one
     that is on its way out.
+
+    Validated with the Streamlit page's two live lookups (`_Lookup`, `_splits`)
+    — without them the same statement read clean on one surface and warned or
+    rejected on the other.
+
+    `surface` ("import" / "paste") files the anonymised diagnostic the page
+    files for every outcome (`portfolio.diagnostics.report`) — the parser
+    raising, a file with nothing in it, and the full parse-and-validate record
+    — which is what turns "some brokers fail" into a queryable fact. None
+    reports nothing: a commit of a file its preview already reported would
+    count one upload twice.
+
+    A statement the parser read without error but found nothing in — no
+    transaction and not even a skipped line — is refused as unreadable (422),
+    as the page refuses it: that is a file from the wrong platform or the
+    wrong export, and an empty preview would only say "0 rows".
     """
-    parsed = _parse(platform, filename, raw)
+    parsed = _parse(platform, filename, raw, surface=surface)
+    if not parsed.transactions and not parsed.skipped:
+        if surface:
+            diagnostics.report(platform.key, filename, raw, parsed, surface=surface)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{platform.label} found no transactions in this file",
+        )
     prior = [] if wipe else _real_rows(account)
     known = known_tickers(account.watchlist, account.db)
-    return parsed, validate(parsed, prior, known=known)
+    validation = validate(parsed, prior, known=known, lookup=_Lookup(), splits=_splits)
+    if surface:
+        diagnostics.report(
+            platform.key, filename, raw, parsed, validation, surface=surface
+        )
+    return parsed, validation
 
 
 @router.get("/platforms", response_model=ImportPlatforms, summary="What can be read")
@@ -247,6 +430,7 @@ def registry() -> ImportPlatforms:
                 file_types=list(platform.file_types),
                 hint=platform.hint,
                 domain=platform.domain,
+                logo=loaders.brand_logo(platform.key),
                 has_sample=bool(platform.sample),
             )
             for platform in platforms.PLATFORMS
@@ -263,7 +447,9 @@ def preview(account: Writer, body: Annotated[Upload, ...]) -> ImportPreview:
     """
     platform = _platform(body.platform)
     raw = _decode(body)
-    parsed, checked = _checked(account, platform, body.filename, raw, wipe=body.wipe)
+    parsed, checked = _checked(
+        account, platform, body.filename, raw, wipe=body.wipe, surface=body.surface
+    )
     importable = checked.importable
     detected = platforms.detected_broker(importable)
     return ImportPreview(
@@ -310,7 +496,18 @@ def commit(
             detail="this is not the file that was previewed",
         )
 
-    _parsed, checked = _checked(account, platform, body.filename, raw, wipe=body.wipe)
+    # Reported only when no preview was claimed: a commit carrying `expect` is
+    # of bytes its preview already filed a diagnostic for (the digest matched
+    # just above), and a second record would count one upload twice. A client
+    # that commits blind is the one whose attempt would otherwise go unseen.
+    _parsed, checked = _checked(
+        account,
+        platform,
+        body.filename,
+        raw,
+        wipe=body.wipe,
+        surface=None if body.expect else body.surface,
+    )
     importable = checked.importable
     if not importable:
         raise HTTPException(

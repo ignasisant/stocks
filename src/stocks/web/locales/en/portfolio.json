@@ -150,8 +150,8 @@
   "portfolio.col_unrecorded": "Not recorded",
   "portfolio.div_unrecorded_hint": "About {val} more than your ledger booked. Part of it is usually tax withheld at source — a Revolut statement reports dividends already net — and part a payment the import never carried. Check the statement before using it for tax.",
   "portfolio.div_history_caption": "Estimated from each company's dividend history and the shares your ledger held the day before every ex-date, gross and converted at the ex-date rate. Compared per position, so a name that imports cleanly never hides one that doesn't. A payment that goes ex in December and pays in January falls in different years here and in your ledger. Estimates never feed the tax figures.",
-  "portfolio.es_flag_modelo_720_reportable": "foreign holdings ~{val} EUR ≥ 50.000 EUR: Modelo 720 may apply if held via a non-Spanish broker.",
-  "portfolio.es_flag_modelo_720_ok": "foreign holdings ~{val} EUR < 50.000 EUR threshold.",
+  "portfolio.es_flag_modelo_720_reportable": "foreign holdings ~{val} ≥ {threshold}: Modelo 720 may apply if held via a non-Spanish broker.",
+  "portfolio.es_flag_modelo_720_ok": "foreign holdings ~{val} < {threshold} threshold.",
   "portfolio.tab_fees": "Fees",
   "portfolio.empty_fees_title": "No trades to analyse",
   "portfolio.empty_fees_body": "This tab breaks down what each trade actually cost you — the explicit commission plus the spread you paid against that day's mid price. It needs buy and sell rows in the ledger.",
@@ -412,5 +412,8 @@
   "portfolio.demo_seeded_toast": "Demo transactions added — every tab is filled with them.",
   "portfolio.demo_banner": "These are demo transactions, not yours. Your first real import removes them.",
   "portfolio.guest_demo_banner": "These are demo transactions on a shared example account, not yours — real prices, invented trades. Sign in to import your own statement and see your real portfolio here.",
-  "portfolio.demo_remove": "Remove demo data"
+  "portfolio.demo_remove": "Remove demo data",
+  "portfolio.hist_pnl": "P/L",
+  "portfolio.zoom_reset": "Reset zoom",
+  "portfolio.zoom_hint": "Drag across the chart to zoom into those days; double-click to reset."
 }

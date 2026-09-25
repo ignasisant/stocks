@@ -37,6 +37,16 @@ MINE = "mine@example.com"
 YOURS = "yours@example.com"
 TOKEN = "s3cret-token"
 
+#: What `/me` adds for a session's own identity card — absent, as nulls, for
+#: anybody who is not a session.
+NO_CARD = {
+    "name": None,
+    "picture": None,
+    "data_dir": None,
+    "data_dir_full": None,
+    "owner": False,
+}
+
 
 def cookie_for(email: str, *, verified: bool = True) -> str:
     """A session cookie, signed the way the OIDC callback signs one."""
@@ -312,13 +322,55 @@ def test_a_token_without_an_account_is_refused(client, books, monkeypatch):
 
 def test_me_reports_the_signed_in_address(client, books):
     body = as_(client, MINE).get("/v1/me").json()
-    assert body == {"kind": "session", "email": MINE, "sign_in": None}
+    assert {k: body[k] for k in ("kind", "email", "sign_in")} == {
+        "kind": "session",
+        "email": MINE,
+        "sign_in": None,
+    }
+
+
+def test_me_carries_the_identity_card_for_the_session_itself(client, books):
+    """The Streamlit card's name, avatar and folder chip: the name from the
+    claims, the folder as its tail with the full path beside it for the
+    tooltip, and no owner flag for an ordinary account."""
+    client.cookies.set(
+        session.COOKIE,
+        session.mint(
+            {
+                "email": MINE,
+                "email_verified": True,
+                "name": "Ada Lovelace",
+                "picture": "https://lh3.example.com/a.png",
+            }
+        ),
+    )
+    body = client.get("/v1/me").json()
+    root = books[MINE].root
+    assert body["name"] == "Ada Lovelace"
+    assert body["picture"] == "https://lh3.example.com/a.png"
+    assert body["data_dir"] == f"users/{root.name}"
+    assert body["data_dir_full"] == str(root)
+    assert body["owner"] is False
+
+
+def test_me_names_the_owner_so_deletion_is_not_offered(client, books, monkeypatch):
+    """The owner's book is the repo-root files: `DELETE /account` refuses it,
+    so the client hides the control, as the Streamlit page does."""
+    from dataclasses import replace
+
+    from stocks.config import PROJECT_ROOT
+
+    # The account files stay the fixture's; only the root says "owner".
+    owned = replace(books[MINE], root=PROJECT_ROOT)
+    monkeypatch.setattr(accounts, "paths_for", lambda email, owner=None: owned)
+    body = as_(client, MINE).get("/v1/me").json()
+    assert body["owner"] is True
 
 
 def test_me_reports_a_token_caller_as_nameless(client, monkeypatch):
     monkeypatch.setenv("API_TOKEN", TOKEN)
     body = client.get("/v1/me", headers={"Authorization": f"Bearer {TOKEN}"}).json()
-    assert body == {"kind": "token", "email": None, "sign_in": None}
+    assert body == {"kind": "token", "email": None, "sign_in": None, **NO_CARD}
 
 
 def test_me_calls_an_anonymous_caller_a_guest(client, monkeypatch):
@@ -328,7 +380,12 @@ def test_me_calls_an_anonymous_caller_a_guest(client, monkeypatch):
     monkeypatch.setenv("API_TOKEN", TOKEN)
     response = client.get("/v1/me")
     assert response.status_code == 200
-    assert response.json() == {"kind": "guest", "email": None, "sign_in": None}
+    assert response.json() == {
+        "kind": "guest",
+        "email": None,
+        "sign_in": None,
+        **NO_CARD,
+    }
 
 
 def test_me_says_where_to_sign_in_when_a_provider_is_configured(client, monkeypatch):
@@ -338,3 +395,70 @@ def test_me_says_where_to_sign_in_when_a_provider_is_configured(client, monkeypa
     deployment rather than about the field."""
     monkeypatch.setattr(session, "sign_in_configured", lambda: True)
     assert client.get("/v1/me").json()["sign_in"] == session.LOGIN_PATH
+
+
+# -------------------------------------------------------------- provisioning
+
+
+@pytest.fixture
+def fresh(monkeypatch, tmp_path):
+    """No account on disk and no bucket: what a brand-new address looks like."""
+    from stocks import storage
+
+    users = tmp_path / "users"
+    monkeypatch.setattr(accounts, "USERS_DIR", users)
+    monkeypatch.setattr(accounts, "configured_owner", lambda: None)
+    real = accounts.paths_for
+    monkeypatch.setattr(
+        accounts, "paths_for",
+        lambda email, owner=None, users_dir=users: real(email, None, users_dir=users),
+    )
+    monkeypatch.setattr(storage, "enabled", lambda: False)
+    return users
+
+
+def test_a_session_for_an_account_with_no_data_provisions_it(client, fresh):
+    """A valid session whose account is missing — a cookie from before the
+    callback provisioned, a callback that hit a bucket outage — used to 404
+    "unknown account" forever, which the shell can only render as offline."""
+    response = as_(client, MINE).get("/v1/watchlist")
+    assert response.status_code == 200
+    assert response.json()["entries"]  # the starter watchlist
+    paths = accounts.paths_for(MINE)
+    prefs = accounts.load_prefs(paths.prefs)
+    assert prefs["email"] == MINE
+    assert prefs["first_seen_estimated"] is False  # seeded now: an exact signup
+
+
+def test_a_token_still_never_calls_an_account_into_existence(
+    client, fresh, monkeypatch
+):
+    """The self-healing is the session's alone: a token names nobody."""
+    monkeypatch.setenv("API_TOKEN", TOKEN)
+    response = client.get(
+        "/v1/watchlist", params={"account": "nobody@example.com"},
+        headers={"Authorization": f"Bearer {TOKEN}"},
+    )
+    assert response.status_code == 404
+    assert not fresh.exists() or not list(fresh.iterdir())
+
+
+def test_a_storage_outage_is_a_503_the_shell_can_translate(client, fresh, monkeypatch):
+    def down(*a, **k):
+        raise accounts.StorageUnavailable("bucket down")
+
+    monkeypatch.setattr(accounts, "restore_account", down)
+    response = as_(client, MINE).get("/v1/watchlist")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "common.storage_restore_failed"
+
+
+def test_an_ordinary_read_by_an_existing_account_writes_nothing(client, fresh):
+    """Only the provisioning request stamps. After that a read is a read — the
+    promise `/import/preview` makes (test_api_persistence) holds for every one."""
+    signed = as_(client, MINE)
+    signed.get("/v1/watchlist")
+    prefs = accounts.paths_for(MINE).prefs
+    before = prefs.stat().st_mtime_ns
+    signed.get("/v1/watchlist")
+    assert prefs.stat().st_mtime_ns == before

@@ -218,37 +218,12 @@ def current_picture() -> str:
 def mark_login(paths: UserPaths, *, seeded: bool = False, email: str = "") -> str:
     """Stamp this account's first/last login; return "signup" or "login".
 
-    `seeded` is ensure_user_data()'s verdict: True only when this run created
-    the account's dir, so only then is the stamp an exact signup date. An
-    account that predates this bookkeeping gets first_seen backfilled to now
-    with first_seen_estimated=True and counts as a plain login — the roster
-    never claims a precision it doesn't have.
-
-    prefs.json is mirrored to the bucket on every save, so this writes at most
-    once per account per day: a PUT on each sign-in would cost more than the
-    metric is worth, and last_seen is only ever read at day granularity.
+    The bookkeeping itself is `accounts.stamp_login`, shared with the OIDC
+    callback and the API so a React sign-in and a Streamlit one date an account
+    the same way. What stays here is the Streamlit-shaped part: the bucket push
+    goes through `_persist`, so a cloud blip is a toast and not a dead page.
     """
-    prefs = load_prefs(paths.prefs)
-    today = datetime.now(UTC).date().isoformat()
-    kind = "login"
-    changed = False
-    # The address, written into the account's own file so headless jobs can
-    # identify it — the Telegram bot has a prefs.json and no session. The
-    # free-chain allowlist (engine.free_eligible) is the caller that needs it.
-    if email and prefs.get("email") != email:
-        prefs["email"] = email
-        changed = True
-    if not prefs.get("first_seen"):
-        prefs["first_seen"] = datetime.now(UTC).isoformat(timespec="seconds")
-        prefs["first_seen_estimated"] = not seeded
-        kind = "signup" if seeded else "login"
-        changed = True
-    if prefs.get("last_seen") != today:
-        prefs["last_seen"] = today
-        changed = True
-    if changed:
-        save_prefs(prefs, paths.prefs)
-    return kind
+    return accounts.stamp_login(paths, seeded=seeded, email=email, persist=_persist)
 
 
 def resolve_user() -> UserPaths:

@@ -7,12 +7,14 @@
  * cannot drop a holding outside it. The server's answer is what the list
  * re-renders from.
  *
- * Shares and average cost are not here: `GET /watchlist` does not return them
- * (see `schemas.WatchlistEntry`), and a field that cannot show what is stored
- * would invite someone to overwrite it with a zero.
+ * Shares and average cost are here too, as the Streamlit grid has them: the
+ * hand-typed position that weights the fallback analytics by value when no
+ * ledger has been imported. `GET /watchlist` reads them back (null for "not
+ * set"), so each field shows what is stored before anyone can overwrite it.
  */
 
 import { useState } from "react";
+import type { Query } from "../../shell/useApi";
 import { NotSignedIn, get, send } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { Loaded } from "../../shell/Layout";
@@ -27,10 +29,30 @@ type Entry = {
   name: string;
   favorite: boolean;
   tags: string[];
+  /** Null when unset — 0 on disk and "not a position" either way. */
+  shares: number | null;
+  cost: number | null;
   is_crypto: boolean;
 };
 
-type Listing = { entries: Entry[] };
+export type Listing = { entries: Entry[] };
+
+/** What a number field holds, as the text box shows it: empty for unset. */
+const asText = (value: number | null) => (value ? String(value) : "");
+
+/**
+ * A number field's text, as the PATCH wants it — or undefined for "unchanged".
+ *
+ * Empty (or zero) is 0 on the wire, which is what clears the field; a value
+ * that does not parse, or is negative, is left unsent rather than guessed at —
+ * the server refuses a negative one anyway, as the grid's `min_value` does.
+ */
+export function parsed(text: string, before: number | null): number | undefined {
+  const trimmed = text.trim().replace(",", ".");
+  const value = trimmed === "" ? 0 : Number(trimmed);
+  if (!Number.isFinite(value) || value < 0) return undefined;
+  return value === (before ?? 0) ? undefined : value;
+}
 
 type Mode = "tags" | "favorites" | "flat";
 const MODES: readonly Mode[] = ["tags", "favorites", "flat"];
@@ -109,12 +131,33 @@ function EntryRow({
 }) {
   const t = useT();
   const [name, setName] = useState(entry.name);
-  const [shown, setShown] = useState(entry.name);
+  const [named, setNamed] = useState(entry.name);
   const [newGroup, setNewGroup] = useState("");
-  if (shown !== entry.name) {
-    setShown(entry.name);
+  const [shares, setShares] = useState(asText(entry.shares));
+  const [cost, setCost] = useState(asText(entry.cost));
+  const [stored, setStored] = useState([entry.shares, entry.cost]);
+  if (named !== entry.name) {
+    setNamed(entry.name);
     setName(entry.name);
   }
+  // The server's answer replaces what was typed, as the name does: a field
+  // that kept its own text after a refused write would show a number nobody
+  // stored.
+  if (stored[0] !== entry.shares || stored[1] !== entry.cost) {
+    setStored([entry.shares, entry.cost]);
+    setShares(asText(entry.shares));
+    setCost(asText(entry.cost));
+  }
+  const commit = (field: "shares" | "cost", text: string) => {
+    const value = parsed(text, entry[field]);
+    if (value === undefined) {
+      // Unparseable or unchanged: put back what is stored.
+      if (field === "shares") setShares(asText(entry.shares));
+      else setCost(asText(entry.cost));
+      return;
+    }
+    onEdit(entry.ticker, { [field]: value });
+  };
 
   const toggleTag = (tag: string) =>
     onEdit(entry.ticker, {
@@ -150,6 +193,37 @@ function EntryRow({
         disabled={busy}
         onChange={(event) => setName(event.target.value)}
         onBlur={() => name !== entry.name && onEdit(entry.ticker, { name })}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+      />
+      {/* Shares and average cost, committed on blur like the name. Text
+          boxes with a decimal keyboard rather than type=number: a number
+          input swallows a comma decimal ("12,5") into an empty value, and
+          half the readers here write decimals that way. */}
+      <input
+        className="pf-input pf-input-sm pf-wnum"
+        aria-label={t("watchlist.col_shares")}
+        placeholder={t("watchlist.col_shares")}
+        inputMode="decimal"
+        value={shares}
+        disabled={busy}
+        onChange={(event) => setShares(event.target.value)}
+        onBlur={() => commit("shares", shares)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+      />
+      <input
+        className="pf-input pf-input-sm pf-wnum"
+        aria-label={t("watchlist.col_cost")}
+        placeholder={t("watchlist.col_cost")}
+        title={t("watchlist.col_cost_help")}
+        inputMode="decimal"
+        value={cost}
+        disabled={busy}
+        onChange={(event) => setCost(event.target.value)}
+        onBlur={() => commit("cost", cost)}
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
         }}
@@ -520,8 +594,12 @@ function Examples({ onAdded }: { onAdded: () => void }) {
   );
 }
 
-export function Watchlist() {
-  const query = useApi(() => get<Listing>("/watchlist"), []);
+/**
+ * The tab's body. The listing is read by the page, not here, because the tab
+ * strip carries its count (the Streamlit tab's badge) — one request for both,
+ * and an edit that reloads it moves the badge too.
+ */
+export function Watchlist({ query }: { query: Query<Listing> }) {
   return (
     <div className="pf-main">
       <Loaded query={query}>

@@ -33,7 +33,7 @@ from stocks.analysis.portfolio import (
     session_quotes,
 )
 from stocks.api.cache import ttl_cache
-from stocks.portfolio import transfers
+from stocks.portfolio import fees, transfers
 from stocks.portfolio.custody import Custody, by_position
 from stocks.portfolio.ledger import all_transactions
 from stocks.portfolio.positions import build
@@ -517,9 +517,12 @@ def trade_bars(db: str, mtime: float) -> dict[str, pd.DataFrame]:
         return {}
     tickers = sorted({t.ticker for t in trades})
     span = (pd.Timestamp.today() - pd.Timestamp(min(t.date for t in trades))).days
-    return fetch_many(
+    bars = fetch_many(
         tickers, period=f"{max(1, span // 30 + 1)}mo", auto_adjust=False
     )
+    # An alias can price a ticker on another venue (Revolut's dollar ASML ->
+    # ASML.AS in euros); the spread converts when the frames say so.
+    return fees.stamp_listing_currency(bars, fees.listing_currencies(list(bars)))
 
 
 @ttl_cache(21600.0, max_entries=8)
@@ -588,6 +591,68 @@ def basket_report(db: str, mtime: float, base: str, period: str):
         return None
     report = analyze(period=period, holdings=holdings_from_positions(positions))
     return rebase_report(report, positions, base, period)
+
+
+def inception_period(first_trade: str) -> str:
+    """The shortest fetch window that reaches back to the book's first trade.
+
+    The same ladder the Portfolio page climbs for its "since inception" choice:
+    yfinance only takes named periods, so the fetch is the next one up and the
+    slice to the first trade happens afterwards (`basket_report_since`).
+    """
+    span = (pd.Timestamp.today().normalize() - pd.Timestamp(first_trade)).days
+    if span <= 360:
+        return "1y"
+    if span <= 700:
+        return "2y"
+    if span <= 1780:
+        return "5y"
+    return "max"
+
+
+@ttl_cache(_LEDGER_TTL, max_entries=16)
+def basket_report_since(db: str, mtime: float, base: str):
+    """`basket_report` clipped to the book's first trade — the page's default.
+
+    Measured from the stock's IPO the backtest would score years the reader
+    never held anything: a volatility and a drawdown for money that was not
+    there, and betas taken over the same borrowed past. So the basket returns,
+    each benchmark's returns and the correlation input all start at the first
+    transaction, exactly where the Streamlit tab's "since inception" starts
+    them.
+
+    A copy, never the cached report mutated in place: `basket_report` is
+    memoized and shared with every other window (and with the Pulse page), and
+    slicing it here would quietly shorten theirs too. After the rebase, not
+    before — `rebase_report` rebuilds `returns` from the full download and
+    would undo the slice.
+    """
+    from dataclasses import replace
+
+    txs = ledger_state(db, mtime, base)[0]
+    if not txs:
+        return None
+    first = min(t.date for t in txs)
+    report = basket_report(db, mtime, base, inception_period(first))
+    if report is None:
+        return None
+    start = pd.Timestamp(first)
+
+    def since(obj):
+        # Series come back naive or stamped in an exchange's zone depending on
+        # the market; compare on the naive calendar date either way.
+        return obj[naive_dates(obj.index) >= start]
+
+    # The basket's daily return is sliced rather than rebuilt: it is weighted
+    # per date (`portfolio_returns` renormalises each day over the names that
+    # traded), so a day's figure does not depend on the days before it and the
+    # slice is exactly what a rebuild over the clipped frame would give.
+    return replace(
+        report,
+        returns=since(report.returns),
+        bench_returns={b: since(r) for b, r in report.bench_returns.items()},
+        port_returns=since(report.port_returns),
+    )
 
 
 @ttl_cache(_LEDGER_TTL, max_entries=1)

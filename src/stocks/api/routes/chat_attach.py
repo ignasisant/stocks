@@ -39,7 +39,7 @@ import binascii
 import time
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from stocks import accounts, obs
@@ -254,16 +254,18 @@ def _say(paths: UserPaths, content: str) -> Message:
     return Message(role="assistant", content=content, action="import")
 
 
-def _provider(paths: UserPaths):
+def _provider(paths: UserPaths, held: dict[str, str] | None = None):
     """The provider that would answer this account, for the column mapper.
 
     None when there is nothing to ask — a BYOK account with no key and no free
     chain. Detection still runs: a statement a parser owns never needed a model
     in the first place, and one that isn't comes back `unavailable` rather than
-    blamed on the file.
+    blamed on the file. `held` is the session-only key the request carried
+    (`chat.session_keys`): the reader who typed one for this tab expects the
+    mapper to run on it too, not on a free chain that may have run dry.
     """
     prefs = accounts.load_prefs(paths.prefs)
-    for provider, key, _model in engine.attempts(prefs):
+    for provider, key, _model in engine.chain(prefs, held):
         return provider, key
     return None, ""
 
@@ -358,7 +360,12 @@ def _note(lang: str, found: dict, filename: str) -> str:
     response_model=Preview,
     summary="Read a statement attached to the conversation",
 )
-def attach(body: Attachment, paths: ChatTurn) -> Preview:
+def attach(
+    body: Attachment,
+    paths: ChatTurn,
+    x_chat_provider: str | None = Header(default=None),
+    x_chat_key: str | None = Header(default=None),
+) -> Preview:
     """Detect, validate and preview one statement. Writes no ledger rows.
 
     A write all the same — it files the assistant's note on the thread, and on
@@ -375,7 +382,10 @@ def attach(body: Attachment, paths: ChatTurn) -> Preview:
     _file_at(paths, body.conversation)
     lang = _lang(paths, body.lang)
 
-    provider, api_key = _provider(paths)
+    # Imported here: `chat` imports this module to mount its routes.
+    from stocks.api.routes.chat import session_keys
+
+    provider, api_key = _provider(paths, session_keys(x_chat_provider, x_chat_key))
     found = autodetect.detect(body.filename, raw, provider, api_key)
     checked = validate(
         found.result,

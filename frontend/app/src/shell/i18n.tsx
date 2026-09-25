@@ -38,6 +38,38 @@ export function useT() {
   };
 }
 
+/** The languages the catalogs ship — `stocks.web.i18n.LANGUAGES`. */
+const LANGUAGES = ["en", "es"];
+
+const PINNED = "guestLang";
+
+/**
+ * The language a landing CTA pinned for this tab, or null.
+ *
+ * The landing links into the app with `?lang=` set to the language the visitor
+ * was reading, and Streamlit honours it for a signed-out session
+ * (`landing.consume_params`). Here the parameter would be gone after the first
+ * in-app navigation — the router writes fresh query strings — so the choice is
+ * remembered in `sessionStorage`, the same lifetime as the Streamlit session
+ * state it mirrors. For a guest only: a signed-in account has a stored
+ * preference, and a marketing link must not overrule it.
+ */
+export function pinnedLang(search: string, storage?: Storage | null): string | null {
+  const asked = (new URLSearchParams(search).get("lang") ?? "").trim().toLowerCase();
+  try {
+    const store = storage ?? window.sessionStorage;
+    if (LANGUAGES.includes(asked)) {
+      store.setItem(PINNED, asked);
+      return asked;
+    }
+    const kept = store.getItem(PINNED);
+    return kept && LANGUAGES.includes(kept) ? kept : null;
+  } catch {
+    // Storage blocked: the parameter still counts on the page it arrived on.
+    return LANGUAGES.includes(asked) ? asked : null;
+  }
+}
+
 export function useLang(): string {
   return useContext(Strings).lang;
 }

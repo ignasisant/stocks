@@ -10,16 +10,23 @@
  * starred + tagged set the Streamlit page builds its grid from. An untagged
  * watchlist name is not in any of them, and it is not in the grid either.
  *
- * Past prints open the ticker's own page rather than the result dialog the
- * Streamlit grid pops: the figures behind that dialog are per-ticker, the page
- * already shows them, and every symbol on screen owes the reader a link home.
+ * Past prints open the same result dialog the Earnings page opens — what the
+ * street expected, what printed, the quarter behind it — exactly as the
+ * Streamlit grid pops `render_result_body` on a click. The dialog carries the
+ * link to the ticker's page, so the symbol still leads home from there.
+ * Upcoming chips carry the company's mark and its name on hover, like
+ * `_mini_chip`, and open the ticker's page: there is no result to show yet.
  */
 
+import "../earnings/earnings.css";
+import { useState } from "react";
 import { get } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { Skeleton } from "../../shell/Layout";
 import { useT, useLang } from "../../shell/i18n";
 import { Link } from "../../shell/router";
+import { TickerCell, useTickerProfile } from "../../shell/tickers";
+import ResultDetail from "../earnings/ResultDetail";
 import { CardQuery, Card, CardTitle, Note } from "./ui";
 import { addDays, dayKey, decimal, mondayOf, plain, type Translate } from "./format";
 import type { CalendarEvent, CalendarResult, EarningsCalendar } from "./types";
@@ -33,6 +40,9 @@ export function EarningsCard() {
   const t = useT();
   const lang = useLang();
   const query = useApi(() => get<EarningsCalendar>("/earnings"), []);
+  // The past print whose dialog is open, if any. Held here rather than in the
+  // chip so one dialog serves the whole grid.
+  const [open, setOpen] = useState<CalendarResult | null>(null);
 
   return (
     <CardQuery
@@ -91,6 +101,7 @@ export function EarningsCard() {
                                   result={result}
                                   t={t}
                                   lang={lang}
+                                  onOpen={() => setOpen(result)}
                                 />
                               ))}
                               {(upcoming.get(key) ?? []).map((event) => (
@@ -109,6 +120,14 @@ export function EarningsCard() {
             <Link page="earnings" className="hm-link">
               {t("home.link_earnings_calendar")}
             </Link>
+            {open ? (
+              <ResultDetail
+                ticker={open.ticker}
+                date={open.date}
+                result={open}
+                onClose={() => setOpen(null)}
+              />
+            ) : null}
           </Card>
         );
       }}
@@ -159,36 +178,43 @@ function isWeekday(iso: string): boolean {
   return weekday >= 1 && weekday <= 5;
 }
 
-/** An upcoming print — neutral, red once it is inside a week. */
+/**
+ * An upcoming print — neutral, red once it is inside a week. The shared cell
+ * brings the company's mark and its name as the hover title, the one request
+ * per screen that every other ticker on the page already shares.
+ */
 function EventChip({ event }: { event: CalendarEvent }) {
   const soon = event.days_until !== null && event.days_until <= SOON_DAYS;
   return (
-    <Link
-      page="ticker"
-      params={{ ticker: event.ticker }}
+    <TickerCell
+      ticker={event.ticker}
       className={soon ? "hm-cal-chip hm-soon" : "hm-cal-chip"}
-    >
-      {event.ticker}
-    </Link>
+      // A 62px cell: the name rides the hover title instead.
+      name={false}
+    />
   );
 }
 
 /**
  * A print that already landed — green beat, red miss, grey when there was
- * nothing to compare it against (`beat: null` is not a miss).
+ * nothing to compare it against (`beat: null` is not a miss). A button, not a
+ * link: it opens the result dialog in place.
  */
 function ResultChip({
   result,
   t,
   lang,
+  onOpen,
 }: {
   result: CalendarResult;
   t: Translate;
   lang: string;
+  onOpen: () => void;
 }) {
+  const profile = useTickerProfile(result.ticker);
   const verdict = result.beat === null ? "" : result.beat ? " hm-beat" : " hm-miss";
   const arrow = result.beat === null ? "" : result.beat ? " ▲" : " ▼";
-  const bits = [result.ticker];
+  const bits = [profile?.name ? `${result.ticker} — ${profile.name}` : result.ticker];
   const reported = decimal(result.reported_eps, lang, 2);
   if (reported !== null) {
     const estimate = decimal(result.eps_estimate, lang, 2);
@@ -199,14 +225,17 @@ function ResultChip({
   const surprise = decimal(result.surprise_pct, lang, 1, { signed: true });
   if (surprise !== null) bits.push(`${surprise}%`);
   return (
-    <Link
-      page="ticker"
-      params={{ ticker: result.ticker }}
+    <button
+      type="button"
       className={`hm-cal-chip hm-past${verdict}`}
       title={bits.join(" · ") + t("earnings.chip_click_details")}
+      onClick={onOpen}
     >
+      {profile?.logo ? (
+        <img className="ag-tick-logo" src={profile.logo} alt="" loading="lazy" />
+      ) : null}
       {result.ticker}
       {arrow}
-    </Link>
+    </button>
   );
 }

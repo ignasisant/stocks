@@ -43,17 +43,23 @@ export default function Risk() {
   const lang = useLang();
   const base = useCurrency();
   const money = moneyIn(lang, base);
-  const [period, setPeriod] = useState<RiskPeriod>("1y");
+  // Since inception by default, as the Streamlit tab opens: a window that
+  // reaches back before the first trade scores years nobody held anything.
+  const [period, setPeriod] = useState<RiskPeriod>("inception");
   // Same axis labels as the history chart next door, for the same reason: two
   // charts of the same book should not date themselves differently.
   const date = new Intl.DateTimeFormat(lang, { month: "short", year: "2-digit" });
   const formatDate = (iso: string) => date.format(new Date(`${iso}T00:00:00`));
 
-  // Two calls, because only one of them depends on the window: changing the
-  // period must not throw away the performance card and refetch the ledger.
+  // Two calls, one window. The selector sits above both cards and drives both,
+  // as it does on the Streamlit tab: the real-performance tiles are re-taken
+  // from the window's start (TWR, IRR with the book's value on that day as the
+  // buy-in, volatility, drawdown), and the basket is backtested over it. Two
+  // requests still, because they fail and load independently — a slow price
+  // burst behind the basket must not hold the ledger's own figures back.
   const performance = useApi(
-    () => get<Performance>("/portfolio/performance", { base }),
-    [base],
+    () => get<Performance>("/portfolio/performance", { base, window: period }),
+    [base, period],
   );
   const risk = useApi(
     () => get<RiskData>("/portfolio/risk", { base, period }),
@@ -62,6 +68,16 @@ export default function Risk() {
 
   return (
     <>
+      <Segmented
+        label={t("portfolio.return_window")}
+        options={RISK_PERIODS}
+        value={period}
+        onChange={setPeriod}
+        format={(option) =>
+          option === "inception" ? t("portfolio.from_start") : option
+        }
+      />
+
       <Card title={t("portfolio.real_perf")}>
         <Loaded query={performance} skeleton={<Skeleton rows={4} />}>
           {(data) => (
@@ -123,14 +139,6 @@ export default function Risk() {
           )}
         </Loaded>
       </Card>
-
-      <Segmented
-        label={t("portfolio.return_window")}
-        options={RISK_PERIODS}
-        value={period}
-        onChange={setPeriod}
-        format={(option) => (option === "max" ? t("portfolio.range_all") : option)}
-      />
 
       <Loaded query={risk} skeleton={<Skeleton rows={10} />}>
         {(data) => {
@@ -261,7 +269,9 @@ export default function Risk() {
                 </Card>
               ) : null}
 
-              {Object.keys(data.correlation).length > 1 ? (
+              {/* A single name still gets its 1×1 grid, as Plotly draws it:
+                  the card is where a reader looks for the answer. */}
+              {Object.keys(data.correlation).length > 0 ? (
                 <Card title={t("portfolio.return_correlation")}>
                   <Heatmap
                     matrix={data.correlation}

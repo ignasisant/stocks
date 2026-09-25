@@ -19,7 +19,7 @@ import { get } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
-import type { TaxPeriod, TaxReport, TaxSale } from "./api";
+import type { TaxFlag, TaxPeriod, TaxReport, TaxSale } from "./api";
 import { flagOf, moneyIn, percent, shares as formatShares } from "./format";
 import { PeriodBars } from "./charts";
 import {
@@ -112,8 +112,13 @@ function Report({ report }: { report: TaxReport }) {
   const lang = useLang();
   const words = useTaxWords(report.jurisdiction);
   const money = moneyIn(lang, report.currency);
+  // How the jurisdiction writes a tax year — "2025/26" in the UK and
+  // Australia — while `period` stays the key the selector and the sales split
+  // run on.
+  const labelOf = (period: string) =>
+    report.years.find((one) => one.period === period)?.year_label || period;
   const yearLabel = (option: string) =>
-    option === ALL_YEARS ? t("portfolio.all_years") : option;
+    option === ALL_YEARS ? t("portfolio.all_years") : labelOf(option);
   const periods = report.years.map((year) => year.period);
   const latest = periods[periods.length - 1] ?? "";
   const [year, setYear] = useState(latest);
@@ -188,8 +193,10 @@ function Report({ report }: { report: TaxReport }) {
       ) : null}
 
       <Card>
-        {/* Few fiscal years read faster as buttons than as a dropdown. */}
-        {options.length <= 3 ? (
+        {/* Few fiscal years read faster as buttons than as a dropdown — up to
+            four options counting "all years", where the Streamlit page
+            switches too. */}
+        {options.length <= 4 ? (
           <Segmented
             label={words.say("fiscal_year")}
             options={options}
@@ -211,7 +218,7 @@ function Report({ report }: { report: TaxReport }) {
         <h2>
           {total
             ? words.say("all_years_header")
-            : words.say("tax_header", { year: selected.period })}
+            : words.say("tax_header", { year: labelOf(selected.period) })}
         </h2>
         <Caption>{words.say(total ? "all_years_caption" : "tax_caption")}</Caption>
         {/* The browser named a country this app does not model, so everything
@@ -237,13 +244,19 @@ function Report({ report }: { report: TaxReport }) {
             gain: money(shown.realized_gain) ?? "",
             loss: money(shown.deductible_loss) ?? "",
           })}
-          {/* Germany exempts 30% of a fund's result, and nothing was
-              classified — the only note the API carries enough state to draw. */}
-          {!report.funds_classified && words.has("funds_unclassified_note")
-            ? words.say("funds_unclassified_note")
-            : null}
+          {/* Every sentence the jurisdiction appends to the year — a deferred
+              loss, an allowance used, a fund exemption nobody could apply —
+              in its own wording, after the summary as the Streamlit caption
+              runs them on. The aggregate carries none: every note is about
+              one year. */}
+          {total
+            ? null
+            : selected.notes.map((note) => words.say(note.key, note.kwargs)).join("")}
         </Caption>
         {sales.length ? <SalesTable report={report} sales={sales} /> : null}
+        {report.flags.map((flag) => (
+          <Caption key={flag.name}>{flagCaption(flag, words, money)}</Caption>
+        ))}
       </Card>
       <Caption>{words.say("planning_aid")}</Caption>
     </>
@@ -285,6 +298,24 @@ function SalesTable({ report, sales }: { report: TaxReport; sales: TaxSale[] }) 
       sort: (row) => row.sell_date,
       cell: (row) => <span className="pf-muted">{row.sell_date}</span>,
     },
+    // Holding period only where the rate turns on it (US short vs long term);
+    // the API leaves `term` null everywhere else, so the column follows the
+    // data rather than a country code.
+    ...(sales.some((sale) => sale.term)
+      ? [
+          {
+            key: "term",
+            label: words.say("col_term"),
+            left: true,
+            sort: (row: TaxSale) => row.term,
+            cell: (row: TaxSale) => (
+              <span className="pf-muted">
+                {row.term ? words.say(`term_${row.term}`) : ""}
+              </span>
+            ),
+          },
+        ]
+      : []),
     ...(showMatched
       ? [
           {
@@ -302,7 +333,7 @@ function SalesTable({ report, sales }: { report: TaxReport; sales: TaxSale[] }) 
       key: "qty",
       label: t("portfolio.col_shares"),
       sort: (row) => row.quantity,
-      cell: (row) => <Figure value={formatShares(lang, row.quantity)} />,
+      cell: (row) => <Figure value={formatShares(lang, row.quantity, true)} />,
     },
     {
       key: "cost",
@@ -349,6 +380,27 @@ function SalesTable({ report, sales }: { report: TaxReport; sales: TaxSale[] }) 
       initial={{ key: "sell", desc: true }}
     />
   );
+}
+
+/**
+ * One foreign-asset reporting line — `web/tax_ui.flag_caption`, in TypeScript.
+ *
+ * The outer sentence is `flag_<name>` with the inner clause (`_reportable` or
+ * `_ok`, carrying the total and the threshold) as its `message`. A flag nobody
+ * worded falls back to the neutral `flag_default` set: shown generically beats
+ * shown as a raw key.
+ */
+function flagCaption(
+  flag: TaxFlag,
+  words: ReturnType<typeof useTaxWords>,
+  money: ReturnType<typeof moneyIn>,
+): string {
+  const name = words.has(`flag_${flag.name}`) ? `flag_${flag.name}` : "flag_default";
+  const inner = words.say(flag.reportable ? `${name}_reportable` : `${name}_ok`, {
+    val: money(flag.total_value) ?? "",
+    threshold: money(flag.threshold) ?? "",
+  });
+  return words.say(name, { message: inner });
 }
 
 /** The region the browser claims, for the "we do not model this" warning. */

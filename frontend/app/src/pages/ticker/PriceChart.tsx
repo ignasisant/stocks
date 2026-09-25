@@ -17,8 +17,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { chart as palette, token } from "../../shell/theme";
 import { useLang } from "../../shell/i18n";
-import { dividendLine, resultsLines, sellLine, snap, type EventLine } from "./events";
-import { DASH, money, signed, type Translate } from "./format";
+import { dividendLine, resultsLines, snap, type EventLine } from "./events";
+import { latest, money, type Translate } from "./format";
+import {
+  averageRow,
+  eventRows,
+  fillRows,
+  hoverTitle,
+  placeFills,
+  priceRows,
+  type Fill,
+} from "./hover";
 import {
   Chart,
   Legend,
@@ -37,8 +46,6 @@ import type { Bars, EarningsEvent, Trade } from "./types";
 const MIN_SPAN = 3;
 
 export type Window = { pct: number; from: string; to: string } | null;
-
-type Marker = { index: number; price: number; trade: Trade };
 
 /** A series split at its nulls, so a warm-up gap is a gap and not a straight line. */
 function segments(values: (number | null)[], from: number, to: number): number[][] {
@@ -133,35 +140,28 @@ export function PriceChart({
    */
   const intraday = /[mh]$/.test(bars.interval);
 
-  const box = frame({ height: mobile ? 280 : 340, left: 48, right: 14, bottom: 26 });
+  const box = frame({
+    height: mobile ? 280 : 340,
+    left: 48,
+    right: 14,
+    // Room over the plot for the events' letter tags.
+    top: 20,
+    bottom: 26,
+  });
   const inner = plotWidth(box);
   const band = inner / Math.max(1, to - from + 1);
   const xOf = (index: number) => box.left + (index - from + 0.5) * band;
+  /**
+   * Where an event's diamond sits: 1% over its bar's high, Streamlit's
+   * `High * 1.01` — above the candle it annotates, never on it. The close on a
+   * bar with no high, which a line chart's series can be.
+   */
+  const diamondY = (index: number) => (high[index] ?? close[index] ?? 0) * 1.01;
 
-  const range = useMemo(() => {
-    const window = <T,>(series: (T | null | undefined)[]) => series.slice(from, to + 1);
-    const price = candles
-      ? [window(high), window(low), window(close)]
-      : [window(close)];
-    const overlays = ["SMA20", "SMA50", "SMA200"]
-      .map((key) => bars.series[key])
-      .filter((series): series is (number | null)[] => Boolean(series))
-      .map((series) => window(series));
-    return bounds([...price, ...overlays]);
-  }, [bars.series, candles, close, high, low, from, to]);
-
-  // Markers live on the bar the event belongs to: a report filed on a
-  // non-trading day lands on the next one, which is where its gap shows up.
-  const fills = useMemo<Marker[]>(() => {
-    const out: Marker[] = [];
-    for (const trade of trades) {
-      const index = snap(days, trade.date);
-      if (index < 0 || index >= n) continue;
-      if (days[index] === undefined) continue;
-      out.push({ index, price: trade.price, trade });
-    }
-    return out;
-  }, [trades, days, n]);
+  // Every buy and sell dated inside the range, on the bar it belongs to —
+  // Streamlit's `>= chart_start`, so an entry older than the window is off its
+  // left edge rather than stacked onto the first candle.
+  const fills = useMemo<Fill[]>(() => placeFills(trades, days), [trades, days]);
 
   const marks = useMemo(() => {
     const lines = new Map<number, EventLine[]>();
@@ -186,6 +186,29 @@ export function PriceChart({
     }
     return { lines, kinds };
   }, [bars.dividends, days, close, events, daily, t]);
+
+  // The y range spans everything drawn in the window, as Plotly's autorange
+  // does: the price, the averages, the fills (a lot bought below this year's
+  // low still shows, at the price it was bought at) and the event diamonds a
+  // step above their bar's high. Leaving the fills out is how a marker ends up
+  // drawn off the plot, which reads as a fill that is not there.
+  const range = useMemo(() => {
+    const window = <T,>(series: (T | null | undefined)[]) => series.slice(from, to + 1);
+    const price = candles
+      ? [window(high), window(low), window(close)]
+      : [window(close)];
+    const overlays = ["SMA20", "SMA50", "SMA200"]
+      .map((key) => bars.series[key])
+      .filter((series): series is (number | null)[] => Boolean(series))
+      .map((series) => window(series));
+    const marked = fills
+      .filter((fill) => fill.index >= from && fill.index <= to)
+      .map((fill) => fill.trade.price);
+    const diamonds = [...marks.kinds.keys()]
+      .filter((index) => index >= from && index <= to)
+      .map((index) => diamondY(index));
+    return bounds([...price, ...overlays, marked, diamonds]);
+  }, [bars.series, candles, close, high, low, from, to, fills, marks]);
 
   if (!range || n === 0) return null;
 
@@ -273,7 +296,7 @@ export function PriceChart({
       ? [{ label: t("ticker.my_buys"), color: colors.textPrimary }]
       : []),
     ...(fills.some((fill) => fill.trade.action === "sell")
-      ? [{ label: t("ticker.my_sells"), color: colors.candleDown }]
+      ? [{ label: t("ticker.my_sells"), color: colors.down }]
       : []),
     // One entry per kind actually drawn, and each in the colour its verticals
     // are stroked with: a dividend marked "Results" is a worse legend than no
@@ -288,60 +311,60 @@ export function PriceChart({
 
   const tip = hover === null ? null : tooltip(hover);
 
+  /**
+   * Streamlit's unified box for one bar, row for row and in its trace order:
+   * the price (and open/high/low on candles), SMA20, SMA50, SMA200 where they
+   * have a value, the fills on that bar, then its dividend and results
+   * diamonds. See `hover.ts` for what each row says.
+   */
   function tooltip(index: number): { title: string; lines: TipLine[] } {
-    const price = close[index] ?? null;
-    const before = index > 0 ? (close[index - 1] ?? null) : null;
-    const lines: TipLine[] = [];
-    const move = price !== null && before ? (price / before - 1) * 100 : null;
-    lines.push({
-      text: `${t("ticker.price")} ${price === null ? DASH : money(price)}${
-        move === null ? "" : `  ${signed(move)}%`
-      }`,
-      tone: move === null ? null : move >= 0 ? "up" : "down",
-    });
-    if (candles) {
-      lines.push({
-        text: t("ticker.hover_ohlc", {
-          open: money(open[index] ?? null),
-          high: money(high[index] ?? null),
-          low: money(low[index] ?? null),
-        }),
-      });
+    const priceSwatch = candles ? colors.candleUp : colors.brandAccent;
+    const lines: TipLine[] = priceRows(
+      {
+        close: close[index] ?? null,
+        prev: index > 0 ? (close[index - 1] ?? null) : null,
+        ohlc: candles
+          ? {
+              open: open[index] ?? null,
+              high: high[index] ?? null,
+              low: low[index] ?? null,
+            }
+          : null,
+        swatch: priceSwatch,
+      },
+      t,
+    );
+    for (const [key, color, name] of overlays) {
+      const value = averageRow(name, bars.series[key]?.[index] ?? null, color);
+      if (value) lines.push(value);
     }
+    // The return on a buy is to the range's LAST close, whatever window is
+    // zoomed — Streamlit's `last`, the same figure the price metric prints.
+    const lastClose = latest(close);
     for (const fill of fills.filter((one) => one.index === index)) {
-      const last = close[to] ?? null;
-      const pct = last !== null && fill.price ? (last / fill.price - 1) * 100 : null;
-      const text =
-        fill.trade.action === "buy"
-          ? t("ticker.hover_buy", {
-              qty: fill.trade.quantity.toFixed(4),
-              price: money(fill.price),
-              date: fill.trade.date,
-              // The Streamlit string carries a `{color}` slot for Plotly's SVG
-              // hover label, which cannot take a custom property. Here the tone
-              // is the line's own class, so the slot is filled with nothing.
-              color: "",
-              pct: signed(pct),
-              last: money(last),
-            })
-          : sellLine(
-              fill.trade.quantity.toFixed(4),
-              money(fill.price),
-              fill.trade.date,
-              t,
-            );
-      lines.push({
-        text: strip(text),
-        tone: pct === null ? null : pct >= 0 ? "up" : "down",
-      });
-      if (fill.trade.action === "buy" && avgCost) {
-        lines.push({ text: strip(t("ticker.hover_avg_buy", { avg: money(avgCost) })) });
-      }
+      const buy = fill.trade.action === "buy";
+      lines.push(
+        ...fillRows(
+          fill.trade,
+          {
+            last: lastClose,
+            avgCost,
+            swatch: buy ? colors.textPrimary : colors.down,
+          },
+          t,
+        ),
+      );
     }
-    for (const line of marks.lines.get(index) ?? []) {
-      lines.push({ text: strip(line.text), tone: line.tone ?? null });
+    const kind = marks.kinds.get(index);
+    if (kind) {
+      lines.push(
+        ...eventRows(
+          marks.lines.get(index) ?? [],
+          kind === "dividend" ? colors.warn : colors.smaSlow,
+        ),
+      );
     }
-    return { title: label(bars.dates[index] ?? ""), lines };
+    return { title: hoverTitle(bars.dates[index] ?? "", intraday), lines };
   }
 
   return (
@@ -369,21 +392,44 @@ export function PriceChart({
           format={(v) => money(v, v >= 100 ? 0 : 2)}
         />
 
-        {/* Corporate events: a dotted vertical, and a line in that bar's
-            tooltip saying what it was. */}
+        {/* Corporate events, as Streamlit draws them: a quiet dotted
+            vertical, the kind's letter on top in its colour ("d" dividend,
+            "r" results), and a small diamond over the bar's high whose row in
+            the tooltip says what it was. */}
         {[...marks.kinds.entries()]
           .filter(([index]) => index >= from && index <= to)
-          .map(([index, kind]) => (
-            <line
-              key={`ev-${index}`}
-              className="tk-event"
-              x1={xOf(index)}
-              x2={xOf(index)}
-              y1={box.top}
-              y2={box.height - box.bottom}
-              stroke={kind === "dividend" ? colors.warn : colors.smaSlow}
-            />
-          ))}
+          .map(([index, kind]) => {
+            const color = kind === "dividend" ? colors.warn : colors.smaSlow;
+            const cx = xOf(index);
+            const cy = y(diamondY(index));
+            return (
+              <g key={`ev-${index}`}>
+                <line
+                  className="tk-event"
+                  x1={cx}
+                  x2={cx}
+                  y1={box.top}
+                  y2={box.height - box.bottom}
+                  stroke={colors.eventLine}
+                />
+                <text
+                  className="tk-event-tag"
+                  x={cx}
+                  y={box.top - 2}
+                  textAnchor="middle"
+                  fill={color}
+                >
+                  {kind === "dividend" ? "d" : "r"}
+                </text>
+                <path
+                  d={`M ${cx} ${cy - 4} L ${cx + 4} ${cy} L ${cx} ${cy + 4} L ${cx - 4} ${cy} Z`}
+                  fill={color}
+                  stroke={colors.surfacePage}
+                  strokeWidth={1}
+                />
+              </g>
+            );
+          })}
 
         {candles ? (
           <g>
@@ -458,13 +504,14 @@ export function PriceChart({
           ));
         })}
 
-        {/* The reader's own fills. Outlined in the canvas colour so they read
-            against candles of either sign. */}
+        {/* The reader's own fills: Streamlit's 12px triangles, buys up in the
+            primary text colour and sells down in the loss colour, outlined in
+            the canvas colour so they read against candles of either sign. */}
         {fills
           .filter((fill) => fill.index >= from && fill.index <= to)
           .map((fill, at) => {
             const cx = xOf(fill.index);
-            const cy = y(fill.price);
+            const cy = y(fill.trade.price);
             const buy = fill.trade.action === "buy";
             const size = 6;
             const path = buy
@@ -474,7 +521,7 @@ export function PriceChart({
               <path
                 key={`f-${fill.index}-${at}`}
                 d={path}
-                fill={buy ? colors.textPrimary : colors.candleDown}
+                fill={buy ? colors.textPrimary : colors.down}
                 stroke={colors.surfacePage}
                 strokeWidth={1.5}
               />
@@ -533,18 +580,4 @@ export function PriceChart({
       <Legend items={legend} />
     </div>
   );
-}
-
-/**
- * The Streamlit catalogs write these hover strings for a renderer that takes
- * markup: `<br>` line breaks, `<b>` emphasis and a `<span style=…>` the Plotly
- * label needs because a custom property does not resolve inside its SVG. This
- * page draws its own tooltip, so the tags come off and the tone rides a class.
- */
-function strip(text: string): string {
-  return text
-    .replace(/<br\s*\/?>/gi, " · ")
-    .replace(/<[^>]*>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
 }

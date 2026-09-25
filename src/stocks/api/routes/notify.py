@@ -55,6 +55,16 @@ class Telegram(BaseModel):
     # this route is session-gated, which is the only reason it may be read back.
     code: str | None = None
     deep_link: str | None = None
+    username: str | None = Field(
+        default=None,
+        description=(
+            "The linked chat's Telegram @handle, without the @, as the link "
+            "job recorded it — what the Streamlit page prints beside "
+            '"connected" so a reader with two accounts can tell which one '
+            "gets the messages. Null when not linked, or when the chat has no "
+            "public username (Telegram does not require one)."
+        ),
+    )
 
 
 def _restore(paths) -> dict:
@@ -85,6 +95,11 @@ def _state(prefs: dict) -> Telegram:
         pending=pending,
         code=code if pending else None,
         deep_link=telegram.deep_link(code) if pending else None,
+        username=(
+            str(prefs.get("telegram_username") or "").lstrip("@") or None
+            if prefs.get("telegram_chat_id")
+            else None
+        ),
     )
 
 
@@ -153,7 +168,11 @@ def test(account: Writer) -> Telegram:
 
 @router.delete("", response_model=Telegram, summary="Disconnect")
 def unlink(account: Writer) -> Telegram:
-    """Stop every message. Only the chat id and any pending code are deleted.
+    """Stop every message. Only the chat identity and any pending code go.
+
+    The identity is the chat id with the handle and link time recorded beside
+    it — the three keys the Streamlit page's disconnect clears — so the next
+    link does not come back printing the previous chat's @username.
 
     Not the toggles: a reader who disconnects and reconnects a month later
     should find the same three switches set the way they left them, and
@@ -162,6 +181,12 @@ def unlink(account: Writer) -> Telegram:
     """
     stored = accounts.update_prefs(
         account.prefs,
-        {"telegram_chat_id": None, "tg_link_code": None, "tg_link_ts": None},
+        {
+            "telegram_chat_id": None,
+            "telegram_username": None,
+            "telegram_linked_at": None,
+            "tg_link_code": None,
+            "tg_link_ts": None,
+        },
     )
     return _state(stored)

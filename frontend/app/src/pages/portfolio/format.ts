@@ -78,14 +78,16 @@ export function decimal(lang: string, value: Maybe, digits = 2): string | null {
 /**
  * Share counts: enough decimals for a fractional share, none for a whole one.
  *
- * The ledger holds 0.0031 of a name as readily as 12 of another, and printing
- * "12.0000" beside it is noise.
+ * The ledger holds 0.0031 of a name as readily as 12 of another, and in a
+ * list of payers "12.0000" beside it is noise. `fixed` is the ledger tables'
+ * reading instead — positions and tax parcels, which the Streamlit page prints
+ * at four decimals always, so the figures line up down the column.
  */
-export function shares(lang: string, value: Maybe): string | null {
+export function shares(lang: string, value: Maybe, fixed = false): string | null {
   if (!usable(value)) return null;
   return new Intl.NumberFormat(lang, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: Number.isInteger(value) ? 0 : 4,
+    minimumFractionDigits: fixed ? 4 : 0,
+    maximumFractionDigits: fixed || !Number.isInteger(value) ? 4 : 0,
   }).format(value);
 }
 

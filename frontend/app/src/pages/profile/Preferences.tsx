@@ -1,6 +1,7 @@
 /**
- * The Preferences tab: interface, the data and the account itself, tax
- * residence, and a rail carrying the guided tour and a summary of what is set.
+ * The Preferences tab: interface, tax residence, the data and the account
+ * itself — in the Streamlit page's order — and a rail carrying the guided tour
+ * and a summary of what is set.
  *
  * Every row saves itself the moment it is changed — the tab strip promises it,
  * and a Save button here would be the one place that broke the promise. The
@@ -99,7 +100,19 @@ function NumberField({
   );
 }
 
-export function Preferences({ prefs, saving, failure, save }: Settings) {
+export function Preferences({
+  prefs,
+  saving,
+  failure,
+  save,
+  owner,
+}: Settings & {
+  /**
+   * Whether this is the deployment owner's book (`/me` `owner`), or null while
+   * that is not known. Only a known non-owner is offered deletion.
+   */
+  owner: boolean | null;
+}) {
   const t = useT();
   const lastImport = useApi(() => get<LastImport>("/import/last"), []);
   // One row is enough: the question is whether the export has anything to
@@ -199,27 +212,12 @@ export function Preferences({ prefs, saving, failure, save }: Settings) {
                 </div>
               </details>
             )}
+            {/* What is behind the disclosure, without opening it — the
+                Streamlit row prints the same line under its popover. Codes
+                only, so there is nothing in it to translate. */}
+            {rest.length > 0 && <span className="pf-morehint">{rest.join(" · ")}</span>}
             <Failure message={fail("currency")} />
           </Row>
-        </Card>
-
-        <Card title={t("profile.data_section")}>
-          <Row label={t("profile.export_title")} help={t("profile.export_help")}>
-            {/* A plain link, because a download is a navigation the browser
-                does: fetching it would buffer the whole ledger in memory only
-                to hand it straight back to the same browser, and lose the
-                filename the server puts in Content-Disposition. */}
-            {ledger.state === "loaded" && ledger.data.total > 0 ? (
-              <a className="pf-download" href="/api/v1/portfolio/transactions.csv">
-                {t("profile.export_button")}
-              </a>
-            ) : (
-              <span className="pf-muted">{t("profile.export_none")}</span>
-            )}
-          </Row>
-          {/* The other half of the promise the privacy policy makes: the data
-              can be taken out, and it can be erased. */}
-          <DeleteAccount />
         </Card>
 
         <Card title={t("profile.tax_section")} note={t("profile.tax_legal_note")}>
@@ -373,6 +371,27 @@ export function Preferences({ prefs, saving, failure, save }: Settings) {
             );
           })}
         </Card>
+        <Card title={t("profile.data_section")}>
+          <Row label={t("profile.export_title")} help={t("profile.export_help")}>
+            {/* A plain link, because a download is a navigation the browser
+                does: fetching it would buffer the whole ledger in memory only
+                to hand it straight back to the same browser, and lose the
+                filename the server puts in Content-Disposition. */}
+            {ledger.state === "loaded" && ledger.data.total > 0 ? (
+              <a className="pf-download" href="/api/v1/portfolio/transactions.csv">
+                {t("profile.export_button")}
+              </a>
+            ) : (
+              <span className="pf-muted">{t("profile.export_none")}</span>
+            )}
+          </Row>
+          {/* The other half of the promise the privacy policy makes: the data
+              can be taken out, and it can be erased. Never offered to the
+              owner, as the Streamlit page never offers it: that "account" is
+              the repo-root files the CLI shares, and `DELETE /account` refuses
+              it — a button that can only fail is not a control. */}
+          {owner === false && <DeleteAccount />}
+        </Card>
       </div>
 
       <aside className="pf-rail">
@@ -393,8 +412,11 @@ export function Preferences({ prefs, saving, failure, save }: Settings) {
             <div className="pf-sum-row">
               <span>{t("profile.tax_section")}</span>
               <b>
+                {/* Behind its flag, as `tax_ui.label` draws it there: eleven
+                    countries is where a list of names wants something to
+                    scan by, and the flag comes off the row, not a table. */}
                 {active
-                  ? `${(
+                  ? `${active.flag ? `${active.flag} ` : ""}${(
                       t(`profile.tax_residence_${active.code.toLowerCase()}`).split(
                         "—",
                       )[0] ?? ""

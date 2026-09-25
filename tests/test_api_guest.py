@@ -265,7 +265,7 @@ def test_a_write_is_refused_with_the_header_that_offers_a_sign_in(
 
 @pytest.mark.parametrize(
     "path",
-    ["/v1/chat/state", "/v1/import/last", "/v1/daily", "/v1/profile", "/v1/movers"],
+    ["/v1/chat/state", "/v1/import/last", "/v1/daily", "/v1/profile"],
 )
 def test_the_routes_a_guest_has_no_business_reading_stay_shut(client, book, path):
     """Each absent from `guest.OPEN` for its own reason, written beside it

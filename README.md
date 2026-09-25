@@ -81,9 +81,9 @@ Configure:
 The app runs the authorization-code round trip itself (`web/oidc.py`, at
 `/auth/login`, `/oauth2callback` and `/auth/logout`) and mints its own signed
 session cookie (`stocks/session.py`). One sign-in therefore covers the
-Streamlit pages, the React shell at `/next` and the `/api/v1` calls it makes:
-the pages read the cookie off `st.context.cookies`, the API verifies it in
-`api/security.py`, and neither can disagree with the other about who is
+app, the `/api/v1` calls it makes and the old Streamlit app at `/legacy`: the
+API verifies the cookie in `api/security.py`, the old pages read it off
+`st.context.cookies`, and neither can disagree with the other about who is
 signed in.
 
 `secrets.toml` is git-ignored; never commit it. When deploying, add the
@@ -147,7 +147,7 @@ docker run --rm -p 8501:8501 \
 ```bash
 uv run stocks update      # fetch + cache price history for the watchlist
 uv run stocks alerts      # print any triggered price alerts
-uv run stocks dashboard   # launch the Streamlit dashboard in the browser
+uv run stocks dashboard   # serve the app at http://localhost:8501
 uv run stocks search bank of america   # find tickers by name or symbol (SEC map)
 
 # fundamental KPIs + comps table (+ EUR spot, + SEC EDGAR cross-check)
@@ -733,8 +733,8 @@ are per-machine and gitignored.
 
 ## The landing page and the app share one port
 
-`stocks dashboard` serves `web/server.py`, an `st.App` that answers a few paths
-itself and hands everything else to the Streamlit app:
+`stocks dashboard` serves `web/server.py`, a plain Starlette app run by uvicorn
+(`--reload` restarts it on source changes):
 
 | Path | Served by |
 |------|-----------|
@@ -742,17 +742,26 @@ itself and hands everything else to the Streamlit app:
 | `/es/` | the landing page in Spanish |
 | `/lp/*` | the landing's assets (brand mark, `og.png` share card) |
 | `/robots.txt`, `/sitemap.xml` | generated for whichever host answered |
-| `/api/v1/*` | the read-only HTTP API (see below) |
-| everything else | the Streamlit app, stamped `X-Robots-Tag: noindex` |
+| `/api/v1/*` | the HTTP API (see below) |
+| `/portfolio`, `/ticker`, … | the app: the React shell (`frontend/app`), stamped `X-Robots-Tag: noindex` |
+| `/next/*` | redirected to the same page at the root (the shell's address while it was built) |
+| `/legacy/*` | the Streamlit app it replaced, kept for reference |
 
 The landing is a plain HTML response: the copy is in the document, so it is
-crawlable and paints without booting a websocket, and it can carry a `<title>`,
-a description, hreflang pairs and an Open Graph card — none of which a Streamlit
-page can set. `/` is shared because Streamlit always serves its default page at
-the root and `st.Page` ignores `url_path` there; a first visit (no parameter, no
-cookie) is the landing, every CTA click arrives with a parameter, and the cookie
-is set on every app response so returning visitors skip the pitch. Crawlers send
-no cookies, so they always see the landing.
+crawlable and paints without any JavaScript, and it carries a `<title>`, a
+description, hreflang pairs and an Open Graph card. `/` is shared: a first
+visit (no parameter, no cookie) is the landing, every CTA click arrives with a
+parameter, and the cookie is set on every app response so returning visitors
+skip the pitch. Crawlers send no cookies, so they always see the landing.
+
+**The old app at `/legacy`.** The Streamlit app is mounted whole under that
+prefix (`st.App` supports being a sub-application), started on the first
+request there rather than at boot, with a banner on every page saying what it
+is. It reads and writes the same account files as the app, so it is for
+looking, not for working in. The last commit where it was the app is tagged
+`streamlit-final`; `git worktree add ../stocks-streamlit streamlit-final` gets
+that state back in full. Once nobody needs to look, it goes: `app_pages/`, the
+Streamlit-only modules and the `streamlit` dependency.
 
 **Set `[app] public_url` in secrets (or `APP_PUBLIC_URL`) on any real deploy** —
 not only behind a custom domain. Cloud Run answers on more than one hostname by
@@ -760,9 +769,9 @@ default, and unset, each one serves a full copy of the site that canonicalizes
 to *itself*: duplicate content, split link equity, and Google choosing which
 copy ranks. Set, it is the base for every canonical, hreflang, Open Graph and
 sitemap URL, and every other hostname 301s to it (GET/HEAD only, and never
-`/_stcore/` — moving a live websocket would break the session a visitor is
-already in). Nothing else needs configuring: no `baseUrlPath`, and the OIDC
-redirect URI is unchanged.
+`/legacy/_stcore/` — moving a live websocket would break the session a visitor
+is already in). Nothing else needs configuring, and the OIDC redirect URI is
+unchanged.
 
 Unknown paths return a real **404**. Streamlit's static mount answers anything
 it does not recognise with the app shell and a 200, which turns every typo and

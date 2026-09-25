@@ -27,9 +27,8 @@ Three things are worth knowing about the choices below.
 from __future__ import annotations
 
 import json
-from functools import lru_cache
-from pathlib import Path
 
+from stocks import navigation
 from stocks.web import landing
 from stocks.web.i18n import DEFAULT_LANG, LANGUAGES, translate
 from stocks.web.landing import (
@@ -85,40 +84,32 @@ def _alternates(jurisdiction: str) -> dict[str, str]:
 _OG_LOCALE = {"en": "en_US", "es": "es_ES"}
 
 
-_PAGES_DIR = Path(__file__).parent / "app_pages"
-
-# Streamlit's own endpoints, plus the app's own sign-in routes (`web/oidc.py`
-# answers `/auth/*`, shadowing the handlers Streamlit installs there). Transport
-# and machinery, never content — disallowed in robots.txt, and accepted by the
-# not-found gate in `server` so a real internal request is never turned away.
+# Where the app's own machinery lives: the retired Streamlit app, kept at a
+# prefix of its own while it is still worth being able to look at (see
+# `server.LEGACY_PATH`), the mirrored logos, the sign-in routes (`web/oidc.py`)
+# and the API. Transport and machinery, never content — disallowed in
+# robots.txt, and accepted by the not-found gate in `server` so a real internal
+# request is never turned away.
 APP_PREFIXES = (
-    "/_stcore/",
-    "/media/",
-    "/component/",
-    "/static/",
+    "/legacy/",
     "/app/static/",
     "/auth/",
+    "/api/",
 )
 
 # Exact paths answered outside the page list: the OIDC return (ours, see
-# `web/oidc.py`) and the three files Streamlit's frontend build serves from the
-# root.
-APP_PATHS = ("/oauth2callback", "/favicon.png", "/index.html", "/manifest.json")
+# `web/oidc.py`).
+APP_PATHS = ("/oauth2callback",)
 
 
-@lru_cache(maxsize=1)
 def app_page_paths() -> tuple[str, ...]:
-    """`/<name>` for every page the nav can serve.
+    """`/<slug>` for every page the React shell serves.
 
-    `st.navigation` derives a page's URL from its module filename, so the
-    directory is the source of truth. Deriving it here means a page added to
-    `app_pages/` is disallowed in robots.txt and accepted by the not-found gate
-    at the same time, with no second list to forget.
+    `stocks.navigation.SHELL_PATHS` is the table the server routes from, so a
+    page added there is disallowed in robots.txt and accepted by the not-found
+    gate at the same time, with no second list to forget.
     """
-    return tuple(
-        sorted(f"/{f.stem}" for f in _PAGES_DIR.glob("*.py")
-               if not f.stem.startswith("_"))
-    )
+    return tuple(f"/{slug}" for slug in navigation.SHELL_PATHS)
 
 
 def path_for(lang: str, jurisdiction: str | None = None) -> str:
@@ -344,7 +335,7 @@ def robots_txt(base_url: str) -> str:
 
     App routes are listed explicitly rather than blanket-disallowed: `/` has to
     stay crawlable (it is the landing for anyone without the app cookie), so
-    "Disallow: /" is not available. Streamlit's own machinery gets the same
+    "Disallow: /" is not available. The app's machinery gets the same
     treatment — those URLs are transport, never content.
 
     AI crawlers get their own blanket block first. Order matters: a robots.txt
@@ -358,10 +349,7 @@ def robots_txt(base_url: str) -> str:
     lines += ["User-agent: *", "Allow: /$"]
     lines += [f"Allow: {p}" for p in LANDING_PATHS if p != PATH_EN]
     lines += [f"Allow: {ASSET_BASE}"]
-    # The OIDC return is the only exact path worth naming; Streamlit's root
-    # files (favicon, manifest) are left crawlable on purpose — they are not
-    # content, they carry `noindex` anyway, and blocking a favicon is how a
-    # search result loses its icon.
+    # The OIDC return is the only exact path worth naming.
     disallow = app_page_paths() + ("/oauth2callback",) + APP_PREFIXES
     lines += [f"Disallow: {p}" for p in disallow]
     lines += ["", f"Sitemap: {_abs(base_url, '/sitemap.xml')}", ""]

@@ -1,6 +1,6 @@
 #!/bin/sh
-# Container boot: materialize Streamlit secrets from the environment, then
-# launch the dashboard.
+# Container boot: materialize the secrets file from the environment, then
+# serve the app (stocks.web.server).
 #
 # STREAMLIT_SECRETS_TOML — full contents of .streamlit/secrets.toml ([auth],
 # [app], [storage], [chat], [free_llm], [telegram]). Container hosts inject
@@ -17,10 +17,14 @@ if [ -n "${STREAMLIT_SECRETS_TOML:-}" ]; then
     umask 022
 fi
 
-# server.py, not app.py: it is the ASGI entry point that serves the static
-# landing page at / alongside the Streamlit app (`streamlit run` detects the
-# module-level st.App and serves it directly). Pointing this at app.py still
-# boots a working dashboard, just with no landing page and no robots/sitemap.
-exec .venv/bin/streamlit run src/stocks/web/server.py \
-    --server.port "${PORT:-8501}" \
-    --server.address 0.0.0.0
+# server.py, not app.py: it is the ASGI entry point that serves the React
+# shell at every route, redirects /next, and mounts the Streamlit app
+# read-only at /legacy (`st.App` detects the module-level mount and serves it
+# directly). Pointing this at app.py still boots a working dashboard, just
+# with no React shell, no landing SEO, and Streamlit back on every route.
+exec .venv/bin/uvicorn stocks.web.server:app \
+    --host 0.0.0.0 \
+    --port "${PORT:-8501}" \
+    --proxy-headers \
+    --forwarded-allow-ips '*' \
+    --no-access-log

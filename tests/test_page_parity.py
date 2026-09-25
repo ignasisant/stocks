@@ -86,20 +86,9 @@ PAGES: dict[str, Page] = {
             "portfolio.hover_correlation": _HOVER,
             "portfolio.hover_portfolio_twr": _HOVER,
             "portfolio.hover_current_basket": _HOVER,
-            "portfolio.data_unavailable": (
-                "the shell's `Loaded` draws every failed section alike — "
-                "`common.failed` plus a retry this page never offered"
-            ),
             "portfolio.report_failed": (
                 "same: a risk report that did not build is a failed query, and "
                 "the shell already has a screen for one"
-            ),
-            "portfolio.ledger_no_positions": (
-                "each tab carries its own empty card (`portfolio.empty_*_title` "
-                "/ `_body`) instead of one warning stopping the whole page"
-            ),
-            "portfolio.from_start": (
-                "the window control names its widest option `portfolio.range_all`"
             ),
             "portfolio.all_columns": (
                 "an expander over a second, wider copy of the table above it. "
@@ -117,22 +106,11 @@ PAGES: dict[str, Page] = {
     "sentiment": Page(
         streamlit="sentiment.py",
         waived={
-            "sentiment.gauge_stale": (
-                "a stale row is dimmed rather than captioned (`sn-dim` in "
-                "Detail.tsx). The date it carries is not shown"
-            ),
         },
     ),
     "sector": Page(
         streamlit="sector.py",
         waived={
-            "sector.refresh": (
-                "a write that costs a minute of Yahoo and has no route; "
-                "Sector.tsx marks the slot rather than drawing a button that "
-                "cannot do the thing"
-            ),
-            "sector.refreshing": "…its progress line",
-            "sector.source_down": "…and what it says when that scan dies",
         },
     ),
     "earnings": Page(streamlit="earnings.py"),
@@ -160,12 +138,6 @@ PAGES: dict[str, Page] = {
             ),
             "profile.iv_saved": "…same",
             "profile.tax_set": "…same",
-            "profile.next_app": (
-                "the card offering this very app. Inside it, there is nowhere "
-                "for it to point"
-            ),
-            "profile.next_app_caption": "…its caption",
-            "profile.next_app_open": "…and its button",
             "profile.delete_done": (
                 "the React flow redirects to `/auth/logout` the moment the "
                 "DELETE lands — there is no page left to congratulate anyone "

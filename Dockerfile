@@ -1,6 +1,7 @@
-# TopStocks — container image for any container host. The live deploy runs it
-# on an Oracle Always Free VM behind Caddy (see deploy/). Serves the Streamlit
-# dashboard on $PORT (default 8501).
+# TopStocks — container image for any container host. The live deploy is
+# Cloud Run (see scripts/deploy.sh), a source deploy of this image. Serves the
+# React shell on $PORT (default 8501), with Streamlit mounted read-only at
+# /legacy.
 #
 # Secrets: bind-mount the real .streamlit/secrets.toml (what deploy/ does), or
 # set STREAMLIT_SECRETS_TOML to its full contents and the entrypoint writes it
@@ -62,6 +63,6 @@ RUN uv sync --frozen --no-dev
 
 EXPOSE 8501
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD \
-    python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"
+    python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/healthz')"
 
 ENTRYPOINT ["./scripts/docker-entrypoint.sh"]

@@ -124,6 +124,18 @@ def test_the_capabilities_are_read_for_this_account_not_a_session(
     assert body["explore"]["watchlist"] is True
 
 
+def test_a_guest_is_not_reported_as_signed_in(client):
+    """The route is guest-open, and it used to hard-code `signed_in=True` — so
+    an anonymous visitor read "Google sign-in ✓ Active" off the setup card."""
+    body = client.get("/v1/onboarding").json()
+    assert body["signed_in"] is False
+    assert body["setup"]["login"] is False
+
+
+def test_a_session_is_reported_as_signed_in(client, account, signed_in):
+    assert signed_in.get("/v1/onboarding").json()["signed_in"] is True
+
+
 # ------------------------------------------------------------------- writing
 
 

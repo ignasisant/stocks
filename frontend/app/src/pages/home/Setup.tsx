@@ -24,8 +24,9 @@ import { get, send } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { Skeleton } from "../../shell/Layout";
 import { openAssistant } from "../../shell/assistant";
+import { signInHref } from "../../shell/guest";
 import { Link, useRoute } from "../../shell/router";
-import { useSession } from "../../shell/session";
+import { useSession, useSignIn } from "../../shell/session";
 import { useApi } from "../../shell/useApi";
 import { plain } from "./format";
 import { EXPLORE, SETUP, target, type Row } from "./checks";
@@ -63,9 +64,20 @@ function Mark({ on }: { on: boolean }) {
  * control. A row with nowhere to go is drawn as text rather than as a button
  * that would swallow the press.
  */
-function Check({ row, on, steps }: { row: Row; on: boolean; steps: TourStep[] }) {
+function Check({
+  row,
+  on,
+  steps,
+  guest,
+}: {
+  row: Row;
+  on: boolean;
+  steps: TourStep[];
+  guest: boolean;
+}) {
   const t = useT();
   const { go } = useRoute();
+  const signIn = signInHref(useSignIn());
   const to = target(row, steps);
   const className = on ? "hm-check hm-check-on" : "hm-check";
   const body = (
@@ -77,11 +89,30 @@ function Check({ row, on, steps }: { row: Row; on: boolean; steps: TourStep[] })
       <span className="hm-sr">{on ? t("tour.active") : t("tour.pending")}</span>
     </>
   );
+  if (row.key === "login" && !on) {
+    // A guest's pending sign-in is the action itself, as Streamlit's pill is a
+    // link to the login route. A deployment with no identity provider has
+    // nowhere to send anybody, so the row states the capability and stops —
+    // `home.py` disables the pill for the same reason.
+    return signIn ? (
+      <a className={className} href={signIn}>
+        {body}
+      </a>
+    ) : (
+      <span className={`${className} hm-check-off`} aria-disabled="true">
+        {body}
+      </span>
+    );
+  }
   if (!to) return <span className={className}>{body}</span>;
   return (
     <button
       type="button"
       className={className}
+      // Every target but search sits behind a sign-in: shown, so a guest sees
+      // what an account gets, and disabled, so pressing it does not walk into
+      // a wall.
+      disabled={guest && row.signedIn === true}
       onClick={() =>
         to.kind === "assistant" ? openAssistant() : go(to.page, to.params)
       }
@@ -97,6 +128,7 @@ function Group({
   badge,
   rows,
   steps,
+  guest,
   collapsed,
   check,
   actions,
@@ -105,6 +137,7 @@ function Group({
   badge: string;
   rows: { row: Row; on: boolean }[];
   steps: TourStep[];
+  guest: boolean;
   /** Nothing left to do: the heading is the whole group. */
   collapsed: boolean;
   /** The receipt tick beside the heading, for a group that is finished. */
@@ -124,7 +157,7 @@ function Group({
       {collapsed ? null : (
         <div className="hm-checks">
           {rows.map(({ row, on }) => (
-            <Check key={row.key} row={row} on={on} steps={steps} />
+            <Check key={row.key} row={row} on={on} steps={steps} guest={guest} />
           ))}
         </div>
       )}
@@ -135,7 +168,8 @@ function Group({
 export function SetupCard() {
   const t = useT();
   const query = useApi(() => get<Onboarding>("/onboarding"), []);
-  const { prefs, reload } = useSession();
+  const session = useSession();
+  const { prefs, reload } = session;
   const [dismissed, setDismissed] = useState(prefs.setup_card_dismissed);
 
   // A registry that will not load has nothing to say about itself, so it says
@@ -147,6 +181,10 @@ export function SetupCard() {
   if (query.state !== "loaded") return null;
 
   const state = query.data;
+  // The payload's own word on who is asking, since `/onboarding` reports
+  // sign-in from the real caller; the session is the fallback for a deploy
+  // whose API predates the field.
+  const guest = state.signed_in === undefined ? session.guest : !state.signed_in;
   const setup = SETUP.map((row) => ({ row, on: state.setup[row.key] === true }));
   const done = setup.filter((entry) => entry.on).length;
   const complete = done === setup.length;
@@ -162,6 +200,7 @@ export function SetupCard() {
         badge={t("home.setup_progress", { done, total: setup.length })}
         rows={setup}
         steps={state.steps}
+        guest={guest}
         collapsed={complete}
         actions={
           <>
@@ -200,6 +239,7 @@ export function SetupCard() {
         badge={t("home.explore_progress", { done: tried, total: explore.length })}
         rows={explore}
         steps={state.steps}
+        guest={guest}
         // Nothing left to invite: one line of receipt rather than three rows
         // leading nowhere the reader has not already been.
         collapsed={tried === explore.length}

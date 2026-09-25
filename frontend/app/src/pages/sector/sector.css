@@ -408,3 +408,77 @@
   color: var(--ag-text-muted);
   font-size: var(--ag-fs-xs);
 }
+
+/* ------------------------------------------------------ picker + rescan */
+
+/* The picker and the rescan share a row, bottom-aligned like the Streamlit
+   columns, and wrap onto two lines on a phone rather than squeezing the
+   select. */
+.ag-sec-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 0.8rem;
+  margin-bottom: 0.8rem;
+}
+
+.ag-sec-top .ag-sec-pick {
+  flex: 1 1 14rem;
+  margin-bottom: 0;
+}
+
+.ag-sec-rescan {
+  flex: none;
+}
+
+.ag-sec-rescan:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.ag-sec-card .ag-sec-rescan {
+  margin-top: 0.6rem;
+}
+
+.ag-sec-status {
+  margin-top: -0.4rem;
+}
+
+/* ------------------------------------------------------- company names */
+
+/* Symbol first, name after it and dimmer — the Streamlit `ticker_cell`
+   shape. The name gives way (ellipsis) before the numbers do. */
+.ag-sec-who {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  max-width: 18rem;
+}
+
+.ag-sec-name,
+.ag-sec-pod-name {
+  font-size: var(--ag-fs-xs);
+  font-weight: 400;
+  color: var(--ag-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.ag-sec-pod-name {
+  display: block;
+  margin-top: 0.15rem;
+}
+
+.ag-sec-mark {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.ag-sec-mark .ag-tick-logo {
+  margin-right: 0;
+  align-self: center;
+}

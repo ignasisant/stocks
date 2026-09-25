@@ -15,7 +15,7 @@
  * Module-level rather than a context, because there is exactly one account per
  * document here — the session is resolved before anything renders and cannot
  * change without a reload, so a provider would be ceremony around a constant.
- * `reset()` exists for the one caller that is not a browser: a test.
+ * `seed()` exists for the one caller that is not a browser: a test.
  */
 
 import { useEffect, useSyncExternalStore } from "react";
@@ -25,6 +25,12 @@ import { Link } from "./router";
 
 export type Profile = {
   ticker: string;
+  /**
+   * What the stored label resolves to — an ISIN-keyed holding reads as its
+   * ticker here. Optional because not every caller that builds one has it; the
+   * cell prints `ticker` when it is missing.
+   */
+  symbol?: string;
   /** "" when no catalog this account has warmed knows the name. */
   name: string;
   /** null when nobody has a mark for it — a real answer, not a missing one. */
@@ -44,6 +50,15 @@ let scheduled = false;
 
 function announce() {
   for (const listener of listeners) listener();
+}
+
+/**
+ * Put answers in the cache as if the server had sent them — for a test, which
+ * renders to static markup and never runs the effect that would ask.
+ */
+export function seed(profiles: Profile[]): void {
+  for (const profile of profiles) cache.set(profile.ticker.toUpperCase(), profile);
+  announce();
 }
 
 async function flush() {
@@ -89,7 +104,9 @@ export function useTickerProfile(ticker: string): Profile | null {
       return () => listeners.delete(listener);
     },
     () => cache.get(key) ?? null,
-    () => null,
+    // The same read on the "server": this app never renders on one, and a
+    // test rendering to static markup should see what the cache holds.
+    () => cache.get(key) ?? null,
   );
   useEffect(() => {
     if (key) request(key);
@@ -98,7 +115,16 @@ export function useTickerProfile(ticker: string): Profile | null {
 }
 
 /**
- * The cell itself: the mark, the symbol, and the link to its page.
+ * The cell itself: the mark, the resolved symbol, the company's name, and the
+ * link to its page — "ASML.AS — ASML Holding", as `ticker_cell` prints it.
+ *
+ * The symbol printed is the *resolved* one (`symbol`), and the link carries the
+ * stored label (`ticker`): an ISIN-keyed holding reads as the ticker a reader
+ * recognises and still opens the page the ledger knows it by.
+ *
+ * `name` is on by default, because in a table the four letters are not enough —
+ * and off for a compact context (a chip, a podium) where the row already says
+ * who it is. `children` still replaces the whole label, as it always did.
  *
  * `className` is the caller's, because a table cell and a chip are the same
  * content at two sizes and the page owns its own spacing. The logo carries an
@@ -108,24 +134,37 @@ export function useTickerProfile(ticker: string): Profile | null {
 export function TickerCell({
   ticker,
   className,
+  name = true,
   children,
 }: {
   ticker: string;
   className?: string;
+  /** Print the company name after the symbol. Default on. */
+  name?: boolean;
   children?: React.ReactNode;
 }) {
   const profile = useTickerProfile(ticker);
+  const symbol = profile?.symbol || ticker;
+  const company = profile?.name || "";
   return (
     <Link
       page="ticker"
       params={{ ticker }}
-      className={className}
-      title={profile?.name || undefined}
+      className={className ? `ag-tick ${className}` : "ag-tick"}
+      // The name is still the hover text where it is not printed.
+      title={company && (!name || children) ? company : undefined}
     >
       {profile?.logo ? (
         <img className="ag-tick-logo" src={profile.logo} alt="" loading="lazy" />
       ) : null}
-      {children ?? ticker}
+      {children ?? (
+        <>
+          <span className="ag-tick-sym">{symbol}</span>
+          {name && company && company.toUpperCase() !== symbol.toUpperCase() ? (
+            <span className="ag-tick-name"> — {company}</span>
+          ) : null}
+        </>
+      )}
     </Link>
   );
 }

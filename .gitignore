@@ -98,6 +98,8 @@ wheels/
 .codegraph/
 
 # The React front end's dependencies. Its *build output*
-# (src/stocks/web/static/ticker/) is deliberately committed — see
+# (src/stocks/web/static/app/) is deliberately committed — see
 # frontend/README.md for why.
 frontend/*/node_modules/
+frontend/*/tsconfig.tsbuildinfo
+test-results/

@@ -36,7 +36,7 @@ from stocks.analysis.portfolio import (
     session_quotes,
     value_weights,
 )
-from stocks.portfolio import transfers
+from stocks.portfolio import fees, transfers
 from stocks.portfolio.custody import Custody, by_position
 from stocks.portfolio.ledger import all_transactions
 from stocks.portfolio.positions import build
@@ -301,7 +301,10 @@ def trade_bars(db: str, mtime: float) -> dict[str, pd.DataFrame]:
         return {}
     tickers = sorted({t.ticker for t in trades})
     period = ledger_period(min(t.date for t in trades))
-    return fetch_many(tickers, period=period, auto_adjust=False)
+    bars = fetch_many(tickers, period=period, auto_adjust=False)
+    # An alias can price a ticker on another venue (Revolut's dollar ASML ->
+    # ASML.AS in euros); the spread converts when the frames say so.
+    return fees.stamp_listing_currency(bars, fees.listing_currencies(list(bars)))
 
 
 @st.cache_data(ttl=3600, show_spinner=False)

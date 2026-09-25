@@ -16,26 +16,59 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { canonical } from "./pages";
 
 /**
- * Where the app is mounted. Kept here so nothing else hardcodes it.
+ * Where the app is mounted: the root. Kept here so nothing else hardcodes it.
  *
- * Not `/app`: the logo mirror already serves `/app/static/`, and a shell that
- * claimed the whole prefix would take it. `/next` says what this is — the
- * rebuild, running beside the Streamlit app rather than over it — and leaves
- * every existing URL answering exactly as it does today.
+ * It was `/next` while the shell was being built beside the Streamlit app; the
+ * server now redirects that prefix here, and serves the old app at `/legacy`.
  */
-export const BASE = "/next";
+export const BASE = "";
+
+/**
+ * Where `npm run dev` serves the document: under the bundle's own base, which
+ * is not a page. Read past it so the dev server opens the page it was pointed
+ * at instead of falling back to Home.
+ */
+const DEV_BASE = "/next-assets";
+
+/** The page part of a pathname, whichever server served it. */
+export function pagePath(pathname: string): string {
+  const path = pathname.startsWith(DEV_BASE)
+    ? pathname.slice(DEV_BASE.length)
+    : pathname;
+  return path.slice(BASE.length).replace(/^\/|\/$/g, "");
+}
 
 export type Route = { page: string; params: URLSearchParams };
 
+/**
+ * The page a URL means — which is not always the one its path names.
+ *
+ * `?ticker=SYM` on any page opens that ticker's page, as `app.py` has always
+ * done: the pre-refactor app served every symbol at `/?ticker=`, and those
+ * links are in bookmarks, old Telegram digests and shared chats. No other page
+ * gives `ticker` a meaning of its own, so there is nothing for the jump to
+ * shadow. Pure, so the rule can be tested without a location to read.
+ */
+export function routeFor(path: string, search: string): Route {
+  const params = new URLSearchParams(search);
+  // Canonical, not literal: a bookmark of the Streamlit URL this page
+  // replaced (`/import_transactions`) has to light the same nav entry and
+  // load the same chunk as the new one, rather than falling through to Home.
+  const page = canonical(path || "home");
+  if (page !== "ticker" && (params.get("ticker") ?? "").trim()) {
+    return { page: "ticker", params };
+  }
+  return { page, params };
+}
+
 function read(): Route {
-  const path = window.location.pathname.slice(BASE.length).replace(/^\/|\/$/g, "");
-  return {
-    // Canonical, not literal: a bookmark of the Streamlit URL this page
-    // replaced (`/import_transactions`) has to light the same nav entry and
-    // load the same chunk as the new one, rather than falling through to Home.
-    page: canonical(path || "home"),
-    params: new URLSearchParams(window.location.search),
-  };
+  const route = routeFor(pagePath(window.location.pathname), window.location.search);
+  if (route.page === "ticker" && pagePath(window.location.pathname) !== "ticker") {
+    // Rewrite the address bar too, so the rail lights Ticker, a reload lands
+    // where the reader is, and the back button skips the page they never saw.
+    window.history.replaceState(null, "", `${BASE}/ticker${window.location.search}`);
+  }
+  return route;
 }
 
 /**

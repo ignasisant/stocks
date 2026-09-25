@@ -23,6 +23,7 @@ import pandas as pd
 
 from stocks import obs
 from stocks.analysis import naive_dates
+from stocks.analysis.listing import price_units, quote_unit
 from stocks.config import Holding, load_watchlist
 from stocks.data.fx import ToBase, converter
 from stocks.portfolio import transfers
@@ -311,11 +312,18 @@ def injected_vs_value(
     fx: dict[str, pd.Series] | None = None,
     to_base: ToBaseFn = None,
     base: str = "EUR",
+    units: dict[str, tuple[str, float]] | None = None,
 ) -> pd.DataFrame:
     """Daily injected capital vs mark-to-market value of the book, in `base`.
 
     `closes` = native-currency close series per ticker; `fx` = daily
-    currency->`base` rate series (the base currency itself implied 1.0). Held
+    currency->`base` rate series (the base currency itself implied 1.0).
+    `units` = ticker -> (ISO currency, scale) each close series is quoted in
+    (stocks.analysis.listing.price_units); a ticker missing from it is taken
+    to be quoted in its ledger rows' currency. The distinction is the whole
+    point: an alias can price a dollar trade off a euro listing, and the close
+    converts at the listing's rate — the trade currency only converts the
+    cash, in `injected_series`. `fx` must carry every currency `units` names. Held
     days without a usable close/FX quote — ticker absent, delisted mid-hold, or
     (like a delisted ORGN) a stray quote outside the holding window — are
     carried at cost (cumulative net invested): no fake loss, no mark-to-market
@@ -344,6 +352,7 @@ def injected_vs_value(
         for t in transfers.normalize(transactions)
         if t.action in ("buy", "sell")
     }
+    units = units or {}
 
     value = pd.Series(0.0, index=idx)
     carried: list[str] = []
@@ -355,7 +364,9 @@ def injected_vs_value(
             px = px.copy()
             px.index = naive_dates(px.index)
             px = px.reindex(idx).ffill()
-            ccy = (ccy_of.get(ticker) or base).upper()
+            ccy, scale = units.get(ticker) or ((ccy_of.get(ticker) or base), 1.0)
+            ccy = ccy.upper()
+            px = px * scale
             if ccy == base:
                 rate = pd.Series(1.0, index=idx)
             else:
@@ -618,12 +629,15 @@ def book_history(
         months = max(1, (pd.Timestamp.today() - pd.Timestamp(first)).days // 30 + 1)
         closes = load_closes(tickers, period=f"{months}mo")
     closes = {t: s for t, s in closes.items() if t in set(tickers)}
+    # The closes convert at their listing's rate, the cash at the trade's —
+    # so the FX paths are the union of both (stocks.analysis.listing).
+    units = price_units(closes, {t.ticker: t.currency for t in held})
     fx = {
         ccy: pd.Series(rates_range(first, date.today().isoformat(), ccy, base))
-        for ccy in {t.currency for t in held}
+        for ccy in {t.currency for t in held} | {u[0] for u in units.values()}
         if ccy != base
     }
-    hist = injected_vs_value(ledger, closes, fx, base=base)
+    hist = injected_vs_value(ledger, closes, fx, base=base, units=units)
     if hist.empty:
         twr = pd.Series(dtype=float)
     else:
@@ -703,18 +717,27 @@ def holdings_from_positions(positions) -> list[Holding]:
 
 
 def market_value(
-    ticker: str, quantity: float, currency: str, base: str = "EUR"
+    ticker: str,
+    quantity: float,
+    currency: str,
+    base: str = "EUR",
+    scale: float = 1.0,
 ) -> float | None:
-    """Live market value of a position in `base`; None if a lookup fails."""
+    """Live market value of a position in `base`; None if a lookup fails.
+
+    `currency`/`scale` are the *listing's* (stocks.analysis.listing): the
+    price is the resolved symbol's quote, so it converts at that venue's rate,
+    pence scaled to pounds first.
+    """
     from stocks.data.fetch import latest_price
     from stocks.data.fx import spot
 
     try:
         price = latest_price(ticker)
-        rate, _ = spot(currency, base)
+        rate = 1.0 if currency.upper() == base.upper() else spot(currency, base)[0]
     except Exception:
         return None
-    return quantity * price * rate
+    return quantity * price * scale * rate
 
 
 def market_values(
@@ -737,6 +760,10 @@ def market_values(
     it. Only names the bulk download has no column for fall back to a
     per-ticker lookup, concurrently.
 
+    Each close converts at its own listing's rate, not the ledger row's
+    (stocks.analysis.listing): an alias that prices Revolut's dollar ASML off
+    the euro ASML.AS listing would otherwise read a euro close as dollars.
+
     Positions whose price or FX is unavailable are absent from the result. A
     wholesale throttle is not silent: if nothing could be priced and Yahoo
     refused us, the `YFRateLimitError` propagates so the caller degrades in
@@ -749,10 +776,17 @@ def market_values(
     if not positions:
         return {}
 
+    units = price_units(
+        [p.ticker for p in positions], {p.ticker: p.currency for p in positions}
+    )
+
+    def unit(p) -> tuple[str, float]:
+        return units.get(p.ticker) or (str(p.currency).upper(), 1.0)
+
     # Warm the spot memo once per currency so nothing races N identical FX
     # fetches for the same pair.
-    rates: dict[str, float] = {}
-    for ccy in {p.currency for p in positions}:
+    rates: dict[str, float] = {base.upper(): 1.0}
+    for ccy in {unit(p)[0] for p in positions} - {base.upper()}:
         try:
             rates[ccy] = float(spot(ccy, base)[0])
         except Exception as exc:
@@ -770,11 +804,12 @@ def market_values(
     stragglers = []
     for p in positions:
         series = closes.get(p.ticker)
-        rate = rates.get(p.currency)
+        ccy, scale = unit(p)
+        rate = rates.get(ccy)
         if series is None or series.empty or rate is None:
             stragglers.append(p)
             continue
-        out[p.ticker] = p.quantity * float(series.iloc[-1]) * rate
+        out[p.ticker] = p.quantity * float(series.iloc[-1]) * scale * rate
 
     # A handful of names Yahoo won't bulk-quote (a delisting, a symbol the
     # download drops) are still worth one request each. A *majority* missing
@@ -792,7 +827,8 @@ def market_values(
             pairs = pool.map(
                 lambda p: (
                     p.ticker,
-                    market_value(p.ticker, p.quantity, p.currency, base),
+                    market_value(p.ticker, p.quantity, unit(p)[0], base,
+                                 scale=unit(p)[1]),
                 ),
                 stragglers,
             )
@@ -831,8 +867,12 @@ def market_value_weights_base(
         px = prices.get(p.ticker)
         if not px:
             continue
-        ccy = (meta.get(p.ticker) or {}).get("currency") or p.currency
-        if str(ccy).upper() == base.upper():
+        # The profile's currency is the listing's, and may be a minor unit
+        # (London in pence): scaled to the major one before any FX.
+        ccy, scale = quote_unit((meta.get(p.ticker) or {}).get("currency"))
+        if ccy is None:
+            ccy, scale = str(p.currency).upper(), 1.0
+        if ccy == base.upper():
             rate = 1.0
         else:
             try:
@@ -842,13 +882,16 @@ def market_value_weights_base(
                          base=base, error_type=type(exc).__name__,
                          error=str(exc)[:300])
                 continue
-        values[p.ticker] = p.quantity * px * rate
+        values[p.ticker] = p.quantity * px * scale * rate
     total = sum(values.values())
     return {t: v / total for t, v in values.items()} if total else {}
 
 
 def positions_frame(
-    positions, base: str = "EUR", values: dict[str, float] | None = None
+    positions,
+    base: str = "EUR",
+    values: dict[str, float] | None = None,
+    units: dict[str, tuple[str, float]] | None = None,
 ) -> pd.DataFrame:
     """Per-position table in `base`: qty, cost, live value, unrealised P/L.
 
@@ -861,9 +904,24 @@ def positions_frame(
 
     `cost` comes from the lots, valued at each trade date's rate — so it only
     lines up with `value` when the ledger was replayed in this same base.
+
+    `ccy` is the currency the row is *priced* in — its listing's, in the major
+    unit (stocks.analysis.listing) — not the one it was bought in. It is the
+    label on the one native figure the tables print, the share price backed
+    out of `value` (value / shares / spot(ccy)), and that division only
+    recovers a real quote at the rate `value` was built with. Everything else
+    on the row is in `base`: cost at each trade date's rate, value at today's
+    listing rate, so `pnl_pct` carries no phantom FX jump from reading one
+    venue's price in another's currency. `units` is that answer when a caller
+    already holds it; left out it is looked up (memo-first, no network for a
+    name the profile memo knows).
     """
     if values is None:
         values = market_values(positions, base=base)
+    if units is None:
+        units = price_units(
+            [p.ticker for p in positions], {p.ticker: p.currency for p in positions}
+        )
     rows = []
     for p in positions:
         value = values.get(p.ticker)
@@ -873,7 +931,7 @@ def positions_frame(
             {
                 "ticker": p.ticker,
                 "shares": p.quantity,
-                "ccy": p.currency,
+                "ccy": (units.get(p.ticker) or (p.currency,))[0],
                 "cost": p.cost,
                 "value": value,
                 "pnl": pnl,
@@ -1045,23 +1103,30 @@ def position_value_frames(
     px.index = naive_dates(px.index)
     px = px.ffill()
 
-    fx = fx_frame({p.currency for p in positions}, px.index, base)
+    # Each series converts at its listing's rate, pence scaled to pounds —
+    # not the ledger row's currency (stocks.analysis.listing).
+    units = price_units(
+        [p.ticker for p in positions if p.ticker in px.columns],
+        {p.ticker: p.currency for p in positions},
+    )
+    fx = fx_frame({u[0] for u in units.values()}, px.index, base)
 
     values: dict[str, pd.Series] = {}
     frozen: dict[str, pd.Series] = {}
     for p in positions:
-        if p.ticker not in px.columns:
+        if p.ticker not in px.columns or p.ticker not in units:
             continue
-        # Keyed as `fx_frame` keys it, so a ledger row carrying a lowercase
-        # code does not silently drop the position out of the frame.
-        ccy = str(p.currency).upper()
+        # Keyed as `fx_frame` keys it (upper-case ISO), so a ledger row
+        # carrying a lowercase code does not silently drop out of the frame.
+        ccy, scale = units[p.ticker]
+        native = p.quantity * px[p.ticker] * scale
         if ccy == base.upper():
-            values[p.ticker] = p.quantity * px[p.ticker]
-            frozen[p.ticker] = values[p.ticker]
+            values[p.ticker] = native
+            frozen[p.ticker] = native
         elif ccy in fx:
             rate = fx[ccy]
-            values[p.ticker] = p.quantity * px[p.ticker] * rate
-            frozen[p.ticker] = p.quantity * px[p.ticker] * float(rate.iloc[-1])
+            values[p.ticker] = native * rate
+            frozen[p.ticker] = native * float(rate.iloc[-1])
     return pd.DataFrame(values), pd.DataFrame(frozen)
 
 

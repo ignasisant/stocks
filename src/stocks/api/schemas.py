@@ -24,7 +24,15 @@ class Health(BaseModel):
 class Position(BaseModel):
     ticker: str
     shares: float
-    currency: str = Field(description="The currency the position trades in.")
+    currency: str = Field(
+        description=(
+            "The currency the position is priced in: its listing's, in the "
+            "major unit (GBP for a London line quoted in pence). A watchlist "
+            "alias can price a name off another venue than the one it was "
+            "bought on — Revolut's dollar ASML off the euro ASML.AS — and "
+            "this is the listing's side, the one `price` and `value` use."
+        )
+    )
     cost: float = Field(description="Basis in the reporting currency.")
     value: float | None = Field(
         default=None, description="Market value; null when no price was available."
@@ -47,6 +55,35 @@ class Position(BaseModel):
             "Share of the book by market value. Unpriced rows read null but "
             "still stand in the denominator at their cost, so the priced ones "
             "are not handed their share."
+        ),
+    )
+    day: float | None = Field(
+        default=None,
+        description=(
+            "Today's move in the reporting currency, FX included. Close-to-"
+            "close on the basket while the name's exchange is open; outside "
+            "it, the live pre/after-hours quote or the last completed "
+            "session's move — never the flat 0 a stale premarket bar reads. "
+            "Null when no two prices could be compared."
+        ),
+    )
+    day_pct: float | None = Field(
+        default=None, description="The same move as a fraction of yesterday's value."
+    )
+    market_active: bool = Field(
+        default=True,
+        description=(
+            "Whether a live quote exists for this name right now (regular "
+            "session, US extended hours, or crypto). False means `day` is the "
+            "last session's move and the cell should be dimmed, not hidden."
+        ),
+    )
+    custody: list[Custodian] = Field(
+        default_factory=list,
+        description=(
+            "Which broker's account holds the shares, largest first — one "
+            "entry for a single-broker position, several when it is split. "
+            "Off the ledger's note prefixes, so it never costs a fetch."
         ),
     )
 
@@ -107,11 +144,23 @@ class Transaction(BaseModel):
     currency: str
     fee: float
     note: str
+    amount: float | None = Field(
+        default=None,
+        description=(
+            "The cash the row moved, in the reporting currency at the trade "
+            "date's ECB rate (Home's recent-transactions strip). Null for a "
+            "split or a transfer, which move no cash, and for a rate that "
+            "could not be found — never today's rate standing in for it."
+        ),
+    )
 
 
 class Transactions(BaseModel):
     total: int = Field(description="Rows in the ledger, before limit/offset.")
     transactions: list[Transaction]
+    base: str | None = Field(
+        default=None, description="Currency every row's `amount` is counted in."
+    )
     demo: bool = Field(
         default=False,
         description=(
@@ -125,6 +174,15 @@ class Transactions(BaseModel):
 
 class Performance(BaseModel):
     base: str
+    window: str = Field(
+        default="inception",
+        description=(
+            "Span every figure below was taken over: inception (the whole "
+            "book, the default), or 6mo/1y/2y/5y back from today. `start` is "
+            "where it actually began, which for a young book is later than "
+            "the window asked for."
+        ),
+    )
     start: str | None = None
     end: str | None = None
     injected: float | None = Field(
@@ -180,6 +238,23 @@ class WatchlistEntry(BaseModel):
     name: str = ""
     favorite: bool = False
     tags: list[str] = Field(default_factory=list)
+    shares: float | None = Field(
+        default=None,
+        description=(
+            "Shares held as the watchlist records them — the hand-typed "
+            "position the Streamlit grid edits, which weights the analytics by "
+            "market value instead of equally. Null when none is set (0 on "
+            "disk), so a client draws an empty cell rather than a zero that "
+            "reads as \"sold\". Written by `PATCH /watchlist/{ticker}`."
+        ),
+    )
+    cost: float | None = Field(
+        default=None,
+        description=(
+            "Average cost per share, for unrealised P/L. Null when unset; "
+            "`PATCH /watchlist/{ticker}` with `cost: 0` clears it."
+        ),
+    )
     is_crypto: bool = Field(
         default=False,
         description=(
@@ -318,7 +393,14 @@ class TickerPosition(BaseModel):
     held: bool = Field(description="False when this account holds none of it.")
     shares: float | None = None
     currency: str | None = Field(
-        default=None, description="The currency the position trades in."
+        default=None,
+        description=(
+            "The currency the ticker's chart is quoted in — the priced "
+            "listing's own code, minor units included (GBp). Usually the one "
+            "the shares were bought in; when an alias prices them off another "
+            "venue, the basis and the fills are restated into this one at "
+            "each trade date's rate so they sit on the chart's axis."
+        ),
     )
     cost_native: float | None = Field(
         default=None, description="Basis in that currency, not the reporting one."
@@ -518,6 +600,15 @@ class Valuation(BaseModel):
         ),
     )
     current: float | None = None
+    current_verdict: str | None = Field(
+        default=None,
+        description=(
+            "Today's P/E on the KPI grid's own cheap/fair/expensive bands "
+            "(`verdict('pe_ttm', current)`), so the chip under it matches the "
+            "grid's reading of the same kind of number. Null with no band."
+        ),
+    )
+    current_tone: str | None = None
     dates: list[str] = Field(default_factory=list)
     pe: list[float | None] = Field(default_factory=list)
     windows: list[ValuationWindow] = Field(default_factory=list)
@@ -538,6 +629,14 @@ class Moat(BaseModel):
         description="Weighted composite 0-100; null when too few pillars scored.",
     )
     rating: str | None = Field(default=None, description="wide | narrow | no moat.")
+    rating_tone: str | None = Field(
+        default=None,
+        description=(
+            "The colour the domain's moat band carries (green | orange | red), "
+            "so a client tints the rating chip without keeping its own copy of "
+            "the thresholds. Null with no score."
+        ),
+    )
     years: int = Field(description="Annual statement years backing the score.")
     pillars: list[MoatPillar] = Field(default_factory=list)
 
@@ -570,6 +669,14 @@ class InsiderTrade(BaseModel):
     insider: str
     role: str
     code: str = Field(description="Raw Form 4 code: P buy, S sell, A grant, M exercise.")
+    label: str = Field(
+        default="",
+        description=(
+            "The code in English words (`insiders.CODE_LABELS`) — the fallback "
+            "for a client whose catalog has no entry for `code`, so an unmapped "
+            "code still reads as a word rather than a letter."
+        ),
+    )
     shares: float = Field(description="Signed: negative for a disposition.")
     price: float | None = None
     value: float | None = Field(
@@ -968,6 +1075,51 @@ class TaxPeriod(BaseModel):
     carryforward_loss: float = 0.0
     sales: int = Field(default=0, description="Matched parcels in the period.")
     kpis: list[TaxKpi] = Field(default_factory=list)
+    year_label: str = Field(
+        default="",
+        description=(
+            'How the jurisdiction writes this tax year — "2025", or "2025/26" '
+            "for a UK or Australian year that opens mid-calendar. Empty for a "
+            "month. `period` stays the sortable key; this is what to print."
+        ),
+    )
+    notes: list[TaxNote] = Field(
+        default_factory=list,
+        description=(
+            "The sentences the jurisdiction appends under this period's "
+            "figures (deferred losses, allowances used, a rate year borrowed), "
+            "as catalog keys the client resolves the same way the KPI names "
+            "are — `portfolio.<code>_<key>` first, then `portfolio.<key>`."
+        ),
+    )
+
+
+class TaxNote(BaseModel):
+    """One localized sentence under a period's figures: a key and its slots.
+
+    Language-neutral on purpose, like `TaxKpi`: the number slots arrive already
+    formatted (`"1,240"`), so a client only substitutes and never re-derives.
+    """
+
+    key: str
+    kwargs: dict[str, str] = Field(default_factory=dict)
+
+
+class TaxFlag(BaseModel):
+    """A foreign-asset reporting threshold — Modelo 720, FBAR, Form 8938…
+
+    `reportable` means the threshold is crossed, not that a filing is due:
+    whether it applies depends on where the assets actually sit, which the
+    ledger does not know. Hence a flag the client words as "may apply", never
+    a verdict.
+    """
+
+    name: str = Field(description="i18n suffix: modelo_720, fbar, form_8938…")
+    reportable: bool
+    total_value: float = Field(
+        description="The open book priced (cost where unpriced), in `currency`."
+    )
+    threshold: float = Field(description="The line, in the jurisdiction's currency.")
 
 
 class TaxAllYears(BaseModel):
@@ -1006,6 +1158,15 @@ class TaxSale(BaseModel):
     proceeds: float
     gain: float
     matched: str = Field(description="fifo | lifo | average | s104 | pool.")
+    term: str | None = Field(
+        default=None,
+        description=(
+            '"long" or "short" where the jurisdiction taxes the two holding '
+            "periods differently (US, AU, PT); null where it does not — Spain "
+            "taxes a gain the same after a week or a decade, and a column "
+            "saying so would be noise."
+        ),
+    )
 
 
 class TaxReport(BaseModel):
@@ -1042,6 +1203,15 @@ class TaxReport(BaseModel):
         description=(
             "Whether fund holdings were identified (DE exempts 30% of a fund's "
             "result). False = nobody checked, so no exemption was applied."
+        ),
+    )
+    flags: list[TaxFlag] = Field(
+        default_factory=list,
+        description=(
+            "Foreign-asset reporting thresholds measured against today's open "
+            "book, converted to the jurisdiction's currency at spot — a "
+            "threshold check, not a basis. Empty when the book could not be "
+            "priced or the rate could not be fetched: no line beats a wrong one."
         ),
     )
 
@@ -1227,6 +1397,28 @@ class CalendarResult(BaseModel):
     )
 
 
+class TaxDeadline(BaseModel):
+    """A filing date the account's tax residence imposes."""
+
+    key: str = Field(
+        description=(
+            "Catalog stem: `earnings.tax_<key>` names it and `…_body` explains "
+            "it, with `{year}` slotted."
+        )
+    )
+    date: str = Field(description="Deadline, ISO, weekend-rolled where the law rolls it.")
+    days_until: int = Field(description="Days from today; negative once it has passed.")
+    year: str = Field(description='The tax year it concerns: "2025", "2025/26".')
+    approximate: bool = Field(
+        default=False,
+        description="True where the date varies (by département, by canton).",
+    )
+    remind: bool = Field(
+        default=False,
+        description="Inside the reminder window: due within the next 30 days.",
+    )
+
+
 class EarningsCalendar(BaseModel):
     upcoming: list[CalendarEvent] = Field(
         default_factory=list, description="Soonest first; a same-day print counts."
@@ -1246,6 +1438,153 @@ class EarningsCalendar(BaseModel):
         default_factory=list,
         description="Watchlist names that never report: coins and funds.",
     )
+    jurisdiction: str | None = Field(
+        default=None, description="The tax residence the deadlines are for."
+    )
+    tax_deadlines: list[TaxDeadline] = Field(
+        default_factory=list,
+        description=(
+            "That jurisdiction's filing dates, about two months back to a year "
+            "ahead, soonest first. Independent of the watchlist."
+        ),
+    )
+
+
+# ------------------------------------------------------------ one past print
+# The result dialog a past chip opens. The calendar payload carries the three
+# EPS figures; everything under them — revenue, margins, the GAAP result, the
+# surprise record, next quarter's consensus — is per ticker, three Yahoo
+# payloads deep, and only worth fetching for the one print somebody clicked.
+# Ratios are FRACTIONS (0.183 is 18.3%) as `stocks.data.earnings` computes them;
+# the one exception is `price_reaction`, a percentage like `surprise_pct`.
+
+
+class QuarterFigures(BaseModel):
+    """One fiscal quarter as filed (GAAP), plus the ratios derived from it."""
+
+    end: str = Field(description="Fiscal quarter end, ISO — not the report date.")
+    revenue: float | None = None
+    gross_profit: float | None = None
+    operating_income: float | None = None
+    net_income: float | None = None
+    pretax_income: float | None = None
+    tax_provision: float | None = None
+    rnd: float | None = None
+    diluted_eps: float | None = None
+    diluted_shares: float | None = None
+    gross_margin: float | None = None
+    operating_margin: float | None = None
+    net_margin: float | None = None
+    rnd_intensity: float | None = Field(default=None, description="R&D / revenue.")
+    tax_rate: float | None = Field(
+        default=None, description="Tax provision / pretax income."
+    )
+    revenue_yoy: float | None = Field(
+        default=None,
+        description="vs the same fiscal quarter a year back; null on a negative base.",
+    )
+    revenue_qoq: float | None = Field(
+        default=None, description="vs the quarter immediately before."
+    )
+
+
+class QuarterBreakdown(BaseModel):
+    """The reported quarter, with every comparison the dialog's tiles print."""
+
+    quarter: QuarterFigures
+    revenue_ttm: float | None = Field(
+        default=None,
+        description="Sum of the last four quarters; null unless all four are known.",
+    )
+    net_income_yoy: float | None = None
+    shares_yoy: float | None = Field(
+        default=None,
+        description="Diluted share count vs a year back. Up is dilution — the bad way.",
+    )
+    gross_margin_bps: float | None = Field(
+        default=None, description="Margin move vs the year-ago quarter, basis points."
+    )
+    operating_margin_bps: float | None = None
+    net_margin_bps: float | None = None
+
+
+class ConsensusPeriod(BaseModel):
+    """Sell-side consensus for one period. Never company guidance."""
+
+    period: str = Field(description='yfinance label: "0q", "+1q", "0y" or "+1y".')
+    eps_avg: float | None = None
+    eps_low: float | None = None
+    eps_high: float | None = None
+    eps_growth: float | None = None
+    eps_analysts: int | None = None
+    rev_avg: float | None = None
+    rev_low: float | None = None
+    rev_high: float | None = None
+    rev_growth: float | None = None
+    rev_analysts: int | None = None
+    currency: str | None = None
+    currency_prefix: str = Field(
+        default="", description='What a figure is printed behind: "$", "€", "CHF ".'
+    )
+
+
+class EarningsResultDetail(BaseModel):
+    ticker: str
+    name: str = Field(default="", description='"" when no catalog knows the name.')
+    logo: str | None = None
+    date: str = Field(description="The report date asked about, ISO.")
+    result: CalendarResult | None = Field(
+        default=None,
+        description="The print on that date; null when the feed has no figures for it.",
+    )
+    price_reaction: float | None = Field(
+        default=None,
+        description=(
+            "% move across the print: last close before the date vs first close "
+            "after, so it always contains the gap whatever the report's timing."
+        ),
+    )
+    quarter_state: str = Field(
+        default="none",
+        description=(
+            "`matched` — the income statement for the reported quarter is out; "
+            "`pending` — statements exist but this quarter's is not published "
+            "yet; `none` — the feed has no quarterly statement for the name."
+        ),
+    )
+    currency: str | None = Field(
+        default=None, description="Currency the income statement is filed in."
+    )
+    currency_prefix: str = ""
+    breakdown: QuarterBreakdown | None = None
+    trend: list[QuarterFigures] = Field(
+        default_factory=list,
+        description="Up to five most recent quarters, newest first.",
+    )
+    eps_gaap_gap: float | None = Field(
+        default=None,
+        description="Headline EPS minus the filed GAAP diluted EPS: the adjustment.",
+    )
+    history: list[CalendarResult] = Field(
+        default_factory=list,
+        description="Every reported print the feed carries for the name, newest first.",
+    )
+    outlook: ConsensusPeriod | None = Field(
+        default=None, description="Next quarter's consensus; null when nobody covers it."
+    )
+    outlook_periods: list[ConsensusPeriod] = Field(
+        default_factory=list,
+        description=(
+            "The quarter in flight, next quarter and both fiscal years, where known."
+        ),
+    )
+    unavailable: bool = Field(
+        default=False,
+        description=(
+            "The statement or estimate fetch failed this time (usually a rate "
+            "limit). The headline still stands; the sections are missing, not empty."
+        ),
+    )
 
 
 # ------------------------------------------------------------------ the regime
@@ -1261,6 +1600,13 @@ class PulseComponent(BaseModel):
         default=None, description="This input's own 0-100 score."
     )
     raw: float | None = Field(default=None, description="What it actually read.")
+    text: str | None = Field(
+        default=None,
+        description=(
+            "`raw` formatted in its own units (+4.2%, 15.2, 1.19…) by the "
+            "registry that knows them — what a row prints. Null with `raw`."
+        ),
+    )
     then: float | None = Field(
         default=None,
         description="The same score 21 sessions ago; null when history is short.",
@@ -1345,7 +1691,38 @@ class Pulse(BaseModel):
     stock_bond_correlation_then: float | None = Field(
         default=None, description="The same, a quarter ago — is it drifting?"
     )
+    loaded_at: str | None = Field(
+        default=None,
+        description=(
+            "Server clock when this was answered, `YYYY-MM-DD HH:MM UTC` — the "
+            "page's 'loaded …' caption. Not `as_of`: that is the market row the "
+            "score was quoted from."
+        ),
+    )
+    unavailable: str | None = Field(
+        default=None,
+        description=(
+            "Why the composite could not be built at all: rate_limited | "
+            "offline | no_data. Set with a null score and an 'unknown' band, "
+            "so a throttle answers 200 and the page keeps its headings."
+        ),
+    )
 
+
+class BookBeta(BaseModel):
+    """One of the book's secondary betas: to duration, credit or EM.
+
+    Same contract as the equity beta on `PulseBook`: the full-window level is
+    the headline, and the drift is the 60-session rolling beta against itself
+    a quarter back — never the level against the rolling value, which are two
+    windows whose difference is not drift.
+    """
+
+    key: str = Field(description="duration | credit | em — the i18n suffix.")
+    ticker: str = Field(description="The benchmark regressed against: TLT, HYG, EEM.")
+    beta: float | None = None
+    rolling: float | None = None
+    rolling_then: float | None = None
 
 
 class PulseBook(BaseModel):
@@ -1400,6 +1777,31 @@ class PulseBook(BaseModel):
         description=(
             "Active weight per sector against the benchmark. A sector the book "
             "does not hold is a real underweight and is included as one."
+        ),
+    )
+    betas: list[BookBeta] = Field(
+        default_factory=list,
+        description=(
+            "Betas to the long bond, high-yield credit and emerging markets, "
+            "on the same EUR-rebased returns as `beta`. A benchmark whose "
+            "series did not load keeps its entry with nulls."
+        ),
+    )
+    sector_weights: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "The book's own sector allocation, largest first, including the "
+            "buckets no sector ETF tracks (Unknown, a crypto sleeve). What "
+            "'your three largest sectors' is read off — the rotation block only "
+            "carries the sectors it has a fund for."
+        ),
+    )
+    unavailable: str | None = Field(
+        default=None,
+        description=(
+            "Why the price-derived figures are null: rate_limited | offline | "
+            "no_data. The weights need no price feed and are still filled, so "
+            "a throttle costs the betas, not the card."
         ),
     )
 
@@ -1479,6 +1881,15 @@ class ImportPlatform(BaseModel):
     file_types: list[str] = Field(description="Extensions this parser accepts.")
     hint: str = Field(description="Where to find the export on that platform.")
     domain: str | None = Field(default=None, description="Brand site, for a logo.")
+    logo: str | None = Field(
+        default=None,
+        description=(
+            "The brand mark, same-origin where this host could mirror it (the "
+            "external URL otherwise) — what the Streamlit picker draws beside "
+            "each name. Null for a platform with no brand, and the client "
+            "prints the name alone."
+        ),
+    )
     has_sample: bool = Field(
         default=False, description="Whether a shipped example export exists."
     )
@@ -1703,11 +2114,12 @@ class LedgerCleared(BaseModel):
 
 
 class DailyCard(BaseModel):
-    """The stored briefing, and whether it still stands.
+    """Today's briefing, whether it still stands, and whether one is coming.
 
-    Nothing here generates one. Writing a card fans out a fetch, spends this
-    account's free-model allowance and takes up to half a minute, which is a
-    job and not a request — the app owns that, and this reports what it left.
+    `GET /daily` never writes one: writing fans out a fetch and spends this
+    account's free-model allowance, and a GET that could do that is a GET a
+    prefetch could empty. `POST /daily` asks for one (see `api/briefing.py`),
+    and while that generation is still out both routes answer `pending`.
     """
 
     day: str | None = Field(
@@ -1740,9 +2152,26 @@ class DailyCard(BaseModel):
     fresh: bool = Field(
         default=False,
         description=(
-            "Whether the stored card still stands for `action_day` in the "
-            "requested language. False means the app will rewrite it on the "
-            "reader's next visit — this API will not."
+            "Whether the card still stands for `action_day` in the requested "
+            "language. False means it is an older card: `POST /daily` writes "
+            "today's, and a client shows this one as dated meanwhile."
+        ),
+    )
+    generated: float | None = Field(
+        default=None,
+        description=(
+            "Epoch seconds the card was written — the clock in the "
+            "'Today · 09:14' stamp under the badge. Null for a card from before "
+            "the field existed, which the stamp prints without a time."
+        ),
+    )
+    pending: bool = Field(
+        default=False,
+        description=(
+            "A briefing is being written right now. With a headline, the "
+            "headline is the computed stand-in shown meanwhile; without one, "
+            "the reader asked to regenerate and the old card is already gone. "
+            "Poll `GET /daily` until this turns false."
         ),
     )
 
@@ -1750,6 +2179,15 @@ class DailyCard(BaseModel):
 class Mover(BaseModel):
     ticker: str
     pct: float = Field(description="Change over the window, as a fraction.")
+    active: bool | None = Field(
+        default=None,
+        description=(
+            "Day window only: whether the name has a live quote now (regular "
+            "session, or US pre/after-hours). False greys the figure — it is the "
+            "last completed session, real but not moving. Null on the longer "
+            "windows, which are close-to-close by construction."
+        ),
+    )
 
 
 class Movers(BaseModel):
@@ -1811,6 +2249,15 @@ class Extreme(BaseModel):
 class Extremes(BaseModel):
     extremes: list[Extreme] = Field(
         default_factory=list, description="Names within 2% of a 52-week edge."
+    )
+    scanned: int = Field(
+        default=0,
+        description=(
+            "How many names were scanned: held positions plus favourites, "
+            "crypto excluded. Zero means there was nothing to scan — the card "
+            "has no reason to be on the page — which is a different fact from "
+            "a scan that found no name at an edge."
+        ),
     )
 
 
@@ -1923,6 +2370,14 @@ class TrendBlock(BaseModel):
             "Why the block is empty: rate_limited | offline | no_data. A block "
             "whose source died keeps its place and says so rather than "
             "vanishing, which would read as 'nothing is happening here'."
+        ),
+    )
+    expected: int | None = Field(
+        default=None,
+        description=(
+            "How many rows the block is configured to carry — the tab's "
+            "badge. Fixed, so a block that is down still says what it would "
+            "hold rather than losing its count."
         ),
     )
 

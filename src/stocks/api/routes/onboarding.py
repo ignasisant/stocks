@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from stocks import accounts
 from stocks.api.deps import Account, Writer
+from stocks.api.security import Who
 from stocks.web import onboarding
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
@@ -89,6 +90,14 @@ class Onboarding(BaseModel):
             "card per feature. Empty for an account that is caught up."
         )
     )
+    signed_in: bool = Field(
+        description=(
+            "Whether the caller is a signed-in account rather than a guest "
+            "reading the shared demo book. Mirrors `setup.login`, and is here "
+            "on its own so a client gating the tour's locked steps need not "
+            "read it out of the setup card."
+        )
+    )
     setup: dict[str, bool] = Field(
         description="The four connectable capabilities, as the Home card reads them."
     )
@@ -125,7 +134,7 @@ def _step(step: onboarding.Step, prefs: dict, paths) -> TourStep:
 
 
 @router.get("", response_model=Onboarding, summary="The tour, and what is new")
-def state(account: Account) -> Onboarding:
+def state(account: Account, caller: Who) -> Onboarding:
     """Everything a client needs to draw the tour and the what's-new modal.
 
     One call because the two are one registry and one account state: a client
@@ -134,6 +143,7 @@ def state(account: Account) -> Onboarding:
     """
     prefs = accounts.load_prefs(account.prefs)
     steps = onboarding.visible_steps()
+    signed_in = caller.kind != "guest"
     return Onboarding(
         version=onboarding.CURRENT_VERSION,
         seen_version=prefs.get(onboarding.PREF_SEEN_VERSION),
@@ -151,16 +161,19 @@ def state(account: Account) -> Onboarding:
             )
             for card in onboarding.unseen_news(prefs)
         ],
-        # A caller that got this far is signed in — the dependency proved it —
-        # so the login capability is not re-derived from a Streamlit session
-        # that does not exist here.
-        setup=onboarding.setup_state(prefs, account, signed_in=True),
+        signed_in=signed_in,
+        # Reported from the real caller. This route is guest-open, and it used
+        # to answer `signed_in=True` unconditionally — so an anonymous visitor
+        # saw "Google sign-in ✓ Active" on the setup card of a demo book. A
+        # token caller names an account that exists, which is what the tick
+        # means; only a guest has no sign-in to report.
+        setup=onboarding.setup_state(prefs, account, signed_in=signed_in),
         explore=onboarding.explore_state(prefs, account),
     )
 
 
 @router.post("/seen", response_model=Onboarding, summary="Mark it read")
-def seen(body: Seen, account: Writer) -> Onboarding:
+def seen(body: Seen, account: Writer, caller: Who) -> Onboarding:
     """Stamp this account as caught up with the current release.
 
     Every way out of the modal stamps it — finishing, dismissing, closing —
@@ -173,4 +186,4 @@ def seen(body: Seen, account: Writer) -> Onboarding:
     if body.done is not None:
         changes[onboarding.PREF_DONE] = body.done
     accounts.update_prefs(account.prefs, changes)
-    return state(account)
+    return state(account, caller)

@@ -216,6 +216,9 @@ export type Valuation = {
   /** Which filing feed backed it; null when neither had the quarters. */
   source: string | null;
   current: number | null;
+  /** Today's P/E on the grid's pe_ttm bands, and that band's tone. */
+  current_verdict: string | null;
+  current_tone: string | null;
   dates: string[];
   pe: (number | null)[];
   windows: ValuationWindow[];
@@ -233,6 +236,8 @@ export type Moat = {
   ticker: string;
   score: number | null;
   rating: string | null;
+  /** The band's tone (green | orange | red); null with no score. */
+  rating_tone: string | null;
   years: number;
   pillars: MoatPillar[];
 };
@@ -242,6 +247,8 @@ type InsiderTrade = {
   insider: string;
   role: string;
   code: string;
+  /** The code in English words — the fallback when the catalog lacks it. */
+  label: string;
   /** Signed: negative for a disposal. */
   shares: number;
   price: number | null;

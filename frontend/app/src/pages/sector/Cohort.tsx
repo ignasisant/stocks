@@ -16,6 +16,7 @@
 import { useEffect, useState } from "react";
 import { useT } from "../../shell/i18n";
 import { Link } from "../../shell/router";
+import { TickerCell, useTickerProfile } from "../../shell/tickers";
 import { useLabels } from "./labels";
 import { csv, formatMetric, ordered, passes, type Screen } from "./metrics";
 import type { CohortRow, SectorCohort } from "./types";
@@ -36,6 +37,42 @@ const SCREENS: { metric: string; kind: "min" | "max"; value: string }[] = [
 
 /** How many columns a phone opens with, before anyone adds more. */
 const NARROW_COLUMNS = 4;
+
+/**
+ * The company's name, dim, beside or under its symbol — what the Streamlit
+ * table prints on both layouts (`ticker_cell(name=True)`, `mobile_names`).
+ * Read off the same batched `/market/profiles` lookup `TickerCell` fills, so
+ * seventeen rows cost one request, and nothing at all until it lands.
+ */
+export function CompanyName({
+  ticker,
+  className,
+}: {
+  ticker: string;
+  className?: string;
+}) {
+  const name = useTickerProfile(ticker)?.name;
+  return name ? <span className={className ?? "ag-sec-name"}>{name}</span> : null;
+}
+
+/**
+ * The phone row's mark: logo, symbol, name. Not a `TickerCell` because the
+ * whole row is already the link to the company's page — a link inside a link
+ * is invalid markup, and a tap target the width of the screen is the point of
+ * the dense row.
+ */
+function Mark({ ticker }: { ticker: string }) {
+  const profile = useTickerProfile(ticker);
+  return (
+    <div className="ag-sec-l1 ag-sec-mark">
+      {profile?.logo ? (
+        <img className="ag-tick-logo" src={profile.logo} alt="" loading="lazy" />
+      ) : null}
+      <span>{ticker}</span>
+      {profile?.name ? <span className="ag-sec-name">{profile.name}</span> : null}
+    </div>
+  );
+}
 
 function useNarrow(): boolean {
   const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW).matches);
@@ -292,9 +329,12 @@ function Table({
           {rows.map((row) => (
             <tr key={row.ticker}>
               <td>
-                <Link page="ticker" params={{ ticker: row.ticker }}>
-                  <b>{row.ticker}</b>
-                </Link>
+                <span className="ag-sec-who">
+                  <TickerCell ticker={row.ticker}>
+                    <b>{row.ticker}</b>
+                  </TickerCell>
+                  <CompanyName ticker={row.ticker} />
+                </span>
               </td>
               {columns.map((column) => (
                 <td key={column}>{formatMetric(column, row.metrics[column], na)}</td>
@@ -334,7 +374,7 @@ function Dense({
           params={{ ticker: row.ticker }}
         >
           <div className="ag-sec-main">
-            <div className="ag-sec-l1">{row.ticker}</div>
+            <Mark ticker={row.ticker} />
             {sub.length ? (
               <div className="ag-sec-l2">
                 {sub

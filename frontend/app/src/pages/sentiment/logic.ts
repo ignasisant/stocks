@@ -62,24 +62,38 @@ export function quadrant(rates: TrendBlock | null | undefined): Quadrant | null 
 /**
  * The reader's largest sectors, split by whether they beat the index this month.
  *
- * Both halves come from the rotation block: `weight` is this account's own
- * allocation to the sector and `changes.month` is that sector's excess return
- * over the index, which is the server's own comparison and not one made here.
+ * The largest three are chosen from the BOOK's own sector split and filtered
+ * second, as `sentiment.py` does (`book["sector"].head(3)`, then only the ones
+ * with an excess return). The order matters: the rotation block only carries
+ * sectors a SPDR fund tracks, so choosing from it would skip an "Unknown" or a
+ * crypto sleeve that is one of the reader's three largest and promote a
+ * smaller holding into a list that claims to be the top three. A top sector
+ * with no fund, or too new to have a month, drops out of the sentence instead.
  *
- * The largest three are chosen first and filtered second, deliberately: a
- * sector too new to have a month of history drops out of the sentence rather
- * than promoting a smaller holding into a list that claims to be the top three.
+ * `changes.month` is the sector's excess return over the index — the server's
+ * own comparison, not one made here. Without a book split (a server too old
+ * to send one) the rotation rows' own weights stand in, which is the same
+ * answer whenever the book holds nothing outside the eleven funded sectors.
  */
-export function topSectors(rotation: TrendBlock | null | undefined): {
+export function topSectors(
+  rotation: TrendBlock | null | undefined,
+  weights?: Record<string, number> | null,
+): {
   leading: TrendRow[];
   lagging: TrendRow[];
 } {
-  const held = (rotation?.rows ?? []).filter(
-    (row) => row.weight !== null && row.weight > 0,
-  );
-  const top = [...held]
-    .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
-    .slice(0, TOP_SECTORS);
+  const rows = rotation?.rows ?? [];
+  const book: [string, number][] =
+    weights && Object.keys(weights).length > 0
+      ? Object.entries(weights)
+      : rows.flatMap((row): [string, number][] =>
+          row.weight === null ? [] : [[row.name, row.weight]],
+        );
+  const top = book
+    .filter(([, weight]) => weight > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, TOP_SECTORS)
+    .flatMap(([name]) => rows.filter((row) => row.name === name));
   return {
     leading: top.filter((row) => (row.changes.month ?? 0) > 0),
     lagging: top.filter(

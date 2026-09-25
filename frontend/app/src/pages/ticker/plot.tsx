@@ -212,8 +212,20 @@ export function YGrid({
   );
 }
 
-/** One line of a tooltip: what it is, what it reads, and how it reads. */
-export type TipLine = { text: string; tone?: "up" | "down" | null };
+/**
+ * One line of a tooltip: what it is, what it reads, and how it reads.
+ *
+ * `parts`, where given, is how the line is set — a muted label, a bold value,
+ * one coloured figure — and `swatch` the colour of the series it belongs to,
+ * which is how Plotly's unified box ties a row to its trace. Both optional: a
+ * bar chart's one-line tooltip needs neither.
+ */
+export type TipLine = {
+  text: string;
+  tone?: "up" | "down" | null;
+  parts?: { text: string; bold?: boolean; tone?: "up" | "down" | "dim" }[];
+  swatch?: string;
+};
 
 /**
  * The hover box.
@@ -250,7 +262,23 @@ export function Tooltip({
           key={`${line.text}-${index}`}
           className={line.tone ? `tk-tip-l tk-is-${line.tone}` : "tk-tip-l"}
         >
-          {line.text}
+          {line.swatch ? (
+            <span className="tk-tip-sw" style={{ background: line.swatch }} />
+          ) : null}
+          {line.parts
+            ? line.parts.map((part, at) => (
+                <span
+                  key={at}
+                  className={
+                    [part.bold ? "tk-tip-b" : "", part.tone ? `tk-is-${part.tone}` : ""]
+                      .filter(Boolean)
+                      .join(" ") || undefined
+                  }
+                >
+                  {part.text}
+                </span>
+              ))
+            : line.text}
         </span>
       ))}
     </div>

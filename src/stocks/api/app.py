@@ -34,6 +34,7 @@ from stocks.api.routes import (
     glance,
     guide,
     health,
+    home,
     i18n,
     import_statement,
     market,
@@ -184,6 +185,7 @@ _private.include_router(prefs.router)
 _private.include_router(watchlist_edit.router)
 _private.include_router(import_statement.router)
 _private.include_router(glance.router)
+_private.include_router(home.router)
 _private.include_router(guide.router)
 _private.include_router(reference.router)
 _private.include_router(chat.router)

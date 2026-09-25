@@ -48,10 +48,13 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
             {configured === true && linked && (
               <span className="pf-chips">
                 <span className="pf-badge">{t("profile.notify_connected")}</span>
-                {/* The handle stays on the server with the chat id, so this
-                    reads as the Streamlit page reads it when it has none. */}
+                {/* Which chat gets the messages, as the Streamlit page names
+                    it — a reader with two accounts needs to tell them apart.
+                    A chat with no public username reads as it does there. */}
                 <span className="pf-hint">
-                  {t("profile.tg_linked_as", { handle: "" }).trim()}
+                  {t("profile.tg_linked_as", {
+                    handle: tg.state?.username ? `@${tg.state.username}` : "",
+                  }).trim()}
                 </span>
               </span>
             )}

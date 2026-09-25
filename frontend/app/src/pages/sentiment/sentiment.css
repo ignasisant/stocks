@@ -180,7 +180,7 @@
 /* ------------------------------------------------------------- the hero */
 .sn-hero {
   display: grid;
-  grid-template-columns: 1.35fr 1fr;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 1.4rem;
 }
 
@@ -1043,10 +1043,12 @@
   color: var(--ag-purple-400);
 }
 
-/* ----------------------------------------------------------------- phones */
-@media (max-width: 860px) {
+/* ------------------------------------------------- narrow: phones, or a page
+   squeezed by the chat drawer. By the page's own width, not the viewport's —
+   see `.ag-main` in styles.css. */
+@container ag-main (max-width: 620px) {
   .sn-hero {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .sn-hero-r {
     border-left: 0;
@@ -1056,7 +1058,10 @@
   }
 }
 
-@media (max-width: 720px) {
+/* The trend table's fixed columns need ~46rem; below that the row folds into
+   two lines. Measured on the page, like the hero above, so a desktop page
+   squeezed by the chat drawer folds too instead of running under it. */
+@container ag-main (max-width: 760px) {
   .sn-jump {
     display: flex;
   }

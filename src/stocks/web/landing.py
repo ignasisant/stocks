@@ -2037,6 +2037,38 @@ _BAR_JS = """
 """
 
 
+# Carry the source token from the landing's own URL onto the CTA links, so the
+# click that leaves for the app says where the reader came from. It has to
+# happen in the browser: the document is one cached string per language and
+# host (`landing_static.document`), and a per-request token would give every
+# campaign its own copy of ~90KB.
+#
+# `web.attribution` owns the vocabulary — the parameter name and the shape of a
+# token are asserted equal on both sides in `tests/test_attribution.py`, so this
+# cannot quietly drift into forwarding something the server then drops.
+#
+# No "less-than" character in here either: same sanitiser, same rule.
+_SRC_JS = """
+<script>
+(function () {
+  try {
+    const q = new URLSearchParams(location.search);
+    const raw = q.get("utm_source") || q.get("src") || q.get("ref") || "";
+    const src = raw
+      .toLowerCase()
+      .replace(/[^a-z0-9._+-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 32);
+    if (!src) return;
+    document.querySelectorAll('a[href^="/?"]').forEach((a) => {
+      a.setAttribute("href", a.getAttribute("href") + "&src=" + encodeURIComponent(src));
+    });
+  } catch (e) {}
+})();
+</script>
+"""
+
+
 def _mobile_css_body() -> str:
     """The phone rules again, at a wider breakpoint, for User-Agent gating.
 
@@ -2076,6 +2108,11 @@ def ua_mobile_rules() -> str:
 def bar_script() -> str:
     """The mobile CTA bar's reveal script, in its `<script>` element."""
     return _BAR_JS
+
+
+def source_script() -> str:
+    """The CTA source-carrying script, in its `<script>` element (`_SRC_JS`)."""
+    return _SRC_JS
 
 
 def consume_params() -> None:

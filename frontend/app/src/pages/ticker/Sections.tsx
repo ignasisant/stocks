@@ -10,8 +10,18 @@
 
 import type { ReactNode } from "react";
 import { useT } from "../../shell/i18n";
+import { TickerCell } from "../../shell/tickers";
 import { InsiderFlow, FundExposure } from "./Charts";
-import { DASH, amount, orElse, percent } from "./format";
+import {
+  DASH,
+  compactMoney,
+  insiderPrice,
+  insiderValue,
+  orElse,
+  percent,
+  signed,
+  type Translate,
+} from "./format";
 import {
   Banner,
   Card,
@@ -123,10 +133,14 @@ export function MoatSection({ moat }: { moat: Moat }) {
       note={t("ticker.moat_caption", { years: moat.years })}
     >
       <Kpis>
+        {/* The band's tone from the server and the KPI's own description on
+            the tooltip — Streamlit's `verdict("moat")` chip and `kpi_desc`,
+            which is where the reader learns ≥70 is "wide". */}
         <Kpi
           label={t("ticker.moat_score")}
+          help={orElse(t, "kpi.moat.desc", "") || undefined}
           value={moat.score.toFixed(0)}
-          meta={moat.rating ? <Tag>{moat.rating}</Tag> : null}
+          meta={moat.rating ? <Tag tone={moat.rating_tone}>{moat.rating}</Tag> : null}
         />
       </Kpis>
       <ul className="tk-pillars">
@@ -202,7 +216,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
             value={String(summary.buy_count)}
             meta={
               summary.buy_value ? (
-                <Tag tone="green">{`+${amount(summary.buy_value, ccy)}`}</Tag>
+                <Tag tone="green">{`+${compactMoney(summary.buy_value, ccy ?? "USD")}`}</Tag>
               ) : null
             }
           />
@@ -211,13 +225,13 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
             value={String(summary.sell_count)}
             meta={
               summary.sell_value ? (
-                <Tag tone="red">{`-${amount(summary.sell_value, ccy)}`}</Tag>
+                <Tag tone="red">{`-${compactMoney(summary.sell_value, ccy ?? "USD")}`}</Tag>
               ) : null
             }
           />
           <Kpi
             label={t("ticker.net_window", { days: summary.window_days })}
-            value={amount(summary.net_value, ccy)}
+            value={compactMoney(summary.net_value, ccy ?? "USD")}
           />
           <Kpi
             label={t("ticker.distinct_buyers_sellers")}
@@ -246,22 +260,25 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
             >
               <p className="tk-stack-title">{trade.insider}</p>
               <Line label={t("ticker.col_date")} value={trade.date ?? DASH} />
-              {/* Untranslated, as on the Streamlit page: only Date/Shares/
-                  Price/Value have keys, and inventing two more here would make
-                  the two front ends read differently in Spanish. */}
+              {/* Untranslated, as on the Streamlit page: its table labels only
+                  Date/Shares/Price/Value, and Role is the filer's own words. */}
               <Line label="Role" value={trade.role} />
+              <Line label={t("ticker.col_type")} value={codeLabel(t, trade)} />
               <Line
                 label={t("ticker.col_shares")}
-                value={trade.shares.toLocaleString("en-US")}
+                value={signed(trade.shares, 0)}
                 tone={trade.shares >= 0 ? "green" : "red"}
               />
               {trade.price !== null ? (
-                <Line label={t("ticker.col_price")} value={trade.price.toFixed(2)} />
+                <Line
+                  label={t("ticker.col_price")}
+                  value={insiderPrice(trade.price, trade.currency)}
+                />
               ) : null}
               {trade.value !== null ? (
                 <Line
                   label={t("ticker.col_value")}
-                  value={amount(trade.value, trade.currency)}
+                  value={insiderValue(trade.value, trade.currency)}
                   tone={trade.value >= 0 ? "green" : "red"}
                 />
               ) : null}
@@ -276,6 +293,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
                 <th>{t("ticker.col_date")}</th>
                 <th>Insider</th>
                 <th>Role</th>
+                <th>{t("ticker.col_type")}</th>
                 <th>{t("ticker.col_shares")}</th>
                 <th>{t("ticker.col_price")}</th>
                 <th>{t("ticker.col_value")}</th>
@@ -287,10 +305,11 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
                   <td>{trade.date ?? DASH}</td>
                   <td>{trade.insider}</td>
                   <td className="tk-muted">{trade.role}</td>
+                  <td>{codeLabel(t, trade)}</td>
                   <td className={trade.shares >= 0 ? "tk-is-green" : "tk-is-red"}>
-                    {trade.shares.toLocaleString("en-US")}
+                    {signed(trade.shares, 0)}
                   </td>
-                  <td>{trade.price === null ? DASH : trade.price.toFixed(2)}</td>
+                  <td>{insiderPrice(trade.price, trade.currency)}</td>
                   <td
                     className={
                       trade.value === null
@@ -300,7 +319,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
                           : "tk-is-red"
                     }
                   >
-                    {amount(trade.value, trade.currency)}
+                    {insiderValue(trade.value, trade.currency)}
                   </td>
                 </tr>
               ))}
@@ -311,6 +330,15 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
       <Note>{t("ticker.signed_caption")}</Note>
     </Card>
   );
+}
+
+/**
+ * What kind of transaction a row is, in the reader's language: the catalog's
+ * word for the Form 4 code, then the English one the API sends, so a code this
+ * catalog has not heard of still reads as a word rather than a lone letter.
+ */
+function codeLabel(t: Translate, trade: Insiders["trades"][number]): string {
+  return orElse(t, `ticker.insider_code_${trade.code}`, trade.label || trade.code);
 }
 
 function Line({
@@ -376,7 +404,11 @@ function FundTiles({ fund }: { fund: Fund }) {
   const cell = (value: string) => (value === DASH ? na : value);
   const tiles: [string, string, string][] = [
     ["ticker.fund_ter", cell(percent(fund.expense_ratio, 2)), "ticker.fund_ter_help"],
-    ["ticker.fund_aum", cell(amount(fund.aum, fund.currency)), "ticker.fund_aum_help"],
+    [
+      "ticker.fund_aum",
+      cell(compactMoney(fund.aum, fund.currency)),
+      "ticker.fund_aum_help",
+    ],
     [
       "ticker.fund_yield",
       cell(percent(fund.dividend_yield, 2)),
@@ -423,7 +455,6 @@ function FundHoldings({ fund }: { fund: Fund }) {
           <thead>
             <tr>
               <th>{t("ticker.fund_holding")}</th>
-              <th />
               <th>{t("ticker.fund_weight")}</th>
             </tr>
           </thead>
@@ -431,14 +462,18 @@ function FundHoldings({ fund }: { fund: Fund }) {
             {fund.holdings.map((holding) => (
               <tr key={holding.symbol || holding.name}>
                 <td>
-                  {/* House rule: every symbol on screen opens its analysis. */}
+                  {/* House rule: every symbol on screen opens its analysis, and
+                      reads under the app's own name for it ("Nvidia"), as
+                      Streamlit's `ticker_cell` prints it — not Yahoo's
+                      "NVIDIA Corp", which would name one company two ways
+                      across two screens. A line Yahoo gives no symbol for has
+                      no page to open, so its own name is all there is. */}
                   {holding.symbol ? (
-                    <TickerLink ticker={holding.symbol} title={holding.name} />
+                    <TickerCell ticker={holding.symbol} />
                   ) : (
-                    DASH
+                    <span className="tk-muted">{holding.name || DASH}</span>
                   )}
                 </td>
-                <td className="tk-muted">{holding.name}</td>
                 {/* Weights arrive as fractions; scaling once, here. */}
                 <td>{percent(holding.weight, 2)}</td>
               </tr>

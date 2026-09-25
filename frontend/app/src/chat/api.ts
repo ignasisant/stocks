@@ -9,6 +9,7 @@
  */
 
 import { ApiError, NotSignedIn, get, retryAfter, send } from "../shell/api";
+import { keyHeaders } from "./sessionKey";
 import type {
   ChatState,
   Committed,
@@ -23,7 +24,51 @@ import type {
 
 const id = (cid: string) => encodeURIComponent(cid);
 
-export const readState = () => get<ChatState>("/chat/state");
+/** The error a failed response stands for — `shell/api`'s, for local fetches. */
+async function refusal(response: Response): Promise<never> {
+  if (response.status === 401) throw new NotSignedIn();
+  const detail = await response
+    .json()
+    .then((parsed: { detail?: string; reason?: string }) => parsed)
+    .catch(() => ({}) as { detail?: string; reason?: string });
+  throw new ApiError(
+    response.status,
+    detail.detail ?? response.statusText,
+    detail.reason,
+    retryAfter(response),
+  );
+}
+
+/**
+ * `shell/api`'s `get`/`send`, plus the tab's session-only key when it holds one.
+ *
+ * Only the calls whose answer depends on which key would serve go through
+ * here: the state (who answers), the settings patch (it answers with the
+ * state), the attachment read (the column mapper runs on the account's
+ * provider) and the walkthrough's advance (its one generated line). Everything
+ * else stays on the shell's helpers, so the key rides on as few requests as
+ * it can.
+ */
+export async function keyed<T>(
+  verb: "GET" | "POST" | "PATCH",
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const response = await fetch(`/api/v1${path}`, {
+    method: verb,
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      ...(verb === "GET" ? {} : { "Content-Type": "application/json" }),
+      ...keyHeaders(),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!response.ok) await refusal(response);
+  return (await response.json()) as T;
+}
+
+export const readState = () => keyed<ChatState>("GET", "/chat/state");
 
 export const readThreads = () =>
   get<{ conversations: Conversation[] }>("/chat/conversations").then(
@@ -42,7 +87,7 @@ export const dropThread = (cid: string) =>
   send<void>("DELETE", `/chat/conversations/${id(cid)}`);
 
 export const saveSettings = (body: SettingsPatch) =>
-  send<ChatState>("PATCH", "/chat/settings", body);
+  keyed<ChatState>("PATCH", "/chat/settings", body);
 
 /**
  * Read a statement attached to the thread. Writes no ledger rows.
@@ -56,7 +101,7 @@ export const readAttachment = (body: {
   content: string;
   conversation?: string;
   lang?: string;
-}) => send<Preview>("POST", "/chat/attachments", body);
+}) => keyed<Preview>("POST", "/chat/attachments", body);
 
 /**
  * Write the rows the preview showed.
@@ -110,6 +155,22 @@ export function asBase64(blob: Blob): Promise<string> {
  */
 export const storeKey = (provider: string, key: string) =>
   send<ChatState>("PUT", `/chat/keys/${id(provider)}`, { key });
+
+/**
+ * The stored key, in full — the Streamlit panel's "Show key".
+ *
+ * A POST with an empty body rather than a GET: the one request any page can
+ * make is a GET, and a secret has no business in a response a prefetch might
+ * cache. Session only on the server (a bearer token is refused), and the
+ * caller holds the answer in component state for as long as it is on screen
+ * and no longer.
+ */
+export const revealKey = (provider: string) =>
+  send<{ provider: string; key: string }>(
+    "POST",
+    `/chat/keys/${id(provider)}/reveal`,
+    {},
+  ).then((body) => body.key);
 
 /** Forget the stored key. 404 when there was none, which is not an error here. */
 export const forgetKey = (provider: string) =>
@@ -172,6 +233,10 @@ export async function ask(
     staged_import?: string;
     conversation?: string;
     lang?: string;
+    /** The page slug the reader is on, for the prompt's "Current view". */
+    view?: string;
+    /** The ticker on screen, so "is it cheap?" has an "it". */
+    focus?: string;
   },
   onMeta: (meta: Meta) => void,
   onText: (chunk: string) => void,
@@ -181,25 +246,18 @@ export async function ask(
   const response = await fetch("/api/v1/chat/messages", {
     method: "POST",
     credentials: "same-origin",
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      // A key held for this tab only, when there is one (`sessionKey.ts`).
+      ...keyHeaders(),
+    },
     body: JSON.stringify(body),
     // Aborting rejects both the fetch and the reader below, so a stop takes
     // effect between two chunks rather than at the end of the answer.
     signal,
   });
-  if (!response.ok) {
-    if (response.status === 401) throw new NotSignedIn();
-    const detail = await response
-      .json()
-      .then((parsed: { detail?: string; reason?: string }) => parsed)
-      .catch(() => ({}) as { detail?: string; reason?: string });
-    throw new ApiError(
-      response.status,
-      detail.detail ?? response.statusText,
-      detail.reason,
-      retryAfter(response),
-    );
-  }
+  if (!response.ok) await refusal(response);
 
   const reader = response.body?.getReader();
   if (!reader) throw new ApiError(response.status, "the response carried no body");

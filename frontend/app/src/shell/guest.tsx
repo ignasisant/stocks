@@ -20,10 +20,10 @@
  * and Portfolio waivers together.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useT } from "./i18n";
 import { useGuest, useSignIn } from "./session";
-import { BASE } from "./router";
+import { BASE, pagePath } from "./router";
 
 /**
  * Where the round trip should come back to: this document's own path.
@@ -37,11 +37,8 @@ import { BASE } from "./router";
 export function signInHref(target: string | null, here?: Location): string | null {
   if (!target) return null;
   const { pathname, search } = here ?? window.location;
-  const dev = "/next-assets";
-  const path = pathname.startsWith(dev)
-    ? BASE + pathname.slice(dev.length).replace(/\/$/, "")
-    : pathname;
-  return `${target}?next=${encodeURIComponent((path || BASE) + search)}`;
+  const page = pagePath(pathname);
+  return `${target}?next=${encodeURIComponent(`${BASE}/${page}${search}`)}`;
 }
 
 /**
@@ -94,9 +91,35 @@ export function SignedInOnly({
  * picks between them the same way; this is the same decision moved, not a new
  * one.
  */
+/**
+ * Whether a dismissible banner was put away in this tab.
+ *
+ * `sessionStorage`, because that is the lifetime Streamlit gives the same
+ * button (`guest_banner_dismissed` in session state): a guest has no account to
+ * remember a preference in, and the shared guest prefs.json is read-only — so
+ * the banner comes back on the next visit, which is right for a line that is
+ * the visitor's way to an account of their own.
+ */
+export function bannerDismissed(key: string, storage?: Storage | null): boolean {
+  try {
+    return (storage ?? window.sessionStorage).getItem(`bannerDismissed:${key}`) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function dismissBanner(key: string, storage?: Storage | null): void {
+  try {
+    (storage ?? window.sessionStorage).setItem(`bannerDismissed:${key}`, "1");
+  } catch {
+    // The banner still goes for this render; it will just be back on reload.
+  }
+}
+
 export function GuestBanner({
   text,
   short,
+  dismissible,
   children,
 }: {
   text: string;
@@ -109,16 +132,39 @@ export function GuestBanner({
    * not a new one.
    */
   short?: string;
+  /**
+   * Offer "Dismiss", remembered for this tab under this key. Home's welcome
+   * banner has one in Streamlit (`home.py`); the Portfolio's "these trades are
+   * invented" deliberately does not — every figure under it is fiction, and
+   * that is not a line to put away.
+   */
+  dismissible?: string;
   /** A second action beside the sign-in, where a page has one. */
   children?: ReactNode;
 }) {
   const t = useT();
   const signIn = useSignIn();
+  const [gone, setGone] = useState(() =>
+    dismissible ? bannerDismissed(dismissible) : false,
+  );
+  if (gone) return null;
   return (
     <div className="ag-note ag-guest">
       <p>{t(signIn || !short ? text : short)}</p>
       <SignIn />
       {children}
+      {dismissible ? (
+        <button
+          type="button"
+          className="ag-guest-dismiss"
+          onClick={() => {
+            dismissBanner(dismissible);
+            setGone(true);
+          }}
+        >
+          {t("home.dismiss")}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -157,15 +203,19 @@ export function SignInWall({
  * Mirrors what the Streamlit sidebar does for an anonymous visitor, which is
  * the specification for all of this: the rail and the search box are how a
  * visitor moves at all, feedback is offered to guests on purpose, the tour is
- * mounted but never opens itself at somebody who has not arrived anywhere yet,
+ * mounted but never opens itself at somebody who has not arrived anywhere yet
+ * (`?tour=1` opens it, with the steps that read somebody's own data locked),
  * and the chat drawer spends the operator's API keys and writes a file every
- * visitor would share.
+ * visitor would share. The investor-profile nudge is an account's, and voice
+ * dictation in feedback spends the transcription key a `Writer` route guards.
  */
 export const GUEST_CHROME = {
   nav: true,
   search: true,
   feedback: true,
-  /** Reachable, never automatic. */
-  tour: false,
+  /** Mounted, so `?tour=1` works — but it never opens itself for a guest. */
+  tour: true,
   chat: false,
+  profilePrompt: false,
+  dictation: false,
 } as const;

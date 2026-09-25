@@ -10,6 +10,7 @@ disagreeing about what a number says.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated, cast
 
 import pandas as pd
@@ -27,6 +28,11 @@ from stocks.analysis.fundamentals import (
     verdict,
 )
 from stocks.analysis.history import PERIODS, rangebreaks
+from stocks.analysis.listing import (
+    listing_currencies,
+    restate_position,
+    restate_trades,
+)
 from stocks.analysis.moat import PILLAR_WEIGHTS, moat_score
 from stocks.analysis.pe_history import DISPLAY_WINDOWS, window_stats
 from stocks.analysis.portfolio import market_live, session_quote
@@ -67,7 +73,7 @@ from stocks.data.bafin import insider_transactions as bafin_transactions
 from stocks.data.crypto import is_crypto, split_pair
 from stocks.data.estimates import estimate_currency, projection
 from stocks.data.funds import is_fund
-from stocks.data.insiders import summarize
+from stocks.data.insiders import CODE_LABELS, summarize
 from stocks.portfolio import platforms
 from stocks.portfolio.custody import UNKNOWN as BROKER_UNKNOWN
 from stocks.portfolio.custody import mix as custody_mix
@@ -215,15 +221,34 @@ def position(symbol: Symbol, account: Account, base: Base = None) -> TickerPosit
     ticker = symbol.strip().upper()
     db = str(account.db)
     mtime = loaders.db_mtime(db)
-    fills = _trades(db, mtime, ticker)
-    held = loaders.native_positions(db, mtime).get(ticker)
+    # The chart this answers for is the priced listing's series, and a
+    # watchlist alias can make that another venue than the one the shares
+    # were bought on (Revolut's dollar ASML, charted off the euro ASML.AS).
+    # The basis and the fills are restated into the listing's quote so they
+    # sit on the chart's axis (stocks.analysis.listing.restate_trades).
+    code = listing_currencies([ticker]).get(ticker)
+    fills = _trades(db, mtime, ticker, code)
+    held = restate_position(
+        loaders.native_positions(db, mtime).get(ticker),
+        loaders.ledger_state(db, mtime)[0],
+        code,
+    )
     if held is None:
         # Closed, or never opened. The fills still travel: a chart that forgets
         # where somebody entered is missing the only part of it that was theirs.
         return TickerPosition(ticker=ticker, held=False, trades=fills)
 
     ccy = reporting_currency(account, base)
-    table = loaders.positions_table(db, mtime, ccy)
+    # The book's pricing pass is the one network-bound step here, and the
+    # fills above do not need it. A throttled Yahoo must cost the reply its
+    # value and weight — Streamlit's `_position_values_safe` — not the whole
+    # answer: a 5xx here took every buy and sell marker off the chart with it.
+    try:
+        table = loaders.positions_table(db, mtime, ccy)
+    except Exception as exc:
+        obs.warn("api.position_value_failed", ticker=ticker,
+                 error_type=type(exc).__name__, error=str(exc)[:300])
+        table = pd.DataFrame()
     value = None
     weight = None
     if not table.empty and ticker in table.index:
@@ -392,8 +417,17 @@ def financials(symbol: Symbol) -> Financials:
     estimate_ccy = None
     if not annual.empty:
         raw_estimates = loaders.estimates(ticker)
-        estimate_ccy = estimate_currency(raw_estimates.earnings_estimate)
-        frame = projection(raw_estimates, int(annual.index[-1]))
+        # Revenue's currency first, EPS's as the fallback — the same order the
+        # Streamlit page asks in, so the two agree on which currency the
+        # consensus is in when only one table carries a code.
+        estimate_ccy = estimate_currency(
+            raw_estimates.revenue_estimate
+        ) or estimate_currency(raw_estimates.earnings_estimate)
+        frame = (
+            pd.DataFrame()
+            if _currency_clash(raw.info.get("financialCurrency"), estimate_ccy)
+            else projection(raw_estimates, int(annual.index[-1]))
+        )
         projected = [
             ProjectedRow(
                 period=str(period),
@@ -426,18 +460,37 @@ def financials(symbol: Symbol) -> Financials:
     )
 
 
-def _trades(db: str, mtime: float, ticker: str) -> list[Trade]:
+def _currency_clash(statements: str | None, estimates: str | None) -> bool:
+    """Are the statements and the consensus in different currencies?
+
+    An ADR is the case this exists for: TSMC files in TWD while its analysts
+    quote per USD ADS, so the "forecast" bar would sit next to the reported ones
+    thirty-odd times too short. Streamlit's `_projection` drops the whole path
+    then rather than converting it — a share-count ratio sits between the two as
+    well as a rate — and this route does the same, on the server, so no client
+    can forget the check and draw the cliff. Unknown on either side is not a
+    clash: most names carry no `financialCurrency` and are fine.
+    """
+    return bool(statements and estimates and statements != estimates)
+
+
+def _trades(
+    db: str, mtime: float, ticker: str, code: str | None = None
+) -> list[Trade]:
     """The caller's buys and sells of one name, chart-ready.
 
     Relabelling and split-scaling both live in `corporate.own_fills`, which the
     Streamlit page calls too — the two corrections are invisible when missing,
-    and one place to forget them is enough.
+    and one place to forget them is enough. `code` is the charted listing's
+    quote currency: the fills are priced in it first, so a dollar buy of a
+    name charted in euros marks the euro price it paid.
     """
     from stocks.portfolio.corporate import own_fills
 
+    rows = restate_trades(loaders.ledger_state(db, mtime)[0], ticker, code)
     return [
         Trade(date=f.date, action=f.action, price=f.price, quantity=f.quantity)
-        for f in own_fills(loaders.ledger_state(db, mtime)[0], ticker)
+        for f in own_fills(rows, ticker)
     ]
 
 
@@ -542,10 +595,16 @@ def valuation(symbol: Symbol) -> Valuation:
         for label, row in stats.iterrows()
     ] if stats is not None and not stats.empty else []
 
+    current = _num(result.get("current"))
+    # Banded here, like every other verdict: a client picking its own P/E
+    # thresholds is a second place for "expensive" to mean something else.
+    banded = verdict("pe_ttm", current)
     return Valuation(
         ticker=ticker,
         source=result.get("source"),
-        current=_num(result.get("current")),
+        current=current,
+        current_verdict=banded[0] if banded else None,
+        current_tone=banded[1] if banded else None,
         dates=[str(pd.Timestamp(ts).date()) for ts in series.index]
         if series is not None and not series.empty
         else [],
@@ -564,10 +623,14 @@ def moat(symbol: Symbol) -> Moat:
     """
     ticker = symbol.strip().upper()
     scored = moat_score(loaders.fundamentals(ticker))
+    # The tone off the same band table the KPI grid's verdicts use, so the chip
+    # is the colour Streamlit's `verdict("moat", …)` paints it.
+    banded = verdict("moat", scored.score)
     return Moat(
         ticker=ticker,
         score=_num(scored.score),
         rating=scored.rating,
+        rating_tone=banded[1] if banded else None,
         years=scored.years,
         pillars=[
             MoatPillar(
@@ -594,12 +657,26 @@ def insiders(symbol: Symbol) -> Insiders:
     ticker = symbol.strip().upper()
     trades = loaders.insiders(ticker)
     source = "SEC" if trades else None
+    filer = _sec_filer(ticker)
 
-    if not trades:
-        issuer = str(loaders.fundamentals(ticker).info.get("longName") or "").strip()
+    # BaFin only for a symbol the SEC has never heard of — Streamlit's rule. A
+    # US filer in a quiet quarter is an empty Form 4 list, not a German issuer,
+    # and asking BaFin by its name would spend a request and could match an
+    # unrelated company whose name happens to overlap.
+    if not trades and filer is False:
+        issuer = _issuer_name(ticker)
         if issuer:
             trades = bafin_transactions(ticker, issuer=issuer)
             source = "BaFin" if trades else None
+
+    # Newest first, undated last: the table shows the first thirty and a feed
+    # that arrives filing-ordered (or BaFin's publication order) would otherwise
+    # decide which thirty. `transactions_frame` sorts the Streamlit table the
+    # same way. The whole list still travels — the monthly flow chart and the
+    # summary read every row, as they do there.
+    trades = sorted(
+        trades, key=lambda t: (t.date is not None, t.date or date.min), reverse=True
+    )
 
     return Insiders(
         ticker=ticker,
@@ -611,18 +688,45 @@ def insiders(symbol: Symbol) -> Insiders:
                 insider=t.insider.title(),
                 role=t.relationship,
                 code=t.code,
+                label=CODE_LABELS.get(t.code, t.code),
                 # Signed so a table can sort and sum without re-deriving the
                 # direction from a separate flag.
                 shares=t.shares if t.acquired else -t.shares,
                 price=_num(t.price),
-                value=_num(t.value if t.acquired else -(t.value or 0.0)),
+                # Null with no notional, never a signed zero: a sale with no
+                # price printed as "-0" reads as a trade worth nothing, and
+                # Streamlit's frame leaves that cell blank.
+                value=_num(t.value if t.acquired else -t.value) if t.value else None,
                 is_open_market=t.is_open_market,
                 currency=getattr(t, "currency", None),
             )
             for t in trades
         ],
-        sec_filer=_sec_filer(ticker),
+        sec_filer=filer,
     )
+
+
+def _issuer_name(ticker: str) -> str | None:
+    """The company name BaFin's register is searched by.
+
+    Yahoo's `longName` first, as on the Streamlit page. Then its
+    `company_name()` fallback minus the watchlist leg: this route takes no
+    account — every figure on it is the company's — so a name somebody typed on
+    their own list is not available here, and the fund catalog and the SEC map
+    are what is left. Rarely reached: the common miss is Yahoo throttled, and a
+    German issuer is then usually still in neither list, in which case the card
+    says "not covered" rather than guessing.
+    """
+    issuer = str(loaders.fundamentals(ticker).info.get("longName") or "").strip()
+    if issuer:
+        return issuer
+    try:
+        from stocks.data.funds import fund_name
+
+        resolved = loaders.display_symbol(ticker)
+        return fund_name(resolved) or loaders.sec_title(resolved)
+    except Exception:
+        return None
 
 
 def _insider_summary(trades) -> InsiderSummary:

@@ -28,7 +28,6 @@ from stocks.web import (
     exports,
     i18n,
     onboarding,
-    server,
     tax_ui,
     watchlist_ui,
 )
@@ -535,24 +534,6 @@ with tab_prefs:
                 st.rerun()
         _ccy_cell.html(
             f'<span class="ag-morehint">{esc(" · ".join(_rest))}</span>'
-        )
-
-    # ------------------------------------------------------------- new app
-    # The rebuilt front end (frontend/app, served at /next). A link rather
-    # than a redirect, and only while the flag is on: the two front ends read
-    # the same API and the same files, so moving between them loses nothing,
-    # but which one a reader gets is their choice until the old one is retired.
-    if server.react_app_enabled():
-        _row(
-            _ui,
-            "nextapp",
-            tr("profile.next_app"),
-            tr("profile.next_app_caption"),
-            align="center",
-        ).link_button(
-            tr("profile.next_app_open"),
-            server.APP_PATH,
-            icon=":material/rocket_launch:",
         )
 
     # ---------------------------------------------------------- tax residence

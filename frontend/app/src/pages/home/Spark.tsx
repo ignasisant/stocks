@@ -13,7 +13,7 @@
  * simply a little shorter.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { get } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { useT, useLang } from "../../shell/i18n";
@@ -24,6 +24,9 @@ import type { History } from "./types";
 
 const WIDTH = 320;
 const HEIGHT = 56;
+
+/** Trailing days averaged into the SMA20 overlay — a calendar month of trading. */
+const SMA_WINDOW = 20;
 
 /**
  * The windows the selector offers, in the order they widen.
@@ -45,6 +48,8 @@ export function Spark({ nonce }: { nonce: number }) {
   const lang = useLang();
   const base = useCurrency();
   const [range, setRange] = useState<Range>("1m");
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const wrap = useRef<HTMLDivElement>(null);
   const query = useApi(
     () => get<History>("/portfolio/history", { base, window: range }),
     [base, nonce, range],
@@ -104,20 +109,65 @@ export function Spark({ nonce }: { nonce: number }) {
 
   const high = money(Math.max(...levels), base, lang);
   const low = money(floor, base, lang);
-  /** The day as one line: when, what it was worth, what went in, and the gap. */
-  const hover = (day: (typeof days)[number]) => {
+
+  // Trailing mean of the value line — undefined until the window has 20 days
+  // behind it, same warm-up gap the ticker chart's own SMA20 draws.
+  const sma20: (number | null)[] = days.map((_, index) => {
+    if (index < SMA_WINDOW - 1) return null;
+    let sum = 0;
+    for (let i = index - SMA_WINDOW + 1; i <= index; i += 1) sum += days[i]!.value;
+    return sum / SMA_WINDOW;
+  });
+  const smaPoints = sma20
+    .map((value, index) => (value === null ? null : `${x(index)},${y(value)}`))
+    .filter((point): point is string => point !== null)
+    .join(" ");
+
+  // The peak of the value line itself, not of whichever of the two series
+  // happens to be higher — "period max" is a claim about what the book was
+  // worth, not about what went into it.
+  const maxValue = Math.max(...days.map((day) => day.value));
+  const maxIndex = days.findIndex((day) => day.value === maxValue);
+
+  /**
+   * What Streamlit's unified hover label says about one day
+   * (`home.spark_hover_tmpl`), in the same order: worth (colored by gain or
+   * loss), what went in, and the gap between them as an amount and a percent.
+   */
+  const tipRows = (day: (typeof days)[number]) => {
+    const gain = day.value >= day.injected;
     const pnl = day.value - day.injected;
     const pct = day.injected
       ? percent(pnl / day.injected, lang, { signed: true })
       : null;
-    const gap = `${money(pnl, base, lang, { signed: true })}${pct ? ` (${pct})` : ""}`;
     return [
-      monthDay(day.date, t) ?? day.date,
-      `${t("home.chart_value")} ${money(day.value, base, lang)}`,
-      `${t("home.chart_injected")} ${money(day.injected, base, lang)}`,
-      gap,
-    ].join(" · ");
+      {
+        label: t("home.chart_value"),
+        value: money(day.value, base, lang),
+        color: gain ? token("up") : token("down"),
+      },
+      { label: t("home.chart_injected"), value: money(day.injected, base, lang) },
+      {
+        label: "",
+        value: `${money(pnl, base, lang, { signed: true })}${pct ? ` (${pct})` : ""}`,
+      },
+    ];
   };
+
+  /** Which day a pointer sits over, from its position over the plot. */
+  const dayAt = (clientX: number) => {
+    const box = wrap.current?.getBoundingClientRect();
+    if (!box || !box.width) return null;
+    const fraction = (clientX - box.left) / box.width;
+    return Math.max(
+      0,
+      Math.min(days.length - 1, Math.round(fraction * (days.length - 1))),
+    );
+  };
+
+  const hovered = hoverIndex === null ? null : days[hoverIndex];
+  const tipLeft = hoverIndex === null ? 0 : (x(hoverIndex) / WIDTH) * 100;
+
   return (
     <>
       <div className="hm-spark-head">{selector}</div>
@@ -133,58 +183,134 @@ export function Spark({ nonce }: { nonce: number }) {
           <span className="hm-spark-key hm-spark-value" />
           {t("home.chart_value")}
         </li>
+        {smaPoints ? (
+          <li>
+            <span className="hm-spark-key hm-spark-sma" />
+            {t("home.chart_sma20")}
+          </li>
+        ) : null}
+        <li>
+          <span className="hm-spark-key hm-spark-max" />
+          {t("home.chart_period_max")}: {money(maxValue, base, lang)}
+        </li>
       </ul>
-      <svg
-        className="hm-spark"
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        width="100%"
-        role="img"
-        aria-label={t("portfolio.injected_vs_value")}
-      >
-        {bands.map((band, index) => (
-          <path
-            key={index}
-            d={band.path}
-            fill={band.gain ? token("profit-band") : token("loss-band")}
-          />
-        ))}
-        <polyline
-          points={line((day) => day.injected)}
-          fill="none"
-          stroke={token("text-muted")}
-          strokeWidth="1"
-          strokeDasharray="3 2"
-        />
-        <polyline
-          points={line((day) => day.value)}
-          fill="none"
-          stroke={token("brand-accent")}
-          strokeWidth="1.5"
-        />
-        {/* One invisible column per day, each carrying a native <title>. The
-            Streamlit chart states the same three things in a Plotly
-            hovertemplate (`home.spark_hover_tmpl`); a browser tooltip makes
-            the claim without a tooltip library, a hover state or a re-render,
-            which at this size is the whole budget. */}
-        {days.map((day, index) => (
-          <rect
-            key={day.date}
-            x={index === 0 ? 0 : x(index) - WIDTH / (days.length - 1) / 2}
-            y={0}
-            width={WIDTH / (days.length - 1)}
-            height={HEIGHT}
-            fill="transparent"
+      {/* The plot and its scale side by side: the two extremes at the top and
+          bottom of the plot's right edge, where a y axis puts its ticks —
+          underneath it, next to each other, they read as the x axis. */}
+      <div className="hm-spark-plot">
+        {/* The wrap, not the svg, tracks the pointer: its rendered box is what
+          a clientX has to be read against, and it is what the floating tip
+          below is positioned inside. */}
+        <div
+          className="hm-spark-wrap"
+          ref={wrap}
+          onPointerMove={(event) => setHoverIndex(dayAt(event.clientX))}
+          onPointerLeave={() => setHoverIndex(null)}
+        >
+          {/* Stretched, not letterboxed: the viewBox is only a coordinate system
+            here, and `none` lets it fill whatever width the card has at the
+            fixed CSS height. The strokes opt out of the stretch
+            (`non-scaling-stroke`), so a line is as thick on a wide card as a
+            narrow one and its dashes do not smear sideways. */}
+          <svg
+            className="hm-spark"
+            viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+            preserveAspectRatio="none"
+            role="img"
+            aria-label={t("portfolio.injected_vs_value")}
           >
-            <title>{hover(day)}</title>
-          </rect>
-        ))}
-      </svg>
-      {/* The two ends of the scale, pinned to the window's own extremes as the
+            {bands.map((band, index) => (
+              <path
+                key={index}
+                d={band.path}
+                fill={band.gain ? token("profit-band") : token("loss-band")}
+              />
+            ))}
+            <polyline
+              points={line((day) => day.injected)}
+              fill="none"
+              stroke={token("text-muted")}
+              strokeWidth="1"
+              strokeDasharray="3 2"
+              vectorEffect="non-scaling-stroke"
+            />
+            <polyline
+              points={line((day) => day.value)}
+              fill="none"
+              stroke={token("brand-accent")}
+              strokeWidth="1.5"
+              vectorEffect="non-scaling-stroke"
+            />
+            {smaPoints ? (
+              <polyline
+                points={smaPoints}
+                fill="none"
+                stroke={token("sma-fast")}
+                strokeWidth="1"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            <line
+              x1={0}
+              x2={WIDTH}
+              y1={y(maxValue)}
+              y2={y(maxValue)}
+              stroke={token("text-faint")}
+              strokeDasharray="2 2"
+              strokeWidth="1"
+              vectorEffect="non-scaling-stroke"
+            />
+            <circle cx={x(maxIndex)} cy={y(maxValue)} r="2" fill={token("text-faint")} />
+            {hoverIndex !== null ? (
+              <line
+                x1={x(hoverIndex)}
+                x2={x(hoverIndex)}
+                y1={0}
+                y2={HEIGHT}
+                stroke={token("text-faint")}
+                strokeDasharray="2 2"
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="none"
+              />
+            ) : null}
+          </svg>
+          {/* Streamlit's unified hover label (`home.spark_hover_tmpl`), as a
+            positioned box rather than the browser's native `<title>` — which
+            only answered on the day under the cursor's own thin column, after
+            its own OS delay. */}
+          {hovered ? (
+            <div
+              className={
+                tipLeft > 55 ? "hm-spark-tip hm-spark-tip-flip" : "hm-spark-tip"
+              }
+              style={{ left: `${tipLeft}%` }}
+              role="status"
+            >
+              <span className="hm-spark-tip-title">
+                {monthDay(hovered.date, t) ?? hovered.date}
+              </span>
+              {tipRows(hovered).map((row, index) => (
+                <span className="hm-spark-tip-row" key={index}>
+                  {row.color ? (
+                    <span
+                      className="hm-spark-tip-swatch"
+                      style={{ background: row.color }}
+                    />
+                  ) : null}
+                  {row.label ? <span>{row.label}</span> : null}
+                  <strong>{row.value}</strong>
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        {/* The two ends of the scale, pinned to the window's own extremes as the
           Streamlit chart's ticks are: without them the line has a shape and no
           size, and a reader cannot tell a €200 swing from a €20k one. */}
-      <div className="hm-spark-scale">
-        <span>{high}</span>
-        <span>{low}</span>
+        <div className="hm-spark-scale">
+          <span>{high}</span>
+          <span>{low}</span>
+        </div>
       </div>
     </>
   );

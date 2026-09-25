@@ -44,5 +44,6 @@
   "notify.concentration_title": "Concentration",
   "notify.concentration": "Top {n} = {pct}% of the book",
   "notify.drift": "({pts} pt this week)",
-  "notify.effective": "behaves like {n} equal-sized names"
+  "notify.effective": "behaves like {n} equal-sized names",
+  "notify.tax_deadlines": "Tax deadlines, next 30 days"
 }

@@ -346,9 +346,10 @@ RELEASES: tuple[Release, ...] = (
         date="2026-09",
         items=(
             # One card for eight rebuilt screens, not eight cards: to the
-            # reader this is one thing — the app looks different — and the
-            # step it hands them to is the row in Profile that opens it.
-            News(slug="newapp", icon="rocket_launch", step="prefs"),
+            # reader this is one thing — the app looks different. No step:
+            # there is no one place to send them, they are already standing
+            # in it. The card says where the previous version went.
+            News(slug="newapp", icon="rocket_launch"),
         ),
     ),
 )

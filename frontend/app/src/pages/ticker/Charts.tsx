@@ -14,12 +14,12 @@ import { useT } from "../../shell/i18n";
 import { chart as palette } from "../../shell/theme";
 import {
   DASH,
+  barGrowth,
   compact,
   growthLabel,
   known,
   legend as legendOf,
   percent,
-  yoy,
 } from "./format";
 import {
   Chart,
@@ -150,15 +150,19 @@ function Annual({ data }: { data: Financials }) {
       : t("ticker.k_consensus");
   };
 
+  // Year-over-year per bar, the label Streamlit prints above each one. The
+  // first forecast bar is measured against the last *reported* year, and each
+  // later one against the forecast before it — see `barGrowth`.
+  const growth = bars.map((series) => barGrowth(series.values, years.length));
+
   const lines: TipLine[] = [];
   if (hover !== null) {
-    for (const series of bars) {
+    bars.forEach((series, slot) => {
       const value = series.values[hover];
-      const before = hover > 0 ? (series.values[hover - 1] ?? null) : null;
       lines.push({
-        text: `${series.label} ${compact(value)} ${growthLabel(yoy(value ?? null, before))}`.trim(),
+        text: `${series.label} ${compact(value)} ${growthLabel(growth[slot]?.[hover] ?? null)}`.trim(),
       });
-    }
+    });
     const point = eps[hover];
     if (known(point)) lines.push({ text: `EPS ${point.toFixed(2)}` });
     lines.push({ text: kindOf(hover) });
@@ -216,17 +220,34 @@ function Annual({ data }: { data: Financials }) {
             if (!known(value)) return null;
             const forecast = index >= years.length;
             const x = xOf(index) - (width * bars.length) / 2 + slot * width;
+            const label = growthLabel(growth[slot]?.[index] ?? null);
+            // Outside the bar, on the side away from zero, like Plotly's
+            // `textposition="outside"`: a loss's label hangs under it. Not on
+            // a phone: two bars per year at 390px leave ~12px each, and two
+            // "+12%" labels side by side overprint — the tooltip carries it.
+            const labelY = value >= 0 ? y(value) - 4 : y(value) + 11;
             return (
-              <rect
-                key={`${series.key}-${index}`}
-                x={x}
-                y={Math.min(y(value), y(0))}
-                width={Math.max(1, width - 2)}
-                height={Math.max(1, Math.abs(y(value) - y(0)))}
-                fill={forecast ? "url(#tk-forecast)" : series.color}
-                opacity={forecast ? 0.75 : 1}
-                stroke={forecast ? series.color : "none"}
-              />
+              <g key={`${series.key}-${index}`}>
+                <rect
+                  x={x}
+                  y={Math.min(y(value), y(0))}
+                  width={Math.max(1, width - 2)}
+                  height={Math.max(1, Math.abs(y(value) - y(0)))}
+                  fill={forecast ? "url(#tk-forecast)" : series.color}
+                  opacity={forecast ? 0.75 : 1}
+                  stroke={forecast ? series.color : "none"}
+                />
+                {label && !mobile ? (
+                  <text
+                    className="tk-bar-label"
+                    x={x + Math.max(1, width - 2) / 2}
+                    y={labelY}
+                    textAnchor="middle"
+                  >
+                    {label}
+                  </text>
+                ) : null}
+              </g>
             );
           }),
         )}
@@ -310,7 +331,10 @@ function Annual({ data }: { data: Financials }) {
       <Legend
         items={[
           ...bars.map((series) => ({
-            label: legendOf(series.label, series.values, t),
+            // Reported years only: the legend's "latest" and CAGR are claims
+            // about what was filed, and letting the consensus tail in would
+            // print next year's forecast as the company's latest revenue.
+            label: legendOf(series.label, series.values.slice(0, years.length), t),
             color: series.color,
           })),
           ...(epsPoints.length
@@ -565,6 +589,11 @@ export function ValuationChart({
           label={t("ticker.kpi_pe_current")}
           help={t("ticker.kpi_pe_current_help")}
           value={data.current === null ? DASH : data.current.toFixed(1)}
+          meta={
+            data.current_verdict ? (
+              <Tag tone={data.current_tone}>{data.current_verdict}</Tag>
+            ) : null
+          }
         />
         <Kpi
           label={t("ticker.kpi_pe_avg", { rng: window.window })}

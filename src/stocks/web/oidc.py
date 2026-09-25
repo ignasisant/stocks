@@ -24,13 +24,16 @@ from __future__ import annotations
 import hmac
 from functools import lru_cache
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit
 
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 from starlette.routing import Route
 
-from stocks import obs, session
+from stocks import accounts, obs, session
 from stocks.secrets_env import secret
+from stocks.web import attribution
 
 #: Google signs with RS256 today. The metadata says which algorithms it offers,
 #: and we intersect that list with this one rather than trusting it: a document
@@ -168,7 +171,11 @@ async def callback(request: Request) -> Response:
     """
     flow = session.open_flow(request.cookies) or {}
     target = _safe_next(str(flow.get("next") or "/"))
-    response = _home(request, target)
+    source = _source(target)
+    # The browser goes home to a clean URL: the token is recorded on the event
+    # and on the account, and a campaign parameter left in the address bar is
+    # one re-share away from attributing somebody else to this post.
+    response = _home(request, attribution.clean_target(target))
     _clear(response, session.FLOW_COOKIE, request)
 
     # Pressing Cancel at Google is the normal way not to sign in, not an error.
@@ -213,12 +220,59 @@ async def callback(request: Request) -> Response:
     cookie = session.mint(claims)
     if cookie is None:
         return response
+    if session.verified(claims.get("email_verified")):
+        await run_in_threadpool(
+            _provision, str(claims["email"]).strip().lower(), source
+        )
     _set(response, session.COOKIE, cookie, session.MAX_AGE, request)
     # A browser that signed in under the old build still carries Streamlit's
     # cookie. Ours wins, but leaving it would mean two answers to "who is this"
     # for thirty days.
     _clear_legacy(response, request)
     return response
+
+
+def _source(target: str) -> str:
+    """The campaign token that rode the round trip home inside `next`.
+
+    A sign-in leaves this origin for Google and comes back with Google as the
+    referrer, so the token the landing put on the CTA link would be lost here
+    if `server.LandingGate` had not folded it into `next` on the way out.
+    """
+    return attribution.source(dict(parse_qsl(urlsplit(target).query)))
+
+
+def _provision(email: str, source: str = "") -> None:
+    """Create the account this sign-in names, and date the sign-in.
+
+    What `web.auth.resolve_user` does for a Streamlit session, done here because
+    the React shell has no script run to do it in: without it, a brand-new
+    address signs in, asks the API for its book, gets "unknown account" and sees
+    the offline screen forever.
+
+    Only for a verified address — the same rule `session.signed_in_email` uses
+    to turn a cookie into an account, so nothing is created here that the
+    session could not later read. And never a reason to refuse the sign-in: the
+    identity checks all passed, and the API's signed-in path provisions again
+    by itself (`api.deps._session_account`), so a bucket outage now is a 503 on
+    the next request — which the shell can say — rather than a login that
+    silently did nothing.
+    """
+    try:
+        paths, seeded = accounts.provision(email, accounts.configured_owner())
+        kind = accounts.stamp_login(
+            paths, seeded=seeded, email=email, source=source
+        )
+    except Exception as exc:  # noqa: BLE001 — see the docstring
+        obs.error("auth.provision_failed", exc)
+        return
+    # The two events `web.telemetry.bind_run` emits for a Streamlit session,
+    # so a signup through the React shell is on the same log timeline.
+    user = accounts.slug(email)
+    obs.event("session.start", logged_in=True, user=user, via="oidc")
+    obs.event(
+        f"auth.{kind}", user=user, via="oidc", **({"src": source} if source else {})
+    )
 
 
 async def logout(request: Request) -> Response:

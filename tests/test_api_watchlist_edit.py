@@ -145,6 +145,29 @@ def test_clearing_shares_does_not_touch_the_cost_basis(client, account, signed_i
     assert entry["cost"] == 300.0
 
 
+def test_the_position_is_read_back_where_it_is_written(client, account, signed_in):
+    """Shares and average cost, which the Streamlit grid shows and edits. A
+    field the read side left out invited overwriting a stored value with zero;
+    unset reads as null, not 0, so an empty cell means one thing."""
+    patched = signed_in.patch(
+        "/v1/watchlist/MSFT", json={"shares": 12, "cost": 300.0}
+    ).json()
+    assert (patched["shares"], patched["cost"]) == (12, 300.0)
+    listed = client.get("/v1/watchlist", params=WHO, headers=AUTH).json()["entries"]
+    msft = next(e for e in listed if e["ticker"] == "MSFT")
+    assert (msft["shares"], msft["cost"]) == (12, 300.0)
+    aapl = next(e for e in listed if e["ticker"] == "AAPL")
+    assert (aapl["shares"], aapl["cost"]) == (None, None)
+
+
+def test_a_negative_position_is_refused(client, account, signed_in):
+    """The grid's `min_value=0`: a hand-typed row cannot express a short."""
+    assert (
+        signed_in.patch("/v1/watchlist/MSFT", json={"shares": -1}).status_code == 422
+    )
+    assert signed_in.patch("/v1/watchlist/MSFT", json={"cost": -5}).status_code == 422
+
+
 def test_an_empty_tag_list_removes_them_all(client, account, signed_in):
     assert signed_in.patch("/v1/watchlist/AAPL", json={"tags": []}).json()["tags"] == []
 

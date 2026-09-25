@@ -8,7 +8,7 @@ import { get } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { Loaded } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
-import { DASH, compact, orElse } from "./format";
+import { DASH, compactMoney, money, orElse } from "./format";
 import { Card, Metric, Metrics, Note, Scroll, Tag } from "./ui";
 import type { AssetStats, KpiSourceRow } from "./types";
 
@@ -21,15 +21,24 @@ export function AssetStatsSection({ stats }: { stats: AssetStats }) {
   const na = t("ticker.na");
   const cell = (value: string) => (value === DASH ? na : value);
   const rows: [string, string][] = [
-    [t("ticker.market_cap"), cell(compact(stats.market_cap, stats.quote))],
-    [t("ticker.volume_24h"), cell(compact(stats.volume_24h, stats.quote))],
-    [t("ticker.circulating_supply"), cell(compact(stats.circulating_supply))],
+    // `compact_money`, as Streamlit prints them: "€1.5T", "€40.7B" — the mark
+    // of the quote currency, one decimal. Supply is a count of coins, so it
+    // takes the same rounding with no mark at all.
+    [t("ticker.market_cap"), cell(compactMoney(stats.market_cap, stats.quote))],
+    [t("ticker.volume_24h"), cell(compactMoney(stats.volume_24h, stats.quote))],
+    [
+      t("ticker.circulating_supply"),
+      cell(compactMoney(stats.circulating_supply, null)),
+    ],
     [
       t("ticker.range_52w"),
       // Half a range is not a range: one end missing leaves nothing to read
       // between, so the row says "n/a" rather than printing a lone bound.
-      stats.low_52w !== null && stats.high_52w !== null
-        ? `${compact(stats.low_52w)} – ${compact(stats.high_52w)}`
+      // Full precision, as Streamlit prints it ("16,212 – 98,050"): the range
+      // of a coin is read against today's price, and "16.2K – 98.1K" loses the
+      // very digits that comparison needs.
+      stats.low_52w && stats.high_52w
+        ? `${money(stats.low_52w, 0)} – ${money(stats.high_52w, 0)}`
         : na,
     ],
   ];
@@ -82,12 +91,18 @@ export function KpiSourcesSection() {
                         <th>{t("kpi.col_level")}</th>
                         <th>{t("kpi.col_loaded")}</th>
                         <th>{t("kpi.col_verify")}</th>
+                        <th>{t("kpi.col_note")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.kpis.map((row) => (
                         <tr key={row.key}>
-                          <td title={row.desc}>{row.label}</td>
+                          {/* The catalog's name for the KPI, as Streamlit's
+                              `kpi_label` reads it; the API's English string is
+                              the fallback for a KPI nobody has translated. */}
+                          <td title={orElse(t, `kpi.${row.key}.desc`, row.desc)}>
+                            {orElse(t, `kpi.${row.key}.label`, row.label)}
+                          </td>
                           <td>
                             {/* Provenance, muted but never absent: a consensus
                                 figure shown bare wears a filing's authority. */}
@@ -97,6 +112,9 @@ export function KpiSourcesSection() {
                           </td>
                           <td className="tk-muted">{row.loader}</td>
                           <td className="tk-muted">{row.verify}</td>
+                          <td className="tk-muted">
+                            {row.note ? orElse(t, `kpi.${row.key}.note`, row.note) : ""}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

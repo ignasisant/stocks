@@ -77,6 +77,25 @@ jobs:
             exit 1
           fi
 
+  # The built shell in a real browser, against the real ASGI app with Yahoo,
+  # the model and the network sealed off (tests/e2e/serve.py). Runs on the
+  # committed bundle, which the frontend job proves is the one the sources build.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --frozen
+      - run: uv run playwright install --with-deps chromium
+      - run: uv run pytest -m e2e -q --tracing retain-on-failure --output test-results
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
+
   # Known-vulnerability scan over the locked dependency set. Runs on main and
   # weekly — not on PRs, so an upstream CVE never blocks unrelated work; the
   # red run on main is the signal to bump the pinned dependency.

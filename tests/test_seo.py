@@ -180,7 +180,7 @@ def test_robots_allows_the_landing_and_disallows_the_app():
     assert "Allow: /$" in body
     for path in (PATH_ES, PATH_EN_ES, PATH_ES_US):
         assert f"Allow: {path}" in body
-    for private in ("/portfolio", "/profile", "/import_transactions", "/_stcore/"):
+    for private in ("/portfolio", "/profile", "/import_transactions", "/legacy/"):
         assert f"Disallow: {private}" in body
     assert f"Sitemap: {BASE}/sitemap.xml" in body
 
@@ -264,15 +264,7 @@ def test_robots_disallows_every_app_page_it_can_see():
         assert f"Disallow: {prefix}" in body
 
 
-def test_robots_leaves_the_favicon_and_manifest_crawlable():
-    # Blocking a favicon is how a search result loses its icon; neither file is
-    # content, and both already carry noindex.
-    body = seo.robots_txt(BASE)
-    assert "Disallow: /favicon.png" not in body
-    assert "Disallow: /manifest.json" not in body
-
-
-def test_the_page_paths_track_the_app_pages_directory():
+def test_the_page_paths_track_the_navigation_table():
     paths = seo.app_page_paths()
     assert "/portfolio" in paths and "/ticker" in paths
     assert not any(p.startswith("/_") for p in paths)

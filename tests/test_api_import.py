@@ -59,6 +59,27 @@ def token(monkeypatch):
     monkeypatch.setenv("API_TOKEN", TOKEN)
 
 
+@pytest.fixture(autouse=True)
+def offline(monkeypatch, tmp_path):
+    """No Yahoo and no repo writes from the validation's live lookups.
+
+    Validation now asks the market what the Streamlit page asks it — does an
+    unfamiliar symbol trade, did an oversold ticker split — and files an
+    anonymised diagnostic for every attempt. Neither belongs in a unit test:
+    the lookups answer "could not check" and no splits unless a test says
+    otherwise, the memo starts empty, and diagnostics land in tmp rather than
+    in the checkout's data/imports.
+    """
+    from stocks.api.routes import import_statement
+    from stocks.portfolio import diagnostics
+
+    monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: None)
+    monkeypatch.setattr(import_statement.fetch, "splits", lambda ticker: [])
+    monkeypatch.setattr(import_statement, "_exists_memo", {})
+    monkeypatch.setattr(diagnostics, "DIAGNOSTICS_DIR", tmp_path / "diagnostics")
+    monkeypatch.setattr(diagnostics.storage, "persist", lambda path: None)
+
+
 @pytest.fixture
 def account(monkeypatch, tmp_path):
     users = tmp_path / "users"
@@ -99,6 +120,23 @@ def test_the_platforms_say_what_they_accept(client, account):
     assert {"revolut", "generic"} <= keys
     generic = next(p for p in payload["platforms"] if p["key"] == "generic")
     assert "csv" in generic["file_types"]
+
+
+def test_a_branded_platform_carries_its_logo_and_a_generic_one_none(
+    client, account, monkeypatch
+):
+    """The picker draws the brand mark beside the name, as Streamlit does; a
+    platform with no brand site gets no image rather than a broken one."""
+    from stocks.api import loaders
+
+    monkeypatch.setattr(
+        loaders, "brand_logo", lambda key: f"/app/static/logos/{key}.png"
+        if key == "revolut" else None
+    )
+    payload = client.get("/v1/import/platforms", params=WHO, headers=AUTH).json()
+    by_key = {p["key"]: p for p in payload["platforms"]}
+    assert by_key["revolut"]["logo"] == "/app/static/logos/revolut.png"
+    assert by_key["generic"]["logo"] is None
 
 
 # -------------------------------------------------------------------- preview
@@ -163,11 +201,151 @@ def test_content_that_is_not_base64_is_refused(client, account, signed_in):
 
 
 def test_an_oversized_statement_is_refused_before_it_is_parsed(
-    client, account, signed_in
+    client, account, signed_in, monkeypatch
 ):
-    huge = base64.b64encode(b"x" * (8 * 1024 * 1024 + 1)).decode()
+    # The cap shrunk for the test: sending 50 MB of base64 through a test
+    # client proves nothing a kilobyte does not.
+    from stocks.api.routes import import_statement
+
+    monkeypatch.setattr(import_statement, "MAX_BYTES", 1024)
+    huge = base64.b64encode(b"x" * 1025).decode()
     response = signed_in.post("/v1/import/preview", json=body() | {"content": huge})
     assert response.status_code == 413
+
+
+def test_the_cap_is_well_past_a_real_statement():
+    """Not 8 MB any more: a decade of activity as a PDF runs to tens."""
+    from stocks.api.routes import import_statement
+
+    assert import_statement.MAX_BYTES >= 50 * 1024 * 1024
+
+
+def test_a_statement_with_nothing_in_it_is_unreadable_not_empty(
+    client, account, signed_in
+):
+    """No transaction and not even a skipped line: a file from the wrong
+    platform or the wrong export. The page says "is this a … statement?", and
+    a preview of zero rows would say nothing."""
+    header_only = "date,ticker,action,quantity,price,currency,fee,note\n"
+    response = signed_in.post("/v1/import/preview", json=body(header_only))
+    assert response.status_code == 422
+    assert "no transactions" in response.json()["detail"]
+
+
+def test_a_symbol_the_market_quotes_carries_no_unknown_ticker_warning(
+    client, account, signed_in, monkeypatch
+):
+    """The page's live lookup, on this surface too: without it the same
+    statement read clean there and warned here."""
+    from stocks.api.routes import import_statement
+
+    unusual = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2024-01-02,ZZZQX.DE,buy,10,100.00,EUR,1.00,revolut Something\n"
+    )
+
+    def keys(payload):
+        return [i["key"] for i in payload["importable"][0]["issues"]]
+
+    blind = signed_in.post("/v1/import/preview", json=body(unusual)).json()
+    assert "validate.unknown_ticker" in keys(blind)
+
+    asked: list[str] = []
+    monkeypatch.setattr(
+        import_statement, "_ticker_exists", lambda t: asked.append(t) or True
+    )
+    seen = signed_in.post("/v1/import/preview", json=body(unusual)).json()
+    assert "validate.unknown_ticker" not in keys(seen)
+    signed_in.post("/v1/import/preview", json=body(unusual))
+    assert asked == ["ZZZQX.DE"], "a definite answer is remembered"
+
+
+def test_a_lookup_that_hangs_is_given_up_on(client, account, signed_in, monkeypatch):
+    """A worker thread is not a spinner: past the budget the answer is "could
+    not check", the warning stays, and the preview still comes back."""
+    import time as clock
+
+    from stocks.api.routes import import_statement
+
+    monkeypatch.setattr(import_statement, "LOOKUP_BUDGET_S", 0.05)
+    monkeypatch.setattr(
+        import_statement, "_ticker_exists", lambda t: clock.sleep(1) or True
+    )
+    unusual = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2024-01-02,ZZZQX.DE,buy,10,100.00,EUR,1.00,revolut Something\n"
+    )
+    payload = signed_in.post("/v1/import/preview", json=body(unusual)).json()
+    issues = [i["key"] for i in payload["importable"][0]["issues"]]
+    assert "validate.unknown_ticker" in issues
+    assert import_statement._exists_memo == {}, "a timeout is not remembered"
+
+
+def test_an_oversold_ticker_is_rescued_by_the_split_the_file_never_printed(
+    client, account, signed_in, monkeypatch
+):
+    """A statement of trades alone: 1 share bought, 20 sold after a 20:1. The
+    page adds the split row instead of rejecting the sell, and so does this."""
+    from stocks.api.routes import import_statement
+
+    monkeypatch.setattr(
+        import_statement.fetch, "splits", lambda t: [("2024-02-01", 20.0)]
+    )
+    split_hidden = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2024-01-02,AAPL,buy,1,2000.00,USD,0,revolut Apple\n"
+        "2024-03-01,AAPL,sell,20,110.00,USD,0,revolut Apple\n"
+    )
+    payload = signed_in.post("/v1/import/preview", json=body(split_hidden)).json()
+    assert payload["rejected"] == []
+    assert "split" in [row["action"] for row in payload["importable"]]
+
+
+def test_every_preview_files_an_anonymised_diagnostic(
+    client, account, signed_in, monkeypatch
+):
+    """What the page records — the parse failure, the empty file and the full
+    outcome — tagged with the door the file came through."""
+    from stocks.portfolio import diagnostics
+
+    filed: list[dict] = []
+    real = diagnostics.report
+
+    def spy(*args, **kwargs):
+        filed.append({"n": len(args), **kwargs})
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(diagnostics, "report", spy)
+    signed_in.post("/v1/import/preview", json=body())
+    signed_in.post("/v1/import/preview", json=body(surface="paste"))
+    header_only = "date,ticker,action,quantity,price,currency,fee,note\n"
+    signed_in.post("/v1/import/preview", json=body(header_only))
+    assert [f["surface"] for f in filed] == ["import", "paste", "import"]
+    assert filed[0]["n"] == 5, "the parse and the validation both travel"
+
+
+def test_a_commit_of_a_previewed_file_is_not_counted_twice(
+    client, account, signed_in, monkeypatch
+):
+    """`expect` means its preview already filed this upload. A blind commit is
+    the one attempt nothing else would record."""
+    from stocks.portfolio import diagnostics
+
+    filed: list[str] = []
+    monkeypatch.setattr(
+        diagnostics, "report", lambda *a, **k: filed.append(k["surface"]) or {}
+    )
+    digest = signed_in.post("/v1/import/preview", json=body()).json()["digest"]
+    assert filed == ["import"]
+    signed_in.post("/v1/import/commit", json=body(expect=digest))
+    assert filed == ["import"]
+    signed_in.post("/v1/import/commit", json=body(OVERSELL))
+    assert filed == ["import", "import"]
+
+
+def test_the_surface_is_one_of_the_two_doors(client, account, signed_in):
+    response = signed_in.post("/v1/import/preview", json=body(surface="email"))
+    assert response.status_code == 422
 
 
 # --------------------------------------------------------------------- commit
