@@ -25,9 +25,9 @@ Nothing here writes to the ledger; the Import page previews and commits.
 from __future__ import annotations
 
 from stocks.data.crypto import to_pair
-from stocks.portfolio import statement
+from stocks.portfolio import lexicon, statement
 from stocks.portfolio.ledger import Transaction
-from stocks.portfolio.statement import CsvFormat, ParseResult, Row, parse_date
+from stocks.portfolio.statement import CsvFormat, ParseResult, Row
 
 # Logical key -> accepted header names (lowercased); exports drift across
 # app versions, so matching is case-insensitive like the stock parser's.
@@ -42,39 +42,44 @@ _COLS = {
     "currency": ("currency", "fiat currency", "base currency"),
 }
 
-# Money-field symbol/code -> ISO currency, for statements without a currency
-# column. Checked against the raw price/value strings.
-_CCY_MARKS = (
-    ("€", "EUR"),
-    ("EUR", "EUR"),
-    ("£", "GBP"),
-    ("GBP", "GBP"),
-    ("US$", "USD"),
-    ("$", "USD"),
-    ("USD", "USD"),
-)
-
-
 def parse_csv(text: str) -> ParseResult:
     """Parse Revolut crypto-statement CSV text (no side effects)."""
     return statement.parse_csv(text, FORMAT)
 
 
 def _map_action(rtype: str) -> str | None:
-    t = rtype.upper()
-    if t.startswith("BUY"):
-        return "buy"
-    if t.startswith("SELL"):
-        return "sell"
-    return None  # send/receive/exchange/rewards — skipped with a reason
+    """Buy or sell, in whatever language the export was downloaded in.
+
+    Only those two: a crypto statement's other types are moves and rewards,
+    which carry no cost basis and are reported as skipped below. The words
+    themselves live in lexicon.py, so a Spanish "Compra" reads the same here
+    as an English "Buy" — matching on "BUY" alone is what made a whole
+    es-locale export import as zero rows.
+    """
+    action = lexicon.action_of(rtype)
+    return action if action in ("buy", "sell") else None
+
+
+# Type words that mean "coins arrived for free", in the languages the export
+# ships in — a reward is income, not a purchase. Checked before the plain
+# staking words below, because "Recompensa de staking" is both.
+_REWARD_WORDS = ("REWARD", "RECOMPENSA", "RECOMPENSE", "EARN", "LEARN",
+                 "INTEREST", "INTERES", "PREMIO", "BONUS", "AIRDROP")
+# Moving coins in or out of staking: the same coins, still yours, no price.
+_STAKE_WORDS = ("STAKING", "STAKE", "UNSTAK", "DELEGAT", "LOCK")
 
 
 def _skip_reason(rtype: str) -> str:
-    t = rtype.upper()
-    if any(k in t for k in ("REWARD", "STAKING", "LEARN")):
+    t = lexicon.plain(rtype).upper()
+    if any(k in t for k in _REWARD_WORDS):
         return (
             "reward — an acquisition at market value (taxable income in "
             "Spain); add manually as a buy at the reward-day price"
+        )
+    if any(k in t for k in _STAKE_WORDS):
+        return (
+            "moved in or out of staking — the same coins, no acquisition and "
+            "no disposal; nothing to import"
         )
     if "EXCHANGE" in t or "CONVERT" in t:
         return (
@@ -105,25 +110,19 @@ def _currency(row: Row) -> str:
     if explicit:
         return explicit
     for key in ("price", "value", "fee"):
-        v = row.upper(key)
-        for mark, ccy in _CCY_MARKS:
-            if mark in v:
-                return ccy
+        if found := lexicon.currency_of(row.text(key)):
+            return found
     return "USD"
 
 
 def _parse_any_date(value: str | None) -> str:
-    """ISO date from an ISO timestamp, or from the prose formats some crypto
-    exports use ("Jan 5, 2025, 2:31:41 PM")."""
-    try:
-        return parse_date(value)
-    except ValueError:
-        import pandas as pd
+    """ISO date from a timestamp or from the prose formats crypto apps use.
 
-        ts = pd.to_datetime((value or "").strip(), errors="coerce")
-        if pd.isna(ts):
-            raise ValueError(f"unrecognised date {value!r}") from None
-        return ts.date().isoformat()
+    Delegated whole to lexicon.iso_date: this used to fall back to pandas,
+    which reads "3 feb 2025" and rejects "3 abr 2025" — the same file, half
+    of it unreadable, because pandas' month names are English only.
+    """
+    return lexicon.iso_date(value)
 
 
 def _build_tx(row: Row, action: str) -> Transaction:

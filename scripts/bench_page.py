@@ -2,7 +2,7 @@
 
     uv run python scripts/bench_page.py home [--runs 3] [--profile] [--json out.json]
 
-Pages: home, sentiment, ticker (--ticker AAPL), portfolio, earnings, screener,
+Pages: home, sentiment, ticker (--ticker AAPL), portfolio, earnings, sector,
 profile, import_transactions. Run each page in its own process — a second
 AppTest in one process trips Streamlit's component registry.
 

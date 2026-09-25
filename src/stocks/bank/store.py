@@ -214,3 +214,53 @@ def record_fetch(
                 }
                 save(data, path)
                 return
+
+
+# --------------------------------------------------------------- balances
+# Banks report several balances per account — booked, available, on-hold,
+# forward-dated. The order below is what a person means by "how much is in
+# the account", and it lives here rather than in a page because both front
+# ends have to pick the same one or the same account reads two figures.
+BALANCE_PREFERENCE = ("CLBD", "ITAV", "CLAV", "XPCD", "OTHR")
+
+
+def pick_balance(balances: list[dict]) -> dict | None:
+    """The one balance to show, or None when the bank reported none."""
+    for wanted in BALANCE_PREFERENCE:
+        for entry in balances:
+            if str(entry.get("balance_type", "")).upper() == wanted:
+                return entry
+    return balances[0] if balances else None
+
+
+def balance_money(balances: list[dict]) -> tuple[float, str] | None:
+    """`(amount, currency)` of that balance, or None when it will not parse.
+
+    An unreadable amount is None rather than 0.0: a zero on screen is a claim
+    about somebody's money, and "we could not read it" is not that claim.
+    """
+    entry = pick_balance(balances)
+    if not entry:
+        return None
+    money = entry.get("balance_amount") or {}
+    try:
+        amount = float(money.get("amount", 0) or 0)
+    except (TypeError, ValueError):
+        return None
+    return amount, str(money.get("currency", "") or "")
+
+
+# A consent can die before the date the bank stated — revoked at the bank, or
+# cut short by the ASPSP. The date is what both front ends read to decide
+# whether to offer a refresh, so the way to record that is to backdate it.
+DEAD = "1970-01-01T00:00:00Z"
+
+
+def mark_expired(path: Path, session_id: str) -> None:
+    """Record a consent the API just refused, so the card offers a reconnect
+    instead of a button that cannot work."""
+    data = load(path)
+    for conn in data["connections"]:
+        if conn.get("session_id") == session_id:
+            conn["valid_until"] = DEAD
+    save(data, path)

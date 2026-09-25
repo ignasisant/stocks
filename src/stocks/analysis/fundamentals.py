@@ -254,6 +254,45 @@ KPI_SOURCES: dict[str, KpiSource] = {
 METRIC_ORDER = list(KPI_SOURCES)
 
 
+@dataclass(frozen=True)
+class Tile:
+    """One tile of the fundamentals grid a company page shows.
+
+    `KPI_SOURCES` is every KPI this toolkit computes — 23 of them, most of
+    which belong in a reference table rather than on a screen. This is the
+    handful a reader is shown, in the order they are shown, and it is here
+    rather than in a page because two front ends draw that grid now.
+
+    `label` and `help` are i18n *key names*, not strings: which string a tile
+    carries is a decision, the string itself is a translation, and a payload
+    that travels between a Spanish reader and an English one must carry the
+    first without picking the second. A client with no catalog entry falls
+    back to `KpiSource.label`, which is English and is better than a slug.
+    """
+
+    key: str  # into KPI_SOURCES
+    label: str  # i18n key for the tile's caption
+    help: str | None = None  # i18n key overriding KpiSource.desc as the tooltip
+
+
+# The company grid: valuation first, then returns, then the balance sheet, then
+# what the share count has been doing. Nine tiles, because a grid somebody has
+# to scan is a grid nobody reads.
+FUNDAMENTAL_TILES: tuple[Tile, ...] = (
+    Tile("pe_ttm", "ticker.kpi_pe_ttm"),
+    Tile("pe_fwd", "ticker.kpi_pe_fwd"),
+    # The one tooltip that is a warning rather than a definition: yfinance's
+    # PEG is unreliable and the page says so where it is read.
+    Tile("peg", "ticker.kpi_peg", "ticker.kpi_peg_help"),
+    Tile("ev_ebitda", "ticker.kpi_ev_ebitda"),
+    Tile("ev_sales", "ticker.kpi_ev_sales"),
+    Tile("roic", "ticker.kpi_roic"),
+    Tile("fcf_yield", "ticker.kpi_fcf_yield"),
+    Tile("net_debt_ebitda", "ticker.kpi_net_debt_ebitda"),
+    Tile("share_dilution", "ticker.kpi_dilution"),
+)
+
+
 def cagr(start: float | None, end: float | None, years: float) -> float | None:
     """Compound annual growth rate; None when undefined (sign flips, zeros)."""
     if not start or not end or years <= 0 or start <= 0 or end <= 0:

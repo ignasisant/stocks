@@ -10,6 +10,7 @@ table are stubbed.
 from __future__ import annotations
 
 import json
+import re
 
 import pandas as pd
 import pytest
@@ -317,3 +318,78 @@ def test_the_desktop_chart_keeps_every_other_month(page, paths, monkeypatch):
     portfolio_data.ledger_state.clear()
     axis = _figure(_monthly(page("ES")))["layout"]["xaxis"]
     assert axis["dtick"] == 2
+
+
+# --------------------------------------------------- every ejercicio at once
+# The selector's last option adds the finished years up: the question a single
+# year cannot answer — what this book has realized, and owed, since it started.
+
+
+def _options(at) -> list[str]:
+    """The fiscal-year control's labels, whichever widget rendered it."""
+    for group in at.get("button_group"):
+        # The other control on the card is the chart's granularity.
+        if set(group.options) != {"Year", "Month"}:
+            return list(group.options)
+    return list(at.selectbox(key="tax_year").options)
+
+
+def _summary(at) -> tuple[float, float]:
+    """The realized gains / deductible losses the summary line prints."""
+    line = next(
+        str(e.value) for e in at.caption if "Realized gains" in str(e.value)
+    )
+    gain, loss = (float(m.replace(",", "")) for m in re.findall(r"€([\d,]+)", line))
+    return gain, loss
+
+
+def _pick(at, year):
+    at.session_state["tax_year"] = year
+    at.run()
+    assert not at.exception, at.exception
+    return at
+
+
+def test_one_ejercicio_is_already_all_of_them_so_nothing_is_offered(page):
+    """TXS sells in 2026 only: an all-years option would be the same view."""
+    assert _options(page("ES")) == ["2026"]
+
+
+def test_several_ejercicios_offer_them_all_at_once_after_the_years(page, paths):
+    ledger.add_many(LONG_RUN, paths.db)
+    portfolio_data.ledger_state.clear()
+    assert _options(page("ES")) == ["2024", "2025", "2026", "All years"]
+
+
+def test_the_all_years_view_adds_the_finished_years_up(page, paths):
+    ledger.add_many(LONG_RUN, paths.db)
+    portfolio_data.ledger_state.clear()
+    at = page("ES")
+    years = [_summary(_pick(at, y)) for y in (2024, 2025, 2026)]
+    gain, loss = _summary(_pick(at, "all"))
+    # Each tile is rounded to the unit, so a euro per year is not a mismatch.
+    assert gain == pytest.approx(sum(g for g, _ in years), abs=3)
+    assert loss == pytest.approx(sum(loss for _, loss in years), abs=3)
+
+
+def test_the_all_years_view_says_it_is_a_history_not_a_base(page, paths):
+    ledger.add_many(LONG_RUN, paths.db)
+    portfolio_data.ledger_state.clear()
+    body = _text(_pick(page("ES"), "all"))
+    assert "Realized result — all years" in body
+    assert "not one taxable base" in body
+
+
+def test_every_year_s_disposals_are_in_the_one_table(page, paths):
+    ledger.add_many(LONG_RUN, paths.db)
+    portfolio_data.ledger_state.clear()
+    body = _text(_pick(page("ES"), "all"))
+    assert "2024-03-11" in body and "2026-03-05" in body
+
+
+def test_a_jurisdiction_that_writes_its_years_its_own_way_still_totals(page, paths):
+    """The UK's 2025/26 labels must not leak into the all-years heading."""
+    ledger.add_many(LONG_RUN, paths.db)
+    portfolio_data.ledger_state.clear()
+    assert "All years" in _options(page("UK"))
+    assert "Realized result — all years" in _text(_pick(page("UK"), "all"))

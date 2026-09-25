@@ -93,6 +93,12 @@ CANDLE_UP = "#7ED28C"    # bullish candles — DS success, mid step
 CANDLE_DOWN = "#F0897E"  # bearish candles — DS critical, mid step
 SMA_FAST = "#F2A33C"     # SMA20 overlay — DS chart amber (softer than WARN_ORANGE)
 SMA_SLOW = "#6E8FF0"     # SMA50 overlay + results markers — DS chart blue
+# The DS chart spec fixes two overlay hues, and the third average needs one the
+# eye reads as slower rather than as a third signal: neutral-400, the same step
+# the secondary text uses, sits under the amber/blue pair without competing
+# with them — and cannot be mistaken for a candle, the purple price line, or
+# the darker gridlines.
+SMA_LONG = "#B3AFBD"     # SMA200 overlay — neutral-400, the quiet trend line
 EVENT_LINE = TEXT_FAINT  # dashed corporate-event verticals + crosshair — neutral-600
 
 # Caution fills, from the Pulse canvas. WARN_COLOR is a text hue and burns on a
@@ -148,6 +154,14 @@ RADIUS_PILL = "9999px"  # delta pills
 # step. Plotly clamps it to half the bar width (thin monthly bars stay
 # square-ish) and rounds only the ends of a stack, never the joins inside it.
 BAR_RADIUS = 6
+
+# Type faces. config.toml hands these to Streamlit and `seo.FONTS_HREF` loads
+# them into every document the app serves, but a page that is not Streamlit has
+# to name the family itself — so it is a token, not a literal repeated per
+# front end. Each keeps its own fallback stack: the webfont arrives over the
+# network and the first paint must not be a different metric.
+FONT_BODY = "'Instrument Sans', system-ui, -apple-system, sans-serif"
+FONT_MONO = "'Martian Mono', ui-monospace, monospace"
 
 # Type scale — config.toml's headingFontSizes (28/22/18/16/14/12) extended
 # down with the three chrome steps the app needs. px, like the DS scale, so a
@@ -219,18 +233,15 @@ CATEGORICAL_COLORS = [
 BRAND_GOOGLE_TILE = "#FFFFFF"
 
 
-def ds_vars_css() -> str:
-    """`:root` custom properties for every token above, as a `<style>` block.
+def tokens() -> dict[str, str]:
+    """Every design token, by its `--ag-*` name without the prefix.
 
-    Our CSS lives in string literals scattered across pages, most of them plain
-    (non-f) triple-quoted blocks full of CSS braces — threading Python values
-    through them would mean escaping every `{`. Emitting the tokens once as
-    `--ag-*` custom properties instead lets that CSS read `var(--ag-border)`
-    and stay literal, while Python keeps a single source of truth. Custom
-    properties inherit into CCv2 shadow roots, so component `css=` blocks
-    resolve them too. app.py injects this before its own stylesheet.
+    The dict rather than the stylesheet, because not every consumer is CSS: a
+    chart built in JavaScript picks its colours from here, and a front end that
+    is not Streamlit reads it over HTTP (`api/routes/design.py`). One source of
+    truth, three renderings.
     """
-    tokens = {
+    return {
         # color — semantic
         "up": UP_COLOR, "down": DOWN_COLOR,
         "success-fill": SUCCESS_FILL, "down-fill": DOWN_FILL,
@@ -239,6 +250,10 @@ def ds_vars_css() -> str:
         "warn-fill": WARN_FILL, "warn-edge": WARN_EDGE,
         "warn-fill-soft": WARN_FILL_SOFT,
         "info": INFO_COLOR, "info-deep": INFO_DEEP,
+        # color — chart series. Published because a second front end draws
+        # these same series and must not keep its own copy of the hexes.
+        "candle-up": CANDLE_UP, "candle-down": CANDLE_DOWN,
+        "sma-fast": SMA_FAST, "sma-slow": SMA_SLOW, "sma-long": SMA_LONG,
         # color — brand
         "purple-900": PURPLE_900, "purple-800": PURPLE_800,
         "purple-700": PURPLE_700, "brand-cta": BRAND_CTA,
@@ -261,6 +276,7 @@ def ds_vars_css() -> str:
         "on-brand": ON_BRAND,
         # color — alpha variants
         "profit-band": PROFIT_BAND, "loss-band": LOSS_BAND,
+        "accent-band": ACCENT_BAND, "accent-area": ACCENT_AREA,
         "surface-sunken": SURFACE_SUNKEN, "rule-soft": RULE_SOFT,
         "surface-page-haze": SURFACE_PAGE_HAZE,
         "surface-page-veil": SURFACE_PAGE_VEIL,
@@ -278,14 +294,29 @@ def ds_vars_css() -> str:
         "radius-sm": RADIUS_SM,
         "radius-md": RADIUS_MD, "radius-lg": RADIUS_LG,
         "radius-pill": RADIUS_PILL,
-        # type scale
+        # type
+        "font-body": FONT_BODY, "font-mono": FONT_MONO,
         "fs-2xs": FS_2XS, "fs-xs": FS_XS, "fs-sm": FS_SM,
         "fs-md": FS_MD, "fs-base": FS_BASE, "fs-lg": FS_LG, "fs-xl": FS_XL,
         "fs-2xl": FS_2XL, "fs-3xl": FS_3XL, "fs-display": FS_DISPLAY,
         # icon
         "icon-nav": ICON_NAV,
     }
-    body = "".join(f"--ag-{k}:{v};" for k, v in tokens.items())
+
+
+def ds_vars_css() -> str:
+    """`:root` custom properties for every token, as a `<style>` block.
+
+    Our CSS lives in string literals scattered across pages, most of them plain
+    (non-f) triple-quoted blocks full of CSS braces — threading Python values
+    through them would mean escaping every `{`. Emitting the tokens once as
+    `--ag-*` custom properties instead lets that CSS read `var(--ag-border)`
+    and stay literal, while Python keeps a single source of truth. Custom
+    properties inherit into CCv2 shadow roots, so component `css=` blocks
+    resolve them too. app.py injects this before its own stylesheet, and
+    `landing_static` inlines it into the plain HTML documents.
+    """
+    body = "".join(f"--ag-{k}:{v};" for k, v in tokens().items())
     return f"<style>:root{{{body}}}</style>"
 
 

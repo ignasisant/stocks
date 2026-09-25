@@ -17,8 +17,9 @@ Two things shape how this is written:
   has no widget layer to put a button in anyway. Every CTA is an anchor
   carrying a query parameter, and any query parameter on `/` is what tells
   `server.py` to hand the request to Streamlit instead of the landing —
-  `?signin=1` then makes `consume_params()` call `st.login()`, `?guest=1`
-  drops the visitor straight into the app as a guest.
+  `?signin=1` is taken by `server.LandingGate`, which bounces the visitor
+  into the app's own sign-in, `?guest=1` drops them straight into the app
+  as a guest.
 * **Phones get a fixed CTA bar, not a squeezed header.** The page is very
   long, so the sign-in call to action leaves the top bar on narrow viewports
   and reappears as a fixed bottom bar (`.ag-l-mbar`) that follows the reader
@@ -37,7 +38,6 @@ from contextvars import ContextVar
 import streamlit as st
 
 from stocks.portfolio import tax
-from stocks.web import auth
 from stocks.web.i18n import DEFAULT_LANG, LANGUAGES, has, translate
 from stocks.web.markup import esc
 
@@ -2037,6 +2037,38 @@ _BAR_JS = """
 """
 
 
+# Carry the source token from the landing's own URL onto the CTA links, so the
+# click that leaves for the app says where the reader came from. It has to
+# happen in the browser: the document is one cached string per language and
+# host (`landing_static.document`), and a per-request token would give every
+# campaign its own copy of ~90KB.
+#
+# `web.attribution` owns the vocabulary — the parameter name and the shape of a
+# token are asserted equal on both sides in `tests/test_attribution.py`, so this
+# cannot quietly drift into forwarding something the server then drops.
+#
+# No "less-than" character in here either: same sanitiser, same rule.
+_SRC_JS = """
+<script>
+(function () {
+  try {
+    const q = new URLSearchParams(location.search);
+    const raw = q.get("utm_source") || q.get("src") || q.get("ref") || "";
+    const src = raw
+      .toLowerCase()
+      .replace(/[^a-z0-9._+-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 32);
+    if (!src) return;
+    document.querySelectorAll('a[href^="/?"]').forEach((a) => {
+      a.setAttribute("href", a.getAttribute("href") + "&src=" + encodeURIComponent(src));
+    });
+  } catch (e) {}
+})();
+</script>
+"""
+
+
 def _mobile_css_body() -> str:
     """The phone rules again, at a wider breakpoint, for User-Agent gating.
 
@@ -2078,6 +2110,11 @@ def bar_script() -> str:
     return _BAR_JS
 
 
+def source_script() -> str:
+    """The CTA source-carrying script, in its `<script>` element (`_SRC_JS`)."""
+    return _SRC_JS
+
+
 def consume_params() -> None:
     """Act on the landing CTAs' query parameters. Called once per app rerun.
 
@@ -2100,16 +2137,10 @@ def consume_params() -> None:
     if params.get(PARAM_GUEST):
         del params[PARAM_GUEST]  # in-session rerun; nothing else to keep
 
-    # Guarded on the session, not just the parameter: st.login() redirects, and
-    # the parameter can survive the round trip — an unguarded call would then
-    # bounce an already-signed-in visitor back to Google on every rerun.
-    if params.get(PARAM_SIGNIN) and "auth" in st.secrets and not auth.is_logged_in():
-        st.login()
-        # st.login() only enqueues the redirect; without the stop, the rest of
-        # the run keeps rendering into a page the browser is abandoning, and
-        # the aborted chunk loads flash module-import errors until Google
-        # takes over.
-        st.stop()
+    # `?signin=1` is answered by `server.LandingGate`, one layer up, where a
+    # redirect is an actual 302 rather than a message enqueued mid-render. The
+    # parameter and every CTA that carries it are unchanged; a request only
+    # reaches this function once the gate has decided not to act on it.
 
 
 def page_body() -> str:

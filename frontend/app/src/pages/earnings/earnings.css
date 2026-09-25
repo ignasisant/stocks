@@ -1,0 +1,698 @@
+/*
+ * The calendar's own rules. Every colour, radius and type size is an `--ag-*`
+ * custom property the document already carries, so this page and the Streamlit
+ * one it replaces cannot drift — the grid below is the same chip palette
+ * `ds.calendar_css("earn", …)` writes, expressed as CSS grid instead of a
+ * table because the chips no longer have to travel back to Python.
+ *
+ * No hex literals. A colour written here is a colour the design system does
+ * not know about, and it will be wrong in one of the two themes.
+ */
+
+.earn-title {
+  font-size: var(--ag-fs-2xl);
+  margin: 0 0 1rem;
+}
+
+.earn-h2 {
+  font-size: var(--ag-fs-md);
+  margin: 0 0 0.5rem;
+}
+
+.earn-warn {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--ag-warn-edge);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-warn-fill);
+  color: var(--ag-text-primary);
+}
+
+.earn-skipped {
+  margin: 1.25rem 0 0;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-faint);
+}
+
+.earn-legend {
+  margin: 0.75rem 0 0;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+}
+
+.earn-empty {
+  max-width: 34rem;
+  padding: 1.25rem 1.4rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-secondary);
+}
+
+/* ------------------------------------------------------- switcher and pills */
+
+.earn-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.earn-seg {
+  display: inline-flex;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  overflow: hidden;
+}
+
+.earn-seg button {
+  padding: 0.35rem 0.95rem;
+  border: none;
+  background: transparent;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  cursor: pointer;
+}
+
+.earn-seg button[aria-pressed="true"] {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-primary);
+}
+
+.earn-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.earn-pill {
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  cursor: pointer;
+}
+
+.earn-pill:hover {
+  color: var(--ag-text-primary);
+}
+
+.earn-pill[aria-pressed="true"] {
+  border-color: var(--ag-brand-accent);
+  background: var(--ag-purple-800);
+  color: var(--ag-text-primary);
+}
+
+/* ------------------------------------------------------------- the month nav */
+
+.earn-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.6rem;
+}
+
+.earn-nav .ag-btn {
+  line-height: 1;
+  cursor: pointer;
+}
+
+.earn-month {
+  flex: 1;
+  margin: 0 0 0 0.5rem;
+  font-size: var(--ag-fs-lg);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------- the month grid */
+
+.earn-cal-scroll {
+  overflow-x: auto;
+}
+
+.earn-cal {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.earn-wd {
+  padding: 0 0.35rem 0.2rem;
+  font-size: var(--ag-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ag-text-muted);
+}
+
+.earn-day {
+  min-height: 96px;
+  padding: 0.3rem 0.35rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  min-width: 0;
+}
+
+.earn-day.dim {
+  background: var(--ag-surface-sunken);
+}
+
+.earn-day.today {
+  border-color: var(--ag-brand-accent);
+  background: var(--ag-purple-900);
+}
+
+.earn-daynum {
+  margin-bottom: 3px;
+  font-size: var(--ag-fs-xs);
+  font-weight: 600;
+  color: var(--ag-text-faint);
+}
+
+.earn-day.today .earn-daynum {
+  color: var(--ag-purple-400);
+}
+
+/* A chip is a link (an upcoming print) or a button (a past one); both are
+   reset to the same box so the grid reads as one row of chips either way. */
+.earn-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  margin: 2px 0;
+  padding: 1px 5px;
+  border: none;
+  border-radius: var(--ag-radius-xs);
+  background: var(--ag-purple-800);
+  color: var(--ag-purple-300);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  font-weight: 600;
+  line-height: 1.55;
+  text-align: left;
+  text-decoration: none;
+}
+
+.earn-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.earn-chip.soon {
+  background: var(--ag-loss-band);
+  color: var(--ag-down);
+}
+
+.earn-chip.beat {
+  background: var(--ag-profit-band);
+  color: var(--ag-up);
+}
+
+.earn-chip.miss {
+  background: var(--ag-loss-band);
+  color: var(--ag-down);
+}
+
+/* Last, so the hover state wins on a clickable chip whichever verdict class
+   it also carries. */
+.earn-chip.past {
+  cursor: pointer;
+}
+
+.earn-chip.past:hover {
+  background: var(--ag-purple-700);
+  color: var(--ag-text-primary);
+}
+
+/* ---------------------------------------------------------------- the tables */
+
+.earn-block {
+  margin: 0 0 1.5rem;
+}
+
+.earn-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ag-fs-sm);
+}
+
+.earn-table th {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--ag-border);
+  font-size: var(--ag-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: right;
+  color: var(--ag-text-muted);
+}
+
+.earn-table td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid var(--ag-rule-soft);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.earn-table th.left,
+.earn-table td.left {
+  text-align: left;
+}
+
+.earn-ticker {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.earn-ticker:hover {
+  color: var(--ag-brand-accent);
+}
+
+.earn-name {
+  max-width: 16rem;
+  overflow: hidden;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.earn-up {
+  color: var(--ag-up);
+}
+
+.earn-down {
+  color: var(--ag-down);
+}
+
+.earn-flat {
+  color: var(--ag-text-faint);
+}
+
+/* ---------------------------------------------------------------- the dialog */
+
+.earn-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: var(--ag-surface-page-veil);
+}
+
+/* Wide enough for the GAAP line-item table and three tiles abreast — the
+   Streamlit dialog opens `width="large"` for the same reason — and tall only
+   up to the viewport: the breakdown scrolls inside the card, so the scrim and
+   the Close button stay where the reader left them. */
+.earn-modal-card {
+  width: 100%;
+  max-width: 46rem;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-overlay);
+}
+
+.earn-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.earn-modal-date {
+  margin-top: 2px;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-muted);
+}
+
+.earn-close {
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  cursor: pointer;
+}
+
+.earn-tiles {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
+.earn-tile {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-sunken);
+}
+
+.earn-tile-label {
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+}
+
+.earn-tile-value {
+  font-size: var(--ag-fs-xl);
+  font-weight: 700;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.earn-tile-label.tip {
+  text-decoration: underline dotted var(--ag-text-faint);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+/* ------------------------------------------------------- the dialog, header */
+
+.earn-modal-id {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+/* An opaque plate behind the mark, as the ticker page's header has it: a
+   transparent brand logo drawn straight on the dark card disappears. */
+.earn-modal-logo {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 5px;
+  box-sizing: border-box;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-text-primary);
+  object-fit: contain;
+}
+
+.earn-modal-name {
+  font-size: var(--ag-fs-md);
+  color: var(--ag-text-secondary);
+}
+
+/* ----------------------------------------------------- the dialog, sections */
+
+/* A verdict chip on a tile or a gauge: green up, red down, grey unknown. The
+   tone class (`earn-up` / `earn-down` / `earn-flat`) sets the ink; the fill
+   is keyed off the same class below. */
+.earn-verdict {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 7px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-card);
+  font-size: var(--ag-fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.earn-verdict.earn-up {
+  background: var(--ag-profit-band);
+}
+
+.earn-verdict.earn-down {
+  background: var(--ag-loss-band);
+}
+
+.earn-verdict.earn-flat {
+  color: var(--ag-text-muted);
+}
+
+.earn-sec {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ag-border);
+}
+
+.earn-sec > .earn-tiles,
+.earn-sec > .earn-meters {
+  margin-bottom: 0.75rem;
+}
+
+.earn-sec-title {
+  font-size: var(--ag-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ag-text-faint);
+}
+
+.earn-sec-sub {
+  margin: 3px 0 10px;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-muted);
+}
+
+.earn-caption {
+  margin: 0.6rem 0 0.4rem;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+}
+
+.earn-bars {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 7px 10px;
+  align-items: center;
+}
+
+/* Each row lends its three cells to the parent grid, so every label column
+   and every figure column lines up across the stack. */
+.earn-bar-row {
+  display: contents;
+}
+
+.earn-bar-label,
+.earn-bar-value {
+  font-size: var(--ag-fs-xs);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.earn-bar-label {
+  color: var(--ag-text-muted);
+}
+
+.earn-bar-value {
+  text-align: right;
+  color: var(--ag-text-secondary);
+}
+
+.earn-track {
+  display: block;
+  height: 10px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-sunken);
+}
+
+.earn-fill {
+  display: block;
+  height: 10px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-info-deep);
+}
+
+.earn-fill.now {
+  background: var(--ag-brand-accent);
+}
+
+.earn-fill.beat {
+  background: var(--ag-success-fill);
+}
+
+.earn-fill.miss {
+  background: var(--ag-critical-fill);
+}
+
+.earn-meters {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.earn-meter,
+.earn-range {
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-sunken);
+}
+
+.earn-meter-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 7px;
+  margin: 2px 0 7px;
+}
+
+.earn-meter-value {
+  font-size: var(--ag-fs-lg);
+  font-weight: 700;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.earn-meter-track {
+  display: block;
+  height: 6px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-border);
+}
+
+.earn-meter-fill {
+  display: block;
+  height: 6px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-brand-accent);
+}
+
+.earn-range {
+  margin-bottom: 8px;
+}
+
+.earn-range-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.earn-range-note {
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+}
+
+.earn-range-band {
+  position: relative;
+  display: block;
+  height: 8px;
+  margin-top: 9px;
+  border-radius: var(--ag-radius-pill);
+  background: linear-gradient(90deg, var(--ag-info-deep), var(--ag-brand-accent));
+}
+
+/* The consensus mean, a tick standing proud of the band. */
+.earn-range-mark {
+  position: absolute;
+  top: -4px;
+  width: 3px;
+  height: 16px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--ag-text-primary);
+}
+
+.earn-range-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.earn-detail {
+  margin-top: 0.6rem;
+}
+
+.earn-detail summary {
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-muted);
+  cursor: pointer;
+}
+
+.earn-detail summary:hover {
+  color: var(--ag-text-primary);
+}
+
+/* The GAAP grid is eight columns: on a phone it scrolls, it does not squash. */
+.earn-detail-scroll {
+  margin-top: 0.4rem;
+  overflow-x: auto;
+}
+
+.earn-detail .earn-table td,
+.earn-detail .earn-table th {
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------ chip + list */
+
+.earn-chip img {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  object-fit: contain;
+}
+
+/* Phones default to the list, but the grid stays one tap away — and seven
+   columns at 390px squeeze a day to ~55px, so it scrolls sideways instead of
+   ellipsizing every chip to nothing. */
+@media (max-width: 640px) {
+  .earn-cal {
+    min-width: 34rem;
+  }
+
+  .earn-day {
+    min-height: 72px;
+  }
+}
+
+/* ------------------------------------------------------------ tax deadlines */
+
+.earn-tax-warn {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--ag-warn-edge);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-warn-fill-soft);
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+}
+
+.earn-tax-warn p {
+  margin: 0;
+}
+
+.earn-tax-warn p + p {
+  margin-top: 0.4rem;
+}
+
+.earn-tax-warn strong {
+  color: var(--ag-text-primary);
+}
+
+/* A deadline is not a link: nothing to open, the title carries the detail. */
+.earn-chip.tax {
+  background: var(--ag-warn-fill);
+  color: var(--ag-warn);
+  cursor: help;
+}
+
+.earn-tax-soon td {
+  color: var(--ag-warn);
+}

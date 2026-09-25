@@ -13,6 +13,7 @@ import json
 
 import pytest
 
+from stocks import identity
 from stocks.data import edgar, fetch, symbols
 from stocks.web import logos
 
@@ -148,8 +149,10 @@ def test_the_logo_is_probed_under_the_resolved_symbol(monkeypatch):
     monkeypatch.setattr(
         symbols, "_quotes", lambda query, count: quotes(("NOW", "NYSE"))
     )
+    # Patched on `stocks.identity`, which is where the resolution and the
+    # mirror call live; `logos.logo` is the script-run cache around it.
     monkeypatch.setattr(
-        logos, "mirror_logo", lambda ticker, d: asked.append(ticker) or "NOW.png"
+        identity, "mirror_logo", lambda ticker, d: asked.append(ticker) or "NOW.png"
     )
     logos.logo.clear()
     logos.logo("US81762P1021")

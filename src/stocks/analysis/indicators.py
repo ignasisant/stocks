@@ -33,6 +33,7 @@ def add_indicators(df: pd.DataFrame, price_col: str = "Close") -> pd.DataFrame:
     out = df.copy()
     out["SMA20"] = sma(out[price_col], 20)
     out["SMA50"] = sma(out[price_col], 50)
+    out["SMA200"] = sma(out[price_col], 200)
     out["EMA20"] = ema(out[price_col], 20)
     out["RSI14"] = rsi(out[price_col], 14)
     out["Return"] = daily_returns(out[price_col])

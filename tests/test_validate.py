@@ -294,3 +294,25 @@ def test_issues_carry_a_catalog_key_and_its_parameters():
     issue = v.rejected[0].errors[0]
     assert issue.key == "validate.oversell"
     assert issue.params["quantity"] == "5" and issue.params["held"] == "1.0000"
+
+
+# --------------------------------------------------------------- crypto pairs
+
+def test_a_long_coin_pair_is_not_a_malformed_ticker():
+    """CHILLGUY-EUR is eight characters of coin; the symbol rule stops at six."""
+    result = ParseResult(transactions=[
+        Transaction(date="2025-05-08", ticker="CHILLGUY-EUR", action="buy",
+                    quantity=9302.5, price=0.05, currency="EUR"),
+    ])
+    checked = validate(result, [], known=set())
+    assert not checked.rejected
+    assert [tx.ticker for tx in checked.importable] == ["CHILLGUY-EUR"]
+
+
+def test_a_curated_coin_needs_no_watchlist_entry():
+    result = ParseResult(transactions=[
+        Transaction(date="2025-02-03", ticker="SOL-EUR", action="buy",
+                    quantity=5.14, price=194.37, currency="EUR"),
+    ])
+    checked = validate(result, [], known=set())
+    assert not checked.flagged  # no "unknown ticker": crypto is never in EDGAR

@@ -9,11 +9,21 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "anthropic>=0.69",
-    "authlib>=1.3.2",
+    # The OIDC client behind our own sign-in (web/oidc.py). Floor is 1.8 because
+    # `create_authorization_url` returns the code verifier there, and PKCE is
+    # opt-in through `code_challenge_method` rather than sniffed from metadata.
+    "authlib>=1.8",
     "boto3>=1.35",
     "cryptography>=43",
     "ddgs>=9.15.0",
+    "fastapi>=0.120",
     "google-genai>=1.0",
+    # Both arrive transitively today — httpx through the LLM clients, itsdangerous
+    # through Streamlit. The session cookie is signed with itsdangerous and the
+    # OIDC client talks over httpx, so neither may depend on a package we are in
+    # the middle of shedding.
+    "httpx>=0.28",
+    "itsdangerous>=2.2",
     "lxml>=6.1.1",
     "model2vec>=0.9.0",
     "openai>=1.60",
@@ -28,6 +38,10 @@ dependencies = [
     "streamlit>=1.60.0",
     "tiktoken>=0.14.0",
     "trafilatura>=2.2.0",
+    # The server (stocks.web.server is a plain Starlette app since Streamlit
+    # moved to /legacy). Streamlit brings it too, which is exactly why it is
+    # named here: it has to outlive that dependency.
+    "uvicorn>=0.53",
     "yfinance>=1.5.2",
 ]
 
@@ -45,6 +59,10 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The browser tests (tests/e2e) need Chromium, which `uv sync` does not
+# install; they run on request: `uv run pytest -m e2e`. A later `-m` wins.
+addopts = ["-m", "not e2e"]
+markers = ["e2e: drives the built app in a real browser (tests/e2e)"]
 
 # Type checking. The whole of src/stocks is checked and CI keeps it that way,
 # so a new package is covered the day it lands — there is no include list left
@@ -66,6 +84,7 @@ select = ["E", "F", "I", "UP", "B"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-playwright>=0.9.0",
     "ruff>=0.16.0",
     "ty>=0.0.1a21",
     "watchdog>=6.0.0",

@@ -21,6 +21,7 @@ from yfinance.exceptions import YFRateLimitError
 
 from stocks import obs
 from stocks.analysis.fundamentals import (
+    FUNDAMENTAL_TILES,
     KPI_SOURCES,
     annual_financials,
     comp_medals,
@@ -31,9 +32,13 @@ from stocks.analysis.fundamentals import (
     verdict,
     verdict_md,
 )
-from stocks.analysis.indicators import add_indicators
+from stocks.analysis.history import PERIODS, price_history, rangebreaks
 from stocks.analysis.moat import PILLAR_WEIGHTS, MoatScore, moat_score
-from stocks.analysis.pe_history import pe_vs_history, window_stats
+from stocks.analysis.pe_history import (
+    DISPLAY_WINDOWS,
+    pe_vs_history,
+    window_stats,
+)
 from stocks.config import currency_symbol, load_watchlist
 from stocks.data.bafin import insider_transactions as bafin_transactions
 from stocks.data.crypto import is_crypto, split_pair
@@ -86,6 +91,7 @@ from stocks.web.widgets import (
     RADIUS_SM,
     RADIUS_XS,
     SMA_FAST,
+    SMA_LONG,
     SMA_SLOW,
     SUCCESS_FILL,
     SURFACE_PAGE,
@@ -143,82 +149,24 @@ if st.query_params.get("ticker") != ticker:
 
 # label -> (yfinance fetch period, interval). Short ranges use intraday bars
 # so the candles have enough points to be readable. The fetch period is longer
-# than the display window so SMA20/50 (and RSI) have warm-up bars before the
-# range starts and the lines span the whole chart; _trim cuts the frame back
-# to the label's window after the indicators are computed.
-PERIODS = {
-    "1d": ("5d", "5m"),
-    "1w": ("1mo", "30m"),
-    "1m": ("6mo", "1d"),
-    "3m": ("1y", "1d"),
-    "6m": ("1y", "1d"),
-    "1y": ("2y", "1d"),
-    "2y": ("5y", "1d"),
-    "5y": ("10y", "1d"),
-}
-
-# Display window per label for the daily-interval ranges, anchored at the
-# last bar. Intraday labels (1d/1w) trim by trading session instead.
-_WINDOW = {
-    "1m": pd.DateOffset(months=1),
-    "3m": pd.DateOffset(months=3),
-    "6m": pd.DateOffset(months=6),
-    "1y": pd.DateOffset(years=1),
-    "2y": pd.DateOffset(years=2),
-    "5y": pd.DateOffset(years=5),
-}
-
-
-def _trim(df: pd.DataFrame, label: str) -> pd.DataFrame:
-    """Cut an extended-history frame back to the label's display window."""
-    if df.empty:
-        return df
-    if label in ("1d", "1w"):
-        sessions = frames.sessions(df)
-        keep = sessions.unique()[-1 if label == "1d" else -5:]
-        return df[sessions >= keep[0]]
-    return df[df.index >= df.index[-1] - _WINDOW[label]]
+# than the display window so SMA20/50/200 (and RSI) have warm-up bars before
+# the range starts and the lines span the whole chart; _trim cuts the frame
+# back to the label's window after the indicators are computed.
 
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _history(t: str, label: str) -> pd.DataFrame:
-    period, interval = PERIODS[label]
-    df = _trim(add_indicators(fetch_history(t, period=period, interval=interval)), label)
-    # Plotly.js has no timezone support: keep exchange-local wall time so the
-    # hour-based rangebreaks below line up with what the axis shows.
-    if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
-        df.index = df.index.tz_localize(None)
-    return df
+    """`analysis.history.price_history`, cached per (ticker, range label).
 
-
-def _rangebreaks(df: pd.DataFrame, interval: str) -> list[dict]:
-    """Axis breaks hiding closed-market time so candles render contiguous.
-
-    Weekends and holidays come from the days actually missing in the data,
-    overnight hours (intraday bars only) from the observed session open/close
-    — so US and EU tickers both work without an exchange calendar. Markets
-    with weekend bars (crypto) get no breaks at all.
+    The shaping itself — how much history each label downloads, where it is
+    trimmed back to, which indicator columns come with it — is shared with the
+    HTTP API, so the two front ends cannot draw different bars for the same
+    range.
     """
-    if df.empty or (frames.weekdays(df) >= 5).any():
-        return []
-    breaks = [dict(bounds=["sat", "mon"])]
-    sessions = frames.sessions(df).unique()
-    holidays = pd.bdate_range(sessions[0], sessions[-1]).difference(sessions)
-    if len(holidays):
-        breaks.append(dict(values=holidays.tolist()))
-    if interval.endswith(("m", "h")):
-        t = df.index.to_series()
-        day = t.dt.normalize()
-        hours = t.dt.hour + t.dt.minute / 60
-        open_h = hours.groupby(day).min().median()
-        close_h = (
-            hours.groupby(day).max()
-            + cast(pd.Timedelta, pd.Timedelta(interval))
-            / cast(pd.Timedelta, pd.Timedelta(hours=1))
-        ).median()
-        if close_h != open_h:
-            breaks.append(dict(bounds=[close_h % 24, open_h], pattern="hour"))
-    return breaks
+    return price_history(t, label)
+
+
+_rangebreaks = rangebreaks
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
@@ -331,6 +279,31 @@ def _held(db: str, mtime: float):
         obs.warn("ticker.positions_failed", db=db, mtime=mtime,
                  error_type=type(exc).__name__, error=str(exc)[:300])
         return {}
+
+
+@st.cache_data(show_spinner=False, max_entries=64)
+def _on_listing(db: str, mtime: float, ticker: str):
+    """(fills, open position) of `ticker`, in the charted listing's quote.
+
+    The chart is the priced listing's series, and a watchlist alias can make
+    that another venue than the one the shares were bought on — Revolut's
+    dollar ASML, charted off the euro ASML.AS. The buy markers, the average
+    cost line and the value/P&L tiles beside the chart are restated into the
+    listing's currency at each trade date's rate, so none of them reads the
+    FX gap as a move (stocks.analysis.listing). Identical to the ledger's own
+    figures whenever the two currencies agree, which is nearly always.
+    Cached: the fragment reruns on every period switch.
+    """
+    from stocks.analysis.listing import (
+        listing_currencies,
+        restate_position,
+        restate_trades,
+    )
+
+    code = listing_currencies([ticker]).get(ticker)
+    ledger = _ledger(db, mtime)
+    fills = corporate.own_fills(restate_trades(ledger, ticker, code), ticker)
+    return fills, restate_position(_held(db, mtime).get(ticker), ledger, code)
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
@@ -677,15 +650,10 @@ def _price_section(ticker: str) -> None:
         return
     db = str(auth.db_path())
     db_mt = db_mtime(db)
-    ledger_txs = _ledger(db, db_mt)
-    my_trades = [
-        t for t in ledger_txs if t.ticker == ticker and t.action in ("buy", "sell")
-    ]
-    # Ledger prices are as-traded, Yahoo's bars are split-adjusted. Every use of
-    # a trade against this chart goes through corporate.on_market_scale first,
-    # or a pre-split buy plots twenty times above the candles it belongs on.
-    split_factors = corporate.split_factors(ledger_txs)
-    my_pos = _held(db, db_mt).get(ticker)
+    # Already relabelled and already split-scaled — see corporate.own_fills for
+    # why both matter and why forgetting either one draws nothing at all — and
+    # priced in the charted listing's quote (`_on_listing`).
+    my_trades, my_pos = _on_listing(db, db_mt, ticker)
 
     last = float(df["Close"].iloc[-1])
     prev = float(df["Close"].iloc[-2])
@@ -844,6 +812,15 @@ def _price_section(ticker: str) -> None:
             hovertemplate=hover_dim("SMA50") + "  <b>%{y:,.2f}</b><extra></extra>",
         )
     )
+    # The slowest average is the one a long window is read against, so it is
+    # drawn even where its warm-up leaves a gap — Plotly skips the nulls.
+    fig.add_trace(
+        go.Scatter(
+            x=df.index, y=df["SMA200"], name="SMA200",
+            line=dict(color=SMA_LONG, width=1.5),
+            hovertemplate=hover_dim("SMA200") + "  <b>%{y:,.2f}</b><extra></extra>",
+        )
+    )
 
     # Your own buys/sells from the imported ledger, at trade date × trade price.
     if my_trades:
@@ -867,7 +844,8 @@ def _price_section(ticker: str) -> None:
             ]
             if not pts:
                 continue
-            scaled = [corporate.on_market_scale(t, split_factors) for t, _ in pts]
+            # own_fills already put these on today's share scale.
+            scaled = [(t.price, t.quantity) for t, _ in pts]
             if action == "buy":
                 # Per-buy return vs today's close, plus the position's average
                 # cost so each lot can be compared against the blended entry.
@@ -975,7 +953,7 @@ def _price_section(ticker: str) -> None:
     buys = [t for t in my_trades if t.action == "buy" and t.price]
     if buys:
         last_buy = max(buys, key=lambda t: t.date)
-        buy_price, buy_qty = corporate.on_market_scale(last_buy, split_factors)
+        buy_price, buy_qty = last_buy.price, last_buy.quantity
         pct = (last / buy_price - 1) * 100 if buy_price else 0.0
         if _MOBILE:
             pct_md = (
@@ -1660,16 +1638,12 @@ with _fund_card.container(border=True):
         # One HTML grid, not nine Streamlit tiles: the verdict has to sit on
         # the value's line to be unmistakably ITS verdict, and Streamlit's
         # wrapping metric row can't do that (see kpi_grid_html).
+        # Which tiles, in which order, is `fundamentals.FUNDAMENTAL_TILES` —
+        # the React page draws the same nine from the same table, so neither
+        # front end can quietly grow a tenth the other does not have.
         st.html(kpi_grid_html([
-            _kpi(tr("ticker.kpi_pe_ttm"), "pe_ttm"),
-            _kpi(tr("ticker.kpi_pe_fwd"), "pe_fwd"),
-            _kpi(tr("ticker.kpi_peg"), "peg", help=tr("ticker.kpi_peg_help")),
-            _kpi(tr("ticker.kpi_ev_ebitda"), "ev_ebitda"),
-            _kpi(tr("ticker.kpi_ev_sales"), "ev_sales"),
-            _kpi(tr("ticker.kpi_roic"), "roic"),
-            _kpi(tr("ticker.kpi_fcf_yield"), "fcf_yield"),
-            _kpi(tr("ticker.kpi_net_debt_ebitda"), "net_debt_ebitda"),
-            _kpi(tr("ticker.kpi_dilution"), "share_dilution"),
+            _kpi(tr(tile.label), tile.key, help=tr(tile.help) if tile.help else None)
+            for tile in FUNDAMENTAL_TILES
         ]))
 
         if mets.get("market_cap") and mets.get("currency") == "USD":
@@ -1694,7 +1668,8 @@ with _fund_card.container(border=True):
 
 # ------------------------------------------------------- valuation history
 # Display window per range label, in calendar days (window_stats convention).
-_PE_RANGES = {"1y": 365, "3y": 1095, "5y": 1825, "10y": 3650}
+# Shared with the API, which offers the same four to the React page.
+_PE_RANGES = DISPLAY_WINDOWS
 
 
 @st.cache_data(ttl=3600, show_spinner=False)

@@ -14,7 +14,6 @@ table and the ledger-history chart load concurrently on a full rerun.
 from __future__ import annotations
 
 import math
-from collections import defaultdict
 from datetime import date
 from typing import cast
 from urllib.error import URLError
@@ -24,6 +23,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from yfinance.exceptions import YFRateLimitError
 
+from stocks import session
 from stocks.analysis.portfolio import (
     analyze,
     annualized_return,
@@ -35,17 +35,17 @@ from stocks.analysis.portfolio import (
     flow_series,
     holdings_from_positions,
     market_active,
-    market_value_weights_base,
     max_drawdown,
     money_weighted_return,
     portfolio_returns,
     priced_totals,
+    rebase_report,
     top_n_weight,
     us_extended_session,
     us_market_open,
 )
 from stocks.config import currency_symbol
-from stocks.portfolio import custody, demo, dividends, fees
+from stocks.portfolio import custody, demo, dividends, fees, tax
 from stocks.portfolio.tax import month_range
 from stocks.web import auth, empty, notices, skeletons, tax_ui, yfit_slot
 from stocks.web.i18n import t as tr
@@ -156,11 +156,11 @@ if GUEST:
     with st.container(horizontal=True, vertical_alignment="center"):
         st.info(tr("portfolio.guest_demo_banner"), icon=":material/science:")
         if auth.auth_configured():
-            st.button(
+            st.link_button(
                 tr("common.sign_in_google"),
+                session.LOGIN_PATH,
                 key="portfolio_guest_login",
                 icon=":material/login:",
-                on_click=auth.login,
             )
 elif demo.active(auth.db_path()):
     with st.container(horizontal=True, vertical_alignment="center"):
@@ -700,7 +700,9 @@ if tab_risk.open:
                     twr_win = twr[twr.index >= win_start]
                     mwr = (
                         money_weighted_return(
-                            hist["value"], flow_series(txs), start=win_start
+                            hist["value"],
+                            flow_series(txs, base=REPORT_CCY),
+                            start=win_start,
                         )
                         if not hist.empty
                         else float("nan")
@@ -766,6 +768,11 @@ if tab_risk.open:
                     risk_kpis.container().warning(tr("portfolio.report_failed"))
                     rep = None
                 if rep is not None:
+                    # Weights AND returns on the reporting currency's footing,
+                    # benchmarks converted to match — the shared recipe, so
+                    # this tab and `/portfolio/risk` cannot report two
+                    # different volatilities for one book.
+                    rep = rebase_report(rep, positions, REPORT_CCY, period)
                     if choice == FROM_START:
                         start = pd.Timestamp(first_tx)
 
@@ -775,14 +782,13 @@ if tab_risk.open:
                                 idx = idx.tz_localize(None)
                             return obj[idx >= start]
 
+                        # After the rebase, not before: it rebuilds `returns`
+                        # from the full window and would undo the slice.
                         rep.returns = _since(rep.returns)
                         rep.bench_returns = {
                             b: _since(r) for b, r in rep.bench_returns.items()}
-                    # Put weights on one currency's footing, then rebuild the
-                    # portfolio return series.
-                    rep.weights = market_value_weights_base(
-                        positions, rep.prices, rep.meta, REPORT_CCY)
-                    rep.port_returns = portfolio_returns(rep.returns, rep.weights)
+                        rep.port_returns = portfolio_returns(
+                            rep.returns, rep.weights)
 
                     with risk_kpis.container():
                         st.html(kpi_grid_html([
@@ -949,9 +955,9 @@ if tab_tax.open:
         _code, _ccy = _jur.code, _jur.currency
         # Germany exempts 30% of a fund's result, so the settings carry which
         # holdings are funds (from the learned quoteType cache, no fetch).
-        _tset = tax_ui.with_funds(
-            tax_ui.settings(), {t.ticker for t in txs}
-        )
+        # Under the replay's labels, not the ledger's: the exemption is applied
+        # by testing a sale's ticker against this set (see tax.labels).
+        _tset = tax_ui.with_funds(tax_ui.settings(), tax.labels(txs))
         _sym = tax_ui.symbol(_ccy)
         # The jurisdiction picks the matching rule as well as the currency:
         # a UK replay pools shares, so its parcels are not the FIFO ones the
@@ -971,10 +977,9 @@ if tab_tax.open:
                 preview_kw={"rows": 4, "cols": 5},
             )
         else:
-            buy_dates: dict[str, list[str]] = defaultdict(list)
-            for t in txs:
-                if t.action == "buy":
-                    buy_dates[t.ticker].append(t.date)
+            # Relabelled inside, because a RealizedSale carries the replay's
+            # label and the raw ledger does not — see tax.buy_dates.
+            buy_dates = tax.buy_dates(txs)
             year_ty = {
                 y: _jur.fiscal_year(tax_realized, y, buy_dates, _tset)
                 for y in sorted(sell_years)
@@ -1105,23 +1110,54 @@ if tab_tax.open:
                         st.caption(tax_ui.t(_code, "realized_by_month_caption"))
 
             with st.container(border=True):
+                # One more option beside the years: every ejercicio at once,
+                # for the question a single year cannot answer — what this
+                # book has realized, and been taxed, since it started. It is
+                # a sum of finished years (tax.total_of), never a replay of
+                # the whole ledger as one period: allowances reset and the
+                # brackets restart every year, so one long period would tax
+                # a decade of gains up a single scale.
+                ALL_YEARS = "all"
+                # A single ejercicio is already "all of them": no option.
+                _all = [ALL_YEARS] if len(sell_years) > 1 else []
+
+                def _year_opt(v) -> str:
+                    return (
+                        tr("portfolio.all_years")
+                        if v == ALL_YEARS
+                        else _jur.year_label(v)
+                    )
+
                 # Few ejercicios read faster as buttons than as a dropdown.
-                if len(sell_years) <= 3:
+                if len(sell_years) + len(_all) <= 4:
                     year = st.segmented_control(
-                        tax_ui.t(_code, "fiscal_year"), sorted(sell_years),
+                        tax_ui.t(_code, "fiscal_year"),
+                        sorted(sell_years) + _all,
                         default=max(sell_years), key="tax_year",
-                        format_func=_jur.year_label,
+                        format_func=_year_opt,
                     ) or max(sell_years)
                 else:
+                    # Newest first, the way the dropdown opens on it; the
+                    # all-years entry sits at the bottom, after the years.
                     year = st.selectbox(
-                        tax_ui.t(_code, "fiscal_year"), sell_years,
-                        key="tax_year", format_func=_jur.year_label)
-                ty = year_ty[year]
+                        tax_ui.t(_code, "fiscal_year"), sell_years + _all,
+                        key="tax_year", format_func=_year_opt)
+                if year == ALL_YEARS:
+                    ty = tax.total_of(year_ty[y] for y in sorted(sell_years))
+                else:
+                    ty = year_ty[year]
 
                 st.subheader(
-                    tax_ui.t(_code, "tax_header", year=_jur.year_label(year))
+                    tax_ui.t(_code, "all_years_header")
+                    if year == ALL_YEARS
+                    else tax_ui.t(_code, "tax_header",
+                                  year=_jur.year_label(year))
                 )
-                st.caption(tax_ui.t(_code, "tax_caption"))
+                st.caption(
+                    tax_ui.t(_code, "all_years_caption")
+                    if year == ALL_YEARS
+                    else tax_ui.t(_code, "tax_caption")
+                )
                 # The browser named a country this app does not model, so
                 # everything above and below is another country's law applied
                 # to this book. Say it here, where the wrong numbers are, not

@@ -27,28 +27,24 @@ import streamlit as st
 from stocks import obs
 from stocks.analysis import naive_dates
 from stocks.analysis.portfolio import (
-    flow_series,
-    injected_vs_value,
+    HELD_ACTIONS,
+    book_history,
     market_live,
     position_values_history,
     positions_frame,
     session_quote,
     session_quotes,
-    time_weighted_returns,
     value_weights,
 )
-from stocks.portfolio import transfers
+from stocks.portfolio import fees, transfers
 from stocks.portfolio.custody import Custody, by_position
 from stocks.portfolio.ledger import all_transactions
 from stocks.portfolio.positions import build
 
-# The actions that say the book held a security. A transfer leg is not a
-# trade, but a holding that only ever arrived — an IBKR snapshot, shares moved
-# from another broker — is held all the same, and every loader below exists to
-# price what is held. Reading trades alone leaves those positions with no
-# price series, no FX rate and no dividend history, which the UI can only
-# render as "n/a".
-_HELD = ("buy", "sell", *transfers.TRANSFERS)
+# What counts as held — buys, sells and transfer legs alike. Aliased from the
+# analysis package rather than restated, so the loaders here and the shared
+# `book_history` they call can never disagree about which rows get priced.
+_HELD = HELD_ACTIONS
 
 
 @st.cache_data(show_spinner=False, max_entries=32)
@@ -278,37 +274,14 @@ def ledger_history(fingerprint: tuple, db: str, base: str = "EUR"):
     build as (len(txs), txs[-1].date, date.today()) — new transactions and day
     rollovers invalidate it; ttl refreshes intraday prices.
     """
-    from stocks.data.fx import rates_range
-
-    # Relabelled like `held_closes`, or the filter below throws away every
-    # series it just shared: the download is keyed by the replay's label.
-    ledger = transfers.relabel(all_transactions(Path(db)))
-    tickers = sorted({t.ticker for t in ledger if t.action in _HELD})
-    first = min(t.date for t in ledger)
-    # The shared book download (same names, same span) rather than one of its
-    # own — hot already whenever the Home glance or the Pulse page ran first.
-    closes = {
-        t: s for t, s in held_closes(db, db_mtime(db)).items() if t in set(tickers)
-    }
-    fx = {
-        ccy: pd.Series(rates_range(first, date.today().isoformat(), ccy, base))
-        for ccy in {t.currency for t in ledger if t.action in _HELD}
-        if ccy != base
-    }
-    hist = injected_vs_value(ledger, closes, fx, base=base)
-    if hist.empty:
-        twr = pd.Series(dtype=float)
-    else:
-        # No ticker filter: unpriced names are carried at cost in value,
-        # so their buy/sell flows must offset those value jumps.
-        twr = time_weighted_returns(
-            hist["value"], flow_series(ledger, base=base)
-        )
-    missing = sorted(
-        {t for t in tickers if t not in closes}
-        | set(hist.attrs.get("carried_at_cost", []) if not hist.empty else [])
+    # The recipe itself is `analysis.portfolio.book_history` — shared with the
+    # HTTP API, which computes the same numbers with no session to cache
+    # against. What stays here is the caching and the shared price download:
+    # the same names over the same span, hot already whenever the Home glance
+    # or the Pulse page ran first.
+    return book_history(
+        all_transactions(Path(db)), base=base, closes=held_closes(db, db_mtime(db))
     )
-    return hist, twr, missing
 
 
 @st.cache_data(ttl=86400, show_spinner=False, max_entries=8)
@@ -328,7 +301,10 @@ def trade_bars(db: str, mtime: float) -> dict[str, pd.DataFrame]:
         return {}
     tickers = sorted({t.ticker for t in trades})
     period = ledger_period(min(t.date for t in trades))
-    return fetch_many(tickers, period=period, auto_adjust=False)
+    bars = fetch_many(tickers, period=period, auto_adjust=False)
+    # An alias can price a ticker on another venue (Revolut's dollar ASML ->
+    # ASML.AS in euros); the spread converts when the frames say so.
+    return fees.stamp_listing_currency(bars, fees.listing_currencies(list(bars)))
 
 
 @st.cache_data(ttl=3600, show_spinner=False)

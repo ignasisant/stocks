@@ -25,6 +25,13 @@ import pandas as pd
 # Trailing windows to average the multiple over, in calendar days.
 WINDOWS: dict[str, int] = {"6mo": 182, "1y": 365, "2y": 730, "5y": 1825}
 
+# The ranges a company page offers on the P/E chart, which are a longer set:
+# the question there is "is this expensive for this company", and half a year
+# of its own history cannot answer it. Here rather than in a page because two
+# front ends draw that selector, and a selector whose options differ between
+# them is two different questions wearing one label.
+DISPLAY_WINDOWS: dict[str, int] = {"1y": 365, "3y": 1095, "5y": 1825, "10y": 3650}
+
 
 def split_factors(
     splits: Mapping[date, float] | pd.Series, ends: Iterable[date]

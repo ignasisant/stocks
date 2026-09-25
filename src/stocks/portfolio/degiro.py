@@ -52,6 +52,7 @@ from __future__ import annotations
 import csv
 import io
 
+from stocks.portfolio import statement
 from stocks.portfolio.ledger import Transaction
 from stocks.portfolio.statement import ParseResult
 from stocks.portfolio.transfers import TRANSFER_IN, TRANSFER_OUT
@@ -78,7 +79,9 @@ _REQUIRED = ("date", "product", "isin", "quantity", "price")
 
 def parse_csv(text: str) -> ParseResult:
     """Parse DEGIRO Transactions.csv text into a ParseResult (no side effects)."""
-    rows = list(csv.reader(io.StringIO(text)))
+    head = text.splitlines()[0] if text.strip() else ""
+    delimiter = statement.sniff_delimiter(head, _HEADERS)
+    rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
     if not rows:
         return ParseResult()
     header = [h.strip().lower() for h in rows[0]]

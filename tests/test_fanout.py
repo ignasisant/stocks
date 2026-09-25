@@ -525,3 +525,20 @@ def test_weekly_blocked_user_is_marked_and_skipped(local, monkeypatch):
     assert state["delivery"]["blocked"] is True
     # A blocked account keeps no concentration baseline it never received.
     assert "weekly" not in state
+
+
+def test_every_delivery_the_cron_sends_has_a_default_to_read():
+    """A toggle the senders default to on must be on in DEFAULT_PREFS too.
+
+    `iter_notify_users` reads `notify_<kind>` with a default of True, and so
+    does the Profile toggle — but `load_prefs()` only carries the keys
+    DEFAULT_PREFS names. `notify_weekly` was missing from it for a while, which
+    made one switch answer two ways: the review was delivered, while anything
+    asking the loaded prefs dict plainly got None back. Any new delivery added
+    to the cron and not here lands in the same state.
+    """
+    from stocks.accounts import DEFAULT_PREFS
+
+    kinds = {"digest", "weekly", "alerts"}
+    missing = {k for k in kinds if f"notify_{k}" not in DEFAULT_PREFS}
+    assert not missing, f"delivered but not defaulted: {sorted(missing)}"

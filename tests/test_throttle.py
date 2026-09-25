@@ -105,11 +105,11 @@ def test_one_flooder_does_not_lock_out_everyone_else(client):
     assert _get(client, ip="198.51.100.4").status_code == 200
 
 
-def test_the_transport_streamlit_needs_is_not_metered(client):
+def test_the_transport_the_old_app_needs_is_not_metered(client):
     # Every websocket frame is a chat message; metering them here would fight
     # the per-account limit that already covers them, and drop live sessions.
     for _ in range(server.CLIENT_MAX_DOCS * 2):
-        assert _get(client, path="/_stcore/stream").status_code == 200
+        assert _get(client, path="/legacy/_stcore/stream").status_code == 200
 
 
 def test_assets_are_not_metered(client):

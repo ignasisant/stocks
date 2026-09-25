@@ -56,8 +56,8 @@ uv sync            # create .venv and install everything
 
 Browsing the market pages (Home, Ticker, Screener, Earnings, Valuation) is
 public — anonymous visitors get a shared read-only starter watchlist under
-`data/users/_guest/`. Google sign-in (Streamlit-native OIDC: `st.login` /
-`st.user`) is required only for everything personal: the Portfolio, Import
+`data/users/_guest/`. Google sign-in (the app's own OIDC flow — see
+`web/oidc.py`) is required only for everything personal: the Portfolio, Import
 and Profile pages, plus the favorite/tag/watchlist-editing actions. Each
 Google account gets its own private data under `data/users/<slug>/` —
 watchlist, portfolio ledger, last-import record and preferences — keyed by
@@ -77,6 +77,14 @@ Configure:
    (`python -c "import secrets; print(secrets.token_hex(32))"`).
 3. `uv run stocks dashboard` — the portfolio pages show the sign-in screen
    until the secrets are in place; the market pages work regardless.
+
+The app runs the authorization-code round trip itself (`web/oidc.py`, at
+`/auth/login`, `/oauth2callback` and `/auth/logout`) and mints its own signed
+session cookie (`stocks/session.py`). One sign-in therefore covers the
+app, the `/api/v1` calls it makes and the old Streamlit app at `/legacy`: the
+API verifies the cookie in `api/security.py`, the old pages read it off
+`st.context.cookies`, and neither can disagree with the other about who is
+signed in.
 
 `secrets.toml` is git-ignored; never commit it. When deploying, add the
 deployed URL + `/oauth2callback` to both the Google client and
@@ -139,7 +147,7 @@ docker run --rm -p 8501:8501 \
 ```bash
 uv run stocks update      # fetch + cache price history for the watchlist
 uv run stocks alerts      # print any triggered price alerts
-uv run stocks dashboard   # launch the Streamlit dashboard in the browser
+uv run stocks dashboard   # serve the app at http://localhost:8501
 uv run stocks search bank of america   # find tickers by name or symbol (SEC map)
 
 # fundamental KPIs + comps table (+ EUR spot, + SEC EDGAR cross-check)
@@ -408,7 +416,7 @@ The math (`stocks.analysis.valuation`) is pure and unit-tested offline; only
 `gather` touches the network. Inputs (growth, discount, terminal, horizon) are
 yours to own — the output is **derived**, only as good as the assumptions.
 
-## Portfolio analytics, screener & alerts
+## Portfolio analytics, sector screen & alerts
 
 Decision-support layer over the watchlist — dashboard pages (Streamlit
 `st.navigation` multipage, under `web/app_pages/`) and matching CLI commands:
@@ -682,7 +690,8 @@ src/stocks/
   analysis/indicators  SMA, EMA, RSI, returns
   analysis/fundamentals.py  KPI computation + KPI_SOURCES source-of-truth map
   analysis/portfolio.py     allocation, concentration, vol/beta/drawdown, corr
-  analysis/screener.py      cross-sectional KPI rank/filter over the watchlist
+  analysis/screener.py      cross-sectional KPI rank/filter over a set of tickers
+  analysis/sectors.py       per-sector cohorts (ETF basket + vetted non-US names)
   notify/alerts.py     evaluate alerts vs price history (price/RSI/drawdown/cross/52w)
   notify/narrative.py  optional LLM lines for the crons (digest highlight, alert note)
   notify/deliver.py    push alerts to Telegram / email (env-gated, console fallback)
@@ -724,8 +733,8 @@ are per-machine and gitignored.
 
 ## The landing page and the app share one port
 
-`stocks dashboard` serves `web/server.py`, an `st.App` that answers a few paths
-itself and hands everything else to the Streamlit app:
+`stocks dashboard` serves `web/server.py`, a plain Starlette app run by uvicorn
+(`--reload` restarts it on source changes):
 
 | Path | Served by |
 |------|-----------|
@@ -733,16 +742,26 @@ itself and hands everything else to the Streamlit app:
 | `/es/` | the landing page in Spanish |
 | `/lp/*` | the landing's assets (brand mark, `og.png` share card) |
 | `/robots.txt`, `/sitemap.xml` | generated for whichever host answered |
-| everything else | the Streamlit app, stamped `X-Robots-Tag: noindex` |
+| `/api/v1/*` | the HTTP API (see below) |
+| `/portfolio`, `/ticker`, … | the app: the React shell (`frontend/app`), stamped `X-Robots-Tag: noindex` |
+| `/next/*` | redirected to the same page at the root (the shell's address while it was built) |
+| `/legacy/*` | the Streamlit app it replaced, kept for reference |
 
 The landing is a plain HTML response: the copy is in the document, so it is
-crawlable and paints without booting a websocket, and it can carry a `<title>`,
-a description, hreflang pairs and an Open Graph card — none of which a Streamlit
-page can set. `/` is shared because Streamlit always serves its default page at
-the root and `st.Page` ignores `url_path` there; a first visit (no parameter, no
-cookie) is the landing, every CTA click arrives with a parameter, and the cookie
-is set on every app response so returning visitors skip the pitch. Crawlers send
-no cookies, so they always see the landing.
+crawlable and paints without any JavaScript, and it carries a `<title>`, a
+description, hreflang pairs and an Open Graph card. `/` is shared: a first
+visit (no parameter, no cookie) is the landing, every CTA click arrives with a
+parameter, and the cookie is set on every app response so returning visitors
+skip the pitch. Crawlers send no cookies, so they always see the landing.
+
+**The old app at `/legacy`.** The Streamlit app is mounted whole under that
+prefix (`st.App` supports being a sub-application), started on the first
+request there rather than at boot, with a banner on every page saying what it
+is. It reads and writes the same account files as the app, so it is for
+looking, not for working in. The last commit where it was the app is tagged
+`streamlit-final`; `git worktree add ../stocks-streamlit streamlit-final` gets
+that state back in full. Once nobody needs to look, it goes: `app_pages/`, the
+Streamlit-only modules and the `streamlit` dependency.
 
 **Set `[app] public_url` in secrets (or `APP_PUBLIC_URL`) on any real deploy** —
 not only behind a custom domain. Cloud Run answers on more than one hostname by
@@ -750,15 +769,142 @@ default, and unset, each one serves a full copy of the site that canonicalizes
 to *itself*: duplicate content, split link equity, and Google choosing which
 copy ranks. Set, it is the base for every canonical, hreflang, Open Graph and
 sitemap URL, and every other hostname 301s to it (GET/HEAD only, and never
-`/_stcore/` — moving a live websocket would break the session a visitor is
-already in). Nothing else needs configuring: no `baseUrlPath`, and the OIDC
-redirect URI is unchanged.
+`/legacy/_stcore/` — moving a live websocket would break the session a visitor
+is already in). Nothing else needs configuring, and the OIDC redirect URI is
+unchanged.
 
 Unknown paths return a real **404**. Streamlit's static mount answers anything
 it does not recognise with the app shell and a 200, which turns every typo and
 stale link into a soft 404. The gate in `server.py` knows the whole served
 surface — the marketing pages, Streamlit's own endpoints, and the app's pages
 derived from `app_pages/` so a new page needs no edit — and 404s the rest.
+
+## HTTP API (read-only)
+
+`stocks.api` puts an HTTP surface on the same domain packages the pages use —
+`stocks.portfolio`, `stocks.analysis`, `stocks.data`, none of which import
+Streamlit. It exists so something other than a browser session can read a book:
+a cron job, the Telegram bot, a phone, a front end that is not Streamlit.
+
+It is mounted at `/api` inside `web/server.py`, so it deploys with the app and
+answers on the same hostname. The dependency points one way — `stocks.web` does
+not import `stocks.api` — so deleting `src/stocks/api/` leaves the app exactly
+as it was.
+
+**Every route is a GET but one.** `POST /api/v1/search/recent` appends to the
+account's recent-search list, because a recents list that never grows is worse
+than none. Imports, preferences and watchlist edits still go through the app, so
+nothing here can leave a ledger in a state the UI did not produce —
+`tests/test_api.py` asserts that allowlist of one.
+
+### Configuring it
+
+```toml
+# .streamlit/secrets.toml   (or API_TOKEN in the environment)
+[api]
+token = "a long random string"
+```
+
+A token is only for headless callers. A browser signed into the app is read
+from the session cookie it already carries (see below), so a deployment with no
+token configured is an ordinary state — every data route then answers **401**,
+which a front end renders as "sign in". It never runs open: one missing secret
+must not silently publish every book on the deployment. `/api/v1/health`,
+`/api/v1/design/tokens` and `/api/v1/i18n/{lang}` stay open either way — a
+liveness probe carries no credentials, and a sign-in screen needs the design
+tokens and its own strings before anyone is signed in.
+
+### Calling it
+
+```bash
+TOKEN=$(grep -A1 '^\[api\]' .streamlit/secrets.toml | sed -n 's/token = "\(.*\)"/\1/p')
+BASE=http://localhost:8501/api/v1
+
+curl -s "$BASE/health"
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/portfolio/summary?account=you@example.com"
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/portfolio/positions?account=you@example.com&base=USD"
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/market/quotes?tickers=AAPL,MSFT,BTC-EUR"
+```
+
+Interactive docs at `/api/docs`, the schema at `/api/openapi.json`.
+
+| Route | What it returns |
+|-------|-----------------|
+| `GET /api/v1/health` | liveness of the API mount — open, no token |
+| `GET /api/v1/portfolio/positions` | open positions: shares, cost, value, P/L, weight |
+| `GET /api/v1/portfolio/summary` | book totals over the rows that priced |
+| `GET /api/v1/portfolio/transactions` | the ledger, newest first, `limit`/`offset` |
+| `GET /api/v1/portfolio/performance` | TWR (cumulative + annualised) and IRR |
+| `GET /api/v1/watchlist` | tracked tickers as stored |
+| `GET /api/v1/market/quotes` | live price and day move, one upstream request |
+| `GET /api/v1/search` | the ticker box: own list, coins, funds, SEC, worldwide |
+| `GET`/`POST /api/v1/search/recent` | the account's recent tickers — the one write |
+| `GET /api/v1/ticker/{symbol}/profile` | name, resolved symbol, logo, what kind of asset |
+| `GET /api/v1/ticker/{symbol}/bars` | OHLC + moving averages for a range, with rangebreaks |
+| `GET /api/v1/ticker/{symbol}/quote` | last price, day move, pre/post session |
+| `GET /api/v1/ticker/{symbol}/events` | earnings dates, estimate vs reported |
+| `GET /api/v1/ticker/{symbol}/position` | this account's holding, and its own fills |
+| `GET /api/v1/ticker/{symbol}/metrics` | the KPI grid, each with its provenance and band |
+| `GET /api/v1/ticker/{symbol}/financials` | reported years + the consensus path, kept apart |
+| `GET /api/v1/ticker/{symbol}/valuation` | P/E against its own history, and which feed backed it |
+| `GET /api/v1/ticker/{symbol}/moat` | the composite and its pillars |
+| `GET /api/v1/ticker/{symbol}/insiders` | Form 4, or BaFin for a German issuer |
+| `GET /api/v1/ticker/{symbol}/fund` | what an ETF is and what it holds |
+| `GET /api/v1/ticker/{symbol}/crypto` | market cap, 24h volume, supply — the coin block |
+| `GET /api/v1/kpi-sources` | where every KPI loads from and where to verify it |
+| `GET /api/v1/ticker/{symbol}/peers` | who this name could be compared against |
+| `GET /api/v1/comparables` | several names ranked against each other in one pass |
+| `GET /api/v1/design/tokens` | the design system as CSS custom properties — open |
+| `GET /api/v1/i18n/{lang}` | translated strings, `?prefix=` to take a slice — open |
+| `GET /api/v1/me` | who this request is, and how it authenticated |
+
+Account-scoped routes take `?account=<email>` and an optional `?base=<currency>`
+(default: the account's own preference). An address with no book here is a
+**404**, and asking about one does not create it — reading an account is not the
+same act as creating one.
+
+### What this API is not
+
+A single shared token cannot say *who* is calling, which is why the caller names
+the account itself — so any token holder can read every account on the
+deployment. That is the right strength for the owner's own jobs over TLS, and it
+is **not** enough to hand to a browser or to a third party. A public front end
+needs per-user credentials (the OIDC session the web app already has), which is
+a different piece of work.
+
+Two things the API does not inherit from the pages, by design:
+
+- **No `st.cache_data`.** That decorator needs a script run to key against, so
+  the loaders in `stocks/api/loaders.py` use a plain TTL memo (`api/cache.py`)
+  on the same keys the pages use — `(db path, ledger mtime, base currency)` — so
+  an import invalidates a book the moment the file changes.
+- **No app cookie.** `/api/*` is exempt from `ts_app` and from the canonical-host
+  redirect: a client is not a browser that has "been to the app", and a cross-host
+  301 drops the `Authorization` header in several clients.
+
+A throttled or unreachable upstream is a **503**, never a 500, and the body
+carries `reason` (`rate_limited` | `offline`) beside `detail`. Yahoo rate-limits
+datacenter egress IPs as a matter of course; that is weather, not a fault in
+this service, and a client has to be able to tell "try again shortly" from "this
+request will never work". The pages classify the same two exceptions into the
+same two kinds (`web/notices.py`), so the word a client reads here is the word
+the app prints.
+
+A third seam came out of the same work: `stocks.identity` resolves a stored
+broker label to the symbol it stands for, finds a company name for it and
+locates its logo. The ledger keeps what the broker wrote — an ISIN, a local
+Revolut code — because that string is the audit trail; every screen prints what
+it resolves to. `web/logos.py` is the `st.cache_data` wrapper around it and
+`api/loaders.py` is the TTL one.
+
+Shared arithmetic lives in the domain, not in either caller:
+`analysis.portfolio.book_history` computes injected-vs-value, the flow-adjusted
+TWR and the list of names it could not price, and both `web/portfolio_data.py`
+and `api/loaders.py` call it. `stocks.search` owns which search tier answers
+first and how the tiers dedup, and both the Streamlit top bar and `/api/v1/search`
+read it — each supplying its own cache, since `st.cache_data` and the TTL memo
+cannot substitute for one another. When a number or a ranking needs changing it
+changes once.
 
 ## Observability — production logs
 
@@ -1040,7 +1186,7 @@ Other local smoke tests: `uv run stocks digest --dry-run`,
 
 - [x] Portfolio positions + P/L tracking (FIFO ledger + Spanish tax)
 - [x] Portfolio analytics (allocation, concentration, beta/vol/drawdown, benchmarks)
-- [x] Watchlist screener (rank/filter by KPIs)
+- [x] Sector screen (per-sector cohort, ranked by KPIs, top 3 called out)
 - [x] Earnings calendar + reminders
 - [x] Alert upgrades (%move, drawdown, RSI, SMA cross, 52w) + Telegram/email delivery
 - [x] Per-user Telegram notifications: daily digest + hourly price alerts (GitHub Actions cron)

@@ -46,6 +46,7 @@ import pandas as pd
 import streamlit as st
 from yfinance.exceptions import YFRateLimitError
 
+from stocks import session
 from stocks.analysis import sentiment as sm
 from stocks.analysis.portfolio import (
     allocation,
@@ -58,8 +59,7 @@ from stocks.analysis.portfolio import (
     returns_frame,
 )
 from stocks.data import macro
-from stocks.data.funds import sector_weights
-from stocks.web import auth, css, notices, skeletons, spark, trend_ui
+from stocks.web import auth, css, market_data, notices, skeletons, spark, trend_ui
 from stocks.web.ds import (
     BORDER,
     BORDER_FOCUS,
@@ -172,15 +172,11 @@ def _inflation() -> pd.DataFrame:
     return macro.inflation()
 
 
-@st.cache_data(ttl=24 * 3600, show_spinner=False)
-def _benchmark_sectors() -> dict[str, float]:
-    """SPY's sector split — the benchmark the reader's tilt is measured against.
-
-    Yahoo's own fund look-through, so the buckets are already spelled the way a
-    stock's `info["sector"]` spells them and join straight onto the book's
-    allocation with no mapping layer.
-    """
-    return sector_weights("SPY")
+# SPY's sector split — the benchmark the reader's tilt is measured against.
+# Shared with the dashboard's daily card rather than cached twice: it is the
+# same 24-hour call, and one entry means whichever screen the reader opens
+# first pays for it (web/market_data.py).
+_benchmark_sectors = market_data.benchmark_sectors
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -218,23 +214,9 @@ def _book(tickers: tuple[str, ...], db: str, mtime: float):
     }
 
 
-# The rates block, as (FRED id, i18n suffix, whether a rise is the unwelcome
-# direction). `up_is_bad` is not decoration: rising yields and widening spreads
-# are the unwelcome direction, but a *steepening* curve is the healthy one —
-# inversion is the warning there — so colouring every rise red would paint the
-# curve rows backwards. Policy rates are neutral: they are a fact about the
-# central bank, not a market move.
-RATE_ROWS: dict[str, tuple[str, int]] = {
-    "DGS10": ("us10y", -1),
-    "DFII10": ("us10y_real", -1),
-    "T10Y2Y": ("curve_2s10s", +1),
-    "T10Y3M": ("curve_3m10y", +1),
-    "BAMLH0A0HYM2": ("hy_spread", -1),
-    "BAMLC0A0CM": ("ig_spread", -1),
-    "T5YIE": ("breakeven5y", -1),
-    "DFEDTARU": ("policy_fed", 0),
-    "ECBDFR": ("policy_ecb", 0),
-}
+# The rates block's registry now lives in `analysis.sentiment` beside INDICES
+# and GAUGES, so the HTTP API can serve the same rows without importing a page.
+RATE_ROWS = sm.RATE_ROWS
 
 
 # ----------------------------------------------------------------------- CSS
@@ -969,10 +951,10 @@ def _side_invite(box, *, message_key: str, note_key: str, cta: str) -> None:
         )
         if cta == "signin":
             if auth.auth_configured():
-                st.button(
+                st.link_button(
                     tr("sentiment.book_signin_cta"),
+                    session.LOGIN_PATH,
                     icon=":material/login:",
-                    on_click=auth.login,
                     type="primary",
                     key="pulse_signin",
                 )

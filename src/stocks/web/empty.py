@@ -1,9 +1,9 @@
 """Empty states — the card a section draws when it has nothing to draw.
 
 Most of this app's value is derived: positions, P/L, risk, dividends, fees and
-the tax report all come out of an imported ledger, and the screener, the
-earnings calendar and the sentiment pass all come out of a watchlist. A fresh
-account has one of those and not the other, so on a first visit a good half of
+the tax report all come out of an imported ledger; the earnings calendar and
+the sentiment pass come out of a watchlist. A fresh account has one of those
+and not the other, so on a first visit a good half of
 the app has genuinely nothing to render.
 
 Those spots used to render one gray sentence — `st.warning("No transactions
@@ -197,7 +197,7 @@ def state(
             the real content's shape; a three-row ghost above a card that
             fills with a year of history undersells it.
         event: stable slug for the log line this card emits, once per session
-            (`portfolio.ledger`, `screener.watchlist`). Which sections a real
+            (`portfolio.ledger`, `sector.no_scan`). Which sections a real
             account actually finds empty is the only way to know which of
             these cards is worth its space — and it must be a slug, not the
             title, which is translated and would split the same section across

@@ -633,3 +633,19 @@ def test_digest_buttons_are_translated():
         for label, _ in dg.digest_buttons(priced_data(results=[_result()]), "es", ORIGIN)
     ]
     assert labels == ["Cartera", "Resultados"]
+
+
+def test_a_tax_deadline_is_named_and_keeps_the_full_digest():
+    from stocks.portfolio.tax import deadlines
+
+    today = date(2027, 3, 5)
+    data = dg.DigestData(
+        date=today,
+        day=(0.0, 0.0),
+        tax_deadlines=deadlines.due_soon("ES", today),
+    )
+    assert not data.quiet
+    text = dg.render_digest(data, "es")
+    assert "Plazos fiscales" in text
+    assert "Modelo 720 (2026)" in text
+    assert "T-26" in text

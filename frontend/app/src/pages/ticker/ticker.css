@@ -1,0 +1,1136 @@
+/*
+ * The Ticker page's own stylesheet, prefixed `tk-` so nothing here can collide
+ * with the shell's `ag-` classes or with a sibling page's.
+ *
+ * Every colour, radius and type step is a `--ag-*` custom property that
+ * `web/ds.py` emits and `server.py` inlines into the document — the same tokens
+ * the Streamlit app paints with. No hex is written here: a colour that is not a
+ * token is a colour the design system does not know about, and it will be wrong
+ * in one of the two themes.
+ */
+
+.tk-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ------------------------------------------------------------------ header */
+
+.tk-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tk-header h1 {
+  margin: 0;
+  font-size: var(--ag-fs-2xl);
+  letter-spacing: -0.01em;
+}
+
+.tk-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--ag-radius-sm);
+  /* An opaque plate: most brand marks are transparent PNGs drawn for a light
+     background, and on a dark card they read as a hole. */
+  background: var(--ag-text-primary);
+  border: 1px solid var(--ag-border);
+  padding: 5px;
+  object-fit: contain;
+  align-self: center;
+}
+
+.tk-names {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tk-name {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tk-badge {
+  align-self: center;
+  padding: 2px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-2xs);
+}
+
+.tk-custody {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: center;
+}
+
+.tk-custody-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--ag-radius-xs);
+  /* The same opaque plate the ticker logo gets, for the same reason. */
+  background: var(--ag-text-primary);
+  border: 1px solid var(--ag-border);
+  padding: 2px;
+  object-fit: contain;
+}
+
+.tk-custody-name {
+  padding: 2px 6px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-xs);
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------------- cards */
+
+.tk-card {
+  background: var(--ag-surface-card);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  box-shadow: var(--ag-shadow-card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tk-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tk-h2 {
+  margin: 0;
+  font-size: var(--ag-fs-lg);
+}
+
+.tk-subhead {
+  margin: 4px 0 0;
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+  color: var(--ag-text-secondary);
+}
+
+.tk-note {
+  margin: 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+  line-height: 1.5;
+}
+
+.tk-empty {
+  margin: 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+}
+
+.tk-muted {
+  color: var(--ag-text-muted);
+}
+
+.tk-details > summary {
+  cursor: pointer;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+}
+
+.tk-details[open] > summary {
+  margin-bottom: 12px;
+}
+
+.tk-down {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+}
+
+.tk-btn,
+.tk-add {
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------- controls */
+
+.tk-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tk-seg {
+  display: inline-flex;
+  background: var(--ag-surface-page);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  padding: 2px;
+  gap: 2px;
+}
+
+.tk-seg button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  padding: 6px 12px;
+  border-radius: var(--ag-radius-pill);
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.tk-seg button:hover {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+}
+
+.tk-seg button.tk-seg-on {
+  background: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+}
+
+.tk-seg button:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 1px;
+}
+
+/* --------------------------------------------------------- metrics and KPIs */
+
+.tk-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.tk-metrics-wide {
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 12px;
+}
+
+.tk-metrics-wide .tk-metric-value {
+  font-size: var(--ag-fs-lg);
+}
+
+.tk-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Off-session figures are dimmed rather than hidden: they are the last
+   completed session, and at full weight they read as live. */
+.tk-metric.tk-dim .tk-metric-value {
+  color: var(--ag-text-secondary);
+}
+
+.tk-metric-label {
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs);
+}
+
+.tk-metric-value {
+  font-size: var(--ag-fs-xl);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-metric-note {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs);
+}
+
+.tk-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.tk-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--ag-surface-page);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+}
+
+.tk-kpi-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs);
+}
+
+.tk-kpi-value {
+  font-size: var(--ag-fs-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-kpi-meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* The definition marker beside a KPI's name: a native `title`, which is the one
+   hover hint that needs no component behind it. */
+.tk-q {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs);
+  line-height: 1;
+  cursor: help;
+}
+
+.tk-tag {
+  font-size: var(--ag-fs-2xs);
+  padding: 1px 6px;
+  border-radius: var(--ag-radius-pill);
+  border: 1px solid var(--ag-border);
+  color: var(--ag-text-secondary);
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------- tones
+   One vocabulary for every coloured cue on the page, and it is the domain's:
+   `analysis.fundamentals` bands a KPI green / orange / red / gray and both
+   front ends print that word. Colouring by the LABEL instead needs a new rule
+   per band and shows every unseen one as neutral. */
+
+.tk-is-green {
+  color: var(--ag-up);
+}
+
+.tk-is-red {
+  color: var(--ag-down);
+}
+
+.tk-is-orange {
+  color: var(--ag-warn);
+}
+
+.tk-is-gray {
+  color: var(--ag-text-muted);
+}
+
+.tk-is-up {
+  color: var(--ag-up);
+}
+
+.tk-is-down {
+  color: var(--ag-down);
+}
+
+.tk-tag.tk-is-green {
+  border-color: var(--ag-success-fill);
+}
+
+.tk-tag.tk-is-red {
+  border-color: var(--ag-down-fill);
+}
+
+.tk-pill {
+  align-self: flex-start;
+  font-size: var(--ag-fs-2xs);
+  padding: 1px 6px;
+  border-radius: var(--ag-radius-pill);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-pill-up {
+  background: var(--ag-success-fill);
+  color: var(--ag-up);
+}
+
+.tk-pill-down {
+  background: var(--ag-down-fill);
+  color: var(--ag-down);
+}
+
+/* Off-session: the move belongs to a session that has closed. */
+.tk-pill-dim {
+  opacity: 0.55;
+}
+
+.tk-banner {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--ag-radius-sm);
+  border: 1px solid var(--ag-border);
+  font-size: var(--ag-fs-sm);
+  line-height: 1.5;
+}
+
+.tk-banner-good {
+  background: var(--ag-profit-band);
+  border-color: var(--ag-up);
+  color: var(--ag-text-primary);
+}
+
+.tk-banner-warn {
+  background: var(--ag-warn-fill-soft);
+  border-color: var(--ag-warn-edge);
+  color: var(--ag-text-primary);
+}
+
+/* ------------------------------------------------------------------- charts */
+
+.tk-plot {
+  position: relative;
+  width: 100%;
+}
+
+/* The SVG is laid out at its viewBox width and scaled to the container, so the
+   rendered aspect ratio always matches — which is what makes a pointer position
+   convertible back into chart coordinates exactly. */
+.tk-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  touch-action: pan-y;
+}
+
+.tk-price {
+  cursor: crosshair;
+}
+
+.tk-grid line {
+  stroke: var(--ag-border);
+  stroke-width: 1;
+}
+
+.tk-grid text,
+.tk-xlabels text {
+  fill: var(--ag-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Per-bar YoY on the results chart: secondary text, never the bar's colour —
+   a green "+8%" above a blue bar reads as a third series. */
+.tk-bar-label {
+  fill: var(--ag-text-secondary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-line {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.tk-event {
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.tk-event-tag {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tk-cross {
+  stroke: var(--ag-text-faint);
+  stroke-width: 1;
+}
+
+.tk-brush {
+  fill: var(--ag-accent-band);
+  stroke: var(--ag-brand-accent);
+  stroke-width: 1;
+}
+
+.tk-tip {
+  position: absolute;
+  top: 8px;
+  transform: translateX(8px);
+  z-index: 5;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(280px, 60%);
+  padding: 8px 10px;
+  background: var(--ag-surface-page);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  box-shadow: var(--ag-shadow-overlay);
+  font-size: var(--ag-fs-xs);
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Flipped once the cursor passes the middle, so the box never leaves the card. */
+.tk-tip-flip {
+  transform: translateX(calc(-100% - 8px));
+}
+
+.tk-tip-t {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs);
+}
+
+.tk-tip-l {
+  color: var(--ag-text-primary);
+  /* The catalog's double space is the gap between a label and its value, as
+     in the Plotly box; collapsed, "Price 187.40" reads as one phrase. */
+  white-space: pre-wrap;
+}
+
+/* The DS tooltip row: label muted, value bold, and the series' swatch ahead of
+   it — Plotly's unified box ties each row to its trace the same way. */
+.tk-tip-b {
+  font-weight: 600;
+}
+
+.tk-tip .tk-is-dim {
+  color: var(--ag-text-muted);
+}
+
+.tk-tip-sw {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 2px;
+  vertical-align: baseline;
+}
+
+.tk-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ag-fs-2xs);
+  color: var(--ag-text-muted);
+}
+
+.tk-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tk-swatch {
+  width: 12px;
+  height: 3px;
+  border-radius: var(--ag-radius-pill);
+  flex: none;
+}
+
+.tk-swatch-dash {
+  /* A dashed swatch for a dashed series: the consensus path must not read as
+     the reported one in a legend either. */
+  height: 0;
+  border-top: 3px dashed currentColor;
+  background: none !important;
+}
+
+/* The change across a window the reader dragged out on the chart. */
+.tk-readout {
+  margin: 0;
+  font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------------- price hero */
+
+.tk-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tk-hero-price {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tk-hero-level {
+  font-weight: 700;
+  font-size: var(--ag-fs-3xl);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-hero-session,
+.tk-hero-period {
+  font-size: var(--ag-fs-sm);
+  padding-bottom: 2px;
+}
+
+.tk-hero-session {
+  color: var(--ag-text-muted);
+}
+
+/* A phone reader who does not hold the name: RSI and the SMA20 trend on one
+   muted line where the holding tiles would be. */
+.tk-hero-trend {
+  margin: 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.tk-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-sunken);
+}
+
+.tk-tile-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--ag-fs-2xs);
+  color: var(--ag-text-muted);
+}
+
+.tk-tile-value {
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-tile-note {
+  font-size: var(--ag-fs-2xs);
+  color: var(--ag-text-muted);
+}
+
+/* -------------------------------------------------------------------- moat */
+
+.tk-pillars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tk-pillar-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--ag-fs-sm);
+}
+
+/* The score is the row's last word, whatever sits between it and the name. */
+.tk-pillar-score {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-secondary);
+}
+
+.tk-pillar-detail {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs);
+}
+
+.tk-bar {
+  height: 4px;
+  background: var(--ag-surface-page);
+  border-radius: var(--ag-radius-pill);
+  overflow: hidden;
+  margin: 4px 0;
+}
+
+.tk-bar-fill {
+  height: 100%;
+  background: var(--ag-brand-accent);
+}
+
+/* ------------------------------------------------------------ fund exposure */
+
+.tk-hbars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tk-hbar {
+  display: grid;
+  grid-template-columns: minmax(6rem, 10rem) 1fr auto;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--ag-fs-xs);
+}
+
+.tk-hbar-l {
+  color: var(--ag-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tk-hbar-track {
+  height: 10px;
+  background: var(--ag-surface-page);
+  border-radius: var(--ag-radius-pill);
+  overflow: hidden;
+}
+
+.tk-hbar-fill {
+  display: block;
+  height: 100%;
+  background: var(--ag-brand-accent);
+}
+
+.tk-hbar-v {
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-muted);
+}
+
+/* ------------------------------------------------------------------ tables */
+
+.tk-scroll {
+  overflow-x: auto;
+}
+
+.tk-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ag-fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs);
+  padding: 6px 10px 6px 0;
+  white-space: nowrap;
+}
+
+.tk-table td {
+  padding: 6px 10px 6px 0;
+  border-top: 1px solid var(--ag-border);
+  white-space: nowrap;
+}
+
+.tk-comps th[scope="row"] {
+  color: var(--ag-text-primary);
+  padding-right: 16px;
+}
+
+.tk-ticker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ag-text-primary);
+  text-decoration: none;
+  border-bottom: 1px solid var(--ag-border);
+}
+
+.tk-ticker:hover {
+  border-bottom-color: var(--ag-brand-accent);
+}
+
+.tk-ticker-logo {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--ag-radius-xs);
+  background: var(--ag-text-primary);
+  object-fit: contain;
+}
+
+/* A wide grid on a phone either pans sideways or squeezes every column to three
+   characters. Stacking each row into a card keeps every figure readable. */
+
+.tk-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tk-stack-card {
+  padding: 10px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-sunken);
+}
+
+.tk-stack-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+
+.tk-stack-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 3px 0;
+  font-size: var(--ag-fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-stack-line > span:first-child {
+  color: var(--ag-text-muted);
+}
+
+/* ------------------------------------------------------------- text fields */
+/* The peer picker's filter and symbol search. */
+
+.tk-field {
+  width: 100%;
+  height: 36px;
+  padding: 0 1.75rem 0 0.75rem;
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  outline: none;
+}
+
+.tk-field::placeholder {
+  color: var(--ag-text-muted);
+}
+
+.tk-field:focus {
+  border-color: var(--ag-brand-accent);
+}
+
+/* ------------------------------------------------------- actions and peers */
+
+.tk-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tk-star,
+.tk-pop-btn {
+  height: 32px;
+  padding: 0 10px;
+  background: var(--ag-surface-card);
+  color: var(--ag-text-secondary);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tk-star {
+  width: 32px;
+  padding: 0;
+  line-height: 1;
+}
+
+.tk-star:disabled {
+  cursor: progress;
+}
+
+/* Filled, not outlined: the favourited state takes the primary fill and keeps
+   the same star on both front ends. */
+.tk-star-on {
+  background: var(--ag-brand-cta);
+  border-color: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+}
+
+.tk-pop {
+  position: relative;
+}
+
+.tk-pop-btn:hover,
+.tk-pop-open {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+}
+
+.tk-pop-panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(300px, calc(100vw - 32px));
+  padding: 12px;
+  background: var(--ag-surface-card);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  box-shadow: var(--ag-shadow-card);
+  text-align: left;
+}
+
+.tk-editor-label {
+  margin: 10px 0 4px;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs);
+}
+
+.tk-editor-label:first-child {
+  margin-top: 0;
+}
+
+.tk-editor-help {
+  margin: 8px 0 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+  line-height: 1.5;
+}
+
+.tk-add {
+  margin-top: 12px;
+  width: 100%;
+  background: var(--ag-brand-cta);
+  border-color: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+}
+
+.tk-add:disabled {
+  background: var(--ag-surface-hover);
+  border-color: var(--ag-border);
+  color: var(--ag-text-muted);
+  cursor: not-allowed;
+}
+
+.tk-rules {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tk-rules li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: var(--ag-fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-peers {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tk-peers-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tk-peers-label {
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-sm);
+}
+
+.tk-chips,
+.tk-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+
+.tk-groups {
+  align-self: center;
+}
+
+.tk-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  cursor: pointer;
+}
+
+.tk-chip:hover {
+  border-color: var(--ag-border-focus);
+}
+
+/* A picked peer. Clicking it removes it, which is what the × says. */
+.tk-chip-on {
+  background: var(--ag-brand-cta);
+  border-color: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+}
+
+.tk-chip-logo {
+  width: 14px;
+  height: 14px;
+  align-self: center;
+  border-radius: var(--ag-radius-xs);
+  object-fit: contain;
+  background: var(--ag-text-primary);
+}
+
+/* A whole watchlist of chips: capped at a few rows, scrolled inside. */
+.tk-chips-scroll {
+  max-height: 136px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.tk-chip-name {
+  color: var(--ag-text-muted);
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tk-chip-on .tk-chip-name {
+  color: inherit;
+}
+
+.tk-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-secondary);
+  border-radius: var(--ag-radius-pill);
+  font-size: var(--ag-fs-2xs);
+}
+
+.tk-x {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tk-x:hover {
+  color: var(--ag-text-primary);
+}
+
+/* ------------------------------------------------------------------- phone */
+
+@media (max-width: 640px) {
+  .tk-field {
+    height: 44px; /* DS touch target */
+  }
+
+  .tk-logo {
+    width: 30px;
+    height: 30px;
+    padding: 4px;
+  }
+
+  /* The design's compact app bar: symbol over name, so a long name cannot push
+     the badge off the row. */
+  .tk-names {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  .tk-controls {
+    justify-content: flex-start;
+  }
+
+  .tk-seg {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
+  .tk-star,
+  .tk-pop-btn {
+    height: 40px;
+  }
+
+  .tk-star {
+    width: 40px;
+  }
+
+  /* Anchored to the viewport rather than to a button that may sit at either
+     edge of a wrapped row. */
+  .tk-pop-panel {
+    right: auto;
+    left: 0;
+  }
+
+  .tk-tip {
+    max-width: 80%;
+  }
+}
+
+/* The header's Analyse-with-AI action. Primary, because it is the one thing on
+   this page that does something rather than shows something — and icon-only on
+   a phone, where the header already carries logo, name, badge and marks. */
+.tk-ai {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tk-ai:hover {
+  background: var(--ag-purple-700);
+}

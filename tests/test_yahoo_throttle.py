@@ -25,7 +25,7 @@ def test_a_spent_retry_ladder_opens_the_cooldown():
         raise YFRateLimitError()
 
     with pytest.raises(YFRateLimitError):
-        fetch._retry(always_limited, attempts=2, base_delay=0.0)
+        fetch.retry(always_limited, attempts=2, base_delay=0.0)
     assert len(calls) == 2  # the ladder was climbed...
     assert fetch.throttle_remaining() > 0  # ...and lost, so the breaker is open
 
@@ -34,12 +34,12 @@ def test_the_cooldown_refuses_without_touching_the_network():
     fetch.trip_throttle()
     called = []
     with pytest.raises(YFRateLimitError):
-        fetch._retry(lambda: called.append(1))
+        fetch.retry(lambda: called.append(1))
     assert called == []  # the point: no request, no backoff, no yfinance retries
 
 
 def test_a_success_never_opens_the_cooldown():
-    assert fetch._retry(lambda: "ok") == "ok"
+    assert fetch.retry(lambda: "ok") == "ok"
     assert fetch.throttle_remaining() == 0
 
 
@@ -52,7 +52,7 @@ def test_one_transient_limit_still_clears_on_the_next_attempt():
             raise YFRateLimitError()
         return "ok"
 
-    assert fetch._retry(flaky, attempts=3, base_delay=0.0) == "ok"
+    assert fetch.retry(flaky, attempts=3, base_delay=0.0) == "ok"
     assert fetch.throttle_remaining() == 0  # flaky is not burnt
 
 
@@ -69,7 +69,7 @@ def test_clear_throttle_reopens_the_line():
     assert fetch.throttle_remaining() > 0
     fetch.clear_throttle()
     assert fetch.throttle_remaining() == 0
-    assert fetch._retry(lambda: "ok") == "ok"
+    assert fetch.retry(lambda: "ok") == "ok"
 
 
 def test_trip_throttle_never_shortens_a_longer_cooldown():
@@ -136,3 +136,102 @@ def test_fetch_many_still_returns_frames(monkeypatch):
     monkeypatch.setattr(fetch.yf, "download", lambda *a, **k: frame)
     out = fetch.fetch_many(["AAPL"])
     assert list(out) == ["AAPL"] and len(out["AAPL"]) == 2
+
+
+# ------------------------------------------------------- the fundamentals path
+# A screen is the widest fan-out in the app, and `data.fundamentals` used to
+# call yfinance raw: no memo, no breaker, five requests per company. These pin
+# the three properties a sector scan depends on.
+
+
+class _FakeTicker:
+    """Models the two yfinance behaviours these tests turn on: each statement
+    frame is memoized on the instance, and any of them can refuse once."""
+
+    def __init__(self, symbol, log, limit_on=None):
+        self.symbol = symbol
+        self._log = log
+        self._limit_on = limit_on
+        self._refused = set()
+        self._cache = {}
+
+    def _frame(self, name):
+        if name in self._cache:
+            return self._cache[name]
+        self._log.append(name)
+        if name == self._limit_on and name not in self._refused:
+            self._refused.add(name)
+            raise YFRateLimitError()
+        self._cache[name] = pd.DataFrame({name: [1.0]})
+        return self._cache[name]
+
+    @property
+    def info(self):
+        self._log.append("info")
+        return {"sector": "Technology"}
+
+    financials = property(lambda self: self._frame("financials"))
+    quarterly_financials = property(lambda self: self._frame("quarterly"))
+    balance_sheet = property(lambda self: self._frame("balance"))
+    cashflow = property(lambda self: self._frame("cashflow"))
+
+
+@pytest.fixture
+def yahoo(monkeypatch):
+    """One fake Yahoo behind every `yf.Ticker`.
+
+    `fetch.info` and `fetch_fundamentals` build one each, and `fetch.yf` is the
+    same module object as `fundamentals.yf` — so this is one patch, not two.
+    The profile memo is stubbed out because it is a real file on disk.
+    """
+    monkeypatch.setattr(fetch, "ticker_aliases", dict)
+    monkeypatch.setattr(fetch.profiles, "remember", lambda *a, **k: None)
+    fetch.clear_info_cache()
+    seen = {"log": [], "built": [], "limit_on": None}
+
+    def factory(symbol):
+        seen["built"].append(symbol)
+        return _FakeTicker(symbol, seen["log"], seen["limit_on"])
+
+    monkeypatch.setattr(fetch.yf, "Ticker", factory)
+    yield seen
+    fetch.clear_info_cache()
+
+
+def test_a_cooling_off_host_is_not_asked_for_fundamentals(yahoo):
+    from stocks.data.fundamentals import fetch_fundamentals
+
+    fetch.trip_throttle()
+    with pytest.raises(YFRateLimitError):
+        fetch_fundamentals("AAPL")
+    assert yahoo["built"] == []  # refused before the first round trip
+
+
+def test_fundamentals_share_the_info_memo(yahoo):
+    """Two passes over one name in a render must not buy `.info` twice."""
+    from stocks.data.fundamentals import fetch_fundamentals
+
+    first = fetch_fundamentals("AAPL")
+    second = fetch_fundamentals("AAPL")
+    assert yahoo["log"].count("info") == 1
+    assert first.info == second.info == {"sector": "Technology"}
+    assert first.ticker == "AAPL"  # what the caller asked for, not the alias
+
+
+def test_a_refused_statement_retries_only_that_frame(yahoo):
+    """One ladder for the four frames, and the Ticker is built outside it — so
+    a 429 on the last frame must not re-buy the three that already landed."""
+    from stocks.data.fundamentals import fetch_fundamentals
+
+    yahoo["limit_on"] = "cashflow"
+    raw = fetch_fundamentals("NVDA")
+    assert yahoo["log"] == [
+        "info",
+        "financials", "quarterly", "balance", "cashflow",  # the refused pass
+        "cashflow",                                        # ...and just the retry
+    ]
+    # Two Tickers per call — one inside fetch.info, one for the statements —
+    # and the retry adds no third.
+    assert yahoo["built"] == ["NVDA", "NVDA"]
+    assert not raw.cashflow.empty
+    assert fetch.throttle_remaining() == 0  # one transient limit is not a burn

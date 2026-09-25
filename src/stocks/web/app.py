@@ -1,8 +1,8 @@
 """The Streamlit app — st.navigation over the app_pages/ modules.
 
-Run: uv run stocks dashboard   (which serves stocks.web.server, the ASGI entry
-point that fronts this script with the static landing page; running this file
-directly with `streamlit run` still works and simply has no landing).
+The retired app. `uv run stocks dashboard` serves stocks.web.server, which
+mounts this script at /legacy behind the React app; running this file directly
+with `streamlit run` still works and simply has no landing and no API.
 
 Page config, the dense-layout CSS and the nav are defined once here; the page
 modules under app_pages/ carry only their own content. Colors and fonts live
@@ -15,6 +15,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from urllib.error import URLError
+from urllib.parse import urlsplit
 
 # Hosts that run this file straight from the repo checkout (no editable
 # install) need src/ on sys.path; locally it pins imports to the source tree.
@@ -25,7 +26,7 @@ if _SRC not in sys.path:
 import streamlit as st  # noqa: E402
 from yfinance.exceptions import YFRateLimitError  # noqa: E402
 
-from stocks import obs  # noqa: E402
+from stocks import navigation, obs, session  # noqa: E402
 from stocks.web import (  # noqa: E402
     auth,
     chat_core,
@@ -1073,73 +1074,41 @@ if not guide.maybe_start() and not onboarding.maybe_open():
     # from the Profile page).
     _profile_modal = auth.maybe_prompt_profile()
 
-ticker_page = st.Page(
-    "app_pages/ticker.py",
-    title=tr("nav.ticker"),
-    icon=":material/query_stats:",
-    url_path="ticker",
-)
+# Which pages exist, in which order and under which heading is
+# `stocks.navigation` — the same table the phone tab bar and the React shell
+# read, so a page added here appears in all three menus or in none.
+_PAGES = {
+    destination.path: st.Page(
+        f"app_pages/{destination.module}.py",
+        title=tr(destination.label),
+        icon=f":material/{destination.icon}:",
+        url_path=destination.path or None,
+        default=destination.path == "",
+    )
+    for destination in navigation.DESTINATIONS
+}
+ticker_page = _PAGES["ticker"]
 
-_portfolio_pages = [
-    st.Page(
-        "app_pages/portfolio.py",
-        title=tr("nav.portfolio"),
-        icon=":material/pie_chart:",
-    ),
-    st.Page(
-        "app_pages/import_transactions.py",
-        title=tr("nav.import"),
-        icon=":material/upload_file:",
-    ),
-]
 # Grouped like the design's left menu: Inicio on top, then the Cartera and
 # Mercado sections, with the account entry in its own bottom group.
-page = st.navigation(
+# The ignore is a checker limitation, not a doubt about the call: `streamlit`
+# ships both a `navigation` function and a `streamlit.navigation` submodule, and
+# ty (since 0.0.82) binds the attribute to the submodule and calls it non-
+# callable. Runtime resolves the function, as every page load proves.
+page = st.navigation(  # ty: ignore[call-non-callable]
     {
-        "": [
-            st.Page(
-                "app_pages/home.py",
-                title=tr("nav.home"),
-                icon=":material/home:",
-                default=True,
-            ),
-        ],
-        tr("nav.section_portfolio"): _portfolio_pages,
-        tr("nav.section_market"): [
-            ticker_page,
-            st.Page(
-                "app_pages/sentiment.py",
-                title=tr("nav.sentiment"),
-                icon=":material/speed:",
-            ),
-            st.Page(
-                "app_pages/screener.py",
-                title=tr("nav.screener"),
-                icon=":material/filter_alt:",
-            ),
-            st.Page(
-                "app_pages/earnings.py",
-                title=tr("nav.earnings"),
-                icon=":material/calendar_month:",
-            ),
-        ],
-        tr("nav.section_account"): [
-            st.Page(
-                "app_pages/profile.py",
-                title=tr("nav.profile"),
-                icon=":material/account_circle:",
-            ),
-        ],
+        tr(section) if section else "": [_PAGES[d.path] for d in items]
+        for section, items in navigation.sections()
     }
 )
 
 # Anonymous visitors get a sign-in entry point on every page; the gated
 # pages (Portfolio, Import, Profile) render a full login screen themselves.
 if "auth" in st.secrets and not auth.is_logged_in():
-    st.sidebar.button(
+    st.sidebar.link_button(
         tr("common.sign_in_google"),
+        session.LOGIN_PATH,
         icon=":material/login:",
-        on_click=auth.login,
         width="stretch",
     )
 
@@ -1184,6 +1153,13 @@ _focus = (
 )
 render_topbar(page.title, _focus)
 
+# This script is the retired app, mounted at /legacy behind the React one (see
+# stocks.web.server). It still writes the account's real files, so every page
+# says what it is and where the app is. Read off the URL rather than assumed,
+# so a bare `streamlit run` of this file — and every AppTest — is left alone.
+if urlsplit(st.context.url or "").path.startswith("/legacy"):
+    st.warning(tr("common.legacy_banner"), icon=":material/history:")
+
 # Phones swap the sidebar for the DS bottom tab bar (Inicio · Cartera ·
 # Screener · Perfil); the drawer stays behind the header's menu toggle for the
 # remaining pages. Rendered before page.run() like the topbar, so a page that
@@ -1217,7 +1193,7 @@ if chat_core.covers_viewport(_drawer_open):
     st.stop()
 
 # Yahoo throttles datacenter egress IPs; when the fetch layer's
-# backoff (stocks.data.fetch._retry) is exhausted the error would otherwise
+# backoff (stocks.data.fetch.retry) is exhausted the error would otherwise
 # surface as Streamlit's opaque crash page. Degrade to a banner instead —
 # st.cache_data never caches exceptions, so a rerun retries the failed fetches
 # while every cached section keeps rendering.

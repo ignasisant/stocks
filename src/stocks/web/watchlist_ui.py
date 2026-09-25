@@ -437,11 +437,17 @@ def _apply(before: list[dict], after: list[dict], path: Path) -> int:
 # ------------------------------------------------------------- phone rows
 
 
-def _phone_rows(container, rows: list[Holding], path: Path) -> None:
-    """One control row per holding: the grid's actions without the panning."""
+def _phone_rows(container, gid: str, rows: list[Holding], path: Path) -> None:
+    """One control row per holding: the grid's actions without the panning.
+
+    Keyed by section as well as by ticker: a starred name that carries tags is
+    rendered once per group on purpose, so the ticker alone would collide with
+    itself. The grid keys by group too, through `_ed_key`.
+    """
     for h in rows:
+        rid = f"{gid}_{slug(h.ticker)}"
         box = container.container(
-            horizontal=True, vertical_alignment="center", key=f"wl_row_{slug(h.ticker)}"
+            horizontal=True, vertical_alignment="center", key=f"wl_row_{rid}"
         )
         src = logo(h.ticker)
         img = f'<img src="{esc(src)}" alt="">' if src else ""
@@ -457,7 +463,7 @@ def _phone_rows(container, rows: list[Holding], path: Path) -> None:
         )
         box.button(
             ":material/star:" if h.favorite else ":material/star_border:",
-            key=f"wl_fav_{slug(h.ticker)}",
+            key=f"wl_fav_{rid}",
             help=tr("watchlist.col_favorite"),
             on_click=_toggle_fav,
             args=(h.ticker, path),
@@ -467,32 +473,32 @@ def _phone_rows(container, rows: list[Holding], path: Path) -> None:
                 tr("watchlist.col_tags"),
                 options=auth.all_tags(path),
                 default=list(h.tags),
-                key=f"wl_mtags_{slug(h.ticker)}",
+                key=f"wl_mtags_{rid}",
                 accept_new_options=True,
                 placeholder=tr("watchlist.add_groups_ph"),
                 on_change=_save_tags,
-                args=(h.ticker, f"wl_mtags_{slug(h.ticker)}", path),
+                args=(h.ticker, f"wl_mtags_{rid}", path),
             )
             st.number_input(
                 tr("watchlist.col_shares"),
                 min_value=0.0,
                 value=float(h.shares or 0.0),
-                key=f"wl_msh_{slug(h.ticker)}",
+                key=f"wl_msh_{rid}",
                 on_change=_save_position,
-                args=(h.ticker, f"wl_msh_{slug(h.ticker)}", "shares", path),
+                args=(h.ticker, f"wl_msh_{rid}", "shares", path),
             )
             st.number_input(
                 tr("watchlist.col_cost"),
                 min_value=0.0,
                 value=float(h.cost or 0.0),
-                key=f"wl_mco_{slug(h.ticker)}",
+                key=f"wl_mco_{rid}",
                 help=tr("watchlist.col_cost_help"),
                 on_change=_save_position,
-                args=(h.ticker, f"wl_mco_{slug(h.ticker)}", "cost", path),
+                args=(h.ticker, f"wl_mco_{rid}", "cost", path),
             )
             st.button(
                 tr("watchlist.act_remove"),
-                key=f"wl_mdel_{slug(h.ticker)}",
+                key=f"wl_mdel_{rid}",
                 icon=":material/delete:",
                 on_click=_remove,
                 args=(h.ticker, path),
@@ -633,7 +639,7 @@ def list_card(container, holdings: list[Holding], path: Path) -> None:
     for gid, label, rows, tag in groups(shown, mode):
         _group_head(card, gid, label, len(rows), tag, path)
         if is_mobile():
-            _phone_rows(card, rows[:MOBILE_ROWS], path)
+            _phone_rows(card, gid, rows[:MOBILE_ROWS], path)
             if len(rows) > MOBILE_ROWS:
                 card.html(
                     f'<div class="wl-hint">'

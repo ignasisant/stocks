@@ -45,3 +45,31 @@ def test_no_fetch_site_re_raises_to_the_app_level_guard():
         if pattern.search(p.read_text())
     ]
     assert offenders == []
+
+
+def _parallel_fragment_app() -> None:
+    import streamlit as st
+    from yfinance.exceptions import YFRateLimitError
+
+    from stocks.web import notices
+
+    @st.fragment(parallel=True)
+    def section() -> None:
+        try:
+            raise YFRateLimitError()
+        except YFRateLimitError as exc:
+            notices.data_toast(exc)
+        st.write("section survived")
+
+    section()
+
+
+def test_data_toast_is_safe_inside_a_parallel_fragment():
+    """The prod crash: a Yahoo throttle inside a `parallel=True` fragment made
+    `st.toast` raise StreamlitAPIException (write outside the fragment during
+    the initial load). The notice must degrade to an inline caption instead."""
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_function(_parallel_fragment_app).run(timeout=30)
+    assert not at.exception
+    assert any("section survived" in m.value for m in at.markdown)

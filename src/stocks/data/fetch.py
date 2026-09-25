@@ -20,7 +20,7 @@ from stocks.data import profiles
 # ---------------------------------------------------------------- the breaker
 # One verdict about Yahoo for the whole process, because there is only one
 # thing it can be angry at: this host's egress IP. Without it every caller
-# rediscovers the throttle on its own and pays the full `_retry` ladder to do
+# rediscovers the throttle on its own and pays the full `retry` ladder to do
 # it — and yfinance itself charges three or four round trips for a rejected
 # request (it re-mints the cookie and crumb, flips its cookie strategy and
 # replays the call). A Home render is ~50 symbols; one throttled Yahoo used to
@@ -55,8 +55,13 @@ def clear_throttle() -> None:
         _blocked_until = 0.0
 
 
-def _retry[T](fn: Callable[[], T], attempts: int = 3, base_delay: float = 1.5) -> T:
+def retry[T](fn: Callable[[], T], attempts: int = 3, base_delay: float = 1.5) -> T:
     """Run fn, retrying on Yahoo's 429 with exponential backoff (1.5s, 3s).
+
+    Public because it is the whole discipline: any module that talks to Yahoo
+    goes through here, or it rediscovers the throttle on this host's behalf and
+    deepens it (`data.fundamentals` used to, and a sector scan is two hundred
+    companies' worth of that mistake).
 
     Hosted deploys hit Yahoo from datacenter IPs, so transient rate limits
     are routine; a short backoff usually clears them. The final attempt re-raises so
@@ -257,7 +262,7 @@ def close_on(ticker: str, day: str) -> float | None:
     start = (pd.Timestamp(day) - pd.Timedelta(days=10)).date().isoformat()
     end = (pd.Timestamp(day) + pd.Timedelta(days=1)).date().isoformat()
     try:
-        df = _retry(
+        df = retry(
             lambda: yf.Ticker(key[0]).history(
                 start=start, end=end, interval="1d", auto_adjust=False
             )
@@ -282,7 +287,7 @@ def close_on(ticker: str, day: str) -> float | None:
 
 def fetch_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
     """Download OHLCV history for one ticker."""
-    df = _retry(
+    df = retry(
         lambda: yf.Ticker(resolve(ticker)).history(period=period, interval=interval)
     )
     df.index.name = "Date"
@@ -320,7 +325,7 @@ def fetch_many(
     # would cost three minutes plus the backoff — the budget has to bound the
     # whole thing, sleeps included.
     data = _budgeted(
-        lambda: _retry(
+        lambda: retry(
             lambda: yf.download(
                 symbols,
                 period=period,
@@ -365,7 +370,7 @@ def latest_price(ticker: str) -> float:
         price = t.fast_info["lastPrice"]
         if price:
             return float(price)
-    df = _retry(lambda: t.history(period="5d", interval="1d"))
+    df = retry(lambda: t.history(period="5d", interval="1d"))
     if df.empty:
         raise ValueError(f"no data for {ticker}")
     return float(df["Close"].iloc[-1])

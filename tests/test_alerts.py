@@ -64,3 +64,44 @@ def test_52w_high_low():
 def test_unknown_alert_type_rejected_at_construction():
     with pytest.raises(ValueError):
         Alert("bogus", price=1)
+
+
+# ------------------------------------------------------------- the editor's half
+# Which types exist is one table; what each one asks a person for is another, and
+# two editors read the second one now — the app's watchlist widget and the React
+# ticker page, through /alert-types. A type added to `ALERT_TYPES` with no entry
+# in `ALERT_FORMS` is offered by neither, which is the silent half of the failure.
+
+
+def test_every_alert_type_can_actually_be_entered():
+    from stocks.config import ALERT_FORMS, ALERT_TYPES
+
+    assert {form.type for form in ALERT_FORMS} == ALERT_TYPES
+    assert len(ALERT_FORMS) == len(ALERT_TYPES), "a type offered twice"
+
+
+def test_each_form_asks_for_the_field_its_rule_is_evaluated_on():
+    """The field an editor collects has to be the field the evaluator reads, or
+    the rule stores fine and never fires."""
+    from stocks.config import ALERT_FORMS
+
+    reads = {
+        "above": "price", "below": "price",
+        "pct_move": "pct", "drawdown": "pct",
+        "rsi_below": "level", "rsi_above": "level",
+        "sma_cross": None, "high_52w": None, "low_52w": None,
+    }
+    assert {form.type: form.field for form in ALERT_FORMS} == reads
+
+
+def test_the_history_types_carry_the_lookback_they_are_computed_over():
+    from stocks.config import ALERT_FORM_BY_TYPE, HISTORY_ALERT_TYPES
+
+    windowed = {"rsi_below", "rsi_above", "sma_cross", "high_52w", "low_52w"}
+    for name in HISTORY_ALERT_TYPES:
+        form = ALERT_FORM_BY_TYPE[name]
+        assert (form.window is not None) == (name in windowed), name
+    # A rule entered with no window at all is one the evaluator has to guess a
+    # span for; these are the spans the app has always offered.
+    assert ALERT_FORM_BY_TYPE["sma_cross"].window == 50
+    assert ALERT_FORM_BY_TYPE["high_52w"].window == 252

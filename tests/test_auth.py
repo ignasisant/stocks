@@ -6,6 +6,7 @@ import pytest
 import yaml
 from streamlit.testing.v1 import AppTest
 
+from stocks import session
 from stocks.config import DATA_DIR, PROJECT_ROOT, load_watchlist
 from stocks.portfolio import demo
 from stocks.portfolio.ledger import all_transactions
@@ -24,6 +25,7 @@ from stocks.web.auth import (
     slug,
     toggle_favorite,
 )
+from tests.conftest import AUTH_COOKIE_SECRET
 
 
 def test_slug_is_filesystem_safe():
@@ -90,7 +92,7 @@ def test_starter_watchlist_is_a_spread_of_live_tickers_and_no_positions(tmp_path
 
     tickers = [h.ticker for h in holdings]
     assert len(tickers) == len(set(tickers))
-    # The screener's P/E table, the 52-week scan and the sentiment pass all
+    # The sector screen's P/E table, the 52-week scan and the sentiment pass all
     # rank across the list; two rows gave them nothing to compare.
     assert len(tickers) >= 8
     assert all(h.name for h in holdings)  # names, or the tables read as codes
@@ -170,8 +172,13 @@ def test_ensure_user_data_migrates_legacy_dir(tmp_path):
     assert [h.ticker for h in load_watchlist(p.watchlist)] == ["NVDA"]
 
 
-def _signed_in(monkeypatch, tmp_path, email="jane@example.com"):
-    """resolve_user() against a fake Streamlit session, rooted at tmp_path."""
+def _signed_in(monkeypatch, tmp_path, email="jane@example.com", verified=True):
+    """resolve_user() against a fake Streamlit session, rooted at tmp_path.
+
+    The identity is a real signed cookie in a real (faked) jar, not a stubbed
+    `is_logged_in` — so this exercises `_jar()` and the verifier the way a
+    browser does, which is the whole path that replaced st.user.
+    """
     # paths_for() binds users_dir as a default argument, so patching
     # auth.USERS_DIR alone would let the account land in the real data dir.
     monkeypatch.setattr(auth, "USERS_DIR", tmp_path)
@@ -182,8 +189,15 @@ def _signed_in(monkeypatch, tmp_path, email="jane@example.com"):
     monkeypatch.setattr(
         auth, "guest_paths", lambda: paths_for("_guest", users_dir=tmp_path)
     )
-    monkeypatch.setattr(auth, "is_logged_in", lambda: bool(email))
-    monkeypatch.setattr(auth.st, "user", type("U", (), {"email": email}), raising=False)
+    monkeypatch.setenv("AUTH_COOKIE_SECRET", AUTH_COOKIE_SECRET)
+    jar = {}
+    if email:
+        jar[session.COOKIE] = session.mint(
+            {"email": email, "email_verified": verified, "name": "Jane"}
+        )
+    monkeypatch.setattr(
+        auth.st, "context", type("C", (), {"cookies": jar})(), raising=False
+    )
     monkeypatch.setattr(auth.st, "secrets", {}, raising=False)
     monkeypatch.setattr(auth.st, "session_state", {}, raising=False)
     return auth.st.session_state
@@ -255,15 +269,61 @@ def test_the_guest_book_is_seeded_once_per_session(monkeypatch, tmp_path):
     auth.require_login_or_demo()
 
 
+def test_a_guests_search_is_not_written_to_the_shared_dir(monkeypatch, tmp_path):
+    """The top bar draws for everybody, and its result rows push what was
+    picked into prefs. For a guest that file is the shared one — so an
+    anonymous visitor's searches would be read back out of the next anonymous
+    visitor's dropdown, and mirrored to the bucket on the way."""
+    _signed_in(monkeypatch, tmp_path, email="")
+    paths = auth.resolve_user()
+
+    auth.push_recent_search("AAPL")
+
+    assert not paths.prefs.exists(), "a guest wrote to the shared prefs file"
+    assert auth.load_recent_searches(auth.load_prefs()) == []
+
+
+def test_the_shared_prefs_file_refuses_a_write_whoever_is_asking():
+    """The backstop under the login check above.
+
+    The guard is in the persistence layer rather than in each caller because
+    the callers are the problem: a helper that saves a setting is easy to reach
+    from a code path that never asked who is asking, which is exactly how the
+    searches got there. A login check can be forgotten; this cannot.
+
+    `accounts.GUEST_DIR` is already a fresh directory of this test's own —
+    `conftest._own_guest_dir` gives every test one, so that nothing in the suite
+    reads or writes the checkout's real `data/users/_guest`.
+    """
+    from stocks import accounts
+
+    guest = accounts.guest_paths()
+
+    with pytest.raises(accounts.GuestIsReadOnly):
+        accounts.save_prefs(guest.prefs, {"currency": "USD"}, persist=lambda p: None)
+    with pytest.raises(accounts.GuestIsReadOnly):
+        accounts.push_recent_search(guest.prefs, "AAPL", persist=lambda p: None)
+
+    assert not guest.prefs.exists()
+
+
+def test_a_signed_in_search_is_still_remembered(monkeypatch, tmp_path):
+    """The guard is on the guest, not on the feature."""
+    _signed_in(monkeypatch, tmp_path)
+    auth.resolve_user()
+
+    auth.push_recent_search("AAPL")
+
+    assert auth.load_recent_searches(auth.load_prefs()) == ["AAPL"]
+
+
 def test_the_gate_still_stops_a_half_signed_in_identity(monkeypatch, tmp_path):
     """An identity with no email claim, or an unverified one, must reach the
     error require_login() renders — not be quietly downgraded to a guest
     session reading a fabricated book."""
-    _signed_in(monkeypatch, tmp_path, email="")
+    # A cookie the flow did mint, for an address Google did not verify.
+    _signed_in(monkeypatch, tmp_path, verified=False)
     monkeypatch.setattr(auth.st, "secrets", {"auth": {}}, raising=False)
-    monkeypatch.setattr(
-        auth.st, "user", type("U", (), {"is_logged_in": True})(), raising=False
-    )
     monkeypatch.setattr(auth, "require_login", lambda: "stopped")
 
     assert auth.require_login_or_demo() == "stopped"

@@ -257,6 +257,43 @@ def _jurisdiction(prefs: dict):
         return None
 
 
+def _market(tbl, hist, currency: str) -> list:
+    """The market-wide candidates, or none of them.
+
+    The one part of the card with a download of its own (web/market_data.py),
+    and the only part that can be slow or fail on its own — Yahoo throttles the
+    hosted deploy's IP routinely. So it is wrapped whole: a card that says
+    nothing about the index is the card this was before, while a Home page that
+    raised a fetch error under its KPI row would be a regression.
+    """
+    from stocks.analysis.portfolio import basket_change
+    from stocks.web import market_data
+
+    try:
+        closes = market_data.card_closes()
+        weights = tbl["weight"].dropna() if tbl is not None and "weight" in tbl else None
+        sectors = market_data.book_sectors(weights)
+        # Currency weights come straight off the positions frame — the quote
+        # currency per row is already there, so the fx line costs no lookup.
+        ccy = None
+        if tbl is not None and not tbl.empty and {"ccy", "weight"} <= set(tbl.columns):
+            ccy = tbl.groupby("ccy")["weight"].sum()
+        month = basket_change(hist, 30) if hist is not None and not hist.empty else None
+        return signals.market_candidates(
+            closes,
+            book_sectors=sectors,
+            bench_sectors=market_data.benchmark_sectors(),
+            currency_weights=ccy,
+            book_month_pct=None if not month else month[1] * 100,
+            bench_month_pct=market_data.index_month_base(closes, currency) * 100,
+            currency=currency,
+        )
+    except Exception as exc:
+        obs.warn("daily_action.market_unavailable",
+                 error_type=type(exc).__name__, error=str(exc)[:200])
+        return []
+
+
 def _start(
     prefs: dict,
     facts: dict,
@@ -284,6 +321,8 @@ def _start(
         "forced": forced,
         "prefs": prefs,
         "stored": stored,
+        "facts": facts,
+        "day": day,
         "action": None,
         "spent": False,
         "done": False,
@@ -333,6 +372,12 @@ def _collect(job: dict) -> daily.DailyAction | None:
     if action:
         card = action.to_dict()
         card["recent"] = daily.remembered(job.get("stored"), action.headline)
+        # The triggers this card was offered, stamped today: tomorrow's
+        # candidates are ranked against it so the card turns over even when
+        # the book does not (signals.decay).
+        card["shown"] = daily.seen(
+            job.get("stored"), job.get("facts") or {}, job["day"]
+        )
         auth.save_action(card)
     return action
 
@@ -647,8 +692,13 @@ def _render(slot, tbl, hist, currency, day_change, earnings, extremes,
             realized=realized,
             earnings=earnings,
             extremes=extremes,
+            market=_market(tbl, hist, currency),
+            # What the last few cards already led with, so a standing trigger
+            # sinks instead of opening the card for the fourth morning running.
+            shown=stored.shown if stored else None,
             jurisdiction=_jurisdiction(prefs),
             currency=currency,
+            today=day,
         ),
     )
     # Resolved before the card is drawn, not inside it: which fragment paints

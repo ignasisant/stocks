@@ -1,0 +1,622 @@
+/*
+ * The Portfolio page's own stylesheet, loaded with its chunk.
+ *
+ * No hex literals: every colour is a `--ag-*` custom property the server
+ * already inlined on `:root`, so this page and the Streamlit one beside it
+ * cannot drift, and neither can the two themes.
+ *
+ * Layout is `auto-fit` grids rather than breakpoints wherever it can be, so a
+ * KPI row that is four across on a desktop is two on a tablet and one on a
+ * phone without anybody writing three rules for it.
+ */
+
+.pf-tabs {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--ag-border);
+  margin: 0 0 1.25rem;
+  padding: 0;
+}
+
+.pf-tab {
+  appearance: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-sm, 0.875rem);
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pf-tab:hover {
+  color: var(--ag-text-primary);
+}
+
+.pf-tab-on {
+  color: var(--ag-text-primary);
+  border-bottom-color: var(--ag-brand-accent);
+}
+
+.pf-card {
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md, 12px);
+  background: var(--ag-surface-card);
+  padding: 1rem 1.1rem 1.1rem;
+  margin: 0 0 1rem;
+}
+
+.pf-card > h2 {
+  margin: 0 0 0.9rem;
+  font-size: var(--ag-fs-lg, 1.05rem);
+  font-weight: 600;
+}
+
+.pf-caption {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 0.78rem);
+  line-height: 1.45;
+  margin: 0.7rem 0 0;
+}
+
+.pf-warn {
+  border: 1px solid var(--ag-warn-edge, var(--ag-border));
+  border-left-width: 3px;
+  border-radius: var(--ag-radius-sm, 8px);
+  background: var(--ag-warn-fill-soft, var(--ag-surface-sunken));
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-sm, 0.875rem);
+  line-height: 1.5;
+  padding: 0.7rem 0.85rem;
+  margin: 0 0 0.9rem;
+}
+
+.pf-info {
+  border: 1px solid var(--ag-border);
+  border-left: 3px solid var(--ag-info);
+  border-radius: var(--ag-radius-sm, 8px);
+  background: var(--ag-surface-sunken);
+  font-size: var(--ag-fs-sm, 0.875rem);
+  line-height: 1.5;
+  padding: 0.7rem 0.85rem;
+  margin: 0 0 0.9rem;
+}
+
+/* ------------------------------------------------------------------ KPI row */
+
+.pf-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+  gap: 0.6rem;
+}
+
+/*
+ * Rows of a known length wrap evenly instead of leaving an orphan. auto-fit
+ * alone breaks four tiles 3+1 at the widths the page takes with the chat
+ * drawer open (~1440px screen), which reads as a fourth figure that belongs
+ * to nothing. So a row of four goes 4 → 2+2 → 1, three and two go all-or-one,
+ * and six goes 3+3 → 2+2+2. The breakpoints are on the main column
+ * (`ag-main`, the shell's size container), not the viewport: the drawer takes
+ * width without the window changing. Other lengths keep auto-fit.
+ */
+.pf-kpis[data-n="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.pf-kpis[data-n="3"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.pf-kpis[data-n="4"] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.pf-kpis[data-n="6"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@container ag-main (max-width: 52rem) {
+  .pf-kpis[data-n="4"],
+  .pf-kpis[data-n="6"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container ag-main (max-width: 38rem) {
+  .pf-kpis[data-n="3"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container ag-main (max-width: 26rem) {
+  .pf-kpis[data-n="2"],
+  .pf-kpis[data-n="4"],
+  .pf-kpis[data-n="6"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pf-kpi {
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  background: var(--ag-surface-sunken);
+  padding: 0.65rem 0.75rem;
+}
+
+.pf-kpi-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs, 0.72rem);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pf-kpi-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+}
+
+.pf-kpi-value {
+  font-size: var(--ag-fs-xl, 1.3rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The "?" pill: the help text is the title, so it costs no layout. */
+.pf-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill, 999px);
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs, 0.7rem);
+  cursor: help;
+  flex: none;
+}
+
+.pf-chip {
+  display: inline-block;
+  border-radius: var(--ag-radius-pill, 999px);
+  padding: 0.08rem 0.42rem;
+  font-size: var(--ag-fs-2xs, 0.72rem);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pf-chip-up {
+  background: var(--ag-success-fill, var(--ag-surface-sunken));
+  color: var(--ag-up);
+}
+
+.pf-chip-down {
+  background: var(--ag-down-fill, var(--ag-surface-sunken));
+  color: var(--ag-down);
+}
+
+.pf-chip-flat {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-muted);
+}
+
+/* -------------------------------------------------------------------- tables */
+
+.pf-scroll {
+  overflow-x: auto;
+}
+
+.pf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ag-fs-sm, 0.875rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-table th,
+.pf-table td {
+  padding: 0.42rem 0.55rem;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--ag-rule-soft, var(--ag-border));
+}
+
+.pf-table th {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs, 0.72rem);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  position: sticky;
+  top: 0;
+  background: var(--ag-surface-card);
+}
+
+.pf-table th.pf-left,
+.pf-table td.pf-left {
+  text-align: left;
+}
+
+.pf-table tbody tr:hover {
+  background: var(--ag-surface-hover);
+}
+
+.pf-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.pf-sort-mark {
+  color: var(--ag-text-faint);
+  padding-left: 0.2rem;
+}
+
+.pf-up {
+  color: var(--ag-up);
+}
+
+.pf-down {
+  color: var(--ag-down);
+}
+
+.pf-muted {
+  color: var(--ag-text-muted);
+}
+
+.pf-pair {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.pf-ticker {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.pf-ticker:hover {
+  color: var(--ag-brand-accent);
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------------ controls */
+
+.pf-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.9rem;
+}
+
+.pf-control-label {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 0.78rem);
+}
+
+.pf-seg {
+  display: inline-flex;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  overflow: hidden;
+}
+
+.pf-seg button {
+  appearance: none;
+  border: none;
+  background: none;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-xs, 0.78rem);
+  padding: 0.3rem 0.65rem;
+  cursor: pointer;
+}
+
+.pf-seg button + button {
+  border-left: 1px solid var(--ag-border);
+}
+
+.pf-seg button:hover {
+  color: var(--ag-text-primary);
+}
+
+.pf-seg .pf-seg-on {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+}
+
+.pf-select {
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-xs, 0.78rem);
+  padding: 0.3rem 0.5rem;
+}
+
+/* -------------------------------------------------------------------- charts */
+
+.pf-donuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 1rem;
+}
+
+.pf-donut h3,
+.pf-chart h3 {
+  margin: 0 0 0.5rem;
+  color: var(--ag-text-secondary, var(--ag-text-primary));
+  font-size: var(--ag-fs-sm, 0.875rem);
+  font-weight: 600;
+}
+
+.pf-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ag-fs-xs, 0.78rem);
+  color: var(--ag-text-secondary, var(--ag-text-primary));
+}
+
+.pf-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pf-swatch {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 2px;
+  flex: none;
+}
+
+.pf-legend-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.9rem;
+  margin: 0 0 0.6rem;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ag-fs-xs, 0.78rem);
+  color: var(--ag-text-secondary, var(--ag-text-primary));
+}
+
+/* The correlation grid: one square per pair, labels down and across. */
+.pf-heat {
+  display: grid;
+  gap: 1px;
+  font-size: var(--ag-fs-2xs, 0.7rem);
+  min-width: max-content;
+}
+
+.pf-heat-cell {
+  min-width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 2px;
+}
+
+.pf-heat-label {
+  color: var(--ag-text-muted);
+  padding: 0 0.35rem;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+/* Column names read bottom-to-top, so a fifteen-name basket still fits the
+   card's width: vertical-rl plus the half turn is the one combination that
+   does not mirror the glyphs. */
+.pf-heat-col {
+  color: var(--ag-text-muted);
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  height: 3.6rem;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* -------------------------------------------------------------- empty states */
+
+.pf-empty {
+  border: 1px dashed var(--ag-border);
+  border-radius: var(--ag-radius-md, 12px);
+  background: var(--ag-surface-card);
+  padding: 2rem 1.2rem;
+  text-align: center;
+}
+
+.pf-empty h2 {
+  margin: 0 0 0.5rem;
+  font-size: var(--ag-fs-lg, 1.05rem);
+}
+
+.pf-empty p {
+  margin: 0 auto 1rem;
+  max-width: 34rem;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm, 0.875rem);
+  line-height: 1.55;
+}
+
+/* The history chart's legend shares its row with the zoom reset. */
+.pf-chart-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.pf-zoom-reset {
+  font-size: var(--ag-fs-2xs, 0.72rem);
+  padding: 0.2rem 0.6rem;
+}
+
+/* Drag-to-zoom: a crosshair says the plot takes a drag, and no text selection
+   fights it. `touch-action` keeps a vertical swipe scrolling the page. */
+.pf-zoomable {
+  cursor: crosshair;
+  user-select: none;
+  touch-action: pan-y;
+}
+
+/* The plot and its hover box share a positioned frame, so the box can be
+   placed as a percentage of the chart's rendered width (charts.tsx ChartTip). */
+.pf-plot {
+  position: relative;
+}
+
+/* Plotly's unified hover label: date on top, one row per series with its
+   swatch, name muted and figure bold. Never takes the pointer. */
+.pf-tip {
+  position: absolute;
+  top: 8px;
+  transform: translateX(8px);
+  z-index: 5;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(280px, 60%);
+  padding: 8px 10px;
+  background: var(--ag-surface-page);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  box-shadow: var(--ag-shadow-overlay);
+  font-size: var(--ag-fs-xs, 0.78rem);
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Past the middle the box opens to the pointer's left, so it stays in the card. */
+.pf-tip-flip {
+  transform: translateX(calc(-100% - 8px));
+}
+
+.pf-tip-title {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs, 0.72rem);
+}
+
+.pf-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ag-text-primary);
+  white-space: nowrap;
+}
+
+.pf-tip-row strong {
+  margin-left: auto;
+  padding-left: 8px;
+  font-weight: 600;
+}
+
+.pf-tip-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+
+/* The correlation colour scale, −1 to +1, under the grid. */
+.pf-heat-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs, 0.72rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-heat-ramp {
+  flex: 0 1 14rem;
+  height: 0.55rem;
+  border-radius: var(--ag-radius-pill, 999px);
+}
+
+/*
+ * A cell that carries a second, dim line under its headline — the custodians
+ * under a ticker on a phone. `pf-narrow-only` / `pf-wide-only` pick which of
+ * the two renderings of the same fact shows, by live width, so a resized
+ * desktop window adapts as well as a phone does.
+ */
+.pf-stack {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.pf-sub {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs, 0.72rem);
+  font-weight: 400;
+}
+
+.pf-narrow-only {
+  display: none;
+}
+
+/* Real but not live: the last session's move while its exchange is shut. */
+.pf-dim {
+  opacity: 0.55;
+}
+
+@media (max-width: 640px) {
+  .pf-card {
+    padding: 0.85rem 0.8rem 0.9rem;
+  }
+  .pf-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+  .pf-narrow-only {
+    display: inline;
+  }
+  .pf-table .pf-wide-only {
+    display: none;
+  }
+}
+
+/*
+ * The example book's own row: the offer over an empty ledger, and the warning
+ * over a ledger holding invented rows. One shape for both, because they are
+ * the same claim at two moments — these figures are not yours yet.
+ *
+ * Loud on purpose. Everything under it is a number a reader could otherwise
+ * mistake for their own money.
+ */
+.pf-demo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--ag-warn-edge, var(--ag-border));
+  border-radius: var(--ag-radius-md, 12px);
+  background: var(--ag-warn-fill-soft, var(--ag-surface-sunken));
+}
+
+.pf-demo p {
+  flex: 1 1 18rem;
+  margin: 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm, 0.875rem);
+  line-height: 1.5;
+}

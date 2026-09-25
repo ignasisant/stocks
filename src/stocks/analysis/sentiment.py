@@ -162,6 +162,25 @@ MACRO_ASSETS: tuple[tuple[str, str, str], ...] = (
     ("ETH-USD", "Ethereum", "{:,.0f}"),
 )
 
+# The rates block, as (FRED id, i18n suffix, whether a rise is the unwelcome
+# direction). `welcome` is not decoration: rising yields and widening spreads
+# are the unwelcome direction, but a *steepening* curve is the healthy one —
+# inversion is the warning there — so colouring every rise red would paint the
+# curve rows backwards. Policy rates are neutral: they are a fact about the
+# central bank, not a market move.
+RATE_ROWS: dict[str, tuple[str, int]] = {
+    "DGS10": ("us10y", -1),
+    "DFII10": ("us10y_real", -1),
+    "T10Y2Y": ("curve_2s10s", +1),
+    "T10Y3M": ("curve_3m10y", +1),
+    "BAMLH0A0HYM2": ("hy_spread", -1),
+    "BAMLC0A0CM": ("ig_spread", -1),
+    "T5YIE": ("breakeven5y", -1),
+    "DFEDTARU": ("policy_fed", 0),
+    "ECBDFR": ("policy_ecb", 0),
+}
+
+
 # The composite's own inputs, plus the benchmarks the personalisation regresses
 # a book against. Kept apart from the display registries because these are
 # needed whether or not their tile is on screen.

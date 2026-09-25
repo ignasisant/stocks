@@ -371,13 +371,13 @@ def test_a_phone_gets_controls_per_holding_instead_of_a_panning_grid(
     body = _html(page)
     assert 'class="wl-m-s">NVDA<' in body and "<span>semis</span>" in body
     # The star writes on the tap, and the row's popover carries the rest.
-    page.button(key="wl_fav_NVDA").click().run()
+    page.button(key="wl_fav_tag_semis_NVDA").click().run()
     assert _entries(paths.watchlist)["NVDA"]["favorite"] is True
-    page.multiselect(key="wl_mtags_NVDA").set_value(["semis", "ai"]).run()
+    page.multiselect(key="wl_mtags_tag_semis_NVDA").set_value(["semis", "ai"]).run()
     assert _entries(paths.watchlist)["NVDA"]["tags"] == ["semis", "ai"]
-    page.number_input(key="wl_msh_NVDA").set_value(8.0).run()
+    page.number_input(key="wl_msh_tag_semis_NVDA").set_value(8.0).run()
     assert _entries(paths.watchlist)["NVDA"]["shares"] == 8.0
-    page.button(key="wl_mdel_NVDA").click().run()
+    page.button(key="wl_mdel_tag_semis_NVDA").click().run()
     assert not _entries(paths.watchlist)
 
 
@@ -393,6 +393,23 @@ def test_the_phone_list_stops_at_its_cap_and_says_so(page, paths, phone, monkeyp
     assert 'class="wl-m-s">T1<' in body and 'class="wl-m-s">T3<' not in body
     assert "3 more in this group" in body
 
+
+def test_a_starred_name_also_in_a_tag_group_keeps_both_rows_on_a_phone(
+    page, paths, phone
+):
+    """`groups()` puts a favorite that carries tags in two sections on purpose.
+    The phone rows have to key by section as the grid does, or the second copy
+    collides with the first and the page dies on a duplicate element key."""
+    paths.watchlist.write_text(
+        "watchlist:\n  - ticker: NVDA\n    favorite: true\n    tags: [semis]\n"
+    )
+    page.run()
+    assert not page.exception
+    stars = [b.key for b in page.get("button") if (b.key or "").startswith("wl_fav_")]
+    assert stars == ["wl_fav_fav_NVDA", "wl_fav_tag_semis_NVDA"]
+    # The copy under the tag still writes, the same as the one under Favorites.
+    page.button(key="wl_fav_tag_semis_NVDA").click().run()
+    assert _entries(paths.watchlist)["NVDA"].get("favorite") is not True
 
 # ---------------------------------------------------------------- helpers
 

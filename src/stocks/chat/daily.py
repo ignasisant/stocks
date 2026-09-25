@@ -94,6 +94,12 @@ class DailyAction:
     lang: str = "en"
     generated: float = 0.0
     recent: list[str] = field(default_factory=list)  # past headlines, newest first
+    # Which triggers this card was built from, and for how many days running:
+    # {"harvest:NVDA": {"last": "2026-09-17", "run": 3}}. Read back by
+    # signals.decay() so a standing trigger sinks down the next day's card
+    # instead of leading it again. Headlines alone cannot do this — the model
+    # rewords the same trigger every day and `recent` sees two different lines.
+    shown: dict = field(default_factory=dict)
 
     @property
     def from_model(self) -> bool:
@@ -110,6 +116,7 @@ class DailyAction:
             "lang": self.lang,
             "generated": self.generated,
             "recent": list(self.recent),
+            "shown": dict(self.shown),
         }
 
     @classmethod
@@ -123,6 +130,9 @@ class DailyAction:
         bullets = [str(b) for b in (raw.get("bullets") or []) if str(b).strip()]
         if not day or not bullets:
             return None
+        # Bound once: a stored card is whatever JSON was on disk, so `shown`
+        # has to be *seen* to be a dict, not asked twice and assumed.
+        shown = raw.get("shown")
         return cls(
             day=day,
             as_of=str(raw.get("as_of") or ""),
@@ -133,6 +143,7 @@ class DailyAction:
             lang=str(raw.get("lang") or "en"),
             generated=float(raw.get("generated") or 0.0),
             recent=[str(h) for h in (raw.get("recent") or []) if str(h).strip()],
+            shown=shown if isinstance(shown, dict) else {},
         )
 
 
@@ -354,7 +365,28 @@ _KINDS = (
     "- drawdown: a position is `pnl_pct` under its cost. The moment to re-read "
     "the thesis, not a sell instruction.\n"
     "- concentration: one name is `weight_pct` of the whole book.\n"
-    "- low_52w: a watchlist name (not held) is `gap_pct` from its 52-week low."
+    "- low_52w: a watchlist name (not held) is `gap_pct` from its 52-week low.\n"
+    "- market: the index itself. `trend` is where it sits in its own trend "
+    "(up / turning_down / turning_up / down), `from_high_pct` how far under "
+    "its 52-week high it is, `month_pct` its last month, and "
+    "`sectors_in_uptrend` of `sectors_read` (`breadth_pct`) how many sectors "
+    "are still above their long average — a high index with few sectors in "
+    "trend is a narrow market. Say what it means for THIS book, never a market "
+    "summary on its own.\n"
+    "- sector_tilt: the book's largest sector bet against the index. `sector` "
+    "is `own_pct` of the user's EQUITY (not of the whole book: "
+    "`equity_share_pct` is how much of the book that equity is, and the rest "
+    "is crypto, bonds or unclassified) against `index_pct` of the index, a "
+    "`tilt_pp`-point active position, and `excess_month_pct` is how much that "
+    "sector beat (or trailed) the index this month — whether the bet is "
+    "paying.\n"
+    "- vs_benchmark: the book returned `book_month_pct` over the month against "
+    "the index's `index_month_pct`, a `gap_pp`-point difference. Both figures "
+    "are already in the user's own currency.\n"
+    "- fx: the book holds `share_pct` in `currency` (`foreign_share_pct` "
+    "outside `base` in total) and that currency moved `move_month_pct` this "
+    "month, which added `drag_month_pct` to the book's return before any "
+    "holding moved."
 )
 
 _SHAPE = (
@@ -362,14 +394,16 @@ _SHAPE = (
     "no code fence:\n"
     '{"headline": "...", "bullets": ["...", "..."], "focus": ["TICKER"]}\n'
     f"- headline: at most {HEADLINE_CHARS} characters. The single decision "
-    "that matters most today, ticker included.\n"
+    "that matters most today, with the ticker when it is about one holding.\n"
     f"- bullets: {MIN_BULLETS} to {MAX_BULLETS} lines, each at most "
     f"{BULLET_CHARS} characters, ordered by how much they matter. One action "
-    "per line, and each line must name the ticker, what to do or check, and "
-    "the trigger with its figure — e.g. 'REVIEW NVDA: your 150 exit alert "
-    "fired, price 148.20'. Telegraphic, no prose, no preamble.\n"
+    "per line: what to do or check, and the trigger with its figure — e.g. "
+    "'REVIEW NVDA: your 150 exit alert fired, price 148.20'. A line built on a "
+    "ticker action must name that ticker; a market, sector_tilt, vs_benchmark "
+    "or fx line is about the whole book and names no holding. Telegraphic, no "
+    "prose, no preamble.\n"
     f"- focus: the tickers those lines name, at most {FOCUS_MAX}, exactly as "
-    "they are spelled in the data."
+    "they are spelled in the data. Empty when no line is about a holding."
 )
 
 # The one thing the model cannot work out from the numbers themselves. Off
@@ -395,6 +429,13 @@ _GUARDRAILS = (
     "lines rather than padding with commentary. When `actions` is empty, say "
     "plainly that nothing needs a decision today and point at what the user "
     "could review anyway from the context numbers.\n"
+    "Write about different things. Never spend two lines on the same trigger "
+    "kind, and when the card has both a whole-book action (market, "
+    "sector_tilt, vs_benchmark, fx) and a single-holding one, use both: a card "
+    "that is four variations on one theme is the one a reader stops opening. "
+    "Where a whole-book action explains a holding's (the sector the position "
+    "sits in led or lagged, the currency carried it), say so on one line "
+    "rather than writing the two separately.\n"
     "You are not a licensed financial advisor. Write each line as a decision "
     "to make — review, check, decide before, consider — with the trigger that "
     "raised it, never as an instruction to buy, sell or hold, and never "
@@ -473,10 +514,21 @@ def _line(text: str, limit: int) -> str:
 # prompt. Every such figure must be traceable to `facts`, so the audit below
 # is a hard gate: a card with an untraceable number is a provider miss, and
 # the next candidate — or `computed()` — writes the card instead.
-_PCT_RE = re.compile(r"([-+]?\d[\d.,\u00a0 ]*?)\s*%")
+# One written figure. A space belongs to the number only when it separates a
+# group of exactly three digits, which is the one thing it can legitimately
+# be — before that rule "the S&P 500 is 8.1% under its high" read as the
+# single figure 5008.1, and a perfectly sourced card was rejected over an
+# index whose name ends in a number. The grouped form is tried first and
+# requires a group, so a bare "1234,5" still falls through to the plain form
+# whole instead of being cut after its third digit.
+_NUM = (
+    r"[-+]?\d{1,3}(?:[.,\u00a0\u202f ]\d{3})+(?:[.,]\d+)?"
+    r"|[-+]?\d+(?:[.,]\d+)?"
+)
+_PCT_RE = re.compile(rf"({_NUM})\s*%")
 _MONEY_RE = re.compile(
-    r"[€$£¥]\s*([-+]?\d[\d.,\u00a0 ]*)"
-    r"|([-+]?\d[\d.,\u00a0 ]*?)\s*(?:EUR|USD|GBP|CHF|JPY)\b"
+    rf"[€$£¥]\s*({_NUM})"
+    rf"|({_NUM})\s*(?:EUR|USD|GBP|CHF|JPY)\b"
 )
 _DMY_RE = re.compile(r"\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\b")
 _ISO_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
@@ -724,6 +776,58 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
             price=f"{float(action.get('price') or 0):,.2f}",
             gap=f"{float(action.get('gap_pct') or 0):.1f}%",
         )
+    if kind == signals.MARKET:
+        # Breadth rides the same line when it could be read: the index level
+        # and how much of the market is behind it are one reading, and split
+        # over two lines they read as two unrelated facts.
+        line = translate(
+            key, lang, index=action.get("index") or "",
+            trend=translate(f"home.daily_trend_{action.get('trend')}", lang),
+            dip=f"{abs(float(action.get('from_high_pct') or 0)):.1f}%",
+        )
+        if action.get("sectors_read"):
+            line += " " + translate(
+                "home.daily_act_market_breadth", lang,
+                hit=action.get("sectors_in_uptrend"),
+                total=action.get("sectors_read"),
+            )
+        return line
+    if kind == signals.SECTOR_TILT:
+        # The sector labels are Yahoo's English spellings; the Pulso page
+        # already carries a translation for each, so the card borrows it and
+        # prints the raw label only for a bucket that has none.
+        from stocks.web.i18n import has
+
+        sector = str(action.get("sector") or "")
+        slug = f"sentiment.sector_{sector.lower().replace(' ', '_')}"
+        line = translate(
+            key, lang,
+            sector=translate(slug, lang) if has(slug) else sector,
+            own=f"{float(action.get('own_pct') or 0):.0f}%",
+            index=f"{float(action.get('index_pct') or 0):.0f}%",
+            tilt=f"{float(action.get('tilt_pp') or 0):+.0f}",
+        )
+        excess = action.get("excess_month_pct")
+        if excess is not None:
+            line += " " + translate(
+                "home.daily_act_sector_tilt_excess", lang,
+                excess=f"{float(excess):+.1f}%",
+            )
+        return line
+    if kind == signals.VS_BENCH:
+        return translate(
+            key, lang, index=action.get("index") or "",
+            book=f"{float(action.get('book_month_pct') or 0):+.1f}%",
+            bench=f"{float(action.get('index_month_pct') or 0):+.1f}%",
+            gap=f"{abs(float(action.get('gap_pp') or 0)):.1f}",
+        )
+    if kind == signals.FX:
+        return translate(
+            key, lang, currency=action.get("currency") or "",
+            share=f"{float(action.get('share_pct') or 0):.0f}%",
+            move=f"{float(action.get('move_month_pct') or 0):+.1f}%",
+            drag=f"{float(action.get('drag_month_pct') or 0):+.1f}%",
+        )
     return ""
 
 
@@ -842,6 +946,54 @@ def _tickers(facts: dict) -> set[str]:
             symbol = str(row.get("ticker") or "").strip().upper()
             if symbol:
                 out.add(symbol)
+    return out
+
+
+def offered(facts: dict) -> list[str]:
+    """The `signals.Signal.key` of every trigger that reached the card.
+
+    Rebuilt from the facts rather than carried down from `candidates()`,
+    because the facts are what both paths — the model and `computed()` — were
+    actually given, and they are already on hand wherever a card gets stored.
+    """
+    out = []
+    for action in facts.get("actions") or []:
+        kind = str(action.get("kind") or "")
+        if not kind:
+            continue
+        subject = str(action.get("ticker") or action.get("sector") or "")
+        out.append(f"{kind}:{subject}")
+    return out
+
+
+def seen(previous: DailyAction | None, facts: dict, day: date) -> dict:
+    """The `shown` map to store with a new card: every trigger it was offered,
+    stamped today, with its run of consecutive days.
+
+    A trigger offered yesterday and again today has its run extended; one that
+    was not offered yesterday starts over at one, whatever it did last week.
+    Keys nobody has seen for a while are dropped, so the file is a memory of
+    the current repetition and not a log.
+    """
+    past = (previous.shown if previous else None) or {}
+    yesterday = (day - timedelta(days=1)).isoformat()
+    out: dict = {}
+    for key in dict.fromkeys(offered(facts)):
+        seen = past.get(key)
+        before = seen if isinstance(seen, dict) else {}
+        run = int(before.get("run") or 0) if before.get("last") == yesterday else 0
+        out[key] = {"last": day.isoformat(), "run": run + 1}
+    # Triggers that did not come up today keep their stamp for a few days — a
+    # condition that flickers in and out must not read as fresh every time.
+    for key, value in past.items():
+        if key in out or not isinstance(value, dict):
+            continue
+        try:
+            last = date.fromisoformat(str(value.get("last") or ""))
+        except ValueError:
+            continue
+        if (day - last).days <= signals.DECAY_FORGET_DAYS:
+            out[key] = value
     return out
 
 

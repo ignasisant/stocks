@@ -1,10 +1,8 @@
-"""ASGI entry point: the static marketing site in front of the Streamlit app.
+"""ASGI entry point: the marketing site, the React app, the API — and the old app.
 
-Run: uv run stocks dashboard   (or: uv run streamlit run src/stocks/web/server.py)
+Run: uv run stocks dashboard   (or: uv run uvicorn stocks.web.server:app)
 
-`streamlit run` detects the module-level `st.App` and serves it directly, so
-this is one process on one port — the app exactly as before, plus a handful of
-plain Starlette routes it now shares the server with:
+One process on one port, one Starlette app in front of everything:
 
     /              the landing (English), or the app for a visitor who has one
     /es/           the landing (Spanish)
@@ -13,22 +11,32 @@ plain Starlette routes it now shares the server with:
     /sitemap.xml   both landing URLs, cross-linked by hreflang
     /livez         liveness probe for uptime checks (scripts/setup_monitoring.sh)
     /healthz       the same probe, for local runs and the Docker HEALTHCHECK
+    /status        which revision answers, from which commit (scripts/deploy.sh)
     /legal/*       privacy policy and terms of use (static, bilingual)
-    everything else    Streamlit: /portfolio, /ticker, /_stcore/…, /oauth2callback
+    /auth/login, /oauth2callback, /auth/logout   sign-in (web/oidc.py)
+    /api/v1/*      the HTTP API (stocks.api) every screen reads through
+    /portfolio, /ticker, …   the app: the React shell (frontend/app), one
+                   document for every page its router answers
+    /next-assets/* that shell's bundle
+    /app/static/*  the mirrored logos (same-origin, see stocks.identity)
+    /next/*        the shell's address while it was being built, redirected
+    /legacy/*      the Streamlit app it replaced, read-only in spirit
 
-Why `/` is shared rather than the app moving to a prefix: the app's default
-page is served at the root by Streamlit and nothing can move it (`st.Page`
-ignores `url_path` for the default page), so putting the landing anywhere else
-would mean `server.baseUrlPath` — which rewrites every app URL, invalidates
-every bookmark, and changes the OIDC redirect URI registered with Google. The
-gate below avoids all of that: a request for `/` gets the landing only when it
-carries no query parameter and no `ts_app` cookie, which is exactly the state
-of a first-time visitor and of every crawler. Any CTA click arrives with a
-parameter, and the cookie keeps returning visitors going straight to the app.
+`/` is shared: a request for it gets the landing only when it carries no query
+parameter and no `ts_app` cookie, which is exactly the state of a first-time
+visitor and of every crawler. Any CTA click arrives with a parameter, and the
+cookie keeps returning visitors going straight to the app. Crawlers never send
+cookies, so the pages Google sees at `/` and `/es/` are the pages a first-time
+human sees. The app routes are marked `noindex` on the way out, because they are
+a JavaScript shell over somebody's positions.
 
-Crawlers never send cookies, so the pages Google sees at `/` and `/es/` are the
-pages a first-time human sees. The app routes are marked `noindex` on the way
-out, because they are a JavaScript shell over somebody's positions.
+**Why the Streamlit app is still here.** The React shell replaced it screen for
+screen, but "the old one showed something different" is a question worth being
+able to answer by looking, for a while. So it is mounted whole at `/legacy`
+(`st.App` supports being a sub-application) rather than deleted: same account,
+same cookie, same data. It is started on the first request under that prefix,
+not at boot, so a deployment nobody opens it on pays nothing for it. The last
+commit where it was the app is tagged `streamlit-final`.
 """
 
 from __future__ import annotations
@@ -38,20 +46,37 @@ import json
 import os
 import re
 import subprocess
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import quote
 
 import streamlit as st
+from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
-from starlette.responses import FileResponse, RedirectResponse, Response
-from starlette.routing import Route
+from starlette.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
+from starlette.routing import Mount, Route
 
-from stocks import obs
+from stocks import api, navigation, obs, session
 from stocks.secrets_env import secret
-from stocks.web import landing, landing_static, legal, ratelimit, seo
+from stocks.web import (
+    attribution,
+    landing,
+    landing_static,
+    legal,
+    oidc,
+    ratelimit,
+    seo,
+)
 from stocks.web.landing import (
     ASSET_BASE,
     LANDING_PATHS,
@@ -75,6 +100,37 @@ _APP_COOKIE_MAX_AGE = 400 * 24 * 3600  # the ceiling Chrome will honour
 # in the query string means "take me to the app".
 PARAM_LANDING = "landing"
 
+# The app: the React shell (frontend/app), served as one document for every
+# page its client router answers (`navigation.SHELL_PATHS`), with its bundle
+# under `/next-assets/`. Not under `/app/`: the logo mirror answers
+# `/app/static/`, and the API hands those URLs out absolute.
+APP_ASSETS = "/next-assets/"
+_APP_BUILD = _HERE / "static" / "app"
+
+# Where the shell lived while it was being built beside the Streamlit app.
+# Redirected rather than dropped: it was linked from the "what's new" card and
+# from Profile, and it is the bank's registered return address
+# (`bank.access.APP_PATH`), which is changed in the Enable Banking panel, not
+# here.
+NEXT_PATH = "/next"
+
+# The retired Streamlit app, mounted whole (see the module docstring).
+LEGACY_PATH = "/legacy"
+
+# The mirrored logos. Streamlit's static serving (`enableStaticServing`) used to
+# answer this at the root; it now answers it only under `/legacy`, and the API
+# hands out `/app/static/logos/…` absolute (`api.loaders.logo`), so the root
+# serves the same directory itself.
+STATIC_PATH = "/app/static/"
+_STATIC = _HERE / "static"
+
+
+# Where the read-only HTTP API is mounted (stocks.api). Not the marketing site
+# and not the app shell either: its clients are cron jobs and scripts, so it is
+# exempt from the app cookie below, and the gate has to be told it exists or
+# every request under it is answered as a 404.
+API_PREFIX = f"{api.MOUNT_PATH}/"
+
 # The marketing site's own paths — deliberately excluding `/`, which is only
 # the landing when the gate says so. Anything not listed here is the app, and
 # gets stamped noindex on the way out. The probes and the legal pages ride
@@ -92,7 +148,7 @@ _HOST_RE = re.compile(r"^[A-Za-z0-9.\-]+(:\d+)?$")
 
 _HTML = "text/html; charset=utf-8"
 
-# Paths the canonical-host redirect must leave alone: Streamlit's transport
+# Paths the canonical-host redirect must leave alone: the old app's transport
 # (an in-flight session moves with it and breaks), the OIDC return (the
 # hostname is registered with Google and is not ours to change mid-flight),
 # and the health probes. Those three answer *about the container handling the
@@ -101,7 +157,8 @@ _HTML = "text/html; charset=utf-8"
 # its /status hands back the revision already serving 100% of traffic. That is
 # how scripts/deploy.sh came to smoke-test the old revision and refuse to
 # promote a healthy candidate.
-_NEVER_REDIRECT = ("/_stcore/", "/oauth2callback", "/livez", "/healthz", "/status")
+_NEVER_REDIRECT = (f"{LEGACY_PATH}/_stcore/", "/oauth2callback", "/livez",
+                   "/healthz", "/status", API_PREFIX)
 
 
 def _is_marketing_path(path: str) -> bool:
@@ -172,6 +229,12 @@ def landing_response(
 ) -> Response:
     """The landing document for one variant, gzipped when the client takes it."""
     origin = base_url(request)
+    obs.event(
+        "landing.view",
+        lang=lang,
+        path=request.url.path,
+        **_attribution(request),
+    )
     accepts_gzip = "gzip" in request.headers.get("accept-encoding", "").lower()
     jur = jurisdiction or landing.jurisdiction_for(lang)
     root = request.url.path == PATH_EN
@@ -202,14 +265,19 @@ def landing_response(
 def _wants_landing(request: Request) -> bool:
     """True when this request for `/` should get the pitch instead of the app.
 
-    No query parameter and no app cookie — a first-time visitor, or a crawler,
-    which sends neither. `?landing=1` asks for it explicitly.
+    Nothing asked for in the query and no app cookie — a first-time visitor, or
+    a crawler, which sends neither. `?landing=1` asks for it explicitly.
+
+    Campaign parameters do not count as asking for anything: `?utm_source=` is
+    how every promoted link is written, and a reader who follows one has to
+    arrive at the pitch, not at an app shell over somebody else's demo book.
+    `web.attribution.is_passive` is the whole of that exception.
     """
     if request.method not in ("GET", "HEAD"):
         return False
     if PARAM_LANDING in request.query_params:
         return True
-    if request.query_params:
+    if any(not attribution.is_passive(k) for k in request.query_params):
         return False  # a CTA click, a ?ticker= deep link, an OIDC return
     return request.cookies.get(APP_COOKIE) != "1"
 
@@ -255,15 +323,22 @@ def canonical_redirect(request: Request) -> str | None:
 def _is_known_path(path: str) -> bool:
     """True for a path something actually serves.
 
-    Streamlit's static mount answers anything it does not recognise with the
-    app shell and a 200, which makes every typo and every stale link a soft 404
-    — indexed as nothing, reported in Search Console as a problem, and crawled
+    The shell's router answers any slug with a page — Home, for one it does not
+    know — which would make every typo and every stale link a soft 404:
+    indexed as nothing, reported in Search Console as a problem, and crawled
     forever. The set below is the whole surface: this module's own pages, the
-    app's pages (derived from `app_pages/`, so a new one needs no edit here),
-    and Streamlit's own endpoints.
+    shell's pages (`navigation.SHELL_PATHS`), and the machinery prefixes.
     """
     path = path.rstrip("/") or "/"
     if path == PATH_EN or _is_marketing_path(path + "/") or _is_marketing_path(path):
+        return True
+    if path.startswith(API_PREFIX) or path + "/" == API_PREFIX:
+        return True
+    if path.startswith(APP_ASSETS) or path.startswith(STATIC_PATH):
+        return True
+    if path in (NEXT_PATH, LEGACY_PATH) or path.startswith(
+        (NEXT_PATH + "/", LEGACY_PATH + "/")
+    ):
         return True
     if path in seo.app_page_paths() or path in seo.APP_PATHS:
         return True
@@ -288,56 +363,43 @@ def not_found(request: Request) -> Response:
 
 
 # Requests one client may make per window before it is turned away. Counted
-# per document, not per asset: one page load pulls dozens of Streamlit bundles
-# and every websocket frame is a chat message, so metering those would either
-# lock out a normal first visit or have to be set so high it meters nothing.
+# per document, not per asset: one page load pulls a dozen bundle chunks, and
+# the old app's every websocket frame is a chat message, so metering those
+# would either lock out a normal first visit or have to be set so high it
+# meters nothing.
 # Documents are the expensive part anyway — a landing render, an app shell.
 CLIENT_MAX_DOCS = 60
 CLIENT_WINDOW_S = 60
 
-# Not metered: the transport Streamlit needs to keep a session alive (the app
-# has its own per-account limit on what arrives over it, see
-# web/ratelimit.py's use in chat_core), the mirrored logos and landing assets,
-# and the probes an uptime monitor hits on a schedule.
-_UNMETERED = ("/_stcore/", "/static/", ASSET_BASE, "/livez", "/healthz",
-              "/favicon", "/app/static/")
+# Not metered: the transport the old app needs to keep a session alive (it has
+# its own per-account limit on what arrives over it, see web/ratelimit.py's use
+# in chat_core) and its bundle, the mirrored logos, the shell's bundle and the
+# landing's assets, and the probes an uptime monitor hits on a schedule.
+_UNMETERED = (
+    *(f"{LEGACY_PATH}{p}" for p in ("/_stcore/", "/static/", "/app/static/",
+                                     "/media/", "/component/")),
+    ASSET_BASE, "/livez", "/healthz", STATIC_PATH, APP_ASSETS,
+)
 
-# How many proxies sit in front of this process. Cloud Run's frontend appends
-# its own hop to X-Forwarded-For, so the client is the entry before the last.
-# Behind a second proxy (a CDN in front of Cloud Run) it is two before, and
-# with no proxy at all the socket peer is the client.
-TRUSTED_PROXY_HOPS = 1
+# The API gets its own budget, on its own key. A document and an API call are
+# not the same unit of work: the shell's ticker page asks for its price bars,
+# quote, calendar, position, KPIs, financials, valuation, moat, insiders, fund
+# and peers separately, so one page view is around twenty requests here where
+# it is one on the document path. Metered against CLIENT_MAX_DOCS, three
+# tickers in a minute would 429 a reader doing nothing unusual.
+#
+# Separate keys, not just a bigger number: a burst of API calls must not be
+# able to lock somebody out of the app shell, and a reload loop on the shell
+# must not take the data with it.
+API_MAX_REQUESTS = 300
 
-
-def _trusted_hops() -> int:
-    try:
-        return max(0, int(os.environ.get("TRUSTED_PROXY_HOPS",
-                                         TRUSTED_PROXY_HOPS)))
-    except ValueError:
-        return TRUSTED_PROXY_HOPS
-
-
-def client_ip(request: Request) -> str:
-    """The caller's address as far as it can be trusted.
-
-    X-Forwarded-For is client-supplied up to the first proxy that appends to
-    it, so only the entries our own infrastructure wrote mean anything: with
-    one trusted hop, the last entry is Cloud Run's frontend and the one before
-    it is what that frontend saw. Everything to the left of that a client can
-    write itself.
-
-    A determined attacker still has as many "addresses" as it has real ones,
-    which is why this is a speed bump in front of the account-level limits,
-    not the thing keeping anyone honest.
-    """
-    parts = [p.strip() for p in
-             request.headers.get("x-forwarded-for", "").split(",") if p.strip()]
-    hops = _trusted_hops()
-    if parts and hops and len(parts) > hops:
-        return parts[-(hops + 1)]
-    if parts and not hops:
-        return parts[0]
-    return request.client.host if request.client else "unknown"
+# Both moved to `web/ratelimit.py`, beside the limiter they key, because the
+# API needs the same answer for `POST /v1/feedback` from a guest and cannot
+# import this module — it is the one that mounts the API. Re-exported under the
+# names they have always had here: this is where a reader looks for them, and
+# `tests/test_throttle.py` asks for them by this path.
+TRUSTED_PROXY_HOPS = ratelimit.TRUSTED_PROXY_HOPS
+client_ip = ratelimit.client_ip
 
 
 class ClientThrottle(BaseHTTPMiddleware):
@@ -357,18 +419,37 @@ class ClientThrottle(BaseHTTPMiddleware):
         path = request.url.path
         if any(path.startswith(prefix) for prefix in _UNMETERED):
             return await call_next(request)
+        is_api = path.startswith(API_PREFIX)
         try:
-            key = f"http::{client_ip(request)}"
-            allowed = ratelimit.allow(key, max_events=CLIENT_MAX_DOCS,
-                                      window_s=CLIENT_WINDOW_S)
+            key = f"{'api' if is_api else 'http'}::{client_ip(request)}"
+            allowed = ratelimit.allow(
+                key,
+                max_events=API_MAX_REQUESTS if is_api else CLIENT_MAX_DOCS,
+                window_s=CLIENT_WINDOW_S,
+            )
         except Exception:
             return await call_next(request)
         if not allowed:
             wait = ratelimit.retry_after(key, window_s=CLIENT_WINDOW_S)
             obs.warn("http.throttled", path=path, retry_after=wait)
+            headers = {"Retry-After": str(max(1, wait))}
+            if is_api:
+                # The API answers in JSON everywhere else, including its own
+                # 503 for an upstream that is rate limiting us. A caller that
+                # parses every other refusal should not have to special-case
+                # this one into a text body, and `reason` is the field it
+                # already switches on.
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "detail": "too many requests from this client",
+                        "reason": "throttled",
+                    },
+                    headers=headers,
+                )
             return Response("Too many requests\n", status_code=429,
                             media_type="text/plain; charset=utf-8",
-                            headers={"Retry-After": str(max(1, wait))})
+                            headers=headers)
         return await call_next(request)
 
 
@@ -407,18 +488,71 @@ class SecurityHeaders(BaseHTTPMiddleware):
         return response
 
 
+def _attribution(request: Request) -> dict:
+    """Where this request came from, as log fields (see `web.attribution`)."""
+    return attribution.fields(
+        request.query_params,
+        referer=request.headers.get("referer"),
+        user_agent=request.headers.get("user-agent"),
+    )
+
+
+def _entry_kind(request: Request) -> str:
+    """Which door this browser came through on its first app document.
+
+    "guest" and "signin" are the landing's two calls to action; "link" is a URL
+    somebody shared with a source token on it (including the return leg of a
+    sign-in, which carries the token home); "direct" is everything else — a
+    bookmark, a typed address, a deep link from a chat window.
+    """
+    params = request.query_params
+    if landing.PARAM_GUEST in params:
+        return "guest"
+    if landing.PARAM_SIGNIN in params:
+        return "signin"
+    return "link" if attribution.source(params) else "direct"
+
+
 class LandingGate(BaseHTTPMiddleware):
     """Serves the landing at `/`, and keeps the app out of search indexes.
 
-    Middleware rather than a route because `/` has to be able to fall through:
-    Streamlit owns that path for its default page and there is no way to hand a
-    request back to a route once it has been claimed.
+    Middleware rather than a route because `/` has two owners: the landing for
+    a first visit, the app shell for everyone else, and the shell's route is
+    the one that answers once the gate lets a request through.
     """
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         if (target := canonical_redirect(request)) is not None:
             return RedirectResponse(target, status_code=301)
+        # `?signin=1` on the landing is a request to sign in, and this is the
+        # first place that can answer it with a real redirect. Guarded on the
+        # session so a stale parameter cannot bounce somebody who is already
+        # signed in back out to Google.
+        if (
+            path == PATH_EN
+            and landing.PARAM_SIGNIN in request.query_params
+            and not session.signed_in_email(request.cookies)
+        ):
+            obs.event("landing.cta", kind="signin", **_attribution(request))
+            # `next` is where the callback sends the browser once Google is
+            # done, so it is also the only place a source token can wait out
+            # the round trip — there is no cookie of ours to park it in, and
+            # the referrer is Google by then.
+            lang = request.query_params.get("lang")
+            carried = "&".join(
+                part
+                for part in (
+                    f"lang={lang}" if lang else "",
+                    attribution.carry(request.query_params),
+                )
+                if part
+            )
+            target = f"?{carried}" if carried else ""
+            return RedirectResponse(
+                f"{session.LOGIN_PATH}?next={quote(f'/{target}')}", status_code=302
+            )
+
         if path == PATH_EN and _wants_landing(request):
             return landing_response(request, "en")
         if not _is_known_path(path):
@@ -431,7 +565,19 @@ class LandingGate(BaseHTTPMiddleware):
             # over private positions, or transport. Out of the index, and the
             # browser is now known to have been there.
             response.headers["X-Robots-Tag"] = "noindex, nofollow"
-            if request.cookies.get(APP_COOKIE) != "1":
+            # …but only a browser gets marked as having been to the app. An API
+            # client is not one, and a Set-Cookie on its responses would be
+            # noise at best and a stored credential it never asked for at worst.
+            if not path.startswith(API_PREFIX) and request.cookies.get(APP_COOKIE) != "1":
+                # First app document this browser has been handed: the step
+                # between "read the pitch" and "has an account", and the only
+                # one no other event covers.
+                obs.event(
+                    "landing.cta",
+                    kind=_entry_kind(request),
+                    path=path,
+                    **_attribution(request),
+                )
                 response.set_cookie(
                     APP_COOKIE,
                     "1",
@@ -591,6 +737,98 @@ async def legal_page(request: Request) -> Response:
     )
 
 
+@lru_cache(maxsize=1)
+def _app_document(mtime: float) -> bytes:  # noqa: ARG001 — mtime keys the cache
+    """The shell's index.html with the design tokens inlined.
+
+    `ds_vars_css()` replaces the `<!--AG-TOKENS-->` marker so the page paints in
+    the right colours on its first frame and the charts read their palette back
+    out of those custom properties instead of fetching them, and `_faces()`
+    replaces `<!--AG-FONTS-->` with the stylesheet that makes it the app's
+    typeface rather than the system's — and the tab its icon, which the
+    landing's own mark is.
+    """
+    from stocks.web.widgets import ds_vars_css
+
+    html = (_APP_BUILD / "index.html").read_text(encoding="utf-8")
+    html = html.replace("<!--AG-TOKENS-->", ds_vars_css())
+    icon = f'<link rel="icon" type="image/svg+xml" href="{ASSET_BASE}topstocks-icon.svg">'
+    return html.replace("<!--AG-FONTS-->", _faces() + icon).encode("utf-8")
+
+
+def _faces() -> str:
+    """Link tags for the DS typefaces.
+
+    `seo.FONTS_HREF` is the stylesheet the landing already links; Streamlit
+    loads the same faces from config.toml. A React document that links neither
+    declares Instrument Sans in its CSS and paints in system-ui — which reads
+    as nothing being wrong.
+    """
+    from stocks.web.seo import FONTS_HREF
+
+    return (
+        '<link rel="preconnect" href="https://fonts.googleapis.com">'
+        '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+        f'<link rel="stylesheet" href="{FONTS_HREF}">'
+    )
+
+
+async def app_shell(request: Request) -> Response:
+    """Every page of the app — the client router reads the path.
+
+    Serving one document for every page is what makes a deep link work:
+    /portfolio?tab=fees has to survive a reload, and the page it names is
+    drawn in the browser.
+    """
+    index = _APP_BUILD / "index.html"
+    if not index.is_file():
+        # A checkout that never ran `npm run build`. CI refuses to merge one
+        # (the bundle is committed and checked), so this is a local run.
+        return Response("The app is not built: cd frontend/app && npm run build\n",
+                        status_code=503, media_type="text/plain")
+    return Response(
+        _app_document(index.stat().st_mtime),
+        media_type=_HTML,
+        # A shell over somebody's book, with the tokens inlined into it: never
+        # a cacheable file.
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+async def next_redirect(request: Request) -> Response:
+    """`/next/<page>` → `/<page>`, query and all, permanently."""
+    rest = request.path_params.get("path", "").strip("/")
+    query = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(f"/{rest}{query}", status_code=301)
+
+
+async def legacy_slash(request: Request) -> Response:
+    """`/legacy` → `/legacy/`: the old app resolves its assets from the slash."""
+    return RedirectResponse(f"{LEGACY_PATH}/", status_code=301)
+
+
+async def static_file(request: Request) -> Response:
+    """`/app/static/<file>` — the mirrored logos, from the directory they land in."""
+    name = request.path_params.get("path", "")
+    target = (_STATIC / name).resolve()
+    if _STATIC.resolve() not in target.parents or not target.is_file():
+        return Response("Not found", status_code=404, media_type="text/plain")
+    return FileResponse(target, headers={"Cache-Control": "public, max-age=86400"})
+
+
+async def app_asset(request: Request) -> Response:
+    """`/next-assets/<file>` — the shell's own bundle, stylesheet and chunks.
+
+    Short cache: a rebuild reuses the same filenames, and a long max-age would
+    serve yesterday's bundle against today's API.
+    """
+    name = request.path_params.get("path", "")
+    target = (_APP_BUILD / name).resolve()
+    if _APP_BUILD.resolve() not in target.parents or not target.is_file():
+        return Response("Not found", status_code=404, media_type="text/plain")
+    return FileResponse(target, headers={"Cache-Control": "public, max-age=300"})
+
+
 async def asset(request: Request) -> Response:
     """`/lp/<file>` — the landing's brand mark and share card.
 
@@ -607,9 +845,12 @@ async def asset(request: Request) -> Response:
     )
 
 
+# The retired Streamlit app. The script path is absolute on purpose: `st.App`
+# resolves a relative one against the working directory when an ASGI server
+# (rather than `streamlit run`) loads it.
+legacy = st.App(str(_HERE / "app.py"))
+
 routes = [
-    # Every landing variant but `/`, which the gate answers so Streamlit can
-    # keep owning that path (see LandingGate).
     *(
         Route(p, variant_landing, methods=["GET", "HEAD"])
         for p in LANDING_PATHS
@@ -627,16 +868,45 @@ routes = [
     Route("/status", status, methods=["GET", "HEAD"]),
     Route("/legal/{doc:str}", legal_page, methods=["GET", "HEAD"]),
     Route(f"{ASSET_BASE}{{path:path}}", asset, methods=["GET", "HEAD"]),
+    Route(f"{APP_ASSETS}{{path:path}}", app_asset, methods=["GET", "HEAD"]),
+    Route(f"{STATIC_PATH}{{path:path}}", static_file, methods=["GET", "HEAD"]),
+    *oidc.routes(),
+    Mount(api.MOUNT_PATH, app=api.app),
+    # `/` is the shell for whoever the gate lets through (see LandingGate).
+    Route("/", app_shell, methods=["GET", "HEAD"]),
+    *(Route(f"/{slug}", app_shell, methods=["GET", "HEAD"])
+      for slug in navigation.SHELL_PATHS),
+    Route(NEXT_PATH, next_redirect, methods=["GET", "HEAD"]),
+    Route(f"{NEXT_PATH}/{{path:path}}", next_redirect, methods=["GET", "HEAD"]),
+    Route(LEGACY_PATH, legacy_slash, methods=["GET", "HEAD"]),
+    Mount(LEGACY_PATH, app=legacy),
 ]
 
-# The script path is absolute on purpose: `streamlit run` resolves a relative
-# one against this module, but an external ASGI server (or a test importing
-# this module) would resolve it against the working directory instead.
-app = st.App(
-    str(_HERE / "app.py"),
+
+@asynccontextmanager
+async def lifespan(app: Starlette):
+    """Run the API's boot work, which its own lifespan cannot do from here.
+
+    Starlette does not run a mounted sub-application's lifespan, so without
+    this `api.app`'s — the one that provisions the shared guest book — never
+    runs in the deployed process, and every anonymous request reads a ledger
+    that does not exist.
+    """
+    async with api.app.router.lifespan_context(api.app):
+        yield
+
+
+app = Starlette(
     routes=routes,
+    lifespan=lifespan,
     # First is outermost: the security headers wrap everything, including the
-    # gate's own short-circuit responses (landing, redirects, 404s).
-    middleware=[Middleware(ClientThrottle), Middleware(SecurityHeaders),
-                Middleware(LandingGate)],
+    # gate's own short-circuit responses (landing, redirects, 404s). Compression
+    # sits inside them and skips what is already compressed (the landing, the
+    # old app's own gzip) and what must not be buffered (the chat's stream).
+    middleware=[
+        Middleware(ClientThrottle),
+        Middleware(SecurityHeaders),
+        Middleware(GZipMiddleware, minimum_size=1024),
+        Middleware(LandingGate),
+    ],
 )

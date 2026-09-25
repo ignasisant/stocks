@@ -110,6 +110,31 @@ def remember_highlight(state: dict, line: str, keep: int = HIGHLIGHTS_KEPT) -> N
     state["highlights"] = [*recent_highlights(state), line][-keep:]
 
 
+TAX_REMINDERS_KEPT = 40
+
+
+def tax_reminders_due(state: dict, code: str | None, today) -> list:
+    """Deadlines inside the 30-day window this account was not yet told about.
+
+    One reminder per deadline, the first weekday digest after it enters the
+    window — the digest skips weekends, so "exactly 30 days out" would miss
+    whichever deadlines land on a Saturday's T-30.
+    """
+    from stocks.portfolio.tax import deadlines
+
+    told = set(state.get("tax_reminded") or [])
+    return [d for d in deadlines.due_soon(code, today) if d.id not in told]
+
+
+def remember_tax_reminders(
+    state: dict, sent, keep: int = TAX_REMINDERS_KEPT
+) -> None:
+    """Record delivered reminders; a bounded list, oldest dropped first."""
+    told = [str(x) for x in state.get("tax_reminded") or []]
+    told += [d.id for d in sent if d.id not in told]
+    state["tax_reminded"] = told[-keep:]
+
+
 def previous_top_weight(state: dict) -> float | None:
     """Last week's top-5 concentration, or None the first time round.
 

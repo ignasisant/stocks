@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TopStocks</title>
+    <!--AG-TOKENS-->
+    <!--
+      The DS faces. Injected rather than written here, from the same constant
+      the landing links (`seo.FONTS_HREF`): a document outside Streamlit that
+      does not load them renders the whole app in system-ui while declaring
+      Instrument Sans, which looks like nothing being wrong.
+
+      No icon font: `shell/Icon.tsx` inlines its paths, so the nav costs no
+      request and cannot flash the word "pie_chart" before a font arrives.
+    -->
+    <!--AG-FONTS-->
+    <script type="module" crossorigin src="/next-assets/app.js"></script>
+    <link rel="stylesheet" crossorigin href="/next-assets/index.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

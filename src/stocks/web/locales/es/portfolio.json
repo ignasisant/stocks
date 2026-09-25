@@ -96,6 +96,9 @@
   "portfolio.empty_realized_title": "Aún no hay ventas realizadas",
   "portfolio.empty_realized_body": "Una ganancia o pérdida se realiza — y tributa — cuando vendes. Hasta entonces esta pestaña no tiene nada que informar; el P/L no realizado está en la pestaña Posiciones.",
   "portfolio.fiscal_year": "Ejercicio fiscal",
+  "portfolio.all_years": "Todos",
+  "portfolio.all_years_header": "Resultado realizado \u2014 todos los ejercicios",
+  "portfolio.all_years_caption": "Cada ejercicio se compensa y tributa por su cuenta, as\u00ed que esto es la suma de las cifras ya cerradas de cada a\u00f1o \u2014 lo realizado y lo pagado desde el principio, no una base imponible \u00fanica. Elige un ejercicio para ver sus reglas y sus notas.",
   "portfolio.es_tax_header": "Base del ahorro del IRPF — ejercicio {year}",
   "portfolio.es_tax_caption": "IRPF = impuesto sobre la renta de las personas físicas; las ganancias patrimoniales y los dividendos entran en su *base del ahorro*, gravada a tramos progresivos del 19–28%. FIFO: las ventas casan primero con tus acciones más antiguas (art. 37 LIRPF).",
   "portfolio.net_taxable": "Base imponible neta",
@@ -147,8 +150,8 @@
   "portfolio.col_unrecorded": "Sin registrar",
   "portfolio.div_unrecorded_hint": "Unos {val} más de lo que registró tu libro. Parte suele ser retención en origen — el extracto de Revolut ya da los dividendos netos — y parte un pago que la importación nunca trajo. Revisa el extracto antes de usarlo para la declaración.",
   "portfolio.div_history_caption": "Estimado con el historial de dividendos de cada empresa y las acciones que tu libro tenía el día antes de cada fecha ex — en bruto y convertido al cambio de esa fecha. Se compara posición a posición, así que un valor que importa bien nunca tapa a otro que no. Un pago que va ex en diciembre y se cobra en enero cae en años distintos aquí y en tu libro. Las estimaciones nunca alimentan las cifras fiscales.",
-  "portfolio.es_flag_modelo_720_reportable": "posiciones en el extranjero ~{val} EUR ≥ 50.000 EUR: el Modelo 720 puede aplicar si se mantienen a través de un bróker no español.",
-  "portfolio.es_flag_modelo_720_ok": "posiciones en el extranjero ~{val} EUR < 50.000 EUR (umbral).",
+  "portfolio.es_flag_modelo_720_reportable": "posiciones en el extranjero ~{val} ≥ {threshold}: el Modelo 720 puede aplicar si se mantienen a través de un bróker no español.",
+  "portfolio.es_flag_modelo_720_ok": "posiciones en el extranjero ~{val} < {threshold} (umbral).",
   "portfolio.tab_fees": "Comisiones",
   "portfolio.empty_fees_title": "Sin compraventas que analizar",
   "portfolio.empty_fees_body": "Esta pestaña desglosa lo que te costó de verdad cada operación — la comisión explícita más el diferencial que pagaste frente al precio medio de ese día. Necesita filas de compra y venta en el libro.",
@@ -409,5 +412,8 @@
   "portfolio.demo_seeded_toast": "Transacciones de prueba añadidas: todas las pestañas se han rellenado con ellas.",
   "portfolio.demo_banner": "Son transacciones de prueba, no las tuyas. Tu primera importación real las borra.",
   "portfolio.guest_demo_banner": "Son transacciones de prueba de una cuenta de ejemplo compartida, no las tuyas: precios reales, operaciones inventadas. Inicia sesión para importar tu extracto y ver aquí tu cartera real.",
-  "portfolio.demo_remove": "Quitar los datos de prueba"
+  "portfolio.demo_remove": "Quitar los datos de prueba",
+  "portfolio.hist_pnl": "P/L",
+  "portfolio.zoom_reset": "Restablecer zoom",
+  "portfolio.zoom_hint": "Arrastra sobre el gráfico para ampliar esos días; doble clic para volver."
 }

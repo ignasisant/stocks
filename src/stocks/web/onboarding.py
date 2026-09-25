@@ -92,17 +92,24 @@ class Step:
     gated: bool = False
     # Whether this account has the feature switched on, given prefs. None for
     # steps that are nothing to switch on (a page is a page).
-    done: Callable[[dict], bool] | None = None
+    #
+    # The optional second argument is the account to answer for. Omitted, it is
+    # the session's own — which is every caller inside the app. The HTTP API
+    # has no session and names the account explicitly, and it has to go through
+    # these same predicates: two implementations of "has this account imported
+    # anything" is two answers to one question, and the one on screen would be
+    # whichever surface the reader happened to open.
+    done: Callable[..., bool] | None = None
 
 
-def _has_ledger(_prefs: dict) -> bool:
+def _has_ledger(_prefs: dict, paths: object | None = None) -> bool:
     try:
-        return has_transactions(auth.db_path())
+        return has_transactions(getattr(paths, "db", None) or auth.db_path())
     except Exception:
         return False  # unreadable/missing ledger reads as "nothing imported"
 
 
-def _has_watchlist(_prefs: dict) -> bool:
+def _has_watchlist(_prefs: dict, paths: object | None = None) -> bool:
     """Whether this account follows anything yet.
 
     Reads the list rather than prefs: the watchlist is a YAML file, and it is
@@ -110,20 +117,29 @@ def _has_watchlist(_prefs: dict) -> bool:
     any of which should tick the step off.
     """
     try:
-        return bool(load_watchlist(auth.watchlist_path()))
+        return bool(
+            load_watchlist(getattr(paths, "watchlist", None) or auth.watchlist_path())
+        )
     except Exception:
         return False  # unreadable/missing list reads as "nothing followed"
 
 
-def _has_ai_key(prefs: dict) -> bool:
+def _has_ai_key(prefs: dict, paths: object | None = None) -> bool:
     """A BYOK provider key saved to prefs (encrypted) or entered this session.
 
     The keyless TopStocks free chain deliberately does not count: the step is
     about connecting your own provider, which is what lifts the daily cap.
     """
-    return any(k.endswith("_key_enc") for k in prefs) or any(
-        k.startswith("llm_key::") and st.session_state[k] for k in st.session_state
-    )
+    if any(k.endswith("_key_enc") for k in prefs):
+        return True
+    try:
+        return any(
+            k.startswith("llm_key::") and st.session_state[k] for k in st.session_state
+        )
+    except Exception:
+        # No script run behind this call (the HTTP API). A key entered into a
+        # session this caller is not in is not a key this account has saved.
+        return False
 
 
 # The tour, in order. Sequenced as the work actually flows — get the ledger in,
@@ -158,7 +174,7 @@ STEPS: tuple[Step, ...] = (
         page="app_pages/portfolio.py",
         query={"tab": "tax"},
         reset_keys=("portfolio_tab",),
-        done=lambda prefs: bool(prefs.get("tax_residence")),
+        done=lambda prefs, paths=None: bool(prefs.get("tax_residence")),
     ),
     Step(
         id="income",
@@ -183,7 +199,7 @@ STEPS: tuple[Step, ...] = (
     ),
     Step(id="pulse", icon="speed", page="app_pages/sentiment.py"),
     Step(id="market", icon="query_stats", page="app_pages/ticker.py"),
-    Step(id="screener", icon="filter_alt", page="app_pages/screener.py"),
+    Step(id="sector", icon="donut_small", page="app_pages/sector.py"),
     Step(
         id="assistant",
         icon="auto_awesome",
@@ -197,7 +213,7 @@ STEPS: tuple[Step, ...] = (
         page="app_pages/profile.py",
         session={"profile_tab": "notify"},
         gated=True,
-        done=lambda prefs: bool(prefs.get("telegram_chat_id")),
+        done=lambda prefs, paths=None: bool(prefs.get("telegram_chat_id")),
     ),
     Step(
         id="investor",
@@ -205,7 +221,7 @@ STEPS: tuple[Step, ...] = (
         page="app_pages/profile.py",
         session={"profile_tab": "iv"},
         gated=True,
-        done=auth.profile_is_set,
+        done=lambda prefs, paths=None: auth.profile_is_set(prefs),
     ),
     Step(
         id="prefs",
@@ -221,6 +237,13 @@ STEPS: tuple[Step, ...] = (
 @dataclass(frozen=True)
 class News:
     """One shipped feature, as one card in the "what's new" modal.
+
+    The modal interrupts someone who came to look at their portfolio, so a
+    card has to be somewhere new to go: a new section, page or tab, a screen
+    rebuilt under them, or something they could not do at all before. One
+    more of a kind that already ships — another broker, another jurisdiction,
+    another field — belongs in the existing step's `_body` copy and nowhere
+    here. See the update-tutorial skill, which is where that call is made.
 
     Copy comes from the catalog by convention, keyed off the release version
     and this slug — `tour.news_<version with dots as underscores>_<slug>_title`
@@ -277,6 +300,16 @@ class NewsCard:
 
 # Oldest first; the newest entry's version is what an account gets stamped
 # with. Add to the end when a release ships — see the update-tutorial skill.
+#
+# A release is a handful of cards, not a list of the month's work: what a
+# returning account has to page through is exactly what is written here. The
+# three below were written before that rule and read like a changelog, three
+# months of work card by card. They were cut back in September 2026 to the ones
+# that are somewhere new to go, dropping the fixes, the polish and the
+# "one more broker / jurisdiction / column" items. What those carried is in
+# the step copy for their feature, where it is read on the way to the thing
+# itself rather than in a card: the tax step names all twelve jurisdictions,
+# the import step every broker it reads.
 RELEASES: tuple[Release, ...] = (
     Release(
         version="2026.09",
@@ -284,16 +317,10 @@ RELEASES: tuple[Release, ...] = (
         items=(
             News(slug="tax", icon="receipt_long", step="tax"),
             News(slug="daily", icon="tips_and_updates", step="daily"),
-            News(slug="chat", icon="auto_awesome", step="assistant"),
-            News(slug="askai", icon="smart_toy", step="market"),
             News(slug="fees", icon="percent", step="income"),
             News(slug="demo", icon="science", step="import"),
-            News(slug="guest", icon="lock_open", step="positions"),
             News(slug="pulse", icon="speed", step="pulse"),
             News(slug="profile", icon="tune", step="prefs"),
-            News(slug="digest", icon="insights", step="notify"),
-            News(slug="digestcal", icon="event_available", step="notify"),
-            News(slug="digestlinks", icon="link", step="notify"),
             News(slug="weekly", icon="calendar_view_week", step="notify"),
             News(slug="watchlist", icon="playlist_add", step="watchlist"),
         ),
@@ -302,17 +329,7 @@ RELEASES: tuple[Release, ...] = (
         version="2026.09.1",
         date="2026-09",
         items=(
-            News(slug="tips", icon="info", step="pulse"),
             News(slug="voice", icon="mic", step="assistant"),
-            News(slug="stop", icon="stop_circle", step="assistant"),
-            News(slug="splits", icon="call_split", step="import"),
-            News(slug="divest", icon="savings", step="income"),
-            News(slug="tickerlinks", icon="link", step="market"),
-            News(slug="ibkr", icon="photo_camera", step="import"),
-            News(slug="amount", icon="price_change", step="import"),
-            News(slug="tgtext", icon="voice_over_off", step="notify"),
-            News(slug="hover", icon="show_chart", step="market"),
-            News(slug="isin", icon="badge", step="import"),
         ),
     ),
     Release(
@@ -320,24 +337,19 @@ RELEASES: tuple[Release, ...] = (
         date="2026-09",
         items=(
             News(slug="splitfix", icon="call_split", step="import"),
-            News(slug="peersearch", icon="search", step="market"),
             News(slug="transfers", icon="swap_horiz", step="import"),
-            # No step: the feedback button is sidebar chrome on every page, not
-            # a tour stop, and its modal is a dialog — a step that opened it
-            # from inside the tour's own dialog would be two at once.
-            News(slug="fbvoice", icon="mic"),
-            News(slug="fbshot", icon="screenshot_monitor"),
-            News(slug="mobilechat", icon="smartphone", step="assistant"),
-            News(slug="uae", icon="receipt_long", step="tax"),
-            News(slug="swiss", icon="receipt_long", step="tax"),
-            News(slug="taxfallback", icon="public_off", step="tax"),
-            News(slug="kpimatch", icon="balance", step="positions"),
-            News(slug="onebook", icon="merge", step="import"),
-            News(slug="wht", icon="receipt_long", step="income"),
-            News(slug="pricedmoves", icon="price_check", step="positions"),
-            News(slug="venue", icon="public", step="import"),
-            News(slug="chatmoves", icon="swap_horiz", step="assistant"),
-            News(slug="resume", icon="replay", step="assistant"),
+            News(slug="sectors", icon="donut_small", step="sector"),
+        ),
+    ),
+    Release(
+        version="2026.09.3",
+        date="2026-09",
+        items=(
+            # One card for eight rebuilt screens, not eight cards: to the
+            # reader this is one thing — the app looks different. No step:
+            # there is no one place to send them, they are already standing
+            # in it. The card says where the previous version went.
+            News(slug="newapp", icon="rocket_launch"),
         ),
     ),
 )
@@ -351,16 +363,16 @@ def _has_searched(prefs: dict) -> bool:
     return bool(prefs.get("recent_searches"))
 
 
-def _has_asked(_prefs: dict) -> bool:
+def _has_asked(_prefs: dict, paths: object | None = None) -> bool:
     """Whether any conversation with the assistant has a turn in it."""
     try:
-        book = auth.load_book()
+        book = auth.load_book(getattr(paths, "chat", None))
     except Exception:
         return False
     return any(c.get("messages") for c in book.get("conversations", []))
 
 
-def _watchlist_is_own(_prefs: dict) -> bool:
+def _watchlist_is_own(_prefs: dict, paths: object | None = None) -> bool:
     """Whether the watchlist has been touched since it was seeded.
 
     Compared against the seed text rather than tracked with a flag, so it is
@@ -369,12 +381,15 @@ def _watchlist_is_own(_prefs: dict) -> bool:
     untouched, which is a shrug, not a bug.
     """
     try:
-        return auth.watchlist_path().read_text() != auth.STARTER_WATCHLIST
+        target = getattr(paths, "watchlist", None) or auth.watchlist_path()
+        return target.read_text() != auth.STARTER_WATCHLIST
     except OSError:
         return False
 
 
-def explore_state(prefs: dict | None = None) -> dict[str, bool]:
+def explore_state(
+    prefs: dict | None = None, paths: object | None = None
+) -> dict[str, bool]:
     """Which of the no-setup-required things this account has actually tried.
 
     Separate from `setup_state`: those four are capabilities to switch on, and
@@ -387,22 +402,31 @@ def explore_state(prefs: dict | None = None) -> dict[str, bool]:
     p = prefs if prefs is not None else auth.load_prefs()
     return {
         "search": _has_searched(p),
-        "ask": _has_asked(p),
-        "watchlist": _watchlist_is_own(p),
+        "ask": _has_asked(p, paths),
+        "watchlist": _watchlist_is_own(p, paths),
     }
 
 
-def setup_state(prefs: dict | None = None) -> dict[str, bool]:
+def setup_state(
+    prefs: dict | None = None,
+    paths: object | None = None,
+    *,
+    signed_in: bool | None = None,
+) -> dict[str, bool]:
     """Which connectable capabilities this account has switched on.
 
     One source of truth for the Home setup card and the tour's per-step
     badges — they used to compute this twice and could disagree.
     """
     p = prefs if prefs is not None else auth.load_prefs()
+    # `signed_in` is an argument because the HTTP API's caller proved itself
+    # before this module was reached, and `auth.is_logged_in()` would answer
+    # about a Streamlit session that does not exist there.
+    here = auth.is_logged_in() if signed_in is None else signed_in
     return {
-        "login": auth.is_logged_in(),
-        "import": _has_ledger(p) if auth.is_logged_in() else False,
-        "ai": _has_ai_key(p),
+        "login": here,
+        "import": _has_ledger(p, paths) if here else False,
+        "ai": _has_ai_key(p, paths),
         "telegram": bool(p.get("telegram_chat_id")),
     }
 

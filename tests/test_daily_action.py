@@ -492,3 +492,146 @@ def test_card_round_trips_through_its_dict():
 )
 def test_unusable_stored_cards_read_as_nothing_stored(raw):
     assert daily.DailyAction.from_dict(raw) is None
+
+
+# ------------------------------------------- what the card remembers it offered
+
+
+def market_facts(*kinds: str) -> dict:
+    """Facts carrying one action per kind, the shape `seen` reads."""
+    rows = {
+        "harvest": {"kind": "harvest", "ticker": "NVDA", "loss": 900.0},
+        "market": {"kind": "market", "ticker": "", "index": "S&P 500",
+                   "trend": "down", "from_high_pct": -8.1},
+        "sector_tilt": {"kind": "sector_tilt", "ticker": "",
+                        "sector": "Technology", "tilt_pp": 23.0},
+    }
+    return {"currency": "EUR", "actions": [rows[k] for k in kinds]}
+
+
+def test_offered_keys_name_the_trigger_not_the_line():
+    keys = daily.offered(market_facts("harvest", "market", "sector_tilt"))
+    assert keys == ["harvest:NVDA", "market:", "sector_tilt:Technology"]
+
+
+def test_a_trigger_offered_again_extends_its_run():
+    previous = daily.DailyAction(
+        day="2026-09-02", headline="h", bullets=["a", "b"],
+        shown={"harvest:NVDA": {"last": "2026-09-02", "run": 2}},
+    )
+    out = daily.seen(previous, market_facts("harvest"), date(2026, 9, 3))
+    assert out["harvest:NVDA"] == {"last": "2026-09-03", "run": 3}
+
+
+def test_a_gap_of_a_day_starts_the_run_over():
+    previous = daily.DailyAction(
+        day="2026-08-30", headline="h", bullets=["a", "b"],
+        shown={"harvest:NVDA": {"last": "2026-08-30", "run": 4}},
+    )
+    out = daily.seen(previous, market_facts("harvest"), date(2026, 9, 3))
+    assert out["harvest:NVDA"]["run"] == 1
+
+
+def test_triggers_not_offered_today_are_kept_a_while_then_dropped():
+    previous = daily.DailyAction(
+        day="2026-09-02", headline="h", bullets=["a", "b"],
+        shown={
+            "harvest:NVDA": {"last": "2026-09-02", "run": 2},
+            "drawdown:ASML": {"last": "2026-01-01", "run": 9},
+        },
+    )
+    out = daily.seen(previous, market_facts("market"), date(2026, 9, 3))
+    assert "harvest:NVDA" in out          # yesterday's, still recent
+    assert "drawdown:ASML" not in out     # January's, long forgotten
+    assert out["market:"]["run"] == 1
+
+
+def test_the_shown_map_survives_the_stored_card():
+    card = daily.DailyAction(
+        day="2026-09-03", headline="h", bullets=["a", "b"],
+        shown={"market:": {"last": "2026-09-03", "run": 1}},
+    )
+    assert daily.DailyAction.from_dict(card.to_dict()).shown == card.shown
+
+
+def test_a_card_written_before_the_field_existed_reads_as_no_memory():
+    raw = {"day": "2026-09-03", "headline": "h", "bullets": ["a"]}
+    assert daily.DailyAction.from_dict(raw).shown == {}
+    assert daily.DailyAction.from_dict(raw | {"shown": "junk"}).shown == {}
+
+
+# ---------------------------------------- the whole-book lines without a model
+
+
+@pytest.mark.parametrize("lang", ["en", "es"])
+@pytest.mark.parametrize(
+    "action",
+    [
+        {"kind": "market", "ticker": "", "index": "S&P 500", "trend": "down",
+         "from_high_pct": -8.14, "month_pct": -6.0, "breadth_pct": 45.0,
+         "sectors_in_uptrend": 5, "sectors_read": 11},
+        {"kind": "sector_tilt", "ticker": "", "sector": "Technology",
+         "own_pct": 55.0, "index_pct": 32.0, "tilt_pp": 23.0,
+         "excess_month_pct": 7.4, "equity_share_pct": 100.0},
+        {"kind": "vs_benchmark", "ticker": "", "index": "S&P 500",
+         "book_month_pct": 1.0, "index_month_pct": -6.0, "gap_pp": 7.0},
+        {"kind": "fx", "ticker": "", "base": "EUR", "currency": "USD",
+         "foreign_share_pct": 72.0, "share_pct": 72.0,
+         "move_month_pct": 4.95, "drag_month_pct": 3.57},
+    ],
+    ids=["market", "sector_tilt", "vs_benchmark", "fx"],
+)
+def test_every_whole_book_action_has_a_line_in_both_languages(action, lang):
+    line = daily._action_line(action, lang, "EUR")
+    assert line and "{" not in line and "home.daily" not in line
+
+
+def test_the_sector_line_is_translated_not_transliterated():
+    action = {"kind": "sector_tilt", "ticker": "", "sector": "Technology",
+              "own_pct": 55.0, "index_pct": 32.0, "tilt_pp": 23.0}
+    assert "Tecnología" in daily._action_line(action, "es", "EUR")
+
+
+def test_a_bucket_with_no_translation_prints_its_own_label():
+    action = {"kind": "sector_tilt", "ticker": "", "sector": "Shipping",
+              "own_pct": 55.0, "index_pct": 32.0, "tilt_pp": 23.0}
+    assert "Shipping" in daily._action_line(action, "es", "EUR")
+
+
+def test_a_whole_book_card_needs_no_ticker_in_focus():
+    """A card whose every line is about the book itself is a valid card — the
+    chip row is simply empty."""
+    facts = market_facts("market", "sector_tilt")
+    card = daily.computed(facts, "en", date(2026, 9, 3))
+    assert card.bullets and card.focus == []
+
+
+def test_the_whole_book_figures_pass_the_audit():
+    """A market or sector line quotes numbers that belong to no holding; the
+    audit must find them in the loose pool rather than reject the card."""
+    facts = market_facts("market", "sector_tilt")
+    lines = [
+        "Market: S&P 500 8.1% under its high, 5 of 11 sectors in trend",
+        "Technology is a +23 point bet against the index",
+    ]
+    assert daily.audit(lines, facts) is None
+
+
+def test_a_whole_book_figure_that_was_not_given_is_still_rejected():
+    facts = market_facts("market")
+    assert daily.audit(["S&P 500 is 19.4% under its high"], facts) == "19.4%"
+
+
+def test_an_index_whose_name_ends_in_a_number_is_not_a_figure():
+    """"S&P 500 8.1%" is an index and a percentage, not the number 5008.1."""
+    facts = {"currency": "EUR", "day": {"pct": 8.1}}
+    assert daily.audit(["The S&P 500 is 8.1% under its high"], facts) is None
+
+
+@pytest.mark.parametrize(
+    "written,value",
+    [("8.1%", 8.1), ("-4,32 %", -4.32), ("+23%", 23.0),
+     ("1 234,5%", 1234.5), ("1.234,5%", 1234.5), ("1,234.5%", 1234.5)],
+)
+def test_a_written_percentage_is_read_whole(written, value):
+    assert daily.audit([f"Line with {written} in it"], {"x": value}) is None

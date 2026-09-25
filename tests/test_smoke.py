@@ -29,7 +29,9 @@ def test_alert_triggered():
 def test_add_indicators_columns():
     df = pd.DataFrame({"Close": sample_series()})
     out = add_indicators(df)
-    assert {"SMA20", "SMA50", "EMA20", "RSI14", "Return"} <= set(out.columns)
+    assert {"SMA20", "SMA50", "SMA200", "EMA20", "RSI14", "Return"} <= set(
+        out.columns
+    )
 
 
 def test_load_watchlist_returns_list():

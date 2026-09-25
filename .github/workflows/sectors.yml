@@ -1,0 +1,60 @@
+# Nightly sector scan — the cohorts the sector screen ranks.
+#
+# Not a notification and not a fan-out: the output is one market-wide file
+# (data/sector_scan.json in the R2 bucket) that every account reads. No user
+# data is touched, so nothing here needs the Telegram bot or the Fernet key.
+#
+# What it costs: eleven sectors, ~18 companies each, ~5 Yahoo requests per
+# company — call it a thousand requests, paced by a five-second gap between
+# sectors and the circuit breaker in stocks.data.fetch. A sector Yahoo refuses
+# keeps the cohort it had; the file is never published half-empty.
+#
+# Timing: 03:00 UTC is after every close and before every open, and it is the
+# quietest hour for the endpoint this project has already been rate-limited by
+# once from a datacenter IP.
+name: sectors
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      sector:
+        description: "One sector to scan (blank = all eleven)"
+        required: false
+        default: ""
+        type: string
+      no_widen:
+        description: "Skip the assistant's non-US proposals (ETF basket only)"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: sectors
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      STOCKS_STORAGE_ENDPOINT_URL: ${{ secrets.STOCKS_STORAGE_ENDPOINT_URL }}
+      STOCKS_STORAGE_BUCKET: ${{ secrets.STOCKS_STORAGE_BUCKET }}
+      STOCKS_STORAGE_ACCESS_KEY_ID: ${{ secrets.STOCKS_STORAGE_ACCESS_KEY_ID }}
+      STOCKS_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.STOCKS_STORAGE_SECRET_ACCESS_KEY }}
+      # Widening the cohort past the US mega-caps the sector ETFs hold. Unset,
+      # every sector is scanned as its ETF basket alone — a worse screen, not a
+      # failed job.
+      FREE_LLM_GROQ: ${{ secrets.FREE_LLM_GROQ }}
+      FREE_LLM_CEREBRAS: ${{ secrets.FREE_LLM_CEREBRAS }}
+      FREE_LLM_OPENROUTER: ${{ secrets.FREE_LLM_OPENROUTER }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --frozen --no-dev
+      - name: Scan
+        run: |
+          uv run stocks sector-scan \
+            ${{ inputs.sector && format('--sector "{0}"', inputs.sector) || '' }} \
+            ${{ inputs.no_widen && '--no-widen' || '' }}

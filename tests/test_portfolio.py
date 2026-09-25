@@ -250,6 +250,32 @@ def test_injected_vs_value_marks_to_market_in_eur():
     assert abs(df.loc["2024-01-04", "pnl_pct"] - (169.0 / 149.0 - 1)) < 1e-9
 
 
+def test_injected_vs_value_reads_the_book_in_the_currency_it_reports_in():
+    """A book reported in dollars, priced as one.
+
+    This used to test each holding against a literal "EUR": the dollar names
+    found no rate and were carried at cost — flat, and listed as unpriced —
+    while the euro ones were valued at parity. Two names both up 20% read
+    +4.8%.
+    """
+    txs = [
+        Transaction("2024-01-01", "A", "buy", quantity=10, price=10, currency="USD"),
+        Transaction("2024-01-01", "B", "buy", quantity=10, price=10, currency="EUR"),
+    ]
+    idx = pd.date_range("2024-01-01", "2024-01-02", freq="D")
+    closes = {
+        "A": pd.Series([10.0, 12.0], index=idx),
+        "B": pd.Series([10.0, 12.0], index=idx),
+    }
+    # EUR -> USD, which is what `book_history` builds for a USD book.
+    fx = {"EUR": pd.Series(1.1, index=idx)}
+    usd = lambda amount, ccy, day: amount * (1.1 if ccy == "EUR" else 1.0)  # noqa: E731
+    df = injected_vs_value(txs, closes, fx, to_base=usd, base="USD")
+    assert df.attrs["carried_at_cost"] == []  # the dollar names are priced
+    assert abs(df.loc["2024-01-02", "value"] - (120.0 + 120.0 * 1.1)) < 1e-9
+    assert abs(df.loc["2024-01-02", "pnl_pct"] - 0.2) < 1e-9
+
+
 def test_injected_vs_value_empty_ledger():
     assert injected_vs_value([], {}, {}).empty
 
@@ -307,7 +333,19 @@ def test_flow_series_signs_and_ticker_filter():
     f = flow_series(txs, to_base=_eur, tickers={"A"})
     assert abs(f[pd.Timestamp("2024-01-02")] - 51.0) < 1e-9  # (100 + 2) * 0.5, B skipped
     assert abs(f[pd.Timestamp("2024-01-03")] - (-29.0)) < 1e-9  # -(60 - 2) * 0.5
-    assert abs(f[pd.Timestamp("2024-01-04")] - (-45.0)) < 1e-9  # net dividend out
+
+
+def test_a_dividend_is_not_a_flow_because_the_price_path_already_has_it():
+    """The value path is built on auto_adjusted closes, which walk every close
+    before an ex-date down by the dividend — the payment is already in the
+    series as growth. Booking it as a withdrawal on top paid it twice, which
+    is a free year of return for anybody holding payers."""
+    txs = [
+        Transaction("2024-01-02", "A", "buy", quantity=10, price=10, currency="EUR"),
+        Transaction("2024-01-04", "A", "dividend", price=50, currency="EUR", fee=5),
+    ]
+    f = flow_series(txs, to_base=_eur)
+    assert pd.Timestamp("2024-01-04") not in f.index
 
 
 def test_time_weighted_returns_flow_neutral():

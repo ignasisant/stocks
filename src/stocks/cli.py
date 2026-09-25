@@ -63,6 +63,19 @@ def cmd_alerts(args: argparse.Namespace) -> None:
             print(f"ALERT {line}")
 
 
+def cmd_sector_scan(args: argparse.Namespace) -> None:
+    """Build tonight's sector cohorts. Market-wide, so no account fan-out."""
+    from stocks.analysis.sectors import SECTORS, run_scan
+
+    names = tuple(args.sector or ())
+    unknown = [s for s in names if s not in SECTORS]
+    if unknown:
+        raise SystemExit(f"unknown sector(s): {', '.join(unknown)}")
+    status = run_scan(names, widen=not args.no_widen, dry_run=args.dry_run)
+    for sector, result in status.items():
+        print(f"{sector}: {result}")
+
+
 def cmd_digest(args: argparse.Namespace) -> None:
     if args.all_users:
         from stocks.notify.digest import run_digest_fanout
@@ -392,11 +405,23 @@ def cmd_tv(args: argparse.Namespace) -> None:
 
 
 def cmd_dashboard(args: argparse.Namespace) -> None:
-    # web/server.py is the ASGI entry point: the static landing page at / plus
-    # the Streamlit app behind it. `streamlit run` finds the module-level
-    # st.App and serves that instead of running the file as a script.
-    app = Path(__file__).parent / "web" / "server.py"
-    subprocess.run([sys.executable, "-m", "streamlit", "run", str(app)], check=False)
+    # web/server.py is the ASGI entry point: the landing, the React app and the
+    # API, with the retired Streamlit app mounted at /legacy. A plain Starlette
+    # app, so any ASGI server runs it; uvicorn is the one Streamlit already
+    # brings along.
+    cmd = [sys.executable, "-m", "uvicorn", "stocks.web.server:app",
+           "--host", args.host, "--port", str(args.port),
+           # stocks.obs already logs every request, with its latency.
+           "--no-access-log"]
+    if args.reload:
+        cmd += ["--reload", "--reload-dir", str(Path(__file__).parent)]
+    print(f"TopStocks at http://{args.host}:{args.port}/  (old app at /legacy/)")
+    # From the repo root whatever the caller's directory: the secrets file is
+    # looked up as `.streamlit/secrets.toml` relative to the working directory,
+    # and a server started from `frontend/app` boots with no sign-in at all.
+    from stocks.config import PROJECT_ROOT
+
+    subprocess.run(cmd, check=False, cwd=PROJECT_ROOT)
 
 
 def _print_fund(profile) -> None:
@@ -740,7 +765,6 @@ def cmd_tax(args: argparse.Namespace) -> None:
     own matching rule, since FIFO, LIFO and an averaged cost base give
     different gains on identical trades.
     """
-    from collections import defaultdict
     from datetime import date
 
     from stocks.analysis.portfolio import market_values
@@ -761,16 +785,14 @@ def cmd_tax(args: argparse.Namespace) -> None:
         subnational_rate=args.subnational_rate,
         # Classified from the learned quoteType cache, never a live fetch: the
         # German partial exemption needs to know which holdings are funds.
+        # Under the replay's own labels, since that is what a sale carries.
         fund_tickers=frozenset(
-            t.ticker.upper() for t in txs if is_fund(t.ticker, fetch=False)
+            t.upper() for t in tax.labels(txs) if is_fund(t, fetch=False)
         ),
     )
     # The jurisdiction's own share-identification rule, not the app default.
     positions, realized = build(txs, base=ccy, matching=jur.matching)
-    buy_dates: dict[str, list[str]] = defaultdict(list)
-    for t in txs:
-        if t.action == "buy":
-            buy_dates[t.ticker].append(t.date)
+    buy_dates = tax.buy_dates(txs)
 
     ty = jur.fiscal_year(realized, args.year, buy_dates, settings)
     print(f"=== {jur.code} realized result — FY {jur.year_label(ty.year)} ===")
@@ -933,6 +955,9 @@ def cmd_logs(args: argparse.Namespace) -> None:
     if args.logs_command == "usage":
         print(lq.render_usage(lq.usage(entries)))
         return
+    if args.logs_command == "funnel":
+        print(lq.render_funnel(lq.funnel(entries)))
+        return
     if getattr(args, "json", False):
         for e in entries[::-1]:
             print(json.dumps(e))
@@ -941,6 +966,89 @@ def cmd_logs(args: argparse.Namespace) -> None:
         print("(no entries in range)")
         return
     print(lq.render(entries, show_trace=args.trace))
+
+
+def cmd_imports(args: argparse.Namespace) -> None:
+    """Read the anonymised import diagnostics (stocks.portfolio.diagnostics).
+
+    The failures nobody reported: which broker, which columns, which reason,
+    and never the statement itself.
+    """
+    from stocks.portfolio import diagnostics as diag
+
+    if args.imports_command == "show":
+        item = diag.find(args.id)
+        if item is None:
+            sys.exit(f"imports: no diagnostic {args.id!r}")
+        print(json.dumps(item, ensure_ascii=False, indent=2))
+        return
+
+    if args.imports_command == "replay":
+        _replay_import(args.id)
+        return
+
+    items = diag.recent(diag.stored(), hours=args.hours)
+    if args.platform:
+        items = [i for i in items if i.get("platform") == args.platform]
+
+    if not items:
+        print("(no import diagnostics in range)")
+        return
+    for item in items:
+        reasons = item.get("reasons") or {}
+        top = next(iter(reasons), item.get("error_type", "-"))
+        print(
+            f"{item.get('ts', '?')}  {str(item.get('platform', '?')):<14} "
+            f"{str(item.get('user', '-')):<34} "
+            f"{item.get('imported', 0):>4} ok {item.get('skipped', 0):>4} skip  {top}"
+        )
+        print(f"    {item.get('id', '')}  {item.get('ext', '?')} "
+              f"{item.get('encoding', '?')} delim={item.get('delimiter', '?')!r}")
+    print(f"\n{len(items)} diagnostics")
+    for spot in diag.hotspots(items, threshold=1):
+        print(f"  {spot['platform']:<14} {spot['count']:>3} failures, "
+              f"{spot['readers']} reader(s)  {spot['top_reason']}")
+
+
+def _replay_import(diagnostic_id: str) -> None:
+    """Re-run a parser against the recorded shape of the file that broke it.
+
+    The statement was never kept, so this rebuilds what *is* known: the header
+    row, in the delimiter and encoding the file actually used. That reproduces
+    the structural failures exactly — a refused header, an undetected
+    semicolon, an encoding the parser can't decode — which is the class of bug
+    worth chasing. Row-level reasons can't be replayed from a masked value, so
+    they are printed beside the result to compare against by eye.
+    """
+    from stocks.portfolio import diagnostics as diag
+    from stocks.portfolio import platforms
+
+    item = diag.find(diagnostic_id)
+    if item is None:
+        sys.exit(f"imports: no diagnostic {diagnostic_id!r}")
+    headers = item.get("headers") or []
+    if not headers:
+        sys.exit(f"imports: {diagnostic_id} recorded no header row to replay")
+
+    delimiter = item.get("delimiter", ",")
+    encoding = str(item.get("encoding", "utf-8")).split("/")[0]
+    text = delimiter.join(headers) + "\n" + delimiter.join("" for _ in headers) + "\n"
+    data = text.encode(encoding, errors="replace")
+
+    platform = platforms.by_key(str(item.get("platform", "")))
+    print(f"replaying {diagnostic_id} against {platform.label}")
+    print(f"  {len(headers)} columns, delimiter {delimiter!r}, {encoding}")
+    try:
+        result = platform.parse(str(item.get("file", "replay.csv")), data)
+    except Exception as exc:  # noqa: BLE001 — reproducing the crash is the point
+        print(f"\n  parser raised {type(exc).__name__}: {diag.redact(exc)}")
+    else:
+        print(f"\n  {result.summary}")
+        for entry in result.skipped[:5]:
+            print(f"    row {entry.get('row', '?')}: {diag.redact(entry.get('reason'))}")
+    print("\nrecorded at the time:")
+    for reason, n in (item.get("reasons") or {}).items():
+        print(f"    {n:>5} rows  {reason}")
 
 
 def cmd_feedback(args: argparse.Namespace) -> None:
@@ -1100,6 +1208,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_weekly.set_defaults(func=cmd_weekly)
 
+    p_sector = sub.add_parser(
+        "sector-scan",
+        help="build each sector's comparable cohort and rank it (nightly cron)",
+    )
+    p_sector.add_argument(
+        "--sector", action="append",
+        help="scan only this sector (repeatable); default is all eleven",
+    )
+    p_sector.add_argument(
+        "--no-widen", action="store_true",
+        help="skip the assistant's non-US proposals — the ETF basket only",
+    )
+    p_sector.add_argument(
+        "--dry-run", action="store_true",
+        help="scan and print the result without writing the stored file",
+    )
+    p_sector.set_defaults(func=cmd_sector_scan)
+
     p_ntest = sub.add_parser(
         "notify-test",
         help="send a test notification through the real delivery paths",
@@ -1193,7 +1319,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_tv.set_defaults(func=cmd_tv)
 
-    p_dash = sub.add_parser("dashboard", help="launch the Streamlit dashboard")
+    p_dash = sub.add_parser("dashboard", help="serve the web app locally")
+    p_dash.add_argument("--host", default="localhost")
+    p_dash.add_argument("--port", type=int, default=8501)
+    p_dash.add_argument("--reload", action="store_true",
+                        help="restart on source changes")
     p_dash.set_defaults(func=cmd_dashboard)
 
     p_etf = sub.add_parser(
@@ -1370,12 +1500,37 @@ def build_parser() -> argparse.ArgumentParser:
     _common(p_use, with_output=False)
     p_use.add_argument("--level", help="minimum severity (INFO/WARNING/ERROR)")
     p_use.set_defaults(since="7d", limit=5000)
+    p_fun = logs_sub.add_parser(
+        "funnel",
+        help="landing view -> app entry -> signup -> import, by day and source")
+    _common(p_fun, with_output=False)
+    p_fun.set_defaults(since="14d", limit=20000)
     p_exp = logs_sub.add_parser(
         "export", help="snapshot entries to JSONL (survives the 30d retention)")
     _common(p_exp, with_output=False)
     p_exp.add_argument("--level", help="minimum severity (INFO/WARNING/ERROR)")
     p_exp.add_argument("--out", help="destination file (default data/logs/<stamp>.jsonl)")
     p_logs.set_defaults(func=cmd_logs)
+
+    # ---- imports: anonymised diagnostics of statements that failed ----------
+    p_imports = sub.add_parser(
+        "imports",
+        help="import failures readers never reported (anonymised fingerprints)",
+    )
+    imports_sub = p_imports.add_subparsers(dest="imports_command", required=True)
+
+    def _imports_common(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("--hours", type=int, default=24,
+                            help="how far back to look (default 24)")
+        parser.add_argument("--platform", help="only this platform key")
+
+    _imports_common(imports_sub.add_parser("list", help="one line per failure"))
+    p_imp_show = imports_sub.add_parser("show", help="the full fingerprint")
+    p_imp_show.add_argument("id", help="diagnostic id, from `stocks imports list`")
+    p_imp_replay = imports_sub.add_parser(
+        "replay", help="re-run the parser against the recorded file shape")
+    p_imp_replay.add_argument("id", help="diagnostic id, from `stocks imports list`")
+    p_imports.set_defaults(func=cmd_imports)
 
     # ---- backup: snapshots of the persistence bucket (stocks.backup) --------
     from stocks import backup as _backup

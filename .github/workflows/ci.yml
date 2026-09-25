@@ -42,6 +42,60 @@ jobs:
       - run: uv sync --frozen
       - run: uv run pytest -q
 
+  # The React shell, and the one thing that can go wrong quietly about it: the
+  # bundle it serves is committed inside the Python package (frontend/README.md
+  # says why), and nothing in the image or the deploy rebuilds it. A TSX change
+  # pushed without `npm run build` therefore ships the *previous* bundle and
+  # every check here stays green — so this job rebuilds it and fails if what is
+  # committed is not what the sources produce. `npm run build` is also what
+  # runs prettier, tsc and vitest, so the front end's own gates ride along.
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/app/package-lock.json
+      - run: npm --prefix frontend/app ci
+      - run: npm --prefix frontend/app run build
+      # Dead exports and unreachable files. The front end has no linter
+      # beyond prettier and tsc, and neither of those sees a helper that
+      # nothing imports any more.
+      - run: npm --prefix frontend/app run knip
+      - name: the committed bundle is the one these sources build
+        # `git status`, not `git diff`: a rebuild that *adds* a chunk file
+        # leaves it untracked, and a diff would call that clean.
+        run: |
+          stale=$(git status --porcelain -- src/stocks/web/static/app)
+          if [ -n "$stale" ]; then
+            echo "$stale"
+            echo "::error::the committed bundle is not what these sources build."
+            echo "run: npm --prefix frontend/app run build && git add src/stocks/web/static/app"
+            exit 1
+          fi
+
+  # The built shell in a real browser, against the real ASGI app with Yahoo,
+  # the model and the network sealed off (tests/e2e/serve.py). Runs on the
+  # committed bundle, which the frontend job proves is the one the sources build.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --frozen
+      - run: uv run playwright install --with-deps chromium
+      - run: uv run pytest -m e2e -q --tracing retain-on-failure --output test-results
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
+
   # Known-vulnerability scan over the locked dependency set. Runs on main and
   # weekly — not on PRs, so an upstream CVE never blocks unrelated work; the
   # red run on main is the signal to bump the pinned dependency.

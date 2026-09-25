@@ -37,13 +37,13 @@ signed-in only anyway.
 
 from __future__ import annotations
 
-import re
-
 import streamlit as st
 
 from stocks import obs
-from stocks.chat import engine
-from stocks.config import load_watchlist
+
+# `engine` is kept on this module's namespace: the guide's tests reach the
+# provider chain as `guide.engine`, the same module `guide_ai` calls into.
+from stocks.chat import engine, guide_ai  # noqa: F401
 from stocks.secrets_env import secret
 from stocks.web import auth, i18n, onboarding, skeletons
 from stocks.web.ds import is_mobile
@@ -53,9 +53,9 @@ from stocks.web.i18n import t as tr
 # prefs.json keys, deliberately distinct from the modal tour's (`tour_done`,
 # `tour_seen_version`): the two surfaces can be switched between with the flag
 # below, and an account that took one must not read as having taken the other.
-PREF_STEP = "guide_step"  # id of the step the account is on ("" = not started)
-PREF_DONE = "guide_done"  # finished, skipped or walked out of
-PREF_THREAD = "guide_thread"  # conversation the guide's turns live in
+PREF_STEP = guide_ai.PREF_STEP  # id of the step the account is on ("" = none)
+PREF_DONE = guide_ai.PREF_DONE  # finished, skipped or walked out of
+PREF_THREAD = guide_ai.PREF_THREAD  # conversation the guide's turns live in
 PREF_OPENS = "guide_opens"  # sessions the panel has been popped open on
 
 # Session keys.
@@ -487,117 +487,31 @@ def render_strip() -> None:
 # "trial") and may have no key of its own. What follows is the layer on top —
 # a personal opening line, and answers to whatever the reader asks mid-tour —
 # and every path through it degrades to silence rather than to an error.
+#
+# The logic itself lives in `stocks.chat.guide_ai`, headless, so the HTTP API
+# serves the React drawer the same fence, the same marker and the same opening
+# line. What stays here is only the part that reads this Streamlit session.
 
-_LANG_NAME = {"en": "English", "es": "Spanish"}
+PREF_NARRATED = guide_ai.PREF_NARRATED  # the opening line was attempted, once
+NARRATE_TIMEOUT_S = guide_ai.NARRATE_TIMEOUT_S
+NARRATE_MAX_CHARS = guide_ai.NARRATE_MAX_CHARS
 
-# The one steering channel the model is given. It may end an answer with
-# [[goto:<step id>]] to offer a jump; the id is checked against the registry
-# before it becomes a button, so a step the model invented simply vanishes.
-# Never parsed out of the *user's* text — only out of what a provider wrote.
-_MARKER_RE = re.compile(r"\[\[goto:\s*([a-z_]{1,32})\s*\]\]")
-# How much of a stream's tail to hold back while a marker could still be
-# forming. Longer than any marker, short enough that prose never visibly lags.
-_HOLD = 48
-
-PREF_NARRATED = "guide_narrated"  # the opening line was attempted, once ever
-
-NARRATE_TIMEOUT_S = 12.0
-NARRATE_MAX_CHARS = 280
+hide_markers = guide_ai.hide_markers
+claim_goto = guide_ai.claim_goto
+_accept = guide_ai.accept
 
 
 def prompt_fence() -> str:
-    """What the model is told while it is answering inside the walkthrough.
-
-    Two jobs, and the first is the important one. A model asked "where do I
-    put my broker statement" will happily invent a Settings page, and during
-    onboarding the reader has no way to know it is wrong — they have not seen
-    the app yet. So the prompt carries the registry: these steps exist, and
-    nothing else does. The second job is the jump marker, which is what lets
-    an answer end in a button instead of in directions.
-
-    Empty — and therefore free — for every conversation that is not the
-    guide's own thread.
+    """The walkthrough's fence for the conversation this session has open —
+    `guide_ai.prompt_fence`, read off the session's prefs and thread. Empty,
+    and therefore free, for every conversation that is not the guide's own.
     """
     try:
-        if not owns(auth.active_conversation()):
-            return ""
+        conv = auth.active_conversation()
     except Exception:  # an unreadable chat book is not worth a failed turn
         return ""
-    step = current()
-    if step is None:
-        return ""
-    listing = "\n".join(
-        f"- {s.id}: {tr(f'tour.{s.id}_title')}" for s in steps()
-    )
-    return (
-        "\n\nThe user is part-way through the app's guided walkthrough. They "
-        f"are on step {_index(step) + 1} of {len(steps())}, "
-        f'"{tr(f"tour.{step.id}_title")}".\n'
-        "These are the only parts of the app that exist:\n"
-        f"{listing}\n"
-        "Answer questions about the app from that list alone. Never describe "
-        "a page, tab, button or setting that is not on it, and never invent "
-        "a menu path — say you are not sure instead. Keep walkthrough answers "
-        "short.\n"
-        "To offer to take them somewhere, end your reply with [[goto:<id>]] "
-        "on its own line, using one id from the list exactly as written. At "
-        "most one marker, and only when going there is genuinely the next "
-        "thing to do. Never write the marker in any other form, and never "
-        "explain that it exists.\n"
-    )
-
-
-def hide_markers(chunks, found: list[str]):
-    """Yield a provider's stream with any jump marker withheld, recording it.
-
-    The marker has to be invisible *while streaming*, not merely stripped from
-    what gets stored: `st.write_stream` paints tokens as they arrive and never
-    repaints, so a marker shown for even one frame stays on screen until the
-    reader's next click. So the tail is held back whenever it could still be
-    the beginning of one — which costs a few characters of lag on prose
-    containing "[", and nothing else.
-    """
-    held = ""
-    for chunk in chunks:
-        held += str(chunk)
-        for hit in _MARKER_RE.finditer(held):
-            found.append(hit.group(1))
-        held = _MARKER_RE.sub("", held)
-        # The *earliest* bracket still close enough to the end to be a marker
-        # forming, not the latest: "[[go" would otherwise emit its first
-        # bracket and the reader would watch a marker assemble itself.
-        cut = held.find("[", max(0, len(held) - _HOLD))
-        if cut != -1:
-            out, held = held[:cut], held[cut:]
-        else:
-            out, held = held, ""
-        if out:
-            yield out
-    for hit in _MARKER_RE.finditer(held):
-        found.append(hit.group(1))
-    tail = _MARKER_RE.sub("", held)
-    if tail:
-        yield tail
-
-
-def claim_goto(turn: dict, found: list[str]) -> str | None:
-    """Attach a validated jump to a finished answer; returns the step id.
-
-    The last marker wins — a stream that fell down to a second provider can
-    carry one from each. An id that is not a step in the registry is dropped
-    without a trace: the answer stands, it just ends in prose instead of a
-    button. Also scrubs the text, for the marker that arrived in a shape
-    `hide_markers` could not withhold (a provider that returned the whole
-    answer as one chunk still passes through it, but a stored turn written by
-    some other path might not).
-    """
-    turn["content"] = _MARKER_RE.sub("", str(turn.get("content") or "")).rstrip()
-    for sid in reversed(found):
-        if onboarding.by_id(sid) is not None:
-            turn["guide_goto"] = sid
-            obs.event("guide.jump_offered", step=sid)
-            return sid
-    return None
+    return guide_ai.prompt_fence(auth.load_prefs(), conv.get("id"),
+                                 i18n.active_language())
 
 
 def render_jump(ns: str, msg: dict, index: int) -> None:
@@ -617,80 +531,13 @@ def render_jump(ns: str, msg: dict, index: int) -> None:
 
 
 # ------------------------------------------------------------------ opening
-def _facts(prefs: dict) -> str:
-    """The little the opening line is allowed to know about the account.
-
-    Counts, not holdings: the free chain is operator-funded and shared, and a
-    welcome message is the last place worth sending someone's book through it
-    (the normal turn already carries the snapshot — that one the reader asked
-    for). Everything here is cheap and non-identifying.
-    """
-    try:
-        tickers = len(load_watchlist(auth.watchlist_path()))
-    except Exception:
-        tickers = 0
-    return (
-        f"watchlist_tickers={tickers}; "
-        f"has_imported_ledger={onboarding.setup_state(prefs).get('import')}"
-    )
-
-
-def _accept(raw: str | None) -> str | None:
-    """Keep a usable opening line, or None so the next provider gets a turn.
-
-    Rejects rather than repairs the shapes that mean the model ignored the
-    brief — a link, a marker, a wall of text — and trims the merely long,
-    because one sentence that runs over is still a good sentence.
-    """
-    line = " ".join(str(raw or "").split())
-    if not line or "[[" in line or "](" in line or "http" in line:
-        return None
-    if len(line) > NARRATE_MAX_CHARS * 2:
-        return None
-    if len(line) > NARRATE_MAX_CHARS:
-        line = line[:NARRATE_MAX_CHARS].rsplit(" ", 1)[0] + "…"
-    return line
-
-
 def _generate(prefs: dict, step: onboarding.Step) -> str | None:
-    """One sentence about the step just reached, or None. Never raises.
-
-    Goes through `engine.complete_attempts`, so a dead key, a spent allowance
-    or a hung provider falls to the next candidate and finally to None — the
-    same sandbox the daily briefing runs in. A free unit spent on an attempt
-    that answered nothing is handed back: the guide is not what should cost a
-    new account one of its five trial messages.
-    """
-    lang = i18n.active_language()
-    spent: list[int] = []
-
-    def _spend(p: dict) -> bool:
-        if not engine.spend_free_quota(p):
-            return False
-        spent.append(1)
-        auth.save_prefs(p)
-        return True
-
-    system = (
-        "You are the assistant built into TopStocks, a personal "
-        "stock-portfolio app, walking a new user through it. They have just "
-        f'reached the step "{tr(f"tour.{step.id}_title")}", which the app has '
-        "already described to them. Write ONE sentence of at most 200 "
-        f"characters, in {_LANG_NAME.get(lang, 'English')}, that adds "
-        "something useful about this step for THIS user given the facts "
-        "below — why it matters to them, or what to do first. Do not repeat "
-        "the description, do not greet them, and invent nothing about the "
-        "app. Plain text only: no markdown, no links, no lists, no emoji, no "
-        "quotation marks."
+    """One sentence about the step just reached, or None. Never raises."""
+    return guide_ai.generate(
+        prefs, step, i18n.active_language(),
+        save=lambda p: auth.save_prefs(p),
+        account_facts=guide_ai.facts(prefs),
     )
-    line = engine.complete_attempts(
-        prefs, system, [{"role": "user", "content": _facts(prefs)}],
-        NARRATE_TIMEOUT_S, spend_free=_spend, accept=_accept,
-    )
-    if line is None and spent:
-        engine.refund_free_quota(prefs, sum(spent))
-        auth.save_prefs(prefs)
-    return line
 
 
 def narrate(ns: str, history: list[dict], box) -> bool:
@@ -710,8 +557,8 @@ def narrate(ns: str, history: list[dict], box) -> bool:
     turn that into a stall on every rerun.
     """
     prefs = auth.load_prefs()
-    step = current(prefs)
-    if step is None or prefs.get(PREF_NARRATED) or _index(step) < 1:
+    step = guide_ai.due_narration(prefs)
+    if step is None:
         return False
     # The deferred-slot pattern the rest of the app loads with (web/skeletons):
     # a shimmer in the shape of what is coming, cleared to nothing when it does
@@ -724,8 +571,7 @@ def narrate(ns: str, history: list[dict], box) -> bool:
         slot.clear()
         obs.event("guide.narration_skipped")
         return False
-    turn = {"role": "assistant", "content": line,
-            "guide": {"step": step.id, "state": "note"}}
+    turn = guide_ai.note_turn(step, line)
     # Appended, never inserted: the card above is already on screen at its own
     # index this run, and moving it would repaint it under different widget
     # keys on the next one — the reader would watch the step jump.

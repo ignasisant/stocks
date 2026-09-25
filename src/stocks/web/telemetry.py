@@ -52,7 +52,7 @@ def _user_id() -> str:
     try:
         if not auth.is_logged_in():
             return "guest"
-        return auth.slug(str(st.user.email))
+        return auth.slug(auth.current_email())
     except Exception:  # noqa: BLE001
         return "?"
 

@@ -62,7 +62,12 @@ def test_linked_pages_are_pages_that_exist():
     filename, so a page renamed in web/app.py must rename the link too."""
     for path in (links.PORTFOLIO, links.IMPORT, links.EARNINGS):
         assert (WEB / "app_pages" / f"{path}.py").exists(), path
-    # The ticker page sets its url_path explicitly rather than deriving it.
-    assert 'url_path="ticker"' in (WEB / "app.py").read_text()
+    # And the menu agrees about where each of them lives. Asked of the table
+    # rather than of app.py's source: the pages are built from it now, so this
+    # is the claim itself instead of a grep for the line that used to make it.
+    from stocks import navigation
+
+    for path in (links.PORTFOLIO, links.IMPORT, links.EARNINGS, "ticker"):
+        assert navigation.by_path(path) is not None, path
     assert links.TICKER == "ticker"
     assert (WEB / "app_pages" / "home.py").exists() and links.HOME == ""

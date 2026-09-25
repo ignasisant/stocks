@@ -13,6 +13,7 @@ import html
 
 import streamlit as st
 
+from stocks import navigation
 from stocks.web import css as css_util
 from stocks.web.ds import (
     is_mobile,
@@ -22,17 +23,18 @@ from stocks.web.logos import asset_logo, company_name, display_symbol, logo
 from stocks.web.search import topbar_search_panel
 
 # Bottom tab bar (phones) — the DS mobile spec replaces the sidebar with a
-# fixed 4-destination bar: Inicio · Cartera · Screener · Perfil. Stroke icons
+# fixed 4-destination bar: Inicio · Cartera · Sectores · Perfil. Stroke icons
 # straight from the spec's Amphora set (24×24 grid, 1.5px stroke, round caps).
 # The remaining pages stay reachable through the drawer behind the native
 # header's menu toggle, which the bar deliberately does not remove.
-_BOTTOM_NAV = (
-    # (url_path, i18n label key, Material Symbols ligature — the same glyphs
-    # app.py's st.navigation uses, so drawer and tab bar agree)
-    ("", "nav.home", "home"),
-    ("portfolio", "nav.portfolio", "pie_chart"),
-    ("screener", "nav.screener", "filter_alt"),
-    ("profile", "nav.profile", "account_circle"),
+# Read from `stocks.navigation`, which is also what st.navigation's sidebar and
+# the React shell draw: the glyph and the label on this bar are then the same
+# ones the drawer shows for the same page, by construction rather than by
+# somebody remembering to change both.
+_BOTTOM_NAV = tuple(
+    (destination.path, destination.label, destination.icon)
+    for path in navigation.BOTTOM_NAV
+    if (destination := navigation.by_path(path)) is not None
 )
 
 

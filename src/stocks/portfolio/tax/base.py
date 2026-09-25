@@ -25,7 +25,7 @@ date, a Spanish filer's is EUR at the ECB rate. NOT tax advice; a planning aid.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -157,6 +157,77 @@ class TaxPeriod:
 
     def notes(self) -> list[Note]:
         return []
+
+
+@dataclass
+class TaxTotal:
+    """Several finished periods added up: a history, not a taxable base.
+
+    Every jurisdiction here nets and taxes one year at a time — allowances
+    reset, the brackets restart, and a loss only crosses a year boundary as a
+    carryforward. Which is why this adds up each year's *own* figures instead
+    of replaying the whole ledger as one long period: that would run five
+    years of gains up a single progressive scale and invent a tax nobody owes.
+
+    It carries no bracket maths of its own, so it renders wherever a
+    `TaxPeriod` does (`kpis()`, `notes()`, `sales`) and computes nothing new.
+    """
+
+    jurisdiction: str
+    currency: str
+    # The tax years summed, in the order they were handed over.
+    years: tuple[int, ...] = ()
+    realized_gain: float = 0.0
+    realized_loss: float = 0.0
+    disallowed_loss: float = 0.0
+    recovered_loss: float = 0.0
+    sales: list[RealizedSale] = field(default_factory=list)
+    # Each year's KPIs summed key by key — see `total_of`.
+    totals: list[Kpi] = field(default_factory=list)
+
+    @property
+    def deductible_loss(self) -> float:
+        return self.realized_loss - self.disallowed_loss
+
+    def kpis(self) -> list[Kpi]:
+        return self.totals
+
+    def notes(self) -> list[Note]:
+        """None: every note a jurisdiction writes is about one year."""
+        return []
+
+
+def total_of(periods: Iterable[TaxPeriod]) -> TaxTotal:
+    """Add finished tax years together for an all-years view.
+
+    The KPI tiles are summed by key — total net base, total estimated tax,
+    total carryforward — taking each year's figure as that year's engine
+    already computed it. A key only some years carry still lands, at the sum
+    of the years that had it, in first-seen order.
+    """
+    items = list(periods)
+    if not items:
+        raise ValueError("total_of needs at least one period")
+    first = items[0]
+    out = TaxTotal(
+        jurisdiction=first.jurisdiction,
+        currency=first.currency,
+        years=tuple(p.year for p in items),
+    )
+    summed: dict[str, Kpi] = {}
+    for p in items:
+        out.realized_gain += p.realized_gain
+        out.realized_loss += p.realized_loss
+        out.disallowed_loss += p.disallowed_loss
+        out.recovered_loss += p.recovered_loss
+        out.sales.extend(p.sales)
+        for k in p.kpis():
+            prev = summed.get(k.key)
+            summed[k.key] = Kpi(
+                k.key, (prev.value if prev else 0.0) + k.value, k.help_key
+            )
+    out.totals = list(summed.values())
+    return out
 
 
 # ------------------------------------------------------------------ helpers

@@ -162,7 +162,7 @@ def test_catalog_has_no_copy_for_steps_that_are_gone():
 # ---------------------------------------------------------------- setup_state
 def test_setup_state_reads_the_four_capabilities(monkeypatch):
     monkeypatch.setattr(auth, "is_logged_in", lambda: True)
-    monkeypatch.setattr(onboarding, "_has_ledger", lambda prefs: True)
+    monkeypatch.setattr(onboarding, "_has_ledger", lambda prefs, paths=None: True)
     state = onboarding.setup_state(
         {"anthropic_key_enc": "…", "telegram_chat_id": 42}
     )
@@ -171,7 +171,7 @@ def test_setup_state_reads_the_four_capabilities(monkeypatch):
 
 def test_setup_state_for_a_guest_has_nothing_switched_on(monkeypatch):
     monkeypatch.setattr(auth, "is_logged_in", lambda: False)
-    monkeypatch.setattr(onboarding, "_has_ledger", lambda prefs: True)
+    monkeypatch.setattr(onboarding, "_has_ledger", lambda prefs, paths=None: True)
     state = onboarding.setup_state({"telegram_chat_id": 42})
     # The ledger check is skipped for a guest on purpose — the guest data dir
     # is shared, so its starter ledger is nobody's import.
@@ -180,7 +180,7 @@ def test_setup_state_for_a_guest_has_nothing_switched_on(monkeypatch):
 
 def test_setup_state_ignores_the_keyless_free_chain(monkeypatch):
     monkeypatch.setattr(auth, "is_logged_in", lambda: True)
-    monkeypatch.setattr(onboarding, "_has_ledger", lambda prefs: False)
+    monkeypatch.setattr(onboarding, "_has_ledger", lambda prefs, paths=None: False)
     assert onboarding.setup_state({})["ai"] is False
 
 
@@ -357,7 +357,7 @@ def app(monkeypatch):
         monkeypatch.setattr(
             auth, "save_prefs", lambda p, path=None: prefs.update(p)
         )
-        monkeypatch.setattr(onboarding, "_has_ledger", lambda p: False)
+        monkeypatch.setattr(onboarding, "_has_ledger", lambda p, paths=None: False)
         return AppTest.from_function(_script, default_timeout=15)
 
     return make

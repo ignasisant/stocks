@@ -90,12 +90,20 @@ def clip_seconds(audio: bytes) -> float | None:
 
 
 def transcribe(audio: bytes, *, language: str | None = None,
-               filename: str = "voice.wav") -> str:
+               filename: str = "voice.wav",
+               content_type: str = "audio/wav") -> str:
     """The spoken text of `audio`, or raise TranscriptionFailed.
 
     `language` is an ISO-639-1 hint (the app's active locale): Whisper detects
     the language by itself, but a two-second clip of Spanish is routinely
     detected as Portuguese, and the hint costs nothing.
+
+    `content_type` and `filename` travel together and default to the WAV
+    `st.audio_input` hands back. A browser recording through `MediaRecorder`
+    produces whatever its engine supports instead — WebM/Opus on Chrome and
+    Firefox, MP4/AAC on Safari — and both the name and the type have to say so,
+    because the backend picks its decoder off them and rejects a WebM
+    introduced as a WAV.
     """
     if not audio:
         raise TranscriptionFailed("chat.voice_empty")
@@ -121,7 +129,7 @@ def transcribe(audio: bytes, *, language: str | None = None,
         client = OpenAI(api_key=key, base_url=_BASE_URL, timeout=_TIMEOUT)
         resp = client.audio.transcriptions.create(
             model=model,
-            file=(filename, audio, "audio/wav"),
+            file=(filename, audio, content_type),
             # `omit`, not None: the field is optional, and the SDK sends None
             # as a JSON null rather than leaving the key out — which is a
             # different request, and one Whisper backends are free to reject.

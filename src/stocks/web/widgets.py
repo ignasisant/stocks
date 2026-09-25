@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import streamlit as st
 
-from stocks.config import Alert, load_watchlist
+from stocks import session
+from stocks.config import ALERT_FORM_BY_TYPE, ALERT_FORMS, Alert, load_watchlist
 from stocks.web import auth
 from stocks.web.ds import (  # noqa: F401 — facade re-export
     ACCENT_AREA,
@@ -99,6 +100,7 @@ from stocks.web.ds import (  # noqa: F401 — facade re-export
     SKELETON_BASE,
     SKELETON_HI,
     SMA_FAST,
+    SMA_LONG,
     SMA_SLOW,
     SUCCESS_FILL,
     SURFACE_BAND,
@@ -226,11 +228,11 @@ def ticker_actions(ticker: str, *, container=None, key: str = "ticker") -> None:
     box = container if container is not None else st
     if not auth.is_logged_in():
         if "auth" in st.secrets:
-            box.button(
+            box.link_button(
                 tr("widgets.sign_in_favorite"),
+                session.LOGIN_PATH,
                 key=f"{key}_login_{slug(ticker)}",
                 icon=":material/login:",
-                on_click=auth.login,
                 width="stretch",
             )
         return
@@ -299,11 +301,6 @@ def ticker_actions(ticker: str, *, container=None, key: str = "ticker") -> None:
             parts.append(f"({a.window}d)")
         return " ".join(parts)
 
-    _ALERT_TYPE_ORDER = ("above", "below", "pct_move", "drawdown", "rsi_below",
-                         "rsi_above", "sma_cross", "high_52w", "low_52w")
-    _WINDOW_DEFAULTS = {"rsi_below": 14, "rsi_above": 14, "sma_cross": 50,
-                        "high_52w": 252, "low_52w": 252}
-
     def _alert_editor() -> None:
         st.caption(tr("widgets.alerts_caption"))
         if alerts:
@@ -325,36 +322,41 @@ def ticker_actions(ticker: str, *, container=None, key: str = "ticker") -> None:
         else:
             st.caption(tr("widgets.alert_none", ticker=ticker))
 
+        # Which field a type asks for, in which order the types are offered and
+        # what each one defaults to is `config.ALERT_FORMS` — the same table the
+        # API hands the React page, so both editors write the same rule.
         atype = st.selectbox(
             tr("widgets.alert_type"),
-            _ALERT_TYPE_ORDER,
+            [form.type for form in ALERT_FORMS],
             format_func=lambda t: tr(f"widgets.alert_t_{t}"),
             key=f"{key}_al_type_{slug(ticker)}",
         )
+        form = ALERT_FORM_BY_TYPE[atype]
         entry: dict = {"type": atype}
         fk = f"{key}_al_{atype}_{slug(ticker)}"  # per-type keys: no stale values
-        if atype in ("above", "below"):
+        if form.field == "price":
             entry["price"] = st.number_input(
                 tr("widgets.alert_price"), min_value=0.0, key=f"{fk}_price"
             )
-        elif atype in ("pct_move", "drawdown"):
+        elif form.field == "pct":
             entry["pct"] = st.number_input(
-                tr("widgets.alert_pct"), min_value=0.0, value=5.0, key=f"{fk}_pct"
+                tr("widgets.alert_pct"), min_value=0.0, value=form.default,
+                key=f"{fk}_pct",
             )
-        elif atype in ("rsi_below", "rsi_above"):
+        elif form.field == "level":
             entry["level"] = st.number_input(
                 tr("widgets.alert_level"), min_value=0.0, max_value=100.0,
-                value=30.0 if atype == "rsi_below" else 70.0, key=f"{fk}_level",
+                value=form.default, key=f"{fk}_level",
             )
-        if atype in _WINDOW_DEFAULTS:
+        if form.window is not None:
             entry["window"] = int(st.number_input(
                 tr("widgets.alert_window"), min_value=2,
-                value=_WINDOW_DEFAULTS[atype], key=f"{fk}_window",
+                value=form.window, key=f"{fk}_window",
             ))
 
-        incomplete = (entry.get("price") == 0.0 and atype in ("above", "below")) or (
-            entry.get("pct") == 0.0 and atype in ("pct_move", "drawdown")
-        )
+        # A threshold of zero is nothing anybody meant: no price is ever below
+        # 0, and a 0% move fires on every tick.
+        incomplete = form.field in ("price", "pct") and not entry.get(form.field)
         if st.button(
             tr("widgets.alert_add"),
             key=f"{fk}_add",
