@@ -54,7 +54,7 @@ tv = ["tradingview-ta>=3.3.0"]
 stocks = "stocks.cli:main"
 
 [build-system]
-requires = ["uv_build>=0.11.26,<0.12.0"]
+requires = ["uv_build>=0.11.26,<0.13.0"]
 build-backend = "uv_build"
 
 [tool.pytest.ini_options]
