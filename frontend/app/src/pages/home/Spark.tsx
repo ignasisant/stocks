@@ -260,7 +260,12 @@ export function Spark({ nonce }: { nonce: number }) {
               strokeWidth="1"
               vectorEffect="non-scaling-stroke"
             />
-            <circle cx={x(maxIndex)} cy={y(maxValue)} r="2" fill={token("text-faint")} />
+            <circle
+              cx={x(maxIndex)}
+              cy={y(maxValue)}
+              r="2"
+              fill={token("text-faint")}
+            />
             {hoverIndex !== null ? (
               <line
                 x1={x(hoverIndex)}

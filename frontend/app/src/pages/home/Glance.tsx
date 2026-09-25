@@ -240,7 +240,8 @@ function GlanceCard({ book, nonce }: { book: Book; nonce: number }) {
           <Tile
             label={t("portfolio.annualised_return")}
             value={
-              percent(performance.twr_annualised, lang, { signed: true, digits: 1 }) ?? na
+              percent(performance.twr_annualised, lang, { signed: true, digits: 1 }) ??
+              na
             }
             help={t("portfolio.twr_return_help")}
           />

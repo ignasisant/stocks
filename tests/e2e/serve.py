@@ -106,6 +106,15 @@ def _script_chat() -> None:
 def main() -> None:
     port, root = int(sys.argv[1]), Path(sys.argv[2])
     os.environ.setdefault("AUTH_COOKIE_SECRET", "e2e-cookie-signing-secret-long-enough")
+    # `session.sign_in_configured()` also needs these three before a guest gets
+    # a real "Sign in with Google" link instead of "not set up yet" — sealed
+    # here like every other secret, so the suite reads the same whether or not
+    # the machine running it has a real .streamlit/secrets.toml on its cwd.
+    # Never dialed: `_seal_network()` refuses anything past loopback before a
+    # click could reach Google with these.
+    os.environ.setdefault("AUTH_CLIENT_ID", "e2e-client-id")
+    os.environ.setdefault("AUTH_CLIENT_SECRET", "e2e-client-secret")
+    os.environ.setdefault("AUTH_REDIRECT_URI", f"http://127.0.0.1:{port}/oauth2callback")
 
     _seal_network()
     _seal_accounts(root)
