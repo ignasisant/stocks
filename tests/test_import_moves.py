@@ -19,7 +19,7 @@ from stocks.portfolio import positions
 from stocks.portfolio.ledger import Transaction, add_many, all_transactions
 from stocks.web import auth
 
-PAGE = "src/stocks/web/app_pages/import_transactions.py"
+PAGE = "../src/stocks/web/app_pages/import_transactions.py"
 NO_FX = lambda amount, currency, day: amount  # noqa: E731
 
 # One share of ASML: bought at DEGIRO (which books it under the ISIN), moved to

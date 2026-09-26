@@ -29,7 +29,7 @@ from stocks.portfolio.fees import broker_of
 from stocks.portfolio.ledger import Transaction, add_many, all_transactions
 from stocks.web import auth
 
-IMPORT_PAGE = "src/stocks/web/app_pages/import_transactions.py"
+IMPORT_PAGE = "../src/stocks/web/app_pages/import_transactions.py"
 PORTFOLIO_PAGE = "src/stocks/web/app_pages/portfolio.py"
 
 

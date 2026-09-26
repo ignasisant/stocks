@@ -20,7 +20,7 @@ from streamlit.testing.v1 import AppTest
 from stocks.config import load_watchlist
 from stocks.web import auth, search, watchlist_ui
 
-PAGE = "src/stocks/web/app_pages/profile.py"
+PAGE = "../src/stocks/web/app_pages/profile.py"
 
 
 @pytest.fixture

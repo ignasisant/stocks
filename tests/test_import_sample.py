@@ -26,7 +26,7 @@ from stocks.portfolio.ledger import Transaction, add_many, all_transactions
 from stocks.portfolio.validate import validate
 from stocks.web import auth
 
-PAGE = "src/stocks/web/app_pages/import_transactions.py"
+PAGE = "../src/stocks/web/app_pages/import_transactions.py"
 ASSETS = Path(__file__).resolve().parents[1] / "src" / "stocks" / "web" / "assets"
 REVOLUT = platforms.by_key("revolut")
 

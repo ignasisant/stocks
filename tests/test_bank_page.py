@@ -17,7 +17,7 @@ from streamlit.testing.v1 import AppTest
 from stocks.bank import enablebanking, store
 from stocks.web import auth, bank_ui
 
-PAGE = "src/stocks/web/app_pages/bank.py"
+PAGE = "../src/stocks/web/app_pages/bank.py"
 EMAIL = "me@example.com"
 
 SESSION = {

@@ -19,7 +19,7 @@ from stocks.data import fetch
 from stocks.portfolio.ledger import Transaction, add_many, all_transactions
 from stocks.web import auth
 
-PAGE = "src/stocks/web/app_pages/import_transactions.py"
+PAGE = "../src/stocks/web/app_pages/import_transactions.py"
 
 AMZN_SPLITS = [("1999-09-02", 2.0), ("2022-06-06", 20.0)]
 CLOSES = {("AMZN", "2022-05-24"): 104.10}
