@@ -20,7 +20,7 @@ from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
 from stocks.web import auth, exports
 
-PAGE = "src/stocks/web/app_pages/profile.py"
+PAGE = "../src/stocks/web/app_pages/profile.py"
 
 
 def _stylesheet(at) -> str:

@@ -17,7 +17,7 @@ from streamlit.testing.v1 import AppTest
 from stocks.portfolio import platforms
 from stocks.web import auth, widgets
 
-PAGE = "src/stocks/web/app_pages/import_transactions.py"
+PAGE = "../src/stocks/web/app_pages/import_transactions.py"
 
 
 @pytest.fixture

@@ -21,7 +21,7 @@ from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
 from stocks.web import auth, portfolio_data
 
-PAGE = "src/stocks/web/app_pages/portfolio.py"
+PAGE = "../src/stocks/web/app_pages/portfolio.py"
 
 TXS = [
     Transaction("2024-01-10", "KO", "buy", 100, 60.0, "USD", 1.0),

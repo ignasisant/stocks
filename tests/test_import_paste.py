@@ -26,7 +26,7 @@ from stocks.portfolio import diagnostics, last_import, platforms
 from stocks.portfolio.ledger import all_transactions
 from stocks.web import auth, widgets
 
-PAGE = "src/stocks/web/app_pages/import_transactions.py"
+PAGE = "../src/stocks/web/app_pages/import_transactions.py"
 ASSETS = Path(__file__).resolve().parents[1] / "src" / "stocks" / "web" / "assets"
 SAMPLE = ASSETS / platforms.by_key("revolut").sample
 

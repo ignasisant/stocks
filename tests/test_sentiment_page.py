@@ -22,7 +22,7 @@ from yfinance.exceptions import YFRateLimitError
 from stocks.analysis import sentiment as sm
 from stocks.data import macro
 
-PAGE = "src/stocks/web/app_pages/sentiment.py"
+PAGE = "../src/stocks/web/app_pages/sentiment.py"
 SKELETON_MARKER = "topstocks-sk"
 # The four headings the reader navigates by: why, the trend snapshot, their own
 # book, and the detail tabs. The hero is titled by its score, not a heading.

@@ -19,7 +19,7 @@ from streamlit.testing.v1 import AppTest
 
 from stocks.analysis.sectors import SectorScan
 
-PAGE = "src/stocks/web/app_pages/sector.py"
+PAGE = "../src/stocks/web/app_pages/sector.py"
 # An unresolved slot still shimmers. The empty card's ghost *preview* uses the
 # same markup on purpose, so the scenarios that draw one check their slot a
 # different way.

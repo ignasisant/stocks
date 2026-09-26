@@ -21,7 +21,7 @@ from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction
 from stocks.web import auth, portfolio_data, widgets
 
-PAGE = "src/stocks/web/app_pages/portfolio.py"
+PAGE = "../src/stocks/web/app_pages/portfolio.py"
 
 # One long-term winner and one short-term loser, both in USD, so the US split
 # has something in each bucket and Spain still sees one net figure.
