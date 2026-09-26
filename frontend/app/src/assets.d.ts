@@ -10,3 +10,9 @@ declare module "*.svg?url" {
   const src: string;
   export default src;
 }
+
+/**
+ * Side-effect CSS imports (`import "./foo.css"`) — TypeScript 7 requires an
+ * ambient module for these even though nothing is bound to a name.
+ */
+declare module "*.css";
