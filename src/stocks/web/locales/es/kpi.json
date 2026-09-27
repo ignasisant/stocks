@@ -58,5 +58,9 @@
   "kpi.col_level": "Nivel",
   "kpi.col_loaded": "Cargado de",
   "kpi.col_verify": "Verificar con",
-  "kpi.col_note": "Nota"
+  "kpi.col_note": "Nota",
+  "kpi.roc_63.label": "Rentabilidad 3 meses",
+  "kpi.roc_63.desc": "Precio actual frente a hace unas 3 meses (63 sesiones bursátiles).",
+  "kpi.pct_from_high.label": "Distancia al máximo 52s",
+  "kpi.pct_from_high.desc": "Precio actual frente al cierre más alto del último año; 0% es estar en el máximo."
 }

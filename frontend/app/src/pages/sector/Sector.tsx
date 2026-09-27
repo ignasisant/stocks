@@ -24,7 +24,7 @@ import { useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
 import { Cohort } from "./Cohort";
-import { Podium } from "./Podium";
+import { FUNDAMENTAL_WHY, Podium, TECHNICAL_WHY } from "./Podium";
 import { RescanButton, useRescan } from "./Rescan";
 import { Verdict } from "./Verdict";
 import { useLabels } from "./labels";
@@ -119,8 +119,25 @@ function Screen({ sectors }: { sectors: SectorSummary[] }) {
               <p className="ag-sec-caption">
                 {t("sector.as_of", { date: data.as_of })}
               </p>
-              <Podium podium={data.podium} rows={data.rows} cohort={data.rows.length} />
+              <Podium
+                title={t("sector.podium_title")}
+                emptyText={t("sector.no_podium")}
+                helpText={t("sector.podium_help", { cohort: data.rows.length })}
+                why={FUNDAMENTAL_WHY}
+                podium={data.podium}
+                rows={data.rows}
+              />
               {data.podium.length > 0 && <Verdict sector={data.sector} />}
+              <Podium
+                title={t("sector.tech_podium_title")}
+                emptyText={t("sector.no_tech_podium")}
+                helpText={t("sector.tech_podium_help", {
+                  cohort: data.tech_rows.length,
+                })}
+                why={TECHNICAL_WHY}
+                podium={data.tech_podium}
+                rows={data.tech_rows}
+              />
               <Cohort key={data.sector} data={data} />
             </>
           )

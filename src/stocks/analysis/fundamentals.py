@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from stocks.analysis import ranking
 from stocks.analysis.moat import moat_score
 from stocks.data.fundamentals import RawFundamentals
 
@@ -543,39 +544,15 @@ def comp_scores(metrics: list[dict]) -> dict[str, float]:
     mean over its ranked KPIs. Tickers ranked on fewer than _RANK_MIN_METRICS
     KPIs are dropped — too sparse to compare fairly.
     """
-    per_ticker: dict[str, list[float]] = {str(m["ticker"]): [] for m in metrics}
-    for key in _RANK_LOWER_BETTER | _RANK_HIGHER_BETTER:
-        vals = {
-            str(m["ticker"]): float(m[key])
-            for m in metrics
-            if isinstance(m.get(key), (int, float))
-            and not isinstance(m.get(key), bool)
-            and pd.notna(m[key])
-        }
-        if len(vals) < 2:
-            continue
-        n = len(vals)
-        for t, v in vals.items():
-            beaten = sum(1 for o in vals.values() if o > v) if (
-                key in _RANK_LOWER_BETTER
-            ) else sum(1 for o in vals.values() if o < v)
-            tied = sum(1 for o in vals.values() if o == v) - 1
-            per_ticker[t].append((beaten + tied / 2) / (n - 1))
-    return {
-        t: sum(s) / len(s)
-        for t, s in per_ticker.items()
-        if len(s) >= _RANK_MIN_METRICS
-    }
+    return ranking.percentile_rank_scores(
+        metrics, _RANK_LOWER_BETTER, _RANK_HIGHER_BETTER, _RANK_MIN_METRICS
+    )
 
 
 def comp_medals(metrics: list[dict]) -> dict[str, str]:
     """Medal emoji for the 3 best composite comps scores (skipped when fewer
     than 3 tickers qualify — a 2-horse race has no podium)."""
-    scores = comp_scores(metrics)
-    if len(scores) < 3:
-        return {}
-    ranked = sorted(scores, key=lambda t: scores[t], reverse=True)
-    return dict(zip(ranked, ("🥇", "🥈", "🥉"), strict=False))
+    return ranking.podium_from_scores(comp_scores(metrics))
 
 
 def sources_table() -> pd.DataFrame:

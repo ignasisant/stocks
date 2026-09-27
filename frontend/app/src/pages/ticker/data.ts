@@ -45,7 +45,9 @@ const at = (ticker: string) => `/ticker/${encodeURIComponent(ticker)}`;
 export const getBars = (ticker: string, range: string) =>
   get<Bars>(`${at(ticker)}/bars`, { range });
 
-export const getQuote = (ticker: string) => get<Quote>(`${at(ticker)}/quote`);
+/** `base` buys the one converted figure: `price_base`, in the reader's money. */
+export const getQuote = (ticker: string, base: string) =>
+  get<Quote>(`${at(ticker)}/quote`, { base });
 
 export const getEvents = (ticker: string) => get<PriceEvents>(`${at(ticker)}/events`);
 

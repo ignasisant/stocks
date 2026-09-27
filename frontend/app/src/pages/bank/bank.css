@@ -31,6 +31,7 @@
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-lg, 16px);
   background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-card);
 }
 
 .bk-card-head {
@@ -80,14 +81,6 @@
 .bk-bad {
   border-color: var(--ag-down);
   color: var(--ag-down);
-}
-
-.bk-badge {
-  padding: 0.1rem 0.5rem;
-  border-radius: var(--ag-radius-pill, 9999px);
-  background: var(--ag-surface-page);
-  color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-xs, 11px);
 }
 
 .bk-account {

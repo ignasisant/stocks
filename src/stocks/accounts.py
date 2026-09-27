@@ -480,14 +480,36 @@ def load_recent_searches(prefs: Path) -> list[str]:
     return [str(t) for t in stored][:RECENT_SEARCHES_MAX]
 
 
+def load_recent_names(prefs: Path) -> dict[str, str]:
+    """Company names remembered alongside the recent list; {} when none.
+
+    Kept in a key of its own, not folded into `recent_searches`, because the
+    Streamlit box still reads that list as bare strings.
+    """
+    try:
+        stored = json.loads(prefs.read_text()).get("recent_names", {})
+    except Exception:
+        return {}
+    if not isinstance(stored, dict):
+        return {}
+    return {str(k): str(v) for k, v in stored.items() if v}
+
+
 def push_recent_search(
-    prefs: Path, ticker: str, persist: Callable[[Path], None] | None = None
+    prefs: Path,
+    ticker: str,
+    persist: Callable[[Path], None] | None = None,
+    name: str = "",
 ) -> list[str]:
     """Move `ticker` to the front of the recent list, deduped and capped.
 
     Read-modify-write over the whole prefs file, because that is the unit the
     app stores: rewriting only this key would drop every setting a concurrent
     Streamlit run had just saved. Returns the new list.
+
+    `name` is what the search row that was picked called the ticker. Remembered
+    because the row knew it — a Korean or Frankfurt listing the SEC map has
+    never heard of included — and nothing cheap can rebuild it later.
     """
     t = ticker.strip().upper()
     if not t:
@@ -501,6 +523,10 @@ def push_recent_search(
     rest = [x for x in load_recent_searches(prefs) if x != t]
     recent = [t, *rest][:RECENT_SEARCHES_MAX]
     stored["recent_searches"] = recent
+    names = {k: v for k, v in load_recent_names(prefs).items() if k in recent}
+    if name.strip():
+        names[t] = name.strip()
+    stored["recent_names"] = names
     # Not through save_prefs, so the guard has to be stated again here. This is
     # the exact shape of the bug it exists for: a helper that writes prefs,
     # reached from a path that never asked who is asking.

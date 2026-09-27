@@ -11,6 +11,7 @@ import type { CalendarEvent, CalendarResult, TaxDeadline } from "./data";
 import { days, eps, longDate, plain, signedPct, tone } from "./format";
 import { TickerCell, useTickerProfile } from "../../shell/tickers";
 import { TaxTable } from "./Tax";
+import { DenseRows, Responsive } from "../../ui/Rows";
 
 /**
  * Logo, symbol and — under it — the company's name, as the Streamlit list's
@@ -35,28 +36,44 @@ function Upcoming({ events }: { events: CalendarEvent[] }) {
   return (
     <section className="earn-block">
       <h2 className="earn-h2">{plain(t("earnings.upcoming"))}</h2>
-      <table className="earn-table">
-        <thead>
-          <tr>
-            <th className="left">{t("earnings.list_col_ticker")}</th>
-            <th className="left">{t("earnings.list_col_date")}</th>
-            <th>{t("earnings.list_col_days_out")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {events.map((event) => (
-            <tr key={event.ticker}>
-              <td className="left">
-                <Ticker ticker={event.ticker} />
-              </td>
-              <td className="left">
-                {event.date === null ? "" : longDate(event.date, t)}
-              </td>
-              <td>{days(event.days_until)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <Responsive
+        wide={
+          <table className="earn-table">
+            <thead>
+              <tr>
+                <th className="left">{t("earnings.list_col_ticker")}</th>
+                <th className="left">{t("earnings.list_col_date")}</th>
+                <th>{t("earnings.list_col_days_out")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {events.map((event) => (
+                <tr key={event.ticker}>
+                  <td className="left">
+                    <Ticker ticker={event.ticker} />
+                  </td>
+                  <td className="left">
+                    {event.date === null ? "" : longDate(event.date, t)}
+                  </td>
+                  <td>{days(event.days_until)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        }
+        narrow={
+          <DenseRows
+            rows={events}
+            rowKey={(event) => event.ticker}
+            spec={{
+              ticker: (event) => event.ticker,
+              names: true,
+              value: (event) => days(event.days_until),
+              delta: (event) => (event.date === null ? "" : longDate(event.date, t)),
+            }}
+          />
+        }
+      />
     </section>
   );
 }
@@ -66,34 +83,57 @@ function Past({ results }: { results: CalendarResult[] }) {
   return (
     <section className="earn-block">
       <h2 className="earn-h2">{plain(t("earnings.past_results"))}</h2>
-      <table className="earn-table">
-        <thead>
-          <tr>
-            <th className="left">{t("earnings.list_col_ticker")}</th>
-            <th className="left">{t("earnings.list_col_date")}</th>
-            <th>{t("earnings.list_col_eps_est")}</th>
-            <th>{t("earnings.list_col_reported")}</th>
-            <th>{t("earnings.list_col_surprise")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {results.map((result) => (
-            <tr key={`${result.ticker}-${result.date}`}>
-              <td className="left">
-                <Ticker ticker={result.ticker} />
-              </td>
-              <td className="left">{longDate(result.date, t)}</td>
-              <td>{eps(result.eps_estimate)}</td>
-              <td>{eps(result.reported_eps)}</td>
-              {/* Coloured by the surprise itself, not by `beat`: a result with
+      <Responsive
+        wide={
+          <table className="earn-table">
+            <thead>
+              <tr>
+                <th className="left">{t("earnings.list_col_ticker")}</th>
+                <th className="left">{t("earnings.list_col_date")}</th>
+                <th>{t("earnings.list_col_eps_est")}</th>
+                <th>{t("earnings.list_col_reported")}</th>
+                <th>{t("earnings.list_col_surprise")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {results.map((result) => (
+                <tr key={`${result.ticker}-${result.date}`}>
+                  <td className="left">
+                    <Ticker ticker={result.ticker} />
+                  </td>
+                  <td className="left">{longDate(result.date, t)}</td>
+                  <td>{eps(result.eps_estimate)}</td>
+                  <td>{eps(result.reported_eps)}</td>
+                  {/* Coloured by the surprise itself, not by `beat`: a result with
                   nothing to compare has no colour to be given. */}
-              <td className={tone(result.surprise_pct)}>
-                {signedPct(result.surprise_pct)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                  <td className={tone(result.surprise_pct)}>
+                    {signedPct(result.surprise_pct)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        }
+        narrow={
+          <DenseRows
+            rows={results}
+            rowKey={(result) => `${result.ticker}-${result.date}`}
+            spec={{
+              ticker: (result) => result.ticker,
+              value: (result) => eps(result.reported_eps),
+              delta: (result) => (
+                <span className={tone(result.surprise_pct)}>
+                  {signedPct(result.surprise_pct)}
+                </span>
+              ),
+              sub: (result) => [
+                longDate(result.date, t),
+                `${t("earnings.list_col_eps_est")} ${eps(result.eps_estimate)}`,
+              ],
+            }}
+          />
+        }
+      />
     </section>
   );
 }

@@ -18,7 +18,7 @@ import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import type { History as HistoryData } from "./api";
 import { BookHistory } from "./charts";
-import { moneyIn, percent } from "./format";
+import { compactMoneyIn, moneyIn, percent } from "./format";
 import { Caption, Card, Segmented } from "./ui";
 
 // The same codes the Streamlit range control offers and the API accepts, so a
@@ -32,6 +32,7 @@ export default function History() {
   const lang = useLang();
   const base = useCurrency();
   const money = moneyIn(lang, base);
+  const axisMoney = compactMoneyIn(lang, base);
   const [window, setWindow] = useState<Window>("all");
 
   const query = useApi(
@@ -69,6 +70,7 @@ export default function History() {
                   reset: t("portfolio.zoom_reset"),
                 }}
                 money={(value, signed) => money(value, { signed }) ?? ""}
+                axisMoney={(value) => axisMoney(value) ?? ""}
                 percent={(value) => percent(lang, value, { signed: true }) ?? ""}
                 formatDate={formatDate}
               />

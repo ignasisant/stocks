@@ -65,16 +65,32 @@ def find(
     )
 
 
+def _recents(account, tickers: list[str]) -> Recents:
+    """The list plus a name for each entry that has one.
+
+    The name remembered at pick time first; then `company_name`, for entries
+    recorded before names were, or by the Streamlit box, which stores none.
+    """
+    stored = accounts.load_recent_names(account.prefs)
+    watchlist = str(account.watchlist)
+    names = {}
+    for ticker in tickers:
+        if name := stored.get(ticker) or loaders.company_name(ticker, watchlist):
+            names[ticker] = name
+    return Recents(tickers=tickers, names=names)
+
+
 @router.get("/search/recent", response_model=Recents, summary="Recently opened")
 def recent(account: Account) -> Recents:
     """What the box offers an empty, focused field — the same list the app shows."""
-    return Recents(tickers=accounts.load_recent_searches(account.prefs))
+    return _recents(account, accounts.load_recent_searches(account.prefs))
 
 
 @router.post("/search/recent", response_model=Recents, summary="Record one")
 def remember(
     account: Writer,
     ticker: Annotated[str, Body(embed=True, max_length=32)],
+    name: Annotated[str, Body(embed=True, max_length=120)] = "",
 ) -> Recents:
     """Push a ticker onto the account's recent list.
 
@@ -91,4 +107,6 @@ def remember(
     `Content-Type: application/json`, and a cross-site `fetch` that does gets
     preflighted — and nothing here answers a preflight.
     """
-    return Recents(tickers=accounts.push_recent_search(account.prefs, ticker))
+    return _recents(
+        account, accounts.push_recent_search(account.prefs, ticker, name=name)
+    )

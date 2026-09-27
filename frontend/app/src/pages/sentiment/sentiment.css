@@ -26,7 +26,8 @@
   gap: 0.7rem;
   background: var(--ag-surface-card);
   border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md, 12px);
+  border-radius: var(--ag-radius-lg, 16px);
+  box-shadow: var(--ag-shadow-card);
   padding: 1.1rem 1.2rem;
 }
 
@@ -53,15 +54,6 @@
 
 .sn-spacer {
   flex: 1;
-}
-
-.sn-badge {
-  font-size: var(--ag-fs-2xs, 0.7rem);
-  font-weight: 600;
-  padding: 0.1rem 0.4rem;
-  border-radius: var(--ag-radius-xs, 6px);
-  background: var(--ag-purple-900);
-  color: var(--ag-purple-400);
 }
 
 .sn-kicker {
@@ -127,26 +119,6 @@
 .sn-pill-lg {
   font-size: var(--ag-fs-md, 1rem);
   padding: 0.25rem 0.75rem;
-}
-
-.sn-pill-flat {
-  background: var(--ag-surface-card);
-  color: var(--ag-text-secondary);
-}
-
-.sn-pill-warn {
-  background: var(--ag-warn-fill);
-  color: var(--ag-warn);
-}
-
-.sn-pill-up {
-  background: var(--ag-success-fill);
-  color: var(--ag-up);
-}
-
-.sn-pill-down {
-  background: var(--ag-down-fill);
-  color: var(--ag-down);
 }
 
 /* Regime bands. Euphoria takes the caution amber rather than a deeper green:
@@ -389,29 +361,6 @@
   text-wrap: pretty;
 }
 
-.sn-srow {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  background: var(--ag-surface-page);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm, 8px);
-  padding: 0.55rem 0.7rem;
-}
-
-.sn-srow-l {
-  flex: 1;
-  font-size: var(--ag-fs-sm, 0.875rem);
-  color: var(--ag-text-secondary);
-}
-
-.sn-srow-v {
-  font-weight: 800;
-  font-size: var(--ag-fs-lg, 1.125rem);
-  color: var(--ag-text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
 .sn-more {
   font-size: var(--ag-fs-sm, 0.875rem);
   font-weight: 600;
@@ -571,83 +520,7 @@
 }
 
 /* ------------------------------------------------------- the trend snapshot */
-.sn-tcards {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-}
-
-.sn-tcard {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  background: var(--ag-surface-page);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md, 12px);
-  padding: 0.7rem 0.85rem;
-}
-
-.sn-tcard-col {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.3rem;
-}
-
-.sn-tcard-head {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.sn-tcard-l {
-  flex: 1;
-  font-size: var(--ag-fs-sm, 0.875rem);
-  color: var(--ag-text-secondary);
-}
-
-.sn-tcard-n {
-  font-size: var(--ag-fs-xs, 0.8rem);
-  line-height: 1.4;
-  color: var(--ag-text-muted);
-}
-
 /* ------------------------------------------------------------- your book */
-.sn-bk {
-  display: grid;
-  gap: 0.6rem;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-}
-
-.sn-bk-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.4rem;
-  background: var(--ag-surface-page);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md, 12px);
-  padding: 0.8rem;
-}
-
-.sn-bk-l {
-  font-size: var(--ag-fs-sm, 0.875rem);
-  color: var(--ag-text-secondary);
-}
-
-.sn-bk-v {
-  font-weight: 800;
-  font-size: 1.6rem;
-  line-height: 1;
-  color: var(--ag-text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.sn-bk-n {
-  font-size: var(--ag-fs-xs, 0.8rem);
-  line-height: 1.45;
-  color: var(--ag-text-muted);
-}
-
 .sn-tilt {
   display: flex;
   flex-direction: column;

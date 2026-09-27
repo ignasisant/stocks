@@ -23,34 +23,11 @@
 import type { ReactNode } from "react";
 
 import { useT } from "../../shell/i18n";
+import { Kpi, KpiGrid } from "../../ui/Kpi";
 import { DownBody, YAHOO } from "./Down";
 import { signed } from "./format";
 import { quadrant } from "./logic";
 import type { Pulse, TrendTables } from "./types";
-
-/** One reading: what it is, what it says, and what that means. */
-function Card({
-  label,
-  value,
-  note,
-  children,
-}: {
-  label: string;
-  value: string;
-  note: string;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="sn-tcard sn-tcard-col">
-      <span className="sn-tcard-head">
-        <span className="sn-tcard-l">{label}</span>
-        <span className="sn-tcard-w">{value}</span>
-      </span>
-      {children}
-      <span className="sn-tcard-n">{note}</span>
-    </div>
-  );
-}
 
 export function Snapshot({
   pulse,
@@ -93,7 +70,7 @@ export function Snapshot({
   for (const [label, note, breadth] of breadths) {
     if (!breadth) continue;
     cards.push(
-      <Card
+      <Kpi
         key={label}
         label={t(label)}
         value={`${breadth.hits}/${breadth.total}`}
@@ -108,7 +85,7 @@ export function Snapshot({
   if (pulse.stock_bond_correlation !== null) {
     const then = pulse.stock_bond_correlation_then;
     cards.push(
-      <Card
+      <Kpi
         key="corr"
         label={t("sentiment.stock_bond_corr")}
         value={signed(pulse.stock_bond_correlation, 2)}
@@ -124,7 +101,7 @@ export function Snapshot({
 
   if (quad !== null) {
     cards.push(
-      <Card
+      <Kpi
         key="quad"
         label={t("sentiment.rates_regime")}
         value={t(`sentiment.quad_${quad.key}`)}
@@ -139,7 +116,7 @@ export function Snapshot({
             slope: signed(quad.slope, 0, "bp"),
           })}
         </span>
-      </Card>,
+      </Kpi>,
     );
   }
 
@@ -175,7 +152,7 @@ export function Snapshot({
         )
       ) : (
         <>
-          <div className="sn-tcards">{cards}</div>
+          <KpiGrid>{cards}</KpiGrid>
           {/* The quadrant came from FRED and survived; the breadth counts and
               the correlation ride on the Yahoo burst and did not. */}
           {pulse.unavailable && (

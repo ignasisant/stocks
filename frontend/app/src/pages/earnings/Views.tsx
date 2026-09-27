@@ -19,6 +19,7 @@ import MonthGrid from "./MonthGrid";
 import ResultDetail from "./ResultDetail";
 import ResultList from "./ResultList";
 import { TaxLegend } from "./Tax";
+import { ToggleChip, ToggleRow } from "../../ui/Toggle";
 
 type View = "calendar" | "list";
 
@@ -86,28 +87,22 @@ export default function Views({ data }: { data: EarningsCalendar }) {
           </button>
         </div>
         {Object.keys(data.groups).length > 0 && (
-          <div
-            className="earn-pills"
-            role="group"
-            aria-label={t("earnings.filter_label")}
-          >
+          <ToggleRow label={t("earnings.filter_label")}>
             {Object.keys(data.groups).map((key) => {
               const label = GROUP_KEYS[key];
               return (
-                <button
-                  type="button"
+                <ToggleChip
                   key={key}
-                  className="earn-pill"
-                  aria-pressed={picked.includes(key)}
+                  on={picked.includes(key)}
                   onClick={() => toggle(key)}
                 >
                   {/* A tag is the reader's own word: it is data, not copy, so
                       it is printed as typed rather than looked up. */}
                   {label ? t(label) : key}
-                </button>
+                </ToggleChip>
               );
             })}
-          </div>
+          </ToggleRow>
         )}
       </div>
 

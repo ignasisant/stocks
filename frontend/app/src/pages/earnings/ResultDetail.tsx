@@ -28,6 +28,8 @@ import { Link } from "../../shell/router";
 import { useT } from "../../shell/i18n";
 import { useTickerProfile } from "../../shell/tickers";
 import { useApi } from "../../shell/useApi";
+import { Kpi, KpiGrid, toneOf, type ChipSpec } from "../../ui/Kpi";
+import { Responsive, StackCards } from "../../ui/Rows";
 import type {
   CalendarResult,
   ConsensusPeriod,
@@ -75,11 +77,11 @@ type ResultDetailProps = {
 
 // ------------------------------------------------------------------ pieces
 
-type Chip = { text: string; cls: string } | null;
+type Chip = ChipSpec | null;
 
 /** A signed change as a verdict chip: green up, red down, grey unknown. */
 function chip(text: string, value: number | null | undefined): Chip {
-  return { text, cls: tone(value) };
+  return { text, tone: toneOf(value) };
 }
 
 type TileSpec = {
@@ -92,17 +94,17 @@ type TileSpec = {
 
 function Tiles({ tiles }: { tiles: TileSpec[] }) {
   return (
-    <div className="earn-tiles">
+    <KpiGrid>
       {tiles.map((tile) => (
-        <div className="earn-tile" key={tile.label} title={tile.tip}>
-          <div className={`earn-tile-label${tile.tip ? " tip" : ""}`}>{tile.label}</div>
-          <div className="earn-tile-value">{tile.value}</div>
-          {tile.chip && (
-            <span className={`earn-verdict ${tile.chip.cls}`}>{tile.chip.text}</span>
-          )}
-        </div>
+        <Kpi
+          key={tile.label}
+          label={tile.label}
+          value={tile.value}
+          chip={tile.chip}
+          help={tile.tip}
+        />
       ))}
-    </div>
+    </KpiGrid>
   );
 }
 
@@ -173,31 +175,27 @@ function Meters({
   items: { label: string; fraction: number | null; chip: Chip }[];
 }) {
   return (
-    <div className="earn-meters">
+    <KpiGrid>
       {items.map((item) => {
         const width =
           item.fraction === null ? 0 : Math.min(Math.max(item.fraction * 100, 0), 100);
         return (
-          <div className="earn-meter" key={item.label}>
-            <div className="earn-tile-label">{item.label}</div>
-            <div className="earn-meter-head">
-              <span className="earn-meter-value">{pct(item.fraction)}</span>
-              {item.chip && (
-                <span className={`earn-verdict ${item.chip.cls}`}>
-                  {item.chip.text}
-                </span>
-              )}
-            </div>
+          <Kpi
+            key={item.label}
+            label={item.label}
+            value={pct(item.fraction)}
+            chip={item.chip}
+          >
             <span className="earn-meter-track">
               <span
                 className="earn-meter-fill"
                 style={{ width: `${width.toFixed(1)}%` }}
               />
             </span>
-          </div>
+          </Kpi>
         );
       })}
-    </div>
+    </KpiGrid>
   );
 }
 
@@ -223,12 +221,7 @@ function Range({
       ? 50
       : Math.min(Math.max(((avg - low) / span) * 100, 4), 96);
   return (
-    <div className="earn-range">
-      <div className="earn-range-head">
-        <span className="earn-tile-label">{label}</span>
-        {note && <span className="earn-range-note">{note}</span>}
-      </div>
-      <div className="earn-meter-value">{fmt(avg)}</div>
+    <Kpi label={label} value={fmt(avg)} note={note}>
       <span className="earn-range-band">
         <span className="earn-range-mark" style={{ left: `${position.toFixed(1)}%` }} />
       </span>
@@ -236,55 +229,78 @@ function Range({
         <span>{fmt(low)}</span>
         <span>{fmt(high)}</span>
       </div>
-    </div>
+    </Kpi>
   );
 }
 
 /** The collapsed numbers under a section's visual. */
+type DetailRow = { key: string; cells: ReactNode[]; classes?: string[] };
+
 function Detail({
   head,
   rows,
   caption,
 }: {
   head: string[];
-  rows: { key: string; cells: ReactNode[]; classes?: string[] }[];
+  rows: DetailRow[];
   caption?: string;
 }) {
   const t = useT();
   return (
     <details className="earn-detail">
       <summary>{t("earnings.detail")}</summary>
-      <div className="earn-detail-scroll">
-        <table className="earn-table">
-          <thead>
-            <tr>
-              {head.map((label, i) => (
-                <th key={label} className={i === 0 ? "left" : undefined}>
-                  {label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.key}>
-                {row.cells.map((cell, i) => (
-                  <td
-                    key={i}
-                    className={
-                      [i === 0 ? "left" : "", row.classes?.[i] ?? ""]
-                        .join(" ")
-                        .trim() || undefined
-                    }
-                  >
-                    {cell}
-                  </td>
+      <Responsive
+        wide={
+          <div className="earn-detail-scroll">
+            <table className="earn-table">
+              <thead>
+                <tr>
+                  {head.map((label, i) => (
+                    <th key={label} className={i === 0 ? "left" : undefined}>
+                      {label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.key}>
+                    {row.cells.map((cell, i) => (
+                      <td
+                        key={i}
+                        className={
+                          [i === 0 ? "left" : "", row.classes?.[i] ?? ""]
+                            .join(" ")
+                            .trim() || undefined
+                        }
+                      >
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
                 ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+              </tbody>
+            </table>
+          </div>
+        }
+        // A card per period on a phone, headed by the first column.
+        narrow={
+          <StackCards
+            rows={rows}
+            rowKey={(row) => row.key}
+            title={(row) => row.cells[0]}
+            lines={head.slice(1).map((label, at) => ({
+              label,
+              cell: (row: DetailRow) =>
+                row.classes?.[at + 1] ? (
+                  <span className={row.classes[at + 1]}>{row.cells[at + 1]}</span>
+                ) : (
+                  row.cells[at + 1]
+                ),
+            }))}
+          />
+        }
+      />
       {caption && <p className="earn-caption">{caption}</p>}
     </details>
   );
@@ -531,7 +547,7 @@ function EpsSection({
                 ? null
                 : {
                     text: t("earnings.chip_vs_gaap", { delta: signedNum(gap) }),
-                    cls: "earn-flat",
+                    tone: "flat",
                   },
             tip: t("earnings.tip_gaap_eps"),
           },
@@ -596,26 +612,28 @@ function OutlookSection({
   const prefix = outlook.currency_prefix;
   return (
     <Section title={t("earnings.sec_outlook")} sub={t("earnings.sub_outlook")}>
-      {outlook.rev_avg !== null && (
-        <Range
-          label={t("earnings.outlook_revenue")}
-          low={outlook.rev_low}
-          avg={outlook.rev_avg}
-          high={outlook.rev_high}
-          fmt={(value) => money(value, prefix)}
-          note={consensusNote(t, outlook.rev_growth, outlook.rev_analysts)}
-        />
-      )}
-      {outlook.eps_avg !== null && (
-        <Range
-          label={t("earnings.outlook_eps")}
-          low={outlook.eps_low}
-          avg={outlook.eps_avg}
-          high={outlook.eps_high}
-          fmt={eps}
-          note={consensusNote(t, outlook.eps_growth, outlook.eps_analysts)}
-        />
-      )}
+      <KpiGrid>
+        {outlook.rev_avg !== null && (
+          <Range
+            label={t("earnings.outlook_revenue")}
+            low={outlook.rev_low}
+            avg={outlook.rev_avg}
+            high={outlook.rev_high}
+            fmt={(value) => money(value, prefix)}
+            note={consensusNote(t, outlook.rev_growth, outlook.rev_analysts)}
+          />
+        )}
+        {outlook.eps_avg !== null && (
+          <Range
+            label={t("earnings.outlook_eps")}
+            low={outlook.eps_low}
+            avg={outlook.eps_avg}
+            high={outlook.eps_high}
+            fmt={eps}
+            note={consensusNote(t, outlook.eps_growth, outlook.eps_analysts)}
+          />
+        )}
+      </KpiGrid>
       <Detail
         head={[
           t("earnings.col_period"),

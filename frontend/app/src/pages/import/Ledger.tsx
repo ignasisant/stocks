@@ -22,6 +22,7 @@ import type { Book } from "./api";
 import { names } from "./repairs";
 import { Rich } from "./Rich";
 import { useVocabulary } from "./text";
+import { Kpi } from "../../ui/Kpi";
 
 export function Ledger({ book, onWiped }: { book: Query<Book>; onWiped: () => void }) {
   const t = useT();
@@ -36,10 +37,10 @@ export function Ledger({ book, onWiped }: { book: Query<Book>; onWiped: () => vo
         {(held) => (
           <>
             <div className="im-ledger-head">
-              <p className="im-metric">
-                <span className="im-metric-label">{t("import.metric_in_ledger")}</span>
-                <span className="im-metric-value">{vocab.num(held.total, 0)}</span>
-              </p>
+              <Kpi
+                label={t("import.metric_in_ledger")}
+                value={vocab.num(held.total, 0)}
+              />
               {/* No address, no confirmation anybody could type — and a control
                   that cannot be armed is worse than one that is not offered.
                   A token session is the case: it has no email. */}

@@ -193,15 +193,6 @@ _CSS = """
   margin-left: auto; display: flex; flex-direction: column; gap: 6px;
   align-items: flex-end; min-width: 0;
 }
-.ag-folder {
-  display: inline-flex; align-items: center; gap: 8px;
-  max-width: min(420px, 100%);
-  background: var(--ag-surface-page); border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm); padding: 6px 10px;
-  font-family: "Martian Mono", monospace; font-size: var(--ag-fs-xs);
-  color: var(--ag-text-secondary);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
 .ag-ident-note { font-size: var(--ag-fs-sm); color: var(--ag-text-muted); }
 /* -------------------------------------------------------------- the rail */
 [class*="st-key-pbody_"] > [data-testid="stHorizontalBlock"]
@@ -264,11 +255,6 @@ _CSS = """
   font-size: var(--ag-fs-sm); color: var(--ag-text-faint);
 }
 .ag-savehint .ag-railicon { font-size: 15px; color: var(--ag-success-fill); }
-.ag-folder .ag-railicon {
-  font-size: 15px; color: var(--ag-text-muted); flex: 0 0 auto;
-}
-/* text-overflow needs a block, not the flex chip itself. */
-.ag-folder-p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Phones: one column, no sticky rail, cards edge to edge. */
 @media (max-width: 640px) {
   [class*="st-key-prow_"] { padding: 14px 16px; }
@@ -315,17 +301,6 @@ def _row(card, key: str, label: str, help_text: str = "", *, align: str = "top")
 # CURRENCY_SYMBOL formats amounts, so it spells the Swiss franc and the krona
 # out ("CHF 12"). On a chip the canvas wants the mark, not the code twice.
 _CCY_MARKS = {"CHF": "\u20a3", "SEK": "kr", "NOK": "kr", "DKK": "kr"}
-
-
-def _short_path(path) -> str:
-    """The tail of a data folder: ".../users/<account>".
-
-    The full path is a per-account slug under the repo, long enough to push
-    the Log out button onto a second line — and its identifying part is the
-    last segment, not the first. The whole thing stays in the chip's tooltip.
-    """
-    parts = str(path).split("/")
-    return "/".join(parts[-2:]) if len(parts) > 3 else str(path)
 
 
 def _ccy_label(code: str) -> str:
@@ -404,10 +379,6 @@ with st.container(border=True, key="pident_card"):
         f'<span class="ag-ident-e">{esc(auth.current_email())}</span>'
         "</div>"
         '<div class="ag-ident-r">'
-        f'<span class="ag-folder" title="{esc(str(paths.root))}">'
-        '<span class="ag-railicon">folder_open</span>'
-        f'<span class="ag-folder-p">{esc(_short_path(paths.root))}</span>'
-        "</span>"
         f'<span class="ag-ident-note">{esc(tr("profile.account_scope"))}</span>'
         "</div></div>"
     )

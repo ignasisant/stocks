@@ -206,34 +206,6 @@
   cursor: pointer;
 }
 
-.ag-sec-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
-.ag-sec-chip {
-  font: inherit;
-  font-size: var(--ag-fs-xs);
-  padding: 0.25rem 0.6rem;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  background: transparent;
-  color: var(--ag-text-muted);
-  cursor: pointer;
-}
-
-.ag-sec-chip:hover {
-  border-color: var(--ag-border-focus);
-  color: var(--ag-text-primary);
-}
-
-.ag-sec-chip-on {
-  background: var(--ag-purple-900);
-  border-color: var(--ag-purple-800);
-  color: var(--ag-purple-300);
-}
-
 .ag-sec-rule {
   border: none;
   border-top: 1px solid var(--ag-border);

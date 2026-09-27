@@ -38,6 +38,7 @@ import { useLang, useT } from "./i18n";
 import { useRoute } from "./router";
 import { capture, fromFile, ShotFailed, type Shot } from "./screenshot";
 import { useGuest } from "./session";
+import { ToggleChip, ToggleRow } from "../ui/Toggle";
 
 const KINDS = ["bug", "idea", "other"] as const;
 type Kind = (typeof KINDS)[number];
@@ -207,19 +208,17 @@ export function Feedback() {
           >
             <h2 className="ag-fb-h">{t("feedback.button")}</h2>
             <p className="ag-fb-caption">{t("feedback.caption")}</p>
-            <div className="ag-fb-kinds" role="group" aria-label={t("feedback.kind")}>
+            <ToggleRow className="ag-fb-kinds" label={t("feedback.kind")}>
               {KINDS.map((option) => (
-                <button
+                <ToggleChip
                   key={option}
-                  type="button"
-                  className={option === kind ? "ag-fb-kind ag-fb-on" : "ag-fb-kind"}
-                  aria-pressed={option === kind}
+                  on={option === kind}
                   onClick={() => setKind(option)}
                 >
                   {t(`feedback.kind_${option}`)}
-                </button>
+                </ToggleChip>
               ))}
-            </div>
+            </ToggleRow>
             <textarea
               className="ag-fb-text"
               rows={6}

@@ -9,9 +9,10 @@
  * changed shape, and showing one in place of the other is the mistake this
  * layout is arranged to prevent.
  *
- * TWR and IRR get a tile each for the same reason: the TWR measures the
- * selection and is comparable against an index, the IRR measures what the
- * money did. Neither stands in for the other.
+ * TWR and IRR share one tile — the TWR measures the selection and is
+ * comparable against an index, the IRR (a chip on that tile) measures what
+ * the money did. Neither stands in for the other; the tile exists so a
+ * reader sees both readings of the same window at once.
  */
 
 import { useState } from "react";
@@ -88,11 +89,20 @@ export default function Risk() {
                     label: t("portfolio.annualised_return"),
                     value: percent(lang, data.twr_annualised, { signed: true }),
                     help: t("portfolio.twr_return_help"),
-                  },
-                  {
-                    label: t("portfolio.mwr"),
-                    value: percent(lang, data.irr, { signed: true }),
-                    help: t("portfolio.mwr_help"),
+                    // The IRR rides as a chip on the TWR tile rather than a
+                    // tile of its own: both are the window's annualised
+                    // return, just weighted differently, and the mismatch
+                    // between them (not either figure alone) is what a
+                    // reader is checking for.
+                    chip:
+                      data.irr === null
+                        ? null
+                        : {
+                            text: `${t("portfolio.mwr_short")} ${
+                              percent(lang, data.irr, { signed: true }) ?? ""
+                            }`,
+                            value: data.irr,
+                          },
                   },
                   // The same two readings the basket card below shows, taken
                   // over the flow-adjusted path instead of today's holdings at
@@ -107,16 +117,50 @@ export default function Risk() {
                   {
                     label: t("portfolio.max_drawdown"),
                     value: percent(lang, data.twr_max_drawdown),
-                    help: t("portfolio.twr_dd_help"),
-                  },
-                  {
-                    label: t("portfolio.series_injected"),
-                    value: money(data.injected),
-                    help: t("portfolio.hist_note_injected"),
+                    // The number alone reads as "what the book lost", and on
+                    // a TWR it is not: a fall on a €800 book of two coins
+                    // counts as much as one on today's. When it ran and what
+                    // was at stake is what makes it legible.
+                    help:
+                      data.twr_drawdown_peak && data.twr_drawdown_trough
+                        ? t("portfolio.twr_dd_help_span", {
+                            peak: formatDate(data.twr_drawdown_peak),
+                            trough: formatDate(data.twr_drawdown_trough),
+                            value:
+                              money(data.twr_drawdown_peak_value) ?? t("portfolio.na"),
+                          })
+                        : t("portfolio.twr_dd_help"),
+                    chip:
+                      data.twr_drawdown_peak && data.twr_drawdown_trough
+                        ? {
+                            text: `${formatDate(data.twr_drawdown_peak)} → ${formatDate(
+                              data.twr_drawdown_trough,
+                            )}`,
+                            value: null,
+                            off: true,
+                          }
+                        : null,
                   },
                   {
                     label: t("portfolio.market_value"),
                     value: money(data.value),
+                    // The injected total moves into this tile's help instead
+                    // of a tile of its own: it is the buy-in the chip's P&L
+                    // is measured against, not a reading in its own right.
+                    help:
+                      data.injected === null
+                        ? undefined
+                        : t("portfolio.market_value_injected_help", {
+                            injected: money(data.injected) ?? t("portfolio.na"),
+                          }),
+                    chip:
+                      data.value === null || data.injected === null
+                        ? null
+                        : {
+                            text:
+                              money(data.value - data.injected, { signed: true }) ?? "",
+                            value: data.value - data.injected,
+                          },
                   },
                 ]}
               />
@@ -225,20 +269,21 @@ export default function Risk() {
                 ) : null}
               </Card>
 
-              {/* What the account earned, what today's holdings would have
-                  earned over the same window, and each benchmark — one axis,
-                  one zero, all rebased to the window's first day. The basket
-                  is dotted because it is a backtest of a shape the book has
-                  not always had, and a solid line would read as a record. */}
+              {/* What the account's money became, against the same money —
+                  same euros, same days — put into today's basket and into
+                  each benchmark. Rebasing an index to the window's first day
+                  would invest the whole book there at once, which it never
+                  was. The basket is dotted because it is a backtest of a
+                  shape the book has not always had. */}
               {data.curves ? (
-                <Card title={t("portfolio.cumulative_return")}>
+                <Card title={t("portfolio.flow_matched_return")}>
                   <ReturnLines
                     dates={data.curves.dates}
                     format={(value) => percent(lang, value, { digits: 1 }) ?? ""}
                     formatDate={formatDate}
                     series={[
                       {
-                        label: t("portfolio.series_portfolio_twr"),
+                        label: t("portfolio.series_portfolio_actual"),
                         points: data.curves.portfolio,
                       },
                       {
@@ -251,17 +296,10 @@ export default function Risk() {
                       ),
                     ]}
                   />
-                  <Caption>{t("portfolio.twr_note")}</Caption>
-                  {data.dropped_days.length ? (
-                    <Caption>
-                      {t("portfolio.twr_note_skipped", {
-                        days: data.dropped_days.join(", "),
-                      })}
-                    </Caption>
-                  ) : null}
+                  <Caption>{t("portfolio.flow_matched_note")}</Caption>
                   {data.missing.length ? (
                     <Caption>
-                      {t("portfolio.twr_note_missing", {
+                      {t("portfolio.flow_matched_missing", {
                         tickers: data.missing.join(", "),
                       })}
                     </Caption>

@@ -9,13 +9,14 @@
  * draws it rather than holding the score back for the slower side.
  */
 
-import type { ReactNode } from "react";
 import { Link } from "../../shell/router";
 import { useT } from "../../shell/i18n";
+import { Kpi, chipFor, type ChipSpec } from "../../ui/Kpi";
 import { DownBody } from "./Down";
 import { HeroSpark } from "./Spark";
 import { NA, fixed, percent, share, signed } from "./format";
 import type { Pulse, PulseBook } from "./types";
+import { Badge } from "../../ui/Badge";
 
 /** The bands the catalogs have a pill for. Anything else reads as "no reading". */
 const REGIMES = new Set([
@@ -45,17 +46,19 @@ function regimeKey(regime: string): string {
  * full-window headline beside it, which is a different window and whose
  * difference would not be drift at all.
  */
-export function DriftPill({ now, then }: { now: number | null; then: number | null }) {
-  const t = useT();
+export function driftChip(
+  t: ReturnType<typeof useT>,
+  now: number | null,
+  then: number | null,
+): ChipSpec | null {
   if (now === null || then === null) return null;
   // A 0.02 wobble on a rolling statistic is noise, so the pill stays neutral
   // until the move is big enough to be worth a reader's attention.
   const moved = Math.abs(now - then) >= 0.05;
-  return (
-    <span className={`sn-pill ${moved ? "sn-pill-warn" : "sn-pill-flat"}`}>
-      {t("sentiment.drift_pill", { value: then.toFixed(2) })}
-    </span>
-  );
+  return {
+    text: t("sentiment.drift_pill", { value: then.toFixed(2) }),
+    tone: moved ? "warn" : "flat",
+  };
 }
 
 /**
@@ -181,25 +184,6 @@ export function Composite({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => vo
   );
 }
 
-/** One line of the personal panel: what it is, what it reads, where it was. */
-function SideRow({
-  label,
-  value,
-  pill,
-}: {
-  label: string;
-  value: string;
-  pill?: ReactNode;
-}) {
-  return (
-    <div className="sn-srow">
-      <span className="sn-srow-l">{label}</span>
-      <span className="sn-srow-v">{value}</span>
-      {pill}
-    </div>
-  );
-}
-
 /**
  * The hero's right half: this regime, restated as what it does here.
  *
@@ -260,7 +244,7 @@ export function Side({
     <div className="sn-side">
       <div className="sn-kicker sn-kicker-own">
         {t("sentiment.side_kicker")}
-        <span className="sn-badge">{t("sentiment.side_badge")}</span>
+        <Badge tone="brand">{t("sentiment.side_badge")}</Badge>
         <span className="sn-spacer" />
         {/* Where these three figures come from, in the panel that makes the
             page's least checkable claims: a beta and a correlation are two
@@ -281,29 +265,25 @@ export function Side({
           })}
         </p>
       )}
-      <SideRow
+      <Kpi
         label={t("sentiment.beta_equity")}
         value={fixed(book.beta, 2)}
-        pill={<DriftPill now={book.beta_rolling} then={book.beta_rolling_then} />}
+        chip={driftChip(t, book.beta_rolling, book.beta_rolling_then)}
       />
       {book.bond_correlation !== null && (
-        <SideRow
+        <Kpi
           label={t("sentiment.side_corr")}
           value={signed(book.bond_correlation, 2)}
-          pill={
-            <DriftPill now={book.bond_correlation} then={book.bond_correlation_then} />
-          }
+          chip={driftChip(t, book.bond_correlation, book.bond_correlation_then)}
         />
       )}
-      <SideRow
+      <Kpi
         label={t("sentiment.usd_share")}
         value={share(book.usd_share)}
-        pill={
-          drag === null ? undefined : (
-            <span className={`sn-pill ${drag >= 0 ? "sn-pill-up" : "sn-pill-down"}`}>
-              {t("sentiment.fx_pill", { value: percent(drag, 2) })}
-            </span>
-          )
+        chip={
+          drag === null
+            ? null
+            : chipFor(drag, t("sentiment.fx_pill", { value: percent(drag, 2) }))
         }
       />
       {/* The dollar share survived the outage — it is read off the positions

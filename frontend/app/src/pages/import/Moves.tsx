@@ -20,6 +20,7 @@ import { useState } from "react";
 import { ApiError } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { TickerCell } from "../../shell/tickers";
+import { Responsive, StackCards } from "../../ui/Rows";
 import { useApi } from "../../shell/useApi";
 import { applyMoves, scanMoves } from "./api";
 import type { Move } from "./api";
@@ -127,58 +128,92 @@ function Found({
   return (
     <>
       <p className="im-warn">{t("import.moves_found", { n: moves.length })}</p>
-      <div className="im-scroll">
-        <table className="im-table">
-          <thead>
-            <tr>
-              <th className="im-pick" scope="col" />
-              <th scope="col">{vocab.column("ticker")}</th>
-              <th className="im-num" scope="col">
-                {vocab.column("quantity")}
-              </th>
-              <th scope="col">{vocab.column("from")}</th>
-              <th scope="col">{vocab.column("to")}</th>
-              <th scope="col">{vocab.column("date")}</th>
-              <th scope="col">{vocab.column("gain")}</th>
-              {/* Never folded away on a phone, unlike the trailing columns of
+      <Responsive
+        wide={
+          <div className="im-scroll">
+            <table className="im-table">
+              <thead>
+                <tr>
+                  <th className="im-pick" scope="col" />
+                  <th scope="col">{vocab.column("ticker")}</th>
+                  <th className="im-num" scope="col">
+                    {vocab.column("quantity")}
+                  </th>
+                  <th scope="col">{vocab.column("from")}</th>
+                  <th scope="col">{vocab.column("to")}</th>
+                  <th scope="col">{vocab.column("date")}</th>
+                  <th scope="col">{vocab.column("gain")}</th>
+                  {/* Never folded away on a phone, unlike the trailing columns of
                   the preview tables: this column is the evidence, and a reader
                   is being asked to believe it. */}
-              <th scope="col">{vocab.column("basis")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {moves.map((move) => {
-              const key = moveKey(move);
-              return (
-                <tr key={key}>
-                  <td className="im-pick">
-                    <input
-                      aria-label={`${move.ticker_in} ${move.date_out}`}
-                      checked={on(key)}
-                      disabled={busy}
-                      onChange={() => toggle(key)}
-                      type="checkbox"
-                    />
-                  </td>
-                  <td>
-                    {/* The receiving broker's label, which is the one that
-                        survives: accepting renames the departure rows to it. */}
-                    <TickerCell ticker={move.ticker_in} />
-                  </td>
-                  <td className="im-num">
-                    {move.quantity === null ? NONE : vocab.num(move.quantity, 4)}
-                  </td>
-                  <td>{move.broker_out}</td>
-                  <td>{move.broker_in}</td>
-                  <td>{move.date_out}</td>
-                  <td>{gain(move)}</td>
-                  <td className="im-issues">{basis(move)}</td>
+                  <th scope="col">{vocab.column("basis")}</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {moves.map((move) => {
+                  const key = moveKey(move);
+                  return (
+                    <tr key={key}>
+                      <td className="im-pick">
+                        <input
+                          aria-label={`${move.ticker_in} ${move.date_out}`}
+                          checked={on(key)}
+                          disabled={busy}
+                          onChange={() => toggle(key)}
+                          type="checkbox"
+                        />
+                      </td>
+                      <td>
+                        {/* The receiving broker's label, which is the one that
+                        survives: accepting renames the departure rows to it. */}
+                        <TickerCell ticker={move.ticker_in} />
+                      </td>
+                      <td className="im-num">
+                        {move.quantity === null ? NONE : vocab.num(move.quantity, 4)}
+                      </td>
+                      <td>{move.broker_out}</td>
+                      <td>{move.broker_in}</td>
+                      <td>{move.date_out}</td>
+                      <td>{gain(move)}</td>
+                      <td className="im-issues">{basis(move)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        }
+        narrow={
+          <StackCards
+            rows={moves}
+            rowKey={moveKey}
+            title={(move) => (
+              <span className="im-card-head">
+                <input
+                  aria-label={`${move.ticker_in} ${move.date_out}`}
+                  checked={on(moveKey(move))}
+                  disabled={busy}
+                  onChange={() => toggle(moveKey(move))}
+                  type="checkbox"
+                />
+                <TickerCell ticker={move.ticker_in} />
+              </span>
+            )}
+            lines={[
+              {
+                label: vocab.column("quantity"),
+                cell: (move) =>
+                  move.quantity === null ? NONE : vocab.num(move.quantity, 4),
+              },
+              { label: vocab.column("from"), cell: (move) => move.broker_out },
+              { label: vocab.column("to"), cell: (move) => move.broker_in },
+              { label: vocab.column("date"), cell: (move) => move.date_out },
+              { label: vocab.column("gain"), cell: gain },
+              { label: vocab.column("basis"), cell: basis },
+            ]}
+          />
+        }
+      />
       {failed && <p className="im-bad">{t("common.failed")}</p>}
       <button
         className="ag-btn im-primary"

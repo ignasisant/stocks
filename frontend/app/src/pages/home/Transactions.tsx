@@ -13,6 +13,7 @@ import type { Query } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT, useLang } from "../../shell/i18n";
 import { Link } from "../../shell/router";
+import { DenseRows, Responsive } from "../../ui/Rows";
 import { Card, CardTitle, TickerCell } from "./ui";
 import { money, plain, shortDate } from "./format";
 import type { Transaction, Transactions } from "./types";
@@ -60,45 +61,60 @@ export function RecentTransactions({ query }: { query: Query<Transactions> }) {
       {(data) => {
         const rows = data.transactions.slice(0, 5);
         if (rows.length === 0) return null;
+        const verb = (tx: Transaction) =>
+          ACTIONS.has(tx.action) ? t(`import.action_${tx.action}`) : tx.action;
+        const amount = (tx: Transaction) =>
+          (data.base && tx.amount != null
+            ? money(tx.amount, data.base, lang, { digits: 2 })
+            : money(amountOf(tx), tx.currency, lang, { digits: 2 })) ?? na;
         return (
           <Card>
             <CardTitle>{plain(t("home.recent_transactions"))}</CardTitle>
-            <table className="hm-table">
-              <thead>
-                <tr>
-                  <th>{t("home.col_date")}</th>
-                  <th>{t("home.col_type")}</th>
-                  <th>{t("home.col_ticker")}</th>
-                  {/* The column is one currency, so the header names it —
+            <Responsive
+              wide={
+                <table className="hm-table">
+                  <thead>
+                    <tr>
+                      <th>{t("home.col_date")}</th>
+                      <th>{t("home.col_type")}</th>
+                      <th>{t("home.col_ticker")}</th>
+                      {/* The column is one currency, so the header names it —
                       Streamlit heads it with the code alone. */}
-                  <th className="hm-num">
-                    {data.base
-                      ? `${t("home.col_amount")} (${data.base})`
-                      : t("home.col_amount")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((tx, index) => (
-                  <tr key={tx.id ?? `${tx.date}-${tx.ticker}-${index}`}>
-                    <td>{shortDate(tx.date, lang)}</td>
-                    <td>
-                      {ACTIONS.has(tx.action)
-                        ? t(`import.action_${tx.action}`)
-                        : tx.action}
-                    </td>
-                    <td>
-                      <TickerCell ticker={tx.ticker} name={false} />
-                    </td>
-                    <td className="hm-num">
-                      {(data.base && tx.amount != null
-                        ? money(tx.amount, data.base, lang, { digits: 2 })
-                        : money(amountOf(tx), tx.currency, lang, { digits: 2 })) ?? na}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <th className="hm-num">
+                        {data.base
+                          ? `${t("home.col_amount")} (${data.base})`
+                          : t("home.col_amount")}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((tx, index) => (
+                      <tr key={tx.id ?? `${tx.date}-${tx.ticker}-${index}`}>
+                        <td>{shortDate(tx.date, lang)}</td>
+                        <td>{verb(tx)}</td>
+                        <td>
+                          <TickerCell ticker={tx.ticker} name={false} />
+                        </td>
+                        <td className="hm-num">{amount(tx)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              }
+              narrow={
+                <DenseRows
+                  rows={rows}
+                  rowKey={(tx, index) =>
+                    String(tx.id ?? `${tx.date}-${tx.ticker}-${index}`)
+                  }
+                  spec={{
+                    ticker: (tx) => tx.ticker,
+                    value: (tx) => amount(tx),
+                    sub: (tx) => [shortDate(tx.date, lang), verb(tx)],
+                  }}
+                />
+              }
+            />
             <Link page="import" className="hm-link">
               {t("home.link_import")}
             </Link>

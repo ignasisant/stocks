@@ -78,6 +78,27 @@ _STD_ATTRS = frozenset(
 _NOISY = ("botocore", "boto3", "s3transfer", "urllib3", "httpx", "httpcore",
           "matplotlib", "PIL", "asyncio", "watchdog", "peewee")
 
+
+
+class _YahooMissIsNotAnError(logging.Filter):
+    """Demote yfinance's ERROR lines to WARNING, and drop its blank ones.
+
+    yfinance logs every symbol Yahoo has no data for at ERROR — a delisted
+    name the book once held, an ETF with no earnings calendar, a throttled
+    bulk download — and prints an empty ERROR line before each batch report.
+    Every caller already degrades on those, so at ERROR they were most of
+    `stocks logs errors` and buried the app's own failures. The app logs its
+    own event when a miss matters.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not record.getMessage().strip():
+            return False
+        if record.levelno >= logging.ERROR:
+            record.levelno, record.levelname = logging.WARNING, "WARNING"
+        return True
+
+
 # None rather than {} — a mutable ContextVar default is shared across every
 # context that never set it, so one bind() would leak into all of them.
 _ctx: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
@@ -179,6 +200,9 @@ def setup(level: str | int | None = None, *, force: bool = False) -> None:
 
     for name in _NOISY:
         logging.getLogger(name).setLevel(logging.WARNING)
+    yf_log = logging.getLogger("yfinance")
+    if not any(isinstance(f, _YahooMissIsNotAnError) for f in yf_log.filters):
+        yf_log.addFilter(_YahooMissIsNotAnError())
     logging.captureWarnings(True)  # DeprecationWarning et al become log records
     _configured = True
     if IN_CLOUD_RUN:

@@ -220,17 +220,17 @@ def test_limit_is_honoured(client, account, token, monkeypatch):
 
 
 def test_recents_start_empty_and_grow_by_one_post(client, account, token, signed_in):
-    assert client.get("/v1/search/recent", params=WHO, headers=AUTH).json() == {
-        "tickers": []
-    }
+    assert client.get("/v1/search/recent", params=WHO, headers=AUTH).json()[
+        "tickers"
+    ] == []
     response = client.post(
         "/v1/search/recent", params=WHO, headers=AUTH, json={"ticker": "aapl"}
     )
     assert response.status_code == 200
     assert response.json()["tickers"] == ["AAPL"]
-    assert client.get("/v1/search/recent", params=WHO, headers=AUTH).json() == {
-        "tickers": ["AAPL"]
-    }
+    assert client.get("/v1/search/recent", params=WHO, headers=AUTH).json()[
+        "tickers"
+    ] == ["AAPL"]
 
 
 def test_a_repeat_moves_to_the_front_rather_than_duplicating(
@@ -243,6 +243,34 @@ def test_a_repeat_moves_to_the_front_rather_than_duplicating(
     assert client.get("/v1/search/recent", params=WHO, headers=AUTH).json()[
         "tickers"
     ] == ["AAPL", "MSFT"]
+
+
+def test_a_name_sent_with_the_pick_comes_back_with_the_list(
+    client, account, token, signed_in
+):
+    """A Korean listing is in no local catalog: the name the search row carried
+    is the only one the recents strip will ever have."""
+    client.post(
+        "/v1/search/recent",
+        params=WHO,
+        headers=AUTH,
+        json={"ticker": "005930.KS", "name": "Samsung Electronics Co., Ltd."},
+    )
+    body = client.get("/v1/search/recent", params=WHO, headers=AUTH).json()
+    assert body["names"]["005930.KS"] == "Samsung Electronics Co., Ltd."
+
+
+def test_names_leave_with_the_ticker_they_belong_to(
+    client, account, token, signed_in
+):
+    for i in range(accounts.RECENT_SEARCHES_MAX + 1):
+        client.post(
+            "/v1/search/recent",
+            params=WHO,
+            headers=AUTH,
+            json={"ticker": f"T{i}", "name": f"Name {i}"},
+        )
+    assert "T0" not in accounts.load_recent_names(account.prefs)
 
 
 def test_the_list_is_capped(client, account, token, signed_in):

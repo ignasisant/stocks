@@ -21,19 +21,11 @@ import { Skeleton } from "../../shell/Layout";
 import { useT, useLang } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { Link } from "../../shell/router";
-import {
-  Card,
-  CardQuery,
-  CardTitle,
-  DeltaChip,
-  Note,
-  TickerCell,
-  Tile,
-  Tiles,
-  chipFor,
-} from "./ui";
+import { Chip, Kpi, KpiGrid, chipFor } from "../../ui/Kpi";
+import { DenseRows, Responsive } from "../../ui/Rows";
+import { Card, CardQuery, CardTitle, Note, TickerCell } from "./ui";
 import { money, percent, plain } from "./format";
-import { Spark } from "./Spark";
+import { AverageTile, Spark } from "./Spark";
 import type {
   MarketStatus,
   Movers,
@@ -187,17 +179,17 @@ function GlanceCard({ book, nonce }: { book: Book; nonce: number }) {
   return (
     <>
       <Card>
-        <Tiles>
-          <Tile
+        <KpiGrid>
+          <Kpi
             label={t("home.cost_basis")}
             value={money(summary.cost, currency, lang) ?? na}
           />
-          <Tile
+          <Kpi
             label={t("home.market_value")}
             value={money(summary.value, currency, lang) ?? na}
             chip={gainChip}
           />
-          <Tile
+          <Kpi
             label={t("home.unrealised_pl")}
             value={money(summary.pnl, currency, lang, { signed: true }) ?? na}
             chip={gainChip}
@@ -215,7 +207,7 @@ function GlanceCard({ book, nonce }: { book: Book; nonce: number }) {
               sale" and "broke even" are different facts — and the difference is
               kept where it matters, in the chip, which a zero cost basis cannot
               carry. */}
-          <Tile
+          <Kpi
             label={t("home.realised_pl")}
             value={money(summary.realized ?? 0, currency, lang, { signed: true }) ?? na}
             help={t("home.realised_pl_help")}
@@ -237,7 +229,7 @@ function GlanceCard({ book, nonce }: { book: Book; nonce: number }) {
           {/* The two returns are the pair that belongs together: the TWR strips
               out when money went in, the IRR leaves it in. Neither stands in for
               the other, so both, never one. */}
-          <Tile
+          <Kpi
             label={t("portfolio.annualised_return")}
             value={
               percent(performance.twr_annualised, lang, { signed: true, digits: 1 }) ??
@@ -245,12 +237,12 @@ function GlanceCard({ book, nonce }: { book: Book; nonce: number }) {
             }
             help={t("portfolio.twr_return_help")}
           />
-          <Tile
+          <Kpi
             label={t("portfolio.mwr")}
             value={percent(performance.irr, lang, { signed: true, digits: 1 }) ?? na}
             help={t("portfolio.mwr_help")}
           />
-        </Tiles>
+        </KpiGrid>
         {/* Every figure above is invented while the example book is loaded, and
             a reader who seeded it one session ago will not remember. The tiles
             are not dressed differently — they are the real component, showing a
@@ -268,7 +260,7 @@ function GlanceCard({ book, nonce }: { book: Book; nonce: number }) {
             {t("home.unpriced_note", { n: unpriced, total: summary.positions })}
           </Note>
         ) : null}
-        <Tiles>
+        <KpiGrid>
           {WINDOWS.map(({ key, tile }) => {
             // `basket: null` means the price history does not reach back over the
             // window. That is "we cannot say", not "the book was flat".
@@ -279,7 +271,7 @@ function GlanceCard({ book, nonce }: { book: Book; nonce: number }) {
             // leaves out the one a reader came for: how much moved.
             const cash = money(amount, base || currency, lang, { signed: true });
             return (
-              <Tile
+              <Kpi
                 key={key}
                 label={t(tile)}
                 value={cash ?? figure ?? na}
@@ -287,7 +279,8 @@ function GlanceCard({ book, nonce }: { book: Book; nonce: number }) {
               />
             );
           })}
-        </Tiles>
+          <AverageTile nonce={nonce} />
+        </KpiGrid>
         {/* Which session the day figure belongs to, when it is not this one.
             The server picks the state and the stem; the sentence stays ours. */}
         {note && MARKET_NOTES[note] ? <Note>{t(MARKET_NOTES[note])}</Note> : null}
@@ -383,48 +376,80 @@ function MoverTable({
   return (
     <div>
       <p className="hm-caption">{label}</p>
-      <table className="hm-table">
-        <thead>
-          <tr>
-            <th>{t("home.col_ticker")}</th>
-            <th className="hm-num">{t("home.col_price")}</th>
-            <th className="hm-num">{t("home.col_day_pct")}</th>
-            <th className="hm-num">{t("home.col_value")}</th>
-            <th className="hm-num">{t("home.col_weight")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            const position = held.get(row.ticker);
-            const move = percent(row.pct, lang, { signed: true });
-            return (
-              <tr key={row.ticker}>
-                <td>
-                  {/* Symbol alone, as `home.py` draws the movers (`names=False`):
-                      five columns in half a card have no room for a name. */}
-                  <TickerCell ticker={row.ticker} name={false} />
-                </td>
-                {/* In the currency the name trades in — a share price is
-                    quoted by its own market, unlike the value beside it. */}
-                <td className="hm-num">
-                  {money(position?.price, position?.currency || currency, lang, {
-                    digits: 2,
-                  }) ?? na}
-                </td>
-                <td className="hm-num">
-                  <DeltaChip chip={chipFor(row.pct, move, row.active === false)} />
-                </td>
-                <td className="hm-num">
-                  {money(position?.value, currency, lang) ?? na}
-                </td>
-                <td className="hm-num">
-                  {percent(position?.weight, lang, { digits: 1 }) ?? na}
-                </td>
+      <Responsive
+        wide={
+          <table className="hm-table">
+            <thead>
+              <tr>
+                <th>{t("home.col_ticker")}</th>
+                <th className="hm-num">{t("home.col_price")}</th>
+                <th className="hm-num">{t("home.col_day_pct")}</th>
+                <th className="hm-num">{t("home.col_value")}</th>
+                <th className="hm-num">{t("home.col_weight")}</th>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const position = held.get(row.ticker);
+                const move = percent(row.pct, lang, { signed: true });
+                return (
+                  <tr key={row.ticker}>
+                    <td>
+                      {/* Symbol alone, as `home.py` draws the movers (`names=False`):
+                      five columns in half a card have no room for a name. */}
+                      <TickerCell ticker={row.ticker} name={false} />
+                    </td>
+                    {/* In the currency the name trades in — a share price is
+                    quoted by its own market, unlike the value beside it. */}
+                    <td className="hm-num">
+                      {money(position?.price, position?.currency || currency, lang, {
+                        digits: 2,
+                      }) ?? na}
+                    </td>
+                    <td className="hm-num">
+                      <Chip chip={chipFor(row.pct, move, row.active === false)} />
+                    </td>
+                    <td className="hm-num">
+                      {money(position?.value, currency, lang) ?? na}
+                    </td>
+                    <td className="hm-num">
+                      {percent(position?.weight, lang, { digits: 1 }) ?? na}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        }
+        narrow={
+          <DenseRows
+            rows={rows}
+            rowKey={(row) => row.ticker}
+            spec={{
+              ticker: (row) => row.ticker,
+              badge: (row) => (
+                <Chip
+                  chip={chipFor(
+                    row.pct,
+                    percent(row.pct, lang, { signed: true }),
+                    row.active === false,
+                  )}
+                />
+              ),
+              value: (row) => money(held.get(row.ticker)?.value, currency, lang) ?? na,
+              sub: (row) => {
+                const position = held.get(row.ticker);
+                return [
+                  money(position?.price, position?.currency || currency, lang, {
+                    digits: 2,
+                  }),
+                  percent(position?.weight, lang, { digits: 1 }),
+                ];
+              },
+            }}
+          />
+        }
+      />
     </div>
   );
 }

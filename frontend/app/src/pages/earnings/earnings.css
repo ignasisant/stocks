@@ -81,33 +81,6 @@
   color: var(--ag-text-primary);
 }
 
-.earn-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.earn-pill {
-  padding: 0.3rem 0.8rem;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  background: transparent;
-  color: var(--ag-text-muted);
-  font: inherit;
-  font-size: var(--ag-fs-sm);
-  cursor: pointer;
-}
-
-.earn-pill:hover {
-  color: var(--ag-text-primary);
-}
-
-.earn-pill[aria-pressed="true"] {
-  border-color: var(--ag-brand-accent);
-  background: var(--ag-purple-800);
-  color: var(--ag-text-primary);
-}
-
 /* ------------------------------------------------------------- the month nav */
 
 .earn-nav {
@@ -351,37 +324,6 @@
   cursor: pointer;
 }
 
-.earn-tiles {
-  display: grid;
-  gap: 0.6rem;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-}
-
-.earn-tile {
-  padding: 0.7rem 0.85rem;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm);
-  background: var(--ag-surface-sunken);
-}
-
-.earn-tile-label {
-  font-size: var(--ag-fs-xs);
-  color: var(--ag-text-muted);
-}
-
-.earn-tile-value {
-  font-size: var(--ag-fs-xl);
-  font-weight: 700;
-  color: var(--ag-text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.earn-tile-label.tip {
-  text-decoration: underline dotted var(--ag-text-faint);
-  text-underline-offset: 3px;
-  cursor: help;
-}
-
 /* ------------------------------------------------------- the dialog, header */
 
 .earn-modal-id {
@@ -412,40 +354,13 @@
 
 /* ----------------------------------------------------- the dialog, sections */
 
-/* A verdict chip on a tile or a gauge: green up, red down, grey unknown. The
-   tone class (`earn-up` / `earn-down` / `earn-flat`) sets the ink; the fill
-   is keyed off the same class below. */
-.earn-verdict {
-  display: inline-block;
-  margin-top: 2px;
-  padding: 1px 7px;
-  border-radius: var(--ag-radius-pill);
-  background: var(--ag-surface-card);
-  font-size: var(--ag-fs-xs);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.earn-verdict.earn-up {
-  background: var(--ag-profit-band);
-}
-
-.earn-verdict.earn-down {
-  background: var(--ag-loss-band);
-}
-
-.earn-verdict.earn-flat {
-  color: var(--ag-text-muted);
-}
-
 .earn-sec {
   margin-top: 18px;
   padding-top: 12px;
   border-top: 1px solid var(--ag-border);
 }
 
-.earn-sec > .earn-tiles,
-.earn-sec > .earn-meters {
+.earn-sec > .ag-kpis {
   margin-bottom: 0.75rem;
 }
 
@@ -524,38 +439,9 @@
   background: var(--ag-critical-fill);
 }
 
-.earn-meters {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-}
-
-.earn-meter,
-.earn-range {
-  min-width: 0;
-  padding: 9px 11px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm);
-  background: var(--ag-surface-sunken);
-}
-
-.earn-meter-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 7px;
-  margin: 2px 0 7px;
-}
-
-.earn-meter-value {
-  font-size: var(--ag-fs-lg);
-  font-weight: 700;
-  color: var(--ag-text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
 .earn-meter-track {
   display: block;
+  margin-top: 4px;
   height: 6px;
   border-radius: var(--ag-radius-pill);
   background: var(--ag-border);
@@ -566,23 +452,6 @@
   height: 6px;
   border-radius: var(--ag-radius-pill);
   background: var(--ag-brand-accent);
-}
-
-.earn-range {
-  margin-bottom: 8px;
-}
-
-.earn-range-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.earn-range-note {
-  font-size: var(--ag-fs-xs);
-  color: var(--ag-text-muted);
 }
 
 .earn-range-band {

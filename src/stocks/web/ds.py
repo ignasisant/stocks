@@ -276,6 +276,7 @@ def tokens() -> dict[str, str]:
         "on-brand": ON_BRAND,
         # color — alpha variants
         "profit-band": PROFIT_BAND, "loss-band": LOSS_BAND,
+        "warn-band": WARN_BAND,
         "accent-band": ACCENT_BAND, "accent-area": ACCENT_AREA,
         "surface-sunken": SURFACE_SUNKEN, "rule-soft": RULE_SOFT,
         "surface-page-haze": SURFACE_PAGE_HAZE,

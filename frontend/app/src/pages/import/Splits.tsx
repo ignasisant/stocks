@@ -23,6 +23,7 @@ import { ApiError } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { TickerCell } from "../../shell/tickers";
+import { Responsive, StackCards } from "../../ui/Rows";
 import { useApi } from "../../shell/useApi";
 import { applySplits, scanSplits } from "./api";
 import type { SplitGap } from "./api";
@@ -153,53 +154,88 @@ function Found({
   return (
     <>
       <p className="im-warn">{t("import.splits_found", { n: gaps.length })}</p>
-      <div className="im-scroll">
-        <table className="im-table">
-          <thead>
-            <tr>
-              <th className="im-pick" scope="col" />
-              <th scope="col">{vocab.column("ticker")}</th>
-              <th scope="col">{vocab.column("date")}</th>
-              <th scope="col">{vocab.column("ratio")}</th>
-              <th className="im-num" scope="col">
-                {vocab.column("held_before")}
-              </th>
-              <th className="im-num" scope="col">
-                {vocab.column("held_after")}
-              </th>
-              <th scope="col">{vocab.column("evidence")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {gaps.map((gap) => {
-              const key = splitKey(gap);
-              return (
-                <tr key={key}>
-                  <td className="im-pick">
-                    <input
-                      // The symbol and the day are what the row is; a screen
-                      // reader gets the same two words a sighted reader does.
-                      aria-label={`${gap.ticker} ${gap.date}`}
-                      checked={on(key)}
-                      disabled={busy}
-                      onChange={() => toggle(key)}
-                      type="checkbox"
-                    />
-                  </td>
-                  <td>
-                    <TickerCell ticker={gap.ticker} />
-                  </td>
-                  <td>{gap.date}</td>
-                  <td>{ratioLabel(gap.ratio)}</td>
-                  <td className="im-num">{shares(gap.held_before)}</td>
-                  <td className="im-num">{shares(gap.held_after)}</td>
-                  <td className="im-issues">{evidence(gap)}</td>
+      <Responsive
+        wide={
+          <div className="im-scroll">
+            <table className="im-table">
+              <thead>
+                <tr>
+                  <th className="im-pick" scope="col" />
+                  <th scope="col">{vocab.column("ticker")}</th>
+                  <th scope="col">{vocab.column("date")}</th>
+                  <th scope="col">{vocab.column("ratio")}</th>
+                  <th className="im-num" scope="col">
+                    {vocab.column("held_before")}
+                  </th>
+                  <th className="im-num" scope="col">
+                    {vocab.column("held_after")}
+                  </th>
+                  <th scope="col">{vocab.column("evidence")}</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {gaps.map((gap) => {
+                  const key = splitKey(gap);
+                  return (
+                    <tr key={key}>
+                      <td className="im-pick">
+                        <input
+                          // The symbol and the day are what the row is; a screen
+                          // reader gets the same two words a sighted reader does.
+                          aria-label={`${gap.ticker} ${gap.date}`}
+                          checked={on(key)}
+                          disabled={busy}
+                          onChange={() => toggle(key)}
+                          type="checkbox"
+                        />
+                      </td>
+                      <td>
+                        <TickerCell ticker={gap.ticker} />
+                      </td>
+                      <td>{gap.date}</td>
+                      <td>{ratioLabel(gap.ratio)}</td>
+                      <td className="im-num">{shares(gap.held_before)}</td>
+                      <td className="im-num">{shares(gap.held_after)}</td>
+                      <td className="im-issues">{evidence(gap)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        }
+        narrow={
+          <StackCards
+            rows={gaps}
+            rowKey={splitKey}
+            title={(gap) => (
+              <span className="im-card-head">
+                <input
+                  aria-label={`${gap.ticker} ${gap.date}`}
+                  checked={on(splitKey(gap))}
+                  disabled={busy}
+                  onChange={() => toggle(splitKey(gap))}
+                  type="checkbox"
+                />
+                <TickerCell ticker={gap.ticker} />
+              </span>
+            )}
+            lines={[
+              { label: vocab.column("date"), cell: (gap) => gap.date },
+              { label: vocab.column("ratio"), cell: (gap) => ratioLabel(gap.ratio) },
+              {
+                label: vocab.column("held_before"),
+                cell: (gap) => shares(gap.held_before),
+              },
+              {
+                label: vocab.column("held_after"),
+                cell: (gap) => shares(gap.held_after),
+              },
+              { label: vocab.column("evidence"), cell: evidence },
+            ]}
+          />
+        }
+      />
       {failed && <p className="im-bad">{t("common.failed")}</p>}
       <button
         className="ag-btn im-primary"

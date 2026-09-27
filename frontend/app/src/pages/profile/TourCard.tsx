@@ -48,15 +48,15 @@ export function TourCard() {
 
   return (
     <Card>
-      <div className="pf-sum">
-        <span className="pf-sum-t">{t("tour.launch")}</span>
-        <span className="pf-sum-note">{t("tour.launch_caption")}</span>
-        <button type="button" className="pf-btn pf-btn-p pf-selfstart" onClick={start}>
+      <div className="pr-sum">
+        <span className="pr-sum-t">{t("tour.launch")}</span>
+        <span className="pr-sum-note">{t("tour.launch_caption")}</span>
+        <button type="button" className="pr-btn pr-btn-p pr-selfstart" onClick={start}>
           {t("tour.launch_start")}
         </button>
         {counted && (
           <div
-            className="pf-prog"
+            className="pr-prog"
             role="progressbar"
             aria-label={t("home.setup_progress", {
               done: counted[0],
@@ -66,13 +66,13 @@ export function TourCard() {
             aria-valuemax={counted[1]}
             aria-valuenow={counted[0]}
           >
-            <div className="pf-prog-track">
+            <div className="pr-prog-track">
               <div
-                className="pf-prog-fill"
+                className="pr-prog-fill"
                 style={{ width: `${Math.round((counted[0] / counted[1]) * 100)}%` }}
               />
             </div>
-            <span className="pf-prog-n">
+            <span className="pr-prog-n">
               {counted[0]}/{counted[1]}
             </span>
           </div>

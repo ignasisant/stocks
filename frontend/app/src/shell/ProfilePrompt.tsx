@@ -24,6 +24,7 @@ import { useEffect, useState } from "react";
 import { get, send } from "./api";
 import { useT } from "./i18n";
 import { whenFirstLoadDecided } from "./tourPark";
+import { ToggleChip, ToggleRow } from "../ui/Toggle";
 
 type Options = {
   risk: string[];
@@ -234,19 +235,13 @@ function Chips({
       <span className="ag-pp-label" title={help}>
         {label}
       </span>
-      <div className="ag-fb-kinds">
+      <ToggleRow>
         {options.map((option) => (
-          <button
-            key={option}
-            type="button"
-            className={on(option) ? "ag-fb-kind ag-fb-on" : "ag-fb-kind"}
-            aria-pressed={on(option)}
-            onClick={() => onPick(option)}
-          >
+          <ToggleChip key={option} on={on(option)} onClick={() => onPick(option)}>
             {labelOf(option)}
-          </button>
+          </ToggleChip>
         ))}
-      </div>
+      </ToggleRow>
     </div>
   );
 }

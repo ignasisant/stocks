@@ -11,6 +11,7 @@
  */
 
 import { TickerCell } from "../../shell/tickers";
+import { Responsive, StackCards } from "../../ui/Rows";
 import type { Issue, Row, SkippedRow } from "./api";
 import { useVocabulary } from "./text";
 
@@ -33,9 +34,6 @@ type Field = (typeof FULL)[number];
 
 /** Columns that hold a figure: right-aligned, and formatted to their own places. */
 const PLACES: Partial<Record<Field, number>> = { quantity: 4, price: 2, fee: 2 };
-
-/** Columns a phone drops. The identity of a row and what it did survive. */
-const WIDE: Partial<Record<Field, boolean>> = { fee: true, currency: true, note: true };
 
 export function RowTable({
   rows,
@@ -73,17 +71,40 @@ export function RowTable({
       issues === "errors" ? i.severity === "error" : i.severity === "warning",
     );
 
-  return (
+  // A phone gets a card per row, headed by the symbol, every field on it —
+  // the folded-away columns included, since a card has the room.
+  const narrow = (
+    <StackCards
+      rows={rows}
+      rowKey={(row, index) => `${row.date}-${row.ticker}-${index}`}
+      title={(row) => cell(row, "ticker")}
+      lines={[
+        ...fields
+          .filter((field) => field !== "ticker")
+          .map((field) => ({
+            label: vocab.column(field),
+            cell: (row: Row) => cell(row, field),
+          })),
+        ...(issues
+          ? [
+              {
+                label: vocab.column(issues),
+                cell: (row: Row) => vocab.issues(wanted(row)),
+              },
+            ]
+          : []),
+      ]}
+    />
+  );
+
+  const wide = (
     <div className="im-scroll">
       <table className="im-table">
         <thead>
           <tr>
             {fields.map((field) => (
               <th
-                className={
-                  (PLACES[field] !== undefined ? "im-num " : "") +
-                  (WIDE[field] ? "im-wide" : "")
-                }
+                className={PLACES[field] !== undefined ? "im-num" : undefined}
                 key={field}
                 scope="col"
               >
@@ -98,10 +119,7 @@ export function RowTable({
             <tr key={`${row.date}-${row.ticker}-${index}`}>
               {fields.map((field) => (
                 <td
-                  className={
-                    (PLACES[field] !== undefined ? "im-num " : "") +
-                    (WIDE[field] ? "im-wide" : "")
-                  }
+                  className={PLACES[field] !== undefined ? "im-num" : undefined}
                   key={field}
                 >
                   {cell(row, field)}
@@ -114,6 +132,8 @@ export function RowTable({
       </table>
     </div>
   );
+
+  return <Responsive wide={wide} narrow={narrow} />;
 }
 
 /**
@@ -130,7 +150,19 @@ export function SkippedTable({ rows }: { rows: SkippedRow[] }) {
     for (const field of Object.keys(row))
       if (!fields.includes(field)) fields.push(field);
 
-  return (
+  const narrow = (
+    <StackCards
+      rows={rows}
+      rowKey={(_, index) => String(index)}
+      lines={fields.map((field) => ({
+        label: vocab.column(field),
+        cell: (row: SkippedRow) =>
+          row[field] === null ? "—" : String(row[field] ?? ""),
+      }))}
+    />
+  );
+
+  const wide = (
     <div className="im-scroll">
       <table className="im-table">
         <thead>
@@ -156,4 +188,6 @@ export function SkippedTable({ rows }: { rows: SkippedRow[] }) {
       </table>
     </div>
   );
+
+  return <Responsive wide={wide} narrow={narrow} />;
 }

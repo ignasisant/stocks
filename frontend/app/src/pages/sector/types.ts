@@ -15,6 +15,8 @@ export type SectorSummary = {
   as_of: string | null;
   cohort: number;
   podium: string[];
+  /** Best three on technical momentum — a separate ranking from `podium`. */
+  tech_podium: string[];
 };
 
 export type Sectors = { sectors: SectorSummary[] };
@@ -41,4 +43,10 @@ export type SectorCohort = {
   default_columns: string[];
   /** Metrics where the smaller number is the better one. */
   lower_is_better: string[];
+  /** Best three on technical momentum. */
+  tech_podium: string[];
+  /** One row per cohort ticker with an OHLC history, keyed by the technical
+   * metrics (trend_pct, rsi14, macd_hist, pct_from_high, roc_63, vol_ratio)
+   * rather than `metric_keys`. */
+  tech_rows: CohortRow[];
 };

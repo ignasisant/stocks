@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.error import URLError
 
 import pandas as pd
@@ -12,18 +12,22 @@ from pydantic import BaseModel, Field
 from yfinance.exceptions import YFRateLimitError
 
 from stocks import obs
+from stocks.analysis.monthly import month_ends
 from stocks.analysis.portfolio import (
     annualized_return,
     annualized_volatility,
     correlation_matrix,
     cumulative_returns,
+    drawdown_span,
     effective_positions,
+    flow_matched_curves,
     flow_series,
     market_active,
     market_live,
     max_drawdown,
     money_weighted_return,
     priced_totals,
+    project_sleeves,
     top_n_weight,
     value_weights,
 )
@@ -43,6 +47,8 @@ from stocks.api.schemas import (
     Performance,
     Position,
     Positions,
+    Projection,
+    ProjectionSleeve,
     Risk,
     RiskCurves,
     Summary,
@@ -215,9 +221,7 @@ def positions(account: Account, base: Base = None) -> Positions:
         )
         for ticker, row in table.iterrows()
     ]
-    return Positions(
-        base=ccy, positions=rows, unpriced=int(table["value"].isna().sum())
-    )
+    return Positions(base=ccy, positions=rows, unpriced=int(table["value"].isna().sum()))
 
 
 @router.get("/summary", response_model=Summary, summary="Book totals")
@@ -250,9 +254,7 @@ def summary(account: Account, base: Base = None) -> Summary:
         unpriced=unpriced,
         # Null, not zero, for a book that never sold: "no result" and "broke
         # even" are different facts and the tile has to be able to say so.
-        realized=(
-            _num(sum(s.proceeds - s.cost for s in sales)) if sales else None
-        ),
+        realized=(_num(sum(s.proceeds - s.cost for s in sales)) if sales else None),
         realized_cost=_num(sum(s.cost for s in sales)) if sales else None,
         demo=demo.active(account.db),
     )
@@ -362,9 +364,7 @@ def performance(
     dropped = tuple(twr.attrs.get("dropped_days", ()))
     start: pd.Timestamp | None = None
     if window in _PERFORMANCE_DAYS:
-        start = pd.Timestamp(date.today()) - pd.Timedelta(
-            days=_PERFORMANCE_DAYS[window]
-        )  # ty: ignore[invalid-assignment]  -- today minus days is never NaT
+        start = pd.Timestamp(date.today()) - pd.Timedelta(days=_PERFORMANCE_DAYS[window])  # ty: ignore[invalid-assignment]  -- today minus days is never NaT
         twr = twr[twr.index >= start] if not twr.empty else twr
     cumulative = float((1 + twr).prod() - 1) if not twr.empty else float("nan")
     # Over the span the return was actually measured on, not the ledger's:
@@ -372,12 +372,12 @@ def performance(
     # compounding by those months understates what the money that was in did.
     annualised = annualized_return(twr) if not twr.empty else float("nan")
     txs = loaders.ledger_state(db, mtime, ccy)[0]
-    irr = money_weighted_return(
-        hist["value"], flow_series(txs, base=ccy), start=start
-    )
+    irr = money_weighted_return(hist["value"], flow_series(txs, base=ccy), start=start)
     shown = hist[hist.index >= start] if start is not None else hist
     if shown.empty:
         shown = hist
+    path = cumulative_returns(twr) + 1
+    span = drawdown_span(path)
 
     return Performance(
         base=ccy,
@@ -392,7 +392,10 @@ def performance(
         # series either can be taken over honestly: the book's own value moves
         # every time money is added, and a deposit is not a return.
         twr_volatility=_num(annualized_volatility(twr)),
-        twr_max_drawdown=_num(max_drawdown(cumulative_returns(twr) + 1)),
+        twr_max_drawdown=_num(max_drawdown(path)),
+        twr_drawdown_peak=str(span[0].date()) if span else None,
+        twr_drawdown_trough=str(span[1].date()) if span else None,
+        twr_drawdown_peak_value=(_num(hist["value"].get(span[0])) if span else None),
         dropped_days=[
             str(pd.Timestamp(day).date())
             for day in dropped
@@ -555,7 +558,7 @@ def history(
         end=str(pd.Timestamp(hist.index[-1]).date()),
         points=[
             HistoryPoint(
-                date=str(pd.Timestamp(day).date()),
+                date=f"{day:%Y-%m-%d}",
                 injected=_num(row["injected"]),
                 value=_num(row["value"]),
                 pnl_pct=_num(row["pnl_pct"]),
@@ -569,6 +572,74 @@ def history(
             for day in twr.attrs.get("dropped_days", ())
             if hist.index[0] <= pd.Timestamp(day) <= hist.index[-1]
         ],
+    )
+
+
+# ------------------------------------------------------------ month by month
+# The Overview tab's chart: the return the account stood at on each month's
+# close, weighted by how much money was in and for how long. Always since the
+# first trade — a month-end return rebased on a window would say "since
+# whenever the chart starts", which is not what "where was I in July" asks.
+
+
+class MonthlyPoint(BaseModel):
+    """The book on the last recorded day of one month."""
+
+    month: str = Field(description="ISO month, `YYYY-MM`.")
+    date: str = Field(description="The day the figures were taken on.")
+    injected: float | None
+    value: float | None
+    pnl: float | None = Field(description="value - injected.")
+    money_weighted: float | None = Field(
+        description=(
+            "Cumulative return since the first trade, Modified Dietz: the gain "
+            "over the time-averaged capital, so each deposit counts for its "
+            "amount and for how long it was in. Null where that capital is "
+            "not positive."
+        )
+    )
+    twr: float | None = Field(
+        description="Cumulative time-weighted return since the first trade."
+    )
+
+
+class Monthly(BaseModel):
+    base: str
+    months: list[MonthlyPoint] = []
+    missing: list[str] = Field(
+        default=[],
+        description="Held names with no price series, carried at cost in `value`.",
+    )
+
+
+@router.get("/monthly", response_model=Monthly, summary="The book at each month's close")
+def monthly(account: Account, base: Base = None) -> Monthly:
+    """Month-end levels and the return the account stood at, since inception.
+
+    Off the same `loaders.history` frame as `/history` and `/performance`, so
+    the last point here is the book those two describe today.
+    """
+    ccy = reporting_currency(account, base)
+    db = str(account.db)
+    hist, twr, missing = loaders.history(db, loaders.db_mtime(db), ccy)
+    if hist.empty:
+        return Monthly(base=ccy, missing=missing)
+    rows = month_ends(hist, twr)
+    return Monthly(
+        base=ccy,
+        months=[
+            MonthlyPoint(
+                month=f"{day:%Y-%m}",
+                date=f"{day:%Y-%m-%d}",
+                injected=_num(row["injected"]),
+                value=_num(row["value"]),
+                pnl=_num(row["pnl"]),
+                money_weighted=_num(row["money_weighted"]),
+                twr=_num(row["twr"]),
+            )
+            for day, row in rows.iterrows()
+        ],
+        missing=missing,
     )
 
 
@@ -632,7 +703,14 @@ def transactions_csv(account: Account, base: Base = None) -> Response:
 
 
 @router.get("/fees", response_model=Fees, summary="What trading it cost")
-def fees_(account: Account, base: Base = None) -> Fees:
+def fees_(
+    account: Account,
+    base: Base = None,
+    year: Annotated[
+        int | None,
+        Query(description="Only rows dated in this calendar year."),
+    ] = None,
+) -> Fees:
     """Commission the broker charged, and the spread it charged silently.
 
     They are never added into one number without both being present: the
@@ -645,6 +723,8 @@ def fees_(account: Account, base: Base = None) -> Fees:
     db = str(account.db)
     mtime = loaders.db_mtime(db)
     txs = loaders.ledger_state(db, mtime, ccy)[0]
+    if year is not None:
+        txs = [t for t in txs if t.date.startswith(f"{year}-")]
     brokers = fees.by_broker(txs, base=ccy)
     if not brokers:
         return Fees(base=ccy)
@@ -658,9 +738,7 @@ def fees_(account: Account, base: Base = None) -> Fees:
     spreads: dict[str, fees.SpreadStats] = {}
     measured = False
     try:
-        spreads = fees.spread_by_broker(
-            txs, loaders.trade_bars(db, mtime), base=ccy
-        )
+        spreads = fees.spread_by_broker(txs, loaders.trade_bars(db, mtime), base=ccy)
         measured = True
     except (YFRateLimitError, URLError):
         pass
@@ -870,8 +948,7 @@ def tax_(account: Account) -> TaxReport:
     years = sorted({jurisdiction.tax_year_of(s.sell_date) for s in realized})
     months = sorted({s.sell_date[:7] for s in realized})
     periods = [
-        jurisdiction.fiscal_year(realized, year, buy_dates, settings)
-        for year in years
+        jurisdiction.fiscal_year(realized, year, buy_dates, settings) for year in years
     ]
     report.years = [
         period(value, year) for value, year in zip(periods, years, strict=True)
@@ -916,8 +993,11 @@ def tax_(account: Account) -> TaxReport:
             # every row of a Spanish report is a distinction the law does not
             # make.
             term=(
-                ("long" if jurisdiction.is_long_term(sale.buy_date, sale.sell_date)
-                 else "short")
+                (
+                    "long"
+                    if jurisdiction.is_long_term(sale.buy_date, sale.sell_date)
+                    else "short"
+                )
                 if jurisdiction.splits_holding_period
                 else None
             ),
@@ -949,9 +1029,7 @@ def _reporting_flags(account, jurisdiction, settings) -> list[TaxFlag]:
     with obs.swallow("api.tax_flags", jurisdiction=jurisdiction.code):
         table = loaders.positions_table(db, loaders.db_mtime(db), ccy)
         held = (
-            float(table["value"].fillna(table["cost"]).sum())
-            if not table.empty
-            else 0.0
+            float(table["value"].fillna(table["cost"]).sum()) if not table.empty else 0.0
         )
         rate = (
             1.0
@@ -970,6 +1048,182 @@ def _reporting_flags(account, jurisdiction, settings) -> list[TaxFlag]:
             for flag in jurisdiction.reporting_flags(held * rate, settings)
         ]
     return []
+
+
+# Median compound annual growth per sleeve when the caller names none. Stocks:
+# roughly what world equities have compounded at over the long run — never
+# the book's own history, where a good two years projected forward five is a
+# wish, not a plan. Crypto: zero, because there is no long run to read one
+# off, and the recent one would project a bubble.
+_DEFAULT_GROWTH = {"stocks": 0.08, "crypto": 0.0}
+# Used only when a sleeve has no measurable volatility (too little history).
+_DEFAULT_VOL = {"stocks": 0.20, "crypto": 0.60}
+# Deflator for "today's money": the ECB's target, not a forecast of it.
+_INFLATION = 0.02
+
+
+@router.get(
+    "/projection", response_model=Projection, summary="Range for the value years out"
+)
+def projection(
+    account: Account,
+    base: Base = None,
+    years: Annotated[int, Query(ge=1, le=30)] = 5,
+    stock_growth: Annotated[
+        float | None,
+        Query(ge=-0.5, le=0.5, description="Median compound annual; default 8%."),
+    ] = None,
+    crypto_growth: Annotated[
+        float | None,
+        Query(ge=-0.9, le=2.0, description="Median compound annual; default 0%."),
+    ] = None,
+    crypto_share: Annotated[
+        float | None,
+        Query(
+            ge=0,
+            le=1,
+            description="Share of each contribution to crypto; default its weight today.",
+        ),
+    ] = None,
+    monthly: Annotated[
+        float | None,
+        Query(
+            ge=0,
+            description=(
+                "Contribution per month; default the last 12 months' average "
+                "net money put in."
+            ),
+        ),
+    ] = None,
+    real: Annotated[
+        bool, Query(description="Deflate the future to today's money (2% a year).")
+    ] = False,
+    target: Annotated[
+        float | None,
+        Query(
+            gt=0,
+            description="Value to reach; the share of paths that end at or above it.",
+        ),
+    ] = None,
+) -> Projection:
+    """Where the book's value could be `years` out, as a percentile fan.
+
+    Starts from today's value split into two sleeves — stocks and crypto, by
+    today's market-value weights — each with its own median growth rate and
+    its own measured volatility (`basket_report` over two years, every name
+    clipped to its first buy), correlated at the weekly correlation the two
+    actually showed (`sleeve_stats`, `project_sleeves`).
+    """
+    from stocks.analysis.portfolio import Sleeve, first_owned, sleeve_stats
+    from stocks.data.crypto import is_crypto
+
+    ccy = reporting_currency(account, base)
+    db = str(account.db)
+    mtime = loaders.db_mtime(db)
+    hist, _twr, _missing = loaders.history(db, mtime, ccy)
+    value = hist["value"].dropna() if "value" in hist else pd.Series(dtype=float)
+    start_value = float(value.iloc[-1]) if not value.empty else 0.0
+
+    txs = loaders.ledger_state(db, mtime, ccy)[0]
+    flows = flow_series(txs, base=ccy)
+    year_ago = pd.Timestamp(date.today()) - pd.Timedelta(days=365)
+    recent = flows[flows.index > year_ago] if not flows.empty else flows
+    suggested = max(float(recent.sum()) / 12, 0.0) if not recent.empty else 0.0
+    suggested = round(suggested / 10) * 10
+
+    vols: dict[str, float] = {}
+    corr = None
+    weights: dict[str, float] = {}
+    try:
+        report = loaders.basket_report(db, mtime, ccy, "2y")
+        if report is not None:
+            weights = report.weights
+            groups = {
+                "stocks": [t for t in weights if not is_crypto(t)],
+                "crypto": [t for t in weights if is_crypto(t)],
+            }
+            vols, corr = sleeve_stats(
+                report.returns, weights, groups, since=first_owned(txs)
+            )
+    except (URLError, YFRateLimitError):
+        obs.warn("projection.volatility_unavailable")
+
+    crypto_weight = sum(w for t, w in weights.items() if is_crypto(t))
+    share = crypto_weight if crypto_share is None else crypto_share
+    growth = {
+        "stocks": _DEFAULT_GROWTH["stocks"] if stock_growth is None else stock_growth,
+        "crypto": _DEFAULT_GROWTH["crypto"] if crypto_growth is None else crypto_growth,
+    }
+    split = {"stocks": 1 - crypto_weight, "crypto": crypto_weight}
+    shares = {"stocks": 1 - share, "crypto": share}
+    sleeves = [
+        Sleeve(
+            key=key,
+            value=start_value * split[key],
+            growth=growth[key],
+            volatility=vols.get(key, _DEFAULT_VOL[key]),
+            share=shares[key],
+        )
+        for key in ("stocks", "crypto")
+        if split[key] > 0 or shares[key] > 0
+    ]
+    per_month = suggested if monthly is None else monthly
+    echo = [
+        ProjectionSleeve(
+            key=sl.key,
+            value=round(sl.value, 2),
+            weight=split[sl.key],
+            growth=sl.growth,
+            volatility=sl.volatility,
+            volatility_measured=sl.key in vols,
+            share=sl.share,
+        )
+        for sl in sleeves
+    ]
+    common: dict[str, Any] = dict(
+        base=ccy,
+        years=years,
+        sleeves=echo,
+        correlation=_num(corr),
+        crypto_weight=crypto_weight,
+        monthly=per_month,
+        monthly_suggested=suggested,
+        real=real,
+        inflation=_INFLATION,
+        target=target,
+    )
+    if start_value <= 0 and per_month <= 0:
+        return Projection(**common)
+    fan, finals = project_sleeves(
+        sleeves,
+        corr=corr or 0.0,
+        monthly=per_month,
+        years=years,
+        inflation=_INFLATION if real else 0.0,
+    )
+    # The road so far, one point a month, so the fan reads as a continuation
+    # of the book rather than a line out of nowhere. The current month is
+    # left off: today's value is the fan's own first point. Past figures stay
+    # the euros they were — only the future is deflated.
+    past = pd.DataFrame()
+    if not hist.empty and {"value", "injected"} <= set(hist.columns):
+        monthly_end = hist[["value", "injected"]].resample("ME").last()
+        past = monthly_end[monthly_end.index < pd.Timestamp(date.today()).replace(day=1)]
+        past = past[past["injected"].fillna(0) > 0]
+    today = pd.Timestamp(date.today())
+    dates = [today + pd.DateOffset(months=m) for m in range(len(fan))]
+    return Projection(
+        **common,
+        start_value=start_value,
+        target_probability=(
+            float((finals >= target).mean()) if target is not None else None
+        ),
+        dates=[f"{d:%Y-%m-%d}" for d in dates],
+        **{col: [round(float(v), 2) for v in fan[col]] for col in fan.columns},
+        history_dates=[str(d.date()) for d in past.index],
+        history_value=[_num(v) for v in past["value"]] if not past.empty else [],
+        history_invested=[_num(v) for v in past["injected"]] if not past.empty else [],
+    )
 
 
 @router.get("/risk", response_model=Risk, summary="Risk of the current basket")
@@ -1029,9 +1283,10 @@ def risk(
     corr = correlation_matrix(report.returns)
     # The book's own line, which the report knows nothing about: `basket_report`
     # backtests today's holdings, and what the account actually earned is the
-    # flow-adjusted history. Both belong on one axis or neither says much — the
+    # ledger's value path. Both belong on one axis or neither says much — the
     # gap between them is exactly how much the book has changed shape.
-    _hist, twr, missing = loaders.history(db, mtime, ccy)
+    hist, twr, missing = loaders.history(db, mtime, ccy)
+    flows = flow_series(loaders.ledger_state(db, mtime, ccy)[0], base=ccy)
     return Risk(
         base=ccy,
         period=period,
@@ -1054,7 +1309,7 @@ def risk(
             }
             for row in corr.index
         },
-        curves=_curves(report, twr),
+        curves=_curves(report, hist, flows),
         missing=missing,
         dropped_days=[
             str(pd.Timestamp(day).date()) for day in twr.attrs.get("dropped_days", ())
@@ -1062,44 +1317,43 @@ def risk(
     )
 
 
-def _series(values: pd.Series | None, axis: pd.DatetimeIndex) -> list[float | None]:
-    """A cumulative series read on `axis`, as JSON-safe floats.
-
-    Reindexed, never interpolated: the axis is a subset of the calendar the
-    book's return is sampled on, so every date either has a figure or gets a
-    null. Filling one forward would draw a flat weekend as a fact.
-    """
-    if values is None or values.empty:
-        return [None] * len(axis)
-    return [_num(v) for v in cumulative_returns(values).reindex(axis)]
+def _points(values: pd.Series) -> list[float | None]:
+    return [_num(v) for v in values]
 
 
-def _curves(report, twr: pd.Series) -> RiskCurves | None:
-    """The three lines on one axis: the book, today's basket, the benchmarks.
+def _curves(report, hist: pd.DataFrame, flows: pd.Series) -> RiskCurves | None:
+    """The lines on one axis: the book, today's basket, the benchmarks.
 
-    The axis is the basket's trading days, and everything else is clipped to
-    its first day before compounding — a benchmark that starts from its own
-    zero two years earlier is not being compared to anything.
+    The axis is the basket's trading days. Nothing is rebased to its first
+    day: each alternative is fed the book's own flows on their own dates
+    (`flow_matched_curves`), so an index is credited with the euros the book
+    actually had at work, when it had them — not with all of it from day one.
     """
     axis = report.returns.index
     if axis.empty:
         return None
-    start = pd.Timestamp(axis[0])
     # An axis whose first entry is not a date has no window to clip to, and
     # `NaT` is what pandas hands back for one — it is also the reason this is
     # an isinstance check and not a truth test.
-    if not isinstance(start, pd.Timestamp):
+    if not isinstance(pd.Timestamp(axis[0]), pd.Timestamp):
         return None
-    if start.tz is not None:
-        start = start.tz_localize(None)
-    window = twr[twr.index >= start.normalize()] if not twr.empty else twr
+    value = hist["value"] if "value" in hist else pd.Series(dtype=float)
+    invested, book, shadows = flow_matched_curves(
+        value,
+        flows,
+        axis,
+        {
+            "basket": report.port_returns,
+            **{f"bench:{name}": series for name, series in report.bench_returns.items()},
+        },
+    )
     return RiskCurves(
-        dates=[str(pd.Timestamp(day).date()) for day in axis],
-        portfolio=_series(window, axis),
-        basket=_series(report.port_returns, axis),
+        dates=[str(day.date()) for day in book.index],
+        invested=_points(invested.where(invested > 1e-9)),
+        portfolio=_points(book),
+        basket=_points(shadows["basket"]),
         benchmarks={
-            name: _series(series, axis)
-            for name, series in report.bench_returns.items()
+            name: _points(shadows[f"bench:{name}"]) for name in report.bench_returns
         },
     )
 

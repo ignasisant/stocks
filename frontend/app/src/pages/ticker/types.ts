@@ -40,6 +40,14 @@ export type Quote = {
   as_of: string | null;
   /** Inside the regular session the bars already track the live price. */
   market_open: boolean | null;
+  /** The listing's own quote currency, minor units included (GBp). */
+  currency: string | null;
+  /** `price` restated in `base`, when the two differ and a rate was had. */
+  price_base: number | null;
+  fx_rate: number | null;
+  fx_as_of: string | null;
+  /** The reporting currency asked for. */
+  base: string | null;
 };
 
 export type Trade = {

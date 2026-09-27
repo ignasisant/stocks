@@ -28,6 +28,15 @@ def daily_returns(series: pd.Series) -> pd.Series:
     return series.pct_change()
 
 
+def macd(
+    series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """(macd_line, signal_line, histogram) from the standard 12/26/9 EMAs."""
+    macd_line = ema(series, fast) - ema(series, slow)
+    signal_line = ema(macd_line, signal)
+    return macd_line, signal_line, macd_line - signal_line
+
+
 def add_indicators(df: pd.DataFrame, price_col: str = "Close") -> pd.DataFrame:
     """Append common indicator columns to an OHLCV frame."""
     out = df.copy()

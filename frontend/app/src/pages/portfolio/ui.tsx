@@ -12,7 +12,9 @@ import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { Link } from "../../shell/router";
 import { useT } from "../../shell/i18n";
 import { tone } from "./format";
+import { Chip as Pill, Kpi, KpiGrid, toneOf } from "../../ui/Kpi";
 import { TickerCell as Cell } from "../../shell/tickers";
+import { DenseRows, Responsive, StackCards, type DenseSpec } from "../../ui/Rows";
 
 /**
  * The two emphases the catalogs use, which Streamlit got for free.
@@ -69,20 +71,21 @@ export function TickerCell({ ticker }: { ticker: string }) {
   return <Cell ticker={ticker} className="pf-ticker" />;
 }
 
-function Chip({
+/** A signed figure as the app's pill, coloured by its own sign. */
+export function Chip({
   value,
   text,
   off,
 }: {
   value: number | null | undefined;
-  text: string;
+  /** Null draws nothing — a figure that could not be formatted has no pill. */
+  text: string | null;
   off?: boolean;
 }) {
+  if (text === null) return null;
   // `off` greys a figure that is real but not live — the day change while
   // nothing is trading — without hiding it or dropping its sign.
-  return (
-    <span className={`pf-chip pf-chip-${off ? "flat" : tone(value)}`}>{text}</span>
-  );
+  return <Pill chip={{ text, tone: off ? "flat" : toneOf(value) }} />;
 }
 
 /** A figure that could not be computed reads "n/a" — never 0, never a dash
@@ -112,29 +115,24 @@ export type KpiItem = {
 export function Kpis({ items }: { items: KpiItem[] }) {
   const t = useT();
   return (
-    // The count drives the wrap (portfolio.css): four tiles go 2+2, never 3+1.
-    <div className="pf-kpis" data-n={items.length}>
+    <KpiGrid>
       {items.map((item) => (
-        <div className="pf-kpi" key={item.label}>
-          <div className="pf-kpi-label">
-            <span>{item.label}</span>
-            {item.help ? (
-              <span className="pf-help" title={item.help} aria-label={item.help}>
-                ?
-              </span>
-            ) : null}
-          </div>
-          <div className="pf-kpi-line">
-            <span className="pf-kpi-value">
-              {item.value === null ? t("portfolio.na") : item.value}
-            </span>
-            {item.chip ? (
-              <Chip value={item.chip.value} text={item.chip.text} off={item.chip.off} />
-            ) : null}
-          </div>
-        </div>
+        <Kpi
+          key={item.label}
+          label={item.label}
+          help={item.help}
+          value={item.value === null ? t("portfolio.na") : item.value}
+          chip={
+            item.chip
+              ? {
+                  text: item.chip.text,
+                  tone: item.chip.off ? "flat" : toneOf(item.chip.value),
+                }
+              : null
+          }
+        />
       ))}
-    </div>
+    </KpiGrid>
   );
 }
 
@@ -146,11 +144,6 @@ export type Column<T> = {
   /** Omit to make the column unsortable. `null` always sorts last. */
   sort?: (row: T) => number | string | null;
   cell: (row: T) => ReactNode;
-  /**
-   * Extra class on the column's header and cells — `pf-wide-only` drops a
-   * column on a phone whose content already rides another cell there.
-   */
-  className?: string;
 };
 
 /**
@@ -165,11 +158,17 @@ export function Table<T>({
   rows,
   rowKey,
   initial,
+  dense,
 }: {
   columns: Column<T>[];
   rows: T[];
   rowKey: (row: T, index: number) => string;
   initial?: { key: string; desc?: boolean };
+  /**
+   * The phone's dense ticker row. Without one the phone gets a card per row,
+   * headed by the first column, one line per other column.
+   */
+  dense?: DenseSpec<T>;
 }) {
   const [sort, setSort] = useState(initial ?? null);
 
@@ -196,7 +195,19 @@ export function Table<T>({
       current?.key === key ? { key, desc: !current.desc } : { key, desc: true },
     );
 
-  return (
+  const [head, ...rest] = columns;
+  const narrow = dense ? (
+    <DenseRows rows={ordered} rowKey={rowKey} spec={dense} />
+  ) : (
+    <StackCards
+      rows={ordered}
+      rowKey={rowKey}
+      title={head?.cell}
+      lines={rest.map((column) => ({ label: column.label, cell: column.cell }))}
+    />
+  );
+
+  const wide = (
     <div className="pf-scroll">
       <table className="pf-table">
         <thead>
@@ -207,7 +218,6 @@ export function Table<T>({
                 className={[
                   column.left ? "pf-left" : "",
                   column.sort ? "pf-sortable" : "",
-                  column.className ?? "",
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -232,14 +242,7 @@ export function Table<T>({
           {ordered.map((row, index) => (
             <tr key={rowKey(row, index)}>
               {columns.map((column) => (
-                <td
-                  key={column.key}
-                  className={
-                    [column.left ? "pf-left" : "", column.className ?? ""]
-                      .filter(Boolean)
-                      .join(" ") || undefined
-                  }
-                >
+                <td key={column.key} className={column.left ? "pf-left" : undefined}>
                   {column.cell(row)}
                 </td>
               ))}
@@ -249,6 +252,8 @@ export function Table<T>({
       </table>
     </div>
   );
+
+  return <Responsive wide={wide} narrow={narrow} />;
 }
 
 export function Segmented<T extends string>({
@@ -305,7 +310,7 @@ export function Dropdown<T extends string>({
     <div className="pf-controls">
       <span className="pf-control-label">{label}</span>
       <select
-        className="pf-select"
+        className="pf-dropdown"
         aria-label={label}
         value={value}
         onChange={(event) => onChange(event.target.value as T)}

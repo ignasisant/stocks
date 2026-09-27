@@ -15,8 +15,9 @@
 import { useEffect, useRef, useState } from "react";
 
 import { get, send } from "./api";
-import { useT } from "./i18n";
+import { useLang, useT } from "./i18n";
 import { BASE } from "./router";
+import { useTickerProfile } from "./tickers";
 
 type Match = {
   ticker: string;
@@ -29,7 +30,9 @@ type Match = {
 };
 
 type Results = { query: string; matches: Match[] };
-type Recents = { tickers: string[] };
+type Recents = { tickers: string[]; names: Record<string, string> };
+type Quote = { ticker: string; price: number | null; pct: number | null };
+type Quotes = { quotes: Quote[] };
 
 /** The caption above each tier. Own-list rows get none — they need no excuse. */
 const CAPTIONS: Record<string, string> = {
@@ -51,6 +54,8 @@ export function Search() {
   const [busy, setBusy] = useState(false);
   const [matches, setMatches] = useState<Match[] | null>(null);
   const [recent, setRecent] = useState<string[]>([]);
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const box = useRef<HTMLDivElement>(null);
 
   // Clicking anywhere else closes the panel. Not blur: a click *on* a result
@@ -92,19 +97,48 @@ export function Search() {
     };
   }, [query]);
 
+  // Prices for the recents strip, asked each time it opens — a quote from the
+  // last time the panel was shown would be stale by now. One batched request,
+  // and only here: search results change per keystroke, and a Yahoo round-trip
+  // per keystroke is how a shared cloud IP gets throttled.
+  const recentKey = recent.join(",");
+  useEffect(() => {
+    if (!open || !recentKey) return;
+    let live = true;
+    get<Quotes>("/market/quotes", { tickers: recentKey })
+      .then((answer) => {
+        if (!live) return;
+        setQuotes(Object.fromEntries(answer.quotes.map((q) => [q.ticker, q])));
+      })
+      .catch(() => undefined); // a row without a price is still a working link
+    return () => {
+      live = false;
+    };
+  }, [open, recentKey]);
+
   function focus() {
     setOpen(true);
     if (recent.length === 0) {
       get<Recents>("/search/recent")
-        .then((rows) => setRecent(rows.tickers))
+        .then((rows) => {
+          setRecent(rows.tickers);
+          setNames(rows.names ?? {});
+        })
         .catch(() => undefined); // an empty recents strip is not an error
     }
   }
 
-  function open_(ticker: string) {
+  function open_(ticker: string, name = "") {
     // Recorded, not awaited: the reader is already on their way to the page,
     // and a failed write must not hold the navigation or surface an error.
-    void send<Recents>("POST", "/search/recent", { ticker }).catch(() => undefined);
+    // The name travels with it: the row knows what the ticker is called, and
+    // for a non-US listing nothing cheap on the server can find out later.
+    void send<Recents>("POST", "/search/recent", { ticker, name })
+      .then((rows) => {
+        setRecent(rows.tickers);
+        setNames(rows.names ?? {});
+      })
+      .catch(() => undefined);
     setOpen(false);
     setQuery("");
     window.history.pushState(
@@ -135,7 +169,7 @@ export function Search() {
         }}
         onKeyDown={(event) => {
           if (event.key === "Escape") setOpen(false);
-          if (event.key === "Enter" && rows[0]) open_(rows[0].ticker);
+          if (event.key === "Enter" && rows[0]) open_(rows[0].ticker, rows[0].name);
         }}
       />
       {open && (term || recent.length > 0) ? (
@@ -152,7 +186,13 @@ export function Search() {
             <>
               <p className="ag-search-caption">{t("widgets.recent")}</p>
               {recent.map((ticker) => (
-                <Row key={ticker} ticker={ticker} onPick={open_} />
+                <Row
+                  key={ticker}
+                  ticker={ticker}
+                  name={names[ticker]}
+                  quote={quotes[ticker]}
+                  onPick={open_}
+                />
               ))}
             </>
           )}
@@ -173,7 +213,7 @@ function Found({
   rows: Match[];
   analyze: Match | undefined;
   term: string;
-  onPick: (ticker: string) => void;
+  onPick: (ticker: string, name?: string) => void;
 }) {
   const t = useT();
   if (busy && rows.length === 0 && !analyze) {
@@ -222,28 +262,71 @@ function Row({
   name,
   mark,
   exchange,
+  quote,
   onPick,
 }: {
   ticker: string;
   name?: string;
   mark?: string;
   exchange?: string;
-  onPick: (ticker: string) => void;
+  quote?: Quote;
+  onPick: (ticker: string, name?: string) => void;
 }) {
+  const lang = useLang();
+  // The logo from the shared batch every ticker cell uses; the name falls back
+  // to it too, for a recent entry nothing remembered a name for.
+  const profile = useTickerProfile(ticker);
+  const company = name || profile?.name || "";
+  const price = format(quote?.price, lang, { maximumFractionDigits: 2 });
+  const pct = format(quote?.pct, lang, {
+    style: "percent",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    signDisplay: "always",
+  });
   return (
     <button
       type="button"
       className="ag-search-row"
       role="option"
       aria-selected="false"
-      onClick={() => onPick(ticker)}
+      onClick={() => onPick(ticker, company)}
     >
       {mark && MARKS[mark] ? (
         <span className="ag-search-mark">{MARKS[mark]}</span>
       ) : null}
+      {profile?.logo ? (
+        <img className="ag-search-logo" src={profile.logo} alt="" loading="lazy" />
+      ) : (
+        <span className="ag-search-logo" aria-hidden="true" />
+      )}
       <span className="ag-search-ticker">{ticker}</span>
-      {name ? <span className="ag-search-name">{name}</span> : null}
+      {company ? <span className="ag-search-name">{company}</span> : null}
       {exchange ? <span className="ag-search-venue">{exchange}</span> : null}
+      {price ? (
+        <span className="ag-search-quote">
+          {price}
+          {pct ? (
+            <span className={(quote?.pct ?? 0) < 0 ? "ag-search-down" : "ag-search-up"}>
+              {pct}
+            </span>
+          ) : null}
+        </span>
+      ) : null}
     </button>
   );
+}
+
+/**
+ * A number in the reader's locale, or null for a missing one. No currency: the
+ * batch quote does not say which one the listing trades in, and guessing would
+ * print a Korean won price with a euro sign.
+ */
+function format(
+  value: number | null | undefined,
+  lang: string,
+  options: Intl.NumberFormatOptions,
+): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return new Intl.NumberFormat(lang, options).format(value);
 }

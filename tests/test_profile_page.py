@@ -190,15 +190,6 @@ def test_the_tab_strip_says_the_page_saves_itself(page):
     assert "Changes save instantly" in _html(page)
 
 
-def test_the_folder_chip_shows_the_tail_and_keeps_the_full_path(page, paths):
-    """The identifying part of a per-account data dir is its last segment, and
-    the whole path is long enough to push Log out onto a second line."""
-    page.run()
-    body = _html(page)
-    assert f'title="{paths.root}"' in body
-    assert f">{paths.root.parent.name}/{paths.root.name}<" in body
-
-
 # ------------------------------------------------------- investor profile
 # The tab was rebuilt on the same canvas primitives as Preferences: three
 # cards of setting rows, a sticky rail with the summary and the persona

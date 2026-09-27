@@ -29,14 +29,20 @@ both belong in the copy, not just here:
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from stocks import obs, storage
 from stocks.analysis.fundamentals import comp_medals, comp_scores
 from stocks.analysis.screener import fetch_metrics_many
 from stocks.analysis.sentiment import SECTOR_ETFS
+from stocks.analysis.technicals import (
+    technical_medals,
+    technical_scores,
+    technical_snapshot,
+)
 from stocks.config import DATA_DIR
+from stocks.data.fetch import fetch_many
 
 # The 11 sectors, spelled the way `info["sector"]` spells them — so the sector
 # a company reports joins onto this table with no mapping layer.
@@ -57,7 +63,14 @@ SCAN_FILE = DATA_DIR / "sector_scan.json"
 
 @dataclass(frozen=True)
 class SectorScan:
-    """One sector's cohort, scored. `podium` is best-first and may be empty."""
+    """One sector's cohort, scored. `podium` is best-first and may be empty.
+
+    `tech_*` mirrors `metrics`/`scores`/`podium` for the technical-momentum
+    podium — a separate ranking over price/volume signals rather than
+    valuation and quality. Empty on a scan taken before this existed, or when
+    the OHLC pull for the cohort failed: the fundamentals half never waits on
+    the technical half.
+    """
 
     sector: str
     as_of: str
@@ -65,6 +78,12 @@ class SectorScan:
     metrics: tuple[dict, ...]
     scores: dict[str, float]
     podium: tuple[str, ...]
+    # Defaulted, unlike the fields above: existing call sites (tests,
+    # `SectorScan.from_dict` reading a scan taken before this existed)
+    # construct a scan with no idea these exist.
+    tech_metrics: tuple[dict, ...] = ()
+    tech_scores: dict[str, float] = field(default_factory=dict)
+    tech_podium: tuple[str, ...] = ()
 
     @property
     def medals(self) -> dict[str, str]:
@@ -79,6 +98,9 @@ class SectorScan:
             "metrics": [_plain(m) for m in self.metrics],
             "scores": {k: float(v) for k, v in self.scores.items()},
             "podium": list(self.podium),
+            "tech_metrics": [_plain(m) for m in self.tech_metrics],
+            "tech_scores": {k: float(v) for k, v in self.tech_scores.items()},
+            "tech_podium": list(self.tech_podium),
         }
 
     @classmethod
@@ -90,6 +112,13 @@ class SectorScan:
             metrics=tuple(m for m in raw.get("metrics") or () if isinstance(m, dict)),
             scores={str(k): float(v) for k, v in (raw.get("scores") or {}).items()},
             podium=tuple(str(t) for t in raw.get("podium") or ()),
+            tech_metrics=tuple(
+                m for m in raw.get("tech_metrics") or () if isinstance(m, dict)
+            ),
+            tech_scores={
+                str(k): float(v) for k, v in (raw.get("tech_scores") or {}).items()
+            },
+            tech_podium=tuple(str(t) for t in raw.get("tech_podium") or ()),
         )
 
 
@@ -172,6 +201,35 @@ def validate_symbols(
     return keep
 
 
+_TechScan = tuple[list[dict], dict[str, float], tuple[str, ...]]
+
+
+def _scan_technicals(cohort: list[str]) -> _TechScan:
+    """Technical snapshot + score + podium for a cohort, or empty on any failure.
+
+    A single bulk OHLC pull (`fetch_many`) for the whole cohort — one extra
+    batched request per sector, not one per ticker. Best-effort: a throttled
+    or offline Yahoo loses the technical podium for tonight, not the
+    fundamentals one, which is already computed by the time this runs.
+    """
+    if not cohort:
+        return [], {}, ()
+    try:
+        history = fetch_many(cohort, period="1y")
+    except Exception as exc:
+        obs.warn("sector.technicals_failed", cohort=len(cohort),
+                 error_type=type(exc).__name__, error=str(exc)[:200])
+        return [], {}, ()
+    rows = []
+    for ticker, df in history.items():
+        snapshot = technical_snapshot(df)
+        if snapshot:
+            rows.append({"ticker": ticker, **snapshot})
+    scores = technical_scores(rows)
+    podium = tuple(technical_medals(rows))
+    return rows, scores, podium
+
+
 def scan_sector(
     sector: str, extra: tuple[str, ...] = (), *, as_of: str | None = None
 ) -> SectorScan:
@@ -189,8 +247,9 @@ def scan_sector(
     # comp_medals owns the "a 2-horse race has no podium" rule and returns its
     # winners in rank order; reading the keys keeps that rule in one place.
     podium = tuple(comp_medals(metrics))
+    tech_metrics, tech_scores, tech_podium = _scan_technicals(cohort)
     obs.event("sector.scanned", sector=sector, cohort=len(cohort),
-              scored=len(scores), podium=len(podium))
+              scored=len(scores), podium=len(podium), tech_podium=len(tech_podium))
     return SectorScan(
         sector=sector,
         as_of=as_of or date.today().isoformat(),
@@ -198,6 +257,9 @@ def scan_sector(
         metrics=tuple(metrics),
         scores=scores,
         podium=podium,
+        tech_metrics=tuple(tech_metrics),
+        tech_scores=tech_scores,
+        tech_podium=tech_podium,
     )
 
 

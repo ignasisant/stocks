@@ -1,0 +1,398 @@
+/*
+ * The shared primitives' one stylesheet (`Kpi.tsx`). A page never restyles
+ * these: a tile that looks different on one screen is the drift this file
+ * exists to end. Every colour is an `--ag-*` token.
+ *
+ * The look is Home's glance row — the page ground inside a card, a sentence-
+ * case label, a bold figure, a tinted pill — because it is the one a reader
+ * sees first and every other screen should read the same way.
+ */
+
+/* ----------------------------------------------------------------- the grid */
+
+/* Every track is floored at `min(…, 100%)`: a page beside a wide chat drawer
+   can be narrower than the nominal minimum, and a track that will not shrink
+   pushes the whole column off the side of the page. */
+.ag-kpis {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+}
+
+/*
+ * Rows of a known length wrap evenly instead of leaving an orphan. auto-fit
+ * alone breaks four tiles 3+1 at the widths the page takes with the chat
+ * drawer open, which reads as a fourth figure that belongs to nothing. So four
+ * go 4 → 2+2, three go all-or-one, six go 3+3 → 2+2+2, seven take narrower tracks;
+ * other lengths keep auto-fit. The count is the tiles actually drawn (`:has`), so one that
+ * renders nothing does not leave a hole, and the breakpoints are on the main
+ * column (`ag-main`), not the viewport: the drawer takes width without the
+ * window changing.
+ */
+.ag-kpis:has(> :nth-child(2):last-child) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.ag-kpis:has(> :nth-child(3):last-child) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.ag-kpis:has(> :nth-child(4):last-child) {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.ag-kpis:has(> :nth-child(6):last-child) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+/* Seven is the ticker's price row with a holding beside it: one line on a
+   laptop, narrower tracks rather than a seventh tile left on its own. */
+.ag-kpis:has(> :nth-child(7):last-child) {
+  grid-template-columns: repeat(auto-fit, minmax(min(118px, 100%), 1fr));
+}
+
+@container ag-main (max-width: 52rem) {
+  .ag-kpis:has(> :nth-child(4):last-child),
+  .ag-kpis:has(> :nth-child(6):last-child) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container ag-main (max-width: 38rem) {
+  .ag-kpis:has(> :nth-child(3):last-child) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ----------------------------------------------------------------- the tile */
+
+.ag-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md, 12px);
+  background: var(--ag-surface-page);
+}
+
+.ag-kpi-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ag-kpi-label {
+  font-size: var(--ag-fs-sm, 12px);
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--ag-text-secondary);
+}
+
+.ag-kpi-row {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Epilogue, as the DS tile (`tables.kpi_grid_html`) draws its figure. */
+.ag-kpi-value {
+  font-family: "Epilogue", var(--ag-font-body);
+  font-size: var(--ag-fs-xl, 18px);
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ag-kpi-note {
+  font-size: var(--ag-fs-xs, 11px);
+  line-height: 1.4;
+  color: var(--ag-text-muted);
+}
+
+/* -------------------------------------------------------------- the "?" mark */
+
+.ag-kpi-help {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill, 9999px);
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs, 10px);
+  line-height: 1;
+  cursor: help;
+}
+
+/* ----------------------------------------------------------------- the pill */
+
+.ag-chip {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: var(--ag-radius-pill, 9999px);
+  font-size: var(--ag-fs-xs, 11px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ag-chip-up {
+  background: var(--ag-profit-band);
+  color: var(--ag-up);
+}
+
+.ag-chip-down {
+  background: var(--ag-loss-band);
+  color: var(--ag-down);
+}
+
+.ag-chip-warn {
+  background: var(--ag-warn-band);
+  color: var(--ag-warn);
+}
+
+.ag-chip-flat {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-muted);
+}
+
+/* ------------------------------------------------------ ink for bare figures */
+
+.ag-tone-up {
+  color: var(--ag-up);
+}
+
+.ag-tone-down {
+  color: var(--ag-down);
+}
+
+.ag-tone-warn {
+  color: var(--ag-warn);
+}
+
+.ag-tone-flat {
+  color: var(--ag-text-muted);
+}
+
+/* ------------------------------------------------------- the choice chip */
+
+.ag-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.ag-toggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill, 9999px);
+  background: transparent;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-sm, 12px);
+  line-height: 1.3;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ag-toggle:hover:not(:disabled) {
+  border-color: var(--ag-border-focus);
+  color: var(--ag-text-primary);
+}
+
+.ag-toggle:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 1px;
+}
+
+.ag-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ag-toggle-on {
+  border-color: var(--ag-brand-accent);
+  background: var(--ag-cta-tint);
+  color: var(--ag-text-primary);
+}
+
+/* ---------------------------------------------------------------- the badge */
+
+.ag-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  padding: 1px 8px;
+  border-radius: var(--ag-radius-pill, 9999px);
+  font-size: var(--ag-fs-2xs, 10px);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.ag-badge-neutral {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-muted);
+}
+
+.ag-badge-brand {
+  background: var(--ag-purple-900);
+  color: var(--ag-purple-300);
+}
+
+/* ------------------------------------------------ a table on a narrow column */
+
+/*
+ * `Rows.tsx`: every table with figures ships twice, the column grid and its
+ * phone rendering, and the main column's width picks one — 40rem is the 640px
+ * the Streamlit tables switched at, measured on `ag-main` so an open chat
+ * drawer narrows a table the way a phone does.
+ */
+.ag-resp-narrow {
+  display: none;
+}
+
+@container ag-main (max-width: 40rem) {
+  .ag-resp-wide {
+    display: none;
+  }
+  .ag-resp-narrow {
+    display: block;
+  }
+}
+
+/* Revolut-style: a logo, the symbol over a dim line, the figure on the right. */
+.ag-dense-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--ag-rule-soft, var(--ag-border));
+  color: inherit;
+  text-decoration: none;
+}
+
+.ag-dense-row:last-child {
+  border-bottom: none;
+}
+
+/* Touch has no hover: the row washes the hover surface while pressed. */
+@media (hover: none) {
+  .ag-dense-row:active {
+    background: var(--ag-surface-hover);
+  }
+}
+
+/* The logo plate `.ag-tick-logo` draws, at row size. */
+.ag-dense-logo {
+  box-sizing: border-box;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 2px;
+  border-radius: var(--ag-radius-xs);
+  background: var(--ag-text-primary);
+  object-fit: contain;
+}
+
+.ag-dense-logo-none {
+  background: var(--ag-surface-sunken);
+}
+
+.ag-dense-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ag-dense-side {
+  flex: none;
+  max-width: 48%;
+  text-align: right;
+}
+
+.ag-dense-l1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--ag-fs-base);
+  font-weight: 600;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-dense-side .ag-dense-l1 {
+  justify-content: flex-end;
+}
+
+.ag-dense-sym {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-dense-l2 {
+  overflow: hidden;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-dense-wrap,
+.ag-dense-side .ag-dense-l2 {
+  overflow: visible;
+  white-space: normal;
+}
+
+/* One card per row, one "label — value" line per column. */
+.ag-stack-card {
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--ag-rule-soft, var(--ag-border));
+}
+
+.ag-stack-card:last-child {
+  border-bottom: none;
+}
+
+.ag-stack-title {
+  margin-bottom: 3px;
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ag-stack-kv {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--ag-fs-sm);
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-stack-k {
+  flex: 0 0 auto;
+  color: var(--ag-text-muted);
+}
+
+.ag-stack-v {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}

@@ -97,8 +97,8 @@ function Form({ options, stored }: { options: Options; stored: InvestorProfile }
     t(`profile.iv_${group}_${option}`);
 
   return (
-    <div className="pf-body">
-      <div className="pf-main">
+    <div className="pr-body">
+      <div className="pr-main">
         <Card title={t("profile.iv_how_title")} sub={t("profile.iv_how_sub")}>
           <Row label={t("profile.iv_risk")} help={t("profile.iv_risk_help")}>
             <Select
@@ -187,10 +187,10 @@ function Form({ options, stored }: { options: Options; stored: InvestorProfile }
         </Card>
       </div>
 
-      <aside className="pf-rail">
+      <aside className="pr-rail">
         <Card>
-          <div className="pf-sum">
-            <span className="pf-sum-t">{t("profile.iv_sum_title")}</span>
+          <div className="pr-sum">
+            <span className="pr-sum-t">{t("profile.iv_sum_title")}</span>
             <Summary
               label={t("profile.iv_risk")}
               value={t(`profile.iv_risk_${profile.risk}`)}
@@ -211,8 +211,8 @@ function Form({ options, stored }: { options: Options; stored: InvestorProfile }
                 t("profile.iv_sum_none"),
               )}
             />
-            <div className="pf-sum-rule" />
-            <span className="pf-sum-note">{t("profile.iv_privacy")}</span>
+            <div className="pr-sum-rule" />
+            <span className="pr-sum-note">{t("profile.iv_privacy")}</span>
           </div>
           {/* The summary above says what was chosen; this says what the model
               is told. Folded rather than always open — it is a prompt, and the
@@ -221,10 +221,10 @@ function Form({ options, stored }: { options: Options; stored: InvestorProfile }
               <details>, as the watchlist groups use: no popover in this shell
               to hang it on, and none needed. */}
           {profile.persona ? (
-            <details className="pf-persona">
+            <details className="pr-persona">
               <summary>{t("profile.iv_persona_open")}</summary>
-              <p className="pf-sum-note">{t("profile.iv_persona_help")}</p>
-              <code className="pf-persona-text">{profile.persona}</code>
+              <p className="pr-sum-note">{t("profile.iv_persona_help")}</p>
+              <code className="pr-persona-text">{profile.persona}</code>
             </details>
           ) : null}
         </Card>
@@ -239,7 +239,7 @@ function joined(keys: string[], labelOf: (key: string) => string, none: string) 
 
 function Summary({ label, value }: { label: string; value: string }) {
   return (
-    <div className="pf-sum-row">
+    <div className="pr-sum-row">
       <span>{label}</span>
       <b>{value}</b>
     </div>
@@ -272,7 +272,7 @@ function Notes({
   useEffect(() => setDraft(value), [value]);
   return (
     <textarea
-      className="pf-notes"
+      className="pr-notes"
       rows={4}
       value={draft}
       aria-label={label}

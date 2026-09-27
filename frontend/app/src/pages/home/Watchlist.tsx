@@ -19,7 +19,9 @@ import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT, useLang } from "../../shell/i18n";
 import { Link } from "../../shell/router";
-import { Card, DeltaChip, Note, TickerCell, chipFor } from "./ui";
+import { Chip, chipFor } from "../../ui/Kpi";
+import { DenseRows, Responsive } from "../../ui/Rows";
+import { Card, Note, TickerCell } from "./ui";
 import { decimal, percent } from "./format";
 import type { CloseRow, Closes, Watchlist, WatchlistEntry } from "./types";
 
@@ -149,37 +151,62 @@ function Group({
   return (
     <details className="hm-group" open={open}>
       <summary>{label}</summary>
-      <table className="hm-table">
-        <thead>
-          <tr>
-            <th>{t("home.col_ticker")}</th>
-            <th className="hm-num">{t("home.col_last_close")}</th>
-            <th className="hm-num">{t("home.col_day_pct")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tickers.map((ticker) => {
-            const row = prices?.get(ticker.toUpperCase()) ?? null;
-            const move = percent(row?.pct, lang, { signed: true });
-            return (
-              <tr key={ticker}>
-                {/* Names ellipsise rather than wrap, as the extremes do. */}
-                <td className="hm-tick-cell">
-                  <TickerCell ticker={ticker} />
-                </td>
-                <td className="hm-num">{decimal(row?.close, lang) ?? na}</td>
-                <td className="hm-num">
-                  {move === null ? (
-                    na
-                  ) : (
-                    <DeltaChip chip={chipFor(row?.pct, move, row?.active === false)} />
-                  )}
-                </td>
+      <Responsive
+        wide={
+          <table className="hm-table">
+            <thead>
+              <tr>
+                <th>{t("home.col_ticker")}</th>
+                <th className="hm-num">{t("home.col_last_close")}</th>
+                <th className="hm-num">{t("home.col_day_pct")}</th>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {tickers.map((ticker) => {
+                const row = prices?.get(ticker.toUpperCase()) ?? null;
+                const move = percent(row?.pct, lang, { signed: true });
+                return (
+                  <tr key={ticker}>
+                    {/* Names ellipsise rather than wrap, as the extremes do. */}
+                    <td className="hm-tick-cell">
+                      <TickerCell ticker={ticker} />
+                    </td>
+                    <td className="hm-num">{decimal(row?.close, lang) ?? na}</td>
+                    <td className="hm-num">
+                      {move === null ? (
+                        na
+                      ) : (
+                        <Chip chip={chipFor(row?.pct, move, row?.active === false)} />
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        }
+        narrow={
+          <DenseRows
+            rows={tickers}
+            rowKey={(ticker) => ticker}
+            spec={{
+              ticker: (ticker) => ticker,
+              names: true,
+              value: (ticker) =>
+                decimal(prices?.get(ticker.toUpperCase())?.close, lang) ?? na,
+              delta: (ticker) => {
+                const row = prices?.get(ticker.toUpperCase()) ?? null;
+                const move = percent(row?.pct, lang, { signed: true });
+                return move === null ? (
+                  na
+                ) : (
+                  <Chip chip={chipFor(row?.pct, move, row?.active === false)} />
+                );
+              },
+            }}
+          />
+        }
+      />
     </details>
   );
 }

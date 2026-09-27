@@ -150,7 +150,10 @@ def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
         return {}
     tickers = sorted({t.ticker for t in held})
     period = ledger_period(min(t.date for t in held))
-    return _analysis.load_closes(tickers, period=period)
+    closes = _analysis.load_closes(tickers, period=period)
+    return _analysis.plausible_closes(
+        _analysis.complete_download(closes, tickers), txs
+    )
 
 
 def _window(closes: dict[str, pd.Series], months: int) -> dict[str, pd.Series]:

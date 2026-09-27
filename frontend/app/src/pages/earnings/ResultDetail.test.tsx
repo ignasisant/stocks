@@ -121,7 +121,7 @@ describe("the breakdown", () => {
   it("colours the share count the other way round: fewer shares is good", () => {
     const html = draw(payload());
     // -1.0% YoY on shares is a buyback, so it wears the green class.
-    expect(html).toMatch(/earn-verdict earn-up">earnings\.chip_yoy/);
+    expect(html).toMatch(/ag-chip ag-chip-up">earnings\.chip_yoy/);
   });
 
   it("keeps the EPS record and says why the rest is missing when pending", () => {

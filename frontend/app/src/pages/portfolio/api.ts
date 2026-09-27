@@ -114,6 +114,11 @@ export type Performance = {
   /** Of the flow-adjusted path, over the whole span — not today's basket. */
   twr_volatility: number | null;
   twr_max_drawdown: number | null;
+  /** When the worst fall ran, and what the book was worth at its top — the
+   *  TWR weighs every day alike, so a fall on a small early book needs saying. */
+  twr_drawdown_peak: string | null;
+  twr_drawdown_trough: string | null;
+  twr_drawdown_peak_value: number | null;
   /** Days left out of every figure above, because their flow could not price. */
   dropped_days: string[];
   irr: number | null;
@@ -135,7 +140,7 @@ export type Risk = {
   /** Keyed sector | country | currency | broker. */
   allocation: Record<string, AllocationSlice[]>;
   correlation: Record<string, Record<string, number>>;
-  /** The three cumulative lines over this window; null when nothing to draw. */
+  /** The flow-matched return lines over this window; null when nothing to draw. */
   curves: RiskCurves | null;
   /** Held names with no price series, carried at cost inside `portfolio`. */
   missing: string[];
@@ -144,18 +149,23 @@ export type Risk = {
 };
 
 /**
- * Cumulative return over the risk window, three ways, on one date axis.
+ * Return on the money put in over the risk window, the book against each
+ * alternative, on one date axis.
  *
- * Fractions, not percents, like everything else this API sends. Every series
- * is rebased to the window's first day — three lines from three different
- * zeros compare nothing.
+ * Every alternative is fed the book's own flows on their own dates — a buy
+ * puts the same money in, a sale takes it out — so an index is credited with
+ * the euros the book had at work, when it had them. Each line is value over
+ * `invested`, minus one. Fractions, not percents.
  */
 type RiskCurves = {
   dates: string[];
-  /** What the account earned: flow-adjusted, so deposits are not performance. */
+  /** Net money in each day (opening value + buys − sale proceeds). */
+  invested: (number | null)[];
+  /** What the account's own money became. */
   portfolio: (number | null)[];
-  /** What today's holdings would have earned over the same window. */
+  /** The same flows put into today's holdings at today's weights. */
   basket: (number | null)[];
+  /** The same flows put into each benchmark. */
   benchmarks: Record<string, (number | null)[]>;
 };
 
@@ -354,3 +364,84 @@ export type MarketStatus = {
   us_extended: string | null;
   note: string | null;
 };
+
+/** One month's close, from `/portfolio/monthly`. Returns are since the first trade. */
+export type MonthlyPoint = {
+  month: string;
+  date: string;
+  injected: number | null;
+  value: number | null;
+  pnl: number | null;
+  /** Gain over the time-averaged capital: each deposit weighed by how long it was in. */
+  money_weighted: number | null;
+  twr: number | null;
+};
+
+export type Monthly = {
+  base: string;
+  months: MonthlyPoint[];
+  missing: string[];
+};
+
+/** One block of the book as the projection moved it. */
+type ProjectionSleeve = {
+  key: "stocks" | "crypto";
+  value: number;
+  weight: number;
+  /** Median compound annual return, as used. */
+  growth: number;
+  volatility: number;
+  volatility_measured: boolean;
+  /** Share of each monthly contribution. */
+  share: number;
+};
+
+/**
+ * A percentile fan for the book's value, month by month, from
+ * `/portfolio/projection`. Not a forecast: every assumption it was drawn
+ * under comes back with it, so the page can say what it drew.
+ */
+export type Projection = {
+  base: string;
+  years: number;
+  start_value: number | null;
+  sleeves: ProjectionSleeve[];
+  /** Weekly stocks–crypto correlation used; null when unmeasured. */
+  correlation: number | null;
+  crypto_weight: number;
+  monthly: number;
+  /** Last 12 months' average net money put in — the hint beside `monthly`. */
+  monthly_suggested: number;
+  /** True when the future is in today's money. */
+  real: boolean;
+  inflation: number;
+  target: number | null;
+  /** Share of paths ending at or above `target`. */
+  target_probability: number | null;
+  dates: string[];
+  p10: number[];
+  p25: number[];
+  p50: number[];
+  p75: number[];
+  p90: number[];
+  /** Today's value plus contributions so far. */
+  contributed: number[];
+  /** Past month ends since the first trade, oldest first; today excluded. */
+  history_dates: string[];
+  history_value: (number | null)[];
+  /** Net money put in by each past month end. */
+  history_invested: (number | null)[];
+};
+
+/** Horizons the projection tab offers, in years. */
+export const PROJECTION_YEARS = ["1", "3", "5", "10"] as const;
+/**
+ * Median compound growth for the stock sleeve, in percent. Three are named
+ * after the index whose long-run record they approximate — nominal, total
+ * return, rounded — so the reader picks a reference rather than a number.
+ */
+export const STOCK_PRESETS = { low: 4, mid: 6, world: 8, sp500: 10, ndx: 13 } as const;
+/** Median compound growth for the crypto sleeve, in percent. */
+export const CRYPTO_GROWTH = ["-20", "0", "10", "25"] as const;
+/** Share of each contribution that goes to crypto: as today, or a fixed one. */
+export const CRYPTO_SHARES = ["today", "0", "10", "25"] as const;

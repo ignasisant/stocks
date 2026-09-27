@@ -14,6 +14,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { Link } from "../../shell/router";
 import { useTickerProfile } from "../../shell/tickers";
+import { Kpi, KpiGrid, bandTone, chipFor } from "../../ui/Kpi";
 
 /**
  * Is this a phone?
@@ -149,49 +150,12 @@ export function Tag({ tone, children }: { tone?: string | null; children: ReactN
   return <span className={`tk-tag tk-is-${tone ?? "gray"}`}>{children}</span>;
 }
 
-export function Kpis({ children }: { children: ReactNode }) {
-  return <div className="tk-kpis">{children}</div>;
-}
-
 /**
- * One KPI tile: label, figure, and whatever the domain says about it.
- *
- * `help` rides a native `title`, the same hover hint `st.metric(help=…)` gives
- * the Streamlit page — there is no popover in this shell to hang it on.
+ * A row of the page's figures — the app-wide tile (`src/ui/Kpi.tsx`), so the
+ * ticker reads like every other screen.
  */
-export function Kpi({
-  label,
-  value,
-  help,
-  meta,
-}: {
-  label: string;
-  value: string;
-  help?: string;
-  meta?: ReactNode;
-}) {
-  return (
-    <div className="tk-kpi">
-      <span className="tk-kpi-label" title={help}>
-        {label}
-        {help ? <span className="tk-q">?</span> : null}
-      </span>
-      <span className="tk-kpi-value">{value}</span>
-      {meta ? <span className="tk-kpi-meta">{meta}</span> : null}
-    </div>
-  );
-}
-
-/**
- * A row of metrics. `wide` is the seven-cell row a held name gets on desktop:
- * narrower minimum cells and a step smaller figure, so price, RSI, SMA20 and
- * the four holding figures share one line on a laptop instead of wrapping to
- * a second row that reads as a separate block.
- */
-export function Metrics({ children, wide }: { children: ReactNode; wide?: boolean }) {
-  return (
-    <div className={wide ? "tk-metrics tk-metrics-wide" : "tk-metrics"}>{children}</div>
-  );
+export function Metrics({ children }: { children: ReactNode }) {
+  return <KpiGrid>{children}</KpiGrid>;
 }
 
 export function Metric({
@@ -208,30 +172,25 @@ export function Metric({
   help?: string;
   /** A day move as a FRACTION, or null when there is none to quote. */
   delta?: number | null;
-  /** Off-session: the figure belongs to a session that has closed. */
+  /** Off-session: the move belongs to a session that has closed — grey pill. */
   dim?: boolean;
   note?: ReactNode;
+  /** The domain's band (green / orange / red / gray). */
   noteTone?: string | null;
 }) {
+  const move =
+    delta === null || delta === undefined
+      ? null
+      : `${delta >= 0 ? "+" : ""}${(delta * 100).toFixed(2)}%`;
   return (
-    <div className={dim ? "tk-metric tk-dim" : "tk-metric"}>
-      <span className="tk-metric-label" title={help}>
-        {label}
-      </span>
-      <span className="tk-metric-value">{value}</span>
-      {delta !== null && delta !== undefined ? (
-        <span className={`tk-pill tk-pill-${delta >= 0 ? "up" : "down"}`}>
-          {`${delta >= 0 ? "+" : ""}${(delta * 100).toFixed(2)}%`}
-        </span>
-      ) : null}
-      {note ? (
-        <span
-          className={noteTone ? `tk-metric-note tk-is-${noteTone}` : "tk-metric-note"}
-        >
-          {note}
-        </span>
-      ) : null}
-    </div>
+    <Kpi
+      label={label}
+      value={value}
+      help={help}
+      chip={chipFor(delta, move, dim)}
+      note={note}
+      noteTone={noteTone ? bandTone(noteTone) : null}
+    />
   );
 }
 

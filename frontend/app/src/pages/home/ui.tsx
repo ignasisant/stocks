@@ -1,6 +1,7 @@
 /**
- * The handful of shapes this page repeats: a bordered card, a KPI tile, a
- * tinted delta pill and a ticker cell.
+ * The handful of shapes this page repeats: a bordered card, a note and a
+ * ticker cell. The KPI tile and its delta pill are the shared ones in
+ * `src/ui/Kpi.tsx`.
  *
  * They mirror `web/tables.py` — same tile, same pill, same colour rule — so the
  * rebuilt page and the Streamlit one beside it read as one app. Every colour is
@@ -80,68 +81,6 @@ export function CardQuery<T>({
     <Loaded query={query} skeleton={skeleton}>
       {(data) => children(data)}
     </Loaded>
-  );
-}
-
-/** A signed percentage as a pill, coloured by sign — `kpi_delta_chip`'s twin. */
-export type Chip = { text: string; tone: "up" | "down" | "flat" };
-
-export function chipFor(
-  pct: number | null | undefined,
-  text: string | null,
-  /**
-   * Grey the pill instead of colouring it by sign — `kpi_delta_chip(off=True)`.
-   * For a figure that is real but not live: outside a session the day change is
-   * the last completed one, and colouring it green implies something is moving
-   * right now.
-   */
-  off = false,
-): Chip | null {
-  if (text === null || pct === null || pct === undefined) return null;
-  return { text, tone: off ? "flat" : pct >= 0 ? "up" : "down" };
-}
-
-export function DeltaChip({ chip }: { chip: Chip | null }) {
-  if (!chip) return null;
-  return <span className={`hm-chip hm-chip-${chip.tone}`}>{chip.text}</span>;
-}
-
-export function Tiles({ children }: { children: ReactNode }) {
-  return <div className="hm-kpis">{children}</div>;
-}
-
-/**
- * One KPI tile: label, figure, optional pill.
- *
- * `help` rides a native `title`, the same hover hint the Python grid uses —
- * there is no popover in this shell to hang it on.
- */
-export function Tile({
-  label,
-  value,
-  chip,
-  help,
-}: {
-  label: string;
-  value: string;
-  chip?: Chip | null;
-  help?: string;
-}) {
-  return (
-    <div className="hm-kpi">
-      <div className="hm-kpi-head">
-        <span className="hm-kpi-label">{label}</span>
-        {help ? (
-          <span className="hm-kpi-help" title={help} aria-label={help}>
-            ?
-          </span>
-        ) : null}
-      </div>
-      <div className="hm-kpi-row">
-        <span className="hm-kpi-value">{value}</span>
-        <DeltaChip chip={chip ?? null} />
-      </div>
-    </div>
   );
 }
 

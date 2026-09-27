@@ -22,7 +22,17 @@ import type {
   Summary,
 } from "./api";
 import { brokerName, moneyIn, percent, shares as formatShares } from "./format";
-import { Caption, Card, Empty, Figure, Kpis, Signed, Table, TickerCell } from "./ui";
+import {
+  Caption,
+  Card,
+  Chip,
+  Empty,
+  Figure,
+  Kpis,
+  Signed,
+  Table,
+  TickerCell,
+} from "./ui";
 import type { Column } from "./ui";
 import History from "./History";
 
@@ -129,16 +139,7 @@ function Positions() {
       label: t("portfolio.col_position"),
       left: true,
       sort: (row) => row.ticker,
-      // On a phone the broker column is dropped and its custodians ride
-      // under the symbol instead — names only, the split stays on desktop.
-      cell: (row) => (
-        <span className="pf-stack">
-          <TickerCell ticker={row.ticker} />
-          <span className="pf-sub pf-narrow-only">
-            {custodyText(row.custody, t, lang, false)}
-          </span>
-        </span>
-      ),
+      cell: (row) => <TickerCell ticker={row.ticker} />,
     },
     {
       key: "shares",
@@ -159,7 +160,6 @@ function Positions() {
       key: "broker",
       label: t("portfolio.col_broker"),
       left: true,
-      className: "pf-wide-only",
       sort: (row) => custodyText(row.custody, t, lang),
       cell: (row) => (
         <span className="pf-muted">{custodyText(row.custody, t, lang)}</span>
@@ -195,9 +195,10 @@ function Positions() {
         <span className={row.market_active ? "pf-pair" : "pf-pair pf-dim"}>
           <Signed value={row.day} text={money(row.day, { signed: true })} />
           {row.day_pct === null ? null : (
-            <span className={`pf-chip pf-chip-${row.day_pct >= 0 ? "up" : "down"}`}>
-              {percent(lang, row.day_pct, { signed: true })}
-            </span>
+            <Chip
+              value={row.day_pct}
+              text={percent(lang, row.day_pct, { signed: true })}
+            />
           )}
         </span>
       ),
@@ -212,9 +213,10 @@ function Positions() {
         <span className="pf-pair">
           <Signed value={row.pnl} text={money(row.pnl, { signed: true })} />
           {row.pnl_pct === null ? null : (
-            <span className={`pf-chip pf-chip-${row.pnl_pct >= 0 ? "up" : "down"}`}>
-              {percent(lang, row.pnl_pct, { signed: true })}
-            </span>
+            <Chip
+              value={row.pnl_pct}
+              text={percent(lang, row.pnl_pct, { signed: true })}
+            />
           )}
         </span>
       ),
@@ -339,6 +341,31 @@ function Positions() {
               rows={positions.positions}
               rowKey={(row) => row.ticker}
               initial={{ key: "weight", desc: true }}
+              // The phone's row, as `portfolio.py` lays it out: value and
+              // today's move on the right, the total result as a pill by the
+              // symbol, weight and custodians on the dim line.
+              dense={{
+                ticker: (row) => row.ticker,
+                badge: (row) => (
+                  <Chip
+                    value={row.pnl_pct}
+                    text={percent(lang, row.pnl_pct, { signed: true })}
+                  />
+                ),
+                value: (row) => <Figure value={money(row.value)} />,
+                delta: (row) => (
+                  <span className={row.market_active ? undefined : "pf-dim"}>
+                    <Signed
+                      value={row.day_pct}
+                      text={percent(lang, row.day_pct, { signed: true })}
+                    />
+                  </span>
+                ),
+                sub: (row) => [
+                  percent(lang, row.weight),
+                  custodyText(row.custody, t, lang, false),
+                ],
+              }}
             />
             <Caption>{t("portfolio.positions_caption")}</Caption>
           </Card>

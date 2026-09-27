@@ -169,6 +169,13 @@ STEPS: tuple[Step, ...] = (
         reset_keys=("portfolio_tab",),
     ),
     Step(
+        id="projection",
+        icon="trending_up",
+        page="app_pages/portfolio.py",
+        query={"tab": "projection"},
+        reset_keys=("portfolio_tab",),
+    ),
+    Step(
         id="tax",
         icon="receipt_long",
         page="app_pages/portfolio.py",
@@ -350,6 +357,14 @@ RELEASES: tuple[Release, ...] = (
             # there is no one place to send them, they are already standing
             # in it. The card says where the previous version went.
             News(slug="newapp", icon="rocket_launch"),
+        ),
+    ),
+    Release(
+        version="2026.09.4",
+        date="2026-09",
+        items=(
+            News(slug="sector_tech", icon="donut_small", step="sector"),
+            News(slug="projection", icon="trending_up", step="projection"),
         ),
     ),
 )

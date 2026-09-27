@@ -78,9 +78,9 @@ function NumberField({
   };
 
   return (
-    <span className="pf-chips">
+    <span className="pr-chips">
       <input
-        className="pf-input"
+        className="pr-input"
         type="number"
         inputMode="decimal"
         aria-label={label}
@@ -95,7 +95,7 @@ function NumberField({
           if (event.key === "Enter") event.currentTarget.blur();
         }}
       />
-      {suffix && <span className="pf-hint">{suffix}</span>}
+      {suffix && <span className="pr-hint">{suffix}</span>}
     </span>
   );
 }
@@ -167,8 +167,8 @@ export function Preferences({
   const fail = (field: string) => (failure?.field === field ? failure.message : null);
 
   return (
-    <div className="pf-body">
-      <div className="pf-main">
+    <div className="pr-body">
+      <div className="pr-main">
         <Card title={t("profile.ui_section")} sub={t("profile.ui_section_sub")}>
           <Row label={t("profile.language")} help={t("profile.language_caption")}>
             <Select
@@ -199,7 +199,7 @@ export function Preferences({
               onPick={(code) => code !== prefs.currency && save("currency", code)}
             />
             {rest.length > 0 && (
-              <details className="pf-more">
+              <details className="pr-more">
                 <summary>{t("profile.currency_more", { n: rest.length })}</summary>
                 <div>
                   <Chips
@@ -215,7 +215,7 @@ export function Preferences({
             {/* What is behind the disclosure, without opening it — the
                 Streamlit row prints the same line under its popover. Codes
                 only, so there is nothing in it to translate. */}
-            {rest.length > 0 && <span className="pf-morehint">{rest.join(" · ")}</span>}
+            {rest.length > 0 && <span className="pr-morehint">{rest.join(" · ")}</span>}
             <Failure message={fail("currency")} />
           </Row>
         </Card>
@@ -238,20 +238,20 @@ export function Preferences({
             />
             <Failure message={fail("tax_residence")} />
             {active ? (
-              <div className="pf-rules">
-                <div className="pf-rule">
-                  <span className="pf-rule-k">{t("profile.tax_rule_cost")}</span>
-                  <span className="pf-rule-v">
+              <div className="pr-rules">
+                <div className="pr-rule">
+                  <span className="pr-rule-k">{t("profile.tax_rule_cost")}</span>
+                  <span className="pr-rule-v">
                     {active.currency} · {t("profile.tax_rule_fx")}
                   </span>
                 </div>
-                <div className="pf-rule">
-                  <span className="pf-rule-k">{t("profile.tax_rule_matching")}</span>
-                  <span className="pf-rule-v">{matchLabel}</span>
+                <div className="pr-rule">
+                  <span className="pr-rule-k">{t("profile.tax_rule_matching")}</span>
+                  <span className="pr-rule-v">{matchLabel}</span>
                 </div>
-                <div className="pf-rule">
-                  <span className="pf-rule-k">{t("profile.tax_rule_year")}</span>
-                  <span className="pf-rule-v">{yearRule}</span>
+                <div className="pr-rule">
+                  <span className="pr-rule-k">{t("profile.tax_rule_year")}</span>
+                  <span className="pr-rule-v">{yearRule}</span>
                 </div>
               </div>
             ) : null}
@@ -378,11 +378,11 @@ export function Preferences({
                 to hand it straight back to the same browser, and lose the
                 filename the server puts in Content-Disposition. */}
             {ledger.state === "loaded" && ledger.data.total > 0 ? (
-              <a className="pf-download" href="/api/v1/portfolio/transactions.csv">
+              <a className="pr-download" href="/api/v1/portfolio/transactions.csv">
                 {t("profile.export_button")}
               </a>
             ) : (
-              <span className="pf-muted">{t("profile.export_none")}</span>
+              <span className="pr-muted">{t("profile.export_none")}</span>
             )}
           </Row>
           {/* The other half of the promise the privacy policy makes: the data
@@ -394,22 +394,22 @@ export function Preferences({
         </Card>
       </div>
 
-      <aside className="pf-rail">
+      <aside className="pr-rail">
         <TourCard />
         <Card>
-          <div className="pf-sum">
-            <span className="pf-sum-t">{t("profile.summary_title")}</span>
-            <div className="pf-sum-row">
+          <div className="pr-sum">
+            <span className="pr-sum-t">{t("profile.summary_title")}</span>
+            <div className="pr-sum-row">
               <span>{t("profile.language")}</span>
               {/* Short forms on purpose: a 320px rail is a summary, not a
                   second copy of the controls. */}
               <b>{(langLabel(prefs.language ?? AUTO).split("(")[0] ?? "").trim()}</b>
             </div>
-            <div className="pf-sum-row">
+            <div className="pr-sum-row">
               <span>{t("profile.display_currency")}</span>
               <b>{prefs.currency}</b>
             </div>
-            <div className="pf-sum-row">
+            <div className="pr-sum-row">
               <span>{t("profile.tax_section")}</span>
               <b>
                 {/* Behind its flag, as `tax_ui.label` draws it there: eleven
@@ -424,7 +424,7 @@ export function Preferences({
                   : t("common.loading")}
               </b>
             </div>
-            <div className="pf-sum-row">
+            <div className="pr-sum-row">
               <span>{t("profile.summary_last_import")}</span>
               <b>
                 {lastImport.state === "loaded"
@@ -433,8 +433,8 @@ export function Preferences({
                   : t("common.loading")}
               </b>
             </div>
-            <div className="pf-sum-rule" />
-            <span className="pf-sum-note">{t("profile.summary_note")}</span>
+            <div className="pr-sum-rule" />
+            <span className="pr-sum-note">{t("profile.summary_note")}</span>
           </div>
         </Card>
       </aside>

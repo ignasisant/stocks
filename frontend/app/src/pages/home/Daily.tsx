@@ -39,6 +39,7 @@ import { openAssistant } from "../../shell/assistant";
 import { Card, TickerCell } from "./ui";
 import { dayKey, monthDay, type Translate } from "./format";
 import type { DailyCard } from "./types";
+import { Badge } from "../../ui/Badge";
 
 /** How often a card that is still being written asks whether it is done. */
 const POLL_MS = 1500;
@@ -221,7 +222,7 @@ export function Daily() {
       ) : (
         <>
           <div className="hm-daily-head">
-            <span className="hm-daily-badge">{t("home.daily_badge")}</span>
+            <Badge tone="brand">{t("home.daily_badge")}</Badge>
             <span className="hm-daily-when">{stampOf(card, t)}</span>
           </div>
           <p className="hm-daily-headline">{card.headline}</p>
@@ -289,7 +290,7 @@ function Waiting({ title }: { title: string }) {
   return (
     <>
       <div className="hm-daily-head">
-        <span className="hm-daily-badge">{t("home.daily_badge")}</span>
+        <Badge tone="brand">{t("home.daily_badge")}</Badge>
       </div>
       <p className="hm-daily-wait" role="status">
         <b>{t(title)}</b> {t("home.daily_wait_body")}

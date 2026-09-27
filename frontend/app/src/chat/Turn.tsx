@@ -21,6 +21,7 @@ import { capMessage, clock, host, providerLabel, skillName, took } from "./forma
 import { GuideCard, useVisit } from "./GuideCard";
 import { unshortcode, type GuideState, type GuideStep } from "./guide";
 import type { SkillInfo, Step, Turn as Stored } from "./types";
+import { Badge } from "../ui/Badge";
 
 /** The line that ticks while the answer is being built, naming what it is doing. */
 function Working({ phase }: { phase?: string }) {
@@ -234,10 +235,10 @@ export function Turn({
       {/* A transcript is the reader's own words at one remove: Whisper
           mishears a ticker now and then, and a question that reads oddly
           should say why before its author blames the answer. */}
-      {turn.spoken && <span className="ag-chat-badge">{t("chat.voice_badge")}</span>}
+      {turn.spoken && <Badge>{t("chat.voice_badge")}</Badge>}
       {/* An answer that breaks off mid-sentence reads as the model losing the
           thread. Said plainly, it reads as what it was. */}
-      {turn.stopped && <span className="ag-chat-badge">{t("chat.stopped_badge")}</span>}
+      {turn.stopped && <Badge>{t("chat.stopped_badge")}</Badge>}
       <div className="ag-chat-bubble">
         {mine ? (
           turn.content ? (

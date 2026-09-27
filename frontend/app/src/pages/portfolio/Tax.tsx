@@ -20,11 +20,18 @@ import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import type { TaxFlag, TaxPeriod, TaxReport, TaxSale } from "./api";
-import { flagOf, moneyIn, percent, shares as formatShares } from "./format";
+import {
+  compactMoneyIn,
+  flagOf,
+  moneyIn,
+  percent,
+  shares as formatShares,
+} from "./format";
 import { PeriodBars } from "./charts";
 import {
   Caption,
   Card,
+  Chip,
   Dropdown,
   Empty,
   Figure,
@@ -112,6 +119,7 @@ function Report({ report }: { report: TaxReport }) {
   const lang = useLang();
   const words = useTaxWords(report.jurisdiction);
   const money = moneyIn(lang, report.currency);
+  const axisMoney = compactMoneyIn(lang, report.currency);
   // How the jurisdiction writes a tax year — "2025/26" in the UK and
   // Australia — while `period` stays the key the selector and the sales split
   // run on.
@@ -184,6 +192,7 @@ function Report({ report }: { report: TaxReport }) {
               net: words.say("chart_net"),
             }}
             money={(value) => money(value) ?? ""}
+            axisMoney={(value) => axisMoney(value) ?? ""}
           />
           <Caption>{words.say("realized_by_year_caption")}</Caption>
           {grain === "month" ? (
@@ -362,9 +371,7 @@ function SalesTable({ report, sales }: { report: TaxReport; sales: TaxSale[] }) 
               text={money(row.gain, { digits: 2, signed: true })}
             />
             {pct === null ? null : (
-              <span className={`pf-chip pf-chip-${pct >= 0 ? "up" : "down"}`}>
-                {percent(lang, pct, { signed: true })}
-              </span>
+              <Chip value={pct} text={percent(lang, pct, { signed: true })} />
             )}
           </span>
         );
@@ -378,6 +385,29 @@ function SalesTable({ report, sales }: { report: TaxReport; sales: TaxSale[] }) 
       rows={sales}
       rowKey={(row, index) => `${row.ticker}-${row.sell_date}-${index}`}
       initial={{ key: "sell", desc: true }}
+      dense={{
+        ticker: (row) => row.ticker,
+        badge: (row) =>
+          row.cost ? (
+            <Chip
+              value={row.gain / row.cost}
+              text={percent(lang, row.gain / row.cost, { signed: true })}
+            />
+          ) : null,
+        value: (row) => <Figure value={money(row.proceeds, { digits: 2 })} />,
+        delta: (row) => (
+          <Signed
+            value={row.gain}
+            text={money(row.gain, { digits: 2, signed: true })}
+          />
+        ),
+        sub: (row) => [
+          `${t("portfolio.col_bought")} ${row.buy_date}`,
+          `${t("portfolio.col_sold")} ${row.sell_date}`,
+          `${t("portfolio.col_shares")} ${formatShares(lang, row.quantity, true) ?? ""}`,
+        ],
+        wrap: true,
+      }}
     />
   );
 }

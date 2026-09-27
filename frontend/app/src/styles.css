@@ -38,9 +38,11 @@ body {
   --rail: 3.5rem;
 }
 
+/* No max-width, ever (CLAUDE.md): on a desktop the page runs to the right
+   edge. Only an open chat drawer takes room, by padding the shell by its live
+   width (chat/chat.css) — the page never reserves it up front. */
 .ag-main {
   padding: 1.5rem;
-  max-width: 78rem;
   min-width: 0;
   /* A size container, so a page can lay itself out by the room it actually
      has. A viewport media query cannot see the chat drawer: at 1440px with the
@@ -384,6 +386,46 @@ body {
   font-size: var(--ag-fs-xs);
 }
 
+/* A fixed box whether or not a logo resolved, so the symbols stay in one
+   column down the panel. Same white tile as the table cells' mark. */
+.ag-search-logo {
+  box-sizing: border-box;
+  flex: none;
+  align-self: center;
+  width: 20px;
+  height: 20px;
+  padding: 1px;
+  border-radius: var(--ag-radius-xs);
+  object-fit: contain;
+}
+
+img.ag-search-logo {
+  background: var(--ag-text-primary);
+}
+
+.ag-search-quote {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  margin-left: auto;
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The venue already took the push to the right edge; the quote follows it. */
+.ag-search-venue + .ag-search-quote {
+  margin-left: 0;
+}
+
+.ag-search-up {
+  color: var(--ag-up);
+}
+
+.ag-search-down {
+  color: var(--ag-down);
+}
+
 .ag-search-analyze {
   width: 100%;
   margin-top: 6px;
@@ -602,23 +644,6 @@ body {
   margin-bottom: 10px;
 }
 
-.ag-fb-kind {
-  padding: 4px 12px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  background: none;
-  color: var(--ag-text-secondary);
-  font: inherit;
-  font-size: var(--ag-fs-sm);
-  cursor: pointer;
-}
-
-.ag-fb-on {
-  border-color: var(--ag-brand-accent);
-  background: var(--ag-cta-tint);
-  color: var(--ag-text-primary);
-}
-
 .ag-fb-text {
   width: 100%;
   padding: 10px;
@@ -668,4 +693,11 @@ body {
 .ag-fb-quiet {
   background: none;
   color: var(--ag-text-muted);
+}
+
+/* The screenshot toggle, while armed. */
+.ag-fb-quiet.ag-fb-on {
+  border-color: var(--ag-brand-accent);
+  background: var(--ag-cta-tint);
+  color: var(--ag-text-primary);
 }

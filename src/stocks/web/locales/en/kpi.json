@@ -58,5 +58,9 @@
   "kpi.col_level": "Level",
   "kpi.col_loaded": "Loaded from",
   "kpi.col_verify": "Verify against",
-  "kpi.col_note": "Note"
+  "kpi.col_note": "Note",
+  "kpi.roc_63.label": "3-month return",
+  "kpi.roc_63.desc": "Price now vs. roughly 3 months (63 trading sessions) ago.",
+  "kpi.pct_from_high.label": "Off 52-week high",
+  "kpi.pct_from_high.desc": "Price now vs. the highest close in the trailing year; 0% sits at the high."
 }

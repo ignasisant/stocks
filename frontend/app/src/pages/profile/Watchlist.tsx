@@ -23,6 +23,7 @@ import { describe } from "./errors";
 import { Card, Failure, Prose } from "./ui";
 import { WatchlistAdd } from "./WatchlistAdd";
 import { TickerCell } from "../../shell/tickers";
+import { ToggleChip } from "../../ui/Toggle";
 
 type Entry = {
   ticker: string;
@@ -171,10 +172,10 @@ function EntryRow({
   );
 
   return (
-    <div className="pf-wrow">
+    <div className="pr-wrow">
       <button
         type="button"
-        className={entry.favorite ? "pf-star pf-star-on" : "pf-star"}
+        className={entry.favorite ? "pr-star pr-star-on" : "pr-star"}
         aria-label={t("watchlist.col_favorite")}
         aria-pressed={entry.favorite}
         disabled={busy}
@@ -183,11 +184,11 @@ function EntryRow({
         {entry.favorite ? "★" : "☆"}
       </button>
       {/* Every ticker on screen opens its own page. */}
-      <TickerCell ticker={entry.ticker} className="pf-wsym">
+      <TickerCell ticker={entry.ticker} className="pr-wsym">
         {entry.ticker}
       </TickerCell>
       <input
-        className="pf-input pf-input-sm pf-wname"
+        className="pr-input pr-input-sm pr-wname"
         aria-label={t("watchlist.col_name")}
         value={name}
         disabled={busy}
@@ -202,7 +203,7 @@ function EntryRow({
           input swallows a comma decimal ("12,5") into an empty value, and
           half the readers here write decimals that way. */}
       <input
-        className="pf-input pf-input-sm pf-wnum"
+        className="pr-input pr-input-sm pr-wnum"
         aria-label={t("watchlist.col_shares")}
         placeholder={t("watchlist.col_shares")}
         inputMode="decimal"
@@ -215,7 +216,7 @@ function EntryRow({
         }}
       />
       <input
-        className="pf-input pf-input-sm pf-wnum"
+        className="pr-input pr-input-sm pr-wnum"
         aria-label={t("watchlist.col_cost")}
         placeholder={t("watchlist.col_cost")}
         title={t("watchlist.col_cost_help")}
@@ -230,39 +231,37 @@ function EntryRow({
       />
       <button
         type="button"
-        className="pf-btn"
+        className="pr-btn"
         disabled={busy}
         onClick={() => onRemove(entry.ticker)}
       >
         {t("watchlist.act_remove")}
       </button>
-      <details className="pf-wtags">
+      <details className="pr-wtags">
         <summary>
           {t("watchlist.col_tags")}
           {entry.tags.length ? ` · ${entry.tags.join(", ")}` : ""}
         </summary>
         <div>
-          <span className="pf-hint">{t("watchlist.col_tags_help")}</span>
-          <div className="pf-chips">
+          <span className="pr-hint">{t("watchlist.col_tags_help")}</span>
+          <div className="pr-chips">
             {known.map((tag) => {
               const on = entry.tags.some(
                 (held) => held.toLowerCase() === tag.toLowerCase(),
               );
               return (
-                <button
+                <ToggleChip
                   key={tag}
-                  type="button"
-                  className={on ? "pf-chip pf-chip-on" : "pf-chip"}
-                  aria-pressed={on}
+                  on={on}
                   disabled={busy}
                   onClick={() => toggleTag(tag)}
                 >
                   {tag}
-                </button>
+                </ToggleChip>
               );
             })}
             <input
-              className="pf-input pf-input-sm"
+              className="pr-input pr-input-sm"
               aria-label={t("watchlist.col_tags")}
               placeholder={t("watchlist.add_groups_ph")}
               value={newGroup}
@@ -298,16 +297,16 @@ function GroupHead({
   const t = useT();
   const [name, setName] = useState(section.tag ?? "");
   return (
-    <div className="pf-ghead">
-      <span className="pf-gt">{section.label}</span>
-      <span className="pf-gc">{section.rows.length}</span>
+    <div className="pr-ghead">
+      <span className="pr-gt">{section.label}</span>
+      <span className="pr-gc">{section.rows.length}</span>
       {section.tag !== null && (
-        <details className="pf-more">
+        <details className="pr-more">
           <summary>{t("watchlist.group_manage")}</summary>
-          <div className="pf-chips">
-            <span className="pf-hint">{t("watchlist.group_manage_help")}</span>
+          <div className="pr-chips">
+            <span className="pr-hint">{t("watchlist.group_manage_help")}</span>
             <input
-              className="pf-input pf-input-sm"
+              className="pr-input pr-input-sm"
               aria-label={t("watchlist.group_rename")}
               value={name}
               disabled={busy}
@@ -315,7 +314,7 @@ function GroupHead({
             />
             <button
               type="button"
-              className="pf-btn"
+              className="pr-btn"
               disabled={busy || !name.trim() || name.trim() === section.tag}
               onClick={() => onRename(section.tag!, name.trim())}
             >
@@ -323,7 +322,7 @@ function GroupHead({
             </button>
             <button
               type="button"
-              className="pf-btn"
+              className="pr-btn"
               disabled={busy}
               title={t("watchlist.group_delete_help")}
               onClick={() => onDissolve(section.tag!)}
@@ -394,16 +393,16 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
 
       {entries.length === 0 ? (
         <Card title={t("profile.empty_watchlist_title")}>
-          <div className="pf-cardbody">
-            <p className="pf-hint">{t("profile.empty_watchlist_body")}</p>
+          <div className="pr-cardbody">
+            <p className="pr-hint">{t("profile.empty_watchlist_body")}</p>
           </div>
         </Card>
       ) : (
         <Card title={t("watchlist.list_title")} sub={t("watchlist.list_sub")}>
-          <div className="pf-cardbody">
-            <div className="pf-chips">
+          <div className="pr-cardbody">
+            <div className="pr-chips">
               <input
-                className="pf-input pf-input-sm"
+                className="pr-input pr-input-sm"
                 type="search"
                 aria-label={t("watchlist.filter")}
                 placeholder={t("watchlist.filter_ph")}
@@ -411,28 +410,22 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
                 onChange={(event) => setNeedle(event.target.value)}
               />
               {MODES.map((option) => (
-                <button
+                <ToggleChip
                   key={option}
-                  type="button"
-                  className={option === mode ? "pf-chip pf-chip-on" : "pf-chip"}
-                  aria-pressed={option === mode}
+                  on={option === mode}
                   onClick={() => setMode(option)}
                 >
                   {t(`watchlist.group_${option}`)}
-                </button>
+                </ToggleChip>
               ))}
             </div>
             {tags.length > 0 && (
-              <div className="pf-chips">
-                <span className="pf-hint">{t("watchlist.tag_filter")}</span>
+              <div className="pr-chips">
+                <span className="pr-hint">{t("watchlist.tag_filter")}</span>
                 {tags.map((tag) => (
-                  <button
+                  <ToggleChip
                     key={tag}
-                    type="button"
-                    className={
-                      keeping.has(tag.toLowerCase()) ? "pf-chip pf-chip-on" : "pf-chip"
-                    }
-                    aria-pressed={keeping.has(tag.toLowerCase())}
+                    on={keeping.has(tag.toLowerCase())}
                     onClick={() =>
                       setKeep((current) =>
                         current.includes(tag)
@@ -442,7 +435,7 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
                     }
                   >
                     {tag}
-                  </button>
+                  </ToggleChip>
                 ))}
               </div>
             )}
@@ -450,7 +443,7 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
             <Failure message={failure?.where === "list" ? failure.message : null} />
 
             {shown.length === 0 ? (
-              <p className="pf-hint">{t("watchlist.no_match")}</p>
+              <p className="pr-hint">{t("watchlist.no_match")}</p>
             ) : (
               sections(shown, mode, t("watchlist.g_untagged"), {
                 all: t("watchlist.g_all"),
@@ -500,11 +493,11 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
               ))
             )}
 
-            <div className="pf-foot">
-              <span className="pf-hint">
+            <div className="pr-foot">
+              <span className="pr-hint">
                 {t("watchlist.count", { n: entries.length })}
               </span>
-              <details className="pf-more">
+              <details className="pr-more">
                 <summary>{t("watchlist.how_open")}</summary>
                 <div>
                   <Prose text={t("watchlist.how")} />
@@ -578,15 +571,15 @@ function Examples({ onAdded }: { onAdded: () => void }) {
   return (
     <Card title={t("profile.focus_suggest_title")}>
       <Prose text={t("profile.focus_suggest_help")} />
-      <ul className="pf-examples">
+      <ul className="pr-examples">
         {rows.map((row) => (
           <li key={row.ticker}>
-            <TickerCell ticker={row.ticker} className="pf-wsym" />
+            <TickerCell ticker={row.ticker} className="pr-wsym" />
             <span>{row.name}</span>
           </li>
         ))}
       </ul>
-      <button type="button" className="pf-linkbtn" disabled={busy} onClick={addAll}>
+      <button type="button" className="pr-linkbtn" disabled={busy} onClick={addAll}>
         {t("profile.focus_suggest_add", { n: rows.length })}
       </button>
       <Failure message={failure} />
@@ -601,7 +594,7 @@ function Examples({ onAdded }: { onAdded: () => void }) {
  */
 export function Watchlist({ query }: { query: Query<Listing> }) {
   return (
-    <div className="pf-main">
+    <div className="pr-main">
       <Loaded query={query}>
         {(data, reload) => (
           <>

@@ -278,6 +278,19 @@ export default function Dividends() {
                   rows={dividends.forward}
                   rowKey={(row) => row.ticker}
                   initial={{ key: "annual", desc: true }}
+                  dense={{
+                    ticker: (row) => row.ticker,
+                    value: (row) => <Figure value={money(row.gross_base)} />,
+                    sub: (row) => [
+                      `${t("portfolio.col_shares")} ${formatShares(lang, row.shares) ?? ""}`,
+                      `${t("portfolio.col_per_share_ttm")} ${
+                        moneyIn(lang, row.currency)(row.per_share, { digits: 2 }) ??
+                        t("portfolio.na")
+                      }`,
+                      `${t("portfolio.col_payments_year")} ${row.payments}`,
+                    ],
+                    wrap: true,
+                  }}
                 />
                 <Caption>{t("portfolio.div_forward_caption")}</Caption>
               </Card>

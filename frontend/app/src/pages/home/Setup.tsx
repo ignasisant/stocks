@@ -18,7 +18,7 @@
  * re-computes any of it, and nothing here reads prefs.
  */
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 
 import { get, send } from "../../shell/api";
 import { useT } from "../../shell/i18n";
@@ -32,6 +32,7 @@ import { plain } from "./format";
 import { EXPLORE, SETUP, target, type Row } from "./checks";
 import type { Onboarding, TourStep } from "./types";
 import { Card } from "./ui";
+import { Badge } from "../../ui/Badge";
 
 /*
  * The dismissal is an account setting (`setup_card_dismissed` in prefs.json),
@@ -87,6 +88,12 @@ function Check({
       {/* The tour's own two words for these two states, so the app has one
           vocabulary for "switched on" rather than one per surface. */}
       <span className="hm-sr">{on ? t("tour.active") : t("tour.pending")}</span>
+      {/* Only a row still to do points onward: it is the one worth pressing. */}
+      {on ? null : (
+        <span className="hm-check-go" aria-hidden="true">
+          ›
+        </span>
+      )}
     </>
   );
   if (row.key === "login" && !on) {
@@ -122,6 +129,20 @@ function Check({
   );
 }
 
+/**
+ * How far along a group is, as one segment per row. Decoration: the badge
+ * beside the heading says the same in words.
+ */
+function Meter({ done, total }: { done: number; total: number }) {
+  return (
+    <span className="hm-meter" aria-hidden="true">
+      {Array.from({ length: total }, (_, i) => (
+        <span key={i} className={i < done ? "hm-meter-on" : undefined} />
+      ))}
+    </span>
+  );
+}
+
 /** A heading line, its count, and the rows still worth showing under it. */
 function Group({
   title,
@@ -131,7 +152,7 @@ function Group({
   guest,
   collapsed,
   check,
-  actions,
+  meter,
 }: {
   title: string;
   badge: string;
@@ -142,7 +163,8 @@ function Group({
   collapsed: boolean;
   /** The receipt tick beside the heading, for a group that is finished. */
   check?: boolean;
-  actions?: ReactNode;
+  /** Draw the progress strip under the heading. */
+  meter?: { done: number; total: number };
 }) {
   return (
     <div className="hm-check-group">
@@ -151,9 +173,9 @@ function Group({
         <span className={check ? "hm-check-title hm-muted" : "hm-check-title"}>
           {title}
         </span>
-        <span className="hm-badge">{badge}</span>
-        {actions ? <span className="hm-check-acts">{actions}</span> : null}
+        <Badge>{badge}</Badge>
       </div>
+      {meter && !collapsed ? <Meter {...meter} /> : null}
       {collapsed ? null : (
         <div className="hm-checks">
           {rows.map(({ row, on }) => (
@@ -188,7 +210,7 @@ export function SetupCard() {
   const setup = SETUP.map((row) => ({ row, on: state.setup[row.key] === true }));
   const done = setup.filter((entry) => entry.on).length;
   const complete = done === setup.length;
-  if (complete && dismissed) return null;
+  if (dismissed) return null;
 
   const explore = EXPLORE.map((row) => ({ row, on: state.explore[row.key] === true }));
   const tried = explore.filter((entry) => entry.on).length;
@@ -202,37 +224,7 @@ export function SetupCard() {
         steps={state.steps}
         guest={guest}
         collapsed={complete}
-        actions={
-          <>
-            {/* The tour explains all four of these and everything else, so the
-                card that lists them is the obvious way into it — but it is an
-                action, not a fifth capability, which is why it sits up here
-                rather than inline with the states. A real link, so the step it
-                opens can be shared; the shell's modal answers `?tour=`. */}
-            <Link page="home" params={{ tour: "1" }} className="hm-quiet">
-              {t("tour.launch")}
-            </Link>
-            {/* Offered only once there is nothing left to connect: a checklist
-                dismissed half-done is a checklist that was in the way. */}
-            {complete ? (
-              <button
-                type="button"
-                className="hm-quiet"
-                onClick={() => {
-                  // Hidden first, saved after: the press is the decision and
-                  // a failed write is worth one card coming back, not an
-                  // error in front of somebody tidying their screen.
-                  setDismissed(true);
-                  void send("PATCH", "/prefs", { setup_card_dismissed: true })
-                    .then(reload)
-                    .catch(() => undefined);
-                }}
-              >
-                {t("home.dismiss")}
-              </button>
-            ) : null}
-          </>
-        }
+        meter={{ done, total: setup.length }}
       />
       <Group
         title={plain(t("home.explore_title"))}
@@ -245,6 +237,38 @@ export function SetupCard() {
         collapsed={tried === explore.length}
         check={tried === explore.length}
       />
+      {/* The card's own controls sit under what it lists, not in the heading:
+          beside the badge they wrapped onto a line of their own on a phone and
+          read as a fifth row. */}
+      <div className="hm-firstrun-foot">
+        {/* The tour explains all four of these and everything else, so the
+            card that lists them is the obvious way into it — but it is an
+            action, not a fifth capability, which is why it sits in the foot
+            rather than inline with the states. A real link, so the step it
+            opens can be shared; the shell's modal answers `?tour=`. */}
+        <Link page="home" params={{ tour: "1" }} className="hm-quiet">
+          {t("tour.launch")}
+        </Link>
+        {/* Offered from the first visit: a reader who will never link
+            Telegram should not have to look at the one ring left open
+            every time they come home. The tour stays one press away in
+            Profile. */}
+        <button
+          type="button"
+          className="hm-quiet"
+          onClick={() => {
+            // Hidden first, saved after: the press is the decision and
+            // a failed write is worth one card coming back, not an
+            // error in front of somebody tidying their screen.
+            setDismissed(true);
+            void send("PATCH", "/prefs", { setup_card_dismissed: true })
+              .then(reload)
+              .catch(() => undefined);
+          }}
+        >
+          {t("home.setup_hide")}
+        </button>
+      </div>
     </Card>
   );
 }

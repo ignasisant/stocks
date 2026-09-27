@@ -152,23 +152,67 @@ def bars(symbol: Symbol, range: Range = "1y") -> Bars:
 
 
 @router.get("/{symbol}/quote", response_model=Quote, summary="Live quote")
-def quote(symbol: Symbol) -> Quote:
+def quote(symbol: Symbol, base: Base = None) -> Quote:
     """Current price and day move, with the session the move belongs to.
 
     `market_open` is what the page uses to decide whether to override the last
     bar: inside the regular session the fetched history already tracks the live
     price, and only outside it does this quote say something the bars do not.
+
+    `currency` and `price_base` are the one place this page says "that figure
+    is not in your money" — the header otherwise prints a bare number a reader
+    has no reason to doubt. No account dependency, like `/metrics`: the rate
+    applies only when `?base=` is asked for explicitly.
     """
     ticker = symbol.strip().upper()
     snapshot = session_quote(ticker) or {}
+    price = snapshot.get("price")
+    ccy = _base_currency(base)
+    currency = price_base = rate = as_of = None
+    # Costs a fundamentals pull, so only paid when `?base=` actually asks for
+    # the conversion — a caller that never passes it (a batch script, chat's
+    # inline quotes) keeps this route as cheap as it always was.
+    if ccy and not is_crypto(ticker):
+        currency = cast(str | None, loaders.fundamentals(ticker).info.get("currency"))
+        if price is not None and currency:
+            price_base, rate, as_of = _price_in(ticker, price, currency, ccy)
     return Quote(
         ticker=ticker,
-        price=snapshot.get("price"),
+        price=price,
         pct=snapshot.get("pct"),
         session=snapshot.get("session"),
         as_of=snapshot.get("as_of"),
         market_open=market_live(ticker),
+        currency=currency,
+        price_base=price_base,
+        fx_rate=rate,
+        fx_as_of=as_of,
+        base=ccy,
     )
+
+
+def _price_in(
+    ticker: str, price: float, native: str, base: str
+) -> tuple[float | None, float | None, str | None]:
+    """`price` restated in `base`, minor units (GBp) resolved first.
+
+    Nothing when the two already agree, and nothing when the rate cannot be
+    fetched — the same refusal `_market_cap_in` makes, generalised past
+    dollars: a listing's own quote currency can be anything, not just USD.
+    """
+    from stocks.analysis.listing import quote_unit
+    from stocks.data.fx import spot
+
+    iso, scale = quote_unit(native)
+    if iso is None or iso == base:
+        return None, None, None
+    try:
+        rate, as_of = spot(iso, base)
+    except Exception as exc:
+        obs.warn("api.quote_fx_failed", ticker=ticker, native=iso, base=base,
+                 error_type=type(exc).__name__, error=str(exc)[:300])
+        return None, None, None
+    return price * scale * rate, rate, as_of
 
 
 @router.get("/{symbol}/events", response_model=PriceEvents, summary="Chart events")

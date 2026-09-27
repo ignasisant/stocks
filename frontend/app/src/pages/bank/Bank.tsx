@@ -35,6 +35,7 @@ import { useGuest } from "../../shell/session";
 import { useApi } from "../../shell/useApi";
 import type { BankAuth, BankChoice, BankConnection, BankState } from "./types";
 import "./bank.css";
+import { Badge } from "../../ui/Badge";
 
 /** Countries Enable Banking covers that this app is likely to be used from;
     the bank list itself comes from the API per country. Same table as the
@@ -152,7 +153,7 @@ function Connection({
           {connection.country ? ` · ${connection.country}` : ""}
         </span>
         {connection.expired ? (
-          <span className="bk-badge">{t("bank.consent_expired")}</span>
+          <Badge>{t("bank.consent_expired")}</Badge>
         ) : (
           <span className="bk-note">
             {t("bank.valid_until", { date: connection.valid_until.slice(0, 10) })}
