@@ -142,7 +142,7 @@ def test_portfolio_snapshot_reads_the_accounts_book(monkeypatch, tmp_path):
     from stocks.chat import engine
 
     monkeypatch.setattr(engine, "portfolio_context",
-                        lambda watchlist, db: "NVDA 10 shares")
+                        lambda watchlist, db, currency="EUR": "NVDA 10 shares")
     ctx = Context(watchlist=tmp_path / "watchlist.yaml")
     assert _run("portfolio_snapshot", {}, ctx) == "NVDA 10 shares"
 
@@ -150,7 +150,7 @@ def test_portfolio_snapshot_reads_the_accounts_book(monkeypatch, tmp_path):
 def test_portfolio_snapshot_survives_an_unreadable_book(monkeypatch, tmp_path):
     from stocks.chat import engine
 
-    def boom(watchlist, db):
+    def boom(watchlist, db, currency="EUR"):
         raise ValueError("corrupt yaml")
 
     monkeypatch.setattr(engine, "portfolio_context", boom)
@@ -163,7 +163,7 @@ def test_a_missing_price_cache_is_still_a_snapshot(monkeypatch, tmp_path):
 
     seen = {}
 
-    def spy(watchlist, db):
+    def spy(watchlist, db, currency="EUR"):
         seen["db"] = db
         return "the book"
 

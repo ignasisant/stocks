@@ -122,3 +122,37 @@ def test_setup_is_idempotent():
     obs.setup()
     handlers = [h for h in logging.getLogger().handlers if h.get_name() == "stocks-obs"]
     assert len(handlers) == 1
+
+
+def test_yfinance_misses_are_warnings_and_its_blank_lines_are_dropped():
+    # yfinance logs every symbol Yahoo has no data for at ERROR; in prod that
+    # was most of `stocks logs errors` and hid the app's own failures.
+    obs.setup(force=True)
+    seen: list[logging.LogRecord] = []
+
+    class Sink(logging.Handler):
+        def emit(self, record):
+            seen.append(record)
+
+    yf_log = logging.getLogger("yfinance")
+    # Another test (or yfinance itself) may have raised the logger's level or
+    # disabled it; this one is about the filter, so hear everything.
+    level, disabled = yf_log.level, yf_log.disabled
+    yf_log.setLevel(logging.DEBUG)
+    yf_log.disabled = False
+    sink = Sink()
+    yf_log.addHandler(sink)
+    try:
+        yf_log.error("$ORGN: possibly delisted; no price data found  (period=5y)")
+        yf_log.error("")
+        yf_log.critical("still not ours to page on")
+    finally:
+        yf_log.removeHandler(sink)
+        yf_log.setLevel(level)
+        yf_log.disabled = disabled
+    assert [(r.levelname, r.getMessage()) for r in seen] == [
+        ("WARNING", "$ORGN: possibly delisted; no price data found  (period=5y)"),
+        ("WARNING", "still not ours to page on"),
+    ]
+    obs.setup(force=True)
+    assert sum(isinstance(f, obs._YahooMissIsNotAnError) for f in yf_log.filters) == 1

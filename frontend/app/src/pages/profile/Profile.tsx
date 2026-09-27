@@ -37,8 +37,6 @@ import { Card } from "./ui";
 type Identity = {
   name?: string | null;
   picture?: string | null;
-  data_dir?: string | null;
-  data_dir_full?: string | null;
   owner?: boolean;
 };
 
@@ -101,15 +99,15 @@ function Settings() {
         {CSS}
       </style>
 
-      <header className="pf-head">
-        <h1 className="pf-title">{t("nav.profile")}</h1>
+      <header className="pr-head">
+        <h1 className="pr-title">{t("nav.profile")}</h1>
         {/* Nothing on this page has a Save button, so the page has to say so. */}
-        <span className="pf-savehint">{t("profile.saves_instantly")}</span>
+        <span className="pr-savehint">{t("profile.saves_instantly")}</span>
       </header>
 
       <Card>
-        <div className="pf-ident">
-          <div className="pf-avatar" aria-hidden="true">
+        <div className="pr-ident">
+          <div className="pr-avatar" aria-hidden="true">
             {who?.picture && !brokenPicture ? (
               // No referrer: the provider's image host has no need to learn
               // which page of this app its avatar was drawn on.
@@ -123,46 +121,41 @@ function Settings() {
               initials(email, name)
             )}
           </div>
-          <div className="pf-ident-t">
-            {name && name !== email && <span className="pf-ident-n">{name}</span>}
-            <span className="pf-ident-e">{email}</span>
+          <div className="pr-ident-t">
+            {name && name !== email && <span className="pr-ident-n">{name}</span>}
+            <span className="pr-ident-e">{email}</span>
           </div>
-          {/* Where this account's files live — the tail, with the whole path
-              in the tooltip — and what that scope means, as the Streamlit
-              card's right-hand column has it. */}
-          <div className="pf-ident-r">
-            {who?.data_dir && (
-              <span className="pf-folder" title={who.data_dir_full ?? who.data_dir}>
-                <span className="pf-folder-p">{who.data_dir}</span>
-              </span>
-            )}
-            <span className="pf-ident-note">{t("profile.account_scope")}</span>
+          {/* What this account's scope means. The data folder it lives in is
+              server plumbing, not something a user can act on, so it stays
+              off the card. */}
+          <div className="pr-ident-r">
+            <span className="pr-ident-note">{t("profile.account_scope")}</span>
           </div>
           {/* A real link, not a fetch: signing out is the server clearing the
               cookie both front ends are authenticated by, and the page that
               comes back has to be one rendered without it. Streamlit serves
               the route; this app never runs a second sign-in flow, and it must
               not run a second sign-out either. */}
-          <a className="pf-signout" href="/auth/logout">
+          <a className="pr-signout" href="/auth/logout">
             {t("common.log_out")}
           </a>
         </div>
       </Card>
 
       {/* A tab switch is not a navigation the back button should walk through. */}
-      <div className="pf-tabs" role="tablist" aria-label={t("nav.profile")}>
+      <div className="pr-tabs" role="tablist" aria-label={t("nav.profile")}>
         {TABS.map((entry) => (
           <button
             key={entry.id}
             type="button"
             role="tab"
             aria-selected={entry.id === tab}
-            className={entry.id === tab ? "pf-tab pf-tab-on" : "pf-tab"}
+            className={entry.id === tab ? "pr-tab pr-tab-on" : "pr-tab"}
             onClick={() => setParams({ tab: entry.id })}
           >
             {t(entry.label)}
             {entry.id === "watch" && count > 0 && (
-              <span className="pf-tab-n">{count}</span>
+              <span className="pr-tab-n">{count}</span>
             )}
           </button>
         ))}

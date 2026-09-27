@@ -17,6 +17,8 @@ changes in the domain and both runtimes get it.
 
 from __future__ import annotations
 
+import threading
+from functools import wraps
 from pathlib import Path
 
 import pandas as pd
@@ -27,7 +29,9 @@ from stocks.analysis.history import price_history
 from stocks.analysis.portfolio import (
     HELD_ACTIONS,
     book_history,
+    complete_download,
     load_closes,
+    plausible_closes,
     position_values_history,
     positions_frame,
     session_quotes,
@@ -84,32 +88,102 @@ def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
         return {}
     tickers = sorted({t.ticker for t in held})
     span = (pd.Timestamp.today() - pd.Timestamp(min(t.date for t in held))).days
-    return load_closes(tickers, period=f"{max(1, span // 30 + 1)}mo")
+    closes = load_closes(tickers, period=f"{max(1, span // 30 + 1)}mo")
+    return plausible_closes(complete_download(closes, tickers), txs)
 
 
-@ttl_cache(_PRICES_TTL, max_entries=32)
+def _on_download(fn):
+    """Memoize `fn(db, mtime, base, closes)` on the `held_closes` object itself.
+
+    Every "value of the book" the pages print — the Posiciones and Home
+    tiles, Rendimiento real, the last point of the value chart, the
+    day/week/month deltas, a ticker's share of the book — is read off one of
+    the frames below. Each used to sit in its own timer (15 min here, an hour
+    for the history), so two of them could be built from two different
+    downloads and the same "Valor de mercado" printed two numbers. Keyed on
+    the download they were built from, they rebuild together the moment it is
+    replaced and can never straddle two. Holding the object in the entry keeps
+    the identity test sound: a live object's id cannot be reused.
+    """
+    store: dict[tuple, tuple[object, object]] = {}
+    lock = threading.Lock()
+
+    @wraps(fn)
+    def wrapper(db: str, mtime: float, base: str = "EUR"):
+        closes = held_closes(db, mtime)
+        key = (db, mtime, base)
+        with lock:
+            hit = store.get(key)
+            if hit is not None and hit[0] is closes:
+                return hit[1]
+        value = fn(db, mtime, base, closes)
+        with lock:
+            store[key] = (closes, value)
+            while len(store) > 32:
+                store.pop(next(iter(store)))
+        return value
+
+    clearable: object = wrapper
+    clearable.cache_clear = store.clear  # ty: ignore[unresolved-attribute]
+    return wrapper
+
+
+@_on_download
+def _priced_positions(db: str, mtime: float, base: str, closes) -> pd.DataFrame:
+    positions = ledger_state(db, mtime, base)[1]
+    vals = position_values_history(positions, base=base, closes=closes)
+    latest = (
+        {t: float(v) for t, v in vals.iloc[-1].items() if pd.notna(v)}
+        if not vals.empty
+        else None
+    )
+    return positions_frame(positions, base=base, values=latest)
+
+
+@ttl_cache(_PRICES_TTL, max_entries=16)
+def _self_priced_positions(db: str, mtime: float, base: str) -> pd.DataFrame:
+    return positions_frame(ledger_state(db, mtime, base)[1], base=base)
+
+
 def positions_table(db: str, mtime: float, base: str = "EUR") -> pd.DataFrame:
     """Per-position frame in `base`: shares, cost, live value, unrealised P/L.
 
-    Priced through `positions_frame`'s own `market_values` pass. A name it has
-    no series for reads NaN in `value` rather than zero, which is what keeps
-    `priced_totals` from dividing an intact book's whole basis by a fraction
-    of its market value.
+    Values are the last row of `held_closes`, the download `history()` and
+    `basket_values()` are built from too (`_on_download`), so every tile that
+    prints the book's value reads the same prices.
+
+    A name it has no series for reads NaN in `value` rather than zero, which
+    is what keeps `priced_totals` from dividing an intact book's whole basis
+    by a fraction of its market value. Prices itself only when `held_closes`
+    refuses an incomplete download — Yahoo throttling — and then the history
+    endpoints are refusing too, rather than disagreeing with it.
     """
-    positions = ledger_state(db, mtime, base)[1]
-    return positions_frame(positions, base=base)
+    from yfinance.exceptions import YFRateLimitError
+
+    try:
+        return _priced_positions(db, mtime, base)
+    except YFRateLimitError:
+        return _self_priced_positions(db, mtime, base)
 
 
-@ttl_cache(_LEDGER_TTL, max_entries=16)
-def history(db: str, mtime: float, base: str = "EUR"):
+def _clear_positions() -> None:
+    _priced_positions.cache_clear()
+    _self_priced_positions.cache_clear()  # ty: ignore[unresolved-attribute]
+
+
+positions_table.cache_clear = _clear_positions  # ty: ignore[unresolved-attribute]
+
+
+@_on_download
+def history(db: str, mtime: float, base: str, closes):
     """Full-span daily history: (injected-vs-value frame, daily TWR, unpriced).
 
-    Shares the book's close download with `positions_table` rather than making
-    one of its own.
+    Built from the same download as `positions_table`, so its last value is
+    the one the Posiciones tile prints. No timer of its own: a rebuild is a
+    third of a second, and an hour-old copy is what used to show a different
+    "Valor de mercado" on Rendimiento real than on Posiciones.
     """
-    return book_history(
-        all_transactions(Path(db)), base=base, closes=held_closes(db, mtime)
-    )
+    return book_history(all_transactions(Path(db)), base=base, closes=closes)
 
 
 # How far back the fixed basket reaches. The movers card's longest window is a
@@ -118,8 +192,8 @@ def history(db: str, mtime: float, base: str = "EUR"):
 _BASKET_MONTHS = 3
 
 
-@ttl_cache(_PRICES_TTL, max_entries=16)
-def basket_values(db: str, mtime: float, base: str = "EUR") -> pd.DataFrame:
+@_on_download
+def basket_values(db: str, mtime: float, base: str, closes) -> pd.DataFrame:
     """Daily `base` value per open position at *today's* quantities.
 
     The frame the day/week/month deltas are measured on, and NOT
@@ -146,7 +220,7 @@ def basket_values(db: str, mtime: float, base: str = "EUR") -> pd.DataFrame:
     positions = ledger_state(db, mtime, base)[1]
     cutoff = pd.Timestamp.today().normalize() - pd.DateOffset(months=_BASKET_MONTHS)
     window = {}
-    for ticker, series in held_closes(db, mtime).items():
+    for ticker, series in closes.items():
         # Series arrive naive or stamped in the exchange's zone depending on
         # the market; `naive_dates` is where the app flattens that.
         tail = series[naive_dates(series.index) >= cutoff]
@@ -582,15 +656,16 @@ def basket_report(db: str, mtime: float, base: str, period: str):
     """
     from stocks.analysis.portfolio import (
         analyze,
+        first_owned,
         holdings_from_positions,
         rebase_report,
     )
 
-    positions = ledger_state(db, mtime, base)[1]
+    txs, positions, _ = ledger_state(db, mtime, base)
     if not positions:
         return None
     report = analyze(period=period, holdings=holdings_from_positions(positions))
-    return rebase_report(report, positions, base, period)
+    return rebase_report(report, positions, base, period, since=first_owned(txs))
 
 
 def inception_period(first_trade: str) -> str:

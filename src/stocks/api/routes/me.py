@@ -63,23 +63,6 @@ class Me(BaseModel):
         default=None,
         description="The provider's avatar URL, from the claims; null for none.",
     )
-    data_dir: str | None = Field(
-        default=None,
-        description=(
-            'The tail of this account\'s data folder — "users/<account>" — '
-            "the chip on the identity card. The tail and not the path because "
-            "the identifying part is the last segment, and the whole path "
-            "pushes the card's buttons onto a second line."
-        ),
-    )
-    data_dir_full: str | None = Field(
-        default=None,
-        description=(
-            "The full folder, for the chip's tooltip. Sent only to the "
-            "session that owns it: it names this host's filesystem, which is "
-            "the account's own business and nobody else's."
-        ),
-    )
     owner: bool = Field(
         default=False,
         description=(
@@ -92,12 +75,6 @@ class Me(BaseModel):
     )
 
 
-def _short_path(path) -> str:
-    """".../users/<account>" — `app_pages.profile._short_path`, same rule."""
-    parts = str(path).split("/")
-    return "/".join(parts[-2:]) if len(parts) > 3 else str(path)
-
-
 def _claim(claims: dict | None, key: str) -> str | None:
     return str((claims or {}).get(key) or "").strip() or None
 
@@ -108,13 +85,13 @@ def me(who: Who, request: Request) -> Me:
     if who.kind != "session" or not who.email:
         return Me(kind=who.kind, email=who.email, sign_in=signin)
     claims = session.claims(request.cookies)
-    # Where the account's files are, computed and never created: this is the
-    # first call a client makes, and resolving (let alone provisioning) an
-    # account belongs to the routes that read one. A folder that does not
-    # exist yet is still the folder the account will live in.
+    # Where the account's files are, computed and never created, only to tell
+    # the owner's book apart: this is the first call a client makes, and
+    # resolving (let alone provisioning) an account belongs to the routes that
+    # read one.
     try:
         root = accounts.paths_for(who.email, accounts.configured_owner()).root
-    except Exception:  # noqa: BLE001 — a card decoration, not the identity
+    except Exception:  # noqa: BLE001 — the owner flag, not the identity
         root = None
     return Me(
         kind=who.kind,
@@ -122,7 +99,5 @@ def me(who: Who, request: Request) -> Me:
         sign_in=signin,
         name=_claim(claims, "name"),
         picture=_claim(claims, "picture"),
-        data_dir=_short_path(root) if root is not None else None,
-        data_dir_full=str(root) if root is not None else None,
         owner=root == PROJECT_ROOT,
     )

@@ -81,24 +81,24 @@ function Dialog({ email, onClose }: { email: string; onClose: () => void }) {
 
   return (
     <div
-      className="pf-modal"
+      className="pr-modal"
       onClick={(event) => {
         if (event.target === event.currentTarget && !busy) onClose();
       }}
     >
       <div
-        className="pf-modal-card"
+        className="pr-modal-card"
         role="dialog"
         aria-modal="true"
         aria-label={t("profile.delete_title")}
       >
-        <h2 className="pf-modal-t">{t("profile.delete_title")}</h2>
+        <h2 className="pr-modal-t">{t("profile.delete_title")}</h2>
         {/* The honest list of what goes, straight from the catalog. */}
         <Prose text={t("profile.delete_body")} />
-        <label className="pf-modal-confirm">
-          <span className="pf-hint">{t("profile.delete_confirm")}</span>
+        <label className="pr-modal-confirm">
+          <span className="pr-hint">{t("profile.delete_confirm")}</span>
           <input
-            className="pf-input pf-input-wide"
+            className="pr-input pr-input-wide"
             type="text"
             // The first thing to do in this dialog, and the only thing that
             // arms the button — a keyboard reader starts here rather than on
@@ -116,13 +116,13 @@ function Dialog({ email, onClose }: { email: string; onClose: () => void }) {
           />
         </label>
         <Failure message={refused} />
-        <div className="pf-modal-foot">
-          <button type="button" className="pf-btn" disabled={busy} onClick={onClose}>
+        <div className="pr-modal-foot">
+          <button type="button" className="pr-btn" disabled={busy} onClick={onClose}>
             {t("common.cancel")}
           </button>
           <button
             type="button"
-            className="pf-btn pf-btn-danger"
+            className="pr-btn pr-btn-danger"
             disabled={!armed || busy}
             onClick={erase}
           >
@@ -152,7 +152,7 @@ export function DeleteAccount() {
       help={t("profile.delete_row_help")}
       middle
     >
-      <button type="button" className="pf-btn" onClick={() => setOpen(true)}>
+      <button type="button" className="pr-btn" onClick={() => setOpen(true)}>
         {t("profile.delete_open")}
       </button>
       {open && <Dialog email={me.email ?? ""} onClose={() => setOpen(false)} />}

@@ -464,31 +464,34 @@ def report() -> _Report:
 def test_risk_draws_the_book_the_basket_and_the_benchmarks_on_one_axis(
     client, book, monkeypatch
 ):
-    """The chart the page could not draw: what the account earned, what today's
-    holdings would have earned, and what the index did — rebased to the same
-    first day, because three lines from three different zeros compare nothing.
+    """What the account's money became, and what the same money would have
+    become in today's basket and in the index — every line over the one
+    amount the book had in, so they share a zero and a denominator.
     """
     book(trades())
     index = pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"])
-    twr = pd.Series([0.01, 0.01, 0.01], index=index)
+    hist = pd.DataFrame({"value": [1010.0, 1020.1, 1030.301]}, index=index)
     monkeypatch.setattr(
         loaders, "basket_report", lambda db, mtime, base, period: report()
     )
     monkeypatch.setattr(loaders, "custody", lambda db, mtime: {})
     monkeypatch.setattr(
-        loaders, "history", lambda db, mtime, base="EUR": (pd.DataFrame(), twr, ["ORGN"])
+        loaders,
+        "history",
+        lambda db, mtime, base="EUR": (hist, pd.Series(dtype=float), ["ORGN"]),
     )
 
     curves = client.get(
         "/v1/portfolio/risk", params={"account": EMAIL}, headers=AUTH
     ).json()["curves"]
     assert curves["dates"] == ["2024-01-02", "2024-01-03", "2024-01-04"]
-    # 1% compounded three times, off the window's first day.
-    assert curves["portfolio"] == pytest.approx([0.01, 0.0201, 0.030301])
-    # The basket is the weighted mean of the two names, compounded.
-    assert curves["basket"][0] == pytest.approx(0.015)
+    # Opens at the book's own value; the next buy lands after the window.
+    assert curves["invested"] == pytest.approx([1010.0] * 3)
+    assert curves["portfolio"] == pytest.approx([0.0, 0.01, 0.0201])
+    # The basket is the weighted mean of the two names, compounded from day 1.
+    assert curves["basket"] == pytest.approx([0.0, -0.015, -0.015 + 0.985 * 0.02])
     assert set(curves["benchmarks"]) == {"^GSPC"}
-    assert curves["benchmarks"]["^GSPC"][0] == pytest.approx(0.01)
+    assert curves["benchmarks"]["^GSPC"] == pytest.approx([0.0, -0.02, 0.98 * 1.03 - 1])
     # The names the book could not price ride with the line that hides them.
     assert client.get(
         "/v1/portfolio/risk", params={"account": EMAIL}, headers=AUTH
@@ -882,3 +885,47 @@ def test_a_throttled_basket_leaves_todays_move_null_not_the_table(
     row = response.json()["positions"][0]
     assert row["day"] is None and row["day_pct"] is None
     assert row["value"] == pytest.approx(1100.0)
+
+
+def test_projection_fans_out_from_todays_value(client, book, monkeypatch):
+    """Today's value, the stock sleeve's own volatility, the default 8% median
+    growth unless told otherwise, the contribution asked for, and the share of
+    paths that reach a target."""
+    book(trades())
+    index = pd.to_datetime(["2024-01-02", "2024-01-03"])
+    hist = pd.DataFrame(
+        {"value": [1000.0, 1200.0], "injected": [1000.0, 1000.0]}, index=index
+    )
+    empty = pd.Series(dtype=float)
+    monkeypatch.setattr(
+        loaders, "history", lambda db, mtime, base="EUR": (hist, empty, [])
+    )
+    monkeypatch.setattr(
+        loaders, "basket_report", lambda db, mtime, base, period: report()
+    )
+    payload = client.get(
+        "/v1/portfolio/projection",
+        params={"account": EMAIL, "monthly": 50, "target": 1_000_000},
+        headers=AUTH,
+    ).json()
+    assert payload["start_value"] == 1200.0
+    (stocks,) = payload["sleeves"]  # no crypto held, none contributed
+    assert stocks["key"] == "stocks" and stocks["growth"] == 0.08
+    assert payload["crypto_weight"] == 0.0
+    assert len(payload["dates"]) == 61 and len(payload["p50"]) == 61
+    assert payload["p10"][0] == payload["p90"][0] == 1200.0
+    assert payload["contributed"][-1] == pytest.approx(1200 + 50 * 60)
+    assert payload["p10"][-1] < payload["p50"][-1] < payload["p90"][-1]
+    assert payload["target_probability"] == 0.0
+    # The past, one point per month end, before the fan starts.
+    assert payload["history_dates"] == ["2024-01-31"]
+    assert payload["history_value"] == [1200.0]
+    assert payload["history_invested"] == [1000.0]
+
+    real = client.get(
+        "/v1/portfolio/projection",
+        params={"account": EMAIL, "monthly": 50, "real": "true"},
+        headers=AUTH,
+    ).json()
+    assert real["real"] is True
+    assert real["contributed"][-1] < payload["contributed"][-1]

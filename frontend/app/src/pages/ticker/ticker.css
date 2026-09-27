@@ -58,15 +58,6 @@
   white-space: nowrap;
 }
 
-.tk-badge {
-  align-self: center;
-  padding: 2px 8px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-2xs);
-}
-
 .tk-custody {
   display: inline-flex;
   align-items: center;
@@ -83,16 +74,6 @@
   border: 1px solid var(--ag-border);
   padding: 2px;
   object-fit: contain;
-}
-
-.tk-custody-name {
-  padding: 2px 6px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-xs);
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs);
-  font-weight: 600;
-  white-space: nowrap;
 }
 
 /* -------------------------------------------------------------------- cards */
@@ -222,101 +203,6 @@
 
 /* --------------------------------------------------------- metrics and KPIs */
 
-.tk-metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 16px;
-}
-
-.tk-metrics-wide {
-  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-  gap: 12px;
-}
-
-.tk-metrics-wide .tk-metric-value {
-  font-size: var(--ag-fs-lg);
-}
-
-.tk-metric {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-/* Off-session figures are dimmed rather than hidden: they are the last
-   completed session, and at full weight they read as live. */
-.tk-metric.tk-dim .tk-metric-value {
-  color: var(--ag-text-secondary);
-}
-
-.tk-metric-label {
-  color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-xs);
-}
-
-.tk-metric-value {
-  font-size: var(--ag-fs-xl);
-  font-variant-numeric: tabular-nums;
-}
-
-.tk-metric-note {
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs);
-}
-
-.tk-kpis {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-}
-
-.tk-kpi {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
-  background: var(--ag-surface-page);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md);
-}
-
-.tk-kpi-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-xs);
-}
-
-.tk-kpi-value {
-  font-size: var(--ag-fs-lg);
-  font-variant-numeric: tabular-nums;
-}
-
-.tk-kpi-meta {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-/* The definition marker beside a KPI's name: a native `title`, which is the one
-   hover hint that needs no component behind it. */
-.tk-q {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs);
-  line-height: 1;
-  cursor: help;
-}
-
 .tk-tag {
   font-size: var(--ag-fs-2xs);
   padding: 1px 6px;
@@ -362,29 +248,6 @@
 
 .tk-tag.tk-is-red {
   border-color: var(--ag-down-fill);
-}
-
-.tk-pill {
-  align-self: flex-start;
-  font-size: var(--ag-fs-2xs);
-  padding: 1px 6px;
-  border-radius: var(--ag-radius-pill);
-  font-variant-numeric: tabular-nums;
-}
-
-.tk-pill-up {
-  background: var(--ag-success-fill);
-  color: var(--ag-up);
-}
-
-.tk-pill-down {
-  background: var(--ag-down-fill);
-  color: var(--ag-down);
-}
-
-/* Off-session: the move belongs to a session that has closed. */
-.tk-pill-dim {
-  opacity: 0.55;
 }
 
 .tk-banner {
@@ -611,41 +474,6 @@
   color: var(--ag-text-muted);
   font-size: var(--ag-fs-xs);
   font-variant-numeric: tabular-nums;
-}
-
-.tk-tiles {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.tk-tile {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md);
-  background: var(--ag-surface-sunken);
-}
-
-.tk-tile-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--ag-fs-2xs);
-  color: var(--ag-text-muted);
-}
-
-.tk-tile-value {
-  font-size: var(--ag-fs-md);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.tk-tile-note {
-  font-size: var(--ag-fs-2xs);
-  color: var(--ag-text-muted);
 }
 
 /* -------------------------------------------------------------------- moat */
@@ -984,31 +812,6 @@
 
 .tk-groups {
   align-self: center;
-}
-
-.tk-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 5px 10px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  background: var(--ag-surface-card);
-  color: var(--ag-text-primary);
-  font: inherit;
-  font-size: var(--ag-fs-xs);
-  cursor: pointer;
-}
-
-.tk-chip:hover {
-  border-color: var(--ag-border-focus);
-}
-
-/* A picked peer. Clicking it removes it, which is what the × says. */
-.tk-chip-on {
-  background: var(--ag-brand-cta);
-  border-color: var(--ag-brand-cta);
-  color: var(--ag-on-brand);
 }
 
 .tk-chip-logo {

@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { get } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { Card, Failure } from "./ui";
+import { ToggleChip } from "../../ui/Toggle";
 
 type Match = { ticker: string; name: string; kind: string; exchange: string };
 type Results = { query: string; matches: Match[] };
@@ -93,9 +94,9 @@ export function WatchlistAdd({
 
   return (
     <Card title={t("watchlist.add_title")} sub={t("watchlist.add_sub")}>
-      <div className="pf-cardbody">
+      <div className="pr-cardbody">
         <input
-          className="pf-input pf-input-wide"
+          className="pr-input pr-input-wide"
           type="search"
           aria-label={t("watchlist.add_title")}
           placeholder={t("watchlist.add_placeholder")}
@@ -103,14 +104,12 @@ export function WatchlistAdd({
           onChange={(event) => setQuery(event.target.value)}
         />
 
-        <div className="pf-chips">
-          <span className="pf-hint">{t("watchlist.add_groups")}</span>
+        <div className="pr-chips">
+          <span className="pr-hint">{t("watchlist.add_groups")}</span>
           {groups.map((tag) => (
-            <button
+            <ToggleChip
               key={tag}
-              type="button"
-              className={into.includes(tag) ? "pf-chip pf-chip-on" : "pf-chip"}
-              aria-pressed={into.includes(tag)}
+              on={into.includes(tag)}
               onClick={() =>
                 setInto((current) =>
                   current.includes(tag)
@@ -120,10 +119,10 @@ export function WatchlistAdd({
               }
             >
               {tag}
-            </button>
+            </ToggleChip>
           ))}
           <input
-            className="pf-input pf-input-sm"
+            className="pr-input pr-input-sm"
             aria-label={t("watchlist.add_groups")}
             placeholder={t("watchlist.add_groups_ph")}
             value={newGroup}
@@ -139,9 +138,9 @@ export function WatchlistAdd({
             }}
           />
         </div>
-        <span className="pf-hint">{t("watchlist.add_groups_help")}</span>
+        <span className="pr-hint">{t("watchlist.add_groups_help")}</span>
 
-        <label className="pf-switch">
+        <label className="pr-switch">
           <input
             type="checkbox"
             checked={star}
@@ -153,13 +152,13 @@ export function WatchlistAdd({
         <Failure message={failure ?? searchFailed} />
 
         {term.length < MIN_QUERY ? (
-          <p className="pf-hint">{t("watchlist.add_hint")}</p>
+          <p className="pr-hint">{t("watchlist.add_hint")}</p>
         ) : matches === null ? (
-          <p className="pf-hint">{t("common.loading")}</p>
+          <p className="pr-hint">{t("common.loading")}</p>
         ) : matches.length === 0 ? (
-          <p className="pf-hint">{t("watchlist.add_none")}</p>
+          <p className="pr-hint">{t("watchlist.add_none")}</p>
         ) : (
-          <div className="pf-res">
+          <div className="pr-res">
             {matches.map((match) => {
               const already = listed.has(match.ticker.toUpperCase());
               const kind = KIND_KEY[match.kind] ?? match.kind;
@@ -167,16 +166,16 @@ export function WatchlistAdd({
                 <button
                   key={match.ticker}
                   type="button"
-                  className="pf-btn pf-resrow"
+                  className="pr-btn pr-resrow"
                   disabled={already || busy}
                   title={
                     already ? t("watchlist.add_listed") : t(`watchlist.kind_${kind}`)
                   }
                   onClick={() => pick(match)}
                 >
-                  <span className="pf-resrow-t">{match.ticker}</span>
-                  <span className="pf-resrow-n">{match.name}</span>
-                  <span className="pf-resrow-k">
+                  <span className="pr-resrow-t">{match.ticker}</span>
+                  <span className="pr-resrow-n">{match.name}</span>
+                  <span className="pr-resrow-k">
                     {already
                       ? t("watchlist.add_listed")
                       : (match.exchange ?? "") || t(`watchlist.kind_${kind}`)}

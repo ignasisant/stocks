@@ -155,6 +155,68 @@ def test_an_unquotable_ticker_reads_null_not_zero(client, monkeypatch):
     assert body["price"] is None and body["pct"] is None
 
 
+def test_a_native_price_is_restated_only_when_a_base_is_asked_for(client, monkeypatch):
+    """A KRW listing read by a euro account: the header must not print a bare
+    number that reads as the reader's own money. Same rule as `/metrics` — no
+    account dependency, and no fundamentals pull, until `?base=` asks for it."""
+    monkeypatch.setattr(
+        "stocks.api.routes.ticker.session_quote",
+        lambda t: {"price": 285_500.0, "pct": 0.0325, "session": None, "as_of": None},
+    )
+    monkeypatch.setattr("stocks.api.routes.ticker.market_live", lambda t: True)
+    fetched = []
+    monkeypatch.setattr(
+        loaders, "fundamentals",
+        lambda t: fetched.append(t) or type("F", (), {"info": {"currency": "KRW"}})(),
+    )
+    monkeypatch.setattr("stocks.data.fx.spot", lambda a, b: (0.00068, "2026-09-18"))
+
+    plain = client.get("/v1/ticker/005930.KS/quote", headers=AUTH).json()
+    assert plain["currency"] is None and plain["price_base"] is None
+    assert fetched == [], "no base asked, no fundamentals pull either"
+
+    body = client.get(
+        "/v1/ticker/005930.KS/quote", params={"base": "eur"}, headers=AUTH
+    ).json()
+    assert body["currency"] == "KRW"
+    assert body["price_base"] == pytest.approx(285_500.0 * 0.00068)
+    assert (body["fx_rate"], body["fx_as_of"], body["base"]) == (
+        0.00068, "2026-09-18", "EUR",
+    )
+
+    # Already quoted in the reader's own money: nothing to restate.
+    monkeypatch.setattr(
+        loaders, "fundamentals",
+        lambda t: type("F", (), {"info": {"currency": "USD"}})(),
+    )
+    same = client.get(
+        "/v1/ticker/AAPL/quote", params={"base": "usd"}, headers=AUTH
+    ).json()
+    assert same["price_base"] is None
+
+
+def test_a_coin_pair_is_never_sent_to_fundamentals_for_its_currency(
+    client, monkeypatch
+):
+    """The pair's own symbol already names its quote leg (BTC-EUR), so the
+    quote route must not spend a fundamentals pull asking Yahoo what a coin's
+    currency is."""
+    monkeypatch.setattr(
+        "stocks.api.routes.ticker.session_quote",
+        lambda t: {"price": 50_000.0, "pct": 0.01, "session": None, "as_of": None},
+    )
+    monkeypatch.setattr("stocks.api.routes.ticker.market_live", lambda t: True)
+    monkeypatch.setattr("stocks.api.routes.ticker.is_crypto", lambda t: True)
+    fetched = []
+    monkeypatch.setattr(
+        loaders, "fundamentals", lambda t: fetched.append(t) or object()
+    )
+    body = client.get(
+        "/v1/ticker/BTC-EUR/quote", params={"base": "eur"}, headers=AUTH
+    ).json()
+    assert body["currency"] is None and fetched == []
+
+
 # ---------------------------------------------------------------------- events
 
 

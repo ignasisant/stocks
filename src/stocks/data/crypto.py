@@ -80,6 +80,18 @@ CRYPTO_NAMES: dict[str, str] = {
     "DYDX": "dYdX",
 }
 
+# Coin code -> CoinGecko coin id, priced from CoinGecko and never from Yahoo
+# (`stocks.data.fetch.fetch_many`): either Yahoo has no pair at all (MOODENG),
+# or its pair is a *different* coin under the same symbol (Yahoo's CAT-EUR
+# quotes ~10,000x Simon's Cat, the CAT Revolut sells). Hand-curated and never
+# resolved by CoinGecko's own symbol search: a ticker like MOODENG turns up
+# more than one coin there, including scam duplicates of the real one. Add an
+# entry only after checking its chart against the book's own fills.
+COINGECKO_IDS: dict[str, str] = {
+    "MOODENG": "moo-deng",
+    "CAT": "simon-s-cat",
+}
+
 
 def split_pair(ticker: str) -> tuple[str, str] | None:
     """(coin, fiat) for a crypto pair symbol, None for anything else.

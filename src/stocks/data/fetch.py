@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -14,8 +15,12 @@ import yfinance as yf
 from yfinance.exceptions import YFRateLimitError
 
 from stocks import obs
+from stocks.analysis import naive_dates
 from stocks.config import DATA_DIR, ticker_aliases
 from stocks.data import profiles
+from stocks.data.crypto import COINGECKO_IDS, split_pair
+from stocks.data.fx import rates_range
+from stocks.data.http import get_json
 
 # ---------------------------------------------------------------- the breaker
 # One verdict about Yahoo for the whole process, because there is only one
@@ -318,6 +323,12 @@ def fetch_many(
     """
     if not tickers:
         return {}
+    # Hand-mapped coins skip Yahoo entirely: for some its symbol is another
+    # coin, and an answer from the wrong asset never reaches the fallbacks.
+    gecko = [t for t in tickers if (p := split_pair(t)) and p[0] in COINGECKO_IDS]
+    tickers = [t for t in tickers if t not in gecko]
+    if not tickers:
+        return _coingecko_fallback(gecko, period, interval)
     symbol_of = {t: resolve(t) for t in tickers}
     symbols = list(dict.fromkeys(symbol_of.values()))
     # The budget is OUTSIDE the retry ladder, not inside it: wrapped the other
@@ -360,6 +371,119 @@ def fetch_many(
         if not df.empty:
             df.index.name = "Date"
             out[t] = df
+    missing = [t for t in tickers if t not in out]
+    if missing:
+        out.update(_crypto_usd_fallback(missing, period, interval, auto_adjust, budget))
+    if gecko:
+        out.update(_coingecko_fallback(gecko, period, interval))
+    return out
+
+
+def _crypto_usd_fallback(
+    tickers: list[str],
+    period: str,
+    interval: str,
+    auto_adjust: bool,
+    budget: float,
+) -> dict[str, pd.DataFrame]:
+    """Retry an unpriced EUR/GBP crypto pair on its USD one, FX-converted back.
+
+    Yahoo's EUR/GBP crypto pairs only exist for major coins — a meme token a
+    Revolut statement paired to EUR (`stocks.data.crypto.to_pair`) 404s there
+    even though the USD pair, the one Yahoo actually maintains depth for,
+    prices fine. Converting through the ECB daily rate keeps the series in the
+    ledger's own quote currency, so nothing downstream has to know the coin
+    was fetched at a different pair than the one it is held in.
+    """
+    pairs = {t: p for t in tickers if (p := split_pair(t)) and p[1] != "USD"}
+    if not pairs:
+        return {}
+    usd_symbols = sorted({f"{coin}-USD" for coin, _ in pairs.values()})
+    usd_frames = fetch_many(
+        usd_symbols,
+        period=period,
+        interval=interval,
+        auto_adjust=auto_adjust,
+        budget=budget,
+    )
+    out: dict[str, pd.DataFrame] = {}
+    for t, (coin, quote) in pairs.items():
+        usd_df = usd_frames.get(f"{coin}-USD")
+        if usd_df is None or usd_df.empty:
+            continue
+        converted = usd_df.copy()
+        converted.index = naive_dates(converted.index)
+        converted.index.name = "Date"
+        start = converted.index.min().date().isoformat()
+        end = converted.index.max().date().isoformat()
+        fx = rates_range(start, end, "USD", quote)
+        if not fx:
+            continue
+        rate = pd.Series(fx)
+        rate.index = naive_dates(rate.index)
+        rate = rate.reindex(converted.index).ffill().bfill()
+        for col in ("Open", "High", "Low", "Close"):
+            if col in converted:
+                converted[col] = converted[col] * rate.to_numpy()
+        out[t] = converted
+        obs.event("yahoo.crypto_usd_fallback", ticker=t, via=f"{coin}-USD")
+    return out
+
+
+# CoinGecko's public API, no key: the last resort for a coin Yahoo has no
+# pair for at all, not even -USD (MOODENG, at last check). Free-tier history
+# is capped to the past year regardless of `days` asked for — a book older
+# than that still carries its earliest stretch at cost.
+COINGECKO_URL = (
+    "https://api.coingecko.com/api/v3/coins/{id}/market_chart"
+    "?vs_currency={quote}&days={days}&interval=daily"
+)
+COINGECKO_MAX_DAYS = 365
+_PERIOD_RE = re.compile(r"^(\d+)(d|mo|y)$")
+_PERIOD_DAYS = {"d": 1, "mo": 30, "y": 365}
+
+
+def _period_days(period: str) -> int:
+    """`period` ("1y", "37mo", "5d") as a day count, capped at the free
+    tier's lookback — same d/mo/y shapes `stocks.analysis.portfolio` builds."""
+    m = _PERIOD_RE.match(period)
+    days = int(m.group(1)) * _PERIOD_DAYS[m.group(2)] if m else COINGECKO_MAX_DAYS
+    return min(days, COINGECKO_MAX_DAYS)
+
+
+def _coingecko_fallback(
+    tickers: list[str], period: str, interval: str
+) -> dict[str, pd.DataFrame]:
+    """CoinGecko history for a pair whose coin is hand-mapped in
+    `crypto.COINGECKO_IDS` — the coins Yahoo does not quote under any pair.
+
+    Daily only: `market_chart`'s finer intervals only go back a few days,
+    nowhere near a book's history. `vs_currency` asks CoinGecko for the
+    pair's own quote currency directly, so no FX conversion is needed here —
+    unlike the Yahoo USD fallback above, which has no such option.
+    """
+    if interval != "1d":
+        return {}
+    pairs = {t: p for t in tickers if (p := split_pair(t)) and p[0] in COINGECKO_IDS}
+    if not pairs:
+        return {}
+    days = _period_days(period)
+    out: dict[str, pd.DataFrame] = {}
+    for t, (coin, quote) in pairs.items():
+        url = COINGECKO_URL.format(id=COINGECKO_IDS[coin], quote=quote.lower(), days=days)
+        with obs.swallow("coingecko.market_chart", ticker=t):
+            prices = get_json(url, timeout=15).get("prices") or []
+            if not prices:
+                continue
+            idx = naive_dates(pd.to_datetime([p[0] for p in prices], unit="ms"))
+            close = pd.Series([p[1] for p in prices], index=idx.normalize())  # ty: ignore[unresolved-attribute]
+            close = close[~close.index.duplicated(keep="last")].sort_index()
+            df = pd.DataFrame(
+                {"Open": close, "High": close, "Low": close, "Close": close}
+            )
+            df.index.name = "Date"
+            out[t] = df
+            obs.event("coingecko.fallback", ticker=t, coin=coin)
     return out
 
 

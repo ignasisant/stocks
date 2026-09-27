@@ -42,8 +42,6 @@ TOKEN = "s3cret-token"
 NO_CARD = {
     "name": None,
     "picture": None,
-    "data_dir": None,
-    "data_dir_full": None,
     "owner": False,
 }
 
@@ -330,9 +328,9 @@ def test_me_reports_the_signed_in_address(client, books):
 
 
 def test_me_carries_the_identity_card_for_the_session_itself(client, books):
-    """The Streamlit card's name, avatar and folder chip: the name from the
-    claims, the folder as its tail with the full path beside it for the
-    tooltip, and no owner flag for an ordinary account."""
+    """The card's name and avatar from the claims, no data folder (server
+    plumbing a user cannot act on), and no owner flag for an ordinary
+    account."""
     client.cookies.set(
         session.COOKIE,
         session.mint(
@@ -345,11 +343,9 @@ def test_me_carries_the_identity_card_for_the_session_itself(client, books):
         ),
     )
     body = client.get("/v1/me").json()
-    root = books[MINE].root
     assert body["name"] == "Ada Lovelace"
     assert body["picture"] == "https://lh3.example.com/a.png"
-    assert body["data_dir"] == f"users/{root.name}"
-    assert body["data_dir_full"] == str(root)
+    assert "data_dir" not in body and "data_dir_full" not in body
     assert body["owner"] is False
 
 

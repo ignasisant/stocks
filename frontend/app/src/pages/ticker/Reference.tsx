@@ -7,6 +7,7 @@ import { useState } from "react";
 import { get } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { Loaded } from "../../shell/Layout";
+import { Responsive, StackCards } from "../../ui/Rows";
 import { useT } from "../../shell/i18n";
 import { DASH, compactMoney, money, orElse } from "./format";
 import { Card, Metric, Metrics, Note, Scroll, Tag } from "./ui";
@@ -83,43 +84,75 @@ export function KpiSourcesSection() {
           {(data) =>
             !data || data.kpis.length === 0 ? null : (
               <>
-                <Scroll>
-                  <table className="tk-table">
-                    <thead>
-                      <tr>
-                        <th>{t("kpi.col_kpi")}</th>
-                        <th>{t("kpi.col_level")}</th>
-                        <th>{t("kpi.col_loaded")}</th>
-                        <th>{t("kpi.col_verify")}</th>
-                        <th>{t("kpi.col_note")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.kpis.map((row) => (
-                        <tr key={row.key}>
-                          {/* The catalog's name for the KPI, as Streamlit's
+                <Responsive
+                  wide={
+                    <Scroll>
+                      <table className="tk-table">
+                        <thead>
+                          <tr>
+                            <th>{t("kpi.col_kpi")}</th>
+                            <th>{t("kpi.col_level")}</th>
+                            <th>{t("kpi.col_loaded")}</th>
+                            <th>{t("kpi.col_verify")}</th>
+                            <th>{t("kpi.col_note")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.kpis.map((row) => (
+                            <tr key={row.key}>
+                              {/* The catalog's name for the KPI, as Streamlit's
                               `kpi_label` reads it; the API's English string is
                               the fallback for a KPI nobody has translated. */}
-                          <td title={orElse(t, `kpi.${row.key}.desc`, row.desc)}>
-                            {orElse(t, `kpi.${row.key}.label`, row.label)}
-                          </td>
-                          <td>
-                            {/* Provenance, muted but never absent: a consensus
+                              <td title={orElse(t, `kpi.${row.key}.desc`, row.desc)}>
+                                {orElse(t, `kpi.${row.key}.label`, row.label)}
+                              </td>
+                              <td>
+                                {/* Provenance, muted but never absent: a consensus
                                 figure shown bare wears a filing's authority. */}
+                                <Tag
+                                  tone={row.level === "consensus" ? "orange" : "gray"}
+                                >
+                                  {orElse(t, `kpi.level.${row.level}`, row.level)}
+                                </Tag>
+                              </td>
+                              <td className="tk-muted">{row.loader}</td>
+                              <td className="tk-muted">{row.verify}</td>
+                              <td className="tk-muted">
+                                {row.note
+                                  ? orElse(t, `kpi.${row.key}.note`, row.note)
+                                  : ""}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </Scroll>
+                  }
+                  narrow={
+                    <StackCards
+                      rows={data.kpis}
+                      rowKey={(row) => row.key}
+                      title={(row) => orElse(t, `kpi.${row.key}.label`, row.label)}
+                      lines={[
+                        {
+                          label: t("kpi.col_level"),
+                          cell: (row) => (
                             <Tag tone={row.level === "consensus" ? "orange" : "gray"}>
                               {orElse(t, `kpi.level.${row.level}`, row.level)}
                             </Tag>
-                          </td>
-                          <td className="tk-muted">{row.loader}</td>
-                          <td className="tk-muted">{row.verify}</td>
-                          <td className="tk-muted">
-                            {row.note ? orElse(t, `kpi.${row.key}.note`, row.note) : ""}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </Scroll>
+                          ),
+                        },
+                        { label: t("kpi.col_loaded"), cell: (row) => row.loader },
+                        { label: t("kpi.col_verify"), cell: (row) => row.verify },
+                        {
+                          label: t("kpi.col_note"),
+                          cell: (row) =>
+                            row.note ? orElse(t, `kpi.${row.key}.note`, row.note) : "",
+                        },
+                      ]}
+                    />
+                  }
+                />
                 <Note>{t("ticker.kpi_sources_caption", { n: data.kpis.length })}</Note>
               </>
             )

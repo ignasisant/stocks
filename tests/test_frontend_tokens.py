@@ -30,6 +30,9 @@ FRONTENDS = [REPO / "frontend" / "app" / "src"]
 # `var(--ag-name)` in CSS or TSX, and `token("name")` in theme.ts.
 _VAR = re.compile(r"var\(\s*--ag-([a-z0-9-]+)")
 _TOKEN = re.compile(r'token\(\s*"([a-z0-9-]+)"')
+# `token("name", "fallback")` — the two-argument form, fallback captured too.
+_TOKEN_FALLBACK = re.compile(r'token\(\s*"([a-z0-9-]+)"\s*,\s*"([^"]*)"\s*\)')
+_HEX = re.compile(r"#[0-9A-Fa-f]{3,8}\b")
 
 
 def _named() -> dict[str, set[str]]:
@@ -74,3 +77,58 @@ def test_the_page_actually_uses_tokens_rather_than_hexes():
     """A guard on the guard: if the stylesheet stopped naming tokens at all, the
     test above would pass by using none."""
     assert len(_named()) > 20
+
+
+@pytest.mark.skipif(
+    not any(root.exists() for root in FRONTENDS),
+    reason="frontend sources not checked out",
+)
+def test_react_fallbacks_match_the_design_system():
+    """`token(name, fallback)`'s fallback is what phones and dev-server-before-
+    proxy paint before `--ag-*` resolves — get it wrong and the drift is
+    invisible: the CSS var wins in every render this test could otherwise see.
+
+    So this pins the literal beside the app's own tokens() rather than trusting
+    it was copied right, and re-pins it every time ds.py's palette moves.
+    """
+    published = tokens()
+    stale: dict[str, tuple[str, str]] = {}
+    for root in FRONTENDS:
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*")):
+            if path.suffix not in {".ts", ".tsx"} or path.name.endswith(".test.ts"):
+                continue
+            text = path.read_text()
+            for name, fallback in _TOKEN_FALLBACK.findall(text):
+                if name in published and published[name] != fallback:
+                    stale[name] = (fallback, published[name])
+    assert not stale, (
+        "these fallbacks no longer match ds.tokens() (fallback, current): "
+        f"{stale}"
+    )
+
+
+@pytest.mark.skipif(
+    not any(root.exists() for root in FRONTENDS),
+    reason="frontend sources not checked out",
+)
+def test_no_raw_hex_colors_outside_the_fallback_table():
+    """Every colour on the page should be a `--ag-*` var or a `token()` call —
+    `shell/theme.ts` is the one place a hex literal is legitimate, as the
+    fallback beside the name it belongs to. A hex anywhere else is a value
+    that stopped tracking the palette the moment it was typed.
+    """
+    leaks: dict[str, list[str]] = {}
+    for root in FRONTENDS:
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*")):
+            if path.suffix not in {".css", ".ts", ".tsx"}:
+                continue
+            if path.name == "theme.ts" or ".test." in path.name:
+                continue
+            found = _HEX.findall(path.read_text())
+            if found:
+                leaks[f"{root.parent.name}/{path.name}"] = found
+    assert not leaks, f"raw hex colors outside theme.ts: {leaks}"

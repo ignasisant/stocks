@@ -22,17 +22,8 @@ import {
   signed,
   type Translate,
 } from "./format";
-import {
-  Banner,
-  Card,
-  Kpi,
-  Kpis,
-  Note,
-  Scroll,
-  Tag,
-  TickerLink,
-  useMobile,
-} from "./ui";
+import { Banner, Card, Note, Scroll, Tag, TickerLink, useMobile } from "./ui";
+import { Kpi, KpiGrid, bandTone } from "../../ui/Kpi";
 import type { Comparables, Fund, Insiders, Metrics, Moat } from "./types";
 
 // ------------------------------------------------------------------ KPI grid
@@ -64,7 +55,7 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
 
   return (
     <Card title={t("ticker.fundamentals")}>
-      <Kpis>
+      <KpiGrid>
         {/* The tiles the server says this grid has, in its order, and every one
             of them drawn: a missing figure prints "n/a" rather than vanishing,
             because a grid that changes shape per company cannot be read at a
@@ -83,18 +74,18 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
               label={label}
               help={help || undefined}
               value={kpi.formatted}
-              meta={
-                kpi.verdict ? (
-                  // Coloured by the tone the domain's band carries, never by
-                  // the label: the labels grow ("net cash", "heavy dilution")
-                  // and a client matching on them shows each new one as neutral.
-                  <Tag tone={kpi.verdict_tone}>{kpi.verdict}</Tag>
-                ) : null
+              // Coloured by the tone the domain's band carries, never by the
+              // label: the labels grow ("net cash", "heavy dilution") and a
+              // client matching on them shows each new one as neutral.
+              chip={
+                kpi.verdict
+                  ? { text: kpi.verdict, tone: bandTone(kpi.verdict_tone) }
+                  : null
               }
             />
           );
         })}
-      </Kpis>
+      </KpiGrid>
       {fxFailed ? <Note>{t("ticker.fx_unavailable")}</Note> : null}
       {/* The one figure here that is the reader's rather than the company's: a
           dollar market cap restated in the money they keep their book in. */}
@@ -132,7 +123,7 @@ export function MoatSection({ moat }: { moat: Moat }) {
       title={t("ticker.moat")}
       note={t("ticker.moat_caption", { years: moat.years })}
     >
-      <Kpis>
+      <KpiGrid>
         {/* The band's tone from the server and the KPI's own description on
             the tooltip — Streamlit's `verdict("moat")` chip and `kpi_desc`,
             which is where the reader learns ≥70 is "wide". */}
@@ -140,9 +131,11 @@ export function MoatSection({ moat }: { moat: Moat }) {
           label={t("ticker.moat_score")}
           help={orElse(t, "kpi.moat.desc", "") || undefined}
           value={moat.score.toFixed(0)}
-          meta={moat.rating ? <Tag tone={moat.rating_tone}>{moat.rating}</Tag> : null}
+          chip={
+            moat.rating ? { text: moat.rating, tone: bandTone(moat.rating_tone) } : null
+          }
         />
-      </Kpis>
+      </KpiGrid>
       <ul className="tk-pillars">
         {moat.pillars.map((pillar) => (
           <li key={pillar.key}>
@@ -207,26 +200,32 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
       )}
     >
       {summary ? (
-        <Kpis>
+        <KpiGrid>
           {/* Counts on the value line, money on the chip. The count is how many
               trades, which is not how many people: those are the fourth tile,
               and swapping them overstates one insider trading five times. */}
           <Kpi
             label={t("ticker.buys_open_market")}
             value={String(summary.buy_count)}
-            meta={
-              summary.buy_value ? (
-                <Tag tone="green">{`+${compactMoney(summary.buy_value, ccy ?? "USD")}`}</Tag>
-              ) : null
+            chip={
+              summary.buy_value
+                ? {
+                    text: `+${compactMoney(summary.buy_value, ccy ?? "USD")}`,
+                    tone: "up",
+                  }
+                : null
             }
           />
           <Kpi
             label={t("ticker.sells_open_market")}
             value={String(summary.sell_count)}
-            meta={
-              summary.sell_value ? (
-                <Tag tone="red">{`-${compactMoney(summary.sell_value, ccy ?? "USD")}`}</Tag>
-              ) : null
+            chip={
+              summary.sell_value
+                ? {
+                    text: `-${compactMoney(summary.sell_value, ccy ?? "USD")}`,
+                    tone: "down",
+                  }
+                : null
             }
           />
           <Kpi
@@ -237,7 +236,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
             label={t("ticker.distinct_buyers_sellers")}
             value={`${summary.buyers} / ${summary.sellers}`}
           />
-        </Kpis>
+        </KpiGrid>
       ) : null}
 
       {/* The one reading the page offers on this data, in the app's words. */}
@@ -432,11 +431,11 @@ function FundTiles({ fund }: { fund: Fund }) {
         ],
   ];
   return (
-    <Kpis>
+    <KpiGrid>
       {tiles.map(([label, value, help]) => (
         <Kpi key={label} label={t(label)} value={value} help={t(help)} />
       ))}
-    </Kpis>
+    </KpiGrid>
   );
 }
 

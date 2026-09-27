@@ -101,6 +101,18 @@ PAGES: dict[str, Page] = {
                 "no toast: the banner that replaces the offer is the "
                 "acknowledgement, and it stays for as long as the claim is true"
             ),
+            "portfolio.cumulative_return": (
+                "the React chart compares the book against the same cash flows "
+                "put into the benchmarks, so it is titled and captioned as that "
+                "(`portfolio.flow_matched_return` / `_note`), not as TWR"
+            ),
+            "portfolio.twr_note": "…the same: `portfolio.flow_matched_note`",
+            "portfolio.mwr": (
+                "money-weighted return rides on the TWR tile as a chip "
+                "(`portfolio.mwr_short`) and has its own series in the "
+                "monthly chart, instead of a tile of its own"
+            ),
+            "portfolio.mwr_help": "…the same, the help of that tile",
         },
     ),
     "sentiment": Page(

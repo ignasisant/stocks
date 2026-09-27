@@ -3,7 +3,7 @@
  * P/L, allocation and risk, the realized result under the filer's own
  * jurisdiction, dividends, and what trading it all cost.
  *
- * Five tabs, and the active one rides the URL as a slug (`?tab=fees`) rather
+ * Six tabs, the overview first, and the active one rides the URL as a slug (`?tab=fees`) rather
  * than as its label: labels are localized, and a bookmark made in Spanish has
  * to open the same tab in English. `setParams` writes it without a history
  * entry — switching a tab is not a navigation the back button should have to
@@ -12,7 +12,7 @@
  * Only the open tab's component is mounted, so only its fetch runs. That is
  * the same arrangement as the Streamlit page's dynamic tabs, and for the same
  * reason: the price-and-profile burst behind "Allocation & risk" must not
- * block the four tabs that do not need it.
+ * block the tabs that do not need it.
  */
 
 import { useState } from "react";
@@ -26,16 +26,20 @@ import { GuestBanner } from "../../shell/guest";
 import { useCurrency, useGuest } from "../../shell/session";
 import type { Summary, Transactions } from "./api";
 import { Empty, Warn } from "./ui";
+import Overview from "./Overview";
 import Positions from "./Positions";
 import Risk from "./Risk";
+import Projection from "./Projection";
 import Tax from "./Tax";
 import Dividends from "./Dividends";
 import Fees from "./Fees";
 import "./portfolio.css";
 
 const TABS = [
+  ["overview", "portfolio.tab_overview", Overview],
   ["positions", "portfolio.tab_positions", Positions],
   ["risk", "portfolio.tab_alloc_risk", Risk],
+  ["projection", "portfolio.tab_projection", Projection],
   ["tax", "portfolio.tab_realized_tax", Tax],
   ["dividends", "portfolio.tab_dividends", Dividends],
   ["fees", "portfolio.tab_fees", Fees],

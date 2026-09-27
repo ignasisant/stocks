@@ -16,6 +16,7 @@ import { get } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { Skeleton } from "../../shell/Layout";
 import { useT, useLang } from "../../shell/i18n";
+import { DenseRows, Responsive } from "../../ui/Rows";
 import { CardQuery, Card, CardTitle, Note, TickerCell } from "./ui";
 import { decimal, percent, plain, type Translate } from "./format";
 import type { Extreme, Extremes } from "./types";
@@ -48,28 +49,45 @@ export function ExtremesCard({ nonce }: { nonce: number }) {
             {data.extremes.length === 0 ? (
               <Note>{t("home.no_extremes")}</Note>
             ) : (
-              <table className="hm-table">
-                <thead>
-                  <tr>
-                    <th>{t("home.col_ticker")}</th>
-                    <th className="hm-num">{t("home.col_last_close")}</th>
-                    <th>{t("home.col_52week")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.extremes.map((extreme) => (
-                    <tr key={`${extreme.ticker}-${extreme.edge}`}>
-                      {/* The name ellipsises here rather than wrapping the
+              <Responsive
+                wide={
+                  <table className="hm-table">
+                    <thead>
+                      <tr>
+                        <th>{t("home.col_ticker")}</th>
+                        <th className="hm-num">{t("home.col_last_close")}</th>
+                        <th>{t("home.col_52week")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.extremes.map((extreme) => (
+                        <tr key={`${extreme.ticker}-${extreme.edge}`}>
+                          {/* The name ellipsises here rather than wrapping the
                           row onto two lines in a narrow column. */}
-                      <td className="hm-tick-cell">
-                        <TickerCell ticker={extreme.ticker} />
-                      </td>
-                      <td className="hm-num">{decimal(extreme.price, lang) ?? na}</td>
-                      <td className="hm-muted">{where(extreme, t, lang)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          <td className="hm-tick-cell">
+                            <TickerCell ticker={extreme.ticker} />
+                          </td>
+                          <td className="hm-num">
+                            {decimal(extreme.price, lang) ?? na}
+                          </td>
+                          <td className="hm-muted">{where(extreme, t, lang)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                }
+                narrow={
+                  <DenseRows
+                    rows={data.extremes}
+                    rowKey={(extreme) => `${extreme.ticker}-${extreme.edge}`}
+                    spec={{
+                      ticker: (extreme) => extreme.ticker,
+                      value: (extreme) => decimal(extreme.price, lang) ?? na,
+                      sub: (extreme) => [where(extreme, t, lang)],
+                    }}
+                  />
+                }
+              />
             )}
           </Card>
         )

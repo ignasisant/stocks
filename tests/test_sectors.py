@@ -7,6 +7,7 @@ language model proposed, and refusing the ones Yahoo will not vouch for.
 
 import json
 
+import pandas as pd
 import pytest
 from yfinance.exceptions import YFRateLimitError
 
@@ -60,6 +61,9 @@ def cohort(monkeypatch, tmp_path):
         sectors, "fetch_metrics_many",
         lambda ts, **kw: [_row(t, 1.0 - i * 0.1) for i, t in enumerate(ts)],
     )
+    # No OHLC by default: the technical podium is this module's own subject
+    # below, and every other test here is about the fundamentals half.
+    monkeypatch.setattr(sectors, "fetch_many", lambda ts, **kw: {})
     monkeypatch.setattr(sectors, "SCAN_FILE", tmp_path / "sector_scan.json")
     monkeypatch.setattr(sectors.storage, "enabled", lambda: False)
     return state
@@ -177,6 +181,50 @@ def test_the_scan_does_not_revalidate_its_extras(cohort):
     the caller's bug, and it must not cost a silent Yahoo round trip here."""
     scan = sectors.scan_sector("Technology", extra=("XOM",))
     assert "XOM" in scan.tickers
+
+
+# -------------------------------------------------------------- the technicals
+
+
+def _prices(drift: float, n: int = 260) -> pd.DataFrame:
+    """A synthetic daily OHLCV series compounding at `drift` a day."""
+    idx = pd.date_range("2024-01-01", periods=n, freq="B")
+    closes = [100.0 * (1 + drift) ** i for i in range(n)]
+    return pd.DataFrame({"Close": closes, "Volume": [1_000_000.0] * n}, index=idx)
+
+
+def test_a_strong_uptrend_tops_the_technical_podium(cohort, monkeypatch):
+    monkeypatch.setattr(
+        sectors, "fetch_many",
+        lambda ts, **kw: {
+            "AAPL": _prices(0.01), "MSFT": _prices(0.001), "NVDA": _prices(-0.004),
+        },
+    )
+    scan = sectors.scan_sector("Technology")
+    assert scan.tech_podium == ("AAPL", "MSFT", "NVDA")
+    assert scan.tech_scores["AAPL"] > scan.tech_scores["NVDA"]
+    # The fundamentals podium is untouched by any of this.
+    assert scan.podium == ("AAPL", "MSFT", "NVDA")
+
+
+def test_a_failed_ohlc_pull_loses_only_the_technical_podium(cohort, monkeypatch):
+    def refused(*a, **kw):
+        raise YFRateLimitError()
+
+    monkeypatch.setattr(sectors, "fetch_many", refused)
+    scan = sectors.scan_sector("Technology")
+    assert scan.tech_podium == () and scan.tech_scores == {}
+    assert scan.podium == ("AAPL", "MSFT", "NVDA")  # fundamentals unaffected
+
+
+def test_a_scan_from_before_technicals_existed_still_loads(cohort):
+    """A stored scan.json written before tech_* existed has no such keys."""
+    old = {
+        "sector": "Technology", "as_of": "2026-09-01",
+        "tickers": ["AAPL"], "metrics": [], "scores": {}, "podium": [],
+    }
+    scan = sectors.SectorScan.from_dict(old)
+    assert scan.tech_podium == () and scan.tech_scores == {} and scan.tech_metrics == ()
 
 
 # --------------------------------------------------------------- persistence

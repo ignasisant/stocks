@@ -28,6 +28,7 @@ from stocks.analysis import sectors as sector_scan
 from stocks.analysis.screener import DEFAULT_COLUMNS, LOWER_IS_BETTER, METRIC_ORDER
 from stocks.analysis.sectors import SECTORS
 from stocks.analysis.sentiment import SECTOR_ETFS
+from stocks.analysis.technicals import TECH_METRIC_ORDER
 from stocks.api import loaders
 from stocks.api.deps import Account, Writer
 from stocks.api.jsonsafe import num as _num
@@ -117,6 +118,7 @@ def sectors() -> Sectors:
                 as_of=scan.as_of if (scan := scans.get(name)) else None,
                 cohort=len(scan.tickers) if scan else 0,
                 podium=list(scan.podium) if scan else [],
+                tech_podium=list(scan.tech_podium) if scan else [],
             )
             for name in SECTORS
         ]
@@ -191,9 +193,20 @@ def cohort(
     for place, row in enumerate(rows, start=1):
         row.rank = place
 
+    tech_rows = [
+        CohortRow(
+            ticker=str(m.get("ticker") or "").upper(),
+            score=_num(scan.tech_scores.get(str(m.get("ticker") or "").upper())),
+            metrics={key: _num(m.get(key)) for key in TECH_METRIC_ORDER},
+        )
+        for m in scan.tech_metrics
+    ]
+
     shell.as_of = scan.as_of
     shell.podium = list(scan.podium)
     shell.rows = rows
+    shell.tech_podium = list(scan.tech_podium)
+    shell.tech_rows = tech_rows
     return shell
 
 

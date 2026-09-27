@@ -48,6 +48,10 @@ const UNITS: Record<string, Unit> = {
   fcf_cagr: "pct",
   share_dilution: "pct",
   moat: "score",
+  // The technical podium's own two — the other four (trend_pct, rsi14,
+  // macd_hist, vol_ratio) are scoring-only and never reach formatMetric.
+  roc_63: "pct",
+  pct_from_high: "pct",
 };
 
 /**

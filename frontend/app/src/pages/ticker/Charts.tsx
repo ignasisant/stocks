@@ -33,18 +33,8 @@ import {
   ticks,
   type TipLine,
 } from "./plot";
-import {
-  Banner,
-  Card,
-  Empty,
-  Kpi,
-  Kpis,
-  Note,
-  Segmented,
-  Subhead,
-  Tag,
-  useMobile,
-} from "./ui";
+import { Banner, Card, Empty, Note, Segmented, Subhead, useMobile } from "./ui";
+import { Kpi, KpiGrid, bandTone } from "../../ui/Kpi";
 import type { Financials, Fund, Insiders, Valuation } from "./types";
 
 // ------------------------------------------------------------- results chart
@@ -584,15 +574,15 @@ export function ValuationChart({
         />
       </div>
 
-      <Kpis>
+      <KpiGrid>
         <Kpi
           label={t("ticker.kpi_pe_current")}
           help={t("ticker.kpi_pe_current_help")}
           value={data.current === null ? DASH : data.current.toFixed(1)}
-          meta={
-            data.current_verdict ? (
-              <Tag tone={data.current_tone}>{data.current_verdict}</Tag>
-            ) : null
+          chip={
+            data.current_verdict
+              ? { text: data.current_verdict, tone: bandTone(data.current_tone) }
+              : null
           }
         />
         <Kpi
@@ -608,15 +598,16 @@ export function ValuationChart({
               ? DASH
               : `${window.premium >= 0 ? "+" : ""}${(window.premium * 100).toFixed(1)}%`
           }
-          meta={
-            band && percentile !== null ? (
-              <Tag tone={band.tone}>
-                {t("ticker.pe_percentile", { p: percentile.toFixed(0) })}
-              </Tag>
-            ) : null
+          chip={
+            band && percentile !== null
+              ? {
+                  text: t("ticker.pe_percentile", { p: percentile.toFixed(0) }),
+                  tone: bandTone(band.tone),
+                }
+              : null
           }
         />
-      </Kpis>
+      </KpiGrid>
 
       {divergence > 0.2 ? (
         <Banner tone="warn">

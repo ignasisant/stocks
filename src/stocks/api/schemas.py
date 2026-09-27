@@ -210,6 +210,21 @@ class Performance(BaseModel):
         default=None,
         description="Worst peak-to-trough fall of the TWR path (<= 0).",
     )
+    twr_drawdown_peak: str | None = Field(
+        default=None,
+        description="ISO date the worst fall started from; null when it never fell.",
+    )
+    twr_drawdown_trough: str | None = Field(
+        default=None, description="ISO date the worst fall bottomed out."
+    )
+    twr_drawdown_peak_value: float | None = Field(
+        default=None,
+        description=(
+            "The book's value on the peak day, in `base`. The TWR weighs every "
+            "day the same, so a fall on a small early book reads as large as "
+            "one on today's — this is what says which it was."
+        ),
+    )
     dropped_days: list[str] = Field(
         default_factory=list,
         description=(
@@ -245,7 +260,7 @@ class WatchlistEntry(BaseModel):
             "position the Streamlit grid edits, which weights the analytics by "
             "market value instead of equally. Null when none is set (0 on "
             "disk), so a client draws an empty cell rather than a zero that "
-            "reads as \"sold\". Written by `PATCH /watchlist/{ticker}`."
+            'reads as "sold". Written by `PATCH /watchlist/{ticker}`.'
         ),
     )
     cost: float | None = Field(
@@ -292,6 +307,28 @@ class Quote(BaseModel):
             "the live price, and only outside it does this quote add anything. "
             "Null on the batch route, which does not work out a clock per name."
         ),
+    )
+    currency: str | None = Field(
+        default=None,
+        description=(
+            "The listing's own quote currency, minor units included (GBp) — "
+            "the same code `TickerPosition.currency` carries. Set only on the "
+            "single-ticker route, and null for a coin pair, whose symbol "
+            "already names its quote leg."
+        ),
+    )
+    price_base: float | None = Field(
+        default=None,
+        description=(
+            "`price` restated in `?base=`, when the two currencies differ and "
+            "a rate could be had. Null otherwise — never an unconverted figure "
+            "passed off as one."
+        ),
+    )
+    fx_rate: float | None = Field(default=None, description="The rate used.")
+    fx_as_of: str | None = Field(default=None, description="…and its date.")
+    base: str | None = Field(
+        default=None, description="The reporting currency asked for with `?base=`."
     )
 
 
@@ -915,6 +952,10 @@ class Recents(BaseModel):
     tickers: list[str] = Field(
         default_factory=list, description="Newest first, capped, deduped."
     )
+    names: dict[str, str] = Field(
+        default_factory=dict,
+        description="Company name per ticker, where one is known.",
+    )
 
 
 # ------------------------------------------------------------- the cost of it
@@ -1150,7 +1191,7 @@ class TaxAllYears(BaseModel):
 class TaxSale(BaseModel):
     ticker: str
     buy_date: str = Field(
-        description='Acquisition; for a pooled holding, the earliest still held.'
+        description="Acquisition; for a pooled holding, the earliest still held."
     )
     sell_date: str
     quantity: float
@@ -1228,38 +1269,46 @@ class AllocationSlice(BaseModel):
 
 
 class RiskCurves(BaseModel):
-    """Cumulative return over the window, three ways, on one date axis.
+    """Return on the money put in over the window, the book against each
+    alternative, on one date axis.
 
-    The axis is the basket's own trading days. The book's TWR is sampled on
-    calendar days, so putting it here drops the weekends it spends standing
-    still — no value is interpolated and none is invented, and the three lines
-    can finally be read against each other at a glance.
+    The axis is the basket's own trading days. Every alternative is a shadow
+    account fed the book's own cash flows on their own dates — a buy puts the
+    same money in, a sale takes it out — and opens at the book's value on the
+    window's first day. Rebasing an index to that day instead would invest
+    the whole book there at once, which a book built up over time never did,
+    and the early rally would be credited to money that arrived later.
 
-    Every series is rebased to the window's first day, which is the only way a
-    comparison means anything: a book two years old and a benchmark fetched
-    over six months have nothing to say to each other from their own zeros.
-    Fractions, not percents — the caller multiplies for display, as it does
-    everywhere else in this API.
+    Each line is value over `invested`, minus one: what the book's money
+    became, against what the same money would have become there. Fractions,
+    not percents — the caller multiplies for display, as it does everywhere
+    else in this API.
     """
 
     dates: list[str] = Field(default_factory=list)
-    portfolio: list[float | None] = Field(
+    invested: list[float | None] = Field(
         default_factory=list,
         description=(
-            "The book's own flow-adjusted return, so deposits do not read as "
-            "performance. Null on a day it could not be taken."
+            "Net money in on each day, in `base`: the opening value plus every "
+            "buy, minus every sale's proceeds. The denominator every line "
+            "shares. Null while nothing is in."
         ),
+    )
+    portfolio: list[float | None] = Field(
+        default_factory=list,
+        description="The book's own value over `invested`. Null while nothing is in.",
     )
     basket: list[float | None] = Field(
         default_factory=list,
         description=(
-            "Today's holdings at today's weights, backtested over the same "
-            "window. Not what the book did — what it would have done had it "
-            "always been shaped like this."
+            "The same flows put into today's holdings at today's weights. Not "
+            "what the book did — what it would have done had it always been "
+            "shaped like this."
         ),
     )
     benchmarks: dict[str, list[float | None]] = Field(
-        default_factory=dict, description="One series per benchmark ticker."
+        default_factory=dict,
+        description="The same flows put into each benchmark, keyed by ticker.",
     )
 
 
@@ -1288,7 +1337,7 @@ class Risk(BaseModel):
     curves: RiskCurves | None = Field(
         default=None,
         description=(
-            "The three cumulative-return lines over this window. Null when the "
+            "The flow-matched return lines over this window. Null when the "
             "window holds no measurable return at all."
         ),
     )
@@ -1310,6 +1359,79 @@ class Risk(BaseModel):
     )
 
 
+class ProjectionSleeve(BaseModel):
+    """One block of the book as the projection moved it."""
+
+    key: str = Field(description="stocks | crypto")
+    value: float = Field(description="Today's value of the sleeve, in `base`.")
+    weight: float = Field(description="Share of today's value.")
+    growth: float = Field(description="Median compound annual return, as used.")
+    volatility: float = Field(description="Annual, as used.")
+    volatility_measured: bool = Field(
+        description="True when it is the sleeve's own; false when a default."
+    )
+    share: float = Field(description="Share of each monthly contribution it gets.")
+
+
+class Projection(BaseModel):
+    """A range for the book's value, month by month, some years out.
+
+    Not a forecast: a spread of outcomes under the assumptions it names, each
+    one echoed back so the page can say what it drew. The book moves as two
+    sleeves, stocks and crypto, each with its own growth and volatility and
+    correlated as they have been. Growth is read as the *median* compound
+    annual return — what "4% a year" means to a reader — and defaults to a
+    long-run equity figure for stocks and zero for crypto, never the book's
+    own past, which would project a lucky stretch forward as a plan.
+    """
+
+    base: str
+    years: int
+    start_value: float | None = Field(
+        default=None, description="Today's value of the book, in `base`."
+    )
+    sleeves: list[ProjectionSleeve] = Field(default_factory=list)
+    correlation: float | None = Field(
+        default=None,
+        description="Weekly stocks-crypto correlation used; null if unmeasured.",
+    )
+    crypto_weight: float = Field(
+        default=0.0, description="Crypto's share of today's value."
+    )
+    monthly: float = Field(description="Contribution added at each month's end.")
+    monthly_suggested: float = Field(
+        description="Average net monthly money put in over the last 12 months."
+    )
+    real: bool = Field(
+        default=False, description="True when the future is in today's money."
+    )
+    inflation: float = Field(description="Annual rate `real` deflates by.")
+    target: float | None = None
+    target_probability: float | None = Field(
+        default=None, description="Share of paths ending at or above `target`."
+    )
+    dates: list[str] = Field(default_factory=list, description="Month ends, today first.")
+    p10: list[float] = Field(default_factory=list)
+    p25: list[float] = Field(default_factory=list)
+    p50: list[float] = Field(default_factory=list)
+    p75: list[float] = Field(default_factory=list)
+    p90: list[float] = Field(default_factory=list)
+    contributed: list[float] = Field(
+        default_factory=list, description="Today's value plus contributions so far."
+    )
+    history_dates: list[str] = Field(
+        default_factory=list,
+        description="Past month ends since the first trade, oldest first; not today.",
+    )
+    history_value: list[float | None] = Field(
+        default_factory=list, description="The book's value at each past month end."
+    )
+    history_invested: list[float | None] = Field(
+        default_factory=list,
+        description="Net money put in by each past month end (buys − sale proceeds).",
+    )
+
+
 # ---------------------------------------------------------------- the cohort
 # A sector's comparable set, scanned nightly. The scores are percentile ranks
 # within the cohort on valuation and quality only — no momentum, no analyst
@@ -1326,6 +1448,14 @@ class SectorSummary(BaseModel):
     cohort: int = Field(default=0, description="Names in the scanned cohort.")
     podium: list[str] = Field(
         default_factory=list, description="Best three of the cohort, best first."
+    )
+    tech_podium: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Best three on technical momentum (trend, RSI, MACD, 52-week high, "
+            "3-month return, volume) — a separate ranking from `podium`, which "
+            "is valuation and quality only."
+        ),
     )
 
 
@@ -1355,6 +1485,18 @@ class SectorCohort(BaseModel):
     ascending: bool
     podium: list[str] = Field(default_factory=list)
     rows: list[CohortRow] = Field(default_factory=list)
+    tech_podium: list[str] = Field(
+        default_factory=list, description="Best three on technical momentum."
+    )
+    tech_rows: list[CohortRow] = Field(
+        default_factory=list,
+        description=(
+            "One row per cohort ticker with an OHLC history, scored and keyed "
+            "the same way as `rows` but over the technical metrics "
+            "(trend_pct, rsi14, macd_hist, pct_from_high, roc_63, vol_ratio) "
+            "rather than `metric_keys`."
+        ),
+    )
     metric_keys: list[str] = Field(
         default_factory=list, description="Every metric a row can carry, in order."
     )
@@ -1596,9 +1738,7 @@ class EarningsResultDetail(BaseModel):
 
 class PulseComponent(BaseModel):
     key: str = Field(description="momentum | breadth | volatility | term | …")
-    score: float | None = Field(
-        default=None, description="This input's own 0-100 score."
-    )
+    score: float | None = Field(default=None, description="This input's own 0-100 score.")
     raw: float | None = Field(default=None, description="What it actually read.")
     text: str | None = Field(
         default=None,
@@ -2204,9 +2344,7 @@ class Movers(BaseModel):
             "two are the same statement twice."
         ),
     )
-    positions: int = Field(
-        default=0, description="Open positions in the book."
-    )
+    positions: int = Field(default=0, description="Open positions in the book.")
     unpriced: int = Field(
         default=0,
         description=(
@@ -2350,7 +2488,6 @@ class TrendRow(BaseModel):
             "against something rather than against nothing."
         ),
     )
-
 
 
 class TrendBlock(BaseModel):

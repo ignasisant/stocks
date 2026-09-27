@@ -65,6 +65,7 @@ import {
 import { Empty, useMobile } from "./ui";
 import type { Custodian, Profile, TickerPosition, WatchlistEntry } from "./types";
 import "./ticker.css";
+import { Badge } from "../../ui/Badge";
 
 const RANGE_KEY = "ag-range";
 const CANDLES_KEY = "ag-candles";
@@ -196,8 +197,8 @@ export default function Page() {
   // Quote, calendar and holding do not depend on the range, so changing it
   // redraws the chart without re-fetching any of them.
   const quote = useApi(
-    () => (ticker ? getQuote(ticker) : Promise.resolve(null)),
-    [ticker],
+    () => (ticker ? getQuote(ticker, base) : Promise.resolve(null)),
+    [ticker, base],
   );
   const events = useApi(
     () => (ticker ? getEvents(ticker) : Promise.resolve(null)),
@@ -289,9 +290,7 @@ export default function Page() {
             <span className="tk-name">{drawn.name}</span>
           ) : null}
         </div>
-        {held?.held ? (
-          <span className="tk-badge">{t("ticker.in_portfolio")}</span>
-        ) : null}
+        {held?.held ? <Badge>{t("ticker.in_portfolio")}</Badge> : null}
         <Custody marks={held?.custody ?? []} />
         {/* The assistant spends the operator's API keys and writes into a
             `chat.json` every anonymous visitor would share, and the drawer it
@@ -431,9 +430,9 @@ function Custody({ marks }: { marks: Custodian[] }) {
             title={title}
           />
         ) : (
-          <span className="tk-custody-name" key={mark.broker} title={title}>
+          <Badge key={mark.broker} title={title}>
             {name}
-          </span>
+          </Badge>
         );
       })}
     </span>

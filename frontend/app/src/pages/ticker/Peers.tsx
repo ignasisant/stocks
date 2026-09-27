@@ -18,6 +18,7 @@ import { useTickerProfile } from "../../shell/tickers";
 import { getPeers, searchTickers } from "./data";
 import { Note } from "./ui";
 import type { Peer, SearchMatch, WatchlistEntry } from "./types";
+import { ToggleChip } from "../../ui/Toggle";
 
 const DEBOUNCE_MS = 160;
 
@@ -110,16 +111,15 @@ export function PeerPicker({
       {peers.length > 0 ? (
         <div className="tk-chips">
           {peers.map((peer) => (
-            <button
+            <ToggleChip
               key={peer}
-              type="button"
-              className="tk-chip tk-chip-on"
+              on
               title={t("ticker.extra_drop")}
               onClick={() => onPeers(peers.filter((one) => one !== peer))}
             >
               <ChipMark ticker={peer} />
               {peer} <span aria-hidden="true">×</span>
-            </button>
+            </ToggleChip>
           ))}
         </div>
       ) : null}
@@ -143,10 +143,9 @@ export function PeerPicker({
           />
           <div className="tk-chips tk-chips-scroll">
             {listed.map((entry) => (
-              <button
+              <ToggleChip
                 key={entry.ticker}
-                type="button"
-                className="tk-chip"
+                on={false}
                 onClick={() => add(entry.ticker)}
               >
                 <ChipMark ticker={entry.ticker} />
@@ -154,7 +153,7 @@ export function PeerPicker({
                 {entry.name && entry.name !== entry.ticker ? (
                   <span className="tk-chip-name">{entry.name}</span>
                 ) : null}
-              </button>
+              </ToggleChip>
             ))}
           </div>
         </div>
@@ -167,16 +166,11 @@ export function PeerPicker({
           </span>
           <div className="tk-chips">
             {suggested.map((peer) => (
-              <button
-                key={peer.ticker}
-                type="button"
-                className="tk-chip"
-                onClick={() => add(peer.ticker)}
-              >
+              <ToggleChip key={peer.ticker} on={false} onClick={() => add(peer.ticker)}>
                 <ChipMark ticker={peer.ticker} />
                 {peer.ticker}
                 {peer.name ? <span className="tk-chip-name">{peer.name}</span> : null}
-              </button>
+              </ToggleChip>
             ))}
           </div>
         </div>
@@ -198,16 +192,15 @@ export function PeerPicker({
         {offers.length > 0 ? (
           <div className="tk-chips">
             {offers.map((match) => (
-              <button
+              <ToggleChip
                 key={match.ticker}
-                type="button"
-                className="tk-chip"
+                on={false}
                 onClick={() => add(match.ticker)}
               >
                 <ChipMark ticker={match.ticker} />
                 {match.ticker}
                 {match.name ? <span className="tk-chip-name">{match.name}</span> : null}
-              </button>
+              </ToggleChip>
             ))}
           </div>
         ) : null}

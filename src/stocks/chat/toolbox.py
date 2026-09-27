@@ -51,6 +51,7 @@ class Context:
     memory_db: Path | None = None  # chat/memory.py index, when this deploy has one
     thread: str = ""  # the conversation in progress, excluded from recall
     focus: str = ""  # the ticker the user is looking at, for "this"/"it"
+    currency: str = "EUR"  # the account's reporting currency
 
 
 def _cap(text: str) -> str:
@@ -132,7 +133,9 @@ def _portfolio(args: dict, ctx: Context) -> str:
     if ctx.watchlist is None:
         return "No portfolio available for this account."
     try:
-        return _cap(engine.portfolio_context(ctx.watchlist, ctx.db or _NO_DB))
+        return _cap(
+            engine.portfolio_context(ctx.watchlist, ctx.db or _NO_DB, ctx.currency)
+        )
     except Exception:
         return "The portfolio snapshot could not be read."
 

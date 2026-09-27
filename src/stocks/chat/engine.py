@@ -813,42 +813,26 @@ def book_snapshot(
 
 
 def enriched_frame(db: Path, base: str = "EUR") -> pd.DataFrame | None:
-    """Uncached headless analog of web/portfolio_data.enriched_positions:
-    ledger → FIFO positions → live-priced frame in `base` + weight + day change
-    from the basket history's last two closes. None when there is no ledger
-    or no open positions. Skips the web-only market-closed day override (a
-    display nicety the prompt doesn't need)."""
-    from stocks.analysis.portfolio import (
-        position_values_history,
-        positions_frame,
-        value_weights,
-    )
-    from stocks.portfolio.ledger import all_transactions
-    from stocks.portfolio.positions import build
+    """The frame the Home page is written from (`api.home.enriched`): value,
+    cost, P/L, weight and day move per position, off the book's one shared
+    download. The assistant used to price the book itself — its own fetch at
+    spot — and could tell the reader a total the Portfolio tile did not show.
+    None when there is no ledger, no open position, or Yahoo is refusing (the
+    assistant answers from the rest of its context rather than failing)."""
+    from stocks.api import home, loaders
 
-    txs = all_transactions(db)
-    if not txs:
-        return None
-    positions, _ = build(txs, base=base)
     try:
-        tbl = positions_frame(positions, base=base)
+        tbl = home.enriched(str(db), loaders.db_mtime(str(db)), base)
     except Exception as exc:
-        # A throttled price burst now surfaces instead of pricing the book at
-        # zero (analysis.portfolio.market_values). The assistant answers from
-        # the rest of its context rather than the turn failing outright.
         obs.warn("chat.positions_unavailable",
                  error_type=type(exc).__name__, error=str(exc)[:200])
         return None
-    if tbl.empty:
-        return None
-    tbl["weight"] = value_weights(tbl)
-    vals = position_values_history(positions, period="1mo", base=base)
-    if len(vals) >= 2:
-        last, prev = vals.iloc[-1], vals.iloc[-2]
-        tbl["day_pct"] = (last / prev - 1).reindex(tbl.index)
-    else:
-        tbl["day_pct"] = float("nan")
-    return tbl.sort_values("weight", ascending=False, na_position="last")
+    return None if tbl.empty else tbl
+
+
+def reporting_currency(prefs: dict | None) -> str:
+    """The account's reporting currency from its prefs, EUR when unset."""
+    return str((prefs or {}).get("currency") or "EUR").upper()
 
 
 def portfolio_context(watchlist: Path, db: Path, currency: str = "EUR") -> str:
@@ -1046,7 +1030,8 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
     # `focus` is what "this" and "it" mean: the ticker on the reader's screen
     # (chat_core._gather passes the same one from the Streamlit session).
     ctx = toolbox.Context(watchlist=watchlist, db=db, memory_db=memory_db,
-                          thread=thread, focus=focus)
+                          thread=thread, focus=focus,
+                          currency=reporting_currency(prefs))
     return agent.gather(provider, api_key, msgs, ctx,
                         timeout=timeout or agent.TIMEOUT)
 
@@ -1503,7 +1488,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         auth.load_profile(prefs),
         # The order the Streamlit panel builds it in: where the reader is,
         # what they hold, and — on the walkthrough's thread only — the fence.
-        context + view + portfolio_context(watchlist, db) + fence,
+        context + view
+        + portfolio_context(watchlist, db, reporting_currency(prefs)) + fence,
         skills,
         lang,
     )

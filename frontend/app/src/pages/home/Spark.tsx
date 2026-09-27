@@ -20,12 +20,13 @@ import { useT, useLang } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { token } from "../../shell/theme";
 import { money, monthDay, percent } from "./format";
+import { Kpi, chipFor } from "../../ui/Kpi";
 import type { History } from "./types";
 
 const WIDTH = 320;
 const HEIGHT = 56;
 
-/** Trailing days averaged into the SMA20 overlay — a calendar month of trading. */
+/** Trailing sessions the average tile folds in — a calendar month of trading. */
 const SMA_WINDOW = 20;
 
 /**
@@ -110,19 +111,6 @@ export function Spark({ nonce }: { nonce: number }) {
   const high = money(Math.max(...levels), base, lang);
   const low = money(floor, base, lang);
 
-  // Trailing mean of the value line — undefined until the window has 20 days
-  // behind it, same warm-up gap the ticker chart's own SMA20 draws.
-  const sma20: (number | null)[] = days.map((_, index) => {
-    if (index < SMA_WINDOW - 1) return null;
-    let sum = 0;
-    for (let i = index - SMA_WINDOW + 1; i <= index; i += 1) sum += days[i]!.value;
-    return sum / SMA_WINDOW;
-  });
-  const smaPoints = sma20
-    .map((value, index) => (value === null ? null : `${x(index)},${y(value)}`))
-    .filter((point): point is string => point !== null)
-    .join(" ");
-
   // The peak of the value line itself, not of whichever of the two series
   // happens to be higher — "period max" is a claim about what the book was
   // worth, not about what went into it.
@@ -183,12 +171,6 @@ export function Spark({ nonce }: { nonce: number }) {
           <span className="hm-spark-key hm-spark-value" />
           {t("home.chart_value")}
         </li>
-        {smaPoints ? (
-          <li>
-            <span className="hm-spark-key hm-spark-sma" />
-            {t("home.chart_sma20")}
-          </li>
-        ) : null}
         <li>
           <span className="hm-spark-key hm-spark-max" />
           {t("home.chart_period_max")}: {money(maxValue, base, lang)}
@@ -241,15 +223,6 @@ export function Spark({ nonce }: { nonce: number }) {
               strokeWidth="1.5"
               vectorEffect="non-scaling-stroke"
             />
-            {smaPoints ? (
-              <polyline
-                points={smaPoints}
-                fill="none"
-                stroke={token("sma-fast")}
-                strokeWidth="1"
-                vectorEffect="non-scaling-stroke"
-              />
-            ) : null}
             <line
               x1={0}
               x2={WIDTH}
@@ -318,5 +291,45 @@ export function Spark({ nonce }: { nonce: number }) {
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * The book against its own 20-session mean, as a tile rather than a third line.
+ *
+ * On the sparkline the average hugged the value line at every window short
+ * enough to read, and the question it answers — is the book above or below
+ * where it has been sitting — is a number, not a shape. Its own `3m` fetch, not
+ * the chart's: the chart's window is the reader's choice, and at `1w` it holds
+ * five sessions, which cannot average twenty.
+ *
+ * Nothing until there are twenty valued sessions: a mean of fewer is a
+ * different figure under the same label.
+ */
+export function AverageTile({ nonce }: { nonce: number }) {
+  const t = useT();
+  const lang = useLang();
+  const base = useCurrency();
+  const query = useApi(
+    () => get<History>("/portfolio/history", { base, window: "3m" }),
+    [base, nonce],
+  );
+  if (query.state !== "loaded") return null;
+  const values = query.data.points
+    .map((point) => point.value)
+    .filter((value): value is number => value !== null);
+  if (values.length < SMA_WINDOW) return null;
+  const mean =
+    values.slice(-SMA_WINDOW).reduce((sum, value) => sum + value, 0) / SMA_WINDOW;
+  const last = values[values.length - 1]!;
+  const gap = mean ? (last - mean) / mean : null;
+  const figure = gap === null ? null : percent(gap, lang, { signed: true });
+  return (
+    <Kpi
+      label={t("home.sma20_tile")}
+      value={money(mean, base, lang) ?? "—"}
+      chip={chipFor(gap, figure)}
+      help={t("home.sma20_help")}
+    />
   );
 }

@@ -4,13 +4,16 @@ import math
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from stocks.analysis.portfolio import (
     allocation,
     annualized_volatility,
     beta,
+    drawdown_span,
     effective_positions,
     equal_weights,
+    first_owned,
     hhi,
     market_value_weights,
     max_drawdown,
@@ -95,6 +98,14 @@ def test_max_drawdown():
     prices = pd.Series([100, 120, 90, 110, 60], dtype=float)
     # peak 120 -> trough 60 => -50%
     assert abs(max_drawdown(prices) - (-0.5)) < 1e-12
+
+
+def test_drawdown_span_dates_the_worst_fall():
+    idx = pd.date_range("2024-01-01", periods=5)
+    prices = pd.Series([100, 120, 90, 110, 60], index=idx, dtype=float)
+    assert drawdown_span(prices) == (idx[1], idx[4])
+    # A path that only ever rose has no fall to date.
+    assert drawdown_span(pd.Series([1.0, 1.1, 1.2], index=idx[:3])) is None
 
 
 def test_concentration_metrics():
@@ -296,9 +307,55 @@ def test_injected_vs_value_stray_quote_outside_holding_carried_at_cost():
     assert df.attrs["carried_at_cost"] == ["A"]
 
 
+def _collided_book():
+    """CAT-EUR regression: Revolut fills at ~1e-5 EUR, Yahoo's "CAT-EUR" is a
+    different coin quoting ~0.02 — 2000x the price the book actually paid."""
+    txs = [
+        Transaction("2024-01-01", "A", "buy", quantity=10, price=10, currency="EUR"),
+        Transaction(
+            "2024-01-02", "CAT", "buy", quantity=44_000_000, price=1.1e-5,
+            currency="EUR",
+        ),
+    ]
+    idx = pd.date_range("2024-01-01", "2024-01-04", freq="D")
+    closes = {
+        "A": pd.Series([10.0, 10.5, 11.0, 11.0], index=idx),
+        "CAT": pd.Series(0.02, index=idx),
+    }
+    return txs, closes
+
+
+def test_injected_vs_value_rejects_a_close_the_fills_say_is_another_asset():
+    txs, closes = _collided_book()
+    df = injected_vs_value(txs, closes, {}, to_base=_eur)
+    # CAT carried at its ~484 EUR cost, not marked at 44M x 0.02 = 880k.
+    assert df.attrs["carried_at_cost"] == ["CAT"]
+    assert df["value"].max() < 1_000
+    assert abs(df.loc["2024-01-04", "value"] - (110.0 + 44_000_000 * 1.1e-5)) < 1e-6
+
+
+def test_plausible_closes_drops_the_collided_series_only():
+    txs, closes = _collided_book()
+    kept = plausible_closes(closes, txs, units={})
+    assert set(kept) == {"A"}
+
+
+def test_plausible_closes_keeps_real_moves_and_short_histories():
+    """A name up 5x since the fill is a real move, and a series that starts
+    after the first buy (IPO, short download) has nothing to compare there."""
+    idx = pd.date_range("2024-01-05", periods=3, freq="D")
+    txs = [
+        Transaction("2024-01-01", "X", "buy", quantity=1, price=10, currency="EUR"),
+        Transaction("2024-01-06", "X", "buy", quantity=1, price=48, currency="EUR"),
+    ]
+    closes = {"X": pd.Series([45.0, 50.0, 55.0], index=idx)}
+    assert set(plausible_closes(closes, txs, units={})) == {"X"}
+
+
 # ------------------------------------------------------- time-weighted returns
 from stocks.analysis.portfolio import (  # noqa: E402
     flow_series,
+    plausible_closes,
     time_weighted_returns,
 )
 
@@ -317,6 +374,39 @@ def test_portfolio_returns_ipo_partial_history_not_truncated():
     assert len(p) == 4  # full window, not just B's two days
     assert abs(p.iloc[0] - 0.01) < 1e-12  # A alone, weight renormalised
     assert abs(p.iloc[2] - 0.025) < 1e-12  # (0.01 + 0.04) / 2
+
+
+def test_portfolio_returns_since_excludes_pre_purchase_history():
+    """A name bought late does not backdate today's weight onto years it was
+    never held — the exact bug a fixed-weight-since-inception backtest hits
+    for any position bought after a rally that made it big enough to weight."""
+    idx = pd.date_range("2024-01-01", periods=4, freq="D")
+    returns = pd.DataFrame(
+        {
+            "A": [0.01, 0.01, 0.01, 0.01],
+            "B": [1.00, -0.50, 0.02, 0.02],  # B doubles then halves, pre-purchase
+        },
+        index=idx,
+    )
+    unramped = portfolio_returns(returns, {"A": 0.5, "B": 0.5})
+    ramped = portfolio_returns(
+        returns, {"A": 0.5, "B": 0.5}, since={"B": pd.Timestamp("2024-01-03")}
+    )
+    assert not math.isclose(unramped.iloc[0], ramped.iloc[0])
+    assert abs(ramped.iloc[0] - 0.01) < 1e-12  # A alone before B was owned
+    assert abs(ramped.iloc[2] - 0.015) < 1e-12  # both, once B is masked in
+
+
+def test_first_owned_takes_earliest_buy_and_ignores_transfers():
+    txs = [
+        Transaction("2024-03-01", "A", "buy", quantity=1, price=10),
+        Transaction("2024-01-15", "A", "buy", quantity=1, price=10),  # earlier
+        Transaction("2024-02-01", "A", "sell", quantity=1, price=12),
+        Transaction("2024-06-01", "B", "transfer_in", quantity=1, price=10),
+    ]
+    since = first_owned(txs)
+    assert since["A"] == pd.Timestamp("2024-01-15")
+    assert "B" not in since  # snapshot import, real acquisition date unknown
 
 
 def test_flow_series_signs_and_ticker_filter():
@@ -831,3 +921,121 @@ def test_position_value_frames_empty_without_prices(monkeypatch):
     )
     values, frozen = position_value_frames([_Pos("X", 1, "EUR")])
     assert values.empty and frozen.empty
+
+
+def test_complete_download_refuses_a_gutted_bulk_download():
+    """Yahoo drops a throttled symbol from `yf.download` silently; cached
+    as-is, 46 of 51 positions read n/d. A few absentees (delisted names) pass,
+    a majority raises so no cache keeps it."""
+    import pytest
+    from yfinance.exceptions import YFRateLimitError
+
+    from stocks.analysis.portfolio import complete_download
+
+    tickers = [f"T{i}" for i in range(20)]
+    s = pd.Series([1.0])
+    few_missing = {t: s for t in tickers[:16]}
+    assert complete_download(few_missing, tickers) is few_missing
+    with pytest.raises(YFRateLimitError):
+        complete_download({t: s for t in tickers[:5]}, tickers)
+
+
+from stocks.analysis.portfolio import flow_matched_curves  # noqa: E402
+
+
+def test_flow_matched_curves_invests_each_buy_on_its_own_day():
+    """1000 on each of three days: the index gets 1000 on each of those days,
+    not 3000 on the first — so a rally before the later buys only pays on the
+    money that was already in."""
+    axis = pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"])
+    flows = pd.Series([1000.0, 1000.0, 1000.0], index=axis)
+    value = pd.Series([1000.0, 2000.0, 3000.0], index=axis)  # the book stood still
+    index_move = pd.Series([0.0, 0.10, 0.0], index=axis)
+    invested, book, shadows = flow_matched_curves(
+        value, flows, axis, {"SPY": index_move}
+    )
+    assert list(invested) == [1000.0, 2000.0, 3000.0]
+    assert list(book) == [0.0, 0.0, 0.0]
+    # Only the first 1000 caught the +10%: 1100 + 1000 + 1000 over 3000 in.
+    assert shadows["SPY"].iloc[-1] == pytest.approx(100 / 3000)
+
+
+def test_flow_matched_curves_sales_withdraw_and_weekends_wait():
+    """A sale takes the same euros out of the shadow; a Saturday buy lands on
+    Monday's close; a sale bigger than the shadow empties it, never below."""
+    axis = pd.to_datetime(["2024-01-05", "2024-01-08", "2024-01-09"])  # Fri, Mon, Tue
+    value = pd.Series([1000.0, 1500.0, 0.0], index=axis)
+    flows = pd.Series(
+        [1000.0, 500.0, -5000.0],
+        index=pd.to_datetime(["2024-01-05", "2024-01-06", "2024-01-09"]),
+    )
+    moves = pd.Series([0.0, 0.0, 0.0], index=axis)
+    invested, _, shadows = flow_matched_curves(value, flows, axis, {"X": moves})
+    assert list(invested) == [1000.0, 1500.0, -3500.0]
+    assert shadows["X"].iloc[1] == pytest.approx(0.0)
+    assert math.isnan(shadows["X"].iloc[2])  # nothing left in: no line
+
+
+def test_flow_matched_curves_window_opens_at_the_books_value():
+    """A window starting mid-history buys in at what the book was worth then,
+    and the start day's own flows are already inside that value."""
+    days = pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"])
+    value = pd.Series([500.0, 2000.0, 2200.0], index=days)
+    flows = pd.Series([500.0, 1000.0], index=pd.to_datetime(["2024-01-01", "2024-01-02"]))
+    axis = days[1:]
+    invested, book, shadows = flow_matched_curves(
+        value, flows, axis, {"B": pd.Series([0.0, 0.05], index=axis)}
+    )
+    assert list(invested) == [2000.0, 2000.0]
+    assert list(book) == pytest.approx([0.0, 0.1])
+    assert list(shadows["B"]) == pytest.approx([0.0, 0.05])
+
+
+from stocks.analysis.portfolio import Sleeve, project_sleeves, sleeve_stats  # noqa: E402
+
+
+def _one(value, growth, vol, share=1.0, key="stocks"):
+    return Sleeve(key=key, value=value, growth=growth, volatility=vol, share=share)
+
+
+def test_project_sleeves_without_volatility_is_plain_compounding():
+    fan, finals = project_sleeves([_one(1000.0, 0.10, 0.0)], years=2)
+    assert len(fan) == 25
+    assert fan["p10"].iloc[-1] == pytest.approx(1000 * 1.1**2)
+    assert finals == pytest.approx(1000 * 1.1**2)
+
+
+def test_project_sleeves_growth_is_the_median_compound_rate():
+    """"4% a year" is what the typical path does: the median lands on it
+    however volatile the sleeve, and the spread opens around it."""
+    fan, _ = project_sleeves([_one(1000.0, 0.04, 0.30)], years=5, paths=20000)
+    assert fan["p50"].iloc[-1] == pytest.approx(1000 * 1.04**5, rel=0.02)
+    assert fan["p10"].iloc[-1] < fan["p50"].iloc[-1] < fan["p90"].iloc[-1]
+
+
+def test_project_sleeves_splits_contributions_and_deflates():
+    sleeves = [_one(0.0, 0.0, 0.0, 0.75), _one(0.0, 0.0, 0.0, 0.25, "crypto")]
+    fan, _ = project_sleeves(sleeves, monthly=100.0, years=1)
+    assert fan["p50"].iloc[-1] == pytest.approx(1200.0)
+    assert list(fan["contributed"])[:3] == [0.0, 100.0, 200.0]
+    real, _ = project_sleeves(sleeves, monthly=100.0, years=1, inflation=0.02)
+    assert real["p50"].iloc[-1] == pytest.approx(1200.0 / 1.02)
+
+
+def test_sleeve_stats_measures_each_block_on_its_own_calendar():
+    """Crypto every day, stocks on weekdays only: the stock sleeve's weekend
+    rows are missing, not zero moves, and do not shrink its volatility."""
+    days = pd.date_range("2024-01-01", periods=140, freq="D")
+    rng = np.random.default_rng(1)
+    stock = pd.Series(rng.normal(0, 0.01, len(days)), index=days)
+    stock[days.dayofweek >= 5] = np.nan
+    coin = pd.Series(rng.normal(0, 0.04, len(days)), index=days)
+    returns = pd.DataFrame({"AAPL": stock, "BTC-EUR": coin})
+    vols, corr = sleeve_stats(
+        returns,
+        {"AAPL": 0.8, "BTC-EUR": 0.2},
+        {"stocks": ["AAPL"], "crypto": ["BTC-EUR"]},
+    )
+    assert vols["stocks"] == pytest.approx(0.01 * 252**0.5, rel=0.2)
+    assert vols["crypto"] > 3 * vols["stocks"]
+    assert corr is not None and abs(corr) < 0.5

@@ -258,22 +258,6 @@
   color: var(--ag-down);
 }
 
-.im-metric {
-  align-items: baseline;
-  display: flex;
-  gap: 0.6rem;
-  margin: 0;
-}
-
-.im-metric-label {
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm);
-}
-
-.im-metric-value {
-  font-size: var(--ag-fs-xl);
-}
-
 /* -------------------------------------------------------------- the tables */
 
 .im-scroll {
@@ -318,16 +302,6 @@
   color: var(--ag-text-secondary);
   max-width: 28rem;
   white-space: normal;
-}
-
-/* Phones, and a page squeezed beside the chat drawer: the row's identity and
-   what it did survive; the trailing detail columns fold away rather than
-   pushing the table off the screen. A container query on `ag-main`, because
-   a viewport one cannot see the drawer. */
-@container ag-main (max-width: 38rem) {
-  .im-table .im-wide {
-    display: none;
-  }
 }
 
 /* ------------------------------------------------------- the book, and the
@@ -404,4 +378,19 @@
 .im-table .im-pick {
   padding-right: 0;
   width: 1.5rem;
+}
+
+/* A repair row's card on a phone: the tick box beside the symbol it picks. */
+.im-card-head {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.5rem;
+}
+
+.im-card-head input {
+  accent-color: var(--ag-brand-cta);
+  cursor: pointer;
+  height: 1.1rem;
+  margin: 0;
+  width: 1.1rem;
 }

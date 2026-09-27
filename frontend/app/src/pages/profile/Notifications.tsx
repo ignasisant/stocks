@@ -29,29 +29,29 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
   const configured = tg.state?.configured ?? (prefs.telegram_linked ? true : null);
 
   return (
-    <div className="pf-body">
-      <div className="pf-main">
+    <div className="pr-body">
+      <div className="pr-main">
         <Card
           title={t("profile.notify_channel_title")}
           sub={t("profile.notify_channel_sub")}
         >
-          <div className="pf-cardbody">
+          <div className="pr-cardbody">
             {configured === null && !tg.note && (
-              <p className="pf-busy">{t("common.loading")}</p>
+              <p className="pr-busy">{t("common.loading")}</p>
             )}
 
             {/* Not an error, a sentence: nothing here can be connected. */}
             {configured === false && (
-              <p className="pf-hint">{t("profile.tg_not_configured")}</p>
+              <p className="pr-hint">{t("profile.tg_not_configured")}</p>
             )}
 
             {configured === true && linked && (
-              <span className="pf-chips">
-                <span className="pf-badge">{t("profile.notify_connected")}</span>
+              <span className="pr-chips">
+                <span className="pr-badge">{t("profile.notify_connected")}</span>
                 {/* Which chat gets the messages, as the Streamlit page names
                     it — a reader with two accounts needs to tell them apart.
                     A chat with no public username reads as it does there. */}
-                <span className="pf-hint">
+                <span className="pr-hint">
                   {t("profile.tg_linked_as", {
                     handle: tg.state?.username ? `@${tg.state.username}` : "",
                   }).trim()}
@@ -65,17 +65,17 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
                 dance, and a second control here would be a way to invalidate
                 the code the reader is holding. */}
             {configured === true && !linked && !tg.pending && (
-              <span className="pf-chips">
+              <span className="pr-chips">
                 <button
                   type="button"
-                  className="pf-btn pf-btn-p"
+                  className="pr-btn pr-btn-p"
                   disabled={tg.busy === "connect"}
                   onClick={tg.connect}
                 >
                   {t("profile.tg_connect")}
                 </button>
                 {tg.expired && (
-                  <span className="pf-warn">{t("profile.tg_expired")}</span>
+                  <span className="pr-warn">{t("profile.tg_expired")}</span>
                 )}
               </span>
             )}
@@ -86,7 +86,7 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
                     hands off to the app, which is exactly what should happen,
                     and this tab stays open behind it to catch the answer. */}
                 <a
-                  className="pf-linkbtn"
+                  className="pr-linkbtn"
                   href={tg.pending.deepLink}
                   target="_blank"
                   rel="noreferrer noopener"
@@ -95,7 +95,7 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
                 </a>
                 {/* Some clients show no Start button. Typing the command is
                     the same handshake, so the code is on screen either way. */}
-                <p className="pf-hint">
+                <p className="pr-hint">
                   <Inline
                     text={t("profile.tg_manual", {
                       bot: tg.pending.bot,
@@ -103,7 +103,7 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
                     })}
                   />
                 </p>
-                <p className="pf-busy">
+                <p className="pr-busy">
                   {tg.stalled ? t("profile.tg_poll_error") : t("profile.tg_waiting")}
                 </p>
               </>
@@ -111,7 +111,7 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
 
             {tg.note?.kind === "failed" && <Failure message={tg.note.error} />}
             {tg.note?.kind === "unlinked" && (
-              <p className="pf-hint">{t("profile.tg_unlinked")}</p>
+              <p className="pr-hint">{t("profile.tg_unlinked")}</p>
             )}
           </div>
 
@@ -127,14 +127,14 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
               >
                 <button
                   type="button"
-                  className="pf-btn"
+                  className="pr-btn"
                   disabled={tg.busy === "test"}
                   onClick={tg.test}
                 >
                   {t("profile.tg_test")}
                 </button>
                 {tg.note?.kind === "test_sent" && (
-                  <p className="pf-hint">{t("profile.tg_test_sent")}</p>
+                  <p className="pr-hint">{t("profile.tg_test_sent")}</p>
                 )}
                 {tg.note?.kind === "test_failed" && (
                   <Failure
@@ -149,7 +149,7 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
               >
                 <button
                   type="button"
-                  className="pf-btn"
+                  className="pr-btn"
                   disabled={tg.busy === "unlink"}
                   onClick={tg.unlink}
                 >
@@ -210,10 +210,10 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
         )}
       </div>
 
-      <aside className="pf-rail">
+      <aside className="pr-rail">
         <Card>
-          <div className="pf-sum">
-            <b className="pf-sum-t">{t("profile.notify_caption")}</b>
+          <div className="pr-sum">
+            <b className="pr-sum-t">{t("profile.notify_caption")}</b>
             <Prose text={t("profile.tg_how_body")} />
           </div>
         </Card>

@@ -27,6 +27,7 @@ import {
 } from "./format";
 import { PriceChart, type Window } from "./PriceChart";
 import { Bold, Card, Empty, Metric, Metrics, Segmented, useMobile } from "./ui";
+import { Chip, Kpi, KpiGrid, chipFor } from "../../ui/Kpi";
 import type { Bars, EarningsEvent, Quote, TickerPosition, Trade } from "./types";
 
 /** Range labels, in the order the app shows them (`analysis.history.PERIODS`). */
@@ -106,6 +107,13 @@ export function PriceSection({
           pct: `${signed(periodPct)}%`,
           period: t(`ticker.period_${range}`),
         });
+  // Only set once `/quote` found a currency other than the reader's own and a
+  // rate to restate it at — a bare number here would read as the reader's
+  // money, and a KRW close is not that.
+  const approxLine =
+    quote?.price_base !== null && quote?.price_base !== undefined
+      ? approx(quote.price_base, quote.base)
+      : "";
 
   return (
     <Card>
@@ -141,22 +149,28 @@ export function PriceSection({
           rsi={rsi}
           rsiVerdict={bars?.rsi_verdict ?? null}
           sma20={sma20}
+          currency={quote?.currency ?? null}
+          approxLine={approxLine}
           t={t}
         />
       ) : (
         // Seven cells when held, three when not — Streamlit's `metric_cells(7
         // if my_pos else 3)`: the holding sits in the price row, beside the
         // price it is valued at, rather than in a card further down.
-        <Metrics wide={Boolean(position?.held)}>
+        <Metrics>
           <Metric
             // Extended hours are named in the label, the way the page names
             // them: "Price · pre-market". A day move printed without that reads
             // as today's session when it is not.
             label={t("ticker.price") + (sessionNote ? ` · ${sessionNote}` : "")}
-            value={live === null ? DASH : money(live)}
+            value={
+              live === null
+                ? DASH
+                : `${money(live)}${quote?.currency ? ` ${quote.currency}` : ""}`
+            }
             delta={dayPct}
             dim={quote?.market_open === false}
-            note={periodLine}
+            note={[periodLine, approxLine].filter(Boolean).join(" · ")}
             noteTone={periodPct === null ? null : periodPct >= 0 ? "green" : "red"}
           />
           <Metric
@@ -294,6 +308,8 @@ function Hero({
   rsi,
   rsiVerdict,
   sma20,
+  currency,
+  approxLine,
   t,
 }: {
   price: number | null;
@@ -307,6 +323,10 @@ function Hero({
   rsi: number | null;
   rsiVerdict: string | null;
   sma20: number | null;
+  /** The listing's own quote currency — null for a coin pair or a bare guess. */
+  currency: string | null;
+  /** The price restated in the reader's own money; blank with nothing to show. */
+  approxLine: string;
   t: Translate;
 }) {
   const held = position?.held ? position : null;
@@ -333,12 +353,9 @@ function Hero({
     <div className="tk-hero">
       <div className="tk-hero-price">
         <span className="tk-hero-level">{price === null ? DASH : money(price)}</span>
+        {currency ? <span className="tk-hero-session">{currency}</span> : null}
         {dayPct !== null ? (
-          <span
-            className={`tk-pill tk-pill-${dayPct >= 0 ? "up" : "down"}${dim ? " tk-pill-dim" : ""}`}
-          >
-            {signed(dayPct * 100)}%
-          </span>
+          <Chip chip={chipFor(dayPct, `${signed(dayPct * 100)}%`, dim)} />
         ) : null}
         {sessionNote ? <span className="tk-hero-session">{sessionNote}</span> : null}
         {periodLine ? (
@@ -347,6 +364,9 @@ function Hero({
           </span>
         ) : null}
       </div>
+      {/* Only when `/quote` converted the native close: a bare number here
+          would read as the reader's own money, and often is not. */}
+      {approxLine ? <p className="tk-hero-trend">{approxLine}</p> : null}
       {held ? (
         <PositionTiles position={held} last={last} note={rsiLine} t={t} />
       ) : trendLine ? (
@@ -456,21 +476,19 @@ function PositionTiles({
   const { shares, valueNative, pnlNative, pnlPct, ccy } = holding(position, last);
 
   return (
-    <div className="tk-tiles">
-      <Tile
+    <KpiGrid>
+      <Kpi
         label={t("ticker.position_value")}
         value={valueNative === null ? DASH : `${money(valueNative)} ${ccy}`.trim()}
         note={position.value === null ? "" : approx(position.value, position.base)}
       />
-      <Tile
+      <Kpi
         label={t("ticker.unrealised_pl")}
         help={t("ticker.unrealised_pl_help")}
         value={pnlNative === null ? DASH : `${signed(pnlNative)} ${ccy}`.trim()}
-        valueTone={pnlNative === null ? null : pnlNative >= 0 ? "green" : "red"}
-        note={pnlPct === null ? "" : `${signed(pnlPct)}%`}
-        noteTone={pnlPct === null ? null : pnlPct >= 0 ? "green" : "red"}
+        chip={chipFor(pnlPct, pnlPct === null ? null : `${signed(pnlPct)}%`)}
       />
-      <Tile
+      <Kpi
         label={t("ticker.pct_portfolio")}
         help={t("ticker.pct_portfolio_help")}
         value={
@@ -478,7 +496,7 @@ function PositionTiles({
         }
         note={note ?? ""}
       />
-      <Tile
+      <Kpi
         label={t("ticker.avg_buy_price")}
         value={
           position.avg_cost_native === null
@@ -487,41 +505,6 @@ function PositionTiles({
         }
         note={shares === null ? "" : t("ticker.n_shares", { n: money(shares, 4) })}
       />
-    </div>
-  );
-}
-
-function Tile({
-  label,
-  value,
-  valueTone,
-  note,
-  noteTone,
-  help,
-}: {
-  label: string;
-  value: string;
-  valueTone?: string | null;
-  note?: string;
-  noteTone?: string | null;
-  help?: string;
-}) {
-  return (
-    <div className="tk-tile">
-      <span className="tk-tile-label" title={help}>
-        {label}
-        {help ? <span className="tk-q">?</span> : null}
-      </span>
-      <span
-        className={valueTone ? `tk-tile-value tk-is-${valueTone}` : "tk-tile-value"}
-      >
-        {value}
-      </span>
-      {note ? (
-        <span className={noteTone ? `tk-tile-note tk-is-${noteTone}` : "tk-tile-note"}>
-          {note}
-        </span>
-      ) : null}
-    </div>
+    </KpiGrid>
   );
 }

@@ -47,6 +47,40 @@ import { chart, token } from "../../shell/theme";
 - `chart()` and `token()` read the `--ag-*` custom properties the server
   inlines.
 
+## The shared primitives
+
+`src/ui/` is the design system's components, the ones every page draws the
+same way. A page composes them and does not restyle them.
+
+```tsx
+import { Chip, Kpi, KpiGrid, chipFor, bandTone } from "../../ui/Kpi";
+
+<KpiGrid>
+  <Kpi label={t("home.market_value")} value={money(v)} chip={chipFor(pct, text)} />
+  <Kpi label={t("ticker.moat_score")} value="72" help={t("kpi.moat.desc")}
+       chip={{ text: rating, tone: bandTone(rating_tone) }} />
+</KpiGrid>
+```
+
+- `Kpi` slots: `label`, `value`, `help` (the "?"), `chip`, `note`, and
+  `children` for a meter or a sparkline. An empty slot takes no room.
+- `chipFor(value, text, off?)` returns `null` when there is nothing to say,
+  and `Chip` draws nothing for `null` — hand it over without checking.
+- Tones are `up` / `down` / `warn` / `flat`; `bandTone` maps the API's
+  green / red / orange / gray bands onto them.
+- `KpiGrid` wraps rows of 2, 3, 4 and 6 evenly (no 3+1 orphan).
+
+`tests/test_frontend_kpi.py` fails if a page stylesheet defines its own tile
+or delta pill again.
+
+A table with figures ships a phone rendering too (`src/ui/Rows.tsx`):
+`<Responsive wide={table} narrow={…} />`, where `narrow` is `DenseRows` for a
+ticker list (logo, symbol + pill, dim line, figure on the right — the whole row
+links to the ticker) or `StackCards` for anything else (one card per row, one
+label/value line per column). A container query on `ag-main` at 40rem picks
+one. The portfolio `Table` does this for you: pass `dense` for a ticker list,
+or get cards by default.
+
 ## Rules that are not style preferences
 
 **Never write a user-visible string.** Every label, heading and message is

@@ -26,7 +26,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts
+from stocks import accounts, obs
 from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes.portfolio import _ledger_csv
@@ -290,8 +290,24 @@ def test_a_name_with_no_price_series_is_carried_at_cost_and_disclosed(
     assert first["value"] == pytest.approx(1500.0)
 
 
+def test_a_name_with_no_price_series_is_logged_for_us_too(
+    client, book, priced, monkeypatch
+):
+    """The reader sees the caption; we get nothing unless this fires — the
+    only way to notice a ticker keeps showing up otherwise is someone asking."""
+    seen = []
+    monkeypatch.setattr(obs, "event", lambda name, **fields: seen.append((name, fields)))
+    book([Transaction(START, "ORGN", "buy", 10, 50.0, "EUR", 0.0, note="revolut")])
+    priced({})
+
+    get(client)
+
+    events = [f for n, f in seen if n == "portfolio.unknown_ticker"]
+    assert events and events[0]["tickers"] == ["ORGN"]
+
+
 def test_a_day_the_return_priced_below_minus_one_is_null_and_named(
-    client, book, priced
+    client, book, monkeypatch
 ):
     """A long-only book cannot lose more than everything, so r <= -100% means
     the day's flow never landed in the value path — an unrecorded split, a
@@ -301,13 +317,17 @@ def test_a_day_the_return_priced_below_minus_one_is_null_and_named(
     book(
         [
             Transaction(START, "AAPL", "buy", 10, 100.0, "EUR", 0.0, note="revolut"),
-            # A thousand euros of stock the price series values at one euro.
             Transaction(
                 "2024-01-04", "AAPL", "buy", 1000, 100.0, "EUR", 0.0, note="revolut"
             ),
         ]
     )
-    priced({"AAPL": 1.0})
+    # Right at the first fill, then a 100:1 step the ledger never recorded:
+    # the second buy's 100k lands in a value path pricing it at 1k. (A series
+    # off at *every* fill is another instrument, rejected before any return.)
+    series = closes({"AAPL": 100.0})
+    series["AAPL"] = series["AAPL"].where(series["AAPL"].index < "2024-01-04", 1.0)
+    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: series)
 
     payload = get(client)
     assert payload["dropped_days"] == ["2024-01-04"]
@@ -370,3 +390,96 @@ def test_a_book_with_nothing_in_it_has_no_file_to_hand_back(client, book):
         "/v1/portfolio/transactions.csv", params=WHO, headers=AUTH
     )
     assert response.status_code == 404
+
+
+# ------------------------------------------------- one price, every endpoint
+
+
+def test_summary_and_performance_value_the_book_off_one_download(
+    client, book, monkeypatch
+):
+    """The Posiciones tile and the Rendimiento real tile are the same number.
+
+    Only the network is faked here, not a loader: the two used to price the
+    book through two separate downloads, and a test that swaps `held_closes`
+    or `positions_table` whole cannot see that. The collided name (a memecoin
+    whose ticker Yahoo resolves to another, 2000x pricier coin) must be
+    carried at cost by both, not valued off the wrong asset by either.
+    """
+    from stocks.analysis import portfolio as analysis
+
+    book(
+        trades()
+        + [Transaction(START, "CAT-EUR", "buy", 44_000_000, 1.1e-5, "EUR", 0.0)]
+    )
+    series = closes({"AAPL": 120.0, "CAT-EUR": 0.02})
+    monkeypatch.setattr(loaders, "load_closes", lambda tickers, period: series)
+    monkeypatch.setattr(
+        analysis, "price_units",
+        lambda tickers, ccys, *a, **k: {t: ("EUR", 1.0) for t in tickers},
+    )
+
+    summary = client.get(
+        "/v1/portfolio/summary", params=WHO, headers=AUTH
+    ).json()
+    perf = client.get(
+        "/v1/portfolio/performance", params=WHO, headers=AUTH
+    ).json()
+
+    # Same prices; the only gap is the one each tile captions: the summary
+    # leaves an unpriced name out of both cost and value, the TWR path
+    # carries it at cost. CAT at its ~484 EUR cost, not at 880k, in either.
+    assert summary["value"] == pytest.approx(15 * 120.0)
+    assert summary["unpriced"] == 1
+    assert perf["value"] == pytest.approx(summary["value"] + 44_000_000 * 1.1e-5)
+
+
+def test_a_gutted_download_prices_the_table_itself_and_caches_nothing(
+    client, book, monkeypatch
+):
+    """Most symbols missing from the book's download is Yahoo refusing, not
+    delisting: the positions table prices itself instead of reading n/d, and
+    the partial download is not memoised for the next request."""
+    from stocks.analysis import portfolio as analysis
+
+    book(trades() + [Transaction(START, "MSFT", "buy", 1, 100.0, "EUR", 0.0)]
+         + [Transaction(START, f"X{i}", "buy", 1, 100.0, "EUR", 0.0) for i in range(6)])
+    calls = []
+
+    def gutted(tickers, period):
+        calls.append(period)
+        return closes({"AAPL": 120.0})
+
+    monkeypatch.setattr(loaders, "load_closes", gutted)
+    monkeypatch.setattr(
+        analysis, "market_values",
+        lambda positions, base="EUR", **k: {p.ticker: 7.0 for p in positions},
+    )
+    summary = client.get("/v1/portfolio/summary", params=WHO, headers=AUTH).json()
+    assert summary["unpriced"] == 0  # self-priced, not n/d
+    assert summary["value"] == pytest.approx(7.0 * 8)
+    client.get("/v1/portfolio/summary", params=WHO, headers=AUTH)
+    assert len(calls) >= 1
+    loaders.positions_table.cache_clear()
+    client.get("/v1/portfolio/summary", params=WHO, headers=AUTH)
+    assert len(calls) >= 2  # the refused download was never cached
+
+
+def test_a_new_download_moves_the_tile_and_the_history_together(
+    client, book, monkeypatch
+):
+    """Posiciones and Rendimiento real used to sit on separate timers (15 min
+    and an hour), so after a fresh download one tile moved and the other kept
+    the old price. Both are keyed on the download now, never on a clock."""
+    book(trades())
+    current = {"series": closes({"AAPL": 120.0})}
+    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: current["series"])
+
+    def values() -> tuple[float, float]:
+        s = client.get("/v1/portfolio/summary", params=WHO, headers=AUTH).json()
+        p = client.get("/v1/portfolio/performance", params=WHO, headers=AUTH).json()
+        return s["value"], p["value"]
+
+    assert values() == pytest.approx((15 * 120.0, 15 * 120.0))
+    current["series"] = closes({"AAPL": 130.0})  # the next download
+    assert values() == pytest.approx((15 * 130.0, 15 * 130.0))

@@ -394,11 +394,11 @@ def _gemini_error(exc):
 # secret, so a retired free model is a config change, not a release.
 
 _FREE_BACKEND_DEFAULTS: tuple[tuple[str, str, str], ...] = (
-    # groq retired this slug some time before 2026-09-01 (prod logs: 404
-    # model_not_found on every request). It stays as the first thing tried
-    # because the chain now recovers by itself — see _free_live_model above:
-    # the 404 costs one call per boot, then /models names the replacement.
-    ("groq", "llama-3.3-70b-versatile", "https://api.groq.com/openai/v1"),
+    # groq retired llama-3.3-70b-versatile before 2026-09-01; prod logs through
+    # 2026-09-22 show the chain substituting this slug from /models on every
+    # boot, so it is the default now. The substitution path still covers the
+    # next retirement.
+    ("groq", "openai/gpt-oss-120b", "https://api.groq.com/openai/v1"),
     # Checked live 2026-08-31 against each backend's /models and a real
     # completion. cerebras: key valid (/models is 200) but every model answers
     # 402 payment_required — free quota is account-level and spent. openrouter:

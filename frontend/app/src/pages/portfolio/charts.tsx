@@ -369,11 +369,15 @@ export function PeriodBars({
   periods,
   labels,
   money,
+  axisMoney,
 }: {
   periods: TaxPeriod[];
   labels: { gains: string; losses: string; recovered: string; net: string };
   money: (value: number) => string;
+  /** Compact formatter for the gutter; falls back to `money` when omitted. */
+  axisMoney?: (value: number) => string;
 }) {
+  const gutter = axisMoney ?? money;
   const [hover, setHover] = useState<number | null>(null);
   const svg = useRef<SVGSVGElement>(null);
   if (!periods.length) return null;
@@ -452,10 +456,10 @@ export function PeriodBars({
             y={y}
             left={left}
             right={width - PLOT.right}
-            format={money}
+            format={gutter}
           />
           <text x={left - 6} y={zero + 4} fill={text} fontSize="11" textAnchor="end">
-            {money(0)}
+            {gutter(0)}
           </text>
           {hover === null ? null : (
             <rect
@@ -551,6 +555,20 @@ export type ReturnSeries = {
   /** Dotted, for a line that is a hypothesis rather than a record. */
   dashed?: boolean;
   color?: string;
+  /** A second reading shown in parentheses in the tooltip, e.g. a percentage
+      beside an amount; null leaves the row as the bare figure. */
+  tipNote?: (index: number, value: number) => string | null;
+  /** Read in the tooltip (and dotted on hover) but not stroked or listed:
+      the edge of a band already draws it. */
+  tipOnly?: boolean;
+};
+
+/** A shaded range between two series — a forecast's spread. */
+export type ReturnBand = {
+  label: string;
+  low: (number | null)[];
+  high: (number | null)[];
+  color: string;
 };
 
 /** Where the plot sits inside the 720-wide viewBox; the left gutter holds the value axis. */
@@ -575,11 +593,18 @@ export function ReturnLines({
   series,
   format,
   formatDate,
+  bands = [],
+  marker,
 }: {
   dates: string[];
   series: ReturnSeries[];
   format: (value: number) => string;
   formatDate: (iso: string) => string;
+  /** Shaded ranges drawn under the lines, widest first. */
+  bands?: ReturnBand[];
+  /** A labelled vertical rule at one index — "today" between a record and a
+      projection. */
+  marker?: { index: number; label: string };
 }) {
   const [pointer, setHover] = useState<number | null>(null);
   const svg = useRef<SVGSVGElement>(null);
@@ -592,9 +617,10 @@ export function ReturnLines({
   const plotW = width - PLOT.left - PLOT.right;
   const plotH = height - PLOT.top - PLOT.bottom;
 
-  const values = drawn.flatMap((one) =>
-    one.points.filter((v): v is number => v !== null),
-  );
+  const values = [
+    ...drawn.flatMap((one) => one.points),
+    ...bands.flatMap((band) => [...band.low, ...band.high]),
+  ].filter((v): v is number => v !== null);
   // Zero is always on the axis: a chart of returns that crops it hides whether
   // the line is above water, which is the first thing anybody reads off it.
   const low = Math.min(0, ...values);
@@ -626,15 +652,46 @@ export function ReturnLines({
     return out.map((one) => `M${one}`);
   };
 
+  /** Each contiguous run where both edges exist, as one closed polygon. */
+  const areas = (band: ReturnBand) => {
+    const out: string[] = [];
+    let run: number[] = [];
+    const flush = () => {
+      if (run.length > 1) {
+        const top = run.map((i) => `${x(i)},${y(band.high[i]!)}`);
+        const bottom = [...run].reverse().map((i) => `${x(i)},${y(band.low[i]!)}`);
+        out.push(`M${[...top, ...bottom].join("L")}Z`);
+      }
+      run = [];
+    };
+    dates.forEach((_, i) => {
+      if (band.low[i] == null || band.high[i] == null) flush();
+      else run.push(i);
+    });
+    flush();
+    return out;
+  };
+
   const ticks = [0, Math.floor(dates.length / 2), dates.length - 1];
 
   return (
     <div className="pf-chart">
       <ul className="pf-legend-inline">
-        {colored.map((one) => (
-          <li className="pf-legend-row" key={one.label}>
-            <span className="pf-swatch" style={{ background: one.color }} />
-            <span>{one.label}</span>
+        {colored
+          .filter((one) => !one.tipOnly)
+          .map((one) => (
+            <li className="pf-legend-row" key={one.label}>
+              <span
+                className={one.dashed ? "pf-swatch pf-swatch-dashed" : "pf-swatch"}
+                style={{ background: one.color }}
+              />
+              <span>{one.label}</span>
+            </li>
+          ))}
+        {bands.map((band) => (
+          <li className="pf-legend-row" key={band.label}>
+            <span className="pf-swatch" style={{ background: band.color }} />
+            <span>{band.label}</span>
           </li>
         ))}
       </ul>
@@ -674,18 +731,50 @@ export function ReturnLines({
           >
             {format(0)}
           </text>
-          {colored.map((one) =>
-            paths(one.points).map((d, index) => (
+          {bands.map((band) =>
+            areas(band).map((d, index) => (
               <path
-                key={`${one.label}-${index}`}
+                key={`${band.label}-${index}`}
                 d={d}
-                fill="none"
-                stroke={one.color}
-                strokeWidth="1.5"
-                strokeDasharray={one.dashed ? "4 3" : undefined}
+                fill={band.color}
+                stroke="none"
               />
             )),
           )}
+          {marker && marker.index > 0 && marker.index < dates.length ? (
+            <g pointerEvents="none">
+              <line
+                x1={x(marker.index)}
+                x2={x(marker.index)}
+                y1={PLOT.top}
+                y2={PLOT.top + plotH}
+                stroke={token("border")}
+                strokeWidth="1"
+              />
+              <text
+                x={x(marker.index) + 4}
+                y={PLOT.top + 11}
+                fill={token("text-muted")}
+                fontSize="11"
+              >
+                {marker.label}
+              </text>
+            </g>
+          ) : null}
+          {colored
+            .filter((one) => !one.tipOnly)
+            .map((one) =>
+              paths(one.points).map((d, index) => (
+                <path
+                  key={`${one.label}-${index}`}
+                  d={d}
+                  fill="none"
+                  stroke={one.color}
+                  strokeWidth="1.5"
+                  strokeDasharray={one.dashed ? "4 3" : undefined}
+                />
+              )),
+            )}
           {/* Plotly's `hovermode="x"`: the whole plot answers, nearest day by
             the pointer's x, with a crosshair and a dot on every line there. */}
           {hover === null ? null : (
@@ -736,7 +825,10 @@ export function ReturnLines({
               const value = one.points[hover];
               return {
                 label: one.label,
-                value: value === null || value === undefined ? "—" : format(value),
+                value:
+                  value === null || value === undefined
+                    ? "—"
+                    : withNote(format(value), one.tipNote?.(hover, value)),
                 color: one.color,
               };
             })}
@@ -745,6 +837,10 @@ export function ReturnLines({
       </div>
     </div>
   );
+}
+
+function withNote(text: string, note: string | null | undefined): string {
+  return note ? `${text} (${note})` : text;
 }
 
 /** Fewest days a drag has to cover to count as a zoom rather than a click. */
@@ -810,6 +906,7 @@ export function BookHistory({
   points,
   labels,
   money,
+  axisMoney,
   percent,
   formatDate,
 }: {
@@ -822,9 +919,12 @@ export function BookHistory({
     reset: string;
   };
   money: (value: number, signed?: boolean) => string;
+  /** Compact formatter for the gutter; falls back to `money` when omitted. */
+  axisMoney?: (value: number) => string;
   percent: (value: number) => string;
   formatDate: (iso: string) => string;
 }) {
+  const gutter = axisMoney ?? ((value: number) => money(value));
   // Both legs present or the day is not comparable: a value without its
   // reference line cannot be shaded against anything.
   const all = points.filter(
@@ -978,7 +1078,7 @@ export function BookHistory({
             y={y}
             left={PLOT.left}
             right={width - PLOT.right}
-            format={(value) => money(value)}
+            format={gutter}
           />
           {bands.map((band, index) => (
             <path

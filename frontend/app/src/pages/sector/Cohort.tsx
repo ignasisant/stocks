@@ -20,6 +20,7 @@ import { TickerCell, useTickerProfile } from "../../shell/tickers";
 import { useLabels } from "./labels";
 import { csv, formatMetric, ordered, passes, type Screen } from "./metrics";
 import type { CohortRow, SectorCohort } from "./types";
+import { ToggleChip, ToggleRow } from "../../ui/Toggle";
 
 /**
  * The same breakpoint the Streamlit tables switch on, and for the same reason:
@@ -207,16 +208,14 @@ export function Cohort({ data }: { data: SectorCohort }) {
         </label>
 
         <p className="ag-sec-label">{t("sector.columns")}</p>
-        <div className="ag-sec-chips">
+        <ToggleRow>
           {data.metric_keys.map((key) => {
             const picked = columns.includes(key);
             return (
-              <button
-                type="button"
+              <ToggleChip
                 key={key}
                 title={labels.describe(key)}
-                aria-pressed={picked}
-                className={picked ? "ag-sec-chip ag-sec-chip-on" : "ag-sec-chip"}
+                on={picked}
                 onClick={() =>
                   setColumns((current) =>
                     picked
@@ -226,10 +225,10 @@ export function Cohort({ data }: { data: SectorCohort }) {
                 }
               >
                 {labels.metric(key)}
-              </button>
+              </ToggleChip>
             );
           })}
-        </div>
+        </ToggleRow>
 
         <hr className="ag-sec-rule" />
         <p className="ag-sec-caption">{t("sector.filters_caption")}</p>

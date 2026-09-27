@@ -29,3 +29,17 @@ Verify with:
 ```bash
 uv run pytest tests/test_onboarding.py tests/test_i18n_parity.py -q
 ```
+
+## Pages use the full width
+
+On desktop every screen runs edge to edge: no `max-width` on the shell's
+`.ag-main` or on a page's top-level wrapper, and no right margin kept free for
+the chat. Only an open chat drawer takes room: `:root[data-chat="open"]`
+pads `.ag-shell` by the drawer's live width (`chat/chat.css`), so the page
+narrows when it opens and further as it is dragged wider. Lay
+pages out with `@container ag-main` queries, not viewport media queries, so
+they respond to the room they actually have. Caps belong only on things that
+read badly wide (a paragraph of copy, an empty state, a modal).
+
+Guarded by `tests/test_frontend_layout.py`.
+

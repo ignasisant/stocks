@@ -7,35 +7,15 @@
  * disagreeing.
  */
 
-import type { ReactNode } from "react";
 import { Link } from "../../shell/router";
 import { useT } from "../../shell/i18n";
 import { DownBody } from "./Down";
-import { DriftPill } from "./Hero";
+import { driftChip } from "./Hero";
+import { Kpi, KpiGrid, chipFor } from "../../ui/Kpi";
 import { fixed, maybe, percent, sectorKey, share, signed } from "./format";
 import { topSectors } from "./logic";
 import type { PulseBook, TrendBlock, TrendRow } from "./types";
-
-function Tile({
-  label,
-  value,
-  note,
-  pill,
-}: {
-  label: string;
-  value: string;
-  note: string;
-  pill?: ReactNode;
-}) {
-  return (
-    <div className="sn-bk-tile">
-      <span className="sn-bk-l">{label}</span>
-      <span className="sn-bk-v">{value}</span>
-      {pill}
-      <span className="sn-bk-n">{note}</span>
-    </div>
-  );
-}
+import { Badge } from "../../ui/Badge";
 
 /**
  * The reader's own half needs the rotation block as well as its own endpoint:
@@ -64,7 +44,7 @@ export function Book({
       <h3 className="sn-sec-t" id="ag-book">
         {t("sentiment.book_title")}
       </h3>
-      <span className="sn-badge">{t("sentiment.book_badge")}</span>
+      <Badge tone="brand">{t("sentiment.book_badge")}</Badge>
       <span className="sn-spacer" />
       <span className="sn-mono">{t("sentiment.book_src")}</span>
     </div>
@@ -133,47 +113,43 @@ export function Book({
   return (
     <>
       {head}
-      <div className="sn-bk">
-        <Tile
+      <KpiGrid>
+        <Kpi
           label={t("sentiment.beta_equity")}
           value={fixed(book.beta, 2)}
           note={t("sentiment.beta_equity_help")}
-          pill={<DriftPill now={book.beta_rolling} then={book.beta_rolling_then} />}
+          chip={driftChip(t, book.beta_rolling, book.beta_rolling_then)}
         />
         {/* Duration, credit and emerging markets: the same regression on the
             same EUR-rebased basket, one tile each. The pill is the drift of
             the rolling beta, as on the equity tile — the level alone cannot
             say the book got more rate-sensitive without anyone trading. */}
         {(book.betas ?? []).map((entry) => (
-          <Tile
+          <Kpi
             key={entry.key}
             label={t(`sentiment.beta_${entry.key}`)}
             value={fixed(entry.beta, 2)}
             note={t(`sentiment.beta_${entry.key}_help`)}
-            pill={<DriftPill now={entry.rolling} then={entry.rolling_then} />}
+            chip={driftChip(t, entry.rolling, entry.rolling_then)}
           />
         ))}
-        <Tile
+        <Kpi
           label={t("sentiment.side_corr")}
           value={signed(book.bond_correlation, 2)}
           note={t("sentiment.stock_bond_corr_note")}
-          pill={
-            <DriftPill now={book.bond_correlation} then={book.bond_correlation_then} />
-          }
+          chip={driftChip(t, book.bond_correlation, book.bond_correlation_then)}
         />
-        <Tile
+        <Kpi
           label={t("sentiment.usd_share")}
           value={share(book.usd_share)}
           note={t("sentiment.usd_share_help")}
-          pill={
-            drag === null ? undefined : (
-              <span className={`sn-pill ${drag >= 0 ? "sn-pill-up" : "sn-pill-down"}`}>
-                {t("sentiment.fx_pill", { value: percent(drag, 2) })}
-              </span>
-            )
+          chip={
+            drag === null
+              ? null
+              : chipFor(drag, t("sentiment.fx_pill", { value: percent(drag, 2) }))
           }
         />
-      </div>
+      </KpiGrid>
 
       {tilts.length > 0 && (
         <div className="sn-tilt">

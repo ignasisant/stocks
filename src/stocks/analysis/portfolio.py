@@ -31,6 +31,8 @@ from stocks.portfolio import transfers
 if TYPE_CHECKING:
     from datetime import datetime
 
+    import numpy as np
+
 TRADING_DAYS = 252
 # Default benchmarks: US large-cap, US tech, emerging markets.
 DEFAULT_BENCHMARKS = ("SPY", "QQQ", "EEM")
@@ -72,17 +74,33 @@ def returns_frame(closes: dict[str, pd.Series]) -> pd.DataFrame:
     return px.pct_change().iloc[1:]
 
 
-def portfolio_returns(returns: pd.DataFrame, weights: dict[str, float]) -> pd.Series:
+def portfolio_returns(
+    returns: pd.DataFrame,
+    weights: dict[str, float],
+    since: dict[str, pd.Timestamp] | None = None,
+) -> pd.Series:
     """Daily portfolio return, weights renormalised per date over tickers with data.
 
     Tickers with shorter histories (recent IPOs) contribute only from their first
     quote; earlier dates redistribute their weight over the rest of the book
     instead of truncating the whole series to the common history.
+
+    `since` masks a ticker's return before its own date to missing, the same
+    way a short price history does — a name bought last month at today's
+    weight otherwise backdates that whole weight onto years it was never
+    held, and earns a rally the book never lived.
     """
     cols = [c for c in returns.columns if c in weights and weights[c]]
     if not cols:
         return pd.Series(dtype=float)
     r = returns[cols].dropna(how="all")
+    if since:
+        r = r.copy()
+        naive = naive_dates(r.index)
+        for c in cols:
+            start = since.get(c)
+            if start is not None:
+                r.loc[naive < start, c] = float("nan")
     w = pd.Series({c: weights[c] for c in cols})
     present = r.notna().mul(w, axis=1).sum(axis=1)
     port = r.fillna(0.0).mul(w, axis=1).sum(axis=1) / present
@@ -147,6 +165,23 @@ def max_drawdown(prices: pd.Series) -> float:
     if prices.empty:
         return float("nan")
     return float((prices / prices.cummax() - 1).min())
+
+
+def drawdown_span(prices: pd.Series) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+    """(peak, trough) dates of `max_drawdown`'s fall; None when it never fell.
+
+    A drawdown alone does not say *when*, and on a TWR path that matters: every
+    day weighs the same whatever the book held, so a fall taken while it was a
+    few hundred euros of two names reads as large as one on today's book.
+    """
+    prices = prices.dropna()
+    if prices.empty:
+        return None
+    dd = prices / prices.cummax() - 1
+    if not (dd < 0).any():
+        return None
+    trough = dd.idxmin()
+    return prices[:trough].idxmax(), trough
 
 
 def cumulative_returns(returns: pd.Series) -> pd.Series:
@@ -306,6 +341,86 @@ def injected_series(
     return s.cumsum()
 
 
+def _close_matches_trades(px: pd.Series, ticker: str, ccy: str, transactions) -> bool:
+    """False when a ticker's own fills read this close off by an order of magnitude.
+
+    A close series is keyed on a bare ticker string, and more than one
+    instrument answers to a short one — a memecoin's symbol is cheap real
+    estate among thousands of them. A collided "CAT-EUR" once priced a ~500
+    EUR position at 900k+ for over a year, because nothing checked the close
+    against what the book actually paid for it. The book's own fills are
+    ground truth for what a name costs; a series whose price near a fill date
+    sits a magnitude off is the wrong instrument, not a real move, and is
+    rejected rather than trusted for the whole history.
+    """
+    ratios = []
+    for t in transactions:
+        if t.ticker != ticker or t.action not in ("buy", "sell"):
+            continue
+        if t.currency.upper() != ccy or t.price <= 0:
+            continue
+        near = px[px.index <= pd.Timestamp(t.date)].dropna()
+        if near.empty:
+            continue
+        ratios.append(float(near.iloc[-1]) / t.price)
+    if not ratios:
+        return True
+    ratios.sort()
+    return 0.1 <= ratios[len(ratios) // 2] <= 10.0
+
+
+def complete_download(
+    closes: dict[str, pd.Series], tickers: list[str]
+) -> dict[str, pd.Series]:
+    """`closes`, or `YFRateLimitError` when the bulk download came back gutted.
+
+    `yf.download` drops a symbol Yahoo refused without saying so, and the
+    book's download is cached for a quarter hour (an hour under the TWR). A
+    throttled burst cached as-is read 46 of 51 positions n/d and the book at
+    30k instead of 145k. A few absentees are delisted names (always missing);
+    more than a quarter is Yahoo refusing, and raising keeps it out of every
+    cache so the next request tries again.
+    """
+    from yfinance.exceptions import YFRateLimitError
+
+    missing = len(set(tickers) - set(closes))
+    if missing > max(3, len(tickers) // 4):
+        obs.warn(
+            "portfolio.bulk_prices_missing",
+            missing=missing,
+            requested=len(tickers),
+            priced=len(closes),
+        )
+        raise YFRateLimitError
+    return closes
+
+
+def plausible_closes(
+    closes: dict[str, pd.Series],
+    transactions,
+    units: dict[str, tuple[str, float]] | None = None,
+) -> dict[str, pd.Series]:
+    """`closes` less the series the book's own fills say are another instrument.
+
+    Applied where the book's prices are downloaded, so the live table, the
+    basket and the history all see a collided name as unpriced (carried at
+    cost) instead of each valuing it off the wrong asset.
+    """
+    ccy_of = {t.ticker: t.currency for t in transactions if t.action in ("buy", "sell")}
+    if units is None:
+        units = price_units(list(closes), ccy_of)
+    out: dict[str, pd.Series] = {}
+    for ticker, s in closes.items():
+        ccy, scale = units.get(ticker) or (ccy_of.get(ticker) or "", 1.0)
+        px = s.copy()
+        px.index = naive_dates(px.index)
+        if _close_matches_trades(px * scale, ticker, ccy.upper(), transactions):
+            out[ticker] = s
+        else:
+            obs.warn("portfolio.price_ticker_mismatch", ticker=ticker)
+    return out
+
+
 def injected_vs_value(
     transactions,
     closes: dict[str, pd.Series],
@@ -367,21 +482,26 @@ def injected_vs_value(
             ccy, scale = units.get(ticker) or ((ccy_of.get(ticker) or base), 1.0)
             ccy = ccy.upper()
             px = px * scale
-            if ccy == base:
-                rate = pd.Series(1.0, index=idx)
+            if not _close_matches_trades(px, ticker, ccy, transactions):
+                obs.warn("portfolio.price_ticker_mismatch", ticker=ticker)
             else:
-                rate = fx.get(ccy)
-            if rate is not None:
-                rate = rate.copy()
-                rate.index = pd.to_datetime(rate.index)
-                rate = rate.reindex(idx).ffill().bfill()
-                mtm = shares[ticker] * px * rate
+                rate = pd.Series(1.0, index=idx) if ccy == base else fx.get(ccy)
+                if rate is not None:
+                    rate = rate.copy()
+                    rate.index = pd.to_datetime(rate.index)
+                    rate = rate.reindex(idx).ffill().bfill()
+                    mtm = shares[ticker] * px * rate
         # Held days with no quote fall back to cost, never below zero.
         gap = held if mtm is None else (mtm.isna() & held)
         if gap.any():
-            proxy = injected_series(
-                [t for t in transactions if t.ticker == ticker], to_base, base
-            ).reindex(idx).ffill().fillna(0.0)
+            proxy = (
+                injected_series(
+                    [t for t in transactions if t.ticker == ticker], to_base, base
+                )
+                .reindex(idx)
+                .ffill()
+                .fillna(0.0)
+            )
             value += proxy.where(gap, 0.0).clip(lower=0.0)
             carried.append(ticker)
         if mtm is not None:
@@ -515,6 +635,195 @@ def money_weighted_return(
     return (lo + hi) / 2
 
 
+def flow_matched_curves(
+    value: pd.Series,
+    flows: pd.Series,
+    axis: pd.DatetimeIndex,
+    returns: dict[str, pd.Series],
+) -> tuple[pd.Series, pd.Series, dict[str, pd.Series]]:
+    """The book and each alternative, fed the book's own cash on its own dates.
+
+    Rebasing an index to the window's first day invests the whole book there
+    on day one, which is not what happened: a book built up over two years
+    had a fraction of its money at work for the early rally, and an index
+    credited with all of it reads years ahead of anything the account could
+    have earned. So each alternative here is a shadow account instead. It
+    opens at the book's own value on the first day of `axis` (zero when the
+    window starts before the first trade), then takes every flow the book
+    took — a buy puts the same euros in, a sale takes the same euros out —
+    and grows by its own daily return in between: S_t = S_{t-1}(1 + r_t) + F_t.
+    A sale larger than what the shadow holds empties it, never below zero.
+
+    Flows land on the first `axis` day on or after their date (a weekend
+    trade waits for Monday's close) and arrive at that day's close, like
+    `time_weighted_returns`, so the first day's own flows are already inside
+    the opening value.
+
+    Every line is then read the same way: value over net money put in (the
+    opening value plus the flows so far), minus one — "what my euros became"
+    against "what the same euros would have become there". NaN while nothing
+    is in. Returns (invested, book line, {name: shadow line}), all on `axis`.
+    """
+    axis = pd.DatetimeIndex(naive_dates(axis))
+    if axis.empty:
+        empty = pd.Series(dtype=float)
+        return empty, empty, {}
+    start = axis[0]
+    value = value.dropna()
+    value.index = naive_dates(value.index)
+    before = value[value.index <= start]
+    opening = float(before.iloc[-1]) if not before.empty else 0.0
+
+    if not flows.empty:
+        flows = flows.copy()
+        flows.index = naive_dates(flows.index)
+    later = flows[flows.index > start] if not flows.empty else flows
+    slot = axis.searchsorted(pd.DatetimeIndex(later.index), side="left")
+    keep = slot < len(axis)
+    daily = (
+        pd.Series(later.to_numpy()[keep], index=axis[slot[keep]])
+        .groupby(level=0)
+        .sum()
+        .reindex(axis, fill_value=0.0)
+        if len(later)
+        else pd.Series(0.0, index=axis)
+    )
+    invested = opening + daily.cumsum()
+    live = invested > 1e-9
+
+    def line(path: pd.Series) -> pd.Series:
+        return (path / invested - 1).where(live)
+
+    book = line(value.reindex(axis))
+    shadows: dict[str, pd.Series] = {}
+    for name, rets in returns.items():
+        r = rets.copy()
+        r.index = naive_dates(r.index)
+        r = r[~r.index.duplicated(keep="last")].reindex(axis).fillna(0.0)
+        held, path = opening, []
+        for day, f in daily.items():
+            if day != start:
+                held = max(held * (1 + float(r[day])) + float(f), 0.0)
+            path.append(held)
+        shadows[name] = line(pd.Series(path, index=axis))
+    return invested, book, shadows
+
+
+@dataclass
+class Sleeve:
+    """One block of the book the projection moves on its own."""
+
+    key: str
+    value: float
+    growth: float  # median compound annual return
+    volatility: float  # annual
+    share: float  # of each monthly contribution
+
+
+def sleeve_stats(
+    returns: pd.DataFrame,
+    weights: dict[str, float],
+    groups: dict[str, list[str]],
+    since: dict[str, pd.Timestamp] | None = None,
+) -> tuple[dict[str, float], float | None]:
+    """Annual volatility per group of names, and the correlation of the first two.
+
+    Each group is weighted as the basket is (`portfolio_returns`, weights
+    renormalised per date, each name clipped to when it was first bought) and
+    measured on its own calendar: crypto trades every day, stocks five, and a
+    weekend of stock "returns" would read as five zero-move days a fortnight.
+    The correlation is taken on weekly returns for the same reason — the two
+    calendars only agree on a week.
+    """
+    vols: dict[str, float] = {}
+    weekly: dict[str, pd.Series] = {}
+    for key, names in groups.items():
+        cols = [c for c in names if c in returns.columns]
+        sub = {c: weights[c] for c in cols if weights.get(c)}
+        if not sub:
+            continue
+        series = portfolio_returns(returns[cols], sub, since=since).dropna()
+        if len(series) < 20:
+            continue
+        vols[key] = annualized_volatility(series)
+        series.index = naive_dates(series.index)
+        weekly[key] = (1 + series).resample("W").prod() - 1
+    corr = None
+    if len(weekly) >= 2:
+        a, b = list(weekly.values())[:2]
+        both = pd.concat([a, b], axis=1).dropna()
+        if len(both) >= 10:
+            corr = float(both.corr().iloc[0, 1])
+    return vols, corr
+
+
+def project_sleeves(
+    sleeves: list[Sleeve],
+    corr: float = 0.0,
+    monthly: float = 0.0,
+    years: int = 5,
+    inflation: float = 0.0,
+    paths: int = 4000,
+    seed: int = 7,
+) -> tuple[pd.DataFrame, np.ndarray]:
+    """A range for what the book could be worth, month by month, `years` out.
+
+    Not a forecast — a spread of outcomes under stated assumptions, one set per
+    sleeve (stocks, crypto): a growth rate read as the *median* compound
+    annual return, the rate a reader means by "4% a year", and an annual
+    volatility. Monthly log-returns are drawn normal at drift ln(1 + g) / 12
+    and sigma = vol / sqrt(12), correlated across sleeves by `corr`. Each
+    sleeve compounds on its own, so a crypto rally grows the crypto weight the
+    way it would in the account; the monthly contribution is split by each
+    sleeve's `share` and added at the month's end. The fixed seed draws the
+    same fan for the same inputs on every reload.
+
+    `inflation` > 0 deflates every figure to today's money.
+
+    Returns (frame, finals): the frame has p10, p25, p50, p75, p90 and
+    `contributed` (today's value plus contributions so far), one row per
+    month, row 0 = today; `finals` is every path's last value, for a
+    probability of reaching a target.
+    """
+    import numpy as np
+
+    months = years * 12
+    k = len(sleeves)
+    rng = np.random.default_rng(seed)
+    z = rng.standard_normal(size=(paths, months, k))
+    if k == 2 and corr:
+        c = max(min(corr, 0.999), -0.999)
+        z[:, :, 1] = c * z[:, :, 0] + math.sqrt(1 - c * c) * z[:, :, 1]
+    total = np.zeros((paths, months + 1))
+    for n, sl in enumerate(sleeves):
+        sigma = max(sl.volatility, 0.0) / math.sqrt(12)
+        drift = math.log1p(sl.growth) / 12
+        growth = np.exp(drift + sigma * z[:, :, n])
+        v = np.empty((paths, months + 1))
+        v[:, 0] = sl.value
+        add = monthly * sl.share
+        for m in range(months):
+            v[:, m + 1] = np.maximum(v[:, m] * growth[:, m] + add, 0.0)
+        total += v
+    contributed = sum(sl.value for sl in sleeves) + monthly * np.arange(months + 1)
+    if inflation:
+        deflator = (1 + inflation) ** (np.arange(months + 1) / 12)
+        total = total / deflator
+        contributed = contributed / deflator
+    q = np.percentile(total, [10, 25, 50, 75, 90], axis=0)
+    frame = pd.DataFrame(
+        {
+            "p10": q[0],
+            "p25": q[1],
+            "p50": q[2],
+            "p75": q[3],
+            "p90": q[4],
+            "contributed": contributed,
+        }
+    )
+    return frame, total[:, -1]
+
+
 # ----------------------------------------------------------------- orchestration
 @dataclass
 class PortfolioReport:
@@ -644,12 +953,21 @@ def book_history(
         # No ticker filter on the flows: unpriced names are carried at cost in
         # the value path, so their buys and sells must offset those value jumps.
         twr = time_weighted_returns(hist["value"], flow_series(ledger, base=base))
+    unpriced = sorted({t for t in tickers if t not in closes})
+    if unpriced:
+        # Every render says "sin histórico" to the reader and nothing to us —
+        # the only way a name like this reaches a human today is someone
+        # noticing the caption and asking. One line here is enough to grep
+        # `stocks logs stats --event portfolio.unknown_ticker` for which
+        # tickers keep showing up, without a second sink to maintain: unlike
+        # an import failure, there is no user file to redact here, just our
+        # own catalog symbols.
+        obs.warn("portfolio.unknown_ticker", tickers=unpriced, count=len(unpriced))
     missing = sorted(
-        {t for t in tickers if t not in closes}
+        set(unpriced)
         | set(hist.attrs.get("carried_at_cost", []) if not hist.empty else [])
     )
     return hist, twr, missing
-
 
 
 def _profile(ticker: str) -> dict:
@@ -716,6 +1034,24 @@ def holdings_from_positions(positions) -> list[Holding]:
     ]
 
 
+def first_owned(transactions) -> dict[str, pd.Timestamp]:
+    """Each resolved ticker's earliest buy date, for `portfolio_returns`' `since`.
+
+    Relabelled first (`transfers.relabel`): a book moved between brokers books
+    the same security under two spellings, and the backtest weight is on the
+    resolved symbol, not either broker's own label.
+    """
+    since: dict[str, pd.Timestamp] = {}
+    for tx in transfers.relabel(list(transactions)):
+        if tx.action != "buy":
+            continue
+        date = pd.Timestamp(tx.date).normalize()  # ty: ignore[unresolved-attribute]
+        earliest = since.get(tx.ticker)
+        if earliest is None or date < earliest:
+            since[tx.ticker] = date
+    return since
+
+
 def market_value(
     ticker: str,
     quantity: float,
@@ -740,9 +1076,7 @@ def market_value(
     return quantity * price * scale * rate
 
 
-def market_values(
-    positions, max_workers: int = 8, base: str = "EUR"
-) -> dict[str, float]:
+def market_values(positions, max_workers: int = 8, base: str = "EUR") -> dict[str, float]:
     """Live market value per open position in `base`, off the bulk price path.
 
     Shared by the CLI (positions/tax) and the dashboard. Prices come from
@@ -790,8 +1124,13 @@ def market_values(
         try:
             rates[ccy] = float(spot(ccy, base)[0])
         except Exception as exc:
-            obs.warn("portfolio.fx_warmup_failed", ccy=ccy, base=base,
-                     error_type=type(exc).__name__, error=str(exc)[:300])
+            obs.warn(
+                "portfolio.fx_warmup_failed",
+                ccy=ccy,
+                base=base,
+                error_type=type(exc).__name__,
+                error=str(exc)[:300],
+            )
             # left out of `rates`; the per-position fallback re-tries the pair
 
     throttled: YFRateLimitError | None = None
@@ -819,16 +1158,21 @@ def market_values(
     # already refusing us.
     budget = max(3, len(positions) // 4)
     if len(stragglers) > budget:
-        obs.warn("portfolio.bulk_prices_missing", missing=len(stragglers),
-                 positions=len(positions), priced=len(out))
+        obs.warn(
+            "portfolio.bulk_prices_missing",
+            missing=len(stragglers),
+            positions=len(positions),
+            priced=len(out),
+        )
         stragglers = []
     if stragglers:
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             pairs = pool.map(
                 lambda p: (
                     p.ticker,
-                    market_value(p.ticker, p.quantity, unit(p)[0], base,
-                                 scale=unit(p)[1]),
+                    market_value(
+                        p.ticker, p.quantity, unit(p)[0], base, scale=unit(p)[1]
+                    ),
                 ),
                 stragglers,
             )
@@ -878,9 +1222,14 @@ def market_value_weights_base(
             try:
                 rate, _ = spot(ccy, base)
             except Exception as exc:
-                obs.warn("portfolio.weight_fx_failed", ticker=p.ticker, ccy=ccy,
-                         base=base, error_type=type(exc).__name__,
-                         error=str(exc)[:300])
+                obs.warn(
+                    "portfolio.weight_fx_failed",
+                    ticker=p.ticker,
+                    ccy=ccy,
+                    base=base,
+                    error_type=type(exc).__name__,
+                    error=str(exc)[:300],
+                )
                 continue
         values[p.ticker] = p.quantity * px * scale * rate
     total = sum(values.values())
@@ -983,9 +1332,7 @@ def value_weights(tbl: pd.DataFrame) -> pd.Series:
     return tbl["value"] / total
 
 
-def fx_frame(
-    currencies, index: pd.Index, base: str = "EUR"
-) -> dict[str, pd.Series]:
+def fx_frame(currencies, index: pd.Index, base: str = "EUR") -> dict[str, pd.Series]:
     """{currency: daily rate into `base`} for `currencies`, aligned to `index`.
 
     `index` is any index of dates — it is read as a `DatetimeIndex` below, and
@@ -1014,8 +1361,13 @@ def fx_frame(
         try:
             rates = rates_range(start, date.today().isoformat(), ccy, base)
         except Exception as exc:
-            obs.warn("portfolio.fx_range_failed", ccy=ccy, base=base,
-                     error_type=type(exc).__name__, error=str(exc)[:300])
+            obs.warn(
+                "portfolio.fx_range_failed",
+                ccy=ccy,
+                base=base,
+                error_type=type(exc).__name__,
+                error=str(exc)[:300],
+            )
             continue
         if rates:
             series = pd.Series(rates, dtype=float)
@@ -1025,7 +1377,11 @@ def fx_frame(
 
 
 def rebase_report(
-    report: PortfolioReport, positions, base: str = "EUR", period: str = "1y"
+    report: PortfolioReport,
+    positions,
+    base: str = "EUR",
+    period: str = "1y",
+    since: dict[str, pd.Timestamp] | None = None,
 ) -> PortfolioReport:
     """Re-read a watchlist-shaped report as the holder's own book, in `base`.
 
@@ -1056,7 +1412,7 @@ def rebase_report(
     report.weights = market_value_weights_base(
         positions, report.prices, report.meta, base
     )
-    report.port_returns = portfolio_returns(report.returns, report.weights)
+    report.port_returns = portfolio_returns(report.returns, report.weights, since=since)
     return report
 
 
@@ -1404,7 +1760,7 @@ def market_live(ticker: str, now_utc: datetime | None = None) -> bool:
 
 
 def us_extended_session(now_utc: datetime | None = None) -> str | None:
-    """"pre" / "post" while a US extended-hours window is open, else None.
+    """ "pre" / "post" while a US extended-hours window is open, else None.
 
     Yahoo quotes those windows (04:00-09:30 and 16:00-20:00 America/New_York),
     so the day change keeps moving outside the regular session. Time-based, no
@@ -1550,9 +1906,7 @@ def session_quotes(tickers: list[str]) -> dict[str, dict]:
 
     if not tickers:
         return {}
-    snapshots = (
-        (t, _snapshot(row)) for t, row in live_quotes(list(tickers)).items()
-    )
+    snapshots = ((t, _snapshot(row)) for t, row in live_quotes(list(tickers)).items())
     return {t: q for t, q in snapshots if q and q.get("pct") is not None}
 
 

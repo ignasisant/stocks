@@ -51,6 +51,35 @@ export function moneyIn(lang: string, currency: string): Money {
   };
 }
 
+/**
+ * `moneyIn`, shorthand past a thousand: 12500 -> "12.5k €", 1500000 -> "1.5M €".
+ *
+ * For a chart axis, where the gutter is a few characters wide and every digit
+ * crowds the plot — the exact figure is a tooltip away. Reuses `moneyIn` for
+ * the scaled number (so the currency symbol's side and the locale's decimal
+ * mark stay correct) and splices the suffix in right after the last digit.
+ */
+export function compactMoneyIn(lang: string, currency: string): Money {
+  const full = moneyIn(lang, currency);
+  return (value, options) => {
+    if (!usable(value)) return null;
+    const abs = Math.abs(value);
+    const [scale, suffix]: [number, string] =
+      abs >= 1e9
+        ? [1e9, "B"]
+        : abs >= 1e6
+          ? [1e6, "M"]
+          : abs >= 1e3
+            ? [1e3, "k"]
+            : [1, ""];
+    if (!suffix) return full(value, options);
+    const scaled = value / scale;
+    const digits = options?.digits ?? (Number.isInteger(scaled) ? 0 : 1);
+    const rendered = full(scaled, { ...options, digits });
+    return rendered && rendered.replace(/(\d)(\D*)$/, `$1${suffix}$2`);
+  };
+}
+
 /** A fraction as a percentage: 0.1234 -> "12.3%". */
 export function percent(
   lang: string,

@@ -10,6 +10,7 @@
  */
 
 import { Fragment, type ReactNode } from "react";
+import { ToggleChip } from "../../ui/Toggle";
 
 /** `**bold**` and `` `code` `` inside one line of catalog text. */
 export function Inline({ text }: { text: string }): ReactNode {
@@ -59,7 +60,7 @@ export function Prose({ text, className }: { text: string; className?: string })
       );
   });
   flush(-1);
-  return <div className={className ?? "pf-prose"}>{blocks}</div>;
+  return <div className={className ?? "pr-prose"}>{blocks}</div>;
 }
 
 export function Card({
@@ -74,12 +75,12 @@ export function Card({
   children: ReactNode;
 }) {
   return (
-    <section className="pf-card">
+    <section className="pr-card">
       {title !== undefined && (
-        <div className="pf-cardhead">
-          <span className="pf-cardtitle">{title}</span>
-          {sub && <span className="pf-cardsub">{sub}</span>}
-          {note && <span className="pf-cardnote">{note}</span>}
+        <div className="pr-cardhead">
+          <span className="pr-cardtitle">{title}</span>
+          {sub && <span className="pr-cardsub">{sub}</span>}
+          {note && <span className="pr-cardnote">{note}</span>}
         </div>
       )}
       {children}
@@ -105,16 +106,16 @@ export function Row({
   children: ReactNode;
 }) {
   return (
-    <div className={middle ? "pf-row pf-row-mid" : "pf-row"}>
-      <div className="pf-row-l">
-        <span className="pf-row-lab">{label}</span>
+    <div className={middle ? "pr-row pr-row-mid" : "pr-row"}>
+      <div className="pr-row-l">
+        <span className="pr-row-lab">{label}</span>
         {help && (
-          <span className="pf-row-help">
+          <span className="pr-row-help">
             <Inline text={help} />
           </span>
         )}
       </div>
-      <div className="pf-row-ctl">{children}</div>
+      <div className="pr-row-ctl">{children}</div>
     </div>
   );
 }
@@ -137,7 +138,7 @@ export function Select<T extends string>({
 }) {
   return (
     <select
-      className="pf-select"
+      className="pr-select"
       aria-label={label}
       value={value}
       disabled={disabled}
@@ -167,18 +168,16 @@ export function Chips<T extends string>({
   disabled?: boolean;
 }) {
   return (
-    <div className="pf-chips">
+    <div className="pr-chips">
       {options.map((option) => (
-        <button
+        <ToggleChip
           key={option}
-          type="button"
-          className={option === value ? "pf-chip pf-chip-on" : "pf-chip"}
-          aria-pressed={option === value}
+          on={option === value}
           disabled={disabled}
           onClick={() => onPick(option)}
         >
           {labelOf(option)}
-        </button>
+        </ToggleChip>
       ))}
     </div>
   );
@@ -196,7 +195,7 @@ export function Toggle({
   disabled?: boolean;
 }) {
   return (
-    <label className="pf-switch">
+    <label className="pr-switch">
       <input
         type="checkbox"
         checked={checked}
@@ -217,7 +216,7 @@ export function Toggle({
 export function Failure({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p className="pf-err" role="alert">
+    <p className="pr-err" role="alert">
       {message}
     </p>
   );
@@ -246,20 +245,18 @@ export function MultiChips<T extends string>({
 }) {
   const chosen = new Set(values);
   return (
-    <div className="pf-chips">
+    <div className="pr-chips">
       {options.map((option) => {
         const on = chosen.has(option);
         return (
-          <button
+          <ToggleChip
             key={option}
-            type="button"
-            className={on ? "pf-chip pf-chip-on" : "pf-chip"}
-            aria-pressed={on}
+            on={on}
             disabled={disabled}
             onClick={() => onToggle(option, !on)}
           >
             {labelOf(option)}
-          </button>
+          </ToggleChip>
         );
       })}
     </div>

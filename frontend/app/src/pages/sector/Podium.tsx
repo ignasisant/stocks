@@ -19,23 +19,44 @@ import { TickerCell } from "../../shell/tickers";
 import { CompanyName } from "./Cohort";
 
 /**
- * The two figures that carry a place, in the units the verdict prints.
- *
  * ROIC and P/E rather than the whole KPI row: the score is a mean of eighteen,
  * and quoting all of them under a headline number explains nothing. These two
  * say "compounds well" and "costs this much", which is the trade the reader is
  * actually making between the three.
  */
-const WHY = ["roic", "pe_ttm"];
+export const FUNDAMENTAL_WHY = ["roic", "pe_ttm"];
 
+/**
+ * 3-month return and distance from the 52-week high: how much it has already
+ * moved, and how much room is left before it would be making a new one.
+ */
+export const TECHNICAL_WHY = ["roc_63", "pct_from_high"];
+
+/**
+ * One "best three of this cohort" card. Two placements on the page — one
+ * scored on valuation and quality (`comp_scores`), one on technical momentum
+ * (`technical_scores`) — share this component rather than forking it:
+ * same medal/score/why-line shape, different title, copy and metric keys.
+ *
+ * Three places in one card rather than three cards: a bordered tile inside a
+ * bordered card is the "cards inside cards" shape that makes a dense page
+ * unreadable, and the rule between the columns separates them for free.
+ */
 export function Podium({
+  title,
+  emptyText,
+  helpText,
+  why,
   podium,
   rows,
-  cohort,
 }: {
+  title: string;
+  emptyText: string;
+  helpText: string;
+  /** The two metric keys that carry a place — see FUNDAMENTAL_WHY/TECHNICAL_WHY. */
+  why: readonly string[];
   podium: string[];
   rows: CohortRow[];
-  cohort: number;
 }) {
   const t = useT();
   const labels = useLabels();
@@ -43,9 +64,9 @@ export function Podium({
 
   return (
     <section className="ag-sec-card">
-      <h2 className="ag-sec-h2">{t("sector.podium_title")}</h2>
+      <h2 className="ag-sec-h2">{title}</h2>
       {podium.length === 0 ? (
-        <p className="ag-sec-caption">{t("sector.no_podium")}</p>
+        <p className="ag-sec-caption">{emptyText}</p>
       ) : (
         <div className="ag-sec-podium">
           {podium.map((ticker, index) => {
@@ -76,7 +97,7 @@ export function Podium({
                   <span>/100</span>
                 </div>
                 <div className="ag-sec-why">
-                  {WHY.map((key, place) => (
+                  {why.map((key, place) => (
                     <span key={key}>
                       {place > 0 ? <i>·</i> : null}
                       {`${labels.metric(key)} ${formatMetric(key, row?.metrics[key], na)}`}
@@ -88,7 +109,7 @@ export function Podium({
           })}
         </div>
       )}
-      <p className="ag-sec-caption">{t("sector.podium_help", { cohort })}</p>
+      <p className="ag-sec-caption">{helpText}</p>
     </section>
   );
 }

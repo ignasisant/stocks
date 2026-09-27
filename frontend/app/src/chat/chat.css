@@ -590,15 +590,6 @@
 
 /* What a turn was, when it was not simply typed and answered: a transcript,
    or an answer the reader cut short. Above the bubble, where the lens is. */
-.ag-chat-badge {
-  align-self: inherit;
-  padding: 1px 6px;
-  border-radius: var(--ag-radius-pill);
-  background: var(--ag-surface-sunken);
-  color: var(--ag-text-faint);
-  font-size: var(--ag-fs-2xs);
-}
-
 /* Recording: the microphone holds the critical colour for as long as it is
    listening, because nothing else on screen says the device is open. */
 .ag-chat-taping,
