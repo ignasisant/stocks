@@ -96,7 +96,7 @@ export function current(): Activity {
   return snapshot;
 }
 
-export function subscribe(fn: () => void): () => void {
+function subscribe(fn: () => void): () => void {
   listeners.add(fn);
   return () => {
     listeners.delete(fn);
