@@ -93,19 +93,36 @@ def rangebreaks(df: pd.DataFrame, interval: str) -> list[dict]:
     return breaks
 
 
-def price_history(ticker: str, label: str) -> pd.DataFrame:
-    """OHLCV plus indicator columns for one range label, trimmed to its window.
+def bars_download(ticker: str, period: str, interval: str) -> pd.DataFrame:
+    """The extended-history frame a label's window is cut from, indicators on.
 
-    The index is made timezone-naive on the way out: Plotly.js has no timezone
-    support, so the bars carry exchange-local wall time and the hour-based
-    rangebreaks line up with what the axis shows. Stamping them UTC instead
-    would slide every session by its own offset.
+    Its own step so a cache can key it on what is actually downloaded —
+    `PERIODS[label]` — rather than on the label: 1m, 3m, 6m and 1y are one
+    2y/1d download, and a memo keyed by label fetched it four times over as a
+    reader flipped through them.
     """
     from stocks.data.fetch import fetch_history
 
-    period, interval = PERIODS[label]
-    df = trim(add_indicators(fetch_history(ticker, period=period, interval=interval)),
-              label)
-    if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is not None:
-        df.index = df.index.tz_localize(None)
+    return add_indicators(fetch_history(ticker, period=period, interval=interval))
+
+
+def shape(df: pd.DataFrame, label: str) -> pd.DataFrame:
+    """`bars_download` cut to the label's window, index made timezone-naive.
+
+    Naive on the way out: Plotly.js has no timezone support, so the bars carry
+    exchange-local wall time and the hour-based rangebreaks line up with what
+    the axis shows. Stamping them UTC instead would slide every session by its
+    own offset.
+    """
+    df = trim(df, label)
+    index = df.index
+    if isinstance(index, pd.DatetimeIndex) and index.tz is not None:
+        df = df.copy()
+        df.index = index.tz_localize(None)
     return df
+
+
+def price_history(ticker: str, label: str) -> pd.DataFrame:
+    """OHLCV plus indicator columns for one range label, trimmed to its window."""
+    period, interval = PERIODS[label]
+    return shape(bars_download(ticker, period, interval), label)

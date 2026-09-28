@@ -263,3 +263,30 @@ def test_dry_run_sends_and_deletes_nothing(local, users, sent, monkeypatch):
     assert len(list((local / "data" / "tg_updates").glob("*.json"))) == 2
     saved = json.loads(users["pending"].prefs_path.read_text())
     assert "telegram_chat_id" not in saved
+
+
+def test_a_flood_from_one_chat_is_cut_at_the_burst_limit(
+    local, users, sent, monkeypatch,
+):
+    """One drain answers the whole queue, so a chat that queued fifty
+    messages used to get fifty answers on the account's key. The API's
+    window applies here too; the rest hear the same "slow down" line."""
+    from stocks.web import ratelimit
+
+    monkeypatch.setattr(ratelimit, "_events", {})
+    answered = []
+
+    def fake_answer(**kw):
+        answered.append(kw["message"])
+        return Reply(text="ok", provider_id="free")
+
+    monkeypatch.setattr(bot.engine, "answer", fake_answer)
+    n = ratelimit.CHAT_MAX_TURNS
+    _queue(local, *[_update(100 + i, 111, f"msg {i}") for i in range(n + 2)])
+
+    status = bot.drain()
+    assert len(answered) == n
+    refused = [k for k, v in status.items() if v == "jane_ab12cd34: rate limited"]
+    assert len(refused) == 2
+    assert sum("Demasiados mensajes" in text for text, _ in sent) == 2
+    assert not list((local / "data" / "tg_updates").glob("*.json"))  # consumed

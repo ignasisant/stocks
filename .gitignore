@@ -42,6 +42,9 @@ wheels/
 # it are the ones this machine's ledger holds: a fingerprint of a portfolio
 /data/isin_symbols.json
 /data/profiles.json
+/data/form4.json
+# The API's persisted memos (stocks.api.cache) — runtime state, restored from R2.
+/data/memo/
 /data/last_import.json
 # Daily counter for the keyless assistant's global allowance (runtime state).
 /data/free_llm_global.json

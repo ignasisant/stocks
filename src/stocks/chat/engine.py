@@ -1374,6 +1374,26 @@ def trace(evidence, hits: list, live: list, lang: str = "en") -> list[dict]:
     return steps
 
 
+def answerable(prefs: dict, atts: list[tuple[Provider, str, str]],
+               ) -> list[tuple[Provider, str, str]]:
+    """The attempts that could still answer today: the free chain drops out
+    once this account's allowance, or the shared pot, is gone.
+
+    `prepare` makes model calls of its own before `_charge` is ever consulted
+    -- the action classifier, the skill router, the web planner, the title --
+    all on the head of the chain. Left in place, a capped account kept
+    spending four to seven operator-funded calls per message and was only
+    then told no; the daily cap bounded the answers, not the bill. Checked
+    here, not charged: those calls are the cost of a turn the cap already
+    priced, and the reader who is out today makes none of them.
+    """
+    if not any(p.id == "free" for p, _k, _m in atts):
+        return atts
+    if free_eligible(prefs) and free_left(prefs) > 0:
+        return atts
+    return [a for a in atts if a[0].id != "free"]
+
+
 def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             db: Path, message: str, lang: str = "en",
             context: str = TELEGRAM_CONTEXT,
@@ -1432,7 +1452,12 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     atts = chain(prefs, session_keys)
     if not atts:
         return None, Reply(error="chat.free_exhausted")
-    provider, key, _ = atts[0]
+    # Everything below runs models on `live[0]`; `atts` still goes out whole
+    # so `answer` charges and reports the walls exactly as before.
+    live = answerable(prefs, atts)
+    if not live:
+        return None, _exhausted(prefs, atts, capped=True)
+    provider, key, _ = live[0]
 
     # App actions first (favorite / alerts / groups): a deterministic
     # localized confirmation — no main-model call, no free-quota spend.

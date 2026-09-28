@@ -43,12 +43,18 @@ export default defineConfig({
       output: {
         // One chunk per page, so opening Home does not download the tax
         // engine's tables. The shell is the entry and is always paid for.
-        entryFileNames: "app.js",
+        //
+        // Content-hashed, every one of them: the server marks a hashed name
+        // immutable for a year (`web/server.py`), so a returning reader pays
+        // for the shell's 270KB once per release instead of once every five
+        // minutes, and a release that changes a chunk changes its name — the
+        // document, which is never cached, links the new one.
+        entryFileNames: "app-[hash].js",
         // `[name]` is the module that produced the chunk, which is the page's
         // own entry file — see shell/pages.ts for why those are named after
         // their page and not all called `Page`.
-        chunkFileNames: "[name].js",
-        assetFileNames: "[name][extname]",
+        chunkFileNames: "[name]-[hash].js",
+        assetFileNames: "[name]-[hash][extname]",
       },
     },
   },

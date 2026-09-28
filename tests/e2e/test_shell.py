@@ -38,7 +38,7 @@ def test_every_page_draws_for_a_signed_in_account(page: Page, sign_in, path: str
     expect(page.locator("main.ag-main")).not_to_be_empty()
 
 
-@pytest.mark.parametrize("path", ["home", "portfolio", "bank"])
+@pytest.mark.parametrize("path", PAGES)
 def test_a_guest_page_asks_only_for_what_a_guest_may_read(page: Page, path: str):
     """A 401 on a guest's page is a request the page should not have made: the
     card it feeds either belongs to a guest (and the route belongs in

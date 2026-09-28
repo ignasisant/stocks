@@ -105,7 +105,7 @@ def key_for(day: date, lang: str, session: str | None) -> tuple:
 # ------------------------------------------------------------------- facts
 
 
-@ttl_cache(900.0, max_entries=1)
+@ttl_cache(900.0, max_entries=1, persist="card_closes")
 def _card_closes() -> dict[str, pd.Series]:
     """The market symbols the card reads — `web.market_data.card_closes`.
 
@@ -245,7 +245,7 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
     extremes: list = []
     closes: dict[str, list[float]] = {}
     try:
-        year = home.year_closes(home.closes_tuple(entries, owned))
+        year = home.year_closes(home.closes_tuple(entries, owned), *home.book(paths))
         extremes = home.scan_extremes(home.extremes_scope(entries, owned), year)
         closes = {t: c[-2:] for t, c in year.items()}
     except Exception:  # noqa: BLE001

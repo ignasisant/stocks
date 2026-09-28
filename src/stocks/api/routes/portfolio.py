@@ -26,6 +26,7 @@ from stocks.analysis.portfolio import (
     market_live,
     max_drawdown,
     money_weighted_return,
+    positions_frame,
     priced_totals,
     project_sleeves,
     top_n_weight,
@@ -188,20 +189,45 @@ def _custodians(brokers: dict) -> list[Custodian]:
 
 
 @router.get("/positions", response_model=Positions, summary="Open positions")
-def positions(account: Account, base: Base = None) -> Positions:
+def positions(
+    account: Account,
+    base: Base = None,
+    priced: Annotated[
+        bool,
+        Query(
+            description=(
+                "false: the rows the ledger alone can answer — shares, cost, "
+                "currency, custody — with every price field null, and no "
+                "network. What a table draws while the priced call is out."
+            )
+        ),
+    ] = True,
+) -> Positions:
     ccy = reporting_currency(account, base)
     db = str(account.db)
-    table = loaders.positions_table(db, loaders.db_mtime(db), ccy)
+    mtime = loaders.db_mtime(db)
+    if priced:
+        table = loaders.positions_table(db, mtime, ccy)
+    else:
+        # `values={}` is "priced at nothing": the frame keeps its shape with
+        # NaN values, and `positions_frame` never reaches for a quote.
+        table = positions_frame(
+            loaders.ledger_state(db, mtime, ccy)[1], base=ccy, values={}
+        )
     if table.empty:
         return Positions(base=ccy, positions=[], unpriced=0)
     weights = value_weights(table)
     # One spot per currency, not per position, and read back out of the value
     # the price pass already fetched — a second quote per name to print a share
     # price is how a page gets itself throttled.
-    rates = loaders.spot_rates(
-        tuple(sorted({str(c).upper() for c in table["ccy"] if c})), ccy
+    rates = (
+        loaders.spot_rates(
+            tuple(sorted({str(c).upper() for c in table["ccy"] if c})), ccy
+        )
+        if priced
+        else {}
     )
-    moves = _day_moves(db, ccy, table)
+    moves = _day_moves(db, ccy, table) if priced else {}
     held = loaders.custody(db, loaders.db_mtime(db))
     rows = [
         Position(

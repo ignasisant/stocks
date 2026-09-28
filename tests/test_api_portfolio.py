@@ -929,3 +929,27 @@ def test_projection_fans_out_from_todays_value(client, book, monkeypatch):
     ).json()
     assert real["real"] is True
     assert real["contributed"][-1] < payload["contributed"][-1]
+
+
+def test_unpriced_positions_answer_from_the_ledger_alone(client, book, monkeypatch):
+    """`?priced=false` is what a table draws first: every row, no price, no
+    network — the quote and download loaders must not be touched."""
+    book(trades())
+
+    def boom(*a, **k):
+        raise AssertionError("priced=false must not price")
+
+    for name in (
+        "positions_table", "spot_rates", "quotes", "basket_values", "held_closes",
+    ):
+        monkeypatch.setattr(loaders, name, boom)
+    answer = client.get(
+        "/v1/portfolio/positions",
+        params={"account": EMAIL, "priced": "false"},
+        headers=AUTH,
+    )
+    assert answer.status_code == 200, answer.text
+    rows = answer.json()["positions"]
+    assert [r["ticker"] for r in rows] == ["AAPL"]
+    assert rows[0]["shares"] > 0 and rows[0]["cost"] > 0
+    assert rows[0]["value"] is None and rows[0]["day"] is None

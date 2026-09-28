@@ -20,6 +20,13 @@ What is sealed, and why each one:
 * **Yahoo** is behind a tripped circuit breaker, so every fetch site takes the
   degraded path it already has for a throttled Cloud IP — which is the one
   path that is the same on every machine.
+* **exchange rates** come from a fixed table, answered in-process: a book
+  holding dollars cannot be replayed without them, and a checkout's own
+  `data/fx_history.json` would otherwise answer on a developer machine and
+  leave CI with a 503 on every page that prices one.
+* **the on-disk memos** (`data/memo/`, `data/form4.json`) live under `<root>`
+  too, for the same reason: frames salvaged from a real session would render
+  a page here that renders nowhere else.
 * **the chat** answers from a script: no provider, no key, no daily cap, and
   the same words every time.
 * **the burst limit** is lifted: the whole suite is one client on loopback.
@@ -80,12 +87,52 @@ def _seal_accounts(root: Path) -> None:
     )
     accounts.configured_owner = lambda: None  # type: ignore[assignment]
     storage.enabled = lambda: False  # type: ignore[assignment]
+    from stocks.api import cache
+    from stocks.data import insiders
+
+    cache.MEMO_DIR = root / "memo"
+    insiders.FORM4_CACHE = root / "form4.json"
+    insiders.clear_form4_cache()
 
 
 def _seal_yahoo() -> None:
     from stocks.data import fetch
 
     fetch.trip_throttle(cooldown=10**9)
+
+
+#: Units of each currency per euro. Round on purpose: a figure on the page is
+#: then the fixture's arithmetic, never a real day's rate.
+PER_EUR = {"EUR": 1.0, "USD": 1.1, "GBP": 0.85, "CHF": 0.95}
+
+
+def _script_fx(root: Path) -> None:
+    """Answer the three frankfurter shapes `stocks.data.fx` asks for — latest,
+    one day, a range — from `PER_EUR`, without a socket."""
+    from datetime import date
+    from urllib.parse import parse_qs, urlparse
+
+    import pandas as pd
+
+    from stocks.data import fx
+
+    fx.FX_CACHE = root / "fx_history.json"
+    fx._MEM_CACHE = None
+
+    def get_json(url: str, timeout: float = 15) -> dict:
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+        base, quote = query["base"][0], query["symbols"][0]
+        rate = PER_EUR.get(quote, 1.0) / PER_EUR.get(base, 1.0)
+        when = parsed.path.rsplit("/", 1)[1]
+        if ".." in when:
+            start, end = when.split("..")
+            days = pd.bdate_range(start, end)
+            return {"rates": {d.date().isoformat(): {quote: rate} for d in days}}
+        day = date.today().isoformat() if when == "latest" else when
+        return {"rates": {quote: rate}, "date": day}
+
+    fx.get_json = get_json  # type: ignore[assignment]
 
 
 def _script_chat() -> None:
@@ -119,6 +166,7 @@ def main() -> None:
     _seal_network()
     _seal_accounts(root)
     _seal_yahoo()
+    _script_fx(root)
     _script_chat()
 
     import uvicorn

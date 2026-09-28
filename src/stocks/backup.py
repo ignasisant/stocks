@@ -43,9 +43,20 @@ def _stamp(now: float | None = None) -> str:
     return time.strftime("%Y-%m-%dT%H-%M-%SZ", time.gmtime(now))
 
 
+# The API's persisted memos (stocks.api.cache): price frames that refetch
+# themselves, mirrored so a fresh host can answer while Yahoo says no. Not
+# user data — a snapshot that carried them would grow by megabytes a day for
+# nothing anyone would ever restore.
+MEMO_PREFIX = "data/memo/"
+
+
 def live_keys() -> list[str]:
     """Every key that belongs to the live tree (i.e. not a snapshot)."""
-    return [k for k in storage.list_keys() if not k.startswith(PREFIX)]
+    return [
+        k
+        for k in storage.list_keys()
+        if not k.startswith(PREFIX) and not k.startswith(MEMO_PREFIX)
+    ]
 
 
 def snapshots() -> list[str]:

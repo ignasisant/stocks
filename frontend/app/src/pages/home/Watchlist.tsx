@@ -14,9 +14,10 @@
  * figure greyed, like the Streamlit table's muted cells: real, not moving.
  */
 
+import type { ReactNode } from "react";
 import { get } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
-import { Loaded, Skeleton } from "../../shell/Layout";
+import { Loaded, Pending, Skeleton } from "../../shell/Layout";
 import { useT, useLang } from "../../shell/i18n";
 import { Link } from "../../shell/router";
 import { Chip, chipFor } from "../../ui/Kpi";
@@ -103,6 +104,10 @@ function Groups({
     // would re-fetch forever; its joined form does not.
   }, [key, nonce]);
   const prices = closes.state === "loaded" ? closes.data : null;
+  // The names are known before their prices are: rows draw at once, and
+  // only the two figure cells wait — "n/a" is kept for a price that could
+  // not be had, not for one still on its way.
+  const loading = closes.state === "loading";
 
   const favorites = entries.filter((entry) => entry.favorite).map((e) => e.ticker);
   const tags = new Map<string, string[]>();
@@ -120,13 +125,30 @@ function Groups({
   return (
     <section className="hm-section">
       {favorites.length > 0 ? (
-        <Group label={t("home.favorites")} tickers={favorites} prices={prices} open />
+        <Group
+          label={t("home.favorites")}
+          tickers={favorites}
+          prices={prices}
+          loading={loading}
+          open
+        />
       ) : null}
       {tagged.map((tag) => (
-        <Group key={tag} label={tag} tickers={tags.get(tag) ?? []} prices={prices} />
+        <Group
+          key={tag}
+          label={tag}
+          tickers={tags.get(tag) ?? []}
+          prices={prices}
+          loading={loading}
+        />
       ))}
       {rest.length > 0 ? (
-        <Group label={t("home.watchlist")} tickers={rest} prices={prices} />
+        <Group
+          label={t("home.watchlist")}
+          tickers={rest}
+          prices={prices}
+          loading={loading}
+        />
       ) : null}
       <p className="hm-caption">{t("home.watchlist_caption")}</p>
       <RefreshButton onRefresh={onRefresh} />
@@ -138,16 +160,18 @@ function Group({
   label,
   tickers,
   prices,
+  loading = false,
   open,
 }: {
   label: string;
   tickers: string[];
   prices: Map<string, CloseRow> | null;
+  loading?: boolean;
   open?: boolean;
 }) {
   const t = useT();
   const lang = useLang();
-  const na = t("home.na");
+  const na: ReactNode = loading ? <Pending /> : t("home.na");
   return (
     <details className="hm-group" open={open}>
       <summary>{label}</summary>

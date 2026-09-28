@@ -90,6 +90,7 @@ def account(monkeypatch, tmp_path):
     # No held closes: the freshness check's "latest session" reads empty, so
     # the card's key is the day and the language alone.
     monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
+    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
     return paths
 
 

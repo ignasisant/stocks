@@ -107,6 +107,24 @@ def closes(prices: dict[str, float]) -> dict[str, pd.Series]:
     }
 
 
+def download(prices: dict[str, float]):
+    """A fake `stocks.data.fetch.fetch_many` serving `closes(prices)` as frames.
+
+    The shape the book's one download comes back in (`loaders._held_frames`):
+    an unadjusted OHLCV frame per ticker, `Adj Close` beside `Close`. Flat and
+    equal, so which column a reader takes cannot move a figure.
+    """
+
+    def fetch_many(tickers, period="1y", interval="1d", auto_adjust=True, budget=60.0):
+        return {
+            ticker: pd.DataFrame({"Close": series, "Adj Close": series})
+            for ticker, series in closes(prices).items()
+            if ticker in tickers
+        }
+
+    return fetch_many
+
+
 @pytest.fixture
 def priced(monkeypatch):
     """Swap the one loader that would download a year of bars per ticker."""
@@ -407,13 +425,15 @@ def test_summary_and_performance_value_the_book_off_one_download(
     carried at cost by both, not valued off the wrong asset by either.
     """
     from stocks.analysis import portfolio as analysis
+    from stocks.data import fetch as data_fetch
 
     book(
         trades()
         + [Transaction(START, "CAT-EUR", "buy", 44_000_000, 1.1e-5, "EUR", 0.0)]
     )
-    series = closes({"AAPL": 120.0, "CAT-EUR": 0.02})
-    monkeypatch.setattr(loaders, "load_closes", lambda tickers, period: series)
+    monkeypatch.setattr(
+        data_fetch, "fetch_many", download({"AAPL": 120.0, "CAT-EUR": 0.02})
+    )
     monkeypatch.setattr(
         analysis, "price_units",
         lambda tickers, ccys, *a, **k: {t: ("EUR", 1.0) for t in tickers},
@@ -441,16 +461,18 @@ def test_a_gutted_download_prices_the_table_itself_and_caches_nothing(
     delisting: the positions table prices itself instead of reading n/d, and
     the partial download is not memoised for the next request."""
     from stocks.analysis import portfolio as analysis
+    from stocks.data import fetch as data_fetch
 
     book(trades() + [Transaction(START, "MSFT", "buy", 1, 100.0, "EUR", 0.0)]
          + [Transaction(START, f"X{i}", "buy", 1, 100.0, "EUR", 0.0) for i in range(6)])
     calls = []
+    serve = download({"AAPL": 120.0})
 
-    def gutted(tickers, period):
+    def gutted(tickers, period="1y", **kwargs):
         calls.append(period)
-        return closes({"AAPL": 120.0})
+        return serve(tickers, period, **kwargs)
 
-    monkeypatch.setattr(loaders, "load_closes", gutted)
+    monkeypatch.setattr(data_fetch, "fetch_many", gutted)
     monkeypatch.setattr(
         analysis, "market_values",
         lambda positions, base="EUR", **k: {p.ticker: 7.0 for p in positions},

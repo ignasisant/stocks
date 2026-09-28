@@ -61,7 +61,6 @@ def _own_free_llm_counter(tmp_path):
         ) = before
 
 
-
 @pytest.fixture(autouse=True)
 def _own_guest_dir():
     """Give every test its own anonymous-visitor directory.
@@ -140,6 +139,7 @@ def _listing_at_the_ledgers_word():
     yield
     listing._lookup = before
 
+
 # --------------------------------------------------------------- the session
 
 #: Long enough that itsdangerous is not the thing under test.
@@ -176,3 +176,17 @@ def sign_in(cookie_secret):
         return client
 
     return _sign_in
+
+
+@pytest.fixture(autouse=True)
+def _own_memo_dir(tmp_path):
+    """The API cache's persisted memos (stocks.api.cache) land under a
+    per-test directory, never in the checkout's data/memo — a test that
+    priced a book would otherwise leave its frames for the next run to serve.
+    Saved and restored by hand, like the fixtures above, for the same reason."""
+    from stocks.api import cache
+
+    before = cache.MEMO_DIR
+    cache.MEMO_DIR = tmp_path / "memo"
+    yield
+    cache.MEMO_DIR = before

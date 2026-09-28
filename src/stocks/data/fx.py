@@ -13,6 +13,7 @@ here accepts it as a base or a quote.
 from __future__ import annotations
 
 import json
+import threading
 import time
 from collections.abc import Callable, Iterable
 from datetime import date as _date
@@ -154,9 +155,29 @@ def rates_range(start: str, end: str, base: str, quote: str) -> dict[str, float]
             d: r * scale
             for d, r in rates_range(start, end, base_anchor, quote_anchor).items()
         }
+    key = (start, end, base, quote)
+    with _range_lock:
+        hit = _range_memo.get(key)
+    if hit is not None:
+        return hit
     url = RANGE_URL.format(start=start, end=end, base=base, quote=quote)
     data = get_json(url, timeout=30)
-    return {d: float(v[quote]) for d, v in data["rates"].items()}
+    rates = {d: float(v[quote]) for d, v in data["rates"].items()}
+    with _range_lock:
+        _range_memo[key] = rates
+        while len(_range_memo) > _RANGE_MEMO_MAX:
+            _range_memo.pop(next(iter(_range_memo)))
+    return rates
+
+
+# One answer per exact range request, for the process. `book_history` asks
+# for the same span — first trade to today — every time a book is repriced,
+# and a range that ends today is the same answer until tomorrow, when the end
+# date changes and so does the key. Shared, not copied: callers wrap it in a
+# Series and never write into it.
+_range_memo: dict[tuple[str, str, str, str], dict[str, float]] = {}
+_range_lock = threading.Lock()
+_RANGE_MEMO_MAX = 64
 
 
 def prefetch(pairs: Iterable[tuple[str, str]], quote: str = "EUR") -> None:

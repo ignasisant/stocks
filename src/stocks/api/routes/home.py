@@ -91,7 +91,9 @@ def closes(account: Account) -> Closes:
         return Closes()
     tickers = list(dict.fromkeys(h.ticker for h in entries))
     try:
-        year = home.year_closes(home.closes_tuple(entries, home.held(account)))
+        year = home.year_closes(
+            home.closes_tuple(entries, home.held(account)), *home.book(account)
+        )
     except Exception:  # noqa: BLE001 — a throttled burst is n/a cells, not a 500
         year = {}
     moves = home.last_closes(tickers, year)

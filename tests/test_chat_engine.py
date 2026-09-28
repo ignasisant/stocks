@@ -737,3 +737,43 @@ def test_a_session_key_for_a_provider_nobody_offers_is_ignored(monkeypatch):
     monkeypatch.setattr(engine, "decrypt_byok", lambda prefs, pid: "")
     monkeypatch.setattr(engine, "free_eligible", lambda prefs: False)
     assert engine.attempts({}, {"astrology": "xxxxxxxx"}) == []
+
+
+# ------------------------------------------------- the cap gates the pre-flight
+
+
+def _capped(prefs: dict) -> dict:
+    """`prefs` with today's free allowance already spent."""
+    prefs = dict(prefs)
+    prefs[f"free_msgs::{time.strftime('%Y-%m-%d')}"] = engine.free_daily_cap(prefs)
+    return prefs
+
+
+def test_a_capped_account_makes_no_model_call_at_all(providers, paths):
+    """The classifier, router, planner and title all ran on the free provider
+    *before* `_charge` said no — a capped account still cost the operator
+    four to seven calls a message. Now it costs none."""
+    prefs = _capped(BASE_PREFS)
+    reply = engine.answer(prefs=prefs, message="add AAPL to my favourites",
+                          **paths)
+    assert reply.error == engine.FREE_CAP_ERRORS[engine.free_cap_reason(prefs)]
+    assert providers["free"].calls == []
+    assert auth.load_chat(paths["chat_path"]) == []  # no dangling user turn
+
+
+def test_a_capped_free_chain_hands_the_preflight_to_the_byok_key(
+    providers, enc, paths,
+):
+    prefs = _capped({**BASE_PREFS, **enc("anthropic")})
+    reply = engine.answer(prefs=prefs, message="add AAPL to my favourites",
+                          **paths)
+    assert reply.error is None and reply.provider_id == "anthropic"
+    assert providers["free"].calls == []
+    assert providers["anthropic"].calls  # the classifier ran, on the user's key
+
+
+def test_answerable_leaves_a_chain_without_free_alone(providers):
+    atts = [(providers["anthropic"], "sk-x", "")]
+    assert engine.answerable(_capped(BASE_PREFS), atts) == atts
+    full = engine.chain(dict(BASE_PREFS))
+    assert engine.answerable(dict(BASE_PREFS), full) == full  # allowance left

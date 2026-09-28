@@ -118,6 +118,7 @@ def test_the_card_is_reported_never_written(client, account, monkeypatch):
     """A GET never spends an account's model allowance; `POST /daily` does."""
     monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: {})
     monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
+    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
     payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
     assert payload["headline"] is None
     assert payload["fresh"] is False
@@ -127,6 +128,7 @@ def test_the_card_is_reported_never_written(client, account, monkeypatch):
 def test_a_current_card_reads_fresh(client, account, monkeypatch):
     monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: today_card())
     monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
+    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
     payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
     assert payload["fresh"] is True
     assert payload["focus"] == ["NVDA"]
@@ -140,6 +142,7 @@ def test_a_language_switch_stales_a_card_whose_date_has_not_moved(
     left with yesterday's English briefing until tomorrow."""
     monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: today_card())
     monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
+    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
     payload = client.get(
         "/v1/daily", params=WHO | {"lang": "es"}, headers=AUTH
     ).json()
@@ -168,6 +171,7 @@ def test_the_cutoff_is_reported_so_a_client_need_not_hardcode_it(
 ):
     monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: {})
     monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
+    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
     payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
     assert payload["cutoff_hour"] == daily.CUTOFF_HOUR
 

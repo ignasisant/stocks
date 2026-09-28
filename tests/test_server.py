@@ -674,7 +674,18 @@ def test_the_shell_document_is_never_cached(client):
 def test_the_bundle_is_served_and_cached_briefly(client):
     response = client.get("/next-assets/app.js")
     assert response.status_code == 200
-    assert "max-age" in response.headers["cache-control"]
+    assert response.headers["cache-control"] == "public, max-age=300"
+
+
+def test_a_content_hashed_chunk_is_immutable_for_a_year(client, shell):
+    """Vite renames a chunk whenever its content changes, so the name is the
+    version: a browser may keep it as long as it likes."""
+    (shell / "Home-B3ml_q7a.js").write_text("export {}")
+    (shell / "index-Ck2h9Xw1.css").write_text("body{}")
+    for name in ("Home-B3ml_q7a.js", "index-Ck2h9Xw1.css"):
+        response = client.get(f"/next-assets/{name}")
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
 
 
 def test_the_bundle_route_will_not_walk_out_of_its_directory(client):

@@ -265,7 +265,10 @@ def _provider(paths: UserPaths, held: dict[str, str] | None = None):
     mapper to run on it too, not on a free chain that may have run dry.
     """
     prefs = accounts.load_prefs(paths.prefs)
-    for provider, key, _model in engine.chain(prefs, held):
+    # `answerable`: the mapper's calls (up to MAX_PDF_CALLS a file) are never
+    # charged to the allowance, so a free chain that has run dry today must
+    # not be the provider they run on.
+    for provider, key, _model in engine.answerable(prefs, engine.chain(prefs, held)):
         return provider, key
     return None, ""
 

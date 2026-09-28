@@ -124,3 +124,50 @@ def test_transactions_frame_signs_and_sorts():
 
 def test_transactions_frame_empty():
     assert transactions_frame([]).empty
+
+
+def test_form4_documents_are_fetched_once_and_read_back_from_the_memo(
+    tmp_path, monkeypatch
+):
+    """The index is live; the filings behind it never change. A second
+    process reads them from disk and pays the index alone."""
+    import json
+
+    from stocks.data import insiders
+
+    monkeypatch.setattr(insiders, "FORM4_CACHE", tmp_path / "form4.json")
+    insiders.clear_form4_cache()
+    monkeypatch.setattr(insiders, "cik_for", lambda ticker: "0000001234")
+    index = json.dumps(
+        {
+            "filings": {
+                "recent": {
+                    "form": ["4", "10-K", "4/A"],
+                    "accessionNumber": [
+                        "0001-24-000001", "0001-24-000002", "0001-24-000003",
+                    ],
+                    "primaryDocument": [
+                        "xslF345X06/form4.xml", "10k.htm", "xslF345X06/form4a.xml",
+                    ],
+                }
+            }
+        }
+    ).encode()
+    calls: list[str] = []
+
+    def get(url: str) -> bytes:
+        calls.append(url)
+        return index if url.startswith("https://data.sec.gov/") else FORM4_XML.encode()
+
+    monkeypatch.setattr(insiders, "_get", get)
+
+    first = insiders.insider_transactions("EXPL")
+    assert len(first) == 2 * len(parse_form4(FORM4_XML))
+    assert len(calls) == 3  # the index and the two Form 4 documents
+    assert (tmp_path / "form4.json").exists()
+
+    insiders.clear_form4_cache()  # a new process: the memo comes back from disk
+    calls.clear()
+    assert insiders.insider_transactions("EXPL") == first
+    assert calls == ["https://data.sec.gov/submissions/CIK0000001234.json"]
+    insiders.clear_form4_cache()
