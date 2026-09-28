@@ -140,7 +140,10 @@ def test_the_guest_list_is_not_silently_growing():
     # opens, which the guest calendar already offered in Streamlit.
     # 47: `GET /home/closes` — the guest Home's watchlist rows, last close and
     # day %, which Streamlit has always drawn over the shared list.
-    assert len(guest.OPEN) == 47
+    # 49: `GET /portfolio/monthly` and `GET /portfolio/projection` — the
+    # Overview and Projection tabs, which shipped without them and painted an
+    # error for every guest (caught by tests/e2e/test_portfolio.py).
+    assert len(guest.OPEN) == 49
 
 
 def test_every_route_a_guest_may_read_is_a_read():

@@ -12,7 +12,49 @@
  * write, and it is why `send` never falls back to a form encoding.
  */
 
+import { begin } from "./activity";
+import { noteFreshness } from "./freshness";
+
 const BASE = "/api/v1";
+
+/**
+ * A short memo of GET answers, keyed by path and query.
+ *
+ * The API is cached server-side, so a repeat is cheap — but not free: a page
+ * revisited is a dozen round trips before anything draws. Entries live
+ * `MEMO_MS`, and an in-flight promise is shared, so two components asking at
+ * once make one request (React under StrictMode mounts everything twice).
+ *
+ * Only a screen *opening* reads it: `useApi` wraps its first fetch in
+ * `withMemo`, and a `get` made anywhere else — a poll, a search keystroke, a
+ * click handler — always reaches the server. Anything that could change an
+ * answer drops the whole memo: a write (`send`), and an explicit reload, retry
+ * or changed input (`useApi` calls `invalidate` before re-asking). A failure
+ * is not an answer and is not kept.
+ */
+const MEMO_MS = 60_000;
+const memo = new Map<string, { at: number; answer: Promise<unknown> }>();
+let memoNext = false;
+
+/** Forget every memoized answer. */
+export function invalidate(): void {
+  memo.clear();
+}
+
+/**
+ * Run `fetch` with the memo switched on for the `get` calls it makes
+ * synchronously — the ones at the top of a page's fetcher, before its first
+ * `await`. Anything after an await is a second stage that already depends
+ * on a live answer, and goes live too.
+ */
+export function withMemo<T>(fetch: () => Promise<T>): Promise<T> {
+  memoNext = true;
+  try {
+    return fetch();
+  } finally {
+    memoNext = false;
+  }
+}
 
 export class NotSignedIn extends Error {
   constructor() {
@@ -76,17 +118,45 @@ export async function get<T>(
   const query = entries.length
     ? `?${new URLSearchParams(entries.map(([k, v]) => [k, String(v)]))}`
     : "";
-  const response = await fetch(`${BASE}${path}${query}`, {
+  const url = `${BASE}${path}${query}`;
+  if (!memoNext) return fetchJson<T>(url);
+  const hit = memo.get(url);
+  if (hit && Date.now() - hit.at < MEMO_MS) return hit.answer as Promise<T>;
+  const answer = fetchJson<T>(url);
+  memo.set(url, { at: Date.now(), answer });
+  answer.catch(() => {
+    if (memo.get(url)?.answer === answer) memo.delete(url);
+  });
+  return answer;
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  // Out until the body has arrived, not just the headers: the corner banner
+  // (`shell/activity`) counts what a reader is actually still waiting for.
+  const landed = begin(url);
+  try {
+    return await read<T>(url);
+  } finally {
+    landed();
+  }
+}
+
+async function read<T>(url: string): Promise<T> {
+  const response = await fetch(url, {
     credentials: "same-origin",
     headers: { Accept: "application/json" },
   });
   if (!response.ok) await fail(response);
+  // What the server had to say about the age of these figures, if anything.
+  noteFreshness(url, response.headers.get("x-data-stale-since"));
   return (await response.json()) as T;
 }
 
 type Verb = "POST" | "PATCH" | "PUT" | "DELETE";
 
 export async function send<T>(verb: Verb, path: string, body?: unknown): Promise<T> {
+  // Whatever this changes, a memoized answer may now be wrong about it.
+  invalidate();
   const response = await fetch(`${BASE}${path}`, {
     method: verb,
     credentials: "same-origin",

@@ -312,7 +312,7 @@ def extremes(account: Account) -> Extremes:
     scope = home.extremes_scope(entries, owned)
     if not scope:
         return Extremes(scanned=0)
-    year = home.year_closes(home.closes_tuple(entries, owned))
+    year = home.year_closes(home.closes_tuple(entries, owned), *home.book(account))
     return Extremes(
         scanned=len(scope),
         extremes=[

@@ -88,19 +88,53 @@ def extremes_scope(entries: list[Holding], owned: set[str]) -> tuple[str, ...]:
     return tuple(sorted(t for t in owned | favourites if not is_crypto(t)))
 
 
-def year_closes(tickers: tuple[str, ...]) -> dict[str, list[float]]:
+def book(paths) -> tuple[str | None, float]:
+    """`(db, mtime)` for the loaders keyed on a book; `(None, 0.0)` for a guest,
+    whose Home reads the shared list and no ledger."""
+    if is_guest(paths):
+        return None, 0.0
+    db = str(paths.db)
+    return db, loaders.db_mtime(db)
+
+
+def _year(series) -> list[float]:
+    """The last twelve months of a close series as floats, oldest first."""
+    close = pd.Series(series).dropna()
+    if close.empty:
+        return []
+    if isinstance(close.index, pd.DatetimeIndex):
+        close = close[close.index >= close.index[-1] - pd.DateOffset(years=1)]
+    return [float(v) for v in close]
+
+
+def year_closes(
+    tickers: tuple[str, ...], db: str | None = None, mtime: float = 0.0
+) -> dict[str, list[float]]:
     """A year of daily closes per name, oldest first, NaNs dropped.
 
-    Off `loaders.watchlist_closes` — as-printed prices, which is what a 52-week
-    high means — keyed on the tuple so the rows, the scan and the daily card
-    share one entry.
+    As-printed prices, which is what a 52-week high means. Names the ledger
+    holds are sliced out of the book's own download (`held_printed_closes`,
+    hot after the glance card); only the rest go through `watchlist_closes`.
+    On a book whose positions are also on the list — the common case — that
+    halves what Home asks Yahoo for. Guests (`db` None) read the watchlist
+    download alone. A book download that is refused (throttled) sends every
+    name through the watchlist path instead, so this never fails on its own.
     """
     if not tickers:
         return {}
     out: dict[str, list[float]] = {}
-    for ticker, series in loaders.watchlist_closes(tickers).items():
-        values = [float(v) for v in pd.Series(series).dropna()]
-        if values:
+    if db:
+        wanted = set(tickers)
+        try:
+            printed = loaders.held_printed_closes(db, mtime)
+        except Exception:  # noqa: BLE001 — the list download is the fallback
+            printed = {}
+        for ticker, series in printed.items():
+            if ticker in wanted and (values := _year(series)):
+                out[str(ticker)] = values
+    rest = tuple(t for t in tickers if t not in out)
+    for ticker, series in loaders.watchlist_closes(rest).items() if rest else ():
+        if values := _year(series):
             out[str(ticker)] = values
     return out
 

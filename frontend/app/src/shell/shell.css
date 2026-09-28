@@ -38,6 +38,18 @@
 
 /* The parked tour: one line above the page body, on every page. Not a modal —
    the point of "take me there" is that the reader is looking at the page. */
+/* The "figures are from <when>" line (shell/Layout.tsx StaleNotice): muted,
+   inside the page column, gone the moment the source answers again. */
+.ag-stale {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--ag-border);
+  border-left: 3px solid var(--ag-text-muted);
+  border-radius: 8px;
+  color: var(--ag-text-secondary);
+  font-size: 13px;
+}
+
 .ag-tour-strip {
   display: flex;
   flex-wrap: wrap;

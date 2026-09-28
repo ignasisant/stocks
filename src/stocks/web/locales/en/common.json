@@ -3,6 +3,7 @@
   "common.cta_import": "Import a statement",
   "common.cta_sign_in": "Sign in",
   "common.data_unavailable": "Data unavailable right now — retry in a moment.",
+  "common.stale_notice": "Figures from {when}: the price source is not answering right now. They refresh on their own.",
   "common.failed": "Something went wrong loading this.",
   "common.loading": "Loading…",
   "common.log_out": "Log out",
@@ -33,5 +34,14 @@
   "nav.sentiment": "Pulse",
   "nav.ticker": "Ticker",
   "common.cancel": "Cancel",
-  "common.legacy_banner": "This is the **previous version** of TopStocks, kept for reference only. It reads and writes the same data as the app, so change things in [the app](/) rather than here."
+  "common.legacy_banner": "This is the **previous version** of TopStocks, kept for reference only. It reads and writes the same data as the app, so change things in [the app](/) rather than here.",
+  "activity.title": "Still loading",
+  "activity.progress": "{done} of {total}",
+  "activity.book": "Pricing your portfolio",
+  "activity.prices": "Prices",
+  "activity.fundamentals": "Financial statements",
+  "activity.insiders": "Insider filings (SEC)",
+  "activity.earnings": "Earnings calendar",
+  "activity.pulse": "Market indicators",
+  "activity.other": "Data"
 }

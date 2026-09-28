@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -100,22 +101,27 @@ def profiles(account: Account, tickers: Annotated[str, Query(
     from stocks.data.funds import is_fund
 
     watchlist = str(account.watchlist)
-    out: list[Profile] = []
-    # Ordered as asked, deduplicated: a caller drawing a table wants its own
-    # order back, not a sorted one it has to re-join against.
-    for ticker in dict.fromkeys(wanted):
+
+    def one(ticker: str) -> Profile:
         resolved = loaders.display_symbol(ticker)
-        out.append(
-            Profile(
-                ticker=ticker,
-                symbol=resolved,
-                name=loaders.company_name(ticker, watchlist) or "",
-                logo=loaders.logo(ticker),
-                is_crypto=is_crypto(resolved),
-                is_fund=is_fund(resolved),
-            )
+        return Profile(
+            ticker=ticker,
+            symbol=resolved,
+            name=loaders.company_name(ticker, watchlist) or "",
+            logo=loaders.logo(ticker),
+            is_crypto=is_crypto(resolved),
+            is_fund=is_fund(resolved),
         )
-    return Profiles(profiles=out)
+
+    # Ordered as asked, deduplicated: a caller drawing a table wants its own
+    # order back, not a sorted one it has to re-join against. Resolved side by
+    # side rather than in turn: on a cold memo a row can cost a logo probe or
+    # a name lookup, and fifty of those one after another was the thirty-second
+    # `/market/profiles` in the request log. The loaders are single-flight, so
+    # the same symbol asked twice still costs one lookup.
+    rows = list(dict.fromkeys(wanted))
+    with ThreadPoolExecutor(max_workers=min(8, len(rows))) as pool:
+        return Profiles(profiles=list(pool.map(one, rows)))
 
 
 # ------------------------------------------------------------- open or shut

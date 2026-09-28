@@ -13,6 +13,7 @@ purpose — a probe has no token, and the answer tells nobody anything.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from urllib.error import URLError
 
 from fastapi import APIRouter, Depends, FastAPI, Request
@@ -20,7 +21,7 @@ from fastapi.responses import JSONResponse
 from yfinance.exceptions import YFRateLimitError
 
 from stocks import obs
-from stocks.api import guest, guestbook, security
+from stocks.api import cache, guest, guestbook, security, warm
 from stocks.api.routes import (
     account,
     bank,
@@ -73,6 +74,7 @@ preferences and watchlist edits still go through the app, so this API cannot
 leave a ledger in a state the UI did not produce.
 """
 
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     """Boot work. Today: make the shared guest book exist.
@@ -81,6 +83,10 @@ async def _lifespan(app: FastAPI):
     can write the guest directory — see `api.guestbook`.
     """
     guestbook.provision()
+    # The price memos for the accounts seen lately, on a thread of its own,
+    # given the startup window to run in — see `api.warm`. Off unless the
+    # deploy says otherwise.
+    warm.start()
     yield
 
 
@@ -93,6 +99,30 @@ app = FastAPI(
     openapi_url="/openapi.json",
     lifespan=_lifespan,
 )
+
+
+# ------------------------------------------------------ when the data is old
+# A memo that answered with a salvaged entry — the source refused, the last
+# good figure stood in — marks the request (`cache.STALE`), and the response
+# says so in a header rather than in every schema: the shell reads it once
+# and tells the reader how old the figures are, instead of passing them off
+# as today's.
+STALE_HEADER = "X-Data-Stale-Since"
+
+
+@app.middleware("http")
+async def _stale_since(request: Request, call_next):
+    token = cache.STALE.set({})
+    try:
+        response = await call_next(request)
+        since = (cache.STALE.get() or {}).get("since")
+        if since is not None:
+            response.headers[STALE_HEADER] = datetime.fromtimestamp(
+                since, tz=UTC
+            ).isoformat(timespec="seconds")
+        return response
+    finally:
+        cache.STALE.reset(token)
 
 
 # ------------------------------------------------- when the upstream says no
@@ -134,6 +164,7 @@ def _throttled(request: Request, exc: YFRateLimitError) -> JSONResponse:
 def _unreachable(request: Request, exc: URLError) -> JSONResponse:
     return _unavailable(request, "offline")
 
+
 # Open: a liveness probe carries no credentials, and the design tokens and
 # translated strings are shipped files the landing already publishes in plain
 # HTML — a sign-in screen needs them before anyone is signed in.
@@ -141,6 +172,7 @@ _public = APIRouter(prefix=f"/{API_VERSION}")
 _public.include_router(health.router)
 _public.include_router(design.router)
 _public.include_router(i18n.router)
+
 
 def gate(request: Request, who: Who) -> Caller:
     """The token gate, with a third answer.

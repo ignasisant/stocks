@@ -130,6 +130,13 @@ export default function Page() {
     summary.state === "loaded" &&
     summary.data.positions === 0 &&
     summary.data.realized === null;
+  // Seeding or removing the demo rewrites the book both queries read, so both
+  // are asked again: the ledger alone would leave `nothingHeld` judging the
+  // new book by the empty one's summary until the next page load.
+  const onDemo = (reload: () => void) => () => {
+    reload();
+    if (summary.state === "loaded") summary.reload();
+  };
 
   const slug = params.get("tab") ?? "";
   const active = TABS.find((tab) => tab[0] === slug) ?? TABS[0];
@@ -154,7 +161,7 @@ export default function Page() {
               {guest ? (
                 <GuestBanner text="portfolio.guest_demo_banner" />
               ) : (
-                <DemoBook book={state} onChange={reload} />
+                <DemoBook book={state} onChange={onDemo(reload)} />
               )}
             </>
           ) : (
@@ -169,7 +176,7 @@ export default function Page() {
               {guest ? (
                 <GuestBanner text="portfolio.guest_demo_banner" />
               ) : (
-                <DemoBook book={state} onChange={reload} />
+                <DemoBook book={state} onChange={onDemo(reload)} />
               )}
               {nothingHeld ? (
                 <Warn>{t("portfolio.ledger_no_positions")}</Warn>

@@ -55,13 +55,17 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         ("/v1/extremes", "GET"),
         # The watchlist rows' last close and day %, over the shared list.
         ("/v1/home/closes", "GET"),
-        # --- Portfolio, all five tabs, over the shared demo book ----------
+        # --- Portfolio, every tab, over the shared demo book --------------
         ("/v1/portfolio/positions", "GET"),
         ("/v1/portfolio/summary", "GET"),
         ("/v1/portfolio/transactions", "GET"),
         ("/v1/portfolio/transactions.csv", "GET"),
         ("/v1/portfolio/performance", "GET"),
         ("/v1/portfolio/history", "GET"),
+        # The overview's month-end chart and the projection tab's fan: both
+        # reads over the same book, the projection's knobs only query params.
+        ("/v1/portfolio/monthly", "GET"),
+        ("/v1/portfolio/projection", "GET"),
         ("/v1/portfolio/fees", "GET"),
         ("/v1/portfolio/dividends", "GET"),
         ("/v1/portfolio/tax", "GET"),

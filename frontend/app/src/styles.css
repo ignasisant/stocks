@@ -58,6 +58,17 @@ body {
   padding: 1rem 0.6rem;
   border-right: 1px solid var(--ag-border);
   background: var(--ag-surface-card);
+  /* Pinned to the viewport: a grid child stretches to the page's height and
+     scrolls away with it, so on a long screen the rail was gone by the second
+     card. `align-self: start` keeps the sticky box viewport-sized instead of
+     row-tall (a stretched sticky box has nowhere to stick), and its own
+     scrollbar covers the short-window case where the links outrun it. */
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100dvh;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 
 /* The brand, and the fold control beside it. */
@@ -160,6 +171,72 @@ body {
   animation: ag-pulse 1.4s ease-in-out infinite;
 }
 
+/* A single figure still on its way (shell/Layout.tsx Pending): the width of
+   a short number, the height of the text it stands in for. */
+.ag-pending {
+  display: inline-block;
+  width: 4.5em;
+  height: 0.9em;
+  vertical-align: middle;
+  border-radius: var(--ag-radius-xs, 6px);
+  background: var(--ag-surface-sunken);
+  animation: ag-pulse 1.4s ease-in-out infinite;
+}
+
+/* The corner banner (shell/Layout.tsx ActivityBanner). Above the assistant's
+   round button, which owns the very corner. */
+.ag-activity {
+  position: fixed;
+  right: 16px;
+  bottom: 88px;
+  z-index: 40;
+  width: min(280px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: 10px;
+  background: var(--ag-surface-card);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+  font-size: 13px;
+  color: var(--ag-text-secondary);
+}
+
+.ag-activity-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.ag-activity-title {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+}
+
+.ag-activity-count {
+  color: var(--ag-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-activity-list {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.ag-activity-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ag-surface-sunken);
+  overflow: hidden;
+}
+
+.ag-activity-bar > div {
+  height: 100%;
+  background: var(--ag-text-muted);
+  transition: width 0.3s ease;
+}
+
 @keyframes ag-pulse {
   50% {
     opacity: 0.45;
@@ -251,6 +328,8 @@ body {
   .ag-nav {
     position: fixed;
     inset: auto 0 0 0;
+    height: auto;
+    overflow: visible;
     flex-direction: row;
     justify-content: space-around;
     border-right: none;
