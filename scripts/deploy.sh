@@ -95,6 +95,20 @@ describe() {
 # .gitignore already covers (secrets.toml, portfolio.db, the statements folder)
 # do not show up here and do not reach the build context either — .gcloudignore
 # includes .gitignore.
+# The upload set itself, not an inference from .gitignore: gcloud reads only
+# the root .gitignore through .gcloudignore's #!include, so a nested one
+# (infra/.gitignore hiding terraform.tfstate) does nothing here. Every deploy
+# up to 2026-09-27 shipped the state file, every secret in plaintext, to the
+# run-sources bucket for exactly that reason. Refuse before a byte goes up.
+LEAK="$(gcloud meta list-files-for-upload . 2>/dev/null \
+    | grep -Ei '(^|/)(\.env|secrets\.toml|\.notify_secrets\.env)$|\.tfstate|terraform\.tfvars$|^infra/|\.pem$|\.key$|^data/users/' \
+    || true)"
+if [ -n "$LEAK" ]; then
+    echo "error: these files would be uploaded with the source — add them to .gcloudignore:" >&2
+    echo "$LEAK" >&2
+    exit 1
+fi
+
 SHA="$(git rev-parse HEAD)"
 DIRTY="$(git status --porcelain --untracked-files=all)"
 STAMP="$SHA"
@@ -186,7 +200,9 @@ ARGS=(
     # Update, never set: --labels/--set-env-vars would drop everything the
     # service already carries, including the secrets binding's siblings.
     --update-labels "commit=$STAMP"
-    --update-env-vars "STOCKS_COMMIT=$STAMP"
+    # Boot warm (stocks.api.warm) only where an instance idles and restarts
+    # with nobody waiting; a scale-to-zero service boots for a reader.
+    --update-env-vars "STOCKS_COMMIT=$STAMP,STOCKS_BOOT_WARM=$([ "$MIN_INSTANCES" -ge 1 ] && echo 1 || echo 0)"
 )
 if [ -n "$SECRET" ]; then
     ARGS+=(--update-secrets "STREAMLIT_SECRETS_TOML=$SECRET")
