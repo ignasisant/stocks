@@ -72,7 +72,7 @@ export type DailyTable = {
   note: string;
 };
 
-export type DailyRow = {
+type DailyRow = {
   /** Drawn as a ticker cell (logo + link); null for a label-only row. */
   ticker: string | null;
   /** The name beside the ticker, or the row's whole name when it has none. */

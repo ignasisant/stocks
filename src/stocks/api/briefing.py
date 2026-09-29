@@ -579,13 +579,17 @@ def analysis(paths, prefs: dict, key: str) -> tuple[daily.DailyAction, dict] | N
     from stocks.web import auth
 
     card, body = _analysed(paths, key)
-    if card is None or body:
-        return (card, body) if card is not None else None
+    if card is None:
+        return None
+    if body:
+        return card, body
     with _analysis_lock(paths, key):
         # Again under the lock: a double click waited here for the first.
         card, body = _analysed(paths, key)
-        if card is None or body:
-            return (card, body) if card is not None else None
+        if card is None:
+            return None
+        if body:
+            return card, body
         found = evidence.gather(paths, card, key)
         spent = False
 

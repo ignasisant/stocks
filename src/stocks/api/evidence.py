@@ -31,6 +31,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import date
+from typing import Any
 
 import pandas as pd
 
@@ -203,7 +204,7 @@ def compare(subject: dict, peers: list[dict], sector: dict, index: dict) -> dict
     )
     own = subject.get("perf") or {}
     sec, idx = sector.get("perf") or {}, index.get("perf") or {}
-    out = {
+    out: dict[str, Any] = {
         "vs_sector_m3_pp": _gap(own.get("m3_pct"), sec.get("m3_pct")),
         "vs_sector_y1_pp": _gap(own.get("y1_pct"), sec.get("y1_pct")),
         "vs_index_m3_pp": _gap(own.get("m3_pct"), idx.get("m3_pct")),
@@ -257,7 +258,7 @@ def tax(action: dict, today: date) -> dict:
 
     loss, gain, offset = (finite(action.get(k)) for k in ("loss", "gain_ytd", "offset"))
     named = (("loss", loss), ("gain_ytd", gain), ("offset", offset))
-    out = {k: v for k, v in named if v is not None}
+    out: dict[str, Any] = {k: v for k, v in named if v is not None}
     brackets = signals._brackets(action.get("jurisdiction"))
     if brackets and gain is not None and offset:
         before = progressive_tax(gain, brackets)
@@ -289,8 +290,9 @@ def history(results, closes: pd.Series | None) -> dict:
         move = None
         if not s.empty:
             day = pd.Timestamp(r.date)
-            if s.index.tz is not None:
-                day = day.tz_localize(s.index.tz)
+            tz = getattr(s.index, "tz", None)
+            if tz is not None:
+                day = day.tz_localize(tz)
             before, after = s[s.index < day], s[s.index > day]
             if not before.empty and not after.empty and float(before.iloc[-1]):
                 move = _pct(float(after.iloc[0]) / float(before.iloc[-1]) - 1)
@@ -368,7 +370,7 @@ def holdings(tbl, closes: dict[str, pd.Series], names) -> list[dict]:
     weight, P/L and price performance."""
     if tbl is None or tbl.empty:
         return []
-    rows = []
+    rows: list[dict[str, Any]] = []
     for ticker in names:
         if ticker not in tbl.index:
             continue
@@ -394,7 +396,7 @@ def attribution(tbl, closes: dict[str, pd.Series]) -> list[dict]:
     an attribution, not a reconciliation — the prompt says so."""
     if tbl is None or tbl.empty or "weight" not in tbl:
         return []
-    rows = []
+    rows: list[dict[str, Any]] = []
     for ticker, weight in tbl["weight"].dropna().items():
         month = perf(closes.get(ticker)).get("m1_pct")
         if month is None:
@@ -640,11 +642,11 @@ def gather(paths, card, key: str, *, today: date | None = None) -> dict:
             out["index"] = _index(market)
         elif kind == signals.FX:
             currency = str(action.get("currency") or "")
-            names = [
-                t
-                for t in (tbl.index if tbl is not None else ())
-                if "ccy" in tbl and str(tbl.at[t, "ccy"]) == currency
-            ]
+            names = (
+                [t for t in tbl.index if str(tbl.at[t, "ccy"]) == currency]
+                if tbl is not None and "ccy" in tbl
+                else []
+            )
             out["holdings"] = holdings(tbl, _held(paths), names)
             if {currency, str(action.get("base") or "")} == {"USD", "EUR"}:
                 out["fx"] = {"pair": "EURUSD", **perf(market.get("EURUSD=X"))}
