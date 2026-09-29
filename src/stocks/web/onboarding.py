@@ -367,6 +367,16 @@ RELEASES: tuple[Release, ...] = (
             News(slug="projection", icon="trending_up", step="projection"),
         ),
     ),
+    Release(
+        version="2026.09.5",
+        date="2026-09",
+        items=(
+            # One card: "see more" is the new thing to do. The card's memory
+            # and its new triggers (rate decisions, the tax calendar, results)
+            # are the daily step's body, not cards of their own.
+            News(slug="daily_more", icon="tips_and_updates", step="daily"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

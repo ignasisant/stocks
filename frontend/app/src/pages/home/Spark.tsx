@@ -33,12 +33,12 @@ const SMA_WINDOW = 20;
  * The windows the selector offers, in the order they widen.
  *
  * The same six the Streamlit card shows, under the same literal labels (no
- * i18n — "1w" is "1w" in every catalog the app has), and the same default:
- * `all` is the wrong opening view for a book that took a transfer, because one
- * step dwarfs every month of market movement around it. The clipping is the
- * server's (`/portfolio/history`), which also rebases the return index to the
- * window — slicing a fetched `all` locally would draw a one-month chart
- * starting at last year's number.
+ * i18n — "1w" is "1w" in every catalog the app has). It opens on `1y`: a year
+ * is the view the home card is for, and `all` is the wrong one for a book that
+ * took a transfer, because one step dwarfs every month of market movement
+ * around it. The clipping is the server's (`/portfolio/history`), which also
+ * rebases the return index to the window — slicing a fetched `all` locally
+ * would draw a one-month chart starting at last year's number.
  */
 const RANGES = ["1w", "1m", "6m", "1y", "2y", "5y"] as const;
 
@@ -48,7 +48,7 @@ export function Spark({ nonce }: { nonce: number }) {
   const t = useT();
   const lang = useLang();
   const base = useCurrency();
-  const [range, setRange] = useState<Range>("1m");
+  const [range, setRange] = useState<Range>("1y");
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const query = useApi(

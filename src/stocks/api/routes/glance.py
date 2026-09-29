@@ -32,7 +32,16 @@ from stocks.analysis.portfolio import (
 from stocks.api import briefing, home, loaders
 from stocks.api.deps import Account, Base, Writer, reporting_currency
 from stocks.api.jsonsafe import num as _num
-from stocks.api.schemas import DailyCard, Extreme, Extremes, Mover, Movers
+from stocks.api.schemas import (
+    DailyCard,
+    DailyDetail,
+    DailyDetailText,
+    DailyItem,
+    Extreme,
+    Extremes,
+    Mover,
+    Movers,
+)
 from stocks.chat import daily
 
 router = APIRouter(tags=["glance"])
@@ -114,7 +123,12 @@ def write_card(
             # In flight: report it. Done: this key was tried today — the card
             # it left (stored, or the computed stand-in) is the answer.
             return _status(account, lang)
-        if daily.is_fresh(stored, day, lang, key[2] or None):
+        if daily.is_fresh(stored, day, lang, key[2] or None) and not daily.wants_upgrade(
+            stored
+        ):
+            # A computed stand-in that stands still gets a few more tries at
+            # a written briefing a day (`daily.wants_upgrade`); anything else
+            # that stands costs nothing.
             return _status(account, lang)
 
     prefs = auth.load_prefs(account.prefs)
@@ -125,6 +139,35 @@ def write_card(
         return _empty(day)
     briefing.start(account, prefs, facts, lang, day, stored, key=key, forced=force)
     return _status(account, lang)
+
+
+@router.post(
+    "/daily/detail", response_model=DailyDetail, summary="The card's 'see more'"
+)
+def card_detail(account: Writer) -> DailyDetail:
+    """The paragraph behind each line of the stored card, written on the
+    first ask and stored with it.
+
+    A POST because the first one spends: one free-chain call writes every
+    paragraph (and reads the quarter and the press release behind a print).
+    Every later call — a second click, another device — reads the stored
+    paragraphs and spends nothing. Synchronous: the reader clicked and is
+    waiting on the card, and a model that does not answer leaves the computed
+    paragraphs, so this always ends in text.
+    """
+    from stocks.web import auth
+
+    prefs = auth.load_prefs(account.prefs)
+    card = briefing.detail(account, prefs)
+    if card is None:
+        return DailyDetail()
+    return DailyDetail(
+        day=card.day,
+        source=card.detail_source or None,
+        details=[
+            DailyDetailText(key=key, text=text) for key, text in card.detail.items()
+        ],
+    )
 
 
 def _stored(account) -> daily.DailyAction | None:
@@ -153,6 +196,9 @@ def _answer(action: daily.DailyAction, day, *, fresh: bool, pending=False) -> Da
         fresh=fresh,
         generated=action.generated or None,
         pending=pending,
+        items=[DailyItem(**item) for item in action.items],
+        upgradable=fresh and not pending and daily.wants_upgrade(action),
+        detail_ready=bool(action.detail),
     )
 
 

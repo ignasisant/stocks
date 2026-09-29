@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { stampOf, wantsWriting } from "./Daily";
+import { expandable, linesOf, stampOf, wantsWriting } from "./Daily";
 import type { DailyCard } from "./types";
 
 const t = (key: string, slots?: Record<string, string | number>) =>
@@ -30,6 +30,9 @@ function card(over: Partial<DailyCard> = {}): DailyCard {
     fresh: true,
     generated: null,
     pending: false,
+    items: [],
+    upgradable: false,
+    detail_ready: false,
     ...over,
   };
 }
@@ -47,6 +50,37 @@ describe("wantsWriting", () => {
 
   it("never doubles a generation that is already out", () => {
     expect(wantsWriting(card({ fresh: false, pending: true }), null)).toBe(false);
+  });
+
+  it("asks once more for a written card over a stand-in that stands", () => {
+    const standIn = card({ source: "computed", upgradable: true });
+    expect(wantsWriting(standIn, null)).toBe(true);
+    expect(wantsWriting(standIn, "2026-09-24")).toBe(false);
+  });
+});
+
+describe("linesOf / expandable", () => {
+  const item = {
+    key: "earnings:NVDA",
+    kind: "earnings",
+    line: "NVDA reports",
+    tickers: ["NVDA"],
+  };
+
+  it("reads the keyed items when the card has them", () => {
+    expect(linesOf(card({ items: [item], bullets: ["NVDA reports"] }))).toEqual([item]);
+  });
+
+  it("falls back to the bullets of a card stored before keys", () => {
+    expect(linesOf(card({ bullets: ["a", "b"] })).map((i) => i.key)).toEqual([
+      "line:0",
+      "line:1",
+    ]);
+  });
+
+  it("offers see more only when a line has a trigger behind it", () => {
+    expect(expandable(card({ items: [item] }))).toBe(true);
+    expect(expandable(card({ bullets: ["Portfolio +0.4% today"] }))).toBe(false);
   });
 });
 

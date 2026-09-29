@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 
 import pandas as pd
@@ -167,6 +167,38 @@ def _market(tbl, hist, currency: str) -> list:
         return []
 
 
+@ttl_cache(3600.0, max_entries=4)
+def _rates(sids: tuple[str, ...]) -> dict[str, pd.Series]:
+    """The policy-rate series, off FRED (keyless; disk-cached six hours)."""
+    from stocks.data import macro
+
+    return macro.fred_many(list(sids), years=1)
+
+
+def _macro(day: date, currency: str) -> list:
+    """The rate-decision candidates, or none of them.
+
+    The Fed for everyone — it prices the dollar and most of what a stock book
+    holds — and the ECB for a euro book. The series are downloaded only when
+    a decision is inside the card's window (`signals.macro_due`), which is a
+    few days a year: the other days cost nothing.
+    """
+    from stocks.data import macro_calendar as cal
+
+    banks = [
+        b for b in ((cal.FED, cal.ECB) if currency == "EUR" else (cal.FED,))
+        if signals.macro_due(b, day)
+    ]
+    if not banks:
+        return []
+    try:
+        rates = _rates(tuple(sid for b in banks for sid in cal.RATE_SERIES[b]))
+        return signals.macro_candidates(day, rates, banks=banks)
+    except Exception as exc:  # noqa: BLE001 — best-effort, like the market block
+        obs.warn("daily_action.macro_unavailable", error_type=type(exc).__name__)
+        return []
+
+
 def _jurisdiction(prefs: dict):
     """The account's tax jurisdiction, or None — only the harvest line reads it."""
     try:
@@ -236,18 +268,23 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
     earn = tuple(
         sorted(t for t in owned | favourites | tags if not is_crypto(t) and not _fund(t))
     )
-    events = []
+    events, results = [], []
     try:
-        events = list(loaders.earnings_calendar(earn)[0]) if earn else []
+        if earn:
+            upcoming, printed = loaders.earnings_calendar(earn)
+            events, results = list(upcoming), list(printed)
     except Exception:  # noqa: BLE001
-        events = []
+        events, results = [], []
 
     extremes: list = []
     closes: dict[str, list[float]] = {}
     try:
         year = home.year_closes(home.closes_tuple(entries, owned), *home.book(paths))
         extremes = home.scan_extremes(home.extremes_scope(entries, owned), year)
-        closes = {t: c[-2:] for t, c in year.items()}
+        # The whole year, not the last close: how long an alert has been past
+        # its level is what tells a crossing from a state (signals.
+        # _alert_signals), and a year of floats is already in hand.
+        closes = dict(year)
     except Exception:  # noqa: BLE001
         pass
 
@@ -264,8 +301,10 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
             closes=closes,
             realized=realized,
             earnings=events,
+            results=results,
             extremes=extremes,
             market=_market(tbl, hist, ccy),
+            macro=_macro(day, ccy),
             shown=stored.shown if stored else None,
             jurisdiction=_jurisdiction(prefs),
             currency=ccy,
@@ -287,34 +326,45 @@ def _fund(ticker: str) -> bool:
 # --------------------------------------------------------------------- job
 
 
+def _save_counters(paths, prefs: dict) -> None:
+    """Merge the free-allowance counters into prefs.json.
+
+    Merged rather than the whole dict written back: the prefs were read when
+    the work started, up to half a minute ago, and a settings change made in
+    that window must not be undone by a card.
+    """
+    counters = {k: v for k, v in prefs.items() if k.startswith("free_msgs::")}
+    try:
+        accounts.update_prefs(paths.prefs, counters)
+    except Exception as exc:  # noqa: BLE001 — a lost count, not a lost card
+        obs.warn("daily_action.prefs_unsaved", error_type=type(exc).__name__)
+
+
 def _store(paths, job: Job, prefs: dict, facts: dict, stored, spent: bool) -> None:
     """Apply a finished generation's side effects — `daily_ui._collect`.
 
-    The free counter is merged into prefs.json rather than the whole dict
-    written back: the prefs were read when the job started, up to half a minute
-    ago, and a settings change made in that window must not be undone by a
-    card. Only a model's card is stored — a computed one is free to rebuild,
-    and storing it would block the upgrade to a real briefing once the
-    allowance resets.
+    The card the reader is shown is stored whoever wrote it: the model's, or
+    the computed stand-in when no model answered. Memory is about what the
+    reader saw (`daily.to_store` stamps the triggers on screen, so tomorrow's
+    card does not say them again), and a computed card left unstored was a day
+    the card forgot. `daily.wants_upgrade` is what keeps a stored stand-in
+    from ending the day's chances of a real briefing.
     """
     from stocks.web import auth
 
     if spent:
-        counters = {k: v for k, v in prefs.items() if k.startswith("free_msgs::")}
-        try:
-            accounts.update_prefs(paths.prefs, counters)
-        except Exception as exc:  # noqa: BLE001 — a lost count, not a lost card
-            obs.warn("daily_action.prefs_unsaved", error_type=type(exc).__name__)
-    action = job.action
+        _save_counters(paths, prefs)
+    action = job.action or job.computed
     if action is None or job.abandoned:
         return
-    card = action.to_dict()
-    card["recent"] = daily.remembered(stored, action.headline)
-    # The triggers this card was offered, stamped today: tomorrow's candidates
-    # are ranked against it so the card turns over even when the book does not.
-    card["shown"] = daily.seen(stored, facts, date.fromisoformat(action.day))
+    if job.action is None and stored is not None and stored.from_model and daily.is_fresh(
+        stored, date.fromisoformat(action.day), action.lang, action.as_of or None
+    ):
+        # A Regenerate that got nothing back leaves the written card standing
+        # rather than swapping it for the stand-in.
+        return
     try:
-        auth.save_action(card, paths.action)
+        auth.save_action(daily.to_store(stored, action, facts), paths.action)
     except Exception as exc:  # noqa: BLE001 — the reader still gets the card
         obs.warn("daily_action.unsaved", error_type=type(exc).__name__)
 
@@ -367,6 +417,7 @@ def start(
                 lang,
                 day,
                 recent=stored.recent if stored else [],
+                past=stored.past if stored else [],
                 spend_free=spend,
             )
         except Exception as exc:  # noqa: BLE001 — generate swallows its own; a
@@ -378,14 +429,14 @@ def start(
             )
         finally:
             try:
-                _store(paths, job, prefs, facts, stored, spent)
-            finally:
-                # Last, so a poll that sees `done` also sees the stored file.
                 if job.computed is None and job.action is None:
                     # A forced job that got nothing still owes the reader a
                     # card: the computed one, built now rather than up front
                     # so a Regenerate shows its wait line and not a stand-in.
                     job.computed = daily.computed(facts, lang, day)
+                _store(paths, job, prefs, facts, stored, spent)
+            finally:
+                # Last, so a poll that sees `done` also sees the stored file.
                 job.done = True
 
     thread = threading.Thread(target=work, name="daily-action", daemon=True)
@@ -403,3 +454,169 @@ def now_day() -> tuple[datetime, date]:
     """
     now = datetime.now().astimezone()
     return now, daily.action_day(now)
+
+
+# ------------------------------------------------------------------ see more
+# The paragraph behind each line, written on the reader's click. Synchronous:
+# the reader asked and is watching the card for it, so there is no job to
+# poll — one call, a lock per account so a double click cannot pay twice, and
+# the answer stored with the card so the second opening (and every other
+# device) reads it for free.
+
+_detail_locks: dict[str, threading.Lock] = {}
+
+
+def _detail_lock(paths) -> threading.Lock:
+    with _lock:
+        return _detail_locks.setdefault(str(paths.root), threading.Lock())
+
+
+def _read_card(paths) -> daily.DailyAction | None:
+    from stocks.web import auth
+
+    return daily.DailyAction.from_dict(auth.load_action(paths.action))
+
+
+@ttl_cache(6 * 3600.0, max_entries=64)
+def _quarters(ticker: str) -> tuple[list, str | None]:
+    """(quarters newest-first, their filing currency) — `routes.earnings`'s
+    `_statements`, the same yfinance statement the result dialog reads."""
+    from stocks.data.earnings import fetch_quarters, fetch_statement_currency
+
+    quarters = fetch_quarters(ticker)
+    return quarters, fetch_statement_currency(ticker) if quarters else None
+
+
+@ttl_cache(6 * 3600.0, max_entries=64)
+def _release(ticker: str, iso: str) -> str | None:
+    from stocks.data import edgar
+
+    return edgar.earnings_release(ticker, date.fromisoformat(iso))
+
+
+def _print_source(action: dict) -> dict:
+    """What a print's paragraph can quote beyond EPS: the quarter's revenue
+    and margin, and the company's own press release (US filers)."""
+    from stocks.data.earnings import match_quarter, pct_change, year_ago
+
+    ticker = str(action.get("ticker") or "")
+    source: dict = {"ticker": ticker}
+    try:
+        day = date.fromisoformat(str(action.get("date") or ""))
+    except ValueError:
+        return source
+    try:
+        quarters, currency = _quarters(ticker)
+        quarter = match_quarter(quarters, day) if quarters else None
+    except Exception:  # noqa: BLE001 — a throttled statement is no revenue line
+        quarter, currency = None, None
+    if quarter is not None and quarter.revenue:
+        back = year_ago(quarters, quarter)
+        yoy = pct_change(quarter.revenue, back.revenue if back else None)
+        source |= {
+            "quarter_end": quarter.end.isoformat(),
+            "currency": currency or "USD",
+            "revenue": round(float(quarter.revenue), 2),
+            # The same figure in the units a paragraph writes it in, so "$96.2
+            # billion" passes the audit as the number it is.
+            "revenue_bn": round(float(quarter.revenue) / 1e9, 2),
+            "revenue_mn": round(float(quarter.revenue) / 1e6, 1),
+            "revenue_yoy_pct": None if yoy is None else round(yoy * 100, 1),
+        }
+        if quarter.operating_margin is not None:
+            source["operating_margin_pct"] = round(quarter.operating_margin * 100, 1)
+    release = _release(ticker, day.isoformat())
+    if release:
+        source["release"] = release
+        source["release_figures"] = daily.figures(release)
+    return source
+
+
+def _rate_source(action: dict) -> dict:
+    """A rate paragraph's history: the bank's last few moves, off the series
+    the card already downloaded."""
+    from stocks.data import macro_calendar as cal
+
+    bank = str(action.get("bank") or "")
+    ids = cal.RATE_SERIES.get(bank, ())
+    if not ids:
+        return {}
+    try:
+        series = _rates(tuple(ids))[ids[-1]].dropna()
+    except Exception:  # noqa: BLE001
+        return {}
+    moves = series[series.diff().fillna(1.0) != 0]
+    return {
+        "bank": bank,
+        "history": [
+            {"date": str(pd.Timestamp(i).date()), "rate": round(float(v), 2)}
+            for i, v in moves.tail(4).items()
+        ],
+    }
+
+
+def _sources(card: daily.DailyAction) -> dict[str, dict]:
+    """{item key: extra figures} for the lines that have more behind them."""
+    actions = daily.keyed_actions(card.facts)
+    out: dict[str, dict] = {}
+    for item in card.entries:
+        action = actions.get(item["key"])
+        if action is None:
+            continue
+        kind = action.get("kind")
+        if kind == signals.EARNINGS_RESULT:
+            out[item["key"]] = _print_source(action)
+        elif kind in (signals.MACRO_EVENT, signals.MACRO_RESULT):
+            source = _rate_source(action)
+            if source:
+                out[item["key"]] = source
+    return out
+
+
+def detail(paths, prefs: dict) -> daily.DailyAction | None:
+    """The stored card with its "see more" paragraphs, written if they have to
+    be. None when there is no card to expand.
+
+    The model writes all the paragraphs in one call; any it did not write, or
+    wrote with a figure the audit rejects, is the computed paragraph for that
+    line. Stored only onto the same card it was written for — a card replaced
+    while this ran keeps its own, empty, detail.
+    """
+    from stocks.web import auth
+
+    card = _read_card(paths)
+    if card is None or card.detail:
+        return card
+    with _detail_lock(paths):
+        card = _read_card(paths)
+        if card is None or card.detail:
+            return card
+        sources = _sources(card)
+        spent = False
+
+        def spend(p: dict) -> bool:
+            nonlocal spent
+            ok = engine.spend_free_quota(p)
+            spent = spent or ok
+            return ok
+
+        written = daily.generate_detail(
+            prefs, auth.load_profile(prefs), card, sources, card.lang, spend_free=spend
+        ) or {}
+        if spent:
+            _save_counters(paths, prefs)
+        fallback = daily.detail_computed(card, sources, card.lang)
+        texts = {
+            item["key"]: written.get(item["key"]) or fallback.get(item["key"])
+            for item in card.entries
+            if written.get(item["key"]) or fallback.get(item["key"])
+        }
+        source = "llm" if written else "computed"
+        raw = auth.load_action(paths.action)
+        if raw.get("day") == card.day and raw.get("generated") == card.generated:
+            raw["detail"], raw["detail_source"] = texts, source
+            try:
+                auth.save_action(raw, paths.action)
+            except Exception as exc:  # noqa: BLE001 — the reader still gets it
+                obs.warn("daily_action.detail_unsaved", error_type=type(exc).__name__)
+        return replace(card, detail=texts, detail_source=source)

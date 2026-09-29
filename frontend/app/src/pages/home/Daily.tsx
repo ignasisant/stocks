@@ -29,6 +29,13 @@
  * `source: "computed"` is the fallback built from the triggers alone when no
  * model answered. It is not prose, and it is not presented as a briefing: that
  * card carries `home.daily_computed_note` in place of the model disclaimer.
+ * It is stored too (tomorrow's card has to know what it said), and while it is
+ * `upgradable` the page asks for a written one again on its next visit.
+ *
+ * The card is a summary: the headline names the day's few things and each
+ * line says one. "See more" (`POST /daily/detail`) puts the paragraph behind
+ * each line under it — written on the first click, stored with the card, and
+ * read for free after that, so collapsing and reopening never asks twice.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -38,7 +45,7 @@ import { useLang, useT } from "../../shell/i18n";
 import { openAssistant } from "../../shell/assistant";
 import { Card, TickerCell } from "./ui";
 import { dayKey, monthDay, type Translate } from "./format";
-import type { DailyCard } from "./types";
+import type { DailyCard, DailyDetail, DailyItem } from "./types";
 import { Badge } from "../../ui/Badge";
 
 /** How often a card that is still being written asks whether it is done. */
@@ -71,8 +78,35 @@ export function stampOf(
  * already writing it, and this page has not asked for this day yet.
  */
 export function wantsWriting(card: DailyCard, asked: string | null): boolean {
-  return !card.fresh && !card.pending && asked !== card.action_day;
+  return (!card.fresh || card.upgradable) && !card.pending && asked !== card.action_day;
 }
+
+/** The card's lines as items — its own, or a pre-key card's bullets. */
+export function linesOf(card: Pick<DailyCard, "items" | "bullets">): DailyItem[] {
+  if (card.items?.length) return card.items;
+  return card.bullets.map((line, i) => ({
+    key: `line:${i}`,
+    kind: "",
+    line,
+    tickers: [],
+  }));
+}
+
+/** Whether "see more" has anything to open: a line with a trigger behind it. */
+export function expandable(card: Pick<DailyCard, "items" | "bullets">): boolean {
+  return linesOf(card).some((item) => item.kind !== "");
+}
+
+/** Which card a detail belongs to — a new card never shows the old one's. */
+function stampKey(card: DailyCard | null): string {
+  return card ? `${card.day}|${card.generated}|${card.lang}` : "";
+}
+
+type More =
+  | { kind: "closed" }
+  | { kind: "loading" }
+  | { kind: "failed" }
+  | { kind: "open"; detail: DailyDetail };
 
 type State =
   | { kind: "loading" }
@@ -160,6 +194,37 @@ export function Daily() {
     };
   }, [pending, lang, state]);
 
+  // "See more": closed until asked, then the paragraphs, kept per card so a
+  // collapse and reopen reads them from memory rather than asking again.
+  const shown = state.kind === "card" ? state.card : null;
+  const stamp = stampKey(shown);
+  const [more, setMore] = useState<More>({ kind: "closed" });
+  const detail = useRef<{ stamp: string; body: DailyDetail } | null>(null);
+  useEffect(() => {
+    setMore({ kind: "closed" });
+  }, [stamp]);
+  const toggleMore = useCallback(() => {
+    if (more.kind === "open" || more.kind === "loading") {
+      setMore({ kind: "closed" });
+      return;
+    }
+    if (detail.current?.stamp === stamp) {
+      setMore({ kind: "open", detail: detail.current.body });
+      return;
+    }
+    setMore({ kind: "loading" });
+    const asked = stamp;
+    send<DailyDetail>("POST", "/daily/detail").then(
+      (body) => {
+        detail.current = { stamp: asked, body };
+        setMore((now) =>
+          now.kind === "loading" ? { kind: "open", detail: body } : now,
+        );
+      },
+      () => setMore((now) => (now.kind === "loading" ? { kind: "failed" } : now)),
+    );
+  }, [more.kind, stamp]);
+
   const regenerate = useCallback(() => {
     setState((current) =>
       current.kind === "card"
@@ -169,6 +234,7 @@ export function Daily() {
               ...current.card,
               headline: null,
               bullets: [],
+              items: [],
               focus: [],
               pending: true,
             },
@@ -208,6 +274,14 @@ export function Daily() {
   if (!card.headline && !card.pending) return null;
   const regenerating = !card.headline;
   const written = monthDay(card.day ?? card.action_day, t);
+  const lines = linesOf(card);
+  // Not while a briefing is still being written: the stand-in on screen is
+  // about to be replaced, and its paragraphs with it.
+  const canExpand = !regenerating && !card.pending && expandable(card);
+  const texts: Record<string, string> = {};
+  if (more.kind === "open") {
+    for (const entry of more.detail.details) texts[entry.key] = entry.text;
+  }
 
   let note: string | null;
   if (regenerating) note = null;
@@ -226,12 +300,45 @@ export function Daily() {
             <span className="hm-daily-when">{stampOf(card, t)}</span>
           </div>
           <p className="hm-daily-headline">{card.headline}</p>
-          {card.bullets.length > 0 ? (
+          {lines.length > 0 ? (
             <ul className="hm-daily-list">
-              {card.bullets.map((line, i) => (
-                <li key={i}>{line}</li>
+              {lines.map((item) => (
+                <li key={item.key}>
+                  {item.line}
+                  {texts[item.key] ? (
+                    <p className="hm-daily-more">{texts[item.key]}</p>
+                  ) : null}
+                </li>
               ))}
             </ul>
+          ) : null}
+          {more.kind === "loading" ? (
+            <div className="hm-daily-more-wait">
+              <p className="hm-daily-wait" role="status">
+                {t("home.daily_more_loading")}
+              </p>
+              <Skeleton rows={2} />
+            </div>
+          ) : null}
+          {more.kind === "failed" ? (
+            <p className="hm-note" role="status">
+              {t("home.daily_more_failed")}
+            </p>
+          ) : null}
+          {more.kind === "open" && more.detail.source === "computed" ? (
+            <p className="hm-note">{t("home.daily_more_computed")}</p>
+          ) : null}
+          {canExpand ? (
+            <button
+              type="button"
+              className="hm-daily-toggle"
+              aria-expanded={more.kind === "open" || more.kind === "loading"}
+              onClick={toggleMore}
+            >
+              {more.kind === "open" || more.kind === "loading"
+                ? t("home.daily_less")
+                : t("home.daily_more")}
+            </button>
           ) : null}
           {card.focus.length > 0 ? (
             <div className="hm-daily-chips">
