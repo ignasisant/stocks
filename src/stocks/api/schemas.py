@@ -2253,6 +2253,17 @@ class LedgerCleared(BaseModel):
 # below it are arithmetic over prices already in hand.
 
 
+class DailyItem(BaseModel):
+    """One line of the daily card."""
+
+    key: str = Field(description="The trigger it is about, e.g. `earnings:NVDA`.")
+    kind: str = Field(
+        default="", description="The trigger's kind; empty for a context line."
+    )
+    line: str
+    tickers: list[str] = Field(default_factory=list)
+
+
 class DailyCard(BaseModel):
     """Today's briefing, whether it still stands, and whether one is coming.
 
@@ -2314,6 +2325,51 @@ class DailyCard(BaseModel):
             "Poll `GET /daily` until this turns false."
         ),
     )
+    items: list[DailyItem] = Field(
+        default_factory=list,
+        description=(
+            "The card's lines, each with the trigger it is about — the same "
+            "text as `bullets`, keyed so `POST /daily/detail` can expand each "
+            "one. A card stored before keys existed has none; read `bullets`."
+        ),
+    )
+    upgradable: bool = Field(
+        default=False,
+        description=(
+            "A computed stand-in that a `POST /daily` may still replace with a "
+            "written briefing — the model gets a few more tries a day. The "
+            "card stands meanwhile (`fresh` stays true)."
+        ),
+    )
+    detail_ready: bool = Field(
+        default=False,
+        description=(
+            "Its 'see more' paragraphs are already written: `POST "
+            "/daily/detail` returns them without spending anything."
+        ),
+    )
+
+
+class DailyDetailText(BaseModel):
+    key: str
+    text: str
+
+
+class DailyDetail(BaseModel):
+    """The paragraph behind each line of today's card — its "see more".
+
+    Written on the first request and stored with the card; the card's own
+    figures, plus what the detail fetched for a print (the quarter's revenue,
+    the company's press release) or a rate decision (the rate path), are the
+    only figures it may quote.
+    """
+
+    day: str | None = None
+    source: str | None = Field(
+        default=None,
+        description="llm | computed — computed when no model answered.",
+    )
+    details: list[DailyDetailText] = Field(default_factory=list)
 
 
 class Mover(BaseModel):

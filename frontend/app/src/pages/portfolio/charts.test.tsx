@@ -15,7 +15,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { TaxPeriod } from "./api";
-import { BookHistory, Heatmap, PeriodBars, bookTip, niceTicks } from "./charts";
+import {
+  BookAndRates,
+  BookHistory,
+  Heatmap,
+  PeriodBars,
+  bookTip,
+  niceTicks,
+} from "./charts";
 
 beforeAll(() => {
   vi.stubGlobal("document", { documentElement: {} });
@@ -100,6 +107,60 @@ describe("BookHistory", () => {
     expect(out).toMatch(/text-anchor="end"[^>]*>€1/);
     // Not zoomed yet, so no reset button.
     expect(out).not.toContain("Reset");
+  });
+});
+
+describe("BookAndRates", () => {
+  const points = [1000, 1100, 950, 1200].map((value, i) => ({
+    date: `2026-0${i + 1}-28`,
+    value,
+    invested: 1000,
+  }));
+  const render = (rate: (number | null)[]) =>
+    renderToStaticMarkup(
+      <BookAndRates
+        points={points}
+        series={[
+          { label: "Your money", points: rate },
+          { label: "Your picks", points: [0, 0.1, -0.05, 0.2], dashed: true },
+        ]}
+        labels={{ invested: "Injected", profit: "Profit", loss: "Loss", gain: "Gain" }}
+        money={(v) => `€${v}`}
+        format={(v) => `${(v * 100).toFixed(0)}%`}
+        formatDate={(iso) => iso}
+      />,
+    );
+
+  it("draws the money and the rates under one legend", () => {
+    const out = render([0, 0.1, -0.05, 0.2]);
+    for (const label of ["Injected", "Profit", "Loss", "Your money", "Your picks"]) {
+      expect(out).toContain(label);
+    }
+    // The money floor has its own gutter, and the rates' floor its zero line.
+    expect(out).toMatch(/text-anchor="end"[^>]*>€1/);
+    expect(out).toContain(">0%<");
+  });
+
+  it("breaks a rate line where a month has no rate instead of bridging it", () => {
+    // Two leading nulls leave one run of two points for the money line.
+    const out = render([null, null, -0.05, 0.2]);
+    const money = out.match(/<path d="M[^"]*"[^>]*stroke-dasharray/g) ?? [];
+    expect(money).toHaveLength(1); // only the dashed picks line is dashed
+    expect(out.match(/<path d="M/g)?.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("draws nothing for a single month", () => {
+    const out = renderToStaticMarkup(
+      <BookAndRates
+        points={points.slice(0, 1)}
+        series={[]}
+        labels={{ invested: "Injected", profit: "Profit", loss: "Loss", gain: "Gain" }}
+        money={(v) => `€${v}`}
+        format={(v) => `${v}`}
+        formatDate={(iso) => iso}
+      />,
+    );
+    expect(out).toBe("");
   });
 });
 

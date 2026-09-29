@@ -30,6 +30,7 @@ from stocks import obs, storage
 from stocks.chat import engine
 from stocks.config import DATA_DIR, PROJECT_ROOT
 from stocks.notify import fanout, telegram
+from stocks.web import ratelimit
 
 QUEUE_PREFIX = "data/tg_updates/"
 LINK_TTL = 600  # seconds a pending link code stays valid — matches profile.py
@@ -222,6 +223,15 @@ def handle_update(update: dict, users: list[fanout.NotifyUser],
 
     # The bare checkout has no chat.json — pull the account's thread down
     # once per run before the engine appends to it.
+    # The API answers 429 after CHAT_MAX_TURNS in CHAT_WINDOW_S; this drain is
+    # the bot's only process, so the same window here bounds one account's
+    # spend per run — BYOK money as much as the shared pot — instead of
+    # answering a flood in full because each message arrived on its own.
+    if not ratelimit.allow(f"telegram::{user.label}"):
+        _send(translate("chat.rate_limited", lang,
+                        seconds=ratelimit.retry_after(f"telegram::{user.label}")),
+              chat_id, dry_run)
+        return f"{user.label}: rate limited"
     if user.label not in restored:
         restored.add(user.label)
         storage.restore(user.chat_path)

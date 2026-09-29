@@ -13,6 +13,12 @@ so two accounts on different currencies must never share an entry.
 Nothing is reimplemented here: every function is a cache around a call into
 `stocks.portfolio` / `stocks.analysis`. When a number needs changing, it
 changes in the domain and both runtimes get it.
+
+The memos a page dies without when Yahoo says no — the book's frames, the
+watchlist's year, a chart's bars, a company's statements and calendar, the
+pulse's series — are declared `persist=`: they land on disk and in the
+bucket, and stand in for a refused fetch (`api.cache`). Quotes are not: a
+day move is only worth having live.
 """
 
 from __future__ import annotations
@@ -25,7 +31,7 @@ import pandas as pd
 
 from stocks import identity, obs
 from stocks.analysis import naive_dates
-from stocks.analysis.history import price_history
+from stocks.analysis.history import PERIODS, bars_download, shape
 from stocks.analysis.portfolio import (
     HELD_ACTIONS,
     book_history,
@@ -36,7 +42,7 @@ from stocks.analysis.portfolio import (
     positions_frame,
     session_quotes,
 )
-from stocks.api.cache import ttl_cache
+from stocks.api.cache import Flight, coalesced, ttl_cache
 from stocks.portfolio import fees, transfers
 from stocks.portfolio.custody import Custody, by_position
 from stocks.portfolio.ledger import all_transactions
@@ -68,15 +74,12 @@ def ledger_state(db: str, mtime: float, base: str = "EUR", matching: str = "fifo
     very same trades.
     """
     txs = all_transactions(Path(db))
-    positions, realized = (
-        build(txs, base=base, matching=matching) if txs else ([], [])
-    )
+    positions, realized = build(txs, base=base, matching=matching) if txs else ([], [])
     return txs, positions, realized
 
 
-@ttl_cache(_PRICES_TTL, max_entries=16)
-def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
-    """One bulk close download covering every name the book has ever held.
+def _held(db: str) -> tuple[list, list[str]]:
+    """(relabelled ledger, the names it ever held) — the book's price scope.
 
     Relabelled first (`transfers.relabel`): a book moved between brokers holds
     one position under two spellings, and downloading the other one prices
@@ -84,12 +87,94 @@ def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     """
     txs = transfers.relabel(all_transactions(Path(db)))
     held = [t for t in txs if t.action in HELD_ACTIONS]
-    if not held:
+    return txs, sorted({t.ticker for t in held})
+
+
+# Strict expiry, not stale-while-revalidate: the two memos derived from it
+# below are the ones that serve stale, and their background refresh has to
+# reach a real download here rather than be handed the same old frames back.
+@ttl_cache(_PRICES_TTL, max_entries=16, stale_s=0, persist="held_frames")
+def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
+    """One bulk download covering every name the book has ever held.
+
+    Unadjusted (`auto_adjust=False`), so a single request carries both closes
+    a book needs: `Adj Close`, the total-return series every return is
+    measured on, and `Close`, the price that actually printed — what a
+    52-week edge and the watchlist rows compare against. Home used to fetch
+    the held names a second time for that distinction.
+    """
+    from stocks.data.fetch import fetch_many
+
+    txs, tickers = _held(db)
+    if not tickers:
         return {}
-    tickers = sorted({t.ticker for t in held})
-    span = (pd.Timestamp.today() - pd.Timestamp(min(t.date for t in held))).days
-    closes = load_closes(tickers, period=f"{max(1, span // 30 + 1)}mo")
+    span = (
+        pd.Timestamp.today()
+        - pd.Timestamp(min(t.date for t in txs if t.action in HELD_ACTIONS))
+    ).days
+    frames = fetch_many(tickers, period=f"{max(1, span // 30 + 1)}mo", auto_adjust=False)
+    # Refused here and not only in the two readings below: a gutted download
+    # memoised as the book's frames would have both re-derive the same
+    # refusal for a whole ttl, and land it on disk and in the bucket besides.
+    complete_download(_close_series(frames, "Close"), tickers)
+    return frames
+
+
+def _close_series(frames: dict[str, pd.DataFrame], column: str) -> dict[str, pd.Series]:
+    """`load_closes`'s shape — one named Series per ticker, NaNs dropped —
+    read off one column of each frame. A frame without the column (the crypto
+    fallbacks carry no `Adj Close`) reads its `Close`: a coin pays nothing to
+    adjust for."""
+    out: dict[str, pd.Series] = {}
+    for ticker, df in frames.items():
+        name = column if column in df else "Close"
+        series = df[name].dropna() if name in df else pd.Series(dtype=float)
+        if not series.empty:
+            out[ticker] = series.rename(ticker)
+    return out
+
+
+@ttl_cache(_PRICES_TTL, max_entries=16)
+def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
+    """Adjusted close per name the book has ever held, from `_held_frames`.
+
+    The series every return, value and history is measured on. Refused whole
+    (`YFRateLimitError`) when the download came back gutted, so a throttled
+    burst is never memoized as a book worth a third of itself.
+    """
+    txs, tickers = _held(db)
+    if not tickers:
+        return {}
+    closes = _close_series(_held_frames(db, mtime), "Adj Close")
     return plausible_closes(complete_download(closes, tickers), txs)
+
+
+@ttl_cache(_PRICES_TTL, max_entries=16)
+def held_printed_closes(db: str, mtime: float) -> dict[str, pd.Series]:
+    """Close as printed per held name, from the same download as `held_closes`.
+
+    What `api.home.year_closes` reads for the names the ledger holds, instead
+    of asking `watchlist_closes` to download them again unadjusted.
+    """
+    txs, tickers = _held(db)
+    if not tickers:
+        return {}
+    closes = _close_series(_held_frames(db, mtime), "Close")
+    return plausible_closes(complete_download(closes, tickers), txs)
+
+
+_clear_adjusted = held_closes.cache_clear  # ty: ignore[unresolved-attribute]
+
+
+def _clear_held(expire: bool = True) -> None:
+    """Drop the download and both readings of it together — a refresh that
+    cleared one would have the other re-derived from the frames it kept."""
+    _held_frames.cache_clear(expire)  # ty: ignore[unresolved-attribute]
+    _clear_adjusted()
+    held_printed_closes.cache_clear()  # ty: ignore[unresolved-attribute]
+
+
+held_closes.cache_clear = _clear_held  # ty: ignore[unresolved-attribute]
 
 
 def _on_download(fn):
@@ -106,22 +191,26 @@ def _on_download(fn):
     the identity test sound: a live object's id cannot be reused.
     """
     store: dict[tuple, tuple[object, object]] = {}
+    flights: dict[tuple, Flight] = {}
     lock = threading.Lock()
 
     @wraps(fn)
     def wrapper(db: str, mtime: float, base: str = "EUR"):
         closes = held_closes(db, mtime)
-        key = (db, mtime, base)
-        with lock:
-            hit = store.get(key)
-            if hit is not None and hit[0] is closes:
-                return hit[1]
-        value = fn(db, mtime, base, closes)
-        with lock:
-            store[key] = (closes, value)
-            while len(store) > 32:
-                store.pop(next(iter(store)))
-        return value
+        # Single-flight like `ttl_cache`: the three movers windows, the tiles
+        # and the chart all ask for the same frame in the same instant, and
+        # each replay of a book is seconds of pandas on one vCPU. A waiter that
+        # arrived holding a *newer* download than the flight's gets the
+        # flight's frame — one TTL older at most, and the next call rebuilds.
+        return coalesced(
+            store,
+            flights,
+            lock,
+            (db, mtime, base),
+            fresh=lambda entry: entry[0] is closes,
+            compute=lambda: (closes, fn(db, mtime, base, closes)),
+            max_entries=32,
+        )
 
     clearable: object = wrapper
     clearable.cache_clear = store.clear  # ty: ignore[unresolved-attribute]
@@ -248,17 +337,28 @@ _HISTORY_TTL = 300.0
 _EVENTS_TTL = 3600.0
 
 
-@ttl_cache(_HISTORY_TTL, max_entries=64)
+@ttl_cache(_HISTORY_TTL, max_entries=64, persist="bars")
+def _bars_download(ticker: str, period: str, interval: str) -> pd.DataFrame:
+    return bars_download(ticker, period, interval)
+
+
 def price_bars(ticker: str, label: str) -> pd.DataFrame:
     """OHLCV plus indicators for one range label, shaped by `analysis.history`.
 
     Shared with the Ticker page down to the trimming and the indicator columns,
-    so the two front ends cannot draw different bars for the same range.
+    so the two front ends cannot draw different bars for the same range. The
+    memo is on the download, not the label: the four daily labels under a
+    year are one 2y frame cut four ways, and keying by label fetched it four
+    times as a reader flipped through them.
     """
-    return price_history(ticker, label)
+    period, interval = PERIODS[label]
+    return shape(_bars_download(ticker, period, interval), label)
 
 
-@ttl_cache(_EVENTS_TTL, max_entries=64)
+price_bars.cache_clear = _bars_download.cache_clear  # ty: ignore[unresolved-attribute]
+
+
+@ttl_cache(_EVENTS_TTL, max_entries=64, persist="earnings")
 def earnings(ticker: str):
     """(all known earnings dates, reported results) — one yfinance pass.
 
@@ -271,8 +371,12 @@ def earnings(ticker: str):
     try:
         return fetch_earnings(ticker)
     except Exception as exc:
-        obs.warn("api.earnings_failed", ticker=ticker,
-                 error_type=type(exc).__name__, error=str(exc)[:300])
+        obs.warn(
+            "api.earnings_failed",
+            ticker=ticker,
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
         return [], []
 
 
@@ -322,7 +426,7 @@ def custody(db: str, mtime: float) -> dict[str, dict[str, Custody]]:
     return by_position(all_transactions(Path(db)), to_base=lambda a, c, d: a)
 
 
-@ttl_cache(_EVENTS_TTL, max_entries=32)
+@ttl_cache(_EVENTS_TTL, max_entries=32, persist="fundamentals")
 def fundamentals(ticker: str):
     """One yfinance fundamentals pull: info, income statements, cash flow.
 
@@ -335,7 +439,7 @@ def fundamentals(ticker: str):
     return fetch_fundamentals(ticker)
 
 
-@ttl_cache(_EVENTS_TTL, max_entries=32)
+@ttl_cache(_EVENTS_TTL, max_entries=32, persist="estimates")
 def estimates(ticker: str):
     """Analyst price targets, EPS/revenue consensus and ratings.
 
@@ -347,7 +451,7 @@ def estimates(ticker: str):
     return fetch_estimates(ticker)
 
 
-@ttl_cache(_EVENTS_TTL, max_entries=32)
+@ttl_cache(_EVENTS_TTL, max_entries=32, persist="valuation")
 def valuation(ticker: str) -> dict:
     """P/E reconstructed against its own history: {source, pe, stats, current}.
 
@@ -360,8 +464,12 @@ def valuation(ticker: str) -> dict:
     try:
         return pe_vs_history(ticker)
     except Exception as exc:
-        obs.warn("api.pe_history_failed", ticker=ticker,
-                 error_type=type(exc).__name__, error=str(exc)[:300])
+        obs.warn(
+            "api.pe_history_failed",
+            ticker=ticker,
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
         return {"source": None, "pe": None, "stats": None, "current": None}
 
 
@@ -377,8 +485,12 @@ def insiders(ticker: str):
     try:
         return insider_transactions(ticker)
     except Exception as exc:
-        obs.warn("api.insiders_failed", ticker=ticker,
-                 error_type=type(exc).__name__, error=str(exc)[:300])
+        obs.warn(
+            "api.insiders_failed",
+            ticker=ticker,
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
         return []
 
 
@@ -394,8 +506,12 @@ def fund_profile(ticker: str):
     try:
         return fetch_profile(ticker)
     except Exception as exc:
-        obs.warn("api.fund_profile_failed", ticker=ticker,
-                 error_type=type(exc).__name__, error=str(exc)[:300])
+        obs.warn(
+            "api.fund_profile_failed",
+            ticker=ticker,
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
         return None
 
 
@@ -591,9 +707,7 @@ def trade_bars(db: str, mtime: float) -> dict[str, pd.DataFrame]:
         return {}
     tickers = sorted({t.ticker for t in trades})
     span = (pd.Timestamp.today() - pd.Timestamp(min(t.date for t in trades))).days
-    bars = fetch_many(
-        tickers, period=f"{max(1, span // 30 + 1)}mo", auto_adjust=False
-    )
+    bars = fetch_many(tickers, period=f"{max(1, span // 30 + 1)}mo", auto_adjust=False)
     # An alias can price a ticker on another venue (Revolut's dollar ASML ->
     # ASML.AS in euros); the spread converts when the frames say so.
     return fees.stamp_listing_currency(bars, fees.listing_currencies(list(bars)))
@@ -744,7 +858,7 @@ def sector_scans() -> dict:
     return load_scan()
 
 
-@ttl_cache(21600.0, max_entries=16)
+@ttl_cache(21600.0, max_entries=16, persist="earnings_calendar")
 def earnings_calendar(tickers: tuple[str, ...]):
     """(upcoming events, past results) for a set of names, in ONE parallel pass.
 
@@ -769,7 +883,7 @@ def earnings_calendar(tickers: tuple[str, ...]):
 _PULSE_HISTORY = "2y"
 
 
-@ttl_cache(_PRICES_TTL, max_entries=2)
+@ttl_cache(_PRICES_TTL, max_entries=2, persist="pulse_closes")
 def pulse_closes() -> dict[str, pd.Series]:
     """Close series for every symbol the pulse reads, in ONE bulk request."""
     from stocks.analysis.sentiment import all_tickers
@@ -777,7 +891,7 @@ def pulse_closes() -> dict[str, pd.Series]:
     return load_closes(all_tickers(), period=_PULSE_HISTORY)
 
 
-@ttl_cache(21600.0, max_entries=1)
+@ttl_cache(21600.0, max_entries=1, persist="pulse_rates")
 def pulse_rates() -> dict[str, pd.Series]:
     """The FRED series the composite's credit input needs.
 
@@ -790,7 +904,9 @@ def pulse_rates() -> dict[str, pd.Series]:
     return macro.fred_many(["BAMLH0A0HYM2"])
 
 
-@ttl_cache(_PRICES_TTL, max_entries=2)
+# Strict for the same reason as `_held_frames`: its inputs serve stale on
+# their own, and a stale-served composite of stale-served inputs lags twice.
+@ttl_cache(_PRICES_TTL, max_entries=2, stale_s=0)
 def market_pulse():
     """The composite, built from the two loads above.
 
@@ -816,7 +932,7 @@ def benchmark_sectors() -> dict[str, float]:
     return sector_weights("SPY")
 
 
-@ttl_cache(_PRICES_TTL, max_entries=32)
+@ttl_cache(_PRICES_TTL, max_entries=32, persist="watchlist_closes")
 def watchlist_closes(tickers: tuple[str, ...]) -> dict[str, pd.Series]:
     """A year of closes for a set of names, in ONE bulk download.
 
@@ -861,7 +977,7 @@ def stored_action(path: str, mtime: float) -> dict:
     return out if isinstance(out, dict) else {}
 
 
-@ttl_cache(21600.0, max_entries=1)
+@ttl_cache(21600.0, max_entries=1, persist="pulse_rate_rows")
 def pulse_rate_rows() -> dict[str, pd.Series]:
     """Every FRED series the rates block draws, plus the conditions index.
 
@@ -875,7 +991,7 @@ def pulse_rate_rows() -> dict[str, pd.Series]:
     return macro.fred_many([*RATE_ROWS, "NFCI"])
 
 
-@ttl_cache(21600.0, max_entries=1)
+@ttl_cache(21600.0, max_entries=1, persist="inflation")
 def inflation() -> pd.DataFrame:
     """Annual inflation per area — the slowest source on the page."""
     from stocks.data import macro

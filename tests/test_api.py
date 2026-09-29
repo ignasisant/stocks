@@ -557,6 +557,9 @@ WRITES = {
     # the card beside the prefs — the sector read's twin, and refused to a
     # token for the same reason.
     ("/v1/daily", "post"),
+    # Its "see more": the same allowance spent the first time, and the
+    # paragraphs stored onto the same card.
+    ("/v1/daily/detail", "post"),
     # Home's "Refresh prices". It writes nothing, but it drops process-wide
     # price caches — every account's downloads — so it is a pressed button,
     # and only a signed-in reader presses buttons.

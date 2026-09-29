@@ -1,0 +1,1 @@
+import{V as e}from"./app-uxMvsW9f.js";var t=e();function n({children:e,tone:n=`neutral`,title:r}){return(0,t.jsx)(`span`,{className:`ag-badge ag-badge-${n}`,title:r,children:e})}export{n as t};

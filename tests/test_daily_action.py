@@ -252,7 +252,8 @@ def test_parse_strips_bullet_glyphs_and_clips_long_lines():
     [
         "I cannot help with that.",
         json.dumps({"headline": "h", "bullets": []}),
-        json.dumps({"headline": "h", "bullets": ["only one"]}),
+        json.dumps({"headline": "h", "bullets": ["   "]}),
+        json.dumps({"headline": "h", "items": [{"key": "x", "line": ""}]}),
         json.dumps(["not", "an", "object"]),
         "",
     ],
@@ -520,7 +521,8 @@ def test_a_trigger_offered_again_extends_its_run():
         shown={"harvest:NVDA": {"last": "2026-09-02", "run": 2}},
     )
     out = daily.seen(previous, market_facts("harvest"), date(2026, 9, 3))
-    assert out["harvest:NVDA"] == {"last": "2026-09-03", "run": 3}
+    assert out["harvest:NVDA"]["last"] == "2026-09-03"
+    assert out["harvest:NVDA"]["run"] == 3
 
 
 def test_a_gap_of_a_day_starts_the_run_over():

@@ -49,7 +49,7 @@ from stocks.formatting import finite
 # early enough to be a plan for the day, late enough to have something to say.
 CUTOFF_HOUR = 9
 
-MIN_BULLETS = 2
+MIN_BULLETS = 1
 MAX_BULLETS = 4
 HEADLINE_CHARS = 90
 BULLET_CHARS = 170
@@ -62,6 +62,23 @@ TIMEOUT_S = 25.0
 # not re-emit yesterday's line with new numbers (the trick notify/narrative.py
 # uses for the digest highlight).
 RECENT_KEPT = 5
+# The lines themselves, kept for this many days: what the model is shown as
+# "already said", key by key, so a trigger that is back because its figure
+# moved is written as what changed rather than as news.
+PAST_DAYS = 7
+PAST_SHOWN = 16
+
+# A computed card is stored too — it is what the reader saw, so it is what the
+# card must remember — but it is a stand-in: a later visit may try the model
+# again, this long after the last attempt and at most this many times a day,
+# so a dead provider costs a handful of attempts rather than one per visit.
+UPGRADE_AFTER_S = 1800.0
+UPGRADE_TRIES = 3
+
+# The "see more" text: one paragraph per line, generated on the reader's
+# click, never with the card.
+DETAIL_CHARS = 700
+DETAIL_TIMEOUT_S = 30.0
 
 # What the facts block carries, so a briefing stays proportional to the book.
 MOVERS_SHOWN = 6
@@ -95,15 +112,41 @@ class DailyAction:
     generated: float = 0.0
     recent: list[str] = field(default_factory=list)  # past headlines, newest first
     # Which triggers this card was built from, and for how many days running:
-    # {"harvest:NVDA": {"last": "2026-09-17", "run": 3}}. Read back by
-    # signals.decay() so a standing trigger sinks down the next day's card
-    # instead of leading it again. Headlines alone cannot do this — the model
-    # rewords the same trigger every day and `recent` sees two different lines.
+    # {"harvest:NVDA": {"last": "2026-09-17", "run": 3, "v": {"offset": 900}}}.
+    # Read back by signals.repeat() — a trigger already shown whose figure has
+    # not moved stays off the next card — and by signals.decay(). Headlines
+    # alone cannot do this: the model rewords the same trigger every day and
+    # `recent` sees two different lines.
     shown: dict = field(default_factory=dict)
+    # The lines, each with the trigger it is about: {"key", "kind", "line",
+    # "tickers"}. `bullets` is the same lines as plain text, kept for readers
+    # of the card that predate the keys.
+    items: list[dict] = field(default_factory=list)
+    # Previous days' lines, newest first: {"day", "key", "line"}.
+    past: list[dict] = field(default_factory=list)
+    # How many generation attempts ended in this computed card today.
+    tries: int = 0
+    # What the card was written from, kept for the "see more" call — the
+    # detail must be about the same figures as the lines it expands.
+    facts: dict = field(default_factory=dict)
+    # {key: paragraph}, written on the reader's first "see more" of this card.
+    detail: dict = field(default_factory=dict)
+    detail_source: str = ""
 
     @property
     def from_model(self) -> bool:
         return self.source == _SOURCE_LLM
+
+    @property
+    def entries(self) -> list[dict]:
+        """The card's lines as items — its own, or for a card stored before
+        items existed, its bullets with no trigger attached."""
+        if self.items:
+            return [dict(i) for i in self.items]
+        return [
+            {"key": f"line:{n}", "kind": "", "line": b, "tickers": []}
+            for n, b in enumerate(self.bullets)
+        ]
 
     def to_dict(self) -> dict:
         return {
@@ -117,6 +160,12 @@ class DailyAction:
             "generated": self.generated,
             "recent": list(self.recent),
             "shown": dict(self.shown),
+            "items": [dict(i) for i in self.items],
+            "past": [dict(p) for p in self.past],
+            "tries": self.tries,
+            "facts": dict(self.facts),
+            "detail": dict(self.detail),
+            "detail_source": self.detail_source,
         }
 
     @classmethod
@@ -133,6 +182,12 @@ class DailyAction:
         # Bound once: a stored card is whatever JSON was on disk, so `shown`
         # has to be *seen* to be a dict, not asked twice and assumed.
         shown = raw.get("shown")
+        facts = raw.get("facts")
+        detail = raw.get("detail")
+        try:
+            tries = int(raw.get("tries") or 0)
+        except (TypeError, ValueError):
+            tries = 0
         return cls(
             day=day,
             as_of=str(raw.get("as_of") or ""),
@@ -144,7 +199,35 @@ class DailyAction:
             generated=float(raw.get("generated") or 0.0),
             recent=[str(h) for h in (raw.get("recent") or []) if str(h).strip()],
             shown=shown if isinstance(shown, dict) else {},
+            items=_items(raw.get("items")),
+            past=[
+                {"day": str(p.get("day") or ""), "key": str(p.get("key") or ""),
+                 "line": str(p.get("line") or "")}
+                for p in (raw.get("past") or [])
+                if isinstance(p, dict) and p.get("line")
+            ],
+            tries=tries,
+            facts=facts if isinstance(facts, dict) else {},
+            detail={
+                str(k): str(v) for k, v in detail.items() if str(v).strip()
+            } if isinstance(detail, dict) else {},
+            detail_source=str(raw.get("detail_source") or ""),
         )
+
+
+def _items(raw) -> list[dict]:
+    """Stored items, each checked to be the shape the card renders."""
+    out = []
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict) or not str(item.get("line") or "").strip():
+            continue
+        out.append({
+            "key": str(item.get("key") or ""),
+            "kind": str(item.get("kind") or ""),
+            "line": str(item["line"]),
+            "tickers": [str(t) for t in (item.get("tickers") or [])],
+        })
+    return out
 
 
 def action_day(now: datetime) -> date:
@@ -177,6 +260,22 @@ def is_fresh(
     if not (action and action.day == day.isoformat() and action.lang == lang):
         return False
     return not (as_of and action.as_of < as_of)
+
+
+def wants_upgrade(action: DailyAction | None, now: float | None = None) -> bool:
+    """Whether a card that stands is a computed stand-in worth one more try.
+
+    A computed card is stored like a written one — the reader saw it, and
+    tomorrow's card has to know what it said — but storing it must not end the
+    day's chances of a real briefing: the allowance resets, a provider comes
+    back. So a later visit tries again, `UPGRADE_AFTER_S` after the last
+    attempt and at most `UPGRADE_TRIES` times a day.
+    """
+    if action is None or action.from_model:
+        return False
+    if action.tries >= UPGRADE_TRIES:
+        return False
+    return (now if now is not None else time.time()) - action.generated >= UPGRADE_AFTER_S
 
 
 # ------------------------------------------------------------------- facts
@@ -350,9 +449,16 @@ _TASK = (
 # guess about what it means.
 _KINDS = (
     "Each entry in `actions` is a trigger the app computed from the user's own "
-    "data. Their meanings:\n"
+    "data, and each carries a `key` naming it. None of them was on an earlier "
+    "card unchanged: each is new, or its figure or its date moved since. "
+    "Their meanings:\n"
     "- alert_hit: the price alert THE USER set on that ticker has fired "
-    "(rule/level/price). Their own exit or entry level, reached.\n"
+    "(rule/level/price), `sessions` closes ago. Their own exit or entry level, "
+    "reached.\n"
+    "- alert_stale: the same, but the price has been past the level for "
+    "`sessions` closes — it already fired and was reported; the level no "
+    "longer tells the user anything. The action is to move or remove the "
+    "alert, not to act on the stock.\n"
     "- alert_near: the same alert is within a few percent of firing "
     "(gap_pct).\n"
     "- harvest: an open loss (loss) on a position, against gains already "
@@ -360,8 +466,29 @@ _KINDS = (
     "`repurchase_window` is how long a repurchase would block the loss "
     "(2m = two months, 30d = thirty days, 28d = twenty-eight days); mention it "
     "when it is there, since ignoring it is what costs money.\n"
-    "- earnings: a held name reports in `in_days` days — a date to decide "
-    "before, not news.\n"
+    "- earnings: a name reports on `date`, in `in_days` days. `held` true is "
+    "a position — a date to decide before; false is a watched name — a "
+    "candidate whose print may open or close the entry case.\n"
+    "- earnings_result: a name reported on `date` (`days_ago`): EPS "
+    "`reported_eps` against `eps_estimate` expected, a `surprise_pct` "
+    "surprise (`beat`). The question is whether it changes the thesis.\n"
+    "- macro_event: a central bank (`bank`: fed = US Federal Reserve, ecb = "
+    "European Central Bank) decides rates on `date`, in `in_days` days; the "
+    "rate stands at `rate` (the Fed's is a range from `rate_low`).\n"
+    "- macro_result: that bank decided on `date`: `decision` (hike / cut / "
+    "hold), `change_bp` basis points, from `rate_before` to `rate`.\n"
+    "- tax_deadline: a filing deadline (`deadline`, for tax year `year`) is "
+    "due on `date`, in `in_days` days.\n"
+    "- tax_year_end: the tax year ends on `end`, `days_left` days away; the "
+    "user has realised `gain_ytd` net this year and holds `open_losses` in "
+    "unrealised losses and `open_gains` in unrealised gains — the window to "
+    "plan sales in this year's bill.\n"
+    "- tax_bracket: realised gains this year (`gain_ytd`) are `room` below "
+    "`threshold`, where the savings rate goes from `rate_pct`% to "
+    "`next_rate_pct`% — what the next realised gain costs.\n"
+    "- repurchase_clear: `ticker` was sold at a `loss` on `sell_date`; its "
+    "repurchase window ends on `clear_date` (`in_days`), after which buying it "
+    "back no longer blocks the loss.\n"
     "- drawdown: a position is `pnl_pct` under its cost. The moment to re-read "
     "the thesis, not a sell instruction.\n"
     "- concentration: one name is `weight_pct` of the whole book.\n"
@@ -392,16 +519,18 @@ _KINDS = (
 _SHAPE = (
     "Answer with a single JSON object and nothing else — no prose around it, "
     "no code fence:\n"
-    '{"headline": "...", "bullets": ["...", "..."], "focus": ["TICKER"]}\n'
-    f"- headline: at most {HEADLINE_CHARS} characters. The single decision "
-    "that matters most today, with the ticker when it is about one holding.\n"
-    f"- bullets: {MIN_BULLETS} to {MAX_BULLETS} lines, each at most "
-    f"{BULLET_CHARS} characters, ordered by how much they matter. One action "
-    "per line: what to do or check, and the trigger with its figure — e.g. "
-    "'REVIEW NVDA: your 150 exit alert fired, price 148.20'. A line built on a "
-    "ticker action must name that ticker; a market, sector_tilt, vs_benchmark "
-    "or fx line is about the whole book and names no holding. Telegraphic, no "
-    "prose, no preamble.\n"
+    '{"headline": "...", "items": [{"key": "...", "line": "..."}], '
+    '"focus": ["TICKER"]}\n'
+    f"- headline: at most {HEADLINE_CHARS} characters. The day in one line: "
+    "the two or three things below, each named in a few words — e.g. 'NVDA "
+    "reports Thursday, the Fed decides Wednesday, your AAPL alert fired'.\n"
+    f"- items: {MIN_BULLETS} to {MAX_BULLETS}, ordered by how much they "
+    "matter. `key` is the `key` of the action the line is about, copied "
+    f"exactly. `line` is at most {BULLET_CHARS} characters: what to do or "
+    "check, and the trigger with its figure — e.g. 'REVIEW NVDA: your 150 exit "
+    "alert fired, price 148.20'. A line built on a ticker action must name "
+    "that ticker; a market, sector_tilt, vs_benchmark, fx, macro or tax line "
+    "is about the whole book and names no holding. Telegraphic, no preamble.\n"
     f"- focus: the tickers those lines name, at most {FOCUS_MAX}, exactly as "
     "they are spelled in the data. Empty when no line is about a holding."
 )
@@ -431,7 +560,8 @@ _GUARDRAILS = (
     "could review anyway from the context numbers.\n"
     "Write about different things. Never spend two lines on the same trigger "
     "kind, and when the card has both a whole-book action (market, "
-    "sector_tilt, vs_benchmark, fx) and a single-holding one, use both: a card "
+    "sector_tilt, vs_benchmark, fx, macro, tax) and a single-holding one, use "
+    "both: a card "
     "that is four variations on one theme is the one a reader stops opening. "
     "Where a whole-book action explains a holding's (the sector the position "
     "sits in led or lagged, the currency carried it), say so on one line "
@@ -458,9 +588,19 @@ RULES — these hold whatever the data says:
 
 
 def prompt(
-    facts: dict, profile: dict, lang: str, recent: list[str] | None = None
+    facts: dict,
+    profile: dict,
+    lang: str,
+    recent: list[str] | None = None,
+    past: list[dict] | None = None,
 ) -> tuple[str, list[dict]]:
-    """(system, messages) for one card. Pure — no network, no clock."""
+    """(system, messages) for one card. Pure — no network, no clock.
+
+    `past` is the previous days' lines ({"day", "key", "line"}). They go in
+    the system prompt and never in the facts: they are prose with figures in
+    it, and a figure from last Tuesday must not become one the audit accepts
+    today.
+    """
     system = (
         f"{_TASK} {engine.persona(profile or {})}"
         f"Write in {_LANG_NAME.get(lang, 'English')}.\n\n"
@@ -470,6 +610,19 @@ def prompt(
         system += (
             "\n\nYou wrote these headlines on previous days — do not repeat "
             "them, and do not restate the same idea: " + " | ".join(recent)
+        )
+    today = str(facts.get("date") or "")
+    earlier = [p for p in past or [] if p.get("day") and p.get("day") != today]
+    if earlier:
+        system += (
+            "\n\nWhat the card said on previous days, newest first. When an "
+            "action's key is below, the user has read about it: say what "
+            "changed since (the figure, the date getting closer), never the "
+            "same sentence again.\n"
+            + "\n".join(
+                f"- {p['day']} · {p.get('key') or '-'} · {p['line']}"
+                for p in earlier[:PAST_SHOWN]
+            )
         )
     system += _HOUSE_RULES
     return system, [{"role": "user", "content": json.dumps(facts)}]
@@ -499,11 +652,23 @@ def _json_object(raw: str) -> dict | None:
     return out if isinstance(out, dict) else None
 
 
+def _clip(text: str, limit: int) -> str:
+    """`text` cut to `limit` characters at a word boundary, with an ellipsis
+    when anything was cut — never halfway through a word or a figure."""
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 1]
+    space = cut.rfind(" ")
+    if space >= limit // 2:
+        cut = cut[:space]
+    return cut.rstrip(" ,;:·—-") + "…"
+
+
 def _line(text: str, limit: int) -> str:
     """One display line: whitespace collapsed, leading bullet glyph dropped
-    (the card renders its own), clipped to `limit`."""
+    (the card renders its own), clipped to `limit` at a word boundary."""
     line = " ".join(str(text).split()).lstrip("-•*· ").strip()
-    return line[:limit].rstrip() if len(line) > limit else line
+    return _clip(line, limit)
 
 
 # ------------------------------------------------------------- number audit
@@ -557,6 +722,15 @@ def _values(token: str) -> list[float]:
                 out.append(sign * float(body.replace(group, "").replace(dec, ".")))
             except ValueError:
                 pass
+    return out
+
+
+def figures(text: str) -> list[float]:
+    """Every number written in `text`, both decimal readings — how a source
+    that arrives as prose (a press release) joins the audit pool."""
+    out: list[float] = []
+    for match in re.finditer(_NUM, text or ""):
+        out.extend(_values(match.group(0)))
     return out
 
 
@@ -669,13 +843,15 @@ def parse(
     data = _json_object(raw)
     if not data:
         return None
-    bullets = [
-        _line(b, BULLET_CHARS)
-        for b in (data.get("bullets") or [])
-        if str(b).strip()
-    ][:MAX_BULLETS]
-    if len(bullets) < MIN_BULLETS:
+    actions = {
+        str(a.get("key") or signals.key_of(str(a.get("kind") or ""), a)): a
+        for a in (facts or {}).get("actions") or []
+        if isinstance(a, dict)
+    }
+    items = _parsed_items(data, actions, known)
+    if len(items) < MIN_BULLETS:
         return None
+    bullets = [i["line"] for i in items]
     headline = _line(data.get("headline") or "", HEADLINE_CHARS)
     focus, seen = [], set()
     for tick in data.get("focus") or []:
@@ -687,7 +863,9 @@ def parse(
             continue
         seen.add(symbol)
         focus.append(symbol)
-    headline = headline or bullets[0]
+    if not focus:
+        focus = list(dict.fromkeys(t for i in items for t in i["tickers"]))
+    headline = headline or _clip(bullets[0], HEADLINE_CHARS)
     if facts is not None:
         bogus = audit([headline, *bullets], facts)
         if bogus:
@@ -702,7 +880,64 @@ def parse(
         source=_SOURCE_LLM,
         lang=lang,
         generated=time.time(),
+        items=items,
     )
+
+
+def _parsed_items(data: dict, actions: dict, known: set[str] | None) -> list[dict]:
+    """The reply's lines, each tied to the action it is about.
+
+    The model is asked to copy each action's key; a small one forgets, or
+    invents one, so a key that is not in the facts is recovered from the line
+    itself — the one action whose ticker it names — and a line that matches
+    none keeps a placeholder key: it is still shown, just never remembered.
+    Two lines on one trigger are one line: the second is dropped. A reply in
+    the older shape (plain `bullets`) is read the same way.
+    """
+    raw = data.get("items")
+    if not isinstance(raw, list) or not raw:
+        raw = data.get("bullets") or []
+    out: list[dict] = []
+    used: set[str] = set()
+    for entry in raw if isinstance(raw, list) else []:
+        if isinstance(entry, dict):
+            text, key = entry.get("line") or entry.get("text") or "", entry.get("key")
+        else:
+            text, key = entry, None
+        line = _line(text or "", BULLET_CHARS)
+        if not line:
+            continue
+        key = str(key or "").strip()
+        if key not in actions:
+            key = _infer_key(line, actions, used)
+        if key and key in used:
+            continue
+        action = actions.get(key) or {}
+        # Only symbols the facts carry — "REVIEW" and "EPS" match the pattern.
+        tickers = [t for t in _TICKER_RE.findall(line) if known and t in known]
+        if action.get("ticker"):
+            tickers.insert(0, str(action["ticker"]))
+        if key:
+            used.add(key)
+        out.append({
+            "key": key or f"line:{len(out)}",
+            "kind": str(action.get("kind") or ""),
+            "line": line,
+            "tickers": list(dict.fromkeys(tickers)),
+        })
+        if len(out) >= MAX_BULLETS:
+            break
+    return out
+
+
+def _infer_key(line: str, actions: dict, used: set[str]) -> str:
+    """The key of the single unused action whose ticker `line` names, or ""."""
+    named = set(_TICKER_RE.findall(line))
+    hits = [
+        key for key, action in actions.items()
+        if key not in used and action.get("ticker") and str(action["ticker"]) in named
+    ]
+    return hits[0] if len(hits) == 1 else ""
 
 
 # --------------------------------------------------------------- fallbacks
@@ -723,6 +958,83 @@ def _money(amount: float, currency: str) -> str:
     return f"{currency_symbol(currency)}{amount:+,.0f}"
 
 
+def _when(days, lang: str) -> str:
+    """"today" / "tomorrow" / "in 5 days", for a date ahead."""
+    from stocks.web.i18n import translate
+
+    n = int(days or 0)
+    if n <= 0:
+        return translate("home.daily_when_today", lang)
+    if n == 1:
+        return translate("home.daily_when_tomorrow", lang)
+    return translate("home.daily_when_days", lang, days=n)
+
+
+def _bank(action: dict, lang: str) -> str:
+    from stocks.web.i18n import translate
+
+    return translate(f"home.daily_bank_{action.get('bank') or 'fed'}", lang)
+
+
+def _rate(action: dict) -> str:
+    """The policy rate as printed: the Fed's range, the ECB's single rate."""
+    rate = float(action.get("rate") or 0.0)
+    low = action.get("rate_low")
+    if low is not None and float(low) != rate:
+        return f"{float(low):.2f}–{rate:.2f}%"
+    return f"{rate:.2f}%"
+
+
+def _deadline(action: dict, lang: str) -> str:
+    """A tax deadline's own name — the tax calendar already carries one."""
+    from stocks.web.i18n import has, translate
+
+    slug = f"earnings.tax_{action.get('deadline') or ''}"
+    if has(slug):
+        return translate(slug, lang, year=action.get("year") or "")
+    return str(action.get("deadline") or "")
+
+
+def _short_line(action: dict, lang: str) -> str:
+    """A few words naming one action — what a computed headline strings
+    together into "the day in one line"."""
+    from stocks.web.i18n import has, translate
+
+    kind = str(action.get("kind") or "")
+    slug = f"home.daily_short_{kind}"
+    if not has(slug):
+        return ""
+    sector = str(action.get("sector") or "")
+    sector_slug = f"sentiment.sector_{sector.lower().replace(' ', '_')}"
+    return translate(
+        slug, lang,
+        ticker=str(action.get("ticker") or ""),
+        when=_when(action.get("in_days", action.get("days_left")), lang),
+        bank=_bank(action, lang),
+        name=_deadline(action, lang) if kind == signals.TAX_DEADLINE else "",
+        sector=translate(sector_slug, lang) if has(sector_slug) else sector,
+        index=action.get("index") or "",
+        trend=translate(f"home.daily_trend_{action.get('trend') or 'unknown'}", lang),
+        currency=action.get("currency") or "",
+        decision=translate(
+            f"home.daily_decision_{action.get('decision') or 'hold'}", lang
+        ),
+    )
+
+
+def _summary(labels: list[str]) -> str:
+    """The computed headline: the first few labels, as many as fit."""
+    out = ""
+    for label in (lb for lb in labels if lb):
+        joined = f"{out} · {label}" if out else label
+        if len(joined) > HEADLINE_CHARS:
+            break
+        out = joined
+    if not out and labels:
+        out = _clip(next((lb for lb in labels if lb), ""), HEADLINE_CHARS)
+    return out[:1].upper() + out[1:]
+
+
 def _action_line(action: dict, lang: str, ccy: str) -> str:
     """One computed action as a sentence. Empty for a kind with no template."""
     from stocks.web.i18n import translate
@@ -736,13 +1048,81 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
         in front of a loss reads as the opposite of what it is."""
         return _money(abs(float(value or 0.0)), ccy).replace("+", "")
 
-    if kind in (signals.ALERT_HIT, signals.ALERT_NEAR):
+    if kind in (signals.ALERT_HIT, signals.ALERT_NEAR, signals.ALERT_STALE):
         rule = translate(f"home.daily_rule_{action.get('rule') or 'below'}", lang)
         return translate(
             key, lang, ticker=ticker, rule=rule,
             level=f"{float(action.get('level') or 0):,.2f}",
             price=f"{float(action.get('price') or 0):,.2f}",
             gap=f"{float(action.get('gap_pct') or 0):.1f}%",
+            sessions=action.get("sessions") or 0,
+        )
+    if kind == signals.EARNINGS:
+        return translate(
+            key if action.get("held", True) else f"{key}_watched", lang,
+            ticker=ticker, when=_when(action.get("in_days"), lang),
+            date=_short_date(action.get("date")),
+        )
+    if kind == signals.EARNINGS_RESULT:
+        if action.get("eps_estimate") is None:
+            return translate(
+                f"{key}_plain", lang, ticker=ticker,
+                date=_short_date(action.get("date")),
+                eps=f"{float(action.get('reported_eps') or 0):,.2f}",
+            )
+        return translate(
+            key, lang, ticker=ticker, date=_short_date(action.get("date")),
+            eps=f"{float(action.get('reported_eps') or 0):,.2f}",
+            est=f"{float(action.get('eps_estimate') or 0):,.2f}",
+            surprise=f"{float(action.get('surprise_pct') or 0):+.1f}%",
+            verdict=translate(
+                "home.daily_beat" if action.get("beat") else "home.daily_missed", lang
+            ),
+        )
+    if kind == signals.MACRO_EVENT:
+        return translate(
+            key, lang, bank=_bank(action, lang),
+            when=_when(action.get("in_days"), lang),
+            date=_short_date(action.get("date")), rate=_rate(action),
+        )
+    if kind == signals.MACRO_RESULT:
+        decision = str(action.get("decision") or "hold")
+        return translate(
+            f"{key}_{decision}", lang, bank=_bank(action, lang),
+            bp=abs(int(action.get("change_bp") or 0)),
+            rate=_rate(action), date=_short_date(action.get("date")),
+        )
+    if kind == signals.TAX_DEADLINE:
+        return translate(
+            key, lang, name=_deadline(action, lang),
+            when=_when(action.get("in_days"), lang),
+            date=_short_date(action.get("date")),
+        )
+    if kind == signals.TAX_YEAR_END:
+        line = translate(
+            key, lang, when=_when(action.get("days_left"), lang),
+            end=_short_date(action.get("end")),
+            gain=_money(float(action.get("gain_ytd") or 0.0), ccy),
+        )
+        if float(action.get("open_losses") or 0) >= signals.HARVEST_MIN:
+            line += " " + translate(
+                "home.daily_act_tax_year_end_losses", lang,
+                losses=money(action.get("open_losses")),
+            )
+        return line
+    if kind == signals.TAX_BRACKET:
+        return translate(
+            key, lang, gain=money(action.get("gain_ytd")),
+            room=money(action.get("room")),
+            rate=f"{float(action.get('rate_pct') or 0):.0f}%",
+            next=f"{float(action.get('next_rate_pct') or 0):.0f}%",
+        )
+    if kind == signals.REPURCHASE_CLEAR:
+        return translate(
+            key, lang, ticker=ticker, loss=money(action.get("loss")),
+            sold=_short_date(action.get("sell_date")),
+            when=_when(action.get("in_days"), lang),
+            date=_short_date(action.get("clear_date")),
         )
     if kind == signals.HARVEST:
         line = translate(
@@ -757,8 +1137,6 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
         if window in _WINDOW_KEYS:
             line += " " + translate(f"home.daily_window_{window}", lang)
         return line
-    if kind == signals.EARNINGS:
-        return translate(key, lang, ticker=ticker, days=action.get("in_days"))
     if kind == signals.DRAWDOWN:
         return translate(
             key, lang, ticker=ticker,
@@ -849,19 +1227,31 @@ def computed(facts: dict, lang: str, day: date) -> DailyAction:
 
     ccy = str(facts.get("currency") or "EUR")
     session = facts.get("session") or {}
-    actions = facts.get("actions") or []
-    bullets = [
-        line for line in (_action_line(a, lang, ccy) for a in actions[:MAX_BULLETS])
-        if line
-    ]
-    focus = [str(a.get("ticker")) for a in actions[:MAX_BULLETS] if a.get("ticker")]
+    items: list[dict] = []
+    labels: list[str] = []
+    for action in facts.get("actions") or []:
+        line = _action_line(action, lang, ccy)
+        if not line:
+            continue
+        kind = str(action.get("kind") or "")
+        ticker = str(action.get("ticker") or "")
+        items.append({
+            "key": str(action.get("key") or signals.key_of(kind, action)),
+            "kind": kind,
+            "line": line,
+            "tickers": [ticker] if ticker else [],
+        })
+        labels.append(_short_line(action, lang))
+        if len(items) >= MAX_BULLETS:
+            break
+    bullets = [i["line"] for i in items]
+    focus = [t for i in items for t in i["tickers"]]
 
-    if len(bullets) >= 2:
-        # The top action is the headline and does not repeat below it; the
-        # rest are the card's lines, already in urgency order.
-        headline, bullets = bullets[0], bullets[1:]
-    elif bullets:
-        headline = tr("one_action")
+    if items:
+        # The headline names the day's few things; the lines below say each
+        # in full. (It used to be the top line itself, cut to fit — which is
+        # how the card came to end its headline mid-word.)
+        headline = _summary(labels) or tr("one_action")
     else:
         # Nothing triggered. The day's move is context, not an action — say
         # the quiet part first so the card never poses a figure as a decision.
@@ -886,16 +1276,21 @@ def computed(facts: dict, lang: str, day: date) -> DailyAction:
             focus += [e["ticker"] for e in soon[:2]]
         if not bullets:
             bullets.append(tr("nothing"))
+        items = [
+            {"key": f"line:{n}", "kind": "", "line": b, "tickers": []}
+            for n, b in enumerate(bullets)
+        ]
 
     return DailyAction(
         day=day.isoformat(),
-        headline=headline[:HEADLINE_CHARS],
+        headline=_clip(headline, HEADLINE_CHARS),
         bullets=bullets[:MAX_BULLETS],
         focus=list(dict.fromkeys(focus))[:FOCUS_MAX],
         as_of=str(session.get("date") or ""),
         source=_SOURCE_COMPUTED,
         lang=lang,
         generated=time.time(),
+        items=items[:MAX_BULLETS],
     )
 
 
@@ -910,6 +1305,7 @@ def generate(
     day: date,
     *,
     recent: list[str] | None = None,
+    past: list[dict] | None = None,
     timeout_s: float = TIMEOUT_S,
     spend_free=None,
 ) -> DailyAction | None:
@@ -922,7 +1318,7 @@ def generate(
     """
     known = _tickers(facts)
     try:
-        system, messages = prompt(facts, profile, lang, recent or [])
+        system, messages = prompt(facts, profile, lang, recent or [], past or [])
     except Exception:
         return None
     return engine.complete_attempts(
@@ -949,42 +1345,68 @@ def _tickers(facts: dict) -> set[str]:
     return out
 
 
-def offered(facts: dict) -> list[str]:
-    """The `signals.Signal.key` of every trigger that reached the card.
-
-    Rebuilt from the facts rather than carried down from `candidates()`,
-    because the facts are what both paths — the model and `computed()` — were
-    actually given, and they are already on hand wherever a card gets stored.
-    """
-    out = []
-    for action in facts.get("actions") or []:
-        kind = str(action.get("kind") or "")
-        if not kind:
+def keyed_actions(facts: dict) -> dict[str, dict]:
+    """{key: action} for the facts' actions — the key each one carries, or
+    the one it would have (facts stored before actions carried their key)."""
+    out: dict[str, dict] = {}
+    for action in (facts or {}).get("actions") or []:
+        if not isinstance(action, dict) or not action.get("kind"):
             continue
-        subject = str(action.get("ticker") or action.get("sector") or "")
-        out.append(f"{kind}:{subject}")
+        key = str(action.get("key") or signals.key_of(str(action["kind"]), action))
+        out.setdefault(key, action)
     return out
 
 
-def seen(previous: DailyAction | None, facts: dict, day: date) -> dict:
-    """The `shown` map to store with a new card: every trigger it was offered,
-    stamped today, with its run of consecutive days.
+def offered(facts: dict) -> list[str]:
+    """The `signals.Signal.key` of every trigger that reached the card."""
+    return list(keyed_actions(facts))
 
-    A trigger offered yesterday and again today has its run extended; one that
-    was not offered yesterday starts over at one, whatever it did last week.
-    Keys nobody has seen for a while are dropped, so the file is a memory of
-    the current repetition and not a log.
+
+def seen(
+    previous: DailyAction | None,
+    facts: dict,
+    day: date,
+    keys: list[str] | None = None,
+) -> dict:
+    """The `shown` map to store with a new card: every trigger it showed,
+    stamped today with the figures it showed it with and its run of
+    consecutive days.
+
+    `keys` is what the card actually put on screen (its items' keys); None
+    means every trigger it was offered. Only a shown trigger is remembered —
+    an action the model left out was never read, and must not be held back
+    tomorrow as if it had been.
+
+    A trigger shown yesterday and again today has its run extended; one shown
+    earlier today (a stand-in card upgraded, a Regenerate) keeps the run it
+    had; any other starts over at one. Keys nobody has seen for
+    `signals.MEMORY_DAYS` are dropped, so the file is a memory and not a log.
     """
     past = (previous.shown if previous else None) or {}
-    yesterday = (day - timedelta(days=1)).isoformat()
+    actions = keyed_actions(facts)
+    wanted = list(actions) if keys is None else [k for k in keys if k in actions]
+    today, yesterday = day.isoformat(), (day - timedelta(days=1)).isoformat()
     out: dict = {}
-    for key in dict.fromkeys(offered(facts)):
-        seen = past.get(key)
-        before = seen if isinstance(seen, dict) else {}
-        run = int(before.get("run") or 0) if before.get("last") == yesterday else 0
-        out[key] = {"last": day.isoformat(), "run": run + 1}
-    # Triggers that did not come up today keep their stamp for a few days — a
-    # condition that flickers in and out must not read as fresh every time.
+    for key in dict.fromkeys(wanted):
+        before = past.get(key)
+        if not isinstance(before, dict):
+            before = {}
+        run = int(before.get("run") or 0)
+        if before.get("last") == today:
+            run = max(run, 1)
+        elif before.get("last") == yesterday:
+            run += 1
+        else:
+            run = 1
+        action = actions[key]
+        out[key] = {
+            "last": today,
+            "run": run,
+            "v": signals.measure(str(action.get("kind") or ""), action),
+        }
+    # Triggers that did not come up today keep their stamp for a while — a
+    # condition that flickers in and out must not read as fresh every time,
+    # and an event said once must not be said again next week.
     for key, value in past.items():
         if key in out or not isinstance(value, dict):
             continue
@@ -992,18 +1414,363 @@ def seen(previous: DailyAction | None, facts: dict, day: date) -> dict:
             last = date.fromisoformat(str(value.get("last") or ""))
         except ValueError:
             continue
-        if (day - last).days <= signals.DECAY_FORGET_DAYS:
+        if (day - last).days <= signals.MEMORY_DAYS:
             out[key] = value
     return out
 
 
-def remembered(previous: DailyAction | None, headline: str) -> list[str]:
+def remembered(
+    previous: DailyAction | None, headline: str, day: date | None = None
+) -> list[str]:
     """The `recent` list to store with a new card: this headline in front of
     the ones before it, so tomorrow's prompt can be told not to repeat them.
 
     A stored card already carries its own headline at the head of `recent`, so
-    chaining through it keeps the whole short history with no extra state.
+    chaining through it keeps the whole short history with no extra state —
+    except when it is today's own card being replaced (`day`), whose headline
+    the new one supersedes rather than follows.
     """
-    past = previous.recent if previous else []
+    past = list(previous.recent) if previous else []
+    if previous and day is not None and previous.day == day.isoformat() and past:
+        past = past[1:] if past[0] == previous.headline else past
     kept = [headline] + [h for h in past if h != headline]
     return [h for h in kept if h][:RECENT_KEPT]
+
+
+def past_lines(
+    previous: DailyAction | None, action: DailyAction, day: date
+) -> list[dict]:
+    """The `past` list to store: this card's lines in front of the previous
+    days' (today's earlier card, if any, replaced), `PAST_DAYS` deep."""
+    today = day.isoformat()
+    horizon = (day - timedelta(days=PAST_DAYS)).isoformat()
+    mine = [
+        {"day": today, "key": i["key"], "line": i["line"]}
+        for i in action.entries
+        if i.get("line")
+    ]
+    older = [
+        p for p in (previous.past if previous else [])
+        if p.get("day") and p["day"] != today and p["day"] >= horizon
+    ]
+    return mine + older
+
+
+def to_store(
+    previous: DailyAction | None, action: DailyAction, facts: dict
+) -> dict:
+    """The dict to write to daily_action.json for a card the reader was shown.
+
+    Written for a computed card as much as for a model's: memory is about
+    what the reader saw, whoever wrote it. The facts ride along for the "see
+    more" call, and `tries` counts the stand-ins a day has produced so
+    `wants_upgrade` can stop asking.
+    """
+    day = date.fromisoformat(action.day)
+    card = action.to_dict()
+    card["recent"] = remembered(previous, action.headline, day)
+    keys = [i["key"] for i in action.entries if i.get("key")]
+    card["shown"] = seen(previous, facts, day, keys)
+    card["past"] = past_lines(previous, action, day)
+    card["facts"] = facts
+    card["detail"], card["detail_source"] = {}, ""
+    if not action.from_model:
+        same_day = (
+            previous is not None
+            and previous.day == action.day
+            and not previous.from_model
+        )
+        card["tries"] = (previous.tries if same_day else 0) + 1
+    return card
+
+
+# ------------------------------------------------------------------ see more
+#
+# The card is a summary; "see more" is the paragraph behind each line. It is
+# written on the reader's click, never with the card: most days nobody opens
+# it, and the free chain's allowance is better spent on the days somebody
+# does. One call covers every line, so opening the detail costs one unit.
+#
+# Same discipline as the card: the model is handed the facts the card was
+# written from plus whatever the detail fetched for it (the quarter's revenue
+# and the company's own press release for a print, the rate path for a
+# decision), and every figure it writes is audited against exactly that. A
+# paragraph that fails the audit is replaced by the computed one for its
+# line; the others stand.
+
+_DETAIL_TASK = (
+    "The user opened 'see more' on today's action card of TopStocks, a "
+    "personal stock tracker. For each line of the card, write one paragraph "
+    "that explains it: what happened or what is coming, the figures behind it, "
+    "why it matters for THIS book, and what the user could check or decide. "
+    "Plain prose, no lists, no markdown, no headings."
+)
+
+_DETAIL_SHAPE = (
+    "Answer with a single JSON object and nothing else — no prose around it, "
+    "no code fence:\n"
+    '{"details": [{"key": "...", "text": "..."}]}\n'
+    "- one entry per line, `key` copied exactly from the line;\n"
+    f"- text: 2 to 4 sentences, at most {DETAIL_CHARS} characters."
+)
+
+_DETAIL_GUARDRAILS = (
+    "Use only the figures in the data: never invent, round into a new figure, "
+    "or compute a percentage that is not there. `source.release` is the "
+    "company's own earnings press release: say what it says drove the quarter "
+    "— the segment, the product, the guidance — quoting its figures, and "
+    "attribute them to the company. `source.history` is the bank's recent rate "
+    "path. You are not a licensed financial advisor: explain and frame the "
+    "decision, never tell the user to buy, sell or hold, and never predict a "
+    "price. Dates: `date` is today; say 'today' only about something dated "
+    "today."
+)
+
+
+def detail_prompt(
+    card: DailyAction, sources: dict, profile: dict, lang: str
+) -> tuple[str, list[dict]]:
+    """(system, messages) for the "see more" of one card. Pure."""
+    actions = keyed_actions(card.facts)
+    lines = []
+    for item in card.entries:
+        entry = {"key": item["key"], "line": item["line"]}
+        if item["key"] in actions:
+            entry["action"] = actions[item["key"]]
+        if item["key"] in sources:
+            entry["source"] = sources[item["key"]]
+        lines.append(entry)
+    facts = card.facts or {}
+    payload = {
+        "date": facts.get("date") or card.day,
+        "currency": facts.get("currency"),
+        "headline": card.headline,
+        "lines": lines,
+        "context": {
+            k: facts[k]
+            for k in ("total_value", "unrealised_pl_pct", "top_weights", "day", "month")
+            if k in facts
+        },
+    }
+    system = (
+        f"{_DETAIL_TASK} {engine.persona(profile or {})}"
+        f"Write in {_LANG_NAME.get(lang, 'English')}.\n\n"
+        f"{_KINDS}\n\n{_DETAIL_GUARDRAILS}\n\n{_DETAIL_SHAPE}{_HOUSE_RULES}"
+    )
+    return system, [{"role": "user", "content": json.dumps(payload)}]
+
+
+def _detail_pool(card: DailyAction, sources: dict) -> dict:
+    """What a detail paragraph's figures are audited against."""
+    return {"facts": card.facts or {}, "sources": list(sources.values())}
+
+
+def parse_detail(
+    raw: str, card: DailyAction, sources: dict, lang: str
+) -> dict[str, str] | None:
+    """{key: paragraph} for every paragraph that passes the audit, or None
+    when none does (the reject signal for engine.complete_attempts)."""
+    data = _json_object(raw)
+    if not data:
+        return None
+    keys = {i["key"] for i in card.entries}
+    pool = _detail_pool(card, sources)
+    out: dict[str, str] = {}
+    for entry in data.get("details") or []:
+        if not isinstance(entry, dict):
+            continue
+        key = str(entry.get("key") or "").strip()
+        text = _clip(" ".join(str(entry.get("text") or "").split()), DETAIL_CHARS)
+        if key not in keys or not text or key in out:
+            continue
+        bogus = audit([text], pool)
+        if bogus:
+            obs.warn("daily.detail_figure_rejected", figure=bogus, lang=lang)
+            continue
+        out[key] = text
+    return out or None
+
+
+def generate_detail(
+    prefs: dict,
+    profile: dict,
+    card: DailyAction,
+    sources: dict,
+    lang: str,
+    *,
+    timeout_s: float = DETAIL_TIMEOUT_S,
+    spend_free=None,
+) -> dict[str, str] | None:
+    """The model's paragraphs for `card`, or None. Never raises."""
+    try:
+        system, messages = detail_prompt(card, sources, profile, lang)
+    except Exception:
+        return None
+    return engine.complete_attempts(
+        prefs,
+        system,
+        messages,
+        timeout_s,
+        spend_free=spend_free or engine.spend_free_quota,
+        accept=lambda raw: parse_detail(raw, card, sources, lang),
+    )
+
+
+def detail_computed(card: DailyAction, sources: dict, lang: str) -> dict[str, str]:
+    """The paragraphs without a model: each action's own template, filled
+    from its figures and whatever the detail fetched. A line with no action
+    behind it (a quiet day's context line) has no paragraph."""
+    ccy = str((card.facts or {}).get("currency") or "EUR")
+    actions = keyed_actions(card.facts)
+    out: dict[str, str] = {}
+    for item in card.entries:
+        action = actions.get(item["key"])
+        if action is None:
+            continue
+        text = _detail_line(action, sources.get(item["key"]) or {}, lang, ccy)
+        if text:
+            out[item["key"]] = text
+    return out
+
+
+def _detail_line(action: dict, source: dict, lang: str, ccy: str) -> str:
+    """One action's computed "see more" paragraph."""
+    from stocks.formatting import compact_money
+    from stocks.web.i18n import has, translate
+
+    kind = str(action.get("kind") or "")
+    ticker = str(action.get("ticker") or "")
+    key = f"home.daily_more_{kind}"
+
+    def money(value) -> str:
+        return _money(abs(float(value or 0.0)), ccy).replace("+", "")
+
+    def num(name: str, spec: str = ",.2f") -> str:
+        return format(float(action.get(name) or 0.0), spec)
+
+    if kind in (signals.ALERT_HIT, signals.ALERT_NEAR, signals.ALERT_STALE):
+        return translate(
+            key, lang, ticker=ticker,
+            rule=translate(f"home.daily_rule_{action.get('rule') or 'below'}", lang),
+            level=num("level"), price=num("price"),
+            gap=f"{float(action.get('gap_pct') or 0):.1f}%",
+            sessions=action.get("sessions") or 0,
+        )
+    if kind == signals.HARVEST:
+        text = translate(
+            key, lang, ticker=ticker, loss=money(action.get("loss")),
+            pct=f"{float(action.get('pnl_pct') or 0):+.1f}%",
+            gain=money(action.get("gain_ytd")), offset=money(action.get("offset")),
+        )
+        window = str(action.get("repurchase_window") or "")
+        if window in _WINDOW_KEYS:
+            text += " " + translate(f"home.daily_window_{window}", lang)
+        return text
+    if kind == signals.EARNINGS:
+        return translate(
+            key if action.get("held", True) else f"{key}_watched", lang,
+            ticker=ticker, when=_when(action.get("in_days"), lang),
+            date=_short_date(action.get("date")),
+        )
+    if kind == signals.EARNINGS_RESULT:
+        text = _action_line(action, lang, ccy)
+        if source.get("revenue") is not None:
+            symbol = _currency_sign(str(source.get("currency") or "USD"))
+            text += " " + translate(
+                "home.daily_more_earnings_result_revenue", lang,
+                revenue=compact_money(float(source["revenue"]), symbol),
+                yoy=(
+                    f"{float(source['revenue_yoy_pct']):+.1f}%"
+                    if source.get("revenue_yoy_pct") is not None else "—"
+                ),
+            )
+        if source.get("operating_margin_pct") is not None:
+            text += " " + translate(
+                "home.daily_more_earnings_result_margin", lang,
+                margin=f"{float(source['operating_margin_pct']):.1f}%",
+            )
+        return text + " " + translate(key, lang)
+    if kind == signals.MACRO_EVENT:
+        text = translate(
+            key, lang, bank=_bank(action, lang),
+            when=_when(action.get("in_days"), lang),
+            date=_short_date(action.get("date")), rate=_rate(action),
+        )
+        return _with_history(text, source, lang)
+    if kind == signals.MACRO_RESULT:
+        text = _action_line(action, lang, ccy) + " " + translate(key, lang)
+        return _with_history(text, source, lang)
+    if kind == signals.TAX_DEADLINE:
+        body = f"earnings.tax_{action.get('deadline') or ''}_body"
+        text = translate(body, lang, year=action.get("year") or "") if has(body) else ""
+        return " ".join(
+            t for t in (
+                text,
+                translate(
+                    key, lang, when=_when(action.get("in_days"), lang),
+                    date=_short_date(action.get("date")),
+                ),
+            ) if t
+        )
+    if kind == signals.TAX_YEAR_END:
+        return translate(
+            key, lang, end=_short_date(action.get("end")),
+            when=_when(action.get("days_left"), lang),
+            gain=_money(float(action.get("gain_ytd") or 0.0), ccy),
+            losses=money(action.get("open_losses")),
+            gains=money(action.get("open_gains")),
+        )
+    if kind == signals.TAX_BRACKET:
+        return translate(
+            key, lang, rate=f"{float(action.get('rate_pct') or 0):.0f}%",
+            next=f"{float(action.get('next_rate_pct') or 0):.0f}%",
+            threshold=money(action.get("threshold")),
+            gain=money(action.get("gain_ytd")), room=money(action.get("room")),
+        )
+    if kind == signals.REPURCHASE_CLEAR:
+        return translate(
+            key, lang, ticker=ticker, loss=money(action.get("loss")),
+            sold=_short_date(action.get("sell_date")),
+            date=_short_date(action.get("clear_date")),
+        )
+    if kind == signals.DRAWDOWN:
+        return translate(
+            key, lang, ticker=ticker,
+            pct=f"{float(action.get('pnl_pct') or 0):+.1f}%",
+            amount=money(action.get("pnl")),
+        )
+    if kind == signals.CONCENTRATION:
+        return translate(
+            key, lang, ticker=ticker,
+            weight=f"{float(action.get('weight_pct') or 0):.0f}%",
+        )
+    if kind == signals.LOW_52W:
+        return translate(
+            key, lang, ticker=ticker, price=num("price"),
+            gap=f"{float(action.get('gap_pct') or 0):.1f}%",
+        )
+    if kind in (signals.MARKET, signals.SECTOR_TILT, signals.VS_BENCH, signals.FX):
+        return _action_line(action, lang, ccy) + " " + translate(key, lang)
+    return ""
+
+
+def _with_history(text: str, source: dict, lang: str) -> str:
+    """A rate paragraph with the bank's last move appended, when known."""
+    from stocks.web.i18n import translate
+
+    history = source.get("history") or []
+    if len(history) < 2:
+        return text
+    last, before = history[-1], history[-2]
+    return text + " " + translate(
+        "home.daily_more_rate_history", lang,
+        date=_short_date(last.get("date")),
+        before=f"{float(before.get('rate') or 0):.2f}%",
+        rate=f"{float(last.get('rate') or 0):.2f}%",
+    )
+
+
+def _currency_sign(code: str) -> str:
+    from stocks.config import currency_symbol
+
+    return currency_symbol(code)

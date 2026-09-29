@@ -189,11 +189,29 @@ def test_a_print_on_a_held_name_is_a_decision_date():
     assert prints == ["NVDA", "ASML"]
 
 
-def test_a_print_on_a_name_you_do_not_hold_is_only_news():
-    out = signals.candidates(
-        tbl=positions(), earnings=[Event("TSLA", date(2026, 9, 5), 2)], today=TODAY
-    )
-    assert not [s for s in out if s.kind == signals.EARNINGS]
+def test_a_print_on_a_watched_name_is_news_under_any_held_one():
+    out = [s for s in signals.candidates(
+        tbl=positions(),
+        earnings=[Event("TSLA", date(2026, 9, 4), 1), Event("ASML", date(2026, 9, 7), 4)],
+        today=TODAY,
+    ) if s.kind == signals.EARNINGS]
+    assert [s.ticker for s in out] == ["ASML", "TSLA"]
+    assert out[1].data["held"] is False
+
+
+def test_a_print_two_weeks_out_is_announced_in_phases():
+    def phase(days: int) -> str:
+        out = signals.candidates(
+            tbl=positions(),
+            earnings=[Event("ASML", date(2026, 9, 3), days)],
+            today=TODAY,
+        )
+        return out[0].data["phase"]
+
+    assert [phase(12), phase(4), phase(1)] == ["week", "soon", "now"]
+    assert signals.candidates(
+        tbl=positions(), earnings=[Event("ASML", date(2026, 9, 30), 27)], today=TODAY
+    ) == [s for s in signals.candidates(tbl=positions(), today=TODAY)]
 
 
 def test_a_watchlist_name_at_its_low_is_an_entry_case():
@@ -269,7 +287,8 @@ def test_one_crowded_kind_cannot_take_the_whole_card():
 
 
 def test_a_trigger_offered_for_days_sinks_below_a_fresh_one():
-    shown = {"harvest:AAA": {"last": "2026-09-02", "run": 3}}
+    # Its figure moved (500 to 900), so it is back — but lower down.
+    shown = {"harvest:AAA": {"last": "2026-09-02", "run": 3, "v": {"offset": 500.0}}}
     out = signals.candidates(
         market=[
             *harvests("AAA"),

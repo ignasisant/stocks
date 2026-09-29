@@ -11,3 +11,14 @@ __pycache__/
 .streamlit/secrets.toml.bak*
 deploy/.env
 deploy/secrets.toml
+
+# Terraform: the nested infra/.gitignore hides state and tfvars from git, but
+# gcloud honours only the root .gitignore through #!include — so without these
+# lines every source deploy shipped terraform.tfstate (every secret in
+# plaintext) and ~300 MB of provider binaries to the run-sources bucket.
+infra/
+**/*.tfstate
+**/*.tfstate.backup
+**/terraform.tfvars
+**/.terraform/
+.notify_secrets.env

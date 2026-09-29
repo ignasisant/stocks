@@ -90,6 +90,7 @@ def account(monkeypatch, tmp_path):
     # No held closes: the freshness check's "latest session" reads empty, so
     # the card's key is the day and the language alone.
     monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
+    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
     return paths
 
 
@@ -232,6 +233,85 @@ def test_an_account_with_nothing_to_brief_on_gets_no_card(
 def test_writing_one_spends_the_account_so_a_token_may_not(client, account):
     response = client.post("/v1/daily", params=WHO, headers=AUTH)
     assert response.status_code == 403
+
+
+def test_a_stand_in_that_stands_is_retried_later_not_now(
+    client, account, signed_in, facts, monkeypatch
+):
+    """A computed card is stored — it is what the reader saw — but a later
+    visit still gets a bounded number of tries at a written briefing."""
+    calls = []
+    monkeypatch.setattr(daily, "generate", lambda *a, **k: calls.append(1))
+    first = signed_in.post("/v1/daily", params={"lang": "en"}).json()
+    assert first["source"] == "computed" and first["upgradable"] is False
+    stored = json.loads(account.action.read_text())
+    assert stored["source"] == "computed" and stored["tries"] == 1
+
+    # Half an hour on, in a fresh process (no job guard): one more try.
+    stored["generated"] -= daily.UPGRADE_AFTER_S
+    account.action.write_text(json.dumps(stored))
+    loaders.stored_action.cache_clear()
+    briefing._jobs.clear()
+    assert signed_in.get("/v1/daily", params={"lang": "en"}).json()["upgradable"] is True
+    monkeypatch.setattr(daily, "generate", lambda *a, **k: written(today(), "Upgraded"))
+    body = signed_in.post("/v1/daily", params={"lang": "en"}).json()
+    assert body["headline"] == "Upgraded" and body["source"] == "llm"
+    assert calls == [1]
+
+
+DETAIL_FACTS = {
+    "date": "2026-09-24",
+    "currency": "EUR",
+    "actions": [
+        {"kind": "earnings", "ticker": "NVDA", "in_days": 3, "date": "2026-09-27",
+         "held": True, "phase": "soon", "key": "earnings:NVDA"},
+    ],
+}
+
+
+def test_see_more_is_written_once_and_then_read_from_the_card(
+    client, account, signed_in, monkeypatch
+):
+    card = daily.computed(DETAIL_FACTS, "en", today())
+    account.action.write_text(json.dumps(daily.to_store(None, card, DETAIL_FACTS)))
+    calls = []
+
+    def model(*a, **k):
+        calls.append(1)
+        return {"earnings:NVDA": "NVDA reports in three days; decide before."}
+
+    monkeypatch.setattr(daily, "generate_detail", model)
+    body = signed_in.post("/v1/daily/detail").json()
+    assert body["source"] == "llm"
+    assert body["details"] == [
+        {"key": "earnings:NVDA", "text": "NVDA reports in three days; decide before."}
+    ]
+    again = signed_in.post("/v1/daily/detail").json()
+    assert again["details"] == body["details"] and calls == [1]
+    loaders.stored_action.cache_clear()
+    card = signed_in.get("/v1/daily", params={"lang": "en"}).json()
+    assert card["detail_ready"] is True
+
+
+def test_see_more_without_a_model_is_the_computed_paragraphs(
+    client, account, signed_in, monkeypatch
+):
+    card = daily.computed(DETAIL_FACTS, "en", today())
+    account.action.write_text(json.dumps(daily.to_store(None, card, DETAIL_FACTS)))
+    monkeypatch.setattr(daily, "generate_detail", lambda *a, **k: None)
+    body = signed_in.post("/v1/daily/detail").json()
+    assert body["source"] == "computed"
+    assert body["details"][0]["key"] == "earnings:NVDA"
+    assert "NVDA" in body["details"][0]["text"]
+
+
+def test_see_more_with_no_card_is_empty(client, account, signed_in, monkeypatch):
+    monkeypatch.setattr(daily, "generate_detail", lambda *a, **k: pytest.fail("no call"))
+    assert signed_in.post("/v1/daily/detail").json()["details"] == []
+
+
+def test_see_more_is_the_accounts_own_so_a_token_may_not(client, account):
+    assert client.post("/v1/daily/detail", params=WHO, headers=AUTH).status_code == 403
 
 
 # ------------------------------------------------------------ watchlist rows

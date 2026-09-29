@@ -342,6 +342,7 @@ def _start(
                 lang,
                 day,
                 recent=stored.recent if stored else [],
+                past=stored.past if stored else [],
                 spend_free=spend,
             )
         except Exception as exc:  # daily.generate swallows its own, but a
@@ -361,25 +362,35 @@ def _collect(job: dict) -> daily.DailyAction | None:
     """A finished job's card, after its side effects are applied.
 
     A free-chain attempt spends the account's daily counter, which lives in
-    prefs.json — so prefs are saved only when a unit was actually taken, and
-    the card itself only when a model produced it (a computed card is free to
-    rebuild on the next run, and storing it would block the upgrade to a real
-    briefing once the allowance resets).
+    prefs.json — so prefs are saved only when a unit was actually taken. The
+    card is stored by `_finish`, whoever wrote it.
     """
     if job.get("spent"):
         auth.save_prefs(job["prefs"])
-    action = job.get("action")
-    if action:
-        card = action.to_dict()
-        card["recent"] = daily.remembered(job.get("stored"), action.headline)
-        # The triggers this card was offered, stamped today: tomorrow's
-        # candidates are ranked against it so the card turns over even when
-        # the book does not (signals.decay).
-        card["shown"] = daily.seen(
-            job.get("stored"), job.get("facts") or {}, job["day"]
-        )
-        auth.save_action(card)
-    return action
+    return job.get("action")
+
+
+def _save(stored, action: daily.DailyAction, facts: dict) -> None:
+    """Store the card the reader is shown — `api.briefing._store`.
+
+    A computed stand-in is stored as much as a written card: the triggers it
+    showed are stamped (`daily.to_store`) so tomorrow's card does not say them
+    again, and `daily.wants_upgrade` keeps it from ending the day's chances of
+    a real briefing. The one exception is a Regenerate that got nothing back,
+    which leaves the written card that stands in place of the stand-in.
+    """
+    day = date.fromisoformat(action.day)
+    if (
+        not action.from_model
+        and stored is not None
+        and stored.from_model
+        and daily.is_fresh(stored, day, action.lang, action.as_of or None)
+    ):
+        return
+    try:
+        auth.save_action(daily.to_store(stored, action, facts))
+    except Exception as exc:  # the card is on screen either way
+        obs.warn("daily_action.unsaved", error_type=type(exc).__name__)
 
 
 def _wait_html(title_key: str) -> str:
@@ -534,7 +545,9 @@ def _resolve(
         cached = st.session_state.get(_CARD)
         if cached is not None and cached.get("key") == key:
             return cached["action"], False
-        if daily.is_fresh(stored, day, lang, _asof(facts)):
+        if daily.is_fresh(stored, day, lang, _asof(facts)) and not daily.wants_upgrade(
+            stored
+        ):
             return _remember(stored, key), False
         if st.session_state.get(_TRIED) == key:
             # A generation already ran today and gave nothing back: a provider
@@ -554,10 +567,9 @@ def _finish(job, facts, lang, day, key) -> tuple[daily.DailyAction, bool]:
     """Collect a done job: its card, or the computed one when it came back
     empty. Yesterday's stored card is deliberately not a candidate — today's
     triggers plainly stated beat a stale briefing."""
-    action = _collect(job)
-    if action:
-        return _remember(action, key), False
-    return daily.computed(facts, lang, day), False
+    action = _collect(job) or daily.computed(facts, lang, day)
+    _save(job.get("stored"), action, facts)
+    return _remember(action, key), False
 
 
 def _force_refresh() -> None:

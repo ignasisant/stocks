@@ -8,9 +8,10 @@
  * intact book at -60%, which is the bug this endpoint exists to prevent.
  */
 
+import type { ReactNode } from "react";
 import { get } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
-import { Loaded, Skeleton } from "../../shell/Layout";
+import { Loaded, Pending, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import type {
@@ -133,6 +134,18 @@ function Positions() {
     [base],
   );
 
+  // The rows the ledger alone can answer — who, how many, at what cost — with
+  // no price in them and no network behind them. They draw while the priced
+  // call above is still out, so the table is there at once and only the
+  // figures that are being fetched shimmer.
+  const rows = useApi(
+    () => get<PositionsData>("/portfolio/positions", { base, priced: "false" }),
+    [base],
+  );
+  const pending = query.state === "loading";
+  // A figure still on its way, or the cell it lands in.
+  const priced = (cell: ReactNode): ReactNode => (pending ? <Pending /> : cell);
+
   const columns: Column<Position>[] = [
     {
       key: "ticker",
@@ -175,13 +188,13 @@ function Positions() {
       key: "value",
       label: t("portfolio.market_value"),
       sort: (row) => row.value,
-      cell: (row) => <Figure value={money(row.value)} />,
+      cell: (row) => priced(<Figure value={money(row.value)} />),
     },
     {
       key: "weight",
       label: t("portfolio.col_weight"),
       sort: (row) => row.weight,
-      cell: (row) => <Figure value={percent(lang, row.weight)} />,
+      cell: (row) => priced(<Figure value={percent(lang, row.weight)} />),
     },
     {
       key: "day",
@@ -191,17 +204,18 @@ function Positions() {
       // table pairs them. A name with no live quote (its exchange is shut and
       // it is not in a US extended window) keeps its figures but greys them:
       // that is the last session's move, not today's.
-      cell: (row) => (
-        <span className={row.market_active ? "pf-pair" : "pf-pair pf-dim"}>
-          <Signed value={row.day} text={money(row.day, { signed: true })} />
-          {row.day_pct === null ? null : (
-            <Chip
-              value={row.day_pct}
-              text={percent(lang, row.day_pct, { signed: true })}
-            />
-          )}
-        </span>
-      ),
+      cell: (row) =>
+        priced(
+          <span className={row.market_active ? "pf-pair" : "pf-pair pf-dim"}>
+            <Signed value={row.day} text={money(row.day, { signed: true })} />
+            {row.day_pct === null ? null : (
+              <Chip
+                value={row.day_pct}
+                text={percent(lang, row.day_pct, { signed: true })}
+              />
+            )}
+          </span>,
+        ),
     },
     {
       key: "pnl",
@@ -209,19 +223,68 @@ function Positions() {
       sort: (row) => row.pnl,
       // Amount and percentage of the same move belong in one cell: the
       // nominal is the headline, the percentage the reference.
-      cell: (row) => (
-        <span className="pf-pair">
-          <Signed value={row.pnl} text={money(row.pnl, { signed: true })} />
-          {row.pnl_pct === null ? null : (
+      cell: (row) =>
+        priced(
+          <span className="pf-pair">
+            <Signed value={row.pnl} text={money(row.pnl, { signed: true })} />
+            {row.pnl_pct === null ? null : (
+              <Chip
+                value={row.pnl_pct}
+                text={percent(lang, row.pnl_pct, { signed: true })}
+              />
+            )}
+          </span>,
+        ),
+    },
+  ];
+
+  const table = (positions: Position[]) => (
+    <Table
+      columns={columns}
+      rows={positions}
+      rowKey={(row) => row.ticker}
+      initial={{ key: pending ? "cost" : "weight", desc: true }}
+      // The phone's row, as `portfolio.py` lays it out: value and
+      // today's move on the right, the total result as a pill by the
+      // symbol, weight and custodians on the dim line.
+      dense={{
+        ticker: (row) => row.ticker,
+        badge: (row) =>
+          pending ? null : (
             <Chip
               value={row.pnl_pct}
               text={percent(lang, row.pnl_pct, { signed: true })}
             />
-          )}
-        </span>
-      ),
-    },
-  ];
+          ),
+        value: (row) => priced(<Figure value={money(row.value)} />),
+        delta: (row) =>
+          priced(
+            <span className={row.market_active ? undefined : "pf-dim"}>
+              <Signed
+                value={row.day_pct}
+                text={percent(lang, row.day_pct, { signed: true })}
+              />
+            </span>,
+          ),
+        sub: (row) => [
+          pending ? null : percent(lang, row.weight),
+          custodyText(row.custody, t, lang, false),
+        ],
+      }}
+    />
+  );
+
+  // Priced call still out, ledger rows in: the card with its table, the
+  // tiles as a skeleton, and the price columns pending.
+  if (pending && rows.state === "loaded" && rows.data.positions.length > 0) {
+    return (
+      <Card title={t("portfolio.open_positions_pl", { ccy: base })}>
+        <Skeleton rows={2} />
+        {table(rows.data.positions)}
+        <Caption>{t("portfolio.positions_caption")}</Caption>
+      </Card>
+    );
+  }
 
   return (
     <Loaded query={query} skeleton={<Skeleton rows={8} />}>
@@ -336,37 +399,7 @@ function Positions() {
                 })}
               </Caption>
             ) : null}
-            <Table
-              columns={columns}
-              rows={positions.positions}
-              rowKey={(row) => row.ticker}
-              initial={{ key: "weight", desc: true }}
-              // The phone's row, as `portfolio.py` lays it out: value and
-              // today's move on the right, the total result as a pill by the
-              // symbol, weight and custodians on the dim line.
-              dense={{
-                ticker: (row) => row.ticker,
-                badge: (row) => (
-                  <Chip
-                    value={row.pnl_pct}
-                    text={percent(lang, row.pnl_pct, { signed: true })}
-                  />
-                ),
-                value: (row) => <Figure value={money(row.value)} />,
-                delta: (row) => (
-                  <span className={row.market_active ? undefined : "pf-dim"}>
-                    <Signed
-                      value={row.day_pct}
-                      text={percent(lang, row.day_pct, { signed: true })}
-                    />
-                  </span>
-                ),
-                sub: (row) => [
-                  percent(lang, row.weight),
-                  custodyText(row.custody, t, lang, false),
-                ],
-              }}
-            />
+            {table(positions.positions)}
             <Caption>{t("portfolio.positions_caption")}</Caption>
           </Card>
         );
