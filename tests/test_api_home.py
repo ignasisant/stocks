@@ -34,7 +34,7 @@ from stocks import accounts
 from stocks.api import briefing, home, loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import home as home_routes
-from stocks.chat import daily
+from stocks.chat import daily, daily_analysis
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -269,49 +269,106 @@ DETAIL_FACTS = {
 }
 
 
-def test_see_more_is_written_once_and_then_read_from_the_card(
-    client, account, signed_in, monkeypatch
-):
+ANALYSIS_EVIDENCE = {
+    "subject": {"ticker": "NVDA", "perf": {"m3_pct": -12.0, "y1_pct": 30.0}},
+    "sector": {"etf": "XLK", "sector": "Technology", "perf": {"m3_pct": 4.0}},
+    "index": {"etf": "SPY", "perf": {"m3_pct": 3.0}},
+    "compare": {"vs_sector_m3_pp": -16.0},
+}
+
+
+def store_card(account) -> None:
     card = daily.computed(DETAIL_FACTS, "en", today())
     account.action.write_text(json.dumps(daily.to_store(None, card, DETAIL_FACTS)))
+
+
+@pytest.fixture
+def no_fetch(monkeypatch):
+    """The evidence without the network: what `evidence.gather` would bring."""
+    from stocks.api import evidence
+
     calls = []
 
-    def model(*a, **k):
-        calls.append(1)
-        return {"earnings:NVDA": "NVDA reports in three days; decide before."}
+    def gather(paths, card, key, **_):
+        calls.append(key)
+        return ANALYSIS_EVIDENCE
 
-    monkeypatch.setattr(daily, "generate_detail", model)
-    body = signed_in.post("/v1/daily/detail").json()
-    assert body["source"] == "llm"
-    assert body["details"] == [
-        {"key": "earnings:NVDA", "text": "NVDA reports in three days; decide before."}
-    ]
-    again = signed_in.post("/v1/daily/detail").json()
-    assert again["details"] == body["details"] and calls == [1]
+    monkeypatch.setattr(evidence, "gather", gather)
+    return calls
+
+
+def test_a_lines_analysis_is_written_once_and_then_read_from_the_card(
+    client, account, signed_in, monkeypatch, no_fetch
+):
+    store_card(account)
+    calls = []
+
+    def model(prefs, profile, card, key, evidence, lang, **_):
+        calls.append(key)
+        assert evidence is ANALYSIS_EVIDENCE
+        return {"verdict": "NVDA trails its sector by 16.0 points.",
+                "points": [{"title": "Against XLK", "text": "XLK +4.0%."}] * 2}
+
+    monkeypatch.setattr(daily_analysis, "generate", model)
+    params = {"key": "earnings:NVDA"}
+    body = signed_in.post("/v1/daily/analysis", params=params).json()
+    assert body["source"] == "llm" and body["key"] == "earnings:NVDA"
+    assert body["verdict"] == "NVDA trails its sector by 16.0 points."
+    # The tables are computed whoever wrote the prose.
+    assert body["tables"][0]["rows"][0]["ticker"] == "NVDA"
+    again = signed_in.post("/v1/daily/analysis", params=params).json()
+    assert again == body and calls == ["earnings:NVDA"] and no_fetch == calls
     loaders.stored_action.cache_clear()
     card = signed_in.get("/v1/daily", params={"lang": "en"}).json()
-    assert card["detail_ready"] is True
+    assert card["analysed"] == ["earnings:NVDA"]
 
 
-def test_see_more_without_a_model_is_the_computed_paragraphs(
-    client, account, signed_in, monkeypatch
+def test_an_analysis_without_a_model_is_the_computed_one(
+    client, account, signed_in, monkeypatch, no_fetch
 ):
-    card = daily.computed(DETAIL_FACTS, "en", today())
-    account.action.write_text(json.dumps(daily.to_store(None, card, DETAIL_FACTS)))
-    monkeypatch.setattr(daily, "generate_detail", lambda *a, **k: None)
-    body = signed_in.post("/v1/daily/detail").json()
+    store_card(account)
+    monkeypatch.setattr(daily_analysis, "generate", lambda *a, **k: None)
+    body = signed_in.post("/v1/daily/analysis", params={"key": "earnings:NVDA"}).json()
     assert body["source"] == "computed"
-    assert body["details"][0]["key"] == "earnings:NVDA"
-    assert "NVDA" in body["details"][0]["text"]
+    assert body["verdict"].startswith("NVDA is 16.0 points behind its sector (XLK)")
+    titles = [p["title"] for p in body["points"]]
+    assert titles[:2] == ["What happened", "Against its group"]
 
 
-def test_see_more_with_no_card_is_empty(client, account, signed_in, monkeypatch):
-    monkeypatch.setattr(daily, "generate_detail", lambda *a, **k: pytest.fail("no call"))
-    assert signed_in.post("/v1/daily/detail").json()["details"] == []
+def test_an_analysis_is_stored_only_onto_the_card_it_was_written_for(
+    client, account, signed_in, monkeypatch, no_fetch
+):
+    store_card(account)
+
+    def replaced(*a, **k):
+        # A Regenerate lands while the analysis is being written.
+        stored = json.loads(account.action.read_text())
+        stored["generated"] = stored["generated"] + 1
+        account.action.write_text(json.dumps(stored))
+        return None
+
+    monkeypatch.setattr(daily_analysis, "generate", replaced)
+    body = signed_in.post("/v1/daily/analysis", params={"key": "earnings:NVDA"}).json()
+    assert body["verdict"]
+    assert json.loads(account.action.read_text())["analysis"] == {}
 
 
-def test_see_more_is_the_accounts_own_so_a_token_may_not(client, account):
-    assert client.post("/v1/daily/detail", params=WHO, headers=AUTH).status_code == 403
+def test_an_analysis_of_a_line_that_is_not_on_the_card_is_404(
+    client, account, signed_in, monkeypatch, no_fetch
+):
+    monkeypatch.setattr(
+        daily_analysis, "generate", lambda *a, **k: pytest.fail("no call")
+    )
+    assert signed_in.post("/v1/daily/analysis", params={"key": "x"}).status_code == 404
+    store_card(account)
+    assert signed_in.post("/v1/daily/analysis", params={"key": "x"}).status_code == 404
+    assert no_fetch == []
+
+
+def test_an_analysis_is_the_accounts_own_so_a_token_may_not(client, account):
+    params = {**WHO, "key": "earnings:NVDA"}
+    answer = client.post("/v1/daily/analysis", params=params, headers=AUTH)
+    assert answer.status_code == 403
 
 
 # ------------------------------------------------------------ watchlist rows

@@ -559,7 +559,7 @@ WRITES = {
     ("/v1/daily", "post"),
     # Its "see more": the same allowance spent the first time, and the
     # paragraphs stored onto the same card.
-    ("/v1/daily/detail", "post"),
+    ("/v1/daily/analysis", "post"),
     # Home's "Refresh prices". It writes nothing, but it drops process-wide
     # price caches — every account's downloads — so it is a pressed button,
     # and only a signed-in reader presses buttons.

@@ -462,53 +462,11 @@ def test_a_long_line_is_clipped_at_a_word():
     assert len(clipped) <= 30 and clipped.endswith("word…")
 
 
-# ---------------------------------------------------------------- see more
-
-
-def stored_card() -> daily.DailyAction:
+def test_a_stored_card_starts_with_no_analysis_and_keeps_what_it_is_given():
     card = daily.computed(FACTS, "en", TODAY)
-    return daily.DailyAction.from_dict(daily.to_store(None, card, FACTS))
-
-
-def test_every_line_with_a_trigger_has_a_computed_paragraph():
-    for lang in ("en", "es"):
-        texts = daily.detail_computed(stored_card(), {}, lang)
-        assert set(texts) == {"alert_hit:AAPL", "earnings:NVDA", "macro_event:fed"}
-        assert all(len(t) > 60 for t in texts.values())
-
-
-def test_a_paragraph_with_an_invented_figure_is_dropped_alone():
-    card = stored_card()
-    raw = json.dumps({"details": [
-        {"key": "earnings:NVDA", "text": "NVDA reports on Friday; decide first."},
-        {"key": "alert_hit:AAPL", "text": "AAPL is up 12.3% since the cross."},
-    ]})
-    assert daily.parse_detail(raw, card, {}, "en") == {
-        "earnings:NVDA": "NVDA reports on Friday; decide first."
-    }
-
-
-def test_the_press_release_figures_may_be_quoted():
-    card = stored_card()
-    release = "Revenue of $96.2 billion, up 106% from a year ago."
-    sources = {"earnings:NVDA": {
-        "ticker": "NVDA", "release": release, "release_figures": daily.figures(release),
-    }}
-    raw = json.dumps({"details": [
-        {"key": "earnings:NVDA",
-         "text": "Last quarter NVDA grew revenue 106% to $96.2 billion."},
-    ]})
-    assert daily.parse_detail(raw, card, sources, "en")
-    assert daily.parse_detail(raw, card, {}, "en") is None
-
-
-def test_the_detail_prompt_carries_each_line_with_its_action_and_source():
-    card = stored_card()
-    system, messages = daily.detail_prompt(
-        card, {"macro_event:fed": {"bank": "fed", "history": []}}, {}, "es"
-    )
-    payload = json.loads(messages[0]["content"])
-    keyed = {line["key"]: line for line in payload["lines"]}
-    assert keyed["macro_event:fed"]["source"] == {"bank": "fed", "history": []}
-    assert keyed["earnings:NVDA"]["action"]["in_days"] == 3
-    assert "Spanish" in system
+    stored = daily.to_store(None, card, FACTS)
+    assert stored["analysis"] == {}
+    stored["analysis"] = {"earnings:NVDA": {"verdict": "v"}, "bad": "text"}
+    again = daily.DailyAction.from_dict(stored)
+    assert again.analysis == {"earnings:NVDA": {"verdict": "v"}}
+    assert daily.to_store(again, card, FACTS)["analysis"] == {}

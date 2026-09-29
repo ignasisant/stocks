@@ -33,9 +33,8 @@ from stocks.api import briefing, home, loaders
 from stocks.api.deps import Account, Base, Writer, reporting_currency
 from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
+    DailyAnalysis,
     DailyCard,
-    DailyDetail,
-    DailyDetailText,
     DailyItem,
     Extreme,
     Extremes,
@@ -142,31 +141,40 @@ def write_card(
 
 
 @router.post(
-    "/daily/detail", response_model=DailyDetail, summary="The card's 'see more'"
+    "/daily/analysis",
+    response_model=DailyAnalysis,
+    summary="The analysis behind one line of the card",
 )
-def card_detail(account: Writer) -> DailyDetail:
-    """The paragraph behind each line of the stored card, written on the
+def card_analysis(
+    account: Writer,
+    key: Annotated[str, Query(max_length=120, description="The line's `key`.")],
+) -> DailyAnalysis:
+    """The comparison behind one line of the stored card, written on the
     first ask and stored with it.
 
-    A POST because the first one spends: one free-chain call writes every
-    paragraph (and reads the quarter and the press release behind a print).
-    Every later call — a second click, another device — reads the stored
-    paragraphs and spends nothing. Synchronous: the reader clicked and is
-    waiting on the card, and a model that does not answer leaves the computed
-    paragraphs, so this always ends in text.
+    A POST because the first one spends: it fetches the line's evidence
+    (peers, sector, index, fundamentals, the tax arithmetic…) and makes one
+    free-chain call. Every later call — a second click, another device —
+    reads the stored analysis and spends nothing. Synchronous: the reader
+    clicked and is waiting on the line, and a model that does not answer
+    leaves the computed analysis, so this always ends in one. 404 when the
+    card has no line `key` with a trigger behind it.
     """
     from stocks.web import auth
 
     prefs = auth.load_prefs(account.prefs)
-    card = briefing.detail(account, prefs)
-    if card is None:
-        return DailyDetail()
-    return DailyDetail(
+    found = briefing.analysis(account, prefs, key)
+    if found is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such line on today's card.")
+    card, body = found
+    return DailyAnalysis(
+        key=key,
         day=card.day,
-        source=card.detail_source or None,
-        details=[
-            DailyDetailText(key=key, text=text) for key, text in card.detail.items()
-        ],
+        source=body.get("source") or None,
+        verdict=str(body.get("verdict") or ""),
+        points=list(body.get("points") or []),
+        tables=list(body.get("tables") or []),
+        as_of=body.get("as_of") or None,
     )
 
 
@@ -198,7 +206,7 @@ def _answer(action: daily.DailyAction, day, *, fresh: bool, pending=False) -> Da
         pending=pending,
         items=[DailyItem(**item) for item in action.items],
         upgradable=fresh and not pending and daily.wants_upgrade(action),
-        detail_ready=bool(action.detail),
+        analysed=[k for k, v in action.analysis.items() if v],
     )
 
 
