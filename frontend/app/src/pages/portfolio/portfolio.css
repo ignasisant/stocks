@@ -697,3 +697,26 @@
     transition: none;
   }
 }
+
+/* ------------------------------------------------------------------ overview */
+
+/* The bridge's terms read as a sum: the operator each one joins it with sits
+   before its label, muted, so "+ Ganancia" and "= Hoy" say how the tiles add
+   up without a row of glyphs between them that would wrap on its own. */
+.pf-op {
+  color: var(--ag-text-muted);
+  font-weight: 600;
+  margin-right: 0.35em;
+}
+
+/* The bridge and the rates under it are two KPI rows in one card: a tile's
+   gutter apart, as the tiles inside a row are. */
+.pf-card .ag-kpis + .ag-kpis {
+  margin-top: 8px;
+}
+
+/* The chart under them starts a card's heading-gap below, not flush with the
+   tiles: its legend is the chart's, and read as a third row of tiles it is not. */
+.pf-card .ag-kpis + .pf-chart {
+  margin-top: 0.9rem;
+}

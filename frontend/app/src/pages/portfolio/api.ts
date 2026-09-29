@@ -365,20 +365,37 @@ export type MarketStatus = {
   note: string | null;
 };
 
-/** One month's close, from `/portfolio/monthly`. Returns are since the first trade. */
-export type MonthlyPoint = {
+export const MONTHLY_WINDOWS = ["ytd", "1y", "2y", "5y", "inception"] as const;
+export type MonthlyWindow = (typeof MONTHLY_WINDOWS)[number];
+
+/** One month's close inside a `/portfolio/monthly` window, every figure since
+    the first trade: the window crops the months, it never rebases them. Rates
+    are annual and null until the book is a year old. */
+type MonthlyPoint = {
   month: string;
   date: string;
-  injected: number | null;
   value: number | null;
-  pnl: number | null;
-  /** Gain over the time-averaged capital: each deposit weighed by how long it was in. */
+  /** The injected total at this close: buys so far less sales. */
+  invested: number | null;
+  gain: number | null;
   money_weighted: number | null;
-  twr: number | null;
+  time_weighted: number | null;
 };
 
+/** The window's bridge, in its own euros: opening + (bought − sold) + gain = closing. */
 export type Monthly = {
   base: string;
+  window: MonthlyWindow;
+  start: string | null;
+  end: string | null;
+  opening: number | null;
+  bought: number | null;
+  sold: number | null;
+  contributed: number | null;
+  gain: number | null;
+  closing: number | null;
+  /** Euros the dates of the trades added or cost against a steady pace. */
+  timing: number | null;
   months: MonthlyPoint[];
   missing: string[];
 };

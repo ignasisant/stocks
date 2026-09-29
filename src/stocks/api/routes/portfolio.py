@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from yfinance.exceptions import YFRateLimitError
 
 from stocks import obs
-from stocks.analysis.monthly import month_ends
+from stocks.analysis.monthly import window as book_window
 from stocks.analysis.portfolio import (
     annualized_return,
     annualized_volatility,
@@ -602,35 +602,81 @@ def history(
 
 
 # ------------------------------------------------------------ month by month
-# The Overview tab's chart: the return the account stood at on each month's
-# close, weighted by how much money was in and for how long. Always since the
-# first trade — a month-end return rebased on a window would say "since
-# whenever the chart starts", which is not what "where was I in July" asks.
+# The Overview tab's card: the book's month-ends since the first trade, cropped
+# to a window, and that window's bridge from the value it opened with to today's
+# in euros. The rates are never rebased to the window — it is a zoom into the
+# full chart, not a book opened on its first day (see `analysis.monthly`). The
+# windows are Rendimiento real's plus the calendar year.
+
+_MONTHLY_WINDOWS = ("inception", "ytd", "1y", "2y", "5y")
+
+
+def _monthly_start(window: str) -> pd.Timestamp | None:
+    """The day a window opens on: the last close of last year for `ytd`, the
+    `/performance` offset for the rest, None for the book's whole life."""
+    today = date.today()
+    if window == "ytd":
+        return pd.Timestamp(date(today.year - 1, 12, 31))  # ty: ignore[invalid-return-type]
+    if window in _PERFORMANCE_DAYS:
+        days = pd.Timedelta(days=_PERFORMANCE_DAYS[window])
+        return pd.Timestamp(today) - days  # ty: ignore[invalid-return-type]
+    return None
 
 
 class MonthlyPoint(BaseModel):
-    """The book on the last recorded day of one month."""
+    """The book on the last recorded day of one month inside the window,
+    every figure since the first trade."""
 
     month: str = Field(description="ISO month, `YYYY-MM`.")
     date: str = Field(description="The day the figures were taken on.")
-    injected: float | None
     value: float | None
-    pnl: float | None = Field(description="value - injected.")
+    invested: float | None = Field(
+        description="The injected total at this close: every buy so far less every sale."
+    )
+    gain: float | None = Field(description="value - invested.")
     money_weighted: float | None = Field(
         description=(
-            "Cumulative return since the first trade, Modified Dietz: the gain "
-            "over the time-averaged capital, so each deposit counts for its "
-            "amount and for how long it was in. Null where that capital is "
-            "not positive."
+            "Annualised IRR from the first trade to this close, every buy and "
+            "sale on its own date — the `/performance` `irr` as it stood then. "
+            "Null until the book is a year old: annualising a few months "
+            "exaggerates any result."
         )
     )
-    twr: float | None = Field(
-        description="Cumulative time-weighted return since the first trade."
+    time_weighted: float | None = Field(
+        description=(
+            "Annualised TWR from the first trade to this close. Null in the "
+            "book's first year, like `money_weighted`."
+        )
     )
 
 
 class Monthly(BaseModel):
     base: str
+    window: str = "inception"
+    start: str | None = Field(
+        default=None, description="The close the window opens on."
+    )
+    end: str | None = None
+    opening: float | None = Field(
+        default=None, description="The value the window opened with; 0 since inception."
+    )
+    bought: float | None = Field(default=None, description="Buys inside the window.")
+    sold: float | None = Field(
+        default=None, description="Sale proceeds inside the window."
+    )
+    contributed: float | None = Field(default=None, description="bought - sold.")
+    gain: float | None = Field(
+        default=None, description="closing - opening - contributed."
+    )
+    closing: float | None = None
+    timing: float | None = Field(
+        default=None,
+        description=(
+            "Euros the timing of the trades added (+) or cost (−): `closing` "
+            "less what the opening value and the same trades would be worth "
+            "had all of it grown at the window's steady TWR pace."
+        ),
+    )
     months: list[MonthlyPoint] = []
     missing: list[str] = Field(
         default=[],
@@ -638,32 +684,56 @@ class Monthly(BaseModel):
     )
 
 
-@router.get("/monthly", response_model=Monthly, summary="The book at each month's close")
-def monthly(account: Account, base: Base = None) -> Monthly:
-    """Month-end levels and the return the account stood at, since inception.
+@router.get(
+    "/monthly",
+    response_model=Monthly,
+    summary="The book over a window, month by month",
+)
+def monthly(account: Account, base: Base = None, window: str = "inception") -> Monthly:
+    """The window's bridge in euros, and the book's month-ends inside it.
 
-    Off the same `loaders.history` frame as `/history` and `/performance`, so
-    the last point here is the book those two describe today.
+    Off the same `loaders.history` frame and ledger flows as `/history` and
+    `/performance`, so the last point here is the book — and the IRR — those
+    two describe today since inception.
     """
+    if window not in _MONTHLY_WINDOWS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"window must be one of {', '.join(_MONTHLY_WINDOWS)}",
+        )
     ccy = reporting_currency(account, base)
     db = str(account.db)
-    hist, twr, missing = loaders.history(db, loaders.db_mtime(db), ccy)
+    mtime = loaders.db_mtime(db)
+    hist, twr, missing = loaders.history(db, mtime, ccy)
     if hist.empty:
-        return Monthly(base=ccy, missing=missing)
-    rows = month_ends(hist, twr)
+        return Monthly(base=ccy, window=window, missing=missing)
+    flows = flow_series(loaders.ledger_state(db, mtime, ccy)[0], base=ccy)
+    book = book_window(hist, twr, flows, _monthly_start(window))
+    if book is None:
+        return Monthly(base=ccy, window=window, missing=missing)
     return Monthly(
         base=ccy,
+        window=window,
+        start=f"{book.start:%Y-%m-%d}",
+        end=f"{book.end:%Y-%m-%d}",
+        opening=_num(book.opening),
+        bought=_num(book.bought),
+        sold=_num(book.sold),
+        contributed=_num(book.contributed),
+        gain=_num(book.gain),
+        closing=_num(book.closing),
+        timing=_num(book.timing),
         months=[
             MonthlyPoint(
                 month=f"{day:%Y-%m}",
                 date=f"{day:%Y-%m-%d}",
-                injected=_num(row["injected"]),
                 value=_num(row["value"]),
-                pnl=_num(row["pnl"]),
+                invested=_num(row["invested"]),
+                gain=_num(row["gain"]),
                 money_weighted=_num(row["money_weighted"]),
-                twr=_num(row["twr"]),
+                time_weighted=_num(row["time_weighted"]),
             )
-            for day, row in rows.iterrows()
+            for day, row in book.months.iterrows()
         ],
         missing=missing,
     )
