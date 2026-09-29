@@ -88,7 +88,7 @@ export type Result = {
 };
 
 /** A committed ledger row, as `/import/last` sends the ones that survive. */
-type LedgerRow = {
+export type LedgerRow = {
   id: number | null;
   date: string;
   ticker: string;
@@ -202,6 +202,24 @@ export const book = async (): Promise<Book> => {
     complete: page.transactions.length >= page.total,
   };
 };
+
+/**
+ * Where the book stands, for the tiles above the importer.
+ *
+ * Off the two endpoints the Portfolio overview reads, so the figures here and
+ * there cannot disagree: value and injected are `/performance` since
+ * inception, the dividends `/dividends`' booked total. Two calls rather than
+ * one because the dividend route also asks Yahoo for estimates, and a slow
+ * answer there must not hold the value back.
+ */
+export type Standing = { base: string; value: number | null; injected: number | null };
+
+export const standing = (base: string) =>
+  get<Standing>("/portfolio/performance", { base });
+
+export type Paid = { base: string; booked_total: number };
+
+export const paid = (base: string) => get<Paid>("/portfolio/dividends", { base });
 
 export const lastImport = () => get<LastImport>("/import/last");
 

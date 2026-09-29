@@ -18,12 +18,12 @@
  *   say so, and re-derives the ratio server-side so a client cannot invent one.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ApiError } from "../../shell/api";
 import { useT } from "../../shell/i18n";
-import { Loaded, Skeleton } from "../../shell/Layout";
+import { Loaded } from "../../shell/Layout";
 import { TickerCell } from "../../shell/tickers";
-import { Responsive, StackCards } from "../../ui/Rows";
+import { Status } from "../../ui/Status";
 import { useApi } from "../../shell/useApi";
 import { applySplits, scanSplits } from "./api";
 import type { SplitGap } from "./api";
@@ -34,56 +34,60 @@ import { useVocabulary } from "./text";
 const NONE = "—";
 
 export function Splits({
-  enabled,
   onApplied,
+  onFound,
 }: {
-  /** False for a book with no real rows: there is nothing to price. */
-  enabled: boolean;
   onApplied: () => void;
+  /** How many the scan on screen proposes — the rail's "to review" badge. */
+  onFound: (n: number) => void;
 }) {
   const t = useT();
+  const vocab = useVocabulary();
   // 0 is "not asked yet", and the state the page returns to after writing: the
   // findings were spent, and re-scanning is another round-trip per holding.
   const [asked, setAsked] = useState(0);
   const [applied, setApplied] = useState(0);
   const scan = useApi(async () => (asked === 0 ? null : await scanSplits()), [asked]);
   const scanning = asked > 0 && scan.state === "loading";
+  const gaps =
+    asked > 0 && scan.state === "loaded" && scan.data ? scan.data.splits.length : 0;
+
+  useEffect(() => onFound(gaps), [gaps, onFound]);
 
   return (
-    <section className="im-repair">
+    <div className="im-repair">
       <div className="im-repair-head">
-        <button
-          className="ag-btn"
-          disabled={!enabled || scanning}
-          onClick={() => {
-            setApplied(0);
-            setAsked((n) => n + 1);
-          }}
-          type="button"
-        >
-          {t("import.scan_splits")}
-        </button>
-        <p className="im-help">{t("import.scan_splits_help")}</p>
+        <h3 className="im-h3">
+          {t("import.splits_title")}
+          {gaps > 0 ? ` · ${vocab.tn("import.splits_found_count", gaps)}` : null}
+        </h3>
+        {gaps > 0 ? (
+          <span className="im-tag">{t("import.proposal")}</span>
+        ) : (
+          <span className="im-param">{t("import.splits_cost")}</span>
+        )}
       </div>
 
+      {gaps === 0 && <p className="im-fine">{t("import.splits_note")}</p>}
+
       {applied > 0 && (
-        <p className="im-ok">{t("import.toast_splits_applied", { n: applied })}</p>
+        <p className="im-ok">
+          {t("import.toast_splits_applied", { n: vocab.num(applied, 0) })}
+        </p>
       )}
 
       {asked > 0 && (
-        <Loaded query={scan} skeleton={<Skeleton rows={3} />}>
+        <Loaded query={scan} skeleton={<Status label={t("import.work_scanning")} />}>
           {(found) =>
             found === null ? null : found.splits.length === 0 ? (
               // A throttled scan answers with silence, so an empty list means
               // "could not tell" rather than "nothing missing" — and a clean
               // bill of health is the one thing it must not be read as.
-              <p className={found.throttled ? "im-warn" : "im-ok"}>
-                {t(
-                  found.throttled
-                    ? "common.data_unavailable"
-                    : "import.scan_splits_clean",
-                )}
-              </p>
+              found.throttled ? (
+                <p className="im-line-warn">{t("import.splits_throttled")}</p>
+              ) : (
+                <p className="im-line-ok">✓ {t("import.scan_splits_clean")}</p>
+              )
             ) : (
               <Found
                 gaps={found.splits}
@@ -98,7 +102,21 @@ export function Splits({
           }
         </Loaded>
       )}
-    </section>
+
+      {gaps === 0 && (
+        <button
+          className="im-btn im-btn-outline im-btn-block"
+          disabled={scanning}
+          onClick={() => {
+            setApplied(0);
+            setAsked((n) => n + 1);
+          }}
+          type="button"
+        >
+          {t("import.scan_splits")}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -153,99 +171,54 @@ function Found({
 
   return (
     <>
-      <p className="im-warn">{t("import.splits_found", { n: gaps.length })}</p>
-      <Responsive
-        wide={
-          <div className="im-scroll">
-            <table className="im-table">
-              <thead>
-                <tr>
-                  <th className="im-pick" scope="col" />
-                  <th scope="col">{vocab.column("ticker")}</th>
-                  <th scope="col">{vocab.column("date")}</th>
-                  <th scope="col">{vocab.column("ratio")}</th>
-                  <th className="im-num" scope="col">
-                    {vocab.column("held_before")}
-                  </th>
-                  <th className="im-num" scope="col">
-                    {vocab.column("held_after")}
-                  </th>
-                  <th scope="col">{vocab.column("evidence")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {gaps.map((gap) => {
-                  const key = splitKey(gap);
-                  return (
-                    <tr key={key}>
-                      <td className="im-pick">
-                        <input
-                          // The symbol and the day are what the row is; a screen
-                          // reader gets the same two words a sighted reader does.
-                          aria-label={`${gap.ticker} ${gap.date}`}
-                          checked={on(key)}
-                          disabled={busy}
-                          onChange={() => toggle(key)}
-                          type="checkbox"
-                        />
-                      </td>
-                      <td>
-                        <TickerCell ticker={gap.ticker} />
-                      </td>
-                      <td>{gap.date}</td>
-                      <td>{ratioLabel(gap.ratio)}</td>
-                      <td className="im-num">{shares(gap.held_before)}</td>
-                      <td className="im-num">{shares(gap.held_after)}</td>
-                      <td className="im-issues">{evidence(gap)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        }
-        narrow={
-          <StackCards
-            rows={gaps}
-            rowKey={splitKey}
-            title={(gap) => (
-              <span className="im-card-head">
-                <input
-                  aria-label={`${gap.ticker} ${gap.date}`}
-                  checked={on(splitKey(gap))}
-                  disabled={busy}
-                  onChange={() => toggle(splitKey(gap))}
-                  type="checkbox"
-                />
-                <TickerCell ticker={gap.ticker} />
+      <div className="im-picks">
+        {gaps.map((gap) => {
+          const key = splitKey(gap);
+          return (
+            <label className={on(key) ? "im-pick im-pick-on" : "im-pick"} key={key}>
+              <input
+                // The symbol and the day are what the row is; a screen reader
+                // gets the same two words a sighted reader does.
+                aria-label={`${gap.ticker} ${gap.date}`}
+                checked={on(key)}
+                className="im-pick-box"
+                disabled={busy}
+                onChange={() => toggle(key)}
+                type="checkbox"
+              />
+              <span className="im-pick-body">
+                <span className="im-pick-top">
+                  <TickerCell name={false} ticker={gap.ticker} />
+                  <span className="im-pick-q">{ratioLabel(gap.ratio)}</span>
+                  <span className="im-pick-date">{gap.date}</span>
+                </span>
+                <span className="im-pick-line">
+                  {t("import.split_shares", {
+                    before: shares(gap.held_before),
+                    after: shares(gap.held_after),
+                  })}
+                </span>
+                <span className="im-pick-proof">{evidence(gap)}</span>
               </span>
-            )}
-            lines={[
-              { label: vocab.column("date"), cell: (gap) => gap.date },
-              { label: vocab.column("ratio"), cell: (gap) => ratioLabel(gap.ratio) },
-              {
-                label: vocab.column("held_before"),
-                cell: (gap) => shares(gap.held_before),
-              },
-              {
-                label: vocab.column("held_after"),
-                cell: (gap) => shares(gap.held_after),
-              },
-              { label: vocab.column("evidence"), cell: evidence },
-            ]}
-          />
-        }
-      />
+            </label>
+          );
+        })}
+      </div>
       {failed && <p className="im-bad">{t("common.failed")}</p>}
       <button
-        className="ag-btn im-primary"
+        className="im-btn im-btn-primary im-btn-block"
         disabled={busy || chosen.length === 0}
         onClick={write}
         type="button"
       >
-        {t("import.apply_splits", { n: chosen.length })}
+        {chosen.length > 0
+          ? t("import.apply_splits", { n: vocab.num(chosen.length, 0) })
+          : t("import.pick_one")}
       </button>
-      <p className="im-help">{t("import.apply_splits_help")}</p>
+      {busy && (
+        <Status label={t("import.work_splits", { n: vocab.num(chosen.length, 0) })} />
+      )}
+      <p className="im-fine im-faint">{t("import.apply_splits_help")}</p>
     </>
   );
 }

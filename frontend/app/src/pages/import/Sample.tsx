@@ -1,10 +1,10 @@
 /**
- * The shipped example statement, for a reader with nothing to import.
+ * The empty book's card, and the shipped example statement inside it.
  *
- * It is offered on the empty path only. An account that already holds a real
- * ledger has no use for it, and a button that adds somebody else's trades to a
- * real book is a trap rather than a tour — the server cannot tell those apart,
- * says so, and leaves the rule here.
+ * It is drawn on the empty path only. An account that already holds a real
+ * ledger has no use for the example, and a button that adds somebody else's
+ * trades to a real book is a trap rather than a tour — the server cannot tell
+ * those apart, says so, and leaves the rule here.
  *
  * The bytes go into the same staging slot a file picker fills, so the example
  * rides the identical path: parse, validate, tiered preview, commit,
@@ -14,6 +14,7 @@
 
 import { useState } from "react";
 import { useT } from "../../shell/i18n";
+import { Status } from "../../ui/Status";
 import { sampleStatement } from "./api";
 import type { Platform } from "./api";
 
@@ -29,10 +30,10 @@ export function Sample({
   const [busy, setBusy] = useState(false);
   // A trimmed deployment ships without the file, and the honest answer to that
   // is silence: the offer removes itself rather than failing in the reader's
-  // face over something they cannot fix.
+  // face over something they cannot fix. The card stays — it still says where
+  // this platform's statement is found.
   const [gone, setGone] = useState(false);
-
-  if (!platform.has_sample || gone) return null;
+  const offer = platform.has_sample && !gone;
 
   const load = async () => {
     setBusy(true);
@@ -49,13 +50,25 @@ export function Sample({
   };
 
   return (
-    <div className="im-sample">
-      <p className="im-help">
-        {t("import.sample_caption", { platform: platform.label })}
+    <section aria-labelledby="im-empty-title" className="im-card im-empty">
+      <h2 className="im-h3" id="im-empty-title">
+        {t("import.empty_title")}
+      </h2>
+      <p className="im-fine">
+        {platform.hint}
+        {offer ? ` ${t("import.sample_short")}` : null}
       </p>
-      <button className="ag-btn" disabled={busy} onClick={load} type="button">
-        {t("import.sample_button")}
-      </button>
-    </div>
+      {offer && (
+        <button
+          className="im-btn im-btn-outline"
+          disabled={busy}
+          onClick={load}
+          type="button"
+        >
+          {t("import.sample_button")}
+        </button>
+      )}
+      {busy && <Status label={t("import.work_sample")} />}
+    </section>
   );
 }

@@ -1,47 +1,149 @@
 /*
- * The Import page's own stylesheet.
+ * The Import page's own stylesheet — the canvas "Aguait Importar Refactor"
+ * (1a desktop, 1b phone, 1c states).
  *
  * No hex literals: every colour is an `--ag-*` custom property that server.py
  * inlines into the document, so this page and the Streamlit page it replaces
- * cannot drift, and dark mode stays one definition rather than two.
+ * cannot drift, and dark mode stays one definition rather than two. The
+ * canvas's in-between tints (a red ground under the rejected rows, a border one
+ * step off a fill) are `color-mix` of two tokens rather than new hexes.
+ *
+ * Widths are the main column's (`@container ag-main`), never the viewport's:
+ * an open chat drawer narrows the page without the window changing.
+ *   - 60rem: the rail drops under the task, and its cards fold.
+ *   - 40rem: the phone — cards for rows, a counted step, the confirm bar at
+ *     the foot of the screen.
  */
+
+/* ---------------------------------------------------------------- layout */
 
 .im-page {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 20px;
 }
 
-.im-h1 {
-  font-size: var(--ag-fs-3xl);
-  margin: 0;
+/* The task in the wide column, the book beside it — Profile's rail idiom. Not
+   sticky: the rail can be taller than the window, and a pinned box that tall
+   hides its own foot until the page ends. */
+.im-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
 }
 
-.im-h2 {
-  font-size: var(--ag-fs-2xl);
-  margin: 1.25rem 0 0.5rem;
-}
-
-.im-lede,
-.im-hint {
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm);
-  margin: 0;
-}
-
-.im-hint {
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm);
-  background: var(--ag-surface-sunken);
-  padding: 0.7rem 0.9rem;
-}
-
-/* ------------------------------------------------------------ the controls */
-
-.im-field {
+.im-main {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 20px;
+  /* The tables answer to the task column's own width: beside the rail it is
+     ~380px narrower than the page, which is what `ag-main` measures. */
+  container: im-main / inline-size;
+}
+
+.im-rail {
+  flex: 0 0 380px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Section cards: DS radius-lg + shadow-card, as on every other page. */
+.im-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-card);
+}
+
+.im-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.im-rule {
+  height: 1px;
+  margin: 0;
+  border: 0;
+  background: var(--ag-border);
+}
+
+/* ------------------------------------------------------------------ type */
+
+.im-h1 {
+  margin: 0;
+  font-family: "Epilogue", var(--ag-font-body);
+  font-size: var(--ag-fs-display);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.im-h3 {
+  margin: 0;
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-base);
+  font-weight: 600;
+}
+
+/* A paragraph of copy: the one thing on a full-width page that gets a cap. */
+.im-lede {
+  max-width: 48rem;
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-base);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.im-lede strong {
+  color: var(--ag-text-primary);
+  font-weight: 400;
+}
+
+/* The mono label every block opens with: "2 · EXTRACTO DE DEGIRO". */
+.im-eyebrow {
+  color: var(--ag-text-muted);
+  font: 500 var(--ag-fs-2xs) / 1.3 var(--ag-font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.im-eyebrow-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.im-param {
+  color: var(--ag-text-faint);
+  font: 500 var(--ag-fs-2xs) var(--ag-font-mono);
+}
+
+.im-fine {
+  margin: 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+  line-height: 1.5;
+}
+
+.im-faint {
+  color: var(--ag-text-faint);
+}
+
+.im-mono {
+  font-family: var(--ag-font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .im-label {
@@ -49,197 +151,32 @@
   font-size: var(--ag-fs-sm);
 }
 
-.im-help {
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs);
-  margin: 0.35rem 0 0;
-}
-
 .im-code {
-  background: var(--ag-surface-sunken);
-  border-radius: var(--ag-radius-xs);
-  font-size: 0.92em;
   padding: 0.05rem 0.3rem;
-}
-
-.im-platforms {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
-.im-platform {
-  align-items: center;
-  background: var(--ag-surface-card);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-nav);
-  color: var(--ag-text-muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--ag-fs-md);
-  padding: 0.4rem 0.8rem;
-  display: inline-flex;
-  gap: 0.4rem;
-}
-
-.im-platform-logo {
-  border-radius: var(--ag-radius-sm);
-  flex: none;
-  height: 16px;
-  object-fit: contain;
-  width: 16px;
-}
-
-.im-platform:hover {
-  background: var(--ag-surface-hover);
-  color: var(--ag-text-primary);
-}
-
-.im-platform-on {
-  border-color: var(--ag-brand-cta);
-  color: var(--ag-text-primary);
-}
-
-.im-input,
-.im-paste {
-  background: var(--ag-surface-card);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm);
-  color: var(--ag-text-primary);
-  font: inherit;
-  font-size: var(--ag-fs-base);
-  max-width: 28rem;
-  padding: 0.45rem 0.6rem;
-}
-
-.im-paste {
-  font-family: var(--ag-font-mono, ui-monospace, monospace);
-  font-size: var(--ag-fs-sm);
-  max-width: none;
-  resize: vertical;
-  width: 100%;
-}
-
-.im-input:focus-visible,
-.im-paste:focus-visible {
-  border-color: var(--ag-border-focus);
-  outline: none;
-}
-
-/* The uploader: a dashed drop zone, the words on the left and the button on
-   the right as the Streamlit one lays them — wrapping the button under the
-   words where the page is too narrow for both on one line. */
-.im-drop {
-  align-items: center;
+  border-radius: var(--ag-radius-xs);
   background: var(--ag-surface-sunken);
-  border: 1px dashed var(--ag-border);
-  border-radius: var(--ag-radius-sm);
-  cursor: pointer;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem 1rem;
-  padding: 1rem 1.1rem;
-  position: relative;
+  font-size: 0.92em;
 }
 
-.im-drop:hover,
-.im-drop-on {
-  background: var(--ag-surface-hover);
-  border-color: var(--ag-border-focus);
-}
-
-/* The input keeps its focus, so the ring belongs to the zone around it. */
-.im-drop:focus-within {
-  border-color: var(--ag-border-focus);
-  outline: 2px solid var(--ag-border-focus);
-  outline-offset: 2px;
-}
-
-/* Out of sight and still in the tab order: the zone is what is seen, the
-   input is what the keyboard and assistive tech reach. */
-.im-file {
-  clip-path: inset(50%);
-  height: 1px;
-  overflow: hidden;
-  position: absolute;
-  white-space: nowrap;
-  width: 1px;
-}
-
-.im-drop-text {
-  display: flex;
-  flex: 1 1 14rem;
-  flex-direction: column;
-  gap: 0.2rem;
-  min-width: 0;
-}
-
-.im-drop-title {
-  color: var(--ag-text-primary);
-  font-size: var(--ag-fs-base);
-  overflow-wrap: anywhere;
-}
-
-.im-drop-cap {
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs);
-}
-
-.im-drop-btn {
-  background: var(--ag-surface-card);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm);
-  color: var(--ag-text-primary);
+.im-glyph {
   flex: none;
-  font-size: var(--ag-fs-md);
-  padding: 0.4rem 0.8rem;
-  white-space: nowrap;
 }
 
-.im-primary {
-  align-self: flex-start;
-  background: var(--ag-brand-cta);
-  border-color: var(--ag-brand-cta);
-  color: var(--ag-on-brand);
+.im-tone-warn {
+  color: var(--ag-warn);
 }
 
-.im-primary:disabled {
-  background: var(--ag-surface-sunken);
-  border-color: var(--ag-border);
-  color: var(--ag-text-muted);
-  cursor: not-allowed;
+.im-tone-bad {
+  color: var(--ag-candle-down);
 }
 
-.im-details {
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm);
-  padding: 0.6rem 0.9rem;
-}
-
-.im-details > summary {
-  color: var(--ag-text-secondary);
-  cursor: pointer;
-  font-size: var(--ag-fs-sm);
-}
-
-/* --------------------------------------------------------------- the tiers */
-
-.im-tiers,
-.im-commit,
-.im-done,
-.im-last {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
+/* One-line outcomes: a toast that stays, and a line in a tier's colour. */
 .im-ok,
-.im-warn,
 .im-bad {
+  margin: 0;
+  padding: 8px 10px;
   border-radius: var(--ag-radius-sm);
   font-size: var(--ag-fs-sm);
-  margin: 0;
-  padding: 0.6rem 0.8rem;
 }
 
 .im-ok {
@@ -247,150 +184,1676 @@
   color: var(--ag-up);
 }
 
-.im-warn {
-  background: var(--ag-warn-fill);
-  border: 1px solid var(--ag-warn-edge);
-  color: var(--ag-warn);
-}
-
 .im-bad {
   background: var(--ag-down-fill);
   color: var(--ag-down);
 }
 
-/* -------------------------------------------------------------- the tables */
-
-.im-scroll {
-  overflow-x: auto;
+.im-line-ok,
+.im-line-warn {
+  margin: 0;
+  font-size: var(--ag-fs-sm);
+  line-height: 1.45;
 }
 
-.im-table {
-  border-collapse: collapse;
+.im-line-ok {
+  color: var(--ag-candle-up);
+}
+
+.im-line-warn {
+  color: var(--ag-warn);
+}
+
+.im-line-bad {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.im-line-bad p {
+  margin: 0;
+  color: var(--ag-candle-down);
+  font-size: var(--ag-fs-sm);
+  line-height: 1.45;
+}
+
+/* --------------------------------------------------------------- buttons */
+
+.im-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
+  color: var(--ag-text-primary);
+  font: inherit;
   font-size: var(--ag-fs-md);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 50ms ease-in-out,
+    border-color 50ms ease-in-out;
+}
+
+.im-btn:focus-visible {
+  outline: 2px solid var(--ag-brand-cta);
+  outline-offset: 2px;
+}
+
+.im-btn:disabled {
+  cursor: not-allowed;
+}
+
+.im-btn-block {
   width: 100%;
 }
 
-.im-table th,
-.im-table td {
-  border-bottom: 1px solid var(--ag-border);
-  padding: 0.4rem 0.6rem;
-  text-align: left;
-  white-space: nowrap;
+.im-btn-primary {
+  min-height: 40px;
+  background: var(--ag-brand-cta);
+  box-shadow: 0 4px 12px var(--ag-cta-glow);
+  color: var(--ag-on-brand);
 }
 
-.im-table th {
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs);
-  font-weight: 400;
-  text-transform: uppercase;
+.im-btn-primary:hover:not(:disabled) {
+  background: var(--ag-purple-700);
 }
 
-.im-table tbody tr:hover {
+.im-btn-outline {
+  border-color: var(--ag-border-focus);
+}
+
+.im-btn-outline:hover:not(:disabled) {
   background: var(--ag-surface-hover);
 }
 
-.im-table .im-num {
-  font-variant-numeric: tabular-nums;
-  text-align: right;
+.im-btn-text {
+  padding: 0 6px;
+  color: var(--ag-brand-accent);
 }
 
-.im-table a {
+.im-btn-text:hover:not(:disabled) {
+  color: var(--ag-purple-400);
+}
+
+.im-btn-danger,
+.im-btn-danger:hover:not(:disabled) {
+  color: var(--ag-candle-down);
+}
+
+.im-btn-danger-outline {
+  border-color: color-mix(in srgb, var(--ag-down-fill) 70%, var(--ag-surface-page));
+  color: var(--ag-candle-down);
+}
+
+.im-btn-danger-outline:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ag-down-fill) 18%, var(--ag-surface-card));
+}
+
+.im-btn-destructive {
+  min-height: 40px;
+  background: var(--ag-critical-fill);
+  color: var(--ag-on-brand);
+}
+
+.im-btn-primary:disabled,
+.im-btn-destructive:disabled {
+  background: var(--ag-border);
+  box-shadow: none;
+  color: var(--ag-text-muted);
+}
+
+.im-btn-outline:disabled,
+.im-btn-text:disabled,
+.im-btn-danger-outline:disabled {
+  opacity: 0.55;
+}
+
+/* ------------------------------------------------------------ the header */
+
+.im-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.im-steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 26px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.im-step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px 5px 6px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+}
+
+/* The rule between two pills. */
+.im-step + .im-step::before {
+  position: absolute;
+  top: 50%;
+  left: -22px;
+  width: 18px;
+  height: 1px;
+  background: var(--ag-border);
+  content: "";
+}
+
+.im-step-n {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-muted);
+  font: 500 var(--ag-fs-2xs) var(--ag-font-mono);
+}
+
+.im-step-done .im-step-n {
+  background: var(--ag-success-fill);
+  color: var(--ag-on-brand);
+}
+
+.im-step-cur {
+  border-color: var(--ag-purple-800);
+  background: var(--ag-purple-900);
+}
+
+.im-step-cur .im-step-n {
+  background: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+}
+
+.im-step-next {
+  color: var(--ag-text-muted);
+}
+
+.im-steps-short {
+  display: none;
+  margin: 0;
+  color: var(--ag-text-muted);
+  font: 500 var(--ag-fs-2xs) var(--ag-font-mono);
+}
+
+/* Repairs waiting, said at the top when the rail is out of sight. */
+.im-banner {
+  display: none;
+}
+
+/* ---------------------------------------- steps one and two: the source */
+
+.im-source {
+  gap: 18px;
+  padding: 20px 24px;
+}
+
+.im-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.im-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.im-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px 0 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-page);
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 50ms ease-in-out,
+    border-color 50ms ease-in-out;
+}
+
+.im-chip:hover {
+  background: var(--ag-surface-hover);
   color: var(--ag-text-primary);
 }
 
-.im-table .im-issues {
-  color: var(--ag-text-secondary);
-  max-width: 28rem;
-  white-space: normal;
+.im-chip-on,
+.im-chip-on:hover {
+  border-color: var(--ag-brand-cta);
+  background: var(--ag-purple-900);
+  color: var(--ag-text-primary);
 }
 
-/* ------------------------------------------------------- the book, and the
-   one control that can empty it */
+.im-chip:focus-visible {
+  outline: 2px solid var(--ag-brand-cta);
+  outline-offset: 2px;
+}
 
-.im-ledger,
-.im-repair,
-.im-sample {
+/* The brand's tile: its initial underneath, its logo over it on the white
+   plate every ticker logo sits on. */
+.im-chip-mark {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  overflow: hidden;
+  border-radius: var(--ag-radius-nav);
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-2xs);
+  font-weight: 600;
+}
+
+.im-chip-mark img {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 2px;
+  background: var(--ag-text-primary);
+  object-fit: contain;
+}
+
+.im-drop {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px dashed var(--ag-purple-700);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-page);
+  cursor: pointer;
+}
+
+.im-drop:hover {
+  border-color: var(--ag-brand-accent);
+}
+
+/* The input keeps its focus, so the ring belongs to the zone around it. */
+.im-drop:focus-within {
+  outline: 2px solid var(--ag-brand-cta);
+  outline-offset: 2px;
+}
+
+.im-drop-on,
+.im-drop-on:hover {
+  border-style: solid;
+  border-color: var(--ag-brand-accent);
+  background: var(--ag-purple-900);
+}
+
+/* Out of sight and still in the tab order: the zone is what is seen, the
+   input is what the keyboard and assistive tech reach. */
+.im-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.im-drop-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-purple-900);
+  color: var(--ag-purple-400);
+}
+
+.im-drop-icon .im-glyph {
+  width: 20px;
+  height: 20px;
+}
+
+.im-drop-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.im-drop-title {
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-base);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.im-drop-on .im-drop-title {
+  color: var(--ag-purple-400);
+}
+
+.im-drop-size {
+  color: var(--ag-text-muted);
+  font-weight: 400;
+}
+
+.im-drop-cap {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+}
+
+.im-drop-btn {
+  flex: none;
+}
+
+/* What stopped the statement being read: one red line each. */
+.im-errors {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.im-ledger-head,
-.im-repair-head,
-.im-row {
-  align-items: center;
+.im-errors li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--ag-candle-down);
+  font-size: var(--ag-fs-sm);
+  line-height: 1.45;
+}
+
+.im-errors li::before {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 6px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-candle-down);
+  content: "";
+}
+
+/* The card's last line: the paste door and the wipe, and below them whichever
+   of the two is open, full width. */
+.im-source-foot {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  align-items: center;
+  gap: 10px 20px;
 }
 
-.im-repair-head .im-help {
-  flex: 1 1 18rem;
-  margin: 0;
+.im-source-foot > .im-danger,
+.im-paste-body {
+  flex: 1 1 100%;
 }
 
-/* What opens before a destructive control can act. Bordered in the colour the
-   rest of the app reserves for loss, because that is what this is. */
-.im-danger {
-  border: 1px solid var(--ag-down);
-  border-radius: var(--ag-radius-sm);
-  background: var(--ag-critical-fill);
+.im-disclose {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  cursor: pointer;
+}
+
+.im-disclose .im-glyph {
+  width: 14px;
+  height: 14px;
+  color: var(--ag-text-muted);
+  transition: transform 100ms ease-in-out;
+}
+
+.im-disclose[aria-expanded="true"] .im-glyph {
+  transform: rotate(90deg);
+}
+
+.im-paste-body {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 6px;
+}
+
+/* `display: flex` above would otherwise beat the attribute. */
+.im-paste-body[hidden] {
+  display: none;
+}
+
+.im-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  color: var(--ag-text-secondary);
   font-size: var(--ag-fs-sm);
-  padding: 0.75rem 0.9rem;
+  cursor: pointer;
+}
+
+.im-check input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--ag-brand-cta);
+  cursor: pointer;
+}
+
+.im-input,
+.im-paste {
+  box-sizing: border-box;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--ag-border-focus);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-page);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-md);
+}
+
+.im-paste {
+  width: 100%;
+  padding: 10px 12px;
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-sm);
+  resize: vertical;
+}
+
+.im-input:focus-visible,
+.im-paste:focus-visible {
+  border-color: var(--ag-brand-cta);
+  outline: none;
+}
+
+/* What opens before a total deletion can act. In the colour the rest of the
+   app reserves for loss, because that is what this is. */
+.im-danger {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--ag-down-fill);
+  border-radius: var(--ag-radius-md);
+  background: color-mix(in srgb, var(--ag-down-fill) 18%, var(--ag-surface-page));
 }
 
 .im-danger p {
   margin: 0;
 }
 
-.im-destructive {
-  background: var(--ag-down);
-  border-color: var(--ag-down);
-  color: var(--ag-on-brand);
-}
-
-.im-destructive:disabled {
-  background: var(--ag-surface-sunken);
-  border-color: var(--ag-border);
-  color: var(--ag-text-muted);
-  cursor: not-allowed;
-}
-
-/* The wipe's own tick, and the per-row ticks the two repairs are named by. */
-.im-check {
-  align-items: center;
+.im-danger-title {
   color: var(--ag-text-primary);
-  display: flex;
+  font-size: var(--ag-fs-base);
+  font-weight: 600;
+}
+
+.im-danger-safer {
+  color: var(--ag-down);
   font-size: var(--ag-fs-sm);
-  gap: 0.45rem;
+  line-height: 1.5;
 }
 
-.im-check input,
-.im-table .im-pick input {
-  accent-color: var(--ag-brand-cta);
-  cursor: pointer;
+.im-danger-prompt {
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+}
+
+.im-danger-prompt strong {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+}
+
+.im-danger-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.im-danger-row .im-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+/* ----------------------------------------- step three: the preview card */
+
+.im-review {
+  gap: 0;
+  padding: 0;
+}
+
+.im-review-head {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 24px 16px;
+  border-bottom: 1px solid var(--ag-border);
+}
+
+.im-review-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
   margin: 0;
+  font-size: var(--ag-fs-lg);
+  font-weight: 600;
 }
 
-.im-table .im-pick {
-  padding-right: 0;
-  width: 1.5rem;
+.im-jumps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-/* A repair row's card on a phone: the tick box beside the symbol it picks. */
-.im-card-head {
-  align-items: center;
+.im-jump {
   display: inline-flex;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-page);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.im-card-head input {
+.im-jump:focus-visible {
+  outline: 2px solid var(--ag-brand-cta);
+  outline-offset: 2px;
+}
+
+.im-jump .im-mono {
+  font-weight: 500;
+}
+
+.im-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--ag-radius-pill);
+}
+
+.im-jump-bad {
+  border-color: var(--ag-down-fill);
+  background: color-mix(in srgb, var(--ag-down-fill) 18%, var(--ag-surface-page));
+  color: var(--ag-down);
+}
+
+.im-jump-bad .im-dot {
+  background: var(--ag-candle-down);
+}
+
+.im-jump-warn {
+  border-color: var(--ag-warn-edge);
+  background: var(--ag-warn-fill-soft);
+  color: var(--ag-warn);
+}
+
+.im-jump-warn .im-dot {
+  background: var(--ag-warn);
+}
+
+.im-jump-ok .im-dot {
+  background: var(--ag-candle-up);
+}
+
+.im-jump-skip {
+  color: var(--ag-text-secondary);
+}
+
+.im-jump-skip .im-dot {
+  background: var(--ag-text-faint);
+}
+
+.im-jump-ok:hover,
+.im-jump-skip:hover {
+  border-color: var(--ag-border-focus);
+}
+
+/* Step four, pinned over the tiers so the press never scrolls away. */
+.im-confirm {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--ag-border);
+  background: var(--ag-surface-raised);
+}
+
+.im-confirm-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+
+.im-confirm-text {
+  display: flex;
+  flex: 1 1 260px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-md);
+  line-height: 1.45;
+}
+
+.im-confirm-text strong {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+}
+
+.im-confirm-short {
+  display: none;
+}
+
+.im-btn-go {
+  min-height: 44px;
+  padding: 0 20px;
+  font-size: var(--ag-fs-base);
+}
+
+/* The broker question, on the bar's ground so the two read as one panel. */
+.im-broker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 24px 4px;
+  background: var(--ag-surface-raised);
+}
+
+.im-broker-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.im-broker-row .im-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.im-tiers {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 18px 24px 22px;
+}
+
+/* Far enough below a jump's landing to clear the pinned confirm bar. */
+.im-tier,
+.im-skipped {
+  scroll-margin-top: 8rem;
+}
+
+.im-tier {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.im-tier-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.im-tier-bad .im-tier-head .im-glyph {
+  color: var(--ag-candle-down);
+}
+
+.im-tier-warn .im-tier-head .im-glyph {
+  color: var(--ag-warn);
+}
+
+.im-tier-ok .im-tier-head .im-glyph {
+  color: var(--ag-candle-up);
+}
+
+.im-tier-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+}
+
+.im-cli {
+  padding: 3px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-nav);
+  background: var(--ag-surface-page);
+  color: var(--ag-purple-400);
+  font: 500 var(--ag-fs-xs) var(--ag-font-mono);
+  overflow-wrap: anywhere;
+}
+
+/* The skipped rows: folded by default, a box with its own header row. */
+.im-skipped {
+  overflow: hidden;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+}
+
+.im-skipped > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  background: var(--ag-rule-panel);
+  cursor: pointer;
+  list-style: none;
+}
+
+.im-skipped > summary::-webkit-details-marker {
+  display: none;
+}
+
+.im-skipped > summary .im-glyph {
+  color: var(--ag-text-secondary);
+  transform: rotate(-90deg);
+  transition: transform 100ms ease-in-out;
+}
+
+.im-skipped[open] > summary {
+  border-bottom: 1px solid var(--ag-border);
+}
+
+.im-skipped[open] > summary .im-glyph {
+  transform: none;
+}
+
+.im-skipped-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 12px;
+}
+
+.im-skipped-body > .im-fine {
+  padding: 0 14px;
+}
+
+/* ------------------------------------------------------------ the tables */
+
+.im-grid {
+  overflow: hidden;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-page);
+}
+
+.im-grid-bad {
+  border-color: color-mix(in srgb, var(--ag-down-fill) 60%, var(--ag-surface-page));
+}
+
+.im-grid-warn {
+  border-color: color-mix(in srgb, var(--ag-warn-edge) 70%, var(--ag-surface-page));
+}
+
+.im-scroll {
+  overflow-x: auto;
+}
+
+/* Hundreds of rows scroll inside their own frame, header pinned. */
+.im-scroll-tall {
+  max-height: 520px;
+  overflow: auto;
+}
+
+.im-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--ag-fs-md);
+}
+
+.im-table th,
+.im-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--ag-rule-panel);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.im-table th:first-child,
+.im-table td:first-child {
+  padding-left: 14px;
+}
+
+.im-table th:last-child,
+.im-table td:last-child {
+  padding-right: 14px;
+}
+
+.im-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.im-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom-color: var(--ag-border);
+  background: var(--ag-rule-panel);
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.im-table tbody tr:nth-child(even) td {
+  background: var(--ag-surface-band);
+}
+
+.im-table tbody tr:hover td {
+  background: var(--ag-surface-hover);
+}
+
+/* Ticker cells: the symbol bold, the name muted, and a long name cut short
+   rather than widening the column past the ones after it. */
+.im-table a.ag-tick,
+.im-rcard a.ag-tick,
+.im-pick a.ag-tick,
+.im-mini a.ag-tick {
+  color: var(--ag-text-primary);
+  text-decoration: none;
+}
+
+.im-table a.ag-tick:hover .ag-tick-sym,
+.im-rcard a.ag-tick:hover .ag-tick-sym,
+.im-pick a.ag-tick:hover .ag-tick-sym,
+.im-mini a.ag-tick:hover .ag-tick-sym {
+  text-decoration: underline;
+}
+
+.im-tick .ag-tick-sym {
+  font-weight: 600;
+}
+
+.im-tick {
+  display: inline-block;
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.im-table .im-num {
+  text-align: right;
+}
+
+/* Figures in the mono face, a step down: Martian Mono runs wide, and eight
+   columns have to fit beside the rail. */
+.im-table td.im-num,
+.im-table .im-date,
+.im-table .im-cur {
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.im-table .im-date,
+.im-table .im-cur {
+  color: var(--ag-text-secondary);
+}
+
+.im-table td.im-note-cell {
+  max-width: 12rem;
+  overflow: hidden;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+  text-overflow: ellipsis;
+}
+
+/* The broker's own note is the one column a reader can do without; it goes
+   first when the task column cannot hold all eight. */
+@container im-main (max-width: 58rem) {
+  .im-table .im-note-cell {
+    display: none;
+  }
+}
+
+.im-table .im-issues {
+  min-width: 16rem;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.im-grid-bad th {
+  background: color-mix(in srgb, var(--ag-down-fill) 18%, var(--ag-surface-page));
+  color: color-mix(in srgb, var(--ag-candle-down) 75%, var(--ag-surface-page));
+}
+
+.im-grid-warn th {
+  background: var(--ag-warn-fill-soft);
+  color: color-mix(in srgb, var(--ag-warn) 75%, var(--ag-surface-page));
+}
+
+.im-grid-bad .im-issues {
+  color: var(--ag-down);
+}
+
+.im-grid-warn .im-issues {
+  color: color-mix(in srgb, var(--ag-warn) 60%, var(--ag-text-primary));
+}
+
+/* The skipped table sits inside a box that already has a header row. */
+.im-table-quiet th {
+  background: none;
+  color: var(--ag-text-faint);
+}
+
+.im-op-buy {
+  color: var(--ag-candle-up);
+}
+
+.im-op-sell {
+  color: var(--ag-candle-down);
+}
+
+.im-op-move {
+  color: var(--ag-purple-400);
+}
+
+/* The phone's rows: two lines each — symbol, verb and day; amount, currency
+   and fee — and a rejected or warned one as a card of its own, tagged. */
+.im-rcards > ul {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.im-rcards-plain {
+  overflow: hidden;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+}
+
+.im-rcards-plain .im-rcard + .im-rcard {
+  border-top: 1px solid var(--ag-border);
+}
+
+.im-rcards-bad > ul,
+.im-rcards-warn > ul {
+  gap: 8px;
+}
+
+.im-rcards-bad .im-rcard,
+.im-rcards-warn .im-rcard {
+  border: 1px solid var(--ag-down-fill);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-page);
+}
+
+.im-rcards-warn .im-rcard {
+  border-color: var(--ag-warn-edge);
+}
+
+.im-rcard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.im-rcard-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--ag-fs-md);
+}
+
+.im-rcard-sym {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.im-rcard-sym .im-tick {
+  max-width: 100%;
+}
+
+.im-rcard-date {
+  flex: none;
+  margin-left: auto;
+  color: var(--ag-text-muted);
+  font: 500 var(--ag-fs-xs) var(--ag-font-mono);
+}
+
+.im-rcard-sub {
+  color: var(--ag-text-secondary);
+  font: 500 var(--ag-fs-sm) var(--ag-font-mono);
+}
+
+.im-rcard-msg {
+  margin: 0;
+  font-size: var(--ag-fs-sm);
+  line-height: 1.45;
+}
+
+.im-rcards-bad .im-rcard-msg {
+  color: var(--ag-down);
+}
+
+.im-rcards-warn .im-rcard-msg {
+  color: color-mix(in srgb, var(--ag-warn) 60%, var(--ag-text-primary));
+}
+
+.im-more {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-top: 1px solid var(--ag-border);
+  background: none;
+  color: var(--ag-brand-accent);
+  font: inherit;
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.im-tag,
+.im-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: var(--ag-radius-xs);
+  background: var(--ag-purple-900);
+  color: var(--ag-purple-400);
+  font-size: var(--ag-fs-2xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.im-tag-bad {
+  background: var(--ag-down-fill);
+  color: var(--ag-down);
+}
+
+.im-tag-warn {
+  background: var(--ag-warn-fill);
+  color: var(--ag-warn);
+}
+
+.im-badge {
+  border: 1px solid var(--ag-warn-edge);
+  background: var(--ag-warn-fill-soft);
+  color: var(--ag-warn);
+}
+
+/* --------------------------------------------- after the commit, and before */
+
+.im-done {
+  gap: 14px;
+  padding: 16px 24px;
+}
+
+.im-done-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+
+.im-done-mark {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-success-fill);
+  color: var(--ag-up);
+}
+
+.im-done-text {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.im-done-text p {
+  margin: 0;
+}
+
+.im-done-text > p:not(.im-fine) {
+  font-size: var(--ag-fs-base);
+}
+
+.im-done-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.im-empty {
+  align-items: flex-start;
+  border-style: dashed;
+  border-color: var(--ag-border-focus);
+  box-shadow: none;
+}
+
+.im-empty .im-fine {
+  max-width: 48rem;
+}
+
+/* -------------------------------------------------------------- the rail */
+
+.im-book-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ag-border);
+}
+
+.im-book-foot .im-fine {
+  flex: 1 1 auto;
+}
+
+.im-repair {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.im-repair-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.im-repair-head .im-h3 {
+  flex: 1 1 auto;
+}
+
+/* One proposal each: ticked by default, and a card rather than a table row
+   because the rail is 380px and every proposal carries its evidence. */
+.im-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.im-pick {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-page);
+  cursor: pointer;
+}
+
+.im-pick-on {
+  border-color: var(--ag-purple-800);
+}
+
+.im-pick-box {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
   accent-color: var(--ag-brand-cta);
   cursor: pointer;
-  height: 1.1rem;
+}
+
+.im-pick-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.im-pick-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+}
+
+.im-pick-top a {
+  color: var(--ag-text-primary);
+}
+
+.im-pick-q {
+  color: var(--ag-text-secondary);
+  font: 500 var(--ag-fs-xs) var(--ag-font-mono);
+}
+
+.im-pick-date {
+  flex: none;
+  margin-left: auto;
+  color: var(--ag-text-muted);
+  font: 500 var(--ag-fs-xs) var(--ag-font-mono);
+}
+
+.im-pick-line {
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+}
+
+.im-loss {
+  color: var(--ag-candle-down);
+  font-family: var(--ag-font-mono);
+}
+
+.im-pick-proof {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+  line-height: 1.45;
+}
+
+.im-pick-proof::first-letter {
+  text-transform: uppercase;
+}
+
+.im-last-file {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.im-last-name {
+  overflow: hidden;
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.im-note-warn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
-  width: 1.1rem;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--ag-warn-edge) 70%, var(--ag-surface-page));
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-warn-fill-soft);
+  color: color-mix(in srgb, var(--ag-warn) 60%, var(--ag-text-primary));
+  font-size: var(--ag-fs-sm);
+}
+
+.im-note-warn .im-glyph {
+  color: var(--ag-warn);
+}
+
+.im-disclosure > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+  cursor: pointer;
+  list-style: none;
+}
+
+.im-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.im-disclosure > summary .im-glyph {
+  width: 14px;
+  height: 14px;
+  color: var(--ag-text-muted);
+  transition: transform 100ms ease-in-out;
+}
+
+.im-disclosure[open] > summary .im-glyph {
+  transform: rotate(90deg);
+}
+
+.im-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The last batch's rows at rail width, one line each. */
+.im-mini {
+  max-height: 320px;
+  margin: 8px 0 0;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-page);
+  list-style: none;
+}
+
+.im-mini li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: var(--ag-fs-sm);
+}
+
+.im-mini li + li {
+  border-top: 1px solid var(--ag-rule-panel);
+}
+
+.im-mini-date,
+.im-mini-fig {
+  flex: none;
+  color: var(--ag-text-muted);
+  font: 500 var(--ag-fs-xs) var(--ag-font-mono);
+}
+
+.im-mini-fig {
+  color: var(--ag-text-secondary);
+}
+
+.im-mini-sym {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.im-mini-sym a {
+  color: var(--ag-text-primary);
+}
+
+/* A rail card's folded line — drawn only where the rail is under the task. */
+.im-fold-head {
+  display: none;
+}
+
+.im-fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Four tiles in a 380px rail are four slivers: two by two there. Where the
+   rail spans the page, the shared grid decides again. */
+@container ag-main (min-width: 60.0625rem) {
+  .im-rail .ag-kpis:has(> :nth-child(4):last-child) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ------------------------------------------- the rail under the task */
+
+@container ag-main (max-width: 60rem) {
+  .im-body {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .im-rail {
+    flex: none;
+    width: 100%;
+  }
+
+  .im-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid var(--ag-warn-edge);
+    border-radius: var(--ag-radius-md);
+    background: var(--ag-warn-fill-soft);
+    color: var(--ag-warn);
+    font: inherit;
+    font-size: var(--ag-fs-sm);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .im-banner span {
+    flex: 1 1 auto;
+    color: color-mix(in srgb, var(--ag-warn) 60%, var(--ag-text-primary));
+  }
+
+  .im-fold {
+    gap: 0;
+    padding: 0;
+    border-radius: var(--ag-radius-md);
+    box-shadow: none;
+  }
+
+  .im-fold-label {
+    display: none;
+  }
+
+  .im-fold-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 0;
+    background: none;
+    color: var(--ag-text-primary);
+    font: inherit;
+    font-size: var(--ag-fs-md);
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .im-fold-head:focus-visible {
+    outline: 2px solid var(--ag-brand-cta);
+    outline-offset: -2px;
+  }
+
+  .im-fold-title {
+    flex: 1 1 auto;
+  }
+
+  .im-fold-sum {
+    color: var(--ag-text-muted);
+    font: 500 var(--ag-fs-xs) var(--ag-font-mono);
+  }
+
+  .im-fold-head .im-glyph {
+    color: var(--ag-text-muted);
+    transition: transform 100ms ease-in-out;
+  }
+
+  .im-fold-head[aria-expanded="true"] .im-glyph {
+    transform: rotate(180deg);
+  }
+
+  .im-fold-body {
+    padding: 0 12px 12px;
+  }
+
+  .im-fold[data-open="false"] .im-fold-body {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------- the phone */
+
+@container ag-main (max-width: 40rem) {
+  .im-page,
+  .im-main {
+    gap: 12px;
+  }
+
+  .im-h1 {
+    font-size: var(--ag-fs-3xl);
+  }
+
+  .im-steps {
+    display: none;
+  }
+
+  .im-steps-short {
+    display: block;
+  }
+
+  .im-source {
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .im-chips {
+    gap: 6px;
+  }
+
+  .im-chip {
+    padding: 0 11px 0 6px;
+    font-size: var(--ag-fs-sm);
+  }
+
+  /* The whole zone is the tap target; a button inside it is a second one. */
+  .im-drop {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .im-drop-btn {
+    display: none;
+  }
+
+  .im-drop-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .im-check,
+  .im-disclose {
+    min-height: 44px;
+  }
+
+  .im-review-head {
+    padding: 14px;
+  }
+
+  /* Its own panel here: the bar it sat on top of is at the card's foot. */
+  .im-broker {
+    padding: 14px;
+    border-bottom: 1px solid var(--ag-border);
+  }
+
+  .im-tiers {
+    gap: 16px;
+    padding: 14px;
+  }
+
+  /* Step four moves to the card's foot and pins to the bottom of the screen,
+     above the tab bar (`--dock`, set by the shell), for as long as the card
+     is on screen. Sticky rather than fixed: it cannot outlive the preview or
+     cover the page below it. */
+  .im-confirm {
+    order: 99;
+    top: auto;
+    bottom: var(--dock, 0px);
+    /* The right edge is the assistant's launcher's (`.ag-chat-fab`: 48px,
+       20px in), which floats at this height over the tab bar. */
+    padding: 12px calc(20px + 48px + 12px) 12px 16px;
+    border-top: 1px solid var(--ag-border);
+    border-bottom: 0;
+    border-radius: 0 0 calc(var(--ag-radius-lg) - 1px) calc(var(--ag-radius-lg) - 1px);
+  }
+
+  .im-confirm-main {
+    flex-wrap: nowrap;
+  }
+
+  .im-confirm-text .im-eyebrow,
+  .im-confirm-long {
+    display: none;
+  }
+
+  .im-confirm-text .im-confirm-short {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .im-btn-go .im-confirm-short {
+    display: inline;
+  }
+
+  .im-confirm-short small {
+    color: var(--ag-text-muted);
+    font-size: var(--ag-fs-xs);
+  }
+
+  .im-btn-go {
+    min-height: 48px;
+    padding: 0 18px;
+  }
+
+  .im-done {
+    padding: 14px;
+  }
 }

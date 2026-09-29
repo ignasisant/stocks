@@ -13,11 +13,14 @@
  * the ledger first and then failed its commit would hold an empty book and no
  * undo. Nothing is deleted until the statement has parsed, validated and
  * produced rows worth writing.
+ *
+ * The block has no button of its own: the address arms "Confirm", and the
+ * confirm bar says so while it is missing.
  */
 
 import { useT } from "../../shell/i18n";
 import { useAccount } from "../../shell/session";
-import { Rich } from "./Rich";
+import { Danger } from "./Danger";
 
 export type WipeChoice = { on: boolean; confirm: string };
 
@@ -25,11 +28,14 @@ export const NO_WIPE: WipeChoice = { on: false, confirm: "" };
 
 export function Wipe({
   total,
+  hasLast,
   value,
   onChange,
 }: {
   /** Rows the book holds now — what this would delete. */
   total: number;
+  /** A last import exists, so the block can point at undoing only that. */
+  hasLast: boolean;
   value: WipeChoice;
   onChange: (next: WipeChoice) => void;
 }) {
@@ -42,39 +48,30 @@ export function Wipe({
   if (total === 0 || !email) return null;
 
   return (
-    <div className="im-field">
+    <>
       <label className="im-check">
         <input
           checked={value.on}
           onChange={(event) => onChange({ on: event.target.checked, confirm: "" })}
           type="checkbox"
         />
-        <span>{t("import.wipe_checkbox")}</span>
+        <span>
+          {t("import.wipe_short")}{" "}
+          <span className="im-faint">· {t("import.wipe_short_note")}</span>
+        </span>
       </label>
 
       {value.on && (
-        <div className="im-danger">
-          <p>
-            <Rich text={t("import.clear_all_confirm", { n: total })} />
-          </p>
-          {/* The address itself as the label: this account's own, so there is
-              nothing to translate and nothing to guess about what to type. */}
-          <label className="im-label" htmlFor="im-wipe-confirm">
-            {email}
-          </label>
-          <input
-            autoCapitalize="off"
-            autoComplete="off"
-            className="im-input"
-            id="im-wipe-confirm"
-            onChange={(event) => onChange({ on: true, confirm: event.target.value })}
-            placeholder={email}
-            spellCheck={false}
-            type="text"
-            value={value.confirm}
-          />
-        </div>
+        <Danger
+          email={email}
+          id="im-wipe-confirm"
+          onChange={(typed) => onChange({ on: true, confirm: typed })}
+          prompt={t("import.wipe_type_commit", { email })}
+          safer={hasLast}
+          total={total}
+          value={value.confirm}
+        />
       )}
-    </div>
+    </>
   );
 }
