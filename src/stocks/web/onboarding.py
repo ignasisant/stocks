@@ -371,10 +371,20 @@ RELEASES: tuple[Release, ...] = (
         version="2026.09.5",
         date="2026-09",
         items=(
-            # One card: "see more" is the new thing to do. The card's memory
+            # One card: each line's analysis is the new thing to do. The card's memory
             # and its new triggers (rate decisions, the tax calendar, results)
             # are the daily step's body, not cards of their own.
             News(slug="daily_more", icon="tips_and_updates", step="daily"),
+        ),
+    ),
+    Release(
+        version="2026.09.6",
+        date="2026-09",
+        items=(
+            # A screen rebuilt under the reader: the importer they knew is now
+            # four numbered steps with the book in a rail beside them. Nothing
+            # it does is new, so no step of its own — the import step's card.
+            News(slug="import", icon="upload_file", step="import"),
         ),
     ),
 )
