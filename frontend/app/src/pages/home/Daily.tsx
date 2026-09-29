@@ -33,19 +33,23 @@
  * `upgradable` the page asks for a written one again on its next visit.
  *
  * The card is a summary: the headline names the day's few things and each
- * line says one. "See more" (`POST /daily/detail`) puts the paragraph behind
- * each line under it — written on the first click, stored with the card, and
- * read for free after that, so collapsing and reopening never asks twice.
+ * line says one. Each line with a trigger behind it opens its own analysis
+ * (`POST /daily/analysis?key=`): the comparison the line invites, made — the
+ * company against its peers, its sector and the index, the tax arithmetic of
+ * a sale, which positions explain a month behind the index — as a verdict, a
+ * few points and the computed tables they can be checked against. Written on
+ * the first click of that line, stored with the card and read for free after
+ * that, so collapsing and reopening never asks twice.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { get, send } from "../../shell/api";
 import { Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { openAssistant } from "../../shell/assistant";
 import { Card, TickerCell } from "./ui";
 import { dayKey, monthDay, type Translate } from "./format";
-import type { DailyCard, DailyDetail, DailyItem } from "./types";
+import type { DailyAnalysis, DailyCard, DailyItem, DailyTable } from "./types";
 import { Badge } from "../../ui/Badge";
 
 /** How often a card that is still being written asks whether it is done. */
@@ -92,21 +96,36 @@ export function linesOf(card: Pick<DailyCard, "items" | "bullets">): DailyItem[]
   }));
 }
 
-/** Whether "see more" has anything to open: a line with a trigger behind it. */
-export function expandable(card: Pick<DailyCard, "items" | "bullets">): boolean {
-  return linesOf(card).some((item) => item.kind !== "");
+/** Whether a line has an analysis to open: a trigger behind it. */
+export function opens(item: DailyItem): boolean {
+  return item.kind !== "";
 }
 
-/** Which card a detail belongs to — a new card never shows the old one's. */
+/**
+ * The colour a table cell earns: a signed figure is a move, and reads green or
+ * red; an unsigned one (a weight, a volatility, a multiple) is a level, and
+ * stays ink.
+ */
+export function tone(cell: string): "up" | "down" | null {
+  if (cell.startsWith("+")) return "up";
+  if (cell.startsWith("-") || cell.startsWith("\u2212")) return "down";
+  return null;
+}
+
+/** Which card an analysis belongs to — a new card never shows the old one's. */
 function stampKey(card: DailyCard | null): string {
   return card ? `${card.day}|${card.generated}|${card.lang}` : "";
 }
 
-type More =
-  | { kind: "closed" }
-  | { kind: "loading" }
-  | { kind: "failed" }
-  | { kind: "open"; detail: DailyDetail };
+/** One line's analysis: absent while closed. */
+type Panel =
+  { kind: "loading" } | { kind: "failed" } | { kind: "open"; body: DailyAnalysis };
+
+function without(panels: Record<string, Panel>, key: string): Record<string, Panel> {
+  const rest = { ...panels };
+  delete rest[key];
+  return rest;
+}
 
 type State =
   | { kind: "loading" }
@@ -194,36 +213,55 @@ export function Daily() {
     };
   }, [pending, lang, state]);
 
-  // "See more": closed until asked, then the paragraphs, kept per card so a
-  // collapse and reopen reads them from memory rather than asking again.
+  // Each line's analysis: closed until asked, then kept per card and line so
+  // a collapse and reopen reads it from memory rather than asking again. Lines
+  // open independently — each one is its own fetch and its own call.
   const shown = state.kind === "card" ? state.card : null;
   const stamp = stampKey(shown);
-  const [more, setMore] = useState<More>({ kind: "closed" });
-  const detail = useRef<{ stamp: string; body: DailyDetail } | null>(null);
+  const [panels, setPanels] = useState<Record<string, Panel>>({});
+  const analyses = useRef(new Map<string, DailyAnalysis>());
   useEffect(() => {
-    setMore({ kind: "closed" });
+    setPanels({});
   }, [stamp]);
-  const toggleMore = useCallback(() => {
-    if (more.kind === "open" || more.kind === "loading") {
-      setMore({ kind: "closed" });
-      return;
-    }
-    if (detail.current?.stamp === stamp) {
-      setMore({ kind: "open", detail: detail.current.body });
-      return;
-    }
-    setMore({ kind: "loading" });
-    const asked = stamp;
-    send<DailyDetail>("POST", "/daily/detail").then(
-      (body) => {
-        detail.current = { stamp: asked, body };
-        setMore((now) =>
-          now.kind === "loading" ? { kind: "open", detail: body } : now,
-        );
-      },
-      () => setMore((now) => (now.kind === "loading" ? { kind: "failed" } : now)),
-    );
-  }, [more.kind, stamp]);
+  const toggle = useCallback(
+    (key: string) => {
+      const now = panels[key];
+      if (now && now.kind !== "failed") {
+        setPanels((current) => without(current, key));
+        return;
+      }
+      const cached = analyses.current.get(`${stamp}|${key}`);
+      if (cached) {
+        setPanels((current) => ({ ...current, [key]: { kind: "open", body: cached } }));
+        return;
+      }
+      setPanels((current) => ({ ...current, [key]: { kind: "loading" } }));
+      const asked = stamp;
+      send<DailyAnalysis>(
+        "POST",
+        `/daily/analysis?${new URLSearchParams({ key }).toString()}`,
+      ).then(
+        (body) => {
+          analyses.current.set(`${asked}|${key}`, body);
+          // Only onto the wait it answers: a line collapsed meanwhile stays
+          // shut, and a new card has already cleared the panels.
+          setPanels((current) =>
+            current[key]?.kind === "loading"
+              ? { ...current, [key]: { kind: "open", body } }
+              : current,
+          );
+        },
+        () =>
+          setPanels((current) =>
+            current[key]?.kind === "loading"
+              ? { ...current, [key]: { kind: "failed" } }
+              : current,
+          ),
+      );
+    },
+    [panels, stamp],
+  );
+  const ids = useId();
 
   const regenerate = useCallback(() => {
     setState((current) =>
@@ -276,12 +314,8 @@ export function Daily() {
   const written = monthDay(card.day ?? card.action_day, t);
   const lines = linesOf(card);
   // Not while a briefing is still being written: the stand-in on screen is
-  // about to be replaced, and its paragraphs with it.
-  const canExpand = !regenerating && !card.pending && expandable(card);
-  const texts: Record<string, string> = {};
-  if (more.kind === "open") {
-    for (const entry of more.detail.details) texts[entry.key] = entry.text;
-  }
+  // about to be replaced, and its lines with it.
+  const canOpen = !regenerating && !card.pending;
 
   let note: string | null;
   if (regenerating) note = null;
@@ -302,43 +336,32 @@ export function Daily() {
           <p className="hm-daily-headline">{card.headline}</p>
           {lines.length > 0 ? (
             <ul className="hm-daily-list">
-              {lines.map((item) => (
-                <li key={item.key}>
-                  {item.line}
-                  {texts[item.key] ? (
-                    <p className="hm-daily-more">{texts[item.key]}</p>
-                  ) : null}
-                </li>
-              ))}
+              {lines.map((item, n) => {
+                const panel = panels[item.key];
+                const expanded = panel !== undefined && panel.kind !== "failed";
+                const id = `${ids}-an-${n}`;
+                return (
+                  <li key={item.key}>
+                    {item.line}
+                    {canOpen && opens(item) ? (
+                      <>
+                        {" "}
+                        <button
+                          type="button"
+                          className="hm-daily-toggle"
+                          aria-expanded={expanded}
+                          aria-controls={panel ? id : undefined}
+                          onClick={() => toggle(item.key)}
+                        >
+                          {expanded ? t("home.daily_an_hide") : t("home.daily_an_show")}
+                        </button>
+                        <AnalysisPanel id={id} panel={panel} />
+                      </>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
-          ) : null}
-          {more.kind === "loading" ? (
-            <div className="hm-daily-more-wait">
-              <p className="hm-daily-wait" role="status">
-                {t("home.daily_more_loading")}
-              </p>
-              <Skeleton rows={2} />
-            </div>
-          ) : null}
-          {more.kind === "failed" ? (
-            <p className="hm-note" role="status">
-              {t("home.daily_more_failed")}
-            </p>
-          ) : null}
-          {more.kind === "open" && more.detail.source === "computed" ? (
-            <p className="hm-note">{t("home.daily_more_computed")}</p>
-          ) : null}
-          {canExpand ? (
-            <button
-              type="button"
-              className="hm-daily-toggle"
-              aria-expanded={more.kind === "open" || more.kind === "loading"}
-              onClick={toggleMore}
-            >
-              {more.kind === "open" || more.kind === "loading"
-                ? t("home.daily_less")
-                : t("home.daily_more")}
-            </button>
           ) : null}
           {card.focus.length > 0 ? (
             <div className="hm-daily-chips">
@@ -388,6 +411,110 @@ export function Daily() {
         </p>
       ) : null}
     </Card>
+  );
+}
+
+/** One line's analysis, under it: the wait, the failure, or the verdict, the
+ * points and the tables. */
+function AnalysisPanel({ id, panel }: { id: string; panel: Panel | undefined }) {
+  const t = useT();
+  if (!panel) return null;
+  if (panel.kind === "loading") {
+    return (
+      <div className="hm-an" id={id}>
+        <p className="hm-daily-wait" role="status">
+          {t("home.daily_an_loading")}
+        </p>
+        <Skeleton rows={3} />
+      </div>
+    );
+  }
+  if (panel.kind === "failed") {
+    return (
+      <p className="hm-note hm-an-failed" id={id} role="status">
+        {t("home.daily_an_failed")}
+      </p>
+    );
+  }
+  const { body } = panel;
+  return (
+    <div className="hm-an" id={id}>
+      {body.verdict ? (
+        <p className="hm-an-verdict">
+          <b>{t("home.daily_an_verdict")}</b> {body.verdict}
+        </p>
+      ) : null}
+      {body.points.length > 0 ? (
+        <div className="hm-an-points">
+          {body.points.map((point, n) => (
+            <section key={n} className="hm-an-point">
+              <h4 className="hm-an-title">{point.title}</h4>
+              <p>{point.text}</p>
+            </section>
+          ))}
+        </div>
+      ) : null}
+      {body.tables.length > 0 ? (
+        <div className="hm-an-tables">
+          {body.tables.map((table, n) => (
+            <AnalysisTable key={n} table={table} />
+          ))}
+        </div>
+      ) : null}
+      {body.source === "computed" ? (
+        <p className="hm-note">{t("home.daily_an_computed")}</p>
+      ) : null}
+    </div>
+  );
+}
+
+/** A computed table under an analysis. Every symbol is a ticker cell — logo
+ * and link — with the company's name beside it. */
+function AnalysisTable({ table }: { table: DailyTable }) {
+  return (
+    <figure className="hm-an-table">
+      <figcaption className="hm-an-caption">{table.title}</figcaption>
+      <div className="hm-an-scroll">
+        <table className="hm-table">
+          <thead>
+            <tr>
+              {table.columns.map((column, n) => (
+                <th key={n} scope="col" className={n ? "hm-num" : undefined}>
+                  {column}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row, n) => (
+              <tr key={n} className={row.highlight ? "hm-an-hl" : undefined}>
+                <td className="hm-an-name">
+                  {row.ticker ? (
+                    <span className="hm-an-who">
+                      <TickerCell ticker={row.ticker} name={false} />
+                      {row.label ? (
+                        <span className="hm-an-label">{row.label}</span>
+                      ) : null}
+                    </span>
+                  ) : (
+                    row.label
+                  )}
+                </td>
+                {row.cells.map((cell, m) => {
+                  const sign = tone(cell);
+                  return (
+                    <td key={m} className={sign ? `hm-num hm-an-${sign}` : "hm-num"}>
+                      {cell}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {table.note ? <p className="hm-note">{table.note}</p> : null}
+    </figure>
   );
 }
 

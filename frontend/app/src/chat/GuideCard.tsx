@@ -15,11 +15,13 @@
  * Next would spend the walkthrough reopening it.
  */
 
+import { useState } from "react";
 import { useT } from "../shell/i18n";
 import { canonical } from "../shell/pages";
 import { useRoute } from "../shell/router";
 import { landing } from "../shell/Tour";
 import type { GuideState, GuideStep } from "./guide";
+import { Status } from "../ui/Status";
 
 const phone = () =>
   typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 640px)").matches;
@@ -62,6 +64,9 @@ export function GuideCard({
   const last = guide.index >= guide.of;
   const reachable = step.path !== null || Object.keys(step.session).length > 0;
   const visit = useVisit(onLeave);
+  // The next step is a server write and a re-read of the thread; the button
+  // waits, and says so, rather than taking a second press for a second step.
+  const [moving, setMoving] = useState(false);
 
   return (
     <div className="ag-guide">
@@ -85,9 +90,15 @@ export function GuideCard({
           <button
             type="button"
             className="ag-chat-btn ag-chat-btn-on"
+            disabled={moving}
             onClick={async () => {
-              const next = await onNext();
-              if (next.step && !phone()) visit(next.step);
+              setMoving(true);
+              try {
+                const next = await onNext();
+                if (next.step && !phone()) visit(next.step);
+              } finally {
+                setMoving(false);
+              }
             }}
           >
             {t(
@@ -105,6 +116,7 @@ export function GuideCard({
           </button>
         )}
       </div>
+      {moving && <Status label={t("common.loading")} />}
     </div>
   );
 }

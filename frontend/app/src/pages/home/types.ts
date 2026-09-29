@@ -29,14 +29,14 @@ export type DailyCard = {
   pending: boolean;
   /**
    * The lines, each with the trigger it is about — the text of `bullets`,
-   * keyed so "see more" can put a paragraph under each. Empty on a card
-   * stored before keys existed.
+   * keyed so each can open its own analysis. Empty on a card stored before
+   * keys existed.
    */
   items: DailyItem[];
   /** A computed stand-in the server may still replace with a written card. */
   upgradable: boolean;
-  /** Its "see more" paragraphs are already written (reading them is free). */
-  detail_ready: boolean;
+  /** Keys of the lines whose analysis is already written (reading it is free). */
+  analysed: string[];
 };
 
 export type DailyItem = {
@@ -47,12 +47,39 @@ export type DailyItem = {
   tickers: string[];
 };
 
-/** `POST /daily/detail` — the paragraph behind each line of the card. */
-export type DailyDetail = {
+/**
+ * `POST /daily/analysis?key=` — the comparison behind one line of the card.
+ * The prose is audited against the evidence the server fetched; the tables
+ * are computed from that same evidence, cells already formatted in the card's
+ * language.
+ */
+export type DailyAnalysis = {
+  key: string;
   day: string | null;
   /** llm | computed — computed when no model answered. */
   source: string | null;
-  details: { key: string; text: string }[];
+  verdict: string;
+  points: { title: string; text: string }[];
+  tables: DailyTable[];
+  as_of: string | null;
+};
+
+export type DailyTable = {
+  title: string;
+  /** Headers, the name column first — one more than each row's cells. */
+  columns: string[];
+  rows: DailyRow[];
+  note: string;
+};
+
+type DailyRow = {
+  /** Drawn as a ticker cell (logo + link); null for a label-only row. */
+  ticker: string | null;
+  /** The name beside the ticker, or the row's whole name when it has none. */
+  label: string;
+  cells: string[];
+  /** The row the analysis is about. */
+  highlight: boolean;
 };
 
 type Mover = {

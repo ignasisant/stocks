@@ -2329,7 +2329,7 @@ class DailyCard(BaseModel):
         default_factory=list,
         description=(
             "The card's lines, each with the trigger it is about — the same "
-            "text as `bullets`, keyed so `POST /daily/detail` can expand each "
+            "text as `bullets`, keyed so `POST /daily/analysis` can open each "
             "one. A card stored before keys existed has none; read `bullets`."
         ),
     )
@@ -2341,35 +2341,70 @@ class DailyCard(BaseModel):
             "card stands meanwhile (`fresh` stays true)."
         ),
     )
-    detail_ready: bool = Field(
-        default=False,
+    analysed: list[str] = Field(
+        default_factory=list,
         description=(
-            "Its 'see more' paragraphs are already written: `POST "
-            "/daily/detail` returns them without spending anything."
+            "Keys of the lines whose analysis is already written: `POST "
+            "/daily/analysis` returns it without spending anything."
         ),
     )
 
 
-class DailyDetailText(BaseModel):
-    key: str
+class DailyAnalysisPoint(BaseModel):
+    title: str
     text: str
 
 
-class DailyDetail(BaseModel):
-    """The paragraph behind each line of today's card — its "see more".
+class DailyAnalysisRow(BaseModel):
+    ticker: str | None = Field(
+        default=None,
+        description="The row's symbol, drawn as a ticker cell; null for a label row.",
+    )
+    label: str = Field(
+        default="",
+        description="The row's name when it has no ticker, or a note beside it.",
+    )
+    cells: list[str] = Field(
+        default_factory=list,
+        description="The values, formatted in the card's language, one per column.",
+    )
+    highlight: bool = Field(
+        default=False, description="The row the analysis is about."
+    )
 
-    Written on the first request and stored with the card; the card's own
-    figures, plus what the detail fetched for a print (the quarter's revenue,
-    the company's press release) or a rate decision (the rate path), are the
-    only figures it may quote.
+
+class DailyAnalysisTable(BaseModel):
+    title: str
+    columns: list[str] = Field(
+        description="Headers, the name column first — one more than each row's cells."
+    )
+    rows: list[DailyAnalysisRow] = Field(default_factory=list)
+    note: str = ""
+
+
+class DailyAnalysis(BaseModel):
+    """The analysis behind one line of today's card.
+
+    Written on the first request for that line and stored with the card. The
+    figures come from what the app fetched for it — the company against its
+    peers, its sector's ETF and the index, its business figures and the
+    analysts' consensus, the tax arithmetic of a sale, the month's
+    attribution — and every figure the prose quotes was checked against
+    those. The tables are computed, never written.
     """
 
+    key: str
     day: str | None = None
     source: str | None = Field(
         default=None,
         description="llm | computed — computed when no model answered.",
     )
-    details: list[DailyDetailText] = Field(default_factory=list)
+    verdict: str = ""
+    points: list[DailyAnalysisPoint] = Field(default_factory=list)
+    tables: list[DailyAnalysisTable] = Field(default_factory=list)
+    as_of: str | None = Field(
+        default=None, description="The day the evidence was read for."
+    )
 
 
 class Mover(BaseModel):

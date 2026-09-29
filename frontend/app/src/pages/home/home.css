@@ -273,26 +273,9 @@
   line-height: 1.45;
 }
 
-/* "See more": the paragraph behind a line, under it. Capped at a reading
-   width — this is the one part of the card that is prose, and a paragraph run
-   across a full-width desktop card is one nobody finishes. */
-.hm-daily-more {
-  max-width: 72ch;
-  margin: 0.25rem 0 0.45rem;
-  color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-sm, 12px);
-  line-height: 1.6;
-}
-
-.hm-daily-more-wait {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-/* A text control, not a third button: it opens the card, it does not act. */
+/* A text control after its line, not a button beside the card's two: it
+   opens the line, it does not act. */
 .hm-daily-toggle {
-  align-self: flex-start;
   padding: 0;
   border: 0;
   background: none;
@@ -322,10 +305,140 @@
 }
 
 @container ag-main (max-width: 38rem) {
-  /* The DS 44px touch target, without growing the text. */
+  /* The DS 44px touch target, without growing the text — on its own row
+     under the line, where a thumb can find it. */
   .hm-daily-toggle {
+    display: block;
     min-height: 44px;
   }
+}
+
+/* One line's analysis, under it: a panel sunk into the card so it reads as
+   belonging to the line above and not as the card's next section. */
+.hm-an {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin: 0.35rem 0 0.6rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  background: var(--ag-surface-page);
+  min-width: 0;
+}
+
+.hm-an-failed {
+  margin: 0.25rem 0 0.45rem;
+}
+
+/* Prose is capped at a reading width; the tables below it are not. */
+.hm-an-verdict {
+  max-width: 72ch;
+  margin: 0;
+  font-size: var(--ag-fs-base, 14px);
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.hm-an-verdict b {
+  margin-right: 0.3em;
+  color: var(--ag-brand-accent);
+  font-weight: 600;
+}
+
+.hm-an-points {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem 1.5rem;
+}
+
+.hm-an-title {
+  margin: 0 0 0.2rem;
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-sm, 12px);
+  font-weight: 600;
+}
+
+.hm-an-point p {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm, 12px);
+  line-height: 1.6;
+}
+
+.hm-an-tables {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.85rem 1.5rem;
+}
+
+/* Side by side once there is room for two points, and for two tables, a row;
+   by the page's own width, so an open chat drawer folds them back. */
+@container ag-main (min-width: 56rem) {
+  .hm-an-points {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container ag-main (min-width: 80rem) {
+  .hm-an-tables {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.hm-an-table {
+  min-width: 0;
+  margin: 0;
+}
+
+.hm-an-caption {
+  margin-bottom: 0.25rem;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 11px);
+  font-weight: 600;
+}
+
+/* Wider than a phone: the table scrolls inside its own box and the page
+   never does. */
+.hm-an-scroll {
+  overflow-x: auto;
+}
+
+.hm-an-scroll .hm-table td,
+.hm-an-scroll .hm-table th {
+  white-space: nowrap;
+}
+
+.hm-an-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  max-width: 24ch;
+  min-width: 0;
+  vertical-align: middle;
+}
+
+.hm-an-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 11px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hm-an-hl td {
+  background: var(--ag-surface-hover);
+  font-weight: 600;
+}
+
+.hm-an-up {
+  color: var(--ag-up);
+}
+
+.hm-an-down {
+  color: var(--ag-down);
 }
 
 .hm-daily-chips {

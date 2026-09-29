@@ -14,9 +14,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { Attachment } from "./Attachment";
 import { Composer } from "./Composer";
 import { Turn } from "./Turn";
-import type { ChatState, Turn as Stored } from "./types";
+import type { ChatState, Preview, Turn as Stored } from "./types";
 
 beforeEach(() => {
   vi.stubGlobal("window", {
@@ -112,5 +113,64 @@ describe("the composer's button", () => {
     expect(out).toContain('aria-label="chat.stop"');
     expect(out).not.toContain('aria-label="chat.send"');
     expect(out).not.toContain('type="submit"');
+  });
+});
+
+const preview: Preview = {
+  filename: "U1_20260914.csv",
+  label: "Interactive Brokers",
+  platform: "ibkr",
+  kind: "trades",
+  unavailable: false,
+  broker: "ibkr",
+  needs_broker: false,
+  brokers: [{ key: "ibkr", label: "IBKR" }],
+  fresh: [
+    {
+      date: "2026-09-14",
+      ticker: "ASML.AS",
+      action: "buy",
+      quantity: 1,
+      price: 633.9,
+      currency: "EUR",
+      fee: 0,
+      note: "",
+      why: "",
+    },
+  ],
+  duplicates: [],
+  flagged: [],
+  rejected: [],
+  skipped: [],
+  note: "",
+  message: { role: "assistant", content: "", action: "import" },
+  conversation: null,
+};
+
+const drawCard = (busy: boolean, importing?: boolean) =>
+  renderToStaticMarkup(
+    <Attachment
+      preview={preview}
+      busy={busy}
+      importing={importing}
+      onImport={() => {}}
+      onDiscard={() => {}}
+    />,
+  );
+
+describe("the import card", () => {
+  it("says it is importing while its rows are written, not only greys out", () => {
+    const out = drawCard(true, true);
+    expect(out).toContain('role="status"');
+    expect(out).toContain("chat.work_importing");
+  });
+
+  it("draws no status while it waits on the reader", () => {
+    expect(drawCard(false)).not.toContain('role="status"');
+  });
+
+  it("draws no status of its own while another file is being read", () => {
+    // The panel says "reading" at the bottom; this card is not the one moving.
+    expect(drawCard(true, false)).not.toContain("chat.work_importing");
   });
 });

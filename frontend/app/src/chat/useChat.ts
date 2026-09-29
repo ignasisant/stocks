@@ -67,6 +67,11 @@ const unfiled = (turn: Turn | undefined): boolean =>
 
 export type Chat = ReturnType<typeof useChat>;
 
+/** A statement being parsed into a card, or the card's rows being written. */
+export type Work =
+  | { kind: "reading"; filename: string }
+  | { kind: "importing"; filename: string; n: number };
+
 export function useChat(live: boolean) {
   const lang = useLang();
   // Where the reader is, told to the model with every question — the
@@ -94,7 +99,13 @@ export function useChat(live: boolean) {
   // thing a closed Streamlit session does, and for the same reason (the
   // uploaded bytes are never kept anywhere).
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [reading, setReading] = useState(false);
+  // Which of the two waits a statement is in, and on which file — the drawer
+  // says so while it lasts, because the clip going grey is not an answer.
+  const [work, setWork] = useState<Work | null>(null);
+  const reading = work !== null;
+  // A thread being fetched: its turns are cleared first, and without this the
+  // gap between the two reads as an empty thread, starters and all.
+  const [opening, setOpening] = useState(false);
   // Bumped by every batch this drawer writes. The broker-move repair below
   // the thread is a question about the ledger, and the ledger just changed.
   const [imported, setImported] = useState(0);
@@ -367,10 +378,15 @@ export function useChat(live: boolean) {
   const open = useCallback(async (cid: string) => {
     setActiveId(cid);
     setTurns([]);
-    await editThread(cid, { active: true });
-    const thread = await readThread(cid);
-    setTurns(thread.messages.map((m) => ({ ...m })));
-    setThreads((list) => (list ?? []).map((c) => ({ ...c, active: c.id === cid })));
+    setOpening(true);
+    try {
+      await editThread(cid, { active: true });
+      const thread = await readThread(cid);
+      setTurns(thread.messages.map((m) => ({ ...m })));
+      setThreads((list) => (list ?? []).map((c) => ({ ...c, active: c.id === cid })));
+    } finally {
+      setOpening(false);
+    }
   }, []);
 
   const create = useCallback(async () => {
@@ -413,7 +429,7 @@ export function useChat(live: boolean) {
   const attach = useCallback(
     async (file: File) => {
       if (reading || busy) return;
-      setReading(true);
+      setWork({ kind: "reading", filename: file.name });
       try {
         const found = await readAttachment({
           filename: file.name,
@@ -442,7 +458,7 @@ export function useChat(live: boolean) {
           },
         ]);
       } finally {
-        setReading(false);
+        setWork(null);
       }
     },
     [activeId, busy, lang, reading, refresh],
@@ -451,8 +467,12 @@ export function useChat(live: boolean) {
   /** Write the rows on the card, plus whichever duplicates were opted in. */
   const commitImport = useCallback(
     async (broker: string, duplicates: ImportRow[] = []) => {
-      if (!preview) return;
-      setReading(true);
+      if (!preview || reading) return;
+      setWork({
+        kind: "importing",
+        filename: preview.filename,
+        n: preview.fresh.length + duplicates.length,
+      });
       try {
         const done = await commitAttachment({
           filename: preview.filename,
@@ -480,10 +500,10 @@ export function useChat(live: boolean) {
           },
         ]);
       } finally {
-        setReading(false);
+        setWork(null);
       }
     },
-    [activeId, lang, preview, refresh],
+    [activeId, lang, preview, reading, refresh],
   );
 
   /** Re-read one thread in place — no blank frame between the two versions. */
@@ -575,6 +595,8 @@ export function useChat(live: boolean) {
     apply,
     preview,
     reading,
+    work,
+    opening,
     imported,
     ready,
     guide,

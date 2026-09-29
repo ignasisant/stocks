@@ -7,21 +7,24 @@
  * bill nobody owes, and a holding period restarted for no reason.
  * `transfers.propose` finds the pairs from the one thing a sale and a
  * repurchase could not produce — an arrival carrying the basis the shares
- * already had — which is why the table below leads on that number.
+ * already had — which is why every card below ends on that number.
  *
  * Unlike the split scan there is no button: this reads the ledger and, at most,
  * one ISIN lookup for a pair that already matches on everything else, so the
  * question is answered on every visit exactly as the Streamlit page answers it.
- * A book with nothing to repair says nothing at all — including while the
- * answer is still coming, because nobody asked for it.
+ * A book with nothing to repair says nothing at all.
+ *
+ * Two ways in. `Moves` asks the question itself — the chat drawer offers it
+ * after a statement it imported. `MoveList` is handed the answer — the Import
+ * page asks once for its rail card and for the phone banner that points to it.
  */
 
 import { useState } from "react";
 import { ApiError } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { TickerCell } from "../../shell/tickers";
-import { Responsive, StackCards } from "../../ui/Rows";
 import { useApi } from "../../shell/useApi";
+import { Status } from "../../ui/Status";
 import { applyMoves, scanMoves } from "./api";
 import type { Move } from "./api";
 import { moveKey, useSelection } from "./repairs";
@@ -41,34 +44,64 @@ export function Moves({
   nonce: number;
   onApplied: () => void;
 }) {
-  const t = useT();
-  const [applied, setApplied] = useState(0);
   const [again, setAgain] = useState(0);
   const scan = useApi(
     async () => (enabled ? await scanMoves() : { moves: [] }),
     [enabled, nonce, again],
   );
-  const moves = scan.state === "loaded" ? scan.data.moves : [];
+  const ask = () => setAgain((count) => count + 1);
+  return (
+    <MoveList
+      moves={scan.state === "loaded" ? scan.data.moves : []}
+      onApplied={() => {
+        // Its own re-scan: the caller's counter need not move when a move is
+        // booked, and the proposal on screen would outlive the rows it named.
+        ask();
+        onApplied();
+      }}
+      onStale={ask}
+    />
+  );
+}
+
+export function MoveList({
+  moves,
+  onApplied,
+  onStale,
+}: {
+  /** What the scan proposes for the ledger as it stands. */
+  moves: Move[];
+  onApplied: () => void;
+  /** The proposal on screen is not this ledger's any more: ask again. */
+  onStale: () => void;
+}) {
+  const t = useT();
+  const vocab = useVocabulary();
+  const [applied, setApplied] = useState(0);
 
   if (applied === 0 && moves.length === 0) return null;
   return (
-    <section className="im-repair">
+    <div className="im-repair">
+      <div className="im-repair-head">
+        <h3 className="im-h3">{t("import.moves_title")}</h3>
+      </div>
       {applied > 0 && (
-        <p className="im-ok">{t("import.toast_moves_applied", { n: applied })}</p>
+        <p className="im-ok">
+          {t("import.toast_moves_applied", { n: vocab.num(applied, 0) })}
+        </p>
       )}
       {moves.length > 0 && (
         <Found
           moves={moves}
           onApplied={(n) => {
-            // No local re-scan: recording a move writes, so the page bumps
-            // `nonce` and this query re-runs once rather than twice.
+            // No re-scan here: whoever asked the question asks it again.
             setApplied(n);
             onApplied();
           }}
-          onStale={() => setAgain((count) => count + 1)}
+          onStale={onStale}
         />
       )}
-    </section>
+    </div>
   );
 }
 
@@ -93,9 +126,7 @@ function Found({
   const gain = (move: Move) =>
     move.phantom_gain === null
       ? NONE
-      : t("import.move_gain", {
-          amount: `${vocab.num(move.phantom_gain, 2)} ${move.currency}`,
-        });
+      : `${move.phantom_gain > 0 ? "+" : ""}${vocab.num(move.phantom_gain, 2)} ${move.currency}`;
 
   /** The evidence itself: the cost that arrived, against the price it was sold
    *  at. A real sale and repurchase would report the repurchase price. */
@@ -127,103 +158,59 @@ function Found({
 
   return (
     <>
-      <p className="im-warn">{t("import.moves_found", { n: moves.length })}</p>
-      <Responsive
-        wide={
-          <div className="im-scroll">
-            <table className="im-table">
-              <thead>
-                <tr>
-                  <th className="im-pick" scope="col" />
-                  <th scope="col">{vocab.column("ticker")}</th>
-                  <th className="im-num" scope="col">
-                    {vocab.column("quantity")}
-                  </th>
-                  <th scope="col">{vocab.column("from")}</th>
-                  <th scope="col">{vocab.column("to")}</th>
-                  <th scope="col">{vocab.column("date")}</th>
-                  <th scope="col">{vocab.column("gain")}</th>
-                  {/* Never folded away on a phone, unlike the trailing columns of
-                  the preview tables: this column is the evidence, and a reader
-                  is being asked to believe it. */}
-                  <th scope="col">{vocab.column("basis")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {moves.map((move) => {
-                  const key = moveKey(move);
-                  return (
-                    <tr key={key}>
-                      <td className="im-pick">
-                        <input
-                          aria-label={`${move.ticker_in} ${move.date_out}`}
-                          checked={on(key)}
-                          disabled={busy}
-                          onChange={() => toggle(key)}
-                          type="checkbox"
-                        />
-                      </td>
-                      <td>
-                        {/* The receiving broker's label, which is the one that
-                        survives: accepting renames the departure rows to it. */}
-                        <TickerCell ticker={move.ticker_in} />
-                      </td>
-                      <td className="im-num">
-                        {move.quantity === null ? NONE : vocab.num(move.quantity, 4)}
-                      </td>
-                      <td>{move.broker_out}</td>
-                      <td>{move.broker_in}</td>
-                      <td>{move.date_out}</td>
-                      <td>{gain(move)}</td>
-                      <td className="im-issues">{basis(move)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        }
-        narrow={
-          <StackCards
-            rows={moves}
-            rowKey={moveKey}
-            title={(move) => (
-              <span className="im-card-head">
-                <input
-                  aria-label={`${move.ticker_in} ${move.date_out}`}
-                  checked={on(moveKey(move))}
-                  disabled={busy}
-                  onChange={() => toggle(moveKey(move))}
-                  type="checkbox"
-                />
-                <TickerCell ticker={move.ticker_in} />
+      <p className="im-fine">{t("import.moves_note")}</p>
+      <div className="im-picks">
+        {moves.map((move) => {
+          const key = moveKey(move);
+          return (
+            <label className={on(key) ? "im-pick im-pick-on" : "im-pick"} key={key}>
+              <input
+                aria-label={`${move.ticker_in} ${move.date_out}`}
+                checked={on(key)}
+                className="im-pick-box"
+                disabled={busy}
+                onChange={() => toggle(key)}
+                type="checkbox"
+              />
+              <span className="im-pick-body">
+                <span className="im-pick-top">
+                  {/* The receiving broker's label, which is the one that
+                      survives: accepting renames the departure rows to it. */}
+                  <TickerCell name={false} ticker={move.ticker_in} />
+                  <span className="im-pick-q">
+                    × {move.quantity === null ? NONE : vocab.num(move.quantity, 4)}
+                  </span>
+                  <span className="im-pick-date">{move.date_out}</span>
+                </span>
+                <span className="im-pick-line">
+                  {move.broker_out} <span className="im-faint">→</span> {move.broker_in}
+                  {" · "}
+                  {vocab.column("gain")} <span className="im-loss">{gain(move)}</span>
+                </span>
+                {/* Never folded away, unlike a table's trailing columns: this
+                    line is the evidence, and a reader is being asked to
+                    believe it. */}
+                <span className="im-pick-proof">{basis(move)}</span>
               </span>
-            )}
-            lines={[
-              {
-                label: vocab.column("quantity"),
-                cell: (move) =>
-                  move.quantity === null ? NONE : vocab.num(move.quantity, 4),
-              },
-              { label: vocab.column("from"), cell: (move) => move.broker_out },
-              { label: vocab.column("to"), cell: (move) => move.broker_in },
-              { label: vocab.column("date"), cell: (move) => move.date_out },
-              { label: vocab.column("gain"), cell: gain },
-              { label: vocab.column("basis"), cell: basis },
-            ]}
-          />
-        }
-      />
+            </label>
+          );
+        })}
+      </div>
       {failed && <p className="im-bad">{t("common.failed")}</p>}
       <button
-        className="ag-btn im-primary"
+        className="im-btn im-btn-primary im-btn-block"
         disabled={busy || chosen.length === 0}
         onClick={write}
         type="button"
       >
-        {t("import.apply_moves", { n: chosen.length })}
+        {chosen.length > 0
+          ? t("import.apply_moves", { n: vocab.num(chosen.length, 0) })
+          : t("import.pick_one")}
       </button>
-      <p className="im-help">{t("import.apply_moves_help")}</p>
+      {busy && (
+        <Status label={t("import.work_moves", { n: vocab.num(chosen.length, 0) })} />
+      )}
+      <p className="im-fine im-faint">{t("import.apply_moves_help")}</p>
     </>
   );
 }

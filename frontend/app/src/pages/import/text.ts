@@ -53,6 +53,37 @@ export function useVocabulary() {
       maximumFractionDigits: places,
     }).format(value);
 
+  /**
+   * A sentence about `n` things, `n` printed the way the page prints counts.
+   *
+   * Spanish bends for one ("1 fila", "2 filas") where the `(s)` the older keys
+   * carry reads as a form nobody fills in, so a key can ship a `_one` twin and
+   * this picks it. A key without one reads the same either way.
+   */
+  const tn = (key: string, n: number, params: Record<string, string | number> = {}) => {
+    const one = `${key}_one`;
+    const pick = n === 1 && t(one) !== one ? one : key;
+    return t(pick, { ...params, n: num(n, 0) });
+  };
+
+  /**
+   * An amount in whole units of `currency`, as the Portfolio tiles print it.
+   * A code `Intl` rejects prints beside the number rather than throwing inside
+   * render, which would blank the page.
+   */
+  const money = (value: number, currency: string) => {
+    const shape = { minimumFractionDigits: 0, maximumFractionDigits: 0 };
+    try {
+      return new Intl.NumberFormat(lang, {
+        style: "currency",
+        currency,
+        ...shape,
+      }).format(value);
+    } catch {
+      return `${new Intl.NumberFormat(lang, shape).format(value)} ${currency}`;
+    }
+  };
+
   /** An ISO instant as the page has always printed it: `2026-09-18 14:03 UTC`. */
   const when = (iso: string) => {
     const at = new Date(iso);
@@ -64,5 +95,5 @@ export function useVocabulary() {
     );
   };
 
-  return { action, column, issue, issues, num, when };
+  return { action, column, issue, issues, money, num, tn, when };
 }

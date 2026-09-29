@@ -13,14 +13,23 @@
  * ten seconds ago can be a duplicate now. `expect` carries the preview's digest
  * so a file that changed underneath the reader is refused instead of committed
  * as something nobody ever saw.
+ *
+ * It is drawn as a bar pinned over the tiers — to the top of the screen beside
+ * a wide table, to the bottom on a phone — so the one press the page exists for
+ * never scrolls away. The broker question sits just above it, unpinned. A button that cannot be pressed yet says why underneath;
+ * a disabled control with no reason reads as a broken one.
  */
 
 import { useMemo, useState } from "react";
 import { useT } from "../../shell/i18n";
 import { useAccount } from "../../shell/session";
+import { Status } from "../../ui/Status";
 import { MAX_BYTES, commit } from "./api";
 import type { Platform, Preview, Refusal, Result, Staged } from "./api";
+import { Eyebrow } from "./Card";
 import { names } from "./repairs";
+import { Rich } from "./Rich";
+import { useVocabulary } from "./text";
 import type { WipeChoice } from "./Wipe";
 
 /** `platforms.OTHER` — a real origin, just not one the registry parses. */
@@ -62,6 +71,7 @@ export function CommitPanel({
   onCommitted: (result: Result) => void;
 }) {
   const t = useT();
+  const vocab = useVocabulary();
   const me = useAccount();
   const options = useMemo(() => brands(platforms), [platforms]);
   const [pick, setPick] = useState("");
@@ -69,17 +79,26 @@ export function CommitPanel({
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
 
+  const rows = preview.importable.length;
+  const rejected = preview.rejected.length;
+  const skipped = preview.skipped.length;
+
   // Naming the real broker beats "other", so a typed name wins over the
   // catch-all when both are present.
   const chosen = pick === OTHER ? typed.trim() || OTHER : pick;
   const origin = preview.needs_broker ? chosen : "";
-  const ready =
-    preview.importable.length > 0 &&
-    (!preview.needs_broker || origin !== "") &&
-    // A wipe that is asked for and not confirmed is refused by the route with a
-    // 422; pressing the button to learn that would be a press that might have
-    // emptied the book.
-    (!wipe.on || names(wipe.confirm, me.email ?? ""));
+  // The first thing still missing, in the order a reader would fix them. A
+  // wipe that is asked for and not confirmed is refused by the route with a
+  // 422; pressing the button to learn that would be a press that might have
+  // emptied the book.
+  const missing =
+    rows === 0
+      ? t("import.no_importable")
+      : preview.needs_broker && origin === ""
+        ? t("import.broker_missing")
+        : wipe.on && !names(wipe.confirm, me.email ?? "")
+          ? t("import.commit_needs_email")
+          : null;
 
   const write = async () => {
     setBusy(true);
@@ -96,61 +115,110 @@ export function CommitPanel({
     }
   };
 
+  // What the commit leaves behind, said beside what it writes: the tiers below
+  // are the detail, this is the sentence a reader decides on.
+  const left =
+    rejected > 0 && skipped > 0
+      ? t("import.confirm_left_both", {
+          rejected: vocab.num(rejected, 0),
+          skipped: vocab.num(skipped, 0),
+        })
+      : rejected > 0
+        ? t("import.confirm_left_rejected", { n: vocab.num(rejected, 0) })
+        : skipped > 0
+          ? t("import.confirm_left_skipped", { n: vocab.num(skipped, 0) })
+          : "";
+
   return (
-    <section className="im-commit">
+    <>
+      {/* Above the pinned bar rather than inside it: the question, its field
+          and its help are three lines, and a bar that tall pinned to a phone's
+          foot would cover half the rows it is asking about. */}
       {preview.needs_broker && (
-        <div className="im-field">
+        <div className="im-broker">
           <label className="im-label" htmlFor="im-broker">
             {t("import.broker")}
           </label>
-          <select
-            className="im-input"
-            id="im-broker"
-            onChange={(event) => setPick(event.target.value)}
-            value={pick}
-          >
-            <option value="">{t("import.broker_pick")}</option>
-            {options.map((option) => (
-              <option key={option.key} value={option.key}>
-                {option.label}
-              </option>
-            ))}
-            <option value={OTHER}>{t("import.broker_other")}</option>
-          </select>
-          {pick === OTHER && (
-            <input
-              aria-label={t("import.broker_other")}
+          <div className="im-broker-row">
+            <select
               className="im-input"
-              onChange={(event) => setTyped(event.target.value)}
-              type="text"
-              value={typed}
-            />
-          )}
-          <p className="im-help">{t("import.broker_help")}</p>
+              disabled={busy}
+              id="im-broker"
+              onChange={(event) => setPick(event.target.value)}
+              value={pick}
+            >
+              <option value="">{t("import.broker_pick")}</option>
+              {options.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+              <option value={OTHER}>{t("import.broker_other")}</option>
+            </select>
+            {pick === OTHER && (
+              <input
+                aria-label={t("import.broker_name")}
+                className="im-input"
+                disabled={busy}
+                onChange={(event) => setTyped(event.target.value)}
+                placeholder={t("import.broker_name")}
+                type="text"
+                value={typed}
+              />
+            )}
+          </div>
+          <p className="im-fine">{t("import.broker_help")}</p>
         </div>
       )}
+      <div aria-label={t("import.confirm")} className="im-confirm" role="region">
+        <div className="im-confirm-main">
+          <div className="im-confirm-text">
+            <Eyebrow n={4}>{t("import.confirm")}</Eyebrow>
+            {busy ? (
+              <Status label={vocab.tn("import.work_committing", rows)} />
+            ) : (
+              <>
+                <span className="im-confirm-long">
+                  <Rich text={vocab.tn("import.confirm_rows", rows)} /> {left}
+                </span>
+                <span className="im-confirm-short">
+                  <strong>{vocab.tn("import.rows_count", rows)}</strong>
+                  {rejected > 0 && (
+                    <small>{vocab.tn("import.rejected_left", rejected)}</small>
+                  )}
+                </span>
+              </>
+            )}
+          </div>
+          <button
+            className="im-btn im-btn-primary im-btn-go"
+            disabled={missing !== null || busy}
+            onClick={write}
+            type="button"
+          >
+            <span className="im-confirm-long">{t("import.confirm_button")}</span>
+            <span className="im-confirm-short">{t("import.confirm_short")}</span>
+          </button>
+        </div>
 
-      <button
-        className="ag-btn im-primary"
-        disabled={!ready || busy}
-        onClick={write}
-        type="button"
-      >
-        {t("import.commit_button")}
-      </button>
+        {missing && !busy && <p className="im-line-warn">{missing}</p>}
 
-      {refusal && (
-        <p className="im-bad">
-          {refusal.kind === "changed"
-            ? t("import.file_changed")
-            : refusal.kind === "too_large"
-              ? t("import.file_too_large", {
-                  size: (staged.bytes / (1024 * 1024)).toFixed(1),
-                  cap: MAX_BYTES / (1024 * 1024),
-                })
-              : t("import.commit_failed")}
-        </p>
-      )}
-    </section>
+        {refusal && (
+          <div className="im-line-bad" role="alert">
+            <p>
+              {refusal.kind === "changed"
+                ? t("import.file_changed")
+                : refusal.kind === "too_large"
+                  ? t("import.file_too_large", {
+                      size: (staged.bytes / (1024 * 1024)).toFixed(1),
+                      cap: MAX_BYTES / (1024 * 1024),
+                    })
+                  : t("import.commit_failed")}
+            </p>
+            <p>{t("import.nothing_written")}</p>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

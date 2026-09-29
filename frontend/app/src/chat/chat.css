@@ -346,31 +346,6 @@
   text-decoration: none;
 }
 
-/* The "working" line while the model has not said anything yet. */
-.ag-chat-work {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm);
-}
-
-.ag-chat-work-glyph {
-  animation: ag-chat-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes ag-chat-pulse {
-  50% {
-    opacity: 0.35;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ag-chat-work-glyph {
-    animation: none;
-  }
-}
-
 /* --------------------------------------------------- the answer's markup */
 
 .ag-chat-p {
@@ -1288,17 +1263,6 @@
    drawer, but it is a container and not a control: no ring. */
 .ag-chat-panel:focus {
   outline: none;
-}
-
-/* Read by a screen reader, drawn for nobody: the sentence a `title` only ever
-   shows on hover. */
-.ag-sr {
-  position: absolute;
-  overflow: hidden;
-  width: 1px;
-  height: 1px;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 
 /* ----------------------------------------------------------------- phone */

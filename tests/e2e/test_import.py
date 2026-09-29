@@ -22,12 +22,12 @@ def test_the_example_statement_goes_in_and_comes_back_out(page: Page, sign_in):
     expect(page.get_by_role("heading", level=1)).to_have_text("Import transactions")
 
     page.get_by_role("button", name="Load an example statement").click()
-    commit = page.get_by_role("button", name="Commit to ledger")
+    commit = page.get_by_role("button", name="Confirm into the portfolio")
     expect(commit).to_be_enabled(timeout=15_000)
     commit.click()
 
     receipt = page.get_by_text(
-        re.compile(r"^Imported \d+ transactions\. Ledger now holds \d+\.$")
+        re.compile(r"^Imported \d+; your portfolio now holds \d+\.$")
     )
     expect(receipt).to_be_visible()
     imported = int(re.search(r"Imported (\d+)", receipt.inner_text()).group(1))
@@ -54,6 +54,6 @@ def test_a_guest_meets_the_sign_in_wall_and_no_importer(page: Page):
     """A guest has no book to import into (`guest.py`): the page says so, and
     offers no control that would ask."""
     page.goto("/import")
-    expect(page.get_by_text("Sign in to see your own book.")).to_be_visible()
+    expect(page.get_by_text("Sign in to import your statements.")).to_be_visible()
     expect(page.get_by_role("button", name="Load an example statement")).to_have_count(0)
-    expect(page.get_by_role("button", name="Commit to ledger")).to_have_count(0)
+    expect(page.get_by_role("button", name="Confirm into the portfolio")).to_have_count(0)

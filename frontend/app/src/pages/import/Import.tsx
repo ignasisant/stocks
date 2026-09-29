@@ -8,11 +8,17 @@
  * report the rows, and the commit's own answer is what gets shown afterwards,
  * not the preview's prediction of it.
  *
- * Beside the import sit two repairs, because a statement cannot carry what they
- * fix: splits the book never heard about (`Splits`, on request — it prices every
- * holding against Yahoo) and shares that only changed broker but read as a sale
- * (`Moves`, on every visit — it reads the ledger alone). Both propose; neither
- * writes until the reader names what they believe.
+ * The layout is the canvas's ("Aguait Importar Refactor", 1a–1c): the task in
+ * the wide column, in the order it is done, and the book beside it in a rail —
+ * what it holds now, the repairs it is waiting on, and the last batch with its
+ * undo. The rail is read when it is needed and never pushes the task down;
+ * when the page is too narrow for both it drops under the task and folds.
+ *
+ * The two repairs sit in that rail because a statement cannot carry what they
+ * fix: splits the book never heard about (`Splits`, on request — it prices
+ * every holding against Yahoo) and shares that only changed broker but read as
+ * a sale (`Moves`, on every visit — it reads the ledger alone). Both propose;
+ * neither writes until the reader names what they believe.
  *
  * The example statement is here for the same reason it is there: a reader with
  * nothing to import can still see the real thing happen, because its bytes go
@@ -23,26 +29,29 @@ import { useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FocusEvent } from "react";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
-import { useRoute } from "../../shell/router";
+import { Link, useRoute } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
+import { Status } from "../../ui/Status";
 import type { Query } from "../../shell/useApi";
 import {
   MAX_BYTES,
   asBase64,
   book,
-  dismissRecord,
   lastImport,
   listPlatforms,
   preview as previewOf,
-  undoLast,
+  scanMoves,
 } from "./api";
-import type { Book, LastImport, Platform, Result, Staged } from "./api";
+import type { Book, Platform, Result, Staged } from "./api";
+import { Eyebrow, jump } from "./Card";
 import { CommitPanel } from "./Commit";
+import { Glyph } from "./Glyph";
+import { LastBatch } from "./Last";
 import { Ledger } from "./Ledger";
-import { Moves } from "./Moves";
+import { Repairs } from "./RepairCard";
 import { Rich } from "./Rich";
 import { Sample } from "./Sample";
-import { Splits } from "./Splits";
+import { Source } from "./Source";
 import { RowTable } from "./Tables";
 import { Tiers } from "./Tiers";
 import { NO_WIPE, Wipe } from "./Wipe";
@@ -53,8 +62,15 @@ import { SignInWall } from "../../shell/guest";
 import { useGuest } from "../../shell/session";
 import "./import.css";
 
+/** The four steps the canvas numbers, in the order the page is worked. */
+const STEPS = [
+  "import.step_platform",
+  "import.step_statement",
+  "import.step_review",
+  "import.step_confirm",
+];
+
 export default function Page() {
-  const t = useT();
   // In the rail and refusing inside, as Streamlit does and for the reason
   // given on Profile. A guest has no book to import into and the shared demo
   // one is not it, so `/v1/import/*` is shut to them at the API too — the wall
@@ -64,38 +80,102 @@ export default function Page() {
     () => (guest ? Promise.resolve({ platforms: [] }) : listPlatforms()),
     [guest],
   );
+  if (guest) {
+    return (
+      <div className="im-page">
+        <Head />
+        <SignInWall text="import.guest" />
+      </div>
+    );
+  }
   return (
     <div className="im-page">
-      <h1 className="im-h1">{t("import.title")}</h1>
-      <p className="im-lede">{t("import.intro_caption")}</p>
-      {guest ? <SignInWall text="common.sign_in" /> : null}
-      <Loaded query={platforms} skeleton={<Skeleton rows={6} />}>
+      <Loaded
+        query={platforms}
+        skeleton={
+          <>
+            <Head />
+            <Skeleton rows={6} />
+          </>
+        }
+      >
         {(data) =>
-          data.platforms.length > 0 ? <Importer platforms={data.platforms} /> : null
+          data.platforms.length > 0 ? <Importer platforms={data.platforms} /> : <Head />
         }
       </Loaded>
     </div>
   );
 }
 
+/**
+ * The title, the one promise the page makes, and where the reader is in it.
+ * `at` is the step being worked; five means all four are done.
+ */
+function Head({ at }: { at?: number }) {
+  const t = useT();
+  const current = at === undefined ? null : Math.min(at, STEPS.length);
+  return (
+    <header className="im-head">
+      <h1 className="im-h1">{t("import.title")}</h1>
+      <p className="im-lede">
+        <Rich text={t("import.lede")} />
+      </p>
+      {at !== undefined && current !== null && (
+        <>
+          <ol aria-label={t("import.steps_label")} className="im-steps">
+            {STEPS.map((key, index) => {
+              const n = index + 1;
+              const state = n < at ? "done" : n === at ? "cur" : "next";
+              return (
+                <li
+                  aria-current={state === "cur" ? "step" : undefined}
+                  className={`im-step im-step-${state}`}
+                  key={key}
+                >
+                  <span aria-hidden="true" className="im-step-n">
+                    {state === "done" ? "✓" : n}
+                  </span>
+                  {t(key)}
+                </li>
+              );
+            })}
+          </ol>
+          {/* A phone has no row for four pills: the one being worked, counted.
+              Hidden from assistive tech, which already has the list above. */}
+          <p aria-hidden="true" className="im-steps-short">
+            {t("import.step_of", {
+              n: current,
+              total: STEPS.length,
+              label: t(STEPS[current - 1]!),
+            })}
+          </p>
+        </>
+      )}
+    </header>
+  );
+}
+
 function Importer({ platforms }: { platforms: Platform[] }) {
   const t = useT();
+  const vocab = useVocabulary();
   const { params, setParams } = useRoute();
   const platform =
     platforms.find((entry) => entry.key === params.get("platform")) ?? platforms[0]!;
 
   const [staged, setStaged] = useState<Staged | null>(null);
   const [oversize, setOversize] = useState<number | null>(null);
-  // A pasted format this platform has no parser for, by its extension.
+  // A pasted or dropped format this platform has no parser for, by its extension.
   const [wrongType, setWrongType] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
-  // A file held over the drop zone, which lights it up as a target.
   const [dragging, setDragging] = useState(false);
   const [wipe, setWipe] = useState<WipeChoice>(NO_WIPE);
-  // Bumped by anything that writes: the ledger count, the last-import record
-  // and both repairs are stale the moment a commit, an undo or a wipe lands.
+  // Bumped by anything that writes: the ledger count, the last-import record,
+  // both repairs and the preview itself are stale the moment a commit, an
+  // undo, a repair or a wipe lands.
   const [writes, setWrites] = useState(0);
   const wrote = () => setWrites((n) => n + 1);
+  // A move proposal the server no longer makes (409): ask again.
+  const [again, setAgain] = useState(0);
 
   const file = useRef<HTMLInputElement>(null);
   const pasted = useRef("");
@@ -105,10 +185,12 @@ function Importer({ platforms }: { platforms: Platform[] }) {
   // A statement must never be parsed by another platform's parser, so the
   // staged file is part of this query's identity and not just its input. The
   // wipe is too: with it set, validation runs against an empty ledger, and a
-  // preview taken without it is a preview of a different import.
+  // preview taken without it is a preview of a different import. And so is
+  // every write — the rail can undo a batch or book a transfer while a preview
+  // is on screen, and the preview is validated against the ledger it moved.
   const preview = useApi(
     async () => (staged ? await previewOf(platform.key, staged, wipe.on) : null),
-    [platform.key, staged, wipe.on],
+    [platform.key, staged, wipe.on, writes],
   );
 
   const held = ledger.state === "loaded" ? ledger.data : null;
@@ -117,7 +199,17 @@ function Importer({ platforms }: { platforms: Platform[] }) {
   // and `_real_rows` leaves them out of both scans for the same reason.
   const real = held ? (held.complete ? held.total - held.demo : held.total) : 0;
   const nothingReal = held !== null && held.complete && real === 0;
-  const noRecord = last.state === "loaded" && !last.data.filename;
+  const record = last.state === "loaded" ? last.data : null;
+  const hasLast = !!record?.filename;
+  const empty = !staged && !result && nothingReal && record !== null && !hasLast;
+
+  // Asked here rather than inside the rail card, because the phone banner at
+  // the top of the task needs the same count.
+  const moveScan = useApi(
+    async () => (real > 0 ? await scanMoves() : { moves: [] }),
+    [real > 0, writes, again],
+  );
+  const moves = moveScan.state === "loaded" ? moveScan.data.moves : [];
 
   const stage = async (
     name: string,
@@ -169,8 +261,6 @@ function Importer({ platforms }: { platforms: Platform[] }) {
     void stage(dropped.name, dropped);
   };
 
-  // No button: a text area commits on blur, which is the same moment the
-  // Streamlit widget hands its value over.
   const onPaste = (event: FocusEvent<HTMLTextAreaElement>) => {
     const text = event.target.value.trim();
     if (!text || text === pasted.current) return;
@@ -204,180 +294,87 @@ function Importer({ platforms }: { platforms: Platform[] }) {
     clear();
   };
 
+  // Everything that stopped the statement being read, as the zone's own
+  // lines: what went wrong, and what to do about it.
+  const types = platform.file_types.map((kind) => kind.toUpperCase()).join(", ");
+  const errors: string[] = [];
+  if (oversize !== null)
+    errors.push(
+      t("import.file_too_large", {
+        size: (oversize / (1024 * 1024)).toFixed(1),
+        cap: MAX_BYTES / (1024 * 1024),
+      }),
+    );
+  if (wrongType !== null)
+    errors.push(
+      t("import.paste_wrong_type", {
+        kind: wrongType.toUpperCase(),
+        platform: platform.label,
+        types,
+      }),
+    );
+  if (staged && preview.state === "loaded" && preview.data && !preview.data.ok)
+    errors.push(
+      t("import.no_rows_parsed", { platform: platform.label, hint: platform.hint }),
+    );
+
   return (
-    <>
-      <Ledger
-        book={ledger}
-        onWiped={() => {
-          // The book it was going to be validated against is gone, so the
-          // preview on screen is about a ledger that no longer exists.
-          clear();
-          wrote();
-        }}
-      />
+    <div className="im-body">
+      <div className="im-main">
+        <Head at={result ? 5 : staged ? 3 : 2} />
 
-      {/* Both repairs before the importer, where the Streamlit page puts them:
-          a book that is reporting a gain nobody made is worth fixing before
-          another statement is poured on top of it. */}
-      <Splits enabled={real > 0} onApplied={wrote} />
-      <Moves enabled={real > 0} nonce={writes} onApplied={wrote} />
+        {/* Beside the task the repairs card says this itself; under it, the
+            card is a screen away, so the one line that matters comes up here. */}
+        {moves.length > 0 && (
+          <button
+            className="im-banner"
+            onClick={() => jump("im-repairs")}
+            type="button"
+          >
+            <Glyph name="info" />
+            <span>{vocab.tn("import.repairs_banner", moves.length)}</span>
+            <Glyph name="right" />
+          </button>
+        )}
 
-      <div className="im-field">
-        <span className="im-label" id="im-platform">
-          {t("import.importing_from")}
-        </span>
-        {/* One control at both sizes. Seven brand names do not fit a phone-width
-            row side by side, which is why the Streamlit page falls back to a
-            dropdown there; letting them wrap solves the same problem without a
-            second control to keep in step. */}
-        <div aria-labelledby="im-platform" className="im-platforms" role="group">
-          {platforms.map((entry) => (
-            <button
-              aria-pressed={entry.key === platform.key}
-              className={
-                entry.key === platform.key
-                  ? "im-platform im-platform-on"
-                  : "im-platform"
-              }
-              key={entry.key}
-              onClick={() => choose(entry.key)}
-              type="button"
-            >
-              {/* The brand mark beside the name, as the Streamlit picker
-                  draws it. Decorative — the name is the label — so an image
-                  that fails to load simply goes away. */}
-              {entry.logo ? (
-                <img
-                  alt=""
-                  className="im-platform-logo"
-                  height={16}
-                  loading="lazy"
-                  onError={(event) => {
-                    event.currentTarget.style.display = "none";
-                  }}
-                  src={entry.logo}
-                  width={16}
-                />
-              ) : null}
-              {entry.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="im-field">
-        <span className="im-label" id="im-file-label">
-          {t("import.uploader_label", {
-            platform: platform.label,
-            types: platform.file_types.map((kind) => kind.toUpperCase()).join(", "),
-          })}
-        </span>
-        {/* The drop zone the Streamlit uploader draws, in this app's words: a
-            bare <input type=file> prints "Choose File / No file chosen" in the
-            browser's language rather than the reader's, and says nothing about
-            what it takes. The input is still the control — visually hidden,
-            focusable, inside the label that opens it — so the keyboard and a
-            screen reader get the native dialog, and a drop lands on the same
-            pipeline as a pick. */}
-        <label
-          className={dragging ? "im-drop im-drop-on" : "im-drop"}
-          onDragEnter={(event) => {
-            event.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={(event) => {
-            // Leaving for a child of the zone is not leaving the zone.
-            if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-              setDragging(false);
-          }}
-          onDragOver={(event) => event.preventDefault()}
+        <Source
+          dragging={dragging}
+          errors={errors}
+          file={file}
+          hint={!staged && !empty}
+          onChoose={choose}
+          onDragging={setDragging}
           onDrop={onDrop}
-        >
-          <input
-            accept={platform.file_types.map((kind) => `.${kind}`).join(",")}
-            aria-describedby="im-file-cap"
-            aria-labelledby="im-file-label"
-            className="im-file"
-            id="im-file"
-            key={platform.key}
-            onChange={onPick}
-            ref={file}
-            type="file"
-          />
-          <span className="im-drop-text">
-            <span className="im-drop-title">
-              {staged && staged.surface === "import"
-                ? t("import.drop_chosen", {
-                    name: staged.filename,
-                    size: sizeLabel(staged.bytes),
-                  })
-                : t("import.drop_title")}
-            </span>
-            <span className="im-drop-cap" id="im-file-cap">
-              {staged && staged.surface === "import"
-                ? t("import.drop_replace")
-                : t("import.drop_caption", {
-                    cap: MAX_BYTES / (1024 * 1024),
-                    types: platform.file_types
-                      .map((kind) => kind.toUpperCase())
-                      .join(", "),
-                  })}
-            </span>
-          </span>
-          <span className="im-drop-btn" aria-hidden="true">
-            {t("import.drop_browse")}
-          </span>
-        </label>
-      </div>
-
-      {/* The second door into the same pipeline, for a reader whose browser
-          will not hand over a file at all: a managed device can switch file
-          dialogs off outright, and that reaches the app as "no file". */}
-      <details className="im-details">
-        <summary>{t("import.paste_expander")}</summary>
-        <p className="im-help">{t("import.paste_caption")}</p>
-        <label className="im-label" htmlFor="im-paste">
-          {t("import.paste_label", { platform: platform.label })}
-        </label>
-        <textarea
-          className="im-paste"
-          id="im-paste"
-          key={platform.key}
-          onBlur={onPaste}
-          placeholder={t("import.paste_placeholder")}
-          rows={8}
+          onPaste={onPaste}
+          onPick={onPick}
+          platform={platform}
+          platforms={platforms}
+          staged={staged}
+          // Before the preview and not beside the commit: the wipe decides
+          // what the validation is run against.
+          wipe={
+            <Wipe
+              hasLast={hasLast}
+              onChange={setWipe}
+              total={held?.total ?? 0}
+              value={wipe}
+            />
+          }
         />
-      </details>
 
-      {oversize !== null && (
-        <p className="im-bad">
-          {t("import.file_too_large", {
-            size: (oversize / (1024 * 1024)).toFixed(1),
-            cap: MAX_BYTES / (1024 * 1024),
-          })}
-        </p>
-      )}
-
-      {wrongType !== null && (
-        <p className="im-bad">
-          {t("import.paste_wrong_type", {
-            kind: wrongType.toUpperCase(),
-            platform: platform.label,
-            types: platform.file_types.map((kind) => kind.toUpperCase()).join(", "),
-          })}
-        </p>
-      )}
-
-      {staged && (
-        <>
-          {/* Before the preview and not beside the commit: the wipe decides
-              what the validation is run against. */}
-          <Wipe total={held?.total ?? 0} value={wipe} onChange={setWipe} />
-          <Loaded query={preview} skeleton={<Skeleton rows={6} />}>
+        {staged && (
+          <Loaded
+            query={preview}
+            skeleton={
+              <div className="im-card">
+                <Status label={t("import.work_reading")} />
+                <Skeleton rows={6} />
+              </div>
+            }
+          >
             {(outcome) =>
-              outcome === null ? null : outcome.ok ? (
-                <>
-                  <Tiers preview={outcome.value} />
+              outcome !== null && outcome.ok ? (
+                <Tiers preview={outcome.value}>
                   <CommitPanel
                     onCommitted={(committed) => {
                       setResult(committed);
@@ -393,56 +390,60 @@ function Importer({ platforms }: { platforms: Platform[] }) {
                     staged={staged}
                     wipe={wipe}
                   />
-                </>
-              ) : (
-                <p className="im-bad">
-                  {t("import.no_rows_parsed", {
-                    platform: platform.label,
-                    hint: platform.hint,
-                  })}
-                </p>
-              )
+                </Tiers>
+              ) : null
             }
           </Loaded>
-        </>
-      )}
+        )}
 
-      {result && <Committed ledger={ledger} result={result} />}
+        {result && <Committed ledger={ledger} onAgain={clear} result={result} />}
 
-      {/* Also right after a commit: the batch that just landed is the one an
-          undo would take back, and that offer belongs beside the receipt. */}
-      {!staged && (
+        {/* Only on the empty path, and only with nothing real to lose: the
+            example commits somebody else's trades, which is a tour in an
+            empty book and a trap in a real one. */}
+        {empty && (
+          <Sample
+            onPicked={(name, blob) => void stage(name, blob)}
+            platform={platform}
+          />
+        )}
+      </div>
+
+      <aside aria-label={t("import.book_now")} className="im-rail">
+        <Ledger
+          book={ledger}
+          hasLast={hasLast}
+          nonce={writes}
+          onWiped={() => {
+            // The book it was going to be validated against is gone, so the
+            // preview on screen is about a ledger that no longer exists.
+            clear();
+            wrote();
+          }}
+        />
+        {real > 0 && (
+          <Repairs
+            moves={moves}
+            onApplied={wrote}
+            onStale={() => setAgain((count) => count + 1)}
+          />
+        )}
         <Loaded query={last} skeleton={<Skeleton rows={2} />}>
-          {(record) =>
-            record.filename ? (
+          {(batch) =>
+            batch.filename ? (
               <LastBatch
                 onDone={() => {
                   setResult(null);
                   wrote();
                 }}
                 platforms={platforms}
-                record={record}
+                record={batch}
               />
             ) : null
           }
         </Loaded>
-      )}
-
-      {!staged && !result && (
-        <>
-          <p className="im-hint">{platform.hint}</p>
-          {/* Only on the empty path, and only with nothing real to lose: this
-              commits somebody else's trades, which is a tour in an empty book
-              and a trap in a real one. */}
-          {nothingReal && noRecord && (
-            <Sample
-              onPicked={(name, blob) => void stage(name, blob)}
-              platform={platform}
-            />
-          )}
-        </>
-      )}
-    </>
+      </aside>
+    </div>
   );
 }
 
@@ -451,139 +452,64 @@ function Importer({ platforms }: { platforms: Platform[] }) {
  *
  * The commit re-parses and re-validates against a ledger that may have moved,
  * so it can refuse rows the preview accepted. Those are reported here rather
- * than dropped quietly.
+ * than dropped quietly, and their count is said even when it is zero.
  */
-function Committed({ ledger, result }: { ledger: Query<Book>; result: Result }) {
-  const t = useT();
-  return (
-    <section className="im-done">
-      <Loaded query={ledger} skeleton={<Skeleton rows={1} />}>
-        {(count) => (
-          <p className="im-ok">
-            {t("import.commit_success", { n: result.imported, total: count.total })}
-          </p>
-        )}
-      </Loaded>
-      {result.rejected.length > 0 && (
-        <>
-          <p className="im-bad">
-            {t("import.rows_rejected", { n: result.rejected.length })}
-          </p>
-          <RowTable brief issues="errors" link={false} rows={result.rejected} />
-        </>
-      )}
-      <p className="im-help">
-        <Rich text={t("import.commit_help")} />
-      </p>
-    </section>
-  );
-}
-
-/**
- * The last committed batch, and the two different things to do with it.
- *
- * Committed rows live in the ledger, so there is nothing to re-upload — *clear
- * last import* deletes the ids that commit inserted and no others, and
- * *dismiss* forgets the note while the rows stay exactly where they are. What
- * separates them is the ledger itself, which is why they are two buttons and
- * one caption rather than one button whose meaning has to be guessed.
- */
-function LastBatch({
-  onDone,
-  platforms,
-  record,
+function Committed({
+  ledger,
+  result,
+  onAgain,
 }: {
-  onDone: () => void;
-  platforms: Platform[];
-  record: LastImport;
+  ledger: Query<Book>;
+  result: Result;
+  onAgain: () => void;
 }) {
   const t = useT();
   const vocab = useVocabulary();
-  const [busy, setBusy] = useState(false);
-  const source = platforms.find((entry) => entry.key === record.platform);
-
-  const act = async (call: () => Promise<unknown>) => {
-    setBusy(true);
-    try {
-      await call();
-    } catch {
-      // Nothing was deleted. Re-reading the record below is the honest
-      // answer either way: it says what is still there.
-    } finally {
-      setBusy(false);
-      onDone();
-    }
-  };
-
   return (
-    <section className="im-last">
-      <h2 className="im-h2">{t("import.last_import")}</h2>
-      <p>
-        <Rich
-          text={
-            t("import.last_import_summary", {
-              filename: record.filename ?? "",
-              platform: source?.label ?? record.platform ?? "",
-              n: record.rows,
-              when: record.imported_at ? vocab.when(record.imported_at) : "",
-            }) + (record.wiped ? t("import.ledger_wiped_suffix") : "")
-          }
-        />
-      </p>
-      {/* What the commit wrote and what is left are two counts, and they part
-          company as soon as a row is deleted by hand. The reader is told how
-          many left rather than shown a batch that quietly shrank. */}
-      {record.still_here < record.rows && (
-        <p className="im-help">
-          {t("import.rows_no_longer", { n: record.rows - record.still_here })}
-        </p>
-      )}
-      {record.transactions.length > 0 && (
-        <details className="im-details">
-          <summary>{t("import.imported_rows_still", { n: record.still_here })}</summary>
-          {/* A committed row has no parser issues left to report — it was
-              accepted — so the table is handed the shape it expects with
-              those two fields empty rather than being taught a second one. */}
-          <RowTable
-            rows={record.transactions.map((row) => ({
-              ...row,
-              issues: [],
-              duplicate: false,
-            }))}
-          />
-        </details>
-      )}
-      <div className="im-row">
-        <button
-          className="ag-btn"
-          disabled={busy || record.still_here === 0}
-          onClick={() => void act(undoLast)}
-          type="button"
-        >
-          {t("import.clear_last_import", { n: record.still_here })}
-        </button>
-        <button
-          className="ag-btn"
-          disabled={busy}
-          onClick={() => void act(dismissRecord)}
-          type="button"
-        >
-          {t("import.dismiss_record")}
-        </button>
+    <section aria-live="polite" className="im-card im-done">
+      <div className="im-done-main">
+        <span aria-hidden="true" className="im-done-mark">
+          <Glyph name="check" />
+        </span>
+        <div className="im-done-text">
+          <Eyebrow n={4}>{t("import.confirm")}</Eyebrow>
+          <Loaded query={ledger} skeleton={<Skeleton rows={1} />}>
+            {(count) => (
+              <p>
+                <Rich
+                  text={t("import.done_sentence", {
+                    n: vocab.num(result.imported, 0),
+                    total: vocab.num(count.total, 0),
+                  })}
+                />
+              </p>
+            )}
+          </Loaded>
+          <p className="im-fine">
+            {t("import.done_rejected", { n: vocab.num(result.rejected.length, 0) })}
+          </p>
+        </div>
+        <div className="im-done-actions">
+          <Link className="im-btn im-btn-primary" page="portfolio">
+            {t("import.go_to", { page: t("nav.portfolio") })}
+          </Link>
+          <Link className="im-btn im-btn-outline" page="home">
+            {t("import.go_to", { page: t("nav.home") })}
+          </Link>
+          <button className="im-btn im-btn-text" onClick={onAgain} type="button">
+            {t("import.import_another")}
+          </button>
+        </div>
       </div>
-      <p className="im-help">
-        <Rich text={t("import.last_import_help")} />
-      </p>
+      {result.rejected.length > 0 && (
+        <RowTable
+          brief
+          issues="errors"
+          link={false}
+          rows={result.rejected}
+          tone="bad"
+        />
+      )}
     </section>
   );
-}
-
-/**
- * A file's size the way the uploader caption states the cap: whole kilobytes
- * under a megabyte, one decimal of megabytes above it. Units are symbols, the
- * same in every catalog, so there is nothing here to translate.
- */
-function sizeLabel(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

@@ -299,10 +299,18 @@ export function Pending() {
   return <span className="ag-pending" role="img" aria-label={t("common.loading")} />;
 }
 
-/** A block of the page that is still loading — the shape of what is coming. */
+/**
+ * A block of the page that is still loading — the shape of what is coming.
+ *
+ * A status with the word in it, not a hidden shape: the grey bars are all a
+ * sighted reader needs, and without the word a screen reader hears nothing
+ * where the block will land.
+ */
 export function Skeleton({ rows = 3 }: { rows?: number }) {
+  const t = useT();
   return (
-    <div className="ag-skeleton" aria-hidden="true">
+    <div className="ag-skeleton" role="status">
+      <span className="ag-sr">{t("common.loading")}</span>
       {Array.from({ length: rows }, (_, i) => (
         <div className="ag-skeleton-row" key={i} />
       ))}

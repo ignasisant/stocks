@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { expandable, linesOf, stampOf, wantsWriting } from "./Daily";
+import { linesOf, opens, stampOf, tone, wantsWriting } from "./Daily";
 import type { DailyCard } from "./types";
 
 const t = (key: string, slots?: Record<string, string | number>) =>
@@ -32,7 +32,7 @@ function card(over: Partial<DailyCard> = {}): DailyCard {
     pending: false,
     items: [],
     upgradable: false,
-    detail_ready: false,
+    analysed: [],
     ...over,
   };
 }
@@ -59,7 +59,7 @@ describe("wantsWriting", () => {
   });
 });
 
-describe("linesOf / expandable", () => {
+describe("linesOf / opens", () => {
   const item = {
     key: "earnings:NVDA",
     kind: "earnings",
@@ -78,9 +78,20 @@ describe("linesOf / expandable", () => {
     ]);
   });
 
-  it("offers see more only when a line has a trigger behind it", () => {
-    expect(expandable(card({ items: [item] }))).toBe(true);
-    expect(expandable(card({ bullets: ["Portfolio +0.4% today"] }))).toBe(false);
+  it("offers an analysis only on a line with a trigger behind it", () => {
+    expect(opens(item)).toBe(true);
+    expect(linesOf(card({ bullets: ["Portfolio +0.4% today"] })).some(opens)).toBe(
+      false,
+    );
+  });
+});
+
+describe("tone", () => {
+  it("colours a move and leaves a level in ink", () => {
+    expect(tone("+12,1%")).toBe("up");
+    expect(tone("-1.520 €")).toBe("down");
+    expect(tone("22,6%")).toBeNull();
+    expect(tone("—")).toBeNull();
   });
 });
 

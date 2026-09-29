@@ -75,11 +75,6 @@ PAST_SHOWN = 16
 UPGRADE_AFTER_S = 1800.0
 UPGRADE_TRIES = 3
 
-# The "see more" text: one paragraph per line, generated on the reader's
-# click, never with the card.
-DETAIL_CHARS = 700
-DETAIL_TIMEOUT_S = 30.0
-
 # What the facts block carries, so a briefing stays proportional to the book.
 MOVERS_SHOWN = 6
 WEIGHTS_SHOWN = 6
@@ -126,12 +121,12 @@ class DailyAction:
     past: list[dict] = field(default_factory=list)
     # How many generation attempts ended in this computed card today.
     tries: int = 0
-    # What the card was written from, kept for the "see more" call — the
-    # detail must be about the same figures as the lines it expands.
+    # What the card was written from, kept for the analysis behind each line
+    # — it must be about the same figures as the line it opens.
     facts: dict = field(default_factory=dict)
-    # {key: paragraph}, written on the reader's first "see more" of this card.
-    detail: dict = field(default_factory=dict)
-    detail_source: str = ""
+    # {key: analysis}, each written on the reader's first opening of that line
+    # (chat/daily_analysis.record) and read from here after that.
+    analysis: dict = field(default_factory=dict)
 
     @property
     def from_model(self) -> bool:
@@ -164,8 +159,7 @@ class DailyAction:
             "past": [dict(p) for p in self.past],
             "tries": self.tries,
             "facts": dict(self.facts),
-            "detail": dict(self.detail),
-            "detail_source": self.detail_source,
+            "analysis": dict(self.analysis),
         }
 
     @classmethod
@@ -183,7 +177,7 @@ class DailyAction:
         # has to be *seen* to be a dict, not asked twice and assumed.
         shown = raw.get("shown")
         facts = raw.get("facts")
-        detail = raw.get("detail")
+        analysis = raw.get("analysis")
         try:
             tries = int(raw.get("tries") or 0)
         except (TypeError, ValueError):
@@ -208,10 +202,9 @@ class DailyAction:
             ],
             tries=tries,
             facts=facts if isinstance(facts, dict) else {},
-            detail={
-                str(k): str(v) for k, v in detail.items() if str(v).strip()
-            } if isinstance(detail, dict) else {},
-            detail_source=str(raw.get("detail_source") or ""),
+            analysis={
+                str(k): v for k, v in analysis.items() if isinstance(v, dict)
+            } if isinstance(analysis, dict) else {},
         )
 
 
@@ -1138,9 +1131,10 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
             line += " " + translate(f"home.daily_window_{window}", lang)
         return line
     if kind == signals.DRAWDOWN:
+        # Unsigned: the sentence already says "under your cost".
         return translate(
             key, lang, ticker=ticker,
-            pct=f"{float(action.get('pnl_pct') or 0):+.1f}%",
+            pct=f"{abs(float(action.get('pnl_pct') or 0)):.1f}%",
             amount=money(action.get("pnl")),
         )
     if kind == signals.CONCENTRATION:
@@ -1462,8 +1456,8 @@ def to_store(
     """The dict to write to daily_action.json for a card the reader was shown.
 
     Written for a computed card as much as for a model's: memory is about
-    what the reader saw, whoever wrote it. The facts ride along for the "see
-    more" call, and `tries` counts the stand-ins a day has produced so
+    what the reader saw, whoever wrote it. The facts ride along for the
+    analysis behind each line, and `tries` counts the stand-ins a day has produced so
     `wants_upgrade` can stop asking.
     """
     day = date.fromisoformat(action.day)
@@ -1473,7 +1467,7 @@ def to_store(
     card["shown"] = seen(previous, facts, day, keys)
     card["past"] = past_lines(previous, action, day)
     card["facts"] = facts
-    card["detail"], card["detail_source"] = {}, ""
+    card["analysis"] = {}
     if not action.from_model:
         same_day = (
             previous is not None
@@ -1486,155 +1480,13 @@ def to_store(
 
 # ------------------------------------------------------------------ see more
 #
-# The card is a summary; "see more" is the paragraph behind each line. It is
-# written on the reader's click, never with the card: most days nobody opens
-# it, and the free chain's allowance is better spent on the days somebody
-# does. One call covers every line, so opening the detail costs one unit.
-#
-# Same discipline as the card: the model is handed the facts the card was
-# written from plus whatever the detail fetched for it (the quarter's revenue
-# and the company's own press release for a print, the rate path for a
-# decision), and every figure it writes is audited against exactly that. A
-# paragraph that fails the audit is replaced by the computed one for its
-# line; the others stand.
-
-_DETAIL_TASK = (
-    "The user opened 'see more' on today's action card of TopStocks, a "
-    "personal stock tracker. For each line of the card, write one paragraph "
-    "that explains it: what happened or what is coming, the figures behind it, "
-    "why it matters for THIS book, and what the user could check or decide. "
-    "Plain prose, no lists, no markdown, no headings."
-)
-
-_DETAIL_SHAPE = (
-    "Answer with a single JSON object and nothing else — no prose around it, "
-    "no code fence:\n"
-    '{"details": [{"key": "...", "text": "..."}]}\n'
-    "- one entry per line, `key` copied exactly from the line;\n"
-    f"- text: 2 to 4 sentences, at most {DETAIL_CHARS} characters."
-)
-
-_DETAIL_GUARDRAILS = (
-    "Use only the figures in the data: never invent, round into a new figure, "
-    "or compute a percentage that is not there. `source.release` is the "
-    "company's own earnings press release: say what it says drove the quarter "
-    "— the segment, the product, the guidance — quoting its figures, and "
-    "attribute them to the company. `source.history` is the bank's recent rate "
-    "path. You are not a licensed financial advisor: explain and frame the "
-    "decision, never tell the user to buy, sell or hold, and never predict a "
-    "price. Dates: `date` is today; say 'today' only about something dated "
-    "today."
-)
-
-
-def detail_prompt(
-    card: DailyAction, sources: dict, profile: dict, lang: str
-) -> tuple[str, list[dict]]:
-    """(system, messages) for the "see more" of one card. Pure."""
-    actions = keyed_actions(card.facts)
-    lines = []
-    for item in card.entries:
-        entry = {"key": item["key"], "line": item["line"]}
-        if item["key"] in actions:
-            entry["action"] = actions[item["key"]]
-        if item["key"] in sources:
-            entry["source"] = sources[item["key"]]
-        lines.append(entry)
-    facts = card.facts or {}
-    payload = {
-        "date": facts.get("date") or card.day,
-        "currency": facts.get("currency"),
-        "headline": card.headline,
-        "lines": lines,
-        "context": {
-            k: facts[k]
-            for k in ("total_value", "unrealised_pl_pct", "top_weights", "day", "month")
-            if k in facts
-        },
-    }
-    system = (
-        f"{_DETAIL_TASK} {engine.persona(profile or {})}"
-        f"Write in {_LANG_NAME.get(lang, 'English')}.\n\n"
-        f"{_KINDS}\n\n{_DETAIL_GUARDRAILS}\n\n{_DETAIL_SHAPE}{_HOUSE_RULES}"
-    )
-    return system, [{"role": "user", "content": json.dumps(payload)}]
-
-
-def _detail_pool(card: DailyAction, sources: dict) -> dict:
-    """What a detail paragraph's figures are audited against."""
-    return {"facts": card.facts or {}, "sources": list(sources.values())}
-
-
-def parse_detail(
-    raw: str, card: DailyAction, sources: dict, lang: str
-) -> dict[str, str] | None:
-    """{key: paragraph} for every paragraph that passes the audit, or None
-    when none does (the reject signal for engine.complete_attempts)."""
-    data = _json_object(raw)
-    if not data:
-        return None
-    keys = {i["key"] for i in card.entries}
-    pool = _detail_pool(card, sources)
-    out: dict[str, str] = {}
-    for entry in data.get("details") or []:
-        if not isinstance(entry, dict):
-            continue
-        key = str(entry.get("key") or "").strip()
-        text = _clip(" ".join(str(entry.get("text") or "").split()), DETAIL_CHARS)
-        if key not in keys or not text or key in out:
-            continue
-        bogus = audit([text], pool)
-        if bogus:
-            obs.warn("daily.detail_figure_rejected", figure=bogus, lang=lang)
-            continue
-        out[key] = text
-    return out or None
-
-
-def generate_detail(
-    prefs: dict,
-    profile: dict,
-    card: DailyAction,
-    sources: dict,
-    lang: str,
-    *,
-    timeout_s: float = DETAIL_TIMEOUT_S,
-    spend_free=None,
-) -> dict[str, str] | None:
-    """The model's paragraphs for `card`, or None. Never raises."""
-    try:
-        system, messages = detail_prompt(card, sources, profile, lang)
-    except Exception:
-        return None
-    return engine.complete_attempts(
-        prefs,
-        system,
-        messages,
-        timeout_s,
-        spend_free=spend_free or engine.spend_free_quota,
-        accept=lambda raw: parse_detail(raw, card, sources, lang),
-    )
-
-
-def detail_computed(card: DailyAction, sources: dict, lang: str) -> dict[str, str]:
-    """The paragraphs without a model: each action's own template, filled
-    from its figures and whatever the detail fetched. A line with no action
-    behind it (a quiet day's context line) has no paragraph."""
-    ccy = str((card.facts or {}).get("currency") or "EUR")
-    actions = keyed_actions(card.facts)
-    out: dict[str, str] = {}
-    for item in card.entries:
-        action = actions.get(item["key"])
-        if action is None:
-            continue
-        text = _detail_line(action, sources.get(item["key"]) or {}, lang, ccy)
-        if text:
-            out[item["key"]] = text
-    return out
+# The paragraph that says what happened behind one line, in templates. The
+# analysis behind a line (chat/daily_analysis.py) opens with it when no model
+# answers, and it is what "what happened" means there.
 
 
 def _detail_line(action: dict, source: dict, lang: str, ccy: str) -> str:
-    """One action's computed "see more" paragraph."""
+    """One action's computed "what happened" paragraph."""
     from stocks.formatting import compact_money
     from stocks.web.i18n import has, translate
 

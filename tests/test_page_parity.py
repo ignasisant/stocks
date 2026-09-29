@@ -142,6 +142,79 @@ PAGES: dict[str, Page] = {
                 "page is handed 'no file'. The React uploader POSTs to "
                 "`/api/v1`, where that failure mode does not exist"
             ),
+            # Rebuilt from the "Aguait Importar Refactor" canvas (2026-09): the
+            # same things said in the canvas's shorter, numbered-step copy.
+            # Each line names the key that says it now.
+            "import.intro_caption": (
+                "said as `import.lede` under the title; the duplicates-vs-wipe "
+                "advice is the wipe tick's own note (`import.wipe_short_note`)"
+            ),
+            "import.importing_from": (
+                "the chip row is labelled by its step eyebrow "
+                "(`import.step_platform`)"
+            ),
+            "import.uploader_label": (
+                "the drop zone's eyebrow, `import.statement_from`; the formats "
+                "are in `import.drop_caption`"
+            ),
+            "import.wipe_checkbox": (
+                "split into `import.wipe_short` + `import.wipe_short_note`"
+            ),
+            "import.clear_all_imports": "the rail's `import.clear_all_short`",
+            "import.clear_all_confirm": (
+                "the shared danger block: `import.wipe_warning` (what goes, "
+                "that it cannot come back) and `import.wipe_safer` (the undo "
+                "that removes only the last batch)"
+            ),
+            "import.preview": (
+                "the preview card's eyebrow `import.review` and its summary, "
+                "one `import.sum_*` per tier"
+            ),
+            "import.rows_rejected": (
+                "a tier heading: `import.tier_rejected` + `import.tier_rejected_note`"
+            ),
+            "import.rows_with_warnings": (
+                "a tier heading: `import.tier_warned` + `import.tier_warned_note`"
+            ),
+            "import.skipped_rows": (
+                "the folded tier's heading: `import.tier_skipped` + "
+                "`import.tier_skipped_note`"
+            ),
+            "import.rejected_help": (
+                "`import.rejected_fix` beside the command itself, in a code "
+                "block with a copy button"
+            ),
+            "import.commit_button": "the pinned bar's `import.confirm_button`",
+            "import.commit_success": (
+                "the done card's `import.done_sentence`, with the commit-time "
+                "rejections counted in `import.done_rejected`"
+            ),
+            "import.commit_help": (
+                "the done card's two links (`import.go_to` Allocation / Home) "
+                "are the where-next it described"
+            ),
+            "import.last_import_summary": (
+                "the rail card: the file name, then platform · "
+                "`import.rows_count` · when"
+            ),
+            "import.rows_no_longer": "the rail's warn note, `import.rows_gone`",
+            "import.imported_rows_still": "the rail's disclosure, `import.rows_still`",
+            "import.dismiss_record": "`import.dismiss_short`",
+            "import.last_import_help": "`import.last_help_short`",
+            "import.sample_caption": (
+                "the empty-book card: the platform's hint, then "
+                "`import.sample_short`"
+            ),
+            "import.scan_splits_help": "the splits block's `import.splits_note`",
+            "import.splits_found": (
+                "the splits heading's `import.splits_found_count` and its "
+                "`import.proposal` tag"
+            ),
+            "import.moves_found": "`import.moves_title` + `import.moves_note`",
+            "import.move_gain": (
+                "each transfer card's line: `import.col_gain` and the signed "
+                "amount"
+            ),
         },
     ),
     # Nothing waived and nothing pending: the page is small, and the React one

@@ -456,19 +456,19 @@ def now_day() -> tuple[datetime, date]:
     return now, daily.action_day(now)
 
 
-# ------------------------------------------------------------------ see more
-# The paragraph behind each line, written on the reader's click. Synchronous:
-# the reader asked and is watching the card for it, so there is no job to
-# poll — one call, a lock per account so a double click cannot pay twice, and
-# the answer stored with the card so the second opening (and every other
-# device) reads it for free.
+# ------------------------------------------------------------------ analysis
+# The analysis behind one line, written on the reader's click. Synchronous:
+# the reader asked and is watching the line for it, so there is no job to
+# poll — one fetch and one call, a lock per account and line so a double click
+# cannot pay twice, and the answer stored with the card so the second opening
+# (and every other device) reads it for free.
 
-_detail_locks: dict[str, threading.Lock] = {}
+_analysis_locks: dict[tuple[str, str], threading.Lock] = {}
 
 
-def _detail_lock(paths) -> threading.Lock:
+def _analysis_lock(paths, key: str) -> threading.Lock:
     with _lock:
-        return _detail_locks.setdefault(str(paths.root), threading.Lock())
+        return _analysis_locks.setdefault((str(paths.root), key), threading.Lock())
 
 
 def _read_card(paths) -> daily.DailyAction | None:
@@ -555,43 +555,42 @@ def _rate_source(action: dict) -> dict:
     }
 
 
-def _sources(card: daily.DailyAction) -> dict[str, dict]:
-    """{item key: extra figures} for the lines that have more behind them."""
-    actions = daily.keyed_actions(card.facts)
-    out: dict[str, dict] = {}
-    for item in card.entries:
-        action = actions.get(item["key"])
-        if action is None:
-            continue
-        kind = action.get("kind")
-        if kind == signals.EARNINGS_RESULT:
-            out[item["key"]] = _print_source(action)
-        elif kind in (signals.MACRO_EVENT, signals.MACRO_RESULT):
-            source = _rate_source(action)
-            if source:
-                out[item["key"]] = source
-    return out
+def _analysed(paths, key: str) -> tuple[daily.DailyAction | None, dict | None]:
+    """(the stored card, its stored analysis of `key` or None). The card is
+    None when there is none, or no line `key` with a trigger behind it."""
+    card = _read_card(paths)
+    if card is None or key not in daily.keyed_actions(card.facts):
+        return None, None
+    return card, card.analysis.get(key) or None
 
 
-def detail(paths, prefs: dict) -> daily.DailyAction | None:
-    """The stored card with its "see more" paragraphs, written if they have to
-    be. None when there is no card to expand.
+def analysis(paths, prefs: dict, key: str) -> tuple[daily.DailyAction, dict] | None:
+    """(the stored card, its analysis of line `key`), written if it has to be.
+    None when there is no card, or no line `key` with a trigger behind it.
 
-    The model writes all the paragraphs in one call; any it did not write, or
-    wrote with a figure the audit rejects, is the computed paragraph for that
-    line. Stored only onto the same card it was written for — a card replaced
-    while this ran keeps its own, empty, detail.
+    The evidence is fetched (`api/evidence.py`), the model writes the verdict
+    and the points from it, and the computed ones stand in when no model
+    answers or every answer fails the audit — so this always ends in an
+    analysis. Stored only onto the card it was written for: a card replaced
+    while this ran keeps its own, and the reader still gets this one.
     """
+    from stocks.api import evidence
+    from stocks.chat import daily_analysis
     from stocks.web import auth
 
-    card = _read_card(paths)
-    if card is None or card.detail:
-        return card
-    with _detail_lock(paths):
-        card = _read_card(paths)
-        if card is None or card.detail:
-            return card
-        sources = _sources(card)
+    card, body = _analysed(paths, key)
+    if card is None:
+        return None
+    if body:
+        return card, body
+    with _analysis_lock(paths, key):
+        # Again under the lock: a double click waited here for the first.
+        card, body = _analysed(paths, key)
+        if card is None:
+            return None
+        if body:
+            return card, body
+        found = evidence.gather(paths, card, key)
         spent = False
 
         def spend(p: dict) -> bool:
@@ -600,23 +599,24 @@ def detail(paths, prefs: dict) -> daily.DailyAction | None:
             spent = spent or ok
             return ok
 
-        written = daily.generate_detail(
-            prefs, auth.load_profile(prefs), card, sources, card.lang, spend_free=spend
-        ) or {}
+        written = daily_analysis.generate(
+            prefs, auth.load_profile(prefs), card, key, found, card.lang, spend_free=spend
+        )
         if spent:
             _save_counters(paths, prefs)
-        fallback = daily.detail_computed(card, sources, card.lang)
-        texts = {
-            item["key"]: written.get(item["key"]) or fallback.get(item["key"])
-            for item in card.entries
-            if written.get(item["key"]) or fallback.get(item["key"])
-        }
-        source = "llm" if written else "computed"
-        raw = auth.load_action(paths.action)
-        if raw.get("day") == card.day and raw.get("generated") == card.generated:
-            raw["detail"], raw["detail_source"] = texts, source
-            try:
-                auth.save_action(raw, paths.action)
-            except Exception as exc:  # noqa: BLE001 — the reader still gets it
-                obs.warn("daily_action.detail_unsaved", error_type=type(exc).__name__)
-        return replace(card, detail=texts, detail_source=source)
+        body = daily_analysis.record(card, key, found, written, card.lang)
+        # Read, merge, write under the account's own lock ("" is no line's
+        # key): two lines opened at once must not store over each other.
+        with _analysis_lock(paths, ""):
+            raw = auth.load_action(paths.action)
+            if raw.get("day") == card.day and raw.get("generated") == card.generated:
+                stored = raw.get("analysis")
+                stored = stored if isinstance(stored, dict) else {}
+                raw["analysis"] = {**stored, key: body}
+                try:
+                    auth.save_action(raw, paths.action)
+                except Exception as exc:  # noqa: BLE001 — the reader still gets it
+                    obs.warn(
+                        "daily_action.analysis_unsaved", error_type=type(exc).__name__
+                    )
+        return replace(card, analysis={**card.analysis, key: body}), body

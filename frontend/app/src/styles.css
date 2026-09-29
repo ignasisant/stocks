@@ -243,6 +243,17 @@ body {
   }
 }
 
+/* Read by a screen reader, drawn for nobody: the sentence a `title` only ever
+   shows on hover, the "loading" a skeleton only draws. */
+.ag-sr {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .ag-note {
   color: var(--ag-text-muted);
 }
@@ -316,6 +327,10 @@ body {
 @media (max-width: 640px) {
   .ag-shell {
     grid-template-columns: 1fr;
+    /* What a page pinning something to the foot of the screen has to clear:
+       this bar's padding, a row of 20px glyphs in their padded links, and its
+       top rule. Import's confirm bar reads it. */
+    --dock: calc(1.8rem + 21px);
   }
   /* A tab bar has no width to fold and no room for a wordmark: the phone
      header already carries the mark. Folded or not, this is the same bar. */

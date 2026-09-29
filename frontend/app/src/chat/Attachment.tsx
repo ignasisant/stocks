@@ -25,6 +25,7 @@ import { useId, useState } from "react";
 import { useT } from "../shell/i18n";
 import { TickerCell } from "../shell/tickers";
 import { Glyph } from "./icons";
+import { Status } from "../ui/Status";
 import type { ImportRow, Preview } from "./types";
 
 /** Money and share counts, in the reader's own locale. */
@@ -120,11 +121,15 @@ function Tier({
 export function Attachment({
   preview,
   busy,
+  importing = false,
   onImport,
   onDiscard,
 }: {
   preview: Preview;
+  /** A statement is being read or written: both buttons wait. */
   busy: boolean;
+  /** This card's rows are the ones being written. */
+  importing?: boolean;
   onImport: (broker: string, duplicates: ImportRow[]) => void;
   onDiscard: () => void;
 }) {
@@ -247,6 +252,10 @@ export function Attachment({
           {t("chat.import_cancel")}
         </button>
       </div>
+      {/* Beside the buttons that just went grey, which is where the eye is
+          after pressing one: a batch of a few hundred rows is a few seconds
+          of prices and dedupe, and nothing else on the card moves. */}
+      {importing && <Status label={t("chat.work_importing", { n: count })} />}
     </section>
   );
 }

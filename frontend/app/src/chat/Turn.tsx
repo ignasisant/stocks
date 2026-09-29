@@ -17,6 +17,7 @@ import { useId, useState } from "react";
 import { useLang, useT } from "../shell/i18n";
 import { Glyph } from "./icons";
 import { Markdown } from "./markdown";
+import { Status } from "../ui/Status";
 import { capMessage, clock, host, providerLabel, skillName, took } from "./format";
 import { GuideCard, useVisit } from "./GuideCard";
 import { unshortcode, type GuideState, type GuideStep } from "./guide";
@@ -27,21 +28,11 @@ import { Badge } from "../ui/Badge";
 function Working({ phase }: { phase?: string }) {
   const t = useT();
   // The server names the phase by its key; an unknown one (a newer server)
-  // falls back to the generic line rather than printing a raw key.
+  // falls back to the generic line rather than printing a raw key. Outside
+  // the bubble's live region, so it is heard before the answer is written.
   const key = `chat.work_${phase ?? "thinking"}`;
   const said = t(key);
-  return (
-    // A status rather than a plain line: it is the only thing that tells a
-    // screen reader the question was taken, and it sits outside the bubble's
-    // live region so that it is announced now rather than held back with the
-    // answer that has not been written yet.
-    <div className="ag-chat-work" role="status">
-      <span className="ag-chat-work-glyph" aria-hidden="true">
-        ✻
-      </span>
-      {said === key ? t("chat.work_thinking") : said}
-    </div>
-  );
+  return <Status label={said === key ? t("chat.work_thinking") : said} />;
 }
 
 /**
