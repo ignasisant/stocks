@@ -816,17 +816,29 @@ async def static_file(request: Request) -> Response:
     return FileResponse(target, headers={"Cache-Control": "public, max-age=86400"})
 
 
+# A Vite content hash in a built file's name: `app-Ck2h9Xw1.js`,
+# `Home-B3ml_q7a.css`. Such a file never changes under its name — a rebuild
+# that changes it renames it — so it can be cached for as long as a browser
+# will hold it. Anything else under the build dir gets the short lease.
+_HASHED = re.compile(r"-[A-Za-z0-9_-]{8}\.[a-z0-9]+$")
+_IMMUTABLE = "public, max-age=31536000, immutable"
+_BRIEF = "public, max-age=300"
+
+
 async def app_asset(request: Request) -> Response:
     """`/next-assets/<file>` — the shell's own bundle, stylesheet and chunks.
 
-    Short cache: a rebuild reuses the same filenames, and a long max-age would
-    serve yesterday's bundle against today's API.
+    A content-hashed name is immutable for a year; the document that links it
+    is never cached (`app_shell`), so a release is picked up on the next load
+    and its unchanged chunks are not downloaded again. A name without a hash
+    gets five minutes, the old rule, for whatever a build leaves unhashed.
     """
     name = request.path_params.get("path", "")
     target = (_APP_BUILD / name).resolve()
     if _APP_BUILD.resolve() not in target.parents or not target.is_file():
         return Response("Not found", status_code=404, media_type="text/plain")
-    return FileResponse(target, headers={"Cache-Control": "public, max-age=300"})
+    lease = _IMMUTABLE if _HASHED.search(target.name) else _BRIEF
+    return FileResponse(target, headers={"Cache-Control": lease})
 
 
 async def asset(request: Request) -> Response:

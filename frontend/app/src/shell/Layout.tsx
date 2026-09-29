@@ -28,6 +28,8 @@ import { Icon } from "./Icon";
 import { GUEST_CHROME, SignIn } from "./guest";
 import { useGuest } from "./session";
 import type { Query } from "./useApi";
+import { useStaleSince } from "./freshness";
+import { useActivity } from "./activity";
 
 /**
  * Whether the rail is folded to its icons, remembered per browser.
@@ -197,6 +199,30 @@ function Nav() {
   );
 }
 
+/**
+ * One line, on every page, whenever a figure on it is older than it looks.
+ *
+ * The API says so per response (`X-Data-Stale-Since`) when the price source
+ * refused and the last good data stood in; this reads the oldest such mark and
+ * goes away on its own once a live answer replaces it. Here rather than in each
+ * card because the same download feeds half the cards on a screen, and one
+ * sentence beats six badges saying the same thing.
+ */
+function StaleNotice() {
+  const t = useT();
+  const since = useStaleSince();
+  if (since === null) return null;
+  const when = new Date(since).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  return (
+    <p className="ag-stale" role="status">
+      {t("common.stale_notice", { when })}
+    </p>
+  );
+}
+
 export function Layout({ children }: { children: ReactNode }) {
   const guest = useGuest();
   return (
@@ -208,6 +234,7 @@ export function Layout({ children }: { children: ReactNode }) {
             the height the page needs. Both of these are on every screen in the
             Streamlit app too, which is the whole reason they live out here. */}
         <Search />
+        <StaleNotice />
         {/* Inside the page column, above the body: when the tour is parked
             this is where its strip sits, on every page. The modal itself is
             fixed-position, so where it mounts does not move it. Mounted for
@@ -222,8 +249,54 @@ export function Layout({ children }: { children: ReactNode }) {
           nudge is about an account a guest does not have. */}
       {!guest || GUEST_CHROME.chat ? <Drawer /> : null}
       {!guest || GUEST_CHROME.profilePrompt ? <ProfilePrompt /> : null}
+      <ActivityBanner />
     </div>
   );
+}
+
+/**
+ * The corner banner: what is taking a while, and how far along the page is.
+ *
+ * Silent until a request has been out for `activity.SLOW_MS` — a page that
+ * answers promptly never shows it. Bottom-left on a phone would sit on the tab
+ * bar, so it is bottom-right everywhere, above the assistant's button.
+ */
+function ActivityBanner() {
+  const t = useT();
+  const { slow, done, total } = useActivity();
+  if (slow.length === 0) return null;
+  const share = total ? Math.min(1, done / total) : 0;
+  return (
+    <div className="ag-activity" role="status" aria-live="polite">
+      <div className="ag-activity-head">
+        <span className="ag-activity-title">{t("activity.title")}</span>
+        <span className="ag-activity-count">
+          {t("activity.progress", { done, total })}
+        </span>
+      </div>
+      <ul className="ag-activity-list">
+        {slow.slice(0, 3).map((kind) => (
+          <li key={kind}>{t(kind)}</li>
+        ))}
+      </ul>
+      <div className="ag-activity-bar" aria-hidden="true">
+        <div style={{ width: `${Math.round(share * 100)}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One figure that is still on its way, in the cell it will land in.
+ *
+ * For tables whose rows are already known — the tickers a reader holds, the
+ * names on their list — and whose prices are not: the row draws at once and
+ * only the cell that is waiting shimmers. A figure that *could not* be fetched
+ * is a different fact and still reads "n/a".
+ */
+export function Pending() {
+  const t = useT();
+  return <span className="ag-pending" role="img" aria-label={t("common.loading")} />;
 }
 
 /** A block of the page that is still loading — the shape of what is coming. */

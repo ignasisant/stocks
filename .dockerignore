@@ -8,10 +8,17 @@ __pycache__
 .pytest_cache
 .ruff_cache
 
-# Secrets — never bake into an image
+# Secrets — never bake into an image. The rotate script leaves
+# secrets.toml.bak.<ts> copies beside the live file, each holding the keys
+# it replaced; the deploy/ folder keeps its own env and secrets for compose.
 .streamlit/secrets.toml
-.env
+.streamlit/secrets.toml.bak*
+.streamlit/*.bak*
+**/.env
+**/secrets.toml*
 .notify_secrets.env
+infra/**/*.tfstate*
+infra/**/terraform.tfvars
 
 # Personal data + runtime caches (restored from R2 / refetched at runtime)
 data/users/
@@ -25,6 +32,14 @@ data/fx_history.json
 data/last_import.json
 watchlist.yaml
 src/stocks/web/static/logos/
+# Owner-account state and observability that names accounts
+data/chat_memory.db
+data/daily_action.json
+data/logs/
+data/imports/
+data/memo/
+data/feedback/
+data/tg_updates/
 
 # Not needed at runtime
 notebooks/

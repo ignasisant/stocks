@@ -10,6 +10,7 @@ disagreeing about what a number says.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import Annotated, cast
 
@@ -572,14 +573,22 @@ def profile(symbol: Symbol, account: Account) -> Profile:
     """
     ticker = symbol.strip().upper()
     resolved = loaders.display_symbol(ticker)
-    return Profile(
-        ticker=ticker,
-        symbol=resolved,
-        name=loaders.company_name(ticker, str(account.watchlist)) or "",
-        logo=loaders.logo(ticker),
-        is_crypto=is_crypto(resolved),
-        is_fund=is_fund(resolved),
-    )
+    # The name and the logo are the two lookups that can reach the network on
+    # a cold memo, and neither needs the other: side by side, the header waits
+    # for the slower one rather than for both. This is the first answer the
+    # page draws and the one that gates its company sections, so its cold
+    # cost is paid by every section under it.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        name = pool.submit(loaders.company_name, ticker, str(account.watchlist))
+        logo = pool.submit(loaders.logo, ticker)
+        return Profile(
+            ticker=ticker,
+            symbol=resolved,
+            name=name.result() or "",
+            logo=logo.result(),
+            is_crypto=is_crypto(resolved),
+            is_fund=is_fund(resolved),
+        )
 
 
 @router.get("/{symbol}/peers", response_model=Peers, summary="Suggested comparables")

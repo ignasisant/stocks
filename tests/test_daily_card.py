@@ -122,7 +122,10 @@ def test_a_card_quoting_a_figure_the_book_lacks_never_reaches_the_page(
     body = _card(page)
     assert "37.4" not in body and "Nvidia carries the day" not in body
     assert "+1.20%" in body  # the computed card, straight from the book
-    assert not stored
+    # What is stored is what the reader saw — the computed card — and never
+    # the invented figure.
+    assert stored["source"] == "computed"
+    assert "37.4" not in json.dumps(stored)
 
 
 def test_the_card_is_generated_once_and_then_read_from_the_store(page, free, stored):
@@ -188,14 +191,20 @@ def test_a_dead_provider_still_fills_the_card(page, free, monkeypatch):
     assert page.caption[0].value.startswith("The assistant is unavailable")
 
 
-def test_the_computed_card_is_not_stored(page, free, stored, monkeypatch):
-    """Only a model briefing is worth a bucket write — and storing the
-    fallback would pin it for the rest of the day."""
+def test_the_computed_card_is_stored_but_does_not_pin_the_day(
+    page, free, stored, monkeypatch
+):
+    """The stand-in is stored — it is what the reader saw, and tomorrow's
+    card has to remember it — but it stays upgradable: a later visit tries the
+    model again, a bounded number of times."""
     monkeypatch.setattr(
         FakeProvider, "complete", lambda *a, **k: (_ for _ in ()).throw(RuntimeError())
     )
     page.run()
-    assert stored == {}
+    card = daily.DailyAction.from_dict(stored)
+    assert card is not None and card.source == "computed" and card.tries == 1
+    assert not daily.wants_upgrade(card, now=card.generated)
+    assert daily.wants_upgrade(card, now=card.generated + daily.UPGRADE_AFTER_S)
 
 
 def test_a_stale_stored_card_is_replaced(page, free, stored):
@@ -249,7 +258,8 @@ def test_the_users_own_alert_reaches_the_prompt_and_the_card(page, free):
     _system, facts = free.calls[0]
     assert facts["actions"][0] == {
         "kind": "alert_hit", "ticker": "ASML", "rule": "below", "level": 300.0,
-        "price": 280.0, "held": False, "gap_pct": 6.67,
+        "price": 280.0, "held": False, "gap_pct": 6.67, "sessions": 1,
+        "key": "alert_hit:ASML",
     }
     assert "ASML hit your exit" in _card(page)
 

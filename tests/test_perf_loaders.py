@@ -187,3 +187,116 @@ def test_the_calendar_fills_in_when_the_table_only_has_the_past(monkeypatch):
     dates, _ = earnings.fetch_earnings("AAPL")
     assert fake.calendar_reads == 1
     assert date.today() + timedelta(days=30) in dates
+
+
+# ------------------------------------------------------------- one per process
+def test_a_range_of_fx_rates_is_one_request_per_process(monkeypatch):
+    """`book_history` asks for the same span every time a book is repriced;
+    a range that ends today is the same answer until tomorrow."""
+    from stocks.data import fx
+
+    fx._range_memo.clear()
+    calls: list[str] = []
+    monkeypatch.setattr(
+        fx,
+        "get_json",
+        lambda url, timeout=30: calls.append(url)
+        or {"rates": {"2024-01-02": {"USD": 1.1}}},
+    )
+    first = fx.rates_range("2024-01-01", "2024-01-05", "EUR", "USD")
+    assert first == {"2024-01-02": 1.1}
+    assert fx.rates_range("2024-01-01", "2024-01-05", "EUR", "USD") is first
+    assert len(calls) == 1
+    fx.rates_range("2024-01-01", "2024-01-06", "EUR", "USD")  # another span
+    assert len(calls) == 2
+    fx._range_memo.clear()
+
+
+def test_daily_labels_under_a_year_share_one_bars_download(monkeypatch):
+    """1m, 3m, 6m and 1y are one 2y/1d frame cut four ways; the memo has to
+    key on the download, or flipping through them is four fetches."""
+    from stocks.api import loaders
+
+    loaders.price_bars.cache_clear()
+    calls: list[tuple[str, str]] = []
+    idx = pd.date_range("2022-01-03", periods=520, freq="B", tz="America/New_York")
+    frame = pd.DataFrame({"Close": range(520)}, index=idx)
+    monkeypatch.setattr(
+        loaders,
+        "bars_download",
+        lambda t, period, interval: calls.append((period, interval)) or frame,
+    )
+    month = loaders.price_bars("AAPL", "1m")
+    year = loaders.price_bars("AAPL", "1y")
+    assert calls == [("2y", "1d")]
+    assert 0 < len(month) < len(year) and month.index.tz is None
+    loaders.price_bars("AAPL", "5y")
+    assert calls == [("2y", "1d"), ("10y", "1d")]
+    loaders.price_bars.cache_clear()
+
+
+def test_the_book_downloads_once_for_its_adjusted_and_printed_closes(
+    tmp_path, monkeypatch
+):
+    """`Adj Close` and `Close` come out of one unadjusted request; the two
+    memos read their own column of it."""
+    from stocks.api import loaders
+    from stocks.data import fetch as data_fetch
+    from stocks.portfolio import ledger
+    from stocks.portfolio.ledger import Transaction
+
+    db = tmp_path / "portfolio.db"
+    ledger.add_many(
+        [
+            Transaction("2024-01-02", "AAPL", "buy", 10, 100.0, "EUR", 1.0),
+            Transaction("2024-02-01", "MSFT", "buy", 5, 200.0, "EUR", 1.0),
+        ],
+        path=db,
+    )
+    days = pd.bdate_range("2024-01-02", periods=300)
+    calls: list[tuple[str, ...]] = []
+
+    def download(tickers, period="1y", interval="1d", auto_adjust=True, budget=60.0):
+        calls.append(tuple(tickers))
+        assert auto_adjust is False
+        return {
+            "AAPL": pd.DataFrame({"Close": 100.0, "Adj Close": 95.0}, index=days),
+            "MSFT": pd.DataFrame({"Close": 200.0, "Adj Close": 190.0}, index=days),
+        }
+
+    monkeypatch.setattr(data_fetch, "fetch_many", download)
+    loaders.held_closes.cache_clear()
+    adjusted = loaders.held_closes(str(db), 1.0)
+    printed = loaders.held_printed_closes(str(db), 1.0)
+    assert calls == [("AAPL", "MSFT")]
+    assert float(adjusted["AAPL"].iloc[-1]) == 95.0
+    assert float(printed["AAPL"].iloc[-1]) == 100.0
+    loaders.held_closes.cache_clear()
+    loaders.held_closes(str(db), 1.0)
+    assert len(calls) == 2, "clearing the adjusted memo drops the download too"
+    loaders.held_closes.cache_clear()
+
+
+def test_home_reads_held_names_off_the_book_download(monkeypatch):
+    """The watchlist's year asks Yahoo only for the names the ledger does not
+    hold; a held name's twelve months are sliced from the book's own frames."""
+    from stocks.api import home, loaders
+
+    days = pd.bdate_range("2022-01-03", periods=700)
+    book = {"AAPL": pd.Series(range(700), index=days, dtype=float)}
+    asked: list[tuple[str, ...]] = []
+
+    def watchlist(tickers):
+        asked.append(tickers)
+        return {t: pd.Series([1.0, 2.0]) for t in tickers}
+
+    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: book)
+    monkeypatch.setattr(loaders, "watchlist_closes", watchlist)
+    year = home.year_closes(("AAPL", "MSFT", "NVDA"), "book.db", 1.0)
+    assert asked == [("MSFT", "NVDA")]
+    assert 250 <= len(year["AAPL"]) <= 265 and year["AAPL"][-1] == 699.0
+    assert year["MSFT"] == [1.0, 2.0]
+    # No book at all — a guest — is the watchlist download alone.
+    asked.clear()
+    home.year_closes(("AAPL",), None)
+    assert asked == [("AAPL",)]

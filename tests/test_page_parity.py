@@ -113,6 +113,13 @@ PAGES: dict[str, Page] = {
                 "monthly chart, instead of a tile of its own"
             ),
             "portfolio.mwr_help": "…the same, the help of that tile",
+            "portfolio.series_portfolio_twr": (
+                "a cumulative TWR line. The React charts that draw the book "
+                "label it for what they plot: the flow-matched book "
+                "(`portfolio.series_portfolio_actual`) and, beside the IRR "
+                "in the monthly chart, the annualised TWR "
+                "(`portfolio.overview_monthly_twr`)"
+            ),
         },
     ),
     "sentiment": Page(

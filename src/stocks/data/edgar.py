@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import date
 
 import pandas as pd
@@ -239,3 +240,120 @@ def diluted_eps_facts(ticker: str) -> pd.DataFrame:
 
     rows = sorted((e, filed, val, kind) for (e, kind), (val, filed) in picked.items())
     return pd.DataFrame(rows, columns=["end", "filed", "eps", "kind"])
+
+
+# ------------------------------------------------------------ press releases
+# A US filer's earnings release is an 8-K under Item 2.02 with the release
+# itself as exhibit 99.1 — the company's own account of the quarter, which is
+# where "revenue up 94%, driven by data center" lives and the XBRL facts do
+# not. Read only for the daily card's "see more" on a print, and cached on disk
+# per (ticker, report date): a release never changes once filed, and every
+# account that follows the name reads the same one.
+
+SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
+ARCHIVE_INDEX_URL = (
+    "https://www.sec.gov/Archives/edgar/data/{cik}/{folder}/{accession}-index.htm"
+)
+ARCHIVE_URL = "https://www.sec.gov{path}"
+RELEASE_DIR = DATA_DIR / "edgar_releases"
+# How far a filing may sit from the report date the calendar gives: the 8-K is
+# usually filed the same day, a day late for an after-hours print.
+RELEASE_SLACK_DAYS = 3
+RELEASE_CHARS = 3000
+
+_EXHIBIT_ROW_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.IGNORECASE | re.DOTALL)
+_HREF_RE = re.compile(r'href="(/Archives/[^"]+\.html?)"', re.IGNORECASE)
+
+
+def _release_filing(cik: str, report: date) -> str | None:
+    """Accession number of the Item 2.02 8-K filed around `report`, or None."""
+    subs = _get_json(SUBMISSIONS_URL.format(cik=cik))
+    recent = (subs.get("filings") or {}).get("recent") or {}
+    forms = recent.get("form") or []
+    filed = recent.get("filingDate") or []
+    items = recent.get("items") or []
+    accessions = recent.get("accessionNumber") or []
+    best: tuple[int, str] | None = None
+    for form, day, item, accession in zip(forms, filed, items, accessions, strict=False):
+        if form != "8-K" or "2.02" not in str(item):
+            continue
+        try:
+            gap = abs((date.fromisoformat(day) - report).days)
+        except ValueError:
+            continue
+        if gap <= RELEASE_SLACK_DAYS and (best is None or gap < best[0]):
+            best = (gap, accession)
+    return best[1] if best else None
+
+
+def _exhibit_path(cik: str, accession: str) -> str | None:
+    """The EX-99.1 document's archive path, off the filing's index page."""
+    from stocks.data.http import get_bytes
+
+    page = get_bytes(
+        ARCHIVE_INDEX_URL.format(
+            cik=int(cik), folder=accession.replace("-", ""), accession=accession
+        ),
+        user_agent=_user_agent(),
+        timeout=20,
+    ).decode("utf-8", "replace")
+    for row in _EXHIBIT_ROW_RE.findall(page):
+        if re.search(r">\s*EX-99(?:\.1|\.01)?\s*<", row, re.IGNORECASE):
+            href = _HREF_RE.search(row)
+            if href:
+                return href.group(1)
+    return None
+
+
+def _release_text(raw: bytes) -> str:
+    """The release's narrative: its paragraphs, before the tables."""
+    from lxml import html as lxml_html
+
+    try:
+        doc = lxml_html.fromstring(raw)
+    except Exception:  # noqa: BLE001 — an unparsable exhibit is no excerpt
+        return ""
+    for bad in doc.xpath("//script|//style|//table"):
+        parent = bad.getparent()
+        if parent is not None:
+            parent.remove(bad)
+    paras = [" ".join(p.text_content().split()) for p in doc.xpath("//p|//div[not(*)]")]
+    # The exhibit opens with EDGAR's own header cell ("EX-99.1 2 q2fy27pr.htm").
+    text = " ".join(
+        p for p in dict.fromkeys(paras) if len(p) > 40 and not p.startswith("EX-99")
+    )
+    if not text:
+        text = " ".join(doc.text_content().split())
+    return text[:RELEASE_CHARS]
+
+
+def earnings_release(ticker: str, report: date) -> str | None:
+    """The opening of `ticker`'s earnings press release for the print on
+    `report`, or None — not a US filer, no Item 2.02 8-K near that date, a
+    refused request. Never raises."""
+    RELEASE_DIR.mkdir(parents=True, exist_ok=True)
+    cached = RELEASE_DIR / f"{ticker.upper().replace('/', '_')}_{report.isoformat()}.txt"
+    if cached.exists():
+        return cached.read_text() or None
+    try:
+        cik = cik_for(ticker)
+        if not cik:
+            return None
+        accession = _release_filing(cik, report)
+        path = _exhibit_path(cik, accession) if accession else None
+        if not path:
+            text = ""
+        else:
+            from stocks.data.http import get_bytes
+
+            text = _release_text(
+                get_bytes(
+                    ARCHIVE_URL.format(path=path), user_agent=_user_agent(), timeout=20
+                )
+            )
+    except Exception:  # noqa: BLE001 — the detail degrades to the EPS line
+        return None
+    # A miss is cached too (empty file): the filing will not appear later for a
+    # print already days old, and asking again costs three SEC round trips.
+    cached.write_text(text)
+    return text or None

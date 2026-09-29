@@ -14,18 +14,35 @@ tested offline; only `insider_transactions` touches the network.
 
 from __future__ import annotations
 
+import json
+import threading
 import urllib.error
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from xml.etree import ElementTree as ET
 
 import pandas as pd
 
+from stocks import obs
+from stocks.config import DATA_DIR
 from stocks.data.edgar import _user_agent, cik_for
 from stocks.data.http import get_bytes
 
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 ARCHIVE_DOC_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{doc}"
+
+# Parsed Form 4 lines per filing document, on disk. A filing never changes
+# once it is on EDGAR, and fetching one is a round trip the SEC meters at ten
+# a second — so a ticker's forty most recent filings cost ~6s the first time
+# (measured 2026-09-27, the slowest section of a cold Ticker page) and must
+# not cost it again after a restart. Keyed by document URL (accession plus
+# file name), loaded once per process, pushed to the bucket on change the way
+# the logo mirror is, so an ephemeral host restores it on first touch. Only
+# the submissions index, which does change, is fetched every time.
+FORM4_CACHE = DATA_DIR / "form4.json"
+FORM4_CACHE_MAX = 4000
+_form4_memo: dict[str, list[dict]] | None = None
+_form4_lock = threading.Lock()
 
 # Form 4 transaction codes. P/S are the discretionary open-market trades the
 # market actually reads as a signal; the rest are grants, option mechanics,
@@ -284,12 +301,85 @@ def _recent_form4_docs(cik: str, limit: int) -> list[str]:
     return urls
 
 
+def _form4_cache() -> dict[str, list[dict]]:
+    """The on-disk memo, read once per process (bucket first on a fresh host)."""
+    global _form4_memo
+    with _form4_lock:
+        if _form4_memo is None:
+            if not FORM4_CACHE.exists():
+                with obs.swallow("insiders.restore"):
+                    from stocks import storage
+
+                    storage.restore(FORM4_CACHE)
+            try:
+                loaded = json.loads(FORM4_CACHE.read_text())
+            except (OSError, ValueError):
+                loaded = {}
+            _form4_memo = loaded if isinstance(loaded, dict) else {}
+        return _form4_memo
+
+
+def clear_form4_cache() -> None:
+    """Forget the memo — for tests that point `FORM4_CACHE` somewhere else."""
+    global _form4_memo
+    with _form4_lock:
+        _form4_memo = None
+
+
+def _encode(tx: InsiderTx) -> dict:
+    row = asdict(tx)
+    row["date"] = tx.date.isoformat() if tx.date else None
+    return row
+
+
+def _decode(row: dict) -> InsiderTx:
+    when = row.get("date")
+    price = row.get("price")
+    return InsiderTx(
+        date=date.fromisoformat(str(when)) if when else None,
+        insider=str(row.get("insider") or ""),
+        relationship=str(row.get("relationship") or ""),
+        code=str(row.get("code") or ""),
+        acquired=bool(row.get("acquired")),
+        shares=float(row.get("shares") or 0.0),
+        price=None if price is None else float(price),
+        ticker=str(row.get("ticker") or ""),
+        currency=str(row.get("currency") or "USD"),
+        source=str(row.get("source") or "SEC"),
+    )
+
+
+def _remember_form4(parsed: dict[str, list[InsiderTx]]) -> None:
+    """Add freshly parsed documents to the memo and push it to disk + bucket.
+
+    Bounded oldest-first: a long-lived server would otherwise keep every
+    filing anyone ever looked at. Never fatal — a memo that failed to write
+    costs the next process a refetch, not this reader their page.
+    """
+    memo = _form4_cache()
+    with _form4_lock:
+        for url, txs in parsed.items():
+            memo.pop(url, None)
+            memo[url] = [_encode(t) for t in txs]
+        while len(memo) > FORM4_CACHE_MAX:
+            memo.pop(next(iter(memo)))
+        with obs.swallow("insiders.remember"):
+            FORM4_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            FORM4_CACHE.write_text(json.dumps(memo, separators=(",", ":")))
+            from stocks import storage
+
+            storage.persist(FORM4_CACHE)
+
+
 def insider_transactions(ticker: str, limit: int = 40) -> list[InsiderTx]:
     """Recent Form 4 transactions for a ticker, newest filing first.
 
     Best-effort: non-US filers (no CIK) and any network/parse failure yield an
     empty list rather than raising, matching the rest of the data layer. `limit`
-    caps how many Form 4 filings are fetched (each is one HTTP request).
+    caps how many Form 4 filings are read; only the ones the on-disk memo has
+    not seen are fetched (one HTTP request each, in sequence — the SEC's
+    fair-access limit is ten a second, and a parallel burst would earn a block
+    rather than a faster page).
     """
     try:
         cik = cik_for(ticker)
@@ -302,11 +392,23 @@ def insider_transactions(ticker: str, limit: int = 40) -> list[InsiderTx]:
     except (urllib.error.URLError, TimeoutError, ValueError):
         return []
 
-    out: list[InsiderTx] = []
+    known = _form4_cache()
+    fetched: dict[str, list[InsiderTx]] = {}
     for url in doc_urls:
+        if url in known:
+            continue
         try:
             xml = _get(url).decode("utf-8", errors="replace")
         except (urllib.error.URLError, TimeoutError):
             continue
-        out.extend(parse_form4(xml))
+        fetched[url] = parse_form4(xml)
+    if fetched:
+        _remember_form4(fetched)
+
+    out: list[InsiderTx] = []
+    for url in doc_urls:
+        if url in fetched:
+            out.extend(fetched[url])
+        elif url in known:
+            out.extend(_decode(row) for row in known[url])
     return out
