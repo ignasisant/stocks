@@ -37,6 +37,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useLang, useT } from "../shell/i18n";
 import { capMessage, skillName } from "./format";
 import { Glyph } from "./icons";
+import { Status } from "../ui/Status";
 import type { ChatState, SettingsPatch, SkillsMode } from "./types";
 import { canRecord, record, transcribe, VoiceFailed, type Recording } from "./voice";
 
@@ -237,6 +238,9 @@ export function Composer({
       {voiceError && (
         <p className="ag-chat-note">{t(voiceError.key, voiceError.slots)}</p>
       )}
+      {/* Above the field the transcript is about to fill: a long note is a
+          few seconds of Whisper, and the mic going grey says nothing. */}
+      {saying && <Status label={t("chat.work_transcribing")} />}
       {wall && (
         <div className="ag-chat-wall">
           <p>{capMessage(t, wall, state.free_cap)}</p>

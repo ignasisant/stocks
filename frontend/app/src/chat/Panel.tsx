@@ -30,6 +30,7 @@ import { Glyph } from "./icons";
 import { Settings } from "./Settings";
 import { Setup, needsSetup } from "./Setup";
 import { Threads } from "./Threads";
+import { Status } from "../ui/Status";
 import { Turn } from "./Turn";
 import type { Chat } from "./useChat";
 import {
@@ -368,6 +369,10 @@ export default function Panel({
                       onDrop={i === chat.turns.length - 1 ? chat.drop : undefined}
                     />
                   ))
+                ) : chat.opening ? (
+                  // Not the starters: they are an empty thread's, and this one
+                  // is only empty until its turns arrive.
+                  <Status label={t("common.loading")} />
                 ) : needsSetup(state) ? (
                   <Setup
                     state={state}
@@ -396,8 +401,18 @@ export default function Panel({
                   <Attachment
                     preview={chat.preview}
                     busy={chat.reading}
+                    importing={chat.work?.kind === "importing"}
                     onImport={(broker, dupes) => void chat.commitImport(broker, dupes)}
                     onDiscard={chat.discardImport}
+                  />
+                )}
+                {/* At the bottom, where the card is about to land — below
+                    the one it replaces, if there is one. Reading a statement
+                    can take a model call on an unknown format, and the clip
+                    going grey is all that would happen otherwise. */}
+                {chat.work?.kind === "reading" && (
+                  <Status
+                    label={t("chat.work_reading", { filename: chat.work.filename })}
                   />
                 )}
               </div>
@@ -409,6 +424,7 @@ export default function Panel({
                 and lives in the settings view, behind a confirmation. Drawn
                 for a finished answer — a refusal carries its own Retry. */}
             {!chat.busy &&
+              !chat.reading &&
               chat.turns.length > 1 &&
               chat.turns[chat.turns.length - 1]?.role === "assistant" &&
               !chat.turns[chat.turns.length - 1]?.error &&
