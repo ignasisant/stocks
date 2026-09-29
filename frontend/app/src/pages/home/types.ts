@@ -27,6 +27,32 @@ export type DailyCard = {
    * Regenerate and the old card is already gone. Poll until it turns false.
    */
   pending: boolean;
+  /**
+   * The lines, each with the trigger it is about — the text of `bullets`,
+   * keyed so "see more" can put a paragraph under each. Empty on a card
+   * stored before keys existed.
+   */
+  items: DailyItem[];
+  /** A computed stand-in the server may still replace with a written card. */
+  upgradable: boolean;
+  /** Its "see more" paragraphs are already written (reading them is free). */
+  detail_ready: boolean;
+};
+
+export type DailyItem = {
+  key: string;
+  /** The trigger's kind; empty for a context line with nothing behind it. */
+  kind: string;
+  line: string;
+  tickers: string[];
+};
+
+/** `POST /daily/detail` — the paragraph behind each line of the card. */
+export type DailyDetail = {
+  day: string | null;
+  /** llm | computed — computed when no model answered. */
+  source: string | null;
+  details: { key: string; text: string }[];
 };
 
 type Mover = {

@@ -56,19 +56,23 @@ export function niceTicks(low: number, high: number, count = 4): number[] {
   return out;
 }
 
-/** The value axis: faint gridlines with their labels, right-aligned in the gutter. */
+/** The value axis: faint gridlines with their labels, right-aligned in the
+    left gutter — or left-aligned in the right one, for a chart whose second
+    floor reads off that side. */
 function ValueAxis({
   ticks,
   y,
   left,
   right,
   format,
+  side = "left",
 }: {
   ticks: number[];
   y: (value: number) => number;
   left: number;
   right: number;
   format: (value: number) => string;
+  side?: "left" | "right";
 }) {
   return (
     <g>
@@ -83,11 +87,11 @@ function ValueAxis({
             strokeWidth="1"
           />
           <text
-            x={left - 6}
+            x={side === "left" ? left - 6 : right + 6}
             y={y(tick) + 4}
             fill={token("text-muted")}
             fontSize="11"
-            textAnchor="end"
+            textAnchor={side === "left" ? "end" : "start"}
           >
             {format(tick)}
           </text>
@@ -843,6 +847,40 @@ function withNote(text: string, note: string | null | undefined): string {
   return note ? `${text} (${note})` : text;
 }
 
+/**
+ * The gap between a value line and the money behind it, one polygon per
+ * contiguous run of the same sign. A run is extended by one point on each side
+ * so neighbouring bands meet instead of leaving a seam at the crossover. The
+ * value line is cut on the same runs and coloured by them — green above what
+ * went in, red below — as the Streamlit trace is: the overlapping point keeps
+ * the two colours joined.
+ */
+function gainBands(
+  points: { value: number; base: number }[],
+  x: (index: number) => number,
+  y: (value: number) => number,
+): { gain: boolean; path: string; value: string }[] {
+  const bands: { gain: boolean; path: string; value: string }[] = [];
+  let start = 0;
+  for (let index = 1; index <= points.length; index += 1) {
+    const ending = index === points.length;
+    const gain = points[start]!.value >= points[start]!.base;
+    const same = !ending && points[index]!.value >= points[index]!.base === gain;
+    if (same) continue;
+    const run = points.slice(start, Math.min(index + 1, points.length));
+    const offset = start;
+    const top = run.map((point, i) => `${x(offset + i)},${y(point.value)}`);
+    const bottom = run.map((point, i) => `${x(offset + i)},${y(point.base)}`).reverse();
+    bands.push({
+      gain,
+      path: `M${top.join("L")}L${bottom.join("L")}Z`,
+      value: top.join(" "),
+    });
+    start = ending ? start : index;
+  }
+  return bands;
+}
+
 /** Fewest days a drag has to cover to count as a zoom rather than a click. */
 const MIN_ZOOM_DAYS = 5;
 
@@ -967,29 +1005,11 @@ export function BookHistory({
   const line = (pick: (day: (typeof days)[number]) => number) =>
     days.map((day, index) => `${x(index)},${y(pick(day))}`).join(" ");
 
-  // Contiguous runs of one sign, each closed into its own polygon. A run is
-  // extended by one point on each side so neighbouring bands meet instead of
-  // leaving a seam at the crossover. The value line is cut on the same runs
-  // and coloured by them — green above what went in, red below — as the
-  // Streamlit trace is: the overlapping point keeps the two colours joined.
-  const bands: { gain: boolean; path: string; value: string }[] = [];
-  let start = 0;
-  for (let index = 1; index <= days.length; index += 1) {
-    const ending = index === days.length;
-    const gain = days[start]!.value >= days[start]!.injected;
-    const same = !ending && days[index]!.value >= days[index]!.injected === gain;
-    if (same) continue;
-    const run = days.slice(start, Math.min(index + 1, days.length));
-    const offset = start;
-    const top = run.map((day, i) => `${x(offset + i)},${y(day.value)}`);
-    const bottom = run.map((day, i) => `${x(offset + i)},${y(day.injected)}`).reverse();
-    bands.push({
-      gain,
-      path: `M${top.join("L")}L${bottom.join("L")}Z`,
-      value: top.join(" "),
-    });
-    start = ending ? start : index;
-  }
+  const bands = gainBands(
+    days.map((day) => ({ value: day.value, base: day.injected })),
+    x,
+    y,
+  );
 
   const ticks = [0, Math.floor(days.length / 2), days.length - 1];
   const offsetOf = zoom ? zoom.from : 0;
@@ -1151,6 +1171,361 @@ export function BookHistory({
             width={width}
             title={formatDate(hovered.date)}
             rows={tipRows(hovered)}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** The two floors inside the 720-wide viewBox: money over rates with no gap
+    between them, one date axis under both, money's gutter on the left and the
+    rates' on the right. `inset` keeps a rate line off the seam. */
+const FLOORS = {
+  width: 720,
+  left: 64,
+  right: 52,
+  top: 8,
+  money: 200,
+  rates: 130,
+  inset: 8,
+  bottom: 24,
+};
+
+export type BookRatePoint = {
+  date: string;
+  value: number | null;
+  /** What the book had put to work by this date — the base the gain is over. */
+  invested: number | null;
+};
+
+/**
+ * A window's euros and its rates on one date axis, answering to one pointer.
+ *
+ * The top floor is the book as `BookHistory` draws it — what was put to work
+ * against what it is worth, the gap between them green or red — and the bottom
+ * one the rates as `ReturnLines` draws them, read off the right-hand axis.
+ * Stacked with no gap rather than overlaid on a second y-axis: overlaid, a
+ * percentage line crosses the value line wherever the two scales happen to
+ * put it, a meaningless point that reads as an event. Stacked, the same
+ * vertical rules (each month in a short window, each January in a long one)
+ * run through both floors, so a dip in the rates sits under the deposit and
+ * the fall that caused it. The pointer reads the same month off both floors
+ * into one box: value, money put in, the gain between them, and each rate.
+ */
+export function BookAndRates({
+  points,
+  series,
+  labels,
+  money,
+  axisMoney,
+  format,
+  formatDate,
+}: {
+  points: BookRatePoint[];
+  series: ReturnSeries[];
+  labels: { invested: string; profit: string; loss: string; gain: string };
+  money: (value: number, signed?: boolean) => string;
+  /** Compact formatter for the money gutter; falls back to `money`. */
+  axisMoney?: (value: number) => string;
+  /** The rates' formatter, for their gutter and the box. */
+  format: (value: number) => string;
+  formatDate: (iso: string) => string;
+}) {
+  const [pointer, setHover] = useState<number | null>(null);
+  const svg = useRef<SVGSVGElement>(null);
+  // Both legs or the month is not comparable, as on the history chart.
+  const book = points.filter(
+    (point): point is BookRatePoint & { value: number; invested: number } =>
+      point.value !== null && point.invested !== null,
+  );
+  if (book.length < 2 || book.length !== points.length) return null;
+  // A shorter window can arrive under a pointer still resting on the old one.
+  const hover = pointer !== null && pointer < book.length ? pointer : null;
+
+  const { width, left, right } = FLOORS;
+  const plotW = width - left - right;
+  const moneyTop = FLOORS.top;
+  const ratesTop = moneyTop + FLOORS.money;
+  const bottom = ratesTop + FLOORS.rates;
+  const height = bottom + FLOORS.bottom;
+  const x = (index: number) => left + (index / (book.length - 1)) * plotW;
+
+  const levels = book.flatMap((point) => [point.value, point.invested]);
+  const rawLow = Math.min(...levels);
+  const rawHigh = Math.max(...levels);
+  const pad = (rawHigh - rawLow) * 0.04 || Math.abs(rawHigh) * 0.04 || 1;
+  const moneyLow = rawLow - pad;
+  const moneySpan = rawHigh + pad - moneyLow;
+  const yMoney = (value: number) =>
+    moneyTop + (1 - (value - moneyLow) / moneySpan) * FLOORS.money;
+
+  const drawn = series.filter((one) => one.points.some((v) => v !== null));
+  const rates = drawn
+    .flatMap((one) => one.points)
+    .filter((v): v is number => v !== null);
+  // Zero stays on the rates' axis, as on every return chart here.
+  const rateLow = Math.min(0, ...rates);
+  const rateSpan = Math.max(0, ...rates) - rateLow || 1;
+  const rateH = FLOORS.rates - 2 * FLOORS.inset;
+  const yRate = (value: number) =>
+    ratesTop + FLOORS.inset + (1 - (value - rateLow) / rateSpan) * rateH;
+
+  const ramp = categorical();
+  const colored = drawn.map((one, index) => ({
+    ...one,
+    color: one.color ?? ramp[index % ramp.length]!,
+  }));
+  /** Contiguous runs of a rate line, so a month without a rate breaks it. */
+  const runs = (values: (number | null)[]) => {
+    const out: string[] = [];
+    let run: string[] = [];
+    values.forEach((value, index) => {
+      if (value === null) {
+        if (run.length > 1) out.push(`M${run.join("L")}`);
+        run = [];
+        return;
+      }
+      run.push(`${x(index)},${yRate(value)}`);
+    });
+    if (run.length > 1) out.push(`M${run.join("L")}`);
+    return out;
+  };
+
+  const bands = gainBands(
+    book.map((point) => ({ value: point.value, base: point.invested })),
+    x,
+    yMoney,
+  );
+  const upColor = token("up");
+  const downColor = token("down");
+  const anyGain = book.some((point) => point.value >= point.invested);
+  const anyLoss = book.some((point) => point.value < point.invested);
+  const ticks = [0, Math.floor(book.length / 2), book.length - 1];
+  // The rules both floors share: every month while there are few enough to
+  // tell apart, each January once there are not.
+  const rules = book
+    .map((point, index) => ({ index, month: point.date.slice(5, 7) }))
+    .filter(({ index, month }) =>
+      book.length <= 13 ? index > 0 && index < book.length - 1 : month === "01",
+    )
+    .map(({ index }) => index);
+  const hovered = hover === null ? null : book[hover]!;
+
+  const tipRows = (index: number, point: (typeof book)[number]): TipRow[] => {
+    const up = point.value >= point.invested;
+    return [
+      {
+        label: up ? labels.profit : labels.loss,
+        value: money(point.value),
+        color: up ? upColor : downColor,
+      },
+      {
+        label: labels.invested,
+        value: money(point.invested),
+        color: token("text-muted"),
+      },
+      { label: labels.gain, value: money(point.value - point.invested, true) },
+      ...colored.map((one) => {
+        const value = one.points[index];
+        return {
+          label: one.label,
+          value: value === null || value === undefined ? "—" : format(value),
+          color: one.color,
+        };
+      }),
+    ];
+  };
+
+  return (
+    <div className="pf-chart">
+      <ul className="pf-legend-inline">
+        <li className="pf-legend-row">
+          <span
+            className="pf-swatch pf-swatch-dashed"
+            style={{ background: token("text-muted") }}
+          />
+          <span>{labels.invested}</span>
+        </li>
+        {anyGain ? (
+          <li className="pf-legend-row">
+            <span className="pf-swatch" style={{ background: upColor }} />
+            <span>{labels.profit}</span>
+          </li>
+        ) : null}
+        {anyLoss ? (
+          <li className="pf-legend-row">
+            <span className="pf-swatch" style={{ background: downColor }} />
+            <span>{labels.loss}</span>
+          </li>
+        ) : null}
+        {colored.map((one) => (
+          <li className="pf-legend-row" key={one.label}>
+            <span
+              className={one.dashed ? "pf-swatch pf-swatch-dashed" : "pf-swatch"}
+              style={{ background: one.color }}
+            />
+            <span>{one.label}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="pf-plot">
+        <svg
+          ref={svg}
+          viewBox={`0 0 ${width} ${height}`}
+          width="100%"
+          role="img"
+          onPointerMove={(event) => {
+            const at = viewX(event, svg.current, width);
+            if (at !== null) setHover(nearest(at, left, plotW, book.length));
+          }}
+          onPointerLeave={() => setHover(null)}
+        >
+          {rules.map((index) => (
+            <line
+              key={`rule-${index}`}
+              x1={x(index)}
+              x2={x(index)}
+              y1={moneyTop}
+              y2={bottom}
+              stroke={token("rule-soft")}
+              strokeWidth="1"
+            />
+          ))}
+          <ValueAxis
+            ticks={niceTicks(moneyLow, moneyLow + moneySpan)}
+            y={yMoney}
+            left={left}
+            right={width - right}
+            format={axisMoney ?? ((value) => money(value))}
+          />
+          {bands.map((band, index) => (
+            <path
+              key={index}
+              d={band.path}
+              fill={band.gain ? token("profit-band") : token("loss-band")}
+            />
+          ))}
+          <polyline
+            points={book
+              .map((point, i) => `${x(i)},${yMoney(point.invested)}`)
+              .join(" ")}
+            fill="none"
+            stroke={token("text-muted")}
+            strokeWidth="1.5"
+            strokeDasharray="4 3"
+          />
+          {bands.map((band, index) => (
+            <polyline
+              key={`value-${index}`}
+              points={band.value}
+              fill="none"
+              stroke={band.gain ? upColor : downColor}
+              strokeWidth="2"
+            />
+          ))}
+
+          {/* The seam: where money's floor ends and the rates' begins. */}
+          <line
+            x1={left}
+            x2={width - right}
+            y1={ratesTop}
+            y2={ratesTop}
+            stroke={token("border")}
+            strokeWidth="1"
+          />
+          <ValueAxis
+            ticks={niceTicks(rateLow, rateLow + rateSpan, 3).filter(
+              (tick) => tick !== 0,
+            )}
+            y={yRate}
+            left={left}
+            right={width - right}
+            format={format}
+            side="right"
+          />
+          <line
+            x1={left}
+            x2={width - right}
+            y1={yRate(0)}
+            y2={yRate(0)}
+            stroke={token("border")}
+            strokeWidth="1"
+            strokeDasharray="2 3"
+          />
+          <text
+            x={width - right + 6}
+            y={yRate(0) + 4}
+            fill={token("text-muted")}
+            fontSize="11"
+            textAnchor="start"
+          >
+            {format(0)}
+          </text>
+          {colored.map((one) =>
+            runs(one.points).map((d, index) => (
+              <path
+                key={`${one.label}-${index}`}
+                d={d}
+                fill="none"
+                stroke={one.color}
+                strokeWidth="1.5"
+                strokeDasharray={one.dashed ? "4 3" : undefined}
+              />
+            )),
+          )}
+
+          {hovered && hover !== null ? (
+            <g pointerEvents="none">
+              <line
+                x1={x(hover)}
+                x2={x(hover)}
+                y1={moneyTop}
+                y2={bottom}
+                stroke={token("text-faint")}
+                strokeDasharray="2 2"
+              />
+              <circle
+                cx={x(hover)}
+                cy={yMoney(hovered.value)}
+                r="3"
+                fill={hovered.value >= hovered.invested ? upColor : downColor}
+              />
+              {colored.map((one) => {
+                const value = one.points[hover];
+                return value === null || value === undefined ? null : (
+                  <circle
+                    key={one.label}
+                    cx={x(hover)}
+                    cy={yRate(value)}
+                    r="3"
+                    fill={one.color}
+                  />
+                );
+              })}
+            </g>
+          ) : null}
+          {ticks.map((index) => (
+            <text
+              key={index}
+              x={x(index)}
+              y={height - 6}
+              fill={token("text-muted")}
+              fontSize="11"
+              textAnchor={
+                index === 0 ? "start" : index === book.length - 1 ? "end" : "middle"
+              }
+            >
+              {formatDate(book[index]!.date)}
+            </text>
+          ))}
+        </svg>
+        {hovered && hover !== null ? (
+          <ChartTip
+            x={x(hover)}
+            width={width}
+            title={formatDate(hovered.date)}
+            rows={tipRows(hover, hovered)}
           />
         ) : null}
       </div>

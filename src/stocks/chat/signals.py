@@ -18,27 +18,39 @@ actually declared or the ledger actually holds:
     is only worth surfacing when there is a realised gain this tax year for it
     to offset, and the jurisdiction's repurchase window is the trap that goes
     with it.
-  - **the calendar** — a print inside a few days is a decision date, not news.
+  - **the earnings calendar** — a print inside a few days is a decision date,
+    not news; one inside two weeks, or on a watched name, is one to plan for;
+    and a print of the last few days is reported against its estimate.
   - **the price** — a watchlist name at its 52-week low is the "getting close
     to interesting" case, which is about candidates, not holdings.
   - **the market, against this book** — the index's own trend and how much of
     it is still in one, the sector bet the book is running against the index,
     how the book did beside that index, and what the currency did to it.
-    `market_candidates()` owns those, and they are the only ones here that are
-    not about a single ticker.
+    `market_candidates()` owns those.
+  - **the central banks** — a Fed or ECB decision inside a week, and the one
+    that just happened, read off the policy-rate series (`macro_candidates()`).
+  - **the tax calendar** — a filing deadline coming up, the tax year closing
+    with gains or losses still open, the next savings bracket within reach,
+    and the day a loss sale's repurchase window lets go.
 
 Each candidate carries its numbers and an urgency; stocks/chat/daily.py hands
 the top few to the model, which picks and phrases — it never gets to invent one
 — and renders them directly when no model is available. Nothing here fetches:
-every input is a frame or list the dashboard already loaded.
+every input is a frame, list or series the caller already loaded.
 
 **A card that repeats itself is a card nobody reads.** Most of these triggers
 are standing conditions, not events: an open loss with a gain behind it is
-just as true tomorrow, and the card used to spend all four of its lines on the
-same family of them. Two rules fix that, both in `candidates()`: `_CAP` limits
-how many of one kind can reach the model at once, and `decay()` sinks a
-standing trigger a little further each consecutive day it has already been
-offered, so today's card leads with something yesterday's did not.
+just as true tomorrow, and a fired alert stays fired for as long as the price
+stays past it — which is how one alert led the card for weeks. So the card
+remembers what it said (daily.DailyAction.shown: every key it showed, when,
+and the figure it showed it with), and `candidates()` drops a trigger that was
+on an earlier day's card and has not changed since (`repeat()`): its figure has
+not moved past `_MATERIAL`, its phase has not advanced, its cooldown has not
+run out. An alert is an event only on the sessions after it crossed; one that
+has been past its level for longer is `alert_stale`, said once — the level has
+stopped telling the user anything — and then left alone. `_CAP` and
+`_FAMILY_CAP` still limit how many of one kind can reach the model at once, and
+`decay()` still sinks a standing trigger shown on consecutive days.
 """
 
 from __future__ import annotations
@@ -59,9 +71,33 @@ DRAWDOWN_PCT = 25.0
 # spread and attention than it saves.
 HARVEST_MIN = 150.0
 CONCENTRATION_PCT = 30.0
+# A print this close is a decision date for a held name; out to EARNINGS_AHEAD
+# it is one to plan for, and the only horizon a watched name gets.
 EARNINGS_DAYS = 5
+EARNINGS_AHEAD = 14
+# A print this recent is still the news the reader has to digest.
+RESULT_DAYS = 3
 # Within this of the 52-week low, a watchlist name is worth a look.
 LOW_52W_PCT = 3.0
+# An alert whose price has stayed past the level for more sessions than this
+# is no longer an event: it fired, it was said, and the level has stopped
+# telling the user anything until they move it.
+ALERT_FRESH_SESSIONS = 5
+
+# --- the calendars ------------------------------------------------------------
+# A rate decision this close is worth planning around; one this recent is
+# still the backdrop. The ECB's window is longer because its deposit rate only
+# changes the Wednesday after the decision, and the move is read off the rate.
+MACRO_DAYS = 7
+_RESULT_DAYS = {"fed": 4, "ecb": 9}
+# How far ahead a filing deadline, and the end of the tax year, reach the card.
+TAX_DEADLINE_DAYS = 30
+YEAR_END_DAYS = 60
+# A savings bracket this close (as a share of its own width) is the one the
+# next realised gain lands in.
+BRACKET_ROOM_SHARE = 0.25
+# A loss sale's repurchase window ending this soon is a date to plan a buy on.
+REPURCHASE_DAYS = 7
 
 # --- the market block's own thresholds ---------------------------------------
 # Sessions in a month and in a trading year, and the average trend breadth is
@@ -95,8 +131,10 @@ FX_SHARE_PCT = 25.0
 # alert is the user's own trigger going off today; a concentration drift has
 # been true for weeks and will still be true tomorrow.
 ALERT_HIT = "alert_hit"
+ALERT_STALE = "alert_stale"
 HARVEST = "harvest"
 EARNINGS = "earnings"
+EARNINGS_RESULT = "earnings_result"
 ALERT_NEAR = "alert_near"
 MARKET = "market"
 DRAWDOWN = "drawdown"
@@ -105,20 +143,37 @@ LOW_52W = "low_52w"
 VS_BENCH = "vs_benchmark"
 FX = "fx"
 CONCENTRATION = "concentration"
+MACRO_EVENT = "macro_event"
+MACRO_RESULT = "macro_result"
+TAX_DEADLINE = "tax_deadline"
+TAX_YEAR_END = "tax_year_end"
+TAX_BRACKET = "tax_bracket"
+REPURCHASE_CLEAR = "repurchase_clear"
 
 _URGENCY = {
     ALERT_HIT: 90,
     HARVEST: 75,
+    EARNINGS_RESULT: 72,
     EARNINGS: 70,
+    MACRO_RESULT: 66,
+    TAX_DEADLINE: 62,
     ALERT_NEAR: 60,
     MARKET: 58,
+    MACRO_EVENT: 57,
     DRAWDOWN: 55,
     SECTOR_TILT: 52,
+    TAX_YEAR_END: 50,
+    TAX_BRACKET: 48,
+    REPURCHASE_CLEAR: 47,
     LOW_52W: 45,
     VS_BENCH: 44,
+    ALERT_STALE: 42,
     FX: 40,
     CONCENTRATION: 35,
 }
+# How far a watched (not held) name's print or result sits under a held one's:
+# news about a candidate, not a decision about money already in it.
+WATCHED_DISCOUNT = 22
 
 # How many of one kind may reach the model in a single card. Events are allowed
 # to crowd it — three alerts firing on one morning IS the morning — but a
@@ -129,24 +184,42 @@ _CAP = {
     ALERT_HIT: 3,
     ALERT_NEAR: 2,
     EARNINGS: 2,
+    EARNINGS_RESULT: 2,
     LOW_52W: 2,
-    HARVEST: 1,
-    DRAWDOWN: 1,
-    CONCENTRATION: 1,
-    MARKET: 1,
-    SECTOR_TILT: 1,
-    VS_BENCH: 1,
-    FX: 1,
+    MACRO_EVENT: 2,
 }
 _CAP_DEFAULT = 1
 
+# And how many of one family: two central banks and the index are one story
+# about rates and the tape, and the four tax lines are one about this year's
+# bill — a card spending all its lines on either is the monotony `_CAP` exists
+# to prevent, one level up.
+_FAMILY = {
+    ALERT_HIT: "alert",
+    ALERT_NEAR: "alert",
+    ALERT_STALE: "alert",
+    EARNINGS: "earnings",
+    EARNINGS_RESULT: "earnings",
+    MARKET: "macro",
+    MACRO_EVENT: "macro",
+    MACRO_RESULT: "macro",
+    HARVEST: "tax",
+    TAX_DEADLINE: "tax",
+    TAX_YEAR_END: "tax",
+    TAX_BRACKET: "tax",
+    REPURCHASE_CLEAR: "tax",
+}
+_FAMILY_CAP = {"alert": 3, "earnings": 3, "macro": 2, "tax": 2}
+
 # The kinds a reader would see word for word again tomorrow, and so the ones
-# `decay()` sinks. Left out on purpose: alert_hit and earnings are events (one
-# fires once, the other gets more urgent as the date approaches), and `market`
-# and `vs_benchmark` are re-read from the tape every day — their numbers are
-# different on Tuesday even when their key is not.
+# `decay()` sinks. Left out on purpose: events (an alert crossing, a print, a
+# decision, a deadline) whose phase moves on its own, and `market` and
+# `vs_benchmark`, re-read from the tape every day.
 _STANDING = frozenset(
-    {HARVEST, DRAWDOWN, CONCENTRATION, LOW_52W, SECTOR_TILT, FX, ALERT_NEAR}
+    {
+        HARVEST, DRAWDOWN, CONCENTRATION, LOW_52W, SECTOR_TILT, FX, ALERT_NEAR,
+        ALERT_STALE, TAX_BRACKET,
+    }
 )
 # Urgency lost per consecutive day already offered, and the floor it stops at.
 # Three days takes harvest from 75 to 39 — under a fresh drawdown, over a fresh
@@ -156,6 +229,70 @@ DECAY_MAX = 36
 # A key not offered for this many days has stopped being repetitive; its streak
 # is forgotten rather than carried forever.
 DECAY_FORGET_DAYS = 7
+# How long the card remembers having shown a key at all. Longer than any
+# cooldown below, or a print shown a fortnight out would be forgotten — and
+# shown again as new — before its own date came round.
+MEMORY_DAYS = 45
+
+
+@dataclass(frozen=True)
+class _Rel:
+    """A material move measured against the old figure: 0.25 is a quarter."""
+
+    share: float
+
+
+# What "changed since the reader last saw it" means, per kind: the fields the
+# card remembers with each key, and how far each must move before the trigger
+# reads as new. A number is an absolute move in the field's own units (points
+# for a percentage), `_Rel` a share of the old value, None an exact change — a
+# new phase, a new date, a different sector. An event's phase ("week", "soon",
+# "now") is how a print is allowed back onto the card as it gets closer.
+_MATERIAL: dict[str, dict] = {
+    ALERT_HIT: {"rule": None, "level": None},
+    ALERT_STALE: {"rule": None, "level": None},
+    ALERT_NEAR: {"rule": None, "level": None, "gap_pct": 1.5},
+    HARVEST: {"offset": _Rel(0.25)},
+    DRAWDOWN: {"pnl_pct": 5.0},
+    CONCENTRATION: {"weight_pct": 3.0},
+    LOW_52W: {"price": _Rel(0.05)},
+    MARKET: {"trend": None, "from_high_pct": 3.0, "breadth_pct": 15.0},
+    SECTOR_TILT: {"sector": None, "tilt_pp": 3.0},
+    VS_BENCH: {"gap_pp": 3.0},
+    FX: {"currency": None, "move_month_pct": 1.5},
+    EARNINGS: {"date": None, "phase": None},
+    EARNINGS_RESULT: {"date": None},
+    MACRO_EVENT: {"date": None, "phase": None},
+    MACRO_RESULT: {"date": None},
+    TAX_DEADLINE: {"date": None, "phase": None},
+    TAX_YEAR_END: {"end": None, "phase": None},
+    TAX_BRACKET: {"rate_pct": None, "room": _Rel(0.5)},
+    REPURCHASE_CLEAR: {"clear_date": None},
+}
+
+# Days after which an unchanged trigger may come back as a reminder. None is
+# never: an event is said once per phase, and its next phase is its reminder.
+_COOLDOWN: dict[str, int | None] = {
+    ALERT_HIT: None,
+    ALERT_STALE: 14,
+    ALERT_NEAR: 7,
+    HARVEST: 7,
+    DRAWDOWN: 10,
+    CONCENTRATION: 14,
+    LOW_52W: 7,
+    MARKET: 7,
+    SECTOR_TILT: 14,
+    VS_BENCH: 7,
+    FX: 7,
+    EARNINGS: None,
+    EARNINGS_RESULT: None,
+    MACRO_EVENT: None,
+    MACRO_RESULT: None,
+    TAX_DEADLINE: None,
+    TAX_YEAR_END: None,
+    TAX_BRACKET: 14,
+    REPURCHASE_CLEAR: None,
+}
 
 
 @dataclass(frozen=True)
@@ -169,17 +306,33 @@ class Signal:
 
     @property
     def key(self) -> str:
-        """What "the same trigger as yesterday" means, for `decay()`.
+        """What "the same trigger as yesterday" means, for `repeat()` and
+        `decay()`.
 
         Kind plus subject: a market-wide signal carries no ticker and is keyed
-        on its kind alone, and a sector bet is keyed on the sector rather than
-        on a holding, because that is the thing that would read as a repeat.
+        on its kind alone, a sector bet on the sector rather than on a holding,
+        a rate decision on its bank, and a tax deadline on the deadline —
+        because each of those is the thing that would read as a repeat.
         """
-        subject = self.ticker or str(self.data.get("sector") or "")
-        return f"{self.kind}:{subject}"
+        return key_of(self.kind, {"ticker": self.ticker, **self.data})
 
     def to_dict(self) -> dict:
-        return {"kind": self.kind, "ticker": self.ticker, **self.data}
+        # The key rides along: the model hands it back with each line it
+        # writes, which is how the card knows which triggers it actually
+        # showed (and so which to remember) rather than which it was offered.
+        return {"kind": self.kind, "ticker": self.ticker, **self.data, "key": self.key}
+
+
+def key_of(kind: str, data: dict) -> str:
+    """`Signal.key` from a kind and its dict — what a stored action carries."""
+    subject = (
+        data.get("ticker")
+        or data.get("sector")
+        or data.get("bank")
+        or data.get("deadline")
+        or ""
+    )
+    return f"{kind}:{subject}"
 
 
 def _round(value, digits: int = 2) -> float | None:
@@ -188,6 +341,18 @@ def _round(value, digits: int = 2) -> float | None:
 
 
 # ------------------------------------------------------------ the user's own
+
+
+def _sessions_past(alert, prices: list) -> int:
+    """How many closes in a row, counting back from the last, the alert has
+    been triggered on — the age of the crossing, in sessions."""
+    run = 0
+    for value in reversed(prices):
+        price = finite(value)
+        if price is None or not alert.triggered(price):
+            break
+        run += 1
+    return run
 
 
 def _alert_signals(holdings, closes: dict, held: set[str]) -> list[Signal]:
@@ -199,12 +364,19 @@ def _alert_signals(holdings, closes: dict, held: set[str]) -> list[Signal]:
     notify/alerts.py against a full price history — a fetch this card has no
     business making, and the notification path already covers them.
 
+    `closes` is each ticker's recent closes, oldest first, and the history is
+    what tells an event from a state: an alert past its level for at most
+    `ALERT_FRESH_SESSIONS` closes just crossed (`alert_hit`, with the count);
+    one past it for longer is `alert_stale` — the level is no longer telling
+    the user anything, which is its own, one-off, line. With only the last
+    close to go on (a caller that passes one) every fired alert reads fresh.
+
     Comparison is in the ticker's own quote currency, because that is the
     currency the user typed the level in.
     """
     out: list[Signal] = []
     for h in holdings:
-        prices = closes.get(h.ticker) or []
+        prices = list(closes.get(h.ticker) or [])
         price = finite(prices[-1]) if prices else None
         if price is None:
             continue
@@ -223,7 +395,11 @@ def _alert_signals(holdings, closes: dict, held: set[str]) -> list[Signal]:
                 "gap_pct": _round(abs(gap_pct)),
             }
             if alert.triggered(price):
-                out.append(Signal(ALERT_HIT, h.ticker, _URGENCY[ALERT_HIT], data))
+                sessions = _sessions_past(alert, prices)
+                kind = ALERT_HIT if sessions <= ALERT_FRESH_SESSIONS else ALERT_STALE
+                out.append(Signal(
+                    kind, h.ticker, _URGENCY[kind], data | {"sessions": sessions}
+                ))
             elif abs(gap_pct) <= NEAR_PCT:
                 out.append(Signal(ALERT_NEAR, h.ticker, _URGENCY[ALERT_NEAR], data))
     return out
@@ -312,25 +488,354 @@ def _harvest_signals(
 # --------------------------------------------------------- calendar & price
 
 
-def _earnings_signals(earnings, held: set[str]) -> list[Signal]:
-    """Prints inside EARNINGS_DAYS — a date the user can still act before.
+def phase(days: int) -> str:
+    """Where a dated event sits: "now" (today or tomorrow), "soon" (inside
+    `EARNINGS_DAYS`), "week" (further out). The card says an event once per
+    phase, so a print two weeks out is announced, then recalled the week of,
+    then on the day — three lines, not fourteen."""
+    if days <= 1:
+        return "now"
+    if days <= EARNINGS_DAYS:
+        return "soon"
+    return "week"
 
-    Held names only: a print on a name you do not own is news, not a decision.
-    The closer the date the higher it sorts, so tomorrow's print outranks
-    Friday's.
+
+def _earnings_signals(earnings, held: set[str]) -> list[Signal]:
+    """Prints inside `EARNINGS_AHEAD` days — a date the user can still act
+    before.
+
+    A held name's print is a decision about money already in it, and inside
+    `EARNINGS_DAYS` it sorts by how close it is, so tomorrow's print outranks
+    Friday's. A watched name's is news about a candidate — worth a line, well
+    under any held one (`WATCHED_DISCOUNT`).
     """
     out: list[Signal] = []
     for event in earnings:
         days = getattr(event, "days_until", None)
         if getattr(event, "date", None) is None or days is None:
             continue
-        if event.ticker not in held or not 0 <= days <= EARNINGS_DAYS:
+        if not 0 <= days <= EARNINGS_AHEAD:
             continue
+        owned = event.ticker in held
+        urgency = _URGENCY[EARNINGS] + max(EARNINGS_DAYS - days, 0)
+        if days > EARNINGS_DAYS:
+            urgency -= 12
+        if not owned:
+            urgency -= WATCHED_DISCOUNT
         out.append(Signal(
-            EARNINGS, event.ticker, _URGENCY[EARNINGS] + (EARNINGS_DAYS - days),
-            {"in_days": int(days), "date": event.date.isoformat()},
+            EARNINGS, event.ticker, urgency,
+            {
+                "in_days": int(days),
+                "date": event.date.isoformat(),
+                "held": owned,
+                "phase": phase(int(days)),
+            },
         ))
     return out
+
+
+def _result_signals(results, held: set[str], today: date) -> list[Signal]:
+    """Prints of the last `RESULT_DAYS` days: what was reported against what
+    was expected.
+
+    The calendar pass already carries these (loaders.earnings_calendar's
+    second half — yfinance's reported EPS, the estimate and the surprise), so
+    the line costs nothing; the revenue and the press release behind it are
+    fetched only if the reader opens the detail. One per ticker, the newest.
+    """
+    out: list[Signal] = []
+    seen: set[str] = set()
+    for result in results:
+        when = getattr(result, "date", None)
+        reported = finite(getattr(result, "reported_eps", None))
+        if when is None or reported is None or result.ticker in seen:
+            continue
+        ago = (today - when).days
+        if not 0 <= ago <= RESULT_DAYS:
+            continue
+        seen.add(result.ticker)
+        owned = result.ticker in held
+        estimate = finite(getattr(result, "eps_estimate", None))
+        surprise = finite(getattr(result, "surprise_pct", None))
+        data = {
+            "date": when.isoformat(),
+            "days_ago": ago,
+            "held": owned,
+            "reported_eps": _round(reported),
+            "eps_estimate": _round(estimate),
+            "surprise_pct": _round(surprise),
+        }
+        if estimate is not None:
+            data["beat"] = reported >= estimate
+        urgency = _URGENCY[EARNINGS_RESULT] - ago * 3
+        if not owned:
+            urgency -= WATCHED_DISCOUNT
+        out.append(Signal(EARNINGS_RESULT, result.ticker, urgency, data))
+    return out
+
+
+# --------------------------------------------------------------- the tax year
+
+
+def _window_end(sell: date, window: str) -> date | None:
+    """The first day a repurchase no longer touches a loss sold on `sell`."""
+    from datetime import timedelta
+
+    from stocks.portfolio.tax.base import shift_months
+
+    if window == "2m":
+        return shift_months(sell, 2) + timedelta(days=1)
+    if window in ("30d", "28d"):
+        return sell + timedelta(days=int(window[:-1]) + 1)
+    return None
+
+
+def _year_end(jurisdiction, today: date) -> date:
+    """The last day of the tax year `today` falls in."""
+    from datetime import timedelta
+
+    month, day = getattr(jurisdiction, "year_start", (1, 1)) or (1, 1)
+    start = date(today.year, month, day)
+    nxt = start if start > today else date(today.year + 1, month, day)
+    return nxt - timedelta(days=1)
+
+
+def _tax_signals(
+    tbl, realized, jurisdiction, currency: str, today: date
+) -> list[Signal]:
+    """The tax calendar against this book: what is due, what closes, what the
+    next euro of gain costs, and when a blocked loss lets go.
+
+    Each is a date or a threshold the user can plan a sale or a purchase
+    around — the part of tax the tax tab reports after the fact.
+    """
+    if jurisdiction is None:
+        return []
+    out: list[Signal] = []
+    code = getattr(jurisdiction, "code", None)
+
+    # Filing deadlines — the soonest one only; the tax tab lists the rest.
+    try:
+        from stocks.portfolio.tax import deadlines
+
+        due = deadlines.due_soon(code, today, within=TAX_DEADLINE_DAYS)
+    except Exception:  # noqa: BLE001 — a calendar gap is no card line
+        due = []
+    for d in due[:1]:
+        days = d.days_until(today)
+        out.append(Signal(
+            TAX_DEADLINE, "", _URGENCY[TAX_DEADLINE] + max(7 - days, 0),
+            {
+                "deadline": d.key,
+                "year": d.year_label,
+                "date": d.date.isoformat(),
+                "in_days": days,
+                "phase": "now" if days <= 1 else "soon" if days <= 7 else "week",
+            },
+        ))
+
+    net_gain = realized_this_year(realized, jurisdiction, today)
+    losses = gains = 0.0
+    if tbl is not None and not tbl.empty and "pnl" in tbl:
+        pnl = tbl["pnl"].dropna()
+        losses = float(-pnl[pnl < 0].sum())
+        gains = float(pnl[pnl > 0].sum())
+
+    # The tax year closing with something still to decide in it.
+    end = _year_end(jurisdiction, today)
+    left = (end - today).days
+    if 0 <= left <= YEAR_END_DAYS and (net_gain or losses >= HARVEST_MIN):
+        out.append(Signal(
+            TAX_YEAR_END, "", _URGENCY[TAX_YEAR_END] + (8 if left <= 30 else 0),
+            {
+                "end": end.isoformat(),
+                "days_left": left,
+                "gain_ytd": _round(net_gain),
+                "open_losses": _round(losses),
+                "open_gains": _round(gains),
+                "currency": currency,
+                "phase": "10" if left <= 10 else "30" if left <= 30 else "60",
+            },
+        ))
+
+    # The next savings bracket, where the scale is progressive and in this
+    # book's own currency (a USD-reported book against euro brackets would be
+    # arithmetic on the wrong number).
+    brackets = _brackets(code)
+    if brackets and net_gain > 0 and currency == getattr(jurisdiction, "currency", ""):
+        floor = 0.0
+        for i, (upper, rate) in enumerate(brackets):
+            if net_gain < upper:
+                if i + 1 < len(brackets) and upper != float("inf"):
+                    room = upper - net_gain
+                    if room <= (upper - floor) * BRACKET_ROOM_SHARE:
+                        out.append(Signal(
+                            TAX_BRACKET, "", _URGENCY[TAX_BRACKET],
+                            {
+                                "gain_ytd": _round(net_gain),
+                                "threshold": _round(upper),
+                                "room": _round(room),
+                                "rate_pct": _round(rate * 100),
+                                "next_rate_pct": _round(brackets[i + 1][1] * 100),
+                                "currency": currency,
+                            },
+                        ))
+                break
+            floor = upper
+
+    # A loss sale whose repurchase window ends within the week, on a name not
+    # bought back — the date from which buying it again keeps the loss.
+    window = getattr(jurisdiction, "repurchase_window", "") or ""
+    held = set(tbl.index.astype(str)) if tbl is not None and not tbl.empty else set()
+    latest: dict[str, _Loss] = {}
+    for sale in realized:
+        if sale.gain >= 0 or sale.ticker in held:
+            continue
+        try:
+            sold = date.fromisoformat(str(sale.sell_date)[:10])
+        except ValueError:
+            continue
+        mine = latest.get(sale.ticker)
+        if mine is None or sold > mine.sold:
+            latest[sale.ticker] = _Loss(sold, -sale.gain)
+        elif sold == mine.sold:
+            latest[sale.ticker] = _Loss(sold, mine.loss - sale.gain)
+    for ticker, loss in sorted(latest.items()):
+        clear = _window_end(loss.sold, window)
+        if clear is None:
+            continue
+        days = (clear - today).days
+        if 0 <= days <= REPURCHASE_DAYS and loss.loss >= HARVEST_MIN:
+            out.append(Signal(
+                REPURCHASE_CLEAR, ticker, _URGENCY[REPURCHASE_CLEAR],
+                {
+                    "sell_date": loss.sold.isoformat(),
+                    "clear_date": clear.isoformat(),
+                    "in_days": days,
+                    "loss": _round(loss.loss),
+                    "currency": currency,
+                    "repurchase_window": window,
+                },
+            ))
+    return out
+
+
+@dataclass(frozen=True)
+class _Loss:
+    """A ticker's latest loss sale: its date and what it lost, parcels summed."""
+
+    sold: date
+    loss: float
+
+
+def _brackets(code: str | None) -> list[tuple[float, float]]:
+    """The progressive savings scale the card can reason about, or none.
+
+    Spain's base del ahorro only, today: a single scale with no filing status
+    and no other income in it, so the bracket a realised gain lands in is
+    arithmetic on that gain alone. Every other jurisdiction's rate depends on
+    settings the card does not read.
+    """
+    if code != "ES":
+        return []
+    from stocks.portfolio.tax import es
+
+    return list(es.SAVINGS_BRACKETS)
+
+
+# --------------------------------------------------------- the central banks
+
+
+def macro_due(bank: str, today: date) -> bool:
+    """Whether `bank` has a decision close enough, ahead or behind, for
+    `macro_candidates()` to say anything — so the caller downloads the rate
+    series only on the few days a year it can matter."""
+    from stocks.data import macro_calendar as cal
+
+    nxt = cal.next_decision(bank, today)
+    last = cal.last_decision(bank, today)
+    return (nxt is not None and (nxt - today).days <= MACRO_DAYS) or (
+        last is not None and (today - last).days <= _RESULT_DAYS.get(bank, 4)
+    )
+
+
+def macro_candidates(
+    today: date, rates: dict | None = None, *, banks=("fed", "ecb")
+) -> list[Signal]:
+    """A rate decision inside `MACRO_DAYS`, and the one just taken.
+
+    The calendar is data (stocks/data/macro_calendar.py); the rate is the
+    policy series itself, which the caller fetches (FRED, keyless) and passes
+    in as `rates` — {series id: date-indexed Series} — so this stays pure.
+
+    The result is read off the series, not a headline: an observation dated
+    after the decision day that differs from the one before it is a move, and
+    one that matches is a hold. The ECB's deposit rate only changes on the
+    following Wednesday, so a hold there is indistinguishable from a move not
+    yet effective and is left unsaid; a move is reported once it shows.
+    """
+    from stocks.data import macro_calendar as cal
+
+    rates = rates or {}
+    out: list[Signal] = []
+    for bank in banks:
+        ids = cal.RATE_SERIES.get(bank, ())
+        series = [s for sid in ids if (s := rates.get(sid)) is not None]
+        if not series or len(series) < len(ids) or any(s.dropna().empty for s in series):
+            continue
+        upper = series[-1].dropna()
+        lower = series[0].dropna() if len(series) > 1 else None
+        rate = _round(float(upper.iloc[-1]))
+        low = _round(float(lower.iloc[-1])) if lower is not None else None
+
+        nxt = cal.next_decision(bank, today)
+        if nxt is not None and (nxt - today).days <= MACRO_DAYS:
+            days = (nxt - today).days
+            data = {
+                "bank": bank,
+                "date": nxt.isoformat(),
+                "in_days": days,
+                "rate": rate,
+                "phase": "now" if days <= 1 else "week",
+            }
+            if low is not None:
+                data["rate_low"] = low
+            out.append(Signal(
+                MACRO_EVENT, "", _URGENCY[MACRO_EVENT] + max(3 - days, 0), data
+            ))
+
+        last = cal.last_decision(bank, today)
+        if last is None or (today - last).days > _RESULT_DAYS.get(bank, 4):
+            continue
+        stamp = _stamp(last)
+        before = upper[upper.index <= stamp]
+        after = upper[upper.index > stamp]
+        if before.empty or after.empty:
+            continue
+        was, now = float(before.iloc[-1]), float(after.iloc[-1])
+        change_bp = round((now - was) * 100)
+        if change_bp == 0 and bank == "ecb":
+            continue
+        data = {
+            "bank": bank,
+            "date": last.isoformat(),
+            "days_ago": (today - last).days,
+            "rate_before": _round(was),
+            "rate": _round(now),
+            "change_bp": change_bp,
+            "decision": "hike" if change_bp > 0 else "cut" if change_bp < 0 else "hold",
+        }
+        if low is not None:
+            data["rate_low"] = low
+        urgency = _URGENCY[MACRO_RESULT] - (10 if change_bp == 0 else 0)
+        out.append(Signal(MACRO_RESULT, "", urgency, data))
+    return out
+
+
+def _stamp(day: date):
+    import pandas as pd
+
+    return pd.Timestamp(day)
 
 
 def _low_signals(extremes, held: set[str]) -> list[Signal]:
@@ -609,7 +1114,87 @@ def decay(signal: Signal, shown: dict | None, today: date) -> int:
     if (today - last).days > DECAY_FORGET_DAYS:
         return signal.urgency
     run = max(int(seen.get("run") or 0), 0)
-    return signal.urgency - min(run * DECAY_PER_DAY, DECAY_MAX)
+    if last >= today:
+        # Today's own stamp is not a day it was already offered: a Regenerate
+        # must rank the same triggers the card it replaces ranked.
+        run -= 1
+    return signal.urgency - min(max(run, 0) * DECAY_PER_DAY, DECAY_MAX)
+
+
+def measure(kind: str, data: dict) -> dict:
+    """The figures `repeat()` compares for one trigger — what the card stores
+    beside each key it showed (daily.seen)."""
+    return {name: data.get(name) for name in _MATERIAL.get(kind, {})}
+
+
+def _moved(before: dict, after: dict, rules: dict) -> bool:
+    """Whether any remembered figure moved past its rule (`_MATERIAL`)."""
+    for name, rule in rules.items():
+        old, new = before.get(name), after.get(name)
+        if rule is None or old is None or new is None:
+            if old != new:
+                return True
+            continue
+        try:
+            old, new = float(old), float(new)
+        except (TypeError, ValueError):
+            if old != new:
+                return True
+            continue
+        limit = rule.share * abs(old) if isinstance(rule, _Rel) else float(rule)
+        if abs(new - old) >= limit:
+            return True
+    return False
+
+
+def _weekdays(start: date, end: date) -> int:
+    """Weekdays in (start, end] — sessions elapsed, holidays aside."""
+    from datetime import timedelta
+
+    days, count = start, 0
+    while days < end:
+        days += timedelta(days=1)
+        count += days.weekday() < 5
+    return count
+
+
+def repeat(signal: Signal, shown: dict | None, today: date) -> bool:
+    """Whether `signal` is one an earlier day's card already showed, and
+    nothing about it has changed since — the card's memory, as a filter.
+
+    `shown` is daily.DailyAction.shown: key -> {"last", "run", "v"}, where "v"
+    is `measure()` at the time. A trigger is a repeat when it was last shown
+    before today (today's own card — a Regenerate — is free to show it again),
+    its figures have not moved past `_MATERIAL`, and its `_COOLDOWN` has not
+    run out. A fired alert is the one case measured by time instead: it is the
+    crossing already shown while the price has stayed past the level since
+    the day it was shown — a fresh crossing after a retreat is news again.
+
+    A memory entry from before the figures were stored ("v" missing) cannot
+    say whether anything changed, so only its cooldown applies.
+    """
+    entry = (shown or {}).get(signal.key)
+    if not isinstance(entry, dict) or signal.kind not in _MATERIAL:
+        return False
+    try:
+        last = date.fromisoformat(str(entry.get("last") or ""))
+    except ValueError:
+        return False
+    if last >= today:
+        return False
+    before = entry.get("v")
+    rules = _MATERIAL[signal.kind]
+    now = measure(signal.kind, signal.data)
+    if isinstance(before, dict) and _moved(before, now, rules):
+        return False
+    if signal.kind == ALERT_HIT:
+        return int(signal.data.get("sessions") or 1) >= _weekdays(last, today)
+    cooldown = _COOLDOWN.get(signal.kind)
+    if not isinstance(before, dict) and cooldown is None:
+        # An event remembered without its phase: said once is enough until
+        # the memory ages out.
+        return (today - last).days <= DECAY_FORGET_DAYS
+    return cooldown is None or (today - last).days < cooldown
 
 
 def candidates(
@@ -619,25 +1204,31 @@ def candidates(
     closes: dict | None = None,
     realized=(),
     earnings=(),
+    results=(),
     extremes=(),
     market=(),
+    macro=(),
     shown: dict | None = None,
     jurisdiction=None,
     currency: str = "EUR",
     today: date | None = None,
     limit: int = 8,
 ) -> list[Signal]:
-    """Every action the book currently justifies, most urgent first.
+    """Every action the book currently justifies and the card has not already
+    said, most urgent first.
 
     One ticker can raise several (a name can be both deeply down and the
-    harvest candidate), and the card's job is to choose — but only within
-    `_CAP` per kind, so one crowded family cannot take the whole card, and
-    after `decay()`, so a family that had its turn yesterday gives way today.
-    Ties keep ticker order, which keeps the list stable between reruns of an
+    harvest candidate), and the card's job is to choose — but only among the
+    ones `repeat()` lets through, within `_CAP` per kind and `_FAMILY_CAP` per
+    family so one crowded family cannot take the whole card, and after
+    `decay()`, so a family that had its turn yesterday gives way today. Ties
+    keep ticker order, which keeps the list stable between reruns of an
     unchanged book.
 
-    `market` is the list `market_candidates()` built, passed in rather than
-    computed here because it is the one part with a download behind it.
+    `market` and `macro` are the lists `market_candidates()` and
+    `macro_candidates()` built, passed in rather than computed here because
+    they are the parts with a download behind them. `results` is the
+    calendar's past prints (EarningsResult), newest first.
     """
     day = today or date.today()
     held = set(tbl.index.astype(str)) if tbl is not None and not tbl.empty else set()
@@ -645,18 +1236,26 @@ def candidates(
         *_alert_signals(holdings, closes or {}, held),
         *_harvest_signals(tbl, realized, jurisdiction, currency, today),
         *_earnings_signals(earnings, held),
+        *_result_signals(results, held, day),
         *_position_signals(tbl, currency),
         *_low_signals(extremes, held),
+        *_tax_signals(tbl, realized, jurisdiction, currency, day),
         *market,
+        *macro,
     ]
-    ranked = sorted(out, key=lambda s: (-decay(s, shown, day), s.kind, s.ticker))
+    fresh = [s for s in out if not repeat(s, shown, day)]
+    ranked = sorted(fresh, key=lambda s: (-decay(s, shown, day), s.kind, s.ticker))
     kept: list[Signal] = []
-    seen: dict[str, int] = {}
+    per_kind: dict[str, int] = {}
+    per_family: dict[str, int] = {}
     for signal in ranked:
-        room = _CAP.get(signal.kind, _CAP_DEFAULT)
-        if seen.get(signal.kind, 0) >= room:
+        family = _FAMILY.get(signal.kind, signal.kind)
+        if per_kind.get(signal.kind, 0) >= _CAP.get(signal.kind, _CAP_DEFAULT):
             continue
-        seen[signal.kind] = seen.get(signal.kind, 0) + 1
+        if per_family.get(family, 0) >= _FAMILY_CAP.get(family, limit):
+            continue
+        per_kind[signal.kind] = per_kind.get(signal.kind, 0) + 1
+        per_family[family] = per_family.get(family, 0) + 1
         kept.append(signal)
         if len(kept) >= limit:
             break
