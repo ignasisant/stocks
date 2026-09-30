@@ -1,11 +1,19 @@
 /**
- * The input, and the two controls that change what the next answer will be.
+ * The input, and the control that changes what the next answer will be.
  *
- * Internet and the skill lens belong at the composer rather than in a settings
- * screen opened once a quarter: they change the *next* answer, so they sit
- * beside the thing they change. Both write straight through to
- * `PATCH /chat/settings`, which returns the whole state — one round trip both
- * applies the change and re-reads what it implies.
+ * The skill lens belongs at the composer rather than in a settings screen
+ * opened once a quarter: it changes the *next* answer, so it sits beside the
+ * thing it changes. It writes straight through to `PATCH /chat/settings`,
+ * which returns the whole state — one round trip both applies the change and
+ * re-reads what it implies. It is an icon inside the field rather than a chip
+ * in a row of its own: on a phone that row was height taken from the
+ * conversation for one control, and a lens off its default still shows, in
+ * the icon's colour (`ag-box-set`).
+ *
+ * There is no Internet chip any more. The assistant reads the web wherever
+ * search works (`engine.web_enabled`): the toggle was one almost nobody moved
+ * off its default, and those who did got quietly worse answers with nothing
+ * on screen saying why.
  *
  * A second send while one is in flight is refused here rather than queued: the
  * engine writes one thread, and a queued question would land inside the first
@@ -15,7 +23,7 @@
  * composer's `submit_mode="stop"`: the one control a reader looks for when an
  * answer is going the wrong way is the one their thumb is already on.
  *
- * The paperclip is the third control, and it is the one that does not change
+ * The paperclip is the other control, and it is the one that does not change
  * the next answer but replaces it: a statement attached here is an import — a
  * parse, a preview and a confirmation — served by `/chat/attachments`, and the
  * card it opens is what writes to the ledger. One file per press, because a
@@ -23,23 +31,28 @@
  * dropped with an apology, and in practice the second file was nearly always
  * the same export twice.
  *
- * The microphone is the fourth, and it is drawn only where it can work: this
- * browser has to have `MediaRecorder` and the deployment has to have a
- * transcription key (`state.voice`). A spoken question is transcribed into the
+ * The microphone is the fourth, inside the field beside the lens — the same
+ * control, in the same corner, as the feedback dialog's (`ui/Mic`). It is
+ * drawn only where it can work: this browser has to have `MediaRecorder` and
+ * the deployment has to have a transcription key (`state.voice`). A spoken question is transcribed into the
  * field, not sent: Whisper mishears tickers and numbers often enough that the
  * reader has to see the words before they become a question, and correcting a
  * sent turn costs a whole answer. It joins whatever was already typed, because
  * a note recorded *with* something typed reads as one message rather than two,
- * and the turn is still badged as spoken when it goes.
+ * and the turn is still badged as spoken when it goes. While it is being said,
+ * the browser's recogniser writes it into the field as it is heard (`voice.ts`)
+ * — greyed and read-only, with Send held, until Whisper's transcript replaces
+ * it at the stop.
  */
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useLang, useT } from "../shell/i18n";
 import { capMessage, skillName } from "./format";
 import { Glyph } from "./icons";
+import { Box, Mic } from "../ui/Mic";
 import { Status } from "../ui/Status";
 import type { ChatState, SettingsPatch, SkillsMode } from "./types";
-import { canRecord, record, transcribe, VoiceFailed, type Recording } from "./voice";
+import { canRecord, dictate, join, VoiceFailed, type Dictation } from "./voice";
 
 const MODES: SkillsMode[] = ["auto", "manual", "off"];
 
@@ -152,7 +165,10 @@ export function Composer({
   // The field holds a transcript, so the turn it becomes is badged as spoken.
   // Cleared with the field: a reader who deletes it all and types has typed.
   const spoken = useRef(false);
-  const clip = useRef<Recording | null>(null);
+  const clip = useRef<Dictation | null>(null);
+  // What the field held when the recording started: the words being said are
+  // drawn after it, and the transcript replaces them there.
+  const before = useRef("");
   // "" is not recording; "…" while the clip is being turned into words.
   const [taping, setTaping] = useState(false);
   const [saying, setSaying] = useState(false);
@@ -165,9 +181,9 @@ export function Composer({
   const [caret, setCaret] = useState(false);
   const uid = useId();
   const pickerId = `${uid}-skills`;
-  const webHelpId = `${uid}-web`;
 
   const mode = state.skills_mode;
+  const lens = t("chat.skills_chip", { mode: t(`chat.skills_${mode}`) });
   // The counter and the wall are about the free chain, so neither is drawn for
   // an account whose own key answers: it has no allowance to spend and no wall
   // to hit.
@@ -185,13 +201,17 @@ export function Composer({
     if (saying || busy || reading) return;
     setVoiceError(null);
     if (!taping) {
+      before.current = text;
       try {
-        clip.current = await record();
+        clip.current = await dictate(lang, (words) =>
+          setText(join(before.current, words)),
+        );
         setTaping(true);
       } catch {
         // Denying the microphone is an answer, not a failure: nothing is
         // drawn, and the button goes back to where it was.
         clip.current = null;
+        setText(before.current);
       }
       return;
     }
@@ -201,11 +221,11 @@ export function Composer({
     if (!tape) return;
     setSaying(true);
     try {
-      const said = await transcribe(await tape.stop(), lang);
-      setText((was) => (was.trim() ? `${was.trim()} ${said}` : said));
+      setText(join(before.current, await tape.stop()));
       spoken.current = true;
       setCaret(true);
     } catch (failure) {
+      setText(before.current);
       setVoiceError(
         failure instanceof VoiceFailed
           ? { key: failure.key, slots: failure.slots }
@@ -216,6 +236,10 @@ export function Composer({
     }
   };
 
+  // A recording must not outlive the drawer: the microphone light would stay
+  // on, and the recogniser would keep writing into a field nobody sees.
+  useEffect(() => () => clip.current?.cancel(), []);
+
   useEffect(() => {
     if (!caret) return;
     setCaret(false);
@@ -225,9 +249,12 @@ export function Composer({
     el.setSelectionRange(el.value.length, el.value.length);
   }, [caret]);
 
+  // The words in the field are still being said, or about to be replaced.
+  const live = taping || saying;
+
   const submit = () => {
     const question = text.trim();
-    if (!question || busy) return;
+    if (!question || busy || live) return;
     setText("");
     onSend(question, spoken.current || undefined);
     spoken.current = false;
@@ -252,39 +279,6 @@ export function Composer({
           </button>
         </div>
       )}
-      <div className="ag-chat-rail">
-        {state.web_available && (
-          <>
-            <button
-              type="button"
-              className={`ag-chat-chip${state.web ? " ag-chat-chip-on" : ""}`}
-              aria-pressed={state.web}
-              aria-describedby={webHelpId}
-              title={t("chat.web_help")}
-              onClick={() => onSave({ web: !state.web })}
-            >
-              <Glyph name="globe" size={13} />
-              {t("chat.web_chip")}
-            </button>
-            {/* What the `title` says, for everyone the `title` never reaches:
-                it opens on hover and nowhere else, so a keyboard or a touch
-                reader learns nothing about what Internet turns on. */}
-            <span id={webHelpId} className="ag-sr">
-              {t("chat.web_help")}
-            </span>
-          </>
-        )}
-        <button
-          type="button"
-          className={`ag-chat-chip${picking ? " ag-chat-chip-on" : ""}`}
-          aria-expanded={picking}
-          aria-controls={pickerId}
-          onClick={() => setPicking((was) => !was)}
-        >
-          <Glyph name="spark" size={13} />
-          {t("chat.skills_chip", { mode: t(`chat.skills_${mode}`) })}
-        </button>
-      </div>
       <Skills id={pickerId} hidden={!picking} state={state} onSave={onSave} />
       <form
         className="ag-chat-form"
@@ -320,39 +314,55 @@ export function Composer({
         >
           <Glyph name="attach" size={18} />
         </button>
-        {state.voice && canRecord() && (
-          <button
-            type="button"
-            className={`ag-chat-clip${taping ? " ag-chat-taping" : ""}`}
-            disabled={busy || reading || saying}
-            aria-pressed={taping}
-            title={t(taping ? "chat.voice_stop" : "chat.voice_start")}
-            aria-label={t(taping ? "chat.voice_stop" : "chat.voice_start")}
-            onClick={() => void talk()}
-          >
-            <Glyph name={taping ? "stop" : "mic"} size={18} />
-          </button>
-        )}
-        <textarea
-          ref={field}
-          className="ag-chat-field"
-          value={text}
-          rows={1}
-          placeholder={t("chat.placeholder")}
-          aria-label={t("chat.placeholder")}
-          onChange={(event) => {
-            setText(event.target.value);
-            if (!event.target.value.trim()) spoken.current = false;
-          }}
-          onKeyDown={(event) => {
-            // Enter sends, shift-enter writes a second line — the shape every
-            // chat field in this app has had.
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              submit();
-            }
-          }}
-        />
+        <Box
+          tools={
+            <>
+              <button
+                type="button"
+                className={`ag-box-tool${picking ? " ag-box-open" : ""}${
+                  mode !== "auto" ? " ag-box-set" : ""
+                }`}
+                aria-expanded={picking}
+                aria-controls={pickerId}
+                title={lens}
+                aria-label={lens}
+                onClick={() => setPicking((was) => !was)}
+              >
+                <Glyph name="spark" size={16} />
+              </button>
+              {state.voice && canRecord() && (
+                <Mic
+                  on={taping}
+                  disabled={busy || reading || saying}
+                  label={t(taping ? "chat.voice_stop" : "chat.voice_start")}
+                  onPress={() => void talk()}
+                />
+              )}
+            </>
+          }
+        >
+          <textarea
+            ref={field}
+            className={`ag-chat-field${live ? " ag-chat-heard" : ""}`}
+            value={text}
+            readOnly={live}
+            rows={1}
+            placeholder={t("chat.placeholder")}
+            aria-label={t("chat.placeholder")}
+            onChange={(event) => {
+              setText(event.target.value);
+              if (!event.target.value.trim()) spoken.current = false;
+            }}
+            onKeyDown={(event) => {
+              // Enter sends, shift-enter writes a second line — the shape every
+              // chat field in this app has had.
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                submit();
+              }
+            }}
+          />
+        </Box>
         {busy && onStop ? (
           // A plain button, not the form's submit: Enter in the field while an
           // answer streams must not stop it — a reader typing the next
@@ -371,7 +381,7 @@ export function Composer({
           <button
             type="submit"
             className="ag-chat-send"
-            disabled={busy || !text.trim()}
+            disabled={busy || live || !text.trim()}
             aria-label={t("chat.send")}
           >
             <Glyph name="send" size={18} />

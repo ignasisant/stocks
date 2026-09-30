@@ -40,6 +40,13 @@ wheels/
 # cache; the catalog in funds.py seeds the common funds without it
 /data/quote_types.json
 
+# Closed-end fund verdict per symbol (stocks.data.cef), learned from EDGAR
+/data/closed_end.json
+
+# Asset kind per symbol (stocks.data.asset_kind), learned from a fund's
+# description — regenerable, the ticker page re-derives a missing one
+/data/asset_kinds.json
+
 # ISIN -> Yahoo symbol (stocks.data.symbols) — regenerable, and the ISINs in
 # it are the ones this machine's ledger holds: a fingerprint of a portfolio
 /data/isin_symbols.json

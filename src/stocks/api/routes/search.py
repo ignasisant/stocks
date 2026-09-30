@@ -59,10 +59,27 @@ def find(
                 kind=row.kind,
                 mark=row.mark,
                 exchange=row.exchange,
+                asset=_asset(row),
             )
             for row in rows
         ],
     )
+
+
+def _asset(row) -> str | None:
+    """The row's kind from this host's caches alone — a keystroke fetches nothing.
+
+    The fund and coin tiers are catalogs, so their rows are a fund and a coin
+    even before anything about them is cached.
+    """
+    from stocks.data import asset_kind
+
+    if row.kind == "analyze":
+        return None
+    found = asset_kind.cached(row.ticker, row.name)
+    if found is None and row.kind in ("fund", "crypto"):
+        return asset_kind.FUND if row.kind == "fund" else asset_kind.CRYPTO
+    return found
 
 
 def _recents(account, tickers: list[str]) -> Recents:

@@ -59,6 +59,9 @@ if TYPE_CHECKING:
 SAMPLE_ROWS = 18
 MAX_COLS = 30
 MAX_CELL = 40
+# Columns a mapping editor offers. More than the model is shown: a reader
+# fixing a mapping is looking at the whole file, not at a sample of it.
+MAX_EDIT_COLS = 60
 
 # Pause before the single retry of the symbol-resolution call (see
 # _resolve_symbols): long enough to clear a per-minute rate limit, short
@@ -125,6 +128,11 @@ class Extraction:
     result: ParseResult = field(default_factory=ParseResult)
     kind: str = KIND_NONE
     unavailable: bool = False  # the model never answered; the file is unjudged
+    # The mapping the rows were read with, and the file's columns as a reader
+    # would name them (`columns`) — what a mapping editor shows and sends back.
+    # Absent for a PDF, which is extracted rather than mapped.
+    mapping: dict | None = None
+    columns: tuple[str, ...] = ()
 
 
 # --------------------------------------------------------------- file to grid
@@ -1044,9 +1052,39 @@ def _resolve_symbols(result: ParseResult, provider: Provider,
 # ------------------------------------------------------------------ entry
 
 
-def extract(filename: str, data: bytes, provider: Provider,
-            api_key: str = "") -> Extraction:
-    """Read one unrecognised export, by whichever route its format needs."""
+def columns(grid: list[list[str]], header_row: int) -> tuple[str, ...]:
+    """Each column as a reader would recognise it: its header and a sample.
+
+    "Precio · 12,50" rather than "column 6": the mapping is by index, and an
+    index means nothing to someone looking at their own spreadsheet. A column
+    with no header is numbered from one, the way a spreadsheet letters them.
+    """
+    width = min(max((len(r) for r in grid), default=0), MAX_EDIT_COLS)
+    head = grid[header_row] if 0 <= header_row < len(grid) else []
+    body = next((r for r in grid[header_row + 1:] if any(c.strip() for c in r)), [])
+    out = []
+    for i in range(width):
+        name = (head[i].strip() if i < len(head) else "") or f"#{i + 1}"
+        cell = body[i].strip() if i < len(body) else ""
+        label = f"{name} · {cell}" if cell and cell != name else name
+        out.append(label[:MAX_CELL + 20])
+    return tuple(out)
+
+
+def extract(filename: str, data: bytes, provider: Provider | None,
+            api_key: str = "", mapping: dict | None = None) -> Extraction:
+    """Read one unrecognised export, by whichever route its format needs.
+
+    `mapping` is one the reader corrected (`Extraction.mapping`, edited): it
+    is checked exactly as a model's reply would be and applied with no model
+    call at all, so a second read can only differ where the reader changed it.
+    """
+    if mapping is not None and not filename.lower().endswith(".pdf"):
+        return _remap(filename, data, provider, api_key, mapping)
+    if provider is None:
+        return Extraction(ParseResult(skipped=[{
+            "row": 0, "type": "file", "reason": "no parser recognised this file",
+        }]))
     if filename.lower().endswith(".pdf"):
         found = extract_pdf(data, provider, api_key)
         _resolve_symbols(found.result, provider, api_key)
@@ -1072,13 +1110,14 @@ def extract(filename: str, data: bytes, provider: Provider,
         mapping, down = None, str(exc)
 
     result = apply_mapping(grid, mapping) if mapping else ParseResult()
+    used = mapping
     if not result.transactions and guess and guess != mapping:
         rescued = apply_mapping(grid, guess)
         if rescued.transactions:
             obs.event("import.llm_map.rescued", rows=len(rescued.transactions),
                       reason="model_down" if down else
                       ("no_mapping" if mapping is None else "no_rows"))
-            result = rescued
+            result, used = rescued, guess
 
     if not result.transactions:
         if down:
@@ -1093,7 +1132,29 @@ def extract(filename: str, data: bytes, provider: Provider,
             }]))
 
     _resolve_symbols(result, provider, api_key)
-    return Extraction(result, KIND_TRADES if result.transactions else KIND_NONE)
+    return Extraction(
+        result, KIND_TRADES if result.transactions else KIND_NONE,
+        mapping=used,
+        columns=columns(grid, used["header_row"]) if used else (),
+    )
+
+
+def _remap(filename: str, data: bytes, provider: Provider | None,
+           api_key: str, mapping: dict) -> Extraction:
+    """`extract` with the reader's own mapping in place of the model's."""
+    grid = read_grid(filename, data)
+    chosen = parse_mapping(json.dumps(mapping), grid) if len(grid) >= 2 else None
+    if chosen is None:
+        return Extraction(ParseResult(skipped=[{
+            "row": 0, "type": "file",
+            "reason": "the columns could not be matched to date/symbol/action",
+        }]), mapping=None, columns=columns(grid, 0))
+    result = apply_mapping(grid, chosen)
+    if provider is not None:
+        _resolve_symbols(result, provider, api_key)
+    obs.event("import.llm_map.remapped", rows=len(result.transactions))
+    return Extraction(result, KIND_TRADES if result.transactions else KIND_NONE,
+                      mapping=chosen, columns=columns(grid, chosen["header_row"]))
 
 
 def parse(filename: str, data: bytes, provider: Provider,

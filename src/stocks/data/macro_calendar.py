@@ -62,6 +62,10 @@ RATE_SERIES: dict[str, tuple[str, ...]] = {
     ECB: ("ECBDFR",),
 }
 
+# Whose rate a cash holding in each currency tracks: a euro money-market fund
+# earns about the ECB's deposit rate, a dollar one the Fed's.
+CURRENCY_BANK: dict[str, str] = {"EUR": ECB, "USD": FED}
+
 
 def next_decision(bank: str, today: date) -> date | None:
     """The bank's next decision day, today included — None past the calendar."""

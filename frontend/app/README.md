@@ -129,9 +129,13 @@ edit anything under `src/shell/`, and do not commit.
 
 ## Streaming
 
-One endpoint does not answer JSON: `POST /chat/messages` sends
-`text/event-stream`. It is a POST, so `EventSource` cannot read it — the drawer
-uses `fetch` plus `response.body.getReader()` and parses the frames itself.
+One endpoint does not answer JSON: `POST /chat/runs` sends
+`text/event-stream` — an [AG-UI](https://docs.ag-ui.com) run, `RunAgentInput`
+in and AG-UI events out. It is a POST, so `EventSource` cannot read it — the
+drawer uses `fetch` plus `response.body.getReader()` and parses the events
+itself (`run` in `src/chat/api.ts`). `@ag-ui/core` is a dev dependency and is
+only ever imported with `import type`: its runtime is zod schemas, and the
+drawer is in the chunk every reader downloads.
 `src/chat/` owns that reader; a page has no reason to stream anything and
 should use `get`/`send` like everything else.
 

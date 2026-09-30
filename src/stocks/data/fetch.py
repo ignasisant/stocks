@@ -291,12 +291,34 @@ def close_on(ticker: str, day: str) -> float | None:
 
 
 def fetch_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
-    """Download OHLCV history for one ticker."""
-    df = retry(
-        lambda: yf.Ticker(resolve(ticker)).history(period=period, interval=interval)
-    )
+    """Download OHLCV history for one ticker.
+
+    The listing's first trading day rides along as `attrs["first_trade"]`
+    (exchange-local ``YYYY-MM-DD``): Yahoo sends it in the same response as the
+    bars, and it is what tells the price chart that a 2y range of a stock listed
+    last spring would draw the same bars as "max".
+    """
+    handle = yf.Ticker(resolve(ticker))
+    df = retry(lambda: handle.history(period=period, interval=interval))
     df.index.name = "Date"
+    first = _first_trade(handle) if not df.empty else None
+    if first:
+        df.attrs["first_trade"] = first
     return df
+
+
+def _first_trade(handle) -> str | None:
+    """`firstTradeDate` from the metadata `history()` just stored, or None.
+
+    Read only after a history call that returned rows: yfinance fills the
+    metadata from that response, and asking before it fires a request of its
+    own.
+    """
+    try:
+        first = (handle.history_metadata or {}).get("firstTradeDate")
+        return str(pd.Timestamp(first).date()) if first is not None else None
+    except Exception:
+        return None
 
 
 def fetch_many(

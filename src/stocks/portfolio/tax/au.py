@@ -37,6 +37,7 @@ from datetime import date
 
 from stocks.portfolio.positions import RealizedSale
 from stocks.portfolio.tax.base import (
+    Acquisitions,
     Kpi,
     Note,
     ReportingFlag,
@@ -201,7 +202,7 @@ class AuTaxPeriod(TaxPeriod):
 def fiscal_period(
     realized: list[RealizedSale],
     period: str,
-    buy_dates: dict[str, list[str]],
+    buy_dates: Acquisitions,
     settings: TaxSettings | None = None,
 ) -> AuTaxPeriod:
     """Summarize an income year ("YYYY" = 1 July YYYY to 30 June) or a month.

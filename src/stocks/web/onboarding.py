@@ -387,6 +387,17 @@ RELEASES: tuple[Release, ...] = (
             News(slug="import", icon="upload_file", step="import"),
         ),
     ),
+    Release(
+        version="2026.09.7",
+        date="2026-09",
+        items=(
+            # One card: a sale simulated through the tax engine is something
+            # the app could not do anywhere before. The rest of that change —
+            # actions that wait for Confirm, the bull/bear debate, page links
+            # under an answer — is the assistant step's body, not cards.
+            News(slug="whatif", icon="calculate", step="assistant"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

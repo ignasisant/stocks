@@ -22,6 +22,7 @@ import {
   insiderValue,
   legend,
   orElse,
+  shares,
   signed,
   yoy,
 } from "./format";
@@ -29,6 +30,7 @@ import type { AlertForm } from "./types";
 
 const CATALOG: Record<string, string> = {
   "ticker.hover_dividend": "<b>Dividend</b>  {amt}/sh \u00b7 ex-date {date}",
+  "ticker.hover_dividend_bar": "<b>Dividend</b>  {amt}/sh",
   "ticker.hover_div_yield": " \u00b7 \u2248{pct}% of price",
   "ticker.hover_results": "<b>Results</b> \u00b7 {date}",
   "ticker.hover_vs_est": " vs est {est}",
@@ -120,6 +122,14 @@ describe("signs and sizes", () => {
     expect(compact(-2_400_000)).toBe("-2.40M");
     expect(compact(null)).toBe("\u2014");
   });
+
+  it("counts shares without padding a whole lot", () => {
+    // "67.0000 acciones" read as a fractional lot that is not there.
+    expect(shares(67)).toBe("67");
+    expect(shares(0.12345)).toBe("0.1235");
+    expect(shares(1234)).toBe("1,234");
+    expect(shares(null)).toBe("\u2014");
+  });
 });
 
 describe("the results legend", () => {
@@ -155,6 +165,13 @@ describe("what a corporate-event marker says", () => {
     const line = dividendLine(0.24, 46.0, "2019-05-10", t);
     expect(line.text).toContain("0.52%");
     expect(line.text).toContain("2019-05-10");
+  });
+
+  it("claims no ex-date on a weekly or monthly bar", () => {
+    // The bar is dated by its last session; the dividend went ex some day in it.
+    const line = dividendLine(0.24, 46.0, null, t);
+    expect(line.text).toContain("0.24");
+    expect(line.text).not.toMatch(/\d{4}-\d{2}-\d{2}/);
   });
 
   it("says nothing about yield when the close is missing", () => {

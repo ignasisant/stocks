@@ -8,7 +8,7 @@ specific and everything else turned out not to be:
   "regla de los dos meses" and the US wash-sale rule (30 days either side).
   The mechanics are identical: block the loss in the sale year, re-integrate
   it as the replacement shares are themselves sold. Only the window differs,
-  so `replacement_dates`/`recovered_losses` take the window as a predicate.
+  so `repurchases` takes the window as a predicate.
 * **What the net is taxed at.** A flat progressive scale over one base (Spain)
   versus two buckets split by holding period, netted against each other, with
   the remainder deductible against ordinary income up to a cap (US).
@@ -25,11 +25,14 @@ date, a Spanish filer's is EUR at the ECB rate. NOT tax advice; a planning aid.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
+import math
+from collections import defaultdict
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from typing import NamedTuple
 
-from stocks.portfolio.positions import RealizedSale
+from stocks.portfolio.positions import MATCH_FIFO, MATCH_LIFO, RealizedSale
 
 # (sell_date, buy_date) -> True when that purchase blocks the sale's loss.
 Window = Callable[[date, date], bool]
@@ -364,77 +367,195 @@ def days_after_window(days: int) -> Window:
     return within
 
 
-def replacement_dates(
-    sale: RealizedSale, ticker_buy_dates: list[str], within: Window
-) -> set[str]:
-    """Buy dates that block this sale's loss.
+class Acquisition(NamedTuple):
+    """`quantity` shares of a security bought on `date` (ISO), in that day's
+    units — a later split is applied here, from the `Split` rows beside it."""
 
-    Homogeneous / substantially-identical shares acquired *after* the sold lot
-    and inside the window — i.e. a genuine replacement position, not the sold
-    lot's own purchase nor an older parcel. Same ticker stands in for both
-    "homogéneas" (ES) and "substantially identical" (US); options, converts and
-    cross-listings are not chased.
+    date: str
+    quantity: float
+
+
+class Split(NamedTuple):
+    """An N:1 forward split on `date`: `ratio` new shares for each old one.
+
+    A `RealizedSale` counts shares in the units of its sell date and a purchase
+    in those of its buy date, so comparing a sale with its buy-back across a
+    split needs the ratio in between.
     """
-    sell = date.fromisoformat(sale.sell_date)
-    lot_buy = date.fromisoformat(sale.buy_date)
-    out: set[str] = set()
-    for d in ticker_buy_dates:
-        b = date.fromisoformat(d)
-        if b <= lot_buy:  # the sold lot itself, or an older one: no replacement
-            continue
-        if within(sell, b):
-            out.add(d)
+
+    date: str
+    ratio: float
+
+
+# Ticker -> what the repurchase rules read about it: every acquisition, plus
+# the splits that rescale them. A bare ISO date is an acquisition of unknown
+# size, which blocks a loss in full.
+Acquisitions = Mapping[str, Sequence[str | Acquisition | Split]]
+
+# RealizedSale.matched values that name one lot's own purchase. A pooled
+# holding carries its earliest acquisition instead, which is no lot at all.
+_OWN_LOT = (MATCH_FIFO, MATCH_LIFO)
+
+
+@dataclass
+class _Block:
+    """Part of a loss sale that one repurchase blocks."""
+
+    sale: RealizedSale
+    units: float  # the sale's size, in the book's current units
+    dates: frozenset[str]  # acquisitions whose later sale frees it
+    left: float  # blocked shares not yet freed, current units
+
+
+@dataclass
+class Repurchases:
+    """Which losses a buy-back blocks, share by share, and when each comes back.
+
+    A repurchase blocks a loss only for as many shares as it bought: selling
+    100 at a loss and buying 10 back defers a tenth of the loss, not all of it
+    (US Treas. Reg. 1.1091-1(c); the same proportion Spain's DGT applies to
+    art. 33.5.f). Built once per book by `repurchases`, then read per period.
+    """
+
+    # id(sale) -> the share of its loss a repurchase blocks, 0..1.
+    blocked: dict[int, float] = field(default_factory=dict)
+    # (blocked sale, sell date of the replacement that freed it, loss freed).
+    freed: list[tuple[RealizedSale, str, float]] = field(default_factory=list)
+
+    def disallowed(self, sale: RealizedSale) -> float:
+        """The part of this sale's loss the repurchase rule blocks."""
+        if sale.gain >= 0:
+            return 0.0
+        return -sale.gain * self.blocked.get(id(sale), 0.0)
+
+    def recovered(
+        self,
+        period: str,
+        blocked_filter: Callable[[RealizedSale], bool] | None = None,
+    ) -> float:
+        """Blocked losses that unlock in `period` because the replacement sold.
+
+        A loss blocked by a repurchase becomes computable as the replacement
+        shares are transmitted (ES art. 33.5.f second leg; in the US the same
+        economics arrive via the basis bump on the replacement lot).
+
+        `blocked_filter` restricts which blocked sales are counted — the US
+        module passes it twice to recover short- and long-term losses
+        separately, since a recovered loss keeps the character of the loss
+        that was blocked.
+        """
+        return sum(
+            loss
+            for sale, when, loss in self.freed
+            if when.startswith(period)
+            and (blocked_filter is None or blocked_filter(sale))
+        )
+
+
+def repurchases(
+    realized: list[RealizedSale], buy_dates: Acquisitions, within: Window
+) -> Repurchases:
+    """Match every loss in the book against the buy-backs that block it.
+
+    A replacement is homogeneous / substantially-identical shares acquired
+    *after* the sold lot and inside the window — a genuine new position, not
+    the sold lot's own purchase nor an older parcel. Same ticker stands in for
+    both "homogéneas" (ES) and "substantially identical" (US); options,
+    converts and cross-listings are not chased.
+
+    Loss sales are taken in date order and each claims the replacement shares
+    in order of acquisition, earliest first; a share that has blocked one sold
+    share blocks no other (1.1091-1(e)). Shares of a lot sold on the same day
+    as the loss left with that disposal, so they replace nothing it sold. Each
+    replacement share later sold frees one blocked share's loss, pro rata.
+
+    Matching is over the whole book, not one period: which shares a December
+    sale may claim depends on what an October sale already took.
+    """
+    out = Repurchases()
+    by_ticker: dict[str, list[RealizedSale]] = defaultdict(list)
+    for s in realized:
+        by_ticker[s.ticker].append(s)
+    for ticker, sales in by_ticker.items():
+        if any(s.gain < 0 for s in sales):
+            _match(sales, buy_dates.get(ticker, ()), within, out)
     return out
 
 
-def recovered_losses(
-    realized: list[RealizedSale],
-    period: str,
-    buy_dates: dict[str, list[str]],
+def _match(
+    sales: list[RealizedSale],
+    entries: Sequence[str | Acquisition | Split],
     within: Window,
-    blocked_filter: Callable[[RealizedSale], bool] | None = None,
-) -> float:
-    """Blocked losses that unlock in `period` because the replacement sold.
+    out: Repurchases,
+) -> None:
+    """`repurchases` for one security."""
+    splits = [e for e in entries if isinstance(e, Split) and e.ratio > 0]
 
-    A loss blocked by a repurchase becomes computable as the replacement shares
-    are transmitted (ES art. 33.5.f second leg; in the US the same economics
-    arrive via the basis bump on the replacement lot). FIFO sales carry their
-    lot's buy date, so a sale of a replacement lot is any later sale whose lot
-    was bought on one of the blocking dates. Buy quantities aren't in
-    `buy_dates` (dates only), so each replacement share sold frees one blocked
-    share's loss, pro-rata, capped at the full blocked amount.
+    def units(quantity: float, on: str) -> float:
+        """Shares held on `on`, in the book's current units."""
+        for sp in splits:
+            if sp.date > on:
+                quantity *= sp.ratio
+        return quantity
 
-    `blocked_filter` restricts which blocked sales are counted — the US module
-    passes it twice to recover short- and long-term losses separately, since a
-    recovered loss keeps the character of the loss that was blocked.
-    """
-    total = 0.0
-    for s in realized:
-        if s.gain >= 0 or s.quantity <= 0:
+    size: dict[str, float] = defaultdict(float)
+    for e in entries:
+        if isinstance(e, Split):
             continue
-        if blocked_filter is not None and not blocked_filter(s):
-            continue
-        repl = replacement_dates(s, buy_dates.get(s.ticker, []), within)
-        if not repl:
-            continue
-        consuming = sorted(
-            (
-                r
-                for r in realized
-                if r.ticker == s.ticker
-                and r.buy_date in repl
-                and r.sell_date >= s.sell_date
-            ),
-            key=lambda r: r.sell_date,
-        )
-        block = s.quantity  # shares whose loss the repurchase blocks
-        cum = 0.0
-        for r in consuming:
-            prev = min(cum, block)
-            cum += r.quantity
-            if r.sell_date.startswith(period):
-                total += (min(cum, block) - prev) / block * -s.gain
-    return total
+        if isinstance(e, str):
+            size[e] = math.inf
+        else:
+            size[e.date] += units(e.quantity, e.date)
+    gone: dict[tuple[str, str], float] = defaultdict(float)
+    for r in sales:
+        if r.matched in _OWN_LOT:
+            gone[r.buy_date, r.sell_date] += units(r.quantity, r.sell_date)
+
+    used: dict[str, float] = defaultdict(float)
+    blocks: list[_Block] = []
+    losses = sorted(
+        (s for s in sales if s.gain < 0 and s.quantity > 0),
+        key=lambda s: s.sell_date,
+    )
+    for s in losses:
+        sell = date.fromisoformat(s.sell_date)
+        lot_buy = date.fromisoformat(s.buy_date)
+        want = units(s.quantity, s.sell_date)
+        blocked = 0.0
+        unsized: list[str] = []
+        for d in sorted(size):
+            b = date.fromisoformat(d)
+            if b <= lot_buy or not within(sell, b):
+                continue
+            if size[d] == math.inf:
+                unsized.append(d)
+                continue
+            take = min(want - blocked, size[d] - gone[d, s.sell_date] - used[d])
+            if take > 1e-9:
+                used[d] += take
+                blocked += take
+                blocks.append(_Block(s, want, frozenset((d,)), take))
+        if unsized and want - blocked > 1e-9:
+            blocks.append(_Block(s, want, frozenset(unsized), want - blocked))
+            blocked = want
+        if blocked > 0:
+            out.blocked[id(s)] = min(1.0, blocked / want)
+
+    for r in sorted(sales, key=lambda r: r.sell_date):
+        budget = units(r.quantity, r.sell_date)
+        for blk in blocks:
+            if budget <= 1e-12:
+                break
+            if (
+                blk.left <= 1e-12
+                or r.buy_date not in blk.dates
+                or blk.sale.sell_date >= r.sell_date
+            ):
+                continue
+            freed = min(blk.left, budget)
+            blk.left -= freed
+            budget -= freed
+            out.freed.append((blk.sale, r.sell_date, freed / blk.units * -blk.sale.gain))
 
 
 def flag(

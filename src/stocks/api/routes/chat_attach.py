@@ -36,17 +36,18 @@ from __future__ import annotations
 
 import base64
 import binascii
+import json
 import time
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Header, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from stocks import accounts, obs
 from stocks.accounts import UserPaths
 from stocks.api.deps import ChatTurn, Writer
 from stocks.api.jsonsafe import num as _num
-from stocks.chat import engine
+from stocks.chat import a2ui, engine
 from stocks.data import fetch
 from stocks.data.symbols import is_isin, symbol_for_isin
 from stocks.portfolio import (
@@ -127,6 +128,21 @@ class Attachment(BaseModel):
         description="Thread to file the note on. Omitted means the active one.",
     )
     lang: str | None = None
+    mapping: dict | None = Field(
+        default=None,
+        description=(
+            "How to read the columns of an export no parser recognised — the "
+            "`mapping` of a previous preview's surface, corrected by the "
+            "reader. Applied as given, with no model call."
+        ),
+    )
+
+    @field_validator("mapping")
+    @classmethod
+    def _small(cls, value: dict | None) -> dict | None:
+        if value is not None and len(json.dumps(value)) > 4000:
+            raise ValueError("a mapping is at most 4000 characters of JSON")
+        return value
 
 
 class Preview(BaseModel):
@@ -161,6 +177,14 @@ class Preview(BaseModel):
     note: str
     message: Message
     conversation: str | None = None
+    surface: list[dict] | None = Field(
+        default=None,
+        description=(
+            "An A2UI v0.9 surface showing how an unrecognised export's columns "
+            "were read, with a way to correct them (`chat/a2ui.py`). Only on "
+            "a file the column mapper read."
+        ),
+    )
 
 
 class CommitRows(BaseModel):
@@ -224,7 +248,7 @@ def _decode(content: str) -> bytes:
 def _file_at(paths: UserPaths, cid: str | None) -> None:
     """Point the thread cursor at `cid`, or 404 if there is no such thread.
 
-    The same rule `POST /chat/messages` is under: turns land in the *active*
+    The same rule `POST /chat/runs` is under: turns land in the *active*
     conversation, so naming one means activating it first.
     """
     from stocks.web import auth
@@ -389,7 +413,8 @@ def attach(
     from stocks.api.routes.chat import session_keys
 
     provider, api_key = _provider(paths, session_keys(x_chat_provider, x_chat_key))
-    found = autodetect.detect(body.filename, raw, provider, api_key)
+    found = autodetect.detect(body.filename, raw, provider, api_key,
+                              mapping=body.mapping)
     checked = validate(
         found.result,
         # Demo rows go on the first real commit, so checking against them
@@ -461,6 +486,12 @@ def attach(
         note=note,
         message=_say(paths, note),
         conversation=auth.active_conversation(paths.chat)["id"],
+        surface=(
+            a2ui.column_mapping(found.mapping, list(found.columns),
+                                lambda key: i18n.translate(key, lang))
+            if found.mapping and found.columns
+            else None
+        ),
     )
 
 

@@ -21,6 +21,7 @@
  * naming the real one beats filing the batch under "other".
  */
 
+import { Surface } from "./a2ui";
 import { useId, useState } from "react";
 import { useT } from "../shell/i18n";
 import { TickerCell } from "../shell/tickers";
@@ -124,6 +125,7 @@ export function Attachment({
   importing = false,
   onImport,
   onDiscard,
+  onRemap,
 }: {
   preview: Preview;
   /** A statement is being read or written: both buttons wait. */
@@ -132,6 +134,8 @@ export function Attachment({
   importing?: boolean;
   onImport: (broker: string, duplicates: ImportRow[]) => void;
   onDiscard: () => void;
+  /** Read the file again with a corrected column mapping. */
+  onRemap?: (mapping: Record<string, unknown>) => void;
 }) {
   const t = useT();
   const uid = useId();
@@ -154,6 +158,25 @@ export function Attachment({
       </p>
 
       {preview.fresh.length > 0 && <Rows rows={preview.fresh} />}
+
+      {/* How an export no parser owns was read, as the server's A2UI surface:
+          open when it read nothing (that is the mapping to fix), folded when
+          the rows above already look right. */}
+      {preview.surface?.length ? (
+        <details className="ag-chat-tier" open={preview.fresh.length === 0}>
+          <summary>{t("chat.import_col_title")}</summary>
+          <Surface
+            messages={preview.surface}
+            disabled={busy}
+            onAction={(action) => {
+              const mapping = action.context.mapping;
+              if (action.name === "remap" && mapping && typeof mapping === "object") {
+                onRemap?.(mapping as Record<string, unknown>);
+              }
+            }}
+          />
+        </details>
+      ) : null}
 
       <Tier
         label={t("chat.import_warnings", { n: preview.flagged.length })}

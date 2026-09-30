@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 
 from stocks.portfolio.positions import RealizedSale
 from stocks.portfolio.tax.base import (
+    Acquisitions,
     Kpi,
     Note,
     ReportingFlag,
@@ -220,7 +221,7 @@ def _is_fund(ticker: str, settings: TaxSettings) -> bool:
 def fiscal_period(
     realized: list[RealizedSale],
     period: str,
-    buy_dates: dict[str, list[str]],
+    buy_dates: Acquisitions,
     settings: TaxSettings | None = None,
 ) -> DeTaxPeriod:
     """Summarize an ISO date prefix ("YYYY" or "YYYY-MM") for Anlage KAP.

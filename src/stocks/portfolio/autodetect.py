@@ -74,6 +74,10 @@ class Detected:
     kind: str = llm_map.KIND_NONE
     # True when the model was never reached, so the file was never judged.
     unavailable: bool = False
+    # How a mapped export was read (`llm_map.Extraction`): the mapping, and
+    # the file's columns by name. Empty for a dedicated parser and for a PDF.
+    mapping: dict | None = None
+    columns: tuple[str, ...] = ()
 
     @property
     def recognised(self) -> bool:
@@ -101,12 +105,18 @@ def _cascade() -> list:
 
 
 def detect(filename: str, data: bytes, provider: Provider | None = None,
-           api_key: str = "") -> Detected:
+           api_key: str = "", mapping: dict | None = None) -> Detected:
     """Parse an uploaded statement with whichever parser understands it.
 
     `provider` enables the column-mapping fallback; without one, an
     unrecognised file comes back empty with a skip reason, never guessed at.
+    `mapping` is a reader's correction of how the fallback read this same file:
+    the parsers already declined it, so it goes straight to being applied.
     """
+    if mapping is not None:
+        found = llm_map.extract(filename, data, provider, api_key, mapping=mapping)
+        return Detected(found.result, LLM_KEY, "", found.kind, found.unavailable,
+                        found.mapping, found.columns)
     ext = _extension(filename)
     head = _headers(filename, data)
     # Why each parser passed on the file. A decline is ordinary — that is how
@@ -143,7 +153,8 @@ def detect(filename: str, data: bytes, provider: Provider | None = None,
             LLM_KEY, "",
         )
     found = llm_map.extract(filename, data, provider, api_key)
-    return Detected(found.result, LLM_KEY, "", found.kind, found.unavailable)
+    return Detected(found.result, LLM_KEY, "", found.kind, found.unavailable,
+                    found.mapping, found.columns)
 
 
 def supported_types() -> tuple[str, ...]:

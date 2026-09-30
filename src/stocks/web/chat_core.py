@@ -414,31 +414,14 @@ def _resolve_skills(provider: llm.Provider, api_key: str, history: list[dict],
 # queries — the same one-extra-cheap-call shape as the skill auto-router.
 
 
-def _turn_prefs() -> dict:
-    """This account's prefs as the pending turn must read them.
-
-    One override, and only on a phone: the internet stays on. The chip that
-    toggles it is not drawn at that width (see `_render_rail`), so an account
-    that switched the web off at a desk would otherwise arrive here with no
-    internet and nothing on screen to turn it back on — the failure mode being
-    answers that are quietly worse, with no way to tell why.
-
-    Forced in the copy handed to the turn and never written back: the toggle
-    is still that account's setting, still off, and still off the next time
-    they sit at the desk where they set it.
-    """
-    prefs = auth.load_prefs()
-    return prefs | {"chat_web": True} if is_mobile() else prefs
-
-
 def _gather_web(provider: llm.Provider, api_key: str, history: list[dict],
                 prefs: dict, context: str) -> list[chat_web.Result]:
     """The pages this turn reads: the planner's searches, opened and read,
     plus any link the user pasted.
 
-    [] when the web toggle is off — that means no internet at all, pasted
-    links included. Like the skill router, this runs off the script thread,
-    so `prefs` and the view context arrive as arguments."""
+    [] without a working search install — no internet at all, pasted links
+    included. Like the skill router, this runs off the script thread, so
+    `prefs` and the view context arrive as arguments."""
     return engine.ground_web(prefs, provider, api_key, history, context)
 
 
@@ -447,15 +430,14 @@ def _gather(provider: llm.Provider, api_key: str, msgs: list[dict], prefs: dict,
             focus: str) -> agent.Evidence:
     """The model-directed lookup for this turn (chat/agent.py).
 
-    Gated by the same "chat_web" toggle as the fixed pre-flight: the tools can
-    reach the internet, so a user who turned the web off must not get it back
-    through the side door. Off means Evidence(ok=False), which puts the turn on
-    the fixed path — where the toggle is honoured too.
+    Gated like the fixed pre-flight (`engine.web_enabled`): the tools reach
+    the internet. Unsupported means Evidence(ok=False), which puts the turn on
+    the fixed path.
 
     Runs off the script thread, so the account's paths and the current view
     arrive as arguments rather than being read from session state.
     """
-    if not engine.web_enabled(prefs):
+    if not engine.web_enabled():
         return agent.Evidence(ok=False)
     return agent.gather(provider, api_key, msgs, toolbox.Context(
         watchlist=watchlist, db=db, memory_db=memory_db, thread=thread,
@@ -2401,7 +2383,7 @@ def render_conversation(ns: str, provider: llm.Provider, model: str,
                     # Session state is read here, on the script thread; the
                     # three lookups then run concurrently off it (routing,
                     # search + page reads, quotes — ~15s back to back).
-                    prefs = _turn_prefs()
+                    prefs = auth.load_prefs()
                     view = _view_context().strip()
                     watchlist = auth.watchlist_path()
                     db = auth.db_path()
@@ -2714,35 +2696,22 @@ def _fill_quota(slot) -> None:
 def _render_rail(ns: str) -> None:
     """Per-message controls, beside the input they act on.
 
-    Internet and the skill lens change the *next* answer, so they belong at
-    the composer rather than in an account settings panel opened once a
-    quarter. Both are buttons, not widgets: a press is one rerun, and the
-    skill picker only pays for itself when it is opened.
+    The skill lens changes the *next* answer, so it belongs at the composer
+    rather than in an account settings panel opened once a quarter. A popover,
+    not a widget: the picker only pays for itself when it is opened.
 
-    On a phone the internet chip is not drawn. The panel is the whole screen
-    at that width, and a row of two chips above the composer cost roughly a
-    message of reading — while the toggle itself is one almost nobody moves
-    off its default. So the phone keeps the capability and drops the control:
-    `_turn_prefs` forces the web on there, which is why hiding the chip does
-    not strand anyone who switched it off at a desk. The skill lens stays:
-    it changes which answer you get, not merely how it is sourced.
+    There is no internet chip. The web is on wherever search works
+    (`engine.web_enabled`): the toggle was one almost nobody moved off its
+    default, and those who did got quietly worse answers with nothing on
+    screen saying why.
     """
     prefs = auth.load_prefs()
     phone = is_mobile()
     with st.container(horizontal=True, vertical_alignment="center",
                       key=f"{ns}_rail"):
-        if chat_web.available() and not phone:
-            on = bool(prefs.get("chat_web", True))
-            if st.button(tr("chat.web_chip"), icon=":material/language:",
-                         type="primary" if on else "secondary",
-                         key=f"{ns}_rail_web", help=tr("chat.web_help")):
-                prefs["chat_web"] = not on
-                auth.save_prefs(prefs)
-                st.rerun()
         mode = _skill_mode(prefs)
-        # Phone: the lens word alone ("auto", "portfolio"), because the row it
-        # sits in is now one control wide and "Skills:" is a label for a thing
-        # already obvious from its icon.
+        # Phone: the lens word alone ("auto", "portfolio"), because "Skills:"
+        # is a label for a thing already obvious from its icon.
         label = (tr(f"chat.skills_{mode}") if phone
                  else tr("chat.skills_chip", mode=tr(f"chat.skills_{mode}")))
         with st.popover(label, icon=":material/auto_awesome:",
@@ -3200,7 +3169,6 @@ body:has(.st-key-chatpanel) .st-key-topbar_search {
 }
 .st-key-chatpanel .st-key-panel_rail
   button[data-testid="stBaseButton-primary"] { font-weight: 600; }
-.st-key-chatpanel .st-key-panel_rail_web,
 .st-key-chatpanel .st-key-panel_rail_skills { width: max-content !important; }
 /* Phone: the rail carries one control, so it needs less room to say so. The
    border-top still does the work of separating composer from conversation. */

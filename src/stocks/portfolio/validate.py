@@ -416,7 +416,8 @@ def _rescue_fills(checked: list[Checked], prior: list[Transaction]) -> None:
     twice at a mis-mapped price, so the duplicate check flags the second fill
     and `fresh` would drop it. Arithmetic is the arbiter: replay what is
     actually about to be committed, and any flagged row whose ticker comes up
-    short was a real fill, so its duplicate warning is withdrawn. A genuine
+    short — at a sale, or at a transfer out that states more shares than the
+    book holds — was a real fill, so its duplicate warning is withdrawn. A genuine
     repeat is never restored by this — dropping it leaves the book closing
     exactly as it did before.
 
@@ -429,7 +430,7 @@ def _rescue_fills(checked: list[Checked], prior: list[Transaction]) -> None:
     # is the likelier of the two tiers to be a separate fill.
     spare.sort(key=lambda c: 0 if _near_duplicate(c) else 1)
     while spare:
-        short = _replay(checked, prior)
+        short = _replay(checked, prior, departures=True)
         if not short:
             return
         tickers = {c.tx.ticker for c, _ in short}
@@ -481,13 +482,21 @@ def _check_oversells(
 
 
 def _replay(
-    checked: list[Checked], prior: list[Transaction]
+    checked: list[Checked], prior: list[Transaction], departures: bool = False
 ) -> list[tuple[Checked, float]]:
     """Replay quantities per ticker over prior + new rows in date order.
 
     Returns (row, held) for every batch sell larger than the position at that
     point — nothing is mutated, so the caller can replay again after adding
     rows.
+
+    `departures` counts a batch `transfer_out` larger than the position too.
+    The leg moves no shares in the replay, but it is the source broker stating
+    how many it held, so a fill dropped as a duplicate shows up there when no
+    sale follows it — a DEGIRO book moved whole to IBKR ends in transfers, not
+    sales. Only the rescue asks for it: a departure short of its lots is
+    routinely history from before the statement's first row, and the pairing
+    rule already leaves such a lot open, so it is no oversell to reject.
     """
     events: list[tuple[str, int, Transaction, Checked | None]] = [
         (t.date, t.id or 0, t, None) for t in prior
@@ -516,6 +525,9 @@ def _replay(
                 short.append((c, q))
                 continue
             held[tx.ticker] = q - tx.quantity
+        elif tx.action == transfers.TRANSFER_OUT:
+            if departures and tx.quantity - q > 1e-6 and c is not None:
+                short.append((c, q))
         elif tx.action == transfers.TRANSFER_IN:
             opens = min(tx.quantity, arriving.get(tx.ticker, 0.0))
             arriving[tx.ticker] = arriving.get(tx.ticker, 0.0) - opens

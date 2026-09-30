@@ -16,6 +16,11 @@
  * query and its own failure. A dead insider feed costs the insider card, not
  * the price chart above it.
  *
+ * **The kind decides the page.** The search box finds shares, funds, coins and
+ * indices alike, and a money-market fund read as a share is RSI calling cash
+ * "overbought". The header names the kind with one line on what to read, and
+ * `layout.ts` says which figures, averages and sections that kind gets.
+ *
  * **No Plotly here.** The Streamlit page and the standalone `/ticker` document
  * draw these charts with it; this shell has no Plotly dependency and a page is
  * not free to add one. The charts are SVG built from design tokens — see
@@ -66,6 +71,8 @@ import { Empty, useMobile } from "./ui";
 import type { Custodian, Profile, TickerPosition, WatchlistEntry } from "./types";
 import "./ticker.css";
 import { Badge } from "../../ui/Badge";
+import { ASSETS, assetKind } from "../../shell/assets";
+import { layout, resolveKind } from "./layout";
 
 const RANGE_KEY = "ag-range";
 const CANDLES_KEY = "ag-candles";
@@ -91,21 +98,6 @@ function remember(key: string, value: string): void {
   } catch {
     /* private window, blocked storage — the page works without it */
   }
-}
-
-/**
- * Which analysis question this symbol deserves.
- *
- * A coin has no fundamentals and a fund has no business of its own, so both
- * get their own question rather than a company one that half applies. Read off
- * the payloads the page has already loaded: the header must not pay a lookup
- * to label a button, and a symbol still loading reads as a stock — the prompt
- * is a question, not a claim.
- */
-function aiPromptKey(crypto: boolean, fund: boolean): string {
-  if (crypto) return "ticker.ai_prompt_crypto";
-  if (fund) return "ticker.ai_prompt_fund";
-  return "ticker.ai_prompt";
 }
 
 export default function Page() {
@@ -194,6 +186,20 @@ export default function Page() {
     () => (ticker ? getBars(ticker, range) : Promise.resolve(null)),
     [ticker, range],
   );
+  // The ranges this company's history fills, as its last bars answered. Held
+  // in state so the pills do not all come back while the next range loads,
+  // and tagged with the company so the previous one's never apply here.
+  const [fills, setFills] = useState<{ ticker: string; ranges: Range[] } | null>(null);
+  useEffect(() => {
+    if (bars.state !== "loaded" || !bars.data?.ranges?.length) return;
+    setFills({ ticker: bars.data.ticker, ranges: bars.data.ranges.filter(isRange) });
+  }, [bars]);
+  const offered = fills && fills.ticker === ticker ? fills.ranges : null;
+  // A remembered "5Y" on a stock two years old is not re-fetched as "max":
+  // five years trimmed from a two-year history already IS the whole of it.
+  // Only the pill and the period line change, and the reader's pick stays
+  // stored for the next company that has five years to show.
+  const shown: Range = offered && !offered.includes(range) ? "max" : range;
   // Quote, calendar and holding do not depend on the range, so changing it
   // redraws the chart without re-fetching any of them.
   const quote = useApi(
@@ -214,23 +220,32 @@ export default function Page() {
     [ticker],
   );
 
-  // What kind of symbol this is decides which sections exist at all — the cut
-  // Streamlit makes with `st.stop()`. A coin gets its asset stats and nothing
-  // below; a fund gets its profile and nothing below. Everything under those
-  // two — results, fundamentals, valuation, moat, insiders, comps and the KPI
-  // sources — is a company's, and for the other two it would be a column of
-  // empty cards that each cost a fetch.
+  // What kind of symbol this is decides what the page draws at all (`layout.ts`)
+  // — the cut Streamlit makes with `st.stop()`, taken further. A coin gets its
+  // asset stats and nothing below; a fund gets its profile and nothing below;
+  // an index gets its chart and nothing below. Everything under those —
+  // results, fundamentals, valuation, moat, insiders, comps and the KPI
+  // sources — is a company's, and for the rest it would be a column of empty
+  // cards that each cost a fetch.
   //
-  // A fund is whatever `/fund` says once it answers (Streamlit keys off the
-  // profile it fetched, and a catalog fund Yahoo returns no profile for falls
-  // through to the company sections there too); until then the profile's
-  // catalog guess stands in, so a fund page does not flash company cards. A
-  // failed profile reads as a company: the sections degrade on their own.
+  // The kind is the profile's (`stocks.data.asset_kind`). A fund is also
+  // whatever `/fund` says once it answers — a catalog fund Yahoo files as a
+  // share must not get company cards; until then the profile's catalog guess
+  // stands in, so a fund page does not flash them. A failed profile reads as a
+  // company: the sections degrade on their own.
   const drawn = profile.state === "loaded" ? profile.data : null;
-  const crypto = Boolean(drawn?.is_crypto);
-  const isFund =
+  const fundSays =
     fund.state === "loaded" ? Boolean(fund.data?.is_fund) : Boolean(drawn?.is_fund);
-  const company = profile.state !== "loading" && !crypto && !isFund;
+  const kind = resolveKind(assetKind(drawn?.asset), {
+    crypto: Boolean(drawn?.is_crypto),
+    fund: fundSays,
+  });
+  const shape = layout(kind);
+  const crypto = shape.sections.stats;
+  const company = profile.state !== "loading" && shape.sections.company;
+  // Named once the profile has answered: a label that flips from "Share" to
+  // "Money market" as the page loads is a wrong answer shown first.
+  const named = drawn ? ASSETS[kind] : null;
 
   const metrics = useApi(
     () => (ticker && company ? getMetrics(ticker, base) : Promise.resolve(null)),
@@ -290,21 +305,31 @@ export default function Page() {
             <span className="tk-name">{drawn.name}</span>
           ) : null}
         </div>
+        {/* What this is, before whether the reader owns it: the search box
+            finds shares, funds, coins and indices alike, and each is read by
+            different figures. */}
+        {named ? (
+          <Badge title={named.help ? t(named.help) : undefined}>{t(named.label)}</Badge>
+        ) : null}
         {held?.held ? <Badge>{t("ticker.in_portfolio")}</Badge> : null}
         <Custody marks={held?.custody ?? []} />
         {/* The assistant spends the operator's API keys and writes into a
             `chat.json` every anonymous visitor would share, and the drawer it
             opens is not mounted for a guest anyway — so the button that would
             open it goes with it rather than becoming one that does nothing. */}
+        {/* The question is the kind's: a coin has no fundamentals, a fund no
+            business of its own, and an index nothing to buy — so no button. A
+            symbol still loading reads as a share: the prompt is a question,
+            not a claim. */}
         <SignedInOnly>
-          {ticker ? (
+          {ticker && shape.ai ? (
             <button
               type="button"
               className="tk-ai"
               title={t("ticker.ai_analyze_help", { ticker })}
               onClick={() =>
                 askAssistant(
-                  t(aiPromptKey(Boolean(crypto), isFund), {
+                  t(shape.ai ?? "ticker.ai_prompt", {
                     ticker,
                     name: drawn?.name || ticker,
                   }),
@@ -328,6 +353,9 @@ export default function Page() {
             change company, as on the Streamlit page — two boxes that both
             navigate is one too many, and only the shell's keeps the recents. */}
       </header>
+      {/* The one line on what the kind is and what to read it by — a reader
+          who searched "xeon" learns here it is cash, not a share. */}
+      {named?.help ? <p className="tk-kind-line">{t(named.help)}</p> : null}
 
       {/* Nothing picked yet — the same invitation the Streamlit page opens with,
           rather than a column of empty cards. */}
@@ -347,15 +375,18 @@ export default function Page() {
             quote={quote.state === "loaded" ? quote.data : null}
             events={events.state === "loaded" ? (events.data?.earnings ?? []) : []}
             position={held}
-            range={range}
+            range={shown}
+            offered={offered}
             onRange={onRange}
             candles={candles ?? !mobile}
             onCandles={onCandles}
+            shape={shape}
+            fund={fund.state === "loaded" ? fund.data : null}
           />
 
           {/* A fund stops here, as Streamlit's does. */}
-          {isFund && fund.state === "loaded" && fund.data?.is_fund ? (
-            <FundSection fund={fund.data} />
+          {shape.sections.fund && fund.state === "loaded" && fund.data?.is_fund ? (
+            <FundSection fund={fund.data} holdings={shape.sections.fundHoldings} />
           ) : null}
 
           {/* …and a coin pair here: no statements, no Form 4, no comps. */}

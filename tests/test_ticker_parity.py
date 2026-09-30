@@ -56,7 +56,7 @@ _LITERAL = re.compile(r'(?<![\w.])t\(\s*"([a-z][\w]*\.[\w.]+)"')
 # those sets has to be added in both places — which is exactly when its string
 # needs writing.
 _TEMPLATES = {
-    "ticker.period_": ("1d", "1w", "1m", "3m", "6m", "1y", "2y", "5y"),
+    "ticker.period_": ("1d", "1w", "1m", "3m", "6m", "1y", "2y", "5y", "max"),
     "ticker.session_": ("pre", "post"),
     "ticker.view_": ("annual", "quarterly"),
     # These two are read off the domain rather than typed out: the alert types

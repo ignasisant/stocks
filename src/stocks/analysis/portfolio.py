@@ -587,7 +587,11 @@ def time_weighted_returns(value: pd.Series, flows: pd.Series) -> pd.Series:
 
 
 def money_weighted_return(
-    value: pd.Series, flows: pd.Series, start: pd.Timestamp | None = None
+    value: pd.Series,
+    flows: pd.Series,
+    start: pd.Timestamp | None = None,
+    *,
+    annual: bool = True,
 ) -> float:
     """Annualised money-weighted return (IRR) of the book over [start, end].
 
@@ -599,6 +603,11 @@ def money_weighted_return(
     did the strategy do". `start` before the first value falls back to the
     full history. NaN when the window is empty, has no time span, or no rate
     in (-99.99%, 1000%) prices the flows to zero.
+
+    `annual=False` is the same IRR over the window as a whole rather than per
+    year — each flow's time counted as a share of the window, not in years —
+    so a book a few months old reads what it made over them, not that pace
+    stretched to a year. The two are equal on a window exactly a year long.
     """
     value = value.dropna()
     if value.empty:
@@ -608,7 +617,10 @@ def money_weighted_return(
         if not clipped.empty:
             value = clipped
     t0, t_end = value.index[0], value.index[-1]
-    years = (t_end - t0).days / 365.25
+    unit = 365.25 if annual else (t_end - t0).days
+    if unit <= 0:
+        return float("nan")
+    years = (t_end - t0).days / unit
     if years <= 0:
         return float("nan")
     # Flows arrive at day-t close (time_weighted_returns convention), so the
@@ -616,7 +628,7 @@ def money_weighted_return(
     cash = [(0.0, -float(value.iloc[0]))]
     if not flows.empty:
         inside = flows[(flows.index > t0) & (flows.index <= t_end)]
-        cash += [((ts - t0).days / 365.25, -float(f)) for ts, f in inside.items()]
+        cash += [((ts - t0).days / unit, -float(f)) for ts, f in inside.items()]
     cash.append((years, float(value.iloc[-1])))
 
     def npv(rate: float) -> float:

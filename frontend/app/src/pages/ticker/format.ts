@@ -43,6 +43,26 @@ export function signed(value: Maybe, digits = 2): string {
   return `${value >= 0 ? "+" : ""}${money(value, digits)}`;
 }
 
+/**
+ * A share count: whole shares whole, a fraction to at most four places.
+ *
+ * "67", not "67.0000" — four fixed decimals claim a precision a whole lot does
+ * not have — while "0.1234" still shows the fractional lot a broker sold.
+ */
+export function shares(value: Maybe): string {
+  if (!known(value)) return DASH;
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  });
+}
+
+/** A premium keeps its sign: "−2.6%" is a discount, and unsigned it is a level. */
+export function signedPercent(value: Maybe, digits = 2): string {
+  if (!known(value)) return DASH;
+  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(digits)}%`;
+}
+
 /** A fraction as a percentage: 0.1234 -> "12.3%". */
 export function percent(value: Maybe, digits = 1): string {
   return known(value) ? `${(value * 100).toFixed(digits)}%` : DASH;
@@ -261,16 +281,19 @@ export function earliest(values: (number | null)[] | undefined): number | null {
  * Streamlit's `(last - prev) / prev` over the last two closes. On an intraday
  * range the bar before the last is five minutes ago, not yesterday, so there
  * the previous close is the last bar of the previous session instead. A
- * fraction, as the quote's `pct` is; null when there is nothing to measure.
+ * weekly or monthly bar ("max" over a long listing) has no yesterday in it at
+ * all. A fraction, as the quote's `pct` is; null when there is nothing to
+ * measure.
  */
 export function barsDayPct(bars: Bars | null): number | null {
   if (!bars) return null;
+  const intraday = bars.interval !== "1d" && /[mh]$/.test(bars.interval);
+  if (bars.interval !== "1d" && !intraday) return null;
   const close = bars.series.Close ?? [];
   let at = close.length - 1;
   while (at >= 0 && (close[at] === null || close[at] === undefined)) at--;
   if (at < 1) return null;
   const last = close[at] as number;
-  const intraday = bars.interval !== "1d" && /[mh]$/.test(bars.interval);
   const today = (bars.dates[at] ?? "").slice(0, 10);
   for (let i = at - 1; i >= 0; i--) {
     const prev = close[i];

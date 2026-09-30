@@ -58,17 +58,21 @@ export function snap(days: string[], day: string): number {
   return at === -1 ? days.length - 1 : at;
 }
 
-/** "Dividend 0.24/sh · ex-date 2024-05-10 · ≈0.52% of price" */
+/**
+ * "Dividend 0.24/sh · ex-date 2024-05-10 · ≈0.52% of price". No date on a
+ * weekly or monthly bar: the bar's own is its last session, not the ex-date.
+ */
 export function dividendLine(
   value: number,
   close: number | null,
-  date: string,
+  date: string | null,
   t: Translate,
 ): EventLine {
-  let text = t("ticker.hover_dividend", {
-    amt: String(Number(value.toPrecision(4))),
-    date: date.slice(0, 10),
-  });
+  const amt = String(Number(value.toPrecision(4)));
+  let text =
+    date === null
+      ? t("ticker.hover_dividend_bar", { amt })
+      : t("ticker.hover_dividend", { amt, date: date.slice(0, 10) });
   // The yield is against THAT day's close, not today's: a 2019 dividend told
   // as a percentage of the 2026 price is a different number entirely.
   if (close) {

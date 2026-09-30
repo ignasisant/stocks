@@ -125,6 +125,37 @@ def test_partial_fills_of_one_order_survive_the_duplicate_check():
     assert len(v.fresh) == 3
 
 
+def test_partial_fills_survive_when_the_book_ends_in_a_transfer_out():
+    """A DEGIRO book moved whole to IBKR ends in transfers, not sales. The
+    departure states how many shares the broker held, so it proves the
+    second fill just as a later sale would."""
+    out = Transaction(date="2025-02-03", ticker="AAPL", action="transfer_out",
+                      quantity=2.0, price=412.75)
+    v = validate(
+        _result([
+            _buy(qty=1.0, price=248.645),
+            _buy(qty=1.0, price=248.445),
+            out,
+        ]),
+        [],
+        known=KNOWN,
+        today=TODAY,
+    )
+    assert not v.duplicates
+    assert not v.rejected
+    assert len(v.fresh) == 3
+
+
+def test_a_transfer_out_short_of_its_lots_is_not_an_oversell():
+    """Shares bought before the statement's first row leave with the transfer
+    all the same; the pairing rule keeps that lot open, so nothing is rejected."""
+    out = Transaction(date="2025-02-03", ticker="AAPL", action="transfer_out",
+                      quantity=5.0, price=412.75)
+    v = validate(_result([_buy(qty=1.0), out]), [], known=KNOWN, today=TODAY)
+    assert not v.rejected
+    assert len(v.fresh) == 2
+
+
 def test_a_true_repeat_is_still_dropped_when_the_book_closes_without_it():
     """The rescue is arithmetic, not amnesty: a repeat the sale does not need
     stays a duplicate."""

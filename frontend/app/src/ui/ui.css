@@ -423,3 +423,103 @@
     animation: none;
   }
 }
+
+/* ---------------------------------------------- a box with its controls */
+
+/* `Mic.tsx`: the field fills the box and the controls sit over its bottom
+   right corner. The field pads itself clear of however many there are, so a
+   long line wraps before it runs under a button. */
+.ag-box {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+}
+
+.ag-box > textarea {
+  flex: 1;
+  min-width: 0;
+  /* The corner a resize grip would take is the controls'. */
+  resize: none;
+}
+
+/* One line of hint, cut short: in a one-row field, a hint that wraps to make
+   room for the controls shows its first line and half of the second. */
+.ag-box > textarea::placeholder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-box:has(.ag-box-tools > :nth-child(1)) > textarea {
+  padding-right: 40px;
+}
+
+.ag-box:has(.ag-box-tools > :nth-child(2)) > textarea {
+  padding-right: 74px;
+}
+
+.ag-box-tools {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: flex;
+  gap: 2px;
+}
+
+.ag-box-tool {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
+  color: var(--ag-text-secondary);
+  cursor: pointer;
+  place-items: center;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* A tap leaves `:hover` behind on a touch screen, so only a mouse gets it;
+   a finger gets `:active`, on the press rather than the release. */
+@media (hover: hover) and (pointer: fine) {
+  .ag-box-tool:hover:not(:disabled) {
+    background: var(--ag-surface-sunken);
+    color: var(--ag-text-primary);
+  }
+}
+
+.ag-box-tool:active:not(:disabled),
+.ag-box-open {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-primary);
+}
+
+.ag-box-tool:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ag-box-tool:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 1px;
+}
+
+/* A control whose setting is off its default: the chip that used to say so
+   in words is an icon now, so the colour has to. */
+.ag-box-set {
+  color: var(--ag-brand-accent);
+}
+
+/* Recording. After the hover rule, which would otherwise take the fill away
+   from a mouse resting on the button it just pressed. */
+.ag-box-rec,
+.ag-box-rec:hover:not(:disabled),
+.ag-box-rec:active:not(:disabled) {
+  background: var(--ag-critical-fill);
+  color: var(--ag-on-brand);
+}

@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 
 // `server.py` inlines `ds_vars_css()` in place of the <!--AG-TOKENS--> marker
 // before the document goes out; `npm run dev` serves index.html untouched, so
@@ -33,7 +33,7 @@ function devTokens(): Plugin {
 // page without anyone needing Node. That means the bundle is committed — see
 // frontend/README.md for why, and `npm run build` is the only thing that
 // should ever change it.
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), devTokens()],
   base: "/next-assets/",
   build: {
@@ -59,6 +59,12 @@ export default defineConfig({
     },
   },
   server: {
+    // `stocks dashboard --reload` starts this server with STOCKS_VITE set to
+    // its own address, and 8501 sends the document with the modules pointed
+    // here (`_dev_document` in web/server.py). A URL Vite writes into a module
+    // — the brand mark's `?url` import — must then name this server too: left
+    // relative it resolves against 8501, which has no source to give.
+    origin: loadEnv(mode, ".", "STOCKS_VITE").STOCKS_VITE,
     // `/app/static/` is the logo mirror: the API hands a ticker's logo back as
     // a path relative to the app document (see web/logos.py), which resolves
     // against this dev server rather than the one holding the mirror — every
@@ -80,4 +86,4 @@ export default defineConfig({
     // a file it has not been told it may; the repo root is that permission.
     fs: { allow: ["../.."] },
   },
-});
+}));

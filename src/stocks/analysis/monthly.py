@@ -11,10 +11,19 @@ Those rates are always since the first trade. A window does not rebase them:
 it crops the months, as zooming into the full chart would. Re-taking them from
 the window's first day read as if the book had been opened then — the old
 money's run gone, and a calendar year that opened in a dip drawn below zero
-for an account that was well above it. Neither is drawn before the book is a
-year old: annualising a few months turns +7% into +278%, and de-annualising
-the IRR back over them credits a late deposit's gain to money that was not in
-yet — the reason GIPS forbids both.
+for an account that was well above it.
+
+Nor are they annual in the book's first year: annualising a few months turns
++7% into +278%, and GIPS forbids a rate stretched to a year from less than
+one. Until the first birthday a month's close carries what the book made from
+its first day to that close instead, as a period return — the daily TWR
+chain-linked, and the same IRR solved over the span as a whole rather than
+per year — and `annual` says which reading a row holds. On the birthday the
+two readings are one number, so the line carries on across it without a
+step. Leaving the first year blank read as a book with no returns for it.
+The first-year IRR still weighs a deposit by the share of the span it was in,
+as any IRR does: €2k added to an €800 book in its second month, just before
+a rise, reads well above the euros' gain, as it would inside an annual IRR.
 
 What a window does take from its own first day is euros, because "what did
 this year do" has an answer there that adds up to the cent: the value the
@@ -30,6 +39,17 @@ The since-inception Modified Dietz this module first drew (gain over average
 capital) is why the rates are an IRR: on a book that grew from €4k to €113k in
 its last two years the average capital was €32k, and a dip on fresh money read
 as +132% to 0% and back.
+
+Each month also carries its own return, from the month before's close to its
+own: the daily TWR chain-linked over that calendar month and left as it is —
+"what did my picks do in March". It is a period return reported over its
+own period, which GIPS allows under a year, not a rate stretched to a year,
+so nothing is annualised. It has no capital denominator for a flow to lever
+either: the TWR takes each day's buys and sales out of that day's return, so
+a deposit on the 15th moves the month's euros and not its percentage. The
+months compound to the TWR since the first trade, and a window crops them
+like every other column — a month's return is the same whichever window it
+is seen through.
 """
 
 from __future__ import annotations
@@ -122,11 +142,24 @@ def month_ends(hist: pd.DataFrame, twr: pd.Series, flows: pd.Series) -> pd.DataF
     Levels are forward-filled over calendar days, so a month ending on a
     weekend holds Friday's book: `value`, `invested` — every buy so far less
     every sale, the injected total — and `gain` between them. `money_weighted`
-    is the IRR from the first day to the close and `time_weighted` the
-    annualised TWR over the same span; both NaN until the book is a year old.
-    The current month is included as it stands.
+    is the IRR from the first day to the close and `time_weighted` the TWR
+    over the same span, both annualised once the book is a year old and, in
+    its first year, what it made over the span, not annualised; `annual` says
+    which.
+    `month_return` is the month's own TWR, compounded from the previous
+    month's close (the first day, for the first month) to this one and not
+    annualised: there from the first month, NaN only for a month without a
+    single return in it. The current month is included as it stands.
     """
-    columns = ["value", "invested", "gain", "money_weighted", "time_weighted"]
+    columns = [
+        "value",
+        "invested",
+        "gain",
+        "money_weighted",
+        "time_weighted",
+        "annual",
+        "month_return",
+    ]
     value = hist["value"].dropna()
     if value.empty:
         return pd.DataFrame(columns=columns)
@@ -136,14 +169,19 @@ def month_ends(hist: pd.DataFrame, twr: pd.Series, flows: pd.Series) -> pd.DataF
     daily = daily[daily.index >= first]
     closes = daily.groupby(pd.DatetimeIndex(daily.index).to_period("M")).tail(1)
     rows = []
+    previous = None
     for close, level in closes["value"].items():
         invested = float(flows[flows.index <= close].sum()) if not flows.empty else 0.0
-        if close - first < _YEAR:
-            money = picks = _NAN
+        annual = close - first >= _YEAR
+        book = value[value.index <= close]
+        run = twr[twr.index <= close] if not twr.empty else twr
+        money = money_weighted_return(book, flows, annual=annual)
+        if run.empty:
+            picks = _NAN
+        elif annual:
+            picks = annualized_return(run)
         else:
-            money = money_weighted_return(value[value.index <= close], flows)
-            run = twr[twr.index <= close] if not twr.empty else twr
-            picks = annualized_return(run) if not run.empty else _NAN
+            picks = float((1 + run).prod() - 1)
         rows.append(
             {
                 "value": level,
@@ -151,9 +189,26 @@ def month_ends(hist: pd.DataFrame, twr: pd.Series, flows: pd.Series) -> pd.DataF
                 "gain": level - invested,
                 "money_weighted": money,
                 "time_weighted": picks,
+                "annual": annual,
+                "month_return": _month_return(twr, previous, close),
             }
         )
+        previous = close
     return pd.DataFrame(rows, index=closes.index, columns=columns)
+
+
+def _month_return(
+    twr: pd.Series, previous: pd.Timestamp | None, close: pd.Timestamp
+) -> float:
+    """The daily returns after `previous` (None: from the first) up to `close`,
+    chain-linked; NaN when there are none."""
+    if twr.empty:
+        return _NAN
+    days = twr.index <= close
+    if previous is not None:
+        days &= twr.index > previous
+    inside = twr[days]
+    return float((1 + inside).prod() - 1) if not inside.empty else _NAN
 
 
 def _timing(

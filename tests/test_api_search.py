@@ -187,6 +187,43 @@ def test_a_worldwide_row_carries_its_venue(client, account, token, monkeypatch):
     assert row["exchange"] == "Stockholm"
 
 
+def test_a_row_says_what_kind_of_asset_it_is_from_the_caches_alone(
+    client, account, token, monkeypatch
+):
+    """The pill beside a match: read from what this host already learned, and
+    no row costs a lookup — a keystroke that fetched per row would be the
+    throttle this route is built to dodge."""
+    from stocks.data import asset_kind, fetch, funds
+
+    def no_network(*a, **k):
+        raise AssertionError("a search row must not fetch")
+
+    monkeypatch.setattr(fetch, "info", no_network)
+    monkeypatch.setattr(
+        loaders,
+        "world_matches",
+        lambda q: [
+            ("XEON.DE", "Xtrackers II EUR Overnight Rate Swap UCITS ETF", "XETRA"),
+            ("IWDA.AS", "iShares Core MSCI World UCITS ETF", "Amsterdam"),
+            ("SAP.DE", "SAP SE", "XETRA"),
+        ],
+    )
+    funds.remember("XEON.DE", "ETF")
+    funds.remember("IWDA.AS", "ETF")
+    asset_kind.remember("SAP.DE", asset_kind.STOCK)
+    assets = {m["ticker"]: m["asset"] for m in find(client, "A")}
+    assert assets["XEON.DE"] == "money_market"
+    # A fund whose name does not say which kind: a fund, not a guessed kind.
+    assert assets["IWDA.AS"] == "fund"
+    assert assets["SAP.DE"] == "stock"
+    # Nothing learned about it yet: no label rather than a wrong one.
+    assert assets["AAPL"] is None
+
+
+def test_an_analyze_offer_carries_no_kind(client, account, token):
+    assert [m["asset"] for m in find(client, "ZZQQ")] == [None]
+
+
 def test_an_unknown_symbol_comes_back_as_an_analyze_offer(client, account, token):
     rows = find(client, "ZZQQ")
     assert [(m["ticker"], m["kind"]) for m in rows] == [("ZZQQ", "analyze")]

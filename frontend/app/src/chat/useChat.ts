@@ -25,14 +25,16 @@ import { useLang } from "../shell/i18n";
 import { useRoute } from "../shell/router";
 import {
   asBase64,
-  ask,
   commitAttachment,
   dropThread,
   editThread,
   readState,
   readAttachment,
   readThread,
+  pressSurface,
   readThreads,
+  run,
+  runInput,
   saveSettings,
   startThread,
 } from "./api";
@@ -44,12 +46,16 @@ import {
   syncGuide,
   type GuideState,
 } from "./guide";
+import type { A2uiAction } from "./a2ui";
 import type {
   ChatState,
   Conversation,
+  Edits,
   ImportRow,
   Preview,
+  Proposal,
   SettingsPatch,
+  ToolCall,
   Turn,
 } from "./types";
 
@@ -60,6 +66,21 @@ const blank = (role: string, content: string): Turn => ({
   web: [],
   action: null,
 });
+
+/** The turn's calls with one proposal's card moved to where it now stands. */
+const settled = (
+  calls: ToolCall[] | undefined,
+  offer: Proposal,
+): ToolCall[] | undefined =>
+  calls?.map((call) =>
+    call.id === offer.id
+      ? {
+          ...call,
+          args: { kind: offer.kind, ticker: offer.ticker, args: offer.args },
+          state: offer.state,
+        }
+      : call,
+  );
 
 /** Whether this turn is one the server never stored — a refusal or a stop. */
 const unfiled = (turn: Turn | undefined): boolean =>
@@ -120,6 +141,9 @@ export function useChat(live: boolean) {
   const frame = useRef(0);
   // The turn in flight, so that Stop has something to pull on.
   const flight = useRef<AbortController | null>(null);
+  // The statement on the card, held while the card is up: a corrected column
+  // mapping reads it again, and the server keeps no copy to read.
+  const staged = useRef<File | null>(null);
 
   const refresh = useCallback(async () => {
     const [next, list] = await Promise.all([readState(), readThreads()]);
@@ -229,17 +253,14 @@ export function useChat(live: boolean) {
       // navigates while the answer is written asked about the page they were on.
       const where = { view, ...(focus ? { focus } : {}) };
       try {
-        const done = await ask(
-          again
-            ? { regenerate: true, conversation: activeId ?? undefined, lang, ...where }
-            : {
-                message,
-                conversation: activeId ?? undefined,
-                lang,
-                ...where,
-                // A card is waiting: "import these" is answered with its button.
-                staged_import: preview?.filename,
-              },
+        const done = await run(
+          runInput(again ? { regenerate: true } : { message }, {
+            conversation: activeId ?? undefined,
+            lang,
+            ...where,
+            // A card is waiting: "import these" is answered with its button.
+            staged_import: preview?.filename,
+          }),
           (meta) => {
             setModel(meta.model);
             write((turn) => ({
@@ -255,6 +276,20 @@ export function useChat(live: boolean) {
           },
           (phase) => write((turn) => ({ ...turn, phase })),
           control.signal,
+          (line) =>
+            write((turn) => ({
+              ...turn,
+              live: turn.live?.some((known) => known.id === line.id)
+                ? turn.live.map((known) => (known.id === line.id ? line : known))
+                : [...(turn.live ?? []), line],
+            })),
+          (side) =>
+            write((turn) => ({
+              ...turn,
+              arguing: turn.arguing?.some((known) => known.id === side.id)
+                ? turn.arguing.map((known) => (known.id === side.id ? side : known))
+                : [...(turn.arguing ?? []), side],
+            })),
         );
         settle();
         const took = (Date.now() - started) / 1000;
@@ -267,14 +302,35 @@ export function useChat(live: boolean) {
           skills: done.skills,
           web: done.sources,
           steps: done.steps ?? [],
-          // The walkthrough's jump, already checked against the registry.
-          guide_goto: done.goto ?? null,
+          // Page links, walkthrough jumps and a proposal card, each already
+          // checked on the server.
+          tool_calls: done.calls,
+          activities: done.activities ?? [],
+          debate: done.debate ?? [],
           pending: false,
           phase: undefined,
+          live: undefined,
+          arguing: undefined,
           ts: Date.now(),
           took,
           ...(done.error ? { error: done.error } : {}),
         }));
+        // A "yes" typed under a card settles it: the card above moves to
+        // where the proposal now stands, as a press would have moved it.
+        const offer = done.proposal;
+        if (offer && offer.state !== "pending") {
+          setTurns((list) =>
+            list.map((turn) =>
+              turn.tool_calls?.some((call) => call.id === offer.id)
+                ? {
+                    ...turn,
+                    tool_calls: settled(turn.tool_calls, offer),
+                    activities: [],
+                  }
+                : turn,
+            ),
+          );
+        }
         // A refused turn is never written to disk, so the thread on the
         // server is unchanged and there is nothing to re-read; a served one
         // has a new title, a new count and a spent allowance.
@@ -293,6 +349,8 @@ export function useChat(live: boolean) {
             ...turn,
             content: turn.content + tail,
             pending: false,
+            live: undefined,
+            arguing: undefined,
             stopped: true,
             ts: Date.now(),
             took: (Date.now() - started) / 1000,
@@ -316,6 +374,111 @@ export function useChat(live: boolean) {
       }
     },
     [activeId, busy, flush, focus, lang, preview, refresh, settle, state, view, write],
+  );
+
+  /**
+   * Answer a proposal card: run the action (as edited) or drop it.
+   *
+   * An AG-UI resume — the run that asked finished interrupted on this card,
+   * and this one answers that interrupt. The asking turn is rewritten in place
+   * on the server (its words become the receipt), so it is rewritten in place
+   * here too rather than gaining a turn under it. Resolves with the refusal's
+   * key when the server turned the answer down, so the card can say why and
+   * stay pressable; null when it went through.
+   */
+  const decide = useCallback(
+    async (id: string, approved: boolean, edits?: Edits): Promise<string | null> => {
+      if (busy) return "chat.api_error";
+      setBusy(true);
+      try {
+        const done = await run(
+          runInput(
+            {
+              resume: approved
+                ? {
+                    interruptId: id,
+                    status: "resolved",
+                    payload: { approved: true, ...edits },
+                  }
+                : { interruptId: id, status: "cancelled" },
+            },
+            { conversation: activeId ?? undefined, lang },
+          ),
+          () => {},
+          () => {},
+          () => {},
+        );
+        if (done.error || !done.proposal) return done.error ?? "chat.api_error";
+        const offer = done.proposal;
+        setTurns((list) =>
+          list.map((turn) =>
+            turn.tool_calls?.some((call) => call.id === id)
+              ? {
+                  ...turn,
+                  content: done.text,
+                  action: offer.state === "done" ? offer.kind : turn.action,
+                  tool_calls: settled(turn.tool_calls, offer),
+                  // The form was the proposal's; answered, there is none.
+                  activities: [],
+                }
+              : turn,
+          ),
+        );
+        return null;
+      } catch (failure) {
+        if (failure instanceof ApiError && failure.status === 409) {
+          // Answered elsewhere — another window, or a typed "yes". The thread
+          // on disk knows how; read it back rather than guess.
+          if (activeId) {
+            const thread = await readThread(activeId).catch(() => null);
+            if (thread) setTurns(thread.messages.map((m) => ({ ...m })));
+          }
+          return null;
+        }
+        return "chat.api_error";
+      } finally {
+        setBusy(false);
+      }
+    },
+    [activeId, busy, lang],
+  );
+
+  /**
+   * A press on a surface under turn `index` — a what-if slider let go. The
+   * server's answer is appended to that surface's messages, so the surface
+   * folds it in the way it folded the first ones. Resolves false when the
+   * press went nowhere, for the surface to say so.
+   */
+  const press = useCallback(
+    async (index: number, activity: string, action: A2uiAction): Promise<boolean> => {
+      try {
+        const more = await pressSurface(action, lang);
+        setTurns((list) =>
+          list.map((turn, i) =>
+            i !== index
+              ? turn
+              : {
+                  ...turn,
+                  activities: turn.activities?.map((shown) =>
+                    shown.id === activity
+                      ? {
+                          ...shown,
+                          content: {
+                            ...shown.content,
+                            messages: [...(shown.content.messages ?? []), ...more],
+                          },
+                        }
+                      : shown,
+                  ),
+                },
+          ),
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [lang],
   );
 
   /** Cut the answer being written. Nothing is queued: the press is the abort. */
@@ -427,8 +590,9 @@ export function useChat(live: boolean) {
    * so it is appended here too rather than re-read.
    */
   const attach = useCallback(
-    async (file: File) => {
+    async (file: File, mapping?: Record<string, unknown>) => {
       if (reading || busy) return;
+      staged.current = file;
       setWork({ kind: "reading", filename: file.name });
       try {
         const found = await readAttachment({
@@ -436,11 +600,17 @@ export function useChat(live: boolean) {
           content: await asBase64(file),
           conversation: activeId ?? undefined,
           lang,
+          ...(mapping ? { mapping } : {}),
         });
         setTurns((list) => [...list, { ...found.message, skills: [], web: [] }]);
-        // Only a file with something in it gets a card. The note already says
-        // what happened to one that has not.
-        if (found.fresh.length || found.duplicates.length) setPreview(found);
+        // Only a file with something in it gets a card — or one whose columns
+        // can still be corrected, since a mapping that read nothing is exactly
+        // the one worth fixing. The note already says what happened.
+        if (found.fresh.length || found.duplicates.length || found.surface?.length) {
+          setPreview(found);
+        } else {
+          setPreview(null);
+        }
         await refresh().catch(() => {});
       } catch (failure) {
         const walled = failure instanceof ApiError && failure.status === 429;
@@ -464,6 +634,18 @@ export function useChat(live: boolean) {
     [activeId, busy, lang, reading, refresh],
   );
 
+  /**
+   * Read the card's file again with the columns the reader corrected — the
+   * mapping surface's "remap". The file never left this tab, so it is sent
+   * again rather than kept anywhere on the server.
+   */
+  const remap = useCallback(
+    (mapping: Record<string, unknown>) => {
+      if (staged.current) void attach(staged.current, mapping);
+    },
+    [attach],
+  );
+
   /** Write the rows on the card, plus whichever duplicates were opted in. */
   const commitImport = useCallback(
     async (broker: string, duplicates: ImportRow[] = []) => {
@@ -483,6 +665,7 @@ export function useChat(live: boolean) {
           lang,
         });
         setPreview(null);
+        staged.current = null;
         setImported((n) => n + 1);
         setTurns((list) => [...list, { ...done.message, skills: [], web: [] }]);
         await refresh().catch(() => {});
@@ -558,7 +741,10 @@ export function useChat(live: boolean) {
   }, []);
 
   /** Throw the card away. Nothing was written, so nothing has to be undone. */
-  const discardImport = useCallback(() => setPreview(null), []);
+  const discardImport = useCallback(() => {
+    staged.current = null;
+    setPreview(null);
+  }, []);
 
   const settings = useCallback(async (patch: SettingsPatch) => {
     setState(await saveSettings(patch));
@@ -586,6 +772,8 @@ export function useChat(live: boolean) {
     stop,
     retry,
     regenerate,
+    decide,
+    press,
     drop,
     open,
     create,
@@ -605,6 +793,7 @@ export function useChat(live: boolean) {
     guideAdvance,
     guideFinish,
     attach,
+    remap,
     commitImport,
     discardImport,
   };

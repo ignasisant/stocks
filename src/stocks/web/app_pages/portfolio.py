@@ -977,8 +977,8 @@ if tab_tax.open:
                 preview_kw={"rows": 4, "cols": 5},
             )
         else:
-            # Relabelled inside, because a RealizedSale carries the replay's
-            # label and the raw ledger does not — see tax.buy_dates.
+            # Normalized inside, because a RealizedSale carries the replay's
+            # label and dates and the raw ledger does not — see tax.buy_dates.
             buy_dates = tax.buy_dates(txs)
             year_ty = {
                 y: _jur.fiscal_year(tax_realized, y, buy_dates, _tset)

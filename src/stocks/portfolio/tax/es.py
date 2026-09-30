@@ -9,7 +9,8 @@ Key rules encoded:
   deductible in the year if identical securities were (re)bought within the two
   months before or after the sale. The loss is deferred, not lost — it becomes
   computable as the replacement shares are later sold, which the shared
-  `recovered_losses` machinery re-integrates.
+  `repurchases` machinery re-integrates. Only as many shares as were bought
+  back are blocked: a partial buy-back defers that proportion of the loss.
 * Losses offset gains within the savings base; any excess carries forward 4
   years (surfaced as a note, not auto-applied across years here).
 * Modelo 720 / foreign-asset reporting flag (> 50.000 EUR held abroad).
@@ -21,6 +22,7 @@ from dataclasses import dataclass
 
 from stocks.portfolio.positions import RealizedSale
 from stocks.portfolio.tax.base import (
+    Acquisitions,
     Note,
     ReportingFlag,
     TaxPeriod,
@@ -29,8 +31,7 @@ from stocks.portfolio.tax.base import (
     months_window,
     open_period,
     progressive_tax,
-    recovered_losses,
-    replacement_dates,
+    repurchases,
     sales_in,
 )
 
@@ -82,17 +83,18 @@ class EsTaxPeriod(TaxPeriod):
 def fiscal_period(
     realized: list[RealizedSale],
     period: str,
-    buy_dates: dict[str, list[str]],
+    buy_dates: Acquisitions,
     settings: TaxSettings | None = None,
 ) -> EsTaxPeriod:
     """Summarize an ISO date prefix ("YYYY" or "YYYY-MM") for the savings base.
 
-    `buy_dates` maps ticker -> every buy date in the ledger (ISO), used to apply
-    the 2-month rule against replacement purchases in any year. The monthly
-    slice is a breakdown, not a taxable base — IRPF nets the savings base over
-    the whole ejercicio.
+    `buy_dates` maps ticker -> every acquisition in the ledger (see
+    `tax.buy_dates`), used to apply the 2-month rule against replacement
+    purchases in any year. The monthly slice is a breakdown, not a taxable
+    base — IRPF nets the savings base over the whole ejercicio.
     """
     out = open_period(EsTaxPeriod, CODE, CURRENCY, period)
+    blocks = repurchases(realized, buy_dates, WINDOW)
     for s in sales_in(period, realized, YEAR_START):
         out.sales.append(s)
         gain = s.gain
@@ -101,9 +103,8 @@ def fiscal_period(
             continue
         loss = -gain
         out.realized_loss += loss
-        if replacement_dates(s, buy_dates.get(s.ticker, []), WINDOW):
-            out.disallowed_loss += loss
-    out.recovered_loss = recovered_losses(realized, period, buy_dates, WINDOW)
+        out.disallowed_loss += blocks.disallowed(s)
+    out.recovered_loss = blocks.recovered(period)
     return out
 
 

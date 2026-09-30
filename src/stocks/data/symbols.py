@@ -114,12 +114,17 @@ def search_symbols(query: str, limit: int = 6) -> list[tuple[str, str, str]]:
     after a failure: once Yahoo starts rejecting this host, retrying on every
     keystroke only deepens the throttle.
     """
+    from stocks.data import funds
+
     out: list[tuple[str, str, str]] = []
     seen: list[str] = []
     for row in _quotes(query, max(limit * 3, 12)):
         symbol = str(row.get("symbol") or "").strip()
         if not symbol or row.get("quoteType") not in QUOTE_TYPES:
             continue
+        # The quoteType came free with the match; keeping it is what lets the
+        # search box label the row (asset_kind.cached) without a lookup.
+        funds.remember(symbol, row.get("quoteType"))
         # longname first: it is the full legal name, spelled the same on every
         # venue ("Mips AB (publ)"), while shortname is a 30-char truncation of
         # whatever the local exchange prints ("ASML Holding N.V. - New York Re").

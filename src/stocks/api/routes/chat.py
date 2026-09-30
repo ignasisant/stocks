@@ -11,8 +11,11 @@ made once.
 
 Sending is a stream, not a request/response. A chat turn takes ten to forty
 seconds against a busy provider, and a client with nothing to show for thirty
-of them looks broken — so `POST /chat/messages` answers `text/event-stream` and
-the words arrive as the model writes them. It is a POST rather than an
+of them looks broken — so `POST /chat/runs` answers `text/event-stream` and
+the words arrive as the model writes them. The stream is AG-UI
+(docs.ag-ui.com): the body is its `RunAgentInput`, the events are its own, an
+app action waits on the reader as an interrupt, and a page link is a frontend
+tool call. It is a POST rather than an
 `EventSource` GET on purpose: the message is a body, bodies are what this API's
 CSRF defence is built on (a cross-site form cannot send `application/json`), and
 a question typed by a user does not belong in a URL that lands in logs.
@@ -21,25 +24,73 @@ a question typed by a user does not belong in a URL that lands in logs.
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import Iterator
 
+from ag_ui.core import (
+    ActivitySnapshotEvent,
+    BaseEvent,
+    CustomEvent,
+    Interrupt,
+    ResumeEntry,
+    RunAgentInput,
+    RunErrorEvent,
+    RunFinishedEvent,
+    RunFinishedInterruptOutcome,
+    RunStartedEvent,
+    StepFinishedEvent,
+    StepStartedEvent,
+    SubagentErrorEvent,
+    SubagentFinishedEvent,
+    SubagentStartedEvent,
+    TextMessageContentEvent,
+    TextMessageEndEvent,
+    TextMessageStartEvent,
+    TextPart,
+    ToolCallArgsEvent,
+    ToolCallEndEvent,
+    ToolCallResultEvent,
+    ToolCallStartEvent,
+    UserMessage,
+)
+from ag_ui.encoder import EventEncoder
 from fastapi import APIRouter, Header, HTTPException, status
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from stocks import accounts, navigation
 from stocks.accounts import UserPaths
-from stocks.api.deps import Account, ChatTurn, Writer
+from stocks.api.deps import Account, ChatTurn, SurfaceAction, Writer
 from stocks.api.routes import chat_attach
-from stocks.chat import engine, guide_ai
+from stocks.chat import a2ui, engine, guide_ai, navigate, tools, whatif
 from stocks.portfolio import autodetect
-from stocks.web import chat_skills, chat_web, llm, stt
+from stocks.web import chat_skills, llm, stt
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 # Long enough for a pasted earnings paragraph, short enough that a runaway
 # client cannot push a novel through the free chain on someone else's keys.
 MAX_MESSAGE = 4000
+# A run's `messages` and `tools`, bounded. Only the last message is read (the
+# thread on disk is the history), so a client sending more is sending noise.
+MAX_RUN_MESSAGES = 50
+MAX_RUN_TOOLS = 8
+
+# The tool call a proposal arrives as, and the reason its interrupt names.
+CONFIRM_TOOL = "confirm_action"
+# What `resume[0].payload` may say about a proposal (`Verdict`), as the
+# interrupt advertises it to a client that has never seen this server.
+RESUME_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "approved": {"type": "boolean"},
+        "ticker": {"type": "string"},
+        "args": {"type": "object"},
+        "form": {"type": "object", "additionalProperties": {"type": "string"}},
+    },
+    "required": ["approved"],
+    "additionalProperties": False,
+}
 
 _SKILL_MODES = ("auto", "manual", "off")
 
@@ -79,6 +130,37 @@ class Step(BaseModel):
     out: str = ""
 
 
+class ToolCallOut(BaseModel):
+    """One frontend tool call on a stored turn.
+
+    `navigate` with `{step}` is a walkthrough step the model offered
+    (`guide_goto` on disk), with `{page, tab?, ticker?}` a page link (`nav`).
+    `confirm_action` is a proposal (`proposal`), and `state` says whether it is
+    still waiting ("pending") or was answered ("done", "cancelled").
+    """
+
+    id: str
+    name: str
+    args: dict
+    state: str | None = None
+
+
+class DebateSide(BaseModel):
+    """One analyst's case: `side` is "bull" or "bear"."""
+
+    side: str
+    text: str
+
+
+class ActivityOut(BaseModel):
+    """One AG-UI activity on a stored turn: `type` "a2ui" is a surface, and
+    `content.messages` its A2UI v0.9 messages."""
+
+    id: str
+    type: str
+    content: dict
+
+
 class Message(BaseModel):
     """One stored turn. `skills`, `web` and `steps` are what the answer was
     built from — the lens, the pages, and the tool trace."""
@@ -94,10 +176,14 @@ class Message(BaseModel):
     # Set on a turn the walkthrough wrote: `step` is the registry id the card
     # presents, `state` is "done" for a receipt and "end" for the last line.
     guide: dict[str, str] | None = None
-    # A step an answer on the guide's thread offered to take the reader to —
-    # the model's `[[goto:<id>]]`, checked against the registry and scrubbed
-    # from the text (`guide_ai.claim_goto`). The client draws it as a button.
-    guide_goto: str | None = None
+    # The frontend tool calls the answer carried, as the stream handed them
+    # over — so a reloaded turn draws the same buttons as the one watched.
+    tool_calls: list[ToolCallOut] = []
+    # A2UI surfaces drawn under the answer (`chat/a2ui.py`), as the AG-UI
+    # activities the stream carried them in: a pending proposal's edit form.
+    activities: list[ActivityOut] = []
+    # The bull and bear cases argued before the answer (`chat/debate.py`).
+    debate: list[DebateSide] = []
 
 
 class Conversation(BaseModel):
@@ -196,8 +282,6 @@ class State(BaseModel):
     skills_mode: str
     skills_selected: list[str]
     max_manual: int
-    web: bool
-    web_available: bool
     # What the composer's paperclip may offer. The extensions are every parser's
     # own plus the three the column mapper reads, so a client that hard-coded a
     # list would silently stop offering the next broker's format
@@ -221,7 +305,6 @@ class Settings(BaseModel):
 
     skills_mode: str | None = None
     skills: list[str] | None = None
-    web: bool | None = None
     provider: str | None = None
     # Applied to the provider named in the same patch, or to the preferred one.
     # A model belongs to a backend, so the pair travels together or not at all.
@@ -274,10 +357,64 @@ class EditThread(BaseModel):
     active: bool | None = None
 
 
-class Ask(BaseModel):
+class Verdict(BaseModel):
+    """The reader's answer to a proposal: approve or not, and any edits.
+
+    `ticker` and `args` are the card's edit fields — the same symbol and tool
+    fields the classifier filled — and go back through the tool's own parser
+    (`tools.revise`), so an edit is held to exactly what a detection was.
+    """
+
     model_config = {"extra": "forbid"}
 
-    message: str = Field(default="", max_length=MAX_MESSAGE)
+    approved: bool
+    ticker: str | None = Field(default=None, max_length=20)
+    args: dict | None = None
+    # The proposal's A2UI form (`/form` of its surface), as an alternative to
+    # `ticker` + `args`: the drawer sends what the reader typed, and the tool
+    # registry turns it back into arguments (`tools.args_from_form`).
+    form: dict[str, str] | None = None
+
+    @field_validator("form")
+    @classmethod
+    def _short(cls, value: dict[str, str] | None) -> dict[str, str] | None:
+        if value is not None and (
+            len(value) > 12 or any(len(str(v)) > 200 for v in value.values())
+        ):
+            raise ValueError("a form is at most 12 fields of 200 characters")
+        return value
+
+    @field_validator("args")
+    @classmethod
+    def _small(cls, value: dict | None) -> dict | None:
+        if value is not None and len(json.dumps(value)) > 2000:
+            raise ValueError("args are at most 2000 characters of JSON")
+        return value
+
+
+class Where(BaseModel):
+    """The run's `state`: where the reader is when they ask.
+
+    The page slug and the ticker on screen. The Streamlit panel has always told
+    the model both (`chat_core._view_context`) — "is this a good entry?" means
+    nothing without the page it was asked on — and the focused symbol also
+    feeds the quote lookup and the gather, so a price for "it" is fetched even
+    when the message never names a ticker. Unknown slugs and anything that is
+    not a symbol are dropped, not echoed.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    view: str = Field(default="", max_length=40)
+    focus: str = Field(default="", max_length=40)
+
+
+class Forwarded(BaseModel):
+    """The run's `forwardedProps`: what this app passes that AG-UI does not name."""
+
+    model_config = {"extra": "forbid"}
+
+    lang: str | None = Field(default=None, max_length=8)
     # Answer the last question again instead of asking a new one. The thread is
     # rewound first — the previous answer *and* the question go, and the
     # question is asked again — so a regenerated turn leaves one pair behind
@@ -287,31 +424,66 @@ class Ask(BaseModel):
     # these" is then answered with "press the button below", not with "attach
     # the file" — the drawer knows the card is up, the engine cannot.
     staged_import: str = Field(default="", max_length=255)
-    # Where the reader is: the page slug and the ticker on screen. The
-    # Streamlit panel has always told the model both (`chat_core._view_context`)
-    # — "is this a good entry?" means nothing without the page it was asked on
-    # — and the focused symbol also feeds the quote lookup and the gather, so a
-    # price for "it" is fetched even when the message never names a ticker.
-    # Unknown slugs and anything that is not a symbol are dropped, not echoed.
-    view: str = Field(default="", max_length=40)
-    focus: str = Field(default="", max_length=40)
+
+
+class Run(RunAgentInput):
+    """One AG-UI run: a question, a regenerate, or the answer to a proposal.
+
+    AG-UI's own `RunAgentInput`, closed and bounded. `threadId` names the
+    thread the turn lands in ("" is the active one — a first turn on a fresh
+    account has no thread to name yet). Of `messages`, only the last one is
+    read, and only when it is the reader's: the thread on disk is the history,
+    and a client-sent transcript would be a way to put words in the
+    assistant's mouth. `tools` says which frontend tools the client runs —
+    `navigate` is the one this server offers to (`chat/navigate.py`).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    thread_id: str = Field(max_length=64)
+    run_id: str = Field(min_length=1, max_length=64)
 
     @model_validator(mode="after")
-    def _one_or_the_other(self) -> Ask:
-        if self.regenerate:
-            if self.message.strip():
-                raise ValueError(
-                    "regenerate answers the question already on the thread; "
-                    "send it without a message"
-                )
-            return self
-        if not self.message.strip():
-            raise ValueError("message must not be empty")
+    def _bounded(self) -> Run:
+        if len(self.messages) > MAX_RUN_MESSAGES:
+            raise ValueError(f"at most {MAX_RUN_MESSAGES} messages")
+        if len(self.tools or []) > MAX_RUN_TOOLS:
+            raise ValueError(f"at most {MAX_RUN_TOOLS} tools")
+        if len(self.resume or []) > 1:
+            raise ValueError("one proposal is answered per run")
+        Where.model_validate(self.state or {})
+        Forwarded.model_validate(self.forwarded_props or {})
         return self
-    # Which thread the turn lands in. Omitted means the active one — which is
-    # what a single-window client always wants and what the Telegram bot has.
-    conversation: str | None = None
-    lang: str | None = None
+
+    @property
+    def where(self) -> Where:
+        return Where.model_validate(self.state or {})
+
+    @property
+    def props(self) -> Forwarded:
+        return Forwarded.model_validate(self.forwarded_props or {})
+
+    @property
+    def question(self) -> str:
+        """The reader's last message, as text. "" when the run carries none."""
+        last = self.messages[-1] if self.messages else None
+        if not isinstance(last, UserMessage):
+            return ""
+        if isinstance(last.content, str):
+            text = last.content
+        else:
+            text = "".join(
+                part.text for part in last.content if isinstance(part, TextPart)
+            )
+        if len(text) > MAX_MESSAGE:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"a message is at most {MAX_MESSAGE} characters",
+            )
+        return text.strip()
+
+    def declares(self, name: str) -> bool:
+        return any(tool.name == name for tool in self.tools or [])
 
 
 # -------------------------------------------------------------------- reads
@@ -357,7 +529,7 @@ def _view(view: str, focus: str, lang: str) -> tuple[str, str]:
     return engine.view_context(page, sym), sym
 
 
-def _turn(raw: dict) -> Message:
+def _turn(raw: dict, lang: str = "en") -> Message:
     return Message(
         role=str(raw.get("role", "")),
         content=str(raw.get("content", "")),
@@ -378,8 +550,53 @@ def _turn(raw: dict) -> Message:
             if isinstance(raw.get("guide"), dict)
             else None
         ),
-        guide_goto=(str(raw["guide_goto"]) if raw.get("guide_goto") else None),
+        tool_calls=_calls(raw),
+        activities=[ActivityOut(**a) for a in _activities(raw, lang)],
+        debate=[
+            DebateSide(side=str(d.get("side", "")), text=str(d.get("text", "")))
+            for d in (raw.get("debate") or [])
+            if isinstance(d, dict) and d.get("text")
+        ],
     )
+
+
+def _activities(raw: dict, lang: str) -> list[dict]:
+    """The surfaces a stored turn draws. Built from what the turn holds rather
+    than stored beside it: a pending proposal's form is a pure function of the
+    proposal, and a second copy on disk would be one more thing to go stale."""
+    from stocks.web.i18n import translate
+
+    stored = [
+        a for a in (raw.get("activities") or [])
+        if isinstance(a, dict) and a.get("id") and a.get("type") == a2ui.ACTIVITY_TYPE
+        and isinstance(a.get("content"), dict)
+    ]
+    offer = raw.get("proposal")
+    if not (isinstance(offer, dict) and offer.get("state") == "pending"
+            and offer.get("id") and offer.get("kind") in tools.TOOLS):
+        return stored
+    form = a2ui.proposal_form(offer, lambda key: translate(key, lang))
+    return [*stored, a2ui.activity(f"form_{offer['id']}", form)]
+
+
+def _calls(raw: dict) -> list[ToolCallOut]:
+    """A stored turn's buttons, as the `tool_calls` the stream sent for it."""
+    out: list[ToolCallOut] = []
+    if raw.get("guide_goto"):
+        out.append(ToolCallOut(id="goto", name=navigate.TOOL_NAME,
+                               args={"step": str(raw["guide_goto"])}))
+    nav = raw.get("nav")
+    if isinstance(nav, dict) and navigate.target(
+        "/".join(str(nav.get(k, "")) for k in ("page", "tab", "ticker") if nav.get(k))
+    ):
+        out.append(ToolCallOut(id="nav", name=navigate.TOOL_NAME,
+                               args={k: str(v) for k, v in nav.items()}))
+    offer = raw.get("proposal")
+    if isinstance(offer, dict) and offer.get("id") and offer.get("kind"):
+        out.append(ToolCallOut(id=str(offer["id"]), name=CONFIRM_TOOL,
+                               args=_call_args(offer),
+                               state=str(offer.get("state") or "pending")))
+    return out
 
 
 def _tail(key: str) -> str | None:
@@ -459,8 +676,6 @@ def _state(paths: UserPaths, held: dict[str, str] | None = None) -> State:
             i for i in prefs.get("chat_skills", []) if i in chat_skills.valid_ids()
         ],
         max_manual=chat_skills.MAX_MANUAL,
-        web=engine.web_enabled(prefs),
-        web_available=chat_web.available(),
         upload_types=list(autodetect.supported_types()),
         upload_max_mb=chat_attach.MAX_UPLOAD_MB,
         voice=stt.available(),
@@ -499,13 +714,14 @@ def conversations(paths: Account) -> Conversations:
 def thread(cid: str, paths: Account) -> Thread:
     from stocks.web import auth
 
+    lang = str(_prefs(paths).get("language") or "en")
     book = auth.load_book(paths.chat)
     for conv in book["conversations"]:
         if conv["id"] == cid:
             return Thread(
                 id=conv["id"],
                 title=conv["title"],
-                messages=[_turn(m) for m in conv["messages"]],
+                messages=[_turn(m, lang) for m in conv["messages"]],
             )
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND, detail=f"no conversation {cid}"
@@ -596,8 +812,6 @@ def settings(
         changes["chat_skills_mode"] = body.skills_mode
     if body.skills is not None:
         changes["chat_skills"] = body.skills
-    if body.web is not None:
-        changes["chat_web"] = body.web
     if body.provider is not None:
         changes["llm_provider"] = body.provider
     if body.model is not None:
@@ -621,40 +835,185 @@ def settings(
 # --------------------------------------------------------------- one turn
 
 
-def _frame(event: str, data: dict) -> str:
-    """One Server-Sent Event. `data` is one line: JSON never contains a raw
-    newline, so no multi-line framing is needed and none is parsed."""
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+_WIRE = EventEncoder()
+
+
+def _frame(event: BaseEvent) -> str:
+    """One AG-UI event as one Server-Sent Event: `data: {json}`, no `event:`
+    line — the type rides inside the JSON, which is how AG-UI frames SSE."""
+    return _WIRE.encode(event)
+
+
+def _call(call_id: str, name: str, args: dict, parent: str) -> Iterator[str]:
+    """A tool call, whole: start, its arguments in one piece, end.
+
+    Arguments are sent in one delta rather than streamed: they are decided
+    after the answer (a marker is only known once the text is), so there is
+    nothing to stream them alongside.
+    """
+    yield _frame(ToolCallStartEvent(tool_call_id=call_id, tool_call_name=name,
+                                    parent_message_id=parent))
+    yield _frame(ToolCallArgsEvent(
+        tool_call_id=call_id, delta=json.dumps(args, ensure_ascii=False)
+    ))
+    yield _frame(ToolCallEndEvent(tool_call_id=call_id))
+
+
+def _interrupt(offer: dict, question: str) -> Interrupt:
+    """The pause a pending proposal puts on the run, and how to answer it."""
+    return Interrupt(
+        id=offer["id"],
+        reason=CONFIRM_TOOL,
+        message=question,
+        tool_call_id=offer["id"],
+        response_schema=RESUME_SCHEMA,
+    )
 
 
 def _events(
-    *, prefs: dict, paths: UserPaths, message: str, lang: str,
-    staged_import: str = "", view: str = "", focus: str = "",
-    guided: bool = False, held: dict[str, str] | None = None,
+    *, thread: str, run: str, prefs: dict, paths: UserPaths, message: str,
+    lang: str, staged_import: str = "", view: str = "", focus: str = "",
+    guided: bool = False, linked: bool = False,
+    held: dict[str, str] | None = None,
 ) -> Iterator[str]:
-    """The turn, as SSE frames. Never raises: a stream that dies mid-answer
+    """The turn, as AG-UI events. Never raises: a stream that dies mid-answer
     cannot be turned back into a status code, so every failure becomes a
-    `done` frame carrying the same locale key the Reply would have carried.
+    `RUN_ERROR` carrying the locale key the Reply would have carried.
 
-    `guided` is a turn on the walkthrough's own thread. It gets the fence in
-    its prompt, and its text passes through the marker filter on the way out:
-    a `[[goto:…]]` never reaches the client's screen, not even for the one
-    frame a streamed token is painted in, and the finished answer carries the
-    validated step as `goto` — the same field a reloaded turn reads back as
-    `guide_goto`.
+    The engine's phases become steps (`STEP_STARTED`/`STEP_FINISHED`, named by
+    the panel's `chat.work_*` keys), who answered is a `CUSTOM` "chat.meta"
+    event held until the first real chunk, the words are one text message, and
+    `RUN_FINISHED.result` is the finished Reply — authoritative, since the
+    chunks were only what made the wait bearable. The research behind it
+    streams as it happens: each tool the gather runs is a backend tool call,
+    `TOOL_CALL_START`/`ARGS` when it starts and `END`/`RESULT` when it returns,
+    so the reader watches "search_web · nvidia guidance" come back as
+    "5 results" instead of a spinner over all of it.
+
+    `guided` is a turn on the walkthrough's own thread: the fence in its
+    prompt, and its `[[goto:…]]` withheld from the stream and handed over as a
+    `navigate` call with `{step}`. `linked` is a client that runs the
+    `navigate` tool: the page list in the prompt and its `[[open:…]]` handed
+    over the same way with `{page, tab?, ticker?}`. An app action the engine
+    would have run comes back as a `confirm_action` call instead, and the run
+    finishes *interrupted* on it — AG-UI's human-in-the-loop pause.
     """
     # Flushes headers (and any proxy buffer) before the model is even asked, so
     # the client's reader resolves immediately instead of at the first token.
     yield ": open\n\n"
-    gate = guide_ai.MarkerFilter() if guided else None
-    claimed: dict[str, str] = {}
+    yield _frame(RunStartedEvent(thread_id=thread, run_id=run))
+    gates = [
+        *([guide_ai.MarkerFilter()] if guided else []),
+        *([guide_ai.MarkerFilter(navigate.MARKER_RE)] if linked else []),
+    ]
+    claimed: dict = {}
+    mid = f"msg_{uuid.uuid4().hex[:16]}"
+    opened = False
+    step: str | None = None
+    # Research calls started and not yet returned. One the gather's timeout
+    # abandoned is closed before the answer starts, so no call is left open.
+    running: set[str] = set()
+    # Subagents announced and not yet finished — the same rule for a side of
+    # the debate the timeout cut short.
+    arguing: set[str] = set()
 
     def polish(entry: dict) -> None:
         # Runs inside the engine before the answer is stored, so the thread on
         # disk holds the scrubbed words and the button, never the marker.
-        sid = guide_ai.claim_goto(entry, gate.found if gate else [])
-        if sid:
-            claimed["goto"] = sid
+        if guided:
+            sid = guide_ai.claim_goto(entry, gates[0].found)
+            if sid:
+                claimed["goto"] = sid
+        if linked:
+            nav = navigate.claim(entry, gates[-1].found)
+            if nav:
+                claimed["nav"] = nav
+
+    def shown(chunk: str) -> str:
+        for gate in gates:
+            chunk = gate.feed(chunk) if chunk else chunk
+        return chunk
+
+    def tail() -> str:
+        out = ""
+        for gate in gates:
+            out = (gate.feed(out) if out else "") + gate.close()
+        return out
+
+    def words(delta: str) -> Iterator[str]:
+        nonlocal opened
+        if not delta:
+            return
+        if not opened:
+            opened = True
+            yield _frame(TextMessageStartEvent(message_id=mid, role="assistant"))
+        yield _frame(TextMessageContentEvent(message_id=mid, delta=delta))
+
+    def close_step() -> Iterator[str]:
+        nonlocal step
+        for cid in sorted(running):
+            yield _frame(ToolCallEndEvent(tool_call_id=cid))
+        running.clear()
+        for sid in sorted(arguing):
+            yield _frame(SubagentErrorEvent(subagent_run_id=sid,
+                                            message="chat.debate_failed",
+                                            code="chat.debate_failed"))
+        arguing.clear()
+        if step is not None:
+            yield _frame(StepFinishedEvent(step_name=step))
+            step = None
+
+    def argued(said: dict) -> Iterator[str]:
+        # One side of the debate, as an AG-UI subagent: announced, its case as
+        # a text message under its own run id, then finished — or failed,
+        # which leaves the answer to go on without it.
+        sid, kind = str(said["id"]), said["kind"]
+        if kind == "start":
+            arguing.add(sid)
+            yield _frame(SubagentStartedEvent(
+                subagent_run_id=sid, name=str(said["side"]),
+                description=f"{said['side']} analyst", parent_message_id=mid,
+            ))
+        elif kind == "text":
+            sub = f"msg_{sid}"
+            yield _frame(TextMessageStartEvent(message_id=sub, role="assistant",
+                                               subagent_run_id=sid))
+            yield _frame(TextMessageContentEvent(message_id=sub,
+                                                 delta=str(said["text"]),
+                                                 subagent_run_id=sid))
+            yield _frame(TextMessageEndEvent(message_id=sub, subagent_run_id=sid))
+        elif kind == "end" and sid in arguing:
+            arguing.discard(sid)
+            yield _frame(SubagentFinishedEvent(subagent_run_id=sid,
+                                               result={"side": said["side"]}))
+        elif kind == "error" and sid in arguing:
+            arguing.discard(sid)
+            yield _frame(SubagentErrorEvent(subagent_run_id=sid,
+                                            message=str(said["message"]),
+                                            code=str(said["message"])))
+
+    def research(line: dict) -> Iterator[str]:
+        # A backend tool, run here: AG-UI's full call, result included. The
+        # result is the line the trace files ("5 results"), not what the tool
+        # read — that went to the model, and a page of someone else's site has
+        # no business on the wire twice.
+        cid = str(line["id"])
+        if cid not in running:
+            yield _frame(ToolCallStartEvent(tool_call_id=cid,
+                                            tool_call_name=str(line["tool"])))
+            yield _frame(ToolCallArgsEvent(
+                tool_call_id=cid,
+                delta=json.dumps(line.get("args") or {}, ensure_ascii=False,
+                                 default=str),
+            ))
+            running.add(cid)
+        if "out" in line:
+            running.discard(cid)
+            yield _frame(ToolCallEndEvent(tool_call_id=cid))
+            yield _frame(ToolCallResultEvent(
+                message_id=f"res_{cid}", tool_call_id=cid, role="tool",
+                content=str(line["out"]) or "-",
+            ))
 
     try:
         for kind, payload in engine.answer_stream(
@@ -669,50 +1028,120 @@ def _events(
             staged_import=staged_import,
             view=view,
             focus=focus,
+            # The walkthrough's fence closes the prompt on its own thread; the
+            # page list goes where it would have, on every other one.
             fence=(
                 guide_ai.prompt_fence(prefs, prefs.get(guide_ai.PREF_THREAD), lang)
                 if guided
-                else ""
+                else navigate.prompt_block() if linked else ""
             ),
             session_keys=held,
-            polish=polish if guided else None,
+            polish=polish if gates else None,
+            confirm_actions=True,
+            debating=True,
         ):
             if kind == "phase":
-                # What the turn is doing before it has words: the panel's
-                # `chat.work_*` line, named by its key.
-                yield _frame("phase", {"phase": payload})
+                yield from close_step()
+                step = name = str(payload)
+                yield _frame(StepStartedEvent(step_name=name))
+            elif kind == "tool":
+                assert isinstance(payload, dict)
+                yield from research(payload)
+            elif kind == "subagent":
+                assert isinstance(payload, dict)
+                yield from argued(payload)
             elif kind == "text":
-                chunk = gate.feed(str(payload)) if gate else payload
-                if chunk:
-                    yield _frame("text", {"chunk": chunk})
+                yield from words(shown(str(payload)))
             elif kind == "meta":
                 assert isinstance(payload, dict)
-                yield _frame("meta", payload)
+                yield from close_step()
+                yield _frame(CustomEvent(name="chat.meta", value=payload))
             else:
                 reply = payload
                 assert isinstance(reply, engine.Reply)
-                if gate and (tail := gate.close()):
-                    yield _frame("text", {"chunk": tail})
-                yield _frame(
-                    "done",
-                    {
-                        "text": reply.text,
-                        "skills": list(reply.skills),
-                        "sources": list(reply.sources),
-                        "provider": reply.provider_id or None,
-                        "error": reply.error,
-                        "steps": list(reply.steps),
-                        # Only on an answer that earned a jump: every other
-                        # frame keeps the shape it has always had.
-                        **({"goto": claimed["goto"]} if "goto" in claimed else {}),
-                    },
-                )
+                yield from close_step()
+                yield from words(tail())
+                if reply.error and not reply.text:
+                    if opened:
+                        yield _frame(TextMessageEndEvent(message_id=mid))
+                    yield _frame(RunErrorEvent(message=reply.error, code=reply.error))
+                    return
+                # An answer the engine settled without streaming it (an import
+                # note, a proposal) arrives whole, as one text message.
+                if not opened:
+                    yield from words(reply.text)
+                if opened:
+                    yield _frame(TextMessageEndEvent(message_id=mid))
+                if "goto" in claimed:
+                    yield from _call(f"nav_{uuid.uuid4().hex[:12]}", navigate.TOOL_NAME,
+                                     {"step": claimed["goto"]}, mid)
+                if "nav" in claimed:
+                    yield from _call(f"nav_{uuid.uuid4().hex[:12]}", navigate.TOOL_NAME,
+                                     claimed["nav"], mid)
+                offer = reply.proposal
+                asking = offer is not None and offer.get("state") == "pending"
+                for shown_ui in _activities(
+                    {"activities": list(reply.activities),
+                     **({"proposal": offer} if asking else {})},
+                    lang,
+                ):
+                    yield _frame(ActivitySnapshotEvent(
+                        message_id=shown_ui["id"],
+                        activity_type=shown_ui["type"],
+                        content=shown_ui["content"],
+                    ))
+                if asking:
+                    assert offer is not None
+                    yield from _call(offer["id"], CONFIRM_TOOL, _call_args(offer), mid)
+                yield _frame(RunFinishedEvent(
+                    thread_id=thread,
+                    run_id=run,
+                    result=_result(reply),
+                    outcome=(
+                        RunFinishedInterruptOutcome(
+                            interrupts=[_interrupt(offer, reply.text)]
+                        )
+                        if asking
+                        else None
+                    ),
+                ))
     except Exception:  # pragma: no cover - the engine already swallows its own
-        yield _frame(
-            "done",
-            {"text": "", "skills": [], "sources": [], "provider": None,
-             "error": "chat.api_error"},
-        )
+        yield _frame(RunErrorEvent(message="chat.api_error", code="chat.api_error"))
+
+
+def _call_args(offer: dict) -> dict:
+    """A proposal as `confirm_action`'s arguments — what would run."""
+    return {"kind": offer["kind"], "ticker": offer["ticker"],
+            "args": dict(offer.get("args") or {})}
+
+
+def _result(reply: engine.Reply) -> dict:
+    """`RUN_FINISHED.result`: the finished Reply, as the client stores a turn."""
+    return {
+        "text": reply.text,
+        "skills": list(reply.skills),
+        "sources": list(reply.sources),
+        "provider": reply.provider_id or None,
+        "steps": list(reply.steps),
+        # Only on a turn that asked or settled one: every other result keeps
+        # the shape it has always had.
+        **({"proposal": dict(reply.proposal)} if reply.proposal else {}),
+        **({"debate": [dict(d) for d in reply.debate]} if reply.debate else {}),
+    }
+
+
+def _settled(*, thread: str, run: str, reply: engine.Reply) -> Iterator[str]:
+    """The stream for a proposal the reader just answered: one line, done."""
+    mid = f"msg_{uuid.uuid4().hex[:16]}"
+    yield _frame(RunStartedEvent(thread_id=thread, run_id=run))
+    if reply.error:
+        yield _frame(RunErrorEvent(message=reply.error, code=reply.error))
+        return
+    yield _frame(TextMessageStartEvent(message_id=mid, role="assistant"))
+    yield _frame(TextMessageContentEvent(message_id=mid, delta=reply.text))
+    yield _frame(TextMessageEndEvent(message_id=mid))
+    yield _frame(RunFinishedEvent(thread_id=thread, run_id=run,
+                                  result=_result(reply)))
 
 
 def _rewind(paths: UserPaths) -> str:
@@ -741,21 +1170,47 @@ def _rewind(paths: UserPaths) -> str:
     return str(asked["content"]).strip()
 
 
-@router.post("/messages", summary="Ask the assistant (streams the answer)")
+def _answer(entry: ResumeEntry) -> Verdict:
+    """The reader's verdict out of one resume entry."""
+    if entry.status == "cancelled":
+        return Verdict(approved=False)
+    try:
+        said = Verdict.model_validate(entry.payload or {})
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    return said
+
+
+_STREAM_HEADERS = {
+    "Cache-Control": "no-cache",
+    # Nginx and Cloud Run's front end both buffer a response body by default,
+    # which would hold every chunk until the turn ended and make the stream
+    # pointless.
+    "X-Accel-Buffering": "no",
+}
+
+
+@router.post("/runs", summary="Run the assistant (AG-UI, streams the answer)")
 def ask(
-    body: Ask,
+    body: Run,
     paths: ChatTurn,
     x_chat_provider: str | None = Header(default=None),
     x_chat_key: str | None = Header(default=None),
 ) -> StreamingResponse:
-    """One chat turn, streamed as it is written.
+    """One chat turn as an AG-UI run, streamed as it is written.
 
-    Frames are `phase` (what the turn is doing before it has words —
-    `gathering`, `searching`, `writing`), `meta` (which provider answered,
-    with which lens — held until the first real chunk, so a client never names
-    a provider that then failed over), `text` (a piece of the answer) and
-    exactly one `done` (the finished Reply, or its error key). A client that
-    only wants the answer can ignore everything but `done`.
+    The body is AG-UI's `RunAgentInput` and the answer its event stream
+    (`RUN_STARTED` … `RUN_FINISHED` or `RUN_ERROR`; see `_events`), so any
+    AG-UI client can drive the drawer's assistant and ours reads a published
+    protocol rather than frame names only it knows. Three kinds of run:
+
+    * a question — the last of `messages`, the reader's;
+    * a regenerate — `forwardedProps.regenerate`, with no message;
+    * the answer to a proposal — `resume`, one entry naming the interrupt the
+      previous run finished on. Approved, the action runs (as edited, when the
+      payload carries edits) and the asking turn becomes its confirmation.
 
     The turn is a write — it appends to chat.json and spends the account's free
     allowance — so it is guarded by `Writer`: a bearer token may read this
@@ -763,52 +1218,160 @@ def ask(
     """
     from stocks.web import auth
 
-    if body.conversation is not None:
+    if body.thread_id:
         if not any(
-            c["id"] == body.conversation
-            for c in auth.list_conversations(paths.chat)
+            c["id"] == body.thread_id for c in auth.list_conversations(paths.chat)
         ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"no conversation {body.conversation}",
+                detail=f"no conversation {body.thread_id}",
             )
         # The engine writes the *active* thread, which is what the panel and
         # the bot have always meant by "the conversation". Two windows of the
         # same account therefore share one cursor; last one to send wins, and
         # the thread each answer landed in is what the client re-reads.
-        auth.set_active_conversation(body.conversation, paths.chat)
+        auth.set_active_conversation(body.thread_id, paths.chat)
 
-    message = body.message.strip()
-    if body.regenerate:
+    props = body.props
+    prefs = _prefs(paths)
+    lang = (props.lang or prefs.get("language") or "en").strip().lower()
+    message = body.question
+    asked = [bool(body.resume), props.regenerate, bool(message)]
+    if sum(asked) != 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="a run carries one of: a user message, regenerate, or resume",
+        )
+    thread = body.thread_id or auth.active_conversation(paths.chat)["id"]
+
+    if body.resume:
+        entry = body.resume[0]
+        said = _answer(entry)
+        try:
+            reply = engine.settle_proposal(
+                chat_path=paths.chat, watchlist=paths.watchlist,
+                proposal_id=entry.interrupt_id, approve=said.approved, lang=lang,
+                ticker=said.ticker, args=said.args, form=said.form,
+            )
+        except LookupError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"no proposal {entry.interrupt_id} on this thread",
+            ) from exc
+        except engine.ProposalError as exc:
+            if exc.code == "chat.action_gone":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="this proposal was already answered",
+                ) from exc
+            reply = engine.Reply(error=exc.code)
+        return StreamingResponse(
+            _settled(thread=thread, run=body.run_id, reply=reply),
+            media_type="text/event-stream",
+            headers=_STREAM_HEADERS,
+        )
+
+    if props.regenerate:
         message = _rewind(paths)
 
-    prefs = _prefs(paths)
-    lang = (body.lang or prefs.get("language") or "en").strip().lower()
-    view, focus = _view(body.view, body.focus, lang)
+    where = body.where
+    view, focus = _view(where.view, where.focus, lang)
     # The engine writes the active thread, so that is the one to test: a turn
     # lands on the walkthrough's thread exactly when it is the active one.
     guided = guide_ai.owns(auth.active_conversation(paths.chat)["id"], prefs)
     return StreamingResponse(
         _events(
+            thread=thread,
+            run=body.run_id,
             prefs=prefs,
             paths=paths,
             message=message,
             lang=lang,
-            staged_import=body.staged_import.strip(),
+            staged_import=props.staged_import.strip(),
             view=view,
             focus=focus,
             guided=guided,
+            linked=not guided and body.declares(navigate.TOOL_NAME),
             held=session_keys(x_chat_provider, x_chat_key),
         ),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            # Nginx and Cloud Run's front end both buffer a response body by
-            # default, which would hold every chunk until the turn ended and
-            # make the stream pointless.
-            "X-Accel-Buffering": "no",
-        },
+        headers=_STREAM_HEADERS,
     )
+
+
+# ---------------------------------------------------------- surface actions
+
+
+class SurfacePress(BaseModel):
+    """A2UI's client-to-server action, as its spec words it."""
+
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(max_length=40)
+    surfaceId: str = Field(max_length=80)  # noqa: N815 — A2UI's own field names
+    sourceComponentId: str = Field(default="", max_length=80)  # noqa: N815
+    timestamp: str = Field(default="", max_length=40)
+    context: dict = {}
+
+    @field_validator("context")
+    @classmethod
+    def _small(cls, value: dict) -> dict:
+        if len(json.dumps(value, default=str)) > 2000:
+            raise ValueError("an action's context is at most 2000 characters")
+        return value
+
+
+class ActionBody(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    action: SurfacePress
+    lang: str | None = Field(default=None, max_length=8)
+
+
+class SurfaceUpdate(BaseModel):
+    """What the surface should apply: A2UI v0.9 server messages."""
+
+    messages: list[dict]
+
+
+@router.post("/actions", response_model=SurfaceUpdate,
+             summary="Press something on a surface the assistant drew")
+def press(body: ActionBody, paths: SurfaceAction) -> SurfaceUpdate:
+    """An A2UI action from a surface in the drawer, answered with the messages
+    that update it. No model is asked and nothing is stored: a slider moving
+    is the reader exploring, and the answer above it still says what it said.
+
+    One surface answers here today — the what-if sale's slider
+    (`chat/whatif.py`), re-run through the tax engine for the shares it now
+    names. An action this server has no handler for is a 404, not a guess.
+    """
+    press_ = body.action
+    lang = (body.lang or _prefs(paths).get("language") or "en").strip().lower()
+    if press_.surfaceId != whatif.SURFACE_ID or press_.name != whatif.ACTION:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no action {press_.name} on {press_.surfaceId}",
+        )
+    symbol = engine.clean_focus(str(press_.context.get("ticker") or ""))
+    try:
+        shares = float(press_.context.get("shares", ""))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="shares must be a number",
+        ) from exc
+    from stocks.web.i18n import translate
+
+    sale = whatif.simulate(db=paths.db, prefs_path=paths.prefs, ticker=symbol,
+                           shares=shares) if symbol else None
+    if sale is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"nothing of {symbol or 'that'} to sell, or no price for it",
+        )
+    return SurfaceUpdate(messages=whatif.moved(
+        sale, lambda key, **kw: translate(key, lang, **kw)
+    ))
 
 
 # ------------------------------------------------------------ provider keys

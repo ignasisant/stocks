@@ -126,6 +126,21 @@ def _meta(tickers: tuple[str, ...]) -> dict[str, dict]:
     return load_meta(list(tickers))
 
 
+def book_sectors(tbl) -> pd.Series:
+    """The book's weights summed by sector, funds looked through — the split
+    the card's sector-tilt line is written from, and the assistant's
+    snapshot quotes. Empty when there is nothing weighted to split."""
+    from stocks.analysis.portfolio import allocation
+
+    weights = tbl["weight"].dropna() if tbl is not None and "weight" in tbl else None
+    if weights is None or not len(weights):
+        return pd.Series(dtype=float)
+    names = tuple(sorted(str(t) for t in weights.index))
+    return allocation(
+        {str(t): float(w) for t, w in weights.items()}, _meta(names), "sector"
+    )
+
+
 def _market(tbl, hist, currency: str) -> list:
     """The market-wide candidates, or none of them — `daily_ui._market`.
 
@@ -133,18 +148,11 @@ def _market(tbl, hist, currency: str) -> list:
     that can be slow or fail on its own: a card that says nothing about the
     index is the card this was before, so any failure is an empty list.
     """
-    from stocks.analysis.portfolio import allocation
     from stocks.web.market_data import index_month_base
 
     try:
         closes = _card_closes()
-        weights = tbl["weight"].dropna() if tbl is not None and "weight" in tbl else None
-        sectors = pd.Series(dtype=float)
-        if weights is not None and len(weights):
-            names = tuple(sorted(str(t) for t in weights.index))
-            sectors = allocation(
-                {str(t): float(w) for t, w in weights.items()}, _meta(names), "sector"
-            )
+        sectors = book_sectors(tbl)
         ccy = None
         if tbl is not None and not tbl.empty and {"ccy", "weight"} <= set(tbl.columns):
             ccy = tbl.groupby("ccy")["weight"].sum()

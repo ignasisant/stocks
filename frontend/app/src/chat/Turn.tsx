@@ -19,9 +19,14 @@ import { Glyph } from "./icons";
 import { Markdown } from "./markdown";
 import { Status } from "../ui/Status";
 import { capMessage, clock, host, providerLabel, skillName, took } from "./format";
+import { ActionCard } from "./ActionCard";
 import { GuideCard, useVisit } from "./GuideCard";
 import { unshortcode, type GuideState, type GuideStep } from "./guide";
-import type { SkillInfo, Step, Turn as Stored } from "./types";
+import { PageLink } from "./links";
+import { Surfaces } from "./Surfaces";
+import { Debate } from "./Debate";
+import type { A2uiAction } from "./a2ui";
+import type { Edits, LiveStep, SkillInfo, Step, Turn as Stored } from "./types";
 import { Badge } from "../ui/Badge";
 
 /** The line that ticks while the answer is being built, naming what it is doing. */
@@ -78,6 +83,33 @@ function Trace({ steps, spent }: { steps: Step[]; spent: string }) {
   );
 }
 
+/**
+ * The research under an answer still being written, line by line as it runs.
+ *
+ * Open, unlike the trace it turns into: while the reader waits, what is being
+ * looked up *is* the thing worth reading, and a line that says "search_web ·
+ * nvidia guidance …" and then "→ 5 results" is the difference between a
+ * spinner and watching someone work. Beside the status line, never instead
+ * of it: every wait still names itself.
+ */
+function Live({ steps }: { steps: LiveStep[] }) {
+  return (
+    <ul className="ag-chat-steps ag-chat-live">
+      {steps.map((step) => (
+        <li key={step.id} aria-busy={step.out === undefined}>
+          <code>{step.tool}</code>
+          {step.arg && <span> {step.arg}</span>}
+          {step.out === undefined ? (
+            <span className="ag-chat-step-out"> …</span>
+          ) : (
+            <span className="ag-chat-step-out"> → {step.out}</span>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Sources({ web }: { web: { title: string; url: string }[] }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -119,7 +151,8 @@ function Sources({ web }: { web: { title: string; url: string }[] }) {
 
 /**
  * The button an answer on the walkthrough's thread earned by ending in a valid
- * `[[goto:<step>]]` — `guide.render_jump`.
+ * `[[goto:<step>]]` — `guide.render_jump`, and a `navigate` call with `{step}`
+ * on the wire.
  *
  * A button and not a navigation: the model proposes, the reader decides. The
  * marker itself never reaches the screen (the server withholds it while the
@@ -145,6 +178,9 @@ export function Turn({
   cap,
   onRetry,
   onDrop,
+  onDecide,
+  onLeave,
+  onPress,
   walk,
 }: {
   turn: Stored;
@@ -159,6 +195,12 @@ export function Turn({
    * question" beside Retry. Absent: nothing to offer.
    */
   onDrop?: () => void;
+  /** Answer a proposal card. Absent: its buttons are not drawn. */
+  onDecide?: (id: string, approved: boolean, edits?: Edits) => Promise<string | null>;
+  /** The drawer stepping aside for the page a link opened, on a phone. */
+  onLeave?: () => void;
+  /** A press on one of the answer's surfaces. Absent: they draw, inert. */
+  onPress?: (activity: string, action: A2uiAction) => Promise<boolean>;
   /** The walkthrough, for a turn it wrote. Absent: no guide on this server. */
   walk?: {
     state: GuideState;
@@ -230,6 +272,9 @@ export function Turn({
       {/* An answer that breaks off mid-sentence reads as the model losing the
           thread. Said plainly, it reads as what it was. */}
       {turn.stopped && <Badge>{t("chat.stopped_badge")}</Badge>}
+      {!mine && (turn.arguing?.length || turn.debate?.length) ? (
+        <Debate sides={turn.pending ? (turn.arguing ?? []) : (turn.debate ?? [])} />
+      ) : null}
       <div className="ag-chat-bubble">
         {mine ? (
           turn.content ? (
@@ -253,15 +298,40 @@ export function Turn({
           </div>
         )}
         {turn.pending && !turn.content && <Working phase={turn.phase} />}
+        {turn.pending && (turn.live?.length ?? 0) > 0 && (
+          <Live steps={turn.live ?? []} />
+        )}
       </div>
       {fallback && <p className="ag-chat-hint">{fallback}</p>}
-      {walk &&
-        turn.guide_goto &&
-        !turn.pending &&
-        (() => {
-          const step = walk.state.steps.find((s) => s.id === turn.guide_goto);
-          return step ? <Jump step={step} onLeave={walk.onLeave} /> : null;
-        })()}
+      {!turn.pending && (turn.activities?.length ?? 0) > 0 && (
+        <Surfaces activities={turn.activities ?? []} onPress={onPress} />
+      )}
+      {!turn.pending &&
+        (turn.tool_calls ?? []).map((call) => {
+          if (call.name === "confirm_action") {
+            const form = turn.activities?.find(
+              (shown) => shown.id === `form_${call.id}` && shown.type === "a2ui",
+            );
+            return (
+              <ActionCard
+                key={call.id}
+                call={call}
+                form={form?.content.messages}
+                onDecide={onDecide}
+              />
+            );
+          }
+          if (call.name !== "navigate") return null;
+          if (typeof call.args.step === "string") {
+            const step = walk?.state.steps.find((s) => s.id === call.args.step);
+            return step && walk ? (
+              <Jump key={call.id} step={step} onLeave={walk.onLeave} />
+            ) : null;
+          }
+          return typeof call.args.page === "string" ? (
+            <PageLink key={call.id} args={call.args} onLeave={onLeave ?? (() => {})} />
+          ) : null;
+        })}
       {walk &&
         turn.guide &&
         !turn.guide.state &&

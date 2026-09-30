@@ -194,3 +194,38 @@ def test_latest_price_resolves_alias(monkeypatch):
     monkeypatch.setattr(fetch.yf, "Ticker", FakeTicker)
     assert fetch.latest_price("HMI") == 123.0
     assert seen["symbol"] == "RMS.PA"
+
+
+def test_fetch_history_carries_the_listing_date(monkeypatch):
+    """Yahoo files it on the history response itself, so it costs no request —
+    and the Ticker page needs it to know which ranges a listing can fill."""
+    _patch_aliases(monkeypatch, {})
+
+    class FakeTicker:
+        def __init__(self, symbol):
+            self.history_metadata = {}
+
+        def history(self, **kwargs):
+            self.history_metadata = {"firstTradeDate": pd.Timestamp("2021-04-14 13:30")}
+            return pd.DataFrame(
+                {"Close": [1.0, 2.0]}, index=pd.to_datetime(["2024-01-02", "2024-01-03"])
+            )
+
+    monkeypatch.setattr(fetch.yf, "Ticker", FakeTicker)
+    assert fetch.fetch_history("COIN").attrs["first_trade"] == "2021-04-14"
+
+
+def test_fetch_history_without_a_listing_date_carries_none(monkeypatch):
+    _patch_aliases(monkeypatch, {})
+
+    class FakeTicker:
+        def __init__(self, symbol):
+            self.history_metadata = {}
+
+        def history(self, **kwargs):
+            return pd.DataFrame(
+                {"Close": [1.0]}, index=pd.to_datetime(["2024-01-02"])
+            )
+
+    monkeypatch.setattr(fetch.yf, "Ticker", FakeTicker)
+    assert "first_trade" not in fetch.fetch_history("XYZ").attrs

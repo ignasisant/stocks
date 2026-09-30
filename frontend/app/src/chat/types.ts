@@ -8,11 +8,67 @@
  * reload redraws the conversation differently from the way it was written.
  */
 
+import type { A2uiMessage } from "./a2ui";
+
 /** One web hit that grounded an answer. */
 type Source = { title: string; url: string };
 
 /** One tool line behind an answer: what ran, on what, and what came back. */
 export type Step = { tool: string; arg: string; out: string };
+
+/** One analyst's case in the bull/bear debate an answer weighed. */
+export type DebateSide = { side: string; text: string };
+
+/** A side of the debate while it is being argued (session-only). */
+export type Arguing = DebateSide & { id: string; state: "arguing" | "done" | "failed" };
+
+/** A tool line while the answer is still being researched: `out` once back. */
+export type LiveStep = { id: string; tool: string; arg: string; out?: string };
+
+/**
+ * A frontend tool call an answer carried — AG-UI's, as the stream handed it
+ * over and as the stored turn reads it back.
+ *
+ * `navigate` is a button: `{ step }` a walkthrough step, `{ page, tab?,
+ * ticker? }` a page. `confirm_action` is a proposal card: `{ kind, ticker,
+ * args }` is what would run, and `state` whether it still waits ("pending")
+ * or was answered ("done", "cancelled").
+ */
+export type ToolCall = {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+  state?: string | null;
+};
+
+/** What a `confirm_action` proposes, and where it stands. */
+export type Proposal = {
+  id: string;
+  kind: string;
+  ticker: string;
+  args: Record<string, unknown>;
+  state: "pending" | "done" | "cancelled";
+};
+
+/**
+ * The reader's edits to a proposal before approving it: its A2UI form as
+ * typed, or the symbol and arguments directly.
+ */
+export type Edits = {
+  ticker?: string;
+  args?: Record<string, unknown>;
+  form?: Record<string, string>;
+};
+
+/**
+ * An AG-UI activity under an answer. `type` "a2ui" is a surface the server
+ * built (`chat/a2ui.tsx` draws it), and `content.messages` its A2UI messages.
+ */
+export type Activity = {
+  id: string;
+  type: string;
+  content: { messages?: A2uiMessage[] } & Record<string, unknown>;
+};
 
 /** One stored turn, as the API returns it. */
 type Message = {
@@ -29,11 +85,15 @@ type Message = {
    */
   guide?: { step: string; state?: string } | null;
   /**
-   * A step an answer on the walkthrough's thread offered to take the reader
-   * to — the model's `[[goto:<id>]]`, validated and scrubbed on the server.
-   * Drawn as a "take me there" button under the answer.
+   * The buttons and cards under the answer: page links, walkthrough jumps and
+   * proposals. Checked on the server before they are stored, and never in the
+   * prose — the model's markers are scrubbed from it.
    */
-  guide_goto?: string | null;
+  tool_calls?: ToolCall[];
+  /** Surfaces drawn under the answer: a pending proposal's edit form. */
+  activities?: Activity[];
+  /** The bull and bear cases argued before the answer was written. */
+  debate?: DebateSide[];
 };
 
 /**
@@ -56,6 +116,17 @@ export type Turn = Message & {
   wait?: number;
   /** Still being written — the stream is open. */
   pending?: boolean;
+  /**
+   * The research happening under a pending answer, as it happens: each tool
+   * the server runs, and what it brought back once it has. Session-only and
+   * dropped when the answer lands — its `steps` are the same lines, filed.
+   */
+  live?: LiveStep[];
+  /**
+   * The debate while it is argued: each side as it starts, speaks and ends.
+   * Dropped when the answer lands, which carries the cases as `debate`.
+   */
+  arguing?: Arguing[];
   /**
    * What the turn is doing before it has words: `gathering`, `searching`,
    * `writing` — the key of the panel's own `chat.work_*` line.
@@ -154,8 +225,6 @@ export type ChatState = {
   skills_mode: string;
   skills_selected: string[];
   max_manual: number;
-  web: boolean;
-  web_available: boolean;
   /** Extensions the paperclip may offer — every parser's, plus the mapper's. */
   upload_types: string[];
   upload_max_mb: number;
@@ -208,6 +277,12 @@ export type Preview = {
   note: string;
   message: { role: string; content: string; action: string | null };
   conversation: string | null;
+  /**
+   * How an export no parser owns had its columns read, as an A2UI surface
+   * whose "remap" action sends a corrected mapping back. Null for a file a
+   * dedicated parser read.
+   */
+  surface?: A2uiMessage[] | null;
 };
 
 export type Committed = {
@@ -223,7 +298,6 @@ export type Committed = {
 export type SettingsPatch = {
   skills_mode?: SkillsMode;
   skills?: string[];
-  web?: boolean;
   provider?: string;
   /** Belongs to a backend, so it travels with the provider that serves it. */
   model?: string;
@@ -237,7 +311,10 @@ export type Meta = {
   sources: Source[];
 };
 
-/** The last frame of a turn, success or failure. Always exactly one. */
+/**
+ * How a run ended — `RUN_FINISHED`'s result, or `RUN_ERROR`'s code. Always
+ * exactly one per run.
+ */
 export type Done = {
   text: string;
   skills: string[];
@@ -245,6 +322,12 @@ export type Done = {
   provider: string | null;
   error: string | null;
   steps?: Step[];
-  /** The walkthrough step this answer offered to take the reader to. */
-  goto?: string;
+  /** The frontend tool calls the answer carried, whole. */
+  calls: ToolCall[];
+  /** The surfaces the run drew, by activity id — the last snapshot of each. */
+  activities?: Activity[];
+  /** A proposal this run asked, or one it just settled. */
+  proposal?: Proposal;
+  /** The cases argued before the answer. */
+  debate?: DebateSide[];
 };

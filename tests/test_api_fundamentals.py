@@ -509,13 +509,112 @@ def test_a_row_names_its_code_and_a_priceless_sale_has_no_value(client, monkeypa
 # ------------------------------------------------------------------------ funds
 
 
+@pytest.fixture
+def fund_offline(monkeypatch):
+    """The fund routes' own lookups, answered here: a quoteType from the
+    learned cache only, no bars unless a test serves some, no central bank."""
+    from stocks.data import funds
+
+    def no_bars(ticker, label):
+        raise RuntimeError("offline")
+
+    monkeypatch.setattr(
+        funds, "quote_type", lambda t, fetch=True: funds._known_types().get(t.upper())
+    )
+    monkeypatch.setattr(loaders, "price_bars", no_bars)
+    monkeypatch.setattr(loaders, "policy_rate", lambda ccy: None)
+    loaders._fund_kind.cache_clear()
+    yield
+    loaders._fund_kind.cache_clear()
+
+
+def _serve_fund(monkeypatch, ticker, name, *, quote_type="ETF", **fields):
+    from stocks.data import funds
+    from stocks.data.funds import FundProfile
+
+    funds.remember(ticker, quote_type)
+    monkeypatch.setattr(
+        loaders,
+        "fund_profile",
+        lambda t: FundProfile(ticker=t, name=name, quote_type=quote_type, **fields),
+    )
+
+
+def _drift(days: int, rate: float, start: float = 100.0) -> pd.DataFrame:
+    """Daily closes of an accumulating fund compounding at `rate` a year."""
+    index = pd.bdate_range(end="2026-09-29", periods=days)
+    elapsed = (index - index[0]).days.to_numpy()
+    return pd.DataFrame({"Close": start * (1 + rate) ** (elapsed / 365)}, index=index)
+
+
+def test_a_money_market_fund_reports_its_yield_beside_its_banks_rate(
+    client, monkeypatch, fund_offline
+):
+    """What XEON is held for: the gain its price folds in, as a yearly rate,
+    next to the ECB's — not an RSI."""
+    from datetime import date
+
+    _serve_fund(
+        monkeypatch,
+        "XEON.DE",
+        "Xtrackers II EUR Overnight Rate Swap UCITS ETF 1C",
+        currency="EUR",
+        expense_ratio=0.001,
+    )
+    monkeypatch.setattr(loaders, "price_bars", lambda t, label: _drift(300, 0.021))
+    monkeypatch.setattr(
+        loaders, "policy_rate", lambda ccy: ("ecb", 0.02, date(2026, 9, 17))
+    )
+    cash = client.get("/v1/ticker/XEON.DE/fund", headers=AUTH).json()["cash"]
+    assert cash["source"] == "price"
+    assert cash["yield_3m"] == pytest.approx(0.021, abs=1e-4)
+    assert cash["yield_1y"] == pytest.approx(0.021, abs=1e-4)
+    assert cash["as_of"] == "2026-09-29"
+    assert (cash["bank"], cash["policy_rate"], cash["policy_as_of"]) == (
+        "ecb", 0.02, "2026-09-17",
+    )
+
+
+def test_a_pinned_nav_fund_yields_what_it_pays_out(client, monkeypatch, fund_offline):
+    """A dollar fund held at 1.00 says nothing through its price."""
+    _serve_fund(
+        monkeypatch,
+        "VMFXX",
+        "Vanguard Federal Money Market Fund",
+        quote_type="MUTUALFUND",
+        currency="USD",
+        dividend_yield=0.042,
+    )
+    monkeypatch.setattr(loaders, "price_bars", lambda t, label: _drift(300, 0.0, 1.0))
+    cash = client.get("/v1/ticker/VMFXX/fund", headers=AUTH).json()["cash"]
+    assert (cash["source"], cash["yield_1y"], cash["yield_3m"]) == (
+        "distribution", 0.042, None,
+    )
+
+
+def test_only_a_money_market_fund_carries_a_cash_yield(client, monkeypatch, fund_offline):
+    _serve_fund(monkeypatch, "IWDA.AS", "iShares Core MSCI World UCITS ETF")
+    body = client.get("/v1/ticker/IWDA.AS/fund", headers=AUTH).json()
+    assert body["cash"] is None and body["is_bond_fund"] is False
+
+
+def test_a_bond_fund_is_known_by_its_name_when_yahoo_has_no_mix(
+    client, monkeypatch, fund_offline
+):
+    """AGGH publishes no asset classes; its name is the evidence."""
+    _serve_fund(monkeypatch, "AGGH.AS", "iShares Core Global Aggregate Bond UCITS ETF")
+    body = client.get("/v1/ticker/AGGH.AS/fund", headers=AUTH).json()
+    assert body["is_bond_fund"] is True and body["cash"] is None
+
+
 def test_a_company_is_not_a_fund_and_that_is_an_answer(client, monkeypatch):
     monkeypatch.setattr(loaders, "fund_profile", lambda t: None)
+    monkeypatch.setattr(loaders, "closed_end", lambda t: None)
     body = client.get("/v1/ticker/AAPL/fund", headers=AUTH).json()
     assert body["is_fund"] is False and body["holdings"] == []
 
 
-def test_a_funds_basket_comes_back_as_fractions(client, monkeypatch):
+def test_a_funds_basket_comes_back_as_fractions(client, monkeypatch, fund_offline):
     """0.075 is 7.5%. Percent-scaling on the wire is how a weight gets
     multiplied by a hundred twice."""
     from stocks.data.funds import FundHolding, FundProfile

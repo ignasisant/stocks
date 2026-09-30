@@ -370,7 +370,8 @@ export type MonthlyWindow = (typeof MONTHLY_WINDOWS)[number];
 
 /** One month's close inside a `/portfolio/monthly` window, every figure since
     the first trade: the window crops the months, it never rebases them. Rates
-    are annual and null until the book is a year old. */
+    are annual once the book is a year old and, before, what it made since the
+    first trade — `annual` says which. */
 type MonthlyPoint = {
   month: string;
   date: string;
@@ -380,6 +381,12 @@ type MonthlyPoint = {
   gain: number | null;
   money_weighted: number | null;
   time_weighted: number | null;
+  /** False in the book's first year: the rates are then its run so far, not
+      annualised. They meet the annual reading at a year. */
+  annual: boolean;
+  /** This month's own TWR, previous close to this one, not annualised: there
+      from the first month, and a mid-month deposit does not move it. */
+  month_return: number | null;
 };
 
 /** The window's bridge, in its own euros: opening + (bought − sold) + gain = closing. */

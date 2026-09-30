@@ -40,6 +40,27 @@ def token(monkeypatch):
     monkeypatch.setenv("API_TOKEN", TOKEN)
 
 
+@pytest.fixture(autouse=True)
+def not_closed_end(monkeypatch):
+    """Nothing here is a closed-end fund unless a test says so — the real
+    check asks EDGAR, and these run offline."""
+    monkeypatch.setattr(loaders, "is_closed_end", lambda t, fetch=True: False)
+
+
+@pytest.fixture(autouse=True)
+def quote_types_from_the_cache(monkeypatch):
+    """Yahoo's quoteType is read from the learned cache only — a test that
+    needs one says so with `funds.remember`. The fund-kind memo starts empty."""
+    from stocks.data import funds
+
+    monkeypatch.setattr(
+        funds, "quote_type", lambda t, fetch=True: funds._known_types().get(t.upper())
+    )
+    loaders._fund_kind.cache_clear()
+    yield
+    loaders._fund_kind.cache_clear()
+
+
 @pytest.fixture
 def account(monkeypatch, tmp_path):
     users = tmp_path / "users"
@@ -117,6 +138,47 @@ def test_timestamps_carry_no_zone(client, monkeypatch):
     monkeypatch.setattr(loaders, "price_bars", lambda t, label: frame())
     body = client.get("/v1/ticker/AAPL/bars", headers=AUTH).json()
     assert not any(s.endswith("Z") or "+" in s for s in body["dates"])
+
+
+def test_a_young_listing_is_offered_only_the_ranges_it_fills(client, monkeypatch):
+    """Three months of trading: 6M and longer would draw what "max" draws under
+    a label that overstates it."""
+    young = frame()
+    young.attrs["first_trade"] = "2023-12-01"
+    monkeypatch.setattr(loaders, "price_bars", lambda t, label: young)
+    body = client.get("/v1/ticker/AAPL/bars", headers=AUTH).json()
+    assert body["listed"] == "2023-12-01"
+    assert body["ranges"] == ["1d", "1w", "1m", "3m", "max"]
+
+
+def test_an_unknown_listing_date_offers_every_range(client, monkeypatch):
+    monkeypatch.setattr(loaders, "price_bars", lambda t, label: frame())
+    body = client.get("/v1/ticker/AAPL/bars", params={"range": "1y"}, headers=AUTH).json()
+    assert body["listed"] is None
+    assert body["ranges"][-1] == "max" and "5y" in body["ranges"]
+
+
+def test_max_is_a_range(client, monkeypatch):
+    monkeypatch.setattr(loaders, "price_bars", lambda t, label: frame())
+    params = {"range": "max"}
+    body = client.get("/v1/ticker/AAPL/bars", params=params, headers=AUTH).json()
+    assert body["range"] == "max" and body["listed"] == "2024-03-01"
+
+
+def test_a_long_max_reports_the_bar_size_it_is_drawn_at(client, monkeypatch):
+    """The page drops its day-change fallback and ex-dates on weekly bars —
+    it can only know from what the API says they are."""
+    from stocks.analysis.history import shape
+
+    index = pd.bdate_range("2004-01-05", "2024-06-28")
+    close = pd.Series(range(1, len(index) + 1), index=index, dtype=float)
+    long = pd.DataFrame({"Open": close, "High": close, "Low": close, "Close": close,
+                         "Volume": 1.0, "Dividends": 0.0})
+    monkeypatch.setattr(loaders, "price_bars", lambda t, label: shape(long, label))
+    params = {"range": "max"}
+    body = client.get("/v1/ticker/AAPL/bars", params=params, headers=AUTH).json()
+    assert body["interval"] == "1wk" and body["rangebreaks"] == []
+    assert body["listed"] == "2004-01-05" and body["dates"][0].startswith("2004-01-05")
 
 
 def test_a_range_nobody_defined_is_refused(client, monkeypatch):
@@ -254,6 +316,19 @@ def test_a_fund_is_not_asked_for_a_calendar(client, monkeypatch):
     monkeypatch.setattr("stocks.api.routes.ticker.is_fund", lambda t: True)
 
     assert client.get("/v1/ticker/SPY/events", headers=AUTH).json()["earnings"] == []
+    assert called == []
+
+
+def test_a_closed_end_fund_is_not_asked_either(client, monkeypatch):
+    """Yahoo files MUA as an ordinary share, so `is_fund` says no; the
+    closed-end verdict already on disk is what spares the round trip."""
+    called = []
+    monkeypatch.setattr(loaders, "earnings", lambda t: called.append(t) or ([], []))
+    monkeypatch.setattr("stocks.api.routes.ticker.is_crypto", lambda t: False)
+    monkeypatch.setattr("stocks.api.routes.ticker.is_fund", lambda t: False)
+    monkeypatch.setattr(loaders, "is_closed_end", lambda t, fetch=True: t == "MUA")
+
+    assert client.get("/v1/ticker/MUA/events", headers=AUTH).json()["earnings"] == []
     assert called == []
 
 
@@ -649,6 +724,76 @@ def test_a_name_no_source_knows_comes_back_empty_never_invented(
         "/v1/ticker/ZZQQ/profile", params={"account": EMAIL}, headers=AUTH
     ).json()
     assert (body["name"], body["logo"]) == ("", None)
+
+
+def test_a_closed_end_fund_profiles_as_a_fund(client, account, monkeypatch):
+    """What sends the page to the fund layout instead of empty company
+    fundamentals — MUA's quote type says EQUITY."""
+    from stocks.data import funds
+
+    funds.remember("MUA", "EQUITY")
+    funds.remember("AAPL", "EQUITY")
+    monkeypatch.setattr(loaders, "is_closed_end", lambda t, fetch=True: t == "MUA")
+    monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
+    monkeypatch.setattr(loaders, "company_name", lambda t, w: "BlackRock MuniAssets")
+    monkeypatch.setattr(loaders, "logo", lambda t: None)
+    fund = client.get(
+        "/v1/ticker/MUA/profile", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    company = client.get(
+        "/v1/ticker/AAPL/profile", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert (fund["is_fund"], fund["asset"]) == (True, "closed_end")
+    assert (company["is_fund"], company["asset"]) == (False, "stock")
+
+
+def _profile(client, ticker):
+    return client.get(
+        f"/v1/ticker/{ticker}/profile", params={"account": EMAIL}, headers=AUTH
+    ).json()
+
+
+@pytest.fixture
+def bare_header(monkeypatch):
+    monkeypatch.setattr(loaders, "display_symbol", lambda t: t)
+    monkeypatch.setattr(loaders, "company_name", lambda t, w: "")
+    monkeypatch.setattr(loaders, "logo", lambda t: None)
+
+
+def test_the_profile_says_what_kind_of_asset_the_page_is_about(
+    client, account, bare_header, monkeypatch
+):
+    """The header's label and the layout under it both read `asset`; an
+    index and a coin are told apart without asking anyone."""
+    from stocks.data import funds
+    from stocks.data.funds import FundProfile
+
+    funds.remember("XEON.DE", "ETF")
+    monkeypatch.setattr(
+        loaders,
+        "fund_profile",
+        lambda t: FundProfile(
+            ticker=t,
+            name="Xtrackers II EUR Overnight Rate Swap UCITS ETF 1C",
+            quote_type="ETF",
+        ),
+    )
+    xeon = _profile(client, "XEON.DE")
+    assert (xeon["asset"], xeon["is_fund"]) == ("money_market", True)
+    index = _profile(client, "^GSPC")
+    assert (index["asset"], index["is_fund"], index["is_crypto"]) == (
+        "index",
+        False,
+        False,
+    )
+    coin = _profile(client, "BTC-EUR")
+    assert (coin["asset"], coin["is_crypto"]) == ("crypto", True)
+
+
+def test_an_unknown_quote_type_keeps_the_company_layout(client, account, bare_header):
+    """A failed lookup must never cost a company its fundamentals."""
+    body = _profile(client, "ZZQQ")
+    assert (body["asset"], body["is_fund"]) == ("stock", False)
 
 
 def test_the_profile_is_keyed_to_the_asking_account(client, account, monkeypatch):

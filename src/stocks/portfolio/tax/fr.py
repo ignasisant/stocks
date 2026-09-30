@@ -31,6 +31,7 @@ from dataclasses import dataclass
 
 from stocks.portfolio.positions import RealizedSale
 from stocks.portfolio.tax.base import (
+    Acquisitions,
     Kpi,
     Note,
     ReportingFlag,
@@ -112,7 +113,7 @@ class FrTaxPeriod(TaxPeriod):
 def fiscal_period(
     realized: list[RealizedSale],
     period: str,
-    buy_dates: dict[str, list[str]],
+    buy_dates: Acquisitions,
     settings: TaxSettings | None = None,
 ) -> FrTaxPeriod:
     """Summarize an ISO date prefix ("YYYY" or "YYYY-MM") for the 2074.

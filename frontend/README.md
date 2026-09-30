@@ -16,11 +16,20 @@ the shell as `pages/ticker/`, which is where every page lives.
 
 ```bash
 npm --prefix frontend/app install
-npm --prefix frontend/app run dev      # proxies /api to :8501
+uv run stocks dashboard --reload       # :8501, frontend live from source (HMR)
 npm --prefix frontend/app run build    # format, types, tests, then the bundle
 ```
 
-`run dev` proxies `/api` to a locally running app, so the dev server talks to
+`dashboard --reload` is the way to work on it. It starts Vite on a free port
+beside uvicorn and :8501 sends the app's document with its modules pointed at
+that dev server, so the page is the source on disk, hot-reloaded, under the
+real server — sign-in, API, logos all same-origin as in production. Without it
+:8501 serves the committed bundle, which only `npm run build` changes: an edit
+stays invisible there until you build. `--reload --bundle` serves the bundle
+anyway, to check a build before committing it; a checkout without
+`node_modules` falls back to it on its own.
+
+`npm run dev` still works on its own (Vite's port, `/next-assets/`) and proxies `/api` to a locally running app, so the dev server talks to
 the same endpoints production does — including the session cookie, which is why
 you sign in at `localhost:8501` first. The dev URL carries Vite's `base`
 (`/next-assets/`); the router reads past it.

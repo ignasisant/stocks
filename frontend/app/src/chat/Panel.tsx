@@ -178,6 +178,12 @@ export default function Panel({
   const state = chat.state;
   const provider = state?.providers.find((p) => p.id === state.answering);
   const byok = provider?.needs_key ?? false;
+  // Null is not zero: an account the free chain never served has no counter,
+  // because "0 of 30 left" would tell it that it spent messages it never sent.
+  const quota =
+    !byok && state && state.free_left !== null && state.free_cap !== null
+      ? t("chat.free_left", { left: state.free_left, cap: state.free_cap })
+      : null;
 
   return (
     <>
@@ -206,6 +212,16 @@ export default function Panel({
         >
           <Glyph name="add" size={18} />
         </button>
+        {/* The status row's counter, drawn here only on a phone, where that
+            row is hidden so the conversation keeps its height (chat.css). */}
+        {provider && quota && (
+          <span
+            className="ag-chat-quota ag-chat-head-quota"
+            title={t("chat.free_left_label")}
+          >
+            {quota}
+          </span>
+        )}
         {/* The three widths the Streamlit header offers, and for the same
             reason: a table or a set of sources is unreadable in a 380px
             column, and an import review wants the screen. Hidden on a phone,
@@ -261,12 +277,9 @@ export default function Panel({
             <Glyph name="spark" size={12} />
             {provider.label}
           </span>
-          {/* Null is not zero: an account the free chain never served has no
-              counter, because "0 of 30 left" would tell it that it spent
-              messages it never sent. */}
-          {!byok && state && state.free_left !== null && state.free_cap !== null && (
+          {quota && (
             <span className="ag-chat-quota" title={t("chat.free_left_label")}>
-              {t("chat.free_left", { left: state.free_left, cap: state.free_cap })}
+              {quota}
             </span>
           )}
         </div>
@@ -367,6 +380,9 @@ export default function Panel({
                       // Only the newest turn can be discarded: an older refusal
                       // is history the reader has already moved past.
                       onDrop={i === chat.turns.length - 1 ? chat.drop : undefined}
+                      onDecide={chat.decide}
+                      onLeave={onPark ?? onClose}
+                      onPress={(activity, action) => chat.press(i, activity, action)}
                     />
                   ))
                 ) : chat.opening ? (
@@ -404,6 +420,7 @@ export default function Panel({
                     importing={chat.work?.kind === "importing"}
                     onImport={(broker, dupes) => void chat.commitImport(broker, dupes)}
                     onDiscard={chat.discardImport}
+                    onRemap={chat.remap}
                   />
                 )}
                 {/* At the bottom, where the card is about to land — below

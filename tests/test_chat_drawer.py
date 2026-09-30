@@ -181,19 +181,6 @@ def test_settings_replaces_the_thread_and_owns_the_destructive_action(
     assert _labelled(app, "Back to thread")
 
 
-def test_the_rail_toggles_internet_access_beside_the_input(app, paths,
-                                                           monkeypatch):
-    monkeypatch.setattr(chat_core.chat_web, "available", lambda: True)
-    _seed(paths)
-    app.run()
-
-    assert app.button(key="panel_rail_web").label == "Internet"
-    app.button(key="panel_rail_web").click().run()
-
-    assert not app.exception
-    assert auth.load_prefs(paths.prefs)["chat_web"] is False
-
-
 def test_a_width_preset_stores_a_css_length_the_handle_can_restore(app, paths):
     _seed(paths)
     app.run()
@@ -588,18 +575,17 @@ def test_an_unnamed_thread_reads_as_a_placeholder_in_the_header(app, paths):
     assert app.button(key="panel_open_threads").label == "Semis concentration"
 
 
-# ------------------------------------------------- the composer rail on a phone
+# ------------------------------------------------- the composer rail
 
-# The panel is the whole screen on a phone, so the row of chips above the
-# composer is charged against the conversation. The internet chip goes; the
-# capability it toggles does not (`_turn_prefs`), which is the only reason
-# dropping a control is safe.
+# The rail carries the skill lens alone. The internet chip is gone on every
+# width: the web is on wherever search works (`engine.web_enabled`).
 
 
-def test_a_phone_drops_the_internet_chip_but_keeps_the_skill_lens(
-        app, paths, monkeypatch):
+@pytest.mark.parametrize("phone", [True, False])
+def test_the_rail_has_no_internet_chip_but_keeps_the_skill_lens(
+        app, paths, monkeypatch, phone):
     monkeypatch.setattr(chat_core.chat_web, "available", lambda: True)
-    monkeypatch.setattr(chat_core, "is_mobile", lambda: True)
+    monkeypatch.setattr(chat_core, "is_mobile", lambda: phone)
     _seed(paths)
     app.run()
 
@@ -608,35 +594,6 @@ def test_a_phone_drops_the_internet_chip_but_keeps_the_skill_lens(
     # The lens stays: it changes which answer you get, not how it is sourced,
     # and its picker is still reachable in the rail's popover.
     assert _mode_control(app) is not None
-
-
-def test_the_desk_keeps_the_internet_chip(app, paths, monkeypatch):
-    monkeypatch.setattr(chat_core.chat_web, "available", lambda: True)
-    monkeypatch.setattr(chat_core, "is_mobile", lambda: False)
-    _seed(paths)
-    app.run()
-
-    assert _button(app, "panel_rail_web") is not None
-
-
-def test_a_phone_answers_with_the_internet_on_whatever_the_desk_chose(
-        monkeypatch):
-    """The chip is not drawn on a phone, so the pref behind it must not be
-    able to leave that screen with no internet and no way to ask for it."""
-    stored = {"chat_web": False}
-    monkeypatch.setattr(chat_core.auth, "load_prefs", lambda *a, **kw: dict(stored))
-    monkeypatch.setattr(chat_core, "is_mobile", lambda: True)
-
-    assert chat_core._turn_prefs()["chat_web"] is True
-    assert stored["chat_web"] is False  # the setting itself is untouched
-
-
-def test_the_desk_answers_with_the_setting_the_desk_chose(monkeypatch):
-    stored = {"chat_web": False}
-    monkeypatch.setattr(chat_core.auth, "load_prefs", lambda *a, **kw: dict(stored))
-    monkeypatch.setattr(chat_core, "is_mobile", lambda: False)
-
-    assert chat_core._turn_prefs()["chat_web"] is False
 
 
 def _asml_move(paths):

@@ -107,6 +107,15 @@ PARAM_LANDING = "landing"
 APP_ASSETS = "/next-assets/"
 _APP_BUILD = _HERE / "static" / "app"
 
+# `stocks dashboard --reload` runs Vite beside this server and names it here.
+# The shell's document then loads its modules from that dev server — the
+# source as it is on disk, hot-reloaded — instead of the committed build,
+# which only `npm run build` changes: a local run that served the build drew
+# yesterday's frontend under today's API until somebody remembered to rebuild.
+# Unset everywhere else, deploys included.
+_VITE = os.environ.get("STOCKS_VITE", "").rstrip("/")
+_APP_SOURCE = _HERE.parents[2] / "frontend" / "app" / "index.html"
+
 # Where the shell lived while it was being built beside the Streamlit app.
 # Redirected rather than dropped: it was linked from the "what's new" card and
 # from Profile, and it is the bank's registered return address
@@ -748,12 +757,42 @@ def _app_document(mtime: float) -> bytes:  # noqa: ARG001 — mtime keys the cac
     typeface rather than the system's — and the tab its icon, which the
     landing's own mark is.
     """
+    return _filled((_APP_BUILD / "index.html").read_text(encoding="utf-8"))
+
+
+def _filled(html: str) -> bytes:
+    """`html` with the token and font markers replaced (see `_app_document`)."""
     from stocks.web.widgets import ds_vars_css
 
-    html = (_APP_BUILD / "index.html").read_text(encoding="utf-8")
     html = html.replace("<!--AG-TOKENS-->", ds_vars_css())
     icon = f'<link rel="icon" type="image/svg+xml" href="{ASSET_BASE}topstocks-icon.svg">'
     return html.replace("<!--AG-FONTS-->", _faces() + icon).encode("utf-8")
+
+
+def _dev_document(vite: str) -> bytes:
+    """The source index.html with its modules served by the Vite at `vite`.
+
+    What Vite's own `transformIndexHtml` would add, written out because this
+    server, not Vite, sends the document: the HMR client, and the React
+    refresh preamble that `@vitejs/plugin-react` refuses to run without. Every
+    module URL is absolute to the dev server — the document is on this origin,
+    so a relative one would ask this server for source it does not have. The
+    API, the logos and sign-in stay same-origin, exactly as in production.
+    """
+    base = f"{vite}{APP_ASSETS}"
+    head = (
+        '<script type="module">'
+        f'import {{ injectIntoGlobalHook }} from "{base}@react-refresh";'
+        "injectIntoGlobalHook(window);"
+        "window.$RefreshReg$ = () => {};"
+        "window.$RefreshSig$ = () => (type) => type;"
+        "</script>"
+        f'<script type="module" src="{base}@vite/client"></script>'
+    )
+    html = _APP_SOURCE.read_text(encoding="utf-8")
+    html = html.replace('src="/src/', f'src="{base}src/')
+    html = html.replace("</head>", head + "</head>")
+    return _filled(html)
 
 
 def _faces() -> str:
@@ -780,6 +819,9 @@ async def app_shell(request: Request) -> Response:
     /portfolio?tab=fees has to survive a reload, and the page it names is
     drawn in the browser.
     """
+    if _VITE:
+        return Response(_dev_document(_VITE), media_type=_HTML,
+                        headers={"Cache-Control": "no-store"})
     index = _APP_BUILD / "index.html"
     if not index.is_file():
         # A checkout that never ran `npm run build`. CI refuses to merge one

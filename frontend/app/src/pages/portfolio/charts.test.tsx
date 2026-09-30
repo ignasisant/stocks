@@ -20,6 +20,7 @@ import {
   BookHistory,
   Heatmap,
   PeriodBars,
+  bookRatesTip,
   bookTip,
   niceTicks,
 } from "./charts";
@@ -147,6 +148,84 @@ describe("BookAndRates", () => {
     const money = out.match(/<path d="M[^"]*"[^>]*stroke-dasharray/g) ?? [];
     expect(money).toHaveLength(1); // only the dashed picks line is dashed
     expect(out.match(/<path d="M/g)?.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("stands each month's own return as a bar under the lines", () => {
+    const out = renderToStaticMarkup(
+      <BookAndRates
+        points={points}
+        series={[{ label: "Your money", points: [null, null, null, null] }]}
+        bars={{ label: "That month", points: [0.02, -0.03, null, 0.05] }}
+        labels={{ invested: "Injected", profit: "Profit", loss: "Loss", gain: "Gain" }}
+        money={(v) => `€${v}`}
+        format={(v) => `${(v * 100).toFixed(0)}%`}
+        formatDate={(iso) => iso}
+      />,
+    );
+    // One bar per month that has a return, none for the one that does not —
+    // and the bars draw even while every since-inception rate is still null.
+    expect(out.match(/class="pf-rate-bar"/g)).toHaveLength(3);
+    expect(out).toContain("That month");
+    // The rates' scale holds them: the +5% bar tops out at the floor's inset
+    // (money floor 8 + 200, inset 8), not past it.
+    expect(out).toMatch(/class="pf-rate-bar"[^>]*y="216"/);
+  });
+
+  it("reads the month's own return in the box, between the money and the rates", () => {
+    const rows = bookRatesTip(
+      1,
+      { value: 1100, invested: 1000 },
+      {
+        labels: { invested: "Injected", profit: "Profit", loss: "Loss", gain: "Gain" },
+        money: (v, signed) => `${signed && v > 0 ? "+" : ""}€${v}`,
+        format: (v) => `${(v * 100).toFixed(1)}%`,
+        series: [{ label: "Your money", points: [null, null], color: "c" }],
+        bars: {
+          label: "That month",
+          points: [0.02, -0.03],
+          format: (v) => `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)}%`,
+        },
+      },
+    );
+    expect(rows.map((row) => `${row.label} ${row.value}`)).toEqual([
+      "Profit €1100",
+      "Injected €1000",
+      "Gain +€100",
+      "That month -3.0%",
+      "Your money —",
+    ]);
+  });
+
+  it("says in the box which reading a rate is, where the series says", () => {
+    // The book's first year is its run so far; from the birthday, per year.
+    const reading = (index: number) => (index < 1 ? "not annualised" : "annual");
+    const tip = (index: number) =>
+      bookRatesTip(
+        index,
+        { value: 1100, invested: 1000 },
+        {
+          labels: {
+            invested: "Injected",
+            profit: "Profit",
+            loss: "Loss",
+            gain: "Gain",
+          },
+          money: (v) => `€${v}`,
+          format: (v) => `${(v * 100).toFixed(1)}%`,
+          series: [
+            { label: "Your money", points: [0.07, 0.12], color: "c", tipNote: reading },
+            { label: "Your picks", points: [0.05, null], color: "d", tipNote: reading },
+          ],
+        },
+      )
+        .slice(3)
+        .map((row) => `${row.label} ${row.value}`);
+    expect(tip(0)).toEqual([
+      "Your money 7.0% (not annualised)",
+      "Your picks 5.0% (not annualised)",
+    ]);
+    // A month with no figure stays a bare dash, no note beside nothing.
+    expect(tip(1)).toEqual(["Your money 12.0% (annual)", "Your picks —"]);
   });
 
   it("draws nothing for a single month", () => {

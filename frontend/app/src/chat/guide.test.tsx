@@ -103,9 +103,10 @@ describe("the walkthrough's cards", () => {
 /**
  * An answer on the walkthrough's thread that earned a jump.
  *
- * The server withholds the model's `[[goto:<step>]]` and files the validated
- * step as `guide_goto`; the turn draws it as the step's "take me there" and
- * never as text. A step the registry does not know draws nothing.
+ * The server withholds the model's `[[goto:<step>]]` and hands the validated
+ * step over as a `navigate` call with `{ step }`; the turn draws it as the
+ * step's "take me there" and never as text. A step the registry does not know
+ * draws nothing.
  */
 describe("an answer's jump", () => {
   const answer = (goto: string | null) =>
@@ -117,7 +118,9 @@ describe("an answer's jump", () => {
           skills: [],
           web: [],
           action: null,
-          guide_goto: goto,
+          tool_calls: goto
+            ? [{ id: "goto", name: "navigate", args: { step: goto } }]
+            : [],
         }}
         skills={[]}
         providers={[]}
