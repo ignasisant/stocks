@@ -156,3 +156,26 @@ def test_yfinance_misses_are_warnings_and_its_blank_lines_are_dropped():
     ]
     obs.setup(force=True)
     assert sum(isinstance(f, obs._YahooMissIsNotAnError) for f in yf_log.filters) == 1
+
+
+def test_the_api_process_configures_logging_at_boot(monkeypatch):
+    """The React shell leaves the API as the only process serving pages. Without
+    `setup` there every event went out through logging's last resort: bare
+    text, fields lost, and yfinance's misses back at ERROR."""
+    import asyncio
+    import importlib
+
+    # The module, not the FastAPI instance the package re-exports as `app`.
+    api_app = importlib.import_module("stocks.api.app")
+
+    calls: list[str] = []
+    monkeypatch.setattr(api_app.obs, "setup", lambda *a, **k: calls.append("obs"))
+    monkeypatch.setattr(api_app.guestbook, "provision", lambda: calls.append("guest"))
+    monkeypatch.setattr(api_app.warm, "start", lambda: calls.append("warm"))
+
+    async def boot():
+        async with api_app._lifespan(api_app.app):
+            pass
+
+    asyncio.run(boot())
+    assert calls[0] == "obs"

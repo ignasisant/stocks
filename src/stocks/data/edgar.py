@@ -16,6 +16,7 @@ from datetime import date
 
 import pandas as pd
 
+from stocks import atomic
 from stocks.config import DATA_DIR
 from stocks.data.http import get_json
 from stocks.fuzzy import FUZZY_CUTOFF, MIN_QUERY, fuzzy_ratio
@@ -58,7 +59,7 @@ def _load_map() -> None:
     if _CIK_MAP is not None:
         return
     if not TICKER_CACHE.exists():
-        TICKER_CACHE.write_text(json.dumps(_get_json(TICKER_MAP_URL)))
+        atomic.write_json(TICKER_CACHE, _get_json(TICKER_MAP_URL))
     table = json.loads(TICKER_CACHE.read_text())
     _CIK_MAP = {
         row["ticker"].upper(): str(row["cik_str"]).zfill(10)

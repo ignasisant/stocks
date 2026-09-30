@@ -14,12 +14,17 @@ def _no_yahoo_cooldown():
     otherwise silence every fetch in the files that come after it, as a batch
     of unrelated failures. That is real behaviour, not a bug, so the reset
     belongs here rather than in each suite that happens to trip it.
-    """
-    from stocks.data.fetch import clear_throttle
 
-    clear_throttle()
+    The same goes for its two neighbours: the names Yahoo last disowned, and
+    CoinGecko's memo and cooldown — each one process-wide on purpose.
+    """
+    from stocks.data.fetch import clear_coingecko, clear_throttle, clear_unlisted
+
+    for clear in (clear_throttle, clear_unlisted, clear_coingecko):
+        clear()
     yield
-    clear_throttle()
+    for clear in (clear_throttle, clear_unlisted, clear_coingecko):
+        clear()
 
 
 @pytest.fixture(autouse=True)

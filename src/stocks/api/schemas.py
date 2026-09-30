@@ -109,6 +109,14 @@ class Summary(BaseModel):
             "the same rows, so the percentage between them is like-for-like."
         )
     )
+    unlisted: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Held tickers among the unpriced that Yahoo said it has no symbol "
+            "for — a broker code that needs mapping, not a feed that is down. "
+            "Known only once this process has asked Yahoo for them."
+        ),
+    )
     realized: float | None = Field(
         default=None,
         description=(
@@ -2245,6 +2253,15 @@ class ImportPreview(BaseModel):
     )
     needs_broker: bool = Field(
         default=False, description="Whether a commit must supply `broker`."
+    )
+    unlisted: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Tickers of importable rows Yahoo positively said it does not list "
+            "— a bare broker code, usually. They import, but hold at cost with "
+            "no price until the code is mapped to a Yahoo symbol. A lookup that "
+            "could not be asked (throttled, out of time) puts nothing here."
+        ),
     )
 
 

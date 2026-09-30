@@ -26,7 +26,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from stocks import obs, storage
+from stocks import atomic, obs, storage
 from stocks.config import DATA_DIR, PROJECT_ROOT
 from stocks.web import ratelimit, screenshot, skeletons, stt
 from stocks.web.i18n import active_language
@@ -100,7 +100,7 @@ def submit(
     }
     if shot_name:
         payload["shot"] = shot_name
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    atomic.write_json(path, payload, ensure_ascii=False, indent=2)
     storage.persist(path)
     obs.event("feedback", kind=kind, page=page, chars=len(text),
               shot=len(shot) if shot and shot_name else 0)

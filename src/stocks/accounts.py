@@ -28,7 +28,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from stocks import storage
+from stocks import atomic, storage
 from stocks.chat import memory
 from stocks.config import DATA_DIR, PROJECT_ROOT, WATCHLIST_FILE
 from stocks.secrets_env import secret
@@ -233,7 +233,7 @@ def restore_account(
         raise StorageUnavailable(str(exc)) from exc
     if not seed or paths.watchlist.exists():
         return False
-    paths.watchlist.write_text(STARTER_WATCHLIST)
+    atomic.write_text(paths.watchlist, STARTER_WATCHLIST)
     persist(paths.watchlist)
     return True
 
@@ -435,7 +435,7 @@ def save_prefs(
     prefs: Path, values: dict, persist: Callable[[Path], None] | None = None
 ) -> None:
     """Write the whole prefs file, then mirror it to the bucket."""
-    writable(prefs).write_text(json.dumps(values, indent=2))
+    atomic.write_json(writable(prefs), values, indent=2)
     (persist or storage.persist)(prefs)
 
 
@@ -530,7 +530,7 @@ def push_recent_search(
     # Not through save_prefs, so the guard has to be stated again here. This is
     # the exact shape of the bug it exists for: a helper that writes prefs,
     # reached from a path that never asked who is asking.
-    writable(prefs).write_text(json.dumps(stored, indent=2))
+    atomic.write_json(writable(prefs), stored, indent=2)
     (persist or storage.persist)(prefs)
     return recent
 

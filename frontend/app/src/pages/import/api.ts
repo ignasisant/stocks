@@ -74,6 +74,11 @@ export type Preview = {
   skipped: SkippedRow[];
   broker: string;
   needs_broker: boolean;
+  /**
+   * Importable tickers Yahoo said it does not list: they go in, but hold at
+   * cost with no price until mapped. Optional for an older server.
+   */
+  unlisted?: string[];
 };
 
 export type Result = {

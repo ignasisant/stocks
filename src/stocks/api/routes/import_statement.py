@@ -299,12 +299,26 @@ class _Lookup:
     The batch deadline starts when the instance is made, so a statement of two
     hundred unfamiliar symbols spends at most `BATCH_BUDGET_S` finding out
     which of them trade, and the rest stay "could not check".
+
+    A symbol the price pass already heard Yahoo disown (`fetch.unlisted`) is
+    answered False without asking again: that verdict came from the download
+    that prices the book, which is the one that matters. `disowned` collects
+    every False, so the preview can name the rows that will import unpriced.
     """
 
     def __init__(self) -> None:
         self.deadline = time.monotonic() + BATCH_BUDGET_S
+        self.disowned: set[str] = set()
 
     def __call__(self, ticker: str) -> bool | None:
+        answer = self._ask(ticker)
+        if answer is False:
+            self.disowned.add(ticker)
+        return answer
+
+    def _ask(self, ticker: str) -> bool | None:
+        if fetch.unlisted({ticker}):
+            return False
         now = time.monotonic()
         with _exists_lock:
             hit = _exists_memo.get(ticker)
@@ -401,6 +415,13 @@ def _checked(
     transaction and not even a skipped line — is refused as unreadable (422),
     as the page refuses it: that is a file from the wrong platform or the
     wrong export, and an empty preview would only say "0 rows".
+
+    `known` loses whatever Yahoo has disowned since: a bare broker code that
+    is already in the ledger would otherwise pass as known on every later
+    statement, and hold at cost with no price and no warning, forever.
+
+    Returns the parse, the validation, and the tickers Yahoo said it does not
+    list (`_Lookup.disowned`).
     """
     parsed = _parse(platform, filename, raw, surface=surface)
     if not parsed.transactions and not parsed.skipped:
@@ -412,12 +433,14 @@ def _checked(
         )
     prior = [] if wipe else _real_rows(account)
     known = known_tickers(account.watchlist, account.db)
-    validation = validate(parsed, prior, known=known, lookup=_Lookup(), splits=_splits)
+    known -= fetch.unlisted(known)
+    lookup = _Lookup()
+    validation = validate(parsed, prior, known=known, lookup=lookup, splits=_splits)
     if surface:
         diagnostics.report(
             platform.key, filename, raw, parsed, validation, surface=surface
         )
-    return parsed, validation
+    return parsed, validation, lookup.disowned
 
 
 @router.get("/platforms", response_model=ImportPlatforms, summary="What can be read")
@@ -447,21 +470,23 @@ def preview(account: Writer, body: Annotated[Upload, ...]) -> ImportPreview:
     """
     platform = _platform(body.platform)
     raw = _decode(body)
-    parsed, checked = _checked(
+    parsed, checked, disowned = _checked(
         account, platform, body.filename, raw, wipe=body.wipe, surface=body.surface
     )
     importable = checked.importable
     detected = platforms.detected_broker(importable)
+    rows = [c for c in checked.checked if not c.errors]
     return ImportPreview(
         platform=platform.key,
         filename=body.filename,
         digest=hashlib.sha256(raw).hexdigest(),
-        importable=[_row(c) for c in checked.checked if not c.errors],
+        importable=[_row(c) for c in rows],
         rejected=[_row(c) for c in checked.rejected],
         duplicates=len(checked.duplicates),
         skipped=list(parsed.skipped),
         broker=detected,
         needs_broker=bool(importable) and not detected,
+        unlisted=sorted(disowned & {c.tx.ticker for c in rows}),
     )
 
 
@@ -500,7 +525,7 @@ def commit(
     # of bytes its preview already filed a diagnostic for (the digest matched
     # just above), and a second record would count one upload twice. A client
     # that commits blind is the one whose attempt would otherwise go unseen.
-    _parsed, checked = _checked(
+    _parsed, checked, _disowned = _checked(
         account,
         platform,
         body.filename,

@@ -23,7 +23,7 @@ from xml.etree import ElementTree as ET
 
 import pandas as pd
 
-from stocks import obs
+from stocks import atomic, obs
 from stocks.config import DATA_DIR
 from stocks.data.edgar import _user_agent, cik_for
 from stocks.data.http import get_bytes
@@ -365,7 +365,7 @@ def _remember_form4(parsed: dict[str, list[InsiderTx]]) -> None:
             memo.pop(next(iter(memo)))
         with obs.swallow("insiders.remember"):
             FORM4_CACHE.parent.mkdir(parents=True, exist_ok=True)
-            FORM4_CACHE.write_text(json.dumps(memo, separators=(",", ":")))
+            atomic.write_json(FORM4_CACHE, memo, separators=(",", ":"))
             from stocks import storage
 
             storage.persist(FORM4_CACHE)

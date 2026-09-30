@@ -38,7 +38,7 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from stocks import obs, storage
+from stocks import atomic, obs, storage
 from stocks.config import DATA_DIR
 from stocks.portfolio import statement
 
@@ -361,7 +361,7 @@ def record(fp: dict) -> Path | None:
         DIAGNOSTICS_DIR.mkdir(parents=True, exist_ok=True)
         stamp = str(fp.get("ts", "")).replace(":", "-") or "unknown"
         path = DIAGNOSTICS_DIR / f"{stamp}-{uuid.uuid4().hex[:6]}.json"
-        path.write_text(json.dumps(fp, ensure_ascii=False, indent=2))
+        atomic.write_json(path, fp, ensure_ascii=False, indent=2)
         storage.persist(path)
         return path
     except Exception:  # noqa: BLE001

@@ -940,6 +940,29 @@ def test_complete_download_refuses_a_gutted_bulk_download():
         complete_download({t: s for t in tickers[:5]}, tickers)
 
 
+def test_complete_download_does_not_count_names_yahoo_disowned():
+    """A 17-name book with 9 bare broker codes Yahoo answered "No data found"
+    for read as gutted on every attempt: nothing cached, every page 503'd for
+    good. Those names are missing for a reason, so only the rest are judged."""
+    import pytest
+    from yfinance.exceptions import YFRateLimitError
+
+    from stocks.analysis.portfolio import complete_download
+    from stocks.data import fetch
+
+    listed = [f"L{i}" for i in range(8)]
+    codes = [f"C{i}" for i in range(9)]
+    s = pd.Series([1.0])
+    priced = {t: s for t in listed}
+    with pytest.raises(YFRateLimitError):
+        complete_download(priced, listed + codes)
+    fetch._unlisted.update(codes)
+    assert complete_download(priced, listed + codes) is priced
+    # The rest are still judged: a Yahoo refusing the listed ones is weather.
+    with pytest.raises(YFRateLimitError):
+        complete_download({t: s for t in listed[:3]}, listed + codes)
+
+
 from stocks.analysis.portfolio import flow_matched_curves  # noqa: E402
 
 

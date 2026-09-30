@@ -38,7 +38,7 @@ import time
 from dataclasses import dataclass
 from xml.etree import ElementTree as ET
 
-from stocks import obs
+from stocks import atomic, obs
 from stocks.config import DATA_DIR
 from stocks.data.funds import FundHolding
 from stocks.formatting import finite
@@ -166,7 +166,7 @@ def _remember(key: str, verdict: bool) -> None:
         known[key] = verdict
         stored = _read_cache() | {key: verdict}
     try:
-        CEF_CACHE.write_text(json.dumps(stored, indent=0, sort_keys=True))
+        atomic.write_json(CEF_CACHE, stored, indent=0, sort_keys=True)
     except OSError:
         pass
 

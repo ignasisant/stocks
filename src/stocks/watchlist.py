@@ -27,7 +27,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from stocks import storage
+from stocks import atomic, storage
 from stocks.config import load_watchlist, yaml_dump, yaml_load
 
 # `persist` defaults to None and is resolved at call time rather than being
@@ -75,7 +75,7 @@ def update_entry(
         items.append(entry)
     mutate(entry)
     raw["watchlist"] = items
-    path.write_text(yaml_dump(raw))
+    atomic.write_text(path, yaml_dump(raw))
     _persist(persist, path)
     return entry
 
@@ -225,7 +225,7 @@ def remove_entry(
     if len(kept) == len(items):
         return False
     raw["watchlist"] = kept
-    path.write_text(yaml_dump(raw))
+    atomic.write_text(path, yaml_dump(raw))
     _persist(persist, path)
     return True
 

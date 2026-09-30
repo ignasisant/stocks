@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # One-time Cloud Monitoring setup for the Cloud Run service: an uptime check
-# on /livez, an alert when it fails, and an alert on ERROR-severity app logs.
+# on /livez, an alert when it fails, an alert on ERROR-severity app logs, and
+# alerts on the WARNING events that mean something will not fix itself — a
+# sustained 503 rate, a torn cache, a held ticker Yahoo does not list.
+#
+# Log-based metrics (infra/monitoring/metrics/*.json) are created before the
+# policies (infra/monitoring/*.json), because a rate alert counts one. Both
+# carry __SERVICE__, replaced with the service name at create time, so a run
+# with STOCKS_GCP_SERVICE=topstocks-staging watches staging and not prod.
+# tests/test_monitoring.py checks every event a filter names is still emitted.
 #
 # The path is /livez, not /healthz: Google's frontend answers /healthz itself
 # with a 404 before the request reaches Cloud Run, so a check on that path
@@ -57,8 +65,34 @@ else
     echo "created uptime check"
 fi
 
-# --- alert policies (JSON in infra/monitoring/) --------------------------------
 cd "$(dirname "$0")/.."
+
+# Replace __SERVICE__ in a JSON file and print the result.
+with_service() {
+    python3 - "$1" "$SERVICE" <<'EOF'
+import json, sys
+text = json.dumps(json.load(open(sys.argv[1]))).replace("__SERVICE__", sys.argv[2])
+print(text)
+EOF
+}
+
+# --- log-based metrics (JSON in infra/monitoring/metrics/) ---------------------
+# Counted from the structured logs, so a policy can alert on a rate rather
+# than on every single line. Existing ones are left alone: a changed filter
+# is `gcloud logging metrics update NAME --config-from-file ...` by hand.
+for f in infra/monitoring/metrics/*.json; do
+    METRIC="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['name'])" "$f")"
+    if gcloud logging metrics describe "$METRIC" --project "$PROJECT" >/dev/null 2>&1; then
+        echo "metric exists: $METRIC"
+        continue
+    fi
+    with_service "$f" > /tmp/metric.json
+    gcloud logging metrics create "$METRIC" --project "$PROJECT" \
+        --config-from-file /tmp/metric.json
+    echo "created metric: $METRIC"
+done
+
+# --- alert policies (JSON in infra/monitoring/) --------------------------------
 for f in infra/monitoring/*.json; do
     NAME="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['displayName'])" "$f")"
     if gcloud alpha monitoring policies list --project "$PROJECT" \
@@ -67,16 +101,20 @@ for f in infra/monitoring/*.json; do
         continue
     fi
     # Inject the service name and the channel at create time.
-    python3 - "$f" "$SERVICE" > /tmp/policy.json <<'EOF'
-import json, sys
-policy = json.load(open(sys.argv[1]))
-text = json.dumps(policy).replace("__SERVICE__", sys.argv[2])
-print(text)
-EOF
-    gcloud alpha monitoring policies create --project "$PROJECT" \
-        --policy-from-file /tmp/policy.json \
-        --notification-channels "$CHANNEL"
-    echo "created policy: $NAME"
+    with_service "$f" > /tmp/policy.json
+    # A metric created a moment ago can take a minute to become visible to
+    # Monitoring, and until then a policy on it is refused: retry, don't fail.
+    for attempt in 1 2 3 4 5 6; do
+        if gcloud alpha monitoring policies create --project "$PROJECT" \
+            --policy-from-file /tmp/policy.json \
+            --notification-channels "$CHANNEL"; then
+            echo "created policy: $NAME"
+            break
+        fi
+        [ "$attempt" -lt 6 ] || { echo "error: policy $NAME refused" >&2; exit 1; }
+        echo "policy $NAME refused, retrying in 20s ($attempt/6)"
+        sleep 20
+    done
 done
 
 echo

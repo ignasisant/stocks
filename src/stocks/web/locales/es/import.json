@@ -143,6 +143,8 @@
   "import.tier_importable_note": "lo que se escribirá en la cartera, avisos incluidos",
   "import.tier_skipped_note": "se omiten a propósito; no se pierde nada",
   "import.rejected_fix": "Corrígelas en el extracto o añádelas desde la terminal:",
+  "import.unlisted_note": "Yahoo no lista ninguno de {tickers}. Se importan, pero quedan a coste y sin precio hasta mapear cada código a un símbolo de Yahoo (SAN → SAN.MC) — dinos cuál desde Enviar comentarios.",
+  "import.unlisted_note_one": "Yahoo no lista {tickers}. Se importa, pero queda a coste y sin precio hasta mapear el código a un símbolo de Yahoo (SAN → SAN.MC) — dinos cuál desde Enviar comentarios.",
   "import.copy": "Copiar",
   "import.copied": "Copiado",
   "import.tag_rejected": "Rechazada",

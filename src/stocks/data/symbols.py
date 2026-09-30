@@ -23,6 +23,7 @@ import re
 import time
 import urllib.parse
 
+from stocks import atomic
 from stocks.config import DATA_DIR
 from stocks.data.http import get_json
 from stocks.fuzzy import MIN_QUERY
@@ -190,7 +191,7 @@ def _load_isin_cache() -> dict[str, str]:
 def _save_isin_cache(cache: dict[str, str]) -> None:
     try:
         ISIN_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        ISIN_CACHE.write_text(json.dumps(cache, indent=2, sort_keys=True))
+        atomic.write_json(ISIN_CACHE, cache, indent=2, sort_keys=True)
     except OSError:
         pass  # a read-only data dir costs a lookup per boot, not a render
 

@@ -380,16 +380,26 @@ def complete_download(
     30k instead of 145k. A few absentees are delisted names (always missing);
     more than a quarter is Yahoo refusing, and raising keeps it out of every
     cache so the next request tries again.
+
+    Names Yahoo said it has no symbol for (`fetch.unlisted`) are not counted:
+    they will be missing on every attempt, so counting them turned a book of
+    unresolved broker codes into a permanent "rate limited" — nothing ever
+    cached, and every page 503'd for good. They read unpriced, held at cost.
     """
     from yfinance.exceptions import YFRateLimitError
 
-    missing = len(set(tickers) - set(closes))
-    if missing > max(3, len(tickers) // 4):
+    from stocks.data.fetch import unlisted
+
+    disowned = unlisted(tickers)
+    listed = set(tickers) - disowned
+    missing = len(listed - set(closes))
+    if missing > max(3, len(listed) // 4):
         obs.warn(
             "portfolio.bulk_prices_missing",
             missing=missing,
             requested=len(tickers),
             priced=len(closes),
+            unlisted=len(disowned),
         )
         raise YFRateLimitError
     return closes

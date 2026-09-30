@@ -1,0 +1,20 @@
+{
+  "displayName": "stocks: logo cache unreadable",
+  "documentation": {
+    "content": "`data/logo.py` found its cache file torn or corrupt (`logo.cache_unreadable`) and started over empty. Writes go through `stocks.atomic` since 2026-09, so this should not happen: one entry means a write path is bypassing the rename again, or the bucket mirror restored a bad copy. Triage: `uv run stocks logs tail --since 2h --event logo.cache_unreadable --json` for the error type and revision.",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "logo.cache_unreadable in the app log",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"__SERVICE__\" AND jsonPayload.event=\"logo.cache_unreadable\""
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": { "period": "3600s" },
+    "autoClose": "86400s"
+  }
+}

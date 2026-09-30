@@ -377,6 +377,36 @@ def test_the_summary_sums_the_same_rows_on_both_sides(
     assert (body["cost"], body["value"]) == (600.0, 900.0)
     assert body["pnl_pct"] == pytest.approx(0.5)
     assert (body["positions"], body["unpriced"]) == (2, 1)
+    assert body["unlisted"] == []  # unpriced, but nobody said it is unknown
+
+
+def test_the_summary_names_the_unpriced_yahoo_does_not_list(
+    client, token, account, monkeypatch
+):
+    """A bare broker code will not price by waiting: the page has to say which
+    rows need an alias, not only how many are missing a price."""
+    from stocks.data import fetch
+
+    table = pd.DataFrame(
+        {
+            "shares": [6.0, 5.0, 3.0],
+            "ccy": ["EUR", "EUR", "EUR"],
+            "cost": [600.0, 1000.0, 300.0],
+            "value": [900.0, float("nan"), float("nan")],
+            "pnl": [300.0, float("nan"), float("nan")],
+            "pnl_pct": [0.5, float("nan"), float("nan")],
+        },
+        index=pd.Index(["AAPL", "SAN", "MSFT"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    # AAPL priced after all, so a stale verdict on it must not be repeated.
+    fetch._unlisted.update({"SAN", "AAPL"})
+
+    body = client.get(
+        "/v1/portfolio/summary", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert body["unpriced"] == 2
+    assert body["unlisted"] == ["SAN"]
 
 
 def test_an_empty_book_summarises_to_zero_without_dividing(

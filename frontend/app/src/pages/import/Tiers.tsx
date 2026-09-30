@@ -59,6 +59,7 @@ export function Tiers({
   );
   const rejected = preview.rejected.length;
   const skipped = preview.skipped.length;
+  const unlisted = preview.unlisted ?? [];
 
   const all: { id: string; tone: Tone; label: string; n: number }[] = [
     { id: "im-rejected", tone: "bad", label: t("import.tier_rejected"), n: rejected },
@@ -153,6 +154,17 @@ export function Tiers({
             tone="warn"
           >
             <RowTable brief issues="warnings" rows={warned} tone="warn" />
+            {/* The one warning with a consequence after the import: these
+                rows hold at cost, unpriced, until someone maps the code. */}
+            {unlisted.length > 0 && (
+              <div className="im-tier-foot">
+                <span>
+                  {vocab.tn("import.unlisted_note", unlisted.length, {
+                    tickers: unlisted.join(", "),
+                  })}
+                </span>
+              </div>
+            )}
           </Tier>
         )}
 

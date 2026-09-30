@@ -1,0 +1,28 @@
+{
+  "displayName": "stocks: sustained upstream 503s",
+  "documentation": {
+    "content": "The API has been answering 503 (`api.upstream_unavailable`) more than 25 times per 5 minutes for 10 minutes. Yahoo throttling comes and goes; a rate that holds is usually one route asking for a symbol Yahoo will never answer (2026-09: bare EU broker codes made every portfolio call raise). Triage: `uv run stocks logs stats --since 1h --event api.upstream_unavailable --by path` for the routes, then `uv run stocks logs tail --since 6h --event yahoo.unlisted` and `--event yahoo.bulk_refused` for the symbols.",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "upstream_unavailable > 25 per 5 min, for 10 min",
+      "conditionThreshold": {
+        "filter": "metric.type=\"logging.googleapis.com/user/stocks_upstream_unavailable\" AND resource.type=\"cloud_run_revision\"",
+        "aggregations": [
+          {
+            "alignmentPeriod": "300s",
+            "perSeriesAligner": "ALIGN_SUM",
+            "crossSeriesReducer": "REDUCE_SUM"
+          }
+        ],
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 25,
+        "duration": "600s",
+        "trigger": { "count": 1 }
+      }
+    }
+  ],
+  "alertStrategy": { "autoClose": "86400s" }
+}

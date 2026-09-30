@@ -115,9 +115,11 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
         - pd.Timestamp(min(t.date for t in txs if t.action in HELD_ACTIONS))
     ).days
     frames = fetch_many(tickers, period=f"{max(1, span // 30 + 1)}mo", auto_adjust=False)
-    # Refused here and not only in the two readings below: a gutted download
-    # memoised as the book's frames would have both re-derive the same
-    # refusal for a whole ttl, and land it on disk and in the bucket besides.
+    # Judged here, at the download, and only here: a gutted download memoised
+    # as the book's frames would land on disk and in the bucket besides. The
+    # two readings below trust what this returns — after a restart it comes
+    # back from disk without a download, and re-judging it then would be
+    # asking `fetch.unlisted` about a download this process never made.
     complete_download(_close_series(frames, "Close"), tickers)
     return frames
 
@@ -141,14 +143,15 @@ def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     """Adjusted close per name the book has ever held, from `_held_frames`.
 
     The series every return, value and history is measured on. Refused whole
-    (`YFRateLimitError`) when the download came back gutted, so a throttled
-    burst is never memoized as a book worth a third of itself.
+    (`YFRateLimitError`) when the download came back gutted — `_held_frames`
+    raises it — so a throttled burst is never memoized as a book worth a
+    third of itself.
     """
     txs, tickers = _held(db)
     if not tickers:
         return {}
     closes = _close_series(_held_frames(db, mtime), "Adj Close")
-    return plausible_closes(complete_download(closes, tickers), txs)
+    return plausible_closes(closes, txs)
 
 
 @ttl_cache(_PRICES_TTL, max_entries=16)
@@ -162,7 +165,7 @@ def held_printed_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     if not tickers:
         return {}
     closes = _close_series(_held_frames(db, mtime), "Close")
-    return plausible_closes(complete_download(closes, tickers), txs)
+    return plausible_closes(closes, txs)
 
 
 _clear_adjusted = held_closes.cache_clear  # ty: ignore[unresolved-attribute]
