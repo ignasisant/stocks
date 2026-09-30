@@ -45,6 +45,7 @@ import re
 import threading
 from collections.abc import Iterable, Sequence
 
+from stocks import atomic
 from stocks.config import DATA_DIR
 
 STOCK = "stock"
@@ -272,7 +273,7 @@ def remember(ticker: str, kind: str | None) -> None:
         cache[key] = kind
         stored = _read() | {key: kind}
     try:
-        KIND_CACHE.write_text(json.dumps(stored, indent=0, sort_keys=True))
+        atomic.write_json(KIND_CACHE, stored, indent=0, sort_keys=True)
     except OSError:
         pass
 

@@ -1,0 +1,20 @@
+{
+  "name": "stocks_upstream_unavailable",
+  "description": "API answers of 503 because Yahoo refused or could not be reached (stocks.api.app._unavailable). A handful is weather; a steady stream means a page is asking for something Yahoo will never answer.",
+  "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"__SERVICE__\" AND jsonPayload.event=\"api.upstream_unavailable\"",
+  "labelExtractors": {
+    "reason": "EXTRACT(jsonPayload.reason)"
+  },
+  "metricDescriptor": {
+    "metricKind": "DELTA",
+    "valueType": "INT64",
+    "unit": "1",
+    "labels": [
+      {
+        "key": "reason",
+        "valueType": "STRING",
+        "description": "rate_limited | offline"
+      }
+    ]
+  }
+}

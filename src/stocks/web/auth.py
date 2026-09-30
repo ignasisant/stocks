@@ -35,7 +35,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from stocks import accounts, session, storage
+from stocks import accounts, atomic, session, storage
 from stocks import watchlist as wl
 from stocks.chat import memory
 from stocks.config import (
@@ -530,7 +530,7 @@ def save_action(card: dict, path: Path | None = None) -> None:
     already has.
     """
     p = path or user_paths().action
-    p.write_text(json.dumps(card, indent=2))
+    atomic.write_json(p, card, indent=2)
     _persist(p)
 
 
@@ -561,7 +561,7 @@ def save_verdicts(verdicts: dict, path: Path | None = None) -> None:
     the same paragraph.
     """
     p = path or user_paths().verdicts
-    p.write_text(json.dumps(verdicts, indent=2))
+    atomic.write_json(p, verdicts, indent=2)
     _persist(p)
 
 
@@ -923,7 +923,7 @@ def _pruned(book: dict) -> dict:
 
 def save_book(book: dict, path: Path | None = None) -> None:
     p = path or user_paths().chat
-    p.write_text(json.dumps(_pruned(book), indent=2))
+    atomic.write_json(p, _pruned(book), indent=2)
     _persist(p)
 
 
@@ -1142,7 +1142,7 @@ def save_watchlist_entries(entries: list[dict], path: Path | None = None) -> Non
         items.append(item)
 
     raw["watchlist"] = items
-    p.write_text(yaml_dump(raw))
+    atomic.write_text(p, yaml_dump(raw))
     _persist(p)
 
 

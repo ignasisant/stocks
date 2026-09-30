@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from stocks import atomic
 from stocks.config import DATA_DIR
 from stocks.formatting import finite
 from stocks.fuzzy import FUZZY_CUTOFF, MIN_QUERY, fuzzy_ratio
@@ -256,7 +257,7 @@ def remember(ticker: str, quote_type: str | None) -> None:
     cache[key] = value
     stored = _read_types() | {key: value}
     try:
-        TYPE_CACHE.write_text(json.dumps(stored, indent=0, sort_keys=True))
+        atomic.write_json(TYPE_CACHE, stored, indent=0, sort_keys=True)
     except OSError:
         pass
 

@@ -15,7 +15,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from stocks import storage
+from stocks import atomic, storage
 from stocks.config import Alert
 
 VERSION = 1
@@ -63,7 +63,7 @@ def save_state(
             fp: rec for fp, rec in state["alerts"].items() if fp in active_fingerprints
         }
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2))
+    atomic.write_json(path, state, indent=2)
     storage.persist(path)
 
 

@@ -149,6 +149,32 @@ def test_fetch_many_falls_back_a_yahoo_less_coin_to_coingecko(monkeypatch):
     assert out["MOODENG-USD"]["Close"].iloc[-1] == pytest.approx(0.032)
 
 
+def test_a_coingecko_429_cools_the_coins_off_and_a_hit_is_memoised(monkeypatch):
+    """The keyless tier shares its limit with everyone on the egress IP. After
+    a 429 no coin asks again until the cooldown is over, and a coin already
+    fetched answers from memory meanwhile."""
+    from urllib.error import HTTPError
+
+    _patch_aliases(monkeypatch, {})
+    monkeypatch.setattr(fetch.yf, "download", lambda symbols, **kwargs: pd.DataFrame())
+    asked: list[str] = []
+
+    def fake_get_json(url, **kwargs):
+        asked.append(url)
+        if "simon-s-cat" in url:
+            raise HTTPError(url, 429, "Too Many Requests", {"Retry-After": "120"}, None)
+        return {"prices": [[1767571200000, 0.03], [1767657600000, 0.032]]}
+
+    monkeypatch.setattr(fetch, "get_json", fake_get_json)
+    first = fetch.fetch_many(["MOODENG-USD", "CAT-EUR"])
+    assert list(first) == ["MOODENG-USD"]
+    assert fetch._gecko_wait() > 60  # Retry-After honoured, not the default
+    asked.clear()
+    again = fetch.fetch_many(["MOODENG-USD", "CAT-EUR"])
+    assert list(again) == ["MOODENG-USD"]
+    assert asked == []  # memo for one, cooldown for the other: no request
+
+
 def test_fetch_many_never_asks_yahoo_for_a_coin_it_quotes_as_another(monkeypatch):
     """Yahoo's CAT-EUR is a different coin ~10,000x Simon's Cat, the CAT
     Revolut sells. It answers, so a miss-only fallback never fired and a ~500

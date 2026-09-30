@@ -48,6 +48,28 @@ def test_logo_url_ok_probe_cached_to_disk(monkeypatch):
     assert logo_mod._load_cache()["AAPL"] == FMP_AAPL
 
 
+def test_a_torn_cache_file_is_read_as_empty_and_rewritten_whole(monkeypatch):
+    """Two threads resolving at once used to interleave their writes into one
+    file; every later read raised JSONDecodeError and the logo went with it."""
+    import json
+    import threading
+
+    logo_mod.LOGO_CACHE.write_text('{"AAPL": "https://x"}{"MSFT": ')
+    assert logo_mod._load_cache() == {}
+    monkeypatch.setattr(logo_mod, "_probe", lambda url: "ok")
+    threads = [
+        threading.Thread(target=logo_mod.logo_url, args=(t,))
+        for t in ("AAPL", "MSFT", "NVDA", "AMZN")
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert {"AAPL", "MSFT", "NVDA", "AMZN"} <= set(
+        json.loads(logo_mod.LOGO_CACHE.read_text())
+    )
+
+
 def test_blocked_probe_returns_guess_without_disk_cache(monkeypatch):
     probes = []
 

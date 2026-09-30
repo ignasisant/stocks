@@ -11,7 +11,7 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from stocks import storage
+from stocks import atomic, storage
 from stocks.config import DATA_DIR
 
 RECORD_PATH = DATA_DIR / "last_import.json"
@@ -27,7 +27,7 @@ class ImportRecord:
 
 
 def save(record: ImportRecord, path: Path = RECORD_PATH) -> None:
-    path.write_text(json.dumps(asdict(record), indent=2))
+    atomic.write_json(path, asdict(record), indent=2)
     storage.persist(path)
 
 

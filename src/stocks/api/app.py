@@ -77,11 +77,16 @@ leave a ledger in a state the UI did not produce.
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    """Boot work. Today: make the shared guest book exist.
+    """Boot work: logging, then the shared guest book.
 
-    At boot rather than on the first anonymous request, so that no request path
-    can write the guest directory — see `api.guestbook`.
+    The guest book at boot rather than on the first anonymous request, so
+    that no request path can write the guest directory — see `api.guestbook`.
     """
+    # Here and not only in the Streamlit pages (`web.telemetry`): since the
+    # React shell this process serves no page unless /legacy is asked for, and
+    # without it every event went out through logging's last resort — bare
+    # text, fields lost, yfinance's misses still at ERROR.
+    obs.setup()
     guestbook.provision()
     # The price memos for the accounts seen lately, on a thread of its own,
     # given the startup window to run in — see `api.warm`. Off unless the

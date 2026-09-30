@@ -19,6 +19,7 @@ from collections.abc import Callable, Iterable
 from datetime import date as _date
 from datetime import timedelta
 
+from stocks import atomic
 from stocks.config import DATA_DIR
 from stocks.data.http import get_json
 
@@ -109,7 +110,7 @@ def _load_cache() -> dict[str, float]:
 
 
 def _save_cache(cache: dict[str, float]) -> None:
-    FX_CACHE.write_text(json.dumps(cache, indent=0, sort_keys=True))
+    atomic.write_json(FX_CACHE, cache, indent=0, sort_keys=True)
 
 
 def rate_on(day: str | _date, base: str, quote: str) -> float:

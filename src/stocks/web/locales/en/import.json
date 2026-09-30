@@ -143,6 +143,8 @@
   "import.tier_importable_note": "what will be written to your portfolio, warned rows included",
   "import.tier_skipped_note": "left out by design; nothing is lost",
   "import.rejected_fix": "Fix them in the statement, or add them from a terminal:",
+  "import.unlisted_note": "Yahoo lists none of {tickers}. They import, but hold at cost with no price until each code is mapped to a Yahoo symbol (SAN → SAN.MC) — tell us which through Send feedback.",
+  "import.unlisted_note_one": "Yahoo does not list {tickers}. It imports, but holds at cost with no price until the code is mapped to a Yahoo symbol (SAN → SAN.MC) — tell us which through Send feedback.",
   "import.copy": "Copy",
   "import.copied": "Copied",
   "import.tag_rejected": "Rejected",

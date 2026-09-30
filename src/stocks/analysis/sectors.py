@@ -32,7 +32,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import date
 
-from stocks import obs, storage
+from stocks import atomic, obs, storage
 from stocks.analysis.fundamentals import comp_medals, comp_scores
 from stocks.analysis.screener import fetch_metrics_many
 from stocks.analysis.sentiment import SECTOR_ETFS
@@ -301,7 +301,7 @@ def save_scan(scans: dict[str, SectorScan]) -> None:
         "sectors": {name: scan.to_dict() for name, scan in scans.items()},
     }
     SCAN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SCAN_FILE.write_text(json.dumps(payload, indent=0, sort_keys=True))
+    atomic.write_json(SCAN_FILE, payload, indent=0, sort_keys=True)
     if storage.enabled():
         with obs.swallow("sector.scan_persist"):
             storage.persist(SCAN_FILE)

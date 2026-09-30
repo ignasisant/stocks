@@ -23,10 +23,11 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
-from stocks import obs
+from stocks import atomic, obs
 from stocks.config import DATA_DIR
 from stocks.data.http import get_bytes_and_type, probe_image
 
@@ -57,17 +58,33 @@ _VERSION_KEY = "_v"
 
 
 def _load_cache() -> dict[str, str]:
-    """On-disk cache, discarded wholesale if written by an older schema."""
-    if LOGO_CACHE.exists():
-        data = json.loads(LOGO_CACHE.read_text())
-        if isinstance(data, dict) and data.get(_VERSION_KEY) == CACHE_VERSION:
-            return {k: v for k, v in data.items() if isinstance(v, str)}
+    """On-disk cache, discarded wholesale if written by an older schema.
+
+    Or if it does not parse. Every entry can be probed again, so a broken file
+    costs a round of probes; raising cost every logo request a 500 until
+    someone deleted it by hand — `/market/profiles` resolves rows on eight
+    threads, and two interleaved writes once left it with "Extra data".
+    """
+    try:
+        data = json.loads(LOGO_CACHE.read_text()) if LOGO_CACHE.exists() else {}
+    except (json.JSONDecodeError, OSError) as exc:
+        obs.warn("logo.cache_unreadable", error_type=type(exc).__name__)
+        return {}
+    if isinstance(data, dict) and data.get(_VERSION_KEY) == CACHE_VERSION:
+        return {k: v for k, v in data.items() if isinstance(v, str)}
     return {}
 
 
 def _save_cache(cache: dict[str, str]) -> None:
+    """Whole-file replace, so a reader never sees half of a write."""
     stamped = {_VERSION_KEY: CACHE_VERSION, **cache}
-    LOGO_CACHE.write_text(json.dumps(stamped, indent=2, sort_keys=True))
+    atomic.write_json(LOGO_CACHE, stamped, indent=2, sort_keys=True)
+
+
+# Held across read-merge-write, not across the probe: without it two threads
+# each load the file, add their own key and save, and the second save drops
+# the first one's.
+_cache_lock = threading.Lock()
 
 
 # Skips 404 placeholders and dead FMP paths; "blocked" = can't tell from here.
@@ -134,8 +151,10 @@ def _resolve(key: str, candidates) -> str | None:
         return _inconclusive[key]
     url, definitive = _first_alive(candidates)
     if definitive:
-        cache[key] = url
-        _save_cache(cache)
+        with _cache_lock:
+            cache = _load_cache()
+            cache[key] = url
+            _save_cache(cache)
     else:
         _inconclusive[key] = url
     return url or None

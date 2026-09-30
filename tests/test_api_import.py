@@ -279,6 +279,61 @@ def test_a_lookup_that_hangs_is_given_up_on(client, account, signed_in, monkeypa
     issues = [i["key"] for i in payload["importable"][0]["issues"]]
     assert "validate.unknown_ticker" in issues
     assert import_statement._exists_memo == {}, "a timeout is not remembered"
+    assert payload["unlisted"] == [], "could not check is not a verdict"
+
+
+def test_a_symbol_yahoo_says_it_does_not_list_is_named_in_the_preview(
+    client, account, signed_in, monkeypatch
+):
+    """The rows go in, but hold at cost with no price: the reader has to hear
+    which ones before committing, not find n/a on the portfolio later."""
+    from stocks.api.routes import import_statement
+
+    monkeypatch.setattr(import_statement, "_ticker_exists", lambda t: False)
+    unusual = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2024-01-02,ZZZQX,buy,10,100.00,EUR,1.00,revolut Something\n"
+        "2024-01-03,AAPL,buy,1,100.00,EUR,1.00,revolut Apple\n"
+    )
+    payload = signed_in.post("/v1/import/preview", json=body(unusual)).json()
+    assert len(payload["importable"]) == 2
+    assert payload["unlisted"] == ["ZZZQX"]
+
+
+def test_a_code_the_book_already_holds_is_flagged_once_yahoo_disowns_it(
+    client, account, signed_in, monkeypatch
+):
+    """A bare broker code in the ledger counts as known, so every later
+    statement carrying it read clean while it sat unpriced. The price pass's
+    verdict (`fetch.unlisted`) takes it back out of the known set — and is
+    trusted without asking Yahoo a second time."""
+    from stocks.api.routes import import_statement
+    from stocks.data import fetch
+
+    ledger.add_many(
+        [Transaction("2024-01-02", "SAN", "buy", 10, 4.0, "EUR", 0.0, note="manual")],
+        account.db,
+    )
+    asked: list[str] = []
+    monkeypatch.setattr(
+        import_statement, "_ticker_exists", lambda t: asked.append(t) or True
+    )
+    again = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2024-06-03,SAN,buy,5,4.50,EUR,1.00,revolut Santander\n"
+    )
+
+    before = signed_in.post("/v1/import/preview", json=body(again)).json()
+    assert before["importable"][0]["issues"] == []
+    assert before["unlisted"] == []
+
+    fetch._unlisted.add("SAN")
+    after = signed_in.post("/v1/import/preview", json=body(again)).json()
+    warning = after["importable"][0]["issues"]
+    assert [i["key"] for i in warning] == ["validate.unknown_ticker"]
+    assert warning[0]["params"]["sources"].endswith("/yfinance")
+    assert after["unlisted"] == ["SAN"]
+    assert asked == [], "the download's verdict needs no second lookup"
 
 
 def test_an_oversold_ticker_is_rescued_by_the_split_the_file_never_printed(

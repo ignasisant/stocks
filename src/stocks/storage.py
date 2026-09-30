@@ -34,6 +34,7 @@ import os
 import threading
 from pathlib import Path
 
+from stocks import atomic
 from stocks.config import PROJECT_ROOT
 
 _ENV_PREFIX = "STOCKS_STORAGE_"
@@ -145,7 +146,7 @@ def restore(path: Path) -> bool:
     except client.exceptions.NoSuchKey:
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(obj["Body"].read())
+    atomic.write_bytes(path, obj["Body"].read())
     return True
 
 
@@ -184,7 +185,7 @@ def restore_dir(directory: Path) -> None:
                     continue
                 body = client.get_object(Bucket=cfg["bucket"], Key=obj["Key"])["Body"]
                 directory.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(body.read())
+                atomic.write_bytes(dest, body.read())
     except Exception:
         with _lock:  # let the next touch retry instead of caching a half-restore
             _restored.discard(tag)

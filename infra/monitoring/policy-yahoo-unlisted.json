@@ -1,0 +1,20 @@
+{
+  "displayName": "stocks: held tickers Yahoo does not list",
+  "documentation": {
+    "content": "The price pass heard Yahoo say it has no symbol for a ticker somebody holds (`yahoo.unlisted`) — almost always a bare broker code (SAN for SAN.MC). The position holds at cost with no price until it is mapped. Fires again after a restart for the same codes, so at most once a day. Triage: `uv run stocks logs tail --since 24h --event yahoo.unlisted --json` lists the codes; map each under `aliases:` in the root watchlist.yaml.",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "yahoo.unlisted in the app log",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"__SERVICE__\" AND jsonPayload.event=\"yahoo.unlisted\""
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": { "period": "86400s" },
+    "autoClose": "604800s"
+  }
+}

@@ -5,6 +5,7 @@
   "portfolio.data_unavailable": "Datos de mercado no disponibles ahora mismo — cambia de pestaña o recarga para reintentar.",
   "portfolio.prices_unavailable": "Precios no disponibles ahora mismo — recarga para reintentar.",
   "portfolio.unpriced_note": "Posiciones sin precio en vivo: {n} de {total} — el coste base y el valor de mercado de arriba las excluyen.",
+  "portfolio.unlisted_note": "Sin símbolo de Yahoo para {tickers} — hay que mapear el código del bróker a uno (SAN → SAN.MC), así que esperar no le dará precio. Dinos cuál desde Enviar comentarios.",
   "portfolio.tab_positions": "Posiciones",
   "portfolio.tab_alloc_risk": "Asignación y riesgo",
   "portfolio.tab_realized_tax": "Realizado y fiscal",

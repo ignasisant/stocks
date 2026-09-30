@@ -7,6 +7,8 @@ Both exist for the same failure: Yahoo refuses this host's egress IP, and the
 app spends minutes rediscovering that, once per block, on every rerun.
 """
 
+import logging
+import threading
 import time
 
 import pandas as pd
@@ -136,6 +138,100 @@ def test_fetch_many_still_returns_frames(monkeypatch):
     monkeypatch.setattr(fetch.yf, "download", lambda *a, **k: frame)
     out = fetch.fetch_many(["AAPL"])
     assert list(out) == ["AAPL"] and len(out["AAPL"]) == 2
+
+
+# ---------------------------------------------- what the bulk download said
+# yfinance swallows every per-symbol failure and only names it in a summary it
+# logs once the batch is done. "Yahoo has no such symbol" and "Yahoo refused"
+# arrive the same way — an absent frame — and only that summary tells them
+# apart.
+
+DISOWNED = "No data found, symbol may be delisted"
+REFUSED = "YFRateLimitError('Too Many Requests. Rate limited. Try after a while.')"
+
+
+@pytest.fixture
+def yf_log():
+    """yfinance's logger, hearing everything for the length of the test."""
+    logger = logging.getLogger("yfinance")
+    level, disabled = logger.level, logger.disabled
+    logger.setLevel(logging.DEBUG)
+    logger.disabled = False
+    yield logger
+    logger.setLevel(level)
+    logger.disabled = disabled
+
+
+def _bulk(yf_log, priced: list[str], failures: dict[str, list[str]]):
+    """A `yf.download` stand-in: frames for `priced`, then yfinance's summary,
+    on the thread that called it, in the shape yfinance 1.7 prints it."""
+    idx = pd.date_range("2026-01-05", periods=2, name="Date")
+
+    def download(symbols, **kwargs):
+        frame = pd.concat(
+            {s: pd.DataFrame({"Close": [1.0, 2.0]}, index=idx) for s in priced},
+            axis=1,
+        )
+        yf_log.error("\n%.f Failed downloads:", sum(map(len, failures.values())))
+        for reason, syms in failures.items():
+            yf_log.error(f"{syms}: " + reason)
+        return frame
+
+    return download
+
+
+def test_a_disowned_symbol_is_told_apart_from_a_refused_one(monkeypatch, yf_log):
+    # yfinance upper-cases the symbol it reports; the verdict is keyed by the
+    # ticker as the book spells it.
+    monkeypatch.setattr(fetch, "ticker_aliases", lambda: {"BSD2": "bsd2.de"})
+    monkeypatch.setattr(
+        fetch.yf,
+        "download",
+        _bulk(yf_log, ["AAPL"], {DISOWNED: ["SIE", "BSD2.DE"], REFUSED: ["NVDA"]}),
+    )
+    out = fetch.fetch_many(["AAPL", "SIE", "BSD2", "NVDA"])
+    assert list(out) == ["AAPL"]
+    assert fetch.unlisted(["AAPL", "SIE", "BSD2", "NVDA"]) == {"SIE", "BSD2"}
+    assert fetch.throttle_remaining() == 0  # a refused name is not the breaker's
+
+
+def test_only_yahoos_own_words_disown_a_symbol(monkeypatch, yf_log):
+    """yfinance's own guesses — "possibly delisted; no timezone found" shows up
+    under throttling too — do not count."""
+    monkeypatch.setattr(fetch, "ticker_aliases", dict)
+    monkeypatch.setattr(
+        fetch.yf,
+        "download",
+        _bulk(yf_log, ["AAPL"], {"possibly delisted; no timezone found": ["SIE"]}),
+    )
+    fetch.fetch_many(["AAPL", "SIE"])
+    assert fetch.unlisted(["SIE"]) == set()
+
+
+def test_a_name_that_prices_again_stops_being_unlisted(monkeypatch, yf_log):
+    monkeypatch.setattr(fetch, "ticker_aliases", dict)
+    disowned = _bulk(yf_log, ["AAPL"], {DISOWNED: ["SIE"]})
+    monkeypatch.setattr(fetch.yf, "download", disowned)
+    fetch.fetch_many(["AAPL", "SIE"])
+    assert fetch.unlisted(["SIE"]) == {"SIE"}
+    monkeypatch.setattr(fetch.yf, "download", _bulk(yf_log, ["AAPL", "SIE"], {}))
+    fetch.fetch_many(["AAPL", "SIE"])
+    assert fetch.unlisted(["SIE"]) == set()
+
+
+def test_the_summary_is_heard_only_by_the_download_that_logged_it(yf_log):
+    """Two bulk downloads run at once on a page; each must read its own."""
+    mine: dict[str, str] = {}
+    fetch._download_log.sink = mine
+    try:
+        other = threading.Thread(target=lambda: yf_log.error(f"['NVDA']: {DISOWNED}"))
+        other.start()
+        other.join()
+        assert mine == {}
+        yf_log.error(f"['sie', 'OZTA']: {DISOWNED}")
+    finally:
+        fetch._download_log.sink = None
+    assert mine == {"SIE": DISOWNED, "OZTA": DISOWNED}
 
 
 # ------------------------------------------------------- the fundamentals path

@@ -253,6 +253,35 @@ probe() {
     esac
 }
 
+# One guest read through the whole stack — gate, the demo book, prices, JSON.
+# /livez proves the process is up; this proves a page can paint. A 500 here is
+# the bug class that once took the portfolio down for everyone (a code path
+# raising on data it did not expect), so it blocks the promotion. A 503 is the
+# app saying "upstream is down" on purpose — Yahoo throttling a fresh IP — and
+# says nothing about the revision, so it only warns; so does no answer at all,
+# since a cold demo book on a throttled IP can be slow without being broken.
+API_SMOKE_PATH="/api/v1/portfolio/summary"
+api_smoke() {
+    local target="$1$API_SMOKE_PATH" code
+    code="$(curl -sS -o /dev/null --max-time 60 -w '%{http_code}' "$target" 2>/dev/null || true)"
+    case "$code" in
+        401|403)
+            code="$(curl -sS -o /dev/null --max-time 60 -w '%{http_code}' \
+                -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+                "$target" 2>/dev/null || true)"
+            ;;
+    esac
+    case "$code" in
+        200) echo "  $API_SMOKE_PATH $code"; return 0 ;;
+        503) echo "  warning: $API_SMOKE_PATH answered 503 (upstream unavailable) — promoting anyway" >&2
+             return 0 ;;
+        000|"") echo "  warning: $API_SMOKE_PATH gave no answer in 60s — promoting anyway" >&2
+             return 0 ;;
+        *)   echo "  $API_SMOKE_PATH answered $code to a guest" >&2
+             return 1 ;;
+    esac
+}
+
 # Retry: a scale-to-zero service has to cold-start before it can answer, and
 # a freshly tagged URL takes a moment to route.
 smoke() {
@@ -270,7 +299,7 @@ smoke() {
             [ "$rc" = 0 ] || return 1
             echo "  /status $out"
             case "$out" in
-                *"\"$REVISION\""*) return 0 ;;
+                *"\"$REVISION\""*) api_smoke "$base"; return ;;
                 *) echo "  expected revision $REVISION" >&2; return 1 ;;
             esac
         fi

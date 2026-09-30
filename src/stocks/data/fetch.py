@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+import logging
 import re
 import threading
 import time
@@ -9,6 +11,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from pathlib import Path
+from urllib.error import HTTPError
 
 import pandas as pd
 import yfinance as yf
@@ -129,6 +132,99 @@ def _budgeted[T](fn: Callable[[], T], *, budget: float, **fields) -> T:
         raise YFRateLimitError() from None
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
+
+
+# --------------------------------------------- what a bulk download said
+# `yf.download` never raises for one symbol. It files each reason away and,
+# once the batch is done, logs a summary on the thread that called it — one
+# line per reason, "['SIE', 'OZTA']: No data found, symbol may be delisted" or
+# "['AAPL']: YFRateLimitError('Too Many Requests. Rate limited. …')". That
+# summary is the only place the two part ways, and they must: a symbol Yahoo
+# says it has never heard of is a fact about the book, a refused one is
+# weather. Read as a filter, not a handler, so it hears the line whatever the
+# logging setup does with it afterwards, and changes nothing about where it
+# goes.
+_SUMMARY_RE = re.compile(r"^(\[[^\]]*\]): (.*)$", re.S)
+_download_log = threading.local()
+
+# Yahoo's own words for a chart it has no symbol for — its 404 reason, which
+# yfinance passes through verbatim. Not the generic "no price data found" nor
+# "no timezone found": yfinance says those on its own, and a throttled Yahoo
+# has been seen to produce the second.
+UNLISTED_REASON = "no data found"
+_REFUSED_RE = re.compile(r"YFRateLimitError|Too Many Requests", re.I)
+
+
+class _DownloadFailures(logging.Filter):
+    """File each summary line into the calling thread's sink, if it set one."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        sink = getattr(_download_log, "sink", None)
+        if sink is None:
+            return True
+        m = _SUMMARY_RE.match(record.getMessage())
+        if m is None:
+            return True
+        try:
+            symbols = ast.literal_eval(m.group(1))
+        except (ValueError, SyntaxError):
+            return True
+        for symbol in symbols:
+            if isinstance(symbol, str):
+                sink[symbol.upper()] = m.group(2).strip()
+        return True
+
+
+logging.getLogger("yfinance").addFilter(_DownloadFailures())
+
+# Tickers (as requested) that the last bulk download asking for them was told
+# Yahoo has no such symbol. One verdict per process, like the breaker: the
+# answer is about the symbol, not about who asked. Rewritten by every download
+# that includes the name, so one that starts pricing leaves on its own.
+_unlisted: set[str] = set()
+_unlisted_lock = threading.Lock()
+
+
+def unlisted(tickers) -> set[str]:
+    """Those of `tickers` Yahoo last said it has no symbol for."""
+    with _unlisted_lock:
+        return _unlisted & set(tickers)
+
+
+def clear_unlisted() -> None:
+    """Forget every verdict — for tests."""
+    with _unlisted_lock:
+        _unlisted.clear()
+
+
+def _note_failures(
+    tickers: list[str],
+    symbol_of: dict[str, str],
+    priced: dict[str, pd.DataFrame],
+    failures: dict[str, str],
+) -> None:
+    """Record which unpriced names Yahoo disowned, and say when it refused."""
+    refused = sorted(s for s, why in failures.items() if _REFUSED_RE.search(why))
+    if refused:
+        # Not the breaker: yfinance already spent its own retries on these,
+        # and a partial refusal is `complete_download`'s call, not ours.
+        obs.warn(
+            "yahoo.bulk_refused",
+            refused=len(refused),
+            symbols=len(set(symbol_of.values())),
+        )
+    newly: list[str] = []
+    with _unlisted_lock:
+        for t in tickers:
+            why = failures.get(symbol_of[t].upper(), "")
+            if t not in priced and why.lower().startswith(UNLISTED_REASON):
+                if t not in _unlisted:
+                    newly.append(t)
+                _unlisted.add(t)
+            else:
+                _unlisted.discard(t)
+    if newly:
+        obs.warn("yahoo.unlisted", tickers=sorted(newly))
 
 
 def resolve(ticker: str) -> str:
@@ -342,6 +438,10 @@ def fetch_many(
     minute one. Over budget raises `YFRateLimitError`, which every caller
     already degrades on — but it does NOT open the cooldown, because slow is
     not the same claim as refused, and the next rerun should try again.
+
+    A name Yahoo answers "No data found" for is remembered as `unlisted`, so a
+    caller judging whether the download was gutted can tell a book holding
+    codes Yahoo does not know from a Yahoo that refused.
     """
     if not tickers:
         return {}
@@ -353,13 +453,15 @@ def fetch_many(
         return _coingecko_fallback(gecko, period, interval)
     symbol_of = {t: resolve(t) for t in tickers}
     symbols = list(dict.fromkeys(symbol_of.values()))
-    # The budget is OUTSIDE the retry ladder, not inside it: wrapped the other
-    # way each of the three attempts would get its own 60s and a hung Yahoo
-    # would cost three minutes plus the backoff — the budget has to bound the
-    # whole thing, sleeps included.
-    data = _budgeted(
-        lambda: retry(
-            lambda: yf.download(
+    failures: dict[str, str] = {}
+
+    def download() -> pd.DataFrame:
+        # On the thread yfinance logs its summary from — `_budgeted`'s worker,
+        # not the caller. Cleared per attempt: only the one that returned counts.
+        failures.clear()
+        _download_log.sink = failures
+        try:
+            return yf.download(
                 symbols,
                 period=period,
                 interval=interval,
@@ -368,10 +470,14 @@ def fetch_many(
                 progress=False,
                 threads=min(DOWNLOAD_THREADS, len(symbols)),
             )
-        ),
-        budget=budget,
-        symbols=len(symbols),
-    )
+        finally:
+            _download_log.sink = None
+
+    # The budget is OUTSIDE the retry ladder, not inside it: wrapped the other
+    # way each of the three attempts would get its own 60s and a hung Yahoo
+    # would cost three minutes plus the backoff — the budget has to bound the
+    # whole thing, sleeps included.
+    data = _budgeted(lambda: retry(download), budget=budget, symbols=len(symbols))
     out: dict[str, pd.DataFrame] = {}
     for t in tickers:
         try:
@@ -396,6 +502,7 @@ def fetch_many(
     missing = [t for t in tickers if t not in out]
     if missing:
         out.update(_crypto_usd_fallback(missing, period, interval, auto_adjust, budget))
+    _note_failures(tickers, symbol_of, out, failures)
     if gecko:
         out.update(_coingecko_fallback(gecko, period, interval))
     return out
@@ -464,6 +571,53 @@ COINGECKO_MAX_DAYS = 365
 _PERIOD_RE = re.compile(r"^(\d+)(d|mo|y)$")
 _PERIOD_DAYS = {"d": 1, "mo": 30, "y": 365}
 
+# The keyless tier allows a few dozen calls a minute per IP, and a Cloud Run
+# egress IP is shared with everyone else's keyless calls: 429s arrive in
+# bursts. Daily bars change once a day, so a quarter-hour memo costs nothing,
+# and after a 429 the coins wait out what CoinGecko asked for (bounded — the
+# header is advisory, and an hour-long pause would blank the coin for no gain).
+GECKO_TTL_S = 900.0
+GECKO_COOLDOWN_S = 60.0
+_GECKO_WAIT_BOUNDS = (30.0, 600.0)
+_gecko_memo: dict[str, tuple[float, pd.DataFrame]] = {}
+_gecko_blocked_until = 0.0
+_gecko_lock = threading.Lock()
+
+
+def _gecko_hit(url: str) -> pd.DataFrame | None:
+    with _gecko_lock:
+        hit = _gecko_memo.get(url)
+    if hit is None or time.monotonic() - hit[0] > GECKO_TTL_S:
+        return None
+    return hit[1].copy()
+
+
+def _gecko_wait() -> float:
+    with _gecko_lock:
+        return max(0.0, _gecko_blocked_until - time.monotonic())
+
+
+def _gecko_trip(retry_after: str | None) -> float:
+    """Open CoinGecko's cooldown for its `Retry-After`, clamped; the seconds."""
+    global _gecko_blocked_until
+    try:
+        wait = float(retry_after) if retry_after is not None else GECKO_COOLDOWN_S
+    except ValueError:  # an HTTP date: not worth parsing for a hint
+        wait = GECKO_COOLDOWN_S
+    low, high = _GECKO_WAIT_BOUNDS
+    wait = min(max(wait, low), high)
+    with _gecko_lock:
+        _gecko_blocked_until = max(_gecko_blocked_until, time.monotonic() + wait)
+    return wait
+
+
+def clear_coingecko() -> None:
+    """Forget CoinGecko's memo and cooldown — for tests."""
+    global _gecko_blocked_until
+    with _gecko_lock:
+        _gecko_memo.clear()
+        _gecko_blocked_until = 0.0
+
 
 def _period_days(period: str) -> int:
     """`period` ("1y", "37mo", "5d") as a day count, capped at the free
@@ -491,10 +645,26 @@ def _coingecko_fallback(
         return {}
     days = _period_days(period)
     out: dict[str, pd.DataFrame] = {}
+    waiting: list[str] = []
     for t, (coin, quote) in pairs.items():
         url = COINGECKO_URL.format(id=COINGECKO_IDS[coin], quote=quote.lower(), days=days)
+        if (hit := _gecko_hit(url)) is not None:
+            out[t] = hit
+            continue
+        if _gecko_wait() > 0:
+            waiting.append(t)
+            continue
         with obs.swallow("coingecko.market_chart", ticker=t):
-            prices = get_json(url, timeout=15).get("prices") or []
+            try:
+                prices = get_json(url, timeout=15).get("prices") or []
+            except HTTPError as exc:
+                if exc.code != 429:
+                    raise
+                headers = exc.headers
+                wait = _gecko_trip(headers.get("Retry-After") if headers else None)
+                obs.warn("coingecko.rate_limited", ticker=t, cooldown_s=wait)
+                waiting.append(t)
+                continue
             if not prices:
                 continue
             idx = naive_dates(pd.to_datetime([p[0] for p in prices], unit="ms"))
@@ -504,8 +674,16 @@ def _coingecko_fallback(
                 {"Open": close, "High": close, "Low": close, "Close": close}
             )
             df.index.name = "Date"
-            out[t] = df
+            with _gecko_lock:
+                _gecko_memo[url] = (time.monotonic(), df)
+            out[t] = df.copy()
             obs.event("coingecko.fallback", ticker=t, coin=coin)
+    if waiting:
+        obs.event(
+            "coingecko.cooling_off",
+            remaining_s=round(_gecko_wait(), 1),
+            tickers=sorted(waiting),
+        )
     return out
 
 

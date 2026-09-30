@@ -25,7 +25,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from stocks import storage
+from stocks import atomic, storage
 from stocks.config import DATA_DIR
 
 STATE_PATH = DATA_DIR / "bank.json"
@@ -60,7 +60,7 @@ def load(path: Path = STATE_PATH) -> dict:
 
 def save(state: dict, path: Path = STATE_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2))
+    atomic.write_json(path, state, indent=2)
     storage.persist(path)
 
 

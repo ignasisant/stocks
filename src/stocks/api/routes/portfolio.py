@@ -64,6 +64,7 @@ from stocks.api.schemas import (
 )
 from stocks.api.schemas import TaxPeriod as TaxPeriodOut
 from stocks.api.security import Authed
+from stocks.data import fetch
 from stocks.portfolio import custody, demo, dividends, fees, last_import, tax
 from stocks.portfolio.custody import UNKNOWN as BROKER_UNKNOWN
 from stocks.portfolio.custody import mix as custody_mix
@@ -250,6 +251,13 @@ def positions(
     return Positions(base=ccy, positions=rows, unpriced=int(table["value"].isna().sum()))
 
 
+def _unpriced_tickers(table: pd.DataFrame) -> list[str]:
+    """The rows `priced_totals` left out, by name."""
+    if "value" not in table:
+        return [str(t) for t in table.index]
+    return [str(t) for t in table.index[table["value"].isna()]]
+
+
 @router.get("/summary", response_model=Summary, summary="Book totals")
 def summary(account: Account, base: Base = None) -> Summary:
     """Cost, value and P/L over the rows that priced.
@@ -278,6 +286,9 @@ def summary(account: Account, base: Base = None) -> Summary:
         pnl_pct=_num(value / cost - 1) if cost else None,
         positions=int(len(table)),
         unpriced=unpriced,
+        # Which of the unpriced are a code Yahoo does not know, rather than a
+        # feed that is down: those need an alias, and waiting will not help.
+        unlisted=sorted(fetch.unlisted(_unpriced_tickers(table))) if unpriced else [],
         # Null, not zero, for a book that never sold: "no result" and "broke
         # even" are different facts and the tile has to be able to say so.
         realized=(_num(sum(s.proceeds - s.cost for s in sales)) if sales else None),

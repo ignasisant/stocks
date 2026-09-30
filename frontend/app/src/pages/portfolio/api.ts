@@ -60,6 +60,11 @@ export type Summary = {
   /** Rows left out of cost and value alike, so the two stay like-for-like. */
   unpriced: number;
   /**
+   * Those of the unpriced Yahoo said it has no symbol for: a broker code that
+   * needs an alias, not a feed that is down. Optional for an older server.
+   */
+  unlisted?: string[];
+  /**
    * Closed sales, FIFO-matched, all-time. Null for a book that never sold —
    * no sale is not a result of zero. NOT the tax tab's figure, which replays
    * under the jurisdiction's own currency and matching rule.

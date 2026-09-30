@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import threading
 
+from stocks import atomic
 from stocks.config import DATA_DIR
 
 PROFILE_CACHE = DATA_DIR / "profiles.json"
@@ -76,7 +77,7 @@ def remember(symbol: str, info: dict | None) -> None:
         cache[key] = entry
         stored = _read() | {key: entry}
         try:
-            PROFILE_CACHE.write_text(json.dumps(stored, indent=0, sort_keys=True))
+            atomic.write_json(PROFILE_CACHE, stored, indent=0, sort_keys=True)
         except OSError:
             pass
 

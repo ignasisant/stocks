@@ -5,6 +5,7 @@
   "portfolio.data_unavailable": "Market data unavailable right now — switch tabs or reload to retry.",
   "portfolio.prices_unavailable": "Prices unavailable right now — reload to retry.",
   "portfolio.unpriced_note": "Positions with no live price: {n} of {total} — the cost basis and market value above both leave them out.",
+  "portfolio.unlisted_note": "No Yahoo symbol for {tickers} — a broker code needs mapping to one (SAN → SAN.MC), so waiting will not price it. Tell us which through Send feedback.",
   "portfolio.tab_positions": "Positions",
   "portfolio.tab_alloc_risk": "Allocation & risk",
   "portfolio.tab_realized_tax": "Realized & tax",

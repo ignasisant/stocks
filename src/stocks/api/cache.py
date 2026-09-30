@@ -50,7 +50,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
-from stocks import obs
+from stocks import atomic, obs
 from stocks.config import DATA_DIR
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -263,14 +263,12 @@ def _write(path: Path, entry: Entry) -> None:
     moment late is still there for the next process.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
     blob = {
         "wall": entry[2],
         "value": entry[1],
         "since": entry[3] if len(entry) > 3 else None,
     }
-    tmp.write_bytes(pickle.dumps(blob, protocol=pickle.HIGHEST_PROTOCOL))
-    tmp.replace(path)
+    atomic.write_bytes(path, pickle.dumps(blob, protocol=pickle.HIGHEST_PROTOCOL))
     _trim(path.parent)
     threading.Thread(
         target=_mirror, args=(path,), name="cache-mirror", daemon=True

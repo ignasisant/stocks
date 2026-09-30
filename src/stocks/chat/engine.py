@@ -31,7 +31,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from stocks import obs, storage
+from stocks import atomic, obs, storage
 from stocks.chat import a2ui, agent, debate, market, tokens, toolbox, whatif
 from stocks.config import DATA_DIR, currency_symbol
 from stocks.secrets_env import secret
@@ -471,7 +471,7 @@ def _load_global_free() -> None:
 def _save_global_free() -> None:
     try:
         GLOBAL_FREE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        GLOBAL_FREE_FILE.write_text(json.dumps(_global_free))
+        atomic.write_json(GLOBAL_FREE_FILE, _global_free)
         if storage.enabled():
             storage.persist(GLOBAL_FREE_FILE)
     except Exception as exc:  # a counter that cannot be saved still counts

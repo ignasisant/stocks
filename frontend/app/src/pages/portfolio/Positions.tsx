@@ -399,6 +399,14 @@ function Positions() {
                 })}
               </Caption>
             ) : null}
+            {/* Which of those will not price by waiting: a code Yahoo does not
+                know needs an alias. Shown even with no tiles — a book of bare
+                broker codes is the case it exists for. */}
+            {summary.unlisted?.length ? (
+              <Caption>
+                {t("portfolio.unlisted_note", { tickers: summary.unlisted.join(", ") })}
+              </Caption>
+            ) : null}
             {table(positions.positions)}
             <Caption>{t("portfolio.positions_caption")}</Caption>
           </Card>
