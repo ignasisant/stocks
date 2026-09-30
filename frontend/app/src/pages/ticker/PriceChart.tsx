@@ -40,7 +40,11 @@ import {
   scale,
   type TipLine,
 } from "./plot";
+import type { Marker, Overlay } from "./layout";
 import type { Bars, EarningsEvent, Trade } from "./types";
+
+const ALL_OVERLAYS: readonly Overlay[] = ["SMA20", "SMA50", "SMA200"];
+const ALL_MARKERS: readonly Marker[] = ["results", "dividends"];
 
 /** Fewer bars than this in a drag is a mis-click, not a window somebody picked. */
 const MIN_SPAN = 3;
@@ -84,6 +88,8 @@ export function PriceChart({
   trades,
   avgCost,
   candles,
+  overlays: shown = ALL_OVERLAYS,
+  markers = ALL_MARKERS,
   mobile,
   onWindow,
   t,
@@ -94,6 +100,14 @@ export function PriceChart({
   /** The blended entry, so a single lot can be read against the position. */
   avgCost: number | null;
   candles: boolean;
+  /**
+   * The averages this kind of asset is read by (`layout.ts`). A money-market
+   * fund's price is a straight line: an average laid over it is a second
+   * straight line that says nothing.
+   */
+  overlays?: readonly Overlay[];
+  /** The corporate events worth a vertical on this kind of chart. */
+  markers?: readonly Marker[];
   mobile: boolean;
   /** The change across a window the reader dragged out, for the readout. */
   onWindow: (window: Window) => void;
@@ -166,16 +180,22 @@ export function PriceChart({
   const marks = useMemo(() => {
     const lines = new Map<number, EventLine[]>();
     const kinds = new Map<number, "dividend" | "results">();
-    (bars.dividends ?? []).forEach((value, index) => {
-      const day = days[index];
-      if (!value || day === undefined) return;
-      const at = close[index] ?? null;
-      lines.set(index, [...(lines.get(index) ?? []), dividendLine(value, at, day, t)]);
-      kinds.set(index, "dividend");
-    });
+    (markers.includes("dividends") ? (bars.dividends ?? []) : []).forEach(
+      (value, index) => {
+        const day = days[index];
+        if (!value || day === undefined) return;
+        const at = close[index] ?? null;
+        const exDate = daily || intraday ? day : null;
+        lines.set(index, [
+          ...(lines.get(index) ?? []),
+          dividendLine(value, at, exDate, t),
+        ]);
+        kinds.set(index, "dividend");
+      },
+    );
     const first = days[0] ?? "";
     const last = days[days.length - 1] ?? "";
-    for (const event of events) {
+    for (const event of markers.includes("results") ? events : []) {
       if (event.date < first || event.date > last) continue;
       const index = snap(days, event.date);
       lines.set(index, [
@@ -185,7 +205,7 @@ export function PriceChart({
       kinds.set(index, "results");
     }
     return { lines, kinds };
-  }, [bars.dividends, days, close, events, daily, t]);
+  }, [bars.dividends, days, close, events, markers, daily, intraday, t]);
 
   // The y range spans everything drawn in the window, as Plotly's autorange
   // does: the price, the averages, the fills (a lot bought below this year's
@@ -197,7 +217,7 @@ export function PriceChart({
     const price = candles
       ? [window(high), window(low), window(close)]
       : [window(close)];
-    const overlays = ["SMA20", "SMA50", "SMA200"]
+    const overlays = shown
       .map((key) => bars.series[key])
       .filter((series): series is (number | null)[] => Boolean(series))
       .map((series) => window(series));
@@ -208,7 +228,7 @@ export function PriceChart({
       .filter((index) => index >= from && index <= to)
       .map((index) => diamondY(index));
     return bounds([...price, ...overlays, marked, diamonds]);
-  }, [bars.series, candles, close, high, low, from, to, fills, marks]);
+  }, [bars.series, shown, candles, close, high, low, from, to, fills, marks]);
 
   if (!range || n === 0) return null;
 
@@ -280,11 +300,13 @@ export function PriceChart({
     })
     .join(" ");
 
-  const overlays: [string, string, string][] = [
-    ["SMA20", colors.smaFast, t("ticker.sma20_label")],
-    ["SMA50", colors.smaSlow, "SMA50"],
-    ["SMA200", smaLong, "SMA200"],
-  ];
+  const overlays = (
+    [
+      ["SMA20", colors.smaFast, t("ticker.sma20_label")],
+      ["SMA50", colors.smaSlow, "SMA50"],
+      ["SMA200", smaLong, "SMA200"],
+    ] as [Overlay, string, string][]
+  ).filter(([key]) => shown.includes(key));
   const drawn = overlays.filter(([key]) =>
     bars.series[key]?.slice(from, to + 1).some((value) => value !== null),
   );
@@ -389,13 +411,15 @@ export function PriceChart({
           frame={box}
           lo={range.lo}
           hi={range.hi}
-          format={(v) => money(v, v >= 100 ? 0 : 2)}
+          format={(v) => money(v, range.hi >= 100 ? 0 : 2)}
         />
 
         {/* Corporate events, as Streamlit draws them: a quiet dotted
             vertical, the kind's letter on top in its colour ("d" dividend,
             "r" results), and a small diamond over the bar's high whose row in
-            the tooltip says what it was. */}
+            the tooltip says what it was. On weekly or monthly bars only the
+            diamond: forty years of quarterly dividends is a vertical every
+            third candle, a curtain over the chart rather than a marker. */}
         {[...marks.kinds.entries()]
           .filter(([index]) => index >= from && index <= to)
           .map(([index, kind]) => {
@@ -404,23 +428,27 @@ export function PriceChart({
             const cy = y(diamondY(index));
             return (
               <g key={`ev-${index}`}>
-                <line
-                  className="tk-event"
-                  x1={cx}
-                  x2={cx}
-                  y1={box.top}
-                  y2={box.height - box.bottom}
-                  stroke={colors.eventLine}
-                />
-                <text
-                  className="tk-event-tag"
-                  x={cx}
-                  y={box.top - 2}
-                  textAnchor="middle"
-                  fill={color}
-                >
-                  {kind === "dividend" ? "d" : "r"}
-                </text>
+                {daily || intraday ? (
+                  <>
+                    <line
+                      className="tk-event"
+                      x1={cx}
+                      x2={cx}
+                      y1={box.top}
+                      y2={box.height - box.bottom}
+                      stroke={colors.eventLine}
+                    />
+                    <text
+                      className="tk-event-tag"
+                      x={cx}
+                      y={box.top - 2}
+                      textAnchor="middle"
+                      fill={color}
+                    >
+                      {kind === "dividend" ? "d" : "r"}
+                    </text>
+                  </>
+                ) : null}
                 <path
                   d={`M ${cx} ${cy - 4} L ${cx + 4} ${cy} L ${cx} ${cy + 4} L ${cx - 4} ${cy} Z`}
                   fill={color}

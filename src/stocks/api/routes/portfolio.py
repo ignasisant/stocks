@@ -636,17 +636,36 @@ class MonthlyPoint(BaseModel):
     gain: float | None = Field(description="value - invested.")
     money_weighted: float | None = Field(
         description=(
-            "Annualised IRR from the first trade to this close, every buy and "
-            "sale on its own date — the `/performance` `irr` as it stood then. "
-            "Null until the book is a year old: annualising a few months "
-            "exaggerates any result."
+            "IRR from the first trade to this close, every buy and sale on its "
+            "own date — once the book is a year old, annualised: the "
+            "`/performance` `irr` as it stood then. In the book's first year, "
+            "over the span as a whole and not annualised (see `annual`): "
+            "annualising a few months exaggerates any result."
         )
     )
     time_weighted: float | None = Field(
         description=(
-            "Annualised TWR from the first trade to this close. Null in the "
-            "book's first year, like `money_weighted`."
+            "TWR from the first trade to this close: annualised once the book "
+            "is a year old, compounded and not annualised before, like "
+            "`money_weighted`."
         )
+    )
+    annual: bool = Field(
+        default=True,
+        description=(
+            "Whether `money_weighted` and `time_weighted` are rates per year "
+            "(false in the book's first year, when they are what the book made "
+            "since the first trade). At a year the two readings meet."
+        ),
+    )
+    month_return: float | None = Field(
+        default=None,
+        description=(
+            "This month's own return, not since the first trade: the daily TWR "
+            "compounded from the previous month's close (the first trade, for "
+            "the first month) to this one, not annualised. There from the first "
+            "month; a deposit mid-month does not move it."
+        ),
     )
 
 
@@ -732,6 +751,8 @@ def monthly(account: Account, base: Base = None, window: str = "inception") -> M
                 gain=_num(row["gain"]),
                 money_weighted=_num(row["money_weighted"]),
                 time_weighted=_num(row["time_weighted"]),
+                annual=bool(row["annual"]),
+                month_return=_num(row["month_return"]),
             )
             for day, row in book.months.iterrows()
         ],
@@ -1006,9 +1027,10 @@ def tax_(account: Account) -> TaxReport:
     if not realized:
         return report
 
-    # Relabelled inside: a RealizedSale carries the replay's label and the raw
-    # ledger does not, so a repurchase booked under the other spelling of the
-    # same security is invisible to every repurchase rule. See tax.buy_dates.
+    # Normalized inside, as the replay is: a RealizedSale carries the replay's
+    # label and acquisition dates, and the raw ledger has neither, so a
+    # repurchase under the other spelling — or one that arrived as an opening
+    # balance — is invisible to every repurchase rule. See tax.buy_dates.
     buy_dates = tax.buy_dates(txs)
 
     def period(value, year: int | None = None) -> TaxPeriodOut:

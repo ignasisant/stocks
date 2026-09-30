@@ -400,7 +400,17 @@
   white-space: nowrap;
 }
 
+/* A label longer than the box leaves is cut, not let out past its edge: the
+   box is capped, and a row wider than it overhung the plot — on a phone, the
+   page. The figure is never the part cut. */
+.pf-tip-row .pf-muted {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
 .pf-tip-row strong {
+  flex: none;
   margin-left: auto;
   padding-left: 8px;
   font-weight: 600;

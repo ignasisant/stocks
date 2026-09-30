@@ -32,6 +32,7 @@ from dataclasses import dataclass
 
 from stocks.portfolio.positions import RealizedSale
 from stocks.portfolio.tax.base import (
+    Acquisitions,
     Note,
     ReportingFlag,
     TaxPeriod,
@@ -80,7 +81,7 @@ class ItTaxPeriod(TaxPeriod):
 def fiscal_period(
     realized: list[RealizedSale],
     period: str,
-    buy_dates: dict[str, list[str]],
+    buy_dates: Acquisitions,
     settings: TaxSettings | None = None,
 ) -> ItTaxPeriod:
     """Summarize an ISO date prefix ("YYYY" or "YYYY-MM") for quadro RT.

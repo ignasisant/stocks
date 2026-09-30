@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SLOW_MS, begin, current, kindOf } from "./activity";
+import { SLOW_MS, begin, current, forget, kindOf } from "./activity";
 
 describe("activity", () => {
   afterEach(() => {
@@ -38,5 +38,21 @@ describe("activity", () => {
     vi.advanceTimersByTime(SLOW_MS + 10);
     expect(current()).toMatchObject({ done: 0, total: 1 });
     b();
+  });
+
+  it("forgets what the last screen was still fetching", () => {
+    vi.useFakeTimers();
+    const hung = begin("/api/v1/ticker/MUA/insiders");
+    vi.advanceTimersByTime(SLOW_MS + 10);
+    expect(current().slow).toEqual(["activity.insiders"]);
+    forget();
+    expect(current().slow).toEqual([]);
+    const next = begin("/api/v1/portfolio/positions");
+    vi.advanceTimersByTime(SLOW_MS + 10);
+    expect(current()).toMatchObject({ slow: ["activity.book"], done: 0, total: 1 });
+    hung(); // lands late: not this screen's, and not counted
+    expect(current()).toMatchObject({ done: 0, total: 1 });
+    next();
+    expect(current().slow).toEqual([]);
   });
 });

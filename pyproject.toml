@@ -8,6 +8,10 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    # The chat drawer's wire format (api/routes/chat.py): AG-UI's event and
+    # RunAgentInput models, so the stream is a published protocol rather than
+    # four frame names only our own client knows. Pydantic only, no runtime.
+    "ag-ui-protocol>=1.0",
     "anthropic>=0.69",
     # The OIDC client behind our own sign-in (web/oidc.py). Floor is 1.8 because
     # `create_authorization_url` returns the code verifier there, and PKCE is

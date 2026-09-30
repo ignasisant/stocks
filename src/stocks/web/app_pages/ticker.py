@@ -586,10 +586,11 @@ def _price_section(ticker: str) -> None:
     # placeholder instead of jumping to the top of an empty card.
     metrics_slot = skeletons.reserve("metrics", n=(1, 2, 2) if _MOBILE else 3)
     # Phones: 8 period pills overflow a 360px viewport — drop the two
-    # in-between ranges (6m/2y) there.
-    period_opts = (
-        [p for p in PERIODS if p not in ("6m", "2y")] if _MOBILE else list(PERIODS)
-    )
+    # in-between ranges (6m/2y) there. "max" is the React page's alone: this
+    # page's period line reads "+X% in <label>", which "all" does not fit.
+    period_opts = [
+        p for p in PERIODS if p != "max" and not (_MOBILE and p in ("6m", "2y"))
+    ]
     # Desktop: period pills and the candles/line toggle share one full-width
     # row — "distribute" pins the pills left and the toggle to the right edge.
     # Phones stack them (each pill set already fills a 360px viewport alone).

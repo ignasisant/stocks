@@ -18,15 +18,19 @@ keys; nothing in the web or CLI layer branches on the code.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from stocks.portfolio.positions import POOLED_MODES, RealizedSale
 from stocks.portfolio.tax import ae, au, ca, ch, de, es, fr, ie, it, pt, uk, us
 from stocks.portfolio.tax.base import (
+    Acquisition,
+    Acquisitions,
     Kpi,
     Note,
     ReportingFlag,
+    Split,
     TaxPeriod,
     TaxSettings,
     TaxTotal,
@@ -36,12 +40,15 @@ from stocks.portfolio.tax.base import (
 )
 
 __all__ = [
+    "Acquisition",
+    "Acquisitions",
     "DEFAULT_CODE",
     "JURISDICTIONS",
     "Jurisdiction",
     "Kpi",
     "Note",
     "ReportingFlag",
+    "Split",
     "TaxPeriod",
     "TaxSettings",
     "TaxTotal",
@@ -55,7 +62,7 @@ __all__ = [
 ]
 
 PeriodFn = Callable[
-    [list[RealizedSale], str, dict[str, list[str]], TaxSettings | None], TaxPeriod
+    [list[RealizedSale], str, Acquisitions, TaxSettings | None], TaxPeriod
 ]
 FlagsFn = Callable[[float, TaxSettings | None], list[ReportingFlag]]
 
@@ -108,6 +115,20 @@ class Jurisdiction:
         return bool(self._long_term and self._long_term(buy_date, sell_date))
 
     @property
+    def summary(self) -> str:
+        """What these rules tax, in one line: its module docstring's first.
+
+        Each country module opens with that sentence ("Spain — IRPF savings
+        base (base del ahorro) on securities.", "Switzerland — a private
+        investor's capital gains are not taxed."), so it is the one place the
+        headline is written, and the assistant quotes it rather than
+        reciting a tax system from memory.
+        """
+        module = sys.modules.get(self._period.__module__)
+        doc = ((module.__doc__ if module else None) or "").strip()
+        return doc.splitlines()[0] if doc else self.code
+
+    @property
     def pools_shares(self) -> bool:
         """True when a sale's cost can be an average rather than a lot's own."""
         return self.matching in POOLED_MODES
@@ -124,7 +145,7 @@ class Jurisdiction:
         self,
         realized: list[RealizedSale],
         period: str,
-        buy_dates: dict[str, list[str]],
+        buy_dates: Acquisitions,
         settings: TaxSettings | None = None,
     ) -> TaxPeriod:
         """Summarize an ISO period prefix: "YYYY" (a real base) or "YYYY-MM"."""
@@ -134,7 +155,7 @@ class Jurisdiction:
         self,
         realized: list[RealizedSale],
         year: int,
-        buy_dates: dict[str, list[str]],
+        buy_dates: Acquisitions,
         settings: TaxSettings | None = None,
     ) -> TaxPeriod:
         return self.fiscal_period(realized, f"{year:04d}", buy_dates, settings)
@@ -296,8 +317,8 @@ def labels(transactions) -> list[str]:
     return sorted({tx.ticker for tx in transfers.relabel(list(transactions))})
 
 
-def buy_dates(transactions) -> dict[str, list[str]]:
-    """Acquisition dates per security, for the repurchase rules.
+def buy_dates(transactions) -> dict[str, list[Acquisition | Split]]:
+    """Acquisitions per security, for the repurchase rules.
 
     Every jurisdiction that blocks a loss on a quick buy-back looks its window
     up here — Spain's two months, the US wash sale, Ireland's four weeks,
@@ -312,14 +333,29 @@ def buy_dates(transactions) -> dict[str, list[str]]:
     and a disallowed loss is reported as deductible. That is an
     under-declaration, and nothing in the output says it happened.
 
-    So: relabel first, with the same function the replay used.
+    The same holds for which rows are acquisitions. The replay opens a lot for
+    a `transfer_in` no departure accounts for — an IBKR snapshot of shares the
+    book never held — dated the day they arrived, and a sale of that lot
+    carries that date as its `buy_date`. Leave the arrival out here and a loss
+    sold at one broker and bought straight back at the other is deductible in
+    full, while the replay itself says the shares were acquired inside the
+    window. A matched pair is still no acquisition: it drops out of both.
+
+    So: normalize first, with the same function the replay used.
+
+    Each acquisition carries its size, because a buy-back blocks a loss only
+    for as many shares as it bought, and the splits ride along in ledger order:
+    a sale counts shares in its own day's units, a purchase in its own.
     """
     from collections import defaultdict
 
     from stocks.portfolio import transfers
 
-    dates: dict[str, list[str]] = defaultdict(list)
-    for tx in transfers.relabel(list(transactions)):
+    out: dict[str, list[Acquisition | Split]] = defaultdict(list)
+    rows = transfers.normalize(list(transactions))
+    for tx in sorted(rows, key=lambda t: (t.date, t.id or 0)):
         if tx.action == "buy":
-            dates[tx.ticker].append(tx.date)
-    return dict(dates)
+            out[tx.ticker].append(Acquisition(tx.date, tx.quantity))
+        elif tx.action == "split":
+            out[tx.ticker].append(Split(tx.date, tx.quantity))
+    return dict(out)

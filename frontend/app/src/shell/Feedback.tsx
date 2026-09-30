@@ -18,26 +18,26 @@
  *   does a deployment with no transcription key, which `/chat/state` says.
  *   The words land in the box to be read before sending, rather than being
  *   sent as heard: Whisper mishears tickers, and a report is not a chat turn.
+ *   They land as they are said, where the browser has a recogniser, and
+ *   Whisper's transcript replaces them at the stop (`chat/voice.dictate`).
+ *   The microphone is an icon inside the box, bottom right — the chat
+ *   composer's, in the same corner (`ui/Mic`) — not a text button under it.
  *
  * The draft survives a failed send. Somebody who typed three paragraphs into a
  * box that then lost them does not type them again.
  */
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
-import {
-  canRecord,
-  record,
-  transcribe,
-  VoiceFailed,
-  type Recording,
-} from "../chat/voice";
+import { canRecord, dictate, join, VoiceFailed, type Dictation } from "../chat/voice";
 import { ApiError, get, send } from "./api";
 import { GUEST_CHROME } from "./guest";
 import { useLang, useT } from "./i18n";
 import { useRoute } from "./router";
 import { capture, fromFile, ShotFailed, type Shot } from "./screenshot";
 import { useGuest } from "./session";
+import { Box, Mic } from "../ui/Mic";
 import { ToggleChip, ToggleRow } from "../ui/Toggle";
 
 const KINDS = ["bug", "idea", "other"] as const;
@@ -46,16 +46,26 @@ type Kind = (typeof KINDS)[number];
 /** The ceiling the store applies (`web/feedback.MAX_CHARS`). */
 const MAX = 4000;
 
-/** Whether an element is this dialog's own chrome — left out of a capture. */
+/** The store's ceiling on `page` (`api/routes/feedback.Feedback.page`). */
+const PAGE_MAX = 120;
+
+/**
+ * Whether an element is chrome the reader opened to get here — this dialog,
+ * and on a phone the "More" sheet it lives in — rather than the screen being
+ * reported. Left out of a capture: a picture of the menu says nothing.
+ */
+const CHROME = ["ag-fb-scrim", "ag-fb-sent", "ag-nav-sheet", "ag-nav-scrim"];
 const chrome = (element: Element) =>
-  element.classList?.contains("ag-fb-scrim") ||
-  element.classList?.contains("ag-fb-sent");
+  CHROME.some((name) => element.classList?.contains(name));
 
 export function Feedback() {
   const t = useT();
   const lang = useLang();
   const guest = useGuest();
-  const { page } = useRoute();
+  const { page, params } = useRoute();
+  // Which ticker, which tab: "ticker" alone does not say which screen it was.
+  const query = params.toString();
+  const where = (query ? `${page}?${query}` : page).slice(0, PAGE_MAX);
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [kind, setKind] = useState<Kind>("bug");
@@ -69,8 +79,12 @@ export function Feedback() {
   const file = useRef<HTMLInputElement>(null);
 
   const [voice, setVoice] = useState(false);
-  const [taping, setTaping] = useState<Recording | null>(null);
+  const [taping, setTaping] = useState<Dictation | null>(null);
   const [hearing, setHearing] = useState(false);
+  // What the box held when the recording started: the words being said are
+  // drawn after it, and the transcript replaces them there.
+  const before = useRef("");
+  const live = !!taping || hearing;
 
   // Whether this deployment can transcribe at all — asked when the dialog
   // opens, and only by somebody who could use the answer. A microphone that
@@ -90,11 +104,13 @@ export function Feedback() {
   // stay on. Through a ref and on unmount only — a cleanup keyed on `taping`
   // would also fire when a recording is handed over to be transcribed, and
   // cancel it mid-stop.
-  const live = useRef<Recording | null>(null);
-  live.current = taping;
-  useEffect(() => () => live.current?.cancel(), []);
+  const tape = useRef<Dictation | null>(null);
+  tape.current = taping;
+  useEffect(() => () => tape.current?.cancel(), []);
 
   function close() {
+    // Dropped, and so are its words: they were never transcribed.
+    if (taping) setText(before.current);
     taping?.cancel();
     setTaping(null);
     setOpen(false);
@@ -126,16 +142,16 @@ export function Feedback() {
       .finally(() => setShooting(false));
   }
 
-  async function dictate() {
+  async function talk() {
     if (taping) {
       const recording = taping;
       setTaping(null);
       setHearing(true);
       try {
-        const said = await transcribe(await recording.stop(), lang);
         // A note recorded *with* something typed is one report, not two.
-        setText((before) => (before.trim() ? `${before.trim()} ${said}` : said));
+        setText(join(before.current, await recording.stop()));
       } catch (error) {
+        setText(before.current);
         setFailed(
           error instanceof VoiceFailed
             ? t(error.key, error.slots)
@@ -148,21 +164,23 @@ export function Feedback() {
     }
     try {
       setFailed(null);
-      setTaping(await record());
+      before.current = text;
+      setTaping(await dictate(lang, (words) => setText(join(before.current, words))));
     } catch {
       // The reader denied the microphone: an answer, not a failure.
+      setText(before.current);
     }
   }
 
   function submit() {
     const body = text.trim();
-    if (!body || busy || shooting) return;
+    if (!body || busy || shooting || live) return;
     setBusy(true);
     setFailed(null);
     send("POST", "/feedback", {
       text: body,
       kind,
-      page,
+      page: where,
       lang,
       ...(shot ? { shot: shot.base64 } : {}),
     })
@@ -196,135 +214,150 @@ export function Feedback() {
       >
         {t("feedback.button")}
       </button>
-      {sent ? <p className="ag-fb-sent">{t("feedback.sent")}</p> : null}
-      {open ? (
-        <div className="ag-fb-scrim" role="presentation" onClick={close}>
-          <div
-            className="ag-fb"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t("feedback.button")}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h2 className="ag-fb-h">{t("feedback.button")}</h2>
-            <p className="ag-fb-caption">{t("feedback.caption")}</p>
-            <ToggleRow className="ag-fb-kinds" label={t("feedback.kind")}>
-              {KINDS.map((option) => (
-                <ToggleChip
-                  key={option}
-                  on={option === kind}
-                  onClick={() => setKind(option)}
-                >
-                  {t(`feedback.kind_${option}`)}
-                </ToggleChip>
-              ))}
-            </ToggleRow>
-            <textarea
-              className="ag-fb-text"
-              rows={6}
-              maxLength={MAX}
-              value={text}
-              placeholder={t("feedback.placeholder")}
-              aria-label={t("feedback.button")}
-              onChange={(event) => setText(event.target.value)}
-              onPaste={(event) => {
-                // A system screenshot on the clipboard is the fastest way to a
-                // picture of the screen — take it rather than pasting nothing.
-                const image = [...event.clipboardData.items].find((item) =>
-                  item.type.startsWith("image/"),
-                );
-                const blob = image?.getAsFile();
-                if (blob) {
-                  event.preventDefault();
-                  attach(blob);
-                }
-              }}
-            />
-            <div className="ag-fb-tools">
-              <button
-                type="button"
-                className="ag-fb-quiet"
-                disabled={shooting}
-                title={t("feedback.shot_help")}
-                onClick={shoot}
+      {sent
+        ? createPortal(
+            <p className="ag-fb-sent">{t("feedback.sent")}</p>,
+            document.body,
+          )
+        : null}
+      {open
+        ? createPortal(
+            <div className="ag-fb-scrim" role="presentation" onClick={close}>
+              <div
+                className="ag-fb"
+                role="dialog"
+                aria-modal="true"
+                aria-label={t("feedback.button")}
+                onClick={(event) => event.stopPropagation()}
               >
-                {t("feedback.shot_capture")}
-              </button>
-              <button
-                type="button"
-                className="ag-fb-quiet"
-                disabled={shooting}
-                onClick={() => file.current?.click()}
-              >
-                {t("feedback.shot_attach")}
-              </button>
-              <input
-                ref={file}
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={(event) => {
-                  const picked = event.target.files?.[0];
-                  if (picked) attach(picked);
-                  event.target.value = "";
-                }}
-              />
-              {voice ? (
-                <button
-                  type="button"
-                  className={taping ? "ag-fb-quiet ag-fb-on" : "ag-fb-quiet"}
-                  disabled={hearing}
-                  aria-pressed={!!taping}
-                  onClick={() => void dictate()}
+                <h2 className="ag-fb-h">{t("feedback.button")}</h2>
+                <p className="ag-fb-caption">{t("feedback.caption")}</p>
+                <ToggleRow className="ag-fb-kinds" label={t("feedback.kind")}>
+                  {KINDS.map((option) => (
+                    <ToggleChip
+                      key={option}
+                      on={option === kind}
+                      onClick={() => setKind(option)}
+                    >
+                      {t(`feedback.kind_${option}`)}
+                    </ToggleChip>
+                  ))}
+                </ToggleRow>
+                <Box
+                  tools={
+                    voice ? (
+                      <Mic
+                        on={!!taping}
+                        disabled={hearing}
+                        label={t(
+                          hearing
+                            ? "feedback.dictating"
+                            : taping
+                              ? "feedback.dictate_stop"
+                              : "feedback.dictate",
+                        )}
+                        onPress={() => void talk()}
+                      />
+                    ) : null
+                  }
                 >
-                  {t(
-                    hearing
-                      ? "feedback.dictating"
-                      : taping
-                        ? "feedback.dictate_stop"
-                        : "feedback.dictate",
-                  )}
-                </button>
-              ) : null}
-            </div>
-            <p className="ag-fb-hint">{t("feedback.shot_paste")}</p>
-            {shooting ? (
-              <p className="ag-fb-hint">{t("feedback.shot_working")}</p>
-            ) : null}
-            {shotNote ? <p className="ag-fb-bad">{shotNote}</p> : null}
-            {shot ? (
-              <div className="ag-fb-shot">
-                <img src={shot.url} alt="" />
-                <span className="ag-fb-hint">
-                  {t("feedback.shot_ready", { kb: shot.kb })}
-                </span>
-                <button
-                  type="button"
-                  className="ag-fb-quiet"
-                  onClick={() => setShot(null)}
-                >
-                  {t("feedback.shot_remove")}
-                </button>
+                  <textarea
+                    className={live ? "ag-fb-text ag-fb-live" : "ag-fb-text"}
+                    readOnly={live}
+                    rows={6}
+                    maxLength={MAX}
+                    value={text}
+                    placeholder={t("feedback.placeholder")}
+                    aria-label={t("feedback.button")}
+                    onChange={(event) => setText(event.target.value)}
+                    onPaste={(event) => {
+                      // A system screenshot on the clipboard is the fastest way to a
+                      // picture of the screen — take it rather than pasting nothing.
+                      const image = [...event.clipboardData.items].find((item) =>
+                        item.type.startsWith("image/"),
+                      );
+                      const blob = image?.getAsFile();
+                      if (blob) {
+                        event.preventDefault();
+                        attach(blob);
+                      }
+                    }}
+                  />
+                </Box>
+                <div className="ag-fb-tools">
+                  <button
+                    type="button"
+                    className="ag-fb-quiet"
+                    disabled={shooting}
+                    title={t("feedback.shot_help")}
+                    onClick={shoot}
+                  >
+                    {t("feedback.shot_capture")}
+                  </button>
+                  <button
+                    type="button"
+                    className="ag-fb-quiet"
+                    disabled={shooting}
+                    onClick={() => file.current?.click()}
+                  >
+                    {t("feedback.shot_attach")}
+                  </button>
+                  <input
+                    ref={file}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(event) => {
+                      const picked = event.target.files?.[0];
+                      if (picked) attach(picked);
+                      event.target.value = "";
+                    }}
+                  />
+                </div>
+                <p className="ag-fb-hint">{t("feedback.shot_paste")}</p>
+                {shooting ? (
+                  <p className="ag-fb-hint">{t("feedback.shot_working")}</p>
+                ) : null}
+                {shotNote ? <p className="ag-fb-bad">{shotNote}</p> : null}
+                {shot ? (
+                  <div className="ag-fb-shot">
+                    <img src={shot.url} alt="" />
+                    <span className="ag-fb-hint">
+                      {t("feedback.shot_ready", { kb: shot.kb })}
+                    </span>
+                    <button
+                      type="button"
+                      className="ag-fb-quiet"
+                      onClick={() => setShot(null)}
+                    >
+                      {t("feedback.shot_remove")}
+                    </button>
+                  </div>
+                ) : null}
+                {failed ? <p className="ag-fb-bad">{failed}</p> : null}
+                <div className="ag-fb-foot">
+                  <button type="button" className="ag-fb-quiet" onClick={close}>
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    className="ag-fb-send"
+                    disabled={busy || shooting || live || !text.trim()}
+                    title={shooting ? t("feedback.shot_wait") : undefined}
+                    onClick={submit}
+                  >
+                    {t("feedback.button")}
+                  </button>
+                </div>
               </div>
-            ) : null}
-            {failed ? <p className="ag-fb-bad">{failed}</p> : null}
-            <div className="ag-fb-foot">
-              <button type="button" className="ag-fb-quiet" onClick={close}>
-                {t("common.cancel")}
-              </button>
-              <button
-                type="button"
-                className="ag-fb-send"
-                disabled={busy || shooting || !text.trim()}
-                title={shooting ? t("feedback.shot_wait") : undefined}
-                onClick={submit}
-              >
-                {t("feedback.button")}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+            </div>,
+            // Out to the body: on a phone the button lives in the tab bar's "More"
+            // sheet, and a fixed bar is a stacking context — whatever z-index the
+            // dialog asks for, it would stay level with the bar, under the corner
+            // banner and the assistant's button.
+            document.body,
+          )
+        : null}
     </>
   );
 }

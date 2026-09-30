@@ -14,7 +14,14 @@
  * inlines — so these agree with the Streamlit charts and with both themes.
  */
 
-import { Fragment, useEffect, useRef, useState, type PointerEvent } from "react";
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
 import { token } from "../../shell/theme";
 import type { TaxPeriod } from "./api";
 
@@ -110,7 +117,9 @@ export type TipRow = { label: string; value: string; color?: string };
  * A div over the SVG rather than SVG text: it has to stay legible at every
  * rendered width, and inside the viewBox it would scale with the chart. Placed
  * as a percentage of the frame so it tracks the pointer whatever the size, and
- * flipped to the pointer's left past the middle so it never leaves the card.
+ * flipped to the pointer's left past the middle, then nudged back inside the
+ * plot where it would still overhang it: on a phone a box 60% of the plot wide
+ * anchored at its middle ran off the right edge and widened the page.
  * It replaced per-day `<title>` slices, which only answered on every n-th day
  * and — being the browser's tooltip — lagged a second behind the pointer.
  */
@@ -127,8 +136,26 @@ function ChartTip({
   rows: TipRow[];
 }) {
   const left = (x / width) * 100;
+  const box = useRef<HTMLDivElement>(null);
+  // Measured on every render, after the pointer moved it: set on the element
+  // rather than through state, so the measurement is never of its own nudge.
+  // On `left` rather than a transform, which would still leave the untouched
+  // box counted in the page's width.
+  useLayoutEffect(() => {
+    const tip = box.current;
+    const plot = tip?.parentElement;
+    if (!tip || !plot) return;
+    tip.style.left = `${left}%`;
+    const at = tip.getBoundingClientRect();
+    const frame = plot.getBoundingClientRect();
+    const over = at.right - frame.right;
+    const under = frame.left - at.left;
+    const nudge = over > 0 ? -over : under > 0 ? under : 0;
+    if (nudge) tip.style.left = `calc(${left}% + ${nudge}px)`;
+  });
   return (
     <div
+      ref={box}
       className={left > 55 ? "pf-tip pf-tip-flip" : "pf-tip"}
       style={{ left: `${left}%` }}
       role="status"
@@ -1199,6 +1226,78 @@ export type BookRatePoint = {
   invested: number | null;
 };
 
+/** A figure each point has of its own rather than one running since the
+    first — a month's own return — drawn as bars from zero on the rates'
+    floor, under the lines and on their axis. */
+export type RateBars = {
+  label: string;
+  points: (number | null)[];
+  /** Its formatter in the box, e.g. signed; falls back to the rates' own. */
+  format?: (value: number) => string;
+};
+
+/** The box `BookAndRates` shows for one point: the money, then the bars'
+    figure for that point, then each rate. */
+export function bookRatesTip(
+  index: number,
+  point: { value: number; invested: number },
+  {
+    labels,
+    money,
+    format,
+    series,
+    bars,
+  }: {
+    labels: { invested: string; profit: string; loss: string; gain: string };
+    money: (value: number, signed?: boolean) => string;
+    format: (value: number) => string;
+    series: (ReturnSeries & { color: string })[];
+    bars?: RateBars;
+  },
+): TipRow[] {
+  const up = point.value >= point.invested;
+  const bar = bars?.points[index];
+  return [
+    {
+      label: up ? labels.profit : labels.loss,
+      value: money(point.value),
+      color: up ? token("up") : token("down"),
+    },
+    {
+      label: labels.invested,
+      value: money(point.invested),
+      color: token("text-muted"),
+    },
+    { label: labels.gain, value: money(point.value - point.invested, true) },
+    ...(bars
+      ? [
+          {
+            label: bars.label,
+            value:
+              bar === null || bar === undefined ? "—" : (bars.format ?? format)(bar),
+            color:
+              bar === null || bar === undefined
+                ? undefined
+                : bar >= 0
+                  ? token("candle-up")
+                  : token("candle-down"),
+          },
+        ]
+      : []),
+    ...series.map((one) => {
+      const value = one.points[index];
+      return {
+        label: one.label,
+        value:
+          value === null || value === undefined
+            ? "—"
+            : withNote(format(value), one.tipNote?.(index, value)),
+        color: one.color,
+      };
+    }),
+  ];
+}
+
 /**
  * A window's euros and its rates on one date axis, answering to one pointer.
  *
@@ -1212,10 +1311,15 @@ export type BookRatePoint = {
  * run through both floors, so a dip in the rates sits under the deposit and
  * the fall that caused it. The pointer reads the same month off both floors
  * into one box: value, money put in, the gain between them, and each rate.
+ *
+ * `bars`, when given, stand on the rates' floor under the lines, one per
+ * point from zero: a figure that is that point's own (the month's return)
+ * next to rates that run from the first trade, on the same percentage axis.
  */
 export function BookAndRates({
   points,
   series,
+  bars,
   labels,
   money,
   axisMoney,
@@ -1224,6 +1328,7 @@ export function BookAndRates({
 }: {
   points: BookRatePoint[];
   series: ReturnSeries[];
+  bars?: RateBars;
   labels: { invested: string; profit: string; loss: string; gain: string };
   money: (value: number, signed?: boolean) => string;
   /** Compact formatter for the money gutter; falls back to `money`. */
@@ -1261,9 +1366,11 @@ export function BookAndRates({
     moneyTop + (1 - (value - moneyLow) / moneySpan) * FLOORS.money;
 
   const drawn = series.filter((one) => one.points.some((v) => v !== null));
-  const rates = drawn
-    .flatMap((one) => one.points)
-    .filter((v): v is number => v !== null);
+  const barred = bars?.points.some((v) => v !== null) ? bars : undefined;
+  const rates = [
+    ...drawn.flatMap((one) => one.points),
+    ...(barred?.points ?? []),
+  ].filter((v): v is number => v !== null);
   // Zero stays on the rates' axis, as on every return chart here.
   const rateLow = Math.min(0, ...rates);
   const rateSpan = Math.max(0, ...rates) - rateLow || 1;
@@ -1312,30 +1419,19 @@ export function BookAndRates({
     .map(({ index }) => index);
   const hovered = hover === null ? null : book[hover]!;
 
-  const tipRows = (index: number, point: (typeof book)[number]): TipRow[] => {
-    const up = point.value >= point.invested;
-    return [
-      {
-        label: up ? labels.profit : labels.loss,
-        value: money(point.value),
-        color: up ? upColor : downColor,
-      },
-      {
-        label: labels.invested,
-        value: money(point.invested),
-        color: token("text-muted"),
-      },
-      { label: labels.gain, value: money(point.value - point.invested, true) },
-      ...colored.map((one) => {
-        const value = one.points[index];
-        return {
-          label: one.label,
-          value: value === null || value === undefined ? "—" : format(value),
-          color: one.color,
-        };
-      }),
-    ];
-  };
+  const tipRows = (index: number, point: (typeof book)[number]): TipRow[] =>
+    bookRatesTip(index, point, {
+      labels,
+      money,
+      format,
+      series: colored,
+      bars: barred,
+    });
+  // A bar per point, centred on its date, thin enough that the first and the
+  // last stay clear of the gutters' labels.
+  const barUp = token("candle-up");
+  const barDown = token("candle-down");
+  const barW = Math.max(1, Math.min(10, (plotW / (book.length - 1)) * 0.6));
 
   return (
     <div className="pf-chart">
@@ -1357,6 +1453,17 @@ export function BookAndRates({
           <li className="pf-legend-row">
             <span className="pf-swatch" style={{ background: downColor }} />
             <span>{labels.loss}</span>
+          </li>
+        ) : null}
+        {barred ? (
+          <li className="pf-legend-row">
+            <span
+              className="pf-swatch"
+              style={{
+                background: `linear-gradient(90deg, ${barUp} 50%, ${barDown} 50%)`,
+              }}
+            />
+            <span>{barred.label}</span>
           </li>
         ) : null}
         {colored.map((one) => (
@@ -1444,6 +1551,20 @@ export function BookAndRates({
             format={format}
             side="right"
           />
+          {barred?.points.map((value, index) =>
+            value === null ? null : (
+              <rect
+                key={`bar-${index}`}
+                className="pf-rate-bar"
+                x={x(index) - barW / 2}
+                y={Math.min(yRate(0), yRate(value))}
+                width={barW}
+                height={Math.max(1, Math.abs(yRate(value) - yRate(0)))}
+                fill={value >= 0 ? barUp : barDown}
+                fillOpacity={hover === null || hover === index ? 0.7 : 0.4}
+              />
+            ),
+          )}
           <line
             x1={left}
             x2={width - right}

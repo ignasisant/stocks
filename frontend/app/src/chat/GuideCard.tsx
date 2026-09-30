@@ -23,7 +23,7 @@ import { landing } from "../shell/Tour";
 import type { GuideState, GuideStep } from "./guide";
 import { Status } from "../ui/Status";
 
-const phone = () =>
+export const phone = () =>
   typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 640px)").matches;
 
 /**

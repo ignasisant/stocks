@@ -12,6 +12,8 @@
  * euros before percentages: a bridge that adds up to today's value, the two
  * rates beside it with the timing of the trades put back into euros, then the
  * money and the rates on one date axis, each month's figures in its tooltip.
+ * Under the since-inception lines, each month's own return stands as a bar:
+ * there from the first month, when the annual lines wait for a year.
  */
 
 import { useState } from "react";
@@ -150,6 +152,7 @@ function MonthlyCard() {
     year: "numeric",
   });
   const formatDay = (iso: string) => day.format(new Date(`${iso}T00:00:00`));
+  const long = new Intl.DateTimeFormat(lang, { month: "long", year: "numeric" });
 
   return (
     <Card title={t("portfolio.overview_monthly_title")}>
@@ -167,8 +170,38 @@ function MonthlyCard() {
           if (!data.months.length) {
             return <Caption>{t("portfolio.not_enough_history")}</Caption>;
           }
-          const moneyLabel = t("portfolio.overview_monthly_irr");
-          const picksLabel = t("portfolio.overview_monthly_twr");
+          // The lines are annual from the book's first birthday and, before
+          // it, what the book made since its first trade — a few months
+          // stretched to a year would exaggerate them. A window with any of
+          // that first year in it drops "annual" from the legend, says in
+          // each point's box which reading it is, and when they turn annual.
+          const yearly = data.months.findIndex((row) => row.annual);
+          const annual = yearly === 0;
+          const moneyLabel = t(
+            annual
+              ? "portfolio.overview_monthly_irr"
+              : "portfolio.overview_monthly_irr_plain",
+          );
+          const picksLabel = t(
+            annual
+              ? "portfolio.overview_monthly_twr"
+              : "portfolio.overview_monthly_twr_plain",
+          );
+          const reading = (index: number) =>
+            annual
+              ? null
+              : t(
+                  data.months[index]?.annual
+                    ? "portfolio.overview_monthly_tip_annual"
+                    : "portfolio.overview_monthly_tip_run",
+                );
+          const yearOne = annual
+            ? null
+            : yearly > 0
+              ? t("portfolio.overview_monthly_first_year", {
+                  date: long.format(new Date(`${data.months[yearly]!.date}T00:00:00`)),
+                })
+              : t("portfolio.overview_monthly_young");
           // A window that opens on a real close starts from what the book was
           // worth there; the book's whole life starts from nothing, and a
           // "0 €" tile would be a term of the sum that says nothing.
@@ -266,13 +299,21 @@ function MonthlyCard() {
                   {
                     label: moneyLabel,
                     points: data.months.map((row) => row.money_weighted),
+                    tipNote: reading,
                   },
                   {
                     label: picksLabel,
                     points: data.months.map((row) => row.time_weighted),
                     dashed: true,
+                    tipNote: reading,
                   },
                 ]}
+                bars={{
+                  label: t("portfolio.overview_monthly_month"),
+                  points: data.months.map((row) => row.month_return),
+                  format: (value) =>
+                    percent(lang, value, { digits: 1, signed: true }) ?? "",
+                }}
                 labels={{
                   invested: t("portfolio.series_injected"),
                   profit: t("portfolio.series_value_profit"),
@@ -284,6 +325,7 @@ function MonthlyCard() {
                 format={(value) => percent(lang, value, { digits: 1 }) ?? ""}
                 formatDate={formatMonth}
               />
+              {yearOne ? <Caption>{yearOne}</Caption> : null}
               <Caption>
                 {t("portfolio.overview_monthly_note")}
                 {data.missing.length

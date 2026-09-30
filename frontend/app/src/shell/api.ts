@@ -86,9 +86,19 @@ export class ApiError extends Error {
 export function isTransient(error: unknown): boolean {
   return (
     error instanceof ApiError &&
-    ["rate_limited", "offline", "throttled"].includes(error.reason ?? "")
+    ["rate_limited", "offline", "throttled", "timeout"].includes(error.reason ?? "")
   );
 }
+
+/**
+ * How long a GET may take before it is given up on.
+ *
+ * Generous — a cold book priced from scratch or a first SEC insider pull runs
+ * into tens of seconds on a throttled host — but finite: a request the upstream
+ * never answers would otherwise hold its screen's spinner, and the corner
+ * banner, for as long as the tab stays open.
+ */
+export const TIMEOUT_MS = 90_000;
 
 /** `Retry-After` in seconds, when the server sent one as a number. */
 export function retryAfter(response: Response): number | undefined {
@@ -142,14 +152,25 @@ async function fetchJson<T>(url: string): Promise<T> {
 }
 
 async function read<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
-    credentials: "same-origin",
-    headers: { Accept: "application/json" },
-  });
-  if (!response.ok) await fail(response);
-  // What the server had to say about the age of these figures, if anything.
-  noteFreshness(url, response.headers.get("x-data-stale-since"));
-  return (await response.json()) as T;
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+      signal: abort.signal,
+    });
+    if (!response.ok) await fail(response);
+    // What the server had to say about the age of these figures, if anything.
+    noteFreshness(url, response.headers.get("x-data-stale-since"));
+    return (await response.json()) as T;
+  } catch (error) {
+    // Transient, so a page says "retry in a moment" rather than "failed".
+    if (abort.signal.aborted) throw new ApiError(504, "timed out", "timeout");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 type Verb = "POST" | "PATCH" | "PUT" | "DELETE";

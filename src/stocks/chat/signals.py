@@ -120,6 +120,10 @@ TILT_PP = 8.0
 # can be compared to the index at all. Under this, too much of it is crypto, a
 # bond sleeve or a failed metadata lookup for the difference to mean anything.
 TILT_COVERAGE = 0.75
+# Allocation buckets that are not an equity sector: a holding whose sector
+# could not be read, and the crypto and bond sleeves no index sector covers.
+# Left out of any comparison with the index, and of "share of the equity".
+NOT_EQUITY = ("Unknown", "Crypto", "Funds")
 # The book beating or trailing the index by this much over a month is the gap
 # worth explaining.
 VS_BENCH_PP = 3.0
@@ -933,9 +937,7 @@ def _tilt_signal(
     # the denominator would report every index sector as a large underweight
     # purely because a third of the book is unclassified — which is how this
     # first fired on a book holding no technology at all.
-    equity = book_sectors.drop(
-        labels=["Unknown", "Crypto", "Funds"], errors="ignore"
-    ).dropna()
+    equity = book_sectors.drop(labels=list(NOT_EQUITY), errors="ignore").dropna()
     covered = float(equity.sum())
     if equity.empty or covered < TILT_COVERAGE:
         return None

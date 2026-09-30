@@ -4,22 +4,28 @@
  * Everything that answers JSON goes through `shell/api` so the credentials,
  * the CSRF story (a JSON body no cross-site form can send) and the error shape
  * — `NotSignedIn`, `ApiError` — are the shell's, not a second set invented
- * here. Only `ask` is local, because `get`/`send` parse the body as JSON and a
- * turn arrives as `text/event-stream`.
+ * here. Only `run` is local, because `get`/`send` parse the body as JSON and a
+ * turn arrives as `text/event-stream` — an AG-UI event stream.
  */
 
+import type { ResumeEntry, RunAgentInput, Tool } from "@ag-ui/core";
 import { ApiError, NotSignedIn, get, retryAfter, send } from "../shell/api";
+import type { A2uiAction, A2uiMessage } from "./a2ui";
 import { keyHeaders } from "./sessionKey";
 import type {
+  Activity,
+  Arguing,
   ChatState,
   Committed,
   Conversation,
   Done,
   ImportRow,
+  LiveStep,
   Meta,
   Preview,
   SettingsPatch,
   Thread,
+  ToolCall,
 } from "./types";
 
 const id = (cid: string) => encodeURIComponent(cid);
@@ -101,6 +107,8 @@ export const readAttachment = (body: {
   content: string;
   conversation?: string;
   lang?: string;
+  /** A corrected column mapping (the preview surface's): read with no model. */
+  mapping?: Record<string, unknown>;
 }) => keyed<Preview>("POST", "/chat/attachments", body);
 
 /**
@@ -172,38 +180,75 @@ export const revealKey = (provider: string) =>
     {},
   ).then((body) => body.key);
 
+/**
+ * A press on a surface the assistant drew (A2UI's client-to-server action),
+ * answered with the messages that update it — a what-if slider let go comes
+ * back as its new figures. No model is asked, and nothing is stored.
+ */
+export const pressSurface = (action: A2uiAction, lang?: string) =>
+  send<{ messages: A2uiMessage[] }>("POST", "/chat/actions", { action, lang }).then(
+    (body) => body.messages,
+  );
+
 /** Forget the stored key. 404 when there was none, which is not an error here. */
 export const forgetKey = (provider: string) =>
   send<ChatState>("DELETE", `/chat/keys/${id(provider)}`);
 
 // --------------------------------------------------------------- the stream
 
-/** One parsed SSE block: its event name and its decoded `data:` payload. */
-type Frame = { event: string; data: unknown };
+/**
+ * The AG-UI events this drawer reads, as they arrive on the wire.
+ *
+ * Local rather than `@ag-ui/core`'s `AGUIEvent`: that union is keyed on a
+ * TypeScript enum, and narrowing it by `type` needs the enum at runtime —
+ * which is the package's zod schemas in the shell chunk every reader pays for.
+ * The shapes are the protocol's; anything else the server sends is skipped.
+ */
+type Wire =
+  | { type: "STEP_STARTED"; stepName: string }
+  | { type: "CUSTOM"; name: string; value: unknown }
+  | {
+      type: "TEXT_MESSAGE_CONTENT";
+      messageId: string;
+      delta: string;
+      subagentRunId?: string;
+    }
+  | { type: "SUBAGENT_STARTED"; subagentRunId: string; name: string }
+  | { type: "SUBAGENT_FINISHED"; subagentRunId: string }
+  | { type: "SUBAGENT_ERROR"; subagentRunId: string; code?: string }
+  | { type: "TOOL_CALL_START"; toolCallId: string; toolCallName: string }
+  | { type: "TOOL_CALL_ARGS"; toolCallId: string; delta: string }
+  | { type: "TOOL_CALL_END"; toolCallId: string }
+  | { type: "TOOL_CALL_RESULT"; toolCallId: string; content: string }
+  | {
+      type: "ACTIVITY_SNAPSHOT";
+      messageId: string;
+      activityType: string;
+      content: Activity["content"];
+    }
+  | { type: "RUN_FINISHED"; result?: Partial<Done> }
+  | { type: "RUN_ERROR"; message: string; code?: string };
 
 /**
- * One `event:`/`data:` block, or null for anything that is not a frame.
+ * One SSE block's `data:` payload, or null for anything that is not an event.
  *
- * A line opening with `:` is a comment — the server sends one immediately so
- * this reader resolves before the model has said anything — and a block of
- * nothing but comments is not an event. `data:` may legally repeat, so the
- * lines are joined before they are parsed, even though this server never
- * splits one (JSON never contains a raw newline).
+ * AG-UI frames carry their type inside the JSON, so there is no `event:` line
+ * to read. A line opening with `:` is a comment — the server sends one
+ * immediately so this reader resolves before the model has said anything.
+ * `data:` may legally repeat, so the lines are joined before they are parsed,
+ * even though this server never splits one (JSON never contains a raw newline).
  */
-function parse(block: string): Frame | null {
-  let event = "message";
+function parse(block: string): Wire | null {
   const data: string[] = [];
   for (const line of block.split("\n")) {
-    if (!line || line.startsWith(":")) continue;
-    const cut = line.indexOf(":");
-    const field = cut < 0 ? line : line.slice(0, cut);
-    const value = cut < 0 ? "" : line.slice(cut + 1).replace(/^ /, "");
-    if (field === "event") event = value;
-    else if (field === "data") data.push(value);
+    if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
   }
   if (!data.length) return null;
   try {
-    return { event, data: JSON.parse(data.join("\n")) as unknown };
+    const event = JSON.parse(data.join("\n")) as unknown;
+    return event && typeof event === "object" && "type" in event
+      ? (event as Wire)
+      : null;
   } catch {
     // A truncated frame is the connection dying mid-write, which the caller
     // already handles as a turn that produced no answer. Dropping it here
@@ -212,38 +257,131 @@ function parse(block: string): Frame | null {
   }
 }
 
+/** The frontend tools this drawer runs, declared on every run. */
+const TOOLS: Tool[] = [
+  {
+    name: "navigate",
+    description: "Offer the reader a button that opens one of the app's pages.",
+    parameters: {
+      type: "object",
+      properties: {
+        page: { type: "string" },
+        tab: { type: "string" },
+        ticker: { type: "string" },
+        step: { type: "string" },
+      },
+    },
+  },
+];
+
 /**
- * Ask, and hand the answer over as it is written.
- *
- * Resolves with the `done` frame, which is authoritative: `done.text` is the
- * finished answer and the chunks are only what made the wait bearable. A
- * stream that ends without one is a dropped connection, and it resolves as the
- * same refusal the server would have sent rather than as a thrown error the
- * composer would have to translate a second way.
- *
- * `signal` is the exception to that: an abort *throws*, because a stopped turn
- * is not a failed one and the caller keeps the words that had already arrived.
+ * The calls this drawer runs or answers itself. Every other tool call on the
+ * stream is research the server ran — told as it happens, and filed on the
+ * answer as its `steps`.
  */
-export async function ask(
-  body: {
-    message?: string;
-    /** Answer the question already on the thread again. Sent without a message. */
-    regenerate?: boolean;
-    /** The statement a preview card is waiting on, when there is one. */
-    staged_import?: string;
+const FRONTEND = new Set(["navigate", "confirm_action"]);
+
+const ARG_KEYS = ["query", "url", "tickers", "ticker", "symbol"];
+
+/**
+ * The argument that identifies a call — the query, the URL, the tickers — as
+ * the server's `_step_arg` picks it, so a live line reads exactly like the
+ * trace line that replaces it when the answer lands.
+ */
+function stepArg(raw: string): string {
+  let args: Record<string, unknown> = {};
+  try {
+    args = JSON.parse(raw || "{}") as Record<string, unknown>;
+  } catch {
+    return "";
+  }
+  const key = ARG_KEYS.find((name) => args[name]);
+  const value = key
+    ? args[key]
+    : Object.keys(args)
+        .sort()
+        .map((name) => args[name])
+        .find(Boolean);
+  const text = Array.isArray(value) ? value.join(", ") : String(value ?? "");
+  return text.split(/\s+/).filter(Boolean).join(" ").slice(0, 56);
+}
+
+/** What one run asks: a question, a regenerate, or an answer to a proposal. */
+export type Ask =
+  | { message: string; regenerate?: never; resume?: never }
+  | { regenerate: true; message?: never; resume?: never }
+  | { resume: ResumeEntry; message?: never; regenerate?: never };
+
+const fresh = () =>
+  globalThis.crypto?.randomUUID?.() ??
+  `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+/**
+ * The run as AG-UI's `RunAgentInput`.
+ *
+ * Only the new message travels: the thread on disk is the history, and the
+ * server reads nothing else of `messages`. Where the reader is rides in
+ * `state`; what AG-UI has no field for (the language, regenerate, the staged
+ * statement) in `forwardedProps`.
+ */
+export function runInput(
+  ask: Ask,
+  where: {
     conversation?: string;
     lang?: string;
     /** The page slug the reader is on, for the prompt's "Current view". */
     view?: string;
     /** The ticker on screen, so "is it cheap?" has an "it". */
     focus?: string;
+    /** The statement a preview card is waiting on, when there is one. */
+    staged_import?: string;
   },
+): RunAgentInput {
+  const props: Record<string, unknown> = {};
+  if (where.lang) props.lang = where.lang;
+  if (ask.regenerate) props.regenerate = true;
+  if (where.staged_import && ask.message !== undefined)
+    props.staged_import = where.staged_import;
+  return {
+    threadId: where.conversation ?? "",
+    runId: fresh(),
+    messages:
+      ask.message !== undefined
+        ? [{ id: fresh(), role: "user", content: ask.message }]
+        : [],
+    state: { view: where.view ?? "", ...(where.focus ? { focus: where.focus } : {}) },
+    tools: TOOLS,
+    context: [],
+    forwardedProps: props,
+    ...(ask.resume ? { resume: [ask.resume] } : {}),
+  };
+}
+
+/**
+ * Run the assistant, and hand the answer over as it is written.
+ *
+ * Resolves with how the run ended, which is authoritative: `RUN_FINISHED`'s
+ * `result.text` is the finished answer and the deltas are only what made the
+ * wait bearable. A stream that ends without an ending is a dropped
+ * connection, and it resolves as the same refusal the server would have sent
+ * rather than as a thrown error the composer would have to translate a second
+ * way.
+ *
+ * `signal` is the exception to that: an abort *throws*, because a stopped turn
+ * is not a failed one and the caller keeps the words that had already arrived.
+ */
+export async function run(
+  input: RunAgentInput,
   onMeta: (meta: Meta) => void,
   onText: (chunk: string) => void,
   onPhase: (phase: string) => void,
   signal?: AbortSignal,
+  /** A piece of research starting, and again once it has come back. */
+  onTool?: (line: LiveStep) => void,
+  /** A side of the bull/bear debate starting, speaking, ending or failing. */
+  onSide?: (side: Arguing) => void,
 ): Promise<Done> {
-  const response = await fetch("/api/v1/chat/messages", {
+  const response = await fetch("/api/v1/chat/runs", {
     method: "POST",
     credentials: "same-origin",
     headers: {
@@ -252,7 +390,7 @@ export async function ask(
       // A key held for this tab only, when there is one (`sessionKey.ts`).
       ...keyHeaders(),
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(input),
     // Aborting rejects both the fetch and the reader below, so a stop takes
     // effect between two chunks rather than at the end of the answer.
     signal,
@@ -265,6 +403,19 @@ export async function ask(
   const decoder = new TextDecoder();
   let buffer = "";
   let done: Done | null = null;
+  // Tool calls as they are assembled: named on START, argued in pieces.
+  const calls = new Map<string, { name: string; args: string }>();
+  // Surfaces by activity id: a later snapshot of the same one replaces it.
+  const activities = new Map<string, Activity>();
+  // The debate's sides by subagent run id, as they are argued.
+  const sides = new Map<string, Arguing>();
+  const side = (id: string, change: Partial<Arguing>) => {
+    const was = sides.get(id);
+    if (!was) return;
+    const now = { ...was, ...change };
+    sides.set(id, now);
+    onSide?.(now);
+  };
   for (;;) {
     const step = await reader.read();
     if (step.done) break;
@@ -272,22 +423,132 @@ export async function ask(
     // separator to look for rather than three.
     buffer += decoder.decode(step.value, { stream: true }).replace(/\r\n/g, "\n");
     for (let cut = buffer.indexOf("\n\n"); cut >= 0; cut = buffer.indexOf("\n\n")) {
-      const frame = parse(buffer.slice(0, cut));
+      const event = parse(buffer.slice(0, cut));
       buffer = buffer.slice(cut + 2);
-      if (!frame) continue;
-      if (frame.event === "phase") onPhase((frame.data as { phase: string }).phase);
-      else if (frame.event === "meta") onMeta(frame.data as Meta);
-      else if (frame.event === "text") onText((frame.data as { chunk: string }).chunk);
-      else if (frame.event === "done") done = frame.data as Done;
+      if (!event) continue;
+      switch (event.type) {
+        case "STEP_STARTED":
+          onPhase(event.stepName);
+          break;
+        case "CUSTOM":
+          if (event.name === "chat.meta") onMeta(event.value as Meta);
+          break;
+        case "TEXT_MESSAGE_CONTENT":
+          // A subagent's words are its own: they never join the answer's.
+          if (event.subagentRunId) {
+            side(event.subagentRunId, {
+              text: (sides.get(event.subagentRunId)?.text ?? "") + event.delta,
+            });
+          } else onText(event.delta);
+          break;
+        case "SUBAGENT_STARTED": {
+          const fresh: Arguing = {
+            id: event.subagentRunId,
+            side: event.name,
+            text: "",
+            state: "arguing",
+          };
+          sides.set(fresh.id, fresh);
+          onSide?.(fresh);
+          break;
+        }
+        case "SUBAGENT_FINISHED":
+          side(event.subagentRunId, { state: "done" });
+          break;
+        case "SUBAGENT_ERROR":
+          side(event.subagentRunId, { state: "failed" });
+          break;
+        case "TOOL_CALL_START":
+          calls.set(event.toolCallId, { name: event.toolCallName, args: "" });
+          break;
+        case "TOOL_CALL_ARGS": {
+          const call = calls.get(event.toolCallId);
+          if (call) call.args += event.delta;
+          break;
+        }
+        case "TOOL_CALL_END": {
+          const call = calls.get(event.toolCallId);
+          if (call && !FRONTEND.has(call.name)) {
+            onTool?.({
+              id: event.toolCallId,
+              tool: call.name,
+              arg: stepArg(call.args),
+            });
+          }
+          break;
+        }
+        case "TOOL_CALL_RESULT": {
+          const call = calls.get(event.toolCallId);
+          if (call && !FRONTEND.has(call.name)) {
+            onTool?.({
+              id: event.toolCallId,
+              tool: call.name,
+              arg: stepArg(call.args),
+              out: String(event.content),
+            });
+          }
+          break;
+        }
+        case "ACTIVITY_SNAPSHOT":
+          activities.set(event.messageId, {
+            id: event.messageId,
+            type: event.activityType,
+            content: event.content,
+          });
+          break;
+        case "RUN_FINISHED":
+          done = {
+            text: "",
+            skills: [],
+            sources: [],
+            provider: null,
+            ...event.result,
+            error: null,
+            calls: assemble(calls, event.result?.proposal?.id),
+            activities: [...activities.values()],
+          };
+          break;
+        case "RUN_ERROR":
+          done = { ...FAILED, error: event.code ?? "chat.api_error" };
+          break;
+      }
     }
   }
-  return (
-    done ?? {
-      text: "",
-      skills: [],
-      sources: [],
-      provider: null,
-      error: "chat.api_error",
+  return done ?? FAILED;
+}
+
+const FAILED: Done = {
+  text: "",
+  skills: [],
+  sources: [],
+  provider: null,
+  error: "chat.api_error",
+  calls: [],
+};
+
+/**
+ * The finished calls. Arguments are only acted on once whole (AG-UI's rule),
+ * and one whose arguments do not parse is dropped rather than half-drawn. The
+ * proposal's call starts out pending: that is what the run stopped on.
+ */
+function assemble(
+  calls: Map<string, { name: string; args: string }>,
+  asking?: string,
+): ToolCall[] {
+  const out: ToolCall[] = [];
+  for (const [id, call] of calls) {
+    if (!FRONTEND.has(call.name)) continue;
+    try {
+      const args = JSON.parse(call.args || "{}") as Record<string, unknown>;
+      out.push({
+        id,
+        name: call.name,
+        args,
+        ...(id === asking ? { state: "pending" } : {}),
+      });
+    } catch {
+      continue;
     }
-  );
+  }
+  return out;
 }

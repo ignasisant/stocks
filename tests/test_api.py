@@ -603,7 +603,8 @@ WRITES = {
     # pair to chat.json, and it spends the account's free allowance on the
     # operator's shared keys — which is the one a leaked token would be worth
     # stealing for.
-    ("/v1/chat/messages", "post"),
+    ("/v1/chat/runs", "post"),
+    ("/v1/chat/actions", "post"),
     ("/v1/chat/conversations", "post"),
     ("/v1/chat/conversations/{cid}", "patch"),
     ("/v1/chat/conversations/{cid}", "delete"),

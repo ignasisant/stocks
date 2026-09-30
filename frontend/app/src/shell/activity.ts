@@ -9,7 +9,10 @@
  *
  * Progress is per burst: a page opening fires a dozen requests, the bar
  * counts how many of *those* have landed, and the count resets once nothing
- * is out.
+ * is out — or once the reader moves to another screen (`forget`), since what
+ * the last one was still fetching is no longer what they are waiting for.
+ * Without that, one request the upstream never answered kept the banner up,
+ * its count climbing across every page visited after it.
  */
 
 import { useSyncExternalStore } from "react";
@@ -90,6 +93,36 @@ export function begin(url: string, now = Date.now()): () => void {
     done += 1;
     publish();
   };
+}
+
+/**
+ * Stop counting what is out: the reader left the screen that asked for it.
+ * A request forgotten here still lands, and landing is then a no-op.
+ */
+export function forget(): void {
+  out.clear();
+  total = 0;
+  done = 0;
+  publish();
+}
+
+/** Which screen the reader is on: the page, and the instrument it shows. */
+function screen(): string {
+  const { pathname, search } = window.location;
+  const params = new URLSearchParams(search);
+  return `${pathname}?${params.get("symbol") ?? params.get("ticker") ?? ""}`;
+}
+
+// Every navigation announces itself as `popstate` (`router.announce`), and
+// synchronously — so this runs before the new screen's first request goes
+// out. A tab or a range switched in place keeps the screen, and its count.
+if (typeof window !== "undefined") {
+  let at = screen();
+  window.addEventListener("popstate", () => {
+    const now = screen();
+    if (now !== at) forget();
+    at = now;
+  });
 }
 
 export function current(): Activity {

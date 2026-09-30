@@ -13,6 +13,10 @@ superficial loss — silently stops firing for such a security: the buy-back is
 filed under a key nobody asks for, the loss is reported as deductible, and
 nothing in the output says it happened. That is an under-declaration, which is
 why these tests exist rather than a comment.
+
+The same goes for which rows are acquisitions. The replay opens a lot for a
+`transfer_in` no departure accounts for — an IBKR snapshot of shares the book
+never held — so that arrival is a buy-back the rules have to see.
 """
 
 from __future__ import annotations
@@ -80,7 +84,40 @@ def test_only_purchases_count_as_acquisitions():
     """A transfer leg is not a buy: treating it as one would block a loss on a
     reacquisition that never happened."""
     dates = tax.buy_dates(_two_broker_book())
-    assert dates["AAPL"] == ["2024-01-02", "2024-06-24"]
+    assert dates["AAPL"] == [
+        tax.Acquisition("2024-01-02", 10),
+        tax.Acquisition("2024-06-24", 10),
+    ]
+
+
+def _sold_and_rebought_elsewhere() -> list[Transaction]:
+    """Sold at a loss at DEGIRO, bought straight back at IBKR — and IBKR's side
+    reaches the book only as a snapshot of the holding, a `transfer_in` no
+    departure accounts for."""
+    isin, note = "US0378331005", "ISIN US0378331005"
+    return [
+        Transaction("2024-01-02", isin, "buy", 10, 100.0, "EUR", 1.0, note=note),
+        Transaction("2024-06-03", isin, "sell", 10, 60.0, "EUR", 1.0, note=note),
+        Transaction("2024-07-10", "AAPL", "transfer_in", 10, 62.0, "EUR", 0.0, note=note),
+    ]
+
+
+def test_an_opening_balance_is_an_acquisition_on_the_day_it_arrived():
+    """The replay opens that lot on the snapshot's date, so the repurchase
+    rules have to see it there too."""
+    assert tax.buy_dates(_sold_and_rebought_elsewhere()) == {
+        "AAPL": [tax.Acquisition("2024-01-02", 10), tax.Acquisition("2024-07-10", 10)]
+    }
+
+
+def test_a_buy_back_seen_only_as_a_snapshot_still_blocks_the_loss():
+    txs = _sold_and_rebought_elsewhere()
+    _, realized = build(txs, base="EUR", matching="fifo")
+    period = tax.get("es").fiscal_year(
+        realized, 2024, tax.buy_dates(txs), tax.TaxSettings()
+    )
+    assert period.realized_loss > 0
+    assert period.disallowed_loss == pytest.approx(period.realized_loss)
 
 
 def test_the_fund_set_is_keyed_the_same_way():

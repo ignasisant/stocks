@@ -35,6 +35,8 @@ export type Profile = {
   name: string;
   /** null when nobody has a mark for it — a real answer, not a missing one. */
   logo: string | null;
+  /** The asset kind, when the server has one on file without asking Yahoo. */
+  asset?: string | null;
 };
 
 /** The route's own cap. Asking for more is a 422, not a truncated answer. */

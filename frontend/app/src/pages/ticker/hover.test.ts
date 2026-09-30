@@ -225,6 +225,11 @@ describe("the day change without a quote", () => {
     expect(barsDayPct(bars(stamps, [100, 104, 105], "5m"))).toBeCloseTo(0.05, 9);
   });
 
+  it("is null on weekly or monthly bars, which hold no yesterday", () => {
+    expect(barsDayPct(bars(DAYS, [100, 100, 100, 110], "1wk"))).toBeNull();
+    expect(barsDayPct(bars(DAYS, [100, 100, 100, 110], "1mo"))).toBeNull();
+  });
+
   it("is null with fewer than two closes", () => {
     expect(barsDayPct(bars(["2025-01-06"], [100]))).toBeNull();
     expect(barsDayPct(null)).toBeNull();

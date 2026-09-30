@@ -15,6 +15,20 @@
   box-sizing: border-box;
 }
 
+/* A field under 16px makes iOS Safari zoom the page in on focus, and it stays
+   zoomed after the send — the reader has to pinch back out to read the reply.
+   On a touch screen every field is 16px, whatever the component asked for:
+   `!important` because this is the platform's floor, not a style, and it has
+   to beat a component's own rule wherever it sits. The viewport keeps pinch
+   zoom (no `maximum-scale`), which Android would otherwise take away. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 body {
   margin: 0;
   background: var(--ag-surface-page);
@@ -184,12 +198,15 @@ body {
 }
 
 /* The corner banner (shell/Layout.tsx ActivityBanner). Above the assistant's
-   round button, which owns the very corner. */
+   round button, which owns the very corner. Above the page and the phone's
+   tab bar (20), under everything the reader opens on top of it (40 and up:
+   search, modals, the tour, feedback): a dialog they are typing into is not
+   something a progress note may sit on. */
 .ag-activity {
   position: fixed;
   right: 16px;
   bottom: 88px;
-  z-index: 40;
+  z-index: 30;
   width: min(280px, calc(100vw - 32px));
   box-sizing: border-box;
   padding: 10px 12px;
@@ -507,8 +524,20 @@ img.ag-search-logo {
   font-variant-numeric: tabular-nums;
 }
 
-/* The venue already took the push to the right edge; the quote follows it. */
-.ag-search-venue + .ag-search-quote {
+/* The kind's pill: pushed to the right edge ahead of the venue and quote,
+   and never squeezed — the name is what truncates. */
+.ag-search-kind {
+  flex: none;
+  align-self: center;
+  margin-left: auto;
+  font-size: var(--ag-fs-xs);
+}
+
+/* The venue already took the push to the right edge; the quote follows it.
+   Behind a kind pill, neither pushes again. */
+.ag-search-venue + .ag-search-quote,
+.ag-search-kind + .ag-search-venue,
+.ag-search-kind + .ag-search-quote {
   margin-left: 0;
 }
 
@@ -750,6 +779,11 @@ img.ag-search-logo {
   resize: vertical;
 }
 
+/* Dictation in progress: the words are a preview until the transcript lands. */
+.ag-fb-live {
+  color: var(--ag-text-secondary);
+}
+
 .ag-fb-bad {
   margin: 8px 0 0;
   color: var(--ag-critical-fill);
@@ -787,11 +821,4 @@ img.ag-search-logo {
 .ag-fb-quiet {
   background: none;
   color: var(--ag-text-muted);
-}
-
-/* The screenshot toggle, while armed. */
-.ag-fb-quiet.ag-fb-on {
-  border-color: var(--ag-brand-accent);
-  background: var(--ag-cta-tint);
-  color: var(--ag-text-primary);
 }

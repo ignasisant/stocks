@@ -7,7 +7,7 @@
  * thing a single-page app has is `sessionStorage` — one tab, survives a
  * reload, never shared with another tab, cleared when the tab closes — so the
  * key lives there and nowhere else. The server never stores it: each request
- * that needs it (`/chat/state`, `/chat/messages`, the attachment mapper, the
+ * that needs it (`/chat/state`, `/chat/runs`, the attachment mapper, the
  * walkthrough's narration) carries it in `X-Chat-Provider` + `X-Chat-Key`, and
  * `api/routes/chat.py` uses it for that request alone.
  *

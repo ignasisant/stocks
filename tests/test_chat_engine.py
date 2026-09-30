@@ -94,6 +94,14 @@ def test_persona_from_profile():
     assert "prefers ETFs" in out
 
 
+def test_spanish_residency_does_not_deny_a_repurchase_rule():
+    # "no US wash-sale rule" came back as "Spain has no wash-sale rule", when
+    # the two-month rule is one. What the rules are is tax_rules' block.
+    out = engine.persona({"set": True, "constraints": ["spain_tax"]})
+    assert "Spanish tax residency" in out
+    assert "wash-sale" not in out
+
+
 # ----------------------------------------------------------------- recent
 
 
@@ -428,7 +436,7 @@ def paths(tmp_path):
     }
 
 
-BASE_PREFS = {"chat_skills_mode": "off", "chat_web": False}
+BASE_PREFS = {"chat_skills_mode": "off"}
 
 
 @pytest.fixture(autouse=True)
@@ -457,6 +465,7 @@ def test_answer_free_happy_path(providers, paths):
     assert model == "default-model"
     assert "no open positions" in system
     assert "Telegram" in system  # TELEGRAM_CONTEXT rides along
+    assert "Tax rules the app applies to this account" in system
     # the brand-new thread was named from the opening question
     assert auth.active_conversation(paths["chat_path"])["title"] == "Free answer"
 
@@ -548,12 +557,22 @@ def test_answer_appends_to_existing_thread(providers, paths):
 # --------------------------------------------------------- grounding
 
 
-def test_web_enabled_follows_the_pref(monkeypatch):
+def test_web_enabled_follows_the_install_alone(monkeypatch):
+    # No per-account toggle: the drawer's "Internet" chip is gone, and a
+    # stored "chat_web" left over from it no longer switches anything off.
     monkeypatch.setattr(engine.chat_web, "available", lambda: True)
-    assert engine.web_enabled({}) is True  # default on
-    assert engine.web_enabled({"chat_web": False}) is False
+    assert engine.web_enabled() is True
     monkeypatch.setattr(engine.chat_web, "available", lambda: False)
-    assert engine.web_enabled({"chat_web": True}) is False
+    assert engine.web_enabled() is False
+
+
+def test_a_stored_web_toggle_is_ignored(providers, monkeypatch):
+    monkeypatch.setattr(engine.chat_web, "available", lambda: True)
+    monkeypatch.setattr(engine.chat_web, "plan", lambda *a: ["nvda news"])
+    monkeypatch.setattr(engine.chat_web, "collect", lambda *a: ["read"])
+    history = [{"role": "user", "content": "news?"}]
+    assert engine.ground_web({"chat_web": False}, providers["free"], "",
+                             history) == ["read"]
 
 
 def test_plan_web_carries_the_view_context_and_prior_turns(providers, monkeypatch):
@@ -573,12 +592,12 @@ def test_plan_web_carries_the_view_context_and_prior_turns(providers, monkeypatc
     assert "how is NVDA?" in seen["ctx"]  # topic continuity
 
 
-def test_ground_web_is_off_when_the_pref_is_off(providers, monkeypatch):
+def test_ground_web_is_off_without_a_search_install(providers, monkeypatch):
+    monkeypatch.setattr(engine.chat_web, "available", lambda: False)
     monkeypatch.setattr(engine.chat_web, "collect",
                         lambda *a: pytest.fail("must not search"))
-    history = [{"role": "user", "content": "news?"}]
-    assert engine.ground_web({"chat_web": False}, providers["free"], "",
-                             history) == []
+    history = [{"role": "user", "content": "read https://x.example/a"}]
+    assert engine.ground_web({}, providers["free"], "", history) == []
 
 
 def test_ground_web_reads_planned_and_pasted_pages(providers, monkeypatch):
@@ -777,3 +796,86 @@ def test_answerable_leaves_a_chain_without_free_alone(providers):
     assert engine.answerable(_capped(BASE_PREFS), atts) == atts
     full = engine.chain(dict(BASE_PREFS))
     assert engine.answerable(dict(BASE_PREFS), full) == full  # allowance left
+
+
+# ------------------------------------------------------- sectors and tax
+
+
+def test_the_sector_line_gives_both_the_book_and_its_equity_share(monkeypatch):
+    import pandas as pd
+
+    from stocks.api import briefing
+
+    monkeypatch.setattr(briefing, "book_sectors", lambda tbl: pd.Series(
+        {"Technology": 0.4, "Healthcare": 0.2, "Crypto": 0.3, "Unknown": 0.1}))
+    line = engine.sector_exposure(None)
+    # 40% of the book, and two thirds of the 60% that is an equity sector —
+    # the second is the figure the Home card compares with the index.
+    assert "Technology 40.0% / 66.7%" in line
+    assert "Healthcare 20.0% / 33.3%" in line
+    assert "outside any equity sector: Crypto 30.0%, Unknown 10.0%" in line
+    assert line.index("Technology") < line.index("Healthcare")
+
+
+def test_a_sector_lookup_that_fails_leaves_the_snapshot_without_it(monkeypatch):
+    from stocks.api import briefing
+
+    def boom(tbl):
+        raise RuntimeError("yahoo")
+
+    monkeypatch.setattr(briefing, "book_sectors", boom)
+    assert engine.sector_exposure(None) == ""
+
+
+def test_the_snapshot_carries_the_sector_line(monkeypatch, tmp_path):
+    import pandas as pd
+
+    from stocks.api import briefing
+
+    monkeypatch.setattr(briefing, "book_sectors",
+                        lambda tbl: pd.Series({"Technology": 1.0}))
+    tbl = pd.DataFrame(
+        {"shares": [2.0], "value": [100.0], "cost": [80.0], "pnl": [20.0],
+         "pnl_pct": [0.25], "weight": [1.0], "day_pct": [0.01]},
+        index=["AAPL"],
+    )
+    watchlist = tmp_path / "watchlist.yaml"
+    watchlist.write_text("tickers: []\n")
+    out = engine.book_snapshot(tbl, watchlist)
+    assert "- AAPL: 2 sh" in out
+    assert "Sector exposure" in out and "Technology 100.0% / 100.0%" in out
+
+
+def test_spains_rules_are_the_engines_not_the_models():
+    from datetime import date
+
+    out = engine.tax_rules({"tax_residence": "ES"}, today=date(2026, 9, 29))
+    assert "Spain — IRPF savings base" in out
+    # The three things the model got wrong from memory.
+    assert "taxed the same whatever the holding period" in out
+    assert "within 2 months of the sale" in out
+    assert "19% up to 6,000" in out
+    assert "carry forward 4 years" in out
+    assert "the current one is 2026" in out
+
+
+def test_other_jurisdictions_say_what_their_own_engine_applies():
+    from datetime import date
+
+    today = date(2026, 9, 29)
+    us = engine.tax_rules({"tax_residence": "US"}, today=today)
+    assert "the holding period matters" in us and "within 30 days" in us
+    assert "carry forward indefinitely" in us and "savings-base" not in us.lower()
+    uk = engine.tax_rules({"tax_residence": "UK"}, today=today)
+    assert "opening on 6 April" in uk and "2026/27" in uk
+    assert "section 104 pool" in uk and "bought within" not in uk
+    ch = engine.tax_rules({"tax_residence": "CH"}, today=today)
+    assert "not taxed" in ch and "Losses do not carry forward" in ch
+
+
+def test_every_jurisdiction_has_a_headline():
+    from stocks.portfolio import tax
+
+    for code in tax.codes():
+        summary = tax.get(code).summary
+        assert summary != code and " — " in summary

@@ -54,8 +54,6 @@ const state = (over: Partial<ChatState>): ChatState => ({
   skills_mode: "auto",
   skills_selected: [],
   max_manual: 3,
-  web: false,
-  web_available: false,
   upload_types: ["csv"],
   upload_max_mb: 10,
   voice: false,

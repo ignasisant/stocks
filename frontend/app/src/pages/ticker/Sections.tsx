@@ -15,16 +15,29 @@ import { InsiderFlow, FundExposure } from "./Charts";
 import {
   DASH,
   compactMoney,
+  currencySymbol,
   insiderPrice,
   insiderValue,
+  money,
   orElse,
   percent,
   signed,
+  signedPercent,
   type Translate,
 } from "./format";
-import { Banner, Card, Note, Scroll, Tag, TickerLink, useMobile } from "./ui";
+import { Banner, Bold, Card, Note, Scroll, Tag, TickerLink, useMobile } from "./ui";
 import { Kpi, KpiGrid, bandTone } from "../../ui/Kpi";
-import type { Comparables, Fund, Insiders, Metrics, Moat } from "./types";
+import type {
+  ClosedEnd,
+  Comparables,
+  FigureSource,
+  Fund,
+  Insiders,
+  Metrics,
+  Moat,
+  SourceCheck,
+  SourcedFigure,
+} from "./types";
 
 // ------------------------------------------------------------------ KPI grid
 
@@ -359,29 +372,63 @@ function Line({
 
 // ---------------------------------------------------------------------- fund
 
-export function FundSection({ fund }: { fund: Fund }) {
+export function FundSection({
+  fund,
+  holdings = true,
+}: {
+  fund: Fund;
+  /**
+   * The asset mix, sector chart and top holdings. Off for a money-market fund:
+   * its basket is deposits, bills and repos rolled weekly — a pie of "Other
+   * 100%" and a list of repo lines tell the reader nothing the yield does not,
+   * so the card closes on what that kind of fund is instead.
+   */
+  holdings?: boolean;
+}) {
   const t = useT();
   if (!fund.is_fund) return null;
+  const cef = fund.closed_end ?? null;
   // What kind of wrapper it is, who runs it, what it is classified as — the
   // three facts that decide whether the rest of the card is worth reading.
-  const meta = [fund.legal_type, fund.category, fund.family]
+  const meta = [
+    cef ? t("ticker.cef_kind") : fund.legal_type,
+    fund.category,
+    fund.family,
+  ]
     .filter(Boolean)
     .join(" · ");
   return (
     <Card title={t("ticker.fund_profile")} note={meta || fund.name}>
-      <FundTiles fund={fund} />
+      {cef ? (
+        <>
+          <CefTiles fund={fund} cef={cef} />
+          <CefChecks fund={fund} cef={cef} />
+        </>
+      ) : (
+        <FundTiles fund={fund} />
+      )}
       {/* Stocks / bonds / cash, which is what says whether the sector chart
           below is the whole story or a third of it. */}
-      {fund.asset_classes.length > 0 ? (
+      {holdings && fund.asset_classes.length > 0 ? (
         <Note>
           {`${t("ticker.fund_assets")} ${fund.asset_classes
             .map(([label, weight]) => `${label} ${percent(weight, 1)}`)
             .join(" · ")}`}
         </Note>
       ) : null}
-      <FundExposure fund={fund} />
-      <FundHoldings fund={fund} />
-      <Note>{t("ticker.fund_caption")}</Note>
+      {holdings ? (
+        <>
+          <FundExposure fund={fund} />
+          <FundHoldings fund={fund} />
+        </>
+      ) : null}
+      <Note>
+        {cef
+          ? t("ticker.cef_caption")
+          : holdings
+            ? t("ticker.fund_caption")
+            : t("ticker.cash_caption")}
+      </Note>
     </Card>
   );
 }
@@ -440,6 +487,176 @@ function FundTiles({ fund }: { fund: Fund }) {
 }
 
 /**
+ * Where a closed-end fund figure came from, in words. A switch of literal
+ * keys, so the parity scan sees every one.
+ */
+function sourceLabel(t: Translate, source: FigureSource, navSymbol: string): string {
+  switch (source) {
+    case "yahoo":
+      return t("ticker.cef_src_yahoo");
+    case "yahoo_nav":
+      return t("ticker.cef_src_yahoo_nav", { symbol: navSymbol });
+    case "edgar_xbrl":
+      return t("ticker.cef_src_edgar_xbrl");
+    case "edgar_nport":
+      return t("ticker.cef_src_edgar_nport");
+    default:
+      return source;
+  }
+}
+
+function metricLabel(t: Translate, metric: string): string {
+  return metric === "premium"
+    ? t("ticker.cef_metric_premium")
+    : t("ticker.cef_metric_nav");
+}
+
+/**
+ * The line under a tile: which source, as of when — or, with no figure, which
+ * sources were asked. Never blank: an empty tile that does not say who was
+ * asked reads as "nobody looked".
+ */
+function provenance(
+  t: Translate,
+  figure: SourcedFigure,
+  navSymbol: string,
+  lead?: string,
+): string {
+  const named = (list: FigureSource[]) =>
+    list.map((source) => sourceLabel(t, source, navSymbol)).join(", ");
+  if (figure.value === null || figure.source === null) {
+    return figure.tried.length
+      ? t("ticker.cef_tried", { sources: named(figure.tried) })
+      : t("ticker.na");
+  }
+  return [lead, sourceLabel(t, figure.source, navSymbol), figure.as_of]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
+ * A closed-end fund's own tiles. It trades at a price of its own against the
+ * value of its holdings, so NAV and the premium lead; cost, income, size and
+ * leverage follow, each from the filing or feed that publishes it.
+ */
+function CefTiles({ fund, cef }: { fund: Fund; cef: ClosedEnd }) {
+  const t = useT();
+  const na = t("ticker.na");
+  const sym = currencySymbol(fund.currency);
+  const cell = (value: string) => (value === DASH ? na : value);
+  const priced = (value: number | null) =>
+    value === null ? na : `${sym}${money(value, 2)}`;
+  const premiumLead =
+    cef.premium.source === "yahoo_nav" && cef.price.value !== null
+      ? t("ticker.cef_premium_lead", {
+          price: priced(cef.price.value),
+          nav: cef.price.as_of === cef.premium.as_of ? priced(navOn(cef)) : na,
+        })
+      : undefined;
+  const tiles: [string, string, string, string][] = [
+    [
+      t("ticker.cef_nav"),
+      priced(cef.nav.value),
+      t("ticker.cef_nav_help"),
+      provenance(t, cef.nav, cef.nav_symbol),
+    ],
+    [
+      t("ticker.cef_premium"),
+      cell(signedPercent(cef.premium.value)),
+      t("ticker.cef_premium_help"),
+      provenance(t, cef.premium, cef.nav_symbol, premiumLead),
+    ],
+    [
+      t("ticker.cef_distribution"),
+      cell(percent(cef.distribution_rate.value, 2)),
+      t("ticker.cef_distribution_help"),
+      provenance(t, cef.distribution_rate, cef.nav_symbol),
+    ],
+    [
+      t("ticker.fund_ter"),
+      cell(percent(cef.expense_ratio.value, 2)),
+      t("ticker.cef_ter_help"),
+      provenance(t, cef.expense_ratio, cef.nav_symbol),
+    ],
+    [
+      t("ticker.cef_net_assets"),
+      cell(compactMoney(cef.net_assets.value, fund.currency)),
+      t("ticker.cef_net_assets_help"),
+      provenance(t, cef.net_assets, cef.nav_symbol),
+    ],
+    [
+      t("ticker.cef_leverage"),
+      cell(percent(cef.leverage.value, 1)),
+      t("ticker.cef_leverage_help"),
+      provenance(t, cef.leverage, cef.nav_symbol),
+    ],
+  ];
+  return (
+    <KpiGrid>
+      {tiles.map(([label, value, help, note]) => (
+        <Kpi key={label} label={label} value={value} help={help} note={note} />
+      ))}
+    </KpiGrid>
+  );
+}
+
+/**
+ * The NAV the premium was computed against: the price and premium share a
+ * session, so NAV = price ÷ (1 + premium) is that session's, not the latest.
+ */
+function navOn(cef: ClosedEnd): number | null {
+  const { price, premium } = cef;
+  if (price.value === null || premium.value === null || premium.value === -1)
+    return null;
+  return price.value / (1 + premium.value);
+}
+
+/**
+ * EDGAR against Yahoo, on EDGAR's date. A disagreement is a warning with both
+ * numbers in it — the page does not pick one — and a comparison that could
+ * not be made says so rather than passing for agreement.
+ */
+function CefChecks({ fund, cef }: { fund: Fund; cef: ClosedEnd }) {
+  const t = useT();
+  const sym = currencySymbol(fund.currency);
+  const shown = (check: SourceCheck, value: number | null) =>
+    value === null
+      ? t("ticker.na")
+      : check.metric === "premium"
+        ? signedPercent(value)
+        : `${sym}${money(value, 2)}`;
+  if (cef.checks.length === 0) return <Note>{t("ticker.cef_check_absent")}</Note>;
+  return (
+    <>
+      {cef.checks.map((check) => {
+        const slots = {
+          metric: metricLabel(t, check.metric),
+          date: check.as_of,
+          official: shown(check, check.official),
+          official_source: sourceLabel(t, check.official_source, cef.nav_symbol),
+          market: shown(check, check.market),
+          market_source: sourceLabel(t, check.market_source, cef.nav_symbol),
+        };
+        if (check.agree === false) {
+          return (
+            <Banner key={check.metric} tone="warn">
+              <Bold text={t("ticker.cef_check_off", slots)} />
+            </Banner>
+          );
+        }
+        return (
+          <Note key={check.metric}>
+            {check.agree
+              ? t("ticker.cef_check_ok", slots)
+              : t("ticker.cef_check_none", slots)}
+          </Note>
+        );
+      })}
+    </>
+  );
+}
+
+/**
  * The disclosed basket. Yahoo publishes the top ten only, so the caption says
  * what the rows add up to: a reader who sees ten names must not read them as
  * the whole fund.
@@ -450,7 +667,7 @@ function FundHoldings({ fund }: { fund: Fund }) {
   return (
     <>
       <Scroll>
-        <table className="tk-table">
+        <table className="tk-table tk-holdings">
           <thead>
             <tr>
               <th>{t("ticker.fund_holding")}</th>
@@ -481,10 +698,17 @@ function FundHoldings({ fund }: { fund: Fund }) {
         </table>
       </Scroll>
       <Note>
-        {t("ticker.fund_holdings_caption", {
-          n: fund.holdings.length,
-          pct: percent(fund.disclosed_weight, 1),
-        })}
+        {fund.closed_end
+          ? t("ticker.cef_holdings_caption", {
+              n: fund.holdings.length,
+              count: fund.closed_end.holdings_count ?? DASH,
+              date: fund.closed_end.holdings_as_of ?? DASH,
+              pct: percent(fund.disclosed_weight, 1),
+            })
+          : t("ticker.fund_holdings_caption", {
+              n: fund.holdings.length,
+              pct: percent(fund.disclosed_weight, 1),
+            })}
       </Note>
     </>
   );

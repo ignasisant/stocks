@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import math
 import queue
+import secrets
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -31,7 +32,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from stocks import obs, storage
-from stocks.chat import agent, market, tokens, toolbox
+from stocks.chat import a2ui, agent, debate, market, tokens, toolbox, whatif
 from stocks.config import DATA_DIR, currency_symbol
 from stocks.secrets_env import secret
 from stocks.web import chat_skills, chat_web
@@ -40,7 +41,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
     from stocks.chat.tools import Action
-    from stocks.web.llm import Provider
+    from stocks.web.llm import Provider, ToolCall
 
 # Remembered-key lifetime. The window *slides*: every successful use of a
 # stored key pushes BYOK_TTL out again, so an active account never re-enters
@@ -698,7 +699,10 @@ _FOCUS_EN = {
     "dividends_value": "dividends, value and broad-index holdings",
 }
 _CONSTRAINT_EN = {
-    "spain_tax": "factor in Spanish tax residency (IRPF; no US wash-sale rule)",
+    # Not "no wash-sale rule": a model read that as "no repurchase rule" and
+    # told a Spanish filer so, when the two-month rule is exactly that. What
+    # the rules are is `tax_rules`' block, from the engine that applies them.
+    "spain_tax": "factor in Spanish tax residency (IRPF)",
     "us_tax": (
         "factor in US tax residency (IRS; wash-sale rule, short versus "
         "long-term rates)"
@@ -788,6 +792,7 @@ def book_snapshot(
             + (f" — {unpriced} of {len(tbl)} positions have no live price and"
                " are excluded from both totals" if unpriced else "")
             + ":\n" + "\n".join(lines)
+            + sector_exposure(tbl)
         )
         held = set(tbl.index)
     else:
@@ -839,6 +844,116 @@ def portfolio_context(watchlist: Path, db: Path, currency: str = "EUR") -> str:
     """Headless twin of chat_core._portfolio_context, from explicit paths."""
     tbl = enriched_frame(db, currency) if db.exists() else None
     return book_snapshot(tbl, watchlist, currency)
+
+
+def sector_exposure(tbl: pd.DataFrame | None) -> str:
+    """The snapshot's sector line: the book by sector, funds looked through,
+    as a share of the whole book and of its equity part.
+
+    Both, because they answer different questions and the model was guessing
+    at both — it told a reader whose Home card said "technology is 51% of your
+    equity" that tech was about 30% of their book. "How much of my money is
+    tech" is the first share; the second is the one the Home card compares
+    with the index, and it reads larger on a book that is part crypto or
+    unclassified. Empty when the split cannot be read: the snapshot stands
+    without it.
+    """
+    from stocks.api import briefing
+    from stocks.chat.signals import NOT_EQUITY
+
+    try:
+        sectors = briefing.book_sectors(tbl)
+    except Exception as exc:  # noqa: BLE001 — a metadata lookup, best-effort
+        obs.warn("chat.sectors_unavailable",
+                 error_type=type(exc).__name__, error=str(exc)[:200])
+        return ""
+    sectors = sectors[sectors > 0].sort_values(ascending=False)
+    total = float(sectors.sum())
+    if sectors.empty or not total:
+        return ""
+    equity = sectors.drop(labels=list(NOT_EQUITY), errors="ignore")
+    outside = sectors[sectors.index.isin(NOT_EQUITY)]
+    covered = float(equity.sum())
+    parts = [f"{name} {w / total:.1%} / {w / covered:.1%}" for name, w in equity.items()]
+    line = ("\n\nSector exposure, funds looked through (share of the whole "
+            "book / of its equity part): " + (", ".join(parts) or "none"))
+    if not outside.empty:
+        line += "; outside any equity sector: " + ", ".join(
+            f"{name} {w / total:.1%}" for name, w in outside.items())
+    return line + "."
+
+
+_MATCHING_EN = {
+    "fifo": "first in, first out (the oldest shares are sold first)",
+    "lifo": "last in, first out (the newest shares are sold first)",
+    "average": "at the average cost of every share held",
+    "s104": ("by the share-identification rules: same day, then the next 30 "
+             "days, then the section 104 pool at average cost"),
+}
+_WINDOW_UNIT_EN = {"d": "days", "m": "months"}
+
+
+def tax_rules(prefs: dict, today: date | None = None) -> str:
+    """The tax rules the app applies to this account, for the system prompt.
+
+    Without them the model recites a tax system from memory, and did: a
+    Spanish filer was told gains are taxed at 19–26% "if you sell after more
+    than a year" and that there is no repurchase rule — three errors in one
+    sentence, about rules the Tax tab applies correctly. Written from the
+    Jurisdiction the replay itself uses, so the prose and the engine cannot
+    disagree. Rules only, no figures: a figure needs a replay of the ledger,
+    which the what-if runs when a sale is actually asked about
+    (`chat/whatif.py`).
+    """
+    import calendar
+
+    from stocks.portfolio import tax
+    from stocks.portfolio.tax import es
+    from stocks.portfolio.tax import prefs as tax_prefs
+
+    code, _how = tax_prefs.resolve(prefs or {})
+    jur = tax.get(code)
+    day = today or date.today()
+    month, first = jur.year_start
+    year = (
+        "the calendar year" if (month, first) == (1, 1)
+        else f"a year opening on {first} {calendar.month_name[month]}"
+    )
+    lines = [
+        jur.summary,
+        f"Tax year: {year}; the current one is "
+        f"{jur.year_label(jur.tax_year_of(day.isoformat()))}.",
+        f"Sales are matched to lots {_MATCHING_EN.get(jur.matching, jur.matching)}.",
+        "Short- and long-term gains are taxed differently: the holding period "
+        "matters." if jur.splits_holding_period
+        else "A gain is taxed the same whatever the holding period.",
+    ]
+    if jur.code == es.CODE:
+        scale = "; ".join(
+            f"{rate:.0%} above" if upper == float("inf")
+            else f"{rate:.0%} up to {upper:,.0f}"
+            for upper, rate in es.SAVINGS_BRACKETS
+        )
+        lines.append(f"Savings-base scale ({jur.currency}, marginal): {scale}.")
+    window = jur.repurchase_window
+    if window[:-1].isdigit() and window[-1] in _WINDOW_UNIT_EN:
+        lines.append(
+            "A loss is deferred, not deductible that year, when the same "
+            f"security is also bought within {window[:-1]} "
+            f"{_WINDOW_UNIT_EN[window[-1]]} of the sale."
+        )
+    if jur.carryforward_years is None:
+        lines.append("Net losses carry forward indefinitely.")
+    elif jur.carryforward_years:
+        lines.append(f"Net losses carry forward {jur.carryforward_years} years.")
+    else:
+        lines.append("Losses do not carry forward.")
+    return (
+        "\n\nTax rules the app applies to this account (its own engine, the one "
+        "the Tax tab reports from). Use these rather than what you remember, "
+        "and call any figure you derive from them an estimate:\n"
+        + "\n".join(f"- {line}" for line in lines)
+    )
 
 
 # ------------------------------------------------------------ system prompt
@@ -973,10 +1088,16 @@ def resolve_skills(prefs: dict, provider: Provider, api_key: str,
 # -------------------------------------------------------------- web search
 
 
-def web_enabled(prefs: dict) -> bool:
-    """Whether this turn may touch the internet: the "chat_web" pref (default
-    on) and a working ddgs install."""
-    return chat_web.available() and bool(prefs.get("chat_web", True))
+def web_enabled() -> bool:
+    """Whether this turn may touch the internet: whenever a working ddgs
+    install says it can.
+
+    There used to be a "chat_web" pref behind it, drawn as an "Internet" chip
+    above the composer. Almost nobody moved it off its default, the few who
+    did got answers that were quietly worse with nothing on screen saying why,
+    and the phone had already dropped the chip for the room it took — so the
+    toggle went, and a stored "chat_web" is now ignored."""
+    return chat_web.available()
 
 
 def plan_web(prefs: dict, provider: Provider, api_key: str,
@@ -986,7 +1107,7 @@ def plan_web(prefs: dict, provider: Provider, api_key: str,
     Same planner as the web panel (chat_web.plan on the provider's cheapest
     model), with the caller's context (the current view, for the panel) and
     prior user turns riding along for topic continuity."""
-    if not web_enabled(prefs):
+    if not web_enabled():
         return []
     prior = [m["content"][:200] for m in history[:-1] if m["role"] == "user"][-2:]
     ctx = f"Today is {date.today().isoformat()}." + (
@@ -1000,9 +1121,9 @@ def ground_web(prefs: dict, provider: Provider, api_key: str,
                history: list[dict], context: str = "") -> list[chat_web.Result]:
     """The pages this turn reads: planned searches plus any pasted links.
 
-    The "chat_web" pref gates the whole thing — off means no internet at all,
-    pasted links included."""
-    if not web_enabled(prefs):
+    No working search install means no internet at all, pasted links
+    included."""
+    if not web_enabled():
         return []
     return chat_web.collect(plan_web(prefs, provider, api_key, history, context),
                             history[-1]["content"])
@@ -1012,14 +1133,15 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
                     msgs: list[dict], watchlist: Path, db: Path,
                     chat_path: Path | None = None,
                     timeout: float | None = None,
-                    focus: str = "") -> agent.Evidence:
+                    focus: str = "",
+                    on_tool: Callable[[str, ToolCall, bool], None] | None = None,
+                    ) -> agent.Evidence:
     """The model-directed lookup for a Telegram turn (chat/agent.py).
 
-    Gated by the same "chat_web" pref as the fixed pre-flight — the tools can
-    reach the internet, and a user who turned the web off must not get it back
-    through the side door. Off, unsupported or failed all mean Evidence with
-    ok=False, which puts the turn back on the fixed path."""
-    if not web_enabled(prefs):
+    Gated like the fixed pre-flight (`web_enabled`): the tools reach the
+    internet. Unsupported or failed both mean Evidence with ok=False, which
+    puts the turn back on the fixed path."""
+    if not web_enabled():
         return agent.Evidence(ok=False)
     from stocks.web import auth
 
@@ -1033,7 +1155,7 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
                           thread=thread, focus=focus,
                           currency=reporting_currency(prefs))
     return agent.gather(provider, api_key, msgs, ctx,
-                        timeout=timeout or agent.TIMEOUT)
+                        timeout=timeout or agent.TIMEOUT, on_tool=on_tool)
 
 
 def _settle(future, timeout: float | None,
@@ -1219,6 +1341,175 @@ def action_reply(act: Action, lang: str) -> str:
     return tools.reply(act, lambda key, **kw: translate(key, lang, **kw))
 
 
+def _simulate_sale(message: str, watchlist: Path, db: Path, prefs_path: Path,
+                   focus: str, lang: str, told: Callable[[dict], None]) -> object:
+    """A sale the message is contemplating, run through the tax engine
+    (`chat/whatif.py`) — or None for a message that is not about selling
+    something the reader holds. Told as a tool line while it runs: it is a
+    replay of the whole ledger, and the wait should say what it is."""
+    if not whatif.wants(message):
+        return None
+    symbol = whatif.target(message, watchlist, focus)
+    if not symbol:
+        return None
+    cid = f"tool_sale_{secrets.token_hex(4)}"
+    told({"id": cid, "tool": "simulate_sale", "arg": symbol, "args": {"ticker": symbol}})
+    try:
+        sale = whatif.simulate(
+            db=db, prefs_path=prefs_path, ticker=symbol,
+            shares=lambda held: whatif.shares_asked(message, held),
+        )
+    except Exception as exc:  # noqa: BLE001 — the answer goes on without it
+        obs.warn("chat.whatif_failed", error_type=type(exc).__name__,
+                 error=str(exc)[:300])
+        sale = None
+    told({"id": cid, "tool": "simulate_sale", "arg": symbol,
+          "args": {"ticker": symbol},
+          "out": _sale_step(sale, lang)["out"] if sale else "-"})
+    return sale
+
+
+def _sale_step(sale: whatif.Scenario, lang: str) -> dict:
+    return {"tool": "simulate_sale", "arg": f"{sale.shares:g} {sale.ticker}",
+            "out": _tr("chat.step_whatif", lang,
+                       tax=f"{sale.extra_tax:+,.0f} {sale.currency}")}
+
+
+def _tr(key: str, lang: str, **slots) -> str:
+    from stocks.web.i18n import translate
+
+    return translate(key, lang, **slots)
+
+
+# --------------------------------------------------------------- proposals
+# An app action the reader is asked about before it runs. The proposal is a
+# field on the assistant turn that asked, so the thread on disk is the only
+# place it lives: a reload redraws the same card in the same state, and there
+# is no second store to fall out of step with the conversation.
+
+
+def _proposal(act: Action) -> dict:
+    return {"id": f"act_{secrets.token_hex(6)}", "kind": act.kind,
+            "ticker": act.ticker, "args": dict(act.args), "state": "pending"}
+
+
+def _open_proposal(history: list[dict]) -> int | None:
+    """Index of the last turn when it is an assistant turn still asking."""
+    if not history:
+        return None
+    last = history[-1]
+    offer = last.get("proposal")
+    if last.get("role") == "assistant" and isinstance(offer, dict) \
+            and offer.get("state") == "pending":
+        return len(history) - 1
+    return None
+
+
+class ProposalError(Exception):
+    """A proposal that cannot be settled. `code` is the locale key that says why."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+def _apply(offer: dict, approve: bool, *, watchlist: Path, lang: str,
+           ticker: str | None = None, args: dict | None = None,
+           form: dict | None = None) -> str:
+    """Run (or drop) one proposal in place; return the line that says so.
+
+    Mutates `offer` — its state, and on approval the symbol and fields the
+    reader may have edited — and raises ProposalError without touching it when
+    the edit does not parse or the write fails, so the card stays up and
+    pressable rather than claiming a change that never happened.
+    """
+    from stocks.chat import tools
+
+    if not approve:
+        offer["state"] = "cancelled"
+        obs.event("chat.action_cancelled", action=offer.get("kind"))
+        return _tr("chat.action_cancelled", lang)
+    base = tools.Action(str(offer.get("kind")), str(offer.get("ticker") or ""),
+                        dict(offer.get("args") or {}))
+    if base.kind not in tools.TOOLS:
+        raise ProposalError("chat.action_invalid")
+    if form is not None:
+        # The card's A2UI form: its fields, as the tool's own arguments.
+        ticker = str(form.get("ticker") or base.ticker)
+        args = tools.args_from_form(base.kind, form)
+    act = tools.revise(base, ticker, args)
+    if act is None:
+        raise ProposalError("chat.action_invalid")
+    try:
+        tools.execute(act, watchlist)
+    except Exception as exc:
+        obs.warn("chat.engine.action_failed", action=act.kind,
+                 error_type=type(exc).__name__, error=str(exc)[:300])
+        raise ProposalError("chat.action_failed") from exc
+    offer.update({"ticker": act.ticker, "args": dict(act.args),
+                  "state": "done"})
+    obs.event("chat.action_approved", action=act.kind,
+              edited=act != base)
+    return action_reply(act, lang)
+
+
+def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
+                    approve: bool, lang: str = "en", ticker: str | None = None,
+                    args: dict | None = None, form: dict | None = None) -> Reply:
+    """The reader pressed Approve or Cancel on a proposal card.
+
+    The asking turn is rewritten in place — its words become the confirmation
+    (or the "nothing changed" line) and its proposal records the outcome — so
+    the thread reads as a question that was answered, and the model reading it
+    back next turn sees what actually happened rather than an open question.
+
+    Raises LookupError for an id this thread does not hold, and ProposalError
+    for one already settled or an edit that does not parse.
+    """
+    from stocks.web import auth
+
+    history = auth.load_chat(chat_path)
+    for entry in reversed(history):
+        offer = entry.get("proposal")
+        if isinstance(offer, dict) and offer.get("id") == proposal_id:
+            break
+    else:
+        raise LookupError(proposal_id)
+    if offer.get("state") != "pending":
+        raise ProposalError("chat.action_gone")
+    note = _apply(offer, approve, watchlist=watchlist, lang=lang,
+                  ticker=ticker, args=args, form=form)
+    entry["content"] = note
+    if offer["state"] == "done":
+        entry["action"] = offer["kind"]
+    auth.save_chat(history, chat_path)
+    return Reply(text=note, proposal=dict(offer))
+
+
+def _typed_verdict(history: list[dict], index: int, approve: bool, *,
+                   prefs: dict, chat_path: Path, watchlist: Path,
+                   lang: str) -> Reply:
+    """A "yes" or "no" typed under a proposal: the same as the button.
+
+    Unlike the button, the reader's words are part of the thread — so the
+    asking turn keeps its question, and the outcome is a new answer under the
+    "yes" rather than a rewrite above it.
+    """
+    from stocks.web import auth
+
+    offer = history[index]["proposal"]
+    try:
+        note = _apply(offer, approve, watchlist=watchlist, lang=lang)
+    except ProposalError as exc:
+        return Reply(error=exc.code)
+    entry: dict = {"role": "assistant", "content": note}
+    if offer["state"] == "done":
+        entry["action"] = offer["kind"]
+    history.append(entry)
+    auth.save_chat(history, chat_path)
+    return Reply(text=note, proposal=dict(offer))
+
+
 # ------------------------------------------------------------------ answer
 
 
@@ -1236,6 +1527,15 @@ class Reply:
     # What ran to build the answer, as the panel's tool lines — {tool, arg,
     # out}. Also stored on the history turn under "steps", like the panel.
     steps: tuple[dict, ...] = ()
+    # An app action put to the reader instead of run (`prepare` with
+    # `confirm_actions`), or one the reader just settled: {id, kind, ticker,
+    # args, state} with state "pending", "done" or "cancelled". Stored on the
+    # assistant turn under "proposal" too, so a reload redraws the same card.
+    proposal: dict | None = None
+    # The surfaces the answer carries (`Turn.activities`), as stored.
+    activities: tuple[dict, ...] = ()
+    # The cases argued before it (`Turn.debate`), as stored.
+    debate: tuple[dict, ...] = ()
 
 
 def _keep_byok(prefs: dict, prefs_path: Path, pid: str) -> None:
@@ -1312,6 +1612,12 @@ class Turn:
     steps: list[dict] = dc_field(default_factory=list)
     #: The account's locale — the thread title's fallback language.
     lang: str = "en"
+    #: A2UI surfaces the answer carries (`chat/a2ui.py`), as AG-UI activities
+    #: {id, type, content} — a simulated sale's slider. Stored on the answer.
+    activities: list[dict] = dc_field(default_factory=list)
+    #: The bull and bear cases argued before the answer (`chat/debate.py`),
+    #: as {side, text}. Stored on the answer.
+    debate: list[dict] = dc_field(default_factory=list)
 
 
 
@@ -1346,6 +1652,21 @@ def _step_out(call, lang: str) -> str:
         if hits:
             return translate("chat.step_results", lang, n=hits)
     return translate("chat.step_chars", lang, n=len(result))
+
+
+_LIVE_ARGS_CHARS = 600  # of a call's JSON arguments put on the wire
+
+
+def live_step(cid: str, call: ToolCall, lang: str, done: bool) -> dict:
+    """One tool call as it is happening: the line `trace` will file for it,
+    plus its id and its arguments — `out` only once it has returned."""
+    args = call.args if len(json.dumps(call.args, default=str)) <= _LIVE_ARGS_CHARS \
+        else {}
+    step = {"id": cid, "tool": call.name, "arg": _step_arg(call.args),
+            "args": args}
+    if done:
+        step["out"] = _step_out(call, lang)
+    return step
 
 
 def trace(evidence, hits: list, live: list, lang: str = "en") -> list[dict]:
@@ -1404,6 +1725,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             focus: str = "",
             fence: str = "",
             session_keys: dict[str, str] | None = None,
+            confirm_actions: bool = False,
+            on_tool: Callable[[dict], None] | None = None,
+            on_subagent: Callable[[dict], None] | None = None,
             ) -> tuple[Turn | None, Reply | None]:
     """Everything before the model: history, provider chain, prompt, evidence.
 
@@ -1420,12 +1744,40 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     the prompt's context for a turn on the walkthrough's thread
     (`guide_ai.prompt_fence`). `session_keys` are keys held for this request
     only; see `attempts`.
+
+    `on_tool` is told about the research while it happens, as the tool lines
+    `trace` will file: `{id, tool, arg, args}` when a call starts and the same
+    with `out` when it returns (`live_step`). The model's own calls are told
+    as they run; the fixed pre-flight's, once both have come back.
+
+    `on_subagent` turns on the bull/bear debate (`chat/debate.py`) for a
+    question that asks for a decision, and is told each side's lifecycle as it
+    runs. Only a caller that can show the two cases passes one: they are two
+    more model calls, and a reader who cannot see them should not pay for them.
+
+    `confirm_actions` asks before an app action runs rather than after: the
+    detected action is filed as a pending proposal (`Reply.proposal`) and
+    nothing is written to the watchlist until the reader approves it — with
+    the drawer's button (`settle_proposal`) or by answering "yes" in words,
+    which this function settles itself. Off for the Telegram bot, whose reader
+    has no card to press and already said what they wanted.
     """
     from stocks.chat import tools
     from stocks.web import auth
 
     history = auth.load_chat(chat_path)
     history.append({"role": "user", "content": message})
+
+    # A proposal waiting on the turn above, answered in words: "sí" is the
+    # button pressed, not a question for a model that would cheerfully reply
+    # "done" without having done anything.
+    if confirm_actions:
+        held = _open_proposal(history[:-1])
+        said = tools.verdict(message) if held is not None else None
+        if held is not None and said is not None:
+            return None, _typed_verdict(history, held, said, prefs=prefs,
+                                        chat_path=chat_path,
+                                        watchlist=watchlist, lang=lang)
 
     # Asked to import: there is nothing to execute and nothing worth asking a
     # model, since the statement itself is what an import needs and this
@@ -1464,6 +1816,17 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     if tools.maybe_action(message):
         act = tools.detect(provider, key, message,
                            view + action_context(watchlist))
+        if act is not None and confirm_actions:
+            offer = _proposal(act)
+            note = tools.proposal(act, lambda k, **kw: _tr(k, lang, **kw))
+            history.append({"role": "assistant", "content": note,
+                            "action": act.kind, "proposal": offer})
+            auth.save_chat(history, chat_path)
+            autotitle(chat_path, provider, key, history, lang)
+            _keep_byok(prefs, prefs_path, provider.id)
+            obs.event("chat.action_proposed", action=act.kind)
+            return None, Reply(text=note, provider_id=provider.id,
+                               proposal=dict(offer))
         if act is not None:
             try:
                 tools.execute(act, watchlist)
@@ -1489,13 +1852,21 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     # knows whether "gathering" is a line in a bubble, a frame on a stream or
     # nothing at all.
     say = on_phase or (lambda _phase: None)
+    told = on_tool or (lambda _step: None)
+
+    def watch(cid: str, call: ToolCall, done: bool) -> None:
+        told(live_step(cid, call, lang, done))
+
     msgs = recent(history)
     say("gathering")
-    skills, evidence = in_parallel(
+    skills, evidence, sale = in_parallel(
         lambda: resolve_skills(prefs, provider, key, history,
                                context=context + view),
         lambda: gather_evidence(prefs, provider, key, msgs, watchlist, db,
-                                chat_path, timeout=timeout_s, focus=focus),
+                                chat_path, timeout=timeout_s, focus=focus,
+                                on_tool=watch if on_tool else None),
+        lambda: _simulate_sale(message, watchlist, db, prefs_path, focus, lang,
+                               told),
         timeout=timeout_s,
     )
     skills = skills or []
@@ -1509,12 +1880,17 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             timeout=timeout_s,
         )
         hits, live = hits or [], live or []
+        # No loop to watch here: the search and the quotes are told once
+        # both have landed, already finished.
+        for n, line in enumerate(trace(None, hits, live, lang)):
+            told({"id": f"tool_pre{n}", **line, "args": {}})
     system = system_prompt(
         auth.load_profile(prefs),
         # The order the Streamlit panel builds it in: where the reader is,
         # what they hold, and — on the walkthrough's thread only — the fence.
         context + view
-        + portfolio_context(watchlist, db, reporting_currency(prefs)) + fence,
+        + portfolio_context(watchlist, db, reporting_currency(prefs))
+        + tax_rules(prefs) + fence,
         skills,
         lang,
     )
@@ -1527,11 +1903,33 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         msgs[-1]["content"] = chat_web.augment(msgs[-1]["content"], hits)
     if live:
         msgs[-1]["content"] = market.augment(msgs[-1]["content"], live)
+    if isinstance(sale, whatif.Scenario):
+        msgs[-1]["content"] += sale.line()
     # Last, after augmentation: the page extracts and quotes just stapled onto
     # the newest turn are the biggest thing in the request (chat/tokens.py).
     msgs = tokens.fit(msgs, system=system)
 
+    # Argued off the fitted messages — the analysts read what the answer
+    # reads, and a cheap model's window is the smaller one — then the cases
+    # join the question and the whole is fitted again.
+    sides: list[dict] = []
+    if on_subagent is not None and debate.wants(message):
+        say("debating")
+        sides = debate.run(provider, key, msgs, lang, on_event=on_subagent,
+                           timeout=min(timeout_s, debate.TIMEOUT))
+        if sides:
+            msgs[-1]["content"] += debate.brief(sides)
+            msgs = tokens.fit(msgs, system=system)
+
     say("writing")
+    steps = trace(evidence, hits, live, lang)
+    activities: list[dict] = []
+    if isinstance(sale, whatif.Scenario):
+        steps.append(_sale_step(sale, lang))
+        activities.append(a2ui.activity(
+            whatif.SURFACE_ID,
+            whatif.surface(sale, lambda k, **kw: _tr(k, lang, **kw)),
+        ))
     return Turn(
         history=history,
         attempts=atts,
@@ -1539,8 +1937,10 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         messages=msgs,
         skills=list(skills),
         sources=list(chat_web.sources(hits) or evidence.sources()),
-        steps=trace(evidence, hits, live, lang),
+        steps=steps,
         lang=lang,
+        activities=activities,
+        debate=sides,
     ), None
 
 
@@ -1599,6 +1999,10 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
         entry["web"] = turn.sources
     if turn.steps:
         entry["steps"] = list(turn.steps)
+    if turn.activities:
+        entry["activities"] = list(turn.activities)
+    if turn.debate:
+        entry["debate"] = list(turn.debate)
     if polish is not None:
         polish(entry)
         text = str(entry.get("content") or "")
@@ -1611,7 +2015,8 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
               web_sources=len(turn.sources))
     return Reply(text=text, skills=tuple(turn.skills),
                  sources=tuple(turn.sources), provider_id=provider.id,
-                 steps=tuple(turn.steps))
+                 steps=tuple(turn.steps), activities=tuple(turn.activities),
+                 debate=tuple(turn.debate))
 
 
 def _exhausted(prefs: dict, atts: list[tuple[Provider, str, str]],
@@ -1689,11 +2094,16 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                   fence: str = "",
                   session_keys: dict[str, str] | None = None,
                   polish: Callable[[dict], None] | None = None,
+                  confirm_actions: bool = False,
+                  debating: bool = False,
                   ) -> Iterator[tuple[str, object]]:
     """The same turn, handed over as the model writes it.
 
     Yields `("phase", key)` while the turn is being built — `gathering`,
-    `searching`, `writing`, the panel's own `chat.work_*` lines — then
+    `searching`, `writing`, the panel's own `chat.work_*` lines — and
+    `("tool", step)` for each piece of research as it starts and returns
+    (`live_step`), `("subagent", event)` for the bull/bear debate when
+    `debating` (`chat/debate.py`), then
     `("meta", {...})` once a provider has actually started answering,
     then `("text", chunk)` per piece, and always exactly one `("done", Reply)`
     last — so a caller can render progressively and still get the same Reply
@@ -1710,7 +2120,7 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     # before the first token, and a stream that says nothing for fifteen
     # seconds reads as a dead one. The worker's own failure is re-raised here,
     # on the stream's thread, where the caller's handler can see it.
-    phases: queue.SimpleQueue[str | None] = queue.SimpleQueue()
+    phases: queue.SimpleQueue[tuple[str, object] | None] = queue.SimpleQueue()
     box: dict = {}
 
     def work() -> None:
@@ -1719,8 +2129,14 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                 prefs=prefs, prefs_path=prefs_path, chat_path=chat_path,
                 watchlist=watchlist, db=db, message=message, lang=lang,
                 context=context, timeout_s=timeout_s,
-                staged_import=staged_import, on_phase=phases.put,
+                staged_import=staged_import,
+                on_phase=lambda phase: phases.put(("phase", phase)),
+                on_tool=lambda step: phases.put(("tool", step)),
+                on_subagent=(
+                    (lambda said: phases.put(("subagent", said))) if debating else None
+                ),
                 view=view, focus=focus, fence=fence, session_keys=session_keys,
+                confirm_actions=confirm_actions,
             )
         except BaseException as exc:  # noqa: BLE001 — re-raised just below
             box["exc"] = exc
@@ -1729,8 +2145,8 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
 
     worker = threading.Thread(target=work, name="chat-prepare", daemon=True)
     worker.start()
-    while (phase := phases.get()) is not None:
-        yield ("phase", phase)
+    while (said := phases.get()) is not None:
+        yield said
     worker.join()
     if "exc" in box:
         raise box["exc"]

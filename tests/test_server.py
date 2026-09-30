@@ -722,6 +722,47 @@ def test_an_unbuilt_checkout_says_so(client, shell):
     assert "npm run build" in response.text
 
 
+def test_a_dev_run_draws_the_source_from_vite(client, shell, tmp_path, monkeypatch):
+    """`dashboard --reload` names a Vite dev server: the document then loads the
+    source from it, hot-reloaded, rather than the committed build that only
+    `npm run build` changes — the build being stale is the whole point."""
+    source = tmp_path / "index.html"
+    source.write_text(
+        "<html><head><!--AG-TOKENS--><!--AG-FONTS--></head><body>"
+        '<script type="module" src="/src/main.tsx"></script></body></html>'
+    )
+    monkeypatch.setattr(server, "_APP_SOURCE", source)
+    monkeypatch.setattr(server, "_VITE", "http://localhost:5301")
+    response = client.get("/portfolio")
+    assert response.status_code == 200
+    body = response.text
+    assert STUB not in body, "not the build"
+    vite = "http://localhost:5301/next-assets/"
+    assert f'src="{vite}src/main.tsx"' in body
+    assert f'src="{vite}@vite/client"' in body
+    # @vitejs/plugin-react refuses to run a module without its preamble.
+    assert f'from "{vite}@react-refresh"' in body
+    assert body.index("@react-refresh") < body.index("src/main.tsx")
+    # Tokens, faces and icon are this server's to add either way.
+    assert "--ag-" in body and "fonts.googleapis.com" in body
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_a_dev_run_needs_no_build(client, shell, tmp_path, monkeypatch):
+    (shell / "index.html").unlink()
+    source = tmp_path / "index.html"
+    source.write_text('<html><head></head><body><script src="/src/main.tsx"></script>')
+    monkeypatch.setattr(server, "_APP_SOURCE", source)
+    monkeypatch.setattr(server, "_VITE", "http://localhost:5301")
+    assert client.get("/portfolio").status_code == 200
+
+
+def test_the_dev_document_reads_the_real_source_entry():
+    """The rewrite keys on index.html's own `src="/src/` spelling: if the entry
+    moves, a dev run would load nothing and blame nobody."""
+    assert 'src="/src/main.tsx"' in server._APP_SOURCE.read_text()
+
+
 def test_the_entry_point_is_a_plain_asgi_app():
     """Not an `st.App`: `streamlit run` would find one and serve it, and the
     Streamlit app is a tenant of this server now, not its owner."""

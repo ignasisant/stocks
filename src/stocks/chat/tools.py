@@ -406,6 +406,26 @@ def execute(action: Action, path: Path | None = None) -> None:
     TOOLS[action.kind].run(action, p)
 
 
+def _slots(action: Action, translate: Callable[..., str]) -> dict[str, str]:
+    """The placeholders a tool's confirmation and proposal lines both fill."""
+    if action.kind == "set_alerts":
+        rules = ", ".join(
+            translate(f"chat.action_alert_{a['type']}", price=f"{a['price']:g}")
+            for a in action.alerts
+        )
+        return {"ticker": action.ticker, "rules": rules}
+    if action.kind in ("tag", "untag"):
+        return {"ticker": action.ticker, "groups": ", ".join(action.tags)}
+    if action.kind == "set_position":
+        parts = [
+            translate(f"chat.action_position_{f}", value=f"{action.args[f]:g}")
+            for f in ("shares", "cost")
+            if f in action.args
+        ]
+        return {"ticker": action.ticker, "details": " · ".join(parts)}
+    return {"ticker": action.ticker}
+
+
 def reply(action: Action, translate: Callable[..., str]) -> str:
     """The confirmation bubble for an executed action.
 
@@ -414,20 +434,117 @@ def reply(action: Action, translate: Callable[..., str]) -> str:
     recipient's language — so this stays the single place that knows which
     locale key and which slots each tool's confirmation needs.
     """
-    key = TOOLS[action.kind].reply_key
-    if action.kind == "set_alerts":
-        rules = ", ".join(
-            translate(f"chat.action_alert_{a['type']}", price=f"{a['price']:g}")
-            for a in action.alerts
-        )
-        return translate(key, ticker=action.ticker, rules=rules)
-    if action.kind in ("tag", "untag"):
-        return translate(key, ticker=action.ticker, groups=", ".join(action.tags))
-    if action.kind == "set_position":
-        parts = [
-            translate(f"chat.action_position_{f}", value=f"{action.args[f]:g}")
-            for f in ("shares", "cost")
-            if f in action.args
-        ]
-        return translate(key, ticker=action.ticker, details=" · ".join(parts))
-    return translate(key, ticker=action.ticker)
+    return translate(TOOLS[action.kind].reply_key, **_slots(action, translate))
+
+
+def proposal(action: Action, translate: Callable[..., str]) -> str:
+    """The question put to the reader before an action runs.
+
+    The confirmation line asked in the future tense — "Add AAPL to
+    favorites?" — under the same slots, so what is proposed and what is
+    confirmed afterwards can never describe two different changes. Its key is
+    the reply key with `action_` turned into `propose_`.
+    """
+    key = TOOLS[action.kind].reply_key.replace("chat.action_", "chat.propose_", 1)
+    return translate(key, **_slots(action, translate))
+
+
+def revise(action: Action, ticker: str | None, args: dict | None) -> Action | None:
+    """The action as the reader edited it before approving, or None if unusable.
+
+    Only the symbol and the tool's own fields can change, never the tool: an
+    edit that turned "favorite" into "remove_ticker" would be a second action
+    nobody was asked about. The edit goes back through the same parser the
+    classifier's answer did, so a price of -5 or a symbol with a space in it is
+    refused here exactly as it would have been refused there.
+    """
+    data = {**action.args, **(args or {}), "action": action.kind,
+            "ticker": ticker if ticker is not None else action.ticker}
+    return _action_from(data)
+
+
+# ------------------------------------------------------------------- forms
+# What a proposal card lets the reader change before approving, per tool:
+# the symbol always, and these. Strings in the form (it is what an input
+# holds), turned back into the tool's arguments by `args_from_form` and then
+# parsed like any detection. `chat/a2ui.py` lays the fields out.
+
+FORMS: dict[str, tuple[str, ...]] = {
+    "set_position": ("shares", "cost"),
+    "set_alerts": ("above", "below"),
+    "tag": ("tags",),
+    "untag": ("tags",),
+    "add_ticker": ("name",),
+}
+NUMERIC_FIELDS = frozenset({"shares", "cost", "above", "below"})
+
+
+def _figure(value) -> str:
+    return format(value, ".12g") if isinstance(value, (int, float)) else ""
+
+
+def form_of(action: Action) -> dict[str, str]:
+    """The proposal as its card's fields hold it."""
+    form = {"ticker": action.ticker}
+    for name in FORMS.get(action.kind, ()):
+        if name in ("above", "below"):
+            rule = next((a for a in action.alerts if a["type"] == name), None)
+            form[name] = _figure(rule["price"]) if rule else ""
+        elif name == "tags":
+            form[name] = ", ".join(action.tags)
+        elif name in NUMERIC_FIELDS:
+            form[name] = _figure(action.args.get(name))
+        else:
+            form[name] = str(action.args.get(name) or "")
+    return form
+
+
+def args_from_form(kind: str, form: dict) -> dict:
+    """The card's fields as the tool's arguments, for `revise` to parse.
+
+    A blank number is left out rather than read as zero: "0 shares" clears a
+    position, and an emptied box is not the reader asking for that.
+    """
+    def text(name: str) -> str:
+        return str(form.get(name) or "").strip()
+
+    def figure(name: str):
+        raw = text(name).replace(",", ".")
+        return raw if raw else None
+
+    if kind == "set_position":
+        return {k: v for k in ("shares", "cost") if (v := figure(k)) is not None}
+    if kind == "set_alerts":
+        return {"alerts": [{"type": k, "price": v} for k in ("above", "below")
+                           if (v := figure(k)) is not None]}
+    if kind in ("tag", "untag"):
+        return {"tags": [t.strip() for t in text("tags").split(",") if t.strip()]}
+    if kind == "add_ticker":
+        return {"name": text("name")}
+    return {}
+
+
+# A whole message that answers a pending proposal. Short on purpose: "sí, pero
+# a 150" is a new instruction and goes to the classifier, not a yes.
+_YES = frozenset({
+    "si", "sí", "yes", "ok", "okay", "vale", "dale", "hazlo", "confirmo",
+    "confirmar", "confirm", "adelante", "claro", "perfecto", "go", "do it",
+    "go ahead", "yes please", "si por favor", "sí por favor", "sí hazlo",
+    "si hazlo", "venga",
+})
+_NO = frozenset({
+    "no", "nope", "cancel", "cancela", "cancelar", "cancelalo", "cancélalo",
+    "mejor no", "dejalo", "déjalo", "olvidalo", "olvídalo", "no gracias",
+    "no thanks", "never mind", "nevermind",
+})
+
+
+def verdict(text: str) -> bool | None:
+    """True for a typed yes, False for a typed no, None for anything else."""
+    said = re.sub(r"[^\w\sáéíóúüñ]", "", str(text or "").lower()).strip()
+    said = re.sub(r"\s+", " ", said)
+    if said in _YES:
+        return True
+    if said in _NO:
+        return False
+    return None

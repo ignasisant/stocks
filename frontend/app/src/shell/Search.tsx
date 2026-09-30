@@ -15,9 +15,11 @@
 import { useEffect, useRef, useState } from "react";
 
 import { get, send } from "./api";
+import { assetLabel } from "./assets";
 import { useLang, useT } from "./i18n";
 import { BASE } from "./router";
 import { useTickerProfile } from "./tickers";
+import { Badge } from "../ui/Badge";
 
 type Match = {
   ticker: string;
@@ -27,6 +29,12 @@ type Match = {
   /** favorite | held | "" — own-list rows only. */
   mark: string;
   exchange: string;
+  /**
+   * What kind of thing the symbol is (`shell/assets.ts`), or "fund" when the
+   * server knows no more than that. Null when nothing on file says — no pill
+   * rather than a guessed one.
+   */
+  asset?: string | null;
 };
 
 type Results = { query: string; matches: Match[] };
@@ -238,6 +246,7 @@ function Found({
             name={match.name}
             mark={match.mark}
             exchange={match.exchange}
+            asset={match.asset}
             onPick={onPick}
           />
         </div>
@@ -262,6 +271,7 @@ function Row({
   name,
   mark,
   exchange,
+  asset,
   quote,
   onPick,
 }: {
@@ -269,14 +279,17 @@ function Row({
   name?: string;
   mark?: string;
   exchange?: string;
+  asset?: string | null;
   quote?: Quote;
   onPick: (ticker: string, name?: string) => void;
 }) {
+  const t = useT();
   const lang = useLang();
-  // The logo from the shared batch every ticker cell uses; the name falls back
-  // to it too, for a recent entry nothing remembered a name for.
+  // The logo from the shared batch every ticker cell uses; the name and the
+  // kind fall back to it too, for a recent entry nothing remembered them for.
   const profile = useTickerProfile(ticker);
   const company = name || profile?.name || "";
+  const kind = assetLabel(asset ?? profile?.asset);
   const price = format(quote?.price, lang, { maximumFractionDigits: 2 });
   const pct = format(quote?.pct, lang, {
     style: "percent",
@@ -302,6 +315,13 @@ function Row({
       )}
       <span className="ag-search-ticker">{ticker}</span>
       {company ? <span className="ag-search-name">{company}</span> : null}
+      {/* "XEON" alone does not say it is cash: the kind before the venue, so
+          a share, a fund, a coin and an index are told apart in the list. */}
+      {kind ? (
+        <span className="ag-search-kind">
+          <Badge>{t(kind)}</Badge>
+        </span>
+      ) : null}
       {exchange ? <span className="ag-search-venue">{exchange}</span> : null}
       {price ? (
         <span className="ag-search-quote">

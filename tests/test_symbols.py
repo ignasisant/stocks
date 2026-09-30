@@ -187,3 +187,15 @@ def test_non_isin_never_calls_out(monkeypatch, isin_cache):
     serve(monkeypatch, MIPS, spy=spy)
     assert symbols.symbol_for_isin("NOW") is None
     assert spy == []
+
+
+def test_search_keeps_each_rows_quote_type(monkeypatch):
+    """The match already says what the row is; the search box's label
+    (asset_kind.cached) reads it from here instead of looking it up."""
+    from stocks.data import funds
+
+    serve(monkeypatch, MIPS)
+    search_symbols("mips")
+    assert funds.quote_type("MIPS.ST", fetch=False) == "EQUITY"
+    # A row the search drops is not one it vouches for.
+    assert funds.quote_type("MIPSX", fetch=False) is None

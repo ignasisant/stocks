@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 
 from stocks.portfolio.positions import RealizedSale
 from stocks.portfolio.tax.base import (
+    Acquisitions,
     Kpi,
     Note,
     ReportingFlag,
@@ -43,8 +44,7 @@ from stocks.portfolio.tax.base import (
     TaxSettings,
     days_after_window,
     open_period,
-    recovered_losses,
-    replacement_dates,
+    repurchases,
     sales_in,
 )
 
@@ -179,7 +179,7 @@ def _is_fund(ticker: str, settings: TaxSettings) -> bool:
 def fiscal_period(
     realized: list[RealizedSale],
     period: str,
-    buy_dates: dict[str, list[str]],
+    buy_dates: Acquisitions,
     settings: TaxSettings | None = None,
 ) -> IeTaxPeriod:
     """Summarize an ISO date prefix ("YYYY" or "YYYY-MM") for the CG1/Form 11.
@@ -193,6 +193,7 @@ def fiscal_period(
         IeTaxPeriod, CODE, CURRENCY, period,
         settings=cfg, funds_classified=cfg.fund_tickers is not None,
     )
+    blocks = repurchases(realized, buy_dates, WINDOW)
     for s in sales_in(period, realized, YEAR_START):
         out.sales.append(s)
         fund = _is_fund(s.ticker, cfg)
@@ -212,15 +213,11 @@ def fiscal_period(
             out.disallowed_loss += loss
             continue
         out.share_loss += loss
-        if replacement_dates(s, buy_dates.get(s.ticker, []), WINDOW):
-            out.share_disallowed += loss
-            out.disallowed_loss += loss
-    out.recovered_loss = recovered_losses(
-        realized,
-        period,
-        buy_dates,
-        WINDOW,
-        blocked_filter=lambda s: not _is_fund(s.ticker, cfg),
+        restricted = blocks.disallowed(s)
+        out.share_disallowed += restricted
+        out.disallowed_loss += restricted
+    out.recovered_loss = blocks.recovered(
+        period, blocked_filter=lambda s: not _is_fund(s.ticker, cfg)
     )
     return out
 

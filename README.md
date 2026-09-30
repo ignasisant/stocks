@@ -148,6 +148,7 @@ docker run --rm -p 8501:8501 \
 uv run stocks update      # fetch + cache price history for the watchlist
 uv run stocks alerts      # print any triggered price alerts
 uv run stocks dashboard   # serve the app at http://localhost:8501
+uv run stocks dashboard --reload   # same, for development: Python reloads, frontend live under Vite
 uv run stocks search bank of america   # find tickers by name or symbol (SEC map)
 
 # fundamental KPIs + comps table (+ EUR spot, + SEC EDGAR cross-check)
@@ -734,7 +735,8 @@ are per-machine and gitignored.
 ## The landing page and the app share one port
 
 `stocks dashboard` serves `web/server.py`, a plain Starlette app run by uvicorn
-(`--reload` restarts it on source changes):
+(`--reload` restarts it on Python changes and runs the frontend live from its
+source under Vite, hot-reloaded; see `frontend/README.md`):
 
 | Path | Served by |
 |------|-----------|

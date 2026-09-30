@@ -346,7 +346,12 @@ class Quotes(BaseModel):
 class Bars(BaseModel):
     ticker: str
     range: str = Field(description="The requested range label, e.g. 1y.")
-    interval: str = Field(description="Bar size the range downloads at, e.g. 1d.")
+    interval: str = Field(
+        description=(
+            "Bar size the range is drawn at, e.g. 1d — or 1wk/1mo for a max "
+            "range too long to draw daily."
+        )
+    )
     dates: list[str] = Field(
         description=(
             "Exchange-local wall time, no zone — the axis the app draws. "
@@ -378,6 +383,21 @@ class Bars(BaseModel):
         description=(
             "Axis breaks hiding closed-market time, so bars render contiguous. "
             "Pass straight to the x-axis; empty for a market that trades 24/7."
+        ),
+    )
+    listed: str | None = Field(
+        default=None,
+        description=(
+            "The listing's first trading day (YYYY-MM-DD), or null when Yahoo "
+            "did not say and the range cannot tell."
+        ),
+    )
+    ranges: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Range labels worth offering for this listing, in display order: a "
+            "window longer than its whole history is dropped, since it would "
+            "draw the same bars as `max`. Every label when `listed` is null."
         ),
     )
 
@@ -807,6 +827,107 @@ class Fund(BaseModel):
     asset_classes: list[list] = Field(
         default_factory=list, description="[[label, fraction], …] — stocks, bonds, cash."
     )
+    closed_end: ClosedEnd | None = Field(
+        default=None,
+        description=(
+            "Set for a listed closed-end fund (Yahoo files those as EQUITY): "
+            "its NAV, premium, distribution rate and filed balance sheet, each "
+            "with the source it came from. None for an ETF or mutual fund."
+        ),
+    )
+    cash: CashYield | None = Field(
+        default=None,
+        description=(
+            "Set for a money-market fund only: what it has earned, annualised, "
+            "beside the central bank rate it tracks. The number that fund is "
+            "held for — its chart is a straight line."
+        ),
+    )
+
+
+class CashYield(BaseModel):
+    yield_3m: float | None = Field(
+        default=None, description="Last three months, annualised: 0.021 is 2.1%."
+    )
+    yield_1y: float | None = Field(default=None, description="Last twelve months.")
+    as_of: str | None = Field(
+        default=None, description="YYYY-MM-DD of the last close read."
+    )
+    source: str = Field(
+        default="price",
+        description=(
+            "price — read off the accumulating price; distribution — Yahoo's "
+            "yield, for a fund whose price is pinned at 1 and pays it out."
+        ),
+    )
+    bank: str | None = Field(
+        default=None, description="ecb | fed — whose rate it tracks."
+    )
+    policy_rate: float | None = Field(
+        default=None, description="That bank's rate (Fed: its target range's midpoint)."
+    )
+    policy_as_of: str | None = None
+
+
+class SourcedFigure(BaseModel):
+    """One number and the source it was read from — or the sources asked."""
+
+    value: float | None = None
+    source: str | None = Field(
+        default=None,
+        description=(
+            "yahoo | yahoo_nav | edgar_xbrl | edgar_nport; None when no source had it."
+        ),
+    )
+    as_of: str | None = Field(default=None, description="YYYY-MM-DD the figure is for.")
+    tried: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Sources asked that had nothing. With no value, why the tile is "
+            "empty; with a value, the second opinion that could not be had."
+        ),
+    )
+
+
+class SourceCheck(BaseModel):
+    """A filed figure against the market feed's, on the filing's own date."""
+
+    metric: str = Field(description="nav | premium.")
+    as_of: str
+    official: float
+    official_source: str
+    market: float | None = Field(
+        default=None, description="None when the market feed has no row for that session."
+    )
+    market_source: str
+    agree: bool | None = Field(
+        default=None,
+        description="None when nothing was compared — not the same as agreeing.",
+    )
+    tolerance: float = Field(
+        description="Allowed gap: relative for nav (0.01 = 1%), points for premium."
+    )
+
+
+class ClosedEnd(BaseModel):
+    nav_symbol: str = Field(description="Yahoo's NAV line for the fund, e.g. XMUAX.")
+    nav: SourcedFigure
+    price: SourcedFigure
+    premium: SourcedFigure = Field(
+        description="Price ÷ NAV − 1 on one session: −0.05 is a 5% discount."
+    )
+    distribution_rate: SourcedFigure = Field(
+        description="Annual distribution ÷ price. Can include return of capital."
+    )
+    expense_ratio: SourcedFigure
+    net_assets: SourcedFigure
+    total_assets: SourcedFigure
+    leverage: SourcedFigure = Field(
+        description="Liabilities ÷ total assets from the N-PORT balance sheet."
+    )
+    holdings_count: int | None = None
+    holdings_as_of: str | None = None
+    checks: list[SourceCheck] = Field(default_factory=list)
 
 
 class Trade(BaseModel):
@@ -889,6 +1010,16 @@ class Profile(BaseModel):
     )
     is_crypto: bool = False
     is_fund: bool = False
+    asset: str | None = Field(
+        default=None,
+        description=(
+            "stock | equity_fund | bond_fund | money_market | closed_end | "
+            "crypto | index — what the page lays itself out by and labels. "
+            "`fund` where only the quoteType is known yet (a table of "
+            "profiles never fetches); None for a future, a currency, or a "
+            "symbol nothing is known about."
+        ),
+    )
 
 
 class Peer(BaseModel):
@@ -938,6 +1069,14 @@ class SearchMatch(BaseModel):
         description="favorite | held | '' — only own-list rows carry one.",
     )
     exchange: str = Field(default="", description="Venue, worldwide rows only.")
+    asset: str | None = Field(
+        default=None,
+        description=(
+            "The row's asset kind as `Profile.asset`, from what this host "
+            "already knows — never a fetch per keystroke, so a fund no page "
+            "has opened reads `fund` and an unknown symbol None."
+        ),
+    )
 
 
 class SearchResults(BaseModel):

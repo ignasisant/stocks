@@ -58,6 +58,17 @@
   white-space: nowrap;
 }
 
+/* The kind's one line under the header: what this is and what to read it by.
+   A sentence, so it is capped to a readable measure; pulled up under the
+   header it belongs to rather than floating a full page gap below it. */
+.tk-kind-line {
+  margin: -8px 0 0;
+  max-width: 72ch;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+  line-height: 1.45;
+}
+
 .tk-custody {
   display: inline-flex;
   align-items: center;
@@ -588,6 +599,14 @@
   white-space: nowrap;
 }
 
+/* A holding's name wraps and its weight never does: a closed-end fund's lines
+   are bond issuers ("Puerto Rico Sales Tax Financing Corp Sales Tax Revenue"),
+   and on a phone one of those on one line pushed the weight column out of
+   sight, behind a sideways scroll nobody knew was there. */
+.tk-holdings td:first-child {
+  white-space: normal;
+}
+
 .tk-comps th[scope="row"] {
   color: var(--ag-text-primary);
   padding-right: 16px;
@@ -896,6 +915,11 @@
   .tk-seg {
     overflow-x: auto;
     max-width: 100%;
+  }
+
+  /* Seven range pills, "Todo" the widest, fit a 360px phone only at 10px. */
+  .tk-seg button {
+    padding: 6px 10px;
   }
 
   .tk-star,

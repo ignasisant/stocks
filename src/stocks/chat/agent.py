@@ -21,6 +21,8 @@ a model that ignores the tools, a gather that runs long — all of them return
 
 from __future__ import annotations
 
+import secrets
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date
@@ -111,6 +113,21 @@ def available(provider: Provider) -> bool:
     return provider.supports_tools()
 
 
+def _watched(execute: Callable[[str, dict], str],
+             on_tool: Callable[[str, ToolCall, bool], None],
+             ) -> Callable[[str, dict], str]:
+    """The dispatcher, telling `on_tool` as each call starts and returns."""
+
+    def run(name: str, args: dict) -> str:
+        cid = f"tool_{secrets.token_hex(6)}"
+        on_tool(cid, ToolCall(name, dict(args or {}), ""), False)
+        out = execute(name, args)
+        on_tool(cid, ToolCall(name, dict(args or {}), out), True)
+        return out
+
+    return run
+
+
 def gather(
     provider: Provider,
     api_key: str,
@@ -119,6 +136,7 @@ def gather(
     *,
     model: str = "",
     timeout: float = TIMEOUT,
+    on_tool: Callable[[str, ToolCall, bool], None] | None = None,
 ) -> Evidence:
     """Run the tool loop for the pending turn and return what it fetched.
 
@@ -129,16 +147,25 @@ def gather(
 
     Runs on the provider's cheapest model: the gather step picks tools and
     reads results, which is not what the expensive model is for.
+
+    `on_tool(id, call, done)` is told about each call twice while the loop
+    runs — as it starts (`done` False, no result yet) and as it returns — so a
+    caller can show
+    the research happening instead of a spinner over it. Called on the loop's
+    own thread; a call the timeout abandons is announced and never finished.
     """
     if not available(provider) or not messages:
         return Evidence(ok=False)
     system = GATHER_SYSTEM.format(today=date.today().isoformat())
     picked = model or provider.classifier_model or provider.default_model
 
+    execute = toolbox.executor(ctx)
+    if on_tool is not None:
+        execute = _watched(execute, on_tool)
+
     def run():
         return provider.run_tools(
-            api_key, picked, system, messages,
-            toolbox.specs(ctx), toolbox.executor(ctx),
+            api_key, picked, system, messages, toolbox.specs(ctx), execute,
         )
 
     # Same discipline as engine.in_parallel: no `with`, because shutdown would

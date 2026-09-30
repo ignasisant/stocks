@@ -154,6 +154,14 @@
   color: var(--ag-text-muted);
 }
 
+/* The status row's counter, repeated in the header for a phone (below). */
+.ag-chat-head-quota {
+  display: none;
+  flex: none;
+  font-size: var(--ag-fs-xs);
+  white-space: nowrap;
+}
+
 .ag-chat-body {
   display: flex;
   min-height: 0;
@@ -469,6 +477,12 @@
   border-color: var(--ag-border-focus);
 }
 
+/* Words still being said, or about to be replaced by the transcript. Not
+   `ag-chat-live`: that is the research list under a pending answer. */
+.ag-chat-heard {
+  color: var(--ag-text-secondary);
+}
+
 .ag-chat-send {
   display: grid;
   width: 38px;
@@ -487,14 +501,6 @@
   background: var(--ag-surface-hover);
   color: var(--ag-text-faint);
   cursor: default;
-}
-
-.ag-chat-rail {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  margin-bottom: 6px;
 }
 
 .ag-chat-hint {
@@ -565,14 +571,6 @@
 
 /* What a turn was, when it was not simply typed and answered: a transcript,
    or an answer the reader cut short. Above the bubble, where the lens is. */
-/* Recording: the microphone holds the critical colour for as long as it is
-   listening, because nothing else on screen says the device is open. */
-.ag-chat-taping,
-.ag-chat-taping:hover:not(:disabled) {
-  background: var(--ag-critical-fill);
-  color: var(--ag-on-brand);
-}
-
 /* ------------------------------------------------- the attached statement */
 
 /* The clip sits inside the input bar, left of the field: the reader already
@@ -1299,4 +1297,152 @@
     /* Clear of the bottom tab bar, which is fixed at the same corner. */
     bottom: 76px;
   }
+  /* Every row above and below the conversation is height taken from it, and
+     on a phone there is little to take from. The header tightens, the
+     status row goes — its counter moves up into the header, the provider's
+     name is in Settings — and the composer loses its spare padding. */
+  .ag-chat-head {
+    gap: 4px;
+    padding: 4px 6px;
+  }
+  .ag-chat-status {
+    display: none;
+  }
+  .ag-chat-head-quota {
+    display: inline;
+  }
+  .ag-chat-composer {
+    padding: 6px 8px 8px;
+  }
+}
+
+/* A proposal's controls, under the bubble that asks (`ActionCard`). The
+   question is the bubble; the card only holds what answers it. */
+.ag-chat-act {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.ag-chat-act-error {
+  color: var(--ag-critical-fill);
+}
+
+/* The research under a pending answer (`Turn.Live`): the trace's own lines,
+   open and arriving one by one, flush with the bubble's text. */
+.ag-chat-live {
+  padding-left: 0;
+  list-style: none;
+}
+
+/* An A2UI surface (`chat/a2ui.tsx`): the server's layout, the drawer's look.
+   Rows wrap rather than squeeze, because a 380px drawer is the usual width. */
+.ag-a2ui-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ag-a2ui-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ag-a2ui-row > div {
+  flex: 1 1 110px;
+  min-width: 0;
+}
+
+.ag-a2ui-align-end {
+  align-items: flex-end;
+}
+
+.ag-a2ui-align-center {
+  align-items: center;
+}
+
+.ag-a2ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-2xs);
+}
+
+.ag-a2ui-slider input {
+  width: 100%;
+  accent-color: var(--ag-brand-accent);
+}
+
+.ag-a2ui-text {
+  margin: 0;
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-a2ui-caption {
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-2xs);
+}
+
+.ag-a2ui-h3 {
+  font-weight: 600;
+}
+
+.ag-a2ui-divider {
+  width: 100%;
+  margin: 2px 0;
+  border: 0;
+  border-top: 1px solid var(--ag-border);
+}
+
+/* A surface under an answer (`Surfaces`): carded, like the import preview —
+   it is something to work, not something the assistant said. */
+.ag-chat-surface {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+}
+
+/* The bull and bear cases (`Debate`), side by side when the drawer is wide
+   enough for two readable columns, stacked when it is not. */
+.ag-chat-debate {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.ag-chat-case {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--ag-border);
+  border-left-width: 3px;
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-chat-case-bull {
+  border-left-color: var(--ag-up);
+}
+
+.ag-chat-case-bear {
+  border-left-color: var(--ag-down);
+}
+
+.ag-chat-case-head {
+  margin: 0 0 4px;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }

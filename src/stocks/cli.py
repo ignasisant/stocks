@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
+import socket
 import subprocess
 import sys
 from datetime import UTC
@@ -413,15 +416,62 @@ def cmd_dashboard(args: argparse.Namespace) -> None:
            "--host", args.host, "--port", str(args.port),
            # stocks.obs already logs every request, with its latency.
            "--no-access-log"]
-    if args.reload:
-        cmd += ["--reload", "--reload-dir", str(Path(__file__).parent)]
-    print(f"TopStocks at http://{args.host}:{args.port}/  (old app at /legacy/)")
     # From the repo root whatever the caller's directory: the secrets file is
     # looked up as `.streamlit/secrets.toml` relative to the working directory,
     # and a server started from `frontend/app` boots with no sign-in at all.
     from stocks.config import PROJECT_ROOT
 
-    subprocess.run(cmd, check=False, cwd=PROJECT_ROOT)
+    env = dict(os.environ)
+    vite = None
+    if args.reload:
+        cmd += ["--reload", "--reload-dir", str(Path(__file__).parent)]
+        if not args.bundle:
+            vite = _start_vite(PROJECT_ROOT / "frontend" / "app", env)
+    # A SIGTERM (`kill`, a supervisor) would end this process without
+    # unwinding and leave its children holding their ports; as an exit it
+    # unwinds into the `finally`. Which asks rather than kills: uvicorn's
+    # reloader SIGKILLed leaves its worker serving the port on its own.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    print(f"TopStocks at http://{args.host}:{args.port}/  (old app at /legacy/)")
+    children = [c for c in (vite, subprocess.Popen(cmd, cwd=PROJECT_ROOT, env=env)) if c]
+    try:
+        children[-1].wait()
+    finally:
+        for child in children:
+            if child.poll() is None:
+                child.terminate()
+        for child in children:
+            child.wait()
+
+
+def _start_vite(app: Path, env: dict[str, str]) -> subprocess.Popen | None:
+    """The frontend's dev server, for a `dashboard --reload`; None without Node.
+
+    `--reload` restarts uvicorn on a Python change, but the page is the
+    committed bundle, which only `npm run build` rewrites: every frontend edit
+    stayed invisible at :8501 until somebody remembered to build. With Vite
+    running, the server sends the document with its modules pointed at it
+    (`_dev_document` in web/server.py), so :8501 draws the source on disk and
+    hot-reloads it, and the committed bundle changes only when it is built on
+    purpose. `STOCKS_VITE` tells both sides where it listens: uvicorn's worker
+    inherits it, and `vite.config.ts` makes it the origin of the URLs it
+    writes. A free port rather than a fixed one: a second Vite, for
+    screenshots or another checkout, may already hold the usual ones.
+    """
+    binary = app / "node_modules" / ".bin" / "vite"
+    if not binary.is_file():
+        print("No frontend/app/node_modules (npm --prefix frontend/app ci): "
+              "serving the committed bundle, which only `npm run build` updates")
+        return None
+    with socket.socket() as probe:
+        probe.bind(("localhost", 0))
+        port = probe.getsockname()[1]
+    env["STOCKS_VITE"] = f"http://localhost:{port}"
+    print(f"Frontend live from {app} under Vite (:{port}), not the committed bundle")
+    return subprocess.Popen(
+        [str(binary), "--port", str(port), "--strictPort", "--clearScreen", "false"],
+        cwd=app, env=env,
+    )
 
 
 def _print_fund(profile) -> None:
@@ -1323,7 +1373,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_dash.add_argument("--host", default="localhost")
     p_dash.add_argument("--port", type=int, default=8501)
     p_dash.add_argument("--reload", action="store_true",
-                        help="restart on source changes")
+                        help="restart on Python changes; the frontend runs "
+                             "live from its source under Vite")
+    p_dash.add_argument("--bundle", action="store_true",
+                        help="with --reload, serve the committed frontend "
+                             "bundle instead of the live source")
     p_dash.set_defaults(func=cmd_dashboard)
 
     p_etf = sub.add_parser(

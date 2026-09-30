@@ -252,3 +252,103 @@ def test_a_commit_is_a_write_so_a_bearer_token_never_gets_one(client, account):
         },
     )
     assert response.status_code == 403
+
+
+# ------------------------------------------------------------ column mapping
+
+# No parser owns these headers, so the column mapper reads it.
+FOREIGN = """When,What,Side,Units,Each,Money
+02/01/2024,AAPL,Compra,10,100,EUR
+05/02/2024,MSFT,Compra,5,200,EUR
+"""
+
+
+@pytest.fixture
+def mapper(monkeypatch):
+    """A column mapper that swaps quantity and price, as a weak model might,
+    and a chain with one backend so the mapper is reached at all."""
+    from stocks.portfolio import llm_map
+
+    class Backend:
+        id = "fake"
+        needs_key = False
+
+    asked: list[int] = []
+
+    def wrong(provider, api_key, grid):
+        asked.append(1)
+        return {"header_row": 0,
+                "columns": {"date": 0, "ticker": 1, "action": 2, "quantity": 4,
+                            "price": 3, "amount": None, "currency": 5,
+                            "fee": None, "note": None},
+                "date_format": "%d/%m/%Y", "decimal": ".", "thousands": "",
+                "action_map": {"compra": "buy"}, "asset_class": ""}
+
+    monkeypatch.setattr(llm_map, "map_columns", wrong)
+    monkeypatch.setattr(llm_map, "_resolve_symbols", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "stocks.api.routes.chat_attach._provider",
+        lambda paths, held=None: (Backend(), "k"),
+    )
+    return asked
+
+
+def test_a_mapped_export_shows_how_its_columns_were_read(
+    client, account, signed_in, mapper
+):
+    from stocks.chat import a2ui
+
+    payload = signed_in.post(
+        "/v1/chat/attachments", json=attach(FOREIGN, filename="foreign.csv")
+    ).json()
+    read = [(r["quantity"], r["price"]) for r in payload["fresh"]]
+    assert read == [(100, 10), (200, 5)]
+    surface = payload["surface"]
+    a2ui.check(surface)
+    data = surface[-1]["updateDataModel"]["value"]["mapping"]
+    assert data["columns"]["quantity"] == "4"
+    pickers = surface[1]["updateComponents"]["components"]
+    options = next(c for c in pickers if c["id"] == "c_quantity")["options"]
+    # The file's own column names, with a sample — not bare indices.
+    assert {"label": "Units · 10", "value": "3"} in options
+    again = next(c for c in pickers if c["id"] == "again")
+    assert again["action"]["event"]["name"] == "remap"
+
+
+def test_a_corrected_mapping_is_read_again_with_no_model_call(
+    client, account, signed_in, mapper
+):
+    first = signed_in.post(
+        "/v1/chat/attachments", json=attach(FOREIGN, filename="foreign.csv")
+    ).json()
+    mapping = first["surface"][-1]["updateDataModel"]["value"]["mapping"]
+    mapping["columns"].update({"quantity": "3", "price": "4"})
+    mapper.clear()
+    again = signed_in.post(
+        "/v1/chat/attachments",
+        json=attach(FOREIGN, filename="foreign.csv", mapping=mapping),
+    ).json()
+    assert mapper == []
+    assert [(r["quantity"], r["price"]) for r in again["fresh"]] == [(10, 100), (5, 200)]
+    assert again["surface"][-1]["updateDataModel"]["value"]["mapping"]["columns"][
+        "quantity"] == "3"
+
+
+def test_a_mapping_missing_a_required_column_reads_nothing(
+    client, account, signed_in, mapper
+):
+    first = signed_in.post(
+        "/v1/chat/attachments", json=attach(FOREIGN, filename="foreign.csv")
+    ).json()
+    mapping = first["surface"][-1]["updateDataModel"]["value"]["mapping"]
+    mapping["columns"]["date"] = ""
+    again = signed_in.post(
+        "/v1/chat/attachments",
+        json=attach(FOREIGN, filename="foreign.csv", mapping=mapping),
+    ).json()
+    assert again["fresh"] == [] and again["skipped"]
+
+
+def test_a_file_a_parser_owns_has_no_mapping_to_show(client, account, signed_in):
+    payload = signed_in.post("/v1/chat/attachments", json=attach()).json()
+    assert payload["surface"] is None

@@ -122,6 +122,67 @@ def _own_import_diagnostics():
 
 
 @pytest.fixture(autouse=True)
+def _own_feedback_dir():
+    """Keep test submissions out of the real feedback inbox.
+
+    `web.feedback.FEEDBACK_DIR` is the checkout's `data/feedback`, and
+    `POST /feedback` is a route guests may call — so every suite that walks
+    `guest.OPEN` files an `"a note"` report there, and `stocks feedback` read
+    194 of them beside the 8 real ones on 2026-09-29. Its own temporary
+    directory for the reason `_own_guest_dir` gives, restored by hand likewise.
+    """
+    import shutil
+    import tempfile
+
+    from stocks.web import feedback
+
+    before = feedback.FEEDBACK_DIR
+    made = tempfile.mkdtemp(prefix="feedback-")
+    feedback.FEEDBACK_DIR = pathlib.Path(made)
+    yield
+    feedback.FEEDBACK_DIR = before
+    shutil.rmtree(made, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def _bucket_off():
+    """Start every test with the bucket mirror unconfigured.
+
+    `storage` reads `[storage]` from the checkout's `.streamlit/secrets.toml`,
+    and on a machine that deploys, that is the production bucket: a write path
+    under the repo root that a test exercised was mirrored there — which is how
+    the guest-route suites' test notes reached the operator's inbox. A test
+    about the mirror says what it is by replacing `storage._cached` itself.
+    Restored by hand for the reason `_own_free_llm_counter` gives.
+    """
+    from stocks import storage
+
+    before = storage._cached
+    storage._cached = {"config": None}
+    yield
+    storage._cached = before
+
+
+@pytest.fixture(autouse=True)
+def _web_off():
+    """Start every test with the chat's web search unavailable.
+
+    The assistant reads the web wherever `ddgs` is installed — there is no
+    per-account toggle any more (`engine.web_enabled`) — and it is installed
+    here, so without this every suite that takes a chat turn would plan
+    searches and open pages on the real internet. A test about the web says so
+    by patching `chat_web.available` itself.
+    Restored by hand for the reason `_own_free_llm_counter` gives.
+    """
+    from stocks.web import chat_web
+
+    before = chat_web.available
+    chat_web.available = lambda: False
+    yield
+    chat_web.available = before
+
+
+@pytest.fixture(autouse=True)
 def _listing_at_the_ledgers_word():
     """Answer "which currency is this price series in" with "unknown".
 
@@ -190,3 +251,30 @@ def _own_memo_dir(tmp_path):
     cache.MEMO_DIR = tmp_path / "memo"
     yield
     cache.MEMO_DIR = before
+
+
+@pytest.fixture(autouse=True)
+def _own_symbol_kinds():
+    """Keep learned quoteTypes and asset kinds out of the checkout's data/.
+
+    `funds.remember` runs on every Yahoo search row and `asset_kind.remember`
+    on every fund the ticker routes classify, so without this each suite that
+    serves a fake "MIPSX" or "XEON" writes it into `data/quote_types.json` /
+    `data/asset_kinds.json` — and the next run, and the dev server, read it
+    back as fact. Each test starts from the catalog seed alone, in its own
+    directory, restored by hand for the reason `_own_free_llm_counter` gives.
+    """
+    import shutil
+    import tempfile
+
+    from stocks.data import asset_kind, funds
+
+    before = (funds.TYPE_CACHE, funds._types, asset_kind.KIND_CACHE, asset_kind._kinds)
+    made = pathlib.Path(tempfile.mkdtemp(prefix="kinds-"))
+    funds.TYPE_CACHE = made / "quote_types.json"
+    funds._types = None
+    asset_kind.KIND_CACHE = made / "asset_kinds.json"
+    asset_kind._kinds = None
+    yield
+    funds.TYPE_CACHE, funds._types, asset_kind.KIND_CACHE, asset_kind._kinds = before
+    shutil.rmtree(made, ignore_errors=True)

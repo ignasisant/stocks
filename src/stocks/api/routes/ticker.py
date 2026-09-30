@@ -28,7 +28,7 @@ from stocks.analysis.fundamentals import (
     quarterly_eps,
     verdict,
 )
-from stocks.analysis.history import PERIODS, rangebreaks
+from stocks.analysis.history import PERIODS, bar_interval, listed, rangebreaks, ranges
 from stocks.analysis.listing import (
     listing_currencies,
     restate_position,
@@ -45,6 +45,8 @@ from stocks.api.schemas import (
     AnnualRow,
     AssetStats,
     Bars,
+    CashYield,
+    ClosedEnd,
     Custodian,
     EarningsEvent,
     Financials,
@@ -64,12 +66,15 @@ from stocks.api.schemas import (
     Profile,
     ProjectedRow,
     Quote,
+    SourceCheck,
+    SourcedFigure,
     TickerPosition,
     Trade,
     Valuation,
     ValuationWindow,
 )
 from stocks.config import CURRENCIES
+from stocks.data.asset_kind import BOND_FUND, CRYPTO, FUND_KINDS, MONEY_MARKET
 from stocks.data.bafin import insider_transactions as bafin_transactions
 from stocks.data.crypto import is_crypto, split_pair
 from stocks.data.estimates import estimate_currency, projection
@@ -133,22 +138,32 @@ def bars(symbol: Symbol, range: Range = "1y") -> Bars:
     ticker = symbol.strip().upper()
     df = loaders.price_bars(ticker, label)
     if df.empty:
-        return Bars(ticker=ticker, range=label, interval=PERIODS[label][1], dates=[])
+        return Bars(
+            ticker=ticker,
+            range=label,
+            interval=PERIODS[label][1],
+            dates=[],
+            ranges=list(PERIODS),
+        )
     # The momentum read on the newest bar, banded in the domain. The page
     # prints it under the RSI figure; shipping only the number would make each
     # front end pick its own thresholds for "overbought".
     latest_rsi = next((v for v in reversed(_column(df, "RSI14")) if v is not None), None)
     banded = verdict("rsi", latest_rsi)
+    since = listed(df, label)
+    size = bar_interval(df, label)
     return Bars(
         ticker=ticker,
         range=label,
-        interval=PERIODS[label][1],
+        interval=size,
         dates=[str(ts) for ts in df.index],
         series={name: _column(df, name) for name in _SERIES},
         dividends=_column(df, "Dividends"),
         rsi_verdict=banded[0] if banded else None,
         rsi_tone=banded[1] if banded else None,
-        rangebreaks=rangebreaks(df, PERIODS[label][1]),
+        rangebreaks=rangebreaks(df, size),
+        listed=since,
+        ranges=ranges(df, since),
     )
 
 
@@ -229,7 +244,9 @@ def events(symbol: Symbol) -> PriceEvents:
     earnings dates found".
     """
     ticker = symbol.strip().upper()
-    if is_crypto(ticker) or is_fund(ticker):
+    # A closed-end fund is asked from the cache only: `/profile` settles it on
+    # the page's first request, and this one must not wait on EDGAR again.
+    if is_crypto(ticker) or is_fund(ticker) or loaders.is_closed_end(ticker, fetch=False):
         return PriceEvents(ticker=ticker, earnings=[])
     dates, results = loaders.earnings(ticker)
     reported = {r.date: r for r in results}
@@ -577,17 +594,23 @@ def profile(symbol: Symbol, account: Account) -> Profile:
     # a cold memo, and neither needs the other: side by side, the header waits
     # for the slower one rather than for both. This is the first answer the
     # page draws and the one that gates its company sections, so its cold
-    # cost is paid by every section under it.
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    # cost is paid by every section under it. The asset kind rides alongside:
+    # it settles which sections exist at all (a listed closed-end fund is a
+    # fund although Yahoo calls it EQUITY, an index has no company), and after
+    # the first visit it is a cache read.
+    with ThreadPoolExecutor(max_workers=3) as pool:
         name = pool.submit(loaders.company_name, ticker, str(account.watchlist))
         logo = pool.submit(loaders.logo, ticker)
+        kind = pool.submit(loaders.asset_kind, resolved)
+        asset = kind.result()
         return Profile(
             ticker=ticker,
             symbol=resolved,
             name=name.result() or "",
             logo=logo.result(),
-            is_crypto=is_crypto(resolved),
-            is_fund=is_fund(resolved),
+            is_crypto=asset == CRYPTO or is_crypto(resolved),
+            is_fund=asset in FUND_KINDS,
+            asset=asset,
         )
 
 
@@ -822,16 +845,21 @@ def _sec_filer(ticker: str) -> bool | None:
 
 @router.get("/{symbol}/fund", response_model=Fund, summary="Fund profile")
 def fund(symbol: Symbol) -> Fund:
-    """What an ETF or mutual fund is and what it holds.
+    """What an ETF, mutual fund or listed closed-end fund is and what it holds.
 
     `is_fund: false` for an ordinary company, which is an answer and not an
     error: the page asks every ticker and shows this section for the ones that
-    have it.
+    have it. A closed-end fund answers from its own filings and NAV line
+    (`closed_end`), since Yahoo has no fund data for it.
     """
     ticker = symbol.strip().upper()
     profile = loaders.fund_profile(ticker)
     if profile is None:
-        return Fund(ticker=ticker, is_fund=False)
+        cef = loaders.closed_end(ticker)
+        if cef is None:
+            return Fund(ticker=ticker, is_fund=False)
+        return _closed_end_fund(ticker, cef)
+    kind = loaders.asset_kind(ticker)
     return Fund(
         ticker=ticker,
         is_fund=True,
@@ -847,7 +875,9 @@ def fund(symbol: Symbol) -> Fund:
         description=profile.description,
         legal_type=profile.legal_type,
         bond_duration=_num(profile.bond_duration),
-        is_bond_fund=profile.is_bond_fund,
+        # The kind knows a bond fund by its name too; Yahoo publishes no asset
+        # mix for most UCITS bond lines.
+        is_bond_fund=profile.is_bond_fund or kind == BOND_FUND,
         holdings=[
             FundHolding(symbol=h.symbol, name=h.name, weight=h.weight)
             for h in profile.holdings
@@ -855,4 +885,98 @@ def fund(symbol: Symbol) -> Fund:
         disclosed_weight=profile.disclosed_weight,
         sectors=[[label, weight] for label, weight in profile.sectors],
         asset_classes=[[label, weight] for label, weight in profile.asset_classes],
+        cash=_cash_yield(ticker, profile) if kind == MONEY_MARKET else None,
+    )
+
+
+def _cash_yield(ticker: str, profile) -> CashYield | None:
+    """A money-market fund's yield off its own price, beside its bank's rate.
+
+    The year of bars is the chart's own download. A pinned-NAV fund's price
+    says nothing, so Yahoo's trailing yield stands in for it.
+    """
+    from stocks.analysis.cash import annualised, is_flat
+
+    try:
+        close = loaders.price_bars(ticker, "1y")["Close"]
+    except Exception as exc:
+        obs.warn("api.cash_yield_failed", ticker=ticker, error_type=type(exc).__name__)
+        close = pd.Series(dtype=float)
+    if not close.empty and is_flat(close):
+        out = CashYield(yield_1y=_num(profile.dividend_yield), source="distribution")
+    else:
+        out = CashYield(
+            yield_3m=_num(annualised(close, 91)),
+            yield_1y=_num(annualised(close, 365)),
+        )
+    if out.yield_3m is None and out.yield_1y is None:
+        return None
+    if not close.empty:
+        out.as_of = pd.Timestamp(close.index[-1]).date().isoformat()
+    if policy := loaders.policy_rate(profile.currency or ""):
+        out.bank, out.policy_rate, stamp = policy[0], _num(policy[1]), policy[2]
+        out.policy_as_of = stamp.isoformat()
+    return out
+
+
+def _figure(figure) -> SourcedFigure:
+    return SourcedFigure(
+        value=_num(figure.value),
+        source=figure.source if figure.value is not None else None,
+        as_of=figure.as_of,
+        tried=list(figure.tried),
+    )
+
+
+def _closed_end_fund(ticker: str, cef) -> Fund:
+    """A closed-end fund in the ETF shape, plus the figures only it has.
+
+    The shared fields (expense ratio, assets, yield, holdings, asset mix) are
+    filled so the page's fund layout reads the same for both kinds; `aum` is
+    the N-PORT net assets and `dividend_yield` the distribution rate.
+    """
+    return Fund(
+        ticker=ticker,
+        is_fund=True,
+        name=cef.name,
+        quote_type="CEF",
+        currency=cef.currency,
+        expense_ratio=_num(cef.expense_ratio.value),
+        aum=_num(cef.net_assets.value),
+        dividend_yield=_num(cef.distribution_rate.value),
+        description=cef.description,
+        legal_type="Closed-End Fund",
+        is_bond_fund=cef.is_bond_fund,
+        holdings=[
+            FundHolding(symbol=h.symbol, name=h.name, weight=h.weight)
+            for h in cef.holdings
+        ],
+        disclosed_weight=cef.disclosed_weight,
+        asset_classes=[[label, weight] for label, weight in cef.asset_classes],
+        closed_end=ClosedEnd(
+            nav_symbol=cef.nav_symbol,
+            nav=_figure(cef.nav),
+            price=_figure(cef.price),
+            premium=_figure(cef.premium),
+            distribution_rate=_figure(cef.distribution_rate),
+            expense_ratio=_figure(cef.expense_ratio),
+            net_assets=_figure(cef.net_assets),
+            total_assets=_figure(cef.total_assets),
+            leverage=_figure(cef.leverage),
+            holdings_count=cef.holdings_count,
+            holdings_as_of=cef.holdings_as_of,
+            checks=[
+                SourceCheck(
+                    metric=c.metric,
+                    as_of=c.as_of,
+                    official=c.official,
+                    official_source=c.official_source,
+                    market=_num(c.market),
+                    market_source=c.market_source,
+                    agree=c.agree,
+                    tolerance=c.tolerance,
+                )
+                for c in cef.checks
+            ],
+        ),
     )

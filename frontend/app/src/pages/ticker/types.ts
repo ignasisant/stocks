@@ -28,6 +28,13 @@ export type Bars = {
    * them, so the field is carried and unused rather than silently dropped.
    */
   rangebreaks: Record<string, unknown>[];
+  /** The listing's first trading day (`YYYY-MM-DD`); null when unknown. */
+  listed?: string | null;
+  /**
+   * The range labels worth offering, in display order: a window longer than
+   * the listing's whole history is left out, since it draws what "max" does.
+   */
+  ranges?: string[];
 };
 
 export type Quote = {
@@ -97,6 +104,12 @@ export type Profile = {
   logo: string | null;
   is_crypto: boolean;
   is_fund: boolean;
+  /**
+   * What kind of thing this is — `stocks.data.asset_kind` — and so which
+   * layout the page draws. null for a future or a currency pair, and absent
+   * from an older server: both read as the booleans above.
+   */
+  asset?: string | null;
 };
 
 export type AssetStats = {
@@ -321,6 +334,70 @@ export type Fund = {
   /** [[label, fraction], …] */
   sectors: [string, number][];
   asset_classes: [string, number][];
+  /** Set for a listed closed-end fund, which Yahoo files as an ordinary share. */
+  closed_end?: ClosedEnd | null;
+  /** Set for a money-market fund: what it yields, against the rate it tracks. */
+  cash?: CashYield | null;
+};
+
+/**
+ * A money-market fund's yield and the central-bank rate beside it.
+ *
+ * Off its own adjusted closes (`source: "price"`) for an accumulating fund;
+ * off a year of payouts (`"distribution"`) for one whose NAV is pinned at 1,
+ * which has no three-month figure. Fractions throughout.
+ */
+type CashYield = {
+  yield_3m: number | null;
+  yield_1y: number | null;
+  as_of: string | null;
+  source: "price" | "distribution";
+  /** ecb | fed — null when the fund's currency has no bank mapped. */
+  bank: string | null;
+  policy_rate: number | null;
+  policy_as_of: string | null;
+};
+
+/** Where a closed-end fund figure was read: yahoo | yahoo_nav | edgar_xbrl | edgar_nport. */
+export type FigureSource = string;
+
+export type SourcedFigure = {
+  value: number | null;
+  /** null when no source had the figure. */
+  source: FigureSource | null;
+  as_of: string | null;
+  /** Sources asked that had nothing — why a tile is empty, or unchecked. */
+  tried: FigureSource[];
+};
+
+/** A figure filed with the SEC against Yahoo's for the same session. */
+export type SourceCheck = {
+  metric: "nav" | "premium" | string;
+  as_of: string;
+  official: number;
+  official_source: FigureSource;
+  /** null when Yahoo has no row for that session. */
+  market: number | null;
+  market_source: FigureSource;
+  /** null when nothing was compared — not the same as agreeing. */
+  agree: boolean | null;
+  tolerance: number;
+};
+
+export type ClosedEnd = {
+  nav_symbol: string;
+  nav: SourcedFigure;
+  price: SourcedFigure;
+  /** Price ÷ NAV − 1: −0.05 is a 5% discount. */
+  premium: SourcedFigure;
+  distribution_rate: SourcedFigure;
+  expense_ratio: SourcedFigure;
+  net_assets: SourcedFigure;
+  total_assets: SourcedFigure;
+  leverage: SourcedFigure;
+  holdings_count: number | null;
+  holdings_as_of: string | null;
+  checks: SourceCheck[];
 };
 
 export type Comparables = {
@@ -350,6 +427,8 @@ export type SearchMatch = {
   mark: string;
   /** Venue, worldwide rows only: what tells MIPS.ST apart from MIPS. */
   exchange: string;
+  /** An asset kind, "fund" for one not yet narrowed, or null to draw no pill. */
+  asset?: string | null;
 };
 
 /**

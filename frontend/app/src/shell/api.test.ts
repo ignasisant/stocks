@@ -5,7 +5,15 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { get, invalidate, send, withMemo } from "./api";
+import {
+  ApiError,
+  TIMEOUT_MS,
+  get,
+  invalidate,
+  isTransient,
+  send,
+  withMemo,
+} from "./api";
 import { resetFreshness, staleSince } from "./freshness";
 
 function ok(body: unknown): Response {
@@ -95,5 +103,32 @@ describe("get memo", () => {
     await expect(withMemo(() => get("/x"))).rejects.toThrow("503");
     expect(await withMemo(() => get("/x"))).toEqual({ n: 2 });
     expect(stub).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("timeout", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("gives up on a request the server never answers", async () => {
+    vi.useFakeTimers();
+    // A fetch that only ever ends by being aborted, as a hung upstream does.
+    const stub = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_, reject) =>
+          init.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          ),
+        ),
+    );
+    vi.stubGlobal("fetch", stub);
+    const answer = get("/ticker/MUA/insiders").catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(TIMEOUT_MS + 10);
+    const error = await answer;
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ reason: "timeout" });
+    expect(isTransient(error)).toBe(true);
   });
 });

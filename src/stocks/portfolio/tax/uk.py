@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 
 from stocks.portfolio.positions import RealizedSale
 from stocks.portfolio.tax.base import (
+    Acquisitions,
     Kpi,
     Note,
     ReportingFlag,
@@ -181,7 +182,7 @@ class UkTaxPeriod(TaxPeriod):
 def fiscal_period(
     realized: list[RealizedSale],
     period: str,
-    buy_dates: dict[str, list[str]],
+    buy_dates: Acquisitions,
     settings: TaxSettings | None = None,
 ) -> UkTaxPeriod:
     """Summarize a UK tax year ("YYYY" = YYYY/YY+1) or one month of it.

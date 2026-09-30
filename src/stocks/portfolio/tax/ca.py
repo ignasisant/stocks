@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 
 from stocks.portfolio.positions import RealizedSale
 from stocks.portfolio.tax.base import (
+    Acquisitions,
     Kpi,
     Note,
     ReportingFlag,
@@ -44,8 +45,7 @@ from stocks.portfolio.tax.base import (
     flag,
     open_period,
     progressive_tax,
-    recovered_losses,
-    replacement_dates,
+    repurchases,
     sales_in,
 )
 
@@ -157,7 +157,7 @@ class CaTaxPeriod(TaxPeriod):
 def fiscal_period(
     realized: list[RealizedSale],
     period: str,
-    buy_dates: dict[str, list[str]],
+    buy_dates: Acquisitions,
     settings: TaxSettings | None = None,
 ) -> CaTaxPeriod:
     """Summarize an ISO date prefix ("YYYY" or "YYYY-MM") for Schedule 3.
@@ -168,6 +168,7 @@ def fiscal_period(
     """
     cfg = settings or TaxSettings()
     out = open_period(CaTaxPeriod, CODE, CURRENCY, period, settings=cfg)
+    blocks = repurchases(realized, buy_dates, WINDOW)
     for s in sales_in(period, realized, YEAR_START):
         out.sales.append(s)
         if s.gain >= 0:
@@ -175,9 +176,8 @@ def fiscal_period(
             continue
         loss = -s.gain
         out.realized_loss += loss
-        if replacement_dates(s, buy_dates.get(s.ticker, []), WINDOW):
-            out.disallowed_loss += loss
-    out.recovered_loss = recovered_losses(realized, period, buy_dates, WINDOW)
+        out.disallowed_loss += blocks.disallowed(s)
+    out.recovered_loss = blocks.recovered(period)
     return out
 
 

@@ -167,15 +167,19 @@ class MarkerFilter:
     to push a chunk in and take the safe prefix out.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, pattern: re.Pattern[str] = MARKER_RE) -> None:
+        # The walkthrough's `[[goto:…]]` by default; the drawer's page links
+        # (`chat/navigate.py`) are the same shape of marker with another verb.
+        # The pattern's first group is what `found` collects.
         self.found: list[str] = []
         self._held = ""
+        self._re = pattern
 
     def feed(self, chunk: str) -> str:
         """Take a chunk; return what can be shown now (possibly '')."""
         held = self._held + str(chunk)
-        self.found.extend(hit.group(1) for hit in MARKER_RE.finditer(held))
-        held = MARKER_RE.sub("", held)
+        self.found.extend(hit.group(1) for hit in self._re.finditer(held))
+        held = self._re.sub("", held)
         # The *earliest* bracket still close enough to the end to be a marker
         # forming, not the latest: "[[go" would otherwise emit its first
         # bracket and the reader would watch a marker assemble itself.
@@ -189,8 +193,8 @@ class MarkerFilter:
     def close(self) -> str:
         """The stream ended: whatever was held, minus any marker in it."""
         held, self._held = self._held, ""
-        self.found.extend(hit.group(1) for hit in MARKER_RE.finditer(held))
-        return MARKER_RE.sub("", held)
+        self.found.extend(hit.group(1) for hit in self._re.finditer(held))
+        return self._re.sub("", held)
 
 
 def hide_markers(chunks: Iterable, found: list[str]) -> Iterator[str]:

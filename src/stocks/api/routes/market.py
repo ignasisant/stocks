@@ -97,6 +97,7 @@ def profiles(account: Account, tickers: Annotated[str, Query(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"at most {_MAX_TICKERS} tickers per request",
         )
+    from stocks.data import asset_kind
     from stocks.data.crypto import is_crypto
     from stocks.data.funds import is_fund
 
@@ -104,13 +105,17 @@ def profiles(account: Account, tickers: Annotated[str, Query(
 
     def one(ticker: str) -> Profile:
         resolved = loaders.display_symbol(ticker)
+        name = loaders.company_name(ticker, watchlist) or ""
         return Profile(
             ticker=ticker,
             symbol=resolved,
-            name=loaders.company_name(ticker, watchlist) or "",
+            name=name,
             logo=loaders.logo(ticker),
             is_crypto=is_crypto(resolved),
-            is_fund=is_fund(resolved),
+            # Cache-only, like the name: a quoteType lookup per row is the
+            # request-per-row this route exists to avoid.
+            is_fund=is_fund(resolved, fetch=False),
+            asset=asset_kind.cached(resolved, name),
         )
 
     # Ordered as asked, deduplicated: a caller drawing a table wants its own

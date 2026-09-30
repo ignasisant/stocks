@@ -11,8 +11,9 @@ rates, no Section 1256 or option straddles). Rules encoded:
 * **Wash sale (IRC 1091).** A loss is disallowed when substantially identical
   stock is bought within 30 days before or after the sale. The loss is not
   lost: it bumps the basis of the replacement shares, so it comes back when
-  those are sold — the shared `recovered_losses` machinery re-integrates it,
-  keeping the original loss's short/long character.
+  those are sold — the shared `repurchases` machinery re-integrates it,
+  keeping the original loss's short/long character. Buying back fewer shares
+  than were sold washes only that many (Treas. Reg. 1.1091-1(c)).
 * **Netting (IRC 1222).** Short-term and long-term buckets net internally,
   then against each other. A net short-term gain is taxed at ordinary rates
   (stacked on `TaxSettings.other_income`); a net long-term gain at the 0/15/20
@@ -40,6 +41,7 @@ from datetime import date
 
 from stocks.portfolio.positions import RealizedSale
 from stocks.portfolio.tax.base import (
+    Acquisitions,
     Kpi,
     Note,
     ReportingFlag,
@@ -49,8 +51,7 @@ from stocks.portfolio.tax.base import (
     flag,
     open_period,
     progressive_tax,
-    recovered_losses,
-    replacement_dates,
+    repurchases,
     sales_in,
 )
 
@@ -341,7 +342,7 @@ class UsTaxPeriod(TaxPeriod):
 def fiscal_period(
     realized: list[RealizedSale],
     period: str,
-    buy_dates: dict[str, list[str]],
+    buy_dates: Acquisitions,
     settings: TaxSettings | None = None,
 ) -> UsTaxPeriod:
     """Summarize an ISO date prefix ("YYYY" or "YYYY-MM") for Schedule D.
@@ -351,6 +352,7 @@ def fiscal_period(
     """
     cfg = settings or TaxSettings()
     out = open_period(UsTaxPeriod, CODE, CURRENCY, period, settings=cfg)
+    blocks = repurchases(realized, buy_dates, WINDOW)
     for s in sales_in(period, realized, YEAR_START):
         out.sales.append(s)
         long = _is_long(s)
@@ -364,22 +366,18 @@ def fiscal_period(
             continue
         loss = -gain
         out.realized_loss += loss
-        washed = bool(replacement_dates(s, buy_dates.get(s.ticker, []), WINDOW))
-        if washed:
-            out.disallowed_loss += loss
+        washed = blocks.disallowed(s)
+        out.disallowed_loss += washed
         if long:
             out.long_loss += loss
-            out.long_disallowed += loss if washed else 0.0
+            out.long_disallowed += washed
         else:
             out.short_loss += loss
-            out.short_disallowed += loss if washed else 0.0
-    out.short_recovered = recovered_losses(
-        realized, period, buy_dates, WINDOW,
-        blocked_filter=lambda s: not _is_long(s),
+            out.short_disallowed += washed
+    out.short_recovered = blocks.recovered(
+        period, blocked_filter=lambda s: not _is_long(s)
     )
-    out.long_recovered = recovered_losses(
-        realized, period, buy_dates, WINDOW, blocked_filter=_is_long,
-    )
+    out.long_recovered = blocks.recovered(period, blocked_filter=_is_long)
     out.recovered_loss = out.short_recovered + out.long_recovered
     return out
 

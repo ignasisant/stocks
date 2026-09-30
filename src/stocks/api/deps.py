@@ -306,3 +306,7 @@ ChatTurn = Annotated[UserPaths, Depends(_burst("chat"))]
 # rather than a turn, and counting it against `chat` would halve the allowance
 # of everyone who speaks their questions: the note *and* the message it becomes.
 VoiceNote = Annotated[UserPaths, Depends(_burst("voice"))]
+# A press on a surface the assistant drew — a what-if slider let go. Its own
+# budget: it spends no model call, and a reader exploring a slider would
+# otherwise wall their own next question.
+SurfaceAction = Annotated[UserPaths, Depends(_burst("surface"))]
