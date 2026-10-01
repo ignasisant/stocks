@@ -27,10 +27,10 @@ def test_issue_text_translates_key_and_parameters(spanish):
         {"quantity": "20", "held": "1.0000", "date": "2024-12-31"},
     )
     text = tx_text.issue_text(issue)
-    assert text.startswith("venta de 20 sobre 1.0000")
+    assert text.startswith("vende 20 pero")
     assert "2024-12-31" in text
     # The English rendering is untouched — the CLI still prints that one.
-    assert "exceeds" in issue.message
+    assert "only 1.0000 were held" in issue.message
 
 
 def test_issue_text_translates_the_action_inside_a_message(spanish):

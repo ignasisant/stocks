@@ -223,3 +223,44 @@ def test_a_failing_migration_rolls_back_its_whole_step(tmp_path, monkeypatch):
         # committed); the failed step 2 left no trace, so a fixed migration
         # resumes exactly there.
         assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+
+
+# --- retag ---
+
+def test_retag_in_one_currency_leaves_the_other_company_alone(tmp_path):
+    # Revolut's euro "ALV" is Allianz; a dollar "ALV" in the same book is
+    # Autoliv, and stays Autoliv.
+    db = tmp_path / "p.db"
+    add_many([
+        Transaction("2025-01-02", "ALV", "buy", 2, 250.0, "EUR"),
+        Transaction("2025-01-03", "ALV", "buy", 5, 95.0, "USD"),
+    ], path=db)
+    assert ledger.retag("ALV", "ALV.DE", db, currency="EUR") == 1
+    assert sorted((t.ticker, t.currency) for t in all_transactions(db)) == [
+        ("ALV", "USD"), ("ALV.DE", "EUR")
+    ]
+
+
+def test_retag_takes_the_split_along_once_nothing_else_is_left(tmp_path):
+    # A statement's split row carries the currency the parser guessed, not
+    # the trade's: it belongs to whichever label still holds the shares.
+    db = tmp_path / "p.db"
+    add_many([
+        Transaction("2025-01-02", "ALV", "buy", 2, 250.0, "EUR"),
+        Transaction("2025-06-02", "ALV", "split", 2, 0, "USD"),
+    ], path=db)
+    assert ledger.retag("ALV", "ALV.DE", db, currency="EUR") == 2
+    assert {t.ticker for t in all_transactions(db)} == {"ALV.DE"}
+
+
+def test_retag_leaves_the_split_while_another_position_holds_the_label(tmp_path):
+    db = tmp_path / "p.db"
+    add_many([
+        Transaction("2025-01-02", "ALV", "buy", 2, 250.0, "EUR"),
+        Transaction("2025-01-03", "ALV", "buy", 5, 95.0, "USD"),
+        Transaction("2025-06-02", "ALV", "split", 2, 0, "USD"),
+    ], path=db)
+    assert ledger.retag("ALV", "ALV.DE", db, currency="EUR") == 1
+    assert sorted((t.ticker, t.action) for t in all_transactions(db)) == [
+        ("ALV", "buy"), ("ALV", "split"), ("ALV.DE", "buy")
+    ]

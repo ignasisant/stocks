@@ -21,6 +21,7 @@ import { Glyph } from "./Glyph";
 
 export function Source({
   platforms,
+  accepts,
   platform,
   onChoose,
   staged,
@@ -35,6 +36,8 @@ export function Source({
   wipe,
 }: {
   platforms: Platform[];
+  /** Every extension a statement can arrive as — not only this platform's. */
+  accepts: string[];
   platform: Platform;
   onChoose: (key: string) => void;
   staged: Staged | null;
@@ -54,7 +57,7 @@ export function Source({
 }) {
   const t = useT();
   const [pasting, setPasting] = useState(false);
-  const types = platform.file_types.map((kind) => kind.toUpperCase()).join(", ");
+  const types = accepts.map((kind) => kind.toUpperCase()).join(", ");
   const cap = t("import.drop_caption", { cap: MAX_BYTES / (1024 * 1024), types });
   // A pasted statement has no file name to show, and the zone keeps offering a
   // file for it: the paste box below is where that text lives.
@@ -135,7 +138,7 @@ export function Source({
           onDrop={onDrop}
         >
           <input
-            accept={platform.file_types.map((kind) => `.${kind}`).join(",")}
+            accept={accepts.map((kind) => `.${kind}`).join(",")}
             aria-describedby="im-file-cap"
             aria-labelledby="im-file-label"
             className="im-file"

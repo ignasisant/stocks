@@ -215,6 +215,16 @@ PAGES: dict[str, Page] = {
                 "each transfer card's line: `import.col_gain` and the signed "
                 "amount"
             ),
+            # The React page reads every file the model can (`autodetect.read`),
+            # not only the picked platform's: both lines are said with the
+            # reader's whole list of types and without blaming the picked one.
+            "import.paste_wrong_type": (
+                "`import.wrong_type`, which lists every type any reader takes"
+            ),
+            "import.no_rows_parsed": (
+                "`import.nothing_read`, since the file was offered to the model "
+                "and every parser, not just the picked platform's"
+            ),
         },
     ),
     # Nothing waived and nothing pending: the page is small, and the React one

@@ -36,6 +36,7 @@ from pathlib import Path
 
 from stocks.config import DATA_DIR, WATCHLIST_FILE, load_watchlist, ticker_aliases
 from stocks.data.crypto import crypto_name, is_crypto
+from stocks.data.symbols import resolved_codes
 from stocks.portfolio import transfers
 from stocks.portfolio.ledger import DB_PATH, Transaction
 from stocks.portfolio.statement import ParseResult
@@ -90,35 +91,38 @@ SplitLookup = Callable[[str], list[tuple[str, float]]]
 # Numbers arrive pre-formatted: a catalog string carrying a `{q:.4f}` spec
 # would have to repeat that spec in every language to stay in step.
 ISSUE_TEXT = {
-    "validate.bad_date": "unparseable date {date}",
-    "validate.future_date": "date {date} is in the future",
-    "validate.ancient_date": "date {date} predates plausible trading history",
-    "validate.missing_ticker": "missing ticker",
-    "validate.malformed_ticker": "malformed ticker {ticker}",
+    "validate.bad_date": "can't read the date {date}",
+    "validate.future_date": "the date {date} is in the future",
+    "validate.ancient_date": "the date {date} is too old to be a real trade",
+    "validate.missing_ticker": "the ticker is missing",
+    "validate.malformed_ticker": "{ticker} doesn't look like a ticker",
+    # `sources` still travels in the params (the API sends it on); the
+    # sentence leaves it out: "EDGAR/watchlist/aliases" means nothing to
+    # someone importing a statement.
     "validate.unknown_ticker": (
-        "{ticker} not in {sources} — EU or OTC broker code? map it to a Yahoo "
-        "symbol under `aliases:` in watchlist.yaml or prices won't resolve"
+        "we don't recognise {ticker} — it imports, but may show no price if "
+        "it's your broker's own code (SAN instead of SAN.MC)"
     ),
     "validate.zero_price_sell": (
-        "sold at 0 — worthless disposal/delisting? this realizes the full "
-        "loss of the position"
+        "sold at 0 — right if the company went bust or was delisted; the "
+        "whole position counts as a loss"
     ),
     "validate.duplicate": (
-        "identical row already in ledger — re-importing an overlapping export "
-        "doubles the position"
+        "this exact trade is already in your portfolio or earlier in the "
+        "file — importing it again counts it twice"
     ),
     "validate.near_duplicate": (
-        "a {action} of {quantity} {ticker} on {date} is already in the ledger "
-        "at a different price — the same trade read twice?"
+        "your portfolio or this file already has a {action} of {quantity} "
+        "{ticker} on {date} at another price — probably the same trade read "
+        "twice"
     ),
     "validate.oversell": (
-        "sell of {quantity} exceeds {held} held on {date} — missing earlier "
-        "buys or a split?"
+        "sells {quantity} but only {held} were held on {date} — is an earlier "
+        "buy or a split missing?"
     ),
     "validate.split_added": (
-        "{ratio}:1 split on {date}, from Yahoo's corporate actions — the "
-        "statement doesn't carry it, and the sells after it don't add up "
-        "without it"
+        "added a {ratio}:1 split on {date} from Yahoo — your statement "
+        "doesn't show it, and the later sells don't add up without it"
     ),
 }
 
@@ -162,6 +166,10 @@ class Checked:
 @dataclass
 class Validation:
     checked: list[Checked]
+    # (bare code, currency) -> the listing its rows were read under
+    # (stocks.portfolio.venue); the caller that writes the batch moves the
+    # book's own rows with it, or one company is two positions.
+    relabeled: dict[tuple[str, str], str] = field(default_factory=dict)
 
     @property
     def importable(self) -> list[Transaction]:
@@ -198,11 +206,12 @@ class Validation:
 def known_tickers(
     watchlist_path: Path = WATCHLIST_FILE, db_path: Path = DB_PATH
 ) -> set[str]:
-    """Symbols we can vouch for offline: EDGAR map + watchlist + aliases + ledger.
+    """Symbols we can vouch for offline: EDGAR map + watchlist + aliases +
+    the broker codes Yahoo's search already resolved + ledger.
 
     Watchlist and ledger are per-user in the web app — pass that user's paths.
-    Aliases stay global (root watchlist.yaml): broker-code mappings are
-    reference data, not personal data.
+    Aliases and resolved codes stay global: broker-code mappings are reference
+    data, not personal data.
     """
     known: set[str] = set()
     if EDGAR_TICKER_CACHE.exists():
@@ -214,6 +223,8 @@ def known_tickers(
     # (or an importer that resolved a name to it) is not an unknown ticker.
     known.update(ticker_aliases())
     known.update(s.upper() for s in ticker_aliases().values())
+    for code, symbol in resolved_codes().items():
+        known.update((code, symbol.upper()))
     from stocks.portfolio.ledger import all_transactions
 
     known.update(t.ticker for t in all_transactions(db_path))

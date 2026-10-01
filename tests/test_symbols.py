@@ -4,6 +4,7 @@ Fixture payloads, no network: every test monkeypatches the module's get_json.
 """
 
 import json
+import time
 
 import pytest
 
@@ -199,3 +200,192 @@ def test_search_keeps_each_rows_quote_type(monkeypatch):
     assert funds.quote_type("MIPS.ST", fetch=False) == "EQUITY"
     # A row the search drops is not one it vouches for.
     assert funds.quote_type("MIPSX", fetch=False) is None
+
+
+# ------------------------------------------------------ bare broker codes
+
+def serve_by_query(monkeypatch, answers, spy=None):
+    """Answer each search with the rows for its `q`, nothing for the rest."""
+    from urllib.parse import parse_qs, urlparse
+
+    def fake(url, **kw):
+        query = parse_qs(urlparse(url).query).get("q", [""])[0]
+        if spy is not None:
+            spy.append(query)
+        return {"quotes": answers.get(query, [])}
+
+    monkeypatch.setattr(symbols, "get_json", fake)
+
+
+def test_a_bare_eur_code_lands_on_its_xetra_line(monkeypatch):
+    # The search for "SIE" ranks Siemens Energy first; only the exact code on
+    # a EUR venue counts, and of those XETRA beats Frankfurt.
+    serve_by_query(monkeypatch, {"SIE": [
+        quote("ENR.DE", "SIEMENS ENERGY AG", exch="XETRA"),
+        quote("SIE.F", "SIEMENS AG", exch="Frankfurt"),
+        quote("SIE.DE", "SIEMENS AG", exch="XETRA"),
+        quote("SIEGY", "Siemens AG ADR", exch="OTC"),
+    ]})
+    assert symbols.symbol_for_code("SIE", "EUR") == "SIE.DE"
+
+
+def test_a_code_the_bare_search_never_lists_is_asked_by_name(monkeypatch):
+    # Yahoo answers "BOY" with Boyd Gaming and La-Z-Boy; "BOY.DE" it knows.
+    spy = []
+    serve_by_query(monkeypatch, {
+        "BOY": [quote("BYD", "Boyd Gaming"), quote("BOY.L", "Bodycote plc")],
+        "BOY.DE": [quote("BOY.DE", "BANCO BILBAO VIZCAYA ARGENTARIA", exch="XETRA")],
+    }, spy=spy)
+    assert symbols.symbol_for_code("BOY", "EUR") == "BOY.DE"
+    assert spy == ["BOY", "BOY.DE"]
+
+
+def test_the_trade_currency_picks_the_venues(monkeypatch):
+    serve_by_query(monkeypatch, {"BOY": [
+        quote("BOY.DE", "BANCO BILBAO VIZCAYA ARGENTARIA", exch="XETRA"),
+        quote("BOY.L", "Bodycote plc", exch="LSE"),
+    ]})
+    assert symbols.symbol_for_code("BOY", "GBP") == "BOY.L"
+
+
+def test_a_currency_with_no_venues_is_never_searched(monkeypatch):
+    # In USD a bare code already is the listing: nothing to look for.
+    spy = []
+    serve_by_query(monkeypatch, {}, spy=spy)
+    assert symbols.symbol_for_code("ZZZQX", "USD") is None
+    assert symbols.symbol_for_code("US81762P1021", "EUR") is None  # no ISINs
+    assert spy == []
+
+
+def test_a_resolved_code_is_cached_for_the_price_path(monkeypatch):
+    spy = []
+    serve_by_query(monkeypatch, {"SIE": [quote("SIE.DE", "SIEMENS AG")]}, spy=spy)
+    assert symbols.symbol_for_code("SIE", "EUR") == "SIE.DE"
+    assert symbols.symbol_for_code("SIE", "EUR") == "SIE.DE"
+    assert spy == ["SIE"]
+    assert json.loads(symbols.CODE_CACHE.read_text()) == {"SIE": "SIE.DE"}
+
+    # A new process reads it back — and the price path has no currency to
+    # search with, so the map is all it gets.
+    monkeypatch.setattr(symbols, "_code_memo", None)
+    assert symbols.code_symbol("sie") == "SIE.DE"
+
+
+def test_a_miss_is_remembered_for_the_process_only(monkeypatch):
+    spy = []
+    serve_by_query(monkeypatch, {}, spy=spy)
+    assert symbols.symbol_for_code("ZZZQX", "EUR") is None
+    assert symbols.symbol_for_code("ZZZQX", "EUR") is None
+    assert spy == ["ZZZQX", "ZZZQX.DE", "ZZZQX.PA", "ZZZQX.F"]
+    assert not symbols.CODE_CACHE.exists()
+
+
+def test_a_home_exchange_beats_a_german_regional_floor(monkeypatch):
+    # Philips trades in Amsterdam; Frankfurt only mirrors it.
+    serve_by_query(monkeypatch, {"PHIA": [
+        quote("PHIA.F", "KONINKLIJKE PHILIPS", exch="Frankfurt"),
+        quote("PHIA.AS", "KONINKLIJKE PHILIPS", exch="Amsterdam"),
+    ]})
+    assert symbols.symbol_for_code("PHIA", "EUR") == "PHIA.AS"
+
+
+@pytest.mark.parametrize(("code", "currency", "wanted"), [
+    ("BT.A", "GBP", "BT-A.L"),     # LSE share class after a dot
+    ("VOLV B", "SEK", "VOLV-B.ST"),  # Nordic share class after a space
+    ("BRK.B", "USD", "BRK-B"),     # US class: Yahoo spells it with a dash
+    ("700", "HKD", "0700.HK"),     # HK codes are four digits on Yahoo
+])
+def test_a_code_is_spelled_the_way_yahoo_spells_it(monkeypatch, code, currency, wanted):
+    # The search is asked for Yahoo's spelling, not the broker's.
+    serve_by_query(monkeypatch, {wanted.split(".")[0]: [quote(wanted, "Some Co")]})
+    assert symbols.symbol_for_code(code, currency) == wanted
+    assert symbols.code_symbol(code) == wanted  # cached under the ledger label
+
+
+@pytest.mark.parametrize(("code", "currency", "wanted"), [
+    ("LLOY", "GBX", "LLOY.L"),        # pence are still London
+    ("005930", "KRW", "005930.KS"),
+    ("PETR4", "BRL", "PETR4.SA"),
+    ("D05", "SGD", "D05.SI"),
+])
+def test_every_quoted_currency_has_venues(monkeypatch, code, currency, wanted):
+    serve_by_query(monkeypatch, {code: [quote(wanted, "Some Co")]})
+    assert symbols.symbol_for_code(code, currency) == wanted
+
+
+def test_a_two_letter_code_is_still_searched(monkeypatch):
+    # The search box ignores queries under three letters; a broker code of
+    # two (BP, 5) is a whole ticker, not a prefix.
+    serve_by_query(monkeypatch, {"BP": [quote("BP.L", "BP PLC", exch="LSE")]})
+    assert symbols.symbol_for_code("BP", "GBP") == "BP.L"
+
+
+def test_a_plain_usd_code_is_never_searched(monkeypatch):
+    spy = []
+    serve_by_query(monkeypatch, {}, spy=spy)
+    assert symbols.symbol_for_code("AAPL", "USD") is None
+    assert spy == []
+
+
+def test_a_miss_while_throttled_is_not_a_miss(monkeypatch):
+    serve_by_query(monkeypatch, {})
+    monkeypatch.setattr(symbols, "_blocked_until", time.monotonic() + 60)
+    assert symbols.symbol_for_code("SIE", "EUR") is None
+    assert "SIE" not in symbols._code_misses
+
+
+# ------------------------------------- a code Yahoo quotes, in another currency
+
+
+def test_the_listings_put_the_searchs_own_venues_first(monkeypatch):
+    # Yahoo ranks "SAN" to Sanofi and lists Santander nowhere; Madrid still
+    # has to be on the list, by name, for the price to decide.
+    serve_by_query(monkeypatch, {"SAN": [
+        quote("SAN", "Santander ADR", exch="NYSE"),
+        quote("SAN.PA", "SANOFI", exch="Paris"),
+        quote("SAN.L", "Santander plc", exch="LSE"),
+    ]})
+    found = symbols.listings_for_code("SAN", "EUR", limit=6)
+    assert found[0] == "SAN.PA"
+    assert "SAN.MC" in found
+    assert "SAN" not in found and "SAN.L" not in found  # not euro lines
+    assert len(found) == 6
+
+
+def test_a_listing_search_is_never_the_price_paths_answer(monkeypatch):
+    # The dollar rows of "ALV" are still Autoliv: nothing global is written.
+    spy = []
+    serve_by_query(monkeypatch, {"ALV": [quote("ALV.DE", "ALLIANZ SE")]}, spy=spy)
+    assert symbols.listings_for_code("ALV", "EUR")[0] == "ALV.DE"
+    assert symbols.listings_for_code("alv", "eur")[0] == "ALV.DE"
+    assert spy == ["ALV"]  # remembered per (code, currency)
+    assert not symbols.CODE_CACHE.exists()
+    assert symbols.code_symbol("ALV") is None
+
+
+def test_a_listing_search_while_throttled_is_asked_again(monkeypatch):
+    spy = []
+    serve_by_query(monkeypatch, {}, spy=spy)
+    monkeypatch.setattr(symbols, "_blocked_until", time.monotonic() + 60)
+    symbols.listings_for_code("ALV", "EUR")
+    symbols.listings_for_code("ALV", "EUR")
+    assert ("ALV", "EUR") not in symbols._listings_memo
+
+
+def test_a_currency_with_no_venues_has_no_listings(monkeypatch):
+    spy = []
+    serve_by_query(monkeypatch, {}, spy=spy)
+    assert symbols.listings_for_code("AAPL", "USD") == []
+    assert symbols.listings_for_code("US81762P1021", "EUR") == []
+    assert symbols.venue_symbols("700", "HKD") == ["0700.HK"]
+    assert spy == []
+
+
+def test_resolve_reads_the_codes_the_search_placed(monkeypatch):
+    from stocks.data import fetch
+
+    monkeypatch.setattr(fetch, "ticker_aliases", lambda: {"RCF": "TEP.PA"})
+    monkeypatch.setattr(symbols, "_code_memo", {"SIE": "SIE.DE", "RCF": "RCF.DE"})
+    assert fetch.resolve("sie") == "SIE.DE"
+    assert fetch.resolve("RCF") == "TEP.PA"  # the hand-written alias wins
+    assert fetch.resolve("AAPL") == "AAPL"

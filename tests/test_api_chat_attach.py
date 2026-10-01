@@ -10,6 +10,10 @@ tested here is the pair of calls the drawer makes and the promises they carry:
   reloads mid-import is not looking at a thread that never mentions the file;
 * a commit refuses a batch with no broker, because the fees and custody views
   read the book by it, and refuses an action the ledger has no meaning for;
+* the rows a commit sends back are validated again, so one that stopped
+  validating since the preview is named and left out, never written;
+* a file reads the same here as on the Import page, because it is the same read
+  and the same validation;
 * the demo book goes on the first real import — an invented cost basis must
   never mix into a real one;
 * every one of these is a write, and a bearer token never gets one.
@@ -25,8 +29,11 @@ from fastapi.testclient import TestClient
 
 from stocks import accounts
 from stocks.api.app import app as fastapi_app
-from stocks.portfolio import demo
-from stocks.portfolio.ledger import all_transactions
+from stocks.api.routes.import_statement import _provider as _real_provider
+from stocks.portfolio import demo, ledger
+from stocks.portfolio.ledger import Transaction, all_transactions
+# The real one, held before the suite's conftest swaps `venue.pick` out.
+from stocks.portfolio.venue import pick as _real_pick
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -77,11 +84,25 @@ def signed_in(client, sign_in):
 
 
 @pytest.fixture(autouse=True)
-def offline(monkeypatch):
-    """No split lookup and no ISIN map: this file is about the HTTP surface."""
+def offline(monkeypatch, tmp_path):
+    """No live lookup, no split lookup, no ISIN map and no diagnostics on disk:
+    this file is about the HTTP surface, and the validation it borrows from the
+    Import page asks Yahoo about every symbol it does not know."""
+    monkeypatch.setattr(
+        "stocks.api.routes.import_statement._ticker_exists", lambda t: True
+    )
+    monkeypatch.setattr(
+        "stocks.api.routes.import_statement.symbols.symbol_for_code",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "stocks.api.routes.import_statement.symbols.symbol_for_isin",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr("stocks.api.routes.import_statement._exists_memo", {})
     monkeypatch.setattr("stocks.data.fetch.splits", lambda *a, **k: {})
     monkeypatch.setattr(
-        "stocks.api.routes.chat_attach.symbol_for_isin", lambda *a, **k: None
+        "stocks.portfolio.diagnostics.DIAGNOSTICS_DIR", tmp_path / "diagnostics"
     )
 
 
@@ -149,9 +170,12 @@ def test_a_file_no_parser_owns_is_answered_rather_than_failed(
     client, account, signed_in, monkeypatch
 ):
     """An account with nothing to ask — no key, no free chain — still gets an
-    answer: detection runs, the mapper is simply never reached."""
+    answer: the parsers read, the model is simply never reached."""
+    from stocks.api.routes import import_statement
+
+    monkeypatch.setattr(import_statement, "_provider", _real_provider)
     monkeypatch.setattr(
-        "stocks.api.routes.chat_attach.engine.attempts", lambda prefs: []
+        "stocks.chat.engine.attempts", lambda prefs, held=None: []
     )
     payload = signed_in.post(
         "/v1/chat/attachments", json=attach("nothing,useful\n1,2\n")
@@ -217,6 +241,88 @@ def test_an_action_the_ledger_has_no_meaning_for_is_refused(
     assert response.status_code == 422
     assert not all_transactions(account.db), "nothing lands from a refused batch"
 
+
+
+def test_a_row_that_no_longer_validates_is_left_out_and_named(
+    client, account, signed_in
+):
+    """The commit validates again: a sale the book does not cover is rejected
+    on the way in, whatever the client says the preview showed."""
+    preview = signed_in.post("/v1/chat/attachments", json=attach()).json()
+    body = committed(preview)
+    body["rows"].append({**body["rows"][0], "action": "sell", "quantity": 99,
+                         "date": "2024-03-01"})
+    payload = signed_in.post("/v1/chat/attachments/commit", json=body).json()
+    assert payload["imported"] == 2
+    assert [r["ticker"] for r in payload["rejected"]] == ["AAPL"]
+    assert payload["rejected"][0]["why"], "a rejected row says why"
+    assert "AAPL" in payload["message"]["content"], "and the turn says so"
+    assert len(all_transactions(account.db)) == 2
+
+
+def test_a_batch_nothing_of_which_validates_writes_nothing(
+    client, account, signed_in
+):
+    preview = signed_in.post("/v1/chat/attachments", json=attach()).json()
+    body = committed(preview)
+    body["rows"] = [{**body["rows"][0], "action": "sell", "quantity": 99}]
+    response = signed_in.post("/v1/chat/attachments/commit", json=body)
+    assert response.status_code == 422
+    assert not all_transactions(account.db)
+
+
+def test_a_relabeled_batch_moves_the_books_rows_with_it(
+    client, account, signed_in, monkeypatch
+):
+    """Revolut's euro ALV previews as ALV.DE; committing it moves the Allianz
+    the book already held under "ALV" too, so the two are one position."""
+    from stocks.api.routes import import_statement
+    from stocks.portfolio import venue
+
+    monkeypatch.setattr(venue, "pick", _real_pick)
+    monkeypatch.setattr(
+        import_statement.symbols,
+        "listings_for_code",
+        lambda code, currency, limit=6: ["ALV.DE"] if code == "ALV" else [],
+    )
+    # The commit sends ALV.DE back, so what proves the book's own "ALV" is
+    # that row's price against ALV.DE's close on its day.
+    closes = {
+        ("ALV.DE", "2025-03-03"): 249.1,
+        ("ALV.DE", "2025-01-02"): 241.0,
+        ("ALV", "2025-03-03"): 95.0,
+    }
+    monkeypatch.setattr(
+        import_statement.fetch, "close_on", lambda symbol, day: closes.get((symbol, day))
+    )
+    monkeypatch.setattr(import_statement.fx, "rate_on", lambda day, base, quote: 0.92)
+    ledger.add_many(
+        [Transaction("2025-01-02", "ALV", "buy", 1, 240.0, "EUR", 0.0, note="revolut Allianz")],
+        account.db,
+    )
+    allianz = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2025-03-03,ALV,buy,2,248.60,EUR,1.00,revolut Allianz\n"
+    )
+
+    preview = signed_in.post("/v1/chat/attachments", json=attach(allianz)).json()
+    assert [r["ticker"] for r in preview["fresh"]] == ["ALV.DE"]
+    signed_in.post("/v1/chat/attachments/commit", json=committed(preview))
+    assert [t.ticker for t in all_transactions(account.db)] == ["ALV.DE", "ALV.DE"]
+
+
+def test_a_file_reads_the_same_here_as_on_the_import_page(
+    client, account, signed_in
+):
+    chat = signed_in.post("/v1/chat/attachments", json=attach()).json()
+    page = signed_in.post(
+        "/v1/import/preview",
+        json={"filename": "ledger.csv", "content": upload(CLEAN)},
+    ).json()
+    assert chat["platform"] == page["platform"]
+    assert [r["ticker"] for r in chat["fresh"]] == [
+        r["ticker"] for r in page["importable"] if not r["duplicate"]
+    ]
 
 def test_the_first_real_import_takes_the_demo_book_with_it(
     client, account, signed_in
@@ -287,7 +393,7 @@ def mapper(monkeypatch):
     monkeypatch.setattr(llm_map, "map_columns", wrong)
     monkeypatch.setattr(llm_map, "_resolve_symbols", lambda *a, **k: None)
     monkeypatch.setattr(
-        "stocks.api.routes.chat_attach._provider",
+        "stocks.api.routes.import_statement._provider",
         lambda paths, held=None: (Backend(), "k"),
     )
     return asked

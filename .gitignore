@@ -50,6 +50,8 @@ wheels/
 # ISIN -> Yahoo symbol (stocks.data.symbols) — regenerable, and the ISINs in
 # it are the ones this machine's ledger holds: a fingerprint of a portfolio
 /data/isin_symbols.json
+# Broker code -> Yahoo symbol (SIE -> SIE.DE), the same kind of fingerprint
+/data/code_symbols.json
 /data/profiles.json
 /data/form4.json
 # The API's persisted memos (stocks.api.cache) — runtime state, restored from R2.

@@ -10,7 +10,9 @@ venue it quotes, so the picker offers a symbol that actually resolves.
 
 The same endpoint answers an ISIN with the line Yahoo quotes it under, so
 `symbol_for_isin` sits here too: it is what turns a DEGIRO row stored as
-"US81762P1021" into the "NOW" every screen prints.
+"US81762P1021" into the "NOW" every screen prints — and `symbol_for_code`,
+which turns the bare "SIE" a Revolut statement prints into the SIE.DE Yahoo
+quotes.
 
 Same failure contract as the other network-backed sources: any error means an
 empty list, never an exception into the render path.
@@ -20,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 import urllib.parse
 
@@ -80,15 +83,16 @@ def _is_dup(keys: set[str], seen: list[str]) -> bool:
     return False
 
 
-def _quotes(query: str, count: int) -> list[dict]:
+def _quotes(query: str, count: int, min_len: int = MIN_QUERY) -> list[dict]:
     """Yahoo's raw quote rows for `query`, every venue it lists, in its own
-    ranking. Empty for a too-short query and for COOLDOWN seconds after a
-    failure: once Yahoo starts rejecting this host, retrying only deepens the
-    block. Never raises — see the module docstring's failure contract.
+    ranking. Empty for a query shorter than `min_len` and for COOLDOWN seconds
+    after a failure: once Yahoo starts rejecting this host, retrying only
+    deepens the block. Never raises — see the module docstring's failure
+    contract.
     """
     global _blocked_until
     q = query.strip()
-    if len(q) < MIN_QUERY or time.monotonic() < _blocked_until:
+    if len(q) < min_len or time.monotonic() < _blocked_until:
         return []
     url = (
         f"{SEARCH_URL}?q={urllib.parse.quote(q)}"
@@ -237,3 +241,244 @@ def symbol_for_isin(isin: str) -> str | None:
     cache[key] = symbol
     _save_isin_cache(cache)
     return symbol
+
+
+# ------------------------------------------------------------ broker codes
+#
+# Revolut prints a European stock under its bare German code — SIE, BSD2, BOY
+# (BBVA), OZTA (Grifols) — which Yahoo quotes only with a venue suffix
+# (SIE.DE, OZTA.F). watchlist.yaml `aliases` is the hand-written answer and
+# still wins; this is the automatic one, so a statement full of them imports
+# priced instead of warned. The trade's currency picks the venues: a code
+# bought in EUR is looked for on the German exchanges first, because that is
+# the code family Revolut uses, then on the other euro venues Yahoo ranks.
+#
+# Asked only for a code Yahoo has just said it does not quote bare
+# (stocks.api.routes.import_statement._Lookup), and only a row whose symbol is
+# the code plus a suffix counts: "SIE" never lands on Siemens Energy (ENR.DE),
+# which the same search ranks first.
+#
+# Unlike the ISIN map this one feeds the price download (fetch.resolve), and
+# the price path has no currency to search with, so the map is mirrored to the
+# bucket: a container that boots without it would hold every such position at
+# cost until the next import.
+
+CODE_CACHE = DATA_DIR / "code_symbols.json"
+
+# Yahoo suffixes per trade currency, best first. EUR puts XETRA first because
+# Revolut's euro codes are German ones, then each market's home exchange, and
+# the German regional floors last: those quote nearly everything, thinly, so
+# Philips found on both is PHIA.AS, not PHIA.F.
+_VENUES = {
+    "EUR": (".DE", ".PA", ".AS", ".MI", ".MC", ".BR", ".LS", ".VI", ".HE",
+            ".IR", ".AT", ".F", ".SG", ".MU", ".DU", ".BE", ".HM", ".HA"),
+    "GBP": (".L", ".IL"),
+    "GBX": (".L", ".IL"),  # London prices in pence; some brokers say so
+    "CHF": (".SW",),
+    "SEK": (".ST",),
+    "DKK": (".CO",),
+    "NOK": (".OL",),
+    "PLN": (".WA",),
+    "CZK": (".PR",),
+    "HUF": (".BD",),
+    "TRY": (".IS",),
+    "ILS": (".TA",),
+    "CAD": (".TO", ".V", ".NE", ".CN"),
+    "AUD": (".AX",),
+    "NZD": (".NZ",),
+    "HKD": (".HK",),
+    "JPY": (".T",),
+    "CNY": (".SS", ".SZ"),
+    "TWD": (".TW", ".TWO"),
+    "KRW": (".KS", ".KQ"),
+    "SGD": (".SI",),
+    "INR": (".NS", ".BO"),
+    "IDR": (".JK",),
+    "THB": (".BK",),
+    "MYR": (".KL",),
+    "BRL": (".SA",),
+    "MXN": (".MX",),
+    "ZAR": (".JO",),
+}
+
+# The venues also asked by name when the bare search misses: Yahoo's matcher
+# ranks "BOY" to Boyd Gaming and La-Z-Boy and never lists BOY.DE, but answers
+# "BOY.DE" exactly. Every other currency asks its first two.
+_PROBES = {"EUR": (".DE", ".PA", ".F")}
+
+# After `_normalized`: a code, optionally with a share class (VOLV-B, BT-A).
+_CODE_RE = re.compile(r"^[A-Z0-9]{1,10}(-[A-Z0-9]{1,3})?$")
+
+
+def _normalized(code: str, currency: str) -> str:
+    """The code as Yahoo spells it: a share class after a hyphen (BT.A,
+    "VOLV B" -> BT-A, VOLV-B), and a Hong Kong number as four digits
+    (700 -> 0700), the form Yahoo lists it under."""
+    key = re.sub(r"[.\s/]+", "-", code.strip().upper())
+    if currency == "HKD" and key.isdigit():
+        key = str(int(key)).zfill(4)
+    return key
+
+
+# code -> symbol, like the ISIN map: hits on disk (and in the bucket), misses
+# for the process only, and a miss while the search is cooling down is not
+# one — that was the host being throttled, not the code being unknown.
+_code_memo: dict[str, str] | None = None
+_code_misses: set[str] = set()
+_code_lock = threading.Lock()
+
+
+def _load_code_cache() -> dict[str, str]:
+    global _code_memo
+    if _code_memo is None:
+        from stocks import obs, storage
+
+        if storage.enabled():
+            with obs.swallow("symbols.code_restore"):
+                storage.restore(CODE_CACHE)
+        memo: dict[str, str] = {}
+        try:
+            data = json.loads(CODE_CACHE.read_text())
+            if isinstance(data, dict):
+                memo = {
+                    str(k).upper(): str(v)
+                    for k, v in data.items()
+                    if isinstance(v, str) and v
+                }
+        except (OSError, ValueError):
+            pass
+        _code_memo = memo
+    return _code_memo
+
+
+def _save_code_cache(cache: dict[str, str]) -> None:
+    from stocks import obs, storage
+
+    try:
+        CODE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        atomic.write_json(CODE_CACHE, cache, indent=2, sort_keys=True)
+    except OSError:
+        return  # a read-only data dir costs a search per boot, not an import
+    if storage.enabled():
+        with obs.swallow("symbols.code_persist"):
+            storage.persist(CODE_CACHE)
+
+
+def code_symbol(code: str) -> str | None:
+    """The Yahoo line a broker code was resolved to, from the map only.
+
+    No network, ever: this sits in `fetch.resolve`, under every price lookup.
+    """
+    return _load_code_cache().get((code or "").strip().upper())
+
+
+def resolved_codes() -> dict[str, str]:
+    """Every broker code the search has resolved so far, code -> symbol."""
+    return dict(_load_code_cache())
+
+
+def symbol_for_code(code: str, currency: str) -> str | None:
+    """The Yahoo line a bare broker code stands for, or None.
+
+    `currency` is the trade's: it says which venues to look on (`_VENUES`).
+    Of the rows whose symbol is the code plus one of those suffixes, the
+    earliest venue wins, so "SIE" in EUR is SIE.DE (XETRA), not SIE.F. A USD
+    code is its own listing and is only searched when Yahoo spells it
+    differently (BRK.B -> BRK-B).
+
+    One to four searches per code, ever: the answer is cached (see
+    `CODE_CACHE`) under the code as the ledger holds it. Never raises.
+    """
+    key = (code or "").strip().upper()
+    cur = (currency or "").strip().upper()
+    wanted = _normalized(key, cur)
+    venues = _VENUES.get(cur) or (("",) if cur == "USD" and wanted != key else ())
+    if not venues or not _CODE_RE.match(wanted):
+        return None
+    if hit := code_symbol(key):
+        return hit
+    if key in _code_misses:
+        return None
+
+    rank = {f"{wanted}{suffix}": i for i, suffix in enumerate(venues)}
+
+    def best(rows: list[dict]) -> str | None:
+        found = [
+            symbol
+            for row in rows
+            if row.get("quoteType") in QUOTE_TYPES
+            and (symbol := str(row.get("symbol") or "").strip().upper()) in rank
+        ]
+        return min(found, key=rank.__getitem__) if found else None
+
+    # Short codes too (BP, 5): this is a lookup, not a keystroke to debounce.
+    symbol = best(_quotes(wanted, 12, min_len=1))
+    for suffix in _PROBES.get(cur, venues[:2]):
+        if symbol:
+            break
+        if suffix:
+            symbol = best(_quotes(f"{wanted}{suffix}", 6, min_len=1))
+    if not symbol:
+        if time.monotonic() >= _blocked_until:
+            _code_misses.add(key)
+        return None
+    with _code_lock:
+        cache = _load_code_cache()
+        cache[key] = symbol
+        _save_code_cache(dict(cache))
+    return symbol
+
+
+# (code, currency) -> candidates, for the process only: a statement's preview
+# and its commit ask the same thing seconds apart.
+_listings_memo: dict[tuple[str, str], list[str]] = {}
+
+
+def venue_symbols(code: str, currency: str) -> list[str]:
+    """The code on each of `currency`'s venues, best first (ALV, EUR ->
+    ALV.DE, ALV.PA, …). Names only, no network; [] for a currency without
+    venues and for a code that is not one."""
+    cur = (currency or "").strip().upper()
+    wanted = _normalized((code or "").strip().upper(), cur)
+    if not _CODE_RE.match(wanted):
+        return []
+    return [f"{wanted}{suffix}" for suffix in _VENUES.get(cur, ())]
+
+
+def listings_for_code(code: str, currency: str, limit: int = 6) -> list[str]:
+    """The lines a code could be on in its trade currency, most likely first.
+
+    For a code Yahoo DOES quote bare, but in dollars: Revolut's euro "ALV" is
+    Allianz (ALV.DE), not the Autoliv that bare "ALV" is. Unlike
+    `symbol_for_code` nothing here is an answer — the caller picks one by
+    price — so nothing is written to `CODE_CACHE`, whose single global answer
+    per code is the price download's: the dollar rows still mean Autoliv.
+
+    The search's own hits on `currency`'s venues come first, by venue, then
+    the venues it did not list, by name and unasked: Yahoo's matcher ranks
+    "SAN" to Sanofi (SAN.PA) and never shows Santander's SAN.MC. Never
+    raises; [] for a currency without venues.
+    """
+    key = (code or "").strip().upper()
+    cur = (currency or "").strip().upper()
+    names = venue_symbols(key, cur)
+    if not names:
+        return []
+    if (key, cur) in _listings_memo:
+        return list(_listings_memo[(key, cur)])
+    wanted = _normalized(key, cur)
+    rank = {symbol: i for i, symbol in enumerate(names)}
+    hits = sorted(
+        {
+            symbol
+            for row in _quotes(wanted, 12, min_len=1)
+            if row.get("quoteType") in QUOTE_TYPES
+            and (symbol := str(row.get("symbol") or "").strip().upper()) in rank
+        },
+        key=rank.__getitem__,
+    )
+    rest = [s for s in rank if s not in hits]
+    found = (hits + rest)[: max(limit, len(hits))]
+    if time.monotonic() >= _blocked_until:
+        _listings_memo[(key, cur)] = found
+    return list(found)

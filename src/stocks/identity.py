@@ -36,8 +36,9 @@ STATIC_LOGO_DIR = Path(__file__).parent / "web" / "static" / "logos"
 def yahoo_symbol(ticker: str) -> str:
     """The Yahoo symbol a stored broker label stands for (itself, unmapped).
 
-    Two tiers, cheapest first: watchlist.yaml `aliases`, the hand-written map
-    that covers the local codes Revolut prints; then, for a label that is
+    Two tiers, cheapest first: `fetch.resolve` — watchlist.yaml `aliases`, the
+    hand-written map, then the bare codes an import already placed with
+    Yahoo's search (SIE -> SIE.DE); then, for a label that is
     ISIN-shaped and unmapped, Yahoo's own ISIN lookup — one search per ISIN
     ever, cached on disk (`stocks.data.symbols.symbol_for_isin`). Without the
     second tier a DEGIRO import reads as twelve rows of "US81762P1021" until

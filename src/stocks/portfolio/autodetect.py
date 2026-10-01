@@ -24,12 +24,27 @@ arbitrary broker Excel or a hand-kept spreadsheet can be imported at all.
 
 Detection is read-only — the caller still validates (validate.py) and previews
 before anything reaches the ledger, exactly as the Import page does.
+
+`read` is the order both HTTP surfaces use — the Import page and a file
+attached to the chat: the model reads every statement first, and the parsers
+read it too, as the check on the model. A parser that owns the file is exact
+where the model is approximate (its fees, its split and sign rules, its broker
+note), so it keeps the file whenever it found at least as many rows. The model
+wins only when it found more — which is what a broker changing its layout
+under a parser looks like — and that case is logged, because it is a parser
+that needs fixing. `detect` is the older order (parsers, then the model for
+what none owns) and stays for the Streamlit pages.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+import copy
+import hashlib
+import threading
+import time
+from collections import OrderedDict
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Any
 
 from stocks import obs
 from stocks.portfolio import llm_map, platforms
@@ -104,6 +119,91 @@ def _cascade() -> list:
     return strict + [by_key[k] for k in _LOOSE if k in by_key]
 
 
+def _order(prefer: str | None) -> list:
+    """The cascade, with the platform the reader named tried first."""
+    cascade = _cascade()
+    if not prefer:
+        return cascade
+    return ([p for p in cascade if p.key == prefer]
+            + [p for p in cascade if p.key != prefer])
+
+
+def _parsers(filename: str, data: bytes, prefer: str | None = None,
+             ) -> tuple[Detected | None, Detected | None, dict[str, str]]:
+    """The first parser that yields transactions, if any.
+
+    Also returns what the `prefer` platform made of the file when it found
+    nothing to import — its skipped lines, or the error it raised, say why,
+    which beats "nothing recognised" when the model found nothing either — and
+    why each parser passed on it.
+
+    `prefer` only reorders: the permissive parsers still need their
+    fingerprint, because on the Import page the platform is preselected and
+    naming it is not proof the file is from it. A named parser whose
+    fingerprint is missing still runs, for its reason only: "missing column
+    date" is what the reader who picked it needs to hear.
+    """
+    ext = _extension(filename)
+    head = _headers(filename, data)
+    # Why each parser passed on the file. A decline is ordinary — that is how
+    # the cascade works — but when *every* parser declines, this is the only
+    # record of what they each objected to, and the file itself is never kept.
+    declined: dict[str, str] = {}
+    quiet: Detected | None = None
+    for platform in _order(prefer):
+        if ext not in platform.file_types:
+            continue
+        need = _FINGERPRINT.get(platform.key)
+        foreign = bool(need and head and not need <= head)
+        if foreign and platform.key != prefer:
+            continue
+        try:
+            result = platform.parse(filename, data)
+        except Exception as exc:  # noqa: BLE001 — a choking parser has declined
+            declined[platform.key] = type(exc).__name__
+            if platform.key == prefer:
+                quiet = Detected(ParseResult(skipped=[{
+                    "row": 0, "type": "file",
+                    "reason": f"{platform.label} could not read this file: {exc}"[:300],
+                }]), platform.key, platform.label)
+            continue
+        if foreign:
+            # The named parser, on a file without its headers: run for its own
+            # account of what is missing ("no date column"), never for rows.
+            if result.skipped:
+                quiet = Detected(ParseResult(skipped=result.skipped),
+                                 platform.key, platform.label)
+            declined[platform.key] = "no fingerprint"
+            continue
+        if result.transactions:
+            return (Detected(result, platform.key, platform.label,
+                             llm_map.KIND_TRADES), quiet, declined)
+        if platform.key == prefer:
+            # Not even a skipped line is a file from another platform or the
+            # wrong export, and saying so beats "nothing recognised".
+            quiet = Detected(result if result.skipped else ParseResult(skipped=[{
+                "row": 0, "type": "file",
+                "reason": f"{platform.label} found no transactions in this file",
+            }]), platform.key, platform.label)
+        declined[platform.key] = "no rows"
+    return None, quiet, declined
+
+
+def _mapped(found: llm_map.Extraction) -> Detected:
+    return Detected(found.result, LLM_KEY, "", found.kind, found.unavailable,
+                    found.mapping, found.columns)
+
+
+def _nothing() -> Detected:
+    return Detected(
+        ParseResult(skipped=[{
+            "row": 0, "type": "file",
+            "reason": "no parser recognised this file",
+        }]),
+        LLM_KEY, "",
+    )
+
+
 def detect(filename: str, data: bytes, provider: Provider | None = None,
            api_key: str = "", mapping: dict | None = None) -> Detected:
     """Parse an uploaded statement with whichever parser understands it.
@@ -114,47 +214,146 @@ def detect(filename: str, data: bytes, provider: Provider | None = None,
     the parsers already declined it, so it goes straight to being applied.
     """
     if mapping is not None:
-        found = llm_map.extract(filename, data, provider, api_key, mapping=mapping)
-        return Detected(found.result, LLM_KEY, "", found.kind, found.unavailable,
-                        found.mapping, found.columns)
+        return _mapped(llm_map.extract(filename, data, provider, api_key,
+                                       mapping=mapping))
     ext = _extension(filename)
-    head = _headers(filename, data)
-    # Why each parser passed on the file. A decline is ordinary — that is how
-    # the cascade works — but when *every* parser declines, this is the only
-    # record of what they each objected to, and the file itself is never kept.
-    declined: dict[str, str] = {}
-    for platform in _cascade():
-        if ext not in platform.file_types:
-            continue
-        need = _FINGERPRINT.get(platform.key)
-        if need and head and not need <= head:
-            continue
-        try:
-            result = platform.parse(filename, data)
-        except Exception as exc:  # noqa: BLE001 — a choking parser has declined
-            declined[platform.key] = type(exc).__name__
-            continue
-        if result.transactions:
-            obs.event("import.detect", winner=platform.key, ext=ext,
-                      declined=_summarise(declined))
-            return Detected(result, platform.key, platform.label,
-                            llm_map.KIND_TRADES)
-        declined[platform.key] = "no rows"
+    parsed, _quiet, declined = _parsers(filename, data)
+    if parsed is not None:
+        obs.event("import.detect", winner=parsed.platform, ext=ext,
+                  declined=_summarise(declined))
+        return parsed
 
     obs.warn("import.detect", winner=None, ext=ext, declined=_summarise(declined),
              fallback="llm" if provider is not None else "none")
 
     if provider is None:
-        return Detected(
-            ParseResult(skipped=[{
-                "row": 0, "type": "file",
-                "reason": "no parser recognised this file",
-            }]),
-            LLM_KEY, "",
-        )
-    found = llm_map.extract(filename, data, provider, api_key)
-    return Detected(found.result, LLM_KEY, "", found.kind, found.unavailable,
-                    found.mapping, found.columns)
+        return _nothing()
+    return _mapped(llm_map.extract(filename, data, provider, api_key))
+
+
+# ---------------------------------------------------------------- model first
+# A statement is read twice by the model if nothing remembers the first read:
+# the page previews again when the wipe box is ticked or the ledger moves, and
+# a PDF costs up to MAX_PDF_CALLS calls a read. The rows, not the bytes, are
+# kept — in memory, for minutes, under the account that uploaded them — and a
+# read the model never answered is not kept at all, so an outage does not
+# outlive itself.
+
+MODEL_TTL_S = 600.0
+MODEL_MAX = 32
+
+_model_memo: OrderedDict[tuple, tuple[float, llm_map.Extraction]] = OrderedDict()
+_model_lock = threading.Lock()
+
+
+def forget() -> None:
+    """Drop every remembered model read (tests; nothing else needs it)."""
+    with _model_lock:
+        _model_memo.clear()
+
+
+def _model_read(filename: str, data: bytes, provider: Provider | None,
+                api_key: str, scope: str) -> llm_map.Extraction | None:
+    """The model's reading of the file, or None when there is no model.
+
+    A model read that raises is a model that could not read: it comes back
+    `unavailable`, never as an exception, because the parsers can still read
+    the file without it.
+    """
+    if provider is None:
+        return None
+    key = (scope, hashlib.sha256(data).hexdigest(), _extension(filename),
+           getattr(provider, "id", ""))
+    now = time.monotonic()
+    if scope:
+        with _model_lock:
+            hit = _model_memo.get(key)
+            if hit is not None and now - hit[0] < MODEL_TTL_S:
+                _model_memo.move_to_end(key)
+                return copy.deepcopy(hit[1])
+    try:
+        found = llm_map.extract(filename, data, provider, api_key)
+    except Exception as exc:  # noqa: BLE001 — the parsers still get their turn
+        obs.warn("import.read.model_failed", error_type=type(exc).__name__,
+                 ext=_extension(filename))
+        return llm_map.Extraction(ParseResult(skipped=[{
+            "row": 0, "type": "file",
+            "reason": f"the assistant could not read this file: {exc}"[:300],
+        }]), unavailable=True)
+    if scope and not found.unavailable:
+        with _model_lock:
+            _model_memo[key] = (now, copy.deepcopy(found))
+            _model_memo.move_to_end(key)
+            while len(_model_memo) > MODEL_MAX:
+                _model_memo.popitem(last=False)
+    return found
+
+
+def read(filename: str, data: bytes, provider: Provider | None = None,
+         api_key: str = "", *, prefer: str | None = None,
+         mapping: dict | None = None, scope: str = "") -> Detected:
+    """Read a statement with the model first and the parsers as its check.
+
+    Both read it; the reconciling rule is in the module docstring. When the
+    model wins over a parser that also read the file, the rows take that
+    parser's broker, because the parser recognising the layout is evidence of
+    where it came from that the model's rows do not carry.
+
+    `prefer` is the platform the reader named, tried before the cascade.
+    `mapping` is a reader's correction of the model's column mapping: applied
+    as given, with no model call and no second opinion. `scope` names whose
+    read this is (the account's directory), which is what lets a repeat read
+    of the same bytes reuse the model's answer; empty, nothing is remembered.
+    Without a provider this is the parsers alone.
+    """
+    if mapping is not None:
+        return _mapped(llm_map.extract(filename, data, provider, api_key,
+                                       mapping=mapping))
+    model = _model_read(filename, data, provider, api_key, scope)
+    parsed, quiet, declined = _parsers(filename, data, prefer)
+    by_model = len(model.result.transactions) if model is not None else 0
+    by_parser = len(parsed.result.transactions) if parsed is not None else 0
+
+    if parsed is not None and by_parser >= by_model:
+        winner = parsed
+    elif model is not None and by_model:
+        winner = _mapped(model)
+        origin = platforms.detected_broker(parsed.result.transactions) if parsed else ""
+        if origin:
+            winner = replace(winner, result=ParseResult(
+                transactions=platforms.stamp_broker(model.result.transactions, origin),
+                skipped=model.result.skipped,
+            ))
+    elif model is not None and model.kind == llm_map.KIND_POSITIONS:
+        winner = _mapped(model)
+    elif quiet is not None:
+        # The parser's own account of every line it left out, and whether the
+        # model was ever asked — "the assistant is down" is not "this file
+        # holds nothing".
+        winner = replace(quiet, unavailable=model is not None and model.unavailable)
+    elif model is not None:
+        winner = _mapped(model)
+    else:
+        winner = _nothing()
+
+    fields: dict[str, Any] = {
+        "winner": winner.platform if winner.recognised else None,
+        "ext": _extension(filename),
+        "model": by_model,
+        "parser": by_parser,
+        "parser_key": parsed.platform if parsed is not None else "",
+        "unavailable": bool(model is not None and model.unavailable),
+        "declined": _summarise(declined),
+    }
+    if winner.recognised:
+        obs.event("import.read", **fields)
+    else:
+        obs.warn("import.read", **fields)
+    if by_parser and winner.platform == LLM_KEY:
+        # A parser read the file and read less of it than the model did: the
+        # layout has moved under it, and the rows it missed are the evidence.
+        obs.warn("import.read.parser_behind", **fields)
+    return winner
 
 
 def supported_types() -> tuple[str, ...]:

@@ -15,6 +15,7 @@
  * is rethrown and reaches `<Loaded>` as the defect it is.
  */
 
+import { keyHeaders } from "../../chat/sessionKey";
 import { ApiError, get, send } from "../../shell/api";
 
 /** Mirrors `MAX_BYTES` in `api/routes/import_statement.py` (50 MB — why not
@@ -33,7 +34,14 @@ export type Platform = {
   has_sample: boolean;
 };
 
-export type Platforms = { platforms: Platform[] };
+export type Platforms = {
+  platforms: Platform[];
+  /** Every extension a statement can arrive as, whichever platform is picked:
+   *  the model reads first and every parser checks it, so a platform's own
+   *  `file_types` is what it exports, not a limit. Optional for an older
+   *  server. */
+  accepts?: string[];
+};
 
 export type Issue = {
   /** "error" | "warning". */
@@ -62,7 +70,16 @@ export type Row = {
 export type SkippedRow = Record<string, string | number | boolean | null>;
 
 export type Preview = {
+  /** What read the file: a platform key, or `llm` for the model. Not always
+   *  the one picked — that one is only tried first. */
   platform: string;
+  /** The parser's display name; empty when the model read it. */
+  label: string;
+  /** `trades`, `positions` (a holdings report: nothing dated to import) or
+   *  `none`. */
+  kind: string;
+  /** The model was never reached, so only the parsers judged the file. */
+  unavailable: boolean;
   filename: string;
   digest: string;
   /** Clean and warned rows — exactly what a commit writes. */
@@ -229,7 +246,11 @@ export const paid = (base: string) => get<Paid>("/portfolio/dividends", { base }
 export const lastImport = () => get<LastImport>("/import/last");
 
 /**
- * Parse and validate a statement, writing nothing.
+ * Read and validate a statement, writing nothing.
+ *
+ * The model reads it first and the parsers check that reading, exactly as a
+ * file attached in the chat is read — so the reader's own session key rides
+ * along, the one the chat would use. Without one the server's chain answers.
  *
  * `wipe` is not a write here and still belongs on the preview: with it set,
  * validation runs against an empty ledger, so nothing is flagged as a
@@ -239,38 +260,51 @@ export const lastImport = () => get<LastImport>("/import/last");
  */
 export const preview = (platform: string, file: Staged, wipe: boolean) =>
   attempt(() =>
-    send<Preview>("POST", "/import/preview", {
-      platform,
-      filename: file.filename,
-      content: file.content,
-      surface: file.surface ?? "import",
-      wipe,
-    }),
+    send<Preview>(
+      "POST",
+      "/import/preview",
+      {
+        platform,
+        filename: file.filename,
+        content: file.content,
+        surface: file.surface ?? "import",
+        wipe,
+      },
+      keyHeaders(),
+    ),
   );
 
 /**
- * Write the importable rows.
+ * Write the rows the preview showed.
  *
- * `expect` is the preview's digest: given it, a file that changed underneath
- * the reader is refused with a 409 rather than committed as something nobody
- * ever saw. The commit re-parses and re-validates regardless, so its answer —
- * not the preview's — is what actually happened.
+ * The rows go back, not the file: a model's reading of the same bytes can
+ * differ from one call to the next, and what is written has to be what the
+ * reader looked at. The server validates them again against the ledger as it
+ * is now, so its answer — not the preview's — is what actually happened.
+ * `platform` is what read the file, which is what the last-import note keeps.
  */
 export const commit = (
-  platform: string,
+  preview: Preview,
   file: Staged,
   broker: string,
-  expect: string,
   wipe: { on: boolean; confirm: string },
 ) =>
   attempt(() =>
     send<Result>("POST", "/import/commit", {
-      platform,
+      platform: preview.platform,
       filename: file.filename,
-      content: file.content,
+      rows: preview.importable.map((row) => ({
+        date: row.date,
+        ticker: row.ticker,
+        action: row.action,
+        quantity: row.quantity,
+        price: row.price,
+        currency: row.currency,
+        fee: row.fee,
+        note: row.note,
+      })),
       surface: file.surface ?? "import",
       broker,
-      expect,
       wipe: wipe.on,
       // The two halves travel together on purpose: a client that emptied the
       // book with `DELETE /portfolio/transactions` and then failed its commit

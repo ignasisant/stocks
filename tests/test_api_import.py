@@ -5,8 +5,11 @@ to `stocks.portfolio` and are tested there, per broker. What is tested here is
 the contract the two endpoints add:
 
 * a preview writes nothing, whatever it says;
-* a commit does not trust the preview — it re-parses and re-validates, because
-  the ledger is shared and moves under both;
+* the model reads first and the parsers check it: the platform a request names
+  is tried first and trusted no further, and the preview says who read it;
+* a commit does not trust the preview — the rows it sends back, or the file
+  read again, are validated again, because the ledger is shared and moves
+  under both;
 * a row that fails validation is quarantined and reported, never committed;
 * an undo removes exactly the ids that commit inserted, and nothing near them;
 * the file travels as base64 in a JSON body, which is what keeps the CSRF
@@ -26,6 +29,9 @@ from stocks import accounts
 from stocks.api.app import app as fastapi_app
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction, all_transactions
+# The real one, held before the suite's conftest swaps `venue.pick` out for
+# every test: the relabel tests below put it back.
+from stocks.portfolio.venue import pick as _real_pick
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -74,6 +80,9 @@ def offline(monkeypatch, tmp_path):
     from stocks.portfolio import diagnostics
 
     monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: None)
+    monkeypatch.setattr(
+        import_statement.symbols, "symbol_for_code", lambda code, currency: None
+    )
     monkeypatch.setattr(import_statement.fetch, "splits", lambda ticker: [])
     monkeypatch.setattr(import_statement, "_exists_memo", {})
     monkeypatch.setattr(diagnostics, "DIAGNOSTICS_DIR", tmp_path / "diagnostics")
@@ -336,6 +345,166 @@ def test_a_code_the_book_already_holds_is_flagged_once_yahoo_disowns_it(
     assert asked == [], "the download's verdict needs no second lookup"
 
 
+def test_a_code_yahoo_disowns_but_its_search_places_imports_clean(
+    client, account, signed_in, monkeypatch
+):
+    """Revolut prints Siemens as "SIE"; Yahoo quotes no bare SIE but lists
+    SIE.DE. The search is asked on the trade currency's venues, and a hit
+    makes the row known — no warning, not named as unpriced — and teaches the
+    price path the symbol."""
+    from stocks.api.routes import import_statement
+    from stocks.data import fetch, symbols
+
+    asked: list[tuple[str, str]] = []
+
+    def search(code, currency):
+        asked.append((code, currency))
+        return {"SIE": "SIE.DE"}.get(code)
+
+    monkeypatch.setattr(import_statement, "_ticker_exists", lambda t: False)
+    monkeypatch.setattr(import_statement.symbols, "symbol_for_code", search)
+    statement = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2024-01-02,SIE,buy,2,150.00,EUR,1.00,revolut Siemens\n"
+        "2024-01-03,ZZZQX,buy,10,100.00,EUR,1.00,revolut Something\n"
+    )
+    payload = signed_in.post("/v1/import/preview", json=body(statement)).json()
+    issues = {row["ticker"]: row["issues"] for row in payload["importable"]}
+    assert issues["SIE"] == []
+    assert payload["unlisted"] == ["ZZZQX"]
+    assert sorted(asked) == [("SIE", "EUR"), ("ZZZQX", "EUR")]
+
+    # What the search learned, the price path reads (the fake stood in for the
+    # write the real one makes).
+    symbols._code_memo = {"SIE": "SIE.DE"}
+    assert fetch.resolve("SIE") == "SIE.DE"
+
+
+def test_a_search_that_runs_out_of_time_is_not_a_verdict(
+    client, account, signed_in, monkeypatch
+):
+    """Yahoo said no to the bare code and the venue search did not answer in
+    time: "could not check", not "will import unpriced"."""
+    import threading
+
+    from stocks.api.routes import import_statement
+
+    released = threading.Event()
+    monkeypatch.setattr(import_statement, "LOOKUP_BUDGET_S", 0.3)
+    monkeypatch.setattr(import_statement, "_ticker_exists", lambda t: False)
+    monkeypatch.setattr(
+        import_statement.symbols,
+        "symbol_for_code",
+        lambda code, currency: released.wait(5) and None,
+    )
+    statement = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2024-01-02,SIE,buy,2,150.00,EUR,1.00,revolut Siemens\n"
+    )
+    try:
+        payload = signed_in.post("/v1/import/preview", json=body(statement)).json()
+    finally:
+        released.set()
+    assert payload["unlisted"] == []
+
+
+# A euro "ALV" is Allianz; the bare ALV Yahoo quotes is Autoliv, in dollars.
+ALLIANZ = (
+    "date,ticker,action,quantity,price,currency,fee,note\n"
+    "2025-03-03,ALV,buy,2,248.60,EUR,1.00,revolut Allianz\n"
+)
+
+
+@pytest.fixture
+def venues(monkeypatch):
+    """The relabel's Yahoo: it quotes every code bare, offers ALV.DE and ALV.F
+    for ALV, closed ALV.DE at 249.10 and Autoliv at 95 USD on the fill's day,
+    and the dollar buys 0.92 of anything. Returns the closes, to empty."""
+    from stocks.api.routes import import_statement
+    from stocks.portfolio import venue
+
+    closes = {("ALV.DE", "2025-03-03"): 249.1, ("ALV", "2025-03-03"): 95.0}
+    monkeypatch.setattr(venue, "pick", _real_pick)
+    monkeypatch.setattr(import_statement, "_ticker_exists", lambda t: True)
+    monkeypatch.setattr(
+        import_statement.symbols,
+        "listings_for_code",
+        lambda code, currency, limit=6: ["ALV.DE", "ALV.F"] if code == "ALV" else [],
+    )
+    monkeypatch.setattr(
+        import_statement.fetch, "close_on", lambda symbol, day: closes.get((symbol, day))
+    )
+    monkeypatch.setattr(import_statement.fx, "rate_on", lambda day, base, quote: 0.92)
+    return closes
+
+
+def test_a_euro_code_yahoo_quotes_in_dollars_previews_under_its_venue(
+    client, account, signed_in, venues
+):
+    payload = signed_in.post("/v1/import/preview", json=body(ALLIANZ)).json()
+    [row] = payload["importable"]
+    assert (row["ticker"], row["issues"]) == ("ALV.DE", [])
+    assert payload["unlisted"] == []
+    assert all_transactions(account.db) == [], "a preview still writes nothing"
+
+
+def test_a_venue_no_price_confirms_leaves_the_code_as_printed(
+    client, account, signed_in, venues
+):
+    venues.clear()  # throttled, or no history that day
+    payload = signed_in.post("/v1/import/preview", json=body(ALLIANZ)).json()
+    assert [row["ticker"] for row in payload["importable"]] == ["ALV"]
+
+
+def test_a_commit_moves_the_books_euro_rows_and_leaves_the_dollar_ones(
+    client, account, signed_in, venues
+):
+    """The Allianz bought before the fix joins the new row: one position, not
+    an Allianz priced as Autoliv beside it. Autoliv stays Autoliv."""
+    ledger.add_many(
+        [
+            Transaction("2025-01-02", "ALV", "buy", 1, 240.0, "EUR", 0.0, note="revolut Allianz"),
+            Transaction("2025-01-02", "ALV", "buy", 3, 90.0, "USD", 0.0, note="revolut Autoliv"),
+        ],
+        account.db,
+    )
+    payload = signed_in.post("/v1/import/commit", json=body(ALLIANZ)).json()
+    assert payload["imported"] == 1
+    assert sorted((t.ticker, t.currency) for t in all_transactions(account.db)) == [
+        ("ALV", "USD"),
+        ("ALV.DE", "EUR"),
+        ("ALV.DE", "EUR"),
+    ]
+
+
+def test_a_statement_imported_again_finds_its_rows_under_the_venue(
+    client, account, signed_in, venues
+):
+    signed_in.post("/v1/import/commit", json=body(ALLIANZ))
+    venues.clear()  # and Yahoo has started throttling since
+    again = signed_in.post("/v1/import/preview", json=body(ALLIANZ)).json()
+    assert again["duplicates"] == 1
+    assert [row["ticker"] for row in again["importable"]] == ["ALV.DE"]
+
+
+def test_a_refused_commit_leaves_the_books_codes_alone(
+    client, account, signed_in, venues
+):
+    """Nothing written, nothing moved: the relabel waits for an import that
+    lands."""
+    ledger.add_many(
+        [Transaction("2025-01-02", "ALV", "buy", 1, 240.0, "EUR", 0.0, note="revolut Allianz")],
+        account.db,
+    )
+    oversold = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2025-03-03,ALV,sell,50,248.60,EUR,1.00,revolut Allianz\n"
+    )
+    response = signed_in.post("/v1/import/commit", json=body(oversold))
+    assert response.status_code == 422
+    assert [t.ticker for t in all_transactions(account.db)] == ["ALV"]
+
+
 def test_an_oversold_ticker_is_rescued_by_the_split_the_file_never_printed(
     client, account, signed_in, monkeypatch
 ):
@@ -470,6 +639,174 @@ def test_an_unattributed_batch_has_to_be_told_its_broker(client, account, signed
     assert payload["broker"] == "clicktrade"
     assert all_transactions(account.db)[0].note.split()[0] == "clicktrade"
 
+
+
+def rows_of(preview: dict) -> list[dict]:
+    """The commit's `rows`, as a client builds them from the preview."""
+    keep = ("date", "ticker", "action", "quantity", "price", "currency", "fee", "note")
+    return [{k: row[k] for k in keep} for row in preview["importable"]]
+
+
+def test_the_previewed_rows_are_written_without_the_file(client, account, signed_in):
+    preview = signed_in.post("/v1/import/preview", json=body()).json()
+    payload = signed_in.post(
+        "/v1/import/commit",
+        json={"filename": "ledger.csv", "rows": rows_of(preview),
+              "platform": preview["platform"]},
+    ).json()
+    assert payload["imported"] == 2
+    assert payload["platform"] == "generic"
+    assert {t.ticker for t in all_transactions(account.db)} == {"AAPL", "MSFT"}
+
+
+def test_the_rows_sent_back_are_validated_against_the_ledger_as_it_is_now(
+    client, account, signed_in
+):
+    """A row the preview called clean can be an oversell by the time it comes
+    back — here the buy it leaned on was never sent — and it is left out and
+    named, not written."""
+    preview = signed_in.post("/v1/import/preview", json=body()).json()
+    sell = {**rows_of(preview)[0], "action": "sell", "date": "2024-03-01"}
+    payload = signed_in.post(
+        "/v1/import/commit",
+        json={"filename": "ledger.csv", "rows": [rows_of(preview)[1], sell]},
+    ).json()
+    assert payload["imported"] == 1
+    assert [row["ticker"] for row in payload["rejected"]] == ["AAPL"]
+    assert {t.ticker for t in all_transactions(account.db)} == {"MSFT"}
+
+
+def test_a_row_sent_back_with_an_action_the_ledger_does_not_know_is_refused(
+    client, account, signed_in
+):
+    preview = signed_in.post("/v1/import/preview", json=body()).json()
+    rows = rows_of(preview)
+    rows[0]["action"] = "teleport"
+    response = signed_in.post(
+        "/v1/import/commit", json={"filename": "ledger.csv", "rows": rows}
+    )
+    assert response.status_code == 422
+    assert all_transactions(account.db) == []
+
+
+def test_rows_sent_back_are_never_read_again(client, account, signed_in, monkeypatch):
+    from stocks.api.routes import import_statement
+
+    preview = signed_in.post("/v1/import/preview", json=body()).json()
+
+    def never(*a, **k):
+        raise AssertionError("a commit with rows reads no file")
+
+    monkeypatch.setattr(import_statement, "_read", never)
+    response = signed_in.post(
+        "/v1/import/commit",
+        json={"filename": "ledger.csv", "rows": rows_of(preview)},
+    )
+    assert response.status_code == 200
+
+
+# -------------------------------------------------------------- who reads it
+
+
+class _Backend:
+    id = "fake"
+    needs_key = False
+
+
+@pytest.fixture
+def model(monkeypatch):
+    """A model that reads every file as the one NVDA buy, and counts its calls.
+
+    Patched where `autodetect` calls it, with a provider in front so it is
+    reached at all (conftest keeps every other test on the parsers alone).
+    """
+    from stocks.api.routes import import_statement
+    from stocks.portfolio import autodetect, llm_map
+    from stocks.portfolio.statement import ParseResult
+
+    calls: list[str] = []
+
+    def extract(filename, data, provider, api_key, mapping=None):
+        calls.append(filename)
+        return llm_map.Extraction(
+            ParseResult(transactions=[Transaction(
+                date="2024-03-01", ticker="NVDA", action="buy", quantity=4,
+                price=500.0, currency="EUR", fee=1.0, note="revolut Nvidia",
+            )]),
+            kind=llm_map.KIND_TRADES,
+        )
+
+    monkeypatch.setattr(autodetect.llm_map, "extract", extract)
+    monkeypatch.setattr(
+        import_statement, "_provider", lambda paths, held=None: (_Backend(), "k")
+    )
+    return calls
+
+
+def test_the_preview_says_which_parser_read_the_file(client, account, signed_in):
+    payload = signed_in.post("/v1/import/preview", json=body()).json()
+    assert payload["platform"] == "generic"
+    assert payload["label"]
+    assert payload["kind"] == "trades"
+    assert payload["unavailable"] is False
+
+
+def test_a_named_platform_is_tried_first_and_trusted_no_further(
+    client, account, signed_in
+):
+    """The page preselects a platform; a generic ledger uploaded under Revolut
+    is still read, by the parser that owns it, and the answer says so."""
+    payload = signed_in.post(
+        "/v1/import/preview", json=body(platform="revolut")
+    ).json()
+    assert payload["platform"] == "generic"
+    assert len(payload["importable"]) == 2
+
+
+@pytest.mark.parametrize("named", ["", "llm"])
+def test_naming_no_platform_still_reads_the_file(client, account, signed_in, named):
+    payload = signed_in.post("/v1/import/preview", json=body(platform=named)).json()
+    assert payload["platform"] == "generic"
+    assert len(payload["importable"]) == 2
+
+
+def test_the_model_reads_a_file_no_parser_owns(client, account, signed_in, model):
+    foreign = "When,What,Units,Each\n01/03/2024,NVDA,4,500\n"
+    payload = signed_in.post(
+        "/v1/import/preview", json=body(foreign, filename="extracto.csv")
+    ).json()
+    assert payload["platform"] == "llm"
+    assert payload["label"] == ""
+    assert [r["ticker"] for r in payload["importable"]] == ["NVDA"]
+    assert model == ["extracto.csv"]
+
+
+def test_a_parser_that_reads_as_much_as_the_model_wins(
+    client, account, signed_in, model
+):
+    """The model found one row, the parser two: the parser's read is kept, and
+    a tie would go to the parser as well — it is exact where a model is only
+    likely."""
+    payload = signed_in.post("/v1/import/preview", json=body()).json()
+    assert payload["platform"] == "generic"
+    assert [r["ticker"] for r in payload["importable"]] == ["AAPL", "MSFT"]
+    assert model == ["ledger.csv"], "the model was asked first all the same"
+
+
+def test_a_commit_of_the_previewed_file_does_not_ask_the_model_twice(
+    client, account, signed_in, model
+):
+    foreign = "When,What,Units,Each\n01/03/2024,NVDA,4,500\n"
+    preview = signed_in.post(
+        "/v1/import/preview", json=body(foreign, filename="extracto.csv")
+    ).json()
+    payload = signed_in.post(
+        "/v1/import/commit",
+        json=body(foreign, filename="extracto.csv", expect=preview["digest"]),
+    ).json()
+    assert payload["platform"] == "llm"
+    assert payload["imported"] == 1
+    assert len(model) == 1, "the preview's read is remembered for the commit"
 
 def test_the_demo_book_does_not_survive_a_real_import(client, account, signed_in):
     """An invented cost basis must never end up mixed into a real one."""

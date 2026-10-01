@@ -8,11 +8,11 @@
  * unattributed lands under whatever its notes happened to start with and is
  * tedious to fix afterwards.
  *
- * Then the commit, which re-parses and re-validates rather than trusting the
- * preview: the ledger is shared mutable state, and a row that was importable
- * ten seconds ago can be a duplicate now. `expect` carries the preview's digest
- * so a file that changed underneath the reader is refused instead of committed
- * as something nobody ever saw.
+ * Then the commit, which sends the rows the preview showed and has them
+ * re-validated rather than trusting its verdict: the ledger is shared mutable
+ * state, and a row that was importable ten seconds ago can be a duplicate now.
+ * The rows, not the file, because the model that read the file may not read it
+ * the same way twice — what is written is exactly what was reviewed.
  *
  * It is drawn as a bar pinned over the tiers — to the top of the screen beside
  * a wide table, to the bottom on a phone — so the one press the page exists for
@@ -55,14 +55,12 @@ function brands(platforms: Platform[]): Platform[] {
 }
 
 export function CommitPanel({
-  platform,
   platforms,
   staged,
   preview,
   wipe,
   onCommitted,
 }: {
-  platform: Platform;
   platforms: Platform[];
   staged: Staged;
   preview: Preview;
@@ -104,7 +102,7 @@ export function CommitPanel({
     setBusy(true);
     setRefusal(null);
     try {
-      const outcome = await commit(platform.key, staged, origin, preview.digest, wipe);
+      const outcome = await commit(preview, staged, origin, wipe);
       if (outcome.ok) onCommitted(outcome.value);
       else setRefusal(outcome.refusal);
     } catch {

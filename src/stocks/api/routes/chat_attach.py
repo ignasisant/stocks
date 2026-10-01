@@ -7,23 +7,28 @@ account's own ledger, previewed as a table inside the bubble, and written only
 when the reader presses the button. This is that flow for any other front end,
 split into the two calls the drawer makes in one process.
 
-**Why it is not `/import/preview`.** That route takes the platform key the
-Import page's selectbox chose, and refuses what no parser owns. The whole point
-of attaching a file to a conversation is that nobody was asked to name their
-broker first — so detection is the route's job here, and an export this app has
-no parser for is mapped rather than rejected. The tiers differ for the same
-reason: the page shows duplicates as warnings next to a wipe checkbox, the chat
-holds them back and lets the preview opt them in.
+**It reads and validates the way `/import/preview` does, because it is that
+code.** The model reads first and the parsers check it (`autodetect.read`), and
+the rows are validated against the ledger with the page's own live lookups —
+both taken from `import_statement`, so a statement that imports on the Import
+page imports here, with the same rows and the same verdicts. What differs is
+only what attaching a file to a conversation means: nobody was asked to name
+their broker first, so no parser is preferred, and a file nothing could read
+is answered in the thread rather than refused. The tiers are presented
+differently for the same reason: the page shows duplicates as warnings next to
+a wipe checkbox, the chat holds them back and lets the preview opt them in.
 
 **The rows come back on the commit, and the file does not.** Uploaded bytes are
 never written to disk — an import is finished inside the session that started
 it, and persisting the statement would leave a second copy of somebody's whole
 trade history lying around for nothing. That rules out staging the batch server
-side, and re-sending the file would mean a second model call whose mapping can
+side, and re-sending the file would mean a second model call whose reading can
 differ from the one that was previewed. So the client returns the rows it was
-shown. It can only ever write rows to *its own* ledger, which is what uploading
-a hand-written CSV to `/import/commit` already does, and it is checked on the
-way in like any other body.
+shown, and they are validated again against the ledger as it is now — the page's
+commit does the same with the same rows — so a row that became a duplicate or
+an oversell in between is dropped and named, not written. It can only ever
+write rows to *its own* ledger, which is what uploading a hand-written CSV to
+`/import/commit` already does.
 
 Both calls file an assistant turn on the thread, the way the drawer does: the
 preview's note (what was found, in what) and the commit's receipt (how many
@@ -47,11 +52,9 @@ from stocks import accounts, obs
 from stocks.accounts import UserPaths
 from stocks.api.deps import ChatTurn, Writer
 from stocks.api.jsonsafe import num as _num
-from stocks.chat import a2ui, engine
-from stocks.data import fetch
-from stocks.data.symbols import is_isin, symbol_for_isin
+from stocks.api.routes import import_statement as page
+from stocks.chat import a2ui
 from stocks.portfolio import (
-    autodetect,
     demo,
     diagnostics,
     last_import,
@@ -59,7 +62,7 @@ from stocks.portfolio import (
     platforms,
 )
 from stocks.portfolio.ledger import Transaction, add_many, all_transactions
-from stocks.portfolio.validate import known_tickers, validate
+from stocks.portfolio.statement import ParseResult
 from stocks.web import i18n
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -69,9 +72,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 MAX_UPLOAD_MB = 10
 MAX_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
-# Nothing sane reaches this. It is here so that a client which lost its preview
-# and started replaying garbage cannot ask for a million-row insert.
-MAX_ROWS = 20_000
+MAX_ROWS = page.MAX_ROWS
 
 
 # ------------------------------------------------------------------ schemas
@@ -215,6 +216,14 @@ class Committed(BaseModel):
     broker: str
     imported_at: str
     message: Message
+    rejected: list[Row] = Field(
+        default_factory=list,
+        description=(
+            "Rows sent back that no longer validate against the ledger as it "
+            "is now — a duplicate of something committed since, a sell the "
+            "book no longer covers — each with why. Not written."
+        ),
+    )
 
 
 # ------------------------------------------------------------------ helpers
@@ -276,25 +285,6 @@ def _say(paths: UserPaths, content: str) -> Message:
     history.append(turn)
     auth.save_chat(history, paths.chat)
     return Message(role="assistant", content=content, action="import")
-
-
-def _provider(paths: UserPaths, held: dict[str, str] | None = None):
-    """The provider that would answer this account, for the column mapper.
-
-    None when there is nothing to ask — a BYOK account with no key and no free
-    chain. Detection still runs: a statement a parser owns never needed a model
-    in the first place, and one that isn't comes back `unavailable` rather than
-    blamed on the file. `held` is the session-only key the request carried
-    (`chat.session_keys`): the reader who typed one for this tab expects the
-    mapper to run on it too, not on a free chain that may have run dry.
-    """
-    prefs = accounts.load_prefs(paths.prefs)
-    # `answerable`: the mapper's calls (up to MAX_PDF_CALLS a file) are never
-    # charged to the allowance, so a free chain that has run dry today must
-    # not be the provider they run on.
-    for provider, key, _model in engine.answerable(prefs, engine.chain(prefs, held)):
-        return provider, key
-    return None, ""
 
 
 def _row(tx: Transaction, why: str = "") -> Row:
@@ -393,43 +383,31 @@ def attach(
     x_chat_provider: str | None = Header(default=None),
     x_chat_key: str | None = Header(default=None),
 ) -> Preview:
-    """Detect, validate and preview one statement. Writes no ledger rows.
+    """Read, validate and preview one statement. Writes no ledger rows.
 
-    A write all the same — it files the assistant's note on the thread, and on
-    an unrecognised export it spends one model call — so it is `Writer` like
-    every other route that costs the account something.
+    A write all the same — it files the assistant's note on the thread, and it
+    spends the account's model calls on reading the file — so it is `Writer`
+    like every other route that costs the account something.
 
-    Unlike the Import page this runs no live symbol-existence check: it costs a
-    network round trip per unknown symbol against an API that already throttles
-    us, and it can only ever soften a warning, never keep a bad row out. The
-    one exception is an ISIN, resolved off the cached map the preview needs
-    anyway to print a symbol.
+    The read and the validation are the Import page's (`import_statement._read`
+    and `_validated`), live symbol lookups included: they are bounded by the
+    batch budget, and without them the same statement warned here and read
+    clean on the page.
     """
     raw = _decode(body.content)
     _file_at(paths, body.conversation)
     lang = _lang(paths, body.lang)
 
-    # Imported here: `chat` imports this module to mount its routes.
-    from stocks.api.routes.chat import session_keys
-
-    provider, api_key = _provider(paths, session_keys(x_chat_provider, x_chat_key))
-    found = autodetect.detect(body.filename, raw, provider, api_key,
-                              mapping=body.mapping)
-    checked = validate(
-        found.result,
-        # Demo rows go on the first real commit, so checking against them
-        # would raise duplicates that are about to stop existing.
-        demo.without(all_transactions(paths.db)),
-        known=known_tickers(paths.watchlist, paths.db),
-        lookup=lambda t: True if is_isin(t) and symbol_for_isin(t) else None,
-        # Asked about one symbol, and only when a sell overshoots: a bank PDF
-        # prints the trades and leaves the 20:1 out, and rejecting that sell is
-        # the rejection nobody can act on.
-        splits=fetch.splits,
+    found = page._read(
+        paths,
+        body.filename,
+        raw,
+        held=page._held(x_chat_provider, x_chat_key),
+        mapping=body.mapping,
     )
+    checked, _disowned = page._validated(paths, found.result)
     # The same anonymised record the Import page files, tagged with the surface
-    # it came through: this path picks its parser by guessing, so its failures
-    # break differently and are worth telling apart.
+    # it came through, so the two are told apart.
     diagnostics.report(
         found.platform, body.filename, raw, found.result, checked, surface="chat"
     )
@@ -503,9 +481,12 @@ def attach(
 def commit(body: CommitRows, paths: Writer) -> Committed:
     """Append the rows the preview showed, and record the batch as undoable.
 
-    The rows are taken as sent — see the module docstring for why they are not
-    re-derived from the file — but every one of them is rebuilt through
-    `Transaction`, so an unknown action is a 422 and not a row in the ledger.
+    The rows are taken from the body — see the module docstring for why they
+    are not re-derived from the file — rebuilt through `Transaction`, so an
+    unknown action is a 422 and not a row in the ledger, and validated again
+    against the ledger as it is now. What no longer validates is left out and
+    handed back as `rejected`; a duplicate the preview opted in is still
+    written, because it was sent on purpose.
 
     Nothing is deleted except the demo book, which the first real import always
     takes with it: an invented cost basis must never mix into a real one.
@@ -516,13 +497,22 @@ def commit(body: CommitRows, paths: Writer) -> Committed:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="rows need a broker to be filed under — send one as `broker`",
         )
-    txs = platforms.stamp_broker([_transaction(r) for r in body.rows], origin)
+    sent = ParseResult(transactions=[_transaction(r) for r in body.rows])
+    checked, _disowned = page._validated(paths, sent)
+    if not checked.importable:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="none of these rows validates against the ledger any more",
+        )
+    txs = platforms.stamp_broker(checked.importable, origin)
 
     _file_at(paths, body.conversation)
     lang = _lang(paths, body.lang)
 
     demo.clear(paths.db)
     ids = add_many(txs, paths.db)
+    if ids:
+        page._retag(paths.db, checked.relabeled)
     stamped = datetime.now(UTC).isoformat(timespec="seconds")
     last_import.save(
         last_import.ImportRecord(
@@ -543,11 +533,16 @@ def commit(body: CommitRows, paths: Writer) -> Committed:
         wiped=False,
         via="chat-api",
     )
-    note = (
-        i18n.translate("chat.import_done", lang, n=len(ids), total=total)
-        + " "
-        + i18n.translate("chat.import_undo_hint", lang)
-    )
+    note = i18n.translate("chat.import_done", lang, n=len(ids), total=total)
+    if checked.rejected:
+        # Said in the turn itself: the card that showed them clean is gone.
+        note += " " + i18n.translate(
+            "chat.import_left_out",
+            lang,
+            n=len(checked.rejected),
+            tickers=", ".join(sorted({c.tx.ticker for c in checked.rejected})),
+        )
+    note += " " + i18n.translate("chat.import_undo_hint", lang)
     return Committed(
         imported=len(ids),
         tx_ids=ids,
@@ -555,4 +550,5 @@ def commit(body: CommitRows, paths: Writer) -> Committed:
         broker=origin,
         imported_at=stamped,
         message=_say(paths, note),
+        rejected=_issues(checked.rejected),
     )

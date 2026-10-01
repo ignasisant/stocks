@@ -24,7 +24,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useT } from "../../shell/i18n";
-import type { Preview } from "./api";
+import type { Platform, Preview } from "./api";
 import { Eyebrow, jump } from "./Card";
 import { Glyph } from "./Glyph";
 import type { GlyphName } from "./Glyph";
@@ -45,9 +45,12 @@ const GLYPH: Record<Tone, GlyphName> = {
 
 export function Tiers({
   preview,
+  picked,
   children,
 }: {
   preview: Preview;
+  /** The platform the reader chose, which was only tried first. */
+  picked?: Platform;
   children?: ReactNode;
 }) {
   const t = useT();
@@ -60,6 +63,20 @@ export function Tiers({
   const rejected = preview.rejected.length;
   const skipped = preview.skipped.length;
   const unlisted = preview.unlisted ?? [];
+  // Who read the file, said only when it is not who the reader asked: the
+  // model reads first, and a reader who picked Revolut and got the model's
+  // reading — or Trading 212's — has to know whose rows these are.
+  const readBy =
+    preview.platform === "llm"
+      ? t("import.read_by_model")
+      : picked && preview.platform && preview.platform !== picked.key
+        ? t("import.read_as", { label: preview.label, picked: picked.label })
+        : null;
+  const notes = [
+    readBy,
+    preview.kind === "positions" ? t("import.read_positions") : null,
+    preview.unavailable ? t("import.read_model_off") : null,
+  ].filter((note): note is string => note !== null);
 
   const all: { id: string; tone: Tone; label: string; n: number }[] = [
     { id: "im-rejected", tone: "bad", label: t("import.tier_rejected"), n: rejected },
@@ -102,6 +119,11 @@ export function Tiers({
             {vocab.tn("import.sum_skipped", skipped)}
           </span>
         </h2>
+        {notes.map((note) => (
+          <p className="im-fine" key={note}>
+            {note}
+          </p>
+        ))}
         {tiers.length > 1 && (
           <nav aria-label={t("import.tiers_label")} className="im-jumps">
             {tiers.map((tier) => (

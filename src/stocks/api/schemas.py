@@ -2184,6 +2184,14 @@ class ImportPlatform(BaseModel):
 
 class ImportPlatforms(BaseModel):
     platforms: list[ImportPlatform] = Field(default_factory=list)
+    accepts: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every extension a statement can arrive as, whichever platform is "
+            "picked: the model reads first and every parser is its check, so a "
+            "platform's own `file_types` is what it exports, not a limit."
+        ),
+    )
 
 
 class ImportIssue(BaseModel):
@@ -2219,7 +2227,31 @@ class ImportPreview(BaseModel):
     hidden the part the reader has to act on.
     """
 
-    platform: str
+    platform: str = Field(
+        description=(
+            "What read the file: a key from `/import/platforms`, or `llm` for "
+            "the model. Not always the platform the request named — that one "
+            "is only tried first."
+        )
+    )
+    label: str = Field(
+        default="",
+        description="The parser's display name. Empty when the model read it.",
+    )
+    kind: str = Field(
+        default="none",
+        description=(
+            "What the document turned out to be: `trades`, `positions` (a "
+            "holdings report, with no dated movement to import) or `none`."
+        ),
+    )
+    unavailable: bool = Field(
+        default=False,
+        description=(
+            "The model was never reached, so only the parsers judged the file. "
+            "Not the same as a file with nothing in it."
+        ),
+    )
     filename: str
     digest: str = Field(
         description=(
