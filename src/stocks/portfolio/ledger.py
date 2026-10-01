@@ -261,7 +261,8 @@ def retag(
             )
             changed = cur.rowcount
             others = conn.execute(
-                "SELECT 1 FROM transactions WHERE ticker = ? AND action != 'split' LIMIT 1",
+                "SELECT 1 FROM transactions"
+                " WHERE ticker = ? AND action != 'split' LIMIT 1",
                 (old,),
             ).fetchone()
             if changed and others is None:

@@ -30,6 +30,7 @@ from stocks.api.app import app as fastapi_app
 from stocks.api.routes.import_statement import _charted as _real_charted
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction, all_transactions
+
 # The real one, held before the suite's conftest swaps `venue.pick` out for
 # every test: the relabel tests below put it back.
 from stocks.portfolio.venue import pick as _real_pick
@@ -907,8 +908,12 @@ def test_a_commit_moves_the_books_euro_rows_and_leaves_the_dollar_ones(
     an Allianz priced as Autoliv beside it. Autoliv stays Autoliv."""
     ledger.add_many(
         [
-            Transaction("2025-01-02", "ALV", "buy", 1, 240.0, "EUR", 0.0, note="revolut Allianz"),
-            Transaction("2025-01-02", "ALV", "buy", 3, 90.0, "USD", 0.0, note="revolut Autoliv"),
+            Transaction(
+                "2025-01-02", "ALV", "buy", 1, 240.0, "EUR", 0.0, note="revolut Allianz"
+            ),
+            Transaction(
+                "2025-01-02", "ALV", "buy", 3, 90.0, "USD", 0.0, note="revolut Autoliv"
+            ),
         ],
         account.db,
     )
@@ -937,7 +942,11 @@ def test_a_refused_commit_leaves_the_books_codes_alone(
     """Nothing written, nothing moved: the relabel waits for an import that
     lands."""
     ledger.add_many(
-        [Transaction("2025-01-02", "ALV", "buy", 1, 240.0, "EUR", 0.0, note="revolut Allianz")],
+        [
+            Transaction(
+                "2025-01-02", "ALV", "buy", 1, 240.0, "EUR", 0.0, note="revolut Allianz"
+            )
+        ],
         account.db,
     )
     oversold = (

@@ -32,6 +32,7 @@ from stocks.api.app import app as fastapi_app
 from stocks.api.routes.import_statement import _provider as _real_provider
 from stocks.portfolio import demo, ledger
 from stocks.portfolio.ledger import Transaction, all_transactions
+
 # The real one, held before the suite's conftest swaps `venue.pick` out.
 from stocks.portfolio.venue import pick as _real_pick
 
@@ -318,7 +319,11 @@ def test_a_relabeled_batch_moves_the_books_rows_with_it(
     )
     monkeypatch.setattr(import_statement.fx, "rate_on", lambda day, base, quote: 0.92)
     ledger.add_many(
-        [Transaction("2025-01-02", "ALV", "buy", 1, 240.0, "EUR", 0.0, note="revolut Allianz")],
+        [
+            Transaction(
+                "2025-01-02", "ALV", "buy", 1, 240.0, "EUR", 0.0, note="revolut Allianz"
+            )
+        ],
         account.db,
     )
     allianz = (

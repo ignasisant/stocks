@@ -137,7 +137,8 @@ def test_2026_trade_without_a_side_is_skipped_not_guessed():
 def test_the_holdings_table_names_each_codes_isin():
     lines = [
         "Symbol Company ISIN Quantity Price Value % of Portfolio",
-        "MEQA Merlin Properties SOCIMI S.A. ES0105025003 631.438159 €12.24 €7,728.80 17.05%",
+        "MEQA Merlin Properties SOCIMI S.A. ES0105025003 631.438159 €12.24"
+        " €7,728.80 17.05%",
         "GOOGL Alphabet (Class A) US02079K3059 24 US$340.92 US$8,182.08 14.83%",
         "2024-01-03 MEQA BUY - MARKET 10 €12.00 €120.00 EUR 1.0",
         "This statement lists US02079K3059 for reference only.",
