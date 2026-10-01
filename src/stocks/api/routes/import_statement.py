@@ -1,9 +1,20 @@
 """Turning a broker statement into ledger rows, over HTTP.
 
-The flow the page has always had: pick a platform, upload, parse (writing
-nothing), validate against the ledger, look at the tiers, commit. Split here
-into a preview and a commit, because the safety property is that a reader —
-or a client — sees what a file will do before it does it.
+The flow the page has always had: upload, read (writing nothing), validate
+against the ledger, look at the tiers, commit. Split here into a preview and a
+commit, because the safety property is that a reader — or a client — sees what
+a file will do before it does it.
+
+**The model reads first, and the parsers check it.** Every statement goes to
+the column mapper (`portfolio.llm_map`) and to every parser that takes its
+extension, and `autodetect.read` keeps whichever read more of it — a parser on
+a tie, because a parser that owns the layout is exact where a model is only
+likely. The platform the page's picker names is tried first and trusted no
+further: a Revolut PDF whose layout moved under its parser still imports, read
+by the model, instead of arriving as "0 rows", and the preview says who read
+it. The chat's attachment runs this same read and this same validation
+(`chat_attach` takes both from here), so a file that imports on one surface
+imports on the other.
 
 **The file arrives as base64 in a JSON body, not as multipart.** That is a
 deliberate choice and not an oversight: a cross-site HTML form *can* send
@@ -11,11 +22,17 @@ multipart, so accepting it would hand back the CSRF hole that every other write
 here avoids by requiring `application/json`. The ~33% encoding overhead is
 nothing against a statement.
 
-**Commit re-parses and re-validates.** It does not trust the preview, and it
-cannot: the ledger moves, and a row that was importable ten seconds ago may now
-be a duplicate of one another client just committed. `expect` lets a caller
-assert the bytes are the same ones it previewed; nothing lets it assert the
-ledger is.
+**Commit re-validates the rows it was shown.** Reading the file again would
+be a second model call, whose answer can differ from the one previewed, on
+whichever instance the request lands on rather than the one that remembers the
+first. So a client sends back the preview's rows — which it could always do by
+uploading them as a generic CSV — and they are rebuilt through the ledger's
+`Transaction` and validated again against the ledger as it is now: the ledger
+moves, and a row that was importable ten seconds ago may be a duplicate of one
+another client just committed. A commit that sends the file instead is read
+again (the model's answer is remembered for a few minutes per account, so this
+is usually the preview's own read); `expect` lets it assert the bytes are the
+ones it previewed. Nothing lets either assert the ledger is.
 
 **Replacing a ledger is a confirmation, not a flag.** The page offers a
 "wipe first" checkbox, and the two halves of it have to travel together: a
@@ -48,16 +65,17 @@ import binascii
 import hashlib
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from concurrent.futures import TimeoutError as FuturesTimeout
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
 from stocks import obs
+from stocks.analysis.listing import quote_unit
 from stocks.api import loaders
 from stocks.api.deps import Account, Writer
 from stocks.api.jsonsafe import num as _num
@@ -72,17 +90,24 @@ from stocks.api.schemas import (
     Transaction,
 )
 from stocks.api.security import Authed
-from stocks.data import fetch
+from stocks.data import fetch, fx, symbols
 from stocks.portfolio import (
+    autodetect,
     corporate,
     demo,
     diagnostics,
     last_import,
+    ledger,
+    llm_map,
     platforms,
+    positions,
     transfers,
+    venue,
 )
 from stocks.portfolio.ledger import add_many, all_transactions, clear, delete_many
+from stocks.portfolio.statement import ParseResult
 from stocks.portfolio.validate import known_tickers, validate
+from stocks.web import tx_text
 
 router = APIRouter(prefix="/import", tags=["import"])
 
@@ -101,11 +126,23 @@ router = APIRouter(prefix="/import", tags=["import"])
 # sending a gigabyte of base64 either.
 MAX_BYTES = 50 * 1024 * 1024
 
+# Nothing sane reaches this. It is here so that a client which lost its preview
+# and started replaying garbage cannot ask for a million-row insert.
+MAX_ROWS = 20_000
+
 
 class Upload(BaseModel):
     model_config = {"extra": "forbid"}
 
-    platform: str = Field(description="Platform key, from `/import/platforms`.")
+    platform: str = Field(
+        default="",
+        description=(
+            "The platform the reader named, from `/import/platforms` — its "
+            "parser is tried first, and trusted no further: the model and "
+            "every parser read the file, and the preview's `platform` says "
+            "which one did. Empty, or `llm`, names none."
+        ),
+    )
     filename: str = Field(
         min_length=1,
         max_length=255,
@@ -136,7 +173,39 @@ class Upload(BaseModel):
     )
 
 
+class StatementRow(BaseModel):
+    """One ledger row a preview showed, sent back to be written."""
+
+    model_config = {"extra": "forbid"}
+
+    date: str = Field(max_length=32)
+    ticker: str = Field(max_length=64)
+    action: str = Field(max_length=32)
+    quantity: float = 0.0
+    price: float = 0.0
+    currency: str = Field(default="USD", max_length=8)
+    fee: float = 0.0
+    note: str = Field(default="", max_length=500)
+
+
 class Commit(Upload):
+    content: str = Field(
+        default="",
+        description=(
+            "The file's bytes, base64-encoded — or nothing, when `rows` is "
+            "sent instead."
+        ),
+    )
+    rows: list[StatementRow] | None = Field(
+        default=None,
+        max_length=MAX_ROWS,
+        description=(
+            "The preview's importable rows, as it returned them. Sent, and "
+            "they are validated again and written; the file is not read a "
+            "second time, so a model's reading cannot change between what "
+            "was shown and what is written."
+        ),
+    )
     broker: str = Field(
         default="",
         description=(
@@ -199,31 +268,92 @@ def _platform(key: str):
     )
 
 
-def _parse(platform, filename: str, raw: bytes, *, surface: str | None = None):
-    """Run the platform's parser; a parser that raises is the caller's 422.
+def _prefer(key: str) -> str | None:
+    """The parser a reader named, to try first — None when they named none.
 
-    `surface` set means "report this attempt" (see `_checked`): a parser that
-    raises used to reach the reader as an error and reach us not at all, and
-    the anonymised fingerprint is what names the encoding or the header row
-    that broke it.
+    Empty and `llm` (what a preview returns for a file the model read) name
+    none. Anything else has to be a platform this app has: an unknown key is
+    a client bug worth a 404, not a hint to drop quietly.
     """
-    try:
-        return platform.parse(filename, raw)
-    except Exception as exc:
-        # A statement this parser cannot read is the caller's file, not a
-        # server fault — and the reason is the only useful part of the answer.
-        obs.warn(
-            "api.import_parse_failed",
-            platform=platform.key,
-            error_type=type(exc).__name__,
-            error=str(exc)[:300],
-        )
-        if surface:
-            diagnostics.report(platform.key, filename, raw, surface=surface, error=exc)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"{platform.label} could not read this file: {exc}"[:300],
-        ) from exc
+    key = key.strip()
+    if not key or key == autodetect.LLM_KEY:
+        return None
+    return _platform(key).key
+
+
+def _provider(paths, held: dict[str, str] | None = None):
+    """The provider that would answer this account, for the model's read.
+
+    None when there is nothing to ask — a BYOK account with no key and no free
+    chain. The read still runs: the parsers read without a model, and a file
+    none of them owns comes back `unavailable` rather than blamed on the file.
+    `held` is the session-only key the request carried (`chat.session_keys`):
+    the reader who typed one for this tab expects the read to run on it too,
+    not on a free chain that may have run dry.
+    """
+    from stocks import accounts
+    from stocks.chat import engine
+
+    prefs = accounts.load_prefs(paths.prefs)
+    # `answerable`: the mapper's calls (up to MAX_PDF_CALLS a file) are never
+    # charged to the allowance, so a free chain that has run dry today must
+    # not be the provider they run on.
+    for provider, key, _model in engine.answerable(prefs, engine.chain(prefs, held)):
+        return provider, key
+    return None, ""
+
+
+def _read(
+    account,
+    filename: str,
+    raw: bytes,
+    *,
+    held: dict[str, str] | None = None,
+    prefer: str | None = None,
+    mapping: dict | None = None,
+) -> autodetect.Detected:
+    """Read a statement the way both surfaces read it: model first, parsers as
+    its check (`autodetect.read`), remembered per account so the commit that
+    follows a preview does not pay for a second model call."""
+    provider, api_key = _provider(account, held)
+    return autodetect.read(
+        filename,
+        raw,
+        provider,
+        api_key,
+        prefer=prefer,
+        mapping=mapping,
+        scope=str(account.db),
+    )
+
+
+def _held(x_chat_provider: str | None, x_chat_key: str | None):
+    # Imported here: `chat` imports `chat_attach`, which imports this module.
+    from stocks.api.routes.chat import session_keys
+
+    return session_keys(x_chat_provider, x_chat_key)
+
+
+def _unreadable(found: autodetect.Detected) -> str | None:
+    """Why nothing at all could be read from this file, or None.
+
+    A file with rows in it, a portfolio report (nothing dated to import, and
+    the preview says so) and a file the model never got to judge are all
+    answered with a preview. What is left is a file whose only skips are about
+    the file itself — every parser declined or choked on it and the model
+    found nothing — and that is the caller's file, not a server fault: the
+    page refuses it with each reader's reason, as it always refused a file its
+    parser could not read.
+    """
+    result = found.result
+    if result.transactions or found.unavailable:
+        return None
+    if found.kind == llm_map.KIND_POSITIONS:
+        return None
+    if any(s.get("type") != "file" for s in result.skipped):
+        return None
+    reasons = "; ".join(str(s.get("reason", "")) for s in result.skipped)
+    return (reasons or "nothing in this file reads as a transaction")[:300]
 
 
 # ------------------------------------------------ the live lookups validation uses
@@ -251,6 +381,7 @@ _EXISTS_TTL_S = 24 * 3600.0
 _EXISTS_MAX = 2048
 
 _exists_memo: dict[str, tuple[float, bool]] = {}
+_UNANSWERED = object()  # a search `_within` gave up on, told apart from "no"
 _exists_lock = threading.Lock()
 
 
@@ -293,6 +424,31 @@ def _ticker_exists(ticker: str) -> bool | None:
         return None  # network down ≠ ticker invalid
 
 
+def _charted(ticker: str, budget: float) -> bool | None:
+    """Does Yahoo have bars for this symbol? Its own last word on a code.
+
+    The quote check cannot always say: yfinance 1.7 raises the same KeyError
+    on a symbol Yahoo has no quote for as on a reply it could not read. The
+    bulk download can — it hears Yahoo's 404 reason, "No data found", and
+    files the code under `fetch.unlisted`, the verdict the price pass reaches
+    on the book. Five days of bars, asked only once nothing else could place
+    the code. None when the download did not finish or Yahoo is throttled.
+    """
+    if budget <= 0 or fetch.throttle_remaining() > 0:
+        return None
+    priced = _within(
+        lambda: fetch.fetch_many([ticker], period="5d", budget=budget),
+        budget,
+        None,
+        ticker=ticker,
+    )
+    if priced is None:
+        return None
+    if ticker in priced:
+        return True
+    return False if fetch.unlisted({ticker}) else None
+
+
 class _Lookup:
     """`validate`'s `lookup`, bounded: one instance per statement.
 
@@ -302,19 +458,124 @@ class _Lookup:
 
     A symbol the price pass already heard Yahoo disown (`fetch.unlisted`) is
     answered False without asking again: that verdict came from the download
-    that prices the book, which is the one that matters. `disowned` collects
-    every False, so the preview can name the rows that will import unpriced.
+    that prices the book, which is the one that matters.
+
+    Anything short of a quote is not the last word, though. A bare code Yahoo
+    does not quote is usually a European line printed without its venue —
+    Revolut's SIE is Yahoo's SIE.DE — so the code is looked up in Yahoo's
+    search, on the venues its trade currency (`currencies`) trades on
+    (`symbols.symbol_for_code`). That includes a quote check that could not
+    say: yfinance 1.7 raises on a symbol it has no quote for (KeyError
+    'currentTradingPeriod') rather than answering empty, which reads as None,
+    and a statement of nine euro codes then warned on every row without the
+    search ever being asked. A hit is remembered for good, so the price
+    download resolves the code through it (`fetch.resolve`) and the row is
+    known. `disowned` collects what is still False after that, so the preview
+    can name the rows that will import unpriced.
+
+    Answers are kept per instance: validation asks once per row, and a code a
+    statement trades nine times would otherwise spend nine quote checks of the
+    one budget.
+
+    The search is told what the statement knows of each code, so it can land
+    on the issuer's home line rather than a German regional floor (MEQA is
+    MRL.MC in Madrid, not MEQA.F): the ISIN the statement prints beside it
+    (`isins`), and the code's fills (`samples`), which a line found by name
+    has to have closed near (`venue.agrees`). `home` asks the same of the
+    codes the map already holds on a floor.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        currencies: dict[str, str] | None = None,
+        isins: dict[str, str] | None = None,
+        samples: dict[str, list[tuple[str, float]]] | None = None,
+    ) -> None:
         self.deadline = time.monotonic() + BATCH_BUDGET_S
+        self.currencies = currencies or {}
+        self.isins = isins or {}
+        self.samples = samples or {}
         self.disowned: set[str] = set()
+        self.answers: dict[str, bool | None] = {}
 
     def __call__(self, ticker: str) -> bool | None:
+        if ticker in self.answers:
+            return self.answers[ticker]
         answer = self._ask(ticker)
+        if answer is not True:
+            listed = self._listed(ticker)
+            # A venue found is a listing whatever the quote check said; no
+            # venue only confirms a False — it cannot turn "could not ask"
+            # into "unlisted". The chart can: a code nothing placed is asked
+            # once more, of the download that will price it.
+            if listed or (listed is None and answer is False):
+                answer = listed
+            elif listed is False and answer is None:
+                answer = _charted(
+                    ticker, min(LOOKUP_BUDGET_S, self.deadline - time.monotonic())
+                )
         if answer is False:
             self.disowned.add(ticker)
+        self.answers[ticker] = answer
         return answer
+
+    def _listed(self, ticker: str) -> bool | None:
+        """Whether the search places this code on a venue (SIE -> SIE.DE).
+
+        None when the search ran out of time: its thread still finishes into
+        the cache, so the next preview may know, and "unpriced" would be a
+        verdict nobody reached.
+        """
+        if symbols.code_symbol(ticker):
+            return True
+        left = self.deadline - time.monotonic()
+        if left <= 0:
+            return False
+        found = _within(
+            lambda: self._search(ticker),
+            min(LOOKUP_BUDGET_S, left),
+            _UNANSWERED,
+            ticker=ticker,
+        )
+        return None if found is _UNANSWERED else bool(found)
+
+    def home(self) -> None:
+        """Ask for the home line of each code here the map holds on a floor.
+
+        `__call__` only reaches codes the book does not know, and a code
+        imported before the search looked past the floors is known: without
+        this its MEQA.F would stand for good. All at once, within one lookup's
+        budget; a search still running then finishes into the map, and one
+        that could not decide is asked again by the next statement.
+        """
+        floored = [
+            ticker
+            for ticker in self.currencies
+            if symbols.on_floor(symbols.code_symbol(ticker) or "")
+        ]
+        left = self.deadline - time.monotonic()
+        if not floored or left <= 0:
+            return
+        pool = ThreadPoolExecutor(max_workers=min(len(floored), _HOME_WORKERS))
+        try:
+            asked = [pool.submit(self._search, ticker) for ticker in floored]
+            wait(asked, timeout=min(LOOKUP_BUDGET_S, left))
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+
+    def _search(self, ticker: str) -> str | None:
+        currency = self.currencies.get(ticker, "")
+        samples = self.samples.get(ticker)
+
+        def vet(symbol: str) -> bool | None:
+            return venue.agrees(symbol, samples or [], currency, _close)
+
+        return symbols.symbol_for_code(
+            ticker,
+            currency,
+            isin=self.isins.get(ticker, ""),
+            vet=vet if samples else None,
+        )
 
     def _ask(self, ticker: str) -> bool | None:
         if fetch.unlisted({ticker}):
@@ -341,13 +602,25 @@ class _Lookup:
         return answer
 
 
+_HOME_WORKERS = 4
+
+
+def _close(symbol: str, day: str) -> float | None:
+    """`fetch.close_on`, bounded, and not asked of a throttled host."""
+    if fetch.throttle_remaining() > 0:
+        return None
+    return _within(
+        lambda: fetch.close_on(symbol, day), LOOKUP_BUDGET_S, None, ticker=symbol
+    )
+
+
 def _splits(ticker: str) -> list[tuple[str, float]]:
     """`fetch.splits`, bounded. Already memoized and throttle-aware there; the
     budget is the one thing it lacks for a caller holding a worker thread."""
     return _within(lambda: fetch.splits(ticker), SPLITS_BUDGET_S, [], ticker=ticker)
 
 
-def _row(checked) -> ImportRow:
+def _row(checked, gain: float | None = None) -> ImportRow:
     tx = checked.tx
     return ImportRow(
         date=tx.date,
@@ -369,7 +642,91 @@ def _row(checked) -> ImportRow:
             for issue in checked.issues
         ],
         duplicate=checked.duplicate,
+        gain=gain,
     )
+
+
+def _skipped(skip: dict) -> dict:
+    """A parser's skip, with the catalog stem that names its reason and whether
+    it leaves the reader a step to take — the `key` an issue carries, for a
+    reason that is otherwise only the parser's English."""
+    stem, manual = tx_text.skip_reason(str(skip.get("reason", "")))
+    return {**skip, "reason_key": stem, "manual": manual}
+
+
+QUOTES_BUDGET_S = 4.0  # today's prices for the buys' gain; the preview waits no longer
+
+
+def _native(amount: float, currency: str, day: str) -> float:
+    """`positions.build`'s converter, converting nothing: a sale's gain is read
+    in the currency it traded in, so the replay needs no rate and no network."""
+    return amount
+
+
+def _realized(book: list) -> dict[tuple[str, str], tuple[float, float]]:
+    """(label, sale day) -> (cost, proceeds) of what that day's sales realized.
+
+    FIFO, as the app's own analytics replay. One security at a time, so a sale
+    the book cannot cover — a statement that starts after the shares were
+    bought elsewhere — loses that security's answer and nobody else's; and only
+    a security traded in one currency, because `_native` would add a dollar
+    cost to a euro one without a word.
+    """
+    groups: dict[str, list] = {}
+    for tx in transfers.relabel(book):
+        groups.setdefault(tx.ticker, []).append(tx)
+    out: dict[tuple[str, str], tuple[float, float]] = {}
+    for group in groups.values():
+        if len({tx.currency for tx in group}) != 1:
+            continue
+        try:
+            _, sales = positions.build(group, to_base=_native, matching="fifo")
+        except ValueError:
+            continue
+        for sale in sales:
+            key = (sale.ticker, sale.sell_date)
+            cost, proceeds = out.get(key, (0.0, 0.0))
+            out[key] = (cost + sale.cost, proceeds + sale.proceeds)
+    return out
+
+
+def _gains(rows: list, prior: list, prices: dict[str, dict]) -> list[float | None]:
+    """How each preview row has done, as a fraction; None where it cannot say.
+
+    A buy against today's quote (`prices`, `session_quotes` snapshots), its
+    fee in the cost as the book counts it — and only when the quote is in the
+    row's own currency, minor units resolved (`quote_unit`): a London line
+    quoted in pence beside a buy in pounds is a hundredfold, not a gain. A sale
+    against the cost it realized, replayed over the book it lands in plus this
+    batch (`_realized`); two sales of one security on one day share a figure.
+    Every other action has no gain to show.
+    """
+    book = prior + [c.tx for c in rows if not c.duplicate]
+    # The replay speaks in one label per security (an ISIN row becomes its
+    # symbol), so each row is looked up under the label it replayed as.
+    label = {
+        tx.ticker: moved.ticker
+        for tx, moved in zip(book, transfers.relabel(book), strict=True)
+    }
+    realized = _realized(book)
+    out: list[float | None] = []
+    for checked in rows:
+        tx = checked.tx
+        gain = None
+        if tx.action == "buy":
+            quote = prices.get(tx.ticker) or {}
+            have, unit = quote_unit(quote.get("currency"))
+            paid, scale = quote_unit(tx.currency)
+            cost = (tx.quantity * tx.price + tx.fee) * scale
+            if quote.get("price") and have == paid and cost > 0:
+                gain = tx.quantity * quote["price"] * unit / cost - 1
+        elif tx.action == "sell":
+            key = (label.get(tx.ticker, tx.ticker), tx.date)
+            cost, proceeds = realized.get(key, (0.0, 0.0))
+            if cost > 0:
+                gain = proceeds / cost - 1
+        out.append(_num(gain))
+    return out
 
 
 def _real_rows(account) -> list:
@@ -384,16 +741,114 @@ def _real_rows(account) -> list:
     return demo.without(all_transactions(account.db))
 
 
-def _checked(
-    account,
-    platform,
-    filename: str,
-    raw: bytes,
-    *,
-    wipe: bool = False,
-    surface: str | None = None,
-):
-    """Parse and validate against this account's own ledger and watchlist.
+RELABEL_BUDGET_S = 12.0  # every listing check one statement makes, together
+_RELABEL_WORKERS = 4
+
+
+def _relabels(rows: list, prior: list) -> dict[tuple[str, str], str]:
+    """The bare codes this batch, or the book it lands in, really traded as.
+
+    `venue.pick` per code, with every question it asks bounded like the
+    lookups above: the per-call budget, one deadline for the statement, and
+    nothing asked of a throttled host. A code still undecided at the deadline
+    stays as printed — see `stocks.portfolio.venue` for why that is safe.
+    """
+    keys = venue.keys(rows, prior)
+    if not keys:
+        return {}
+    asker = _Lookup()
+    asker.deadline = time.monotonic() + RELABEL_BUDGET_S
+
+    def left() -> float:
+        return asker.deadline - time.monotonic()
+
+    def quoted(code: str) -> bool:
+        # A code watchlist.yaml (or an earlier search) already maps is
+        # priced as that answer; the hand-written one wins.
+        return fetch.resolve(code) == code and asker._ask(code) is True
+
+    def candidates(code: str, currency: str) -> list[str]:
+        if left() <= 0:
+            return []
+        return _within(
+            lambda: symbols.listings_for_code(code, currency),
+            min(LOOKUP_BUDGET_S, left()),
+            [],
+            ticker=code,
+        )
+
+    def close(symbol: str, day: str) -> float | None:
+        if left() <= 0 or fetch.throttle_remaining() > 0:
+            return None
+        return _within(
+            lambda: fetch.close_on(symbol, day),
+            min(LOOKUP_BUDGET_S, left()),
+            None,
+            ticker=symbol,
+        )
+
+    def usd_rate(currency: str, day: str) -> float | None:
+        if left() <= 0:
+            return None
+        return _within(
+            lambda: fx.rate_on(day, "USD", currency),
+            min(LOOKUP_BUDGET_S, left()),
+            None,
+            ticker=currency,
+        )
+
+    pool = ThreadPoolExecutor(max_workers=_RELABEL_WORKERS)
+    try:
+        asked = {
+            pool.submit(
+                venue.pick,
+                key,
+                rows,
+                prior,
+                quoted=quoted,
+                candidates=candidates,
+                close=close,
+                usd_rate=usd_rate,
+            ): key
+            for key in keys
+        }
+        done, _ = wait(asked, timeout=RELABEL_BUDGET_S)
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    moved: dict[tuple[str, str], str] = {}
+    for future in done:
+        if future.exception() is not None:
+            obs.warn(
+                "api.import_relabel_failed",
+                error_type=type(future.exception()).__name__,
+                ticker=asked[future][0],
+            )
+        elif symbol := future.result():
+            moved[asked[future]] = symbol
+    if moved:
+        obs.event(
+            "api.import_relabeled",
+            n=len(moved),
+            codes=sorted(f"{c}/{cur}->{s}" for (c, cur), s in moved.items()),
+        )
+    return moved
+
+
+def _retag(db: Path, moved: dict[tuple[str, str], str]) -> int:
+    """Move the book's own rows of each relabeled code to its listing.
+
+    Called after the batch is written and only then: a commit that writes
+    nothing (refused, or every row a duplicate) leaves the book as it found
+    it, and the next import that writes asks again.
+    """
+    return sum(
+        ledger.retag(code, symbol, db, currency=currency)
+        for (code, currency), symbol in moved.items()
+    )
+
+
+def _validated(account, parsed: ParseResult, *, wipe: bool = False):
+    """Validate a read against this account's own ledger and watchlist.
 
     `wipe` empties the baseline rather than the book: a statement that is about
     to replace the ledger has to be read against the ledger it will leave
@@ -402,45 +857,74 @@ def _checked(
 
     Validated with the Streamlit page's two live lookups (`_Lookup`, `_splits`)
     — without them the same statement read clean on one surface and warned or
-    rejected on the other.
-
-    `surface` ("import" / "paste") files the anonymised diagnostic the page
-    files for every outcome (`portfolio.diagnostics.report`) — the parser
-    raising, a file with nothing in it, and the full parse-and-validate record
-    — which is what turns "some brokers fail" into a queryable fact. None
-    reports nothing: a commit of a file its preview already reported would
-    count one upload twice.
-
-    A statement the parser read without error but found nothing in — no
-    transaction and not even a skipped line — is refused as unreadable (422),
-    as the page refuses it: that is a file from the wrong platform or the
-    wrong export, and an empty preview would only say "0 rows".
+    rejected on the other. An ISIN the cached map resolves is known without
+    asking Yahoo, which quotes symbols, not ISINs.
 
     `known` loses whatever Yahoo has disowned since: a bare broker code that
     is already in the ledger would otherwise pass as known on every later
     statement, and hold at cost with no price and no warning, forever.
 
-    Returns the parse, the validation, and the tickers Yahoo said it does not
-    list (`_Lookup.disowned`).
+    A bare code traded outside dollars is read under the listing its price
+    says it was traded on (`_relabels`: Revolut's euro ALV is ALV.DE), in the
+    statement and in the baseline alike, so a re-import still finds its
+    duplicates. `parsed` is relabeled in place, split rows included; the
+    commit moves the book's rows to match (`Validation.relabeled`, `_retag`).
+
+    Returns the validation and the tickers Yahoo said it does not list
+    (`_Lookup.disowned`).
     """
-    parsed = _parse(platform, filename, raw, surface=surface)
-    if not parsed.transactions and not parsed.skipped:
-        if surface:
-            diagnostics.report(platform.key, filename, raw, parsed, surface=surface)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"{platform.label} found no transactions in this file",
-        )
     prior = [] if wipe else _real_rows(account)
     known = known_tickers(account.watchlist, account.db)
     known -= fetch.unlisted(known)
-    lookup = _Lookup()
-    validation = validate(parsed, prior, known=known, lookup=lookup, splits=_splits)
-    if surface:
-        diagnostics.report(
-            platform.key, filename, raw, parsed, validation, surface=surface
+    moved = _relabels(parsed.transactions, prior)
+    if moved:
+        parsed.transactions = venue.relabeled(parsed.transactions, moved)
+        venue.relabel_skipped(parsed.skipped, moved)
+        prior = venue.relabeled(prior, moved)
+        known |= set(moved.values())
+    currencies: dict[str, str] = {}
+    for tx in parsed.transactions:
+        currencies.setdefault(tx.ticker, tx.currency)
+    samples = {
+        ticker: venue.samples((ticker, currency), parsed.transactions)
+        for ticker, currency in currencies.items()
+    }
+    lookup = _Lookup(currencies, parsed.isins, samples)
+    lookup.home()
+
+    def listed(ticker: str) -> bool | None:
+        if symbols.is_isin(ticker) and symbols.symbol_for_isin(ticker):
+            return True
+        return lookup(ticker)
+
+    validation = validate(parsed, prior, known=known, lookup=listed, splits=_splits)
+    validation.relabeled = moved
+    return validation, lookup.disowned
+
+
+def _statement_row(row: StatementRow) -> ledger.Transaction:
+    """One client row as a ledger row, or a 422 naming what is wrong with it.
+
+    `Transaction` refuses an action it does not know, which is the only field
+    here whose values are a closed set — everything else is text and numbers
+    the ledger has always taken from a parser.
+    """
+    try:
+        return ledger.Transaction(
+            date=row.date,
+            ticker=row.ticker,
+            action=row.action,
+            quantity=float(row.quantity),
+            price=float(row.price),
+            currency=row.currency or "USD",
+            fee=float(row.fee),
+            note=row.note,
         )
-    return parsed, validation, lookup.disowned
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{row.ticker or 'a row'}: {exc}"[:200],
+        ) from exc
 
 
 @router.get("/platforms", response_model=ImportPlatforms, summary="What can be read")
@@ -457,33 +941,77 @@ def registry() -> ImportPlatforms:
                 has_sample=bool(platform.sample),
             )
             for platform in platforms.PLATFORMS
-        ]
+        ],
+        accepts=list(autodetect.supported_types()),
     )
 
 
 @router.post("/preview", response_model=ImportPreview, summary="What it would do")
-def preview(account: Writer, body: Annotated[Upload, ...]) -> ImportPreview:
-    """Parse and validate a statement, writing nothing.
+def preview(
+    account: Writer,
+    body: Annotated[Upload, ...],
+    x_chat_provider: str | None = Header(default=None),
+    x_chat_key: str | None = Header(default=None),
+) -> ImportPreview:
+    """Read and validate a statement, writing nothing.
 
     A session like every other non-GET here, even though this one changes
-    nothing: a rule with an exception in it is a rule nobody can check.
+    nothing: a rule with an exception in it is a rule nobody can check. It
+    also spends the account's model calls, which is one more reason.
+
+    `platform` in the answer is what read the file — the named parser, another
+    one, or `llm` for the model — so a page that preselected Revolut can say
+    "read as Trading 212" instead of letting the reader assume.
     """
-    platform = _platform(body.platform)
+    prefer = _prefer(body.platform)
     raw = _decode(body)
-    parsed, checked, disowned = _checked(
-        account, platform, body.filename, raw, wipe=body.wipe, surface=body.surface
+    found = _read(
+        account,
+        body.filename,
+        raw,
+        held=_held(x_chat_provider, x_chat_key),
+        prefer=prefer,
+    )
+    why = _unreadable(found)
+    if why:
+        diagnostics.report(
+            found.platform, body.filename, raw, found.result, surface=body.surface
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=why
+        )
+    checked, disowned = _validated(account, found.result, wipe=body.wipe)
+    # The anonymised record the page files for every outcome, which is what
+    # turns "some brokers fail" into a queryable fact.
+    diagnostics.report(
+        found.platform, body.filename, raw, found.result, checked,
+        surface=body.surface,
     )
     importable = checked.importable
     detected = platforms.detected_broker(importable)
     rows = [c for c in checked.checked if not c.errors]
+    # How each row has done: the book it lands in for a sale's cost, and one
+    # bounded quote request for the buys — a throttled Yahoo costs the column,
+    # never the preview.
+    prior = [] if body.wipe else venue.relabeled(_real_rows(account), checked.relabeled)
+    bought = tuple(sorted({c.tx.ticker for c in rows if c.tx.action == "buy"}))
+    prices = (
+        _within(lambda: loaders.quotes(bought), QUOTES_BUDGET_S, {}, quotes=len(bought))
+        if bought
+        else {}
+    )
+    gains = _gains(rows, prior, prices)
     return ImportPreview(
-        platform=platform.key,
+        platform=found.platform,
+        label=found.label,
+        kind=found.kind,
+        unavailable=found.unavailable,
         filename=body.filename,
         digest=hashlib.sha256(raw).hexdigest(),
-        importable=[_row(c) for c in rows],
+        importable=[_row(c, gain) for c, gain in zip(rows, gains, strict=True)],
         rejected=[_row(c) for c in checked.rejected],
         duplicates=len(checked.duplicates),
-        skipped=list(parsed.skipped),
+        skipped=[_skipped(s) for s in found.result.skipped],
         broker=detected,
         needs_broker=bool(importable) and not detected,
         unlisted=sorted(disowned & {c.tx.ticker for c in rows}),
@@ -492,47 +1020,74 @@ def preview(account: Writer, body: Annotated[Upload, ...]) -> ImportPreview:
 
 @router.post("/commit", response_model=ImportResult, summary="Write the rows")
 def commit(
-    caller: Authed, account: Writer, body: Annotated[Commit, ...]
+    caller: Authed,
+    account: Writer,
+    body: Annotated[Commit, ...],
+    x_chat_provider: str | None = Header(default=None),
+    x_chat_key: str | None = Header(default=None),
 ) -> ImportResult:
-    """Parse, validate and append the importable rows.
+    """Validate and append the importable rows.
 
-    Everything is redone rather than taken from the preview. The ledger is
-    shared mutable state: a row that validated clean a moment ago can be a
-    duplicate now, and committing a remembered verdict would be committing an
-    answer to a question about a ledger that no longer exists.
+    The rows a preview showed come back as `rows` and are validated again
+    here, never taken on the preview's word. The ledger is shared mutable
+    state: a row that validated clean a moment ago can be a duplicate now, and
+    committing a remembered verdict would be committing an answer to a
+    question about a ledger that no longer exists. Without `rows`, the file is
+    read again, exactly as its preview read it.
 
     `wipe` replaces the book rather than adding to it, and the order below is
     the whole reason it lives here instead of being left to two calls: the
-    statement is parsed, validated and found to carry rows worth writing
+    statement is read, validated and found to carry rows worth writing
     *before* anything is deleted. A client that wiped first and then failed its
     commit would be holding an empty ledger and no undo.
     """
-    platform = _platform(body.platform)
+    prefer = _prefer(body.platform)
     if body.wipe and body.wipe_confirm.strip().lower() != (caller.email or "").lower():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="wipe_confirm must be the signed-in address, exactly",
         )
-    raw = _decode(body)
-    digest = hashlib.sha256(raw).hexdigest()
-    if body.expect and body.expect != digest:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="this is not the file that was previewed",
+    raw, report = b"", False
+    if body.rows is not None:
+        parsed = ParseResult(transactions=[_statement_row(r) for r in body.rows])
+        read_by = prefer or autodetect.LLM_KEY
+    else:
+        raw = _decode(body)
+        digest = hashlib.sha256(raw).hexdigest()
+        if body.expect and body.expect != digest:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="this is not the file that was previewed",
+            )
+        found = _read(
+            account,
+            body.filename,
+            raw,
+            held=_held(x_chat_provider, x_chat_key),
+            prefer=prefer,
         )
-
-    # Reported only when no preview was claimed: a commit carrying `expect` is
-    # of bytes its preview already filed a diagnostic for (the digest matched
-    # just above), and a second record would count one upload twice. A client
-    # that commits blind is the one whose attempt would otherwise go unseen.
-    _parsed, checked, _disowned = _checked(
-        account,
-        platform,
-        body.filename,
-        raw,
-        wipe=body.wipe,
-        surface=None if body.expect else body.surface,
-    )
+        # Reported only when no preview was claimed: a commit carrying
+        # `expect` is of bytes its preview already filed a diagnostic for (the
+        # digest matched just above), and a second record would count one
+        # upload twice. A client that commits blind is the one whose attempt
+        # would otherwise go unseen.
+        report = not body.expect
+        why = _unreadable(found)
+        if why:
+            if report:
+                diagnostics.report(
+                    found.platform, body.filename, raw, found.result,
+                    surface=body.surface,
+                )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=why
+            )
+        parsed, read_by = found.result, found.platform
+    checked, _disowned = _validated(account, parsed, wipe=body.wipe)
+    if report:
+        diagnostics.report(
+            read_by, body.filename, raw, parsed, checked, surface=body.surface
+        )
     importable = checked.importable
     if not importable:
         raise HTTPException(
@@ -555,6 +1110,8 @@ def commit(
         # invented cost basis must never end up mixed into a real one.
         demo.clear(account.db)
     ids = add_many(platforms.stamp_broker(importable, origin), account.db)
+    if ids:
+        _retag(account.db, checked.relabeled)
     stamped = datetime.now(UTC).isoformat(timespec="seconds")
     last_import.save(
         last_import.ImportRecord(
@@ -562,7 +1119,7 @@ def commit(
             imported_at=stamped,
             tx_ids=ids,
             wiped=body.wipe,
-            platform=platform.key,
+            platform=read_by,
         ),
         account.last_import,
     )
@@ -570,14 +1127,14 @@ def commit(
     # an import breaks but not out of how many.
     obs.event(
         "import.committed",
-        platform=platform.key,
+        platform=read_by,
         broker=origin,
         n=len(ids),
         wiped=body.wipe,
         via="api",
     )
     return ImportResult(
-        platform=platform.key,
+        platform=read_by,
         filename=body.filename,
         imported=len(ids),
         tx_ids=ids,
@@ -823,6 +1380,193 @@ def splits_apply(account: Writer, body: Annotated[ApplySplits, ...]) -> SplitsAp
     return SplitsApplied(
         applied=len(ids), tx_ids=ids, splits=[_gap(gap) for gap in picked]
     )
+
+
+# ------------------------------------------- the line a code was traded on
+# A code the search could not place anywhere imports unpriced, held at cost
+# (`ImportPreview.unlisted`). The reader usually knows the security, though:
+# they name it ("Merlin"), are shown the lines that name finds on the code's
+# currency's venues, each priced on the days their fills were, and pick one.
+# The pick is the code's answer in `CODE_CACHE`, which is one map for every
+# account, so it is held to what a search answer would be: a real line on
+# those venues that closed near the fills, for a code nothing answers yet.
+
+VENUES_BUDGET_S = 10.0  # every option's closes, together
+_VENUE_WORKERS = 6
+
+
+class VenueFill(BaseModel):
+    """One trade of the code, as the preview showed it."""
+
+    model_config = {"extra": "forbid"}
+
+    date: str = Field(min_length=10, max_length=32, description="YYYY-MM-DD…")
+    price: float = Field(gt=0, description="Per share, in the code's currency.")
+
+
+class VenueAsk(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    code: str = Field(
+        min_length=1, max_length=32, description="As the statement prints it."
+    )
+    currency: str = Field(min_length=3, max_length=4)
+    fills: list[VenueFill] = Field(
+        min_length=1,
+        max_length=500,
+        description="The preview's trades of the code; its latest two days count.",
+    )
+    query: str = Field(
+        default="",
+        max_length=80,
+        description="The security's name as the reader puts it; the code when empty.",
+    )
+
+
+class VenueOption(BaseModel):
+    symbol: str
+    name: str
+    exchange: str
+    close: float | None = Field(
+        description="Its close on `VenueOptions.day`; null when Yahoo could not say."
+    )
+    agrees: bool | None = Field(
+        description=(
+            "Closed near the fills on every sampled day; null when no sampled day "
+            "has a close. Only a true one can be picked."
+        )
+    )
+
+
+class VenueOptions(BaseModel):
+    code: str
+    currency: str
+    day: str = Field(description="The latest fill's day, the one `close` is on.")
+    price: float = Field(description="The fill on `day`.")
+    options: list[VenueOption] = Field(default_factory=list)
+    throttled: bool = Field(
+        default=False,
+        description="Yahoo was refusing this host, so a null `close` is not a verdict.",
+    )
+
+
+class VenuePick(VenueAsk):
+    symbol: str = Field(min_length=1, max_length=32)
+
+
+class VenuePicked(BaseModel):
+    code: str
+    symbol: str
+
+
+def _venue_key(code: str) -> str:
+    return code.strip().upper()
+
+
+def _option(line: tuple[str, str, str], sampled, currency: str) -> VenueOption:
+    symbol, name, exchange = line
+    return VenueOption(
+        symbol=symbol,
+        name=name,
+        exchange=exchange,
+        close=_num(_close(symbol, sampled[0][0])),
+        agrees=venue.agrees(symbol, sampled, currency, _close),
+    )
+
+
+@router.post("/venues", response_model=VenueOptions, summary="Lines a code could be")
+def venues(account: Writer, body: Annotated[VenueAsk, ...]) -> VenueOptions:
+    """The lines `query` finds on the code's currency's venues, each priced on
+    the days the code was traded.
+
+    A POST because the fills travel in the body; it writes nothing. Every
+    option's closes are asked at once within `VENUES_BUDGET_S`, and one still
+    out then comes back unpriced rather than holding the others.
+    """
+    del account  # a session, like every other non-GET here
+    sampled = venue.latest((fill.date, fill.price) for fill in body.fills)
+    currency = body.currency.strip().upper()
+    lines = symbols.lines_for(body.query.strip() or body.code, currency)
+    options: list[VenueOption] = []
+    if lines:
+        pool = ThreadPoolExecutor(max_workers=min(len(lines), _VENUE_WORKERS))
+        try:
+            asked = [pool.submit(_option, line, sampled, currency) for line in lines]
+            wait(asked, timeout=VENUES_BUDGET_S)
+            for line, future in zip(lines, asked, strict=True):
+                done = future.done() and not future.exception()
+                options.append(
+                    future.result()
+                    if done
+                    else VenueOption(
+                        symbol=line[0],
+                        name=line[1],
+                        exchange=line[2],
+                        close=None,
+                        agrees=None,
+                    )
+                )
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+    return VenueOptions(
+        code=_venue_key(body.code),
+        currency=currency,
+        day=sampled[0][0],
+        price=sampled[0][1],
+        options=options,
+        throttled=fetch.throttle_remaining() > 0,
+    )
+
+
+@router.post("/venue", response_model=VenuePicked, summary="The line a code is")
+def venue_pick(account: Writer, body: Annotated[VenuePick, ...]) -> VenuePicked:
+    """Remember `symbol` as the code's line, for every price lookup after.
+
+    Checked here, not believed, because the map is every account's: the code
+    has to be one nothing prices — no alias, no map answer, no bare quote, and
+    a search that still cannot place it — and the symbol a line of the code's
+    currency's venues that closed near the fills on the days they were made
+    (`venue.agrees`, priced now). Anything else is a 409 and nothing is
+    written; a Yahoo that could not be asked is a 503, to try again.
+    """
+    del account  # a session, like every other non-GET here
+    code = _venue_key(body.code)
+    symbol = body.symbol.strip().upper()
+    currency = body.currency.strip().upper()
+
+    def refuse(detail: str, kind: int = status.HTTP_409_CONFLICT):
+        return HTTPException(status_code=kind, detail=detail)
+
+    held = fetch.resolve(code)
+    if held != code:
+        raise refuse(f"{code} is already priced as {held}")
+    if not fetch.unlisted({code}):
+        quoted = _within(lambda: _ticker_exists(code), LOOKUP_BUDGET_S, None, ticker=code)
+        if quoted is None:
+            quoted = _charted(code, LOOKUP_BUDGET_S)
+        if quoted is None:
+            raise refuse("Yahoo could not be asked", status.HTTP_503_SERVICE_UNAVAILABLE)
+        if quoted:
+            raise refuse(f"Yahoo quotes {code} as it is")
+    found = _within(
+        lambda: symbols.symbol_for_code(code, currency),
+        LOOKUP_BUDGET_S,
+        _UNANSWERED,
+        ticker=code,
+    )
+    if found is _UNANSWERED:
+        raise refuse("Yahoo could not be asked", status.HTTP_503_SERVICE_UNAVAILABLE)
+    if found:
+        raise refuse(f"{code} is priced as {found} now")
+    if not symbols.on_venues(symbol, currency):
+        raise refuse(f"{symbol} is not a {currency} line")
+    sampled = venue.latest((fill.date, fill.price) for fill in body.fills)
+    if venue.agrees(symbol, sampled, currency, _close) is not True:
+        raise refuse(f"{symbol} did not close near {code}'s fills")
+    symbols.remember_code(code, symbol)
+    fetch.relisted(code)
+    obs.event("import.venue_picked", code=code, symbol=symbol)
+    return VenuePicked(code=code, symbol=symbol)
 
 
 # ----------------------------------------- shares that only changed custodian

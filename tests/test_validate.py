@@ -37,7 +37,7 @@ def test_future_and_ancient_dates_rejected():
     )
     msgs = [i.message for c in v.rejected for i in c.errors]
     assert any("future" in m for m in msgs)
-    assert any("predates" in m for m in msgs)
+    assert any("too old" in m for m in msgs)
     assert v.importable == []
 
 
@@ -62,7 +62,7 @@ def test_lookup_rescues_unknown_ticker():
 def test_malformed_ticker_rejected():
     v = validate(_result([_buy(ticker="TOOLONGSYM")]), [], known=KNOWN, today=TODAY)
     assert len(v.rejected) == 1
-    assert "malformed" in v.rejected[0].errors[0].message
+    assert "look like a ticker" in v.rejected[0].errors[0].message
 
 
 def test_oversell_rejected_including_prior_ledger():
@@ -71,7 +71,7 @@ def test_oversell_rejected_including_prior_ledger():
         _result([_sell(qty=5, day="2025-06-01")]), prior, known=KNOWN, today=TODAY
     )
     assert len(v.rejected) == 1
-    assert "exceeds" in v.rejected[0].errors[0].message
+    assert "were held" in v.rejected[0].errors[0].message
 
 
 def test_sell_covered_by_prior_ledger_passes():
@@ -84,7 +84,7 @@ def test_duplicate_against_ledger_warns():
     prior = [_buy()]
     v = validate(_result([_buy()]), prior, known=KNOWN, today=TODAY)
     assert len(v.flagged) == 1
-    assert "already in ledger" in v.flagged[0].warnings[0].message
+    assert "already in your portfolio" in v.flagged[0].warnings[0].message
     # Importable as ever — but named, so a caller can leave it out.
     assert len(v.importable) == 1
     assert v.fresh == []
@@ -179,7 +179,7 @@ def test_oversell_survives_a_dropped_duplicate_that_cannot_cover_it():
         today=TODAY,
     )
     assert len(v.rejected) == 1
-    assert "exceeds" in v.rejected[0].errors[0].message
+    assert "were held" in v.rejected[0].errors[0].message
 
 
 def test_two_same_day_dividends_are_not_duplicates():
@@ -283,7 +283,7 @@ def test_split_outside_the_held_window_is_not_applied():
         _result(batch), [], known={"AMZN"}, splits=_amzn_splits, today=TODAY
     )
     assert len(v.rejected) == 1
-    assert "exceeds" in v.rejected[0].errors[0].message
+    assert "were held" in v.rejected[0].errors[0].message
     assert not [c for c in v.checked if c.tx.action == "split"]
 
 
@@ -314,7 +314,7 @@ def test_split_lookup_that_cannot_answer_leaves_the_error_standing():
         today=TODAY,
     )
     assert len(v.rejected) == 1
-    assert "exceeds" in v.rejected[0].errors[0].message
+    assert "were held" in v.rejected[0].errors[0].message
 
 
 def test_issues_carry_a_catalog_key_and_its_parameters():

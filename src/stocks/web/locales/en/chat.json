@@ -110,6 +110,7 @@
   "chat.import_duplicates_anyway": "Import these too — only if they really are separate movements",
   "chat.import_skipped": "{n} rows skipped by the parser",
   "chat.import_done": "✅ Imported {n} transactions. Your book now holds {total}.",
+  "chat.import_left_out": "{n} rows no longer validate against your book and were left out ({tickers}).",
   "chat.import_undo_hint": "You can undo this batch from the Import page.",
   "chat.import_col_intro": "How I read the columns. Fix any that are wrong and read it again — no AI involved the second time.",
   "chat.import_col_again": "Read again with these columns",

@@ -206,6 +206,26 @@ def _listing_at_the_ledgers_word():
     listing._lookup = before
 
 
+@pytest.fixture(autouse=True)
+def _codes_as_printed():
+    """Keep every import's bare codes as the statement printed them.
+
+    Both import surfaces now ask which listing a bare non-dollar code traded
+    on (`venue.pick`): does Yahoo quote the code, which venues the search
+    offers, what each closed on the trade day — three live calls per code, on
+    every preview and commit a test makes with a euro row in it. A test about
+    the relabel puts the real `pick` back itself (imported at module level,
+    before this runs).
+    Restored by hand for the reason `_own_free_llm_counter` gives.
+    """
+    from stocks.portfolio import venue
+
+    before = venue.pick
+    venue.pick = lambda *a, **k: None
+    yield
+    venue.pick = before
+
+
 # --------------------------------------------------------------- the session
 
 #: Long enough that itsdangerous is not the thing under test.
@@ -283,3 +303,74 @@ def _own_symbol_kinds():
     yield
     funds.TYPE_CACHE, funds._types, asset_kind.KIND_CACHE, asset_kind._kinds = before
     shutil.rmtree(made, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def _own_code_symbols():
+    """Keep the broker codes Yahoo's search resolved out of the checkout.
+
+    `symbols.CODE_CACHE` is the real `data/code_symbols.json`, and
+    `fetch.resolve` reads it on every price path — so a machine that previewed
+    a Revolut statement would map a test's "SIE" to "SIE.DE" behind its back,
+    and a test that resolves a fake code would leave it there for the dev
+    server. Each test starts with an empty map in its own directory, restored
+    by hand for the reason `_own_free_llm_counter` gives.
+    """
+    import shutil
+    import tempfile
+
+    from stocks.data import symbols
+
+    before = (
+        symbols.CODE_CACHE,
+        symbols._code_memo,
+        symbols._code_misses,
+        symbols._code_settled,
+        symbols._listings_memo,
+    )
+    made = pathlib.Path(tempfile.mkdtemp(prefix="codes-"))
+    symbols.CODE_CACHE = made / "code_symbols.json"
+    symbols._code_memo = None
+    symbols._code_misses = set()
+    symbols._code_settled = set()
+    symbols._listings_memo = {}
+    yield
+    (
+        symbols.CODE_CACHE,
+        symbols._code_memo,
+        symbols._code_misses,
+        symbols._code_settled,
+        symbols._listings_memo,
+    ) = before
+    shutil.rmtree(made, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def _no_statement_model():
+    """Read statements with the parsers alone unless a test brings a model.
+
+    Both import surfaces now ask the model first (`autodetect.read`), and the
+    provider they ask is whatever the account's prefs and the server's free
+    chain resolve to — on a dev machine with keys in `secrets.toml`, a real
+    network call on every upload a test makes. A test that means the model to
+    read patches `import_statement._provider` itself. The remembered reads are
+    dropped too, and the labels the model named (`instruments._memo`), so one
+    test's stub never answers for the next.
+
+    Its own `MonkeyPatch`, not the fixture: an autouse fixture that asks for
+    `monkeypatch` sets it up first and so tears it down last, after the
+    per-module fixtures that expect a test's patches already undone (the
+    loaders' `cache_clear` in `test_api.py`).
+    """
+    from stocks.api.routes import import_statement
+    from stocks.portfolio import autodetect, instruments
+
+    autodetect.forget()
+    instruments._memo.clear()
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            import_statement, "_provider", lambda paths, held=None: (None, "")
+        )
+        yield
+    autodetect.forget()
+    instruments._memo.clear()

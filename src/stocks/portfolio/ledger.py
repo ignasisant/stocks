@@ -225,7 +225,13 @@ def set_action(tx_ids: list[str | int], action: str, path: Path = DB_PATH) -> in
     return changed
 
 
-def retag(old_ticker: str, new_ticker: str, path: Path = DB_PATH) -> int:
+def retag(
+    old_ticker: str,
+    new_ticker: str,
+    path: Path = DB_PATH,
+    *,
+    currency: str | None = None,
+) -> int:
     """Re-label every row of one security. Returns rows changed.
 
     Brokers disagree about what to call the same thing — a DEGIRO export has
@@ -233,15 +239,36 @@ def retag(old_ticker: str, new_ticker: str, path: Path = DB_PATH) -> int:
     two labels for one security are two positions to every replay downstream.
     Unifying them is a relabelling, never a merge of different things: the
     caller establishes that both names are the same security first.
+
+    `currency` narrows it to the rows booked in that currency, for a label two
+    securities share: Revolut's euro "ALV" is Allianz, a dollar "ALV" is
+    Autoliv. A split row follows once nothing else is left under the old
+    label — its currency is the statement's guess, not a trade's.
     """
     old, new = old_ticker.upper(), new_ticker.upper()
     if old == new:
         return 0
     with closing(connect(path)) as conn, conn:
-        cur = conn.execute(
-            "UPDATE transactions SET ticker = ? WHERE ticker = ?", (new, old)
-        )
-        changed = cur.rowcount
+        if currency is None:
+            cur = conn.execute(
+                "UPDATE transactions SET ticker = ? WHERE ticker = ?", (new, old)
+            )
+            changed = cur.rowcount
+        else:
+            cur = conn.execute(
+                "UPDATE transactions SET ticker = ? WHERE ticker = ? AND currency = ?",
+                (new, old, currency.upper()),
+            )
+            changed = cur.rowcount
+            others = conn.execute(
+                "SELECT 1 FROM transactions"
+                " WHERE ticker = ? AND action != 'split' LIMIT 1",
+                (old,),
+            ).fetchone()
+            if changed and others is None:
+                changed += conn.execute(
+                    "UPDATE transactions SET ticker = ? WHERE ticker = ?", (new, old)
+                ).rowcount
     storage.persist(path)
     return changed
 

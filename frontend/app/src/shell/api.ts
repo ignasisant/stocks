@@ -175,13 +175,22 @@ async function read<T>(url: string): Promise<T> {
 
 type Verb = "POST" | "PATCH" | "PUT" | "DELETE";
 
-export async function send<T>(verb: Verb, path: string, body?: unknown): Promise<T> {
+export async function send<T>(
+  verb: Verb,
+  path: string,
+  body?: unknown,
+  headers?: Record<string, string>,
+): Promise<T> {
   // Whatever this changes, a memoized answer may now be wrong about it.
   invalidate();
   const response = await fetch(`${BASE}${path}`, {
     method: verb,
     credentials: "same-origin",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...headers,
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) await fail(response);

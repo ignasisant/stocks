@@ -390,4 +390,4 @@ def test_an_isin_nothing_resolves_still_warns(account, isin_lookup, monkeypatch)
     pending = chat_core._prepare_import("Transactions.csv", DEGIRO_CSV.encode(),
                                         _StubProvider(), "key")
 
-    assert "not in EDGAR/watchlist/aliases" in _ticker_warnings(pending)[0]
+    assert "we don't recognise" in _ticker_warnings(pending)[0]

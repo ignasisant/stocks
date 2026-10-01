@@ -25,7 +25,7 @@
  * through this very flow rather than through a route of their own.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FocusEvent } from "react";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
@@ -56,6 +56,7 @@ import { RowTable } from "./Tables";
 import { Tiers } from "./Tiers";
 import { NO_WIPE, Wipe } from "./Wipe";
 import type { WipeChoice } from "./Wipe";
+import { forget, keep, land, mark, preview as remembered, restored } from "./kept";
 import { pastedFile } from "./paste";
 import { useVocabulary } from "./text";
 import { SignInWall } from "../../shell/guest";
@@ -100,7 +101,11 @@ export default function Page() {
         }
       >
         {(data) =>
-          data.platforms.length > 0 ? <Importer platforms={data.platforms} /> : <Head />
+          data.platforms.length > 0 ? (
+            <Importer accepts={data.accepts ?? []} platforms={data.platforms} />
+          ) : (
+            <Head />
+          )
         }
       </Loaded>
     </div>
@@ -155,43 +160,74 @@ function Head({ at }: { at?: number }) {
   );
 }
 
-function Importer({ platforms }: { platforms: Platform[] }) {
+function Importer({
+  platforms,
+  accepts,
+}: {
+  platforms: Platform[];
+  /** Every extension the server reads, whichever platform is picked. */
+  accepts: string[];
+}) {
   const t = useT();
   const vocab = useVocabulary();
   const { params, setParams } = useRoute();
+  // What the page held when the reader followed one of its links away: back
+  // here, the review they left rather than an empty drop zone (`kept`).
+  const [left] = useState(restored);
   const platform =
-    platforms.find((entry) => entry.key === params.get("platform")) ?? platforms[0]!;
+    platforms.find(
+      (entry) => entry.key === (params.get("platform") ?? left?.platform),
+    ) ?? platforms[0]!;
+  // The picked platform is only tried first: the model reads every file and
+  // every parser checks it, so a Revolut PDF dropped under Trading 212 is read
+  // anyway. An older server sends no list, and there the platform's is it.
+  const kinds = accepts.length > 0 ? accepts : platform.file_types;
 
-  const [staged, setStaged] = useState<Staged | null>(null);
+  const [staged, setStaged] = useState<Staged | null>(left?.staged ?? null);
   const [oversize, setOversize] = useState<number | null>(null);
-  // A pasted or dropped format this platform has no parser for, by its extension.
+  // A pasted or dropped format nothing here reads, by its extension.
   const [wrongType, setWrongType] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [wipe, setWipe] = useState<WipeChoice>(NO_WIPE);
+  const [wipe, setWipe] = useState<WipeChoice>(left?.wipe ?? NO_WIPE);
   // Bumped by anything that writes: the ledger count, the last-import record,
   // both repairs and the preview itself are stale the moment a commit, an
   // undo, a repair or a wipe lands.
   const [writes, setWrites] = useState(0);
-  const wrote = () => setWrites((n) => n + 1);
+  const wrote = () => {
+    forget();
+    setWrites((n) => n + 1);
+  };
   // A move proposal the server no longer makes (409): ask again.
   const [again, setAgain] = useState(0);
 
   const file = useRef<HTMLInputElement>(null);
   const pasted = useRef("");
+  const root = useRef<HTMLDivElement>(null);
+
+  // Before the preview is asked, so the ask finds this statement kept.
+  useEffect(() => keep(staged, wipe, platform.key), [staged, wipe, platform.key]);
 
   const ledger = useApi(() => book(), [writes]);
   const last = useApi(() => lastImport(), [writes]);
-  // A statement must never be parsed by another platform's parser, so the
-  // staged file is part of this query's identity and not just its input. The
-  // wipe is too: with it set, validation runs against an empty ledger, and a
+  // The platform is part of this query's identity and not just its input: it
+  // is the parser tried first, and the one whose reading the model is checked
+  // against. The wipe is too: with it set, validation runs against an empty ledger, and a
   // preview taken without it is a preview of a different import. And so is
   // every write — the rail can undo a batch or book a transfer while a preview
   // is on screen, and the preview is validated against the ledger it moved.
   const preview = useApi(
-    async () => (staged ? await previewOf(platform.key, staged, wipe.on) : null),
+    async () =>
+      staged
+        ? await remembered(platform.key, staged, wipe.on, () =>
+            previewOf(platform.key, staged, wipe.on),
+          )
+        : null,
     [platform.key, staged, wipe.on, writes],
   );
+  useEffect(() => {
+    if (preview.state === "loaded") land(root.current);
+  }, [preview.state]);
 
   const held = ledger.state === "loaded" ? ledger.data : null;
   // What the repairs work on and what the example statement must not be offered
@@ -242,8 +278,8 @@ function Importer({ platforms }: { platforms: Platform[] }) {
   };
 
   // A dropped file skips the dialog, and with it the `accept` filter the
-  // dialog applies — so the extension is checked here, and a format this
-  // platform has no parser for is named the way a pasted one is.
+  // dialog applies — so the extension is checked here, and a format nothing
+  // here reads is named the way a pasted one is.
   const onDrop = (event: DragEvent<HTMLLabelElement>) => {
     event.preventDefault();
     setDragging(false);
@@ -252,7 +288,7 @@ function Importer({ platforms }: { platforms: Platform[] }) {
     const kind = dropped.name.includes(".")
       ? (dropped.name.split(".").pop() ?? "").toLowerCase()
       : "";
-    if (!platform.file_types.includes(kind)) {
+    if (!kinds.includes(kind)) {
       setWrongType(kind || "?");
       setStaged(null);
       return;
@@ -265,11 +301,11 @@ function Importer({ platforms }: { platforms: Platform[] }) {
     const text = event.target.value.trim();
     if (!text || text === pasted.current) return;
     pasted.current = text;
-    const asFile = pastedFile(text, platform.file_types);
+    const asFile = pastedFile(text, kinds);
     if ("wrong" in asFile) {
-      // A base64 PDF pasted at a platform that reads only CSV: named here,
-      // where it can be said in one sentence, rather than deep inside a parser
-      // that would report it as an unreadable file.
+      // A base64 format nothing here reads: named here, where it can be said
+      // in one sentence, rather than deep inside a reader that would report it
+      // as an unreadable file.
       setWrongType(asFile.wrong);
       setStaged(null);
       return;
@@ -296,7 +332,7 @@ function Importer({ platforms }: { platforms: Platform[] }) {
 
   // Everything that stopped the statement being read, as the zone's own
   // lines: what went wrong, and what to do about it.
-  const types = platform.file_types.map((kind) => kind.toUpperCase()).join(", ");
+  const types = kinds.map((kind) => kind.toUpperCase()).join(", ");
   const errors: string[] = [];
   if (oversize !== null)
     errors.push(
@@ -306,20 +342,18 @@ function Importer({ platforms }: { platforms: Platform[] }) {
       }),
     );
   if (wrongType !== null)
-    errors.push(
-      t("import.paste_wrong_type", {
-        kind: wrongType.toUpperCase(),
-        platform: platform.label,
-        types,
-      }),
-    );
+    errors.push(t("import.wrong_type", { kind: wrongType.toUpperCase(), types }));
   if (staged && preview.state === "loaded" && preview.data && !preview.data.ok)
     errors.push(
-      t("import.no_rows_parsed", { platform: platform.label, hint: platform.hint }),
+      t("import.nothing_read", { platform: platform.label, hint: platform.hint }),
     );
 
   return (
-    <div className="im-body">
+    <div
+      className="im-body"
+      onClickCapture={(event) => mark(root.current, event.nativeEvent)}
+      ref={root}
+    >
       <div className="im-main">
         <Head at={result ? 5 : staged ? 3 : 2} />
 
@@ -347,6 +381,7 @@ function Importer({ platforms }: { platforms: Platform[] }) {
           onDrop={onDrop}
           onPaste={onPaste}
           onPick={onPick}
+          accepts={kinds}
           platform={platform}
           platforms={platforms}
           staged={staged}
@@ -374,7 +409,7 @@ function Importer({ platforms }: { platforms: Platform[] }) {
           >
             {(outcome) =>
               outcome !== null && outcome.ok ? (
-                <Tiers preview={outcome.value}>
+                <Tiers onVenue={wrote} picked={platform} preview={outcome.value}>
                   <CommitPanel
                     onCommitted={(committed) => {
                       setResult(committed);
@@ -384,7 +419,6 @@ function Importer({ platforms }: { platforms: Platform[] }) {
                       if (file.current) file.current.value = "";
                       wrote();
                     }}
-                    platform={platform}
                     platforms={platforms}
                     preview={outcome.value}
                     staged={staged}
@@ -450,8 +484,8 @@ function Importer({ platforms }: { platforms: Platform[] }) {
 /**
  * What the commit did — which is not what the preview predicted it would do.
  *
- * The commit re-parses and re-validates against a ledger that may have moved,
- * so it can refuse rows the preview accepted. Those are reported here rather
+ * The commit validates the previewed rows again against a ledger that may have
+ * moved, so it can refuse rows the preview accepted. Those are reported here rather
  * than dropped quietly, and their count is said even when it is zero.
  */
 function Committed({

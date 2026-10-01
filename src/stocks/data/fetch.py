@@ -24,6 +24,7 @@ from stocks.data import profiles
 from stocks.data.crypto import COINGECKO_IDS, split_pair
 from stocks.data.fx import rates_range
 from stocks.data.http import get_json
+from stocks.data.symbols import code_symbol
 
 # ---------------------------------------------------------------- the breaker
 # One verdict about Yahoo for the whole process, because there is only one
@@ -191,6 +192,13 @@ def unlisted(tickers) -> set[str]:
         return _unlisted & set(tickers)
 
 
+def relisted(ticker: str) -> None:
+    """Drop the verdict on `ticker`: it has just been mapped to a line Yahoo
+    does list, and the next download asks that one."""
+    with _unlisted_lock:
+        _unlisted.discard(ticker)
+
+
 def clear_unlisted() -> None:
     """Forget every verdict — for tests."""
     with _unlisted_lock:
@@ -228,9 +236,14 @@ def _note_failures(
 
 
 def resolve(ticker: str) -> str:
-    """Yahoo Finance symbol for a ticker, mapping broker codes via
-    watchlist.yaml `aliases` (identity when unmapped)."""
-    return ticker_aliases().get(ticker.upper(), ticker)
+    """Yahoo Finance symbol for a ticker (identity when unmapped).
+
+    Broker codes map through watchlist.yaml `aliases` first — the hand-written
+    answer wins — then through the codes an import resolved with Yahoo's
+    search (`symbols.code_symbol`: SIE -> SIE.DE). Both are local reads.
+    """
+    key = ticker.upper()
+    return ticker_aliases().get(key) or code_symbol(key) or ticker
 
 
 # `.info` is the heaviest call yfinance makes — a full quoteSummary — and it

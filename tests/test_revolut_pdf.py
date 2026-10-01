@@ -84,3 +84,73 @@ def test_unparseable_trade_line_lands_in_skipped_not_lost():
     res = parse_lines(lines)
     assert res.transactions == []
     assert len(res.skipped) == 1
+
+
+# The 2026 layout: time + zone after the date, "Trade - Market" plus a Side
+# column, and Fees + Commission where the FX columns used to be.
+_2026_LINES = [
+    "Date Symbol Type Quantity Price Side Value Fees Commission",
+    "01 Dec 2025 14:31:21 GMT NVDA Trade - Market 12.5 US$180.00 Buy US$2,250 US$0 US$0",
+    "30 Jan 2026 18:40:21 GMT NVDA Trade - Market 12.5 US$200.00 Sell US$2,494.78"
+    " US$0.02 US$5.20",
+    "03 Feb 2026 09:05:12 GMT SIE Trade - Limit 10 €250.00 Buy €2,506.25 €6.25 €0",
+    "02 Jan 2026 03:32:09 GMT NVDA Dividend US$0.13 US$0 US$0",
+    "01 Dec 2025 13:09:01 GMT Cash top-up US$5,000 US$0 US$0",
+]
+
+
+def test_2026_layout_trades_take_side_from_their_own_column():
+    res = parse_lines(_2026_LINES)
+    trades = [t for t in res.transactions if t.action in ("buy", "sell")]
+    assert [(t.ticker, t.action) for t in trades] == [
+        ("NVDA", "buy"), ("NVDA", "sell"), ("SIE", "buy"),
+    ]
+    buy = trades[0]
+    assert buy.date == "2025-12-01"
+    assert buy.quantity == 12.5 and buy.price == 180.0 and buy.currency == "USD"
+    assert trades[2].currency == "EUR"
+
+
+def test_2026_layout_fee_is_fees_plus_commission():
+    res = parse_lines(_2026_LINES)
+    buy, sell, eur_buy = (t for t in res.transactions if t.action in ("buy", "sell"))
+    assert buy.fee == 0.0
+    assert sell.fee == 5.22  # 0.02 fees + 5.20 commission, as printed
+    assert eur_buy.fee == 6.25
+
+
+def test_2026_layout_time_never_reads_as_date_or_ticker():
+    res = parse_lines(_2026_LINES)
+    div = next(t for t in res.transactions if t.action == "dividend")
+    assert div.date == "2026-01-02" and div.ticker == "NVDA" and div.price == 0.13
+    cash = next(s for s in res.skipped if "cash movement" in s["reason"])
+    assert cash["ticker"] == ""  # not "GMT"
+
+
+def test_2026_trade_without_a_side_is_skipped_not_guessed():
+    lines = ["01 Dec 2025 14:31:21 GMT NVDA Trade - Market 12.5 US$180.00 US$2,250"]
+    res = parse_lines(lines)
+    assert res.transactions == []
+    assert res.skipped[0]["reason"] == "unrecognised type — not imported"
+
+
+def test_the_holdings_table_names_each_codes_isin():
+    lines = [
+        "Symbol Company ISIN Quantity Price Value % of Portfolio",
+        "MEQA Merlin Properties SOCIMI S.A. ES0105025003 631.438159 €12.24"
+        " €7,728.80 17.05%",
+        "GOOGL Alphabet (Class A) US02079K3059 24 US$340.92 US$8,182.08 14.83%",
+        "2024-01-03 MEQA BUY - MARKET 10 €12.00 €120.00 EUR 1.0",
+        "This statement lists US02079K3059 for reference only.",
+    ]
+    res = parse_lines(lines)
+    assert res.isins == {"MEQA": "ES0105025003", "GOOGL": "US02079K3059"}
+    assert [t.ticker for t in res.transactions] == ["MEQA"]
+
+
+def test_a_code_printed_with_two_isins_is_neithers():
+    res = parse_lines([
+        "ABC Some Co ES0105025003 1 €1 €1 1%",
+        "ABC Other Co ES0171996087 2 €1 €2 1%",
+    ])
+    assert res.isins == {}

@@ -15,6 +15,7 @@
  * is rethrown and reaches `<Loaded>` as the defect it is.
  */
 
+import { keyHeaders } from "../../chat/sessionKey";
 import { ApiError, get, send } from "../../shell/api";
 
 /** Mirrors `MAX_BYTES` in `api/routes/import_statement.py` (50 MB — why not
@@ -33,7 +34,14 @@ export type Platform = {
   has_sample: boolean;
 };
 
-export type Platforms = { platforms: Platform[] };
+export type Platforms = {
+  platforms: Platform[];
+  /** Every extension a statement can arrive as, whichever platform is picked:
+   *  the model reads first and every parser checks it, so a platform's own
+   *  `file_types` is what it exports, not a limit. Optional for an older
+   *  server. */
+  accepts?: string[];
+};
 
 export type Issue = {
   /** "error" | "warning". */
@@ -57,12 +65,36 @@ export type Row = {
   note: string;
   issues: Issue[];
   duplicate: boolean;
+  /** How the row has done, as a fraction in its own currency: a buy against
+   *  today's quote, a sell against the FIFO cost it realized. Null for any
+   *  other action or when the server could not say; absent from an older one. */
+  gain?: number | null;
 };
 
-export type SkippedRow = Record<string, string | number | boolean | null>;
+/**
+ * A row the parser left out, in the parser's own shape — `{row, type, reason}`
+ * and whatever fields it keeps for later (`date`, `ticker`, `amount`…).
+ * `reason_key` is the catalog stem that names `reason` (`<stem>` the kind of
+ * row, `<stem>_note` why), null for a reason no catalog names yet; `manual`
+ * says it leaves the reader a step to take. Both optional for an older server.
+ */
+export type SkippedRow = Record<string, string | number | boolean | null> & {
+  reason?: string;
+  reason_key?: string | null;
+  manual?: boolean;
+};
 
 export type Preview = {
+  /** What read the file: a platform key, or `llm` for the model. Not always
+   *  the one picked — that one is only tried first. */
   platform: string;
+  /** The parser's display name; empty when the model read it. */
+  label: string;
+  /** `trades`, `positions` (a holdings report: nothing dated to import) or
+   *  `none`. */
+  kind: string;
+  /** The model was never reached, so only the parsers judged the file. */
+  unavailable: boolean;
   filename: string;
   digest: string;
   /** Clean and warned rows — exactly what a commit writes. */
@@ -229,7 +261,11 @@ export const paid = (base: string) => get<Paid>("/portfolio/dividends", { base }
 export const lastImport = () => get<LastImport>("/import/last");
 
 /**
- * Parse and validate a statement, writing nothing.
+ * Read and validate a statement, writing nothing.
+ *
+ * The model reads it first and the parsers check that reading, exactly as a
+ * file attached in the chat is read — so the reader's own session key rides
+ * along, the one the chat would use. Without one the server's chain answers.
  *
  * `wipe` is not a write here and still belongs on the preview: with it set,
  * validation runs against an empty ledger, so nothing is flagged as a
@@ -239,38 +275,51 @@ export const lastImport = () => get<LastImport>("/import/last");
  */
 export const preview = (platform: string, file: Staged, wipe: boolean) =>
   attempt(() =>
-    send<Preview>("POST", "/import/preview", {
-      platform,
-      filename: file.filename,
-      content: file.content,
-      surface: file.surface ?? "import",
-      wipe,
-    }),
+    send<Preview>(
+      "POST",
+      "/import/preview",
+      {
+        platform,
+        filename: file.filename,
+        content: file.content,
+        surface: file.surface ?? "import",
+        wipe,
+      },
+      keyHeaders(),
+    ),
   );
 
 /**
- * Write the importable rows.
+ * Write the rows the preview showed.
  *
- * `expect` is the preview's digest: given it, a file that changed underneath
- * the reader is refused with a 409 rather than committed as something nobody
- * ever saw. The commit re-parses and re-validates regardless, so its answer —
- * not the preview's — is what actually happened.
+ * The rows go back, not the file: a model's reading of the same bytes can
+ * differ from one call to the next, and what is written has to be what the
+ * reader looked at. The server validates them again against the ledger as it
+ * is now, so its answer — not the preview's — is what actually happened.
+ * `platform` is what read the file, which is what the last-import note keeps.
  */
 export const commit = (
-  platform: string,
+  preview: Preview,
   file: Staged,
   broker: string,
-  expect: string,
   wipe: { on: boolean; confirm: string },
 ) =>
   attempt(() =>
     send<Result>("POST", "/import/commit", {
-      platform,
+      platform: preview.platform,
       filename: file.filename,
-      content: file.content,
+      rows: preview.importable.map((row) => ({
+        date: row.date,
+        ticker: row.ticker,
+        action: row.action,
+        quantity: row.quantity,
+        price: row.price,
+        currency: row.currency,
+        fee: row.fee,
+        note: row.note,
+      })),
       surface: file.surface ?? "import",
       broker,
-      expect,
       wipe: wipe.on,
       // The two halves travel together on purpose: a client that emptied the
       // book with `DELETE /portfolio/transactions` and then failed its commit
@@ -392,6 +441,62 @@ export const scanSplits = () => get<SplitGaps>("/import/splits/scan");
  */
 export const applySplits = (picks: { ticker: string; date: string }[]) =>
   send<SplitsApplied>("POST", "/import/splits/apply", { splits: picks });
+
+/** One trade of a code, as the preview showed it. */
+export type VenueFill = { date: string; price: number };
+
+/** A line a code could be, priced on the day of its latest fill. */
+export type VenueOption = {
+  symbol: string;
+  name: string;
+  exchange: string;
+  /** Its close on `VenueOptions.day`; null when Yahoo could not say. */
+  close: number | null;
+  /** Closed near the fills on every sampled day; null when no day had a
+   *  close. Only a true one can be picked. */
+  agrees: boolean | null;
+};
+
+export type VenueOptions = {
+  code: string;
+  currency: string;
+  /** The latest fill's day, the one each `close` is on, and its price. */
+  day: string;
+  price: number;
+  options: VenueOption[];
+  /** Yahoo was refusing this host, so a null close is not a verdict. */
+  throttled: boolean;
+};
+
+/**
+ * The lines `query` finds on the venues of `currency`, each priced on the
+ * days the code was traded — the code itself when `query` is empty.
+ */
+export const venueOptions = (
+  code: string,
+  currency: string,
+  fills: VenueFill[],
+  query: string,
+) => send<VenueOptions>("POST", "/import/venues", { code, currency, fills, query });
+
+/**
+ * Price `code` as `symbol` from now on, for every account: the code map is
+ * one. The server prices the line on the fills again rather than believing
+ * this page, and refuses (409) a code something already prices or a line that
+ * did not close near them.
+ */
+export const pickVenue = (
+  code: string,
+  currency: string,
+  fills: VenueFill[],
+  symbol: string,
+) =>
+  send<{ code: string; symbol: string }>("POST", "/import/venue", {
+    code,
+    currency,
+    fills,
+    symbol,
+  });
 
 /** Departures and arrivals in this book that are one move of shares. */
 export const scanMoves = () => get<Moves>("/import/moves/scan");

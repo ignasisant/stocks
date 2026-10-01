@@ -173,6 +173,16 @@ PAGES: dict[str, Page] = {
             "import.rows_rejected": (
                 "a tier heading: `import.tier_rejected` + `import.tier_rejected_note`"
             ),
+            # The skipped rows are grouped by reason, and each group says its
+            # own why (`import.skip_<kind>_note`) — a caption listing every
+            # kind at once would repeat them all under the ones present.
+            "import.skipped_caption_revolut": (
+                "one `import.skip_<kind>` + `_note` per group of skipped rows; "
+                "an underivable split is `import.skip_split_note`"
+            ),
+            "import.skipped_caption_generic": (
+                "the strays' group: `import.skip_other` + `import.skip_other_note`"
+            ),
             "import.rows_with_warnings": (
                 "a tier heading: `import.tier_warned` + `import.tier_warned_note`"
             ),
@@ -214,6 +224,16 @@ PAGES: dict[str, Page] = {
             "import.move_gain": (
                 "each transfer card's line: `import.col_gain` and the signed "
                 "amount"
+            ),
+            # The React page reads every file the model can (`autodetect.read`),
+            # not only the picked platform's: both lines are said with the
+            # reader's whole list of types and without blaming the picked one.
+            "import.paste_wrong_type": (
+                "`import.wrong_type`, which lists every type any reader takes"
+            ),
+            "import.no_rows_parsed": (
+                "`import.nothing_read`, since the file was offered to the model "
+                "and every parser, not just the picked platform's"
             ),
         },
     ),
