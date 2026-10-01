@@ -615,6 +615,12 @@ WRITES = {
     # the body names which of the proposals it accepts and never what they are.
     ("/v1/import/splits/apply", "post"),
     ("/v1/import/moves/apply", "post"),
+    # The line a code nobody can place trades on. The pick writes the code map,
+    # which is every account's: it is checked against the fills before it is
+    # kept, and a token may not make one. The offer only reads, and is here for
+    # the reason the preview is.
+    ("/v1/import/venues", "post"),
+    ("/v1/import/venue", "post"),
     # The demo book: fabricated rows, in an app that also files tax reports.
     # Writable because an empty account can otherwise see none of the ledger
     # half of it, and safe only while every row stays marked `demo` and the

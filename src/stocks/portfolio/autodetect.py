@@ -335,6 +335,13 @@ def read(filename: str, data: bytes, provider: Provider | None = None,
         winner = _mapped(model)
     else:
         winner = _nothing()
+    if parsed is not None and winner is not parsed and parsed.result.isins:
+        # The parser's read of the holdings table rides along whoever won: an
+        # ISIN beside a code is the statement naming the security outright,
+        # and the model's rows do not carry it.
+        winner = replace(winner, result=replace(
+            winner.result, isins={**parsed.result.isins, **winner.result.isins},
+        ))
 
     fields: dict[str, Any] = {
         "winner": winner.platform if winner.recognised else None,

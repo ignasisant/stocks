@@ -28,8 +28,10 @@ import type { Platform, Preview } from "./api";
 import { Eyebrow, jump } from "./Card";
 import { Glyph } from "./Glyph";
 import type { GlyphName } from "./Glyph";
-import { RowTable, SkippedTable } from "./Tables";
+import { SkippedGroups } from "./Skipped";
+import { RowTable } from "./Tables";
 import { useVocabulary } from "./text";
+import { Unlisted } from "./Venues";
 
 /** How a rejected row gets in anyway. The CLI's own words, so not translated. */
 const CLI = "uv run stocks tx add <date> <ticker> <action> --qty … --price …";
@@ -46,17 +48,24 @@ const GLYPH: Record<Tone, GlyphName> = {
 export function Tiers({
   preview,
   picked,
+  onVenue,
   children,
 }: {
   preview: Preview;
   /** The platform the reader chose, which was only tried first. */
   picked?: Platform;
+  /** A code was placed on a line: the preview is stale. */
+  onVenue: () => void;
   children?: ReactNode;
 }) {
   const t = useT();
   const vocab = useVocabulary();
-  // The skipped rows sit folded, so the chip that jumps to them opens them too.
-  const [skippedOpen, setSkippedOpen] = useState(false);
+  // Skipped rows a reader has to finish by hand (a return of capital, a split
+  // whose ratio could not be derived) are not "left out by design".
+  const manual = preview.skipped.filter((row) => row.manual === true).length;
+  // The skipped rows sit folded unless one needs a hand, so the chip that
+  // jumps to them opens them too.
+  const [skippedOpen, setSkippedOpen] = useState(manual > 0);
   const warned = preview.importable.filter((row) =>
     row.issues.some((issue) => issue.severity === "warning"),
   );
@@ -177,15 +186,9 @@ export function Tiers({
           >
             <RowTable brief issues="warnings" rows={warned} tone="warn" />
             {/* The one warning with a consequence after the import: these
-                rows hold at cost, unpriced, until someone maps the code. */}
+                rows hold at cost, unpriced, until the code is placed. */}
             {unlisted.length > 0 && (
-              <div className="im-tier-foot">
-                <span>
-                  {vocab.tn("import.unlisted_note", unlisted.length, {
-                    tickers: unlisted.join(", "),
-                  })}
-                </span>
-              </div>
+              <Unlisted codes={unlisted} onPicked={onVenue} rows={preview.importable} />
             )}
           </Tier>
         )}
@@ -215,17 +218,16 @@ export function Tiers({
               <span className="im-h3">
                 {t("import.tier_skipped")} · {vocab.num(skipped, 0)}
               </span>
-              <span className="im-fine">{t("import.tier_skipped_note")}</span>
+              {manual > 0 ? (
+                <span className="im-fine im-tone-warn">
+                  {vocab.tn("import.skipped_manual", manual)}
+                </span>
+              ) : (
+                <span className="im-fine">{t("import.tier_skipped_note")}</span>
+              )}
             </summary>
             <div className="im-skipped-body">
-              <SkippedTable rows={preview.skipped} />
-              <p className="im-fine">
-                {t(
-                  preview.platform === "revolut"
-                    ? "import.skipped_caption_revolut"
-                    : "import.skipped_caption_generic",
-                )}
-              </p>
+              <SkippedGroups rows={preview.skipped} />
             </div>
           </details>
         )}

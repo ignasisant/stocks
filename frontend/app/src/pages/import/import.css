@@ -964,6 +964,110 @@
   font-size: var(--ag-fs-sm);
 }
 
+/* The codes the search could not place: one row each, folded until the
+   reader asks for its lines, which come back priced against the fills. */
+.im-venues {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.im-venue {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-page);
+}
+
+.im-venue-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.im-venue-head .im-fine {
+  flex: 1 1 14rem;
+}
+
+.im-venue-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.im-venue-search {
+  display: flex;
+  gap: 8px;
+}
+
+.im-venue-search .im-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 28rem;
+}
+
+.im-venue-list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content max-content;
+  align-items: center;
+  gap: 0 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.im-venue-opt {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: 6px 0;
+  border-top: 1px solid var(--ag-border);
+  font-size: var(--ag-fs-sm);
+}
+
+.im-venue-name {
+  overflow: hidden;
+  color: var(--ag-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.im-venue-close {
+  font-family: var(--ag-font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.im-venue-tag {
+  font-size: var(--ag-fs-xs);
+  font-weight: 600;
+}
+
+.im-venue-agrees .im-venue-tag {
+  color: var(--ag-candle-up);
+}
+
+.im-venue-differs .im-venue-tag {
+  color: var(--ag-candle-down);
+}
+
+.im-venue-unknown .im-venue-tag,
+.im-venue-differs .im-venue-name,
+.im-venue-differs .im-venue-close {
+  color: var(--ag-text-muted);
+}
+
+.im-btn-sm {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: var(--ag-fs-sm);
+}
+
 .im-cli {
   padding: 3px 8px;
   border: 1px solid var(--ag-border);
@@ -1011,14 +1115,123 @@
 }
 
 .im-skipped-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-bottom: 12px;
+  padding-block: 14px 16px;
+  padding-inline: 14px;
 }
 
-.im-skipped-body > .im-fine {
-  padding: 0 14px;
+/* One group per reason, set apart by space rather than rules: a group's own
+   lines sit a fifth of the gap that separates it from the next. */
+.im-skip-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.im-skip-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* A step by hand is the one group drawn as something to do. */
+.im-skip-manual {
+  padding-block: 10px;
+  padding-inline: 12px;
+  border: 1px solid var(--ag-warn-edge);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-warn-fill-soft);
+}
+
+.im-skip-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.im-skip-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+}
+
+.im-skip-n {
+  color: var(--ag-text-muted);
+  font: 500 var(--ag-fs-sm) var(--ag-font-mono);
+}
+
+/* The broker's own words for the rows, to find them in the statement by. */
+.im-skip-meta {
+  margin: 0;
+  color: var(--ag-text-faint);
+  font: 500 var(--ag-fs-xs) var(--ag-font-mono);
+}
+
+.im-skip-meta .im-nowrap {
+  white-space: nowrap;
+}
+
+.im-skip-more > summary {
+  width: fit-content;
+  padding-block: 4px;
+  color: var(--ag-brand-accent);
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* A row is one line — day, what, amount — and every row of a group shares the
+   columns (subgrid), sized by what is in them rather than fixed. */
+.im-skip-rows {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  column-gap: 16px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.im-skip-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+  padding-block: 4px;
+  font-size: var(--ag-fs-sm);
+}
+
+.im-skip-date {
+  color: var(--ag-text-muted);
+  font: 500 var(--ag-fs-xs) var(--ag-font-mono);
+  white-space: nowrap;
+}
+
+.im-skip-what {
+  min-width: 0;
+  color: var(--ag-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.im-skip-what a.ag-tick {
+  color: var(--ag-text-primary);
+  text-decoration: none;
+}
+
+.im-skip-what a.ag-tick:hover .ag-tick-sym {
+  text-decoration: underline;
+}
+
+.im-skip-amount {
+  color: var(--ag-text-primary);
+  font: 500 var(--ag-fs-sm) var(--ag-font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
 }
 
 /* ------------------------------------------------------------ the tables */
@@ -1277,8 +1490,25 @@
 }
 
 .im-rcard-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   color: var(--ag-text-secondary);
   font: 500 var(--ag-fs-sm) var(--ag-font-mono);
+}
+
+/* The gain sits under the day, at the card's right edge. */
+.im-rcard-sub .im-gain {
+  flex: none;
+  margin-left: auto;
+}
+
+.im-gain-up {
+  color: var(--ag-up);
+}
+
+.im-gain-down {
+  color: var(--ag-down);
 }
 
 .im-rcard-msg {
@@ -1745,6 +1975,63 @@
   .im-page,
   .im-main {
     gap: 12px;
+  }
+
+  /* The line and its verdict on top, the name and the close under them. */
+  .im-venue-list {
+    grid-template-columns: minmax(0, 1fr) max-content max-content;
+  }
+
+  .im-venue-opt {
+    grid-template-areas:
+      "line tag use"
+      "name close use";
+    row-gap: 2px;
+  }
+
+  .im-venue-opt > .ag-tick {
+    grid-area: line;
+  }
+
+  .im-venue-name {
+    grid-area: name;
+  }
+
+  .im-venue-close {
+    grid-area: close;
+  }
+
+  .im-venue-tag {
+    grid-area: tag;
+    text-align: right;
+  }
+
+  .im-venue-opt > .im-btn {
+    grid-area: use;
+  }
+
+  /* No room for three columns: the day and the amount, what under them. */
+  .im-skip-rows {
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
+
+  .im-skip-row {
+    grid-template-areas:
+      "date amount"
+      "what what";
+    row-gap: 2px;
+  }
+
+  .im-skip-date {
+    grid-area: date;
+  }
+
+  .im-skip-what {
+    grid-area: what;
+  }
+
+  .im-skip-amount {
+    grid-area: amount;
   }
 
   .im-h1 {

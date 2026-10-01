@@ -1871,7 +1871,9 @@ def _snapshot(quote: dict) -> dict | None:
     """`session_quote`'s reading of one raw Yahoo quote row — pure, no network.
 
     Split out because the batch path parses the same rows: one place decides
-    which price a day change is measured from, whoever fetched it.
+    which price a day change is measured from, whoever fetched it. `currency`
+    is the listing's quote currency as Yahoo spells it (GBp for pence), for a
+    caller setting the price beside a figure of its own.
     """
     with obs.swallow("quote.session"):
         state = str(quote.get("marketState") or "")
@@ -1885,6 +1887,7 @@ def _snapshot(quote: dict) -> dict | None:
                 "pct": price / float(regular) - 1,
                 "session": "pre",
                 "as_of": _quote_date(quote, today=True),
+                "currency": quote.get("currency"),
             }
         if post and prev and not state.startswith("PRE"):
             price = float(post)
@@ -1893,6 +1896,7 @@ def _snapshot(quote: dict) -> dict | None:
                 "pct": price / float(prev) - 1,
                 "session": "post" if state.startswith("POST") else None,
                 "as_of": _quote_date(quote),
+                "currency": quote.get("currency"),
             }
         if regular and prev:
             price = float(regular)
@@ -1901,6 +1905,7 @@ def _snapshot(quote: dict) -> dict | None:
                 "pct": price / float(prev) - 1,
                 "session": None,
                 "as_of": _quote_date(quote),
+                "currency": quote.get("currency"),
             }
     return None
 

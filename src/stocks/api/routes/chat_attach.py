@@ -63,7 +63,7 @@ from stocks.portfolio import (
 )
 from stocks.portfolio.ledger import Transaction, add_many, all_transactions
 from stocks.portfolio.statement import ParseResult
-from stocks.web import i18n
+from stocks.web import i18n, tx_text
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -301,11 +301,12 @@ def _row(tx: Transaction, why: str = "") -> Row:
     )
 
 
-def _issues(checked: list) -> list[Row]:
-    from stocks.web import tx_text
-
+def _issues(checked: list, lang: str) -> list[Row]:
+    """Rows with their issues in the reader's language — passed in, because
+    under the API `tx_text` has no Streamlit session to read one from."""
     return [
-        _row(c.tx, tx_text.issues_text(c.errors or c.warnings)) for c in checked
+        _row(c.tx, tx_text.issues_text(c.errors or c.warnings, lang))
+        for c in checked
     ]
 
 
@@ -446,18 +447,18 @@ def attach(
             for key in platforms.broker_options()
         ],
         fresh=[_row(tx) for tx in checked.fresh],
-        duplicates=_issues(checked.duplicates),
+        duplicates=_issues(checked.duplicates, lang),
         # Warnings worth reading are the ones about rows being committed; the
         # duplicates carry their own tier and their own explanation.
-        flagged=_issues([c for c in checked.flagged if not c.duplicate]),
-        rejected=_issues(checked.rejected),
+        flagged=_issues([c for c in checked.flagged if not c.duplicate], lang),
+        rejected=_issues(checked.rejected, lang),
         # Parsers add their own fields to a skip (`statement.skip_entry`), so
         # the three the preview prints are picked out rather than splatted.
         skipped=[
             Skipped(
                 row=str(s.get("row", "")),
                 type=str(s.get("type", "")),
-                reason=str(s.get("reason", "")),
+                reason=tx_text.skip_text(str(s.get("reason", "")), lang),
             )
             for s in found.result.skipped
         ],
@@ -550,5 +551,5 @@ def commit(body: CommitRows, paths: Writer) -> Committed:
         broker=origin,
         imported_at=stamped,
         message=_say(paths, note),
-        rejected=_issues(checked.rejected),
+        rejected=_issues(checked.rejected, lang),
     )

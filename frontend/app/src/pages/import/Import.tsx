@@ -25,7 +25,7 @@
  * through this very flow rather than through a route of their own.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FocusEvent } from "react";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
@@ -56,6 +56,7 @@ import { RowTable } from "./Tables";
 import { Tiers } from "./Tiers";
 import { NO_WIPE, Wipe } from "./Wipe";
 import type { WipeChoice } from "./Wipe";
+import { forget, keep, land, mark, preview as remembered, restored } from "./kept";
 import { pastedFile } from "./paste";
 import { useVocabulary } from "./text";
 import { SignInWall } from "../../shell/guest";
@@ -170,30 +171,42 @@ function Importer({
   const t = useT();
   const vocab = useVocabulary();
   const { params, setParams } = useRoute();
+  // What the page held when the reader followed one of its links away: back
+  // here, the review they left rather than an empty drop zone (`kept`).
+  const [left] = useState(restored);
   const platform =
-    platforms.find((entry) => entry.key === params.get("platform")) ?? platforms[0]!;
+    platforms.find(
+      (entry) => entry.key === (params.get("platform") ?? left?.platform),
+    ) ?? platforms[0]!;
   // The picked platform is only tried first: the model reads every file and
   // every parser checks it, so a Revolut PDF dropped under Trading 212 is read
   // anyway. An older server sends no list, and there the platform's is it.
   const kinds = accepts.length > 0 ? accepts : platform.file_types;
 
-  const [staged, setStaged] = useState<Staged | null>(null);
+  const [staged, setStaged] = useState<Staged | null>(left?.staged ?? null);
   const [oversize, setOversize] = useState<number | null>(null);
   // A pasted or dropped format nothing here reads, by its extension.
   const [wrongType, setWrongType] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [wipe, setWipe] = useState<WipeChoice>(NO_WIPE);
+  const [wipe, setWipe] = useState<WipeChoice>(left?.wipe ?? NO_WIPE);
   // Bumped by anything that writes: the ledger count, the last-import record,
   // both repairs and the preview itself are stale the moment a commit, an
   // undo, a repair or a wipe lands.
   const [writes, setWrites] = useState(0);
-  const wrote = () => setWrites((n) => n + 1);
+  const wrote = () => {
+    forget();
+    setWrites((n) => n + 1);
+  };
   // A move proposal the server no longer makes (409): ask again.
   const [again, setAgain] = useState(0);
 
   const file = useRef<HTMLInputElement>(null);
   const pasted = useRef("");
+  const root = useRef<HTMLDivElement>(null);
+
+  // Before the preview is asked, so the ask finds this statement kept.
+  useEffect(() => keep(staged, wipe, platform.key), [staged, wipe, platform.key]);
 
   const ledger = useApi(() => book(), [writes]);
   const last = useApi(() => lastImport(), [writes]);
@@ -204,9 +217,17 @@ function Importer({
   // every write — the rail can undo a batch or book a transfer while a preview
   // is on screen, and the preview is validated against the ledger it moved.
   const preview = useApi(
-    async () => (staged ? await previewOf(platform.key, staged, wipe.on) : null),
+    async () =>
+      staged
+        ? await remembered(platform.key, staged, wipe.on, () =>
+            previewOf(platform.key, staged, wipe.on),
+          )
+        : null,
     [platform.key, staged, wipe.on, writes],
   );
+  useEffect(() => {
+    if (preview.state === "loaded") land(root.current);
+  }, [preview.state]);
 
   const held = ledger.state === "loaded" ? ledger.data : null;
   // What the repairs work on and what the example statement must not be offered
@@ -328,7 +349,11 @@ function Importer({
     );
 
   return (
-    <div className="im-body">
+    <div
+      className="im-body"
+      onClickCapture={(event) => mark(root.current, event.nativeEvent)}
+      ref={root}
+    >
       <div className="im-main">
         <Head at={result ? 5 : staged ? 3 : 2} />
 
@@ -384,7 +409,7 @@ function Importer({
           >
             {(outcome) =>
               outcome !== null && outcome.ok ? (
-                <Tiers picked={platform} preview={outcome.value}>
+                <Tiers onVenue={wrote} picked={platform} preview={outcome.value}>
                   <CommitPanel
                     onCommitted={(committed) => {
                       setResult(committed);

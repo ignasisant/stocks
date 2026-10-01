@@ -1,5 +1,5 @@
 /**
- * The preview's tables: parsed rows, and the rows the parser left out.
+ * The preview's tables of parsed rows. What the parser left out is `Skipped`.
  *
  * Columns keep their English names internally — the ledger, the parsers, the
  * CLI and every test agree on those words — and only the header text is
@@ -12,13 +12,17 @@
  * A statement is hundreds of rows, so the full table scrolls inside its own
  * frame (`tall`) with its header pinned, and the confirm bar above it never
  * leaves the screen. A phone gets two-line cards instead, fifty at a time.
+ *
+ * The full list says how each trade has done (`Row.gain`, worked out by the
+ * server): a buy against today's price, a sale against the cost it realized.
+ * The brief tables leave it out — their point is the issue, not the result.
  */
 
 import { useState } from "react";
 import { useT } from "../../shell/i18n";
 import { TickerCell } from "../../shell/tickers";
-import { Responsive, StackCards } from "../../ui/Rows";
-import type { Issue, Row, SkippedRow } from "./api";
+import { Responsive } from "../../ui/Rows";
+import type { Issue, Row } from "./api";
 import { useVocabulary } from "./text";
 
 /** Every field a parsed row carries. */
@@ -30,6 +34,7 @@ const FULL = [
   "price",
   "fee",
   "currency",
+  "gain",
   "note",
 ] as const;
 
@@ -40,6 +45,9 @@ type Field = (typeof FULL)[number];
 
 /** Columns that hold a figure: right-aligned, and formatted to their own places. */
 const PLACES: Partial<Record<Field, number>> = { quantity: 4, price: 2, fee: 2 };
+
+/** Right-aligned too: the figures, and the gain beside them. */
+const numeric = (field: Field) => PLACES[field] !== undefined || field === "gain";
 
 /** Cards a phone draws before asking for more. */
 const PAGE = 50;
@@ -99,6 +107,7 @@ export function RowTable({
     if (field === "action")
       return <span className={opClass(row.action)}>{vocab.action(row.action)}</span>;
     if (field === "ticker") return symbol(row);
+    if (field === "gain") return <Gain row={row} />;
     return row[field];
   };
 
@@ -116,7 +125,7 @@ export function RowTable({
               {fields.map((field) => (
                 <th
                   className={
-                    PLACES[field] !== undefined
+                    numeric(field)
                       ? "im-num"
                       : field === "note"
                         ? "im-note-cell"
@@ -135,10 +144,7 @@ export function RowTable({
             {rows.map((row, index) => (
               <tr key={`${row.date}-${row.ticker}-${index}`}>
                 {fields.map((field) => (
-                  <td
-                    className={PLACES[field] !== undefined ? "im-num" : CELL[field]}
-                    key={field}
-                  >
+                  <td className={numeric(field) ? "im-num" : CELL[field]} key={field}>
                     {cell(row, field)}
                   </td>
                 ))}
@@ -174,11 +180,14 @@ export function RowTable({
               <span className="im-rcard-date">{row.date}</span>
             </div>
             <div className="im-rcard-sub">
-              {vocab.num(row.quantity, PLACES.quantity!)} ×{" "}
-              {vocab.num(row.price, PLACES.price!)} · {row.currency}
-              {!brief && row.fee
-                ? ` · ${t("import.fee_short", { fee: vocab.num(row.fee, PLACES.fee!) })}`
-                : null}
+              <span>
+                {vocab.num(row.quantity, PLACES.quantity!)} ×{" "}
+                {vocab.num(row.price, PLACES.price!)} · {row.currency}
+                {!brief && row.fee
+                  ? ` · ${t("import.fee_short", { fee: vocab.num(row.fee, PLACES.fee!) })}`
+                  : null}
+              </span>
+              {!brief && <Gain row={row} />}
             </div>
             {issues && <p className="im-rcard-msg">{vocab.issues(wanted(row))}</p>}
           </li>
@@ -203,57 +212,20 @@ export function RowTable({
 }
 
 /**
- * The rows the parser left out, as it described them.
- *
- * Their shape is the parser's (`{row, type, reason}` today), so the columns are
- * read off the data rather than fixed here: a parser that starts reporting one
- * more field should show it, not have it silently dropped.
+ * A row's gain, signed and in its sign's colour; nothing when it has none.
+ * The title says what it was measured against, which differs by verb.
  */
-export function SkippedTable({ rows }: { rows: SkippedRow[] }) {
+function Gain({ row }: { row: Row }) {
+  const t = useT();
   const vocab = useVocabulary();
-  const fields: string[] = [];
-  for (const row of rows)
-    for (const field of Object.keys(row))
-      if (!fields.includes(field)) fields.push(field);
-
-  const narrow = (
-    <StackCards
-      rows={rows}
-      rowKey={(_, index) => String(index)}
-      lines={fields.map((field) => ({
-        label: vocab.column(field),
-        cell: (row: SkippedRow) =>
-          row[field] === null ? "—" : String(row[field] ?? ""),
-      }))}
-    />
+  if (row.gain == null || !Number.isFinite(row.gain)) return null;
+  const tone = row.gain > 0 ? " im-gain-up" : row.gain < 0 ? " im-gain-down" : "";
+  return (
+    <span
+      className={`im-gain${tone}`}
+      title={t(row.action === "sell" ? "import.gain_sell" : "import.gain_buy")}
+    >
+      {vocab.pct(row.gain)}
+    </span>
   );
-
-  const wide = (
-    <div className="im-scroll">
-      <table className="im-table im-table-quiet">
-        <thead>
-          <tr>
-            {fields.map((field) => (
-              <th key={field} scope="col">
-                {vocab.column(field)}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={index}>
-              {fields.map((field) => (
-                <td key={field}>
-                  {row[field] === null ? "—" : String(row[field] ?? "")}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-
-  return <Responsive wide={wide} narrow={narrow} />;
 }

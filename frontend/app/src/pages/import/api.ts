@@ -65,9 +65,24 @@ export type Row = {
   note: string;
   issues: Issue[];
   duplicate: boolean;
+  /** How the row has done, as a fraction in its own currency: a buy against
+   *  today's quote, a sell against the FIFO cost it realized. Null for any
+   *  other action or when the server could not say; absent from an older one. */
+  gain?: number | null;
 };
 
-export type SkippedRow = Record<string, string | number | boolean | null>;
+/**
+ * A row the parser left out, in the parser's own shape — `{row, type, reason}`
+ * and whatever fields it keeps for later (`date`, `ticker`, `amount`…).
+ * `reason_key` is the catalog stem that names `reason` (`<stem>` the kind of
+ * row, `<stem>_note` why), null for a reason no catalog names yet; `manual`
+ * says it leaves the reader a step to take. Both optional for an older server.
+ */
+export type SkippedRow = Record<string, string | number | boolean | null> & {
+  reason?: string;
+  reason_key?: string | null;
+  manual?: boolean;
+};
 
 export type Preview = {
   /** What read the file: a platform key, or `llm` for the model. Not always
@@ -426,6 +441,62 @@ export const scanSplits = () => get<SplitGaps>("/import/splits/scan");
  */
 export const applySplits = (picks: { ticker: string; date: string }[]) =>
   send<SplitsApplied>("POST", "/import/splits/apply", { splits: picks });
+
+/** One trade of a code, as the preview showed it. */
+export type VenueFill = { date: string; price: number };
+
+/** A line a code could be, priced on the day of its latest fill. */
+export type VenueOption = {
+  symbol: string;
+  name: string;
+  exchange: string;
+  /** Its close on `VenueOptions.day`; null when Yahoo could not say. */
+  close: number | null;
+  /** Closed near the fills on every sampled day; null when no day had a
+   *  close. Only a true one can be picked. */
+  agrees: boolean | null;
+};
+
+export type VenueOptions = {
+  code: string;
+  currency: string;
+  /** The latest fill's day, the one each `close` is on, and its price. */
+  day: string;
+  price: number;
+  options: VenueOption[];
+  /** Yahoo was refusing this host, so a null close is not a verdict. */
+  throttled: boolean;
+};
+
+/**
+ * The lines `query` finds on the venues of `currency`, each priced on the
+ * days the code was traded — the code itself when `query` is empty.
+ */
+export const venueOptions = (
+  code: string,
+  currency: string,
+  fills: VenueFill[],
+  query: string,
+) => send<VenueOptions>("POST", "/import/venues", { code, currency, fills, query });
+
+/**
+ * Price `code` as `symbol` from now on, for every account: the code map is
+ * one. The server prices the line on the fills again rather than believing
+ * this page, and refuses (409) a code something already prices or a line that
+ * did not close near them.
+ */
+export const pickVenue = (
+  code: string,
+  currency: string,
+  fills: VenueFill[],
+  symbol: string,
+) =>
+  send<{ code: string; symbol: string }>("POST", "/import/venue", {
+    code,
+    currency,
+    fills,
+    symbol,
+  });
 
 /** Departures and arrivals in this book that are one move of shares. */
 export const scanMoves = () => get<Moves>("/import/moves/scan");

@@ -43,6 +43,10 @@ class ParseResult:
 
     transactions: list[Transaction] = field(default_factory=list)
     skipped: list[dict] = field(default_factory=list)  # {row, type, reason}
+    # code -> ISIN, where the statement prints both on one line (a holdings
+    # table). Not the rows' own: the ISIN names the security a broker code
+    # stands for, which is how its home listing is found (symbols.symbol_for_code).
+    isins: dict[str, str] = field(default_factory=dict)
 
     @property
     def summary(self) -> str:

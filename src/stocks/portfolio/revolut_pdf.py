@@ -86,6 +86,14 @@ _SYMBOL_CCY = {"US$": "USD", "$": "USD", "€": "EUR", "£": "GBP"}
 
 _TICKER_RE = re.compile(r"^[A-Z0-9]{1,6}(?:[.\-][A-Z0-9]{1,4})?$")
 
+# A holdings-table line: code, the security's name, its ISIN, then the
+# quantity held. The quantity is what tells it from a sentence that happens to
+# hold an ISIN.
+_HOLDING_RE = re.compile(
+    r"^(?P<code>[A-Z0-9]{1,6}(?:[.\-][A-Z0-9]{1,4})?)\s+\S.*?\s"
+    r"(?P<isin>[A-Z]{2}[A-Z0-9]{9}\d)\s+\d[\d.,]*\s"
+)
+
 # The time (and zone) a date may carry: "13:09:01 GMT", "T14:30:00.000Z".
 # Cut before the ticker is looked for, or "GMT" reads as the ticker.
 _TIME_RE = re.compile(
@@ -137,7 +145,26 @@ def parse_pdf(source: str | Path | bytes) -> ParseResult:
 def parse_lines(lines: list[str]) -> ParseResult:
     """Anchor-based line extraction; separate from parse_pdf for testability."""
     rows = [_row_from_line(line, m) for line in lines if (m := _TYPE_RE.search(line))]
-    return revolut.parse_rows(rows)
+    result = revolut.parse_rows(rows)
+    result.isins = _isins(lines)
+    return result
+
+
+def _isins(lines: list[str]) -> dict[str, str]:
+    """code -> ISIN from the holdings table, which prints both on one line:
+    "MEQA Merlin Properties SOCIMI S.A. ES0105025003 631.438159 €12.24 …".
+
+    The transactions table never carries an ISIN, and the holdings table lists
+    only what is still held, so a code sold off before the statement's end has
+    none. A code printed with two ISINs is neither's.
+    """
+    found: dict[str, str] = {}
+    for line in lines:
+        if _TYPE_RE.search(line) or not (m := _HOLDING_RE.match(line.strip())):
+            continue
+        code, isin = m.group("code"), m.group("isin")
+        found[code] = isin if found.get(code, isin) == isin else ""
+    return {code: isin for code, isin in found.items() if isin}
 
 
 def _row_from_line(line: str, m: re.Match) -> dict:

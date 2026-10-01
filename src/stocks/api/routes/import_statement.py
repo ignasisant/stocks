@@ -65,9 +65,8 @@ import binascii
 import hashlib
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from concurrent.futures import TimeoutError as FuturesTimeout
-from concurrent.futures import wait
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Literal
@@ -76,6 +75,7 @@ from fastapi import APIRouter, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
 from stocks import obs
+from stocks.analysis.listing import quote_unit
 from stocks.api import loaders
 from stocks.api.deps import Account, Writer
 from stocks.api.jsonsafe import num as _num
@@ -100,12 +100,14 @@ from stocks.portfolio import (
     ledger,
     llm_map,
     platforms,
+    positions,
     transfers,
     venue,
 )
 from stocks.portfolio.ledger import add_many, all_transactions, clear, delete_many
 from stocks.portfolio.statement import ParseResult
 from stocks.portfolio.validate import known_tickers, validate
+from stocks.web import tx_text
 
 router = APIRouter(prefix="/import", tags=["import"])
 
@@ -422,6 +424,31 @@ def _ticker_exists(ticker: str) -> bool | None:
         return None  # network down ≠ ticker invalid
 
 
+def _charted(ticker: str, budget: float) -> bool | None:
+    """Does Yahoo have bars for this symbol? Its own last word on a code.
+
+    The quote check cannot always say: yfinance 1.7 raises the same KeyError
+    on a symbol Yahoo has no quote for as on a reply it could not read. The
+    bulk download can — it hears Yahoo's 404 reason, "No data found", and
+    files the code under `fetch.unlisted`, the verdict the price pass reaches
+    on the book. Five days of bars, asked only once nothing else could place
+    the code. None when the download did not finish or Yahoo is throttled.
+    """
+    if budget <= 0 or fetch.throttle_remaining() > 0:
+        return None
+    priced = _within(
+        lambda: fetch.fetch_many([ticker], period="5d", budget=budget),
+        budget,
+        None,
+        ticker=ticker,
+    )
+    if priced is None:
+        return None
+    if ticker in priced:
+        return True
+    return False if fetch.unlisted({ticker}) else None
+
+
 class _Lookup:
     """`validate`'s `lookup`, bounded: one instance per statement.
 
@@ -433,27 +460,63 @@ class _Lookup:
     answered False without asking again: that verdict came from the download
     that prices the book, which is the one that matters.
 
-    A False is not the last word, though. A bare code Yahoo does not quote is
-    usually a European line printed without its venue — Revolut's SIE is
-    Yahoo's SIE.DE — so the code is looked up in Yahoo's search, on the venues
-    its trade currency (`currencies`) trades on (`symbols.symbol_for_code`).
-    A hit is remembered for good, so the price download resolves the code
-    through it (`fetch.resolve`) and the row is known. `disowned` collects
-    what is still False after that, so the preview can name the rows that will
-    import unpriced.
+    Anything short of a quote is not the last word, though. A bare code Yahoo
+    does not quote is usually a European line printed without its venue —
+    Revolut's SIE is Yahoo's SIE.DE — so the code is looked up in Yahoo's
+    search, on the venues its trade currency (`currencies`) trades on
+    (`symbols.symbol_for_code`). That includes a quote check that could not
+    say: yfinance 1.7 raises on a symbol it has no quote for (KeyError
+    'currentTradingPeriod') rather than answering empty, which reads as None,
+    and a statement of nine euro codes then warned on every row without the
+    search ever being asked. A hit is remembered for good, so the price
+    download resolves the code through it (`fetch.resolve`) and the row is
+    known. `disowned` collects what is still False after that, so the preview
+    can name the rows that will import unpriced.
+
+    Answers are kept per instance: validation asks once per row, and a code a
+    statement trades nine times would otherwise spend nine quote checks of the
+    one budget.
+
+    The search is told what the statement knows of each code, so it can land
+    on the issuer's home line rather than a German regional floor (MEQA is
+    MRL.MC in Madrid, not MEQA.F): the ISIN the statement prints beside it
+    (`isins`), and the code's fills (`samples`), which a line found by name
+    has to have closed near (`venue.agrees`). `home` asks the same of the
+    codes the map already holds on a floor.
     """
 
-    def __init__(self, currencies: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        currencies: dict[str, str] | None = None,
+        isins: dict[str, str] | None = None,
+        samples: dict[str, list[tuple[str, float]]] | None = None,
+    ) -> None:
         self.deadline = time.monotonic() + BATCH_BUDGET_S
         self.currencies = currencies or {}
+        self.isins = isins or {}
+        self.samples = samples or {}
         self.disowned: set[str] = set()
+        self.answers: dict[str, bool | None] = {}
 
     def __call__(self, ticker: str) -> bool | None:
+        if ticker in self.answers:
+            return self.answers[ticker]
         answer = self._ask(ticker)
-        if answer is False:
-            answer = self._listed(ticker)
+        if answer is not True:
+            listed = self._listed(ticker)
+            # A venue found is a listing whatever the quote check said; no
+            # venue only confirms a False — it cannot turn "could not ask"
+            # into "unlisted". The chart can: a code nothing placed is asked
+            # once more, of the download that will price it.
+            if listed or (listed is None and answer is False):
+                answer = listed
+            elif listed is False and answer is None:
+                answer = _charted(
+                    ticker, min(LOOKUP_BUDGET_S, self.deadline - time.monotonic())
+                )
         if answer is False:
             self.disowned.add(ticker)
+        self.answers[ticker] = answer
         return answer
 
     def _listed(self, ticker: str) -> bool | None:
@@ -468,14 +531,51 @@ class _Lookup:
         left = self.deadline - time.monotonic()
         if left <= 0:
             return False
-        currency = self.currencies.get(ticker, "")
         found = _within(
-            lambda: symbols.symbol_for_code(ticker, currency),
+            lambda: self._search(ticker),
             min(LOOKUP_BUDGET_S, left),
             _UNANSWERED,
             ticker=ticker,
         )
         return None if found is _UNANSWERED else bool(found)
+
+    def home(self) -> None:
+        """Ask for the home line of each code here the map holds on a floor.
+
+        `__call__` only reaches codes the book does not know, and a code
+        imported before the search looked past the floors is known: without
+        this its MEQA.F would stand for good. All at once, within one lookup's
+        budget; a search still running then finishes into the map, and one
+        that could not decide is asked again by the next statement.
+        """
+        floored = [
+            ticker
+            for ticker in self.currencies
+            if symbols.on_floor(symbols.code_symbol(ticker) or "")
+        ]
+        left = self.deadline - time.monotonic()
+        if not floored or left <= 0:
+            return
+        pool = ThreadPoolExecutor(max_workers=min(len(floored), _HOME_WORKERS))
+        try:
+            asked = [pool.submit(self._search, ticker) for ticker in floored]
+            wait(asked, timeout=min(LOOKUP_BUDGET_S, left))
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+
+    def _search(self, ticker: str) -> str | None:
+        currency = self.currencies.get(ticker, "")
+        samples = self.samples.get(ticker)
+
+        def vet(symbol: str) -> bool | None:
+            return venue.agrees(symbol, samples or [], currency, _close)
+
+        return symbols.symbol_for_code(
+            ticker,
+            currency,
+            isin=self.isins.get(ticker, ""),
+            vet=vet if samples else None,
+        )
 
     def _ask(self, ticker: str) -> bool | None:
         if fetch.unlisted({ticker}):
@@ -502,13 +602,25 @@ class _Lookup:
         return answer
 
 
+_HOME_WORKERS = 4
+
+
+def _close(symbol: str, day: str) -> float | None:
+    """`fetch.close_on`, bounded, and not asked of a throttled host."""
+    if fetch.throttle_remaining() > 0:
+        return None
+    return _within(
+        lambda: fetch.close_on(symbol, day), LOOKUP_BUDGET_S, None, ticker=symbol
+    )
+
+
 def _splits(ticker: str) -> list[tuple[str, float]]:
     """`fetch.splits`, bounded. Already memoized and throttle-aware there; the
     budget is the one thing it lacks for a caller holding a worker thread."""
     return _within(lambda: fetch.splits(ticker), SPLITS_BUDGET_S, [], ticker=ticker)
 
 
-def _row(checked) -> ImportRow:
+def _row(checked, gain: float | None = None) -> ImportRow:
     tx = checked.tx
     return ImportRow(
         date=tx.date,
@@ -530,7 +642,91 @@ def _row(checked) -> ImportRow:
             for issue in checked.issues
         ],
         duplicate=checked.duplicate,
+        gain=gain,
     )
+
+
+def _skipped(skip: dict) -> dict:
+    """A parser's skip, with the catalog stem that names its reason and whether
+    it leaves the reader a step to take — the `key` an issue carries, for a
+    reason that is otherwise only the parser's English."""
+    stem, manual = tx_text.skip_reason(str(skip.get("reason", "")))
+    return {**skip, "reason_key": stem, "manual": manual}
+
+
+QUOTES_BUDGET_S = 4.0  # today's prices for the buys' gain; the preview waits no longer
+
+
+def _native(amount: float, currency: str, day: str) -> float:
+    """`positions.build`'s converter, converting nothing: a sale's gain is read
+    in the currency it traded in, so the replay needs no rate and no network."""
+    return amount
+
+
+def _realized(book: list) -> dict[tuple[str, str], tuple[float, float]]:
+    """(label, sale day) -> (cost, proceeds) of what that day's sales realized.
+
+    FIFO, as the app's own analytics replay. One security at a time, so a sale
+    the book cannot cover — a statement that starts after the shares were
+    bought elsewhere — loses that security's answer and nobody else's; and only
+    a security traded in one currency, because `_native` would add a dollar
+    cost to a euro one without a word.
+    """
+    groups: dict[str, list] = {}
+    for tx in transfers.relabel(book):
+        groups.setdefault(tx.ticker, []).append(tx)
+    out: dict[tuple[str, str], tuple[float, float]] = {}
+    for group in groups.values():
+        if len({tx.currency for tx in group}) != 1:
+            continue
+        try:
+            _, sales = positions.build(group, to_base=_native, matching="fifo")
+        except ValueError:
+            continue
+        for sale in sales:
+            key = (sale.ticker, sale.sell_date)
+            cost, proceeds = out.get(key, (0.0, 0.0))
+            out[key] = (cost + sale.cost, proceeds + sale.proceeds)
+    return out
+
+
+def _gains(rows: list, prior: list, prices: dict[str, dict]) -> list[float | None]:
+    """How each preview row has done, as a fraction; None where it cannot say.
+
+    A buy against today's quote (`prices`, `session_quotes` snapshots), its
+    fee in the cost as the book counts it — and only when the quote is in the
+    row's own currency, minor units resolved (`quote_unit`): a London line
+    quoted in pence beside a buy in pounds is a hundredfold, not a gain. A sale
+    against the cost it realized, replayed over the book it lands in plus this
+    batch (`_realized`); two sales of one security on one day share a figure.
+    Every other action has no gain to show.
+    """
+    book = prior + [c.tx for c in rows if not c.duplicate]
+    # The replay speaks in one label per security (an ISIN row becomes its
+    # symbol), so each row is looked up under the label it replayed as.
+    label = {
+        tx.ticker: moved.ticker
+        for tx, moved in zip(book, transfers.relabel(book), strict=True)
+    }
+    realized = _realized(book)
+    out: list[float | None] = []
+    for checked in rows:
+        tx = checked.tx
+        gain = None
+        if tx.action == "buy":
+            quote = prices.get(tx.ticker) or {}
+            have, unit = quote_unit(quote.get("currency"))
+            paid, scale = quote_unit(tx.currency)
+            cost = (tx.quantity * tx.price + tx.fee) * scale
+            if quote.get("price") and have == paid and cost > 0:
+                gain = tx.quantity * quote["price"] * unit / cost - 1
+        elif tx.action == "sell":
+            key = (label.get(tx.ticker, tx.ticker), tx.date)
+            cost, proceeds = realized.get(key, (0.0, 0.0))
+            if cost > 0:
+                gain = proceeds / cost - 1
+        out.append(_num(gain))
+    return out
 
 
 def _real_rows(account) -> list:
@@ -689,7 +885,12 @@ def _validated(account, parsed: ParseResult, *, wipe: bool = False):
     currencies: dict[str, str] = {}
     for tx in parsed.transactions:
         currencies.setdefault(tx.ticker, tx.currency)
-    lookup = _Lookup(currencies)
+    samples = {
+        ticker: venue.samples((ticker, currency), parsed.transactions)
+        for ticker, currency in currencies.items()
+    }
+    lookup = _Lookup(currencies, parsed.isins, samples)
+    lookup.home()
 
     def listed(ticker: str) -> bool | None:
         if symbols.is_isin(ticker) and symbols.symbol_for_isin(ticker):
@@ -789,6 +990,17 @@ def preview(
     importable = checked.importable
     detected = platforms.detected_broker(importable)
     rows = [c for c in checked.checked if not c.errors]
+    # How each row has done: the book it lands in for a sale's cost, and one
+    # bounded quote request for the buys — a throttled Yahoo costs the column,
+    # never the preview.
+    prior = [] if body.wipe else venue.relabeled(_real_rows(account), checked.relabeled)
+    bought = tuple(sorted({c.tx.ticker for c in rows if c.tx.action == "buy"}))
+    prices = (
+        _within(lambda: loaders.quotes(bought), QUOTES_BUDGET_S, {}, quotes=len(bought))
+        if bought
+        else {}
+    )
+    gains = _gains(rows, prior, prices)
     return ImportPreview(
         platform=found.platform,
         label=found.label,
@@ -796,10 +1008,10 @@ def preview(
         unavailable=found.unavailable,
         filename=body.filename,
         digest=hashlib.sha256(raw).hexdigest(),
-        importable=[_row(c) for c in rows],
+        importable=[_row(c, gain) for c, gain in zip(rows, gains, strict=True)],
         rejected=[_row(c) for c in checked.rejected],
         duplicates=len(checked.duplicates),
-        skipped=list(found.result.skipped),
+        skipped=[_skipped(s) for s in found.result.skipped],
         broker=detected,
         needs_broker=bool(importable) and not detected,
         unlisted=sorted(disowned & {c.tx.ticker for c in rows}),
@@ -1168,6 +1380,193 @@ def splits_apply(account: Writer, body: Annotated[ApplySplits, ...]) -> SplitsAp
     return SplitsApplied(
         applied=len(ids), tx_ids=ids, splits=[_gap(gap) for gap in picked]
     )
+
+
+# ------------------------------------------- the line a code was traded on
+# A code the search could not place anywhere imports unpriced, held at cost
+# (`ImportPreview.unlisted`). The reader usually knows the security, though:
+# they name it ("Merlin"), are shown the lines that name finds on the code's
+# currency's venues, each priced on the days their fills were, and pick one.
+# The pick is the code's answer in `CODE_CACHE`, which is one map for every
+# account, so it is held to what a search answer would be: a real line on
+# those venues that closed near the fills, for a code nothing answers yet.
+
+VENUES_BUDGET_S = 10.0  # every option's closes, together
+_VENUE_WORKERS = 6
+
+
+class VenueFill(BaseModel):
+    """One trade of the code, as the preview showed it."""
+
+    model_config = {"extra": "forbid"}
+
+    date: str = Field(min_length=10, max_length=32, description="YYYY-MM-DD…")
+    price: float = Field(gt=0, description="Per share, in the code's currency.")
+
+
+class VenueAsk(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    code: str = Field(
+        min_length=1, max_length=32, description="As the statement prints it."
+    )
+    currency: str = Field(min_length=3, max_length=4)
+    fills: list[VenueFill] = Field(
+        min_length=1,
+        max_length=500,
+        description="The preview's trades of the code; its latest two days count.",
+    )
+    query: str = Field(
+        default="",
+        max_length=80,
+        description="The security's name as the reader puts it; the code when empty.",
+    )
+
+
+class VenueOption(BaseModel):
+    symbol: str
+    name: str
+    exchange: str
+    close: float | None = Field(
+        description="Its close on `VenueOptions.day`; null when Yahoo could not say."
+    )
+    agrees: bool | None = Field(
+        description=(
+            "Closed near the fills on every sampled day; null when no sampled day "
+            "has a close. Only a true one can be picked."
+        )
+    )
+
+
+class VenueOptions(BaseModel):
+    code: str
+    currency: str
+    day: str = Field(description="The latest fill's day, the one `close` is on.")
+    price: float = Field(description="The fill on `day`.")
+    options: list[VenueOption] = Field(default_factory=list)
+    throttled: bool = Field(
+        default=False,
+        description="Yahoo was refusing this host, so a null `close` is not a verdict.",
+    )
+
+
+class VenuePick(VenueAsk):
+    symbol: str = Field(min_length=1, max_length=32)
+
+
+class VenuePicked(BaseModel):
+    code: str
+    symbol: str
+
+
+def _venue_key(code: str) -> str:
+    return code.strip().upper()
+
+
+def _option(line: tuple[str, str, str], sampled, currency: str) -> VenueOption:
+    symbol, name, exchange = line
+    return VenueOption(
+        symbol=symbol,
+        name=name,
+        exchange=exchange,
+        close=_num(_close(symbol, sampled[0][0])),
+        agrees=venue.agrees(symbol, sampled, currency, _close),
+    )
+
+
+@router.post("/venues", response_model=VenueOptions, summary="Lines a code could be")
+def venues(account: Writer, body: Annotated[VenueAsk, ...]) -> VenueOptions:
+    """The lines `query` finds on the code's currency's venues, each priced on
+    the days the code was traded.
+
+    A POST because the fills travel in the body; it writes nothing. Every
+    option's closes are asked at once within `VENUES_BUDGET_S`, and one still
+    out then comes back unpriced rather than holding the others.
+    """
+    del account  # a session, like every other non-GET here
+    sampled = venue.latest((fill.date, fill.price) for fill in body.fills)
+    currency = body.currency.strip().upper()
+    lines = symbols.lines_for(body.query.strip() or body.code, currency)
+    options: list[VenueOption] = []
+    if lines:
+        pool = ThreadPoolExecutor(max_workers=min(len(lines), _VENUE_WORKERS))
+        try:
+            asked = [pool.submit(_option, line, sampled, currency) for line in lines]
+            wait(asked, timeout=VENUES_BUDGET_S)
+            for line, future in zip(lines, asked, strict=True):
+                done = future.done() and not future.exception()
+                options.append(
+                    future.result()
+                    if done
+                    else VenueOption(
+                        symbol=line[0],
+                        name=line[1],
+                        exchange=line[2],
+                        close=None,
+                        agrees=None,
+                    )
+                )
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+    return VenueOptions(
+        code=_venue_key(body.code),
+        currency=currency,
+        day=sampled[0][0],
+        price=sampled[0][1],
+        options=options,
+        throttled=fetch.throttle_remaining() > 0,
+    )
+
+
+@router.post("/venue", response_model=VenuePicked, summary="The line a code is")
+def venue_pick(account: Writer, body: Annotated[VenuePick, ...]) -> VenuePicked:
+    """Remember `symbol` as the code's line, for every price lookup after.
+
+    Checked here, not believed, because the map is every account's: the code
+    has to be one nothing prices — no alias, no map answer, no bare quote, and
+    a search that still cannot place it — and the symbol a line of the code's
+    currency's venues that closed near the fills on the days they were made
+    (`venue.agrees`, priced now). Anything else is a 409 and nothing is
+    written; a Yahoo that could not be asked is a 503, to try again.
+    """
+    del account  # a session, like every other non-GET here
+    code = _venue_key(body.code)
+    symbol = body.symbol.strip().upper()
+    currency = body.currency.strip().upper()
+
+    def refuse(detail: str, kind: int = status.HTTP_409_CONFLICT):
+        return HTTPException(status_code=kind, detail=detail)
+
+    held = fetch.resolve(code)
+    if held != code:
+        raise refuse(f"{code} is already priced as {held}")
+    if not fetch.unlisted({code}):
+        quoted = _within(lambda: _ticker_exists(code), LOOKUP_BUDGET_S, None, ticker=code)
+        if quoted is None:
+            quoted = _charted(code, LOOKUP_BUDGET_S)
+        if quoted is None:
+            raise refuse("Yahoo could not be asked", status.HTTP_503_SERVICE_UNAVAILABLE)
+        if quoted:
+            raise refuse(f"Yahoo quotes {code} as it is")
+    found = _within(
+        lambda: symbols.symbol_for_code(code, currency),
+        LOOKUP_BUDGET_S,
+        _UNANSWERED,
+        ticker=code,
+    )
+    if found is _UNANSWERED:
+        raise refuse("Yahoo could not be asked", status.HTTP_503_SERVICE_UNAVAILABLE)
+    if found:
+        raise refuse(f"{code} is priced as {found} now")
+    if not symbols.on_venues(symbol, currency):
+        raise refuse(f"{symbol} is not a {currency} line")
+    sampled = venue.latest((fill.date, fill.price) for fill in body.fills)
+    if venue.agrees(symbol, sampled, currency, _close) is not True:
+        raise refuse(f"{symbol} did not close near {code}'s fills")
+    symbols.remember_code(code, symbol)
+    fetch.relisted(code)
+    obs.event("import.venue_picked", code=code, symbol=symbol)
+    return VenuePicked(code=code, symbol=symbol)
 
 
 # ----------------------------------------- shares that only changed custodian

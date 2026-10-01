@@ -53,6 +53,15 @@ export function useVocabulary() {
       maximumFractionDigits: places,
     }).format(value);
 
+  /** A fraction as a signed percentage, one place: 0.1234 -> "+12,3 %". */
+  const pct = (value: number) =>
+    new Intl.NumberFormat(lang, {
+      style: "percent",
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+      signDisplay: "exceptZero",
+    }).format(value);
+
   /**
    * A sentence about `n` things, `n` printed the way the page prints counts.
    *
@@ -95,5 +104,5 @@ export function useVocabulary() {
     );
   };
 
-  return { action, column, issue, issues, money, num, tn, when };
+  return { action, column, issue, issues, money, num, pct, tn, when };
 }

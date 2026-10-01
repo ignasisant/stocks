@@ -325,18 +325,21 @@ def _own_code_symbols():
         symbols.CODE_CACHE,
         symbols._code_memo,
         symbols._code_misses,
+        symbols._code_settled,
         symbols._listings_memo,
     )
     made = pathlib.Path(tempfile.mkdtemp(prefix="codes-"))
     symbols.CODE_CACHE = made / "code_symbols.json"
     symbols._code_memo = None
     symbols._code_misses = set()
+    symbols._code_settled = set()
     symbols._listings_memo = {}
     yield
     (
         symbols.CODE_CACHE,
         symbols._code_memo,
         symbols._code_misses,
+        symbols._code_settled,
         symbols._listings_memo,
     ) = before
     shutil.rmtree(made, ignore_errors=True)

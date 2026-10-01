@@ -192,6 +192,13 @@ def unlisted(tickers) -> set[str]:
         return _unlisted & set(tickers)
 
 
+def relisted(ticker: str) -> None:
+    """Drop the verdict on `ticker`: it has just been mapped to a line Yahoo
+    does list, and the next download asks that one."""
+    with _unlisted_lock:
+        _unlisted.discard(ticker)
+
+
 def clear_unlisted() -> None:
     """Forget every verdict — for tests."""
     with _unlisted_lock:

@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient
 
 from stocks import accounts
 from stocks.api.app import app as fastapi_app
+from stocks.api.routes.import_statement import _charted as _real_charted
 from stocks.portfolio import ledger
 from stocks.portfolio.ledger import Transaction, all_transactions
 # The real one, held before the suite's conftest swaps `venue.pick` out for
@@ -73,17 +74,20 @@ def offline(monkeypatch, tmp_path):
     unfamiliar symbol trade, did an oversold ticker split — and files an
     anonymised diagnostic for every attempt. Neither belongs in a unit test:
     the lookups answer "could not check" and no splits unless a test says
-    otherwise, the memo starts empty, and diagnostics land in tmp rather than
-    in the checkout's data/imports.
+    otherwise, the memo starts empty, no buy has a quote to measure its gain
+    against, and diagnostics land in tmp rather than in the checkout's
+    data/imports.
     """
     from stocks.api.routes import import_statement
     from stocks.portfolio import diagnostics
 
     monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: None)
+    monkeypatch.setattr(import_statement, "_charted", lambda ticker, budget: None)
     monkeypatch.setattr(
-        import_statement.symbols, "symbol_for_code", lambda code, currency: None
+        import_statement.symbols, "symbol_for_code", lambda code, currency, **_: None
     )
     monkeypatch.setattr(import_statement.fetch, "splits", lambda ticker: [])
+    monkeypatch.setattr(import_statement.loaders, "quotes", lambda tickers: {})
     monkeypatch.setattr(import_statement, "_exists_memo", {})
     monkeypatch.setattr(diagnostics, "DIAGNOSTICS_DIR", tmp_path / "diagnostics")
     monkeypatch.setattr(diagnostics.storage, "persist", lambda path: None)
@@ -191,6 +195,116 @@ def test_a_file_with_the_wrong_columns_is_told_which_ones(client, account, signe
     payload = response.json()
     assert payload["importable"] == []
     assert "date" in payload["skipped"][0]["reason"]
+
+
+REVOLUT_SKIPS = (
+    "Date,Ticker,Type,Quantity,Price per share,Total Amount,Currency,FX Rate\n"
+    "2024-01-02T14:30:00.000Z,AAPL,BUY - MARKET,5,$130.15,$650.75,USD,1.05\n"
+    "2024-01-01T00:00:00.000Z,,CASH TOP-UP,,,\"$1,000.00\",USD,\n"
+    "2024-05-25T00:00:00.000Z,AAPL,RETURN OF CAPITAL,,,$12.00,USD,\n"
+)
+
+
+def test_a_skip_names_its_reason_for_the_catalog(client, account, signed_in):
+    """The reason is the parser's English. The key, and whether the row leaves
+    a step to take by hand, are what a page in another language prints — the
+    way an issue carries its key beside its English message."""
+    payload = signed_in.post(
+        "/v1/import/preview",
+        json=body(REVOLUT_SKIPS, platform="revolut", filename="statement.csv"),
+    ).json()
+    by_type = {s["type"]: s for s in payload["skipped"]}
+    assert by_type["CASH TOP-UP"]["reason_key"] == "import.skip_cash"
+    assert by_type["CASH TOP-UP"]["manual"] is False
+    assert by_type["RETURN OF CAPITAL"]["reason_key"] == "import.skip_capital"
+    assert by_type["RETURN OF CAPITAL"]["manual"] is True
+    # The parser's own fields ride along untouched.
+    assert by_type["RETURN OF CAPITAL"]["amount"] == 12.0
+
+
+def quoted(monkeypatch, prices: dict[str, tuple[float, str]]) -> list:
+    """Today's quotes for the preview's buys, and a log of what it asked for."""
+    from stocks.api.routes import import_statement
+
+    asked: list = []
+
+    def quotes(tickers):
+        asked.append(tickers)
+        return {
+            t: {"price": price, "pct": 0.0, "currency": currency}
+            for t, (price, currency) in prices.items()
+            if t in tickers
+        }
+
+    monkeypatch.setattr(import_statement.loaders, "quotes", quotes)
+    return asked
+
+
+def test_a_buy_shows_its_gain_against_todays_quote(
+    client, account, signed_in, monkeypatch
+):
+    """Cost is what the book counts — shares times price plus the fee — and
+    the quotes are one request for every name bought."""
+    asked = quoted(monkeypatch, {"AAPL": (120.0, "EUR"), "MSFT": (150.0, "EUR")})
+    payload = signed_in.post("/v1/import/preview", json=body()).json()
+    gains = {row["ticker"]: row["gain"] for row in payload["importable"]}
+    assert gains["AAPL"] == pytest.approx(10 * 120 / 1001 - 1)
+    assert gains["MSFT"] == pytest.approx(5 * 150 / 1001 - 1)
+    assert asked == [("AAPL", "MSFT")]
+
+
+def test_a_quote_in_another_currency_is_no_gain_and_pence_are_pounds(
+    client, account, signed_in, monkeypatch
+):
+    """A dollar quote beside a euro buy is an exchange rate, not a gain; a
+    London line quoted in pence beside a buy in pounds is a hundredfold."""
+    quoted(monkeypatch, {"AAPL": (190.0, "USD"), "VOD.L": (80.0, "GBp")})
+    text = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2024-01-02,AAPL,buy,10,100.00,EUR,0,revolut Apple\n"
+        "2024-01-03,VOD.L,buy,100,0.70,GBP,0,revolut Vodafone\n"
+    )
+    payload = signed_in.post("/v1/import/preview", json=body(text)).json()
+    gains = {row["ticker"]: row["gain"] for row in payload["importable"]}
+    assert gains["AAPL"] is None
+    assert gains["VOD.L"] == pytest.approx(0.80 / 0.70 - 1)
+
+
+def test_a_sale_shows_what_it_realized_against_the_book_it_lands_in(
+    client, account, signed_in
+):
+    """FIFO over the ledger plus the batch: the sale takes the book's older,
+    cheaper lot, and the commission comes off the proceeds."""
+    ledger.add(
+        Transaction("2023-05-01", "AAPL", "buy", 10, 50.0, "EUR", 0.0, "revolut"),
+        account.db,
+    )
+    text = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2024-01-02,AAPL,buy,10,100.00,EUR,0,revolut Apple\n"
+        "2024-03-01,AAPL,sell,5,80.00,EUR,2.00,revolut Apple\n"
+        "2024-04-01,AAPL,dividend,0,4.00,EUR,0,revolut Apple\n"
+    )
+    payload = signed_in.post("/v1/import/preview", json=body(text)).json()
+    sale = next(r for r in payload["importable"] if r["action"] == "sell")
+    assert sale["gain"] == pytest.approx((5 * 80 - 2) / (5 * 50) - 1)
+    dividend = next(r for r in payload["importable"] if r["action"] == "dividend")
+    assert dividend["gain"] is None
+
+
+def test_quotes_that_hang_cost_the_gain_not_the_preview(
+    client, account, signed_in, monkeypatch
+):
+    import time as clock
+
+    from stocks.api.routes import import_statement
+
+    monkeypatch.setattr(import_statement, "QUOTES_BUDGET_S", 0.05)
+    monkeypatch.setattr(
+        import_statement.loaders, "quotes", lambda tickers: clock.sleep(1) or {}
+    )
+    payload = signed_in.post("/v1/import/preview", json=body()).json()
+    assert [row["gain"] for row in payload["importable"]] == [None, None]
 
 
 def test_a_platform_nobody_ships_is_a_404_not_a_silent_fallback(
@@ -357,7 +471,7 @@ def test_a_code_yahoo_disowns_but_its_search_places_imports_clean(
 
     asked: list[tuple[str, str]] = []
 
-    def search(code, currency):
+    def search(code, currency, **_):
         asked.append((code, currency))
         return {"SIE": "SIE.DE"}.get(code)
 
@@ -380,6 +494,126 @@ def test_a_code_yahoo_disowns_but_its_search_places_imports_clean(
     assert fetch.resolve("SIE") == "SIE.DE"
 
 
+def test_a_quote_check_that_cannot_say_still_asks_the_search(
+    client, account, signed_in, monkeypatch
+):
+    """yfinance 1.7 raises on a bare code it has no quote for (KeyError
+    'currentTradingPeriod'), so the quote check answers "could not ask", not
+    "no". The search still runs on that — a Revolut statement of nine euro
+    codes warned on all 35 rows without it — and each code is asked once,
+    however many rows trade it."""
+    from stocks.api.routes import import_statement
+
+    quoted: list[str] = []
+    searched: list[str] = []
+    monkeypatch.setattr(
+        import_statement, "_ticker_exists", lambda t: quoted.append(t) and None
+    )
+    monkeypatch.setattr(
+        import_statement.symbols,
+        "symbol_for_code",
+        lambda code, currency, **_: searched.append(code) or {"SIE": "SIE.DE"}.get(code),
+    )
+    statement = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2024-01-02,SIE,buy,2,150.00,EUR,1.00,revolut Siemens\n"
+        "2024-01-05,SIE,buy,3,152.00,EUR,1.00,revolut Siemens\n"
+        "2024-01-03,ZZZQX,buy,10,100.00,EUR,1.00,revolut Something\n"
+    )
+    payload = signed_in.post("/v1/import/preview", json=body(statement)).json()
+    issues = {row["ticker"]: row["issues"] for row in payload["importable"]}
+    assert issues["SIE"] == []
+    assert [i["key"] for i in issues["ZZZQX"]] == ["validate.unknown_ticker"]
+    assert payload["unlisted"] == [], "no venue after could-not-ask is no verdict"
+    assert searched.count("SIE") == 1 and quoted.count("SIE") <= 2
+
+
+def test_a_code_nothing_places_is_asked_of_the_chart(
+    client, account, signed_in, monkeypatch
+):
+    """The quote check could not say and the search found no venue: the chart
+    has the last word. Its "No data found" makes the code unlisted on the first
+    preview — not only after the book's own download heard it — so the page
+    can offer the code's lines right away; bars make it known."""
+    from stocks.api.routes import import_statement
+
+    charted: list[str] = []
+    monkeypatch.setattr(
+        import_statement,
+        "_charted",
+        lambda t, budget: charted.append(t) or {"MRLQ": False, "NEWCO": True}.get(t),
+    )
+    statement = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2026-08-20,MRLQ,buy,10,14.05,EUR,1.00,revolut Merlin\n"
+        "2026-09-15,MRLQ,buy,10,12.42,EUR,1.00,revolut Merlin\n"
+        "2026-09-16,NEWCO,buy,5,20.00,EUR,1.00,revolut Newco\n"
+        "2026-09-17,ZZZQX,buy,5,20.00,EUR,1.00,revolut Something\n"
+    )
+    payload = signed_in.post("/v1/import/preview", json=body(statement)).json()
+    issues = {row["ticker"]: row["issues"] for row in payload["importable"]}
+    assert payload["unlisted"] == ["MRLQ"]
+    assert issues["NEWCO"] == []
+    assert [i["key"] for i in issues["ZZZQX"]] == ["validate.unknown_ticker"]
+    assert charted.count("MRLQ") == 1, "asked once however many rows trade it"
+
+
+def test_the_chart_is_not_asked_of_a_code_the_search_places(
+    client, account, signed_in, monkeypatch
+):
+    from stocks.api.routes import import_statement
+
+    charted: list[str] = []
+    monkeypatch.setattr(
+        import_statement, "_charted", lambda t, budget: charted.append(t) or False
+    )
+    monkeypatch.setattr(
+        import_statement.symbols,
+        "symbol_for_code",
+        lambda code, currency, **_: {"SIE": "SIE.DE"}.get(code),
+    )
+    statement = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2024-01-02,SIE,buy,2,150.00,EUR,1.00,revolut Siemens\n"
+    )
+    payload = signed_in.post("/v1/import/preview", json=body(statement)).json()
+    assert payload["unlisted"] == [] and charted == []
+
+
+def test_the_chart_reads_yahoos_404_as_unlisted(monkeypatch):
+    """`fetch_many` files a "No data found" under `fetch.unlisted`; anything
+    else short of bars is not a verdict."""
+    from stocks.data import fetch
+
+    fetch.clear_unlisted()
+    monkeypatch.setattr(fetch, "throttle_remaining", lambda: 0)
+
+    def download(tickers, period, budget):
+        assert period == "5d" and budget == 2.0
+        if tickers == ["GONE"]:
+            fetch._unlisted.add("GONE")
+        return {"LIVE": object()} if tickers == ["LIVE"] else {}
+
+    monkeypatch.setattr(fetch, "fetch_many", download)
+    try:
+        assert _real_charted("GONE", 2.0) is False
+        assert _real_charted("LIVE", 2.0) is True
+        assert _real_charted("MUTE", 2.0) is None
+        assert _real_charted("GONE", 0) is None, "no budget, no ask"
+    finally:
+        fetch.clear_unlisted()
+
+
+def test_the_chart_is_not_asked_of_a_throttled_yahoo(monkeypatch):
+    from stocks.data import fetch
+
+    monkeypatch.setattr(fetch, "throttle_remaining", lambda: 30)
+    monkeypatch.setattr(
+        fetch, "fetch_many", lambda *a, **k: pytest.fail("asked a throttled Yahoo")
+    )
+    assert _real_charted("GONE", 2.0) is None
+
+
 def test_a_search_that_runs_out_of_time_is_not_a_verdict(
     client, account, signed_in, monkeypatch
 ):
@@ -395,7 +629,7 @@ def test_a_search_that_runs_out_of_time_is_not_a_verdict(
     monkeypatch.setattr(
         import_statement.symbols,
         "symbol_for_code",
-        lambda code, currency: released.wait(5) and None,
+        lambda code, currency, **_: released.wait(5) and None,
     )
     statement = (
         "date,ticker,action,quantity,price,currency,fee,note\n"
@@ -406,6 +640,216 @@ def test_a_search_that_runs_out_of_time_is_not_a_verdict(
     finally:
         released.set()
     assert payload["unlisted"] == []
+
+
+def test_a_code_the_map_holds_on_a_floor_is_asked_for_its_home_line(
+    account, monkeypatch
+):
+    """MEQA was imported before the search looked past Frankfurt, so the book
+    knows it and validation never looks it up: the statement's ISIN and fills
+    are put to the search anyway, and the price check it is handed reads the
+    candidate's close against the fills."""
+    from stocks.api.routes import import_statement
+    from stocks.data import symbols
+    from stocks.portfolio.statement import ParseResult
+
+    asked = []
+
+    def search(code, currency, *, isin="", vet=None):
+        asked.append((code, currency, isin, vet("MRL.MC"), vet("MEQA.SG")))
+        return "MRL.MC"
+
+    monkeypatch.setattr(import_statement.symbols, "symbol_for_code", search)
+    monkeypatch.setattr(
+        import_statement.fetch,
+        "close_on",
+        lambda symbol, day: {"MRL.MC": 12.1, "MEQA.SG": 9.0}.get(symbol),
+    )
+    symbols._code_memo = {"MEQA": "MEQA.F", "SIE": "SIE.DE"}
+    parsed = ParseResult(
+        transactions=[
+            Transaction(
+                "2025-01-02", "MEQA", "buy", 10, 12.0, "EUR", 0.0, note="revolut"
+            ),
+            Transaction("2025-01-02", "SIE", "buy", 1, 200.0, "EUR", 0.0, note="revolut"),
+        ],
+        isins={"MEQA": "ES0105025003", "SIE": "DE0007236101"},
+    )
+    import_statement._validated(account, parsed)
+    assert asked == [("MEQA", "EUR", "ES0105025003", True, False)]
+
+
+# ------------------------------------------- the line a code was traded on
+
+MERLIN_ROWS = [
+    {"symbol": symbol, "quoteType": kind, "longname": name, "exchDisp": venue}
+    for symbol, kind, name, venue in (
+        ("MEQA.F", "EQUITY", "Merlin Properties SOCIMI S.A. A", "Frankfurt"),
+        ("MRL.MC", "EQUITY", "Merlin Properties SOCIMI, S.A.", "Madrid"),
+        ("MRPRF", "EQUITY", "Merlin Properties SOCIMI", "OTC"),
+        ("MRL.MC", "EQUITY", "dup", "Madrid"),
+        ("MERL.MC", "MUTUALFUND", "a fund", "Madrid"),
+    )
+]
+MEQA_FILLS = [
+    {"date": "2025-01-02", "price": 12.0},
+    {"date": "2025-01-02", "price": 12.2},
+    {"date": "2024-12-20", "price": 11.0},
+    {"date": "2024-11-04", "price": 99.0},
+]
+
+
+def merlin(**extra) -> dict:
+    return {"code": "MEQA", "currency": "EUR", "fills": MEQA_FILLS, **extra}
+
+
+@pytest.fixture
+def picker(monkeypatch):
+    """A Yahoo that does not quote MEQA bare, finds Merlin's lines by name and
+    closed MRL.MC near the fills and MEQA.F nowhere near. Returns the queries
+    the search was asked."""
+    from stocks.api.routes import import_statement
+
+    closes = {
+        ("MRL.MC", "2025-01-02"): 12.1,
+        ("MRL.MC", "2024-12-20"): 11.2,
+        ("MEQA.F", "2025-01-02"): 9.0,
+    }
+    queries = []
+    monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: False)
+    monkeypatch.setattr(import_statement.fetch, "ticker_aliases", lambda: {})
+    monkeypatch.setattr(
+        import_statement.fetch, "close_on", lambda symbol, day: closes.get((symbol, day))
+    )
+    monkeypatch.setattr(
+        import_statement.symbols,
+        "_quotes",
+        lambda query, count, min_len=1: queries.append(query) or MERLIN_ROWS,
+    )
+    return queries
+
+
+def test_a_code_is_offered_the_lines_its_name_finds_priced_on_its_fills(
+    account, signed_in, picker
+):
+    response = signed_in.post("/v1/import/venues", json=merlin(query="Merlin"))
+    assert response.status_code == 200
+    payload = response.json()
+    assert picker == ["Merlin"]
+    assert (payload["day"], payload["price"]) == ("2025-01-02", 12.2)
+    # Euro lines only, once each, the floor last; the fund and the OTC are out.
+    assert [(o["symbol"], o["close"], o["agrees"]) for o in payload["options"]] == [
+        ("MRL.MC", 12.1, True),
+        ("MEQA.F", 9.0, False),
+    ]
+
+
+def test_with_no_name_the_code_itself_is_searched(account, signed_in, picker):
+    signed_in.post("/v1/import/venues", json=merlin())
+    assert picker == ["MEQA"]
+
+
+def test_a_line_that_closed_near_the_fills_becomes_the_codes_answer(
+    account, signed_in, picker
+):
+    from stocks.data import fetch, symbols
+
+    fetch._unlisted.add("MEQA")
+    response = signed_in.post("/v1/import/venue", json=merlin(symbol="mrl.mc"))
+    assert response.status_code == 200
+    assert response.json() == {"code": "MEQA", "symbol": "MRL.MC"}
+    assert symbols.code_symbol("MEQA") == "MRL.MC"
+    assert fetch.resolve("MEQA") == "MRL.MC"
+    assert json.loads(symbols.CODE_CACHE.read_text()) == {"MEQA": "MRL.MC"}
+    assert not fetch.unlisted({"MEQA"})  # the download asks MRL.MC next
+
+
+@pytest.mark.parametrize(
+    "pick",
+    [
+        pytest.param({"symbol": "MEQA.F"}, id="closed-elsewhere"),
+        pytest.param({"symbol": "MRL"}, id="not-a-euro-line"),
+        pytest.param({"symbol": "MRL.MC", "currency": "USD"}, id="not-a-dollar-line"),
+    ],
+)
+def test_a_line_the_fills_do_not_prove_is_refused(account, signed_in, picker, pick):
+    from stocks.data import symbols
+
+    response = signed_in.post("/v1/import/venue", json=merlin(**pick))
+    assert response.status_code == 409
+    assert symbols.code_symbol("MEQA") is None
+
+
+def test_a_code_something_already_prices_is_not_this_pick_to_move(
+    account, signed_in, picker, monkeypatch
+):
+    """The map is every account's: a code another statement placed, a code
+    Yahoo quotes as it is, and one its search places now all keep their
+    answer, whatever fills this pick brings."""
+    from stocks.api.routes import import_statement
+    from stocks.data import symbols
+
+    symbols._code_memo = {"MEQA": "MEQA.F"}
+    response = signed_in.post("/v1/import/venue", json=merlin(symbol="MRL.MC"))
+    assert response.status_code == 409
+    assert symbols.code_symbol("MEQA") == "MEQA.F"
+
+    symbols._code_memo = {}
+    monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: True)
+    response = signed_in.post("/v1/import/venue", json=merlin(symbol="MRL.MC"))
+    assert response.status_code == 409
+
+    monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: False)
+    monkeypatch.setattr(
+        import_statement.symbols, "symbol_for_code", lambda code, currency, **_: "MRL.MC"
+    )
+    response = signed_in.post("/v1/import/venue", json=merlin(symbol="MRL.MC"))
+    assert response.status_code == 409
+
+
+def test_a_yahoo_that_cannot_be_asked_is_a_retry_not_a_verdict(
+    account, signed_in, picker, monkeypatch
+):
+    from stocks.api.routes import import_statement
+    from stocks.data import symbols
+
+    monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: None)
+    response = signed_in.post("/v1/import/venue", json=merlin(symbol="MRL.MC"))
+    assert response.status_code == 503
+    assert symbols.code_symbol("MEQA") is None
+
+
+def test_a_quote_check_that_cannot_say_is_settled_by_the_chart(
+    account, signed_in, picker, monkeypatch
+):
+    """yfinance raises on a code Yahoo has no quote for, so the pick asks the
+    chart — on whichever instance it lands, not only the one whose preview
+    heard the 404."""
+    from stocks.api.routes import import_statement
+    from stocks.data import symbols
+
+    monkeypatch.setattr(import_statement, "_ticker_exists", lambda ticker: None)
+    monkeypatch.setattr(
+        import_statement, "_charted", lambda t, budget: {"MEQA": False}.get(t)
+    )
+    response = signed_in.post("/v1/import/venue", json=merlin(symbol="MRL.MC"))
+    assert response.status_code == 200
+    assert symbols.code_symbol("MEQA") == "MRL.MC"
+
+    monkeypatch.setattr(import_statement, "_charted", lambda t, budget: True)
+    response = signed_in.post(
+        "/v1/import/venue", json=merlin(code="OZTA", symbol="MRL.MC")
+    )
+    assert response.status_code == 409, "a code with bars is priced as it is"
+
+
+def test_a_token_cannot_pick_a_line(client, account, picker):
+    for url, payload in (
+        ("/v1/import/venues", merlin()),
+        ("/v1/import/venue", merlin(symbol="MRL.MC")),
+    ):
+        response = client.post(url, params=WHO, headers=AUTH, json=payload)
+        assert response.status_code == 403, url
 
 
 # A euro "ALV" is Allianz; the bare ALV Yahoo quotes is Autoliv, in dollars.

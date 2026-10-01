@@ -186,3 +186,29 @@ def test_a_localised_crypto_export_is_claimed_by_its_own_parser():
     found = autodetect.detect("statement.csv", csv.encode())
     assert found.platform == "revolut_crypto"
     assert [tx.ticker for tx in found.result.transactions] == ["SOL-EUR", "SOL-EUR"]
+
+
+def test_the_parsers_isins_ride_along_when_the_model_wins(monkeypatch):
+    """The holdings table is the parser's read; the model's rows do not carry
+    an ISIN, and the venue search needs it whichever read won."""
+    from stocks.portfolio import llm_map
+    from stocks.portfolio.ledger import Transaction
+    from stocks.portfolio.statement import ParseResult
+
+    def buy(day):
+        return Transaction(day, "MEQA", "buy", 1, 12.0, "EUR", 0.0, note="revolut")
+
+    parsed = autodetect.Detected(
+        ParseResult(transactions=[buy("2025-01-02")], isins={"MEQA": "ES0105025003"}),
+        "revolut", "Revolut", llm_map.KIND_TRADES,
+    )
+    model = llm_map.Extraction(
+        ParseResult(transactions=[buy("2025-01-02"), buy("2025-01-03")]),
+        kind=llm_map.KIND_TRADES,
+    )
+    monkeypatch.setattr(autodetect, "_model_read", lambda *a: model)
+    monkeypatch.setattr(autodetect, "_parsers", lambda *a: (parsed, None, {}))
+    found = autodetect.read("statement.pdf", b"%PDF", _StubProvider(), "k")
+    assert found.platform == autodetect.LLM_KEY
+    assert len(found.result.transactions) == 2
+    assert found.result.isins == {"MEQA": "ES0105025003"}

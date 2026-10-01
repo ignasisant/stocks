@@ -87,12 +87,22 @@ def keys(rows: Sequence[Transaction], prior: Sequence[Transaction]) -> list[Key]
     return out
 
 
-def _samples(key: Key, rows: Iterable[Transaction]) -> list[tuple[str, float]]:
+def samples(key: Key, rows: Iterable[Transaction]) -> list[tuple[str, float]]:
     """(day, price) of the key's latest trades, one per day, newest first."""
+    return latest(
+        (t.date, t.price)
+        for t in rows
+        if (t.ticker, t.currency) == key and t.action in ("buy", "sell")
+    )
+
+
+def latest(fills: Iterable[tuple[str, float]]) -> list[tuple[str, float]]:
+    """(day, price) of the latest priced fills, one per day, newest first: the
+    days a line has to have closed near to be the one they were traded on."""
     by_day: dict[str, float] = {}
-    for t in rows:
-        if (t.ticker, t.currency) == key and t.action in ("buy", "sell") and t.price > 0:
-            by_day[t.date[:10]] = t.price
+    for day, price in fills:
+        if price > 0:
+            by_day[day[:10]] = price
     return sorted(by_day.items(), reverse=True)[:_SAMPLES]
 
 
@@ -148,8 +158,8 @@ def pick(
     again, and it has to find its duplicates while Yahoo is throttled too.
     """
     code, currency = key
-    samples = _samples(key, (*rows, *prior))
-    if not samples:
+    sampled = samples(key, (*rows, *prior))
+    if not sampled:
         return None
     used = {t.ticker for t in (*rows, *prior) if t.currency == currency}
     booked = {_fill(t) for t in prior if t.currency == currency}
@@ -160,7 +170,7 @@ def pick(
             tried.append(symbol)
             if any((symbol, *m) in booked for m in mine):
                 return symbol
-            if agrees(symbol, samples, currency, close):
+            if agrees(symbol, sampled, currency, close):
                 return symbol
     if not any((t.ticker, t.currency) == key for t in rows):
         return None  # only the book's own rows, claimed by a label: done above
@@ -173,11 +183,11 @@ def pick(
         return last * rate if last and rate else None
 
     for symbol in candidates(code, currency):
-        if symbol in tried or not agrees(symbol, samples, currency, close):
+        if symbol in tried or not agrees(symbol, sampled, currency, close):
             continue
         # Unknown (no dollar history that day, no rate) is not "explains it":
         # the venue's own price already said where the fill was made.
-        if agrees(code, samples, currency, bare_close):
+        if agrees(code, sampled, currency, bare_close):
             return None
         return symbol
     return None

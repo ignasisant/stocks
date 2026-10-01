@@ -25,6 +25,7 @@ import re
 import threading
 import time
 import urllib.parse
+from collections.abc import Callable
 
 from stocks import atomic
 from stocks.config import DATA_DIR
@@ -309,6 +310,28 @@ _PROBES = {"EUR": (".DE", ".PA", ".F")}
 # After `_normalized`: a code, optionally with a share class (VOLV-B, BT-A).
 _CODE_RE = re.compile(r"^[A-Z0-9]{1,10}(-[A-Z0-9]{1,3})?$")
 
+# The German regional floors. They quote nearly every European share under its
+# German code, thinly, and that is where a code lands when its home exchange
+# spells it differently: Revolut's MEQA is MEQA.F in Frankfurt and MRL.MC in
+# Madrid, and no search for "MEQA" ever lists the Madrid line. An answer here
+# is the very security, but the best the code could do rather than the
+# issuer's own line, so `symbol_for_code` asks again for that one whenever its
+# caller can tell which it is.
+_FLOORS = frozenset({".F", ".SG", ".MU", ".DU", ".BE", ".HM", ".HA"})
+
+# Words in a listing's name where the issuer's own name has ended: legal forms,
+# share classes, the floors' padding ("Merlin Properties SOCIMI S.A. A",
+# "GRIFOLS SA A EO 0,25"). Yahoo answers the floor's full name with the floors
+# again, and "Merlin Properties" with MRL.MC first.
+_LEGAL = frozenset(
+    "A B N ON AG SE SA NV PLC SPA AB ASA OYJ AS KGAA SOCIMI INC CORP LTD ORD"
+    " SHS REG SAB SCA".split()
+)
+
+# Home lines a floor answer's name search may offer for a price check: two
+# covers the issuer's line and its other class, and each check is a download.
+_HOME_TRIES = 2
+
 
 def _normalized(code: str, currency: str) -> str:
     """The code as Yahoo spells it: a share class after a hyphen (BT.A,
@@ -326,6 +349,30 @@ def _normalized(code: str, currency: str) -> str:
 _code_memo: dict[str, str] | None = None
 _code_misses: set[str] = set()
 _code_lock = threading.Lock()
+# Codes whose floor answer has been asked for a home line this process, and
+# got a verdict: the next statement trading them does not ask again.
+_code_settled: set[str] = set()
+
+
+def _suffix(symbol: str) -> str:
+    return symbol[symbol.rfind(".") :] if "." in symbol else ""
+
+
+def on_floor(symbol: str) -> bool:
+    """Whether `symbol` is a German regional floor's line (MEQA.F, OZTA.SG)."""
+    return _suffix((symbol or "").strip().upper()) in _FLOORS
+
+
+def _issuer(name: str) -> str:
+    """The issuer part of a listing's name ("Merlin Properties SOCIMI S.A. A"
+    -> "Merlin Properties"), or "" when too little of it is left to search."""
+    words = _clean(name.replace(",", " ").replace("/", " ")).split()
+    end = next(
+        (at for at, word in enumerate(words) if at and _norm(word) in _LEGAL),
+        len(words),
+    )
+    base = " ".join(words[:end])
+    return base if len(_norm(base)) >= _DEDUP_MIN else ""
 
 
 def _load_code_cache() -> dict[str, str]:
@@ -377,7 +424,73 @@ def resolved_codes() -> dict[str, str]:
     return dict(_load_code_cache())
 
 
-def symbol_for_code(code: str, currency: str) -> str | None:
+def _symbol(row: dict) -> str:
+    return str(row.get("symbol") or "").strip().upper()
+
+
+def _home_by_isin(isin: str, venues: tuple[str, ...]) -> str | None:
+    """The line Yahoo quotes `isin` under, if it trades on one of `venues`
+    and is not a floor. An ISIN names the security, class included, so the
+    line needs no price to prove it: ES0105025003 is MRL.MC."""
+    found = symbol_for_isin(isin)
+    if found and _suffix(found) in venues and not on_floor(found):
+        return found
+    return None
+
+
+def _home_by_name(
+    row: dict, venues: tuple[str, ...], vet: Callable[[str], bool | None]
+) -> tuple[str | None, bool]:
+    """The issuer's own line for a floor answer, by the floor line's name.
+
+    A line counts when it trades on one of `venues` off the floors, its name
+    starts with the issuer's, and `vet` says it closed where the statement's
+    trades were filled — a name is not an identity: Grifols' class B shares
+    are "Grifols" too, at two thirds of the price. Yahoo's ranking decides
+    which `_HOME_TRIES` are vetted.
+
+    Returns the line, or None, and whether that is a verdict: a vet that could
+    not say, or a throttled search, leaves the question open.
+    """
+    sure = True
+    tried: list[str] = []
+    asked: set[str] = set()
+    for field in ("longname", "shortname"):
+        base = _issuer(str(row.get(field) or ""))
+        stem = _norm(base)
+        if not base or stem in asked or len(tried) >= _HOME_TRIES:
+            continue
+        asked.add(stem)
+        for found in _quotes(base, 12):
+            symbol = _symbol(found)
+            name = _norm(str(found.get("longname") or found.get("shortname") or ""))
+            if (
+                found.get("quoteType") not in QUOTE_TYPES
+                or symbol in tried
+                or symbol == _symbol(row)
+                or _suffix(symbol) not in venues
+                or on_floor(symbol)
+                or not name.startswith(stem)
+            ):
+                continue
+            if len(tried) >= _HOME_TRIES:
+                break
+            tried.append(symbol)
+            verdict = vet(symbol)
+            if verdict:
+                return symbol, True
+            if verdict is None:
+                sure = False
+    return None, sure and time.monotonic() >= _blocked_until
+
+
+def symbol_for_code(
+    code: str,
+    currency: str,
+    *,
+    isin: str = "",
+    vet: Callable[[str], bool | None] | None = None,
+) -> str | None:
     """The Yahoo line a bare broker code stands for, or None.
 
     `currency` is the trade's: it says which venues to look on (`_VENUES`).
@@ -386,8 +499,19 @@ def symbol_for_code(code: str, currency: str) -> str | None:
     code is its own listing and is only searched when Yahoo spells it
     differently (BRK.B -> BRK-B).
 
-    One to four searches per code, ever: the answer is cached (see
-    `CODE_CACHE`) under the code as the ledger holds it. Never raises.
+    An answer on a German regional floor (`_FLOORS`) is then asked for the
+    issuer's home line, when the caller can tell which that is. `isin` is the
+    statement's own for the code, and Yahoo's line for it is taken as it
+    comes (`_home_by_isin`); without one, the floor line's name is searched,
+    and a line found there counts only once `vet` — the caller's check of a
+    symbol against the trades' fills — proves it (`_home_by_name`). Asked
+    once per process, cached floor answer or not, so a map written before
+    this existed is mended by the next import; the floor answer stays when
+    neither finds better, since it is the security itself, thinly quoted.
+
+    One to four searches per code, ever, and a few more for a floor answer:
+    the answer is cached (see `CODE_CACHE`) under the code as the ledger holds
+    it. Never raises.
     """
     key = (code or "").strip().upper()
     cur = (currency or "").strip().upper()
@@ -395,43 +519,112 @@ def symbol_for_code(code: str, currency: str) -> str | None:
     venues = _VENUES.get(cur) or (("",) if cur == "USD" and wanted != key else ())
     if not venues or not _CODE_RE.match(wanted):
         return None
-    if hit := code_symbol(key):
+    hit = code_symbol(key)
+    homing = bool(isin or vet) and key not in _code_settled
+    if hit and not (homing and on_floor(hit)):
         return hit
-    if key in _code_misses:
+    if not hit and key in _code_misses:
         return None
 
-    rank = {f"{wanted}{suffix}": i for i, suffix in enumerate(venues)}
+    home = _home_by_isin(isin, venues) if homing and is_isin(isin) else None
+    sure = True
+    symbol = home
+    if home is None and hit and vet is None:
+        symbol = hit  # the ISIN was the only way up, and it led nowhere
+    elif home is None:
+        rank = {f"{wanted}{suffix}": i for i, suffix in enumerate(venues)}
 
-    def best(rows: list[dict]) -> str | None:
-        found = [
-            symbol
-            for row in rows
-            if row.get("quoteType") in QUOTE_TYPES
-            and (symbol := str(row.get("symbol") or "").strip().upper()) in rank
-        ]
-        return min(found, key=rank.__getitem__) if found else None
+        def best(rows: list[dict]) -> dict | None:
+            found = [
+                row
+                for row in rows
+                if row.get("quoteType") in QUOTE_TYPES and _symbol(row) in rank
+            ]
+            return min(found, key=lambda row: rank[_symbol(row)]) if found else None
 
-    # Short codes too (BP, 5): this is a lookup, not a keystroke to debounce.
-    symbol = best(_quotes(wanted, 12, min_len=1))
-    for suffix in _PROBES.get(cur, venues[:2]):
-        if symbol:
-            break
-        if suffix:
-            symbol = best(_quotes(f"{wanted}{suffix}", 6, min_len=1))
+        # Short codes too (BP, 5): this is a lookup, not a keystroke to debounce.
+        row = best(_quotes(wanted, 12, min_len=1))
+        for suffix in _PROBES.get(cur, venues[:2]):
+            if row:
+                break
+            if suffix:
+                row = best(_quotes(f"{wanted}{suffix}", 6, min_len=1))
+        if row is None and hit:
+            row = {"symbol": hit}
+        if row is not None and homing and vet is not None and on_floor(_symbol(row)):
+            home, sure = _home_by_name(row, venues, vet)
+        symbol = home or (_symbol(row) if row else None)
+    if homing and sure and time.monotonic() >= _blocked_until:
+        _code_settled.add(key)
     if not symbol:
         if time.monotonic() >= _blocked_until:
             _code_misses.add(key)
         return None
-    with _code_lock:
-        cache = _load_code_cache()
-        cache[key] = symbol
-        _save_code_cache(dict(cache))
+    if symbol != hit:
+        with _code_lock:
+            cache = _load_code_cache()
+            cache[key] = symbol
+            _save_code_cache(dict(cache))
     return symbol
 
 
 # (code, currency) -> candidates, for the process only: a statement's preview
 # and its commit ask the same thing seconds apart.
 _listings_memo: dict[tuple[str, str], list[str]] = {}
+
+
+def remember_code(code: str, symbol: str) -> None:
+    """Map `code` to `symbol` for good, as a search answer would be.
+
+    For the reader's own pick (the Import page's venue picker), which the
+    caller has checked against the reader's fills first: no search here.
+    """
+    key = (code or "").strip().upper()
+    with _code_lock:
+        cache = _load_code_cache()
+        cache[key] = (symbol or "").strip().upper()
+        _save_code_cache(dict(cache))
+    _code_misses.discard(key)
+    _code_settled.add(key)
+
+
+def on_venues(symbol: str, currency: str) -> bool:
+    """Whether `symbol` is a line of `currency`'s venues: bare for dollars,
+    one of its suffixes otherwise (MRL.MC is a euro line, MRL is not)."""
+    sym = (symbol or "").strip().upper()
+    cur = (currency or "").strip().upper()
+    if not sym:
+        return False
+    if cur == "USD":
+        return "." not in sym
+    return _suffix(sym) in _VENUES.get(cur, ())
+
+
+def lines_for(query: str, currency: str, limit: int = 6) -> list[tuple[str, str, str]]:
+    """(symbol, name, exchange) of the lines `query` finds on `currency`'s
+    venues, in Yahoo's order with the German floors last.
+
+    What a reader is shown when the search could not place a code at all and
+    they name its security themselves ("Merlin"): a dollar code's lines are
+    the bare ones, any other's carry a suffix of its currency's venues.
+    Candidates only — nothing is cached. Never raises.
+    """
+    cur = (currency or "").strip().upper()
+    if cur != "USD" and cur not in _VENUES:
+        return []
+    found: list[tuple[str, str, str]] = []
+    for row in _quotes(query, 12, min_len=1):
+        symbol = _symbol(row)
+        if (
+            row.get("quoteType") not in QUOTE_TYPES
+            or not on_venues(symbol, cur)
+            or any(symbol == seen for seen, _, _ in found)
+        ):
+            continue
+        name = _clean(str(row.get("longname") or row.get("shortname") or ""))
+        found.append((symbol, name, str(row.get("exchDisp") or "")))
+    found.sort(key=lambda line: on_floor(line[0]))
+    return found[:limit]
 
 
 def venue_symbols(code: str, currency: str) -> list[str]:

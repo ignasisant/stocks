@@ -334,6 +334,193 @@ def test_a_miss_while_throttled_is_not_a_miss(monkeypatch):
     assert "SIE" not in symbols._code_misses
 
 
+# ------------------------------------------- past the German regional floors
+#
+# Revolut's MEQA is Merlin Properties, which Madrid quotes as MRL.MC; a search
+# for "MEQA" only ever finds the Frankfurt mirror, MEQA.F.
+
+MERLIN_FLOOR = quote(
+    "MEQA.F", "MERLIN PROP. SOCIMI", long="Merlin Properties SOCIMI, S.A.",
+    exch="Frankfurt",
+)
+MERLIN_HOME = quote(
+    "MRL.MC", "MERLIN PROPERTIES", long="Merlin Properties SOCIMI, S.A.",
+    exch="Madrid",
+)
+
+
+def floored(code, symbol):
+    symbols._code_memo = {code: symbol}
+
+
+def test_a_floor_answer_moves_to_the_line_of_the_statements_isin(
+    monkeypatch, isin_cache
+):
+    spy = []
+    serve_by_query(monkeypatch, {"ES0105025003": [MERLIN_HOME]}, spy=spy)
+    floored("MEQA", "MEQA.F")
+    assert symbols.symbol_for_code("MEQA", "EUR", isin="ES0105025003") == "MRL.MC"
+    assert json.loads(symbols.CODE_CACHE.read_text()) == {"MEQA": "MRL.MC"}
+    assert symbols.symbol_for_code("MEQA", "EUR", isin="ES0105025003") == "MRL.MC"
+    assert spy == ["ES0105025003"], "an ISIN needs no code search and no price"
+
+
+def test_an_isin_line_off_the_trade_currencys_venues_is_not_taken(
+    monkeypatch, isin_cache
+):
+    # Yahoo answers Vanguard's All-World ISIN with London's dollar line; the
+    # statement bought it in euros, on XETRA.
+    serve_by_query(monkeypatch, {
+        "IE00BK5BQT80": [quote("VWRA.L", "Vanguard FTSE All-World", exch="LSE")],
+        "VWCE": [quote("VWCE.DE", "Vanguard FTSE All-World", exch="XETRA")],
+    })
+    assert symbols.symbol_for_code("VWCE", "EUR", isin="IE00BK5BQT80") == "VWCE.DE"
+
+
+def test_without_an_isin_the_floors_name_is_searched_and_the_price_decides(
+    monkeypatch,
+):
+    spy, vetted = [], []
+    serve_by_query(monkeypatch, {
+        "MEQA": [MERLIN_FLOOR],
+        "Merlin Properties": [
+            quote("MEQA.SG", "MERLIN PROPERTIES", exch="Stuttgart"),
+            MERLIN_HOME,
+        ],
+    }, spy=spy)
+
+    def vet(symbol):
+        vetted.append(symbol)
+        return symbol == "MRL.MC"
+
+    assert symbols.symbol_for_code("MEQA", "EUR", vet=vet) == "MRL.MC"
+    assert vetted == ["MRL.MC"], "another floor is never a candidate"
+    assert symbols.code_symbol("MEQA") == "MRL.MC"
+    assert "Merlin Properties" in spy
+
+
+def test_a_name_is_not_an_identity(monkeypatch):
+    """Grifols' class B shares are "Grifols" too, at two thirds of the price:
+    the line the price disowns is passed over, and a dollar ADR is never one
+    of the candidates."""
+    vetted = []
+    serve_by_query(monkeypatch, {
+        "OZTA": [quote("OZTA.F", "GRIFOLS SA A EO 0,25", long="Grifols, S.A.")],
+        "Grifols": [
+            quote("GRFS", "Grifols, S.A.", exch="NASDAQ"),
+            quote("GRF-P.MC", "GRIFOLS SA", long="Grifols, S.A."),
+            quote("GRF.MC", "GRIFOLS SA", long="Grifols, S.A."),
+        ],
+    })
+
+    def vet(symbol):
+        vetted.append(symbol)
+        return symbol == "GRF.MC"
+
+    assert symbols.symbol_for_code("OZTA", "EUR", vet=vet) == "GRF.MC"
+    assert vetted == ["GRF-P.MC", "GRF.MC"]
+
+
+def test_the_floor_stays_when_no_home_line_closed_near_the_fills(monkeypatch):
+    spy = []
+    serve_by_query(monkeypatch, {
+        "MEQA": [MERLIN_FLOOR],
+        "Merlin Properties": [MERLIN_HOME],
+    }, spy=spy)
+    floored("MEQA", "MEQA.F")
+    assert symbols.symbol_for_code("MEQA", "EUR", vet=lambda s: False) == "MEQA.F"
+    asked = len(spy)
+    # A verdict: the next statement does not search again this process.
+    assert symbols.symbol_for_code("MEQA", "EUR", vet=lambda s: False) == "MEQA.F"
+    assert len(spy) == asked
+
+
+def test_a_price_that_could_not_be_had_leaves_the_question_open(monkeypatch):
+    spy = []
+    serve_by_query(monkeypatch, {
+        "MEQA": [MERLIN_FLOOR],
+        "Merlin Properties": [MERLIN_HOME],
+    }, spy=spy)
+    floored("MEQA", "MEQA.F")
+    assert symbols.symbol_for_code("MEQA", "EUR", vet=lambda s: None) == "MEQA.F"
+    asked = len(spy)
+    assert symbols.symbol_for_code("MEQA", "EUR", vet=lambda s: True) == "MRL.MC"
+    assert len(spy) > asked
+
+
+def test_a_cached_floor_is_left_alone_with_nothing_to_go_on(monkeypatch):
+    # The price path asks with the code alone: it gets the map, never a search.
+    spy = []
+    serve_by_query(monkeypatch, {}, spy=spy)
+    floored("MEQA", "MEQA.F")
+    assert symbols.symbol_for_code("MEQA", "EUR") == "MEQA.F"
+    assert spy == []
+
+
+def test_a_home_line_is_never_asked_again(monkeypatch, isin_cache):
+    spy = []
+    serve_by_query(monkeypatch, {}, spy=spy)
+    floored("SIE", "SIE.DE")
+    assert symbols.symbol_for_code(
+        "SIE", "EUR", isin="DE0007236101", vet=lambda s: True
+    ) == "SIE.DE"
+    assert spy == []
+
+
+@pytest.mark.parametrize(("name", "issuer"), [
+    ("Merlin Properties SOCIMI, S.A.", "Merlin Properties"),
+    ("GRIFOLS SA A EO 0,25", "GRIFOLS"),
+    ("Banco Bilbao Vizcaya Argentaria, S.A.", "Banco Bilbao Vizcaya Argentaria"),
+    ("Anheuser-Busch InBev SA/NV", "Anheuser-Busch InBev"),
+    ("A2A S.p.A.", ""),  # too little left to search for
+    ("", ""),
+])
+def test_the_issuers_name_is_what_comes_before_its_legal_form(name, issuer):
+    assert symbols._issuer(name) == issuer
+
+
+# ------------------------------------------------ a line the reader names
+
+
+def test_the_lines_a_name_finds_are_its_currencys_with_the_floors_last(monkeypatch):
+    serve_by_query(monkeypatch, {"Merlin": [
+        MERLIN_FLOOR,
+        quote("MRPRF", "MERLIN PROPERTIES", exch="OTC Markets"),
+        MERLIN_HOME,
+        quote("MRL.MC", "dup", exch="Madrid"),
+        quote("MERL.PA", "a fund", exch="Paris", qtype="MUTUALFUND"),
+    ]})
+    assert symbols.lines_for("Merlin", "EUR") == [
+        ("MRL.MC", "Merlin Properties SOCIMI, S.A.", "Madrid"),
+        ("MEQA.F", "Merlin Properties SOCIMI, S.A.", "Frankfurt"),
+    ]
+    assert symbols.lines_for("Merlin", "USD") == [
+        ("MRPRF", "MERLIN PROPERTIES", "OTC Markets"),
+    ]
+    assert symbols.lines_for("Merlin", "XXX") == []
+    assert not symbols.CODE_CACHE.exists()  # candidates, not answers
+
+
+def test_a_line_is_on_a_currencys_venues_by_its_suffix():
+    assert symbols.on_venues("MRL.MC", "EUR")
+    assert symbols.on_venues("mrl.mc", "eur")
+    assert not symbols.on_venues("MRL", "EUR")
+    assert symbols.on_venues("AAPL", "USD")
+    assert not symbols.on_venues("MRL.MC", "USD")
+    assert not symbols.on_venues("", "USD")
+
+
+def test_a_remembered_line_is_the_codes_answer_for_good(monkeypatch):
+    spy = []
+    serve_by_query(monkeypatch, {}, spy=spy)
+    symbols._code_misses.add("MEQA")
+    symbols.remember_code("meqa", "mrl.mc")
+    assert symbols.code_symbol("MEQA") == "MRL.MC"
+    assert symbols.symbol_for_code("MEQA", "EUR", vet=lambda symbol: True) == "MRL.MC"
+    assert spy == []  # a pick is not put back to the search
+    assert json.loads(symbols.CODE_CACHE.read_text()) == {"MEQA": "MRL.MC"}
+
+
 # ------------------------------------- a code Yahoo quotes, in another currency
 
 

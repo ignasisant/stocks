@@ -100,6 +100,9 @@ def offline(monkeypatch, tmp_path):
         lambda *a, **k: None,
     )
     monkeypatch.setattr("stocks.api.routes.import_statement._exists_memo", {})
+    monkeypatch.setattr(
+        "stocks.api.routes.import_statement._charted", lambda ticker, budget: None
+    )
     monkeypatch.setattr("stocks.data.fetch.splits", lambda *a, **k: {})
     monkeypatch.setattr(
         "stocks.portfolio.diagnostics.DIAGNOSTICS_DIR", tmp_path / "diagnostics"
@@ -164,6 +167,24 @@ def test_rows_the_ledger_already_holds_are_held_back_not_re_imported(
     assert again["fresh"] == [], "the same export twice imports nothing by itself"
     assert [r["ticker"] for r in again["duplicates"]] == ["AAPL", "MSFT"]
     assert again["duplicates"][0]["why"], "a held-back row says why it was held"
+
+
+def test_why_a_row_was_flagged_reads_in_the_account_language(
+    client, account, signed_in, monkeypatch
+):
+    """The issue text is rendered on the server, where `t` has no Streamlit
+    session and fell back to English: a Spanish account read every warning
+    of a Spanish-titled card in English."""
+    monkeypatch.setattr(
+        "stocks.api.routes.import_statement._ticker_exists", lambda t: None
+    )
+    account.prefs.write_text(json.dumps({"currency": "EUR", "language": "es"}))
+    odd = (
+        "date,ticker,action,quantity,price,currency,fee,note\n"
+        "2024-01-02,ZZZQX,buy,10,100.00,EUR,1.00,revolut Something\n"
+    )
+    payload = signed_in.post("/v1/chat/attachments", json=attach(odd)).json()
+    assert payload["flagged"][0]["why"].startswith("no reconocemos ZZZQX")
 
 
 def test_a_file_no_parser_owns_is_answered_rather_than_failed(

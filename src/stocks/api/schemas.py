@@ -2217,6 +2217,16 @@ class ImportRow(BaseModel):
     duplicate: bool = Field(
         default=False, description="Repeats a row the ledger already holds."
     )
+    gain: float | None = Field(
+        default=None,
+        description=(
+            "How the row has done, as a fraction, in its own currency: a buy "
+            "against today's quote (its fee in the cost), a sell against the "
+            "FIFO cost it realized from the book plus this batch. Null for "
+            "every other action, and when there is no quote in the row's "
+            "currency or the book cannot cover the sale."
+        ),
+    )
 
 
 class ImportPreview(BaseModel):
@@ -2272,7 +2282,13 @@ class ImportPreview(BaseModel):
     )
     skipped: list[dict] = Field(
         default_factory=list,
-        description="Rows the parser leaves out by design: cash, fees, tax lines.",
+        description=(
+            "Rows the parser leaves out by design: cash, fees, tax lines. Each "
+            "keeps the parser's own fields, plus `reason_key` — the catalog "
+            "stem naming its `reason` (`<stem>` the kind of row, `<stem>_note` "
+            "why), null for a reason no catalog names yet — and `manual`, "
+            "whether it leaves the reader a step to take by hand."
+        ),
     )
     broker: str = Field(
         default="",
