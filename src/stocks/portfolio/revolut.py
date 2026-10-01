@@ -48,6 +48,10 @@ _COLS = {
     "price": ("price per share", "price"),
     "amount": ("total amount", "total", "amount"),
     "currency": ("currency", "ccy"),
+    # Only the PDF extractor emits this (the 2026 layout prints Fees and
+    # Commission, summed into one); the CSV has no charge column, so its fee
+    # stays implied by the total.
+    "fee": ("fee",),
 }
 
 
@@ -135,6 +139,12 @@ def _build_tx(row: Row, action: str) -> Transaction:
     if amount < 0:
         raise ValueError(f"{action} row has negative total {amount}")
     check_consistency(action, qty, price, amount)
+    # A printed fee beats one inferred from a cent-rounded price: on 80 shares
+    # the rounding alone moves the implied figure by up to 40 cents.
+    printed = row.text("fee")
+    fee = row.money("fee") if printed else implied_fee(action, qty, price, amount)
+    if fee < 0:
+        raise ValueError(f"{action} row has negative fee {fee}")
     return Transaction(
         date=date,
         ticker=ticker,
@@ -142,7 +152,7 @@ def _build_tx(row: Row, action: str) -> Transaction:
         quantity=qty,
         price=price,
         currency=currency,
-        fee=implied_fee(action, qty, price, amount),
+        fee=fee,
         note="revolut",
     )
 

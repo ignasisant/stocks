@@ -15,6 +15,14 @@ page headers, the portfolio-breakdown section) is thus ignored for free.
 Anything with a type keyword that still fails to parse lands in `skipped`
 with a reason — never silently dropped. The CSV export stays the preferred
 input; the PDF path exists for statements only kept as PDF.
+
+Two layouts are in the wild. The older one prints the side inside the type
+("BUY - MARKET") and ends each row with Currency + FX Rate. The 2026 one
+splits them — Type "Trade - Market", then a Side column ("Buy"/"Sell") — puts
+the time and zone after the date ("01 Dec 2025 14:31:21 GMT"), drops the FX
+columns and prints Fees and Commission instead. Its rows are rewritten into
+the older type string here, and its two charge columns become the row's fee,
+so parse_rows never learns there were two layouts.
 """
 
 from __future__ import annotations
@@ -33,6 +41,7 @@ _TYPE_PATTERNS = [
     r"DIVIDEND TAX \(CORRECTION\)",
     r"BUY\s*[-–]\s*(?:MARKET|LIMIT|STOP)",
     r"SELL\s*[-–]\s*(?:MARKET|LIMIT|STOP)",
+    r"TRADE\s*[-–]\s*(?:MARKET|LIMIT|STOP)",
     r"CASH TOP-?UP",
     r"CASH WITHDRAWAL",
     r"STOCK SPLIT",
@@ -76,6 +85,17 @@ _CCY_RE = re.compile(r"\b(USD|EUR|GBP|CHF|SEK|DKK|NOK|PLN|RON)\b")
 _SYMBOL_CCY = {"US$": "USD", "$": "USD", "€": "EUR", "£": "GBP"}
 
 _TICKER_RE = re.compile(r"^[A-Z0-9]{1,6}(?:[.\-][A-Z0-9]{1,4})?$")
+
+# The time (and zone) a date may carry: "13:09:01 GMT", "T14:30:00.000Z".
+# Cut before the ticker is looked for, or "GMT" reads as the ticker.
+_TIME_RE = re.compile(
+    r"[ T]\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?"
+    r"(?:\s*(?:GMT|UTC|Z|[+-]\d{2}:?\d{2}))?(?=\s|$)",
+    re.IGNORECASE,
+)
+
+# The 2026 layout's Side column, which completes a "Trade - …" type.
+_SIDE_RE = re.compile(r"\b(BUY|SELL)\b", re.IGNORECASE)
 
 # Month names as they appear in en and es statements ("24 feb. 2025").
 _MONTHS = {
@@ -123,6 +143,15 @@ def parse_lines(lines: list[str]) -> ParseResult:
 def _row_from_line(line: str, m: re.Match) -> dict:
     """Split one text line around the Type keyword into a canonical row dict."""
     left, right = line[: m.start()].strip(), line[m.end() :].strip()
+    left = _TIME_RE.sub("", left, count=1).strip()
+    rtype = m.group(0).upper().replace("–", "-")
+
+    # 2026 layout: "Trade - Market … Buy …" becomes "BUY - MARKET". A trade
+    # row without a side keeps its "TRADE" type, which parse_rows reports as
+    # unrecognised rather than guessing a direction.
+    side = _SIDE_RE.search(right) if rtype.startswith("TRADE") else None
+    if side:
+        rtype = side.group(1).upper() + rtype[len("TRADE"):]
 
     # Left side: "<date> <TICKER>" — ticker only when the trailing token looks
     # like one AND isn't the tail of the date (month names, 4-digit years).
@@ -149,7 +178,7 @@ def _row_from_line(line: str, m: re.Match) -> dict:
     # money regex also matches — so tokens are assigned by column order, never
     # from the tail: trades read price then total; dividend/cash/split rows
     # have no price column, their first money token is the total.
-    is_trade = m.group(0).upper().startswith(("BUY", "SELL"))
+    is_trade = rtype.startswith(("BUY", "SELL"))
     quantity = plain[0] if plain and is_trade else ""
     if is_trade and len(money) >= 2:
         price, amount = money[0][1], money[1][1]
@@ -157,8 +186,14 @@ def _row_from_line(line: str, m: re.Match) -> dict:
         price, amount = "", money[0][1]
     else:
         price = amount = ""
-    if not is_trade and "SPLIT" in m.group(0).upper():
+    if not is_trade and "SPLIT" in rtype:
         quantity = plain[0] if plain else ""  # shares added by the split
+
+    # Fees + Commission, the 2026 layout's last two columns. Only there: in
+    # the older layout the tokens after the total are Currency + FX Rate.
+    fee = ""
+    if side and is_trade and len(money) >= 4:
+        fee = f"{sum(float(_normalize_number(n) or 0) for _, n in money[2:4]):.2f}"
 
     ccy = _CCY_RE.search(right)
     currency = ccy.group(1) if ccy else ""
@@ -171,11 +206,12 @@ def _row_from_line(line: str, m: re.Match) -> dict:
     return {
         "date": _to_iso(date_part),
         "ticker": ticker,
-        "type": m.group(0).upper().replace("–", "-"),
+        "type": rtype,
         "quantity": _normalize_number(quantity),
         "price": _normalize_number(price),
         "amount": _normalize_number(amount),
         "currency": currency,
+        "fee": fee,
     }
 
 
