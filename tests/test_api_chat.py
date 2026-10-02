@@ -1379,6 +1379,195 @@ def test_a_press_with_no_answer_is_refused(
     assert response.status_code == code
 
 
+# ---------------------------------------------------------------- charts
+
+
+@pytest.fixture
+def closes(monkeypatch):
+    """A year of EUR/USD closes for any symbol and window, and who asked."""
+    import pandas as pd
+
+    from stocks.chat import charts
+
+    asked: list[tuple[str, str]] = []
+
+    def fetch(symbol: str, window: str):
+        asked.append((symbol, window))
+        if symbol == "NOPE":
+            return None
+        days = pd.bdate_range("2025-10-01", periods=260)
+        return pd.Series([1.08 + 0.0003 * i for i in range(260)], index=days)
+
+    monkeypatch.setattr(charts, "_closes", fetch)
+    monkeypatch.setattr(charts, "_currency", lambda symbol: "USD")
+    return asked
+
+
+def test_a_chart_asked_for_is_drawn_under_the_answer_not_typed_in_it(
+    client, account, signed_in, monkeypatch, closes
+):
+    """The request that used to come back as ASCII art: the closes are fetched,
+    drawn as an A2UI activity, and handed to the model with the instruction
+    to refer to the chart rather than draw one."""
+    seen: list[tuple[str, list[dict]]] = []
+
+    class Reader(FakeProvider):
+        def stream(self, api_key, model, system, messages):
+            seen.append((system, messages))
+            yield from super().stream(api_key, model, system, messages)
+
+    monkeypatch.setattr(engine, "attempts", lambda prefs: [(Reader(), "k", "fake-1")])
+    monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
+    stream = events(signed_in.post(
+        "/v1/chat/runs", json=run("hazme un grafico evolucion euro dolar")
+    ).text)
+    (shown,) = [e for e in stream if e["type"] == "ACTIVITY_SNAPSHOT"]
+    assert shown["messageId"] == "chart" and shown["activityType"] == "a2ui"
+    data = shown["content"]["messages"][-1]["updateDataModel"]["value"]
+    assert data["window"] == "1y"
+    assert [line["symbol"] for line in data["chart"]] == ["EURUSD=X"]
+    assert closes == [("EURUSD=X", "1y")]
+    assert "price_chart" in [c["name"] for c in calls(stream)]
+    assert finished(stream)["result"]["steps"][-1]["tool"] == "price_chart"
+    system, messages = seen[0]
+    assert "draws a price chart of this under your answer" in messages[-1]["content"]
+    assert "Never draw a chart, plot or diagram out of text" in system
+
+
+def test_a_window_chip_is_answered_with_new_closes_not_a_model(
+    client, account, signed_in, monkeypatch, closes
+):
+    monkeypatch.setattr(engine, "attempts",
+                        lambda prefs: pytest.fail("a model was asked"))
+    response = signed_in.post("/v1/chat/actions", json={"action": {
+        "name": "rechart", "surfaceId": "chart", "sourceComponentId": "windows",
+        "context": {"symbols": ["eurusd=x"], "window": "5y"},
+    }})
+    assert response.status_code == 200
+    updates = {m["updateDataModel"]["path"]: m["updateDataModel"]["value"]
+               for m in response.json()["messages"]}
+    assert updates["/window"] == "5y"
+    assert [line["symbol"] for line in updates["/chart"]] == ["EURUSD=X"]
+    assert closes == [("EURUSD=X", "5y")]
+
+
+@pytest.mark.parametrize(("context", "code"), [
+    ({"symbols": ["AAPL"], "window": "10y"}, 422),
+    ({"symbols": [], "window": "1y"}, 422),
+    ({"symbols": "AAPL", "window": "1y"}, 422),
+    ({"symbols": ["A", "B", "C", "D"], "window": "1y"}, 422),
+    ({"symbols": ["<img src=x>"], "window": "1y"}, 422),
+    ({"symbols": ["NOPE"], "window": "1y"}, 404),
+])
+def test_a_window_press_that_cannot_be_charted_is_refused(
+    client, account, signed_in, closes, context, code
+):
+    response = signed_in.post("/v1/chat/actions", json={"action": {
+        "name": "rechart", "surfaceId": "chart", "context": context,
+    }})
+    assert response.status_code == code
+
+
+# ------------------------------------------------- harvest, rebalance, split
+
+
+@pytest.fixture
+def book(account, monkeypatch):
+    """A 1,000 EUR gain booked this year, TTD 500 under its cost and WIN over
+    it, priced by a Home frame rather than a download."""
+    import pandas as pd
+
+    from stocks.analysis import portfolio
+    from stocks.portfolio.ledger import Transaction, add_many
+
+    account.prefs.write_text(json.dumps({**PREFS, "tax_residence": "ES"}))
+    add_many([
+        Transaction("2025-01-02", "AAPL", "buy", 10, 100.0, "EUR"),
+        Transaction("2026-03-02", "AAPL", "sell", 10, 200.0, "EUR"),
+        Transaction("2025-02-03", "TTD", "buy", 10, 100.0, "EUR"),
+        Transaction("2025-02-03", "WIN", "buy", 10, 50.0, "EUR"),
+    ], account.db)
+    frame = pd.DataFrame({
+        "shares": [10.0, 10.0], "ccy": ["EUR", "EUR"], "cost": [1000.0, 500.0],
+        "value": [500.0, 1500.0], "pnl": [-500.0, 1000.0], "pnl_pct": [-0.5, 2.0],
+        "weight": [0.25, 0.75], "day_asof": [None, None], "day": [0.0, 0.0],
+        "day_pct": [0.0, 0.0],
+    }, index=pd.Index(["TTD", "WIN"], name="ticker"))
+    monkeypatch.setattr(engine, "enriched_frame", lambda db, base="EUR": frame)
+    monkeypatch.setattr(portfolio, "load_meta", lambda tickers: {
+        "TTD": {"sector": "Technology", "country": "United States", "currency": "USD"},
+        "WIN": {"sector": "Healthcare", "country": "Denmark", "currency": "EUR"},
+    })
+    monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
+
+
+@pytest.mark.parametrize(("said", "surface", "tool"), [
+    ("¿Qué podría vender para compensar plusvalías?", "harvest", "harvest_losses"),
+    ("quiero vender WIN hasta que pese un 50%", "rebalance", "rebalance"),
+    ("¿estoy bien diversificado por sectores?", "allocation", "allocation"),
+])
+def test_a_question_about_the_book_is_worked_out_and_drawn(
+    client, account, signed_in, served, book, said, surface, tool
+):
+    """One surface each, and the sale those questions mention is theirs to
+    size: no what-if sale beside the harvest or the rebalance."""
+    served(Recorder())
+    stream = events(signed_in.post("/v1/chat/runs", json=run(said)).text)
+    (shown,) = [e for e in stream if e["type"] == "ACTIVITY_SNAPSHOT"]
+    assert shown["messageId"] == surface and shown["activityType"] == "a2ui"
+    assert [c["name"] for c in calls(stream)] == [tool]
+    assert finished(stream)["result"]["steps"][-1]["tool"] == tool
+
+
+def test_the_model_is_told_the_harvest_s_figures(
+    client, account, signed_in, monkeypatch, book
+):
+    seen: list[list[dict]] = []
+
+    class Reader(FakeProvider):
+        def stream(self, api_key, model, system, messages):
+            seen.append(messages)
+            yield from super().stream(api_key, model, system, messages)
+
+    monkeypatch.setattr(engine, "attempts", lambda prefs: [(Reader(), "k", "fake-1")])
+    signed_in.post("/v1/chat/runs", json=run("which losses would offset my gains?"))
+    asked = seen[0][-1]["content"]
+    assert "Tax-loss harvesting worked out by the app's own tax engine" in asked
+    assert "TTD: loss -500.00 EUR, this year's tax -95.00 EUR" in asked
+
+
+def test_a_weight_slider_let_go_is_answered_by_the_engine_not_a_model(
+    client, account, signed_in, book, monkeypatch
+):
+    monkeypatch.setattr(engine, "attempts",
+                        lambda prefs: pytest.fail("a model was asked"))
+    response = signed_in.post("/v1/chat/actions", json={"action": {
+        "name": "reweigh", "surfaceId": "rebalance", "sourceComponentId": "target",
+        "context": {"ticker": "WIN", "target": 50},
+    }})
+    assert response.status_code == 200
+    updates = {m["updateDataModel"]["path"]: m["updateDataModel"]["value"]
+               for m in response.json()["messages"]}
+    # 1,500 of 2,000 down to half of what is left: 1,000 sold, ten shares at 150.
+    assert updates["/target"] == 50.0
+    assert updates["/view"]["weight"] == "75.0% → 50.0%"
+    assert updates["/view"]["amount"] == "€1,000"
+
+
+@pytest.mark.parametrize(("context", "code"), [
+    ({"ticker": "WIN", "target": "lots"}, 422),
+    ({"ticker": "WIN", "target": 120}, 422),
+    ({"ticker": "MSFT", "target": 10}, 404),
+])
+def test_a_weight_press_with_no_answer_is_refused(
+    client, account, signed_in, book, context, code
+):
+    response = signed_in.post("/v1/chat/actions", json={"action": {
+        "name": "reweigh", "surfaceId": "rebalance", "context": context,
+    }})
+    assert response.status_code == code
+
+
 # ---------------------------------------------------------------- debate
 
 

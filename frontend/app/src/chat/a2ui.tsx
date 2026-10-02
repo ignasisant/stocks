@@ -11,14 +11,20 @@
  *
  * The catalog is `stocks/chat/a2ui.py`'s, which builds every surface the
  * server sends and is held to this one by `tests/test_chat_a2ui.py`: the
- * basic catalog's layout and inputs, plus Aguait's `Metric` (the KPI readout)
- * and `Ticker` (a symbol with its logo and its link — every ticker on screen
- * is one), and a `Slider` that sends its `action` when the reader lets go.
+ * basic catalog's layout and inputs, plus Aguait's `Metric` (the KPI readout),
+ * `Ticker` (a symbol with its logo and its link — every ticker on screen is
+ * one), `Chart` (closes the server fetched, drawn as a line: `chart.tsx`) and
+ * `Donut` (the book's weights the server summed: `donut.tsx`), and a `Slider`
+ * and a `ChoicePicker` that send their `action` when the reader lets go of
+ * the one or picks from the other.
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { TickerCell } from "../shell/tickers";
 import { Kpi, type Tone } from "../ui/Kpi";
+import { ToggleChip, ToggleRow } from "../ui/Toggle";
+import { type Line, LineChart } from "./chart";
+import { AllocationDonut } from "./donut";
 
 type Component = { id: string; component: string } & Record<string, unknown>;
 
@@ -111,7 +117,11 @@ type Draw = {
   data: Data;
   child: (id: string) => ReactNode;
   set: (pointer: string, value: unknown) => void;
-  fire: (action: unknown) => void;
+  /**
+   * Hand an action to the caller, its context read from `data` — or from
+   * `next`, when the press that fires it also wrote the value it sends.
+   */
+  fire: (action: unknown, next?: Data) => void;
   disabled: boolean;
 };
 
@@ -135,12 +145,48 @@ function Field({ part, data, set, disabled }: Draw) {
   );
 }
 
-function Picker({ part, data, set, disabled }: Draw) {
+type Option = { label: unknown; value: unknown };
+
+/**
+ * A choice drawn as a row of chips, one press each: the variant for a few
+ * short options the reader flips between, a chart's windows. With an `action`,
+ * a press sends it at once — there is nothing to confirm about picking "5Y".
+ */
+function Chips({ part, data, set, fire, disabled }: Draw) {
   const bound = isBinding(part.value) ? part.value.path : "";
-  const options = (Array.isArray(part.options) ? part.options : []) as {
-    label: unknown;
-    value: unknown;
-  }[];
+  const options = (Array.isArray(part.options) ? part.options : []) as Option[];
+  const picked = str(resolve(part.value, data));
+  return (
+    <ToggleRow
+      className="ag-a2ui-chips"
+      label={part.label === undefined ? undefined : str(resolve(part.label, data))}
+    >
+      {options.map((option) => {
+        const value = str(option.value);
+        return (
+          <ToggleChip
+            key={value}
+            on={value === picked}
+            disabled={disabled || !bound}
+            onClick={() => {
+              if (!bound || value === picked) return;
+              set(bound, value);
+              if (part.action) fire(part.action, write(data, bound, value) as Data);
+            }}
+          >
+            {str(resolve(option.label, data))}
+          </ToggleChip>
+        );
+      })}
+    </ToggleRow>
+  );
+}
+
+function Picker(draw: Draw) {
+  const { part, data, set, disabled } = draw;
+  if (part.variant === "chips") return <Chips {...draw} />;
+  const bound = isBinding(part.value) ? part.value.path : "";
+  const options = (Array.isArray(part.options) ? part.options : []) as Option[];
   return (
     <label className="ag-a2ui-field">
       {part.label !== undefined && <span>{str(resolve(part.label, data))}</span>}
@@ -260,6 +306,34 @@ const CATALOG: Record<string, (draw: Draw) => ReactNode> = {
     const symbol = str(resolve(part.symbol, data)).toUpperCase();
     return symbol ? <TickerCell ticker={symbol} /> : null;
   },
+  Chart: ({ part, data }) => {
+    const series = resolve(part.series, data);
+    return Array.isArray(series) && series.length ? (
+      <LineChart
+        series={series as Line[]}
+        rebased={part.mode === "change"}
+        label={str(resolve(part.label, data))}
+      />
+    ) : null;
+  },
+  // `slices` is one split, or every split keyed by name with `by` naming the
+  // one drawn — a chips picker bound to `by` then switches it in place.
+  Donut: ({ part, data }) => {
+    const groups = resolve(part.slices, data);
+    const by = str(resolve(part.by, data));
+    const slices = Array.isArray(groups)
+      ? groups
+      : groups && typeof groups === "object"
+        ? (groups as Record<string, unknown>)[by]
+        : undefined;
+    return Array.isArray(slices) && slices.length ? (
+      <AllocationDonut
+        slices={slices as { label: string; weight: number }[]}
+        label={str(resolve(part.label, data))}
+        other={str(resolve(part.other, data))}
+      />
+    ) : null;
+  },
 };
 
 export function Surface({
@@ -300,7 +374,7 @@ export function Surface({
       child,
       disabled,
       set: (pointer, value) => setData((was) => write(was, pointer, value) as Data),
-      fire: (action) => {
+      fire: (action, next) => {
         const event = (action as { event?: { name?: string; context?: unknown } })
           .event;
         if (!event?.name || !onAction) return;
@@ -309,7 +383,7 @@ export function Surface({
           surfaceId: folded.surfaceId,
           sourceComponentId: part.id,
           timestamp: new Date().toISOString(),
-          context: context(event.context, data),
+          context: context(event.context, next ?? data),
         });
       },
     });
