@@ -273,18 +273,20 @@ def _in_base(rows: list[CalendarDividend], base: str, today: date) -> None:
     def day(row: CalendarDividend) -> str:
         return row.date if row.days_until < 0 else today.isoformat()
 
+    priced: list[tuple[CalendarDividend, float, str]] = []
     for row in rows:
         row.base_currency = base
-    priced = [row for row in rows if row.amount is not None and row.currency]
-    fx.prefetch(((day(row), row.currency) for row in priced), quote=base)
+        if row.amount is not None and row.currency:
+            priced.append((row, row.amount, row.currency))
+    fx.prefetch(((day(row), currency) for row, _, currency in priced), quote=base)
     refused: set[str] = set()
-    for row in priced:
-        if row.currency in refused:
+    for row, amount, currency in priced:
+        if currency in refused:
             continue
         try:
-            row.amount_base = _num(fx.to_base(row.amount, row.currency, day(row), base))
+            row.amount_base = _num(fx.to_base(amount, currency, day(row), base))
         except Exception:
-            refused.add(row.currency)
+            refused.add(currency)
 
 
 def _repurchase_windows(
