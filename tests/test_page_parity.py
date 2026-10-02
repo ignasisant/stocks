@@ -73,10 +73,22 @@ PAGES: dict[str, Page] = {
         waived={
             "home.spark_hover_tmpl": _HOVER,
             "earnings.dialog_title": (
-                "the earnings chip opens the ticker's own page instead of a "
-                "result dialog — the figures behind it are per-ticker and that "
-                "page already shows all of them (Earnings.tsx)"
+                "said outside pages/home: Home's four-week calendar draws its "
+                "chips and dialog with the Earnings page's own parts, and a "
+                "past print opens `ResultDetail` through `EventDetail`"
             ),
+            "earnings.chip_vs_est": (
+                "…the same: the chip title is built by the shared `DayChips` "
+                "(earnings/MonthGrid.tsx)"
+            ),
+            "earnings.chip_click_details": "…the same, the tail of that title",
+            "home.earnings_upcoming": (
+                "the earnings-only three-week strip became a four-week calendar "
+                "of every kind of date (earnings, dividends, tax, buy-backs, "
+                "Fed/ECB), titled `home.calendar_title`"
+            ),
+            "home.earnings_3w_caption": "…the same: `home.calendar_caption`",
+            "home.no_reports_3w": "…the same: `home.calendar_empty`",
         },
     ),
     "portfolio": Page(
