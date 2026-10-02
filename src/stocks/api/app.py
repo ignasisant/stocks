@@ -12,6 +12,7 @@ purpose — a probe has no token, and the answer tells nobody anything.
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from urllib.error import URLError
@@ -20,7 +21,7 @@ from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from yfinance.exceptions import YFRateLimitError
 
-from stocks import obs
+from stocks import accounts, obs
 from stocks.api import cache, guest, guestbook, security, warm
 from stocks.api.routes import (
     account,
@@ -128,6 +129,34 @@ async def _stale_since(request: Request, call_next):
         return response
     finally:
         cache.STALE.reset(token)
+
+
+# ------------------------------------------------------ whose request this is
+# Every record a request writes carries its account, the way the Streamlit
+# pages' did (`web.telemetry.bind_run`). Without it every API-era event — the
+# import diagnostics among them — logged `user="-"`, and a "this user could not
+# import" report could only be traced by IP. Here and not in a dependency: a
+# sync dependency runs on a copy of the context, so what it binds is gone
+# before the endpoint runs, while what is bound around `call_next` reaches the
+# endpoint, its threadpool work and a streamed body alike.
+LOG_USER = os.getenv("STOCKS_LOG_USER", "1") != "0"
+
+
+def _log_user(request: Request) -> str:
+    """The slug `web.telemetry` logs for the same person, or what stands in."""
+    if not LOG_USER:
+        return "anon"
+    try:
+        who = security.visitor(request, request.headers.get("authorization", ""))
+        return accounts.slug(who.email) if who.email else who.kind
+    except Exception:  # noqa: BLE001 — a log field never fails a request
+        return "?"
+
+
+@app.middleware("http")
+async def _bind_user(request: Request, call_next):
+    with obs.context(user=_log_user(request)):
+        return await call_next(request)
 
 
 # ------------------------------------------------- when the upstream says no

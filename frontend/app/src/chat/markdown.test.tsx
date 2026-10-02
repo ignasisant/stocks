@@ -74,4 +74,54 @@ describe("tables", () => {
     const out = html(["| Name |", "| --- |", "| **AAPL** |"].join("\n"));
     expect(out).toContain("<strong>AAPL</strong>");
   });
+
+  it("turns a <br> inside a cell into a break", () => {
+    const out = html(
+      ["| Area | News |", "| --- | --- |", "| AI | Gemini <br> Vertex |"].join("\n"),
+    );
+    expect(out).toContain("Gemini<br/>Vertex");
+    expect(out).not.toContain("&lt;br");
+  });
+
+  it("leaves a table of short figures on one line and unstacked", () => {
+    const out = html(
+      ["| Ticker | Weight |", "| --- | ---: |", "| AAPL | 12.4% |"].join("\n"),
+    );
+    expect(out).toContain('<table class="ag-chat-table">');
+    expect(out).not.toContain("ag-chat-wrap");
+    expect(out).not.toContain("ag-chat-label");
+  });
+
+  it("wraps a column of sentences and stacks its table under the headers", () => {
+    const out = html(
+      [
+        "| Area | News |",
+        "| --- | --- |",
+        "| Cloud | Vertex AI lets clients build their own generative apps |",
+        "| Ads | |",
+      ].join("\n"),
+    );
+    expect(out).toContain('class="ag-chat-table ag-chat-stack"');
+    // Only the long column wraps; the short one keeps its single line.
+    expect(out).toContain('<th scope="col">Area</th>');
+    expect(out).toContain('<th scope="col" class="ag-chat-wrap">News</th>');
+    // Every cell but the card's title carries its header's name, unless empty.
+    expect(out.match(/ag-chat-label/g)).toHaveLength(1);
+    expect(out).toContain(
+      '<td class="ag-chat-wrap"><span class="ag-chat-label">News</span>Vertex',
+    );
+  });
+
+  it("stacks a table of figures too wide for a narrow box", () => {
+    const head = "| Ticker | Price | Day | Week | Month | Year | Weight |";
+    const out = html(
+      [
+        head,
+        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| AAPL | 231.40 | +1.2% | -0.4% | +3.9% | +18.2% | 12.4% |",
+      ].join("\n"),
+    );
+    expect(out).toContain("ag-chat-stack");
+    expect(out).not.toContain("ag-chat-wrap");
+  });
 });

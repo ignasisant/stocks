@@ -144,21 +144,3 @@ export function passes(row: CohortRow, screens: readonly Screen[]): boolean {
     return screen.kind === "min" ? value >= screen.value : value <= screen.value;
   });
 }
-
-/**
- * The whole cohort as raw numbers, exactly as the download button offers it:
- * every metric, unrounded and unformatted, with an empty cell where there was
- * nothing to measure. Anything a spreadsheet should re-derive itself is not
- * pre-chewed here.
- */
-export function csv(rows: readonly CohortRow[], keys: readonly string[]): string {
-  const lines = [["ticker", ...keys].join(",")];
-  for (const row of rows) {
-    const cells = keys.map((key) => {
-      const value = row.metrics[key];
-      return value === null || value === undefined ? "" : String(value);
-    });
-    lines.push([row.ticker, ...cells].join(","));
-  }
-  return `${lines.join("\n")}\n`;
-}

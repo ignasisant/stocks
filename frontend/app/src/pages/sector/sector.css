@@ -5,19 +5,23 @@
  * here is a colour the design system does not know about, and it would be
  * wrong in one of the two themes.
  *
- * The controls, the table and the dense rows are styled here rather than in
- * the shell because the shell ships no form or table look yet. When it does,
- * this file should shrink — see the report that came with it.
+ * The phone rendering is the shell's (`ui/Rows.tsx` `Responsive` +
+ * `DenseRows`), and every width below is the main column's (`@container
+ * ag-main`), never the viewport's: an open chat drawer narrows this page the
+ * way a phone does. The controls and the wide table are still styled here,
+ * because the shell ships no form or table look of its own yet.
  */
 
 .ag-sec-h1 {
   font-size: var(--ag-fs-3xl);
   margin: 0 0 1rem;
+  text-wrap: balance;
 }
 
 .ag-sec-h2 {
   font-size: var(--ag-fs-2xl);
   margin: 0 0 0.6rem;
+  text-wrap: balance;
 }
 
 .ag-sec-caption {
@@ -25,12 +29,13 @@
   color: var(--ag-text-muted);
   line-height: 1.5;
   margin: 0.35rem 0;
+  text-wrap: pretty;
 }
 
 .ag-sec-label {
   font-size: var(--ag-fs-sm);
   color: var(--ag-text-secondary);
-  margin: 0.9rem 0 0.4rem;
+  margin: 0.75rem 0 0.35rem;
 }
 
 /* ------------------------------------------------------------- the picker */
@@ -48,33 +53,53 @@
   color: var(--ag-text-secondary);
 }
 
+/* Inputs sit on the sunken surface, darker than the card they are in, at the
+   DS input radius — the `.pf-dropdown` look. */
 .ag-sec-pick select,
 .ag-sec-field select,
-.ag-sec-filter input[type="number"] {
+.ag-sec-filter > input {
   font: inherit;
   font-size: var(--ag-fs-md);
   color: var(--ag-text-primary);
-  background: var(--ag-surface-card);
+  background: var(--ag-surface-sunken);
   border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-xs);
+  border-radius: var(--ag-radius-sm);
   padding: 0.4rem 0.55rem;
+  min-height: 2.25rem;
+  transition: border-color 100ms ease-out;
+}
+
+.ag-sec-pick select:hover,
+.ag-sec-field select:hover,
+.ag-sec-filter > input:hover {
+  border-color: var(--ag-border-focus);
 }
 
 .ag-sec-pick select:focus-visible,
 .ag-sec-field select:focus-visible,
-.ag-sec-filter input:focus-visible {
+.ag-sec-filter > input:focus-visible {
   outline: 2px solid var(--ag-brand-cta);
   outline-offset: 1px;
 }
 
 /* -------------------------------------------------------------- the podium */
 
+/* A section card, as every page draws one (`.pf-card`, `.tk-card`): DS
+   RADIUS_LG + SHADOW_CARD, 1rem between cards. */
 .ag-sec-card {
   border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md);
+  border-radius: var(--ag-radius-lg);
   background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-card);
   padding: 1rem 1.1rem;
-  margin: 0.8rem 0 1.4rem;
+  margin: 0 0 1rem;
+}
+
+@container ag-main (max-width: 40rem) {
+  .ag-sec-card {
+    padding: 0.85rem 0.8rem 0.9rem;
+    margin-bottom: 0.75rem;
+  }
 }
 
 .ag-sec-podium {
@@ -90,7 +115,7 @@
 
 /* The rule between places separates them for free — a bordered tile inside a
    bordered card is the "cards inside cards" shape that makes a page dense. */
-@media (min-width: 641px) {
+@container ag-main (min-width: 40.0625rem) {
   .ag-sec-place + .ag-sec-place {
     border-left: 1px solid var(--ag-border);
     padding-left: 1.1rem;
@@ -100,7 +125,7 @@
 .ag-sec-pod {
   display: flex;
   gap: 0.55rem;
-  align-items: baseline;
+  align-items: center;
 }
 
 .ag-sec-pod-n {
@@ -108,6 +133,7 @@
   min-width: 1.35rem;
   height: 1.35rem;
   line-height: 1.35rem;
+  font-variant-numeric: tabular-nums;
   text-align: center;
   border-radius: var(--ag-radius-xs);
   font-size: var(--ag-fs-2xs);
@@ -137,6 +163,7 @@
   font-size: var(--ag-fs-2xl);
   font-weight: 700;
   line-height: 1.15;
+  margin-top: 0.35rem;
   color: var(--ag-text-primary);
   font-variant-numeric: tabular-nums;
 }
@@ -163,15 +190,17 @@
 
 .ag-sec-cohort {
   display: block;
-  margin-top: 1.4rem;
 }
 
 /* ------------------------------------------------------------ the controls */
 
+/* Boxes nested in the cohort card: the DS nested radius on the page surface,
+   no border of their own — a bordered box in a bordered card is a card inside
+   a card. */
 .ag-sec-controls,
 .ag-sec-help {
-  border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-page);
   padding: 0.6rem 0.9rem;
   margin: 0.8rem 0;
 }
@@ -182,19 +211,81 @@
   font-size: var(--ag-fs-md);
   font-weight: 600;
   color: var(--ag-text-primary);
+  min-height: 1.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  list-style: none;
 }
 
+.ag-sec-controls > summary::-webkit-details-marker,
+.ag-sec-help > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* One chevron for both folds, turned by the open state rather than swapped. */
+.ag-sec-controls > summary::before,
+.ag-sec-help > summary::before {
+  content: "";
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 1.5px solid var(--ag-text-muted);
+  border-bottom: 1.5px solid var(--ag-text-muted);
+  transform: rotate(-45deg);
+  transition: transform 100ms ease-out;
+}
+
+.ag-sec-controls[open] > summary::before,
+.ag-sec-help[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.ag-sec-controls > summary:focus-visible,
+.ag-sec-help > summary:focus-visible {
+  outline: 2px solid var(--ag-brand-cta);
+  outline-offset: 2px;
+  border-radius: var(--ag-radius-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-sec-controls > summary::before,
+  .ag-sec-help > summary::before {
+    transition: none;
+  }
+}
+
+/* The fold packs into lines: sort beside its direction, the three screens
+   side by side, each wrapping only when the room runs out. */
+.ag-sec-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1.25rem;
+  margin-top: 0.5rem;
+}
+
+.ag-sec-label + .ag-sec-line {
+  margin-top: 0;
+}
+
+/* The label beside its select, not over it: one line instead of two. */
 .ag-sec-field {
   display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  max-width: 22rem;
-  margin-top: 0.8rem;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
 }
 
 .ag-sec-field > span {
   font-size: var(--ag-fs-sm);
   color: var(--ag-text-secondary);
+  white-space: nowrap;
+}
+
+.ag-sec-field select {
+  min-width: 0;
+  max-width: 16rem;
 }
 
 .ag-sec-check {
@@ -202,137 +293,196 @@
   align-items: center;
   gap: 0.45rem;
   font-size: var(--ag-fs-md);
-  margin: 0.5rem 0;
+  min-height: 1.75rem;
   cursor: pointer;
 }
 
-.ag-sec-rule {
-  border: none;
-  border-top: 1px solid var(--ag-border);
-  margin: 1rem 0 0.4rem;
+.ag-sec-check input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--ag-brand-accent);
 }
 
 .ag-sec-filter {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  flex-wrap: wrap;
+  gap: 0.4rem;
 }
 
-.ag-sec-filter input[type="number"] {
-  width: 7rem;
+.ag-sec-filter > input {
+  width: 4.5rem;
+  min-height: 2rem;
+  padding: 0.25rem 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A threshold whose filter is off is shown, not applied: it reads as muted. */
+.ag-sec-filter:not(.ag-sec-filter-on) > input {
+  color: var(--ag-text-muted);
+}
+
+/* Narrow, the column chips run as one swiped line instead of a dozen wrapped
+   rows: they bleed to the box's edges, and the right edge fades so the line
+   reads as going on. */
+@container ag-main (max-width: 40rem) {
+  .ag-sec-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin: 0 -0.9rem;
+    padding: 4px 0.9rem;
+    scroll-padding-inline: 0.9rem;
+    scrollbar-width: none;
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      black 0.9rem,
+      black calc(100% - 1.5rem),
+      transparent
+    );
+  }
+
+  .ag-sec-chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ag-sec-chips > .ag-toggle {
+    flex: none;
+  }
 }
 
 /* --------------------------------------------------------------- the table */
 
-/* Both renderings ship and a media query picks by actual viewport width: UA
-   sniffing misses a narrow desktop window and a tablet that sends no "Mobi". */
-.ag-sec-mob {
-  display: none;
-}
-
-@media (max-width: 640px) {
-  .ag-sec-desk {
-    display: none;
-  }
-  .ag-sec-mob {
-    display: block;
-  }
-}
-
-.ag-sec-desk {
+.ag-sec-scroll {
   overflow-x: auto;
 }
 
 .ag-sec-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: var(--ag-fs-md);
   font-variant-numeric: tabular-nums;
 }
 
-.ag-sec-table th {
-  text-align: left;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--ag-border);
-  font-weight: 500;
-  font-size: var(--ag-fs-sm);
-  color: var(--ag-text-muted);
+/* Figures right-aligned so their decimals stack; the symbol column left. */
+.ag-sec-table th,
+.ag-sec-table td {
+  text-align: right;
   white-space: nowrap;
+  border-bottom: 1px solid var(--ag-rule-soft);
 }
 
 .ag-sec-table td {
-  padding: 7px 12px;
+  padding: 7px 10px;
+  color: var(--ag-text-secondary);
+}
+
+.ag-sec-table thead th {
+  padding: 0;
+  border-bottom-color: var(--ag-border);
+  font-weight: 500;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-muted);
+  vertical-align: bottom;
+}
+
+.ag-sec-table tbody tr:last-child > * {
+  border-bottom: none;
+}
+
+/* The symbol column: left, and pinned while the figures scroll under it. */
+.ag-sec-table .ag-sec-who-col {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  text-align: left;
+  background: var(--ag-surface-card);
+}
+
+.ag-sec-table thead .ag-sec-who-col {
+  padding: 8px 10px;
+}
+
+.ag-sec-table tbody .ag-sec-who-col {
+  padding: 7px 10px;
+  font-weight: 400;
+}
+
+/* A head is a button that ranks by its column; full-cell so the whole head is
+   the target, the arrow's room kept so the label does not shift when ranked. */
+.ag-sec-head {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.2rem;
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0 10px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
   white-space: nowrap;
-  border-bottom: 1px solid var(--ag-rule-soft);
+  cursor: pointer;
+  transition: color 100ms ease-out;
 }
 
-.ag-sec-table tbody tr {
-  transition: background 100ms ease-in-out;
+.ag-sec-head:hover {
+  color: var(--ag-text-primary);
 }
 
-.ag-sec-table tbody tr:hover {
+.ag-sec-head:focus-visible {
+  outline: 2px solid var(--ag-brand-cta);
+  outline-offset: -2px;
+  border-radius: var(--ag-radius-xs);
+}
+
+.ag-sec-arrow {
+  display: inline-block;
+  min-width: 0.6rem;
+  text-align: left;
+}
+
+/* The ranked column: its head in the accent, its figures in weight. */
+.ag-sec-table th.ag-sec-ranked {
+  color: var(--ag-text-primary);
+}
+
+.ag-sec-table th.ag-sec-ranked .ag-sec-arrow {
+  color: var(--ag-brand-accent);
+}
+
+.ag-sec-table td.ag-sec-ranked {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+}
+
+.ag-sec-table tbody tr > * {
+  transition: background-color 100ms ease-out;
+}
+
+.ag-sec-table tbody tr:hover > * {
   background: var(--ag-surface-hover);
 }
 
-.ag-sec-table td a {
-  color: inherit;
+.ag-sec-table .ag-sec-who a {
+  color: var(--ag-text-primary);
   text-decoration: none;
 }
 
-.ag-sec-table td a:hover b {
+.ag-sec-table .ag-sec-who a:hover b {
   text-decoration: underline;
 }
 
-/* ---------------------------------------------------------- the dense rows */
-
-.ag-sec-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 2px;
-  min-height: 44px;
-  border-bottom: 1px solid var(--ag-rule-soft);
-  text-decoration: none;
-  color: inherit;
-}
-
-@media (hover: none) {
-  .ag-sec-row:active {
-    background: var(--ag-surface-hover);
+@media (prefers-reduced-motion: reduce) {
+  .ag-sec-head,
+  .ag-sec-table tbody tr > * {
+    transition: none;
   }
 }
 
-.ag-sec-main {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.ag-sec-side {
-  flex: none;
-  text-align: right;
-  max-width: 45%;
-}
-
-.ag-sec-l1 {
-  font-size: var(--ag-fs-base);
-  font-weight: 600;
-  line-height: 1.4;
-  font-variant-numeric: tabular-nums;
-}
-
-.ag-sec-l2 {
-  font-size: var(--ag-fs-sm);
-  color: var(--ag-text-muted);
-  line-height: 1.4;
-  font-variant-numeric: tabular-nums;
-}
-
 /* --------------------------------------------------------- what is beneath */
-
-.ag-sec-download {
-  margin: 0.8rem 0;
-}
 
 .ag-sec-help dl {
   margin: 0.6rem 0 0;
@@ -361,16 +511,23 @@
 
 .ag-sec-verdict-head {
   margin: 0;
+  max-width: 72ch;
   color: var(--ag-text-primary);
+  font-size: var(--ag-fs-base);
   font-weight: 600;
   line-height: 1.35;
+  text-wrap: balance;
 }
 
+/* A paragraph of copy: capped to a reading measure, as CLAUDE.md allows. */
 .ag-sec-verdict-line {
   margin: 0;
+  max-width: 72ch;
   color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-md);
   font-variant-numeric: tabular-nums;
-  line-height: 1.5;
+  line-height: 1.55;
+  text-wrap: pretty;
 }
 
 .ag-sec-verdict-note {
@@ -403,6 +560,15 @@
   flex: none;
 }
 
+.ag-sec-rescan {
+  min-height: 2.25rem;
+  transition: border-color 100ms ease-out;
+}
+
+.ag-sec-rescan:hover:not(:disabled) {
+  border-color: var(--ag-border-focus);
+}
+
 .ag-sec-rescan:disabled {
   opacity: 0.6;
   cursor: progress;
@@ -416,6 +582,11 @@
   margin-top: -0.4rem;
 }
 
+/* Mounted empty so it is a live region before it has anything to say. */
+.ag-sec-status:empty {
+  margin: 0;
+}
+
 /* ------------------------------------------------------- company names */
 
 /* Symbol first, name after it and dimmer — the Streamlit `ticker_cell`
@@ -424,7 +595,7 @@
   display: inline-flex;
   align-items: baseline;
   gap: 0.45rem;
-  max-width: 18rem;
+  max-width: 14rem;
 }
 
 .ag-sec-name,
@@ -441,16 +612,4 @@
 .ag-sec-pod-name {
   display: block;
   margin-top: 0.15rem;
-}
-
-.ag-sec-mark {
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  min-width: 0;
-}
-
-.ag-sec-mark .ag-tick-logo {
-  margin-right: 0;
-  align-self: center;
 }

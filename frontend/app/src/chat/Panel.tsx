@@ -26,7 +26,7 @@ import "../pages/import/import.css";
 import { Attachment } from "./Attachment";
 import { Composer } from "./Composer";
 import { Empty } from "./Empty";
-import { Glyph } from "./icons";
+import { Glyph, ProviderMark } from "./icons";
 import { Settings } from "./Settings";
 import { Setup, needsSetup } from "./Setup";
 import { Threads } from "./Threads";
@@ -285,7 +285,7 @@ export default function Panel({
                 : undefined
             }
           >
-            <Glyph name="spark" size={12} />
+            <ProviderMark provider={provider} />
             {provider.label}
           </span>
           {quota && (

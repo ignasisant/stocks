@@ -231,3 +231,33 @@ def test_one_receipt_never_answers_for_two_payments():
 def test_another_tickers_receipt_books_nothing():
     book = [tx("2026-07-01", "PEP", "dividend", price=50.0)]
     assert dv.unbooked(_owed("2026-06-13"), book) == _owed("2026-06-13")
+
+
+def _paid(day, ticker, gross, withheld, ccy="USD"):
+    return Transaction(
+        date=day, ticker=ticker, action="dividend", quantity=0,
+        price=gross, currency=ccy, fee=withheld,
+    )
+
+
+def test_withholding_reads_the_latest_booked_payments_and_skips_zero_fees():
+    book = [
+        # Five MSFT payments: the oldest at 30% falls out of the last four.
+        _paid("2024-03-01", "MSFT", 10.0, 3.0),
+        _paid("2024-06-01", "MSFT", 10.0, 1.5),
+        _paid("2024-09-01", "MSFT", 10.0, 1.5),
+        _paid("2024-12-01", "MSFT", 10.0, 1.5),
+        _paid("2025-03-01", "MSFT", 10.0, 1.5),
+        # A statement that printed no withholding says nothing about the rate.
+        _paid("2025-06-01", "MSFT", 10.0, 0.0),
+        _paid("2025-01-10", "SAN.MC", 20.0, 3.8, "EUR"),
+    ]
+    by_ticker, by_currency = dv.withholding_rates(book)
+    assert by_ticker == {"MSFT": pytest.approx(0.15), "SAN.MC": pytest.approx(0.19)}
+    assert by_currency["USD"] == pytest.approx(9.0 / 50.0)
+    assert by_currency["EUR"] == pytest.approx(0.19)
+
+
+def test_a_book_with_no_booked_withholding_knows_no_rate():
+    book = [_paid("2025-03-01", "MSFT", 10.0, 0.0), tx("2024-01-02", "MSFT", "buy", 5)]
+    assert dv.withholding_rates(book) == ({}, {})

@@ -21,6 +21,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import sys
 
 import pytest
 from fastapi.testclient import TestClient
@@ -1457,3 +1458,79 @@ def test_a_wipe_is_previewed_against_the_ledger_it_will_leave_behind(
     assert replacing["duplicates"] == 0
     assert len(replacing["importable"]) == 2
     assert len(all_transactions(account.db)) == 2, "a preview still writes nothing"
+
+
+# ------------------------------------------------------------ who read it
+# The anonymised diagnostics carry the reader's slug, so three failures can be
+# told apart as three readers or one retrying. On the Streamlit pages that was
+# bound by `web.telemetry`; on the API it is the request middleware's job, and
+# without it every React-era diagnostic said `user="-"`.
+
+
+def _filed() -> list[dict]:
+    from stocks.portfolio import diagnostics
+
+    return [
+        json.loads(path.read_text())
+        for path in sorted(diagnostics.DIAGNOSTICS_DIR.glob("*.json"))
+    ]
+
+
+def test_a_failed_preview_is_filed_under_its_reader(client, account, signed_in):
+    signed_in.post("/v1/import/preview", json=body(OVERSELL))
+    (filed,) = _filed()
+    assert filed["user"] == accounts.slug(EMAIL)
+
+
+def test_with_user_logging_off_the_reader_is_anonymous(
+    client, account, signed_in, monkeypatch
+):
+    # By module: `stocks.api.app` the attribute is the FastAPI instance.
+    monkeypatch.setattr(sys.modules["stocks.api.app"], "LOG_USER", False)
+    signed_in.post("/v1/import/preview", json=body(OVERSELL))
+    (filed,) = _filed()
+    assert filed["user"] == "anon"
+
+
+# ------------------------------------------------------- a file never sent
+# The page reads the file before anything goes out, so a phone that hands over
+# a file it cannot open used to fail with no request and no record at all.
+
+
+def failure(**extra) -> dict:
+    return {
+        "platform": "revolut",
+        "filename": "Estado_12345678.csv",
+        "bytes": 2048,
+        "error": "NotReadableError",
+        "message": "The requested file could not be read",
+        **extra,
+    }
+
+
+def test_a_file_the_browser_could_not_read_is_filed(client, account, signed_in):
+    response = signed_in.post("/v1/import/client-failure", json=failure())
+    assert response.status_code == 204
+    (filed,) = _filed()
+    assert filed["surface"] == "client"
+    assert filed["platform"] == "revolut"
+    assert filed["user"] == accounts.slug(EMAIL)
+    assert filed["file"] == "Estado_99999999.csv", "the account number is masked"
+    assert filed["ext"] == "csv"
+    assert filed["bytes"] == 2048
+    assert filed["error_type"] == "NotReadableError"
+
+
+def test_only_an_exception_name_is_kept_as_one(client, account, signed_in):
+    signed_in.post("/v1/import/client-failure", json=failure(error="ES12 3456 7890"))
+    (filed,) = _filed()
+    assert filed["error_type"] == "Error"
+
+
+def test_a_failure_report_needs_a_session(client, account):
+    assert client.post("/v1/import/client-failure", json=failure()).status_code == 401
+    token = client.post(
+        "/v1/import/client-failure", params=WHO, headers=AUTH, json=failure()
+    )
+    assert token.status_code == 403
+    assert _filed() == []

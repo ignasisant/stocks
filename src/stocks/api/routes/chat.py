@@ -60,6 +60,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from stocks import accounts, navigation
 from stocks.accounts import UserPaths
+from stocks.api import loaders
 from stocks.api.deps import Account, ChatTurn, SurfaceAction, Writer
 from stocks.api.routes import chat_attach
 from stocks.chat import (
@@ -266,6 +267,13 @@ class ProviderInfo(BaseModel):
         ),
     )
     domain: str | None = None
+    logo: str | None = Field(
+        default=None,
+        description=(
+            "The provider's mark, same-origin where this host could mirror it. "
+            "Null for the keyless chain, which draws the app's own."
+        ),
+    )
     connect_url: str | None = Field(
         default=None,
         description=(
@@ -678,6 +686,7 @@ def _state(paths: UserPaths, held: dict[str, str] | None = None) -> State:
                 key_placeholder=provider.key_placeholder,
                 key_days_left=engine.byok_days_left(prefs, provider.id),
                 domain=provider.domain,
+                logo=loaders.provider_logo(provider.id, provider.domain),
                 connect_url=provider.connect_url or None,
                 connect_token_url=provider.connect_token_url or None,
             )

@@ -55,6 +55,7 @@
   "import.broker_other": "Otro bróker",
   "import.broker_help": "Este formato no dice de qué bróker es: elige el que corresponda — o escribe su nombre si no está en la lista. Se marca en cada fila; Comisiones y Custodia agrupan tu cartera por ahí.",
   "import.file_too_large": "Ese archivo ocupa {size} MB y los extractos están limitados a {cap} MB. Exporta un rango de fechas más corto, o divídelo en dos — no se ha subido nada.",
+  "import.unreadable": "Este dispositivo no pudo abrir ese archivo, así que no se ha subido nada. Si está en Drive o te llegó por una app de chat, guárdalo antes en Descargas del móvil y elígelo desde ahí — o pega su contenido abajo.",
   "import.file_changed": "El archivo cambió desde la vista previa. Vuelve a revisarlo antes de confirmar.",
   "import.commit_failed": "La cartera puede haber cambiado desde la vista previa — vuelve a revisarla y reinténtalo.",
   "import.commit_button": "Confirmar en el libro",

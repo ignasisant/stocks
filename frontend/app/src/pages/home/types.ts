@@ -245,30 +245,6 @@ export type CloseRow = {
 
 export type Closes = { rows: CloseRow[] };
 
-export type CalendarEvent = {
-  ticker: string;
-  date: string | null;
-  days_until: number | null;
-};
-
-export type CalendarResult = {
-  ticker: string;
-  date: string;
-  eps_estimate: number | null;
-  reported_eps: number | null;
-  surprise_pct: number | null;
-  /** Null when there was nothing to compare — never False. */
-  beat: boolean | null;
-};
-
-export type EarningsCalendar = {
-  upcoming: CalendarEvent[];
-  results: CalendarResult[];
-  /** portfolio | favorites | one per watchlist tag; empty sets are left out. */
-  groups: Record<string, string[]>;
-  skipped: string[];
-};
-
 export type WatchlistEntry = {
   ticker: string;
   name: string;

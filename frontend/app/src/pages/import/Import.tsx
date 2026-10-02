@@ -39,7 +39,9 @@ import {
   book,
   lastImport,
   listPlatforms,
+  nameOf,
   preview as previewOf,
+  reportUnreadable,
   scanMoves,
 } from "./api";
 import type { Book, Platform, Result, Staged } from "./api";
@@ -187,6 +189,8 @@ function Importer({
   const [oversize, setOversize] = useState<number | null>(null);
   // A pasted or dropped format nothing here reads, by its extension.
   const [wrongType, setWrongType] = useState<string | null>(null);
+  // A file the browser was handed and could not read.
+  const [unreadable, setUnreadable] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [dragging, setDragging] = useState(false);
   const [wipe, setWipe] = useState<WipeChoice>(left?.wipe ?? NO_WIPE);
@@ -256,24 +260,36 @@ function Importer({
     if (blob.size > MAX_BYTES) {
       // Said before the upload rather than after: the API answers 413 above
       // this, and a reader who waited for the round trip learns nothing extra.
+      setUnreadable(false);
       setOversize(blob.size);
       setStaged(null);
       return;
     }
     setOversize(null);
-    setStaged({
-      filename: name,
-      content: await asBase64(blob),
-      bytes: blob.size,
-      surface,
-    });
+    setUnreadable(false);
+    let content: string;
+    try {
+      content = await asBase64(blob);
+    } catch (error) {
+      // A phone can hand over a file it cannot open — one still in Drive, one
+      // shared out of a chat app — and the read fails before anything is sent.
+      // Said here, and reported, because otherwise nobody hears of it: not the
+      // reader, who saw the zone do nothing, nor the server.
+      setUnreadable(true);
+      setStaged(null);
+      // So picking the same file again, once it is saved locally, still fires.
+      if (file.current) file.current.value = "";
+      reportUnreadable(platform.key, name, blob, error);
+      return;
+    }
+    setStaged({ filename: name, content, bytes: blob.size, surface });
   };
 
   const onPick = (event: ChangeEvent<HTMLInputElement>) => {
     const picked = event.target.files?.[0];
     if (picked) {
       setWrongType(null);
-      void stage(picked.name, picked);
+      void stage(nameOf(picked, kinds), picked);
     }
   };
 
@@ -318,6 +334,7 @@ function Importer({
     setStaged(null);
     setOversize(null);
     setWrongType(null);
+    setUnreadable(false);
     setResult(null);
     setWipe(NO_WIPE);
     pasted.current = "";
@@ -343,6 +360,7 @@ function Importer({
     );
   if (wrongType !== null)
     errors.push(t("import.wrong_type", { kind: wrongType.toUpperCase(), types }));
+  if (unreadable) errors.push(t("import.unreadable"));
   if (staged && preview.state === "loaded" && preview.data && !preview.data.ok)
     errors.push(
       t("import.nothing_read", { platform: platform.label, hint: platform.hint }),

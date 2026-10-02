@@ -12,7 +12,7 @@ trips and a rule, for something one pass over the same watchlist already knows.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Path, Query
@@ -20,20 +20,25 @@ from fastapi import APIRouter, Path, Query
 from stocks import obs
 from stocks.api import loaders
 from stocks.api.cache import ttl_cache
-from stocks.api.deps import Account
+from stocks.api.deps import Account, reporting_currency
 from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
+    CalendarDividend,
     CalendarEvent,
     CalendarResult,
+    CentralBankDecision,
     ConsensusPeriod,
     EarningsCalendar,
     EarningsResultDetail,
     QuarterBreakdown,
     QuarterFigures,
+    RepurchaseWindow,
     TaxDeadline,
 )
 from stocks.config import currency_symbol, load_watchlist
+from stocks.data import fx, macro_calendar
 from stocks.data.crypto import is_crypto
+from stocks.data.dividends import project
 from stocks.data.earnings import (
     EarningsResult,
     Quarter,
@@ -54,6 +59,8 @@ from stocks.data.estimates import (
     quarter_outlook,
 )
 from stocks.data.funds import is_fund
+from stocks.portfolio import dividends as dividend_book
+from stocks.portfolio import tax, transfers
 from stocks.portfolio.tax import deadlines
 from stocks.portfolio.tax import prefs as tax_prefs
 
@@ -129,6 +136,8 @@ def earnings(account: Account) -> EarningsCalendar:
         )
         for d in deadlines.calendar(code, today)
     ]
+    dividends = _dividends(account, today)
+    windows = _repurchase_windows(account, code, today)
 
     return EarningsCalendar(
         upcoming=[
@@ -144,6 +153,190 @@ def earnings(account: Account) -> EarningsCalendar:
         skipped=skipped,
         jurisdiction=code,
         tax_deadlines=tax_deadlines,
+        dividends=dividends,
+        repurchase_windows=windows,
+        central_banks=_central_banks(today),
+    )
+
+
+# How far back the past ex-dates reach: about as far as the past prints do
+# (`get_earnings_dates(limit=12)`), which is as far as anyone pages the grid.
+DIVIDEND_LOOKBACK_DAYS = 730
+
+
+def _dividends(account: Account, today: date) -> list[CalendarDividend]:
+    """The book's ex-dates: the ones its shares were owed, and the next declared.
+
+    The past half is what the ledger's shares were entitled to on each ex-date,
+    priced from Yahoo's per-share history — a statement that never booked the
+    cash still gets its chip. The future half is each open position's next
+    declared ex-date with the shares held today, since that is what it would
+    pay on; the amount is the last payment's, because Yahoo publishes the date
+    before the figure. Past the declared date, the rest of the next 52 weeks
+    is last year's schedule moved forward (`dividends.project`), flagged
+    `projected`.
+
+    Any part failing (Yahoo throttled, a dead symbol) leaves it empty: the
+    reporting calendar around it is worth more than a 503 for want of a chip.
+    """
+    db = str(account.db)
+    mtime = loaders.db_mtime(db)
+    ccy = reporting_currency(account)
+    since = (today - timedelta(days=DIVIDEND_LOOKBACK_DAYS)).isoformat()
+    rows: dict[tuple[str, str], CalendarDividend] = {}
+    with obs.swallow("api.calendar_dividends_past"):
+        for p in loaders.dividend_payments(db, mtime, ccy):
+            if p.ex_date < since:
+                continue
+            rows[(p.ticker, p.ex_date)] = CalendarDividend(
+                ticker=p.ticker,
+                date=p.ex_date,
+                days_until=(date.fromisoformat(p.ex_date) - today).days,
+                per_share=_num(p.per_share),
+                shares=_num(p.shares),
+                amount=_num(p.gross),
+                currency=p.currency,
+            )
+    shares: dict[str, float] = {}
+    txs: list = []
+    with obs.swallow("api.calendar_dividends_next"):
+        txs, positions, _ = loaders.ledger_state(db, mtime, ccy)
+        shares = {p.ticker: p.quantity for p in positions if p.quantity > 0}
+        for event in loaders.ex_dividends(tuple(sorted(shares))):
+            day = event.ex_date.isoformat()
+            # An ex-date that is today is already in the history above.
+            if (event.ticker, day) in rows:
+                continue
+            quantity = shares[event.ticker]
+            amount = event.cash(quantity)
+            rows[(event.ticker, day)] = CalendarDividend(
+                ticker=event.ticker,
+                date=day,
+                days_until=(event.ex_date - today).days,
+                per_share=_num(event.per_share),
+                shares=_num(quantity),
+                amount=_num(amount),
+                currency=event.currency,
+            )
+    with obs.swallow("api.calendar_dividends_projected"):
+        found = loaders.dividend_histories(tuple(sorted(shares)))
+        for ticker, quantity in sorted(shares.items()):
+            if (history := found.get(ticker)) is None:
+                continue
+            declared = [
+                date.fromisoformat(row.date)
+                for row in rows.values()
+                if row.ticker == ticker and row.days_until >= 0
+            ]
+            for event in project(history, today, declared):
+                day = event.ex_date.isoformat()
+                rows[(ticker, day)] = CalendarDividend(
+                    ticker=ticker,
+                    date=day,
+                    days_until=event.days_until,
+                    per_share=_num(event.per_share),
+                    shares=_num(quantity),
+                    amount=_num(event.cash(quantity)),
+                    currency=event.currency,
+                    projected=True,
+                )
+    out = sorted(rows.values(), key=lambda row: (row.date, row.ticker))
+    with obs.swallow("api.calendar_dividends_withholding"):
+        _withholding(out, txs)
+    with obs.swallow("api.calendar_dividends_fx"):
+        _in_base(out, ccy, today)
+    return out
+
+
+def _withholding(rows: list[CalendarDividend], txs: list) -> None:
+    """What the source country keeps, as this book's own statements recorded it.
+
+    The name's own booked withholdings first, then the ones on other payments
+    in the same currency (`dividends.withholding_rates`). Nothing is assumed
+    past that: a treaty rate is the reader's paperwork, not ours to guess.
+    """
+    by_ticker, by_currency = dividend_book.withholding_rates(transfers.relabel(txs))
+    for row in rows:
+        if (rate := by_ticker.get(row.ticker)) is not None:
+            row.withholding, row.withholding_basis = _num(rate), "ticker"
+        elif row.currency and (rate := by_currency.get(row.currency.upper())) is not None:
+            row.withholding, row.withholding_basis = _num(rate), "currency"
+
+
+def _in_base(rows: list[CalendarDividend], base: str, today: date) -> None:
+    """Each amount in the reporting currency, the way the income tab values it.
+
+    A payment that went ex at that day's rate; one still ahead at today's
+    (`dividends.forward_totals`' rule). One prefetch covers every pair, and a
+    currency the rate source refuses leaves its rows without, not the rest.
+    """
+    def day(row: CalendarDividend) -> str:
+        return row.date if row.days_until < 0 else today.isoformat()
+
+    priced: list[tuple[CalendarDividend, float, str]] = []
+    for row in rows:
+        row.base_currency = base
+        if row.amount is not None and row.currency:
+            priced.append((row, row.amount, row.currency))
+    fx.prefetch(((day(row), currency) for row, _, currency in priced), quote=base)
+    refused: set[str] = set()
+    for row, amount, currency in priced:
+        if currency in refused:
+            continue
+        try:
+            row.amount_base = _num(fx.to_base(amount, currency, day(row), base))
+        except Exception:
+            refused.add(currency)
+
+
+def _repurchase_windows(
+    account: Account, code: str, today: date
+) -> list[RepurchaseWindow]:
+    """The loss sales a buy-back would still block, under the account's rules.
+
+    Replayed the way `/portfolio/tax` replays — at the jurisdiction's currency
+    and under its own share matching, with acquisitions read off the relabelled
+    ledger (`tax.buy_dates`) — so this and the tax tab agree on which losses a
+    repurchase already took. A failure leaves the list empty, like the chips.
+    """
+    jurisdiction = tax.get(code)
+    if not jurisdiction.repurchase_window:
+        return []
+    db = str(account.db)
+    with obs.swallow("api.calendar_repurchase_windows"):
+        txs, _, realized = loaders.ledger_state(
+            db, loaders.db_mtime(db), jurisdiction.currency, jurisdiction.matching
+        )
+        return [
+            RepurchaseWindow(
+                ticker=w.ticker,
+                sell_date=w.sold.isoformat(),
+                date=w.clears.isoformat(),
+                days_until=(w.clears - today).days,
+                loss=_num(w.loss) or 0.0,
+                currency=jurisdiction.currency,
+                window=jurisdiction.repurchase_window,
+            )
+            for w in jurisdiction.open_windows(realized, tax.buy_dates(txs), today)
+        ]
+    return []
+
+
+def _central_banks(today: date) -> list[CentralBankDecision]:
+    """Every Fed and ECB decision day `macro_calendar` carries, oldest first.
+
+    A fixed list of a year or two, eight a bank — short enough to send whole
+    rather than window, and the grid only draws the month it is on.
+    """
+    return sorted(
+        (
+            CentralBankDecision(
+                bank=bank, date=day.isoformat(), days_until=(day - today).days
+            )
+            for bank, days in macro_calendar.DECISIONS.items()
+            for day in days
+        ),
+        key=lambda row: (row.date, row.bank),
     )
 
 

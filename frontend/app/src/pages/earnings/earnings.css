@@ -36,8 +36,60 @@
 
 .earn-legend {
   margin: 0.75rem 0 0;
+  max-width: 72ch;
   font-size: var(--ag-fs-xs);
   color: var(--ag-text-muted);
+  text-wrap: pretty;
+}
+
+/* The colour key, folded: one muted line under the month until it is asked
+   for, so the caveats are there without trailing the grid as a wall of copy. */
+.earn-key {
+  margin: 0.75rem 0 0;
+}
+
+.earn-key summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.earn-key summary::-webkit-details-marker {
+  display: none;
+}
+
+.earn-key summary::before {
+  content: "›";
+  display: inline-block;
+  transition: transform 100ms ease-out;
+}
+
+.earn-key[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.earn-key summary:hover {
+  color: var(--ag-text-secondary);
+}
+
+.earn-key summary:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 2px;
+  border-radius: var(--ag-radius-xs);
+}
+
+.earn-key .earn-legend:first-of-type {
+  margin-top: 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .earn-key summary::before {
+    transition: none;
+  }
 }
 
 .earn-empty {
@@ -81,25 +133,86 @@
   color: var(--ag-text-primary);
 }
 
+/* The kind pills' dot: the colour each kind's chips are drawn in. */
+.earn-swatch {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--ag-radius-pill);
+}
+
+.earn-swatch.earnings {
+  background: var(--ag-purple-400);
+}
+
+.earn-swatch.dividends {
+  background: var(--ag-info);
+}
+
+.earn-swatch.tax {
+  background: var(--ag-warn);
+}
+
+.earn-swatch.banks {
+  background: var(--ag-text-muted);
+}
+
 /* ------------------------------------------------------------- the month nav */
 
+/* The month leads; the stepper is one joined control at the far edge, with
+   "today" between the arrows it resets. */
 .earn-nav {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.75rem;
   margin: 0 0 0.6rem;
-}
-
-.earn-nav .ag-btn {
-  line-height: 1;
-  cursor: pointer;
 }
 
 .earn-month {
   flex: 1;
-  margin: 0 0 0 0.5rem;
+  margin: 0;
   font-size: var(--ag-fs-lg);
   font-weight: 600;
+  text-wrap: balance;
+}
+
+.earn-step {
+  display: inline-flex;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  overflow: hidden;
+}
+
+.earn-step button {
+  min-width: 2.25rem;
+  padding: 0.35rem 0.7rem;
+  border: none;
+  background: transparent;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.earn-step button + button {
+  border-left: 1px solid var(--ag-border);
+}
+
+.earn-step button:hover:not(:disabled) {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+}
+
+.earn-step button:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: -2px;
+}
+
+/* Already on this month: "today" has nowhere to take you. */
+.earn-step button:disabled {
+  color: var(--ag-text-faint);
+  cursor: default;
 }
 
 /* ------------------------------------------------------------- the month grid */
@@ -108,9 +221,11 @@
   overflow-x: auto;
 }
 
+/* Weekdays share the width; Saturday and Sunday take a little over half a
+   column each — markets are shut, and almost nothing lands there. */
 .earn-cal {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr)) repeat(2, minmax(0, 0.55fr));
   gap: 4px;
 }
 
@@ -121,6 +236,11 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ag-text-muted);
+}
+
+.earn-wd:nth-child(6),
+.earn-wd:nth-child(7) {
+  color: var(--ag-text-faint);
 }
 
 .earn-day {
@@ -135,24 +255,67 @@
   background: var(--ag-surface-sunken);
 }
 
+/* Today is a ring and a filled day number, not a filled cell: an empty
+   today must not outshout a Wednesday with seven prints on it. */
 .earn-day.today {
   border-color: var(--ag-brand-accent);
-  background: var(--ag-purple-900);
 }
 
 .earn-daynum {
+  display: inline-block;
+  min-width: 1.4rem;
   margin-bottom: 3px;
+  padding: 0 0.3rem;
+  border-radius: var(--ag-radius-pill);
   font-size: var(--ag-fs-xs);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  text-align: center;
   color: var(--ag-text-faint);
 }
 
-.earn-day.today .earn-daynum {
-  color: var(--ag-purple-400);
+.earn-day:not(.dim) .earn-daynum {
+  color: var(--ag-text-muted);
 }
 
-/* A chip is a link (an upcoming print) or a button (a past one); both are
-   reset to the same box so the grid reads as one row of chips either way. */
+.earn-day.today .earn-daynum {
+  background: var(--ag-brand-accent);
+  color: var(--ag-on-brand);
+}
+
+/* "+3" under a full cell: quieter than any chip, so it reads as a fold rather
+   than one more event. */
+.earn-more {
+  display: block;
+  width: 100%;
+  margin: 2px 0 0;
+  padding: 1px 5px;
+  border: none;
+  border-radius: var(--ag-radius-xs);
+  background: transparent;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  font-weight: 600;
+  line-height: 1.55;
+  text-align: left;
+  cursor: pointer;
+}
+
+.earn-more:hover {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+}
+
+.earn-more:focus-visible,
+.earn-chip:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 1px;
+}
+
+/* Every chip is a button that opens the dialog explaining its date, reset to
+   a flat box so the grid reads as rows of chips rather than of controls. */
 .earn-chip {
   display: flex;
   align-items: center;
@@ -170,6 +333,13 @@
   line-height: 1.55;
   text-align: left;
   text-decoration: none;
+  cursor: pointer;
+}
+
+/* A ring in the chip's own ink, so the hover reads on every kind without a
+   hover colour per kind. The kinds that do darken their fill say so below. */
+.earn-chip:hover {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 45%, transparent);
 }
 
 .earn-chip span {
@@ -193,12 +363,8 @@
   color: var(--ag-down);
 }
 
-/* Last, so the hover state wins on a clickable chip whichever verdict class
-   it also carries. */
-.earn-chip.past {
-  cursor: pointer;
-}
-
+/* Last, so the hover state wins on a past chip whichever verdict class it
+   also carries. */
 .earn-chip.past:hover {
   background: var(--ag-purple-700);
   color: var(--ag-text-primary);
@@ -272,10 +438,13 @@
 
 /* ---------------------------------------------------------------- the dialog */
 
+/* Above the chat launcher and the parked guide strip (60), which would
+   otherwise float over the scrim on a phone; below the open drawer (70), so
+   the chat beside it stays usable. */
 .earn-modal {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: 65;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -555,13 +724,171 @@
   color: var(--ag-text-primary);
 }
 
-/* A deadline is not a link: nothing to open, the title carries the detail. */
 .earn-chip.tax {
   background: var(--ag-warn-fill);
   color: var(--ag-warn);
-  cursor: help;
 }
 
 .earn-tax-soon td {
   color: var(--ag-warn);
+}
+
+/* ---------------------------------------------------------------- dividends */
+
+/* Blue, the one hue the grid had left: purple is a print, red/green a verdict,
+   amber a tax date. A wash of the info token rather than a new hex. */
+.earn-chip.div {
+  background: color-mix(in srgb, var(--ag-info) 18%, transparent);
+  color: var(--ag-info);
+}
+
+.earn-chip.div:hover {
+  background: color-mix(in srgb, var(--ag-info) 30%, transparent);
+}
+
+.earn-div-next td {
+  color: var(--ag-info);
+}
+
+/* Not declared yet: the same blue, hollow and dashed, so a guess never reads
+   as a date the company has published. */
+.earn-chip.div.projected {
+  background: transparent;
+  outline: 1px dashed color-mix(in srgb, var(--ag-info) 55%, transparent);
+  outline-offset: -1px;
+}
+
+.earn-chip.div.projected:hover {
+  background: color-mix(in srgb, var(--ag-info) 12%, transparent);
+}
+
+.earn-div-projected td {
+  color: var(--ag-text-muted);
+}
+
+/* -------------------------------------------------------- buy-back windows */
+
+/* Amber, because it is a tax date — outlined rather than filled, because it is
+   a day something becomes allowed, not a day something is due. */
+.earn-chip.rebuy {
+  background: var(--ag-warn-fill-soft);
+  box-shadow: inset 0 0 0 1px var(--ag-warn-edge);
+  color: var(--ag-warn);
+}
+
+.earn-chip.rebuy:hover {
+  background: var(--ag-warn-fill);
+}
+
+/* ----------------------------------------------------------- rate decisions */
+
+/* Grey: context for every name on the grid, belonging to none of them. */
+.earn-chip.cb {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-secondary);
+}
+
+/* ------------------------------------------------------- the event dialog */
+
+/* A date and a figure, not a breakdown: narrow enough to read as a note over
+   the grid rather than a page laid on top of it. */
+.earn-modal-card.earn-ev {
+  max-width: 30rem;
+}
+
+.earn-ev-title {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+}
+
+.earn-ev-hero {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-sunken);
+}
+
+.earn-ev-label {
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+}
+
+.earn-ev-value {
+  margin-top: 2px;
+  font-size: var(--ag-fs-2xl);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.earn-ev-sub {
+  margin-top: 4px;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.earn-ev-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 0.6rem;
+}
+
+.earn-ev-tag {
+  padding: 1px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-secondary);
+}
+
+.earn-ev-tag.soon {
+  border-color: transparent;
+  background: var(--ag-loss-band);
+  color: var(--ag-down);
+}
+
+.earn-ev-tag.warn {
+  border-color: transparent;
+  background: var(--ag-warn-fill);
+  color: var(--ag-warn);
+}
+
+.earn-ev-tag.held {
+  border-color: color-mix(in srgb, var(--ag-brand-accent) 45%, transparent);
+  color: var(--ag-brand-accent);
+}
+
+/* Four tiles two by two: four abreast in a 30rem card squeezes a currency
+   amount into an ellipsis. Specific enough to beat the shared grid's count
+   rule, which reads the page's width, not the card's. */
+.earn-ev .ag-kpis:has(> :nth-child(4):last-child) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.earn-ev .ag-kpis {
+  margin-bottom: 1rem;
+}
+
+.earn-ev-notes {
+  font-size: var(--ag-fs-sm);
+  line-height: 1.5;
+  color: var(--ag-text-secondary);
+}
+
+.earn-ev-notes p {
+  margin: 0;
+}
+
+.earn-ev-notes p + p {
+  margin-top: 0.5rem;
+}
+
+.earn-ev-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 1rem;
 }

@@ -520,6 +520,29 @@ def test_only_a_provider_with_a_sign_in_offers_one(client, account, signed_in):
     assert providers["anthropic"]["connect_token_url"] is None
 
 
+def test_each_provider_names_its_mark_by_its_own_brand_domain(
+    client, account, signed_in, monkeypatch
+):
+    """The settings tiles draw these. The keyless chain is the app's own and
+    declares no domain, so it is asked for none and says null."""
+    from stocks.api import loaders
+
+    asked = []
+
+    def logo(provider, domain):
+        asked.append((provider, domain))
+        return f"/app/static/logos/brand-ai-{provider}.png" if domain else None
+
+    monkeypatch.setattr(loaders, "provider_logo", logo)
+    providers = {
+        p["id"]: p for p in signed_in.get("/v1/chat/state").json()["providers"]
+    }
+    assert providers["anthropic"]["logo"] == "/app/static/logos/brand-ai-anthropic.png"
+    assert ("openrouter", "openrouter.ai") in asked
+    if "free" in providers:
+        assert providers["free"]["logo"] is None
+
+
 def test_a_signed_in_key_is_stored_like_a_typed_one(
     client, account, signed_in, encrypted
 ):

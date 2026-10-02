@@ -71,6 +71,25 @@ def test_fetch_ex_dividend_swallows_a_dead_symbol(monkeypatch):
     assert dv.fetch_ex_dividend("NOPE") == (None, None, None)
 
 
+def test_fetch_ex_dividend_declares_a_rate_limit_it_swallows(monkeypatch):
+    """Nothing comes back either way, but a cached "nothing declared" must be
+    told apart from a throttled host — so the cooldown is tripped."""
+    from yfinance.exceptions import YFRateLimitError
+
+    from stocks.data.fetch import clear_throttle, throttle_remaining
+
+    def limited(_ticker):
+        raise YFRateLimitError()
+
+    monkeypatch.setattr("stocks.data.fetch.info", limited)
+    clear_throttle()
+    try:
+        assert dv.fetch_ex_dividend("MSFT") == (None, None, None)
+        assert throttle_remaining() > 0
+    finally:
+        clear_throttle()
+
+
 def test_fetch_ex_dividend_reads_the_quote_blob(monkeypatch):
     monkeypatch.setattr(
         "stocks.data.fetch.info",
@@ -179,3 +198,69 @@ def test_histories_drops_the_names_with_nothing_to_estimate_from(monkeypatch):
     monkeypatch.setattr(dv, "fetch_history", fake)
     assert list(dv.histories(["KO", "NVDA", "KO"])) == ["KO"]
     assert dv.histories([]) == {}
+
+
+# ---------------------------------------------------------------- projection
+
+PROJ_REF = date(2026, 10, 2)  # a Friday
+
+
+def _history(*rows: tuple[int, float]) -> dv.DividendHistory:
+    """Payments `days` before PROJ_REF, oldest first."""
+    from datetime import timedelta
+
+    return dv.DividendHistory(
+        "KO",
+        tuple(
+            ((PROJ_REF - timedelta(days=d)).isoformat(), a)
+            for d, a in sorted(rows, reverse=True)
+        ),
+        "USD",
+    )
+
+
+def test_a_quarterly_payer_repeats_last_year_on_the_same_weekday():
+    history = _history((300, 0.51), (209, 0.51), (118, 0.51), (27, 0.53))
+    events = dv.project(history, PROJ_REF)
+    assert [e.days_until for e in events] == [64, 155, 246, 337]
+    # 364 days, not a calendar year: the weekday the company used survives.
+    paid = [date.fromisoformat(day) for day, _ in history.payments]
+    assert [e.ex_date.weekday() for e in events] == [d.weekday() for d in paid]
+    # Even payers step up: the latest rate stands for every slot.
+    assert {e.per_share for e in events} == {0.53}
+    assert {e.currency for e in events} == {"USD"}
+
+
+def test_an_interim_and_a_final_keep_their_own_amounts():
+    events = dv.project(_history((250, 0.40), (70, 1.10)), PROJ_REF)
+    assert [(e.days_until, e.per_share) for e in events] == [(114, 0.40), (294, 1.10)]
+
+
+def test_a_special_dividend_is_not_a_slot():
+    history = _history((300, 0.5), (209, 0.5), (150, 3.0), (118, 0.5), (27, 0.5))
+    events = dv.project(history, PROJ_REF)
+    assert len(events) == 4 and all(e.per_share == 0.5 for e in events)
+
+
+def test_a_payer_gone_quiet_is_not_promised_a_date():
+    # Quarterly until five months ago, then nothing: suspended, or late.
+    assert dv.project(_history((330, 0.5), (240, 0.5), (150, 0.5)), PROJ_REF) == []
+    assert dv.project(_history((400, 0.5)), PROJ_REF) == []
+    assert dv.project(dv.DividendHistory("KO"), PROJ_REF) == []
+
+
+def test_a_declared_date_stands_in_for_the_guess_next_to_it():
+    from datetime import timedelta
+
+    history = _history((300, 0.51), (209, 0.51), (118, 0.51), (27, 0.53))
+    declared = [PROJ_REF + timedelta(days=60)]
+    events = dv.project(history, PROJ_REF, declared)
+    assert [e.days_until for e in events] == [155, 246, 337]
+
+
+def test_a_slot_that_drifted_past_the_year_s_edge_is_not_drawn_twice():
+    # Five payments inside 52 weeks: the oldest is this quarter's, paid a few
+    # days later last year — its guess lands next to the one just paid.
+    history = _history((362, 0.5), (272, 0.5), (181, 0.5), (90, 0.5), (1, 0.5))
+    events = dv.project(history, PROJ_REF)
+    assert all(e.days_until > 30 for e in events)

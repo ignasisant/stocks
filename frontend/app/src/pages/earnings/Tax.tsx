@@ -11,16 +11,16 @@
  * exact.
  */
 
-import type { TaxDeadline } from "./data";
+import type { EventPick, TaxDeadline } from "./data";
 import { days, longDate, plain } from "./format";
 import type { T } from "./format";
 import { useT } from "../../shell/i18n";
 
-function taxTitle(deadline: TaxDeadline, t: T): string {
+export function taxTitle(deadline: TaxDeadline, t: T): string {
   return t(`earnings.tax_${deadline.key}`, { year: deadline.year });
 }
 
-function taxBody(deadline: TaxDeadline, t: T): string {
+export function taxBody(deadline: TaxDeadline, t: T): string {
   return t(`earnings.tax_${deadline.key}_body`, { year: deadline.year });
 }
 
@@ -58,18 +58,26 @@ export function TaxReminders({ deadlines }: { deadlines: TaxDeadline[] }) {
   );
 }
 
-export function TaxChip({ deadline }: { deadline: TaxDeadline }) {
+export function TaxChip({
+  deadline,
+  onPick,
+}: {
+  deadline: TaxDeadline;
+  onPick: (pick: EventPick) => void;
+}) {
   const t = useT();
   return (
-    <div
+    <button
+      type="button"
       className="earn-chip tax"
       title={`${taxTitle(deadline, t)} — ${taxBody(deadline, t)}`}
+      onClick={() => onPick({ kind: "tax", item: deadline })}
     >
       <span>
         {deadline.approximate ? t("earnings.tax_approx_mark") : ""}
         {taxTitle(deadline, t)}
       </span>
-    </div>
+    </button>
   );
 }
 

@@ -1,5 +1,7 @@
 /**
- * The flat view: what is coming, then what already printed.
+ * The flat view: what is coming, then what already printed — with the tax
+ * dates, the buy-back windows, the rate decisions and the book's dividends
+ * between them.
  *
  * The phone default, and the reason the grid is not the only view — seven
  * columns at 390px squeeze a day cell to about 55px and the chips ellipsize to
@@ -7,7 +9,17 @@
  */
 
 import { useT } from "../../shell/i18n";
-import type { CalendarEvent, CalendarResult, TaxDeadline } from "./data";
+import { CentralBankTable } from "./CentralBanks";
+import type {
+  CalendarDividend,
+  CalendarEvent,
+  CalendarResult,
+  CentralBankDecision,
+  RepurchaseWindow,
+  TaxDeadline,
+} from "./data";
+import { DividendTable } from "./Dividends";
+import { RepurchaseTable } from "./Repurchase";
 import { days, eps, longDate, plain, signedPct, tone } from "./format";
 import { TickerCell, useTickerProfile } from "../../shell/tickers";
 import { TaxTable } from "./Tax";
@@ -142,15 +154,24 @@ export default function ResultList({
   events,
   results,
   deadlines,
+  windows,
+  banks,
+  dividends,
 }: {
   events: CalendarEvent[];
   results: CalendarResult[];
   deadlines: TaxDeadline[];
+  windows: RepurchaseWindow[];
+  banks: CentralBankDecision[];
+  dividends: CalendarDividend[];
 }) {
   return (
     <>
       {events.length > 0 && <Upcoming events={events} />}
       <TaxTable deadlines={deadlines} />
+      <RepurchaseTable windows={windows} />
+      <CentralBankTable decisions={banks} />
+      <DividendTable dividends={dividends} />
       {results.length > 0 && <Past results={results} />}
     </>
   );

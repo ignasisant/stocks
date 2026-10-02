@@ -46,6 +46,7 @@ import {
   syncGuide,
   type GuideState,
 } from "./guide";
+import { nameOf, reportUnreadable } from "../pages/import/api";
 import type { A2uiAction } from "./a2ui";
 import type {
   ChatState,
@@ -65,6 +66,18 @@ const blank = (role: string, content: string): Turn => ({
   skills: [],
   web: [],
   action: null,
+});
+
+/** An attachment that came to nothing, as the bubble that says why. */
+const attachFailure = (error: string, wait?: number): Turn => ({
+  role: "assistant",
+  content: "",
+  skills: [],
+  web: [],
+  action: "import",
+  error,
+  wait,
+  ts: Date.now(),
 });
 
 /** The turn's calls with one proposal's card moved to where it now stands. */
@@ -593,11 +606,26 @@ export function useChat(live: boolean) {
     async (file: File, mapping?: Record<string, unknown>) => {
       if (reading || busy) return;
       staged.current = file;
-      setWork({ kind: "reading", filename: file.name });
+      const name = nameOf(file, state?.upload_types ?? []);
+      setWork({ kind: "reading", filename: name });
       try {
+        let content: string;
+        try {
+          content = await asBase64(file);
+        } catch (error) {
+          // A phone can hand over a file it cannot open — one still in Drive,
+          // one shared out of a chat app — and the read fails before anything
+          // is sent. Said as that rather than as the assistant being down, and
+          // reported, since no request ever reached the server. The chat names
+          // no broker: an empty platform is what tells this report apart from
+          // the Import page's.
+          reportUnreadable("", name, file, error);
+          setTurns((list) => [...list, attachFailure("chat.unreadable")]);
+          return;
+        }
         const found = await readAttachment({
-          filename: file.name,
-          content: await asBase64(file),
+          filename: name,
+          content,
           conversation: activeId ?? undefined,
           lang,
           ...(mapping ? { mapping } : {}),
@@ -616,22 +644,15 @@ export function useChat(live: boolean) {
         const walled = failure instanceof ApiError && failure.status === 429;
         setTurns((list) => [
           ...list,
-          {
-            role: "assistant",
-            content: "",
-            skills: [],
-            web: [],
-            action: "import",
-            error: walled ? "chat.rate_limited" : "chat.api_error",
-            wait: walled ? failure.retryAfter : undefined,
-            ts: Date.now(),
-          },
+          walled
+            ? attachFailure("chat.rate_limited", failure.retryAfter)
+            : attachFailure("chat.api_error"),
         ]);
       } finally {
         setWork(null);
       }
     },
-    [activeId, busy, lang, reading, refresh],
+    [activeId, busy, lang, reading, refresh, state],
   );
 
   /**

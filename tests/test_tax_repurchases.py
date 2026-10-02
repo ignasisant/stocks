@@ -212,3 +212,82 @@ def test_ireland_and_canada_defer_the_same_proportion():
     assert tax.get("ca").fiscal_year(
         [ca_loss], 2025, buys
     ).disallowed_loss == pytest.approx(200)
+
+
+# ---------------------------------------------------------------- open windows
+# The forward half the calendar draws: which loss sales a buy-back would still
+# block, and the first day it no longer would.
+
+
+def es_windows(txs: list[Transaction], today: str):
+    from datetime import date
+
+    _, realized = build(txs, base="EUR", matching="fifo")
+    return tax.get("es").open_windows(
+        realized, tax.buy_dates(txs), date.fromisoformat(today)
+    )
+
+
+def test_window_end_is_the_first_day_past_each_rule():
+    from datetime import date
+
+    from stocks.portfolio.tax.base import window_end
+
+    sold = date(2025, 12, 31)
+    assert window_end(sold, "2m") == date(2026, 3, 1)  # 28 Feb is still inside
+    assert window_end(sold, "30d") == date(2026, 1, 31)
+    assert window_end(sold, "28d") == date(2026, 1, 29)
+    assert window_end(sold, "") is None and window_end(sold, "6w") is None
+
+
+def test_an_open_window_carries_the_loss_a_buy_back_would_block():
+    (window,) = es_windows(
+        [buy("2024-01-02", 10, 50), sell("2025-03-03", 10, 40)], "2025-03-20"
+    )
+    assert window.ticker == "MSFT" and str(window.sold) == "2025-03-03"
+    assert str(window.clears) == "2025-05-04"
+    assert window.loss == pytest.approx(100)
+
+
+def test_parcels_sold_the_same_day_are_one_window():
+    (window,) = es_windows(
+        [
+            buy("2024-01-02", 5, 50),
+            buy("2024-06-03", 5, 60),
+            sell("2025-03-03", 10, 40),
+        ],
+        "2025-03-20",
+    )
+    assert window.loss == pytest.approx(150)
+
+
+def test_a_partial_buy_back_leaves_only_the_rest_exposed():
+    (window,) = es_windows(
+        [
+            buy("2024-01-02", 100, 50),
+            sell("2025-03-03", 100, 40),
+            buy("2025-03-20", 10, 41),
+        ],
+        "2025-03-25",
+    )
+    assert window.loss == pytest.approx(900)
+
+
+def test_a_closed_window_a_full_buy_back_and_a_gain_mark_nothing():
+    closed = [buy("2024-01-02", 10, 50), sell("2025-03-03", 10, 40)]
+    assert es_windows(closed, "2025-05-05") == []
+    blocked = closed + [buy("2025-03-10", 10, 41)]
+    assert es_windows(blocked, "2025-03-20") == []
+    gain = [buy("2024-01-02", 10, 50), sell("2025-03-03", 10, 60)]
+    assert es_windows(gain, "2025-03-20") == []
+
+
+def test_a_country_without_the_rule_has_no_windows():
+    from datetime import date
+
+    txs = [buy("2024-01-02", 10, 50), sell("2025-03-03", 10, 40)]
+    _, realized = build(txs, base="EUR", matching="fifo")
+    for code in ("de", "uk"):
+        assert tax.get(code).open_windows(
+            realized, tax.buy_dates(txs), date(2025, 3, 20)
+        ) == []

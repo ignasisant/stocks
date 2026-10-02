@@ -56,9 +56,14 @@ function Body({ data }: { data: EarningsCalendar }) {
   const bare = data.upcoming.length === 0 && data.results.length === 0;
   const untracked =
     bare && Object.keys(data.groups).length === 0 && data.skipped.length === 0;
-  // A watchlist with no dates still has the tax calendar to draw, so the grid
-  // only goes when there are no deadlines either.
-  const nothing = bare && data.tax_deadlines.length === 0;
+  // A watchlist with no dates still has the tax calendar, the buy-back
+  // windows and the book's dividends to draw, so the grid only goes when there
+  // are none of them. The Fed and ECB days alone do not keep it.
+  const nothing =
+    bare &&
+    data.tax_deadlines.length === 0 &&
+    data.repurchase_windows.length === 0 &&
+    data.dividends.length === 0;
   return (
     <>
       <TaxReminders deadlines={data.tax_deadlines} />

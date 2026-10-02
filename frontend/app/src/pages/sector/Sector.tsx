@@ -101,7 +101,11 @@ function Screen({ sectors }: { sectors: SectorSummary[] }) {
           <RescanButton rescan={rescan} />
         )}
       </div>
-      {rescan.note && <p className="ag-sec-caption ag-sec-status">{rescan.note}</p>}
+      {/* Always mounted, so a screen reader hears the rescan start and end:
+          a live region that arrives with its text is announced by none. */}
+      <p className="ag-sec-caption ag-sec-status" role="status">
+        {rescan.note}
+      </p>
 
       <Loaded query={cohort} skeleton={<Skeleton rows={8} />}>
         {(data) =>

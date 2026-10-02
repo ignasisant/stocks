@@ -1,23 +1,49 @@
 /**
  * One month as a grid of weeks, with a chip per print in the day it lands on.
  *
- * Upcoming chips are links to the ticker page — there is nothing else to say
- * about a date that has not happened. Past chips are buttons: they open the
- * result overview, which is what the Streamlit calendar does with its custom
- * component, except that here the click never has to travel to a server.
+ * Every chip is a button that hands its event to `onPick`, and the page opens
+ * one dialog for whichever was clicked (`EventDetail`): a past print gets the
+ * result overview the Streamlit calendar pops, every other kind a short card
+ * on what the date means for the reader — a dividend, what lands in the
+ * account. The dialogs link on to the ticker; a chip never navigates by itself.
  *
  * Results are drawn before upcoming prints inside a cell, matching the Python
  * page: on the one day that carries both, what already happened reads first.
+ * The reader's own dates lead — tax deadlines, then the day a loss sold can
+ * be bought back, then the Fed and ECB — and ex-dividend chips go last: a
+ * print moves a price, an ex-date only docks it by the payment.
+ *
+ * A cell shows a handful of chips and folds the rest behind "+N": the last
+ * week of a reporting season stacks seven prints on a Wednesday, and one tall
+ * cell stretches its whole row. Saturday and Sunday run narrower — markets are
+ * shut, and almost nothing lands there. The stacking and the fold live in
+ * `DayChips`, which the Home screen's four-week grid draws its cells with too.
  */
 
-import { Link } from "../../shell/router";
+import { useState } from "react";
+import type { ReactNode } from "react";
 import { useT } from "../../shell/i18n";
 import { useTickerProfile } from "../../shell/tickers";
 import { byDate, isSoon, monthWeeks } from "./data";
-import type { CalendarEvent, CalendarResult, Day, TaxDeadline } from "./data";
+import type {
+  CalendarDividend,
+  CalendarEvent,
+  CalendarResult,
+  CentralBankDecision,
+  Day,
+  EventPick,
+  RepurchaseWindow,
+  TaxDeadline,
+} from "./data";
+import { CentralBankChip } from "./CentralBanks";
+import { DividendChip } from "./Dividends";
 import { eps, signedPct } from "./format";
 import type { T } from "./format";
+import { RepurchaseChip } from "./Repurchase";
 import { TaxChip } from "./Tax";
+
+/** More chips than this and the cell shows one fewer, plus "+N". */
+const CELL_CHIPS = 5;
 
 const WEEKDAYS = [
   "earnings.wd_mon",
@@ -62,7 +88,7 @@ function ResultChip({
   onPick,
 }: {
   result: CalendarResult;
-  onPick: (result: CalendarResult) => void;
+  onPick: (pick: EventPick) => void;
 }) {
   const t = useT();
   const profile = useTickerProfile(result.ticker);
@@ -76,7 +102,7 @@ function ResultChip({
       type="button"
       className={`earn-chip past${verdict}`}
       title={resultTitle(result, profile?.name, t)}
-      onClick={() => onPick(result)}
+      onClick={() => onPick({ kind: "result", item: result })}
     >
       <Mark logo={profile?.logo} />
       <span>
@@ -87,49 +113,111 @@ function ResultChip({
   );
 }
 
-function EventChip({ event }: { event: CalendarEvent }) {
+function EventChip({
+  event,
+  onPick,
+}: {
+  event: CalendarEvent;
+  onPick: (pick: EventPick) => void;
+}) {
   const profile = useTickerProfile(event.ticker);
   return (
-    <Link
-      page="ticker"
-      params={{ ticker: event.ticker }}
+    <button
+      type="button"
       className={`earn-chip${isSoon(event) ? " soon" : ""}`}
       title={named(event.ticker, profile?.name)}
+      onClick={() => onPick({ kind: "print", item: event })}
     >
       <Mark logo={profile?.logo} />
       <span>{event.ticker}</span>
-    </Link>
+    </button>
+  );
+}
+
+/** Everything that lands on one day, by kind. */
+export type DayItems = {
+  events: CalendarEvent[];
+  results: CalendarResult[];
+  deadlines: TaxDeadline[];
+  windows: RepurchaseWindow[];
+  banks: CentralBankDecision[];
+  dividends: CalendarDividend[];
+};
+
+/**
+ * One day's chips in reading order, folded past `limit` behind "+N". The fold
+ * shows one fewer than the limit, so a cell never draws a button that hides a
+ * single chip it had room for.
+ */
+export function DayChips({
+  events,
+  results,
+  deadlines,
+  windows,
+  banks,
+  dividends,
+  onPick,
+  limit = CELL_CHIPS,
+}: DayItems & { onPick: (pick: EventPick) => void; limit?: number }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const chips: ReactNode[] = [
+    ...deadlines.map((deadline) => (
+      <TaxChip key={`t-${deadline.key}`} deadline={deadline} onPick={onPick} />
+    )),
+    ...windows.map((window) => (
+      <RepurchaseChip
+        key={`w-${window.ticker}-${window.sell_date}`}
+        window={window}
+        onPick={onPick}
+      />
+    )),
+    ...banks.map((decision) => (
+      <CentralBankChip key={`b-${decision.bank}`} decision={decision} onPick={onPick} />
+    )),
+    ...results.map((result) => (
+      <ResultChip key={`r-${result.ticker}`} result={result} onPick={onPick} />
+    )),
+    ...events.map((event) => (
+      <EventChip key={`e-${event.ticker}`} event={event} onPick={onPick} />
+    )),
+    ...dividends.map((dividend) => (
+      <DividendChip key={`d-${dividend.ticker}`} dividend={dividend} onPick={onPick} />
+    )),
+  ];
+  const folds = chips.length > limit;
+  const shown = folds && !open ? chips.slice(0, limit - 1) : chips;
+  return (
+    <>
+      {shown}
+      {folds && (
+        <button
+          type="button"
+          className="earn-more"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          {open
+            ? t("earnings.chips_less")
+            : t("earnings.chips_more", { n: chips.length - shown.length })}
+        </button>
+      )}
+    </>
   );
 }
 
 function Cell({
   day,
-  events,
-  results,
-  deadlines,
   onPick,
-}: {
-  day: Day;
-  events: CalendarEvent[];
-  results: CalendarResult[];
-  deadlines: TaxDeadline[];
-  onPick: (result: CalendarResult) => void;
-}) {
+  ...items
+}: DayItems & { day: Day; onPick: (pick: EventPick) => void }) {
   const classes = ["earn-day"];
   if (!day.inMonth) classes.push("dim");
   if (day.today) classes.push("today");
   return (
     <div className={classes.join(" ")}>
       <div className="earn-daynum">{day.day}</div>
-      {deadlines.map((deadline) => (
-        <TaxChip key={`t-${deadline.key}`} deadline={deadline} />
-      ))}
-      {results.map((result) => (
-        <ResultChip key={`r-${result.ticker}`} result={result} onPick={onPick} />
-      ))}
-      {events.map((event) => (
-        <EventChip key={`e-${event.ticker}`} event={event} />
-      ))}
+      <DayChips {...items} onPick={onPick} />
     </div>
   );
 }
@@ -141,6 +229,9 @@ export default function MonthGrid({
   events,
   results,
   deadlines,
+  windows,
+  banks,
+  dividends,
   onPick,
 }: {
   year: number;
@@ -149,12 +240,18 @@ export default function MonthGrid({
   events: CalendarEvent[];
   results: CalendarResult[];
   deadlines: TaxDeadline[];
-  onPick: (result: CalendarResult) => void;
+  windows: RepurchaseWindow[];
+  banks: CentralBankDecision[];
+  dividends: CalendarDividend[];
+  onPick: (pick: EventPick) => void;
 }) {
   const t = useT();
   const upcoming = byDate(events);
   const reported = byDate(results);
   const due = byDate(deadlines);
+  const freed = byDate(windows);
+  const decided = byDate(banks);
+  const exDates = byDate(dividends);
   return (
     <div className="earn-cal-scroll">
       <div className="earn-cal">
@@ -171,6 +268,9 @@ export default function MonthGrid({
               events={upcoming.get(day.iso) ?? []}
               results={reported.get(day.iso) ?? []}
               deadlines={due.get(day.iso) ?? []}
+              windows={freed.get(day.iso) ?? []}
+              banks={decided.get(day.iso) ?? []}
+              dividends={exDates.get(day.iso) ?? []}
               onPick={onPick}
             />
           )),

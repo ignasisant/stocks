@@ -114,6 +114,14 @@ describe("the composer's button", () => {
   });
 });
 
+describe("the composer's paperclip", () => {
+  it("offers a CSV by the type it was saved as, not only by its extension", () => {
+    // Chrome on Android turns `.csv` into `text/comma-separated-values` for the
+    // picker, which then greys out a download saved as `text/csv`.
+    expect(drawComposer(false)).toMatch(/accept="\.csv,[^"]*text\/csv/);
+  });
+});
+
 const preview: Preview = {
   filename: "U1_20260914.csv",
   label: "Interactive Brokers",

@@ -721,49 +721,16 @@
   line-height: 1.4;
 }
 
-.hm-cal-chip {
-  display: block;
-  margin-top: 2px;
-  padding: 1px 4px;
-  border-radius: var(--ag-radius-xs, 4px);
-  background: var(--ag-surface-sunken);
-  color: var(--ag-text-primary);
+/* The Earnings page's chips, a size down: a cell here is a fifth of a card,
+   not a seventh of a page, and three of them have to fit its 62px. */
+.hm-cal .earn-chip {
+  margin: 2px 0 0;
   font-size: var(--ag-fs-2xs, 10px);
-  font-weight: 600;
-  text-decoration: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-/* A past print is a button — it opens the result dialog in place — and a
-   button brings its own border, font and centring, none of which a chip has. */
-button.hm-cal-chip {
-  width: 100%;
-  border: none;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-button.hm-cal-chip:hover {
-  box-shadow: inset 0 0 0 1px var(--ag-border);
-}
-
-/* Due inside a week — the one upcoming chip that earns a colour. */
-.hm-cal-chip.hm-soon {
-  background: var(--ag-loss-band);
-  color: var(--ag-down);
-}
-
-.hm-cal-chip.hm-beat {
-  background: var(--ag-profit-band);
-  color: var(--ag-up);
-}
-
-.hm-cal-chip.hm-miss {
-  background: var(--ag-loss-band);
-  color: var(--ag-down);
+.hm-cal .earn-more {
+  padding: 0 4px;
+  font-size: var(--ag-fs-2xs, 10px);
 }
 
 /* The glance sparkline. Sits between the tile rows at a fixed height so the

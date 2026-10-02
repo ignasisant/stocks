@@ -49,6 +49,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useLang, useT } from "../shell/i18n";
 import { capMessage, skillName } from "./format";
 import { Glyph } from "./icons";
+import { acceptOf } from "../pages/import/api";
 import { Box, Mic } from "../ui/Mic";
 import { Status } from "../ui/Status";
 import type { ChatState, SettingsPatch, SkillsMode } from "./types";
@@ -289,13 +290,14 @@ export function Composer({
       >
         {/* The input is the button: a visible file field in a chat composer
             reads as a form, and `accept` is the server's own list of every
-            extension a parser (or the column mapper) can read. */}
+            extension a parser (or the column mapper) can read — with the MIME
+            types each goes by, since Android's picker filters on those. */}
         <input
           ref={file}
           type="file"
           className="ag-sr"
           tabIndex={-1}
-          accept={state.upload_types.map((ext) => `.${ext}`).join(",")}
+          accept={acceptOf(state.upload_types)}
           onChange={(event) => {
             const picked = event.target.files?.[0];
             // Cleared on the way out, so attaching the same file twice in a

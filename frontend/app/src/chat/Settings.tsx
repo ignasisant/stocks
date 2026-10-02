@@ -32,7 +32,7 @@ import { Status } from "../ui/Status";
 import { forgetKey, readState, revealKey, storeKey } from "./api";
 import { ConnectFailed, connectUrl, finishConnect, type ConnectAsk } from "./connect";
 import { keyError, providerLabel, providerTag } from "./format";
-import { Glyph } from "./icons";
+import { Glyph, ProviderMark } from "./icons";
 import { dropSessionKey, holdSessionKey, readSessionKey } from "./sessionKey";
 import type { ChatState, ProviderInfo, SettingsPatch } from "./types";
 
@@ -396,8 +396,11 @@ export function Settings({
             disabled={busy}
             onClick={() => onSave({ provider: provider.id })}
           >
-            <span className="ag-chat-tile-name">{provider.label}</span>
-            <span className="ag-chat-tile-tag">{tag(provider)}</span>
+            <ProviderMark provider={provider} />
+            <span className="ag-chat-tile-text">
+              <span className="ag-chat-tile-name">{provider.label}</span>
+              <span className="ag-chat-tile-tag">{tag(provider)}</span>
+            </span>
           </button>
         ))}
       </div>

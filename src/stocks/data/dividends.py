@@ -15,6 +15,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from statistics import median
 
 # yfinance reports the ex-date as an epoch. A stale blob can carry a date months
 # in the past (the last one that went ex); build_events drops those with the
@@ -88,13 +89,22 @@ def fetch_ex_dividend(ticker: str) -> tuple[date | None, float | None, str | Non
     whole calendar, and a digest without the dividend section is still a digest.
     Non-payers simply have no `exDividendDate`.
     """
+    from yfinance.exceptions import YFRateLimitError
+
     from stocks.data.crypto import is_crypto
     from stocks.data.fetch import info as quote_info
+    from stocks.data.fetch import trip_throttle
 
     if is_crypto(ticker):
         return None, None, None
     try:
         blob = quote_info(ticker)
+    except YFRateLimitError:
+        # Swallowed like any failure, but declared: a caller that caches the
+        # answer must be able to tell a throttled host from a book that pays
+        # nothing (`api.loaders.ex_dividends`).
+        trip_throttle()
+        return None, None, None
     except Exception:
         return None, None, None
     currency = blob.get("currency")
@@ -222,3 +232,71 @@ def histories(tickers: list[str], max_workers: int = 8) -> dict[str, DividendHis
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         fetched = pool.map(fetch_history, unique)
     return {t: h for t, h in zip(unique, fetched, strict=True) if h.payments}
+
+
+# ---------------------------------------------------------------- projection
+# Yahoo declares an ex-date a few weeks out, so a calendar paged three months
+# ahead is empty for a book that pays every quarter. The last year's schedule
+# fills it: each payment of the past 52 weeks moved forward 52 weeks — 364
+# days, so it lands on the same weekday and never on a weekend the original
+# avoided. A day of drift a year is noise next to an estimate.
+
+PROJECTION_DAYS = 364
+# A payment this many times the year's median is a one-off (a special
+# dividend), not a slot in the schedule. Judged only with three payments or
+# more: one or two cannot say which of them is the odd one.
+SPECIAL_MULTIPLE = 2.5
+# Quarterly or faster payers pay one amount each time and step it up, so the
+# latest is the best guess for every slot. Slower ones split the year into an
+# interim and a final that differ, so each slot keeps its own amount.
+EVEN_CADENCE_DAYS = 120
+# Quiet for this many cadences since the last payment: a suspension or a late
+# declaration, and either way not a date to promise.
+QUIET_CADENCES = 1.5
+
+
+def project(
+    history: DividendHistory, ref: date, declared: list[date] | tuple = ()
+) -> list[DividendEvent]:
+    """The next 52 weeks of ex-dates, guessed from the last 52. Pure.
+
+    `declared` are dates already on the calendar for this name (Yahoo's next
+    ex-date). A guess within half a cadence of one — or of a payment that
+    already went ex, which is where a slot that drifted past the year's edge
+    lands — is that payment, and is dropped for it.
+    """
+    cutoff = ref - timedelta(days=PROJECTION_DAYS)
+    paid = [(date.fromisoformat(day), amount) for day, amount in history.payments]
+    regular = [(day, amount) for day, amount in paid if day <= ref]
+    year = [(day, amount) for day, amount in regular if day > cutoff]
+    if len(year) >= 3:
+        typical = median(amount for _, amount in year)
+        regular = [(d, a) for d, a in regular if a <= typical * SPECIAL_MULTIPLE]
+        year = [(d, a) for d, a in year if a <= typical * SPECIAL_MULTIPLE]
+    if not year:
+        return []
+    # The usual gap, from the year's payments and the one before them — not
+    # 52 weeks over their count, which reads a payer that stopped after three
+    # quarters as one paying every four months.
+    recent = regular[-(len(year) + 1):]
+    gaps = [(b - a).days for (a, _), (b, _) in zip(recent, recent[1:], strict=False)]
+    cadence = min(median(gaps), PROJECTION_DAYS) if gaps else PROJECTION_DAYS
+    if (ref - year[-1][0]).days > cadence * QUIET_CADENCES:
+        return []
+    latest = year[-1][1]
+    taken = [day for day, _ in paid] + list(declared)
+    out: list[DividendEvent] = []
+    for day, amount in year:
+        guess = day + timedelta(days=PROJECTION_DAYS)
+        if guess <= ref:
+            continue
+        if any(abs((guess - known).days) < cadence / 2 for known in taken):
+            continue
+        out.append(DividendEvent(
+            history.ticker,
+            guess,
+            (guess - ref).days,
+            latest if cadence <= EVEN_CADENCE_DAYS else amount,
+            history.currency,
+        ))
+    return out

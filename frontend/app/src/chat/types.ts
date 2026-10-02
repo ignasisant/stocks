@@ -196,6 +196,8 @@ export type ProviderInfo = {
   /** The key in use came with the request — this tab's, not stored. */
   key_session?: boolean;
   domain: string | null;
+  /** The brand's mark, same-origin where mirrored; null for the keyless chain. */
+  logo?: string | null;
   /**
    * A one-click sign-in that mints the key instead of a pasted one (OAuth
    * PKCE, `connect.ts`), and where its code is traded for that key. Both or

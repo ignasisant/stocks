@@ -45,6 +45,84 @@ export type TaxDeadline = {
   remind: boolean;
 };
 
+/**
+ * An ex-dividend date on a name the book holds, or held when it went ex.
+ *
+ * Past ones are what the ledger's shares were entitled to — an estimate from
+ * Yahoo's per-share history, drawn whether or not a statement booked the
+ * cash. An upcoming one is the next date Yahoo has declared, priced at the
+ * LAST payment on today's position, since the date is published first — or,
+ * `projected`, one nobody has declared yet: last year's ex-date moved forward
+ * 52 weeks.
+ */
+export type CalendarDividend = {
+  ticker: string;
+  /** Ex-dividend date, ISO — not the pay date. */
+  date: string;
+  /** Negative once it went ex. */
+  days_until: number;
+  per_share: number | null;
+  shares: number | null;
+  /** per_share × shares, gross, in `currency`. */
+  amount: number | null;
+  currency: string | null;
+  /** Not declared: a guess from last year's schedule. */
+  projected: boolean;
+  /** The account's reporting currency, which `amount_base` is in. */
+  base_currency: string | null;
+  /**
+   * `amount` in `base_currency`: at the ex-date's rate once it went ex, at
+   * today's while it is ahead. Null when no rate could be had.
+   */
+  amount_base: number | null;
+  /**
+   * The share withheld at source, read off the book's own statements: 0.15 is
+   * 15%. Null when no statement ever printed one — never a promise of 0%.
+   */
+  withholding: number | null;
+  /** Read from this name's payments, or borrowed from its currency's. */
+  withholding_basis: "ticker" | "currency" | null;
+};
+
+/**
+ * A loss sold inside the tax residence's repurchase rule, and the first day
+ * buying the name back stops deferring it. Only the part no earlier buy-back
+ * already blocked is here; a loss fully blocked has no day left to wait for.
+ */
+export type RepurchaseWindow = {
+  ticker: string;
+  /** When the loss was sold, ISO. */
+  sell_date: string;
+  /** The first free day, ISO — where the chip goes. */
+  date: string;
+  days_until: number;
+  /** The loss still exposed, in `currency`. */
+  loss: number;
+  currency: string;
+  /** The rule: "2m" (Spain), "30d" (US, Canada) or "28d" (Ireland). */
+  window: string;
+};
+
+/** A Fed or ECB rate-decision day, from a schedule published a year ahead. */
+export type CentralBankDecision = {
+  bank: "fed" | "ecb";
+  date: string;
+  /** Negative once it passed. */
+  days_until: number;
+};
+
+/**
+ * A chip the reader clicked, for the dialog that explains it. One union, so a
+ * grid holds a single piece of state and one dialog serves every kind.
+ */
+export type EventPick =
+  | { kind: "result"; item: CalendarResult }
+  | { kind: "print"; item: CalendarEvent }
+  | { kind: "dividend"; item: CalendarDividend }
+  | { kind: "tax"; item: TaxDeadline }
+  | { kind: "rebuy"; item: RepurchaseWindow }
+  | { kind: "bank"; item: CentralBankDecision };
+
 export type EarningsCalendar = {
   upcoming: CalendarEvent[];
   results: CalendarResult[];
@@ -55,6 +133,12 @@ export type EarningsCalendar = {
   /** The tax residence the deadlines below are for. */
   jurisdiction: string | null;
   tax_deadlines: TaxDeadline[];
+  /** Oldest first; funds included, since they pay without reporting. */
+  dividends: CalendarDividend[];
+  /** Soonest first. Empty where the residence has no such rule. */
+  repurchase_windows: RepurchaseWindow[];
+  /** Oldest first; the whole published schedule, past days included. */
+  central_banks: CentralBankDecision[];
 };
 
 /**

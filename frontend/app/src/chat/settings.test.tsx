@@ -74,6 +74,22 @@ const draw = (next: ChatState) =>
   );
 
 describe("the settings view", () => {
+  it("draws each provider's mark, and the app's own spark for the keyless chain", () => {
+    const base = state({});
+    const out = draw({
+      ...base,
+      providers: base.providers.map((p) =>
+        p.id === "anthropic"
+          ? { ...p, logo: "/app/static/logos/brand-ai-anthropic.png" }
+          : p,
+      ),
+    });
+    expect(out).toContain('src="/app/static/logos/brand-ai-anthropic.png"');
+    // The initial under the logo, so a logo that fails leaves a letter.
+    expect(out).toMatch(/ag-chat-mark"[^>]*>A<img/);
+    expect(out).toMatch(/ag-chat-mark ag-chat-mark-own"[^>]*><svg/);
+  });
+
   it("asks for the key of the provider that was picked, not the one answering", () => {
     // Anthropic chosen, no key yet — so the free chain still answers.
     const out = draw(state({ preferred: "anthropic", answering: "free" }));
