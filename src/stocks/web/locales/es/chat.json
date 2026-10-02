@@ -35,6 +35,7 @@
   "chat.key_session_blocked": "Este navegador no deja que la página guarde la clave, ni siquiera para esta pestaña. Permite el almacenamiento del sitio o usa una ventana normal.",
   "chat.invalid_key": "Clave de API de {provider} no válida.",
   "chat.api_error": "El asistente no está disponible ahora mismo — inténtalo de nuevo en un momento.",
+  "chat.unreadable": "Este dispositivo no pudo abrir ese archivo, así que no se ha enviado nada. Si está en Drive o te llegó por una app de chat, guárdalo antes en Descargas del móvil y adjúntalo desde ahí.",
   "chat.provider_busy": "{provider} está saturado ahora mismo — reintenta en un momento o cambia de proveedor en Ajustes de IA.",
   "chat.fallback_note": "Respondido por {provider} — {chosen} no ha respondido.",
   "chat.no_credits": "Tu clave de {provider} no tiene crédito ni cuota disponible. Añade facturación en la consola del proveedor para seguir usando el asistente.",

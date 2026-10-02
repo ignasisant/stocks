@@ -333,6 +333,42 @@ export const commit = (
 export const undoLast = () => attempt(() => send<LastImport>("DELETE", "/import/last"));
 
 /**
+ * The MIME types each statement extension goes by. Android's file picker
+ * filters by type, not by extension: Chrome turns `.csv` into the one type
+ * Android's own table gives it, `text/comma-separated-values`, while a CSV
+ * downloaded from a broker is stored as whatever the broker served — usually
+ * `text/csv`. So `accept=".csv"` alone greys out the very file the reader came
+ * with, and every name a CSV goes by is listed here.
+ */
+const MIME_TYPES: Record<string, string[]> = {
+  csv: [
+    "text/csv",
+    "text/comma-separated-values",
+    "application/csv",
+    "application/vnd.ms-excel",
+  ],
+  pdf: ["application/pdf"],
+  xlsx: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+};
+
+/** What the file input accepts: every extension, and the types it goes by. */
+export function acceptOf(kinds: string[]): string {
+  return kinds.flatMap((kind) => [`.${kind}`, ...(MIME_TYPES[kind] ?? [])]).join(",");
+}
+
+/**
+ * The name to send for a picked file. The server reads the extension to pick
+ * a parser, and a file shared out of another app can arrive named without one;
+ * its type still says what it is. A name that has an extension keeps it, even
+ * one nothing reads — renaming `book.xls` to `book.xls.csv` would hide it.
+ */
+export function nameOf(file: File, kinds: string[]): string {
+  if (file.name.includes(".")) return file.name;
+  const kind = kinds.find((k) => MIME_TYPES[k]?.includes(file.type));
+  return kind ? `${file.name || "statement"}.${kind}` : file.name || "statement";
+}
+
+/**
  * A Blob as base64, via FileReader.
  *
  * `readAsDataURL` gives `data:<type>;base64,<payload>`, and the payload is
@@ -351,6 +387,33 @@ export function asBase64(blob: Blob): Promise<string> {
     };
     reader.readAsDataURL(blob);
   });
+}
+
+/**
+ * Tell the server a file could not be read, which it has no other way to hear:
+ * the read above happens before any request, so a phone that hands over a file
+ * it cannot open left no trace anywhere. Fire and forget — the reader is
+ * already being told, and a report that fails changes nothing for them.
+ */
+export function reportUnreadable(
+  platform: string,
+  name: string,
+  blob: Blob,
+  error: unknown,
+): void {
+  // Read by shape: a FileReader throws a DOMException, which is not an Error
+  // in every runtime.
+  const { name: kind, message } = (error ?? {}) as {
+    name?: unknown;
+    message?: unknown;
+  };
+  send<void>("POST", "/import/client-failure", {
+    platform,
+    filename: name.slice(0, 255),
+    bytes: blob.size,
+    error: (typeof kind === "string" && kind ? kind : "Error").slice(0, 64),
+    message: String(message ?? error ?? "").slice(0, 500),
+  }).catch(() => undefined);
 }
 
 /** Delete the last-import note and nothing else — the rows stay in the book. */

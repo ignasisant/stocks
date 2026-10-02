@@ -55,6 +55,7 @@
   "import.broker_other": "Other broker",
   "import.broker_help": "This format names no broker, so pick the one the file came from — or type its name if it isn't listed. It is stamped on every row; the Fees and Custody views group your book by it.",
   "import.file_too_large": "That file is {size} MB, and statements are capped at {cap} MB. Export a narrower date range, or split it in two — nothing has been uploaded.",
+  "import.unreadable": "This device could not open that file, so nothing was uploaded. If it lives in Drive or came from a chat app, save it to the phone's Downloads first and pick it from there — or paste its contents below.",
   "import.file_changed": "The file changed since the preview. Check it again before confirming.",
   "import.commit_failed": "The portfolio may have moved since the preview — check it again, then retry.",
   "import.commit_button": "Commit to ledger",

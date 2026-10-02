@@ -402,6 +402,44 @@ def report(
     return fp
 
 
+_ERROR_NAME = re.compile(r"[A-Za-z]{1,40}")
+
+
+def client_failure(
+    platform: str, filename: str, size: int, error_name: str, message: str
+) -> dict:
+    """A statement the browser could not read, so the server never saw it.
+
+    The import page reads the file into memory before anything is sent — and a
+    phone handing over a file from Drive or a chat app can fail right there.
+    That attempt left no trace at all: no request, no `import.parse`, just a
+    reader who gave up. This files it like any other failure, `surface:
+    "client"`, with what the browser knew — the name, the size it claimed, and
+    the `DOMException` it threw — since there are no bytes to fingerprint.
+    """
+    fp: dict = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "platform": platform,
+        "surface": "client",
+        "user": obs.current().get("user", "-"),
+        "file": mask_digits(filename),
+        "ext": _extension(filename),
+        "bytes": max(int(size), 0),
+        "imported": 0,
+        "skipped": 0,
+        "reasons": {},
+        # A DOMException name (`NotReadableError`) is the browser's word, not
+        # the reader's; anything that is not one is not kept.
+        "error_type": error_name if _ERROR_NAME.fullmatch(error_name) else "Error",
+        "error": redact(message)[:300],
+    }
+    obs.event("import.parse", level=logging.WARNING, ok=False, **_fields(fp))
+    path = record(fp)
+    if path is not None:
+        fp["id"] = path.stem
+    return fp
+
+
 # ---------------------------------------------------------------- read side
 
 

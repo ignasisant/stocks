@@ -1018,6 +1018,45 @@ def preview(
     )
 
 
+class ClientFailure(BaseModel):
+    """A statement the browser picked and then could not read."""
+
+    model_config = {"extra": "forbid"}
+
+    platform: str = Field(default="", max_length=64)
+    filename: str = Field(
+        default="",
+        max_length=255,
+        description="Masked before it is kept: its digits go, its extension stays.",
+    )
+    bytes: int = Field(default=0, ge=0, description="The size the browser claimed.")
+    error: str = Field(
+        default="Error",
+        max_length=64,
+        description="The exception's name — `NotReadableError`, `NotFoundError`.",
+    )
+    message: str = Field(default="", max_length=500)
+
+
+@router.post(
+    "/client-failure",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="A file the browser could not read",
+)
+def client_failure(account: Writer, body: Annotated[ClientFailure, ...]) -> None:
+    """File the anonymised diagnostic for a read that never reached `/preview`.
+
+    The page reads the file before it sends anything, so a phone that hands
+    over a file it cannot open — one still in Drive, one shared out of a chat
+    app — failed with no request at all, and so with no record anywhere. A
+    session like every other write, which also caps who can fill
+    `data/imports/` to the people who could import in the first place.
+    """
+    diagnostics.client_failure(
+        body.platform, body.filename, body.bytes, body.error, body.message
+    )
+
+
 @router.post("/commit", response_model=ImportResult, summary="Write the rows")
 def commit(
     caller: Authed,

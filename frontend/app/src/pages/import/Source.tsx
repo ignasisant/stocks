@@ -14,7 +14,7 @@
 import { useState } from "react";
 import type { ChangeEvent, DragEvent, FocusEvent, ReactNode, RefObject } from "react";
 import { useT } from "../../shell/i18n";
-import { MAX_BYTES } from "./api";
+import { MAX_BYTES, acceptOf } from "./api";
 import type { Platform, Staged } from "./api";
 import { Eyebrow } from "./Card";
 import { Glyph } from "./Glyph";
@@ -138,7 +138,7 @@ export function Source({
           onDrop={onDrop}
         >
           <input
-            accept={accepts.map((kind) => `.${kind}`).join(",")}
+            accept={acceptOf(accepts)}
             aria-describedby="im-file-cap"
             aria-labelledby="im-file-label"
             className="im-file"

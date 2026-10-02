@@ -633,6 +633,10 @@ WRITES = {
     # checked, and "every non-GET except the ones that happen not to write" is
     # not.
     ("/v1/import/preview", "post"),
+    # Writes no book, only an anonymised diagnostic under data/imports/ for a
+    # file the browser could not read — still a session's, so nobody who could
+    # not import can fill that directory.
+    ("/v1/import/client-failure", "post"),
     ("/v1/watchlist/{ticker}/alerts", "put"),
     ("/v1/portfolio/transactions", "delete"),
     # The assistant. A turn is a write twice over: it appends the completed
