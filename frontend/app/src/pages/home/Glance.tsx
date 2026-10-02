@@ -25,8 +25,9 @@ import { Chip, Kpi, KpiGrid, chipFor } from "../../ui/Kpi";
 import { DenseRows, Responsive } from "../../ui/Rows";
 import { Card, CardQuery, CardTitle, Note, TickerCell } from "./ui";
 import { money, percent, plain } from "./format";
-import { AverageTile, Spark } from "./Spark";
+import { AverageTile, SPARK_WINDOW, Spark } from "./Spark";
 import type {
+  History,
   MarketStatus,
   Movers,
   Performance,
@@ -72,6 +73,13 @@ type Book = {
    * failing the card for.
    */
   market: MarketStatus | null;
+  /**
+   * The chart's days and the 20-day mean's, in the same burst as `summary` so
+   * the line ends on the value the tile prints — the server prices both off
+   * one download, but only for requests that reach it inside the same one.
+   * Null when it failed: the sparkline fails to nothing, never the card.
+   */
+  history: History | null;
 };
 
 export function Glance({
@@ -83,7 +91,7 @@ export function Glance({
 }) {
   const t = useT();
   const query = useApi<Book>(async () => {
-    const [summary, performance, positions, day, week, month, market] =
+    const [summary, performance, positions, day, week, month, market, history] =
       await Promise.all([
         get<Summary>("/portfolio/summary"),
         get<Performance>("/portfolio/performance"),
@@ -94,8 +102,16 @@ export function Glance({
         // A table of exchange hours and a clock — no account, no fetch. It
         // only decides a caption, so it must never take the card down with it.
         get<MarketStatus>("/market/status").catch(() => null),
+        get<History>("/portfolio/history", { window: SPARK_WINDOW }).catch(() => null),
       ]);
-    return { summary, performance, positions, movers: { day, week, month }, market };
+    return {
+      summary,
+      performance,
+      positions,
+      movers: { day, week, month },
+      market,
+      history,
+    };
   }, [nonce]);
 
   // The ledger read is shared with the recent-transactions strip; here it only
@@ -130,7 +146,7 @@ export function Glance({
         return (
           <section className="hm-section">
             <h2 className="hm-h2">{plain(t("home.portfolio_title"))}</h2>
-            <GlanceCard book={book} nonce={nonce} />
+            <GlanceCard book={book} />
             <MoversCard movers={book.movers} positions={book.positions.positions} />
             <PortfolioLink />
           </section>
@@ -149,7 +165,7 @@ function PortfolioLink() {
   );
 }
 
-function GlanceCard({ book, nonce }: { book: Book; nonce: number }) {
+function GlanceCard({ book }: { book: Book }) {
   const t = useT();
   const lang = useLang();
   const currency = useCurrency();
@@ -250,7 +266,7 @@ function GlanceCard({ book, nonce }: { book: Book; nonce: number }) {
         {summary.demo ? <Note>{t("home.demo_caption")}</Note> : null}
       </Card>
       <Card>
-        <Spark nonce={nonce} />
+        <Spark history={book.history} />
         {/* The worse of the two counts: the price pass can miss a name, and the
             basket can additionally lose one whose currency has no FX path. A
             book reported as whole while a third of it was left out is the same
@@ -279,7 +295,7 @@ function GlanceCard({ book, nonce }: { book: Book; nonce: number }) {
               />
             );
           })}
-          <AverageTile nonce={nonce} />
+          <AverageTile history={book.history} />
         </KpiGrid>
         {/* Which session the day figure belongs to, when it is not this one.
             The server picks the state and the stem; the sentence stays ours. */}
