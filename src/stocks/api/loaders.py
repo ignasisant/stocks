@@ -860,6 +860,52 @@ def dividend_estimates(db: str, mtime: float, base: str = "EUR") -> tuple:
     so a throttled minute is never cached as "this book pays nothing" — the
     route turns it into a 503 with a `Retry-After` like every other fetch here.
     """
+    from stocks.portfolio import dividends as div
+
+    txs, history, payments = _entitled(db, mtime, base)
+    estimated = div.estimate_by_year(payments, base=base)
+    forward = div.forward_income(txs, history)
+    totals = div.forward_totals(forward, base=base)
+    unrecorded = div.unrecorded_by_year(div.by_year(txs, base=base), estimated)
+    return estimated, forward, totals, unrecorded
+
+
+@ttl_cache(21600.0, max_entries=8)
+def unbooked_dividends(db: str, mtime: float, base: str = "EUR") -> list[tuple]:
+    """[(EstimatedPayment, gross in `base` or None), …], newest first.
+
+    The payments `dividend_estimates` counts as unrecorded, one by one: what the
+    shares were entitled to with no ledger dividend row to answer for it. Most
+    of them are the tail a statement never reached — it was exported in July,
+    the book kept paying in August. Valued at the ex-date's rate, as the yearly
+    estimate is; a date with no rate is None, never today's standing in.
+
+    Raises `YFRateLimitError` under the same rule as `dividend_estimates`.
+    """
+    from stocks.data.fx import converter, prefetch
+    from stocks.portfolio import dividends as div
+
+    txs, _history, payments = _entitled(db, mtime, base)
+    missing = div.unbooked(payments, transfers.relabel(txs))
+    prefetch((p.ex_date, p.currency) for p in missing)
+    to_base = converter(base)
+    out: list[tuple] = []
+    for p in reversed(missing):
+        try:
+            amount = to_base(p.gross, p.currency, p.ex_date)
+        except Exception:  # noqa: BLE001 — an unpriced row is n/a, not a 500
+            amount = None
+        out.append((p, amount))
+    return out
+
+
+def _entitled(db: str, mtime: float, base: str) -> tuple:
+    """(ledger, per-share histories, every payment the shares were owed).
+
+    The half both dividend estimates start from. The histories are memoized per
+    process (`stocks.data.dividends`), so the second loader to ask pays no
+    request for them.
+    """
     from yfinance.exceptions import YFRateLimitError
 
     from stocks.data.dividends import histories
@@ -873,12 +919,7 @@ def dividend_estimates(db: str, mtime: float, base: str = "EUR") -> tuple:
     history = histories(tickers)
     if not history and (tickers and throttle_remaining()):
         raise YFRateLimitError
-    payments = div.estimate_payments(txs, history)
-    estimated = div.estimate_by_year(payments, base=base)
-    forward = div.forward_income(txs, history)
-    totals = div.forward_totals(forward, base=base)
-    unrecorded = div.unrecorded_by_year(div.by_year(txs, base=base), estimated)
-    return estimated, forward, totals, unrecorded
+    return txs, history, div.estimate_payments(txs, history)
 
 
 @ttl_cache(_LEDGER_TTL, max_entries=16)

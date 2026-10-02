@@ -1234,6 +1234,42 @@ class Dividends(BaseModel):
     )
 
 
+class UnbookedDividend(BaseModel):
+    ticker: str
+    ex_date: str = Field(
+        description="Entitlement day — the cash lands weeks later, on a pay date "
+        "this estimate does not know."
+    )
+    per_share: float = Field(description="Split-adjusted, in `currency`.")
+    shares: float = Field(description="Held at the close before the ex-date.")
+    currency: str
+    gross: float = Field(description="`per_share` * `shares`, before withholding.")
+    amount: float | None = Field(
+        default=None,
+        description="`gross` in the reporting currency at the ex-date's rate; "
+        "null when that day has no rate.",
+    )
+
+
+class UnbookedDividends(BaseModel):
+    base: str
+    total: int = Field(default=0, description="Payments found, before `limit`.")
+    payments: list[UnbookedDividend] = Field(
+        default_factory=list,
+        description=(
+            "Newest first. Estimates, never receipts: a client listing them "
+            "beside ledger rows has to mark each one as such."
+        ),
+    )
+    available: bool = Field(
+        default=False,
+        description=(
+            "Whether the entitlement pass ran. False with no payments means "
+            "nobody could check, not that nothing is owed."
+        ),
+    )
+
+
 # ------------------------------------------------------------------ what it owes
 # The jurisdiction is not a parameter of this endpoint: it is the account's own
 # setting, and the ledger is replayed *at* that jurisdiction's currency and

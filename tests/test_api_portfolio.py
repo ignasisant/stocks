@@ -292,6 +292,51 @@ def test_a_throttled_estimate_is_null_rather_than_nothing_owed(
     assert payload["booked_total"] == pytest.approx(20.0)  # the receipt stands
 
 
+def test_unbooked_dividends_are_listed_newest_first_and_marked_by_shape(
+    client, book, monkeypatch
+):
+    """What the strip slots beside the ledger: estimates, in their own route."""
+    from stocks.portfolio.dividends import EstimatedPayment
+
+    book([Transaction("2026-01-02", "KO", "buy", 100, 60.0, "USD", 1.0)])
+    monkeypatch.setattr(
+        loaders,
+        "unbooked_dividends",
+        lambda db, mtime, base: [
+            (EstimatedPayment("KO", "2026-09-12", 0.53, 100.0, "USD"), 45.0),
+            (EstimatedPayment("KO", "2026-06-13", 0.53, 100.0, "USD"), None),
+        ],
+    )
+
+    payload = client.get(
+        "/v1/portfolio/dividends/unbooked",
+        params={"account": EMAIL, "limit": 1},
+        headers=AUTH,
+    ).json()
+    assert payload["available"] is True
+    assert payload["total"] == 2
+    (row,) = payload["payments"]
+    assert row["ex_date"] == "2026-09-12"
+    assert row["gross"] == pytest.approx(53.0)
+    assert row["amount"] == pytest.approx(45.0)
+
+
+def test_a_throttled_unbooked_pass_is_unavailable_rather_than_empty(
+    client, book, monkeypatch
+):
+    def throttled(db, mtime, base):
+        raise YFRateLimitError
+
+    book([Transaction("2026-01-02", "KO", "buy", 100, 60.0, "USD", 1.0)])
+    monkeypatch.setattr(loaders, "unbooked_dividends", throttled)
+
+    payload = client.get(
+        "/v1/portfolio/dividends/unbooked", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert payload["available"] is False
+    assert payload["payments"] == []
+
+
 # ------------------------------------------------------------------------- tax
 
 

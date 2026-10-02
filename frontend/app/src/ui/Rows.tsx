@@ -54,7 +54,8 @@ export type DenseSpec<T> = {
 const present = (node: ReactNode) =>
   node !== null && node !== undefined && node !== false && node !== "";
 
-function DenseRow<T>({ row, spec }: { row: T; spec: DenseSpec<T> }) {
+/** One row of `DenseRows`, for a list that slots rows of its own between them. */
+export function DenseRow<T>({ row, spec }: { row: T; spec: DenseSpec<T> }) {
   const ticker = spec.ticker(row);
   const profile = useTickerProfile(ticker);
   const symbol = profile?.symbol || ticker;

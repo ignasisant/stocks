@@ -270,6 +270,47 @@ def unrecorded_by_year(
     return gaps
 
 
+def unbooked(
+    payments: list[EstimatedPayment],
+    transactions: list[Transaction],
+    lag_days: int = 100,
+    early_days: int = 3,
+) -> list[EstimatedPayment]:
+    """The estimated payments no ledger dividend row accounts for, oldest first.
+
+    What `unrecorded_by_year` sums, one payment at a time — the rows a list of
+    recent activity can show for a statement that stops before the book does.
+    A broker books a dividend on its pay date, which trails the ex-date by
+    anything from a day to a quarter (a Japanese register pays in June for
+    March), so a receipt answers for an entitlement of the same ticker that
+    went ex up to `lag_days` before it, or `early_days` after for a statement
+    that dates the row a day off. Each receipt answers for one payment, the
+    earliest still open: a quarter the import skipped stays visible beside the
+    quarters that did arrive, and two rows for one payment never hide the next.
+
+    Both sides have to be on one ticker footing — `transfers.relabel`'d, as the
+    histories the estimates were priced from are.
+    """
+    pending: dict[str, list[EstimatedPayment]] = {}
+    for p in sorted(payments, key=lambda p: p.ex_date):
+        pending.setdefault(p.ticker, []).append(p)
+    for t in sorted(transactions, key=lambda t: (t.date, t.id or 0)):
+        if t.action != "dividend" or not pending.get(t.ticker):
+            continue
+        paid = _date.fromisoformat(t.date[:10])
+        earliest = (paid - _timedelta(days=lag_days)).isoformat()
+        latest = (paid + _timedelta(days=early_days)).isoformat()
+        queue = pending[t.ticker]
+        for i, p in enumerate(queue):
+            if earliest <= p.ex_date <= latest:
+                del queue[i]
+                break
+    return sorted(
+        (p for queue in pending.values() for p in queue),
+        key=lambda p: (p.ex_date, p.ticker),
+    )
+
+
 def forward_income(
     transactions: list[Transaction],
     histories: dict[str, DividendHistory],
