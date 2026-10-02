@@ -25,14 +25,19 @@
  * types anything rather than refusing the key on submit.
  */
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "../shell/i18n";
 import { ApiError } from "../shell/api";
+import { Status } from "../ui/Status";
 import { forgetKey, readState, revealKey, storeKey } from "./api";
-import { keyError, providerTag } from "./format";
+import { ConnectFailed, connectUrl, finishConnect, type ConnectAsk } from "./connect";
+import { keyError, providerLabel, providerTag } from "./format";
 import { Glyph } from "./icons";
 import { dropSessionKey, holdSessionKey, readSessionKey } from "./sessionKey";
 import type { ChatState, ProviderInfo, SettingsPatch } from "./types";
+
+/** What a minted key is called on the reader's own provider dashboard. */
+const CONNECT_LABEL = "TopStocks";
 
 function Group({ children }: { children: string }) {
   return <p className="ag-chat-group">{children}</p>;
@@ -143,6 +148,31 @@ function Key({
     }
   };
 
+  // A provider that mints keys by sign-in (`connect.ts`): one press, and the
+  // reader comes back with a key on their own account instead of hunting for
+  // the console, copying a secret and pasting it here. The Remember box means
+  // the same thing for both ways in, so it is read before leaving.
+  const connectable = Boolean(provider.connect_url && provider.connect_token_url);
+  const signIn = async () => {
+    if (working) return;
+    setWorking(true);
+    setFailed(null);
+    let url: string | null = null;
+    try {
+      url = await connectUrl(provider, storage && remember, CONNECT_LABEL);
+    } catch {
+      // No `crypto.subtle` — a page served over plain http off localhost.
+    }
+    if (!url) {
+      setFailed("chat.connect_blocked");
+      setWorking(false);
+      return;
+    }
+    // Still working on purpose: the page is leaving, and a second press
+    // would only overwrite the verifier the first one is coming back for.
+    window.location.assign(url);
+  };
+
   const forget = async () => {
     setWorking(true);
     setFailed(null);
@@ -189,6 +219,17 @@ function Key({
     );
   }
 
+  const rememberBox = storage && (
+    <label className="ag-chat-check">
+      <input
+        type="checkbox"
+        checked={remember}
+        onChange={(event) => setRemember(event.target.checked)}
+      />
+      {t("chat.remember")}
+    </label>
+  );
+
   return (
     <form
       className="ag-chat-key"
@@ -197,11 +238,32 @@ function Key({
         void save();
       }}
     >
-      <p className="ag-chat-hint">
-        {t(storage ? "chat.byok_help" : "chat.byok_help_session", {
-          provider: provider.label,
-        })}
-      </p>
+      {connectable ? (
+        <>
+          <p className="ag-chat-hint">
+            {t("chat.connect_help", { provider: provider.label })}
+          </p>
+          <button
+            type="button"
+            className="ag-chat-btn ag-chat-btn-on"
+            disabled={busy || working}
+            onClick={() => void signIn()}
+          >
+            <Glyph name="link" size={14} />
+            {t("chat.connect_cta", { provider: provider.label })}
+          </button>
+          {/* Above the paste field rather than beside its Save: it decides
+              where the signed-in key goes as much as a typed one. */}
+          {rememberBox}
+          <p className="ag-chat-or">{t("chat.connect_or")}</p>
+        </>
+      ) : (
+        <p className="ag-chat-hint">
+          {t(storage ? "chat.byok_help" : "chat.byok_help_session", {
+            provider: provider.label,
+          })}
+        </p>
+      )}
       <label htmlFor={`${uid}-key`} className="ag-sr">
         {t("chat.key_label", { provider: provider.label })}
       </label>
@@ -214,20 +276,13 @@ function Key({
         aria-label={t("chat.key_label", { provider: provider.label })}
         onChange={(event) => setTyped(event.target.value)}
       />
-      {storage && (
-        <label className="ag-chat-check">
-          <input
-            type="checkbox"
-            checked={remember}
-            onChange={(event) => setRemember(event.target.checked)}
-          />
-          {t("chat.remember")}
-        </label>
-      )}
+      {!connectable && rememberBox}
       <div className="ag-chat-import-acts">
         <button
           type="submit"
-          className="ag-chat-btn ag-chat-btn-on"
+          // One primary per form: where sign-in is offered, it is the way in
+          // and pasting is the fallback.
+          className={`ag-chat-btn${connectable ? "" : " ag-chat-btn-on"}`}
           disabled={busy || working || !typed.trim()}
         >
           {t("chat.byok_save")}
@@ -266,6 +321,8 @@ export function Settings({
   onSave,
   onState,
   onDeleteThread,
+  connect = null,
+  onConnectTaken,
 }: {
   state: ChatState;
   busy: boolean;
@@ -275,10 +332,44 @@ export function Settings({
   onSave: (patch: SettingsPatch) => void;
   onState: (next: ChatState) => void;
   onDeleteThread: (cid: string) => void;
+  /** Back from a provider's sign-in, with the code still to be traded. */
+  connect?: ConnectAsk | null;
+  onConnectTaken?: () => void;
 }) {
   const t = useT();
   const tag = useTag();
   const [confirming, setConfirming] = useState(false);
+
+  // Finished here rather than where the return lands (`Drawer.tsx`): this
+  // view mounts only once the drawer's opening read is in, so the state the
+  // trade answers with cannot be overwritten by that read arriving late. The
+  // code is single use and StrictMode runs effects twice, hence the ref.
+  const [joining, setJoining] = useState<{
+    provider: string;
+    phase: "working" | "done" | "failed";
+    error?: string;
+  } | null>(null);
+  const spent = useRef<string | null>(null);
+  useEffect(() => {
+    if (!connect || spent.current === connect.code) return;
+    spent.current = connect.code;
+    onConnectTaken?.();
+    const { provider } = connect.pending;
+    setJoining({ provider, phase: "working" });
+    finishConnect(connect.code, connect.pending)
+      .then((next) => {
+        onState(next);
+        setJoining({ provider, phase: "done" });
+      })
+      .catch((failure: unknown) => {
+        setJoining({
+          provider,
+          phase: "failed",
+          error: failure instanceof ConnectFailed ? failure.key : "chat.api_error",
+        });
+      });
+  }, [connect]);
+  const joinedAs = joining ? providerLabel(state.providers, joining.provider) : "";
 
   const picked =
     state.providers.find((p) => p.id === state.preferred) ?? state.providers[0];
@@ -337,6 +428,19 @@ export function Settings({
           {picked.needs_key ? (
             <>
               <Group>{t("chat.sec_key")}</Group>
+              {joining?.phase === "working" && (
+                <Status label={t("chat.connect_working", { provider: joinedAs })} />
+              )}
+              {joining?.phase === "done" && (
+                <p className="ag-chat-hint">
+                  {t("chat.connect_done", { provider: joinedAs })}
+                </p>
+              )}
+              {joining?.phase === "failed" && (
+                <p className="ag-chat-note">
+                  {t(joining.error ?? "chat.connect_failed", { provider: joinedAs })}
+                </p>
+              )}
               <Key
                 provider={picked}
                 storage={state.key_storage ?? true}

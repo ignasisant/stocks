@@ -257,6 +257,22 @@ class ProviderInfo(BaseModel):
         ),
     )
     domain: str | None = None
+    connect_url: str | None = Field(
+        default=None,
+        description=(
+            "An OAuth PKCE authorize page that mints this account a key of its "
+            "own in one click, instead of a pasted one. The client runs the "
+            "flow and hands the key to `PUT /chat/keys/{provider}` (or holds "
+            "it for the session) like a typed one. Null: paste a key."
+        ),
+    )
+    connect_token_url: str | None = Field(
+        default=None,
+        description=(
+            "Where the client trades the code `connect_url` sends back, with "
+            "its PKCE verifier, for the key. Set exactly when `connect_url` is."
+        ),
+    )
 
 
 class State(BaseModel):
@@ -653,6 +669,8 @@ def _state(paths: UserPaths, held: dict[str, str] | None = None) -> State:
                 key_placeholder=provider.key_placeholder,
                 key_days_left=engine.byok_days_left(prefs, provider.id),
                 domain=provider.domain,
+                connect_url=provider.connect_url or None,
+                connect_token_url=provider.connect_token_url or None,
             )
             for provider in llm.available_providers()
         ],

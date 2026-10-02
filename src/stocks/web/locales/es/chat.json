@@ -240,5 +240,12 @@
   "chat.debate_bull": "Caso alcista",
   "chat.debate_bear": "Caso bajista",
   "chat.debate_failed": "Esta parte no respondió a tiempo.",
-  "chat.debate_arguing": "Argumentando…"
+  "chat.debate_arguing": "Argumentando…",
+  "chat.connect_cta": "Entrar con {provider}",
+  "chat.connect_help": "Entra con {provider} y sus modelos responden con tu cuenta y tus créditos, sin copiar ninguna clave. Puedes revocarla cuando quieras en los ajustes de {provider}.",
+  "chat.connect_or": "o pega una clave",
+  "chat.connect_working": "Conectando {provider}…",
+  "chat.connect_done": "{provider} conectado. Las respuestas salen ahora de tu cuenta.",
+  "chat.connect_failed": "{provider} no entregó la clave; puede que el inicio de sesión haya caducado. Vuelve a intentarlo.",
+  "chat.connect_blocked": "No se pudo iniciar sesión en este navegador: necesita almacenamiento del sitio. Permítelo o pega una clave abajo."
 }

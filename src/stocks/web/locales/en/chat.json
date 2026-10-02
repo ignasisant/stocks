@@ -240,5 +240,12 @@
   "chat.debate_bull": "Bull case",
   "chat.debate_bear": "Bear case",
   "chat.debate_failed": "This side did not answer in time.",
-  "chat.debate_arguing": "Arguing…"
+  "chat.debate_arguing": "Arguing…",
+  "chat.connect_cta": "Sign in with {provider}",
+  "chat.connect_help": "Sign in with {provider} and its models answer on your own account and credits — no key to copy. You can revoke it any time in {provider}'s settings.",
+  "chat.connect_or": "or paste a key",
+  "chat.connect_working": "Connecting {provider}…",
+  "chat.connect_done": "{provider} connected. Answers now come from your account.",
+  "chat.connect_failed": "{provider} did not hand over a key — the sign-in may have expired. Try again.",
+  "chat.connect_blocked": "Sign-in could not start in this browser: it needs site storage. Allow it, or paste a key below."
 }
