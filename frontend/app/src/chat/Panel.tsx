@@ -32,6 +32,7 @@ import { Setup, needsSetup } from "./Setup";
 import { Threads } from "./Threads";
 import { Status } from "../ui/Status";
 import { Turn } from "./Turn";
+import type { ConnectAsk } from "./connect";
 import type { Chat } from "./useChat";
 import {
   WIDTHS,
@@ -109,10 +110,15 @@ function Grip({ onWidth }: { onWidth: (key: WidthKey | null) => void }) {
 
 export default function Panel({
   chat,
+  connect = null,
+  onConnectTaken,
   onClose,
   onPark,
 }: {
   chat: Chat;
+  /** Back from a provider's sign-in: the settings view finishes it. */
+  connect?: ConnectAsk | null;
+  onConnectTaken?: () => void;
   onClose: () => void;
   /**
    * Step aside for a page the walkthrough sent the reader to, on a phone —
@@ -123,6 +129,11 @@ export default function Panel({
 }) {
   const t = useT();
   const [view, setView] = useState<"thread" | "threads" | "settings">("thread");
+  // The reader left from the key section and comes back to it: the settings
+  // view is where the sign-in is finished and where its outcome is said.
+  useEffect(() => {
+    if (connect) setView("settings");
+  }, [connect]);
   // Opening the drawer on the guide's own thread is the moment a capability
   // may have been switched on somewhere the guide was not looking — an import
   // in another tab, a key saved in settings. Catch the thread up then, once
@@ -317,6 +328,8 @@ export default function Panel({
           onSave={(patch) => void chat.settings(patch)}
           onState={chat.apply}
           onDeleteThread={(cid) => void chat.remove(cid)}
+          connect={connect}
+          onConnectTaken={onConnectTaken}
         />
       )}
 

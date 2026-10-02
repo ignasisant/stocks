@@ -25,6 +25,7 @@ import { Glyph } from "./icons";
 import { useRoute } from "../shell/router";
 import { autoSeen, markAutoSeen, readGuide, type GuideState } from "./guide";
 import { useChat } from "./useChat";
+import type { ConnectAsk } from "./connect";
 import "./chat.css";
 
 const Panel = lazy(() => import("./Panel"));
@@ -147,6 +148,33 @@ export function Drawer() {
     // Once per mount: the URL case re-runs only when `?guide=` itself changes.
   }, [asked]);
 
+  // Back from a provider's sign-in page (`connect.ts`): `?code=` on the URL
+  // and the verifier this tab saved before it left. Taken off the URL at
+  // once, like `?guide=`, with the query the page had before put back; the
+  // drawer opens on its settings, which finish the trade. The module is
+  // fetched only when there is a code, so the shell every reader pays for
+  // carries none of the key flow (`useChat.ts`).
+  //
+  // A `?code=` that comes with `?state=` is somebody else's return — the bank
+  // page's (`pages/bank/Bank.tsx`) — and is left alone without even looking:
+  // OpenRouter's PKCE sends no state, and looking would spend the slot.
+  const code = params.get("state") ? null : params.get("code");
+  const [connect, setConnect] = useState<ConnectAsk | null>(null);
+  useEffect(() => {
+    if (!code) return;
+    void import("./connect").then(({ takeConnect }) => {
+      const pending = takeConnect();
+      // A `?code=` this tab never asked for is not the drawer's to spend.
+      if (!pending) return;
+      setParams({
+        ...Object.fromEntries(new URLSearchParams(pending.back)),
+        code: undefined,
+      });
+      setConnect({ code, pending });
+      show(true);
+    });
+  }, [code]);
+
   // Started once the drawer has finished its own opening read — otherwise the
   // thread it was loading would land on top of the guide's.
   const { ready, guideStart } = chat;
@@ -251,6 +279,8 @@ export function Drawer() {
           >
             <Panel
               chat={chat}
+              connect={connect}
+              onConnectTaken={() => setConnect(null)}
               onClose={() => show(false)}
               onPark={() => {
                 show(false);

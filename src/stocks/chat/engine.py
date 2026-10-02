@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 BYOK_TTL = 90 * 24 * 3600  # sliding window, seconds
 BYOK_MAX_AGE = 180 * 24 * 3600  # hard cap since first save, seconds
 _BYOK_TOUCH_MIN = 24 * 3600  # slide at most once a day (each write hits the bucket)
-_BYOK_ORDER = ("anthropic", "openai", "gemini")
+_BYOK_ORDER = ("anthropic", "openai", "gemini", "openrouter")
 
 # The free chain runs on the operator's shared keys, so each account gets a
 # modest daily allowance — one runaway user must not drain the quota every

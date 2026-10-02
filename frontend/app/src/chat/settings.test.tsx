@@ -191,3 +191,67 @@ describe("a key of your own", () => {
     expect(out).toContain('type="password"');
   });
 });
+
+/**
+ * A provider that mints the key by sign-in (`connect.ts`): the sign-in is the
+ * way in and the paste field the fallback, with one Remember box deciding
+ * where the key goes either way.
+ */
+describe("a provider you sign in to", () => {
+  const openrouter = (over: Partial<ProviderInfo>) =>
+    provider({
+      id: "openrouter",
+      label: "OpenRouter",
+      models: ["openrouter/auto"],
+      model: "openrouter/auto",
+      needs_key: true,
+      key_placeholder: "sk-or-v1-...",
+      connect_url: "https://openrouter.ai/auth",
+      connect_token_url: "https://openrouter.ai/api/v1/auth/keys",
+      ...over,
+    });
+
+  it("offers the sign-in first, and pasting after it", () => {
+    const out = draw(
+      state({ preferred: "openrouter", providers: [provider({}), openrouter({})] }),
+    );
+    expect(out).toContain("chat.connect_cta");
+    expect(out).toContain("chat.connect_help");
+    expect(out).toContain("chat.connect_or");
+    expect(out).not.toContain("chat.byok_help");
+    // Still a field to paste into, but not the primary press any more.
+    expect(out).toContain('type="password"');
+    expect(out.indexOf("chat.connect_cta")).toBeLessThan(
+      out.indexOf('type="password"'),
+    );
+    expect(out.match(/ag-chat-btn-on/g)).toHaveLength(1);
+    // One Remember box, ahead of the sign-in's "or".
+    expect(out.match(/chat\.remember/g)).toHaveLength(1);
+    expect(out.indexOf("chat.remember")).toBeLessThan(out.indexOf("chat.connect_or"));
+  });
+
+  it("is not offered for a provider that only takes a pasted key", () => {
+    const out = draw(
+      state({
+        preferred: "anthropic",
+        providers: [
+          provider({}),
+          provider({ id: "anthropic", label: "Anthropic", needs_key: true }),
+        ],
+      }),
+    );
+    expect(out).not.toContain("chat.connect_cta");
+    expect(out).toContain("chat.byok_help");
+  });
+
+  it("is not offered once the account has a key there", () => {
+    const out = draw(
+      state({
+        preferred: "openrouter",
+        providers: [provider({}), openrouter({ has_key: true, key_tail: "beef" })],
+      }),
+    );
+    expect(out).not.toContain("chat.connect_cta");
+    expect(out).toContain("chat.forget");
+  });
+});

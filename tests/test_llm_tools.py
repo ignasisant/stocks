@@ -29,6 +29,24 @@ def test_only_the_providers_with_a_loop_report_tool_support():
     assert not llm.PROVIDERS["gemini"].supports_tools()
 
 
+def test_openrouter_runs_the_openai_loop_and_signs_in_by_pkce():
+    openrouter = llm.PROVIDERS["openrouter"]
+    assert openrouter.supports_tools()
+    assert openrouter.connect_url == "https://openrouter.ai/auth"
+    assert openrouter.connect_token_url == "https://openrouter.ai/api/v1/auth/keys"
+    # The auto router never rots the way a pinned slug does.
+    assert openrouter.models[-1] == "openrouter/auto"
+    # Nobody else signs in: their keys are pasted.
+    assert [p.id for p in llm.PROVIDERS.values() if p.connect_url] == ["openrouter"]
+
+
+def test_an_openrouter_account_out_of_credits_is_told_so():
+    broke = SimpleNamespace(status_code=402)
+    assert llm._openrouter_error(broke) == "chat.no_credits"
+    refused = SimpleNamespace(status_code=401)
+    assert llm._openrouter_error(refused) == llm._openai_error(refused)
+
+
 def test_run_tools_on_a_provider_without_a_loop_is_a_clear_error():
     with pytest.raises(NotImplementedError):
         llm.PROVIDERS["gemini"].run_tools("k", "m", "s", [], _TOOLS, _echo)

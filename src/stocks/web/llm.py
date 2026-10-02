@@ -1,5 +1,5 @@
 """LLM provider registry for the chat page — TopStocks AI (free), Claude, ChatGPT,
-Gemini.
+Gemini, OpenRouter.
 
 The named providers are bring-your-own-key: the user supplies their own API key
 (own billing). "TopStocks AI" is keyless for the user — it chains through
@@ -91,6 +91,13 @@ class Provider:
     # keeps the fixed pre-flight (chat/engine.py) — a provider without tools
     # loses the model-directed lookup, not the answer.
     _tools: Callable[..., ToolRun] | None = None
+    # One-click sign-in in place of a pasted key: an OAuth PKCE authorize page
+    # and the endpoint that trades its code for a key the user owns. Both run
+    # in the reader's browser (frontend chat/connect.ts) and the key they mint
+    # goes through the same store / this-session-only paths a typed one does,
+    # so the server learns nothing new. "" = paste-a-key only.
+    connect_url: str = ""
+    connect_token_url: str = ""
 
     @property
     def default_model(self) -> str:
@@ -386,6 +393,23 @@ def _gemini_error(exc):
     return None
 
 
+# ------------------------------------------------------------- OpenRouter
+
+# One key, every vendor's models, billed to the reader's own OpenRouter
+# credits. It speaks the OpenAI wire format, so the stream and the tool loop
+# are OpenAI's with another base_url.
+OPENROUTER_BASE = "https://openrouter.ai/api/v1"
+
+
+def _openrouter_error(exc):
+    # 402 is OpenRouter's "out of credits" (or a request priced above what is
+    # left). The OpenAI SDK has no class for it and files it as a plain
+    # APIStatusError, which _openai_error would call a generic outage.
+    if getattr(exc, "status_code", None) == 402:
+        return "chat.no_credits"
+    return _openai_error(exc)
+
+
 # ------------------------------------------------------- TopStocks AI (free chain)
 # Keyless for the user: a fixed-order chain of free-tier backends billed to the
 # operator's keys ([free_llm] in secrets.toml). Each entry is (backend id,
@@ -661,6 +685,22 @@ PROVIDERS: dict[str, Provider] = {
             classifier_model="gemini-flash-lite-latest",
             domain="gemini.google.com",
         ),
+        Provider(
+            "openrouter", "OpenRouter",
+            # Slugs checked live against openrouter.ai/api/v1/models on
+            # 2026-10-01, all with tool support. Pinned versions rot, so the
+            # list ends on the auto router, which never does.
+            ("anthropic/claude-sonnet-5.5", "openai/gpt-5.6-sol",
+             "google/gemini-3.8-flash", "deepseek/deepseek-v4.1-flash",
+             "openrouter/auto"),
+            "sk-or-v1-...", "https://openrouter.ai/settings/keys",
+            "openai", _openai_compat_stream(OPENROUTER_BASE), _openrouter_error,
+            _tools=_openai_compat_tools(OPENROUTER_BASE),
+            classifier_model="google/gemini-3.5-flash-lite",
+            domain="openrouter.ai",
+            connect_url="https://openrouter.ai/auth",
+            connect_token_url=f"{OPENROUTER_BASE}/auth/keys",
+        ),
     )
 }
 
@@ -673,5 +713,6 @@ def default_provider_id() -> str:
 
 
 def available_providers() -> list[Provider]:
-    """Usable providers, registry order (TopStocks AI, Claude, ChatGPT, Gemini)."""
+    """Usable providers, registry order (TopStocks AI, Claude, ChatGPT, Gemini,
+    OpenRouter)."""
     return [p for p in PROVIDERS.values() if p.available()]
