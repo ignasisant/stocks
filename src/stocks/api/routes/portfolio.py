@@ -61,6 +61,8 @@ from stocks.api.schemas import (
     TaxSale,
     Transaction,
     Transactions,
+    UnbookedDividend,
+    UnbookedDividends,
 )
 from stocks.api.schemas import TaxPeriod as TaxPeriodOut
 from stocks.api.security import Authed
@@ -1001,6 +1003,50 @@ def dividends_(account: Account, base: Base = None) -> Dividends:
             for holding in forward
         ],
         estimates_available=available,
+    )
+
+
+@router.get(
+    "/dividends/unbooked",
+    response_model=UnbookedDividends,
+    summary="Dividends owed with no ledger row",
+)
+def dividends_unbooked(
+    account: Account,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    base: Base = None,
+) -> UnbookedDividends:
+    """Each payment the shares were entitled to that the ledger never booked.
+
+    `/dividends` sums these per year as `unrecorded`; this lists them, so a
+    statement exported in July does not leave August's dividends out of the
+    book's recent activity. A ledger dividend answers for one entitlement of
+    its ticker that went ex in the quarter before it. Estimates throughout —
+    gross, dated by the ex-date — and a throttled Yahoo is `available: false`,
+    not an empty list that would read as nothing owed.
+    """
+    ccy = reporting_currency(account, base)
+    db = str(account.db)
+    try:
+        rows = loaders.unbooked_dividends(db, loaders.db_mtime(db), ccy)
+    except (YFRateLimitError, URLError):
+        return UnbookedDividends(base=ccy)
+    return UnbookedDividends(
+        base=ccy,
+        total=len(rows),
+        available=True,
+        payments=[
+            UnbookedDividend(
+                ticker=p.ticker,
+                ex_date=p.ex_date,
+                per_share=p.per_share,
+                shares=p.shares,
+                currency=p.currency,
+                gross=_num(p.gross) or 0.0,
+                amount=_num(amount),
+            )
+            for p, amount in rows[:limit]
+        ],
     )
 
 

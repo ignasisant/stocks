@@ -208,6 +208,29 @@ export type Transactions = {
 };
 
 /**
+ * `/portfolio/dividends/unbooked` — one dividend the shares were entitled to
+ * that no ledger row answers for. An estimate: gross, dated by the ex-date.
+ */
+export type UnbookedDividend = {
+  ticker: string;
+  ex_date: string;
+  per_share: number;
+  shares: number;
+  currency: string;
+  gross: number;
+  /** `gross` in `UnbookedDividends.base` at the ex-date's rate, or null. */
+  amount: number | null;
+};
+
+export type UnbookedDividends = {
+  base: string;
+  total: number;
+  payments: UnbookedDividend[];
+  /** False: Yahoo was not asked or did not answer — nobody checked. */
+  available: boolean;
+};
+
+/**
  * `/home/closes` — one watchlist row: the last daily close, and the day move
  * close-to-close (re-read from a quote only where the exchange is shut).
  */

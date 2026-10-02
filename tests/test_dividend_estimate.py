@@ -186,3 +186,48 @@ def test_no_history_means_no_estimate_rather_than_a_zero_row():
     book = [tx("2023-01-02", "BRK-B", "buy", 10)]
     assert dv.estimate_payments(book, {}, until="2026-01-01") == []
     assert dv.forward_income(book, {}, ref="2026-01-01") == []
+
+
+# ------------------------------------------------------------------- unbooked
+
+
+def _owed(*days, ticker="KO"):
+    return [dv.EstimatedPayment(ticker, day, 0.5, 100.0, "USD") for day in days]
+
+
+def test_a_statement_that_stops_in_july_leaves_august_owed():
+    """The tail the import never reached is exactly what the strip shows."""
+    book = [
+        tx("2026-01-02", "KO", "buy", 100),
+        tx("2026-04-01", "KO", "dividend", price=50.0, tid=2),
+    ]
+    owed = _owed("2026-03-14", "2026-06-13", "2026-09-12")
+    assert [p.ex_date for p in dv.unbooked(owed, book)] == ["2026-06-13", "2026-09-12"]
+
+
+def test_a_receipt_answers_for_the_quarter_it_was_paid_in_and_no_other():
+    """A pay date trails its ex-date; it never reaches a quarter ahead or two back."""
+    book = [tx("2026-07-01", "KO", "dividend", price=50.0)]
+    owed = _owed("2026-01-10", "2026-06-13", "2026-07-03", "2026-09-12")
+    # 2026-06-13 is paid on 07-01; 07-03 is inside the early tolerance but the
+    # receipt is already spent on the earlier one; 01-10 is too long before.
+    assert [p.ex_date for p in dv.unbooked(owed, book)] == [
+        "2026-01-10",
+        "2026-07-03",
+        "2026-09-12",
+    ]
+
+
+def test_one_receipt_never_answers_for_two_payments():
+    """A monthly payer that skipped a month stays one row short, not zero."""
+    book = [
+        tx("2026-02-15", "O", "dividend", price=50.0, tid=1),
+        tx("2026-04-15", "O", "dividend", price=50.0, tid=2),
+    ]
+    owed = _owed("2026-02-01", "2026-03-01", "2026-04-01", ticker="O")
+    assert len(dv.unbooked(owed, book)) == 1
+
+
+def test_another_tickers_receipt_books_nothing():
+    book = [tx("2026-07-01", "PEP", "dividend", price=50.0)]
+    assert dv.unbooked(_owed("2026-06-13"), book) == _owed("2026-06-13")
