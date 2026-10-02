@@ -1397,6 +1397,40 @@
   border-top: 1px solid var(--ag-border);
 }
 
+/* A price chart (`chat/chart.tsx`): the Ticker page's line and tooltip, drawn
+   at the width it is measured at rather than scaled into it. */
+.ag-a2ui-chart {
+  min-width: 0;
+  touch-action: pan-y;
+}
+
+/* An allocation (`chat/donut.tsx`): the Risk tab's donut, ring beside its
+   legend so a ten-slice split still fits the drawer's height. The surface's
+   own title names it, so the donut's heading is left to the ring's label. */
+.ag-a2ui-donut .pf-donut {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, 8rem) minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.ag-a2ui-donut .pf-donut h3 {
+  display: none;
+}
+
+.ag-a2ui-donut .pf-legend {
+  margin: 0;
+}
+
+/* A chart's windows: six chips that fit one row of the narrowest drawer. */
+.ag-a2ui-chips {
+  gap: 4px;
+}
+
+.ag-a2ui-chips .ag-toggle {
+  padding: 3px 10px;
+}
+
 /* A surface under an answer (`Surfaces`): carded, like the import preview —
    it is something to work, not something the assistant said. */
 .ag-chat-surface {

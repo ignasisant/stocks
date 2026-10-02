@@ -23,6 +23,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from stocks import obs
 from stocks.chat import a2ui, market
@@ -63,6 +64,7 @@ class Scenario:
     currency: str
     jurisdiction: str
     year: str  # as the jurisdiction writes it: "2026", "2026/27"
+    blocked: float = 0.0  # of this sale's loss, deferred by the repurchase rule
 
     @property
     def extra_tax(self) -> float:
@@ -109,16 +111,89 @@ def _price(ticker: str) -> tuple[float, str] | None:
     return float(quote.price), quote.currency or ""
 
 
-def simulate(*, db: Path, prefs_path: Path, ticker: str,
-             shares: float | Callable[[float], float] | None = None,
-             price: tuple[float, str] | None = None,
-             today: date | None = None) -> Scenario | None:
-    """The sale of `shares` of `ticker` today, or None when there is nothing
-    to sell or no price to sell it at. `shares` None is the whole holding; a
-    callable is asked with the holding's size (`shares_asked`), since how
-    many "half" is depends on a replay this function is the one to run."""
+@dataclass(frozen=True)
+class Replay:
+    """The ledger replayed once under the account's jurisdiction, as it is:
+    what every simulated sale is measured against. Built once per question,
+    so a harvest weighing six losses replays the ledger seven times, not
+    twelve, and loads it once."""
+
+    code: str
+    jurisdiction: Any  # tax.Jurisdiction
+    transactions: tuple
+    positions: tuple
+    realized: tuple
+    settings: Any  # TaxSettings
+    year: int
+    day: str
+    before: Any  # TaxPeriod, this tax year without any sale
+
+    @property
+    def currency(self) -> str:
+        return self.jurisdiction.currency
+
+    @property
+    def year_label(self) -> str:
+        return self.jurisdiction.year_label(self.year)
+
+    def held(self, symbol: str):
+        """The open position in `symbol`, or None."""
+        symbol = symbol.strip().upper()
+        return next((p for p in self.positions
+                     if p.ticker == symbol and p.quantity > 0), None)
+
+    def after(self, sales: list[tuple[str, float, float, str]]):
+        """(realized, this year's period) with `sales` — (ticker, shares,
+        price, currency) — made today, on top of the ledger as it is."""
+        from stocks.portfolio import tax
+        from stocks.portfolio.ledger import Transaction
+        from stocks.portfolio.positions import build
+
+        jur = self.jurisdiction
+        txs = [*self.transactions, *(
+            Transaction(date=self.day, ticker=ticker, action="sell", quantity=count,
+                        price=price, currency=currency)
+            for ticker, count, price, currency in sales if count > 0
+        )]
+        _, realized = build(txs, base=jur.currency, matching=jur.matching)
+        return realized, jur.fiscal_year(realized, self.year, tax.buy_dates(txs),
+                                         self.settings)
+
+    def scenario(self, symbol: str, shares: float, price: float,
+                 currency: str = "") -> Scenario | None:
+        """The sale of `shares` of `symbol` today at `price`, or None when
+        nothing of it is held. Clamped to the holding."""
+        held = self.held(symbol)
+        if held is None:
+            return None
+        symbol = held.ticker
+        count = max(0.0, min(float(shares), held.quantity))
+        currency = currency or held.currency
+        tax_before = self.before.estimated_tax
+        if count <= 0:
+            return Scenario(symbol, held.quantity, 0.0, price, currency, 0.0, 0.0,
+                            tax_before, tax_before, self.currency, self.code,
+                            self.year_label)
+        realized, after = self.after([(symbol, count, price, currency)])
+        # Today's sale replays last, so everything before it matched as it
+        # did: the difference between the two replays is this sale's parcels.
+        return Scenario(
+            ticker=symbol, held=held.quantity, shares=count, price=price,
+            price_currency=currency,
+            proceeds=sum(s.proceeds for s in realized)
+            - sum(s.proceeds for s in self.realized),
+            gain=sum(s.gain for s in realized) - sum(s.gain for s in self.realized),
+            tax_before=tax_before, tax_after=after.estimated_tax,
+            currency=self.currency, jurisdiction=self.code, year=self.year_label,
+            blocked=max(0.0, after.disallowed_loss - self.before.disallowed_loss),
+        )
+
+
+def replay(*, db: Path, prefs_path: Path, today: date | None = None) -> Replay | None:
+    """The account's ledger replayed under its tax residence's matching rule
+    and currency, or None without a ledger."""
     from stocks.portfolio import tax
-    from stocks.portfolio.ledger import Transaction, all_transactions
+    from stocks.portfolio.ledger import all_transactions
     from stocks.portfolio.positions import build
     from stocks.portfolio.tax import prefs as tax_prefs
 
@@ -129,11 +204,30 @@ def simulate(*, db: Path, prefs_path: Path, ticker: str,
     if not txs:
         return None
     positions, realized = build(txs, base=jur.currency, matching=jur.matching)
-    symbol = ticker.strip().upper()
-    held = next((p for p in positions if p.ticker == symbol and p.quantity > 0), None)
-    if held is None:
+    day = (today or date.today()).isoformat()
+    year = jur.tax_year_of(day)
+    settings = tax_prefs.with_funds(tax_prefs.settings(prefs), tax.labels(txs))
+    return Replay(
+        code=code, jurisdiction=jur, transactions=tuple(txs),
+        positions=tuple(positions), realized=tuple(realized), settings=settings,
+        year=year, day=day,
+        before=jur.fiscal_year(realized, year, tax.buy_dates(txs), settings),
+    )
+
+
+def simulate(*, db: Path, prefs_path: Path, ticker: str,
+             shares: float | Callable[[float], float] | None = None,
+             price: tuple[float, str] | None = None,
+             today: date | None = None) -> Scenario | None:
+    """The sale of `shares` of `ticker` today, or None when there is nothing
+    to sell or no price to sell it at. `shares` None is the whole holding; a
+    callable is asked with the holding's size (`shares_asked`), since how
+    many "half" is depends on a replay this function is the one to run."""
+    book = replay(db=db, prefs_path=prefs_path, today=today)
+    held = book.held(ticker) if book is not None else None
+    if book is None or held is None:
         return None
-    quoted = price or _price(symbol)
+    quoted = price or _price(held.ticker)
     if quoted is None:
         return None
     if shares is None:
@@ -142,32 +236,11 @@ def simulate(*, db: Path, prefs_path: Path, ticker: str,
         wanted = float(shares)
     else:
         wanted = shares(held.quantity)
-    count = max(0.0, min(wanted, held.quantity))
-    day = (today or date.today()).isoformat()
-    year = jur.tax_year_of(day)
-    settings = tax_prefs.with_funds(tax_prefs.settings(prefs), tax.labels(txs))
-    before = jur.fiscal_year(realized, year, tax.buy_dates(txs), settings)
-    if count <= 0:
-        return Scenario(symbol, held.quantity, 0.0, quoted[0], quoted[1] or held.currency,
-                        0.0, 0.0, before.estimated_tax, before.estimated_tax,
-                        jur.currency, code, jur.year_label(year))
-    sale = Transaction(date=day, ticker=symbol, action="sell", quantity=count,
-                       price=quoted[0], currency=quoted[1] or held.currency)
-    after_txs = [*txs, sale]
-    _, after_realized = build(after_txs, base=jur.currency, matching=jur.matching)
-    after = jur.fiscal_year(after_realized, year, tax.buy_dates(after_txs), settings)
-    # Today's sale replays last, so everything before it matched as it did:
-    # the difference between the two replays is this sale's parcels alone.
-    obs.event("chat.whatif", jurisdiction=code, part=round(count / held.quantity, 2))
-    return Scenario(
-        ticker=symbol, held=held.quantity, shares=count, price=quoted[0],
-        price_currency=quoted[1] or held.currency,
-        proceeds=sum(s.proceeds for s in after_realized)
-        - sum(s.proceeds for s in realized),
-        gain=sum(s.gain for s in after_realized) - sum(s.gain for s in realized),
-        tax_before=before.estimated_tax, tax_after=after.estimated_tax,
-        currency=jur.currency, jurisdiction=code, year=jur.year_label(year),
-    )
+    sale = book.scenario(held.ticker, wanted, quoted[0], quoted[1] or held.currency)
+    if sale is not None and sale.shares > 0:
+        obs.event("chat.whatif", jurisdiction=book.code,
+                  part=round(sale.shares / held.quantity, 2))
+    return sale
 
 
 def target(message: str, watchlist: Path | None, focus: str) -> str:

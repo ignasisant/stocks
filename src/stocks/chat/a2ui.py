@@ -14,10 +14,13 @@ need to: a model at most chooses *which* surface and with what arguments, the
 way the classifier chooses a tool, and this module lays it out.
 
 The catalog is Aguait's: the basic catalog's layout and input components the
-drawer needs, plus two of its own — `Metric` (a label over a figure, the KPI
-readout) and `Ticker` (a symbol with its logo, linking to its page: every
-ticker on screen is one) — and a `Slider` that may carry an `action`, sent when
-the reader lets go. `chat/a2ui.tsx` draws exactly this set, and
+drawer needs, plus four of its own — `Metric` (a label over a figure, the KPI
+readout), `Ticker` (a symbol with its logo, linking to its page: every ticker
+on screen is one), `Chart` (closes drawn as a line, one per symbol, the
+figures a server fetched and never a model's) and `Donut` (weights as a ring,
+one split or several keyed by name with `by` picking one) — and a `Slider` and a
+`ChoicePicker` that may carry an `action`, sent when the reader lets go of the
+one or picks from the other. `chat/a2ui.tsx` draws exactly this set, and
 `tests/test_chat_a2ui.py` holds the two to each other.
 
 On the AG-UI wire a surface travels as an activity: `ACTIVITY_SNAPSHOT` with
@@ -42,13 +45,15 @@ CATALOG: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "Divider": (frozenset(), frozenset({"axis"})),
     "TextField": (frozenset({"label", "value"}), frozenset({"variant"})),
     "ChoicePicker": (frozenset({"options", "value"}),
-                     frozenset({"label", "variant"})),
+                     frozenset({"label", "variant", "action"})),
     "CheckBox": (frozenset({"label", "value"}), frozenset()),
     "Slider": (frozenset({"value", "min", "max"}),
                frozenset({"label", "step", "action"})),
     "Button": (frozenset({"text"}), frozenset({"variant", "action"})),
     "Metric": (frozenset({"label", "value"}), frozenset({"tone", "hint"})),
     "Ticker": (frozenset({"symbol"}), frozenset()),
+    "Chart": (frozenset({"series"}), frozenset({"mode", "label"})),
+    "Donut": (frozenset({"slices"}), frozenset({"by", "label", "other"})),
 }
 
 
