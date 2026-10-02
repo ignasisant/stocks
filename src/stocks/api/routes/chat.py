@@ -62,7 +62,16 @@ from stocks import accounts, navigation
 from stocks.accounts import UserPaths
 from stocks.api.deps import Account, ChatTurn, SurfaceAction, Writer
 from stocks.api.routes import chat_attach
-from stocks.chat import a2ui, engine, guide_ai, navigate, tools, whatif
+from stocks.chat import (
+    a2ui,
+    charts,
+    engine,
+    guide_ai,
+    navigate,
+    rebalance,
+    tools,
+    whatif,
+)
 from stocks.portfolio import autodetect
 from stocks.web import chat_skills, llm, stt
 
@@ -1057,6 +1066,7 @@ def _events(
             polish=polish if gates else None,
             confirm_actions=True,
             debating=True,
+            draws=True,
         ):
             if kind == "phase":
                 yield from close_step()
@@ -1359,27 +1369,43 @@ def press(body: ActionBody, paths: SurfaceAction) -> SurfaceUpdate:
     that update it. No model is asked and nothing is stored: a slider moving
     is the reader exploring, and the answer above it still says what it said.
 
-    One surface answers here today — the what-if sale's slider
-    (`chat/whatif.py`), re-run through the tax engine for the shares it now
-    names. An action this server has no handler for is a 404, not a guess.
+    Three surfaces answer here: the what-if sale's slider (`chat/whatif.py`),
+    re-run through the tax engine for the shares it now names; the rebalance
+    slider (`chat/rebalance.py`), sized and taxed again for the weight it now
+    names; and a price chart's window chips (`chat/charts.py`), fetched again
+    over the window picked. An action this server has no handler for is a
+    404, not a guess.
     """
     press_ = body.action
     lang = (body.lang or _prefs(paths).get("language") or "en").strip().lower()
-    if press_.surfaceId != whatif.SURFACE_ID or press_.name != whatif.ACTION:
+    from stocks.web.i18n import translate
+
+    def tr(key: str, **kw) -> str:
+        return translate(key, lang, **kw)
+
+    handler = {
+        (whatif.SURFACE_ID, whatif.ACTION): _resell,
+        (charts.SURFACE_ID, charts.ACTION): _rechart,
+        (rebalance.SURFACE_ID, rebalance.ACTION): _reweigh,
+    }.get((press_.surfaceId, press_.name))
+    if handler is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no action {press_.name} on {press_.surfaceId}",
         )
-    symbol = engine.clean_focus(str(press_.context.get("ticker") or ""))
+    return SurfaceUpdate(messages=handler(press_.context, paths, tr))
+
+
+def _resell(context: dict, paths: UserPaths, tr) -> list[dict]:
+    """The what-if sale again, for the shares the slider now names."""
+    symbol = engine.clean_focus(str(context.get("ticker") or ""))
     try:
-        shares = float(press_.context.get("shares", ""))
+        shares = float(context.get("shares", ""))
     except (TypeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="shares must be a number",
         ) from exc
-    from stocks.web.i18n import translate
-
     sale = whatif.simulate(db=paths.db, prefs_path=paths.prefs, ticker=symbol,
                            shares=shares) if symbol else None
     if sale is None:
@@ -1387,9 +1413,71 @@ def press(body: ActionBody, paths: SurfaceAction) -> SurfaceUpdate:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"nothing of {symbol or 'that'} to sell, or no price for it",
         )
-    return SurfaceUpdate(messages=whatif.moved(
-        sale, lambda key, **kw: translate(key, lang, **kw)
-    ))
+    return whatif.moved(sale, tr)
+
+
+def _reweigh(context: dict, paths: UserPaths, tr) -> list[dict]:
+    """The rebalance again, for the weight the slider now names."""
+    symbol = engine.clean_focus(str(context.get("ticker") or ""))
+    try:
+        target = float(context.get("target", ""))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="target must be a number",
+        ) from exc
+    if not 0 <= target <= rebalance.CEILING:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"target must be 0 to {rebalance.CEILING:g}",
+        )
+    book = whatif.replay(db=paths.db, prefs_path=paths.prefs) if symbol else None
+    tbl = engine.enriched_frame(paths.db, book.currency) if book else None
+    moved = rebalance.build(book, tbl, symbol, target)
+    if moved is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no priced holding of {symbol or 'that'} to reweigh",
+        )
+    return rebalance.moved(moved, tr)
+
+
+def _rechart(context: dict, paths: UserPaths, tr) -> list[dict]:
+    """The chart's symbols again, over the window the chip picked.
+
+    The symbols come back from the surface, so they are screened here as any
+    other input: a symbol's own characters, or the book's own marker, at most
+    the three a chart draws.
+    """
+    window = str(context.get("window") or "")
+    if window not in charts.WINDOWS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"window must be one of {', '.join(charts.WINDOWS)}",
+        )
+    raw = context.get("symbols")
+    symbols = [
+        charts.BOOK if str(s) == charts.BOOK else engine.clean_focus(str(s))
+        for s in raw
+    ] if isinstance(raw, list) else []
+    symbols = [s for s in dict.fromkeys(symbols) if s]
+    if not symbols or len(symbols) > charts.MAX_SERIES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"symbols must be 1 to {charts.MAX_SERIES} tickers",
+        )
+    # The reader's own book is one of them when the chart was "how am I doing
+    # against the S&P": priced again from this account's ledger, in its
+    # reporting currency, never from anything the surface sent.
+    base = engine.reporting_currency(_prefs(paths))
+    book = charts.book_for(paths.db, base) if charts.BOOK in symbols else None
+    chart = charts.build(symbols, window, book=book, base=base)
+    if chart is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no prices for {' '.join(symbols)} over {window}",
+        )
+    return charts.moved(chart, tr)
 
 
 # ------------------------------------------------------------ provider keys

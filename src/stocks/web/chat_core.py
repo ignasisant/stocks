@@ -1019,19 +1019,21 @@ def _done_generating(ns: str) -> None:
 # With a ledger behind it the assistant's best trick is the reader's own book,
 # so those are the questions the design puts on the opening screen. A fresh
 # account has no ledger and would be offered three questions it cannot answer,
-# so it gets the watchlist set instead: live quotes, fundamentals and the
-# earnings calendar all work with no import at all. Those carry {a}/{b} slots
-# for two of the account's own tickers, so the suggestion reads as a question
-# about *their* list rather than a demo.
+# so it gets the watchlist set instead: live quotes, the bull-and-bear debate
+# and a chart all work with no import at all. Those carry {a}/{b} slots for
+# two of the account's own tickers, so the suggestion reads as a question
+# about *their* list rather than a demo. The React drawer (`chat/Empty.tsx`)
+# offers a fourth of each; the rebalance one needs the priced weights this
+# panel does not read.
 _STARTERS = (
-    "chat.starter_summary",
-    "chat.starter_concentration",
-    "chat.starter_earnings_week",
+    "chat.starter_benchmark",
+    "chat.starter_exposure",
+    "chat.starter_harvest",
 )
 _STARTERS_NEW = (
     "chat.starter_movers",
-    "chat.starter_compare",
-    "chat.starter_earnings",
+    "chat.starter_debate",
+    "chat.starter_chart",
 )
 
 

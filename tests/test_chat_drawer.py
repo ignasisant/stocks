@@ -403,9 +403,9 @@ def test_a_book_changes_the_opening_line_and_the_suggestions(app, paths,
     assert "31 positions" in " ".join(h.body for h in app.get("html"))
     labels = [b.label for b in app.button
               if b.key.startswith("panel_chat.starter_")]
-    assert labels == ["Summarise my portfolio in five lines",
-                      "Where am I too concentrated?",
-                      "What reports earnings this week"]
+    assert labels == ["Am I beating the S&P 500 this year?",
+                      "How exposed am I by country once my funds are looked through?",
+                      "Which losses could I realise to cut this year's tax bill?"]
 
 
 # The launcher/close pair is driven through the two helpers render_side_panel
