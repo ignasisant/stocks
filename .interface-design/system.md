@@ -88,11 +88,35 @@ no Tailwind.
 - **Refetch on control change:** keep the last result on screen with
   `aria-busy` → opacity 0.6 (100ms ease-out — DS motion is 50/100ms, none under reduced motion) instead
   of swapping in a skeleton. Skeleton only on first load.
+- **Calendar chip** (`.earn-chip`, Earnings grid + Home four-week grid): a
+  `<button>`, never a link — the click explains, the dialog carries the way
+  on. `--ag-radius-xs`, kind = class (`past`, `soon`, `div`, `tax`, `rebuy`,
+  `cb`); hover = inset 1px ring in `currentColor` at 45%, so every kind keeps
+  its own colour. One fold for both grids: `DayChips` in `MonthGrid.tsx`
+  (`limit` 5 on the page, 3 on Home, then "+N"). A grid holds one
+  `EventPick | null` and one `EventDetail` — never a dialog per chip.
+- **Event dialog** (`EventDetail.tsx`, `.earn-modal` shell, `.earn-ev` card
+  30rem): head = logo + linked ticker + kind line (`PlainHead` when no
+  ticker); then hero (sunken, `--ag-radius-sm`: muted label, `--ag-fs-2xl`
+  600 tabular figure, secondary sub line with the assumption, pill tags
+  `soon`/`warn`/`held`); then 2×2 `KpiGrid` (four abreast squeezes money
+  into an ellipsis); then notes (`--ag-fs-sm` secondary); one `ag-btn` CTA
+  to where the reader acts. Esc, backdrop and Close all close; focus goes to
+  Close and back to the chip.
+- **Layers:** page modal `z-index: 65` — above the chat launcher and guide
+  strip (60), below the open chat drawer (70); tour scrim 90 above all. A
+  modal under 60 lets the launcher float over its scrim on a phone.
 
 ## Copy
 
 - Every figure that depends on an assumption says the assumption in the
   caption beneath it, with the real measured inputs (volatility, weights,
   correlation). "Not a prediction" wording for any forecast.
+- Money the reader receives leads with what lands (net), says what was taken
+  off and where that rate came from (their own statements, by name, then by
+  currency). No rate on record = say "gross" and give the reference rate —
+  never print a 0% no broker charged. A second figure in the base currency
+  only when the currency differs, at the rate that applies (event day once
+  past, today while ahead), and the line says which.
 - All strings in `src/stocks/web/locales/{en,es}/*.json`, same keys and
   placeholders in both (`tests/test_i18n_parity.py`).

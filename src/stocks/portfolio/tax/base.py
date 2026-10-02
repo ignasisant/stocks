@@ -367,6 +367,20 @@ def days_after_window(days: int) -> Window:
     return within
 
 
+def window_end(sell: date, window: str) -> date | None:
+    """The first day a repurchase no longer touches a loss sold on `sell`.
+
+    `window` is the jurisdiction's label (`Jurisdiction.repurchase_window`):
+    "2m" ends where `months_window(2)` does, "30d"/"28d" a day past their
+    count. None for an empty or unknown label — no rule, no date.
+    """
+    if window == "2m":
+        return shift_months(sell, 2) + timedelta(days=1)
+    if window in ("30d", "28d"):
+        return sell + timedelta(days=int(window[:-1]) + 1)
+    return None
+
+
 class Acquisition(NamedTuple):
     """`quantity` shares of a security bought on `date` (ISO), in that day's
     units — a later split is applied here, from the `Split` rows beside it."""
@@ -480,6 +494,50 @@ def repurchases(
         if any(s.gain < 0 for s in sales):
             _match(sales, buy_dates.get(ticker, ()), within, out)
     return out
+
+
+@dataclass(frozen=True)
+class OpenWindow:
+    """A loss sale whose repurchase window is still open on some ticker."""
+
+    ticker: str
+    sold: date
+    # The first day buying the security back no longer blocks the loss.
+    clears: date
+    # What a buy-back before `clears` would still block: the sale's loss less
+    # the part an earlier repurchase already took.
+    loss: float
+
+
+def open_windows(
+    realized: list[RealizedSale],
+    buy_dates: Acquisitions,
+    within: Window,
+    window: str,
+    today: date,
+) -> list[OpenWindow]:
+    """Every loss sale whose window clears today or later, soonest first.
+
+    Parcels sold the same day are one sale: a broker fill split over three
+    lots is one decision to the reader. A loss a repurchase has already
+    blocked in full is left out — its window closing changes nothing, the
+    loss now waits on the replacement shares being sold — and one blocked in
+    part carries only the part still exposed.
+    """
+    blocks = repurchases(realized, buy_dates, within)
+    exposed: dict[tuple[str, str], float] = defaultdict(float)
+    for s in realized:
+        if s.gain < 0:
+            exposed[s.ticker, s.sell_date[:10]] += -s.gain - blocks.disallowed(s)
+    out: list[OpenWindow] = []
+    for (ticker, sold), loss in exposed.items():
+        if loss <= 1e-6:
+            continue
+        sell = date.fromisoformat(sold)
+        clears = window_end(sell, window)
+        if clears is not None and clears >= today:
+            out.append(OpenWindow(ticker, sell, clears, loss))
+    return sorted(out, key=lambda w: (w.clears, w.ticker))
 
 
 def _match(

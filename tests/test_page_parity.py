@@ -130,6 +130,15 @@ PAGES: dict[str, Page] = {
     "sector": Page(
         streamlit="sector.py",
         waived={
+            "sector.screen": (
+                "said as `sector.screen_filters`: the React disclosure holds "
+                "the sort, the columns and the filters at every width, so its "
+                "summary names both instead of the bare 'Screen' header"
+            ),
+            "sector.download_csv": (
+                "dropped from the React page (2026-10): the raw-numbers CSV "
+                "export was cut, the table and its tooltips are the readout"
+            ),
         },
     ),
     "earnings": Page(streamlit="earnings.py"),

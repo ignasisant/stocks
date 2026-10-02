@@ -14,7 +14,7 @@
   "sector.tech_podium_help": "Ordenadas por un percentil sobre seis señales de tendencia y momentum (tendencia, RSI, MACD, distancia al máximo de 52 semanas, rentabilidad a 3 meses, volumen), relativo a este grupo de {cohort}. Es un ranking distinto del anterior — este ignora por completo valoración y calidad.",
   "sector.no_tech_podium": "Aquí hay muy pocas empresas con histórico de precio suficiente para armar un podio técnico.",
   "sector.table_title": "El grupo entero",
-  "sector.col_ticker": "valor",
+  "sector.col_ticker": "Valor",
   "sector.na": "n/d",
   "sector.screen_filters": "Cribado y filtros",
   "sector.screen": "Cribado",

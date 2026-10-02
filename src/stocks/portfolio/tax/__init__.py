@@ -21,6 +21,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 
 from stocks.portfolio.positions import POOLED_MODES, RealizedSale
 from stocks.portfolio.tax import ae, au, ca, ch, de, es, fr, ie, it, pt, uk, us
@@ -29,12 +30,15 @@ from stocks.portfolio.tax.base import (
     Acquisitions,
     Kpi,
     Note,
+    OpenWindow,
     ReportingFlag,
     Split,
     TaxPeriod,
     TaxSettings,
     TaxTotal,
+    Window,
     month_range,
+    open_windows,
     tax_year_of,
     total_of,
 )
@@ -47,6 +51,7 @@ __all__ = [
     "Jurisdiction",
     "Kpi",
     "Note",
+    "OpenWindow",
     "ReportingFlag",
     "Split",
     "TaxPeriod",
@@ -90,6 +95,9 @@ class Jurisdiction:
     # action card's harvest line — localize it themselves. The window the
     # replay actually applies is each module's WINDOW; this is its label.
     repurchase_window: str = ""
+    # The predicate that label names (each module's WINDOW), for callers that
+    # ask about a window rather than replay a year — `open_windows` below.
+    _window: Window | None = None
     # Filing statuses the brackets distinguish; empty when the country's rate
     # scale doesn't care (Spain's savings base doesn't).
     filing_statuses: tuple[str, ...] = ()
@@ -166,6 +174,20 @@ class Jurisdiction:
         """Foreign-asset reporting thresholds crossed by `total_foreign_value`."""
         return self._flags(total_foreign_value, settings)
 
+    def open_windows(
+        self, realized: list[RealizedSale], buy_dates: Acquisitions, today: date
+    ) -> list[OpenWindow]:
+        """Loss sales a buy-back would still block, and the day it stops.
+
+        Empty where the country has no such rule, or where the matching mode
+        absorbs it (the UK's 30-day rule lives in the s.104 replay).
+        """
+        if self._window is None or not self.repurchase_window:
+            return []
+        return open_windows(
+            realized, buy_dates, self._window, self.repurchase_window, today
+        )
+
 
 JURISDICTIONS: dict[str, Jurisdiction] = {
     es.CODE: Jurisdiction(
@@ -175,6 +197,7 @@ JURISDICTIONS: dict[str, Jurisdiction] = {
         _flags=es.reporting_flags,
         carryforward_years=es.CARRYFORWARD_YEARS,
         repurchase_window="2m",
+        _window=es.WINDOW,
     ),
     us.CODE: Jurisdiction(
         code=us.CODE,
@@ -186,6 +209,7 @@ JURISDICTIONS: dict[str, Jurisdiction] = {
         settings_fields=("filing_status", "other_income", "include_niit"),
         _long_term=us.is_long_term,
         repurchase_window="30d",
+        _window=us.WINDOW,
     ),
     uk.CODE: Jurisdiction(
         code=uk.CODE,
@@ -230,6 +254,7 @@ JURISDICTIONS: dict[str, Jurisdiction] = {
         _flags=ie.reporting_flags,
         carryforward_years=None,  # indefinite, against chargeable gains
         repurchase_window="28d",
+        _window=ie.WINDOW,
     ),
     pt.CODE: Jurisdiction(
         code=pt.CODE,
@@ -249,6 +274,7 @@ JURISDICTIONS: dict[str, Jurisdiction] = {
         matching="average",  # adjusted cost base (ITA s.47)
         settings_fields=("other_income", "subnational_rate"),
         repurchase_window="30d",
+        _window=ca.WINDOW,
     ),
     au.CODE: Jurisdiction(
         code=au.CODE,

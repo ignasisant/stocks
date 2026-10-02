@@ -508,6 +508,57 @@ def test_storing_a_key_is_what_lifts_the_cap(
     assert anthropic["key_days_left"] == 90
 
 
+def test_only_a_provider_with_a_sign_in_offers_one(client, account, signed_in):
+    """The drawer's "Sign in with OpenRouter" is drawn from these two fields
+    alone, so a provider without them must say null rather than ""."""
+    providers = {
+        p["id"]: p for p in signed_in.get("/v1/chat/state").json()["providers"]
+    }
+    assert providers["openrouter"]["connect_url"] == "https://openrouter.ai/auth"
+    assert providers["openrouter"]["connect_token_url"].endswith("/auth/keys")
+    assert providers["anthropic"]["connect_url"] is None
+    assert providers["anthropic"]["connect_token_url"] is None
+
+
+def test_each_provider_names_its_mark_by_its_own_brand_domain(
+    client, account, signed_in, monkeypatch
+):
+    """The settings tiles draw these. The keyless chain is the app's own and
+    declares no domain, so it is asked for none and says null."""
+    from stocks.api import loaders
+
+    asked = []
+
+    def logo(provider, domain):
+        asked.append((provider, domain))
+        return f"/app/static/logos/brand-ai-{provider}.png" if domain else None
+
+    monkeypatch.setattr(loaders, "provider_logo", logo)
+    providers = {
+        p["id"]: p for p in signed_in.get("/v1/chat/state").json()["providers"]
+    }
+    assert providers["anthropic"]["logo"] == "/app/static/logos/brand-ai-anthropic.png"
+    assert ("openrouter", "openrouter.ai") in asked
+    if "free" in providers:
+        assert providers["free"]["logo"] is None
+
+
+def test_a_signed_in_key_is_stored_like_a_typed_one(
+    client, account, signed_in, encrypted
+):
+    """The browser trades the code itself and hands the key over through the
+    same route a pasted key takes — there is no second way in to secure."""
+    body = signed_in.put(
+        "/v1/chat/keys/openrouter", json={"key": "sk-or-v1-signedin"}
+    )
+    assert body.status_code == 200
+    openrouter = next(
+        p for p in body.json()["providers"] if p["id"] == "openrouter"
+    )
+    assert openrouter["has_key"] is True
+    assert openrouter["key_tail"] == "edin"
+
+
 def test_the_key_never_comes_back_out(client, account, signed_in, encrypted):
     """The state payload says a key is stored and how long it has left. It does
     not say what the key is, and nothing here ever should."""

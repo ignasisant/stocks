@@ -109,7 +109,9 @@ export function Podium({
           })}
         </div>
       )}
-      <p className="ag-sec-caption">{helpText}</p>
+      {/* How the ranking is built, only when there is one: under the empty
+          card it would explain a ranking "relative to this cohort of 0". */}
+      {podium.length > 0 && <p className="ag-sec-caption">{helpText}</p>}
     </section>
   );
 }

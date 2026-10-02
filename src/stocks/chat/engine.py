@@ -65,7 +65,7 @@ if TYPE_CHECKING:
 BYOK_TTL = 90 * 24 * 3600  # sliding window, seconds
 BYOK_MAX_AGE = 180 * 24 * 3600  # hard cap since first save, seconds
 _BYOK_TOUCH_MIN = 24 * 3600  # slide at most once a day (each write hits the bucket)
-_BYOK_ORDER = ("anthropic", "openai", "gemini")
+_BYOK_ORDER = ("anthropic", "openai", "gemini", "openrouter")
 
 # The free chain runs on the operator's shared keys, so each account gets a
 # modest daily allowance — one runaway user must not drain the quota every
@@ -1703,9 +1703,16 @@ def _keep_byok(prefs: dict, prefs_path: Path, pid: str) -> None:
 # ------------------------------------------------------------------ one turn
 
 # Prepended for a surface that renders markdown — the web assistant panel and
-# the React drawer. Empty rather than absent so a caller always passes one of
-# the two and the choice is visible at the call site, not defaulted into.
-MARKDOWN_CONTEXT = ""
+# the React drawer. It renders tables, but in a 420px drawer or on a phone, so
+# a table of sentences is a sideways scroll: steer prose into lists at the
+# source. The drawer still wraps and stacks whatever table arrives anyway.
+MARKDOWN_CONTEXT = (
+    "Answers render as markdown in a narrow panel, often on a phone. Use a "
+    "table only for short values side by side (tickers, figures, dates): at "
+    "most four columns and a few words per cell. Anything that takes a "
+    "sentence to say goes in a list instead, one bullet per item with its "
+    "name in bold. Never put <br> or line breaks inside a table cell.\n\n"
+)
 
 # A focused symbol as the drawer may name it: letters, digits and the four
 # punctuation marks real tickers carry (BRK.B, BTC-EUR, ^GSPC, EURUSD=X). It

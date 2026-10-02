@@ -18,8 +18,17 @@
  * GFM table, and the Streamlit bubble renders those. Printing the pipes
  * instead was the drawer saying less than the page it replaces.
  *
+ * A table also has to fit the drawer, which is 420px wide and a phone's width
+ * on a phone. A column of sentences wraps instead of running off the side, and
+ * a table that would still need a sideways scroll in a narrow box is stacked:
+ * one card per row, the first cell its title and every other cell under its
+ * header's name. Short figures keep their one line, because a weight that
+ * breaks between the number and its `%` is not comparable down a column.
+ *
  * What it deliberately does not render: footnotes, images, raw HTML. Those
- * arrive as their own source text, which is ugly and honest; a half-parsed
+ * arrive as their own source text, which is ugly and honest — the one
+ * exception is `<br>` inside a table cell, because a GFM row is one line and
+ * that is the only way a cell can carry two, so models write it. A half-parsed
  * table that drops a column is neither — which is also why a table needs its
  * delimiter row before it is treated as one, and a header row that has
  * streamed in without it reads as a line of text until the next chunk lands.
@@ -252,6 +261,111 @@ function pull(align: Align | undefined): string | undefined {
   return undefined;
 }
 
+/** A line break inside a cell, as the models write it. */
+const BREAK = /<br\s*\/?>/i;
+
+/** A column whose longest line is past this reads as text, and wraps. */
+const PROSE = 28;
+
+/** Past this many characters across a row, a table overflows a narrow box. */
+const ROOMY = 56;
+
+/** The characters a cell's longest line puts on screen, markup stripped. */
+function span(cell: string): number {
+  return Math.max(
+    0,
+    ...cell.split(BREAK).map(
+      (line) =>
+        line
+          .replace(/\[([^\]\n]*)\]\([^)\s]+\)/g, "$1")
+          .replace(/\*\*|\*|`/g, "")
+          .trim().length,
+    ),
+  );
+}
+
+/**
+ * How a table lays out: which columns wrap, and whether a narrow box stacks it.
+ *
+ * Measured from the text rather than left to the browser, because the browser
+ * only finds out after drawing it too wide: `white-space` and the stacking
+ * query have to be decided before there is a layout to measure.
+ */
+function shape(head: string[], rows: string[][]): { wrap: boolean[]; stack: boolean } {
+  const widths = head.map((cell, n) =>
+    Math.max(span(cell), ...rows.map((row) => span(row[n] ?? ""))),
+  );
+  const wrap = widths.map((w) => w > PROSE);
+  // The padding of a cell is worth about three characters.
+  const row = widths.reduce((sum, w) => sum + w + 3, 0);
+  return { wrap, stack: wrap.some(Boolean) || row > ROOMY };
+}
+
+/** A cell's text, its `<br>`s turned into the breaks they meant. */
+function Cell({ text }: { text: string }): ReactNode {
+  return text.split(BREAK).map((line, n) => (
+    <Fragment key={n}>
+      {n > 0 && <br />}
+      <Inline text={line.trim()} />
+    </Fragment>
+  ));
+}
+
+function Table({
+  head,
+  align,
+  rows,
+}: {
+  head: string[];
+  align: Align[];
+  rows: string[][];
+}) {
+  const { wrap, stack } = shape(head, rows);
+  const style = (n: number) =>
+    [pull(align[n]), wrap[n] && "ag-chat-wrap"].filter(Boolean).join(" ") || undefined;
+  return (
+    <div className="ag-chat-tablewrap">
+      <table className={stack ? "ag-chat-table ag-chat-stack" : "ag-chat-table"}>
+        <thead>
+          <tr>
+            {head.map((cell, n) => (
+              <th scope="col" className={style(n)} key={n}>
+                <Cell text={cell} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, r) => (
+            <tr key={r}>
+              {/* Walked by the header rather than by the row: a short
+                  row leaves an empty cell and a long one is cut,
+                  which keeps every row the width of its table. */}
+              {head.map((cell, n) => {
+                const text = row[n] ?? "";
+                return (
+                  <td className={style(n)} key={n}>
+                    {/* The header's name, shown only once the table is
+                        stacked and the header row is gone. The first cell
+                        titles its card and an empty one is hidden, so
+                        neither needs one. */}
+                    {stack && n > 0 && text && (
+                      <span className="ag-chat-label">
+                        <Cell text={cell} />
+                      </span>
+                    )}
+                    <Cell text={text} />
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function Markdown({ text }: { text: string }): ReactNode {
   return (
     <>
@@ -271,33 +385,7 @@ export function Markdown({ text }: { text: string }): ReactNode {
           );
         if (block.kind === "table")
           return (
-            <div className="ag-chat-tablewrap" key={i}>
-              <table className="ag-chat-table">
-                <thead>
-                  <tr>
-                    {block.head.map((cell, n) => (
-                      <th scope="col" className={pull(block.align[n])} key={n}>
-                        <Inline text={cell} />
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {block.rows.map((row, r) => (
-                    <tr key={r}>
-                      {/* Walked by the header rather than by the row: a short
-                          row leaves an empty cell and a long one is cut,
-                          which keeps every row the width of its table. */}
-                      {block.head.map((_, n) => (
-                        <td className={pull(block.align[n])} key={n}>
-                          <Inline text={row[n] ?? ""} />
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table head={block.head} align={block.align} rows={block.rows} key={i} />
           );
         if (block.kind === "list") {
           const items = block.items.map((item, n) => (

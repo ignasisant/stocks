@@ -788,13 +788,28 @@ def brand_logo(broker: str) -> str | None:
     None is the honest answer for a key that declares no domain at all — a
     hand-entered row has no brand, and the client draws a name pill instead.
     """
-    from stocks.data.logo import brand_logo_url, mirror_brand
     from stocks.portfolio import platforms
 
-    domain = platforms.broker_domain(broker)
+    return _brand_src(broker, platforms.broker_domain(broker))
+
+
+@ttl_cache(_IDENTITY_TTL, max_entries=16)
+def provider_logo(provider: str, domain: str | None) -> str | None:
+    """Same-origin logo for a chat provider — the marks on the settings tiles.
+
+    Mirrored under an `ai-` key so a provider can never take a broker's file,
+    and None for the keyless chain, which is this app's own and has no brand
+    domain to ask for.
+    """
+    return _brand_src(f"ai-{provider}", domain)
+
+
+def _brand_src(key: str, domain: str | None) -> str | None:
+    from stocks.data.logo import brand_logo_url, mirror_brand
+
     if not domain:
         return None
-    if name := mirror_brand(broker, domain, identity.STATIC_LOGO_DIR):
+    if name := mirror_brand(key, domain, identity.STATIC_LOGO_DIR):
         return "/" + identity.STATIC_PREFIX + name
     return brand_logo_url(domain)
 
@@ -860,6 +875,115 @@ def dividend_estimates(db: str, mtime: float, base: str = "EUR") -> tuple:
     so a throttled minute is never cached as "this book pays nothing" — the
     route turns it into a 503 with a `Retry-After` like every other fetch here.
     """
+    from stocks.portfolio import dividends as div
+
+    txs, history, payments = _entitled(db, mtime, base)
+    estimated = div.estimate_by_year(payments, base=base)
+    forward = div.forward_income(txs, history)
+    totals = div.forward_totals(forward, base=base)
+    unrecorded = div.unrecorded_by_year(div.by_year(txs, base=base), estimated)
+    return estimated, forward, totals, unrecorded
+
+
+@ttl_cache(21600.0, max_entries=8)
+def unbooked_dividends(db: str, mtime: float, base: str = "EUR") -> list[tuple]:
+    """[(EstimatedPayment, gross in `base` or None), …], newest first.
+
+    The payments `dividend_estimates` counts as unrecorded, one by one: what the
+    shares were entitled to with no ledger dividend row to answer for it. Most
+    of them are the tail a statement never reached — it was exported in July,
+    the book kept paying in August. Valued at the ex-date's rate, as the yearly
+    estimate is; a date with no rate is None, never today's standing in.
+
+    Raises `YFRateLimitError` under the same rule as `dividend_estimates`.
+    """
+    from stocks.data.fx import converter, prefetch
+    from stocks.portfolio import dividends as div
+
+    txs, _history, payments = _entitled(db, mtime, base)
+    missing = div.unbooked(payments, transfers.relabel(txs))
+    prefetch((p.ex_date, p.currency) for p in missing)
+    to_base = converter(base)
+    out: list[tuple] = []
+    for p in reversed(missing):
+        try:
+            amount = to_base(p.gross, p.currency, p.ex_date)
+        except Exception:  # noqa: BLE001 — an unpriced row is n/a, not a 500
+            amount = None
+        out.append((p, amount))
+    return out
+
+
+@ttl_cache(21600.0, max_entries=8)
+def dividend_payments(db: str, mtime: float, base: str = "EUR") -> list:
+    """Every ex-date the ledger's shares were entitled to, oldest first.
+
+    `EstimatedPayment`s straight off `_entitled`: the calendar's past dividend
+    chips, drawn whether or not a statement ever booked the cash.
+
+    Raises `YFRateLimitError` under the same rule as `dividend_estimates`.
+    """
+    return _entitled(db, mtime, base)[2]
+
+
+@ttl_cache(21600.0, max_entries=16, persist="ex_dividends")
+def ex_dividends(tickers: tuple[str, ...]) -> list:
+    """The next declared ex-date per name, inside a year — `DividendEvent`s.
+
+    Keyed on the ticker tuple like `earnings_calendar`, and six hours like it:
+    a company declares once a quarter. Yahoo's `exDividendDate` stays on the
+    LAST ex-date until the next is declared, so most names come back with
+    nothing ahead — which is the answer, not a gap.
+
+    Raises `YFRateLimitError` when Yahoo is in cooldown and nothing came back,
+    so a throttled minute is never cached as "nothing declared".
+    """
+    from yfinance.exceptions import YFRateLimitError
+
+    from stocks.data.dividends import upcoming_ex_dividends
+    from stocks.data.fetch import throttle_remaining
+
+    if not tickers:
+        return []
+    if throttle_remaining():
+        raise YFRateLimitError
+    events = upcoming_ex_dividends(list(tickers), within_days=366)
+    if not events and throttle_remaining():
+        raise YFRateLimitError
+    return events
+
+
+@ttl_cache(21600.0, max_entries=16)
+def dividend_histories(tickers: tuple[str, ...]) -> dict:
+    """Per-share payment history per name — what the projected ex-dates repeat.
+
+    `DividendHistory`s keyed by the caller's label, names that pay nothing
+    left out. The series are memoized per process as well, so a book whose
+    past chips just fetched them pays no request here.
+
+    Raises `YFRateLimitError` when Yahoo is in cooldown and nothing came back,
+    so a throttled minute is never cached as "pays nothing".
+    """
+    from yfinance.exceptions import YFRateLimitError
+
+    from stocks.data.dividends import histories
+    from stocks.data.fetch import throttle_remaining
+
+    if not tickers:
+        return {}
+    found = histories(list(tickers))
+    if not found and throttle_remaining():
+        raise YFRateLimitError
+    return found
+
+
+def _entitled(db: str, mtime: float, base: str) -> tuple:
+    """(ledger, per-share histories, every payment the shares were owed).
+
+    The half both dividend estimates start from. The histories are memoized per
+    process (`stocks.data.dividends`), so the second loader to ask pays no
+    request for them.
+    """
     from yfinance.exceptions import YFRateLimitError
 
     from stocks.data.dividends import histories
@@ -873,12 +997,7 @@ def dividend_estimates(db: str, mtime: float, base: str = "EUR") -> tuple:
     history = histories(tickers)
     if not history and (tickers and throttle_remaining()):
         raise YFRateLimitError
-    payments = div.estimate_payments(txs, history)
-    estimated = div.estimate_by_year(payments, base=base)
-    forward = div.forward_income(txs, history)
-    totals = div.forward_totals(forward, base=base)
-    unrecorded = div.unrecorded_by_year(div.by_year(txs, base=base), estimated)
-    return estimated, forward, totals, unrecorded
+    return txs, history, div.estimate_payments(txs, history)
 
 
 @ttl_cache(_LEDGER_TTL, max_entries=16)

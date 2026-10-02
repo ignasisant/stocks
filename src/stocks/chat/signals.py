@@ -583,15 +583,9 @@ def _result_signals(results, held: set[str], today: date) -> list[Signal]:
 
 def _window_end(sell: date, window: str) -> date | None:
     """The first day a repurchase no longer touches a loss sold on `sell`."""
-    from datetime import timedelta
+    from stocks.portfolio.tax.base import window_end
 
-    from stocks.portfolio.tax.base import shift_months
-
-    if window == "2m":
-        return shift_months(sell, 2) + timedelta(days=1)
-    if window in ("30d", "28d"):
-        return sell + timedelta(days=int(window[:-1]) + 1)
-    return None
+    return window_end(sell, window)
 
 
 def _year_end(jurisdiction, today: date) -> date:

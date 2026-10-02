@@ -13,21 +13,30 @@
  * ranking opens on the most expensive company in the sector.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useT } from "../../shell/i18n";
-import { Link } from "../../shell/router";
 import { TickerCell, useTickerProfile } from "../../shell/tickers";
 import { useLabels } from "./labels";
-import { csv, formatMetric, ordered, passes, type Screen } from "./metrics";
+import { formatMetric, ordered, passes, type Screen } from "./metrics";
 import type { CohortRow, SectorCohort } from "./types";
+import { DenseRows, Responsive } from "../../ui/Rows";
 import { ToggleChip, ToggleRow } from "../../ui/Toggle";
 
 /**
- * The same breakpoint the Streamlit tables switch on, and for the same reason:
- * a narrow desktop window and an iPad (which sends no "Mobi") both need the
- * dense rows, so this is viewport WIDTH and never the User-Agent.
+ * The width the Streamlit tables switched at, 40rem, and the one `Responsive`
+ * swaps the table for its dense rows on — read off the main column rather
+ * than the viewport, so an open chat drawer narrows this page the way a phone
+ * does. Read once, for what the page opens with (the columns a phone starts
+ * on, whether the controls start folded); the swap itself is CSS.
  */
-const NARROW = "(max-width: 640px)";
+function narrowAtOpen(): boolean {
+  const main = document.querySelector(".ag-main");
+  if (!main) return window.innerWidth <= 640;
+  // The container query measures the content box; clientWidth has the padding.
+  const style = window.getComputedStyle(main);
+  const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+  return main.clientWidth - padding <= 640;
+}
 
 /** The three filters the screen offers, with the thresholds it opens on. */
 const SCREENS: { metric: string; kind: "min" | "max"; value: string }[] = [
@@ -56,36 +65,6 @@ export function CompanyName({
   return name ? <span className={className ?? "ag-sec-name"}>{name}</span> : null;
 }
 
-/**
- * The phone row's mark: logo, symbol, name. Not a `TickerCell` because the
- * whole row is already the link to the company's page — a link inside a link
- * is invalid markup, and a tap target the width of the screen is the point of
- * the dense row.
- */
-function Mark({ ticker }: { ticker: string }) {
-  const profile = useTickerProfile(ticker);
-  return (
-    <div className="ag-sec-l1 ag-sec-mark">
-      {profile?.logo ? (
-        <img className="ag-tick-logo" src={profile.logo} alt="" loading="lazy" />
-      ) : null}
-      <span>{ticker}</span>
-      {profile?.name ? <span className="ag-sec-name">{profile.name}</span> : null}
-    </div>
-  );
-}
-
-function useNarrow(): boolean {
-  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW).matches);
-  useEffect(() => {
-    const query = window.matchMedia(NARROW);
-    const update = () => setNarrow(query.matches);
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
-  return narrow;
-}
-
 /** A catalog string with `**bold**` spans in it, as the Streamlit caption has. */
 function Marked({ text }: { text: string }) {
   return (
@@ -106,21 +85,19 @@ function Marked({ text }: { text: string }) {
 export function Cohort({ data }: { data: SectorCohort }) {
   const t = useT();
   const labels = useLabels();
-  const narrow = useNarrow();
   const na = t("sector.na");
 
+  const [narrow] = useState(narrowAtOpen);
   const [sort, setSort] = useState(data.sort);
   const [ascending, setAscending] = useState(data.ascending);
   const [columns, setColumns] = useState<string[]>(() =>
-    window.matchMedia(NARROW).matches
-      ? data.default_columns.slice(0, NARROW_COLUMNS)
-      : data.default_columns,
+    narrow ? data.default_columns.slice(0, NARROW_COLUMNS) : data.default_columns,
   );
   // Open on a wide screen, folded away on a phone — where the sidebar this
   // panel replaces starts collapsed anyway. Controlled, with the toggle fed
   // back: every control inside it re-renders this component, and an `open`
   // prop nothing writes to would slam the panel shut on the next keystroke.
-  const [open, setOpen] = useState(() => !window.matchMedia(NARROW).matches);
+  const [open, setOpen] = useState(!narrow);
   const [on, setOn] = useState<Record<string, boolean>>({});
   const [thresholds, setThresholds] = useState<Record<string, string>>(() =>
     Object.fromEntries(SCREENS.map((screen) => [screen.metric, screen.value])),
@@ -136,11 +113,15 @@ export function Cohort({ data }: { data: SectorCohort }) {
     setAscending(data.lower_is_better.includes(metric));
   };
 
+  /** A column head: a new metric ranks best-first; the ranked one flips. */
+  const sortBy = (metric: string) =>
+    metric === sort ? setAscending((current) => !current) : rankBy(metric);
+
   const screens: Screen[] = SCREENS.filter((screen) => on[screen.metric])
     .map((screen) => ({
       metric: screen.metric,
       kind: screen.kind,
-      value: Number(thresholds[screen.metric]),
+      value: threshold(thresholds[screen.metric] ?? ""),
     }))
     .filter((screen) => Number.isFinite(screen.value));
 
@@ -153,25 +134,13 @@ export function Cohort({ data }: { data: SectorCohort }) {
     ascending,
   );
 
-  // The ranked-by metric is the row's headline number on a phone; the rest go
-  // in the dim line under the symbol.
-  const lead = columns.includes(sort) ? sort : (columns[0] ?? "");
-  const sub = columns.filter((column) => column !== lead);
-
-  const download = () => {
-    const blob = new Blob([csv(data.rows, data.metric_keys)], {
-      type: "text/csv;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${data.sector.toLowerCase().replaceAll(" ", "_")}.csv`;
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  };
+  // The ranked-by metric is the row's headline number on a phone, picked as a
+  // column or not — the rows are in its order, and a headline in any other
+  // figure reads as a list sorted by nothing. The rest go in the dim line.
+  const sub = columns.filter((column) => column !== sort);
 
   return (
-    <section className="ag-sec-cohort">
+    <section className="ag-sec-card ag-sec-cohort">
       <h2 className="ag-sec-h2">{t("sector.table_title")}</h2>
       <p className="ag-sec-caption">
         {t("sector.cohort_caption", { n: data.rows.length, etf: data.etf })}
@@ -182,33 +151,34 @@ export function Cohort({ data }: { data: SectorCohort }) {
         open={open}
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
-        <summary>{narrow ? t("sector.screen_filters") : t("sector.screen")}</summary>
+        <summary>{t("sector.screen_filters")}</summary>
 
-        <label className="ag-sec-field">
-          <span>{t("sector.rank_by")}</span>
-          <select value={sort} onChange={(event) => rankBy(event.target.value)}>
-            {data.metric_keys.map((key) => (
-              <option key={key} value={key}>
-                {labels.metric(key)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="ag-sec-line">
+          <label className="ag-sec-field">
+            <span>{t("sector.rank_by")}</span>
+            <select value={sort} onChange={(event) => rankBy(event.target.value)}>
+              {data.metric_keys.map((key) => (
+                <option key={key} value={key}>
+                  {labels.metric(key)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="ag-sec-check">
+            <input
+              type="checkbox"
+              checked={ascending}
+              onChange={(event) => setAscending(event.target.checked)}
+            />
+            <span>{t("sector.ascending")}</span>
+          </label>
+        </div>
         {labels.describe(sort) ? (
           <p className="ag-sec-caption">{labels.describe(sort)}</p>
         ) : null}
 
-        <label className="ag-sec-check">
-          <input
-            type="checkbox"
-            checked={ascending}
-            onChange={(event) => setAscending(event.target.checked)}
-          />
-          <span>{t("sector.ascending")}</span>
-        </label>
-
         <p className="ag-sec-label">{t("sector.columns")}</p>
-        <ToggleRow>
+        <ToggleRow label={t("sector.columns")} className="ag-sec-chips">
           {data.metric_keys.map((key) => {
             const picked = columns.includes(key);
             return (
@@ -230,43 +200,48 @@ export function Cohort({ data }: { data: SectorCohort }) {
           })}
         </ToggleRow>
 
-        <hr className="ag-sec-rule" />
-        <p className="ag-sec-caption">{t("sector.filters_caption")}</p>
-        {SCREENS.filter((screen) => data.metric_keys.includes(screen.metric)).map(
-          (screen) => (
-            <div className="ag-sec-filter" key={screen.metric}>
-              <label className="ag-sec-check" title={labels.describe(screen.metric)}>
+        <p className="ag-sec-label">{t("sector.filters_caption")}</p>
+        {/* The threshold stays on screen while its filter is off, so the reader
+            sees what ticking it would apply; typing a new one switches it on. */}
+        <div className="ag-sec-line">
+          {SCREENS.filter((screen) => data.metric_keys.includes(screen.metric)).map(
+            (screen) => (
+              <div
+                className={
+                  on[screen.metric] ? "ag-sec-filter ag-sec-filter-on" : "ag-sec-filter"
+                }
+                key={screen.metric}
+              >
+                <label className="ag-sec-check" title={labels.describe(screen.metric)}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(on[screen.metric])}
+                    onChange={(event) =>
+                      setOn((current) => ({
+                        ...current,
+                        [screen.metric]: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>
+                    {labels.metric(screen.metric)} {screen.kind === "max" ? "≤" : "≥"}
+                  </span>
+                </label>
                 <input
-                  type="checkbox"
-                  checked={Boolean(on[screen.metric])}
-                  onChange={(event) =>
-                    setOn((current) => ({
-                      ...current,
-                      [screen.metric]: event.target.checked,
-                    }))
-                  }
-                />
-                <span>
-                  {labels.metric(screen.metric)} {screen.kind === "max" ? "≤" : "≥"}
-                </span>
-              </label>
-              {on[screen.metric] ? (
-                <input
-                  type="number"
-                  step="any"
+                  type="text"
+                  inputMode="decimal"
                   aria-label={labels.metric(screen.metric)}
                   value={thresholds[screen.metric] ?? screen.value}
-                  onChange={(event) =>
-                    setThresholds((current) => ({
-                      ...current,
-                      [screen.metric]: event.target.value,
-                    }))
-                  }
+                  onChange={(event) => {
+                    const text = event.target.value;
+                    setThresholds((current) => ({ ...current, [screen.metric]: text }));
+                    setOn((current) => ({ ...current, [screen.metric]: true }));
+                  }}
                 />
-              ) : null}
-            </div>
-          ),
-        )}
+              </div>
+            ),
+          )}
+        </div>
       </details>
 
       <p className="ag-sec-caption">
@@ -275,12 +250,38 @@ export function Cohort({ data }: { data: SectorCohort }) {
         />
       </p>
 
-      <Table rows={view} columns={columns} na={na} />
-      <Dense rows={view} lead={lead} sub={sub} na={na} />
-
-      <button type="button" className="ag-btn ag-sec-download" onClick={download}>
-        {t("sector.download_csv")}
-      </button>
+      <Responsive
+        wide={
+          <Table
+            rows={view}
+            columns={columns}
+            sort={sort}
+            ascending={ascending}
+            onSort={sortBy}
+            na={na}
+          />
+        }
+        narrow={
+          <DenseRows
+            rows={view}
+            rowKey={(row) => row.ticker}
+            spec={{
+              ticker: (row) => row.ticker,
+              names: true,
+              wrap: true,
+              sub: (row) =>
+                sub.map(
+                  (column) =>
+                    `${labels.metric(column)} ${formatMetric(column, row.metrics[column], na)}`,
+                ),
+              value: (row) => formatMetric(sort, row.metrics[sort], na),
+              // What the headline figure is, under it: a bare "72.6%" on the
+              // right of seventeen rows says nothing about which metric it is.
+              delta: () => labels.metric(sort),
+            }}
+          />
+        }
+      />
 
       <details className="ag-sec-help">
         <summary>{t("sector.metrics_help")}</summary>
@@ -299,44 +300,86 @@ export function Cohort({ data }: { data: SectorCohort }) {
   );
 }
 
-/** The wide rendering: one column per metric, one row per company. */
+/**
+ * The wide rendering: one column per metric, one row per company.
+ *
+ * Every head is a button that ranks by its column — the same `sort` the "Rank
+ * by" select writes, so the two can never disagree — and the ranked column is
+ * marked in its head (`aria-sort` and the arrow) and set in weight down the
+ * rows, so the eye finds the order it is reading. Figures sit right-aligned in
+ * tabular digits so their decimals stack; the symbol column stays put while
+ * the rest scroll under it on a column too narrow for all of them.
+ */
 function Table({
   rows,
   columns,
+  sort,
+  ascending,
+  onSort,
   na,
 }: {
   rows: CohortRow[];
   columns: string[];
+  sort: string;
+  ascending: boolean;
+  onSort: (metric: string) => void;
   na: string;
 }) {
   const t = useT();
   const labels = useLabels();
   return (
-    <div className="ag-sec-desk">
+    <div className="ag-sec-scroll">
       <table className="ag-sec-table">
         <thead>
           <tr>
-            <th>{t("sector.col_ticker")}</th>
-            {columns.map((column) => (
-              <th key={column} title={labels.describe(column)}>
-                {labels.metric(column)}
-              </th>
-            ))}
+            <th scope="col" className="ag-sec-who-col">
+              {t("sector.col_ticker")}
+            </th>
+            {columns.map((column) => {
+              const ranked = column === sort;
+              return (
+                <th
+                  key={column}
+                  scope="col"
+                  className={ranked ? "ag-sec-ranked" : undefined}
+                  aria-sort={
+                    ranked ? (ascending ? "ascending" : "descending") : undefined
+                  }
+                >
+                  <button
+                    type="button"
+                    className="ag-sec-head"
+                    title={labels.describe(column) || undefined}
+                    onClick={() => onSort(column)}
+                  >
+                    {labels.metric(column)}
+                    <span className="ag-sec-arrow" aria-hidden="true">
+                      {ranked ? (ascending ? "▴" : "▾") : ""}
+                    </span>
+                  </button>
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.ticker}>
-              <td>
+              <th scope="row" className="ag-sec-who-col">
                 <span className="ag-sec-who">
                   <TickerCell ticker={row.ticker}>
                     <b>{row.ticker}</b>
                   </TickerCell>
                   <CompanyName ticker={row.ticker} />
                 </span>
-              </td>
+              </th>
               {columns.map((column) => (
-                <td key={column}>{formatMetric(column, row.metrics[column], na)}</td>
+                <td
+                  key={column}
+                  className={column === sort ? "ag-sec-ranked" : undefined}
+                >
+                  {formatMetric(column, row.metrics[column], na)}
+                </td>
               ))}
             </tr>
           ))}
@@ -347,53 +390,11 @@ function Table({
 }
 
 /**
- * The narrow rendering: one dense two-line row per company, so nothing pans
- * horizontally. The ranked-by figure carries the row; the other picked columns
- * ride the dim line under the symbol.
+ * A threshold as typed: "0,15" from a Spanish keyboard as well as "0.15". A
+ * number input would swallow the comma into an empty value, and an empty
+ * value is a filter that silently stops filtering.
  */
-function Dense({
-  rows,
-  lead,
-  sub,
-  na,
-}: {
-  rows: CohortRow[];
-  lead: string;
-  sub: string[];
-  na: string;
-}) {
-  const labels = useLabels();
-  return (
-    <div className="ag-sec-mob">
-      {rows.map((row) => (
-        <Link
-          className="ag-sec-row"
-          key={row.ticker}
-          page="ticker"
-          params={{ ticker: row.ticker }}
-        >
-          <div className="ag-sec-main">
-            <Mark ticker={row.ticker} />
-            {sub.length ? (
-              <div className="ag-sec-l2">
-                {sub
-                  .map(
-                    (column) =>
-                      `${labels.metric(column)} ${formatMetric(column, row.metrics[column], na)}`,
-                  )
-                  .join(" · ")}
-              </div>
-            ) : null}
-          </div>
-          {lead ? (
-            <div className="ag-sec-side">
-              <div className="ag-sec-l1">
-                {formatMetric(lead, row.metrics[lead], na)}
-              </div>
-            </div>
-          ) : null}
-        </Link>
-      ))}
-    </div>
-  );
+function threshold(text: string): number {
+  const raw = text.trim().replace(",", ".");
+  return raw === "" ? Number.NaN : Number(raw);
 }

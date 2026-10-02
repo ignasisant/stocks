@@ -208,6 +208,29 @@ export type Transactions = {
 };
 
 /**
+ * `/portfolio/dividends/unbooked` — one dividend the shares were entitled to
+ * that no ledger row answers for. An estimate: gross, dated by the ex-date.
+ */
+export type UnbookedDividend = {
+  ticker: string;
+  ex_date: string;
+  per_share: number;
+  shares: number;
+  currency: string;
+  gross: number;
+  /** `gross` in `UnbookedDividends.base` at the ex-date's rate, or null. */
+  amount: number | null;
+};
+
+export type UnbookedDividends = {
+  base: string;
+  total: number;
+  payments: UnbookedDividend[];
+  /** False: Yahoo was not asked or did not answer — nobody checked. */
+  available: boolean;
+};
+
+/**
  * `/home/closes` — one watchlist row: the last daily close, and the day move
  * close-to-close (re-read from a quote only where the exchange is shut).
  */
@@ -221,30 +244,6 @@ export type CloseRow = {
 };
 
 export type Closes = { rows: CloseRow[] };
-
-export type CalendarEvent = {
-  ticker: string;
-  date: string | null;
-  days_until: number | null;
-};
-
-export type CalendarResult = {
-  ticker: string;
-  date: string;
-  eps_estimate: number | null;
-  reported_eps: number | null;
-  surprise_pct: number | null;
-  /** Null when there was nothing to compare — never False. */
-  beat: boolean | null;
-};
-
-export type EarningsCalendar = {
-  upcoming: CalendarEvent[];
-  results: CalendarResult[];
-  /** portfolio | favorites | one per watchlist tag; empty sets are left out. */
-  groups: Record<string, string[]>;
-  skipped: string[];
-};
 
 export type WatchlistEntry = {
   ticker: string;

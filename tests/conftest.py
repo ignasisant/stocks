@@ -188,6 +188,23 @@ def _web_off():
 
 
 @pytest.fixture(autouse=True)
+def _no_provider_logos():
+    """Start every test with the chat providers' marks unresolved.
+
+    `/chat/state` names a logo per provider, and resolving one mirrors the
+    brand's favicon off the real internet on first touch. A test about the
+    marks patches `loaders.provider_logo` itself.
+    Restored by hand for the reason `_own_free_llm_counter` gives.
+    """
+    from stocks.api import loaders
+
+    before = loaders.provider_logo
+    loaders.provider_logo = lambda provider, domain: None
+    yield
+    loaders.provider_logo = before
+
+
+@pytest.fixture(autouse=True)
 def _listing_at_the_ledgers_word():
     """Answer "which currency is this price series in" with "unknown".
 

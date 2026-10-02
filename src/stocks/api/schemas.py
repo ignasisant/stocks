@@ -12,6 +12,8 @@ Two rules run through all of them:
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -1234,6 +1236,42 @@ class Dividends(BaseModel):
     )
 
 
+class UnbookedDividend(BaseModel):
+    ticker: str
+    ex_date: str = Field(
+        description="Entitlement day — the cash lands weeks later, on a pay date "
+        "this estimate does not know."
+    )
+    per_share: float = Field(description="Split-adjusted, in `currency`.")
+    shares: float = Field(description="Held at the close before the ex-date.")
+    currency: str
+    gross: float = Field(description="`per_share` * `shares`, before withholding.")
+    amount: float | None = Field(
+        default=None,
+        description="`gross` in the reporting currency at the ex-date's rate; "
+        "null when that day has no rate.",
+    )
+
+
+class UnbookedDividends(BaseModel):
+    base: str
+    total: int = Field(default=0, description="Payments found, before `limit`.")
+    payments: list[UnbookedDividend] = Field(
+        default_factory=list,
+        description=(
+            "Newest first. Estimates, never receipts: a client listing them "
+            "beside ledger rows has to mark each one as such."
+        ),
+    )
+    available: bool = Field(
+        default=False,
+        description=(
+            "Whether the entitlement pass ran. False with no payments means "
+            "nobody could check, not that nothing is owed."
+        ),
+    )
+
+
 # ------------------------------------------------------------------ what it owes
 # The jurisdiction is not a parameter of this endpoint: it is the account's own
 # setting, and the ledger is replayed *at* that jurisdiction's currency and
@@ -1708,6 +1746,89 @@ class TaxDeadline(BaseModel):
     )
 
 
+class CalendarDividend(BaseModel):
+    """An ex-dividend date on a name the book holds, or held at the time."""
+
+    ticker: str
+    date: str = Field(description="Ex-dividend date, ISO — not the pay date.")
+    days_until: int = Field(description="Days from today; negative once it went ex.")
+    per_share: float | None = Field(
+        default=None,
+        description=(
+            "Per share in `currency`. Past: what was paid. Upcoming: the LAST "
+            "payment, since Yahoo publishes the date before the amount."
+        ),
+    )
+    shares: float | None = Field(
+        default=None,
+        description="Held the day before it went ex; today's position if upcoming.",
+    )
+    amount: float | None = Field(
+        default=None, description="per_share × shares, gross, in `currency`."
+    )
+    currency: str | None = None
+    projected: bool = Field(
+        default=False,
+        description=(
+            "Not declared: last year's ex-date moved forward 52 weeks, at last "
+            "year's amount (the latest one for a quarterly or faster payer)."
+        ),
+    )
+    base_currency: str | None = Field(
+        default=None, description="The account's reporting currency."
+    )
+    amount_base: float | None = Field(
+        default=None,
+        description=(
+            "`amount` in `base_currency`: at the ex-date's rate once it went "
+            "ex, at today's before — the only rate a future payment has."
+        ),
+    )
+    withholding: float | None = Field(
+        default=None,
+        description=(
+            "Share of the gross withheld at source (0.15 is 15%), read off this "
+            "book's dividend rows that booked one — this name's, else others "
+            "paid in the same currency. Null when none did."
+        ),
+    )
+    withholding_basis: Literal["ticker", "currency"] | None = Field(
+        default=None, description="Which rows `withholding` was read from."
+    )
+
+
+class RepurchaseWindow(BaseModel):
+    """A loss sale a buy-back would still block, and the day it stops."""
+
+    ticker: str
+    sell_date: str = Field(description="When the loss was sold, ISO.")
+    date: str = Field(
+        description="The first day buying it back no longer blocks the loss, ISO."
+    )
+    days_until: int = Field(description="Days from today to `date`; 0 is today.")
+    loss: float = Field(
+        description=(
+            "The loss still exposed, in `currency` — less any part an earlier "
+            "repurchase already blocked."
+        )
+    )
+    currency: str = Field(description="The jurisdiction's currency.")
+    window: str = Field(
+        description=(
+            "The rule's label, as `Jurisdiction.repurchase_window`: "
+            '"2m", "30d" or "28d".'
+        )
+    )
+
+
+class CentralBankDecision(BaseModel):
+    """A rate-decision day of the Fed or the ECB."""
+
+    bank: str = Field(description='"fed" or "ecb".')
+    date: str = Field(description="The decision day, ISO — the statement's.")
+    days_until: int = Field(description="Days from today; negative once it passed.")
+
+
 class EarningsCalendar(BaseModel):
     upcoming: list[CalendarEvent] = Field(
         default_factory=list, description="Soonest first; a same-day print counts."
@@ -1735,6 +1856,32 @@ class EarningsCalendar(BaseModel):
         description=(
             "That jurisdiction's filing dates, about two months back to a year "
             "ahead, soonest first. Independent of the watchlist."
+        ),
+    )
+    dividends: list[CalendarDividend] = Field(
+        default_factory=list,
+        description=(
+            "The ledger's ex-dividend dates: every one the shares were entitled "
+            "to over the last two years, plus the next one Yahoo has declared "
+            "for each open position, and — for the rest of the next 52 weeks — "
+            "last year's schedule moved forward (`projected`). Oldest first. "
+            "Funds included — they pay even though they never report. Empty "
+            "when Yahoo is throttled."
+        ),
+    )
+    repurchase_windows: list[RepurchaseWindow] = Field(
+        default_factory=list,
+        description=(
+            "Loss sales whose repurchase window is still open under the "
+            "account's jurisdiction, soonest to clear first. Empty where the "
+            "country has no such rule."
+        ),
+    )
+    central_banks: list[CentralBankDecision] = Field(
+        default_factory=list,
+        description=(
+            "Every Fed and ECB decision day the calendar carries, oldest first. "
+            "Independent of the watchlist."
         ),
     )
 

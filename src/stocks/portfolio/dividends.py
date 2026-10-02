@@ -72,6 +72,44 @@ def by_year(
     return years
 
 
+# How many of a name's latest booked withholdings its rate is read from: a
+# year of a quarterly payer, so a treaty form filed last month shows within it.
+WITHHOLDING_ROWS = 4
+
+
+def withholding_rates(
+    transactions: list[Transaction],
+) -> tuple[dict[str, float], dict[str, float]]:
+    """(per ticker, per currency) share of the gross withheld at source.
+
+    Read off the dividend rows a statement booked WITH a withholding. A row
+    whose fee is 0 is skipped, not read as "nothing withheld": Revolut's
+    statement prints no withholding at all (`stocks.portfolio.revolut`), so a
+    zero there means "not reported", and a 0% would promise cash that never
+    arrives. Per ticker it is the latest `WITHHOLDING_ROWS` such payments; per
+    currency, every one — the fallback for a name this book never booked, on
+    the rough grounds that a currency mostly means a country.
+    """
+    booked = sorted(
+        (t for t in transactions if t.action == "dividend" and t.price > 0 and t.fee > 0),
+        key=lambda t: t.date,
+    )
+    rows: dict[str, list[Transaction]] = {}
+    totals: dict[str, list[float]] = {}
+    for tx in booked:
+        rows.setdefault(tx.ticker, []).append(tx)
+        gross_fee = totals.setdefault(tx.currency.upper(), [0.0, 0.0])
+        gross_fee[0] += tx.price
+        gross_fee[1] += tx.fee
+    by_ticker = {}
+    for ticker, paid in rows.items():
+        latest = paid[-WITHHOLDING_ROWS:]
+        withheld = sum(t.fee for t in latest)
+        by_ticker[ticker] = min(1.0, withheld / sum(t.price for t in latest))
+    by_currency = {ccy: min(1.0, fee / gross) for ccy, (gross, fee) in totals.items()}
+    return by_ticker, by_currency
+
+
 # ----------------------------------------------------------------- estimation
 # A dividend is owed to whoever holds the share the day before it goes ex —
 # the broker's statement has no say in it. So the ledger's own share timeline
@@ -268,6 +306,47 @@ def unrecorded_by_year(
         if gap > 0:
             gaps[yr] = gap
     return gaps
+
+
+def unbooked(
+    payments: list[EstimatedPayment],
+    transactions: list[Transaction],
+    lag_days: int = 100,
+    early_days: int = 3,
+) -> list[EstimatedPayment]:
+    """The estimated payments no ledger dividend row accounts for, oldest first.
+
+    What `unrecorded_by_year` sums, one payment at a time — the rows a list of
+    recent activity can show for a statement that stops before the book does.
+    A broker books a dividend on its pay date, which trails the ex-date by
+    anything from a day to a quarter (a Japanese register pays in June for
+    March), so a receipt answers for an entitlement of the same ticker that
+    went ex up to `lag_days` before it, or `early_days` after for a statement
+    that dates the row a day off. Each receipt answers for one payment, the
+    earliest still open: a quarter the import skipped stays visible beside the
+    quarters that did arrive, and two rows for one payment never hide the next.
+
+    Both sides have to be on one ticker footing — `transfers.relabel`'d, as the
+    histories the estimates were priced from are.
+    """
+    pending: dict[str, list[EstimatedPayment]] = {}
+    for p in sorted(payments, key=lambda p: p.ex_date):
+        pending.setdefault(p.ticker, []).append(p)
+    for t in sorted(transactions, key=lambda t: (t.date, t.id or 0)):
+        if t.action != "dividend" or not pending.get(t.ticker):
+            continue
+        paid = _date.fromisoformat(t.date[:10])
+        earliest = (paid - _timedelta(days=lag_days)).isoformat()
+        latest = (paid + _timedelta(days=early_days)).isoformat()
+        queue = pending[t.ticker]
+        for i, p in enumerate(queue):
+            if earliest <= p.ex_date <= latest:
+                del queue[i]
+                break
+    return sorted(
+        (p for queue in pending.values() for p in queue),
+        key=lambda p: (p.ex_date, p.ticker),
+    )
 
 
 def forward_income(

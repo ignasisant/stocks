@@ -144,7 +144,7 @@
 
 .ag-chat-provider {
   display: inline-flex;
-  gap: 4px;
+  gap: 6px;
   align-items: center;
   color: var(--ag-text-secondary);
 }
@@ -400,11 +400,15 @@
   border-top: 1px solid var(--ag-rule-soft);
 }
 
-/* A 420px drawer is narrower than most tables an answer builds, so the table
-   scrolls inside its own box rather than widening the bubble. */
+/* A 420px drawer is narrower than most tables an answer builds. A table that
+   still does not fit scrolls inside its own box rather than widening the
+   bubble — the last resort, since markdown.tsx wraps text columns and the
+   query below stacks the wide tables first. The box is the container, so the
+   same table reads the same in the drawer, the debate and the threads list. */
 .ag-chat-tablewrap {
   overflow-x: auto;
   margin: 0 0 8px;
+  container: ag-chat-table / inline-size;
 }
 
 .ag-chat-table {
@@ -421,6 +425,8 @@
      column nobody can compare down. */
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  /* A row whose text wraps to three lines keeps its title on the first. */
+  vertical-align: top;
 }
 
 .ag-chat-table th {
@@ -440,6 +446,73 @@
 
 .ag-chat-table tr:last-child td {
   border-bottom: 0;
+}
+
+/* A column of sentences wraps; the floor keeps it from being squeezed to a
+   word per line by the figures beside it. */
+.ag-chat-table td.ag-chat-wrap,
+.ag-chat-table th.ag-chat-wrap {
+  min-width: 16ch;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.ag-chat-label {
+  display: none;
+}
+
+/* Narrow and too wide to fit: one card per row. The first cell titles it and
+   every other cell sits under its header's name, which is all the header row
+   was for. */
+@container ag-chat-table (max-width: 520px) {
+  .ag-chat-stack,
+  .ag-chat-stack tbody,
+  .ag-chat-stack tr,
+  .ag-chat-stack td {
+    display: block;
+  }
+
+  .ag-chat-stack thead {
+    display: none;
+  }
+
+  .ag-chat-stack tr {
+    padding: 6px 0;
+    border-bottom: 1px solid var(--ag-rule-soft);
+  }
+
+  .ag-chat-stack tr:last-child {
+    border-bottom: 0;
+  }
+
+  .ag-chat-table.ag-chat-stack td {
+    padding: 0;
+    border: 0;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+
+  .ag-chat-stack td:first-child {
+    font-weight: 600;
+  }
+
+  .ag-chat-stack td + td {
+    margin-top: 2px;
+  }
+
+  .ag-chat-stack td:empty {
+    display: none;
+  }
+
+  .ag-chat-stack .ag-chat-label {
+    display: inline;
+    color: var(--ag-text-secondary);
+  }
+
+  .ag-chat-stack .ag-chat-label::after {
+    content: ": ";
+  }
 }
 
 .ag-chat-glyph {
@@ -663,6 +736,11 @@
   font-size: 12px;
 }
 
+.ag-chat-check input {
+  margin: 0;
+  accent-color: var(--ag-brand-cta);
+}
+
 .ag-chat-skipped {
   margin: 6px 0 0;
   padding-left: 18px;
@@ -746,6 +824,23 @@
   touch-action: manipulation;
 }
 
+.ag-chat-btn:hover:not(:disabled) {
+  border-color: var(--ag-border-focus);
+  color: var(--ag-text-primary);
+}
+
+/* Save stays disabled until a key is typed; drawn at full strength it read as
+   a button that did nothing when pressed. */
+.ag-chat-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* "Get a key" is a link drawn as a button, and a pill does not underline. */
+a.ag-chat-btn {
+  text-decoration: none;
+}
+
 .ag-chat-btn-on,
 .ag-chat-chip-on {
   border-color: var(--ag-brand-accent);
@@ -790,10 +885,21 @@
 }
 
 .ag-chat-or {
+  display: flex;
+  gap: 8px;
+  align-items: center;
   margin: 4px 0;
   color: var(--ag-text-faint);
   font-size: var(--ag-fs-2xs);
-  text-align: center;
+}
+
+/* A rule either side, so it reads as the fork between two ways in rather
+   than as a caption floating between them. */
+.ag-chat-or::before,
+.ag-chat-or::after {
+  flex: 1;
+  border-top: 1px solid var(--ag-border);
+  content: "";
 }
 
 /* The walkthrough's controls, under its card. */
@@ -919,6 +1025,24 @@
   margin-top: 16px;
 }
 
+/* The drawer widens to 720px and past; a line of copy should not. */
+.ag-chat-settings .ag-chat-hint {
+  max-width: 65ch;
+  text-wrap: pretty;
+}
+
+/* A screen that is set once and left alone can afford real targets: the
+   drawer's 22px chips sat beside a 32px field and read as an afterthought. */
+.ag-chat-settings .ag-chat-btn {
+  padding: 6px 12px;
+}
+
+/* Forget and Delete are one action each, sized to their label: stretched to
+   the column they read as a field, not a button. */
+.ag-chat-settings > .ag-chat-btn {
+  align-self: flex-start;
+}
+
 .ag-chat-back {
   display: flex;
   align-self: flex-start;
@@ -948,8 +1072,8 @@
 
 .ag-chat-tile {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  gap: 10px;
+  align-items: center;
   padding: 8px 10px;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-md);
@@ -969,8 +1093,75 @@
   background: var(--ag-surface-sunken);
 }
 
+.ag-chat-tile-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .ag-chat-tile-name {
   font-size: var(--ag-fs-sm);
+}
+
+/* The brand's tile: its initial underneath, its logo over it on the white
+   plate every ticker and broker logo sits on (`.im-chip-mark`). */
+.ag-chat-mark {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  border-radius: var(--ag-radius-nav);
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-xs);
+  font-weight: 600;
+}
+
+.ag-chat-mark img {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 2px;
+  background: var(--ag-text-primary);
+  object-fit: contain;
+}
+
+.ag-chat-mark-own {
+  background: var(--ag-cta-tint);
+  color: var(--ag-brand-accent);
+}
+
+.ag-chat-mark .ag-chat-glyph {
+  width: 60%;
+  height: 60%;
+}
+
+/* In the status line it stands where the spark did, at the text's size. */
+.ag-chat-provider .ag-chat-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--ag-radius-xs);
+  font-size: 9px;
+}
+
+.ag-chat-provider .ag-chat-mark img {
+  padding: 1px;
+}
+
+.ag-chat-provider .ag-chat-mark-own {
+  background: none;
+}
+
+.ag-chat-provider .ag-chat-mark-own .ag-chat-glyph {
+  width: 12px;
+  height: 12px;
 }
 
 .ag-chat-tile-tag {
@@ -979,7 +1170,7 @@
 }
 
 .ag-chat-select,
-.ag-chat-key input {
+.ag-chat-key input:not([type="checkbox"]) {
   width: 100%;
   padding: 7px 9px;
   border: 1px solid var(--ag-border);
@@ -994,6 +1185,22 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* Sign-in is the way in: the one full-width control, its label centred like
+   the first-run card's free button. */
+.ag-chat-key > .ag-chat-btn {
+  justify-content: center;
+  padding-block: 7px;
+}
+
+.ag-chat-key .ag-chat-check {
+  margin-top: 0;
+  color: var(--ag-text-secondary);
+}
+
+.ag-chat-key p {
+  margin: 0;
 }
 
 .ag-chat-quota-row {
@@ -1168,6 +1375,11 @@
   margin: 16px 0 4px;
 }
 
+/* Settings opens on it, so it sits at the top of the padding, not 16px under. */
+.ag-chat-settings > .ag-chat-back {
+  margin: 0 0 4px -2px;
+}
+
 /* ---------------------------------------------------------- empty state */
 
 .ag-chat-empty {
@@ -1250,6 +1462,9 @@
 .ag-chat-send:focus-visible,
 .ag-chat-retry:focus-visible,
 .ag-chat-starter:focus-visible,
+.ag-chat-tile:focus-visible,
+.ag-chat-select:focus-visible,
+.ag-chat-key input:focus-visible,
 .ag-chat-card-open:focus-visible,
 .ag-chat-input:focus-visible,
 .ag-chat-a:focus-visible {

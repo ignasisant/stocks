@@ -64,6 +64,41 @@ export function Glyph({ name, size = 18 }: { name: string; size?: number }) {
 }
 
 /**
+ * A provider's brand mark: its logo over its initial, so a logo that fails to
+ * load leaves a letter rather than a hole — the import page's platform chips
+ * do the same. The keyless chain is this app's own and wears the drawer's
+ * spark. Decorative either way: the name beside it is the label.
+ */
+export function ProviderMark({
+  provider,
+}: {
+  provider: { label: string; logo?: string | null; needs_key: boolean };
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`ag-chat-mark${provider.needs_key ? "" : " ag-chat-mark-own"}`}
+    >
+      {provider.needs_key ? (
+        provider.label.charAt(0).toUpperCase()
+      ) : (
+        <Glyph name="spark" />
+      )}
+      {provider.logo && (
+        <img
+          alt=""
+          src={provider.logo}
+          loading="lazy"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
+        />
+      )}
+    </span>
+  );
+}
+
+/**
  * The four line icons on the opening screen, in the order the capability rows
  * name them: what you hold, the web, an import, an alert. Stroked rather than
  * filled, which is how the artboard draws them.

@@ -14,7 +14,7 @@
   "sector.tech_podium_help": "Ranked by a percentile score across six trend and momentum signals (trend, RSI, MACD, distance from the 52-week high, 3-month return, volume), relative to this cohort of {cohort}. A separate ranking from the one above — this ignores valuation and quality entirely.",
   "sector.no_tech_podium": "Too few companies here have enough price history to rank a technical podium.",
   "sector.table_title": "The whole cohort",
-  "sector.col_ticker": "ticker",
+  "sector.col_ticker": "Ticker",
   "sector.na": "n/a",
   "sector.screen_filters": "Screen & filters",
   "sector.screen": "Screen",

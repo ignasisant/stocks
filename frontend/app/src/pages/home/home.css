@@ -161,6 +161,144 @@
   border-bottom: none;
 }
 
+/* A date reads as one token; the estimate badge widening the next column
+   must not break "21 sept" over two lines. */
+.hm-tx-date {
+  white-space: nowrap;
+}
+
+/* A ledger verb with the estimate badge beside it, on the verb's baseline. */
+.hm-tx-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* Several estimated dividends as one row: the first marks overlapped, the
+   rest as a count, the whole stack the button that opens the payments. */
+.hm-owed-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: -2px -4px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--ag-radius-xs);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.hm-owed-toggle:hover {
+  background: var(--ag-surface-hover);
+}
+
+.hm-owed-toggle:focus-visible,
+.hm-owed-row:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+
+.hm-owed-stack {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
+/* The `.ag-tick-logo` plate, ringed in the card's colour so the overlap reads
+   as three plates and not one smeared one. */
+.hm-owed-logo {
+  box-sizing: border-box;
+  width: 1.2em;
+  height: 1.2em;
+  padding: 1px;
+  border-radius: var(--ag-radius-xs);
+  background: var(--ag-text-primary);
+  box-shadow: 0 0 0 2px var(--ag-surface-card);
+  object-fit: contain;
+}
+
+.hm-owed-logo + .hm-owed-logo {
+  margin-left: -0.3em;
+}
+
+.hm-owed-logo-none {
+  background: var(--ag-surface-sunken);
+}
+
+.hm-owed-more {
+  margin-left: 5px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs, 11px);
+  font-weight: 600;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The `.hm-daily-toggle` arrow: the same open/closed cue the card above uses. */
+.hm-owed-chev::after {
+  content: "▾";
+  color: var(--ag-brand-accent);
+  font-size: var(--ag-fs-md, 13px);
+  font-weight: 600;
+}
+
+[aria-expanded="true"] .hm-owed-chev::after {
+  content: "▴";
+}
+
+/* The payments it sums, sunk under it: the group's own rows, not five more
+   ledger rows. */
+.hm-owed-child td {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-secondary);
+}
+
+.hm-owed-child td:first-child {
+  padding-left: 14px;
+}
+
+/* On a phone the row is the button: a dense row's shape, a button's reset. */
+.hm-owed-row {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--ag-rule-soft, var(--ag-border));
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hm-owed-row:last-child {
+  border-bottom: none;
+}
+
+.hm-owed-row .hm-owed-logo {
+  width: 30px;
+  height: 30px;
+  padding: 2px;
+}
+
+.hm-owed-row .hm-owed-logo + .hm-owed-logo {
+  margin-left: -12px;
+}
+
+.hm-owed-children {
+  padding-left: 12px;
+  border-bottom: 1px solid var(--ag-rule-soft, var(--ag-border));
+  background: var(--ag-surface-sunken);
+}
+
+.hm-owed-children:last-child {
+  border-bottom: none;
+}
+
 .hm-num {
   text-align: right;
   white-space: nowrap;
@@ -583,49 +721,16 @@
   line-height: 1.4;
 }
 
-.hm-cal-chip {
-  display: block;
-  margin-top: 2px;
-  padding: 1px 4px;
-  border-radius: var(--ag-radius-xs, 4px);
-  background: var(--ag-surface-sunken);
-  color: var(--ag-text-primary);
+/* The Earnings page's chips, a size down: a cell here is a fifth of a card,
+   not a seventh of a page, and three of them have to fit its 62px. */
+.hm-cal .earn-chip {
+  margin: 2px 0 0;
   font-size: var(--ag-fs-2xs, 10px);
-  font-weight: 600;
-  text-decoration: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-/* A past print is a button — it opens the result dialog in place — and a
-   button brings its own border, font and centring, none of which a chip has. */
-button.hm-cal-chip {
-  width: 100%;
-  border: none;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-button.hm-cal-chip:hover {
-  box-shadow: inset 0 0 0 1px var(--ag-border);
-}
-
-/* Due inside a week — the one upcoming chip that earns a colour. */
-.hm-cal-chip.hm-soon {
-  background: var(--ag-loss-band);
-  color: var(--ag-down);
-}
-
-.hm-cal-chip.hm-beat {
-  background: var(--ag-profit-band);
-  color: var(--ag-up);
-}
-
-.hm-cal-chip.hm-miss {
-  background: var(--ag-loss-band);
-  color: var(--ag-down);
+.hm-cal .earn-more {
+  padding: 0 4px;
+  font-size: var(--ag-fs-2xs, 10px);
 }
 
 /* The glance sparkline. Sits between the tile rows at a fixed height so the
