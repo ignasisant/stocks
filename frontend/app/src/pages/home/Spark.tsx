@@ -14,8 +14,6 @@
  */
 
 import { useRef, useState } from "react";
-import { get } from "../../shell/api";
-import { useApi } from "../../shell/useApi";
 import { useT, useLang } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { token } from "../../shell/theme";
@@ -30,34 +28,64 @@ const HEIGHT = 56;
 const SMA_WINDOW = 20;
 
 /**
- * The windows the selector offers, in the order they widen.
+ * The windows the selector offers, in the order they widen, and how many
+ * calendar days back from the series' last day each one reaches.
  *
  * The same six the Streamlit card shows, under the same literal labels (no
  * i18n — "1w" is "1w" in every catalog the app has). It opens on `1y`: a year
  * is the view the home card is for, and `all` is the wrong one for a book that
  * took a transfer, because one step dwarfs every month of market movement
- * around it. The clipping is the server's (`/portfolio/history`), which also
- * rebases the return index to the window — slicing a fetched `all` locally
- * would draw a one-month chart starting at last year's number.
+ * around it. The spans are `_HISTORY_SPANS` in `api/routes/portfolio.py`,
+ * counted from the same end, so a slice here is the window the server would
+ * have cut.
  */
-const RANGES = ["1w", "1m", "6m", "1y", "2y", "5y"] as const;
+const RANGES = {
+  "1w": 7,
+  "1m": 30,
+  "6m": 182,
+  "1y": 365,
+  "2y": 730,
+  "5y": 1825,
+} as const;
 
-type Range = (typeof RANGES)[number];
+type Range = keyof typeof RANGES;
 
-export function Spark({ nonce }: { nonce: number }) {
+/** The window the glance fetches: the widest the selector offers. */
+export const SPARK_WINDOW: Range = "5y";
+
+/**
+ * The points of `history` inside `range`, counted back from its last day.
+ *
+ * Sliced here rather than refetched per range, and that is the point: the
+ * history arrives in the same burst as the tiles above it (`Glance`), so the
+ * line ends on the "Valor de mercado" printed over it. A refetch on every click
+ * read whatever download the server held by then — fifteen minutes later, a
+ * different one — and the period's max sat under the tile's value. Only the
+ * level lines are drawn, and they are absolute: unlike the return index, which
+ * the server rebases per window, they survive slicing.
+ */
+export function slice(history: History, range: Range): History["points"] {
+  const last = history.points[history.points.length - 1];
+  if (!last) return [];
+  const from = new Date(`${last.date}T00:00:00Z`);
+  from.setUTCDate(from.getUTCDate() - RANGES[range]);
+  const cutoff = from.toISOString().slice(0, 10);
+  return history.points.filter((point) => point.date >= cutoff);
+}
+
+export function Spark({ history }: { history: History | null }) {
   const t = useT();
   const lang = useLang();
   const base = useCurrency();
   const [range, setRange] = useState<Range>("1y");
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
-  const query = useApi(
-    () => get<History>("/portfolio/history", { base, window: range }),
-    [base, nonce, range],
-  );
+  // The history failed with the tiles still standing: no picture, and no
+  // selector either — every range is a slice of the same missing array.
+  if (!history) return null;
   const selector = (
     <div className="hm-segmented" role="group" aria-label={t("home.chart_value")}>
-      {RANGES.map((key) => (
+      {(Object.keys(RANGES) as Range[]).map((key) => (
         <button
           key={key}
           type="button"
@@ -70,18 +98,16 @@ export function Spark({ nonce }: { nonce: number }) {
       ))}
     </div>
   );
-  // The selector outlives the query: a window with too few points to draw must
-  // still let somebody pick a wider one, or the card traps them there.
-  if (query.state !== "loaded") return <div className="hm-spark-head">{selector}</div>;
-
   // Both legs or the day is not comparable: a value with no reference line has
   // nothing to be shaded against.
   const days: { date: string; injected: number; value: number }[] = [];
-  for (const point of query.data.points) {
+  for (const point of slice(history, range)) {
     if (point.injected !== null && point.value !== null) {
       days.push({ date: point.date, injected: point.injected, value: point.value });
     }
   }
+  // The selector outlives a short window: one with too few points to draw must
+  // still let somebody pick a wider one, or the card traps them there.
   if (days.length < 2) return <div className="hm-spark-head">{selector}</div>;
 
   const levels = days.flatMap((day) => [day.injected, day.value]);
@@ -299,23 +325,21 @@ export function Spark({ nonce }: { nonce: number }) {
  *
  * On the sparkline the average hugged the value line at every window short
  * enough to read, and the question it answers — is the book above or below
- * where it has been sitting — is a number, not a shape. Its own `3m` fetch, not
- * the chart's: the chart's window is the reader's choice, and at `1w` it holds
- * five sessions, which cannot average twenty.
+ * where it has been sitting — is a number, not a shape. Read off the glance's
+ * whole history, not the chart's slice: the chart's window is the reader's
+ * choice, and at `1w` it holds five sessions, which cannot average twenty. The
+ * same array as the chart and the tiles, so the gap is measured from the value
+ * the "Valor de mercado" tile prints.
  *
  * Nothing until there are twenty valued sessions: a mean of fewer is a
  * different figure under the same label.
  */
-export function AverageTile({ nonce }: { nonce: number }) {
+export function AverageTile({ history }: { history: History | null }) {
   const t = useT();
   const lang = useLang();
   const base = useCurrency();
-  const query = useApi(
-    () => get<History>("/portfolio/history", { base, window: "3m" }),
-    [base, nonce],
-  );
-  if (query.state !== "loaded") return null;
-  const values = query.data.points
+  if (!history) return null;
+  const values = history.points
     .map((point) => point.value)
     .filter((value): value is number => value !== null);
   if (values.length < SMA_WINDOW) return null;
