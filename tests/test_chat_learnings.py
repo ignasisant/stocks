@@ -419,7 +419,10 @@ def test_the_extraction_is_handed_the_saved_list_and_the_user_s_words(path):
     prompt = learnings.lesson_prompt(learnings.load(path))
     assert f"{item.id}: (context) Tengo 40 años" in prompt
     assert "(none yet)" in learnings.lesson_prompt([])
-    [turn] = learnings.lesson_request("prefiero X " * 400, ["antes dije esto"])
+    system, [turn] = learnings.lesson_call(
+        [], "prefiero X " * 400, ["antes dije esto"])
+    assert "(none yet)" in system
+    assert "Reply with ONLY a JSON object" in system  # BAML's shape, appended
     assert turn["role"] == "user"
     assert "antes dije esto" in turn["content"]
     assert len(turn["content"]) < learnings._QUOTE_CHARS + 200

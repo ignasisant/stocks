@@ -56,7 +56,7 @@ from pathlib import Path
 from typing import Final, Literal
 
 from stocks import obs
-from stocks.chat import daily_book, engine, memory, signals
+from stocks.chat import daily_book, engine, memory, signals, structured
 from stocks.formatting import finite
 
 # Where the day turns over, in the reader's local time. 09:00 CET is after the
@@ -610,11 +610,11 @@ _KINDS = (
     "holding moved."
 )
 
+# What each field of the reply holds. The reply's shape itself is BAML's
+# (WriteDailyCard in baml_src/briefing.baml), appended to the system prompt by
+# structured.render.
 _SHAPE = (
-    "Answer with a single JSON object and nothing else — no prose around it, "
-    "no code fence:\n"
-    '{"headline": "...", "items": [{"key": "...", "line": "..."}], '
-    '"focus": ["TICKER"], "routines": [{"id": "...", "answer": "..."}]}\n'
+    "The reply:\n"
     f"- headline: at most {HEADLINE_CHARS} characters. The day in one line: "
     "how the portfolio did against the index, then the one or two things "
     "that matter most, each named in a few words — e.g. 'Portfolio +0.8% vs "
@@ -769,31 +769,10 @@ def prompt(
         )
     system += _HOUSE_RULES
     content = memory.augment(json.dumps(facts), list(talk or []))
-    return system, [{"role": "user", "content": content}]
+    return structured.render("WriteDailyCard", system, content)
 
 
 # ------------------------------------------------------------------- parse
-
-
-_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.IGNORECASE)
-
-
-def _json_object(raw: str) -> dict | None:
-    """The JSON object in a completion, fences and stray prose tolerated.
-
-    Small models wrap JSON in a code fence or open with "Here you go:" however
-    firmly the prompt says not to; recovering the braces is cheaper than
-    burning another provider attempt on a reply that is otherwise correct.
-    """
-    text = _FENCE_RE.sub("", (raw or "").strip())
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end <= start:
-        return None
-    try:
-        out = json.loads(text[start : end + 1])
-    except ValueError:
-        return None
-    return out if isinstance(out, dict) else None
 
 
 def _clip(text: str, limit: int) -> str:
@@ -989,8 +968,9 @@ def parse(
     Every alert that fired is on the card whatever the model wrote: one it
     left out gets its computed line, ahead of the model's.
     """
-    data = _json_object(raw)
-    if not data:
+    try:
+        data = structured.parse(raw, "WriteDailyCard")
+    except structured.OffContract:
         return None
     facts_ = facts or {}
     actions = {
@@ -1121,22 +1101,15 @@ def _parsed_items(data: dict, actions: dict, known: set[str] | None) -> list[dic
     invents one, so a key that is not in the facts is recovered from the line
     itself — the one action whose ticker it names — and a line that matches
     none keeps a placeholder key: it is still shown, just never remembered.
-    Two lines on one trigger are one line: the second is dropped. A reply in
-    the older shape (plain `bullets`) is read the same way. Alerts and the
-    rest are capped apart (ALERTS_MAX, MAX_BULLETS), as the card lists them.
+    Two lines on one trigger are one line: the second is dropped. Alerts and
+    the rest are capped apart (ALERTS_MAX, MAX_BULLETS), as the card lists them.
     """
-    raw = data.get("items")
-    if not isinstance(raw, list) or not raw:
-        raw = data.get("bullets") or []
     out: list[dict] = []
     used: set[str] = set()
     room = {ALERTS: ALERTS_MAX, WATCH: MAX_BULLETS}
-    for entry in raw if isinstance(raw, list) else []:
-        if isinstance(entry, dict):
-            text, key = entry.get("line") or entry.get("text") or "", entry.get("key")
-        else:
-            text, key = entry, None
-        line = _line(text or "", BULLET_CHARS)
+    for entry in data.get("items") or []:
+        key = entry.get("key")
+        line = _line(entry.get("line") or "", BULLET_CHARS)
         if not line:
             continue
         key = str(key or "").strip()

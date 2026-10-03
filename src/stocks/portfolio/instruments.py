@@ -51,6 +51,8 @@ _VENUE_RE = re.compile(r"^([A-Z0-9.\-]{1,8}):([A-Z]{4})$", re.I)
 # simply stays unresolved rather than fanning out into more calls.
 MAX_LABELS = 60
 
+# The reply's shape is BAML's (ResolveSymbols in baml_src/import.baml),
+# appended after this by structured.render.
 _SYSTEM = """You map instrument labels from a broker statement to their ticker
 symbols, as Yahoo Finance spells them.
 
@@ -58,8 +60,8 @@ You are given a JSON array of labels. Each is whatever a broker printed to
 identify a holding: a company name, an ISIN, a symbol with an exchange code,
 or a local broker code.
 
-Reply with ONLY a JSON object, no prose, no code fences: every input label,
-copied verbatim as the key, mapped to its ticker as a string, or to null.
+Answer with every input label, copied verbatim as the key, mapped to its
+ticker as a string, or to null.
 
 Rules:
 - Use the listing the instrument actually trades as. A US listing is bare
@@ -110,14 +112,11 @@ def obvious(label: str) -> str | None:
 
 def _parse_reply(raw: str, labels: list[str]) -> dict[str, str | None]:
     """The model's JSON as a label -> ticker map, keeping only usable answers."""
-    match = re.search(r"\{.*\}", raw or "", re.S)
-    if not match:
-        return {}
+    from stocks.chat import structured
+
     try:
-        data = json.loads(match.group(0))
-    except ValueError:
-        return {}
-    if not isinstance(data, dict):
+        data = structured.parse(raw, "ResolveSymbols")
+    except structured.OffContract:
         return {}
 
     by_upper = {label.upper(): label for label in labels}
@@ -136,7 +135,8 @@ def resolve(labels: list[str], provider: Provider, api_key: str = "",
     """`labels` -> tickers, in one call. Unknown labels map to None.
 
     `ask(system, content) -> str` is the model call, injected so this module
-    stays free of provider plumbing (llm_map passes its own `_ask`).
+    stays free of provider plumbing (llm_map passes its own `_send`). The
+    system prompt it is handed is complete, reply schema included.
     """
     wanted = [label for label in dict.fromkeys(labels) if label.strip()]
     out: dict[str, str | None] = {}
@@ -155,7 +155,12 @@ def resolve(labels: list[str], provider: Provider, api_key: str = "",
     for label in unknown[MAX_LABELS:]:
         out[label] = None
     batch = unknown[:MAX_LABELS]
-    answers = _parse_reply(ask(_SYSTEM, json.dumps(batch, ensure_ascii=False)), batch)
+    from stocks.chat import structured
+
+    system, messages = structured.render(
+        "ResolveSymbols", _SYSTEM, json.dumps(batch, ensure_ascii=False)
+    )
+    answers = _parse_reply(ask(system, messages[0]["content"]), batch)
     for label in batch:
         ticker = answers.get(label)
         _memo[label.upper()] = ticker

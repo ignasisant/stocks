@@ -99,12 +99,13 @@ def skills_block(ids: list[str]) -> str:
 
 # ------------------------------------------------------------- auto mode
 
+# The reply's shape is BAML's (PickSkills in baml_src/chat.baml), appended
+# after this by structured.render.
 _CLASSIFIER_SYSTEM = (
-    "You route questions from a stock-tracker chat to analysis skills. "
-    'Reply with ONLY a JSON object of the form {"skills": [...]} listing at '
-    f"most {MAX_AUTO} skill ids from the catalog that clearly fit the user's "
-    "latest message — or an empty list when none clearly applies (casual talk, "
-    "app questions, greetings). No prose, no code fences.\n\nCatalog:\n"
+    "You route questions from a stock-tracker chat to analysis skills. List "
+    f"at most {MAX_AUTO} skill ids from the catalog that clearly fit the "
+    "user's latest message — or an empty list when none clearly applies "
+    "(casual talk, app questions, greetings).\n\nCatalog:\n"
 )
 
 
@@ -133,6 +134,12 @@ class SkillPick(structured.Contract):
         return out
 
 
+def _scan(raw: str) -> list[str]:
+    """Known skill ids in a reply's text, in order of appearance."""
+    valid = valid_ids()
+    return [t for t in re.findall(r"[a-z][a-z-]*[a-z]", raw or "") if t in valid]
+
+
 def parse_skill_ids(raw: str, limit: int = MAX_AUTO) -> list[str]:
     """Skill ids out of a classifier reply, defensively.
 
@@ -140,12 +147,11 @@ def parse_skill_ids(raw: str, limit: int = MAX_AUTO) -> list[str]:
     in order of appearance, which reads a model that answered in prose. Result
     is deduped and capped."""
     try:
-        ids = structured.decode(raw, SkillPick).skills
+        ids = structured.decode(raw, "PickSkills", SkillPick).skills
     except structured.OffContract:
         ids = []
     if not ids:
-        valid = valid_ids()
-        ids = [t for t in re.findall(r"[a-z][a-z-]*[a-z]", raw or "") if t in valid]
+        ids = _scan(raw)
     out: list[str] = []
     for i in ids:
         if i not in out:
@@ -171,9 +177,10 @@ def classify(
     user = (context + "\n\n" if context else "") + f"User message: {question}"
     system = _CLASSIFIER_SYSTEM + cat
     try:
-        picked = structured.ask(provider, api_key, system, user, SkillPick)
+        picked = structured.ask(provider, api_key, "PickSkills", system, user,
+                                SkillPick)
         return picked.skills[:MAX_AUTO]
     except structured.OffContract as exc:
-        return parse_skill_ids(exc.raw) or None
+        return list(dict.fromkeys(_scan(exc.raw)))[:MAX_AUTO] or None
     except Exception:
         return None  # any SDK/network error -> caller falls back, answer proceeds

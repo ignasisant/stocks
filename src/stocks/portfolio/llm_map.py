@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import re
 import time
 from dataclasses import dataclass, field
@@ -46,6 +45,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from stocks import obs
+from stocks.chat import structured
 from stocks.data import crypto
 from stocks.portfolio import instruments, lexicon
 from stocks.portfolio.ledger import ACTIONS, Transaction
@@ -109,16 +109,31 @@ class ProviderUnavailable(Exception):
     """
 
 
-def _ask(provider: Provider, api_key: str, system: str, content: str) -> str:
+def _ask(provider: Provider, api_key: str, fn: str, system: str,
+         content: str) -> str:
+    """The raw reply to BAML function `fn` (chat/structured.py renders it)."""
+    system, messages = structured.render(fn, system, content)
+    return _send(provider, api_key, system, messages[0]["content"])
+
+
+def _send(provider: Provider, api_key: str, system: str, content: str) -> str:
+    """One call with a prompt that is already complete."""
     try:
         return provider.complete(
-            api_key,
-            provider.classifier_model or provider.default_model,
-            system,
+            api_key, _model(provider), system,
             [{"role": "user", "content": content}],
         )
     except Exception as exc:
         raise ProviderUnavailable(str(exc)) from exc
+
+
+def _model(provider: Provider) -> str:
+    return provider.classifier_model or provider.default_model
+
+
+def _replying(provider: Provider):
+    """Binds the provider for the off-contract log of the reply parsed inside."""
+    return obs.context(provider=getattr(provider, "id", ""), model=_model(provider))
 
 
 @dataclass(frozen=True)
@@ -264,27 +279,16 @@ def sample(grid: list[list[str]]) -> str:
     return "\n".join(lines)
 
 
+# The reply's shape is BAML's (MapColumns in baml_src/import.baml), appended
+# after this by structured.render.
 _SYSTEM = """You map a broker's transaction export onto a fixed ledger schema.
 You are shown the first rows of the file, each cell separated by " | " and
 numbered by row and (implicitly) by column, starting at 0.
 
-Reply with ONLY a JSON object, no prose, no code fences:
-{"header_row": <index of the row holding the column headers>,
- "columns": {"date": <column index>, "ticker": <index>, "action": <index>,
-             "quantity": <index or null>, "price": <index or null>,
-             "amount": <index or null>, "currency": <index or null>,
-             "fee": <index or null>, "note": <index or null>},
- "date_format": "<strftime format of the date cells, e.g. %d/%m/%Y>",
- "decimal": "<the decimal separator, '.' or ','>",
- "thousands": "<the thousands separator, or an empty string>",
- "asset_class": "crypto" | "securities",
- "action_map": {"<the exact text in the action column>":
-                "<buy|sell|dividend|fee|split>"}}
-
 Rules:
 - Column indexes are 0-based positions in the " | " list, NOT header names.
 - Required: date, ticker, action. If the file has no column that identifies
-  the security, or no column that says what happened, reply {"columns": null}.
+  the security, or no column that says what happened, set "columns" to null.
 - "ticker": the symbol column. Failing that, the ISIN column, failing that
   the instrument-name column — a name is resolved to its symbol later. Never
   an id column (position id, transaction id, order reference).
@@ -323,16 +327,19 @@ def parse_mapping(raw: str, grid: list[list[str]]) -> dict | None:
     """A validated mapping out of the model's reply, or None.
 
     None means "this file can't be mapped" — a missing required column, an
-    out-of-range index, unparseable JSON. The caller reports that rather than
-    importing a half-understood file.
+    out-of-range index, a reply that is not the mapping at all. The caller
+    reports that rather than importing a half-understood file.
     """
-    m = re.search(r"\{.*\}", raw or "", re.S)
-    if not m:
-        return None
     try:
-        data = json.loads(m.group())
-    except json.JSONDecodeError:
+        data = structured.parse(raw, "MapColumns")
+    except structured.OffContract:
         return None
+    return _mapping_from(data, grid)
+
+
+def _mapping_from(data: dict, grid: list[list[str]]) -> dict | None:
+    """`parse_mapping` for a mapping that is already data — the model's
+    parsed reply, or the one a reader edited and sent back."""
     if not isinstance(data, dict) or not isinstance(data.get("columns"), dict):
         return None
 
@@ -560,7 +567,9 @@ def map_columns(provider: Provider, api_key: str,
     could not be reached raises ProviderUnavailable instead — the two need
     different answers.
     """
-    return parse_mapping(_ask(provider, api_key, _SYSTEM, sample(grid)), grid)
+    raw = _ask(provider, api_key, "MapColumns", _SYSTEM, sample(grid))
+    with _replying(provider):
+        return parse_mapping(raw, grid)
 
 
 # ------------------------------------------------------------------ applying
@@ -810,17 +819,11 @@ def apply_mapping(grid: list[list[str]], mapping: dict) -> ParseResult:
 # ------------------------------------------------------------ pdf extraction
 
 
+# The reply's shape is BAML's (ExtractStatement in baml_src/import.baml),
+# appended after this by structured.render.
 _PDF_SYSTEM = """You read a broker document and pull out its transactions.
 You are shown some pages of it as text; each line is one row of the page and
 " | " separates what sat in separate columns.
-
-Reply with ONLY a JSON object, no prose, no code fences:
-{"kind": "trades" | "positions" | "none",
- "transactions": [{"date": "YYYY-MM-DD", "ticker": "<symbol or ISIN>",
-                   "action": "buy|sell|dividend|fee|split",
-                   "quantity": <number>, "price": <number>,
-                   "currency": "<3-letter code>", "fee": <number>,
-                   "note": "<short label, optional>"}]}
 
 "kind" describes these pages:
 - "trades": they contain dated buys, sells, dividends or fees.
@@ -891,7 +894,7 @@ def _transaction_from(raw: dict) -> tuple[Transaction | None, str]:
     an unparseable date or a non-numeric amount drops the row instead of
     reaching the ledger.
     """
-    if not isinstance(raw, dict):
+    if not isinstance(raw, dict) or not raw:
         return None, "not a record"
     action = str(raw.get("action") or "").strip().lower()
     if action not in ACTIONS:
@@ -929,20 +932,16 @@ def _transaction_from(raw: dict) -> tuple[Transaction | None, str]:
 
 def parse_extraction(raw: str) -> tuple[list[dict], str]:
     """(records, kind) out of one extraction reply; ([], KIND_NONE) on junk."""
-    m = re.search(r"\{.*\}", raw or "", re.S)
-    if not m:
-        return [], KIND_NONE
     try:
-        data = json.loads(m.group())
-    except json.JSONDecodeError:
+        data = structured.parse(raw, "ExtractStatement")
+    except structured.OffContract:
         return [], KIND_NONE
-    if not isinstance(data, dict):
-        return [], KIND_NONE
-    kind = str(data.get("kind") or KIND_NONE).strip().lower()
-    if kind not in (KIND_TRADES, KIND_POSITIONS, KIND_NONE):
+    # The enum's third member is spelled "neither" in Python ("None" is
+    # reserved), so anything but the two real kinds is KIND_NONE.
+    kind = data.get("kind")
+    if kind not in (KIND_TRADES, KIND_POSITIONS):
         kind = KIND_NONE
-    records = data.get("transactions")
-    return (records if isinstance(records, list) else []), kind
+    return data.get("transactions") or [], kind
 
 
 def extract_pdf(data: bytes, provider: Provider, api_key: str = "") -> Extraction:
@@ -970,7 +969,7 @@ def extract_pdf(data: bytes, provider: Provider, api_key: str = "") -> Extractio
     unreachable = 0
     for index, batch in enumerate(batches[:MAX_PDF_CALLS], start=1):
         try:
-            reply = _ask(provider, api_key, _PDF_SYSTEM, batch)
+            reply = _ask(provider, api_key, "ExtractStatement", _PDF_SYSTEM, batch)
         except ProviderUnavailable:
             unreachable += 1
             result.skipped.append({
@@ -978,7 +977,8 @@ def extract_pdf(data: bytes, provider: Provider, api_key: str = "") -> Extractio
                 "reason": f"pages in block {index} could not be read",
             })
             continue
-        records, batch_kind = parse_extraction(reply)
+        with _replying(provider):
+            records, batch_kind = parse_extraction(reply)
         if batch_kind == KIND_TRADES or (
             batch_kind == KIND_POSITIONS and kind != KIND_TRADES
         ):
@@ -1022,10 +1022,10 @@ def _resolve_symbols(result: ParseResult, provider: Provider,
         # calls and the free chain's limits are per-minute: losing it costs
         # every row in the file, which is far worse than a few seconds' wait.
         try:
-            return _ask(provider, api_key, system, content)
+            return _send(provider, api_key, system, content)
         except ProviderUnavailable:
             time.sleep(RESOLVE_RETRY_SECONDS)
-            return _ask(provider, api_key, system, content)
+            return _send(provider, api_key, system, content)
 
     # A pair is already the ticker the app prices with; asking the model to
     # "resolve" BTC-EUR invites it to answer with a company.
@@ -1034,7 +1034,8 @@ def _resolve_symbols(result: ParseResult, provider: Provider,
     if not labels:
         return
     try:
-        mapping = instruments.resolve(labels, provider, api_key, ask=ask)
+        with _replying(provider):
+            mapping = instruments.resolve(labels, provider, api_key, ask=ask)
     except ProviderUnavailable as exc:
         # Nothing is guessed at — but every unresolved row is about to be
         # rejected as a "malformed ticker", which reads as a broken statement
@@ -1143,7 +1144,7 @@ def _remap(filename: str, data: bytes, provider: Provider | None,
            api_key: str, mapping: dict) -> Extraction:
     """`extract` with the reader's own mapping in place of the model's."""
     grid = read_grid(filename, data)
-    chosen = parse_mapping(json.dumps(mapping), grid) if len(grid) >= 2 else None
+    chosen = _mapping_from(mapping, grid) if len(grid) >= 2 else None
     if chosen is None:
         return Extraction(ParseResult(skipped=[{
             "row": 0, "type": "file",

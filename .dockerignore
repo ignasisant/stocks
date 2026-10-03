@@ -44,6 +44,8 @@ data/tg_updates/
 # Not needed at runtime
 notebooks/
 tests/
+# inlined into src/stocks/baml_client by baml-cli generate
+baml_src/
 infra/
 .github/
 .claude/

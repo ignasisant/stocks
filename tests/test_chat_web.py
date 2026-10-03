@@ -24,9 +24,16 @@ def test_parse_empty_list_means_no_search():
 
 def test_parse_garbage_means_no_search():
     assert parse_queries("no json here") == []
-    assert parse_queries('{"queries": "not a list"}') == []
-    assert parse_queries('["bare", "list"]') == []
     assert parse_queries("{broken json") == []
+    assert parse_queries('{"plan": ["nvda"]}') == []  # someone else's shape
+
+
+def test_parse_reads_the_near_misses_small_models_send():
+    # A lone query where a list was asked for, or the list without its
+    # object, is the right answer in the wrong wrapping — read, not repaired.
+    assert parse_queries('{"queries": "ASML news"}') == ["ASML news"]
+    assert parse_queries('["ASML news", "fed"]') == ["ASML news", "fed"]
+    assert parse_queries('{queries: ["ASML news",],}') == ["ASML news"]
 
 
 def test_parse_cleans_dedupes_and_caps():

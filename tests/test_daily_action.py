@@ -60,9 +60,9 @@ def providers(monkeypatch):
 
 REPLY = {
     "headline": "Nvidia carries the day",
-    "bullets": [
-        "NVDA +3.2% today, 30% of the book — check the concentration",
-        "ASML reports in 4 days",
+    "items": [
+        {"line": "NVDA +3.2% today, 30% of the book — check the concentration"},
+        {"line": "ASML reports in 4 days"},
     ],
     "focus": ["NVDA", "TSLA"],  # TSLA is not in the facts — must be dropped
 }
@@ -240,7 +240,10 @@ def test_parse_accepts_a_fenced_reply_and_drops_unknown_tickers():
 
 
 def test_parse_strips_bullet_glyphs_and_clips_long_lines():
-    raw = json.dumps({"headline": "x" * 200, "bullets": ["- one", "• " + "y" * 400]})
+    raw = json.dumps({
+        "headline": "x" * 200,
+        "items": [{"line": "- one"}, {"line": "• " + "y" * 400}],
+    })
     card = daily.parse(raw, day=DAY, lang="en")
     assert card.bullets[0] == "one"
     assert len(card.bullets[1]) == daily.BULLET_CHARS
@@ -251,8 +254,8 @@ def test_parse_strips_bullet_glyphs_and_clips_long_lines():
     "raw",
     [
         "I cannot help with that.",
-        json.dumps({"headline": "h", "bullets": []}),
-        json.dumps({"headline": "h", "bullets": ["   "]}),
+        json.dumps({"headline": "h", "items": []}),
+        json.dumps({"headline": "h", "items": [{"line": "   "}]}),
         json.dumps({"headline": "h", "items": [{"key": "x", "line": ""}]}),
         json.dumps(["not", "an", "object"]),
         "",
@@ -266,7 +269,9 @@ def test_unusable_replies_are_rejected(raw):
 
 
 def _reply(*bullets) -> str:
-    return json.dumps({"headline": bullets[0], "bullets": list(bullets)})
+    return json.dumps(
+        {"headline": bullets[0], "items": [{"line": b} for b in bullets]}
+    )
 
 
 def test_the_figures_it_was_given_pass():
@@ -379,7 +384,7 @@ def test_the_card_is_stamped_with_the_session_it_quotes():
 
 
 def test_headline_falls_back_to_the_first_bullet():
-    raw = json.dumps({"bullets": ["first line", "second line"]})
+    raw = json.dumps({"items": [{"line": "first line"}, {"line": "second line"}]})
     assert daily.parse(raw, day=DAY, lang="en").headline == "first line"
 
 
