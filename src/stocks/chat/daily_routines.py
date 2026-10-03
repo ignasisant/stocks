@@ -61,8 +61,8 @@ def quote_fact(q: market.Quote) -> dict:
         out["name"] = q.name
     for key, value in (("price", q.price), ("year_high", q.year_high),
                        ("year_low", q.year_low)):
-        if _num(value) is not None:
-            out[key] = round(float(value), 4)
+        if (n := _num(value)) is not None:
+            out[key] = round(n, 4)
     if q.currency:
         out["currency"] = q.currency
     if q.day_pct is not None:

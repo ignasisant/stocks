@@ -11,9 +11,9 @@ supplies only what is Revolut-specific. Quirks it absorbs:
 
 Design choices (see module tests):
 
-* buy / sell / dividend / return-of-capital rows become Transactions. Cash top-ups, withdrawals and
-  transfers are *not* position-affecting and are reported as skipped, never
-  silently dropped.
+* buy / sell / dividend / return-of-capital rows become Transactions. Cash
+  top-ups, withdrawals and transfers are *not* position-affecting and are
+  reported as skipped, never silently dropped.
 * Stock splits are NOT auto-imported: Revolut reports the resulting share count,
   not the split ratio positions.py needs, and a wrong ratio corrupts every later
   lot. Split rows are surfaced in `skipped` with a note to add them by hand.

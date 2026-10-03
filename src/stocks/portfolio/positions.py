@@ -22,8 +22,9 @@ by country, so `build(matching=...)` takes the rule:
 Acquisition cost includes buy commissions; sale proceeds are net of sell
 commissions. A return of capital (action ``"capital"``: a share-premium
 repayment, a nondividend distribution) gives back part of what the shares
-cost, so it lowers the basis of the shares held that day under every rule. This module is pure: the currency converter is injected so it can
-be unit-tested without network.
+cost, so it lowers the basis of the shares held that day under every rule.
+This module is pure: the currency converter is injected so it can be
+unit-tested without network.
 
 Money fields hold the *reporting* currency picked by `build(base=...)`: the
 account's own currency for the app's analytics, the tax jurisdiction's for a

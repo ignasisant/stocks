@@ -43,7 +43,7 @@ import secrets
 import threading
 import unicodedata
 from collections.abc import Callable, Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -221,8 +221,7 @@ def add(path: Path, text: str, *, kind: str | None = None, thread: str = "",
         now = _now()
         for n, item in enumerate(items):
             if _fold(item.text) == folded:
-                items[n] = Learning(**{**item.as_dict(), "tickers": item.tickers,
-                                       "updated": now})
+                items[n] = replace(item, updated=now)
                 _save(path, items)
                 return items[n], False
         if len(items) >= MAX_ITEMS:
@@ -273,8 +272,7 @@ def edit(path: Path, lid: str, *, text: str | None = None,
                         and _routines(items) >= MAX_ROUTINES):
                     raise RoutinesFull(MAX_ROUTINES)
                 changes["kind"] = kind
-            items[n] = Learning(**{**item.as_dict(), "tickers": item.tickers,
-                                   **changes})
+            items[n] = replace(item, **changes)
             _save(path, items)
             return items[n]
         return None
@@ -807,6 +805,7 @@ def lessons(raw: str, items: list[Learning], newest: str,
                 old is None or old.id in taken or not _touches(old, newest)):
             continue
         if verb == "delete":
+            assert old is not None  # checked above for both verbs
             taken.add(old.id)
             out.append(Lesson("delete", id=old.id))
             continue
@@ -819,6 +818,7 @@ def lessons(raw: str, items: list[Learning], newest: str,
         if any(_fold(t) == _fold(text) or _same(t, text) for t in others):
             continue  # already kept, in so many words
         if verb == "update":
+            assert old is not None
             taken.add(old.id)
             out.append(Lesson("update", id=old.id, text=text, kind=kind))
         else:
@@ -860,13 +860,12 @@ def apply(path: Path, proposed: list[Lesson], *, thread: str = "",
                 continue
             elif lesson.op == "update":
                 old = items[at]
-                items[at] = Learning(**{
-                    **old.as_dict(), "text": lesson.text,
-                    "kind": lesson.kind or old.kind,
-                    "tickers": tuple(dict.fromkeys(
+                items[at] = replace(
+                    old, text=lesson.text, kind=lesson.kind or old.kind,
+                    tickers=tuple(dict.fromkeys(
                         t.upper() for t in tickers(lesson.text) if t))[:5]
                     or old.tickers,
-                    "updated": now})
+                    updated=now)
                 made.append(change("updated", items[at], auto=True,
                                    before=old.text))
             elif lesson.op == "delete":

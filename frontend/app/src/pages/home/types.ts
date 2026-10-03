@@ -61,7 +61,7 @@ export type DailyItem = {
   section?: "alerts" | "watch";
 };
 
-export type DailyBookRow = {
+type DailyBookRow = {
   window: "day" | "week" | "month";
   /** Percent, already ×100: 0.8 is +0.8%. */
   pct: number | null;

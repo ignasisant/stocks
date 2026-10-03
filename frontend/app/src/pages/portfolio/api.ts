@@ -142,7 +142,7 @@ type AllocationSlice = {
   holdings: { ticker: string; value: number; cost: number }[];
 };
 
-export type RiskName = {
+type RiskName = {
   volatility: number | null;
   betas: Record<string, number>;
   /** Share of the basket's variance; the shares sum to one, negative hedges. */

@@ -1233,8 +1233,9 @@ def _reporting_flags(account, jurisdiction, settings) -> list[TaxFlag]:
 # Median compound annual growth per sleeve when the caller names none. Stocks:
 # roughly what world equities have compounded at over the long run — never
 # the book's own history by default, where a good two years projected forward
-# five is a wish, not a plan (`stock_own` draws it when the reader asks). Crypto: zero, because there is no long run to read one
-# off, and the recent one would project a bubble.
+# five is a wish, not a plan (`stock_own` draws it when the reader asks).
+# Crypto: zero, because there is no long run to read one off, and the recent
+# one would project a bubble.
 _DEFAULT_GROWTH = {"stocks": 0.08, "crypto": 0.0}
 # Used only when a sleeve has no measurable volatility (too little history).
 _DEFAULT_VOL = {"stocks": 0.20, "crypto": 0.60}
@@ -1354,12 +1355,13 @@ def projection(
         for key, asked in (("stocks", stock_own), ("crypto", crypto_own))
         if asked and key in measured
     }
-    growth = {
-        key: measured[key]
-        if key in own
-        else (_DEFAULT_GROWTH[key] if chosen[key] is None else chosen[key])
-        for key in ("stocks", "crypto")
-    }
+    growth: dict[str, float] = {}
+    for key in ("stocks", "crypto"):
+        picked = chosen[key]
+        growth[key] = (
+            measured[key] if key in own
+            else _DEFAULT_GROWTH[key] if picked is None else picked
+        )
     split = {"stocks": 1 - crypto_weight, "crypto": crypto_weight}
     shares = {"stocks": 1 - share, "crypto": share}
     sleeves = [

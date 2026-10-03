@@ -63,7 +63,11 @@ def test_each_lot_gives_up_its_shares_part_not_its_costs_part():
 
 def test_only_the_shares_held_that_day_are_repaid():
     positions, _ = replay(
-        [buy("2025-01-02", 100, 10), capital("2025-03-03", 100), buy("2025-06-02", 100, 20)]
+        [
+            buy("2025-01-02", 100, 10),
+            capital("2025-03-03", 100),
+            buy("2025-06-02", 100, 20),
+        ]
     )
     (pos,) = positions
     assert pos.cost == pytest.approx(900 + 2000)
@@ -71,7 +75,11 @@ def test_only_the_shares_held_that_day_are_repaid():
 
 def test_a_same_day_uk_acquisition_is_not_in_the_pool_it_repays():
     positions, _ = replay(
-        [buy("2025-01-02", 100, 10), buy("2025-03-03", 100, 20), capital("2025-03-03", 100)],
+        [
+            buy("2025-01-02", 100, 10),
+            buy("2025-03-03", 100, 20),
+            capital("2025-03-03", 100),
+        ],
         "s104",
     )
     (pos,) = positions
@@ -86,7 +94,9 @@ def test_a_basis_never_goes_below_zero():
 
 
 def test_a_repayment_on_nothing_held_changes_nothing():
-    positions, sales = replay([buy("2025-01-02", 10, 1), capital("2025-03-03", 5, "COL.MC")])
+    positions, sales = replay(
+        [buy("2025-01-02", 10, 1), capital("2025-03-03", 5, "COL.MC")]
+    )
     assert [p.ticker for p in positions] == ["MRL.MC"]
     assert positions[0].cost == pytest.approx(10)
     assert sales == []

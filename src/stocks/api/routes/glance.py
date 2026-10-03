@@ -233,7 +233,7 @@ def _routine(raw: dict) -> DailyRoutine:
     try:
         return DailyRoutine(**raw)
     except ValidationError:
-        return DailyRoutine(**{**raw, "chart": None})
+        return DailyRoutine.model_validate({**raw, "chart": None})
 
 
 def _status(account, lang: str) -> DailyCard:

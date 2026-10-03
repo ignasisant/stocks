@@ -53,6 +53,7 @@ import time
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Final, Literal
 
 from stocks import obs
 from stocks.chat import daily_book, engine, memory, signals
@@ -71,8 +72,8 @@ BULLET_CHARS = 170
 ROUTINE_CHARS = 280
 FOCUS_MAX = 4
 # The sections a line is filed under (`section_of`).
-ALERTS = "alerts"
-WATCH = "watch"
+ALERTS: Final = "alerts"
+WATCH: Final = "watch"
 # The card's share of the account's free allowance (engine.free_daily_cap), a
 # day: the morning's card and one more try (a Regenerate, or an upgrade of a
 # computed stand-in). Past it the card stays computed and the units stay the
@@ -286,7 +287,7 @@ def _routines(raw) -> list[dict]:
     return out
 
 
-def section_of(item: dict) -> str:
+def section_of(item: dict) -> Literal["alerts", "watch"]:
     """The section a line is filed under: an alert that fired, or the rest."""
     return ALERTS if item.get("kind") == signals.ALERT_HIT else WATCH
 
