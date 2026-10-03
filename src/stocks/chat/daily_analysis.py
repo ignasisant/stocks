@@ -29,7 +29,7 @@ import re
 from datetime import date
 
 from stocks import obs
-from stocks.chat import daily, engine, signals
+from stocks.chat import daily, engine, memory, signals
 
 VERDICT_CHARS = 320
 TITLE_CHARS = 48
@@ -123,9 +123,20 @@ def _item(card: daily.DailyAction, key: str) -> dict | None:
 
 
 def prompt(
-    card: daily.DailyAction, key: str, evidence: dict, profile: dict, lang: str
+    card: daily.DailyAction,
+    key: str,
+    evidence: dict,
+    profile: dict,
+    lang: str,
+    *,
+    memories: str = "",
+    talk: list | None = None,
 ) -> tuple[str, list[dict]]:
-    """(system, messages) for the analysis of line `key`. Pure."""
+    """(system, messages) for the analysis of line `key`. Pure.
+
+    `memories` and `talk` are what the chat knows about this user, read the
+    way the card reads them (`daily.prompt`): the analysis is the card's line
+    opened up, so it has to pull the same way the line did."""
     facts = card.facts or {}
     item = _item(card, key) or {}
     payload = {
@@ -143,10 +154,14 @@ def prompt(
     system = (
         f"{_TASK} {engine.persona(profile or {})}"
         f"Write in {daily._LANG_NAME.get(lang, 'English')}.\n\n"
+        f"{memories}"
         f"{daily._KINDS}\n\n{_EVIDENCE}\n\n{_GUARDRAILS}\n\n{_SHAPE}"
-        f"{daily._HOUSE_RULES}"
     )
-    return system, [{"role": "user", "content": json.dumps(payload)}]
+    if memories or talk:
+        system += "\n\n" + engine.MEMORY_USE
+    system += daily._HOUSE_RULES
+    content = memory.augment(json.dumps(payload), list(talk or []))
+    return system, [{"role": "user", "content": content}]
 
 
 # A difference in points ("16.0 pp", "11 puntos") is a claim like any
@@ -221,10 +236,19 @@ def generate(
     *,
     timeout_s: float = TIMEOUT_S,
     spend_free=None,
+    chat_path=None,
 ) -> dict | None:
-    """The model's analysis of line `key`, or None. Never raises."""
+    """The model's analysis of line `key`, or None. Never raises.
+
+    `chat_path` is the account's chat.json, read as `daily.generate` reads
+    it — the line's ticker is the one looked up in earlier conversations."""
     try:
-        system, messages = prompt(card, key, evidence, profile, lang)
+        ticker = str(daily.keyed_actions(card.facts).get(key, {}).get("ticker") or "")
+        memories, talk = engine.user_memory(
+            prefs, chat_path, [ticker.strip().upper()] if ticker.strip() else []
+        )
+        system, messages = prompt(card, key, evidence, profile, lang,
+                                  memories=memories, talk=talk)
     except Exception:  # noqa: BLE001
         return None
     return engine.complete_attempts(

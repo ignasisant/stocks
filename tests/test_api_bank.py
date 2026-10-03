@@ -335,3 +335,27 @@ def test_a_failing_bank_list_is_a_bad_gateway(signed_in, account, monkeypatch):
 
     monkeypatch.setattr(enablebanking, "aspsps", _boom)
     assert signed_in.get("/v1/bank/aspsps").status_code == 502
+
+
+def test_me_tells_the_shell_whether_to_offer_the_bank_at_all(
+    client, sign_in, account, monkeypatch
+):
+    """The rail is drawn before the page is asked for, so the one call every
+    front end already makes has to carry the allowlist's answer. Otherwise the
+    entry is either shown to everybody and leads to a 403, or shown to nobody
+    and has to be reached by typing a URL."""
+    session = sign_in(client, EMAIL)
+    session.headers.update(PROXIED)
+    assert session.get("/v1/me").json()["bank"] is True
+
+    monkeypatch.setenv("EB_ALLOWED_EMAILS", "")
+    assert session.get("/v1/me").json()["bank"] is False
+
+
+def test_me_offers_nothing_when_no_application_is_configured(
+    client, sign_in, account, monkeypatch
+):
+    monkeypatch.setattr(enablebanking, "configured", lambda: False)
+    session = sign_in(client, EMAIL)
+    session.headers.update(PROXIED)
+    assert session.get("/v1/me").json()["bank"] is False

@@ -4,7 +4,7 @@ import type { SkippedRow } from "./api";
 import { OTHER, groupSkips, located, splitReason } from "./skips";
 
 const CASH = "cash movement — not position-affecting";
-const CAPITAL = "return of capital — reduces cost basis, adjust manually";
+const SPLIT = "stock split — ratio derived at validation, or add manually";
 
 function cash(date: string, type = "CASH TOP-UP"): SkippedRow {
   return {
@@ -29,9 +29,9 @@ describe("groupSkips", () => {
       cash("2026-01-10", "CASH WITHDRAWAL"),
       {
         row: 95,
-        type: "RETURN OF CAPITAL",
-        reason: CAPITAL,
-        reason_key: "import.skip_capital",
+        type: "STOCK SPLIT",
+        reason: SPLIT,
+        reason_key: "import.skip_split",
         manual: true,
         date: "2026-05-25",
         ticker: "MEQA",
@@ -42,7 +42,7 @@ describe("groupSkips", () => {
     ];
     const groups = groupSkips(rows);
     expect(groups.map((g) => g.stem)).toEqual([
-      "import.skip_capital",
+      "import.skip_split",
       "import.skip_cash",
     ]);
     const money = groups[1]!;

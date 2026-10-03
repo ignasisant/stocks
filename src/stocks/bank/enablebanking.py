@@ -152,7 +152,14 @@ def _raise(exc: urllib.error.HTTPError, *, session_scoped: bool) -> BankError:
     except (json.JSONDecodeError, OSError):
         body = {}
     code = str(body.get("error_code", "") or "")
-    description = str(body.get("error_description", "") or exc.reason or "")
+    # Their errors come in two shapes: the documented
+    # error_code/error_description pair, and a bare {"code", "message"} for
+    # the ones raised before a request reaches an ASPSP ("Application is not
+    # active"). Reading only the first turns the most useful message of the
+    # setup into a blank "403 : Forbidden".
+    description = str(
+        body.get("error_description", "") or body.get("message", "") or exc.reason or ""
+    )
     if exc.code == 429 or "RATE_LIMIT" in code.upper():
         return RateLimited(exc.code, code, description)
     # 401 on a session-scoped call is the consent, not our key: the same JWT

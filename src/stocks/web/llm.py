@@ -278,7 +278,7 @@ _openai_stream = _openai_compat_stream()
 
 def _openai_compat_tools(base_url: str | None = None):
     """The same loop over any OpenAI-compatible host: OpenAI itself, and every
-    backend in the free chain (groq, cerebras, openrouter all speak it).
+    backend in the free chain (groq and openrouter both speak it).
 
     Tool results go back as one "tool" message per call, each keyed by the
     tool_call_id from the assistant turn — the wire equivalent of Anthropic's
@@ -424,17 +424,30 @@ _FREE_BACKEND_DEFAULTS: tuple[tuple[str, str, str], ...] = (
     # next retirement.
     ("groq", "openai/gpt-oss-120b", "https://api.groq.com/openai/v1"),
     # Checked live 2026-08-31 against each backend's /models and a real
-    # completion. cerebras: key valid (/models is 200) but every model answers
-    # 402 payment_required — free quota is account-level and spent. openrouter:
-    # the google/* free slugs 429 with limit_source "upstream_provider_shared_pool"
-    # (Google AI Studio's pool, shared by all OpenRouter users — nothing this
-    # account can raise), so the default moved to a non-Google slug that
-    # streams today. A retired default is still a config fix — "<id>_model" in
-    # [free_llm] overrides these.
-    ("cerebras", "gpt-oss-120b", "https://api.cerebras.ai/v1"),
+    # completion. openrouter: the google/* free slugs 429 with limit_source
+    # "upstream_provider_shared_pool" (Google AI Studio's pool, shared by all
+    # OpenRouter users — nothing this account can raise), so the default moved
+    # to a non-Google slug that streams today. A retired default is still a
+    # config fix — "<id>_model" in [free_llm] overrides these.
+    #
+    # cerebras left the chain 2026-10-03: every model has answered 402
+    # payment_required since 2026-08-31 (free quota is account-level and
+    # spent), so it was a dead hop on every fallback, never an answer.
     ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free",
      "https://openrouter.ai/api/v1"),
 )
+
+
+# Tokens per minute a backend's free tier admits, prompt included. One request
+# over it is refused outright — groq answers 413 "Request too large … (TPM):
+# Limit 8000" — however idle the minute was, while a chat turn may carry up to
+# chat.tokens.MAX_CONTEXT_TOKENS. Overridable with a "<id>_tpm" secret when a
+# tier changes; a backend missing here has no cap worth planning around.
+_FREE_TPM: dict[str, int] = {"groq": 8000}
+
+# Our count is tiktoken's o200k_base, not the backend's own tokenizer and chat
+# template, so plan to this share of the limit.
+_TPM_MARGIN = 0.9
 
 
 class FreeTierExhausted(Exception):
@@ -448,6 +461,7 @@ class _FreeBackend:
     model: str
     stream: Callable[[str, str, str, list[dict]], Iterator[str]]
     base_url: str = ""  # for the /models lookup when `model` has been retired
+    tpm: int = 0  # tokens per minute the free tier admits; 0 = no cap
 
 
 # Free tiers retire model slugs without notice, and the chain's only symptom is
@@ -513,7 +527,7 @@ def _free_secrets() -> dict:
     import os
 
     for bid, _model, _url in _FREE_BACKEND_DEFAULTS:
-        for k in (bid, f"{bid}_model"):
+        for k in (bid, f"{bid}_model", f"{bid}_tpm"):
             env = os.environ.get(f"FREE_LLM_{k.upper()}")
             if env:
                 cfg[k] = env
@@ -553,9 +567,53 @@ def _free_backends() -> list[_FreeBackend]:
             continue
         model = (_free_live_model.get(bid)
                  or cfg.get(f"{bid}_model", default_model))
+        try:
+            tpm = int(cfg.get(f"{bid}_tpm") or _FREE_TPM.get(bid, 0))
+        except (TypeError, ValueError):
+            tpm = _FREE_TPM.get(bid, 0)
         out.append(_FreeBackend(bid, key, model,
-                                _openai_compat_stream(base_url), base_url))
+                                _openai_compat_stream(base_url), base_url, tpm))
     return out
+
+
+def _free_plan(backends: list[_FreeBackend], system: str, messages: list[dict],
+               extra: int = 0) -> list[tuple[_FreeBackend, list[dict]]]:
+    """Each backend with the thread it can take, in the order to try them.
+
+    A request over a backend's per-minute cap is refused outright, so sending it
+    the whole thread wastes the hop. Backends it fits go first, in chain order,
+    with the thread untouched; those it does not fit go last, with the thread cut
+    to their cap by chat.tokens.fit — oldest turns first, then the tail of the
+    newest, where pasted pages and quotes live. A fast backend that has
+    forgotten half the conversation is the last resort, not the first. One whose
+    cap the system prompt alone overruns cannot answer at all and is left out.
+
+    `extra` is what rides the request besides system and messages — the tool
+    schemas, for the tool loop.
+    """
+    from stocks.chat import tokens
+
+    fits: list[tuple[_FreeBackend, list[dict]]] = []
+    over: list[tuple[_FreeBackend, list[dict]]] = []
+    need = None
+    for b in backends:
+        if not b.tpm:
+            fits.append((b, messages))
+            continue
+        if need is None:
+            need = tokens.count(system) + tokens.count_messages(messages) + extra
+        cap = int(b.tpm * _TPM_MARGIN)
+        budget = cap - extra  # what system and thread may take between them
+        if need <= cap:
+            fits.append((b, messages))
+        elif tokens.count(system) >= budget:
+            obs.warn("llm.free.over_tpm", backend=b.id, tokens=need, tpm=b.tpm,
+                     action="skipped")
+        else:
+            obs.warn("llm.free.over_tpm", backend=b.id, tokens=need, tpm=b.tpm,
+                     action="trimmed")
+            over.append((b, tokens.fit(messages, system=system, budget=budget)))
+    return fits + over
 
 
 def _free_stream(api_key, model, system, messages):
@@ -564,7 +622,7 @@ def _free_stream(api_key, model, system, messages):
     if not backends:
         raise FreeTierExhausted("no free backend configured")
     started = False
-    for attempt, b in enumerate(backends):
+    for attempt, (b, thread) in enumerate(_free_plan(backends, system, messages)):
         # Grows by at most one entry: a retired slug appends the replacement
         # /models named, so the same backend gets a second shot before the
         # chain moves on.
@@ -573,7 +631,7 @@ def _free_stream(api_key, model, system, messages):
             model = candidates.pop(0)
             t0 = time.perf_counter()
             try:
-                for chunk in b.stream(b.api_key, model, system, messages):
+                for chunk in b.stream(b.api_key, model, system, thread):
                     started = True
                     yield chunk
                 if model != b.model:
@@ -621,10 +679,18 @@ def _free_tools(api_key, model, system, messages, tools, execute, rounds):
     backends = _free_backends()
     if not backends:
         raise FreeTierExhausted("no free backend configured")
-    for attempt, b in enumerate(backends):
+    import json
+
+    from stocks.chat import tokens
+
+    schema = tokens.count(json.dumps(
+        [{"name": t.name, "description": t.description, "parameters": t.schema}
+         for t in tools]))
+    for attempt, (b, thread) in enumerate(
+            _free_plan(backends, system, messages, extra=schema)):
         try:
             return _openai_compat_tools(b.base_url or None)(
-                b.api_key, b.model, system, messages, tools, execute, rounds)
+                b.api_key, b.model, system, thread, tools, execute, rounds)
         except Exception as exc:
             obs.warn("llm.free.tools_failed", backend=b.id, model=b.model,
                      attempt=attempt, error_type=type(exc).__name__,

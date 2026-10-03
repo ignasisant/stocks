@@ -43,3 +43,20 @@ def test_the_documents_cross_link_and_keep_the_language():
 
 def test_the_legal_pages_carry_a_focus_ring():
     assert ":focus-visible" in legal.document("privacy", "en")
+
+
+@pytest.mark.parametrize(
+    ("lang", "needles"),
+    [
+        ("en", ("Enable Banking", "PSD2", "read-only", "180 days", "IBAN")),
+        ("es", ("Enable Banking", "PSD2", "solo lectura", "180 días", "IBAN")),
+    ],
+)
+def test_the_privacy_policy_describes_the_bank_connection(lang, needles):
+    """The policy URL is what Enable Banking was given, and what a bank's
+    consent screen sends a user to read. It has to name the processor, the
+    licence it holds, that the access cannot move money, how long a consent
+    lives and that the account number is kept masked."""
+    html = legal.document("privacy", lang)
+    for needle in needles:
+        assert needle in html

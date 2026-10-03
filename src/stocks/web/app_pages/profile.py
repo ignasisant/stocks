@@ -438,7 +438,9 @@ with tab_prefs:
     current_lang = prefs.get("language") or _AUTO
 
     def _lang_label(code: str) -> str:
-        return tr("profile.lang_auto") if code == _AUTO else i18n.LANGUAGES[code]
+        if code == _AUTO:
+            return f"\U0001F310 {tr('profile.lang_auto')}"
+        return f"{i18n.LANGUAGE_FLAGS.get(code, '')} {i18n.LANGUAGES[code]}".strip()
 
     lang = _row(
         _ui, "lang", tr("profile.language"), tr("profile.language_caption")

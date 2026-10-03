@@ -86,8 +86,12 @@ def test_a_prefix_filter_cuts_the_catalog_down(client):
     assert part["ticker.price"] == whole["ticker.price"]
 
 
-def test_a_language_nobody_ships_is_a_404(client):
-    assert client.get("/v1/i18n/xx").status_code == 404
+def test_a_language_nobody_ships_reads_in_english(client):
+    """A browser set to Italian asks for `it`. A 404 left the app with no
+    strings and every label on screen as its dotted key."""
+    served = client.get("/v1/i18n/it")
+    assert served.status_code == 200
+    assert served.json() == client.get("/v1/i18n/en").json()
 
 
 def test_the_catalog_needs_no_credentials(client):

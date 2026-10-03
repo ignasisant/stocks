@@ -19,7 +19,7 @@ from stocks.config import DATA_DIR
 
 DB_PATH = DATA_DIR / "portfolio.db"
 
-ACTIONS = {"buy", "sell", "dividend", "fee", "split",
+ACTIONS = {"buy", "sell", "dividend", "fee", "split", "capital",
            "transfer_in", "transfer_out"}
 
 SCHEMA = """
@@ -28,10 +28,12 @@ CREATE TABLE IF NOT EXISTS transactions (
     date     TEXT    NOT NULL,          -- ISO YYYY-MM-DD (trade/settlement date)
     ticker   TEXT    NOT NULL,
     action   TEXT    NOT NULL,          -- buy | sell | dividend | fee | split
+                                        -- | capital (return of capital)
                                         -- | transfer_in | transfer_out (see
                                         -- portfolio/transfers.py)
     quantity REAL    NOT NULL DEFAULT 0,-- shares (split: ratio, e.g. 4 for 4:1)
-    price    REAL    NOT NULL DEFAULT 0,-- per-share native ccy (dividend: total)
+    price    REAL    NOT NULL DEFAULT 0,-- per-share native ccy (dividend,
+                                        -- capital: total)
     currency TEXT    NOT NULL DEFAULT 'USD',
     fee      REAL    NOT NULL DEFAULT 0,-- commission in native ccy
     note     TEXT    NOT NULL DEFAULT ''

@@ -43,6 +43,7 @@ NO_CARD = {
     "name": None,
     "picture": None,
     "owner": False,
+    "bank": False,
 }
 
 

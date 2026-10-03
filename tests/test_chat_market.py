@@ -1,7 +1,7 @@
 """chat/market: ticker resolution, quote batching, prompt block."""
 
 from stocks.chat import market
-from stocks.chat.market import Quote, augment, mentioned, quotes
+from stocks.chat.market import Quote, augment, mentioned, named, quotes
 
 # ------------------------------------------------------------- mentions
 
@@ -47,6 +47,40 @@ def test_lookup_is_skipped_when_something_cheaper_matched():
 def test_mentions_are_deduped_and_capped():
     msg = "compare AAPL, MSFT, GOOG, AMZN and META"
     assert len(mentioned(msg, lookup=_no_lookup)) == market.MAX_TICKERS
+
+
+# ------------------------------------------------------------------ names
+
+
+def test_named_is_the_tickers_and_the_names_as_typed():
+    assert named("¿qué opinabas de Golar LNG?") == ["LNG", "Golar LNG"]
+
+
+def test_a_word_capitalized_only_because_it_starts_a_sentence_names_nothing():
+    assert named("Quiero vender") == []
+    assert named("Vale. Entonces compro") == []
+
+
+def test_a_crypto_pair_also_names_its_coin():
+    assert named("¿vendo mi SOL-EUR?") == ["SOL-EUR", "SOL"]
+
+
+def test_stop_words_and_single_letters_are_not_names():
+    # One letter is a word in a memory, whatever it is on an exchange.
+    assert named("¿compro el ETF de V en USD?") == []
+
+
+def test_a_name_with_punctuation_in_it_is_kept_whole():
+    assert named("¿cómo va el S&P hoy?") == ["S&P"]
+
+
+def test_a_month_is_not_a_company():
+    assert named("what happened in October with Nvidia") == ["Nvidia"]
+
+
+def test_named_never_looks_anything_up():
+    # Unlike `mentioned`, which may ask Yahoo; a memory search must not.
+    assert named("how is nvidia doing") == []
 
 
 # --------------------------------------------------------------- quotes

@@ -162,6 +162,24 @@ def test_a_quick_model_lands_in_the_response_and_is_stored(
     assert stored["recent"] == ["Fresh"], "tomorrow's prompt is told not to repeat it"
 
 
+def test_the_stored_card_is_filed_in_the_chat_and_says_where(
+    client, account, signed_in, facts, monkeypatch
+):
+    """The card's "Ask" opens the conversation it is filed in, so the answer
+    carries the thread and the thread is one of the reader's conversations."""
+    monkeypatch.setattr(daily, "generate", lambda *a, **k: written(today(), "Fresh"))
+    body = signed_in.post("/v1/daily", params={"lang": "en"}).json()
+    assert body["thread"]
+    assert json.loads(account.action.read_text())["thread"] == body["thread"]
+    convs = signed_in.get("/v1/chat/conversations").json()["conversations"]
+    (filed,) = [c for c in convs if c["id"] == body["thread"]]
+    assert filed["daily"] == today().isoformat() and not filed["active"]
+    thread = signed_in.get(f"/v1/chat/conversations/{body['thread']}").json()
+    assert thread["messages"][0]["content"].startswith("**Fresh**")
+    again = signed_in.get("/v1/daily", params={"lang": "en"}).json()
+    assert again["thread"] == body["thread"]
+
+
 def test_a_slow_model_answers_pending_with_the_stand_in_then_the_poll_sees_it(
     client, account, signed_in, facts, monkeypatch
 ):

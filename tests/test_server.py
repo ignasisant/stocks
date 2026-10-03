@@ -425,6 +425,12 @@ def test_status_reports_revision_uptime_and_storage(client, monkeypatch):
     assert body["commit"] == "3ea8bbf0"
     assert body["uptime_s"] >= 0
     assert body["storage"] is False  # no [storage] in the test env
+    # Where memory stands, for an incident on a 1GiB instance: the process's
+    # peak always reads; the /proc and cgroup figures are None off Linux.
+    assert body["memory"]["peak_mb"] > 0
+    assert {"rss_mb", "cgroup_mb", "limit_mb", "threads", "memo_mb"} <= set(
+        body["memory"]
+    )
     assert "set-cookie" not in r.headers
 
 

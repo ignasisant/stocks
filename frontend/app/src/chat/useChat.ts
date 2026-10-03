@@ -303,6 +303,7 @@ export function useChat(live: boolean) {
                 ? turn.arguing.map((known) => (known.id === side.id ? side : known))
                 : [...(turn.arguing ?? []), side],
             })),
+          (recalled) => write((turn) => ({ ...turn, recalled })),
         );
         settle();
         const took = (Date.now() - started) / 1000;
@@ -320,6 +321,8 @@ export function useChat(live: boolean) {
           tool_calls: done.calls,
           activities: done.activities ?? [],
           debate: done.debate ?? [],
+          learned: done.learned ?? [],
+          recalled: done.recalled ?? [],
           pending: false,
           phase: undefined,
           live: undefined,

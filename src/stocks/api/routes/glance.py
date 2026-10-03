@@ -19,6 +19,7 @@ from typing import Annotated
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import ValidationError
 
 from stocks.analysis.portfolio import (
     basket_change,
@@ -34,8 +35,10 @@ from stocks.api.deps import Account, Base, Writer, reporting_currency
 from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
     DailyAnalysis,
+    DailyBook,
     DailyCard,
     DailyItem,
+    DailyRoutine,
     Extreme,
     Extremes,
     Mover,
@@ -204,10 +207,33 @@ def _answer(action: daily.DailyAction, day, *, fresh: bool, pending=False) -> Da
         fresh=fresh,
         generated=action.generated or None,
         pending=pending,
-        items=[DailyItem(**item) for item in action.items],
+        items=[
+            DailyItem(**item, section=daily.section_of(item)) for item in action.items
+        ],
         upgradable=fresh and not pending and daily.wants_upgrade(action),
         analysed=[k for k, v in action.analysis.items() if v],
+        thread=action.thread or None,
+        book=_book(action.book),
+        routines=[_routine(r) for r in action.routines],
     )
+
+
+# The two sections read off the stored card, so whatever JSON is on disk: one
+# that does not fit drops its section (or its chart), never the whole card.
+
+
+def _book(raw: dict) -> DailyBook | None:
+    try:
+        return DailyBook(**raw) if raw else None
+    except ValidationError:
+        return None
+
+
+def _routine(raw: dict) -> DailyRoutine:
+    try:
+        return DailyRoutine(**raw)
+    except ValidationError:
+        return DailyRoutine.model_validate({**raw, "chart": None})
 
 
 def _status(account, lang: str) -> DailyCard:

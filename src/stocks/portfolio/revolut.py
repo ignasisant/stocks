@@ -11,15 +11,17 @@ supplies only what is Revolut-specific. Quirks it absorbs:
 
 Design choices (see module tests):
 
-* buy / sell / dividend rows become Transactions. Cash top-ups, withdrawals and
-  transfers are *not* position-affecting and are reported as skipped, never
-  silently dropped.
+* buy / sell / dividend / return-of-capital rows become Transactions. Cash
+  top-ups, withdrawals and transfers are *not* position-affecting and are
+  reported as skipped, never silently dropped.
 * Stock splits are NOT auto-imported: Revolut reports the resulting share count,
   not the split ratio positions.py needs, and a wrong ratio corrupts every later
   lot. Split rows are surfaced in `skipped` with a note to add them by hand.
 * Dividends map to price=gross total, fee=0. Revolut's statement does not break
   out withholding tax, so the Spanish double-tax credit will be understated —
   edit the fee on dividend rows if your statement reports withholding.
+* A return of capital maps to action="capital", price=total, the same shape:
+  positions.py takes it off the cost of the shares held that day.
 
 Nothing here writes to the ledger. The caller previews `ParseResult.transactions`
 and only then commits (see the web Import page / ledger.add_many).
@@ -67,6 +69,10 @@ def _map_action(rtype: str) -> str | None:
     # withholding adjustments that arrive in +/- pairs which cancel out.
     if "DIVIDEND" in t and "TAX" not in t:
         return "dividend"
+    # Cash back out of the share premium: it lowers the shares' cost basis
+    # (positions._return_capital), so it is a ledger row, not a skip.
+    if "RETURN OF CAPITAL" in t:
+        return "capital"
     # split / cash / fee / transfer / reward are intentionally not auto-imported.
     return None
 
@@ -77,8 +83,6 @@ def _skip_reason(rtype: str) -> str:
         return "stock split — ratio derived at validation, or add manually"
     if "DIVIDEND" in t and "TAX" in t:
         return "dividend tax correction — arrives in +/- pairs, review manually"
-    if "RETURN OF CAPITAL" in t:
-        return "return of capital — reduces cost basis, adjust manually"
     if "REWARD" in t:
         return "reward — cash credit, not position-affecting"
     if "FEE" in t:
@@ -108,15 +112,15 @@ def _build_tx(row: Row, action: str) -> Transaction:
         raise ValueError("missing ticker")
     currency = row.text("currency") or "USD"
 
-    if action == "dividend":
+    if action in ("dividend", "capital"):
         total = row.money("amount")
         if total <= 0:
-            raise ValueError(f"dividend amount {total} is not positive")
-        # price = gross dividend total; quantity/fee left at 0 (see module doc).
+            raise ValueError(f"{action} amount {total} is not positive")
+        # price = gross total; quantity/fee left at 0 (see module doc).
         return Transaction(
             date=date,
             ticker=ticker,
-            action="dividend",
+            action=action,
             price=total,
             currency=currency,
             note="revolut",

@@ -3,7 +3,7 @@
  *
  * Several of this page's strings were written for `st.markdown` and carry
  * `**bold**` and `` `code` `` — `import.last_import_summary` bolds the
- * filename, `import.rejected_help` prints a CLI command. Showing the raw
+ * filename. Showing the raw
  * punctuation would be a visible regression against the page being replaced,
  * and rewriting the copy to drop it would change strings two languages share
  * with Streamlit.

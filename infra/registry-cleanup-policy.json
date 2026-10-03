@@ -1,15 +1,15 @@
 [
   {
-    "name": "keep-recent-5",
+    "name": "keep-recent-2",
     "action": { "type": "Keep" },
-    "mostRecentVersions": { "keepCount": 5 }
+    "mostRecentVersions": { "keepCount": 2 }
   },
   {
-    "name": "delete-untagged-14d",
+    "name": "delete-untagged-2d",
     "action": { "type": "Delete" },
     "condition": {
       "tagState": "UNTAGGED",
-      "olderThan": "14d"
+      "olderThan": "2d"
     }
   }
 ]

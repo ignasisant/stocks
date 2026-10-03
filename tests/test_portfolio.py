@@ -1054,7 +1054,7 @@ def test_sleeve_stats_measures_each_block_on_its_own_calendar():
     stock[days.dayofweek >= 5] = np.nan
     coin = pd.Series(rng.normal(0, 0.04, len(days)), index=days)
     returns = pd.DataFrame({"AAPL": stock, "BTC-EUR": coin})
-    vols, corr = sleeve_stats(
+    vols, corr, growth = sleeve_stats(
         returns,
         {"AAPL": 0.8, "BTC-EUR": 0.2},
         {"stocks": ["AAPL"], "crypto": ["BTC-EUR"]},
@@ -1062,3 +1062,24 @@ def test_sleeve_stats_measures_each_block_on_its_own_calendar():
     assert vols["stocks"] == pytest.approx(0.01 * 252**0.5, rel=0.2)
     assert vols["crypto"] > 3 * vols["stocks"]
     assert corr is not None and abs(corr) < 0.5
+    # Under five months: a rate raised to a year nobody earned, so none.
+    assert growth == {}
+
+
+def test_sleeve_stats_reads_each_blocks_own_compound_growth_over_a_year():
+    """A sleeve that doubled over exactly two years compounded at ~41.4% a
+    year, whatever its calendar: weekdays for stocks, every day for crypto."""
+    days = pd.date_range("2024-01-01", "2026-01-01", freq="D")
+    stock_days = days[days.dayofweek < 5]
+    stock = pd.Series(2 ** (1 / (len(stock_days) - 1)) - 1, index=stock_days)
+    stock.iloc[0] = 0.0
+    coin = pd.Series(0.5 ** (1 / (len(days) - 1)) - 1, index=days)
+    coin.iloc[0] = 0.0
+    returns = pd.DataFrame({"AAPL": stock, "BTC-EUR": coin})
+    _, _, growth = sleeve_stats(
+        returns,
+        {"AAPL": 0.8, "BTC-EUR": 0.2},
+        {"stocks": ["AAPL"], "crypto": ["BTC-EUR"]},
+    )
+    assert growth["stocks"] == pytest.approx(2**0.5 - 1, abs=0.01)
+    assert growth["crypto"] == pytest.approx(0.5**0.5 - 1, abs=0.01)

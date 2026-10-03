@@ -43,7 +43,8 @@ def test_map_action_keywords():
     # Withholding adjustments must NOT import as dividends (they cancel in pairs).
     assert _map_action("DIVIDEND TAX (CORRECTION)") is None
     assert _map_action("REWARD") is None
-    assert _map_action("RETURN OF CAPITAL") is None
+    # Share-premium repayments lower the cost basis: a ledger row, not a skip.
+    assert _map_action("RETURN OF CAPITAL") == "capital"
 
 
 def test_parse_csv_imports_trades_and_dividends():

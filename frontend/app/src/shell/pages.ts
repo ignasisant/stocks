@@ -113,11 +113,11 @@ export const PAGES: Page[] = [
     section: "nav.section_account",
     icon: "account_balance",
     component: lazy(() => import("../pages/bank/Bank")),
-    // Hidden for the same reason the Streamlit page is absent from
-    // `st.navigation`: the feature is an allowlist that fails closed, and a
-    // rail entry every account can see would be one most of them cannot use.
-    // It is reachable by URL — which is what the bank's redirect needs it to
-    // be — and the day the allowlist widens, this line is the whole change.
+    // Hidden by default rather than hidden full stop: the feature is an
+    // allowlist that fails closed, so the rail cannot offer it to everybody —
+    // but `/me` says whether this reader is on that list, and `Layout` passes
+    // the slug to `sections()` when it is. Still reachable by URL either way,
+    // which is what the bank's redirect needs it to be.
     hidden: true,
   },
 ];
@@ -135,10 +135,19 @@ export const BOTTOM = ["home", "portfolio", "sector", "profile"];
  * `stocks.navigation.sections()`. Consecutive pages sharing a section form one
  * group, so the order of `PAGES` is the order of the menu.
  */
-export function sections(pages: Page[] = PAGES): { section?: string; pages: Page[] }[] {
+export function sections(
+  pages: Page[] = PAGES,
+  /**
+   * Slugs of hidden pages this reader may see after all — the bank, for an
+   * account on its allowlist. Hidden is the default because the rail is drawn
+   * before anyone knows who is reading; revealing is what the answer to that
+   * question buys.
+   */
+  reveal: readonly string[] = [],
+): { section?: string; pages: Page[] }[] {
   const groups: { section?: string; pages: Page[] }[] = [];
   for (const page of pages) {
-    if (page.hidden) continue;
+    if (page.hidden && !reveal.includes(page.slug)) continue;
     const last = groups[groups.length - 1];
     if (last && last.section === page.section) last.pages.push(page);
     else groups.push({ section: page.section, pages: [page] });

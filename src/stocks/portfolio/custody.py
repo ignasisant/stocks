@@ -210,12 +210,24 @@ def broker_weights(
     that ticker's brokers in proportion to the shares they hold, because a
     broker's share of the *value* of one holding is its share of its shares.
     """
-    out: dict[str, float] = defaultdict(float)
-    for ticker, w in weights.items():
-        parts = mix(custody.get(ticker, {}))
-        if not parts:
-            out[UNKNOWN] += w
-            continue
-        for broker, share in parts:
-            out[broker] += w * share
+    out = {
+        broker: sum(parts.values())
+        for broker, parts in broker_parts(custody, weights).items()
+    }
     return dict(sorted(out.items(), key=lambda kv: -kv[1]))
+
+
+def broker_parts(
+    custody: dict[str, dict[str, Custody]], amounts: dict[str, float]
+) -> dict[str, dict[str, float]]:
+    """`broker_weights` before the sum: each broker's amount, by ticker.
+
+    Linear in `amounts` like `analysis.portfolio.allocation_parts`, so it
+    splits a market value or a cost basis as readily as a weight.
+    """
+    out: dict[str, dict[str, float]] = defaultdict(dict)
+    for ticker, amount in amounts.items():
+        parts = mix(custody.get(ticker, {})) or [(UNKNOWN, 1.0)]
+        for broker, share in parts:
+            out[broker][ticker] = out[broker].get(ticker, 0.0) + amount * share
+    return dict(out)

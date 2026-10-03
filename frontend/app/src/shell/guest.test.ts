@@ -90,3 +90,25 @@ describe("signInHref", () => {
     );
   });
 });
+
+describe("sessionFrom", () => {
+  const prefs = PREFS;
+
+  it("carries the bank allowlist's answer onto the session", () => {
+    const me: Me = { kind: "session", email: "a@b.c", bank: true };
+    expect(sessionFrom(me, prefs, () => {}).bank).toBe(true);
+  });
+
+  it("reads an absent flag as no", () => {
+    // An API that predates the field, or a deployment with no bank configured
+    // at all: either way the rail entry stays out rather than appearing and
+    // leading to a 403.
+    const me: Me = { kind: "session", email: "a@b.c" };
+    expect(sessionFrom(me, prefs, () => {}).bank).toBe(false);
+  });
+
+  it("never offers it to a guest", () => {
+    const me: Me = { kind: "guest", bank: true };
+    expect(sessionFrom(me, prefs, () => {}).bank).toBe(false);
+  });
+});

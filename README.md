@@ -279,12 +279,14 @@ every configured backend is exhausted.
 
 ```toml
 [free_llm]
-# Configure any subset; fallback order is groq -> cerebras -> openrouter.
+# Configure any subset; fallback order is groq -> openrouter.
 groq = "gsk_..."          # console.groq.com/keys
-cerebras = "csk-..."      # cloud.cerebras.ai
 openrouter = "sk-or-..."  # openrouter.ai/settings/keys (:free models)
 # Optional per-backend model override (a retired free model is a config fix):
 # groq_model = "llama-3.3-70b-versatile"
+# Optional per-backend tokens-per-minute cap (groq defaults to its free 8000);
+# a turn over it goes to the next backend first, and here trimmed only last:
+# groq_tpm = 8000
 # Per-account daily message allowance (default 30):
 # daily_cap = 30
 # Who may spend the chain: trial (default) | open | established | allowlist
@@ -1053,7 +1055,7 @@ wraps the source deploy:
 ./scripts/deploy.sh                 # staging — try the change on a real URL
 ./scripts/deploy.sh prod            # gated: clean tree + on origin/main + green CI
 ./scripts/deploy.sh prod --allow-unmerged    # ship a branch tip anyway
-./scripts/deploy.sh prod --min-instances 0   # accept cold starts, save money
+./scripts/deploy.sh prod --min-instances 1   # keep one warm 24/7 (billed)
 ./scripts/rollback.sh prod          # undo: traffic back to the previous revision
 ```
 
@@ -1076,14 +1078,21 @@ being deployed does not contain the one prod is serving, the gate lists exactly
 which commits would disappear and asks for the service name, not a `y`.
 `--allow-unmerged` skips the ancestry refusal; it does not skip that list.
 
-Prod keeps one instance warm by default (`--min-instances 1`) so first paint
-never eats a container boot. `/status` on either service reports the serving
+Prod scales to zero by default (`--min-instances 0`): the app has to stay
+inside Cloud Run's free tier, and a minimum instance is billed every idle
+second of the month while request-based billing counts only the time spent
+serving. The `stocks-healthz` uptime check hits `/livez` every 5 minutes, which
+keeps the instance warm without paying for the idle time in between, so a cold
+start is rare (after an OOM, a deploy, or a scale-in Cloud Run decides on its
+own). `/status` on either service reports the serving
 revision, the commit it was built from, uptime and whether persistence is
 configured. Cost backstops: a GCP
 budget alert (`./scripts/setup_budget.sh <billing-account>`), an Artifact
 Registry cleanup policy so deploy images stop accumulating
-(`./scripts/setup_registry_cleanup.sh --dry-run` first — it keeps the 5 newest
-and deletes untagged images older than 14 days), and a global daily cap on the
+(`./scripts/setup_registry_cleanup.sh --dry-run` first — it keeps the 2 newest
+of each image and deletes untagged images older than 2 days), a lifecycle rule
+on the source-upload bucket (`./scripts/setup_source_cleanup.sh` — deletes
+deploy zips older than 3 days), and a global daily cap on the
 free LLM chain (`FREE_LLM_GLOBAL_DAILY_CAP`, default 400, on top of the
 per-account cap). Incidents: see `docs/RUNBOOK.md` — triage commands,
 rollback, restore, secrets rotation.

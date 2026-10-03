@@ -171,6 +171,33 @@ class ActivityOut(BaseModel):
     content: dict
 
 
+class Learned(BaseModel):
+    """One change a turn made to the saved memories: `op` is "added",
+    "updated" or "deleted", and `id` the memory's (`/chat/memories/{id}`) —
+    what the drawer needs to say so and to undo it. `auto` when it was learned
+    without being asked; `before` is what an update replaced, its undo;
+    `repeated` the days a question was asked on before it became a routine
+    (`learnings.notice`), 0 otherwise."""
+
+    op: str
+    id: str
+    text: str
+    kind: str = "context"
+    auto: bool = False
+    before: str = ""
+    repeated: int = 0
+
+
+class Recalled(BaseModel):
+    """One earlier conversation an answer was given (`engine.earlier`):
+    enough to name it, date it and open it (`thread` is its id)."""
+
+    thread: str
+    title: str = ""
+    when: str = ""
+    snippet: str = ""
+
+
 class Message(BaseModel):
     """One stored turn. `skills`, `web` and `steps` are what the answer was
     built from — the lens, the pages, and the tool trace."""
@@ -194,6 +221,10 @@ class Message(BaseModel):
     activities: list[ActivityOut] = []
     # The bull and bear cases argued before the answer (`chat/debate.py`).
     debate: list[DebateSide] = []
+    # What the turn changed in the saved memories (`chat/learnings.py`).
+    learned: list[Learned] = []
+    # The earlier conversations quoted onto the question it answers.
+    recalled: list[Recalled] = []
 
 
 class Conversation(BaseModel):
@@ -206,6 +237,8 @@ class Conversation(BaseModel):
     updated: str
     messages: int
     active: bool
+    # The day of a daily card's thread (`auth.save_card_thread`), "" otherwise.
+    daily: str = ""
 
 
 class Conversations(BaseModel):
@@ -329,6 +362,10 @@ class State(BaseModel):
     # own, and the settings screen offers exactly that instead of a form that
     # would be refused on submit.
     key_storage: bool = False
+    # The memory switches (`Settings.memory`, `Settings.recall`). Both on for
+    # an account that never touched them.
+    memory: bool = True
+    recall: bool = True
 
 
 class Settings(BaseModel):
@@ -342,6 +379,11 @@ class Settings(BaseModel):
     # Applied to the provider named in the same patch, or to the preferred one.
     # A model belongs to a backend, so the pair travels together or not at all.
     model: str | None = None
+    # Keep saved memories and read them into answers (`chat/learnings.py`).
+    # Off leaves the list on disk, untouched — forgetting is its own button.
+    memory: bool | None = None
+    # Let an answer search the account's earlier conversations.
+    recall: bool | None = None
 
     @field_validator("provider")
     @classmethod
@@ -590,6 +632,24 @@ def _turn(raw: dict, lang: str = "en") -> Message:
             for d in (raw.get("debate") or [])
             if isinstance(d, dict) and d.get("text")
         ],
+        learned=[
+            Learned(op=str(c.get("op", "")), id=str(c.get("id", "")),
+                    text=str(c.get("text", "")),
+                    kind=str(c.get("kind") or "context"),
+                    auto=c.get("auto") is True,
+                    before=str(c.get("before") or ""),
+                    repeated=int(c.get("repeated") or 0))
+            for c in (raw.get("learned") or [])
+            if isinstance(c, dict) and c.get("id")
+        ],
+        recalled=[
+            Recalled(thread=str(r.get("thread", "")),
+                     title=str(r.get("title") or ""),
+                     when=str(r.get("when") or ""),
+                     snippet=str(r.get("snippet") or ""))
+            for r in (raw.get("recalled") or [])
+            if isinstance(r, dict) and r.get("thread")
+        ],
     )
 
 
@@ -716,6 +776,8 @@ def _state(paths: UserPaths, held: dict[str, str] | None = None) -> State:
         upload_max_mb=chat_attach.MAX_UPLOAD_MB,
         voice=stt.available(),
         key_storage=engine.can_store_keys(),
+        memory=engine.memory_on(prefs),
+        recall=engine.recall_on(prefs),
     )
 
 
@@ -863,6 +925,10 @@ def settings(
                 detail=f"{pid} does not serve a model called {body.model!r}",
             )
         changes[f"{pid}_model"] = body.model
+    if body.memory is not None:
+        changes["chat_memory"] = body.memory
+    if body.recall is not None:
+        changes["chat_recall"] = body.recall
     if changes:
         accounts.update_prefs(paths.prefs, changes)
     return _state(paths, session_keys(x_chat_provider, x_chat_key))
@@ -1093,6 +1159,10 @@ def _events(
                 assert isinstance(payload, dict)
                 yield from close_step()
                 yield _frame(CustomEvent(name="chat.meta", value=payload))
+            elif kind == "recalled":
+                # The "based on N conversations" line, drawn while the answer
+                # is still being written; `RUN_FINISHED.result` repeats it.
+                yield _frame(CustomEvent(name="chat.recalled", value=payload))
             else:
                 reply = payload
                 assert isinstance(reply, engine.Reply)
@@ -1101,6 +1171,14 @@ def _events(
                 if reply.error and not reply.text:
                     if opened:
                         yield _frame(TextMessageEndEvent(message_id=mid))
+                    # `RUN_ERROR` has no result to carry it in, and a memory
+                    # command before the question was carried out regardless:
+                    # the refusal still has to say so, undo and all.
+                    if reply.learned:
+                        yield _frame(CustomEvent(
+                            name="chat.learned",
+                            value=[dict(c) for c in reply.learned],
+                        ))
                     yield _frame(RunErrorEvent(message=reply.error, code=reply.error))
                     return
                 # An answer the engine settled without streaming it (an import
@@ -1164,6 +1242,9 @@ def _result(reply: engine.Reply) -> dict:
         # the shape it has always had.
         **({"proposal": dict(reply.proposal)} if reply.proposal else {}),
         **({"debate": [dict(d) for d in reply.debate]} if reply.debate else {}),
+        **({"learned": [dict(c) for c in reply.learned]} if reply.learned else {}),
+        **({"recalled": [dict(r) for r in reply.recalled]}
+           if reply.recalled else {}),
     }
 
 

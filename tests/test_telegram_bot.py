@@ -290,3 +290,98 @@ def test_a_flood_from_one_chat_is_cut_at_the_burst_limit(
     assert len(refused) == 2
     assert sum("Demasiados mensajes" in text for text, _ in sent) == 2
     assert not list((local / "data" / "tg_updates").glob("*.json"))  # consumed
+
+
+# ------------------------------------------------------------------ memory
+
+
+_LEARNED = {"op": "added", "id": "m1", "text": "Tengo 40 años",
+            "kind": "context", "auto": True}
+
+
+def test_what_an_answer_learned_is_said_under_it(local, users, sent, monkeypatch):
+    """The drawer draws a memory line under the answer; a Telegram reply is
+    the same turn in words, with the way to change it since there is no
+    Undo button to press."""
+    seen = {}
+
+    def fake_answer(**kw):
+        seen.update(kw)
+        return Reply(text="Con 40 años, un 30 % en bonos.", provider_id="free",
+                     learned=(_LEARNED,))
+
+    monkeypatch.setattr(bot.engine, "answer", fake_answer)
+    _queue(local, _update(30, 111, "tengo 40 años, ¿cuánto en bonos?"))
+    bot.drain()
+    text, _ = sent[0]
+    assert text.startswith("Con 40 años, un 30 % en bonos.\n\n")
+    assert "Guardado en memoria: «Tengo 40 años»" in text
+    assert "Ajustes → Memoria" in text
+    # The answer waits longer than the panel for what is being learned: a
+    # sent message cannot be edited to add the line once the read is done.
+    assert seen["learn_grace"] == bot.LEARN_WAIT
+
+
+def test_a_correction_says_what_the_memory_said_before(local, users, sent,
+                                                       monkeypatch):
+    fixed = {"op": "updated", "id": "m1", "text": "Me jubilo a los 60",
+             "before": "Me jubilo a los 65", "kind": "goal", "auto": True}
+    monkeypatch.setattr(
+        bot.engine, "answer",
+        lambda **kw: Reply(text="Anotado.", provider_id="free", learned=(fixed,)),
+    )
+    _queue(local, _update(31, 111, "al final me jubilo a los 60"))
+    bot.drain()
+    assert ("Memoria corregida: «Me jubilo a los 60» (antes: «Me jubilo a los 65»)"
+            in sent[0][0])
+
+
+def test_a_remember_command_on_its_own_is_not_said_twice(local, users, sent,
+                                                         monkeypatch):
+    """No model wrote that reply: it is the app's own note on the save,
+    which already says what was kept."""
+    note = "Guardado en memoria: «Tengo 40 años». Lo tendré en cuenta."
+    said = {**_LEARNED, "auto": False}
+    monkeypatch.setattr(bot.engine, "answer",
+                        lambda **kw: Reply(text=note, learned=(said,)))
+    _queue(local, _update(32, 111, "recuerda que tengo 40 años"))
+    bot.drain()
+    assert sent == [(note, 111)]
+
+
+def test_a_refused_answer_still_says_what_was_saved(local, users, sent,
+                                                    monkeypatch):
+    """"Remember that… and tell me…" saves before any model is asked; a wall
+    after it refuses the question, not the save."""
+    said = {**_LEARNED, "auto": False}
+    monkeypatch.setattr(
+        bot.engine, "answer",
+        lambda **kw: Reply(error="chat.free_cap", learned=(said,)),
+    )
+    _queue(local, _update(33, 111, "recuerda que tengo 40 años y dime algo"))
+    bot.drain()
+    text, _ = sent[0]
+    assert str(bot.engine.free_daily_cap()) in text
+    assert "Guardado en memoria: «Tengo 40 años»" in text
+
+
+def test_the_memories_come_down_from_the_bucket_with_the_thread(
+    local, users, sent, monkeypatch,
+):
+    """A bare checkout has no memory file: unrestored, the turn would answer
+    without it, and a "remember that…" saved back would replace the
+    account's whole list in the bucket with one line. The conversation index
+    the same — the turn persists it — and the daily card the prompt quotes."""
+    from stocks.chat import daily, learnings
+    from stocks.web import auth
+
+    pulled = []
+    monkeypatch.setattr(bot.storage, "restore", pulled.append)
+    monkeypatch.setattr(bot.engine, "answer",
+                        lambda **kw: Reply(text="ok", provider_id="free"))
+    _queue(local, _update(34, 111, "hola"), _update(35, 111, "otra"))
+    bot.drain()
+    chat = users["linked"].chat_path
+    assert pulled == [  # once per run
+        chat, learnings.path_for(chat), auth.memory_path(chat), daily.card_path(chat),
+    ]

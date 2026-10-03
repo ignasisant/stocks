@@ -20,8 +20,11 @@ by country, so `build(matching=...)` takes the rule:
   FIFO one on the same trades.
 
 Acquisition cost includes buy commissions; sale proceeds are net of sell
-commissions. This module is pure: the currency converter is injected so it can
-be unit-tested without network.
+commissions. A return of capital (action ``"capital"``: a share-premium
+repayment, a nondividend distribution) gives back part of what the shares
+cost, so it lowers the basis of the shares held that day under every rule.
+This module is pure: the currency converter is injected so it can be
+unit-tested without network.
 
 Money fields hold the *reporting* currency picked by `build(base=...)`: the
 account's own currency for the app's analytics, the tax jurisdiction's for a
@@ -159,6 +162,8 @@ def build(
             realized += _sell(lots[tx.ticker], tx, to_base, newest_first)
         elif tx.action == "split":
             _split(lots[tx.ticker], tx.quantity)
+        elif tx.action == "capital":
+            _return_capital(lots[tx.ticker], to_base(tx.price, tx.currency, tx.date))
         # dividend / fee: not position-affecting (handled in dividends/cash)
 
     positions = [_aggregate(t, q) for t, q in lots.items() if _total_qty(q) > 1e-9]
@@ -221,6 +226,26 @@ def _split(queue: deque[Lot], ratio: float) -> None:
         return
     for lot in queue:
         lot.quantity *= ratio
+
+
+def _return_capital(holdings, amount: float) -> None:
+    """Lower the basis of what is held by `amount` (reporting ccy), pro rata.
+
+    The payment is per share, so each lot or pool gives up its shares' part of
+    it — not a part sized by its cost. Spain (art. 33.3.e LIRPF), the US (IRC
+    §301(c)(2)) and the UK (TCGA s.122) all take it off the acquisition value.
+    A basis cannot go below zero: what exceeds it is taxable income where it
+    is paid, which this replay does not book, so it is floored instead.
+    """
+    held = sum(h.quantity for h in holdings)
+    if held <= 1e-9 or amount <= 0:
+        return
+    for h in holdings:
+        if h.cost <= 0:
+            continue
+        cut = min(h.cost, amount * h.quantity / held)
+        h.cost_native -= h.cost_native * cut / h.cost
+        h.cost -= cut
 
 
 def _aggregate(ticker: str, queue: deque[Lot]) -> Position:
@@ -308,6 +333,10 @@ def _build_average(
         elif tx.action == "split" and tx.quantity > 0:
             # Total cost unchanged, more shares behind it (same as FIFO).
             pools[tx.ticker].quantity *= tx.quantity
+        elif tx.action == "capital":
+            _return_capital(
+                [pools[tx.ticker]], to_base(tx.price, tx.currency, tx.date)
+            )
 
     positions = [
         Position(
@@ -406,7 +435,7 @@ def _build_s104(
     """`build` for the UK rules. Same signature and outputs, other matching."""
     by_ticker: dict[str, list[Transaction]] = defaultdict(list)
     for tx in sorted(transactions, key=lambda t: (t.date, t.id or 0)):
-        if tx.action in ("buy", "sell", "split"):
+        if tx.action in ("buy", "sell", "split", "capital"):
             by_ticker[tx.ticker].append(tx)
 
     positions: list[Position] = []
@@ -475,6 +504,10 @@ def _replay_s104(
                     if not acq.pooled:
                         acq.quantity *= tx.quantity
                         acq.remaining *= tx.quantity
+        elif tx.action == "capital":
+            # Only the pool held the shares on the day: flush has folded in
+            # every earlier buy, and a same-day one bought after the record.
+            _return_capital([pool], to_base(tx.price, tx.currency, tx.date))
         elif tx.action == "sell":
             currency = tx.currency
             sales += _dispose_s104(ticker, tx, acquisitions, pool, to_base, flush)

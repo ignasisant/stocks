@@ -398,6 +398,23 @@ RELEASES: tuple[Release, ...] = (
             News(slug="whatif", icon="calculate", step="assistant"),
         ),
     ),
+    Release(
+        version="2026.10",
+        date="2026-10",
+        items=(
+            # One card: an assistant that carries what the reader told it from
+            # one conversation to the next is something it could not do at all.
+            # How it learns (asked or in passing), the Undo under the answer,
+            # earlier threads brought back and the list in Settings are one
+            # capability — the assistant step's body, not cards of their own.
+            News(slug="memory", icon="psychology", step="assistant"),
+            # One card: a question answered every morning before it is typed
+            # is something the card could not do, and the card itself was
+            # rebuilt under the reader (Portfolio, alerts, worth a look,
+            # routines). The sections and the chart are the daily step's body.
+            News(slug="routines", icon="tips_and_updates", step="daily"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

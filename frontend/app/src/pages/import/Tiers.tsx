@@ -21,7 +21,7 @@
  * one nobody scrolls to.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { useT } from "../../shell/i18n";
 import type { Platform, Preview } from "./api";
@@ -32,9 +32,6 @@ import { SkippedGroups } from "./Skipped";
 import { RowTable } from "./Tables";
 import { useVocabulary } from "./text";
 import { Unlisted } from "./Venues";
-
-/** How a rejected row gets in anyway. The CLI's own words, so not translated. */
-const CLI = "uv run stocks tx add <date> <ticker> <action> --qty … --price …";
 
 type Tone = "bad" | "warn" | "ok" | "skip";
 
@@ -169,11 +166,7 @@ export function Tiers({
               rows={preview.rejected}
               tone="bad"
             />
-            <div className="im-tier-foot">
-              <span>{t("import.rejected_fix")}</span>
-              <code className="im-cli">{CLI}</code>
-              <Copy text={CLI} />
-            </div>
+            <p className="im-tier-foot">{t("import.rejected_fix")}</p>
           </Tier>
         )}
 
@@ -264,32 +257,5 @@ function Tier({
       </header>
       {children}
     </section>
-  );
-}
-
-/** The command onto the clipboard, and two seconds of saying so. */
-function Copy({ text }: { text: string }) {
-  const t = useT();
-  const [done, setDone] = useState(false);
-  useEffect(() => {
-    if (!done) return;
-    const timer = setTimeout(() => setDone(false), 2000);
-    return () => clearTimeout(timer);
-  }, [done]);
-  return (
-    <button
-      className="im-btn im-btn-text"
-      // No clipboard outside a secure context; the command is on screen to
-      // select by hand, so the press simply does nothing there.
-      onClick={() =>
-        void navigator.clipboard?.writeText(text).then(
-          () => setDone(true),
-          () => undefined,
-        )
-      }
-      type="button"
-    >
-      {done ? t("import.copied") : t("import.copy")}
-    </button>
   );
 }

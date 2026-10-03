@@ -309,10 +309,15 @@ function Positions() {
             ) : (
               <Kpis
                 items={[
-                  { label: t("portfolio.cost_basis"), value: money(summary.cost) },
+                  {
+                    label: t("portfolio.cost_basis"),
+                    value: money(summary.cost),
+                    help: t("portfolio.cost_basis_help"),
+                  },
                   {
                     label: t("portfolio.market_value"),
                     value: money(summary.value),
+                    help: t("portfolio.market_value_help"),
                     chip:
                       summary.pnl_pct === null
                         ? null
@@ -325,6 +330,7 @@ function Positions() {
                   {
                     label: t("portfolio.unrealised_pl"),
                     value: money(summary.pnl, { signed: true }),
+                    help: t("portfolio.unrealised_pl_help"),
                     chip:
                       summary.pnl_pct === null
                         ? null

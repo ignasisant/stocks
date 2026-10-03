@@ -47,6 +47,28 @@ export function openAssistant(): void {
   for (const listener of listeners) listener(null);
 }
 
+const threadListeners = new Set<(cid: string) => void>();
+
+/**
+ * Open the assistant on one conversation — Home's daily card has one of its
+ * own, filed by the server, and its "Ask" lands the reader there so the
+ * question is asked with the card above it. A no-op with nothing listening,
+ * like the others.
+ */
+export function openThread(cid: string): void {
+  for (const listener of threadListeners) listener(cid);
+}
+
+/** Subscribe to those opens. The drawer is the only caller. */
+export function useAssistantThreads(handler: (cid: string) => void): void {
+  useEffect(() => {
+    threadListeners.add(handler);
+    return () => {
+      threadListeners.delete(handler);
+    };
+  }, [handler]);
+}
+
 /** Subscribe to those questions. The drawer is the only caller. */
 export function useAssistantAsks(handler: Listener): void {
   useEffect(() => {

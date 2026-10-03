@@ -470,6 +470,35 @@ def test_answer_free_happy_path(providers, paths):
     assert auth.active_conversation(paths["chat_path"])["title"] == "Free answer"
 
 
+@dataclass
+class SlowLearner(FakeProvider):
+    """Answers at once; the background read for memories takes `delay`."""
+
+    delay: float = 0.5
+
+    def complete(self, api_key, model, system, messages) -> str:
+        if not system.startswith("You keep a short list"):
+            return super().complete(api_key, model, system, messages)
+        time.sleep(self.delay)
+        return json.dumps({"ops": [{"op": "add", "kind": "preference",
+                                    "text": "Prefiero dividendos crecientes"}]})
+
+
+def test_a_caller_with_time_to_spare_waits_for_what_the_message_teaches(
+    providers, paths, monkeypatch,
+):
+    """The Telegram bot cannot add the memory line to a message once it is
+    sent, so it waits past the panel's grace for the read to finish."""
+    monkeypatch.setattr(engine, "LEARN_GRACE", 0)
+    providers["free"] = SlowLearner("free", reply="Free answer.")
+    reply = engine.answer(
+        prefs=dict(BASE_PREFS), learn_grace=5, **paths,
+        message="prefiero dividendos crecientes, ¿qué me recomiendas?",
+    )
+    assert [(c["op"], c["text"], c.get("auto")) for c in reply.learned] == [
+        ("added", "Prefiero dividendos crecientes", True)]
+
+
 
 def test_the_turns_language_rule_follows_the_callers_locale(providers, paths):
     """The locale the API route resolved reaches the model, not just the

@@ -20,7 +20,11 @@
   text-transform: uppercase;
 }
 
-:root[data-nav="folded"] .ag-nav-section {
+/* Peeking too: a header arriving would push every link below it down, out
+   from under the pointer that opened the rail. */
+:root[data-nav="folded"] .ag-nav-section,
+:root[data-nav="peek"] .ag-nav-section,
+:root[data-nav="peek-out"] .ag-nav-section {
   display: none;
 }
 

@@ -16,6 +16,7 @@ import { useApi } from "../../shell/useApi";
 import {
   CHURCH_RATES,
   CURRENCIES,
+  LANGUAGE_FLAGS,
   LANGUAGES,
   TOP_CURRENCIES,
   activeJurisdiction,
@@ -24,6 +25,7 @@ import {
 import type { Jurisdictions } from "./data";
 import { DeleteAccount } from "./DeleteAccount";
 import type { Settings } from "./prefs";
+import { MemoryCard } from "./MemoryCard";
 import { TourCard } from "./TourCard";
 import { Card, Chips, Failure, Row, Select, Toggle } from "./ui";
 
@@ -122,7 +124,9 @@ export function Preferences({
 
   const langs = [AUTO, ...Object.keys(LANGUAGES)];
   const langLabel = (code: string) =>
-    code === AUTO ? t("profile.lang_auto") : (LANGUAGES[code] ?? code);
+    code === AUTO
+      ? `🌐 ${t("profile.lang_auto")}`
+      : `${LANGUAGE_FLAGS[code] ?? ""} ${LANGUAGES[code] ?? code}`.trim();
 
   // The five in daily use are chips; a currency set from outside them joins
   // the row rather than disappearing behind the disclosure.
@@ -396,6 +400,7 @@ export function Preferences({
 
       <aside className="pr-rail">
         <TourCard />
+        <MemoryCard />
         <Card>
           <div className="pr-sum">
             <span className="pr-sum-t">{t("profile.summary_title")}</span>

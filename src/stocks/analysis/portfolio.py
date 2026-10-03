@@ -193,6 +193,32 @@ def correlation_matrix(returns: pd.DataFrame) -> pd.DataFrame:
     return returns.corr()
 
 
+def risk_shares(
+    returns: pd.DataFrame, port: pd.Series, weights: dict[str, float]
+) -> dict[str, float]:
+    """Each name's share of the basket's variance: w·cov(name, basket) / var.
+
+    The Euler split of portfolio risk — a name that moves with the rest
+    carries more of it than its weight, a diversifier less (below zero when it
+    hedges). Normalised over the names it can measure, so the shares sum to
+    one even where the basket renormalised weights over a short history.
+    """
+    raw: dict[str, float] = {}
+    for name, weight in weights.items():
+        if not weight or name not in returns:
+            continue
+        pair = pd.concat([returns[name], port], axis=1).dropna()
+        if len(pair) < 2:
+            continue
+        cov = float(pair.cov(ddof=0).iloc[0, 1])
+        if math.isfinite(cov):
+            raw[name] = weight * cov
+    total = sum(raw.values())
+    if not total:
+        return {}
+    return {name: value / total for name, value in raw.items()}
+
+
 # ----------------------------------------------------------------- concentration
 def hhi(weights: dict[str, float]) -> float:
     """Herfindahl-Hirschman index (sum of squared weights); 1.0 = single name."""
@@ -220,18 +246,39 @@ def allocation(weights: dict[str, float], meta: dict[str, dict], key: str) -> pd
     shows it. Fractions that don't sum to 1 (Yahoo rounding, an undisclosed
     remainder) leave the missing part in "Unknown" rather than being scaled up.
     """
-    agg: dict[str, float] = {}
-    for ticker, w in weights.items():
+    agg = {
+        label: sum(parts.values())
+        for label, parts in allocation_parts(weights, meta, key).items()
+    }
+    return pd.Series(agg, dtype=float).sort_values(ascending=False)
+
+
+def allocation_parts(
+    amounts: dict[str, float], meta: dict[str, dict], key: str
+) -> dict[str, dict[str, float]]:
+    """`allocation` before the sum: each bucket's amount, by the ticker it came from.
+
+    Linear in `amounts`, so the same grouping takes weights, market values or
+    cost bases alike — a fund's value and its cost are spread over its split
+    by the same fractions, and a bucket's P/L is then like-for-like. The
+    per-ticker detail is what lets a slice say which holdings it is made of.
+    """
+    parts: dict[str, dict[str, float]] = {}
+
+    def add(label: str, ticker: str, amount: float) -> None:
+        bucket = parts.setdefault(label, {})
+        bucket[ticker] = bucket.get(ticker, 0.0) + amount
+
+    for ticker, amount in amounts.items():
         row = meta.get(ticker) or {}
         if split := row.get(f"{key}_weights"):
             for label, share in split.items():
-                agg[label] = agg.get(label, 0.0) + w * share
+                add(label, ticker, amount * share)
             if (rest := 1.0 - sum(split.values())) > 0.001:
-                agg["Unknown"] = agg.get("Unknown", 0.0) + w * rest
+                add("Unknown", ticker, amount * rest)
             continue
-        label = row.get(key) or "Unknown"
-        agg[label] = agg.get(label, 0.0) + w
-    return pd.Series(agg, dtype=float).sort_values(ascending=False)
+        add(row.get(key) or "Unknown", ticker, amount)
+    return parts
 
 
 def position_table(holdings: list[Holding], prices: dict[str, float]) -> pd.DataFrame:
@@ -747,8 +794,9 @@ def sleeve_stats(
     weights: dict[str, float],
     groups: dict[str, list[str]],
     since: dict[str, pd.Timestamp] | None = None,
-) -> tuple[dict[str, float], float | None]:
-    """Annual volatility per group of names, and the correlation of the first two.
+) -> tuple[dict[str, float], float | None, dict[str, float]]:
+    """Annual volatility per group of names, the correlation of the first two,
+    and each group's own compound annual growth.
 
     Each group is weighted as the basket is (`portfolio_returns`, weights
     renormalised per date, each name clipped to when it was first bought) and
@@ -756,8 +804,14 @@ def sleeve_stats(
     weekend of stock "returns" would read as five zero-move days a fortnight.
     The correlation is taken on weekly returns for the same reason — the two
     calendars only agree on a week.
+
+    Growth is the group's geometric return annualised over the span it covers
+    — the median compound rate the projection reads, as the holdings actually
+    did it. Only a year or more is annualised: three good months raised to a
+    year is a number nobody earned.
     """
     vols: dict[str, float] = {}
+    growth: dict[str, float] = {}
     weekly: dict[str, pd.Series] = {}
     for key, names in groups.items():
         cols = [c for c in names if c in returns.columns]
@@ -769,6 +823,10 @@ def sleeve_stats(
             continue
         vols[key] = annualized_volatility(series)
         series.index = naive_dates(series.index)
+        if (series.index[-1] - series.index[0]).days >= 365:
+            rate = annualized_return(series)
+            if math.isfinite(rate):
+                growth[key] = rate
         weekly[key] = (1 + series).resample("W").prod() - 1
     corr = None
     if len(weekly) >= 2:
@@ -776,7 +834,7 @@ def sleeve_stats(
         both = pd.concat([a, b], axis=1).dropna()
         if len(both) >= 10:
             corr = float(both.corr().iloc[0, 1])
-    return vols, corr
+    return vols, corr, growth
 
 
 def project_sleeves(

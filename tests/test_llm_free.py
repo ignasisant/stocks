@@ -38,14 +38,15 @@ def _dies_midway(bid, exc):
 
 def test_first_healthy_backend_wins(monkeypatch):
     monkeypatch.setattr(
-        llm, "_free_backends", lambda: [_ok("groq", ["g1", "g2"]), _ok("cerebras", ["c"])]
+        llm, "_free_backends",
+        lambda: [_ok("groq", ["g1", "g2"]), _ok("openrouter", ["c"])],
     )
     assert list(llm._free_stream("", "auto", "sys", [])) == ["g1", "g2"]
 
 
 def test_falls_back_when_first_backend_fails(monkeypatch):
     monkeypatch.setattr(
-        llm, "_free_backends", lambda: [_dead("groq"), _ok("cerebras", ["a", "b"])]
+        llm, "_free_backends", lambda: [_dead("groq"), _ok("openrouter", ["a", "b"])]
     )
     assert list(llm._free_stream("", "auto", "sys", [])) == ["a", "b"]
 
@@ -136,7 +137,7 @@ def test_only_a_retired_model_triggers_the_model_list(monkeypatch):
     calls = []
     monkeypatch.setattr(llm, "_live_model", lambda b: calls.append(b.id))
     monkeypatch.setattr(
-        llm, "_free_backends", lambda: [_dead("groq"), _ok("cerebras", ["c"])]
+        llm, "_free_backends", lambda: [_dead("groq"), _ok("openrouter", ["c"])]
     )
     assert list(llm._free_stream("", "auto", "sys", [])) == ["c"]
     assert calls == []
@@ -145,7 +146,7 @@ def test_only_a_retired_model_triggers_the_model_list(monkeypatch):
 def test_backend_that_hides_its_model_list_falls_through(monkeypatch):
     monkeypatch.setattr(
         llm, "_free_backends",
-        lambda: [_retired("groq", live_model="never"), _ok("cerebras", ["c"])],
+        lambda: [_retired("groq", live_model="never"), _ok("openrouter", ["c"])],
     )
 
     def _boom(**kw):
@@ -153,6 +154,92 @@ def test_backend_that_hides_its_model_list_falls_through(monkeypatch):
 
     monkeypatch.setattr("openai.OpenAI", _boom)
     assert list(llm._free_stream("", "auto", "sys", [])) == ["c"]
+
+
+def test_cerebras_left_the_chain(monkeypatch):
+    # Every model has answered 402 since 2026-08-31: a key in the secrets must
+    # not put the dead hop back.
+    monkeypatch.setattr(llm, "_free_secrets", lambda: {"cerebras": "csk-x"})
+    assert llm._free_backends() == []
+
+
+def _capped(bid, chunks, tpm, seen):
+    def stream(api_key, model, system, messages):
+        seen.append((bid, messages))
+        yield from chunks
+
+    return _FreeBackend(bid, f"key-{bid}", f"model-{bid}", stream, tpm=tpm)
+
+
+def _thread(turns, words=400):
+    return [{"role": "user" if i % 2 == 0 else "assistant",
+             "content": f"turn {i} " + "word " * words} for i in range(turns)]
+
+
+def test_groq_carries_its_free_tier_cap(monkeypatch):
+    monkeypatch.setattr(llm, "_free_secrets",
+                        lambda: {"groq": "gsk-x", "openrouter": "sk-or-x"})
+    groq, openrouter = llm._free_backends()
+    assert (groq.tpm, openrouter.tpm) == (8000, 0)
+    monkeypatch.setattr(llm, "_free_secrets",
+                        lambda: {"groq": "gsk-x", "groq_tpm": "30000"})
+    assert llm._free_backends()[0].tpm == 30000
+
+
+def test_a_turn_that_fits_the_cap_goes_to_groq_untouched(monkeypatch):
+    seen = []
+    thread = _thread(2, words=50)
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _capped("groq", ["g"], 8000, seen), _capped("openrouter", ["o"], 0, seen)])
+    assert list(llm._free_stream("", "auto", "sys", thread)) == ["g"]
+    assert seen == [("groq", thread)]
+
+
+def test_a_turn_over_the_cap_tries_the_uncapped_backend_first(monkeypatch):
+    # Groq refuses a request over its per-minute cap outright (413), so the
+    # whole thread goes to a backend that can take it before Groq is asked.
+    seen = []
+    thread = _thread(40)
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _capped("groq", ["g"], 8000, seen), _capped("openrouter", ["o"], 0, seen)])
+    assert list(llm._free_stream("", "auto", "sys", thread)) == ["o"]
+    assert seen == [("openrouter", thread)]
+
+
+def test_groq_is_the_last_resort_with_the_thread_cut_to_its_cap(monkeypatch):
+    from stocks.chat import tokens
+
+    seen = []
+    thread = _thread(40)
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _capped("groq", ["g"], 8000, seen), _dead("openrouter")])
+    assert list(llm._free_stream("", "auto", "sys", thread)) == ["g"]
+    (bid, sent), = seen
+    assert bid == "groq"
+    assert sent[-1] == thread[-1]  # the question survives; old turns went
+    assert len(sent) < len(thread)
+    assert tokens.count("sys") + tokens.count_messages(sent) <= 8000 * 0.9
+
+
+def test_a_system_prompt_over_the_cap_skips_the_backend(monkeypatch):
+    seen = []
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _capped("groq", ["g"], 8000, seen), _dead("openrouter")])
+    with pytest.raises(FreeTierExhausted):
+        list(llm._free_stream("", "auto", "word " * 9000, _thread(1, 5)))
+    assert seen == []
+
+
+def test_tool_schemas_count_against_the_cap(monkeypatch):
+    from stocks.chat import tokens
+
+    thread = _thread(1, words=20)
+    backends = [_capped("groq", ["g"], 1000, []), _capped("openrouter", [], 0, [])]
+    base = tokens.count("sys") + tokens.count_messages(thread)
+    plan = llm._free_plan(backends, "sys", thread)
+    assert [b.id for b, _ in plan] == ["groq", "openrouter"]
+    plan = llm._free_plan(backends, "sys", thread, extra=900 - base + 1)
+    assert [b.id for b, _ in plan] == ["openrouter", "groq"]
 
 
 def test_chat_model_preference_skips_non_chat_slugs():
@@ -186,17 +273,17 @@ def test_backends_follow_fixed_order_and_model_override(monkeypatch):
     monkeypatch.setattr(
         llm,
         "_free_secrets",
-        lambda: {"cerebras": "csk-x", "groq": "gsk-x",
+        lambda: {"openrouter": "sk-or-x", "groq": "gsk-x",
                  "groq_model": "qwen-32b", "daily_cap": 5},
     )
     got = llm._free_backends()
-    assert [b.id for b in got] == ["groq", "cerebras"]
+    assert [b.id for b in got] == ["groq", "openrouter"]
     assert got[0].model == "qwen-32b"
-    assert got[1].model == "gpt-oss-120b"
+    assert got[1].model == "nvidia/nemotron-3-ultra-550b-a55b:free"
 
 
 def test_blank_keys_are_skipped(monkeypatch):
-    monkeypatch.setattr(llm, "_free_secrets", lambda: {"groq": "  ", "cerebras": ""})
+    monkeypatch.setattr(llm, "_free_secrets", lambda: {"groq": "  ", "openrouter": ""})
     assert llm._free_backends() == []
 
 

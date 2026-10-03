@@ -135,6 +135,43 @@ def test_a_current_card_reads_fresh(client, account, monkeypatch):
     assert payload["source"] == "llm"
 
 
+def test_the_card_reports_its_sections(client, account, monkeypatch):
+    """Portfolio rows and chart, each line's section, the routines answered."""
+    line = {"symbol": "@BOOK", "currency": "EUR", "dates": ["2026-09-01", "2026-09-29"],
+            "values": [100.0, 101.2], "label": "Your portfolio", "index": True}
+    card = today_card(
+        items=[
+            {"key": "alert_hit:AAPL", "kind": "alert_hit", "line": "AAPL crossed 260",
+             "tickers": ["AAPL"]},
+            {"key": "earnings:NVDA", "kind": "earnings", "line": "NVDA reports Friday",
+             "tickers": ["NVDA"]},
+        ],
+        book={"index": "S&P 500", "currency": "EUR", "chart": [line],
+              "rows": [{"window": "day", "pct": 0.8, "amount": 120.0,
+                        "index_pct": 0.3}]},
+        routines=[{"id": "r1", "text": "how is NVDA", "answer": "NVDA at 182.50",
+                   "chart": {"window": "1m", "rebased": False, "series": [line]}}],
+    )
+    monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: card)
+    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
+    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
+    payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
+    assert [i["section"] for i in payload["items"]] == ["alerts", "watch"]
+    assert payload["book"]["rows"][0]["index_pct"] == 0.3
+    assert payload["book"]["chart"][0]["values"] == [100.0, 101.2]
+    assert payload["routines"][0]["answer"] == "NVDA at 182.50"
+    assert payload["routines"][0]["chart"]["series"][0]["symbol"] == "@BOOK"
+
+
+def test_a_card_from_before_sections_reads_without_them(client, account, monkeypatch):
+    monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: today_card())
+    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
+    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
+    payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
+    assert payload["book"] is None
+    assert payload["routines"] == []
+
+
 def test_a_language_switch_stales_a_card_whose_date_has_not_moved(
     client, account, monkeypatch
 ):

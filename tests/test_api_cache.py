@@ -431,3 +431,73 @@ def test_a_throttled_source_answers_with_the_last_good_prices_and_says_so(
     movers = client.get(f"/v1/movers?window=day&account={EMAIL}", headers=headers)
     assert movers.status_code == 200
     assert movers.headers["x-data-stale-since"] == again.headers["x-data-stale-since"]
+
+
+# ------------------------------------------------------------- memory bounds
+class _Frame:
+    """A stand-in for a book's frames: something a weakref can watch go."""
+
+
+def test_an_entry_past_its_grace_goes_at_the_next_landing(monkeypatch):
+    """Keys carry the ledger's mtime, so an edit strands the book's old
+    entries where nobody will ask again. They used to stay until enough new
+    keys pushed them past the cap; now the next landing sweeps them."""
+    import gc
+    import weakref
+
+    clock = [0.0]
+    monkeypatch.setattr(cache.time, "monotonic", lambda: clock[0])
+
+    @cache.ttl_cache(10.0, stale_s=5.0, max_entries=32)
+    def frames(db: str, mtime: float):
+        return _Frame()
+
+    old = weakref.ref(frames("book", 1.0))
+    clock[0] = 14.0  # past the ttl, inside the grace: still able to answer
+    frames("other", 1.0)
+    gc.collect()
+    assert old() is not None
+    clock[0] = 16.0  # past ttl + grace: dead weight
+    frames("book", 2.0)  # the edit that stranded it
+    gc.collect()
+    assert old() is None
+
+
+def test_disk_max_caps_a_memo_directory(monkeypatch):
+    clock = _clocks(monkeypatch, 1000.0)
+
+    @cache.ttl_cache(10.0, persist="t_cap", disk_max=2)
+    def f(key: str):
+        return key
+
+    for key in ("a", "b", "c"):
+        clock[0] += 1
+        f(key)
+    assert len(list((cache.MEMO_DIR / "t_cap").glob("*.pkl"))) == 2
+
+
+def test_a_restore_from_the_bucket_does_not_grow_the_directory_back(monkeypatch):
+    """The bucket keeps every copy ever written; restoring them one miss at a
+    time must not refill a directory the cap emptied."""
+    import pickle
+
+    from stocks import storage
+
+    clock = _clocks(monkeypatch, 1000.0)
+
+    @cache.ttl_cache(10.0, persist="t_restore", disk_max=2)
+    def f(key: str):
+        return key
+
+    f("a")
+    f("b")
+
+    def restore(path):
+        blob = {"wall": clock[0], "value": "from-bucket", "since": None}
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(pickle.dumps(blob))
+        return True
+
+    monkeypatch.setattr(storage, "restore", restore)
+    assert f("c") == "from-bucket"
+    assert len(list((cache.MEMO_DIR / "t_restore").glob("*.pkl"))) == 2

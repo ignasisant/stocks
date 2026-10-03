@@ -32,7 +32,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from stocks import storage
+from stocks import obs, storage
 from stocks.config import DATA_DIR, WATCHLIST_FILE, Holding, load_watchlist
 from stocks.data.fetch import fetch_history
 from stocks.notify import links, telegram
@@ -80,6 +80,23 @@ class NotifyUser:
         """chat.json sibling of prefs — data/chat.json for the owner,
         data/users/<slug>/chat.json otherwise (matches auth.paths_for)."""
         return self.prefs_path.with_name("chat.json")
+
+    def memories(self) -> str:
+        """What the user told the chat about themselves (`engine.memory_block`),
+        for the narrated lines: one memory, read by every surface.
+
+        Pulled from the bucket lazily, like chat.json, and only for an account
+        a line is about to be written for. "" on any failure — a notification
+        is never held up by its memory."""
+        from stocks.chat import engine, learnings
+
+        try:
+            _restore_user_files(learnings.path_for(self.chat_path))
+            return engine.memory_block(self.prefs, self.chat_path)
+        except Exception as exc:  # noqa: BLE001
+            obs.warn("notify.memories_unavailable", user=self.label,
+                     error_type=type(exc).__name__, error=str(exc)[:200])
+            return ""
 
 
 def _read_prefs(path: Path) -> dict:
@@ -310,7 +327,8 @@ def run_alerts_fanout(now: datetime | None = None) -> dict[str, str]:
                 # actually going out — the rising-edge/cooldown state above is
                 # what keeps that rare enough to sit on a free tier. None (no
                 # key, no quota, timeout) just ships the plain rule lines.
-                note = narrative.alerts_line(to_send, user.prefs, user.lang)
+                note = narrative.alerts_line(to_send, user.prefs, user.lang,
+                                             memories=user.memories())
                 if note:
                     lines.append(f"\n💡 {esc(note)}")
                 # No configured origin means no link: the button is dropped

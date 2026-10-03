@@ -28,7 +28,8 @@ import {
   type RiskPeriod,
 } from "./api";
 import { brokerName, decimal, moneyIn, percent } from "./format";
-import { Donut, Heatmap, ReturnLines } from "./charts";
+import { Donut, ReturnLines, type LineMoney, type SliceDetail } from "./charts";
+import { CorrelationCard } from "./Correlation";
 import { Caption, Card, Empty, Kpis, Segmented } from "./ui";
 
 /** Allocation splits, in the order the Streamlit page lays them out. */
@@ -51,6 +52,30 @@ export default function Risk() {
   // charts of the same book should not date themselves differently.
   const date = new Intl.DateTimeFormat(lang, { month: "short", year: "2-digit" });
   const formatDate = (iso: string) => date.format(new Date(`${iso}T00:00:00`));
+  // What a slice's hover box and its pinned breakdown read its money with.
+  const detail: SliceDetail = {
+    money: (value, signed) => money(value, { signed }) ?? "",
+    change: (fraction) => percent(lang, fraction, { signed: true }) ?? "",
+    labels: {
+      value: t("portfolio.alloc_value"),
+      invested: t("portfolio.alloc_invested"),
+      result: t("portfolio.alloc_result"),
+      positions: t("portfolio.alloc_positions"),
+      more: (count) => t("portfolio.alloc_more", { n: count }),
+      pin: t("portfolio.alloc_pin_hint"),
+      close: t("portfolio.alloc_close"),
+    },
+  };
+  const lineMoney: Omit<LineMoney, "invested"> = {
+    money: detail.money,
+    change: detail.change,
+    labels: {
+      invested: t("portfolio.flow_tip_invested"),
+      value: t("portfolio.alloc_value"),
+      gain: t("portfolio.flow_tip_gain"),
+      versus: t("portfolio.flow_tip_versus"),
+    },
+  };
 
   // Two calls, one window. The selector sits above both cards and drives both,
   // as it does on the Streamlit tab: the real-performance tiles are re-taken
@@ -252,11 +277,12 @@ export default function Risk() {
                         title={title}
                         otherLabel={t("portfolio.alloc_other")}
                         format={(fraction) => percent(lang, fraction) ?? ""}
+                        detail={detail}
                         slices={
                           key === "broker"
                             ? slices.map((slice) => ({
+                                ...slice,
                                 label: brokerName(slice.label, t),
-                                weight: slice.weight,
                               }))
                             : slices
                         }
@@ -281,6 +307,10 @@ export default function Risk() {
                     dates={data.curves.dates}
                     format={(value) => percent(lang, value, { digits: 1 }) ?? ""}
                     formatDate={formatDate}
+                    money={{
+                      ...lineMoney,
+                      invested: data.curves.invested,
+                    }}
                     series={[
                       {
                         label: t("portfolio.series_portfolio_actual"),
@@ -310,12 +340,7 @@ export default function Risk() {
               {/* A single name still gets its 1×1 grid, as Plotly draws it:
                   the card is where a reader looks for the answer. */}
               {Object.keys(data.correlation).length > 0 ? (
-                <Card title={t("portfolio.return_correlation")}>
-                  <Heatmap
-                    matrix={data.correlation}
-                    format={(value) => decimal(lang, value) ?? ""}
-                  />
-                </Card>
+                <CorrelationCard data={data} />
               ) : null}
             </>
           );

@@ -8,7 +8,7 @@
  * API was built to make impossible.
  */
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 // The mark the Streamlit app and the landing already draw (`web/assets/`),
 // imported rather than copied into this app: two files would be one logo only
 // until somebody changed one of them. Vite hashes it into the build and emits
@@ -21,12 +21,12 @@ import { Search } from "./Search";
 import { ProfilePrompt } from "./ProfilePrompt";
 import { Tour } from "./Tour";
 import { Link, useRoute } from "./router";
-import { BOTTOM, sections } from "./pages";
+import { BOTTOM, PAGES, sections } from "./pages";
 import "./shell.css";
 import { isTransient } from "./api";
 import { Icon } from "./Icon";
 import { GUEST_CHROME, SignIn } from "./guest";
-import { useGuest } from "./session";
+import { useBank, useGuest } from "./session";
 import type { Query } from "./useApi";
 import { useStaleSince } from "./freshness";
 import { useActivity } from "./activity";
@@ -52,6 +52,10 @@ function storedFold(): boolean {
   }
 }
 
+/** How long the peeked rail takes to fold away — the `.ag-nav` clip-path
+ *  transition under `[data-nav="peek-out"]` in styles.css. */
+const PEEK_OUT_MS = 160;
+
 function Nav() {
   const t = useT();
   const { page } = useRoute();
@@ -62,8 +66,27 @@ function Nav() {
   const [more, setMore] = useState(false);
   useEffect(() => setMore(false), [page]);
 
+  // Folded, a pointer resting on the rail unfolds it over the page — labels and
+  // all — and leaving folds it back. Over, not beside: the grid column keeps
+  // its icon width, so the page never reflows under a cursor that was only
+  // passing through. The fold control is what makes it stay.
+  // "out" is the fold back: the rail keeps its open width while the reveal
+  // runs in reverse (`PEEK_OUT_MS`, styles.css), then drops to the column.
+  const [peek, setPeek] = useState<"off" | "on" | "out">("off");
+  // A rail folded by its own button is still under the pointer that pressed
+  // it; peeking straight back open would make the press look ignored. Held off
+  // until the pointer leaves.
+  const held = useRef(false);
+  const timer = useRef<number | undefined>(undefined);
+  const peekRef = useRef(peek);
+  peekRef.current = peek;
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
   const fold = useCallback((next: boolean) => {
     setFolded(next);
+    window.clearTimeout(timer.current);
+    setPeek("off");
+    held.current = next;
     try {
       window.localStorage.setItem(FOLDED, next ? "1" : "0");
     } catch {
@@ -72,19 +95,56 @@ function Nav() {
     }
   }, []);
 
+  const enter = useCallback(() => {
+    // Touch screens fire a synthetic enter on every tap; only a real hover
+    // pointer peeks. The phone bar never does either way (see styles.css).
+    if (held.current || !window.matchMedia?.("(hover: hover)").matches) return;
+    window.clearTimeout(timer.current);
+    // Back in while it is still folding away: reopen from where it is (the
+    // transition retargets) rather than waiting out the delay again.
+    if (peekRef.current === "out") return setPeek("on");
+    // A beat before opening, so a cursor crossing to the page's left edge
+    // does not flash the rail open on its way past.
+    timer.current = window.setTimeout(() => setPeek("on"), 120);
+  }, []);
+
+  const leave = useCallback(() => {
+    held.current = false;
+    window.clearTimeout(timer.current);
+    // Reduced motion has no fold-away to wait out (styles.css drops it).
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (peekRef.current !== "on" || still) return setPeek("off");
+    setPeek("out");
+    timer.current = window.setTimeout(() => setPeek("off"), PEEK_OUT_MS);
+  }, []);
+
   // The rail's width is the shell's grid column, not the rail's own property,
   // so the state has to reach an ancestor. The document element rather than a
   // class on `.ag-shell`, which `Layout` renders and this component does not.
+  // "peek" keeps the folded column and draws the open rail over it.
   useEffect(() => {
-    document.documentElement.dataset.nav = folded ? "folded" : "open";
-  }, [folded]);
+    document.documentElement.dataset.nav = !folded
+      ? "open"
+      : peek === "on"
+        ? "peek"
+        : peek === "out"
+          ? "peek-out"
+          : "folded";
+  }, [folded, peek]);
 
   const label = t(folded ? "nav.expand" : "nav.collapse");
   // Grouped under the Streamlit menu's headers (`stocks.navigation.sections`):
-  // Home on its own, then Portfolio, Market and Account.
-  const groups = sections();
+  // Home on its own, then Portfolio, Market and Account. Bank joins the
+  // Account group only for a reader `/me` says is on its allowlist — for
+  // everyone else the page stays reachable by URL and absent from the rail.
+  const groups = sections(PAGES, useBank() ? ["bank"] : []);
   return (
-    <nav className="ag-nav" aria-label={t("nav.sections")}>
+    <nav
+      className="ag-nav"
+      aria-label={t("nav.sections")}
+      onMouseEnter={folded ? enter : undefined}
+      onMouseLeave={folded ? leave : undefined}
+    >
       {/* The brand, and the control that folds the rail under it. Neither
           belongs on a phone, where the rail is the bottom tab bar and the
           page header already carries the mark — `ag-nav-brand` is hidden
@@ -124,7 +184,7 @@ function Nav() {
                 .join(" ")}
               // Folded, the glyph is all there is: without this the rail
               // becomes nine unnamed icons for a pointer as well as a reader.
-              title={folded ? t(entry.label) : undefined}
+              title={folded && peek === "off" ? t(entry.label) : undefined}
               // The label is hidden on a phone's bar, and a hidden label names
               // nothing: this is what a reader hears there.
               aria-label={t(entry.label)}

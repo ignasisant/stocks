@@ -16,7 +16,7 @@ import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import type { BrokerCost, Fees as FeesData } from "./api";
 import { brokerName, decimal, moneyIn, percent } from "./format";
-import { Caption, Card, Empty, Figure, Kpis, Signed, Table } from "./ui";
+import { Caption, Card, Empty, Figure, Hero, ShareBar, Signed, Table } from "./ui";
 import type { Column } from "./ui";
 
 export default function Fees() {
@@ -44,6 +44,11 @@ export default function Fees() {
         // column is a column of noise.
         const anyOther = fees.brokers.some((broker) => broker.other_fees !== 0);
         const measured = fees.spread_measured;
+        const costScale = Math.max(
+          0,
+          ...fees.brokers.map((row) => Math.abs(row.cost_pct ?? 0)),
+        );
+        const trades = fees.brokers.reduce((sum, row) => sum + row.trades, 0);
 
         const columns: Column<BrokerCost>[] = [
           {
@@ -117,8 +122,20 @@ export default function Fees() {
             key: "cost_pct",
             label: t("portfolio.col_cost_pct"),
             sort: (row) => row.cost_pct,
+            // The one column that compares brokers fairly, so it gets the bar:
+            // centred on zero, a broker that beat the mid runs left in green.
             cell: (row) => (
-              <Figure value={percent(lang, row.cost_pct, { digits: 2 })} />
+              <ShareBar
+                signed
+                share={
+                  row.cost_pct === null || !costScale ? null : row.cost_pct / costScale
+                }
+              >
+                <Signed
+                  value={row.cost_pct === null ? null : -row.cost_pct}
+                  text={percent(lang, row.cost_pct, { digits: 2 })}
+                />
+              </ShareBar>
             ),
           },
         ];
@@ -128,52 +145,82 @@ export default function Fees() {
         const outside = fees.brokers.reduce((sum, row) => sum + row.outside_range, 0);
 
         return (
-          <Card title={t("portfolio.fees_title")}>
-            <Kpis
-              items={[
-                {
-                  label: t("portfolio.fees_explicit"),
-                  value: money(fees.explicit, { digits: 2 }),
-                  help: t("portfolio.fees_explicit_help"),
-                },
-                {
-                  label: t("portfolio.fees_spread"),
-                  value: money(fees.spread, { digits: 2 }),
-                  help: t("portfolio.fees_spread_help"),
-                },
-                {
-                  // "Fees plus estimated spread over volume" is not what an
-                  // unmeasured pass computed — that figure is the commission
-                  // alone — so it reads n/a rather than understating the cost.
-                  label: t("portfolio.fees_pct_volume"),
-                  value: measured ? percent(lang, fees.cost_pct, { digits: 2 }) : null,
-                  help: t("portfolio.fees_pct_volume_help"),
-                },
-              ]}
-            />
-            <Table
-              columns={columns}
-              rows={fees.brokers}
-              rowKey={(row) => row.broker}
-              initial={{ key: "volume", desc: true }}
-            />
-            {measured && skipped ? (
-              <Caption>
-                {t("portfolio.fees_spread_coverage", {
-                  measured: measuredTrades,
-                  total: measuredTrades + skipped,
-                })}
-              </Caption>
-            ) : null}
-            {measured && outside > 0.005 ? (
-              <Caption>
-                {t("portfolio.fees_outside_range", {
-                  val: money(outside, { digits: 2 }) ?? "",
-                })}
-              </Caption>
-            ) : null}
-            <Caption>{t("portfolio.fees_caption")}</Caption>
-          </Card>
+          <>
+            <Card>
+              {/* What trading cost, all in, leads — commission plus the spread
+                paid against the day's mid. Unmeasured, that sum would be the
+                commission dressed as the whole bill, so the commission leads
+                under its own name and the spread reads n/a. */}
+              <Hero
+                eyebrow={
+                  measured ? t("portfolio.fees_hero") : t("portfolio.fees_explicit")
+                }
+                value={money(
+                  measured ? fees.explicit + (fees.spread ?? 0) : fees.explicit,
+                  {
+                    digits: 2,
+                  },
+                )}
+                sub={
+                  measured
+                    ? t("portfolio.fees_hero_sub", {
+                        pct: percent(lang, fees.cost_pct, { digits: 2 }) ?? "",
+                        volume: money(fees.volume) ?? "",
+                      })
+                    : t("portfolio.fees_hero_sub_unmeasured", {
+                        volume: money(fees.volume) ?? "",
+                      })
+                }
+                facts={[
+                  {
+                    label: t("portfolio.fees_explicit"),
+                    value: money(fees.explicit, { digits: 2 }),
+                    help: t("portfolio.fees_explicit_help"),
+                  },
+                  {
+                    label: t("portfolio.fees_spread"),
+                    // Signed: a negative spread is executions that beat the mid.
+                    value: (
+                      <Signed
+                        value={fees.spread === null ? null : -fees.spread}
+                        text={money(fees.spread, { digits: 2 })}
+                      />
+                    ),
+                    note:
+                      fees.spread !== null && fees.spread < 0
+                        ? t("portfolio.fees_spread_beat")
+                        : null,
+                    help: t("portfolio.fees_spread_help"),
+                  },
+                  { label: t("portfolio.col_trades"), value: String(trades) },
+                ]}
+              />
+            </Card>
+            <Card title={t("portfolio.fees_title")}>
+              <Table
+                columns={columns}
+                rows={fees.brokers}
+                rowKey={(row) => row.broker}
+                initial={{ key: "volume", desc: true }}
+              />
+              {measured && skipped ? (
+                <Caption>
+                  {t("portfolio.fees_spread_coverage", {
+                    measured: measuredTrades,
+                    total: measuredTrades + skipped,
+                  })}
+                </Caption>
+              ) : null}
+              {measured && outside > 0.005 ? (
+                <Caption>
+                  {t("portfolio.fees_outside_range", {
+                    val: money(outside, { digits: 2 }) ?? "",
+                  })}
+                </Caption>
+              ) : null}
+              <Caption>{t("portfolio.fees_caption")}</Caption>
+            </Card>
+          </>
         );
       }}
     </Loaded>

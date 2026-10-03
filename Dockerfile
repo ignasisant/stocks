@@ -45,16 +45,35 @@ RUN /app/.venv/bin/python -c "import tiktoken; tiktoken.get_encoding('o200k_base
 # save_pretrained writes what the model actually needs and nothing else, and the
 # hub cache goes with the layer that created it.
 #
+# Quantized to int8 here, at build time: the float32 table is +169MB resident
+# (+286MB while loading) on a 1GiB instance, and the first chat turn of every
+# process loads it — on Cloud Run's in-memory filesystem, the likeliest trigger
+# of the chat OOMs. The int8 table is +74MB (+93MB peak), its vectors sit at
+# cosine 0.998 from the float ones (so the indexes already written keep
+# matching), and the ranking on the test questions is unchanged. Quantizing at
+# load time instead peaks higher than not quantizing at all.
+#
 # HF_HUB_OFFLINE stays on so a missing directory fails loudly at load instead of
 # quietly reaching for the network on a revision that has no egress.
-ENV STOCKS_EMBED_MODEL=/home/appuser/models/potion-base-32M \
+ENV STOCKS_EMBED_MODEL=/home/appuser/models/potion-base-32M-int8 \
     HF_HUB_DISABLE_TELEMETRY=1 \
     HF_HUB_OFFLINE=1
 RUN HF_HUB_OFFLINE=0 HF_HOME=/tmp/hf /app/.venv/bin/python -c \
     "from model2vec import StaticModel; \
-     StaticModel.from_pretrained('minishlab/potion-base-32M') \
-         .save_pretrained('/home/appuser/models/potion-base-32M')" \
+     StaticModel.from_pretrained('minishlab/potion-base-32M', quantize_to='int8') \
+         .save_pretrained('/home/appuser/models/potion-base-32M-int8')" \
     && rm -rf /tmp/hf
+
+# glibc's allocator, tamed. The API serves on ~40 AnyIO worker threads plus
+# per-request download pools, and by default glibc gives busy threads arenas of
+# their own and raises its mmap threshold as large frames come and go — so
+# freed pandas buffers stay mapped and RSS climbs in steps that never come
+# down until the 1GiB instance is killed. Measured on this base image (1 CPU,
+# 40 threads of pandas work): +250-300MB retained and still climbing by
+# default, +30-50MB and flat with a fixed 128KiB mmap threshold (big buffers go
+# straight back to the kernel on free) and two arenas.
+ENV MALLOC_MMAP_THRESHOLD_=131072 \
+    MALLOC_ARENA_MAX=2
 
 COPY --chown=appuser:appuser . .
 # Editable install of the project itself (default): stocks.config.PROJECT_ROOT

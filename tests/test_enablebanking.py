@@ -136,8 +136,10 @@ def test_escaped_newlines_in_the_env_pem_are_restored(monkeypatch, keypair):
 
 
 def test_missing_credentials_raise_rather_than_sign_nothing(monkeypatch):
-    monkeypatch.setenv("EB_APPLICATION_ID", "")
-    monkeypatch.setenv("EB_PRIVATE_KEY", "")
+    # Blanking the environment is not enough: `secret()` falls through to
+    # st.secrets, so on a machine whose secrets.toml has a real application in
+    # it this test would read that one and pass or fail by accident.
+    monkeypatch.setattr(eb, "secret", lambda *a, **k: "")
     eb.reset_token()
     assert not eb.configured()
     with pytest.raises(eb.BankError):
@@ -307,3 +309,14 @@ def test_tx_date_prefers_booking_then_value_then_transaction():
     assert eb.tx_date({"value_date": "2026-03-02"}) == "2026-03-02"
     assert eb.tx_date({"transaction_date": "2026-03-03T10:00:00Z"}) == "2026-03-03"
     assert eb.tx_date({}) == ""
+
+
+def test_an_error_with_only_a_message_still_says_what_went_wrong(calls):
+    """Enable Banking answers a call made before activation with
+    {"code": 403, "message": "Application is not active"} — no
+    error_description. Dropping it left the one message that explains the
+    setup showing as a blank "403 : Forbidden"."""
+    calls(http_error(403, {"code": 403, "message": "Application is not active"}))
+    with pytest.raises(eb.BankError) as caught:
+        eb.aspsps("ES")
+    assert "Application is not active" in str(caught.value)

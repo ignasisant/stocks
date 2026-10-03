@@ -37,7 +37,7 @@ from pydantic import BaseModel, Field
 from stocks import accounts, obs
 from stocks.accounts import UserPaths
 from stocks.api.deps import Account, Writer
-from stocks.chat import guide_ai
+from stocks.chat import engine, guide_ai
 from stocks.web import guide, onboarding
 from stocks.web.i18n import translate
 
@@ -297,6 +297,7 @@ def _narrate(
         save=lambda p: accounts.save_prefs(paths.prefs, p),
         account_facts=guide_ai.facts(prefs, paths, signed_in=True),
         session_keys=held,
+        memories=engine.user_memory(prefs, paths.chat)[0],
     )
     prefs[guide_ai.PREF_NARRATED] = True
     accounts.save_prefs(paths.prefs, prefs)

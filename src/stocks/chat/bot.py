@@ -12,7 +12,9 @@ flow: the page writes a pending tg_link_code into the user's prefs, this job
 matches it and writes telegram_chat_id back. Answers come from the shared
 chat engine (stocks/chat/engine.py) — same persona, portfolio context,
 skills, web search, provider resolution and free-tier quota as the web panel,
-appended to the same chat.json thread.
+appended to the same chat.json thread — and the same memories
+(chat/learnings.py): what a message changes in them is said under the answer,
+where the drawer would show its memory line.
 
 Failure discipline: every update is deleted from the queue whether it
 succeeded or not (a poison update must never wedge the queue); its error goes
@@ -27,13 +29,19 @@ import json
 import time
 
 from stocks import obs, storage
-from stocks.chat import engine
+from stocks.chat import daily, engine, learnings
 from stocks.config import DATA_DIR, PROJECT_ROOT
 from stocks.notify import fanout, telegram
 from stocks.web import ratelimit
 
 QUEUE_PREFIX = "data/tg_updates/"
 LINK_TTL = 600  # seconds a pending link code stays valid — matches profile.py
+# How long an answer waits for what its message is teaching the memory
+# (engine.learn) — far past the panel's LEARN_GRACE. A sent message cannot be
+# edited to add the line later, and this process exits once the queue is
+# drained, taking a read still out with it; a reply that already took a
+# minute can take a few more seconds.
+LEARN_WAIT = 30.0
 
 # Message parts that mean "the sender meant to say something we cannot read".
 # A voice note used to be dropped in silence: no text, so no answer, and the
@@ -44,6 +52,7 @@ LINK_TTL = 600  # seconds a pending link code stays valid — matches profile.py
 # own digests.
 _UNREADABLE = ("voice", "audio", "video_note", "video", "photo", "document",
                "sticker", "animation")
+_MEMORY_OPS = ("added", "updated", "deleted")
 
 
 def queue_key(update_id: int) -> str:
@@ -110,6 +119,31 @@ def _send(text: str, chat_id, dry_run: bool) -> None:
         print(f"[dry-run] -> {chat_id}: {text[:200]}")
         return
     telegram.send_message(text, chat_id, parse_mode=None)
+
+
+def _memory_note(reply: engine.Reply, lang: str) -> str:
+    """What the turn changed in the saved memories, as lines to put under
+    the reply — the drawer's memory line, with the way to undo it in words
+    since a Telegram message has no button for it. Empty for a reply no
+    model wrote and no wall refused (a "remember that…" on its own): that
+    note is the app saying what it did already."""
+    from stocks.web.i18n import translate
+
+    changes = [c for c in reply.learned if c.get("op") in _MEMORY_OPS]
+    if not changes or not (reply.provider_id or reply.error):
+        return ""
+    lines = [translate(f"notify.chat_memory_{_said(c)}", lang,
+                       text=c.get("text", ""), before=c.get("before", ""))
+             for c in changes]
+    return "\n\n" + "\n".join([*lines, translate("notify.chat_memory_undo", lang)])
+
+
+def _said(change: dict) -> str:
+    """The note a memory change is told with: a routine added is told as
+    the daily card it now rides on."""
+    if change["op"] == "added" and change.get("kind") == "routine":
+        return "routine"
+    return change["op"]
 
 
 def _typing(chat_id) -> None:
@@ -221,8 +255,6 @@ def handle_update(update: dict, users: list[fanout.NotifyUser],
     if dry_run:
         return f"dry: would answer {user.label}: {text[:80]}"
 
-    # The bare checkout has no chat.json — pull the account's thread down
-    # once per run before the engine appends to it.
     # The API answers 429 after CHAT_MAX_TURNS in CHAT_WINDOW_S; this drain is
     # the bot's only process, so the same window here bounds one account's
     # spend per run — BYOK money as much as the shared pot — instead of
@@ -232,21 +264,34 @@ def handle_update(update: dict, users: list[fanout.NotifyUser],
                         seconds=ratelimit.retry_after(f"telegram::{user.label}")),
               chat_id, dry_run)
         return f"{user.label}: rate limited"
+    # The bare checkout has no chat.json — pull the account's thread down
+    # once per run before the engine appends to it. Its memories too: the
+    # turn reads them into the prompt, and an empty list here saved back
+    # after a "remember that…" would replace the bucket's whole list with
+    # that one line. The same goes for the conversation index, which a turn
+    # grows and persists — a fresh one would replace every earlier
+    # conversation the bucket's index holds. And the daily card, which the
+    # prompt quotes (`engine.card_block`).
     if user.label not in restored:
         restored.add(user.label)
         storage.restore(user.chat_path)
+        storage.restore(learnings.path_for(user.chat_path))
+        storage.restore(auth.memory_path(user.chat_path))
+        storage.restore(daily.card_path(user.chat_path))
     _typing(chat_id)
     reply = engine.answer(
         prefs=user.prefs, prefs_path=user.prefs_path, chat_path=user.chat_path,
         watchlist=user.watchlist, db=user.db, message=text, lang=user.lang,
+        learn_grace=LEARN_WAIT,
     )
+    memo = _memory_note(reply, lang)
     if reply.error:
         _send(translate(reply.error, lang,
                         cap=engine.free_daily_cap(user.prefs),
                         full=engine.free_daily_cap(),
-                        provider=""), chat_id, dry_run)
+                        provider="") + memo, chat_id, dry_run)
         return f"{user.label}: {reply.error}"
-    _send(reply.text, chat_id, dry_run)
+    _send(reply.text + memo, chat_id, dry_run)
     return f"answered {user.label} via {reply.provider_id}"
 
 

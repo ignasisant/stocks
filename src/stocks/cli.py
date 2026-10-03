@@ -1406,11 +1406,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("ticker")
     p_add.add_argument(
         "action",
-        choices=sorted({"buy", "sell", "dividend", "fee", "split",
+        choices=sorted({"buy", "sell", "dividend", "fee", "split", "capital",
                         "transfer_in", "transfer_out"}))
     p_add.add_argument("--qty", type=float, default=0.0, help="shares (split: ratio)")
     p_add.add_argument("--price", type=float, default=0.0,
-                       help="per-share native ccy (dividend: gross total)")
+                       help="per-share native ccy (dividend, capital: gross total)")
     p_add.add_argument("--currency", default="USD")
     p_add.add_argument("--fee", type=float, default=0.0,
                        help="commission (dividend: tax withheld)")

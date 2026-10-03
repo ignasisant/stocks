@@ -23,6 +23,7 @@ _GROSS = {
     "buy": lambda t: t.quantity * t.price,
     "sell": lambda t: t.quantity * t.price,
     "dividend": lambda t: t.price,
+    "capital": lambda t: t.price,
     "fee": lambda t: t.fee,
 }
 

@@ -86,6 +86,53 @@ def test_refuses_foreign_shape():
     assert "Ticker column" in result.skipped[0]["reason"]
 
 
+# DEGIRO's other two CSVs, which people upload by mistake. The Spanish
+# Portfolio.csv is the 7-column shape seen in production.
+PORTFOLIO_ES = (
+    "Producto,Symbol/ISIN,Cantidad,Precio de cierre,Valor local,,Valor en EUR\n"
+    'APPLE INC. - COMMON ST,US0378331005,10,"170,00",USD,"1700,00","1575,30"\n'
+)
+PORTFOLIO_EN = (
+    "Product,Symbol/ISIN,Amount,Closing,Local value,,Value in EUR\n"
+    "APPLE INC. - COMMON ST,US0378331005,10,170.00,USD,1700.00,1575.30\n"
+)
+ACCOUNT_ES = (
+    "Fecha,Hora,Fecha valor,Producto,ISIN,Descripción,Tipo,Variación,,Saldo,,"
+    "ID Orden\n"
+    '03-01-2024,14:30,03-01-2024,APPLE INC.,US0378331005,Compra 10 Apple,,USD,'
+    '"-1250,00",EUR,"500,00",a1\n'
+)
+ACCOUNT_EN = (
+    "Date,Time,Value date,Product,ISIN,Description,FX,Change,,Balance,,Order Id\n"
+    "03-01-2024,14:30,03-01-2024,APPLE INC.,US0378331005,Buy 10 Apple,,USD,"
+    "-1250.00,EUR,500.00,a1\n"
+)
+
+
+def test_portfolio_export_is_refused_by_name():
+    for text in (PORTFOLIO_ES, PORTFOLIO_EN):
+        result = degiro.parse_csv(text)
+        assert result.transactions == []
+        assert [s["reason"] for s in result.skipped] == [degiro.WRONG_PORTFOLIO]
+
+
+def test_account_export_is_refused_by_name():
+    for text in (ACCOUNT_ES, ACCOUNT_EN):
+        result = degiro.parse_csv(text)
+        assert result.transactions == []
+        assert [s["reason"] for s in result.skipped] == [degiro.WRONG_ACCOUNT]
+
+
+def test_wrong_export_reads_in_the_readers_language():
+    from stocks.web import tx_text
+
+    for reason in (degiro.WRONG_PORTFOLIO, degiro.WRONG_ACCOUNT):
+        stem, manual = tx_text.skip_reason(reason)
+        assert stem is not None and manual
+    assert "Transacciones" in tx_text.skip_text(degiro.WRONG_PORTFOLIO, "es")
+    assert "Transactions" in tx_text.skip_text(degiro.WRONG_ACCOUNT, "en")
+
+
 def test_number_locale_heuristics():
     assert degiro._num("1.234,56") == 1234.56
     assert degiro._num("1,234.56") == 1234.56

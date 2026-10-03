@@ -177,6 +177,46 @@ def mentioned(
     return out[:MAX_TICKERS]
 
 
+# Where a sentence starts: its first word is capitalized by grammar, not
+# because it names anything ("Quiero…", "Explícame…").
+_SENTENCE_START_RE = re.compile(r"(?:^|[.!?¿¡:;\n][\s\"'«(]*)(?=\S)")
+_CALENDAR = {
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+    "Sunday", "January", "February", "March", "April", "May", "June", "July",
+    "August", "September", "October", "November", "December",
+}
+
+
+def named(message: str) -> list[str]:
+    """What `message` names, as typed — no lookup, no network.
+
+    Ticker-shaped tokens (a crypto pair also as its coin: "SOL-EUR" is
+    "SOL" too), and capitalized runs that do not merely start a sentence:
+    "¿qué opinabas de Golar LNG?" names "Golar LNG" and "LNG", "Quiero
+    vender" names nothing. The earlier-conversations recall (chat/memory.py
+    `about`) searches for these; it is `mentioned` without the guesses that
+    are fine for a quote and wrong for a memory.
+    """
+    out: list[str] = []
+    for tok in _TICKER_RE.findall(message):
+        # One letter is a word in a memory ("the S of S&P"), whatever it is
+        # on an exchange.
+        if tok in NOT_TICKERS or len(tok) < 2:
+            continue
+        out.append(tok)
+        base = tok.split("-")[0]
+        if base != tok and len(base) >= 2 and base not in NOT_TICKERS:
+            out.append(base)
+    starts = {m.end() for m in _SENTENCE_START_RE.finditer(message)}
+    for m in _NAME_RE.finditer(message):
+        cand = m.group(0).rstrip(".")
+        if (m.start() in starts or cand in _NOT_NAMES or cand in _CALENDAR
+                or cand.upper() in NOT_TICKERS):
+            continue
+        out.append(cand)
+    return list(dict.fromkeys(out))
+
+
 # ----------------------------------------------------------------- quotes
 
 

@@ -70,6 +70,32 @@ export type Activity = {
   content: { messages?: A2uiMessage[] } & Record<string, unknown>;
 };
 
+/**
+ * One change a turn made to the saved memories (`chat/learnings.py`): what the
+ * "Memory updated" line names, and what its undo puts back. `added` is undone
+ * by deleting `id`; `deleted` by saving `text` again; `updated` by writing
+ * `before` back over it.
+ */
+export type Learned = {
+  op: "added" | "deleted" | "updated";
+  id: string;
+  text: string;
+  kind: string;
+  /** Learned from what the reader said, without being asked to. */
+  auto?: boolean;
+  /** What an update replaced. */
+  before?: string;
+  /** Days a question was asked on before it became a routine. */
+  repeated?: number;
+};
+
+/**
+ * An earlier conversation quoted onto the question an answer was given, as
+ * the "Based on N conversations" line lists it. `thread` opens it; `when` is
+ * an ISO time.
+ */
+export type Recalled = { thread: string; title: string; when: string; snippet: string };
+
 /** One stored turn, as the API returns it. */
 type Message = {
   role: string;
@@ -94,6 +120,10 @@ type Message = {
   activities?: Activity[];
   /** The bull and bear cases argued before the answer was written. */
   debate?: DebateSide[];
+  /** What the turn changed in the saved memories. */
+  learned?: Learned[];
+  /** The earlier conversations the answer was handed. */
+  recalled?: Recalled[];
 };
 
 /**
@@ -172,6 +202,8 @@ export type Conversation = {
   updated: string;
   messages: number;
   active: boolean;
+  /** The day of a daily card's thread, "" for any other conversation. */
+  daily?: string;
 };
 
 export type Thread = { id: string; title: string; messages: Message[] };
@@ -245,6 +277,36 @@ export type ChatState = {
    * instead of offering a Remember box the server would refuse.
    */
   key_storage?: boolean;
+  /** Saved memories ride in every prompt, and "remember that…" saves one. */
+  memory?: boolean;
+  /** A question that names something brings earlier conversations about it. */
+  recall?: boolean;
+};
+
+/**
+ * One saved memory, as the memory screen lists it. `source` is where it came
+ * from: a conversation that still exists ("chat", `thread` opens it), one
+ * since deleted ("deleted" — the memory outlives it), or typed by hand.
+ */
+export type Memory = {
+  id: string;
+  text: string;
+  kind: string;
+  tickers: string[];
+  source: "chat" | "deleted" | "manual";
+  thread: string | null;
+  thread_title: string | null;
+  created: string;
+  updated: string;
+};
+
+export type Memories = {
+  memories: Memory[];
+  enabled: boolean;
+  recall: boolean;
+  max: number;
+  max_chars: number;
+  kinds: string[];
 };
 
 /** One ledger row as the preview shows it, and as the commit sends it back. */
@@ -310,6 +372,8 @@ export type SettingsPatch = {
   provider?: string;
   /** Belongs to a backend, so it travels with the provider that serves it. */
   model?: string;
+  memory?: boolean;
+  recall?: boolean;
 };
 
 /** Sent once a provider has actually started answering — never before. */
@@ -339,4 +403,8 @@ export type Done = {
   proposal?: Proposal;
   /** The cases argued before the answer. */
   debate?: DebateSide[];
+  /** What the run changed in the saved memories — on a refusal too. */
+  learned?: Learned[];
+  /** The earlier conversations the answer was handed. */
+  recalled?: Recalled[];
 };

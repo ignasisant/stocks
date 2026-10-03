@@ -53,6 +53,7 @@ const ACTIONS = new Set([
   "dividend",
   "fee",
   "split",
+  "capital",
   "transfer_in",
   "transfer_out",
 ]);
@@ -71,6 +72,7 @@ function amountOf(tx: Transaction): number | null {
     case "sell":
       return tx.quantity * tx.price - tx.fee;
     case "dividend":
+    case "capital":
       return tx.price;
     case "fee":
       return tx.fee;

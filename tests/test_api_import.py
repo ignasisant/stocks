@@ -203,7 +203,7 @@ REVOLUT_SKIPS = (
     "Date,Ticker,Type,Quantity,Price per share,Total Amount,Currency,FX Rate\n"
     "2024-01-02T14:30:00.000Z,AAPL,BUY - MARKET,5,$130.15,$650.75,USD,1.05\n"
     "2024-01-01T00:00:00.000Z,,CASH TOP-UP,,,\"$1,000.00\",USD,\n"
-    "2024-05-25T00:00:00.000Z,AAPL,RETURN OF CAPITAL,,,$12.00,USD,\n"
+    "2024-05-25T00:00:00.000Z,AAPL,DIVIDEND TAX (CORRECTION),,,$1.20,USD,\n"
 )
 
 
@@ -218,10 +218,11 @@ def test_a_skip_names_its_reason_for_the_catalog(client, account, signed_in):
     by_type = {s["type"]: s for s in payload["skipped"]}
     assert by_type["CASH TOP-UP"]["reason_key"] == "import.skip_cash"
     assert by_type["CASH TOP-UP"]["manual"] is False
-    assert by_type["RETURN OF CAPITAL"]["reason_key"] == "import.skip_capital"
-    assert by_type["RETURN OF CAPITAL"]["manual"] is True
+    correction = by_type["DIVIDEND TAX (CORRECTION)"]
+    assert correction["reason_key"] == "import.skip_div_tax"
+    assert correction["manual"] is True
     # The parser's own fields ride along untouched.
-    assert by_type["RETURN OF CAPITAL"]["amount"] == 12.0
+    assert correction["amount"] == 1.2
 
 
 def quoted(monkeypatch, prices: dict[str, tuple[float, str]]) -> list:

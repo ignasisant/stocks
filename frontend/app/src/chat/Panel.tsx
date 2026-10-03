@@ -27,6 +27,7 @@ import { Attachment } from "./Attachment";
 import { Composer } from "./Composer";
 import { Empty } from "./Empty";
 import { Glyph, ProviderMark } from "./icons";
+import { MemoryView } from "./Memory";
 import { Settings } from "./Settings";
 import { Setup, needsSetup } from "./Setup";
 import { Threads } from "./Threads";
@@ -112,6 +113,10 @@ export default function Panel({
   chat,
   connect = null,
   onConnectTaken,
+  memory = false,
+  onMemoryTaken,
+  thread = null,
+  onThreadTaken,
   onClose,
   onPark,
 }: {
@@ -119,6 +124,12 @@ export default function Panel({
   /** Back from a provider's sign-in: the settings view finishes it. */
   connect?: ConnectAsk | null;
   onConnectTaken?: () => void;
+  /** Sent here to the saved memories (`?chat=memory`, the profile's link). */
+  memory?: boolean;
+  onMemoryTaken?: () => void;
+  /** Sent here to one conversation (the daily card's "Ask"). */
+  thread?: string | null;
+  onThreadTaken?: () => void;
   onClose: () => void;
   /**
    * Step aside for a page the walkthrough sent the reader to, on a phone —
@@ -128,12 +139,32 @@ export default function Panel({
   onPark?: () => void;
 }) {
   const t = useT();
-  const [view, setView] = useState<"thread" | "threads" | "settings">("thread");
+  const [view, setView] = useState<"thread" | "threads" | "settings" | "memory">(
+    "thread",
+  );
   // The reader left from the key section and comes back to it: the settings
   // view is where the sign-in is finished and where its outcome is said.
   useEffect(() => {
     if (connect) setView("settings");
   }, [connect]);
+  useEffect(() => {
+    if (!memory) return;
+    setView("memory");
+    onMemoryTaken?.();
+  }, [memory]);
+  // An earlier conversation named under an answer, or the one a memory was
+  // said in: the thread view, on that thread.
+  const openThread = (cid: string) => {
+    setView("thread");
+    void chat.open(cid);
+  };
+  // Not before the drawer's own opening read has landed: it would put the
+  // active thread back on top of the one asked for.
+  useEffect(() => {
+    if (!thread || !chat.ready) return;
+    openThread(thread);
+    onThreadTaken?.();
+  }, [thread, chat.ready]);
   // Opening the drawer on the guide's own thread is the moment a capability
   // may have been switched on somewhere the guide was not looking — an import
   // in another tab, a key saved in settings. Catch the thread up then, once
@@ -259,8 +290,10 @@ export default function Panel({
           className="ag-chat-icon"
           title={t("chat.settings_short")}
           aria-label={t("chat.settings_short")}
-          aria-pressed={view === "settings"}
-          onClick={() => setView(view === "settings" ? "thread" : "settings")}
+          aria-pressed={view === "settings" || view === "memory"}
+          onClick={() =>
+            setView(view === "settings" || view === "memory" ? "thread" : "settings")
+          }
         >
           <Glyph name="settings" size={18} />
         </button>
@@ -308,10 +341,7 @@ export default function Panel({
         <Threads
           threads={chat.threads ?? []}
           onBack={() => setView("thread")}
-          onOpen={(cid) => {
-            setView("thread");
-            void chat.open(cid);
-          }}
+          onOpen={openThread}
           onRename={(cid, title) => void chat.rename(cid, title)}
           onDelete={(cid) => void chat.remove(cid)}
         />
@@ -330,7 +360,12 @@ export default function Panel({
           onDeleteThread={(cid) => void chat.remove(cid)}
           connect={connect}
           onConnectTaken={onConnectTaken}
+          onMemory={() => setView("memory")}
         />
+      )}
+
+      {state && view === "memory" && (
+        <MemoryView onBack={() => setView("settings")} onOpen={openThread} />
       )}
 
       {state && view === "thread" && (
@@ -396,6 +431,8 @@ export default function Panel({
                       onDecide={chat.decide}
                       onLeave={onPark ?? onClose}
                       onPress={(activity, action) => chat.press(i, activity, action)}
+                      onOpenThread={openThread}
+                      onMemory={() => setView("memory")}
                     />
                   ))
                 ) : chat.opening ? (

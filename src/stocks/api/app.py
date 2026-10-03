@@ -21,13 +21,14 @@ from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from yfinance.exceptions import YFRateLimitError
 
-from stocks import accounts, obs
+from stocks import accounts, memstat, obs
 from stocks.api import cache, guest, guestbook, security, warm
 from stocks.api.routes import (
     account,
     bank,
     chat,
     chat_attach,
+    chat_memory,
     chat_voice,
     comparables,
     design,
@@ -159,6 +160,51 @@ async def _bind_user(request: Request, call_next):
         return await call_next(request)
 
 
+# ----------------------------------------------------- what filled the memory
+# The instance has 1GiB and the platform's metric says how full it is, never
+# which request filled it. A request that grows the process by more than
+# `memstat.STEP_MB` says so, by path (no query, so no account), so a
+# climb towards an OOM can be read back as the requests that made it. Requests
+# overlap, so a step is a lead, not a verdict.
+@app.middleware("http")
+async def _mem_step(request: Request, call_next):
+    before = memstat.rss_mb()
+    if before is None:  # no /proc: not Linux, nothing to measure
+        return await call_next(request)
+    response = await call_next(request)
+
+    def report() -> None:
+        after = memstat.rss_mb()
+        if after is None or after - before < memstat.STEP_MB:
+            return
+        used, limit = memstat.cgroup_mb()
+        obs.warn(
+            "mem.step",
+            path=request.url.path,
+            delta_mb=round(after - before, 1),
+            rss_mb=after,
+            cgroup_mb=used,
+            limit_mb=limit,
+        )
+
+    # A streamed answer (the chat) does its work after the headers go out,
+    # which is when `call_next` returns — so the reading waits for the body.
+    body = getattr(response, "body_iterator", None)
+    if body is None:
+        report()
+        return response
+
+    async def measured():
+        try:
+            async for chunk in body:
+                yield chunk
+        finally:
+            report()
+
+    response.body_iterator = measured()
+    return response
+
+
 # ------------------------------------------------- when the upstream says no
 # Yahoo throttles datacenter egress IPs routinely, and a plain urllib fetcher
 # dies on a dropped network. Both are ordinary weather, not a fault in this
@@ -257,6 +303,7 @@ _private.include_router(reference.router)
 _private.include_router(chat.router)
 _private.include_router(chat_attach.router)
 _private.include_router(chat_voice.router)
+_private.include_router(chat_memory.router)
 _private.include_router(onboarding.router)
 _private.include_router(notify.router)
 _private.include_router(feedback.router)

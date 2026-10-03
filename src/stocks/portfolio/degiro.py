@@ -8,7 +8,10 @@ right. English and Spanish headers are recognised; the parser refuses the
 whole file unless the distinctive columns (date, product, ISIN, quantity,
 price) are all found — a statement from another broker can never be
 half-imported by accident (a ``Ticker`` header is an explicit refusal: DEGIRO
-exports never have one).
+exports never have one). DEGIRO's two other CSVs — Portfolio.csv (today's
+holdings) and Account.csv (the cash statement) — are refused by name, saying
+which export to download instead: they are what people pick by mistake, and
+"missing column(s): date" does not tell them where to go.
 
 Shape notes this parser absorbs:
 
@@ -76,6 +79,17 @@ _COST_PREFIXES = ("transaction", "costes", "gastos")
 _COST_CONTAINS = ("autofx",)
 _REQUIRED = ("date", "product", "isin", "quantity", "price")
 
+# DEGIRO's other exports, refused by name. The wording is matched whole by
+# stocks.web.tx_text.SKIP_REASONS, which says it in the reader's language.
+WRONG_PORTFOLIO = (
+    "DEGIRO Portfolio.csv — today's holdings, no trades; export "
+    "Activity → Transactions → Export → CSV instead"
+)
+WRONG_ACCOUNT = (
+    "DEGIRO Account.csv — the cash statement, no trades; export "
+    "Activity → Transactions → Export → CSV instead"
+)
+
 
 def parse_csv(text: str) -> ParseResult:
     """Parse DEGIRO Transactions.csv text into a ParseResult (no side effects)."""
@@ -88,6 +102,9 @@ def parse_csv(text: str) -> ParseResult:
 
     if "ticker" in header:
         return _refuse("has a Ticker column — not a DEGIRO Transactions.csv")
+    wrong = _wrong_export(header)
+    if wrong:
+        return _refuse(wrong)
     idx, costs = _find_columns(header)
     missing = [k for k in _REQUIRED if k not in idx]
     if missing:
@@ -121,6 +138,21 @@ def parse_csv(text: str) -> ParseResult:
 
 def _refuse(reason: str) -> ParseResult:
     return ParseResult(skipped=[{"row": 1, "type": "header", "reason": reason}])
+
+
+def _wrong_export(header: list[str]) -> str | None:
+    """The refusal for DEGIRO's Portfolio.csv or Account.csv, else None.
+
+    Portfolio.csv is the only DEGIRO export with a combined "Symbol/ISIN"
+    column; Account.csv the only one with a running balance ("Saldo") beside
+    the change ("Variación").
+    """
+    names = set(header)
+    if "symbol/isin" in names:
+        return WRONG_PORTFOLIO
+    if names & {"balance", "saldo"} and names & {"change", "variación", "variacion"}:
+        return WRONG_ACCOUNT
+    return None
 
 
 def _find_columns(header: list[str]) -> tuple[dict[str, int], list[int]]:

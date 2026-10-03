@@ -14,8 +14,10 @@ from yfinance.exceptions import YFRateLimitError
 from stocks import obs
 from stocks.analysis.monthly import window as book_window
 from stocks.analysis.portfolio import (
+    allocation_parts,
     annualized_return,
     annualized_volatility,
+    beta,
     correlation_matrix,
     cumulative_returns,
     drawdown_span,
@@ -29,6 +31,7 @@ from stocks.analysis.portfolio import (
     positions_frame,
     priced_totals,
     project_sleeves,
+    risk_shares,
     top_n_weight,
     value_weights,
 )
@@ -37,6 +40,7 @@ from stocks.api.cache import ttl_cache
 from stocks.api.deps import Account, Base, Writer, reporting_currency
 from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
+    AllocationHolding,
     AllocationSlice,
     BrokerCost,
     Custodian,
@@ -52,6 +56,7 @@ from stocks.api.schemas import (
     ProjectionSleeve,
     Risk,
     RiskCurves,
+    RiskName,
     Summary,
     TaxAllYears,
     TaxFlag,
@@ -1227,9 +1232,10 @@ def _reporting_flags(account, jurisdiction, settings) -> list[TaxFlag]:
 
 # Median compound annual growth per sleeve when the caller names none. Stocks:
 # roughly what world equities have compounded at over the long run — never
-# the book's own history, where a good two years projected forward five is a
-# wish, not a plan. Crypto: zero, because there is no long run to read one
-# off, and the recent one would project a bubble.
+# the book's own history by default, where a good two years projected forward
+# five is a wish, not a plan (`stock_own` draws it when the reader asks).
+# Crypto: zero, because there is no long run to read one off, and the recent
+# one would project a bubble.
 _DEFAULT_GROWTH = {"stocks": 0.08, "crypto": 0.0}
 # Used only when a sleeve has no measurable volatility (too little history).
 _DEFAULT_VOL = {"stocks": 0.20, "crypto": 0.60}
@@ -1252,6 +1258,19 @@ def projection(
         float | None,
         Query(ge=-0.9, le=2.0, description="Median compound annual; default 0%."),
     ] = None,
+    stock_own: Annotated[
+        bool,
+        Query(
+            description=(
+                "Grow stocks at their own measured rate (today's holdings, up "
+                "to 2 years) instead of `stock_growth`; falls back when unmeasured."
+            )
+        ),
+    ] = False,
+    crypto_own: Annotated[
+        bool,
+        Query(description="The same for crypto, instead of `crypto_growth`."),
+    ] = False,
     crypto_share: Annotated[
         float | None,
         Query(
@@ -1288,6 +1307,10 @@ def projection(
     its own measured volatility (`basket_report` over two years, every name
     clipped to its first buy), correlated at the weekly correlation the two
     actually showed (`sleeve_stats`, `project_sleeves`).
+
+    `stock_own` / `crypto_own` swap a sleeve's chosen rate for the one its
+    current holdings compounded at over the same window — the reader's ask,
+    echoed as `own_growth` on every sleeve so the page can offer it by number.
     """
     from stocks.analysis.portfolio import Sleeve, first_owned, sleeve_stats
     from stocks.data.crypto import is_crypto
@@ -1307,6 +1330,7 @@ def projection(
     suggested = round(suggested / 10) * 10
 
     vols: dict[str, float] = {}
+    measured: dict[str, float] = {}
     corr = None
     weights: dict[str, float] = {}
     try:
@@ -1317,7 +1341,7 @@ def projection(
                 "stocks": [t for t in weights if not is_crypto(t)],
                 "crypto": [t for t in weights if is_crypto(t)],
             }
-            vols, corr = sleeve_stats(
+            vols, corr, measured = sleeve_stats(
                 report.returns, weights, groups, since=first_owned(txs)
             )
     except (URLError, YFRateLimitError):
@@ -1325,10 +1349,19 @@ def projection(
 
     crypto_weight = sum(w for t, w in weights.items() if is_crypto(t))
     share = crypto_weight if crypto_share is None else crypto_share
-    growth = {
-        "stocks": _DEFAULT_GROWTH["stocks"] if stock_growth is None else stock_growth,
-        "crypto": _DEFAULT_GROWTH["crypto"] if crypto_growth is None else crypto_growth,
+    chosen = {"stocks": stock_growth, "crypto": crypto_growth}
+    own = {
+        key
+        for key, asked in (("stocks", stock_own), ("crypto", crypto_own))
+        if asked and key in measured
     }
+    growth: dict[str, float] = {}
+    for key in ("stocks", "crypto"):
+        picked = chosen[key]
+        growth[key] = (
+            measured[key] if key in own
+            else _DEFAULT_GROWTH[key] if picked is None else picked
+        )
     split = {"stocks": 1 - crypto_weight, "crypto": crypto_weight}
     shares = {"stocks": 1 - share, "crypto": share}
     sleeves = [
@@ -1349,6 +1382,8 @@ def projection(
             value=round(sl.value, 2),
             weight=split[sl.key],
             growth=sl.growth,
+            growth_own=sl.key in own,
+            own_growth=_num(measured.get(sl.key)),
             volatility=sl.volatility,
             volatility_measured=sl.key in vols,
             share=sl.share,
@@ -1439,21 +1474,62 @@ def risk(
     if report is None or not report.weights:
         return Risk(base=ccy, period=period)
 
+    # What each slice is worth and what it cost, off the same priced rows the
+    # positions table and the summary tiles read, so a slice's euros agree
+    # with the tiles beside it. Only rows that priced count, on both sides.
+    table = loaders.positions_table(db, mtime, ccy)
+    values: dict[str, float] = {}
+    costs: dict[str, float] = {}
+    if not table.empty:
+        for ticker, row in table[table["value"].notna()].iterrows():
+            values[str(ticker)] = float(row["value"])
+            costs[str(ticker)] = float(row["cost"])
+
+    def slices(
+        weights: dict[str, float],
+        value_parts: dict[str, dict[str, float]],
+        cost_parts: dict[str, dict[str, float]],
+    ) -> list[AllocationSlice]:
+        out = []
+        for bucket, weight in sorted(weights.items(), key=lambda kv: -kv[1]):
+            held = value_parts.get(bucket, {})
+            paid = cost_parts.get(bucket, {})
+            out.append(
+                AllocationSlice(
+                    label=str(bucket),
+                    weight=float(weight),
+                    value=_num(sum(held.values())) if held else None,
+                    cost=_num(sum(paid.get(t, 0.0) for t in held)) if held else None,
+                    holdings=[
+                        AllocationHolding(
+                            ticker=ticker, value=amount, cost=paid.get(ticker, 0.0)
+                        )
+                        for ticker, amount in sorted(
+                            held.items(), key=lambda kv: -kv[1]
+                        )
+                    ],
+                )
+            )
+        return out
+
     allocations = {
-        key: [
-            AllocationSlice(label=str(label), weight=float(weight))
-            for label, weight in report.allocation(key).items()
-        ]
+        key: slices(
+            report.allocation(key).to_dict(),
+            allocation_parts(values, report.meta, key),
+            allocation_parts(costs, report.meta, key),
+        )
         for key in ("sector", "country", "currency")
     }
     # Custody joins only when the book actually spans brokers: a single-broker
     # 100% slice says nothing. It reuses the weights above, so it costs no fetch.
-    by_broker = custody.broker_weights(loaders.custody(db, mtime), report.weights)
+    held_by = loaders.custody(db, mtime)
+    by_broker = custody.broker_weights(held_by, report.weights)
     if len(by_broker) > 1:
-        allocations["broker"] = [
-            AllocationSlice(label=broker, weight=float(weight))
-            for broker, weight in sorted(by_broker.items(), key=lambda kv: -kv[1])
-        ]
+        allocations["broker"] = slices(
+            by_broker,
+            custody.broker_parts(held_by, values),
+            custody.broker_parts(held_by, costs),
+        )
 
     corr = correlation_matrix(report.returns)
     # The book's own line, which the report knows nothing about: `basket_report`
@@ -1484,12 +1560,34 @@ def risk(
             }
             for row in corr.index
         },
+        names=_names(report),
         curves=_curves(report, hist, flows),
         missing=missing,
         dropped_days=[
             str(pd.Timestamp(day).date()) for day in twr.attrs.get("dropped_days", ())
         ],
     )
+
+
+def _names(report) -> dict[str, RiskName]:
+    """Each held name's volatility, betas and share of the basket's risk —
+    what the correlation grid's hover reads beside a pair."""
+    shares = risk_shares(report.returns, report.port_returns, report.weights)
+    out: dict[str, RiskName] = {}
+    for name in report.returns.columns:
+        series = report.returns[name].dropna()
+        if series.empty:
+            continue
+        out[str(name)] = RiskName(
+            volatility=_num(annualized_volatility(series)),
+            betas={
+                bench: value
+                for bench, returns in report.bench_returns.items()
+                if (value := _num(beta(series, returns))) is not None
+            },
+            risk_share=_num(shares.get(name)),
+        )
+    return out
 
 
 def _points(values: pd.Series) -> list[float | None]:

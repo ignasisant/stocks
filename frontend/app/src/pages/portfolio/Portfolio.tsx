@@ -15,7 +15,7 @@
  * block the tabs that do not need it.
  */
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 import { get, send } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
@@ -106,6 +106,47 @@ function DemoBook({ book, onChange }: { book: Transactions; onChange: () => void
   );
 }
 
+/**
+ * The tab strip. On a phone it is one scrolling row wider than the screen, and
+ * the open tab is kept in its middle so the one before and the one after are
+ * both in view, each a tap away — a tab picked at the edge slides to the
+ * centre rather than leaving its neighbour off-screen. Only the strip scrolls:
+ * `scrollIntoView` would also move the page under the reader. Where every tab
+ * fits there is nothing to scroll and this does nothing.
+ */
+function Tabs({ active, onPick }: { active: string; onPick: (tab: string) => void }) {
+  const t = useT();
+  const strip = useRef<HTMLDivElement>(null);
+  // The first centring is instant — the page opened on that tab, nothing moved.
+  const moved = useRef(false);
+
+  useLayoutEffect(() => {
+    const row = strip.current;
+    const on = row?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!row || !on) return;
+    const left = on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2;
+    row.scrollTo({ left, behavior: moved.current ? "smooth" : "auto" });
+    moved.current = true;
+  }, [active]);
+
+  return (
+    <div className="pf-tabs" role="tablist" ref={strip}>
+      {TABS.map(([name, label]) => (
+        <button
+          key={name}
+          type="button"
+          role="tab"
+          aria-selected={name === active}
+          className={name === active ? "pf-tab pf-tab-on" : "pf-tab"}
+          onClick={() => onPick(name)}
+        >
+          {t(label)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function Page() {
   const t = useT();
   const { params, setParams } = useRoute();
@@ -182,20 +223,7 @@ export default function Page() {
                 <Warn>{t("portfolio.ledger_no_positions")}</Warn>
               ) : (
                 <>
-                  <div className="pf-tabs" role="tablist">
-                    {TABS.map(([name, label]) => (
-                      <button
-                        key={name}
-                        type="button"
-                        role="tab"
-                        aria-selected={name === active[0]}
-                        className={name === active[0] ? "pf-tab pf-tab-on" : "pf-tab"}
-                        onClick={() => setParams({ tab: name })}
-                      >
-                        {t(label)}
-                      </button>
-                    ))}
-                  </div>
+                  <Tabs active={active[0]} onPick={(tab) => setParams({ tab })} />
                   <Tab />
                 </>
               )}

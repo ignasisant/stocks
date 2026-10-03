@@ -197,6 +197,37 @@ describe("the events it reads", () => {
     expect(cut.error).toBe("chat.api_error");
   });
 
+  it("hands over the recalled conversations early, and a memory change even on a refusal", async () => {
+    const earlier = [
+      { thread: "c_0", title: "Nvidia", when: "2026-09-01T00:00:00Z", snippet: "dear" },
+    ];
+    const learned = [{ op: "added", id: "m1", text: "I hold 5y", kind: "goal" }];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        stream([
+          { type: "CUSTOM", name: "chat.recalled", value: earlier },
+          { type: "CUSTOM", name: "chat.learned", value: learned },
+          { type: "RUN_ERROR", message: "x", code: "chat.free_exhausted" },
+        ]),
+      ),
+    );
+    const seen: unknown[] = [];
+    const refused = await run(
+      runInput({ message: "remember that I hold 5y. is NVDA dear?" }, {}),
+      () => {},
+      () => {},
+      () => {},
+      undefined,
+      undefined,
+      undefined,
+      (recalled) => seen.push(recalled),
+    );
+    expect(seen).toEqual([earlier]);
+    expect(refused.error).toBe("chat.free_exhausted");
+    expect(refused.learned).toEqual(learned);
+  });
+
   it("tells the research as it runs, and keeps it out of the answer's calls", async () => {
     vi.stubGlobal(
       "fetch",

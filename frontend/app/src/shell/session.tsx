@@ -25,6 +25,8 @@ export type Me = {
   kind: "session" | "token" | "guest";
   email?: string | null;
   sign_in?: string | null;
+  /** Whether this account is on the bank connection's allowlist. */
+  bank?: boolean;
 };
 
 /** A caller with an address. Never a guest — that is the whole point. */
@@ -61,9 +63,17 @@ export type Prefs = {
  * optional field a guest would have been shown an empty-address "type your
  * email to confirm" rather than a sign-in.
  */
-export type Session = { prefs: Prefs; reload: () => void; signIn: string | null } & (
-  { guest: true; me: null } | { guest: false; me: Account }
-);
+export type Session = {
+  prefs: Prefs;
+  reload: () => void;
+  signIn: string | null;
+  /**
+   * Whether the bank connection is this reader's to use. On both arms rather
+   * than on the account, because the rail asks the question before it knows
+   * which arm it is on, and a guest's answer is simply no.
+   */
+  bank: boolean;
+} & ({ guest: true; me: null } | { guest: false; me: Account });
 
 const Current = createContext<Session | null>(null);
 
@@ -99,6 +109,15 @@ export function useAccount(): Account {
   return session.me;
 }
 
+/**
+ * Whether to offer the bank connection — the allowlist's answer for this
+ * reader. False is the common case and means the entry stays out of the rail;
+ * the API refuses the routes regardless, so this decides a door, not access.
+ */
+export function useBank(): boolean {
+  return useSession().bank;
+}
+
 /** Where to send somebody who wants an account, or null when no IdP is set up. */
 export function useSignIn(): string | null {
   return useSession().signIn;
@@ -132,13 +151,19 @@ export function screenFor(state: Query<unknown>["state"]): Screen {
 /** Build the session a provider hands down. Pure, so a test can call it. */
 export function sessionFrom(me: Me, prefs: Prefs, reload: () => void): Session {
   const signIn = me.sign_in ?? null;
-  if (me.kind === "guest") return { guest: true, me: null, prefs, reload, signIn };
+  // Absent reads as false, so an older API — or one with no bank configured
+  // at all, which omits nothing but answers false — leaves the entry hidden.
+  const bank = me.bank === true;
+  if (me.kind === "guest") {
+    return { guest: true, me: null, prefs, reload, signIn, bank: false };
+  }
   return {
     guest: false,
     me: { kind: me.kind, email: me.email ?? null },
     prefs,
     reload,
     signIn,
+    bank,
   };
 }
 
