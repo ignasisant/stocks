@@ -47,6 +47,10 @@ if TYPE_CHECKING:
 DIR = DATA_DIR / "mcp"
 
 SCOPE = "topstocks.read"
+#: Editing the book, the watchlist and the memory. Never granted by default:
+#: the consent screen asks for it with a box of its own, left unticked.
+WRITE_SCOPE = "topstocks.write"
+SCOPES = (SCOPE, WRITE_SCOPE)
 ACCESS_PREFIX = "tsat_"
 REFRESH_PREFIX = "tsrt_"
 
@@ -178,8 +182,14 @@ class Ledger:
         return access, refresh
 
     def issue(self, *, email: str, client_id: str, client_name: str,
-              client_kind: str, redirect_host: str) -> Issued:
-        """A new grant: the code exchange after the user said "Allow"."""
+              client_kind: str, redirect_host: str,
+              scopes: tuple[str, ...] = (SCOPE,)) -> Issued:
+        """A new grant: the code exchange after the user said "Allow".
+
+        `scopes` is what the consent screen granted; reading always comes
+        with it, and anything unknown is dropped rather than stored.
+        """
+        granted = (SCOPE, *(s for s in SCOPES if s != SCOPE and s in scopes))
         now = _now()
         with self._lock:
             self._load()
@@ -190,7 +200,7 @@ class Ledger:
                 "client_name": client_name[:80],
                 "client_kind": client_kind,
                 "redirect_host": redirect_host[:120],
-                "scopes": [SCOPE],
+                "scopes": list(granted),
                 "created": now,
                 "spent": [],
             }
@@ -198,8 +208,9 @@ class Ledger:
             self._grants[gid] = g
             self._reindex()
             self._save_grants()
-        obs.event("mcp.grant", grant=gid, client_kind=client_kind)
-        return Issued(gid, access, refresh, ACCESS_TTL, (SCOPE,))
+        obs.event("mcp.grant", grant=gid, client_kind=client_kind,
+                  write=WRITE_SCOPE in granted)
+        return Issued(gid, access, refresh, ACCESS_TTL, granted)
 
     def holder(self, access: str) -> Holder | None:
         """Who an access token speaks for, or None. Reads only memory."""
@@ -309,6 +320,7 @@ class Ledger:
                     "created": g["created"],
                     "used": g.get("used", g["created"]),
                     "expires": g["refresh"]["expires"],
+                    "write": WRITE_SCOPE in g.get("scopes", ()),
                 }
                 for gid, g in self._grants.items()
                 if g["email"] == target and g["refresh"]["expires"] > now

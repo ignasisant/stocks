@@ -639,12 +639,20 @@ WRITES = {
     ("/v1/import/client-failure", "post"),
     ("/v1/watchlist/{ticker}/alerts", "put"),
     ("/v1/portfolio/transactions", "delete"),
+    # Hand edits to the ledger. The plan writes nothing, but it is the first
+    # half of a write and hands out the token the second half needs; the
+    # commit and the undo rewrite rows (`stocks.portfolio.edits`).
+    ("/v1/portfolio/changes/plan", "post"),
+    ("/v1/portfolio/changes", "post"),
+    ("/v1/portfolio/changes/{change_id}", "delete"),
     # The assistant. A turn is a write twice over: it appends the completed
     # pair to chat.json, and it spends the account's free allowance on the
     # operator's shared keys — which is the one a leaked token would be worth
     # stealing for.
     ("/v1/chat/runs", "post"),
     ("/v1/chat/actions", "post"),
+    # Undoes a ledger edit the chat made: rewrites rows like the undo above.
+    ("/v1/chat/proposals/{pid}/undo", "post"),
     ("/v1/chat/conversations", "post"),
     ("/v1/chat/conversations/{cid}", "patch"),
     ("/v1/chat/conversations/{cid}", "delete"),
@@ -730,7 +738,11 @@ def test_no_write_will_answer_a_bearer_token(client, token, account):
         "confirm": EMAIL,
     }
     for path, method in sorted(WRITES):
-        url = path.replace("{ticker}", "AAPL").replace("{tag}", "Tech")
+        url = (
+            path.replace("{ticker}", "AAPL")
+            .replace("{tag}", "Tech")
+            .replace("{change_id}", "1")
+        )
         # `request` rather than the per-verb helpers: DELETE carries a body on
         # the one route that demands a typed confirmation, and httpx's
         # `client.delete` will not send one.

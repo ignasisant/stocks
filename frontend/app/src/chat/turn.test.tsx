@@ -297,6 +297,73 @@ describe("an answer's tool calls", () => {
     );
   });
 
+  const ledger = (state: string, change: number | null) => ({
+    id: "act_2",
+    name: "confirm_action",
+    args: {
+      kind: "mark_transfer",
+      ticker: "GRF.MC",
+      args: {},
+      book: { summary: "Book the GRF.MC sale as a transfer", change },
+    },
+    state,
+  });
+  const undoable = (state: string, change: number | null, undo = true) =>
+    renderToStaticMarkup(
+      <Turn
+        turn={{
+          role: "assistant",
+          content: "Done.",
+          skills: [],
+          web: [],
+          action: null,
+          tool_calls: [ledger(state, change)],
+        }}
+        skills={[]}
+        providers={[]}
+        cap={null}
+        onRetry={() => {}}
+        onDecide={async () => null}
+        onUndo={undo ? async () => null : undefined}
+      />,
+    );
+
+  it("offers Undo on a ledger edit that went through, and only there", () => {
+    expect(undoable("done", 7)).toContain("chat.action_undo");
+    expect(undoable("done", 7, false)).not.toContain("chat.action_undo");
+    expect(undoable("done", null)).not.toContain("chat.action_undo");
+    expect(answer([offer("done")], async () => null)).not.toContain("chat.action_undo");
+  });
+
+  it("says a ledger edit taken back is undone, with nothing to press", () => {
+    const out = undoable("undone", 7);
+    expect(out).toContain("chat.action_undone");
+    expect(out).not.toContain("<button");
+  });
+
+  it("offers no Edit on a ledger edit even beside a surface", () => {
+    const out = renderToStaticMarkup(
+      <Turn
+        turn={{
+          role: "assistant",
+          content: "Book it?",
+          skills: [],
+          web: [],
+          action: null,
+          tool_calls: [ledger("pending", null)],
+          activities: [{ ...form, id: "form_act_2" }],
+        }}
+        skills={[]}
+        providers={[]}
+        cap={null}
+        onRetry={() => {}}
+        onDecide={async () => null}
+      />,
+    );
+    expect(out).toContain("chat.action_approve");
+    expect(out).not.toContain("chat.action_edit");
+  });
+
   it("ignores a tool it does not run", () => {
     expect(answer([{ id: "x", name: "delete_everything", args: {} }])).not.toContain(
       "<button",

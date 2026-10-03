@@ -37,6 +37,7 @@ import {
   runInput,
   saveSettings,
   startThread,
+  undoProposal,
 } from "./api";
 import {
   advanceGuide,
@@ -89,7 +90,14 @@ const settled = (
     call.id === offer.id
       ? {
           ...call,
-          args: { kind: offer.kind, ticker: offer.ticker, args: offer.args },
+          args: {
+            kind: offer.kind,
+            ticker: offer.ticker,
+            args: offer.args,
+            ...(offer.book
+              ? { book: { summary: offer.book.summary, change: offer.book.change } }
+              : {}),
+          },
           state: offer.state,
         }
       : call,
@@ -460,6 +468,38 @@ export function useChat(live: boolean) {
   );
 
   /**
+   * Take back a ledger edit a card already made. The server reverses it
+   * through the book's journal and files a line saying so; the card turns to
+   * "undone" and that line lands under the thread. Resolves with the refusal's
+   * key (rows changed again since, say) for the card to show; null when done.
+   */
+  const undo = useCallback(
+    async (id: string): Promise<string | null> => {
+      if (busy) return "chat.api_error";
+      setBusy(true);
+      try {
+        const done = await undoProposal(id, lang);
+        setTurns((list) => [
+          ...list.map((turn) =>
+            turn.tool_calls?.some((call) => call.id === id)
+              ? { ...turn, tool_calls: settled(turn.tool_calls, done.proposal) }
+              : turn,
+          ),
+          { ...blank("assistant", done.text), action: "undo_change", ts: Date.now() },
+        ]);
+        return null;
+      } catch (failure) {
+        return failure instanceof ApiError && failure.status === 409
+          ? failure.detail
+          : "chat.api_error";
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, lang],
+  );
+
+  /**
    * A press on a surface under turn `index` — a what-if slider let go. The
    * server's answer is appended to that surface's messages, so the surface
    * folds it in the way it folded the first ones. Resolves false when the
@@ -797,6 +837,7 @@ export function useChat(live: boolean) {
     retry,
     regenerate,
     decide,
+    undo,
     press,
     drop,
     open,

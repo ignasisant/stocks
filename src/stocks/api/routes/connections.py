@@ -33,6 +33,13 @@ class Connection(BaseModel):
         )
     )
     redirect_host: str = Field(description="Where the approval was sent back to.")
+    can_write: bool = Field(
+        default=False,
+        description=(
+            "True when the person also ticked editing on the consent screen: "
+            "the app may change the book, the watchlist and the memory."
+        ),
+    )
     created: datetime
     used: datetime = Field(description="The last time it was issued a token.")
     expires: datetime = Field(description="When it lapses unless used again.")
@@ -68,6 +75,7 @@ def connections(caller: Authed, _account: Writer) -> Connections:
                 client_name=r["client_name"] or r["redirect_host"],
                 verified=r["client_kind"] == "cimd",
                 redirect_host=r["redirect_host"],
+                can_write=bool(r.get("write")),
                 created=_when(r["created"]),
                 used=_when(r["used"]),
                 expires=_when(r["expires"]),

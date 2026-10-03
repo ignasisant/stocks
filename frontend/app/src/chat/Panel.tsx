@@ -429,6 +429,7 @@ export default function Panel({
                       // is history the reader has already moved past.
                       onDrop={i === chat.turns.length - 1 ? chat.drop : undefined}
                       onDecide={chat.decide}
+                      onUndo={chat.undo}
                       onLeave={onPark ?? onClose}
                       onPress={(activity, action) => chat.press(i, activity, action)}
                       onOpenThread={openThread}

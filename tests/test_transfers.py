@@ -291,3 +291,80 @@ def test_nothing_is_looked_up_for_a_book_with_nothing_to_repair():
         _ledger(replace(BUY, ticker="NL0010273215"), sold, arrived), resolve=resolve
     )
     assert asked == []
+
+
+# ------------------------------------------- the moves the narrow rules missed
+# The Grifols case from production: DEGIRO books under the ISIN, IBKR under its
+# bare symbol, and the ISIN lookup answers with Yahoo's venue-suffixed one.
+
+GRF_BUY = Transaction("2024-03-01", "ES0171996087", "buy", 100, 8.0, "EUR", 2.0,
+                      "degiro GRIFOLS")
+GRF_SOLD = Transaction("2026-08-06", "ES0171996087", "sell", 100, 12.0, "EUR", 0,
+                       "degiro GRIFOLS")
+
+
+def test_a_bare_broker_symbol_meets_the_venue_suffixed_one():
+    arrived = Transaction("2026-08-20", "GRF", "buy", 100, 8.02, "EUR", 0, "ibkr")
+    resolve, _ = _isin_map(ES0171996087="GRF.MC")
+    [move] = transfers.propose(_ledger(GRF_BUY, GRF_SOLD, arrived), resolve=resolve)
+    assert (move.ticker_out, move.ticker_in) == ("ES0171996087", "GRF")
+    assert round(move.phantom_gain, 2) == 398.0
+
+
+def test_an_ordinary_buy_that_paid_a_commission_is_a_purchase_not_an_arrival():
+    arrived = Transaction("2026-08-20", "GRF.MC", "buy", 100, 8.02, "EUR", 3.0, "ibkr")
+    resolve, _ = _isin_map(ES0171996087="GRF.MC")
+    assert transfers.propose(_ledger(GRF_BUY, GRF_SOLD, arrived), resolve=resolve) == []
+
+
+def test_two_legs_both_brokers_called_a_transfer_meet_across_labels():
+    """No sale to tell apart from a move — only labels that never met, and a
+    book that holds the shares twice until they do."""
+    left = replace(GRF_SOLD, action="transfer_out", price=0.0)
+    arrived = Transaction("2026-08-20", "GRF.MC", "transfer_in", 100, 9.5, "EUR", 0,
+                          "ibkr")
+    resolve, _ = _isin_map(ES0171996087="GRF.MC")
+    [move] = transfers.propose(_ledger(GRF_BUY, left, arrived), resolve=resolve)
+    assert move.rekey and move.ticker_in == "GRF.MC"
+
+
+def test_legs_already_booked_as_one_move_are_not_offered_again():
+    left = replace(GRF_SOLD, action="transfer_out")
+    arrived = replace(left, date="2026-08-20", action="transfer_in", price=8.02,
+                      note="ibkr")
+    assert transfers.propose(_ledger(GRF_BUY, left, arrived)) == []
+
+
+def test_a_day_of_departures_one_per_lot_pairs_with_the_single_arrival():
+    first = replace(GRF_BUY, quantity=60)
+    second = replace(GRF_BUY, date="2024-06-01", quantity=40)
+    out_a = replace(GRF_SOLD, quantity=60)
+    out_b = replace(GRF_SOLD, quantity=40)
+    arrived = Transaction("2026-08-20", "GRF.MC", "transfer_in", 100, 8.02, "EUR", 0,
+                          "ibkr snapshot ES0171996087")
+    [move] = transfers.propose(_ledger(first, second, out_a, out_b, arrived))
+    assert move.out_ids == (3, 4) and move.quantity == 100
+
+
+def test_without_a_lookup_an_isin_never_meets_a_symbol():
+    arrived = Transaction("2026-08-20", "GRF.MC", "buy", 100, 8.02, "EUR", 0, "ibkr")
+    assert transfers.propose(_ledger(GRF_BUY, GRF_SOLD, arrived)) == []
+
+
+def test_accepting_a_move_is_journalled_and_can_be_undone(tmp_path):
+    from stocks.portfolio import edits, ledger
+
+    db = tmp_path / "portfolio.db"
+    arrived = Transaction("2026-08-20", "GRF.MC", "buy", 100, 8.02, "EUR", 0, "ibkr")
+    ledger.add_many([GRF_BUY, GRF_SOLD, arrived], db)
+    before = ledger.all_transactions(db)
+    resolve, _ = _isin_map(ES0171996087="GRF.MC")
+    moves = transfers.propose(before, resolve=resolve)
+    assert transfers.accept(moves, db) == 1
+    after = ledger.all_transactions(db)
+    assert {t.ticker for t in after} == {"GRF.MC"}
+    assert [t.action for t in after] == ["buy", "transfer_out", "transfer_in"]
+    [change] = edits.history(db)
+    assert change.source == "import"
+    edits.undo(change.id, path=db)
+    assert ledger.all_transactions(db) == before

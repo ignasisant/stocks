@@ -4,6 +4,10 @@ Asked every time, never remembered. A grant reads a whole portfolio, tax
 report included, and the client asking may have chosen its own name, so the
 cost of one more click is worth paying on every connection.
 
+Writing is a second, separate yes: a box under the list of reads, unticked
+every time, that adds `store.WRITE_SCOPE` to the grant. The client cannot ask
+for it into existence — whatever scope it requested, only the box decides.
+
 GET draws the page for the request `/authorize` sealed (`oauth.open_request`),
 signing in first when there is no session. POST is the decision, and it must
 prove three things before a code is minted:
@@ -32,7 +36,7 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route, request_response
 
 from stocks import accounts, obs, session
-from stocks.connector import clients, oauth
+from stocks.connector import clients, oauth, store
 
 FORM_PURPOSE = "mcp.consent"
 FORM_MAX_AGE = 600
@@ -118,6 +122,12 @@ p{margin:0 0 12px;color:var(--ag-text-secondary)}
   word-break:break-all}
 ul{margin:4px 0 16px;padding:0 0 0 18px;color:var(--ag-text-primary)}
 li{margin:4px 0}
+.opt{display:flex;gap:10px;align-items:flex-start;margin:4px 0 16px;padding:12px;
+  border:1px solid var(--ag-border);border-radius:var(--ag-radius-sm);cursor:pointer}
+.opt input{margin:3px 0 0;width:16px;height:16px;flex:none;
+  accent-color:var(--ag-brand-cta)}
+.opt strong{display:block;font-weight:600;color:var(--ag-text-primary)}
+.opt .note{display:block;margin-top:2px}
 .actions{display:flex;gap:12px;margin-top:20px}
 button{flex:1;font:inherit;font-weight:600;border-radius:var(--ag-radius-sm);
   padding:10px 16px;cursor:pointer;border:1px solid var(--ag-border)}
@@ -166,11 +176,14 @@ def _page(lang: str, *, name: str, unverified: bool, host: str, email: str,
         f'<p class="who">{_t("consent_signed_in", lang, email=email)} '
         f'<a href="{html.escape(switch)}">{_t("consent_switch", lang)}</a></p>'
         f"<p>{_t('consent_reads', lang, client=name)}</p><ul>{reads}</ul>"
+        f'<form method="post" action="{oauth.CONSENT_PATH}">'
+        '<label class="opt"><input type="checkbox" name="write" value="1">'
+        f"<span><strong>{_t('consent_write', lang, client=name)}</strong>"
+        f'<span class="note">{_t("consent_write_help", lang)}</span></span></label>'
         f"<p>{_t('consent_cannot', lang)}</p>"
         f'<p class="note">{_t("consent_return", lang)}<br>'
         f'<span class="host">{html.escape(host)}</span></p>'
         f'<p class="note">{_t("consent_revoke_hint", lang)}</p>'
-        f'<form method="post" action="{oauth.CONSENT_PATH}">'
         f'<input type="hidden" name="req" value="{html.escape(req)}">'
         f'<input type="hidden" name="csrf" value="{html.escape(form)}">'
         '<div class="actions">'
@@ -253,10 +266,13 @@ async def _decide(request: Request, origin: str) -> Response:
     redirect = req["redirect_uri"]
     kind = clients.describe(client)["client_kind"]
     if form.get("decision") == "allow":
-        code = oauth.mint_code(email, req, resource=origin + oauth.MCP_PATH)
+        write = form.get("write") == "1"
+        scopes = store.SCOPES if write else (store.SCOPE,)
+        code = oauth.mint_code(email, req, resource=origin + oauth.MCP_PATH,
+                               scopes=scopes)
         target = construct_redirect_uri(redirect, code=code, state=req.get("state"),
                                         iss=origin)
-        obs.event("mcp.consent", step="allow", client_kind=kind)
+        obs.event("mcp.consent", step="allow", client_kind=kind, write=write)
     else:
         target = construct_redirect_uri(redirect, error="access_denied",
                                         state=req.get("state"), iss=origin)

@@ -96,6 +96,7 @@ from stocks.portfolio import (
     corporate,
     demo,
     diagnostics,
+    edits,
     last_import,
     ledger,
     llm_map,
@@ -1786,7 +1787,17 @@ def moves_apply(account: Writer, body: Annotated[ApplyMoves, ...]) -> MovesAppli
                 ),
             )
         picked.append(move)
-    applied = transfers.accept(picked, account.db)
+    try:
+        applied = transfers.accept(picked, account.db)
+    except edits.Stale as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="the ledger changed while these were being recorded — scan again",
+        ) from exc
+    except edits.EditError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
     obs.event("import.moves_applied", n=applied, via="api")
     return MovesApplied(
         applied=applied, moves=[_proposed_move(m) for m in picked]

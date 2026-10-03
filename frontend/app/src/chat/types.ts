@@ -32,7 +32,8 @@ export type LiveStep = { id: string; tool: string; arg: string; out?: string };
  * `navigate` is a button: `{ step }` a walkthrough step, `{ page, tab?,
  * ticker? }` a page. `confirm_action` is a proposal card: `{ kind, ticker,
  * args }` is what would run, and `state` whether it still waits ("pending")
- * or was answered ("done", "cancelled").
+ * or was answered ("done", "cancelled"). A ledger edit carries `book`
+ * (`{ summary, change }`) and, taken back, reads "undone".
  */
 export type ToolCall = {
   id: string;
@@ -47,7 +48,13 @@ export type Proposal = {
   kind: string;
   ticker: string;
   args: Record<string, unknown>;
-  state: "pending" | "done" | "cancelled";
+  state: "pending" | "done" | "cancelled" | "undone";
+  /**
+   * A ledger edit (`chat/book.py`): planned on the server and committed
+   * exactly as shown, so it has no form; once done, `change` is the journal
+   * entry Undo takes back.
+   */
+  book?: { summary?: string; change?: number | null };
 };
 
 /**

@@ -390,6 +390,7 @@ export function Turn({
   onRetry,
   onDrop,
   onDecide,
+  onUndo,
   onLeave,
   onPress,
   onOpenThread,
@@ -410,6 +411,8 @@ export function Turn({
   onDrop?: () => void;
   /** Answer a proposal card. Absent: its buttons are not drawn. */
   onDecide?: (id: string, approved: boolean, edits?: Edits) => Promise<string | null>;
+  /** Take back a ledger edit a card made. Absent: no Undo is drawn. */
+  onUndo?: (id: string) => Promise<string | null>;
   /** The drawer stepping aside for the page a link opened, on a phone. */
   onLeave?: () => void;
   /** A press on one of the answer's surfaces. Absent: they draw, inert. */
@@ -543,6 +546,7 @@ export function Turn({
                 call={call}
                 form={form?.content.messages}
                 onDecide={onDecide}
+                onUndo={onUndo}
               />
             );
           }

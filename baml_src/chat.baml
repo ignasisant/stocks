@@ -39,6 +39,24 @@ class ActionCall {
   name string?
   shares (float | string)? @description("a plain number")
   cost (float | string)? @description("a plain number")
+  // The recorded-trade actions (chat/tools.py BOOK): which rows, in words,
+  // and for an edit or a new row its values.
+  broker string? @description("one lowercase word: degiro, ibkr, revolut")
+  to_broker string? @description("the broker the shares moved to")
+  date string? @description("YYYY-MM-DD")
+  since string? @description("YYYY-MM-DD")
+  until string? @description("YYYY-MM-DD")
+  trade string? @description("buy, sell, dividend, fee, split, transfer_in or transfer_out")
+  quantity (float | string)? @description("a plain number")
+  price (float | string)? @description("a plain number")
+  fee (float | string)? @description("a plain number")
+  currency string? @description("ISO code, like EUR")
+  to string? @description("the symbol to book the rows under instead")
+  ids (int | string)[]? @description("row numbers the user quoted")
+  new_date string? @description("YYYY-MM-DD")
+  new_quantity (float | string)? @description("a plain number")
+  new_price (float | string)? @description("a plain number")
+  new_fee (float | string)? @description("a plain number")
 }
 
 function DetectAction(instructions: string, input: string) -> ActionCall {

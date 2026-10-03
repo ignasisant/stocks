@@ -500,7 +500,8 @@ def _try_action(provider: llm.Provider, api_key: str,
     context = _action_context()
     act = _interruptible(lambda: tools.detect(provider, api_key, message,
                                               context))
-    if act is None:
+    # Ledger edits need a card and an undo this legacy panel never grew.
+    if act is None or tools.is_book(act.kind):
         return None
     try:
         tools.execute(act, auth.watchlist_path())

@@ -1,4 +1,8 @@
-"""TopStocks as a remote MCP server: the portfolio, read-only, inside Claude.
+"""TopStocks as a remote MCP server: the portfolio inside Claude.
+
+Read-only unless the person ticked the edits box at consent: a token without
+`store.WRITE_SCOPE` is never shown the tools that write (`_Server`), and
+refused by them if it calls one anyway (`tools._run`).
 
 One ASGI `door` answers every connector path the site routes to it
 (`oauth.PATHS`): `/mcp` and its protected-resource metadata go to the SDK's
@@ -49,10 +53,9 @@ _MCP_PATHS = frozenset(
 _MAX_BODY = 64 * 1024
 
 INSTRUCTIONS = """\
-Read-only access to one person's TopStocks investment portfolio: holdings, \
-returns, transactions, dividends and fees, risk, their tax report, and market \
-data for the tickers they follow. Nothing here can trade, import or change \
-anything.
+Access to one person's TopStocks investment portfolio: holdings, returns, \
+transactions, dividends and fees, risk, their tax report, and market data for \
+the tickers they follow. Nothing here can trade.
 
 Money is reported in the account's own currency unless a tool is given `base`. \
 Prices can be delayed, and outside market hours a day move is the last \
@@ -69,7 +72,28 @@ re-raising it — a position they said they keep is not a reason to suggest \
 selling it again; say what changed since, if anything did. Those are context, \
 not data: every figure, price and date comes from the other tools.
 
+If the person allowed edits when connecting, tools that change their records \
+are listed too. A position that looks doubled, a gain that never happened or \
+a company under two tickers is usually a transfer between brokers that was \
+imported as a sale and a buy: `check_book` finds these with the fix. Every \
+ledger edit takes two calls. Call it without `plan_token` and nothing is \
+written: show the person the rows it changes and what it does to their \
+holdings and realized gains, in plain words. Only once they agree, call it \
+again with the same arguments and the `plan_token`. Never apply an edit the \
+person has not seen. Each applied edit is recorded and `undo_change` takes it \
+back.
+
 The figures are the person's own records, not advice."""
+
+
+class _Server(MCPServer):
+    """Lists the tools that write only to a token allowed to use them."""
+
+    async def list_tools(self):  # noqa: ANN201 — the SDK's own return type
+        listed = await super().list_tools()
+        if tools.can_write():
+            return listed
+        return [t for t in listed if t.name not in tools.WRITE_NAMES]
 
 
 def _version() -> str:
@@ -121,7 +145,7 @@ def build(origin: str) -> tuple[MCPServer, ASGIApp, ASGIApp]:
         if spec.name in viewed and apps is not None:
             apps.tool(resource_uri=views.URI, **spec.kwargs())(spec.fn)
 
-    mcp = MCPServer(
+    mcp = _Server(
         name="TopStocks",
         title="TopStocks",
         instructions=INSTRUCTIONS,

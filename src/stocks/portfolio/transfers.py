@@ -260,7 +260,7 @@ def propose(
         by_security[security_id(tx)].append(tx)
 
     moves: list[Move] = []
-    spare_departures: list[tuple[Transaction, float]] = []
+    spare_departures: list[_Leg] = []
     spare_arrivals: list[Transaction] = []
     for rows in by_security.values():
         found, departures, arrivals = _pair(rows)
@@ -268,8 +268,52 @@ def propose(
         spare_departures += departures
         spare_arrivals += arrivals
     moves += _pair_across_labels(spare_departures, spare_arrivals, resolve)
+    # Two legs the brokers already printed as a transfer, under one label, are
+    # a move the book already reads correctly; offering it would offer nothing.
+    by_id = {t.id: t for t in transactions if t.id is not None}
+    moves = [m for m in moves if _changes_something(m, by_id)]
     moves.sort(key=lambda m: -abs(m.phantom_gain))
     return moves
+
+
+def _changes_something(move: Move, by_id: dict[int, Transaction]) -> bool:
+    if move.rekey:
+        return True
+    if move.in_id is not None and by_id.get(move.in_id, None) is not None:
+        if by_id[move.in_id].action != TRANSFER_IN:
+            return True
+    return any(
+        (t := by_id.get(i)) is not None and t.action != TRANSFER_OUT
+        for i in move.out_ids
+    )
+
+
+def ops(move: Move, transactions: list[Transaction]) -> list[dict]:
+    """The edit (`stocks.portfolio.edits`) that books `move` as what it was.
+
+    The departure rows become `transfer_out`, the arrival `transfer_in`, and
+    when the brokers spelled the security differently every row under the
+    departing label — in the move's currency, plus its splits — takes the
+    arriving one, so the lots the shares left with meet the shares that came.
+    A label two securities share in different currencies (Revolut's euro
+    "ALV" is Allianz, a dollar one Autoliv) only moves its own currency's rows.
+    """
+    out: list[dict] = [
+        {"op": "set_action", "ids": list(move.out_ids), "action": TRANSFER_OUT}
+    ]
+    if move.in_id is not None:
+        out.append({"op": "set_action", "ids": [move.in_id], "action": TRANSFER_IN})
+    if move.rekey:
+        ids = [
+            t.id
+            for t in transactions
+            if t.id is not None
+            and t.ticker == move.ticker_out
+            and (t.currency == move.currency or t.action == "split")
+        ]
+        if ids:
+            out.append({"op": "relabel", "ids": ids, "to": move.ticker_in})
+    return out
 
 
 def accept(moves: list[Move], path) -> int:
@@ -282,101 +326,208 @@ def accept(moves: list[Move], path) -> int:
     the assistant both do, and two surfaces offering one repair must not come
     to mean two slightly different things by it.
     """
-    for m in moves:
-        ledger.set_action(list(m.out_ids), TRANSFER_OUT, path)
-        if m.in_id is not None:
-            ledger.set_action([m.in_id], TRANSFER_IN, path)
-        if m.rekey:
-            ledger.retag(m.ticker_out, m.ticker_in, path)
+    if not moves:
+        return 0
+    # Journalled like any hand edit, so a repair accepted by mistake has an
+    # undo. Imported here: `edits` reads this module's labels at import time.
+    from stocks.portfolio import edits
+
+    rows = ledger.all_transactions(path)
+    planned_ops = [op for m in moves for op in ops(m, rows)]
+    planned = edits.plan(planned_ops, path)
+    if planned.changes:
+        names = sorted({m.ticker_in for m in moves})
+        edits.commit(
+            planned.ops,
+            planned.token,
+            source="import",
+            summary="transfer: " + ", ".join(names),
+            path=path,
+        )
     return len(moves)
+
+
+@dataclass(frozen=True)
+class _Leg:
+    """Shares leaving: one row, or the same day's rows at one broker summed.
+
+    A broker moving a position of several lots may print one departure per
+    lot while the receiving broker prints one arrival for the total, so the
+    day's departures are offered as a whole too. `tx` is then a stand-in row
+    carrying the summed quantity and the quantity-weighted price.
+    """
+
+    tx: Transaction
+    basis: float  # per-share basis of the lots that left, FIFO
+    ids: tuple[int, ...]
 
 
 def _pair(
     rows: list[Transaction],
-) -> tuple[list[Move], list[tuple[Transaction, float]], list[Transaction]]:
+) -> tuple[list[Move], list[_Leg], list[Transaction]]:
     """Moves within one security's rows, plus the legs that found no partner.
 
     The leftovers carry the basis this replay worked out, so the second pass
     across differently-labelled rows does not have to replay anything again.
     """
-    arrivals = [t for t in rows if _is_arrival(t)]
+    arrivals = [t for t in rows if _may_be_arrival(t)]
     lots = _Basis()
-    departures: list[tuple[Transaction, float]] = []  # row, basis/share when it left
+    departures: list[_Leg] = []
     for tx in rows:
         if tx.action == "buy" and not _is_arrival(tx):
             lots.add(tx.quantity, tx.quantity * tx.price + tx.fee)
         elif tx.action in ("sell", TRANSFER_OUT):
-            departures.append((tx, lots.take(tx.quantity)))
+            ids = (tx.id,) if tx.id is not None else ()
+            departures.append(_Leg(tx, lots.take(tx.quantity), ids))
         elif tx.action == "split" and tx.quantity > 0:
             lots.split(tx.quantity)
     if not arrivals:
         return [], departures, []
+    moves, departures, arrivals = _match(departures, arrivals, lambda a, b: True)
+    return moves, departures, arrivals
 
+
+def _match(
+    departures: list[_Leg],
+    arrivals: list[Transaction],
+    same: Callable[[Transaction, Transaction], bool],
+    *,
+    same_security: bool = True,
+) -> tuple[list[Move], list[_Leg], list[Transaction]]:
+    """Pair arrivals with single departures first, then with a day's worth.
+
+    `same` settles identity once every other test has passed — it is the one
+    that may cost a lookup.
+    """
     moves: list[Move] = []
-    claimed: set[int] = set()
-    matched: set[int] = set()
+    claimed: set[int] = set()  # departure positions
+    matched: set[int] = set()  # arrival positions
     for a, arrival in enumerate(arrivals):
-        for i, (tx, basis) in enumerate(departures):
-            if i in claimed or not _same_move(tx, basis, arrival):
+        for i, leg in enumerate(departures):
+            if i in claimed or not _same_move(
+                leg.tx, leg.basis, arrival, same_security=same_security
+            ):
+                continue
+            if not same(leg.tx, arrival):
                 continue
             claimed.add(i)
             matched.add(a)
-            moves.append(_move(tx, basis, arrival))
+            moves.append(_move(leg, arrival))
+            break
+    for a, arrival in enumerate(arrivals):
+        if a in matched:
+            continue
+        for group, leg in _day_groups(departures, claimed):
+            if not _same_move(leg.tx, leg.basis, arrival, same_security=same_security):
+                continue
+            if not same(leg.tx, arrival):
+                continue
+            claimed.update(group)
+            matched.add(a)
+            moves.append(_move(leg, arrival))
             break
     return (
         moves,
         [d for i, d in enumerate(departures) if i not in claimed],
-        [a for i, a in enumerate(arrivals) if i not in matched],
+        [x for i, x in enumerate(arrivals) if i not in matched],
     )
 
 
+def _day_groups(
+    departures: list[_Leg], claimed: set[int]
+) -> list[tuple[list[int], _Leg]]:
+    """Unclaimed departures of one label, broker, day and currency, summed —
+    only where there are at least two of them."""
+    groups: dict[tuple[str, str, str, str], list[int]] = defaultdict(list)
+    for i, leg in enumerate(departures):
+        if i not in claimed:
+            tx = leg.tx
+            groups[(tx.ticker, _broker(tx), tx.date, tx.currency)].append(i)
+    out: list[tuple[list[int], _Leg]] = []
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        legs = [departures[i] for i in members]
+        quantity = sum(leg.tx.quantity for leg in legs)
+        if quantity <= _EPS:
+            continue
+        first = legs[0].tx
+        stand_in = replace(
+            first,
+            id=None,
+            quantity=quantity,
+            price=sum(leg.tx.quantity * leg.tx.price for leg in legs) / quantity,
+            # Still a transfer only if every row already said so.
+            action=(
+                TRANSFER_OUT
+                if all(leg.tx.action == TRANSFER_OUT for leg in legs)
+                else "sell"
+            ),
+        )
+        basis = sum(leg.tx.quantity * leg.basis for leg in legs) / quantity
+        ids = tuple(i for leg in legs for i in leg.ids)
+        out.append((members, _Leg(stand_in, basis, ids)))
+    return out
+
+
 def _pair_across_labels(
-    departures: list[tuple[Transaction, float]],
+    departures: list[_Leg],
     arrivals: list[Transaction],
     resolve: Resolver | None,
 ) -> list[Move]:
     """Legs whose brokers spell the security differently.
 
     Every other test has to pass first — this only settles whether two names
-    are one company, and it asks `resolve` about the ISIN rather than trusting
-    a quantity that happens to line up.
+    are one company, and it asks `resolve` rather than trusting a quantity
+    that happens to line up.
     """
-    if not resolve or not departures or not arrivals:
+    if not departures or not arrivals:
         return []
-    moves: list[Move] = []
-    taken: set[int] = set()
-    for arrival in arrivals:
-        for i, (tx, basis) in enumerate(departures):
-            if i in taken or not _same_move(tx, basis, arrival, same_security=False):
-                continue
-            if not _same_security(tx.ticker, arrival.ticker, resolve):
-                continue
-            taken.add(i)
-            moves.append(_move(tx, basis, arrival))
-            break
-    return moves
+    return _match(
+        departures,
+        arrivals,
+        lambda out, arrival: _same_security(out.ticker, arrival.ticker, resolve),
+        same_security=False,
+    )[0]
 
 
-def _same_security(left: str, right: str, resolve: Resolver) -> bool:
+def _same_security(left: str, right: str, resolve: Resolver | None) -> bool:
     """Whether two ledger labels for a holding name one company.
 
-    Only an ISIN is worth asking about: it is the label a broker export falls
-    back on when it has no symbol column, and the one thing that can be turned
-    into the symbol another broker used.
+    Each broker names it its own way: DEGIRO by ISIN, IBKR by its bare symbol
+    (``GRF``), Revolut and Yahoo with a venue suffix (``GRF.MC``). Both labels
+    go through `resolve` — the ISIN lookup, and the code map for a broker's
+    own codes — and two that land on one symbol, or on one root where one side
+    names no venue (``GRF`` and ``GRF.MC``), are one company. The root rule is
+    only safe because every other test of a move has already passed: the same
+    share count, the same currency, two brokers, and the basis carried over.
+    A lookup that cannot answer joins nothing.
     """
-    for isin, other in ((left, right), (right, left)):
-        if not _ISIN.fullmatch(isin) or _ISIN.fullmatch(other):
-            continue
-        try:
-            symbol = resolve(isin)
-        except Exception:  # a lookup that cannot answer proposes nothing
-            return False
-        if symbol and symbol.upper() == other.upper():
-            return True
-    return False
+    try:
+        a = _symbol(left, resolve)
+        b = _symbol(right, resolve)
+    except Exception:  # a lookup that cannot answer proposes nothing
+        return False
+    if not a or not b or _ISIN.fullmatch(a) or _ISIN.fullmatch(b):
+        return False
+    if a == b:
+        return True
+    root_a, _, venue_a = a.partition(".")
+    root_b, _, venue_b = b.partition(".")
+    return root_a == root_b and not (venue_a and venue_b)
 
 
-def _move(departure: Transaction, basis: float, arrival: Transaction) -> Move:
+def _symbol(label: str, resolve: Resolver | None) -> str:
+    """`label` as a symbol: resolved when there is a lookup, an ISIN only
+    through one."""
+    label = label.upper()
+    if resolve is None:
+        return "" if _ISIN.fullmatch(label) else label
+    return (resolve(label) or ("" if _ISIN.fullmatch(label) else label)).upper()
+
+
+def _move(leg: _Leg, arrival: Transaction) -> Move:
+    departure = leg.tx
     return Move(
         quantity=arrival.quantity,
         ticker_out=departure.ticker,
@@ -385,10 +536,10 @@ def _move(departure: Transaction, basis: float, arrival: Transaction) -> Move:
         broker_in=_broker(arrival),
         date_out=departure.date,
         date_in=arrival.date,
-        out_ids=(departure.id,) if departure.id is not None else (),
+        out_ids=leg.ids,
         in_id=arrival.id,
         booked_at=departure.price,
-        basis_out=basis,
+        basis_out=leg.basis,
         basis_in=arrival.price,
         currency=departure.currency,
     )
@@ -411,7 +562,17 @@ def _same_move(
         return False
     if not departure.date <= arrival.date <= _horizon(departure.date):
         return False
-    if departure.currency != arrival.currency or basis <= 0 or arrival.price <= 0:
+    if departure.currency != arrival.currency:
+        return False
+    if departure.action == TRANSFER_OUT and arrival.action == TRANSFER_IN:
+        # Both brokers already said "transfer": there is no sale to tell apart
+        # from a move, only two labels that never met.
+        return True
+    if not _is_arrival(arrival) and arrival.fee > _EPS:
+        # An ordinary buy stands in for an arrival only when it cost nothing
+        # to make: a custodian change carries no commission, a purchase does.
+        return False
+    if basis <= 0 or arrival.price <= 0:
         return False
     # The decisive test: the receiving broker reports the basis the shares
     # already had, where a real sale followed by a real repurchase reports the
@@ -429,6 +590,13 @@ def _same_move(
 
 def _horizon(day: str) -> str:
     return (_date.fromisoformat(day) + _timedelta(days=_MAX_DAYS_IN_TRANSIT)).isoformat()
+
+
+def _may_be_arrival(tx: Transaction) -> bool:
+    """A row the shares might have turned up as: an arrival proper, or an
+    ordinary buy a statement printed for shares that only changed broker —
+    which `_same_move` then has to prove from the basis it carries."""
+    return tx.action in (TRANSFER_IN, "buy")
 
 
 def _is_arrival(tx: Transaction) -> bool:

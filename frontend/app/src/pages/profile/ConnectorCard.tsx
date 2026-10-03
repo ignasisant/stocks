@@ -28,6 +28,7 @@ export type Connection = {
   client_name: string;
   verified: boolean;
   redirect_host: string;
+  can_write?: boolean;
   created: string;
   used: string | null;
   expires: string;
@@ -122,6 +123,11 @@ function Line({ connection, onGone }: { connection: Connection; onGone: () => vo
           {!connection.verified && (
             <Badge title={t("profile.connector_unverified_help")}>
               {t("profile.connector_unverified")}
+            </Badge>
+          )}
+          {connection.can_write && (
+            <Badge title={t("profile.connector_can_edit_help")}>
+              {t("profile.connector_can_edit")}
             </Badge>
           )}
         </span>

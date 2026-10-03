@@ -440,6 +440,18 @@ RELEASES: tuple[Release, ...] = (
             News(slug="claude", icon="hub", step="prefs", carried=_connector_open),
         ),
     ),
+    Release(
+        version="2026.10.1",
+        date="2026-10",
+        items=(
+            # One card: the ledger could not be corrected anywhere but a wipe
+            # and a re-import. The kinds of edit, the book check, Telegram's
+            # typed yes and the transfers the import now recognises are the
+            # assistant and import steps' bodies; Claude editing through the
+            # connector is a sentence on the claude card, not a card.
+            News(slug="fixbook", icon="build", step="assistant"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

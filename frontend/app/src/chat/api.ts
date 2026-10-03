@@ -26,6 +26,7 @@ import type {
   Memory,
   Meta,
   Preview,
+  Proposal,
   Recalled,
   SettingsPatch,
   Thread,
@@ -192,6 +193,17 @@ export const revealKey = (provider: string) =>
 export const pressSurface = (action: A2uiAction, lang?: string) =>
   send<{ messages: A2uiMessage[] }>("POST", "/chat/actions", { action, lang }).then(
     (body) => body.messages,
+  );
+
+/**
+ * Take back a ledger edit the chat made. 409 when it is not one, or its rows
+ * were changed again since — the detail is the locale key that says which.
+ */
+export const undoProposal = (pid: string, lang?: string) =>
+  send<{ text: string; proposal: Proposal }>(
+    "POST",
+    `/chat/proposals/${id(pid)}/undo${lang ? `?lang=${encodeURIComponent(lang)}` : ""}`,
+    {},
   );
 
 /** Forget the stored key. 404 when there was none, which is not an error here. */

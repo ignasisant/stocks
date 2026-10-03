@@ -1362,7 +1362,7 @@ def action_context(watchlist: Path) -> str:
     from stocks.config import load_watchlist
     from stocks.web import auth
 
-    bits = []
+    bits = [f"Today: {date.today().isoformat()}"]
     holds = load_watchlist(watchlist)
     if holds:
         bits.append("Watchlist: " + ", ".join(
@@ -1592,20 +1592,38 @@ class ProposalError(Exception):
 
 def _apply(offer: dict, approve: bool, *, watchlist: Path, lang: str,
            ticker: str | None = None, args: dict | None = None,
-           form: dict | None = None) -> str:
+           form: dict | None = None, db: Path | None = None,
+           source: str = "chat") -> str:
     """Run (or drop) one proposal in place; return the line that says so.
 
     Mutates `offer` — its state, and on approval the symbol and fields the
     reader may have edited — and raises ProposalError without touching it when
     the edit does not parse or the write fails, so the card stays up and
     pressable rather than claiming a change that never happened.
+
+    A ledger proposal (`offer["book"]`, from `chat/book.py`) is committed
+    exactly as planned: it has no form to edit, and a book that moved since
+    the plan refuses it rather than applying something nobody was shown.
     """
-    from stocks.chat import tools
+    from stocks.chat import book, tools
 
     if not approve:
         offer["state"] = "cancelled"
         obs.event("chat.action_cancelled", action=offer.get("kind"))
         return _tr("chat.action_cancelled", lang)
+    if isinstance(offer.get("book"), dict):
+        if db is None:
+            raise ProposalError("chat.action_failed")
+        try:
+            note = book.apply(offer, db=db, source=source,
+                              translate=lambda k, **kw: _tr(k, lang, **kw))
+        except book.Refused as exc:
+            obs.warn("chat.engine.book_refused", action=offer.get("kind"),
+                     code=exc.code, error=exc.detail[:300])
+            raise ProposalError(exc.code) from exc
+        offer["state"] = "done"
+        obs.event("chat.action_approved", action=offer.get("kind"), edited=False)
+        return note
     base = tools.Action(str(offer.get("kind")), str(offer.get("ticker") or ""),
                         dict(offer.get("args") or {}))
     if base.kind not in tools.TOOLS:
@@ -1632,7 +1650,8 @@ def _apply(offer: dict, approve: bool, *, watchlist: Path, lang: str,
 
 def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
                     approve: bool, lang: str = "en", ticker: str | None = None,
-                    args: dict | None = None, form: dict | None = None) -> Reply:
+                    args: dict | None = None, form: dict | None = None,
+                    db: Path | None = None) -> Reply:
     """The reader pressed Approve or Cancel on a proposal card.
 
     The asking turn is rewritten in place — its words become the confirmation
@@ -1655,7 +1674,7 @@ def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
     if offer.get("state") != "pending":
         raise ProposalError("chat.action_gone")
     note = _apply(offer, approve, watchlist=watchlist, lang=lang,
-                  ticker=ticker, args=args, form=form)
+                  ticker=ticker, args=args, form=form, db=db)
     entry["content"] = note
     if offer["state"] == "done":
         entry["action"] = offer["kind"]
@@ -1665,7 +1684,8 @@ def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
 
 def _typed_verdict(history: list[dict], index: int, approve: bool, *,
                    prefs: dict, chat_path: Path, watchlist: Path,
-                   lang: str) -> Reply:
+                   lang: str, db: Path | None = None,
+                   source: str = "chat") -> Reply:
     """A "yes" or "no" typed under a proposal: the same as the button.
 
     Unlike the button, the reader's words are part of the thread — so the
@@ -1676,7 +1696,8 @@ def _typed_verdict(history: list[dict], index: int, approve: bool, *,
 
     offer = history[index]["proposal"]
     try:
-        note = _apply(offer, approve, watchlist=watchlist, lang=lang)
+        note = _apply(offer, approve, watchlist=watchlist, lang=lang, db=db,
+                      source=source)
     except ProposalError as exc:
         return Reply(error=exc.code)
     entry: dict = {"role": "assistant", "content": note}
@@ -1685,6 +1706,72 @@ def _typed_verdict(history: list[dict], index: int, approve: bool, *,
     history.append(entry)
     auth.save_chat(history, chat_path)
     return Reply(text=note, proposal=dict(offer))
+
+
+def undo_proposal(*, chat_path: Path, db: Path, proposal_id: str,
+                  lang: str = "en") -> Reply:
+    """The reader pressed Undo on a ledger proposal that already went through.
+
+    The change is taken back through the journal (`edits.undo`), and the
+    thread says so in a new answer — the turn above keeps saying it was done,
+    which it was. Raises LookupError for an id this thread does not hold and
+    ProposalError for one that is not an applied ledger edit, or whose rows
+    something has changed since.
+    """
+    from stocks.chat import book
+    from stocks.web import auth
+
+    history = auth.load_chat(chat_path)
+    for entry in reversed(history):
+        offer = entry.get("proposal")
+        if isinstance(offer, dict) and offer.get("id") == proposal_id:
+            break
+    else:
+        raise LookupError(proposal_id)
+    if offer.get("state") != "done" or not isinstance(offer.get("book"), dict):
+        raise ProposalError("chat.action_gone")
+    try:
+        note = book.undo(offer, db=db, translate=lambda k, **kw: _tr(k, lang, **kw))
+    except book.Refused as exc:
+        raise ProposalError(exc.code) from exc
+    offer["state"] = "undone"
+    history.append({"role": "assistant", "content": note, "action": "undo_change"})
+    auth.save_chat(history, chat_path)
+    obs.event("chat.action_undone", action=offer.get("kind"))
+    return Reply(text=note, proposal=dict(offer))
+
+
+def _book_turn(act: Action, *, history: list[dict], prefs: dict, db: Path,
+               chat_path: Path, lang: str, typed: bool,
+               stored: Callable[[dict], dict] = lambda e: e) -> Reply:
+    """A ledger request (`chat/book.py`): drafted with the book in hand, and
+    put to the reader whenever it would change anything — on every surface.
+
+    `typed` is a surface with no card to press (the Telegram bot), so the
+    question ends by saying how to answer it in words.
+    """
+    from stocks.chat import book
+    from stocks.web import auth
+
+    try:
+        drafted = book.draft(act, db=db, resolve=book.resolver(),
+                             translate=lambda k, **kw: _tr(k, lang, **kw),
+                             currency=str(prefs.get("currency") or "EUR"))
+    except Exception as exc:
+        obs.warn("chat.engine.book_failed", action=act.kind,
+                 error_type=type(exc).__name__, error=str(exc)[:300])
+        return Reply(error="chat.action_failed")
+    entry: dict = {"role": "assistant", "content": drafted.text, "action": act.kind}
+    offer = None
+    if drafted.book is not None:
+        offer = {**_proposal(act), "book": drafted.book}
+        if typed:
+            entry["content"] += "\n\n" + _tr("chat.book_reply_yes", lang)
+        entry["proposal"] = offer
+        obs.event("chat.action_proposed", action=act.kind)
+    history.append(stored(entry))
+    auth.save_chat(history, chat_path)
+    return Reply(text=entry["content"], proposal=dict(offer) if offer else None)
 
 
 # ------------------------------------------------------------------ memory
@@ -2327,13 +2414,18 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     # A proposal waiting on the turn above, answered in words: "sí" is the
     # button pressed, not a question for a model that would cheerfully reply
     # "done" without having done anything.
-    if confirm_actions:
-        held = _open_proposal(history[:-1])
-        said = tools.verdict(message) if held is not None else None
-        if held is not None and said is not None:
+    # A ledger proposal is asked on every surface, so it is answered on every
+    # surface too; on the bot ("sí" written) that is the only way to answer.
+    held = _open_proposal(history[:-1])
+    if held is not None and (confirm_actions
+                             or isinstance(history[held]["proposal"].get("book"), dict)):
+        said = tools.verdict(message)
+        if said is not None:
             return None, _typed_verdict(history, held, said, prefs=prefs,
                                         chat_path=chat_path,
-                                        watchlist=watchlist, lang=lang)
+                                        watchlist=watchlist, lang=lang, db=db,
+                                        source="chat" if confirm_actions
+                                        else "telegram")
 
     # Asked to import: there is nothing to execute and nothing worth asking a
     # model, since the statement itself is what an import needs and this
@@ -2401,6 +2493,15 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     if tools.maybe_action(message):
         act = tools.detect(provider, key, message,
                            view + action_context(watchlist))
+        if act is not None and tools.is_book(act.kind):
+            reply = _book_turn(act, history=history, prefs=prefs, db=db,
+                               chat_path=chat_path, lang=lang,
+                               typed=not confirm_actions, stored=stored)
+            if not reply.error:
+                autotitle(chat_path, provider, key, history, lang)
+                _keep_byok(prefs, prefs_path, provider.id)
+                return settled(replace(reply, provider_id=provider.id))
+            act = None
         if act is not None and confirm_actions:
             offer = _proposal(act)
             note = tools.proposal(act, lambda k, **kw: _tr(k, lang, **kw))

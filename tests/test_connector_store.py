@@ -103,7 +103,8 @@ def test_the_profile_list_carries_no_secrets(ledger):
     grant(ledger)
     (row,) = ledger.grants_for(EMAIL)
     assert set(row) == {"id", "client_name", "client_kind", "redirect_host",
-                        "created", "used", "expires"}
+                        "created", "used", "expires", "write"}
+    assert row["write"] is False
 
 
 def test_deleting_an_account_ends_its_connections_only(ledger, tmp_path, monkeypatch):

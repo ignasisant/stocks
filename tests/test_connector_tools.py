@@ -82,6 +82,16 @@ def token(book) -> str:
     ).access
 
 
+@pytest.fixture
+def editor(book, monkeypatch) -> str:
+    """A token whose holder ticked the edits box at consent."""
+    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
+    return store.ledger().issue(
+        email=EMAIL, client_id="c1", client_name="Claude", client_kind="cimd",
+        redirect_host="claude.ai", scopes=store.SCOPES,
+    ).access
+
+
 def rpc(client: TestClient, token: str, method: str, params: dict | None = None,
         **headers):
     return client.post(
@@ -112,21 +122,48 @@ def ok(result: dict) -> dict:
 # ------------------------------------------------------------------ catalog
 
 
-def test_every_tool_is_listed_read_only(site, token):
-    r = rpc(site, token, "tools/list")
-    listed = {t["name"]: t for t in r.json()["result"]["tools"]}
-    assert set(listed) == {spec.name for spec in tools.TOOLS}
-    for tool in listed.values():
+def listed(client: TestClient, token: str) -> dict[str, dict]:
+    tools_ = rpc(client, token, "tools/list").json()["result"]["tools"]
+    return {t["name"]: t for t in tools_}
+
+
+def test_a_read_only_token_is_shown_only_the_reading_tools(site, token):
+    shown = listed(site, token)
+    assert set(shown) == {spec.name for spec in tools.TOOLS if not spec.write}
+    for tool in shown.values():
         assert tool["annotations"]["readOnlyHint"] is True
         assert tool["annotations"]["destructiveHint"] is False
         assert tool["title"]
         assert tool["description"]
 
 
-def test_nothing_that_writes_or_wanders_is_exposed(site, token):
-    names = {t["name"] for t in rpc(site, token, "tools/list").json()["result"]["tools"]}
-    for word in ("import", "delete", "add", "remove", "write", "web", "recall"):
+def test_a_token_allowed_to_edit_sees_every_tool_marked_for_what_it_does(
+    site, editor
+):
+    shown = listed(site, editor)
+    assert set(shown) == {spec.name for spec in tools.TOOLS}
+    assert shown["delete_transactions"]["annotations"]["readOnlyHint"] is False
+    assert shown["delete_transactions"]["annotations"]["destructiveHint"] is True
+    assert shown["follow_ticker"]["annotations"]["destructiveHint"] is False
+    assert shown["list_positions"]["annotations"]["readOnlyHint"] is True
+
+
+def test_nothing_that_wipes_imports_or_wanders_is_exposed(site, editor):
+    """No wiping the book, no statement imports (a file, and far over the
+    body limit), no global ticker map, no web, no account deletion."""
+    names = set(listed(site, editor))
+    for word in ("wipe", "clear", "commit_import", "preview_import", "code_map",
+                 "venue", "web", "recall", "account"):
         assert not any(word in n for n in names), names
+
+
+def test_a_read_only_token_calling_a_write_tool_is_refused(site, token, book):
+    before = ledger.all_transactions(book.db)
+    result = call(site, token, "delete_transactions", ids=[before[0].id],
+                  plan_token="x")
+    assert result["isError"] is True
+    assert "can only read" in result_text(result)
+    assert ledger.all_transactions(book.db) == before
 
 
 # -------------------------------------------------------------- the book
@@ -407,3 +444,194 @@ def test_the_view_is_served_as_an_mcp_app(site, token):
     tools_ = rpc(site, token, "tools/list").json()["result"]["tools"]
     listed = {t["name"]: t for t in tools_}
     assert listed["portfolio_overview"]["_meta"]["ui"]["resourceUri"] == views.URI
+
+
+# ----------------------------------------------------------- editing the book
+
+
+def ids(book) -> list[int]:
+    return [t.id for t in ledger.all_transactions(book.db)]
+
+
+def test_an_edit_previews_then_applies_under_its_token_and_undoes(
+    site, editor, book
+):
+    before = ledger.all_transactions(book.db)
+    sale = before[-1].id
+    plan = ok(call(site, editor, "delete_transactions", ids=[sale]))
+    assert plan["kind"] == "edit_plan" and plan["applied"] is False
+    assert plan["ok"] and plan["plan_token"]
+    assert [c["kind"] for c in plan["changes"]] == ["deleted"]
+    assert ledger.all_transactions(book.db) == before
+
+    done = ok(call(site, editor, "delete_transactions", ids=[sale],
+                   plan_token=plan["plan_token"]))
+    assert done["applied"] is True and done["source"] == "mcp"
+    assert sale not in ids(book)
+
+    history = ok(call(site, editor, "change_history"))
+    assert [c["id"] for c in history["changes"]] == [done["id"]]
+
+    preview = ok(call(site, editor, "undo_change"))
+    assert preview["applied"] is False and preview["id"] == done["id"]
+    assert sale not in ids(book)
+    ok(call(site, editor, "undo_change", change_id=done["id"], confirm=True))
+    assert ledger.all_transactions(book.db) == before
+    again = call(site, editor, "undo_change", change_id=done["id"], confirm=True)
+    assert again["isError"] is True
+
+
+def test_a_token_from_another_plan_applies_nothing(site, editor, book):
+    first, second, sale = ids(book)
+    plan = ok(call(site, editor, "delete_transactions", ids=[sale]))
+    result = call(site, editor, "delete_transactions", ids=[second],
+                  plan_token=plan["plan_token"])
+    assert result["isError"] is True
+    assert "Preview it again" in result_text(result)
+    assert ids(book) == [first, second, sale]
+
+
+def test_a_book_that_moved_since_the_preview_applies_nothing(site, editor, book):
+    sale = ids(book)[-1]
+    plan = ok(call(site, editor, "delete_transactions", ids=[sale]))
+    ledger.add(Transaction("2024-04-01", "MSFT", "buy", 1, 300.0, "EUR"), book.db)
+    result = call(site, editor, "delete_transactions", ids=[sale],
+                  plan_token=plan["plan_token"])
+    assert result["isError"] is True
+    assert sale in ids(book)
+
+
+def test_an_edit_that_breaks_the_book_says_why_and_cannot_apply(site, editor, book):
+    plan = ok(call(site, editor, "delete_transactions", ids=ids(book)[:2]))
+    assert plan["ok"] is False and "exceeds held" in plan["problems"][0]
+    assert "cannot be applied" in plan["next"]
+
+
+def test_a_new_broker_replaces_only_the_notes_first_word(site, editor, book):
+    first = ids(book)[0]
+    plan = ok(call(site, editor, "edit_transaction", id=first, broker="IBKR",
+                   price=101.0))
+    (change,) = plan["changes"]
+    assert change["after"]["note"] == "ibkr"
+    assert change["after"]["price"] == 101.0
+
+
+def test_rows_added_by_hand_carry_their_broker(site, editor, book):
+    row = {"date": "2024-05-02", "ticker": "msft", "action": "buy", "quantity": 2,
+           "price": 300.0, "currency": "EUR", "broker": "Revolut", "note": "app"}
+    plan = ok(call(site, editor, "add_transactions", rows=[row]))
+    ok(call(site, editor, "add_transactions", rows=[row],
+            plan_token=plan["plan_token"]))
+    added = ledger.all_transactions(book.db)[-1]
+    assert (added.ticker, added.note) == ("MSFT", "revolut app")
+
+
+GRIFOLS = [
+    Transaction("2024-03-01", "ES0171996087", "buy", 100, 8.0, "EUR", 2.0,
+                "degiro GRIFOLS"),
+    Transaction("2026-08-06", "ES0171996087", "sell", 100, 12.0, "EUR", 0.0,
+                "degiro GRIFOLS"),
+    Transaction("2026-08-20", "GRF.MC", "buy", 100, 8.02, "EUR", 0.0, "ibkr"),
+]
+
+
+def test_the_grifols_move_is_found_and_its_fix_applied_in_two_calls(
+    site, editor, book, monkeypatch
+):
+    """The case behind all this: one broker's sale under the ISIN, the
+    other's buy under the symbol, read as a 398 EUR gain that never was."""
+    ledger.add_many(GRIFOLS, book.db)
+    monkeypatch.setattr(loaders, "display_symbol", {"ES0171996087": "GRF.MC"}.get)
+    [finding] = ok(call(site, editor, "check_book"))["findings"]
+    assert finding["kind"] == "transfer"
+    plan = ok(call(site, editor, "apply_fix", key=finding["key"]))
+    assert plan["ok"]
+    (gain,) = [e for e in plan["effects"] if e["realized_before"]]
+    assert gain["realized_after"] == {}
+    ok(call(site, editor, "apply_fix", key=finding["key"],
+            plan_token=plan["plan_token"]))
+    assert ok(call(site, editor, "check_book"))["findings"] == []
+    stale = call(site, editor, "apply_fix", key=finding["key"])
+    assert "check_book again" in result_text(stale)
+
+
+def test_a_rename_by_label_touches_only_that_label_at_that_broker(
+    site, editor, book
+):
+    ledger.add_many(GRIFOLS, book.db)
+    plan = ok(call(site, editor, "rename_security", label="es0171996087",
+                   broker="degiro", to="grf.mc"))
+    assert {c["after"]["ticker"] for c in plan["changes"]} == {"GRF.MC"}
+    assert len(plan["changes"]) == 2
+
+
+@pytest.mark.parametrize("tool, arguments, text", [
+    ("rename_security", {"to": "X"}, "a label or ids"),
+    ("rename_security", {"to": "X", "label": "NOPE"}, "No transactions"),
+    ("edit_transaction", {"id": 1}, "at least one field"),
+    ("edit_transaction", {"id": 999, "broker": "ibkr"}, "no transaction 999"),
+])
+def test_an_edit_that_names_nothing_is_refused_in_words(
+    site, editor, tool, arguments, text
+):
+    result = call(site, editor, tool, **arguments)
+    assert result["isError"] is True
+    assert text in result_text(result)
+
+
+def test_the_ledger_narrows_to_the_rows_named(site, token, book):
+    ledger.add_many(GRIFOLS, book.db)
+    data = ok(call(site, token, "list_transactions", broker="DeGiro", action="sell"))
+    assert [(t["ticker"], t["action"]) for t in data["transactions"]] == [
+        ("ES0171996087", "sell")]
+    assert all(t["id"] for t in data["transactions"])
+
+
+# ------------------------------------------------- watchlist, memory, settings
+
+
+def test_follow_alert_and_unfollow(site, editor, book):
+    ok(call(site, editor, "follow_ticker", ticker="msft", favorite=True,
+            tags=["cloud"]))
+    rule = {"type": "below", "price": 300.0}
+    ok(call(site, editor, "set_alerts", ticker="MSFT", alerts=[rule]))
+    alerts = ok(call(site, editor, "get_alerts", ticker="MSFT"))["alerts"]
+    assert [(a["type"], a["price"]) for a in alerts] == [("below", 300.0)]
+    ok(call(site, editor, "unfollow_ticker", ticker="MSFT"))
+    gone = call(site, editor, "unfollow_ticker", ticker="MSFT")
+    assert gone["isError"] is True and "not on this watchlist" in result_text(gone)
+
+
+def test_remember_and_forget_by_the_id_investor_context_gives(site, editor):
+    saved = ok(call(site, editor, "remember", text="Cada día dime cómo va el Nasdaq",
+                    kind="routine"))
+    memories = ok(call(site, editor, "investor_context"))["memories"]
+    assert [(m["id"], m["kind"]) for m in memories] == [(saved["id"], "routine")]
+    ok(call(site, editor, "forget", memory_id=saved["id"]))
+    assert ok(call(site, editor, "investor_context"))["memories"] == []
+
+
+def test_preferences_change_only_what_is_named_and_refuse_nonsense(site, editor):
+    ok(call(site, editor, "set_preferences", currency="usd"))
+    prefs = ok(call(site, editor, "get_preferences"))
+    assert prefs["currency"] == "USD"
+    bad = call(site, editor, "set_preferences", currency="XXX")
+    assert bad["isError"] is True and "currency must be one of" in result_text(bad)
+    empty = call(site, editor, "set_preferences")
+    assert empty["isError"] is True
+
+
+def test_a_sale_is_simulated_by_the_tax_engine(site, token, monkeypatch):
+    from stocks.chat import whatif
+
+    seen: list[dict] = []
+
+    def simulate(**kw):
+        seen.append(kw)
+
+    monkeypatch.setattr(whatif, "simulate", simulate)
+    result = call(site, token, "simulate_sale", ticker="aapl", shares=3, price=150,
+                  currency="eur")
+    assert result["isError"] is True and "No holding of AAPL" in result_text(result)
+    assert seen[0]["ticker"] == "AAPL" and seen[0]["shares"] == 3
+    assert seen[0]["price"] == (150, "EUR")
