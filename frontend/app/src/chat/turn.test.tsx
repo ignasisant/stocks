@@ -2,11 +2,10 @@
  * The two ways out of a turn that did not work, and the one out of a turn that
  * is still being written.
  *
- * A refusal carries Retry *and* Discard — the Streamlit composer's
- * "error_drop" beside its Retry — because a question the reader has given up
- * on should not sit at the bottom of the thread forever. A failed attachment
- * carries only Discard: it has no question of its own to ask again. And while
- * an answer streams, Send is Stop.
+ * A refusal carries Retry *and* Discard, because a question the reader has
+ * given up on should not sit at the bottom of the thread forever. A failed
+ * attachment carries only Discard: it has no question of its own to ask
+ * again. And while an answer streams, Send is Stop.
  *
  * Rendered to static markup: the question is what is drawn from a given turn.
  */

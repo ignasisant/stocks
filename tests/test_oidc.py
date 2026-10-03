@@ -1,10 +1,10 @@
 """The app's own sign-in flow, and the ways it must refuse to sign anybody in.
 
-Streamlit used to run this round trip. Now it is ours, which means the checks
-Streamlit was quietly doing are ours to get right — and the one that matters
-most is the one authlib does *not* do for you: `parse_id_token` pins the issuer
-and never compares the audience to our client id, so a token minted for another
-Google client would otherwise sail through a signature check and sign somebody in.
+The round trip is ours, which means every check is ours to get right — and
+the one that matters most is the one authlib does *not* do for you:
+`parse_id_token` pins the issuer and never compares the audience to our client
+id, so a token minted for another Google client would otherwise sail through
+a signature check and sign somebody in.
 
 Every test below is a variation on one question: when something is wrong, does
 the response leave without a session cookie? A flow that errors is an
@@ -219,9 +219,8 @@ def test_a_completed_round_trip_signs_the_browser_in(client, google):
 def test_a_first_sign_in_creates_the_account_and_dates_the_signup(
     client, google, users
 ):
-    """The React shell has no script run to provision in, so the callback does
-    what `web.auth.resolve_user` does for a Streamlit session — or a new address
-    signs in and meets "unknown account" (the offline screen) forever."""
+    """The callback provisions the account — or a new address signs in and
+    meets "unknown account" (the offline screen) forever."""
     _, flow = start(client, google)
     come_back(client, google, flow)
     paths = accounts.paths_for(EMAIL, None, users_dir=users)
@@ -350,23 +349,14 @@ def test_a_cancelled_sign_in_comes_back_quietly_signed_out(client, google):
     assert signed_in_as(response) is None
 
 
-def test_signing_in_clears_any_leftover_streamlit_cookie(client, google):
-    """Two answers to "who is this" is the one thing the migration must not
-    leave behind."""
-    _, flow = start(client, google)
-    response = come_back(client, google, flow)
-    assert "Max-Age=0" in cookies_set(response)[session.LEGACY_COOKIE]
-
-
 # ---------------------------------------------------------------- signing out
 
 
-def test_signing_out_clears_the_session_and_the_streamlit_leftovers(client, google):
+def test_signing_out_clears_the_session_and_the_flow(client, google):
     response = client.get(session.LOGOUT_PATH)
     set_by = cookies_set(response)
     assert response.status_code == 302
-    for name in (session.COOKIE, session.FLOW_COOKIE, session.LEGACY_COOKIE,
-                 session.LEGACY_TOKENS_COOKIE):
+    for name in (session.COOKIE, session.FLOW_COOKIE):
         assert "Max-Age=0" in set_by[name], name
 
 

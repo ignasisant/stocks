@@ -22,7 +22,7 @@ export function AssetStatsSection({ stats }: { stats: AssetStats }) {
   const na = t("ticker.na");
   const cell = (value: string) => (value === DASH ? na : value);
   const rows: [string, string][] = [
-    // `compact_money`, as Streamlit prints them: "€1.5T", "€40.7B" — the mark
+    // `stocks.formatting.compact_money`'s shape: "€1.5T", "€40.7B" — the mark
     // of the quote currency, one decimal. Supply is a count of coins, so it
     // takes the same rounding with no mark at all.
     [t("ticker.market_cap"), cell(compactMoney(stats.market_cap, stats.quote))],
@@ -35,9 +35,9 @@ export function AssetStatsSection({ stats }: { stats: AssetStats }) {
       t("ticker.range_52w"),
       // Half a range is not a range: one end missing leaves nothing to read
       // between, so the row says "n/a" rather than printing a lone bound.
-      // Full precision, as Streamlit prints it ("16,212 – 98,050"): the range
-      // of a coin is read against today's price, and "16.2K – 98.1K" loses the
-      // very digits that comparison needs.
+      // Full precision ("16,212 – 98,050"): the range of a coin is read against
+      // today's price, and "16.2K – 98.1K" loses the very digits that
+      // comparison needs.
       stats.low_52w && stats.high_52w
         ? `${money(stats.low_52w, 0)} – ${money(stats.high_52w, 0)}`
         : na,
@@ -58,9 +58,9 @@ export function AssetStatsSection({ stats }: { stats: AssetStats }) {
 /**
  * Where every KPI is loaded from and where to check it before acting on it.
  *
- * Collapsed, as on the Streamlit page, and fetched only when opened: it is
- * reference data most readers never expand, and it is the same table every
- * time — so it hangs off `open` rather than costing a request per company.
+ * Collapsed, and fetched only when opened: it is reference data most readers
+ * never expand, and it is the same table every time — so it hangs off `open`
+ * rather than costing a request per company.
  */
 export function KpiSourcesSection() {
   const t = useT();
@@ -100,9 +100,9 @@ export function KpiSourcesSection() {
                         <tbody>
                           {data.kpis.map((row) => (
                             <tr key={row.key}>
-                              {/* The catalog's name for the KPI, as Streamlit's
-                              `kpi_label` reads it; the API's English string is
-                              the fallback for a KPI nobody has translated. */}
+                              {/* The catalog's name for the KPI; the API's
+                              English string is the fallback for a KPI nobody
+                              has translated. */}
                               <td title={orElse(t, `kpi.${row.key}.desc`, row.desc)}>
                                 {orElse(t, `kpi.${row.key}.label`, row.label)}
                               </td>

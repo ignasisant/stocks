@@ -17,6 +17,7 @@
 
 import { useState } from "react";
 import { get } from "../../shell/api";
+import { chart } from "../../shell/theme";
 import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
@@ -32,7 +33,7 @@ import { Donut, ReturnLines, type LineMoney, type SliceDetail } from "./charts";
 import { CorrelationCard } from "./Correlation";
 import { Caption, Card, Empty, Kpis, Segmented } from "./ui";
 
-/** Allocation splits, in the order the Streamlit page lays them out. */
+/** Allocation splits, in the order they are laid out. */
 const SPLITS: [string, string][] = [
   ["sector", "portfolio.alloc_sector"],
   ["country", "portfolio.alloc_geography"],
@@ -45,8 +46,8 @@ export default function Risk() {
   const lang = useLang();
   const base = useCurrency();
   const money = moneyIn(lang, base);
-  // Since inception by default, as the Streamlit tab opens: a window that
-  // reaches back before the first trade scores years nobody held anything.
+  // Since inception by default: a window that reaches back before the first
+  // trade scores years nobody held anything.
   const [period, setPeriod] = useState<RiskPeriod>("inception");
   // Same axis labels as the history chart next door, for the same reason: two
   // charts of the same book should not date themselves differently.
@@ -76,13 +77,22 @@ export default function Risk() {
       versus: t("portfolio.flow_tip_versus"),
     },
   };
+  const palette = chart();
+  // In the API's order (SPY, QQQ, EEM), so an index keeps its hue whichever
+  // window is picked. Validated as a set against the card in both themes.
+  const benchmarkColors = [
+    palette.info,
+    palette.warn,
+    palette.warnOrange,
+    palette.brandAccent,
+  ];
 
-  // Two calls, one window. The selector sits above both cards and drives both,
-  // as it does on the Streamlit tab: the real-performance tiles are re-taken
-  // from the window's start (TWR, IRR with the book's value on that day as the
-  // buy-in, volatility, drawdown), and the basket is backtested over it. Two
-  // requests still, because they fail and load independently — a slow price
-  // burst behind the basket must not hold the ledger's own figures back.
+  // Two calls, one window. The selector sits above both cards and drives both:
+  // the real-performance tiles are re-taken from the window's start (TWR, IRR
+  // with the book's value on that day as the buy-in, volatility, drawdown), and
+  // the basket is backtested over it. Two requests still, because they fail and
+  // load independently — a slow price burst behind the basket must not hold the
+  // ledger's own figures back.
   const performance = useApi(
     () => get<Performance>("/portfolio/performance", { base, window: period }),
     [base, period],
@@ -305,24 +315,39 @@ export default function Risk() {
                 <Card title={t("portfolio.flow_matched_return")}>
                   <ReturnLines
                     dates={data.curves.dates}
-                    format={(value) => percent(lang, value, { digits: 1 }) ?? ""}
+                    label={t("portfolio.flow_matched_return")}
+                    format={(value) =>
+                      percent(lang, value, { digits: 1, signed: true }) ?? ""
+                    }
+                    tickFormat={(value) => percent(lang, value, { digits: 0 }) ?? ""}
                     formatDate={formatDate}
                     money={{
                       ...lineMoney,
                       invested: data.curves.invested,
                     }}
                     series={[
+                      // The account in the ink the page's figures wear, as the
+                      // system draws every real record; the basket a step back
+                      // in secondary, and the benchmarks in the three hues
+                      // that stay apart for every kind of colour vision.
                       {
                         label: t("portfolio.series_portfolio_actual"),
                         points: data.curves.portfolio,
+                        color: palette.textPrimary,
+                        focal: true,
                       },
                       {
                         label: t("portfolio.series_current_basket"),
                         points: data.curves.basket,
+                        color: palette.textSecondary,
                         dashed: true,
                       },
                       ...Object.entries(data.curves.benchmarks).map(
-                        ([bench, points]) => ({ label: bench, points }),
+                        ([bench, points], index) => ({
+                          label: bench,
+                          points,
+                          color: benchmarkColors[index] ?? palette.textMuted,
+                        }),
                       ),
                     ]}
                   />

@@ -160,10 +160,10 @@ def _view(stored: dict) -> Prefs:
         notify_digest=bool(stored.get("notify_digest")),
         # Defaulted here rather than read off the merged file, because unlike
         # its two neighbours this one is missing from `accounts.DEFAULT_PREFS`.
-        # The page draws the toggle on (`prefs.get(key, True)`) and the cron
-        # sends on the same assumption (`notify.fanout.iter_notify_users`), so
-        # reporting False for an account that never touched it would draw the
-        # switch off beside a review that is being delivered every Sunday.
+        # The cron sends on the assumption it is on
+        # (`notify.fanout.iter_notify_users`), so reporting False for an
+        # account that never touched it would draw the switch off beside a
+        # review that is being delivered every Sunday.
         notify_weekly=bool(stored.get("notify_weekly", True)),
         setup_card_dismissed=bool(stored.get("setup_card_dismissed", False)),
         onboarding_dismissed=bool(stored.get("onboarding_dismissed", False)),
@@ -214,10 +214,9 @@ def update(
 # its own vocabulary, so a `PrefsPatch` field for it would accept any JSON at
 # all under the one key that reaches the model's system prompt.
 #
-# `PUT`, not `PATCH`. The form is five controls saved together and the page
-# stores it as a whole (`auth.save_profile`); a partial write would let a client
-# leave `risk` behind while moving `horizon` and end up describing somebody who
-# never filled that combination in.
+# `PUT`, not `PATCH`. The form is five controls stored as a whole; a partial
+# write would let a client leave `risk` behind while moving `horizon` and end
+# up describing somebody who never filled that combination in.
 
 # How much free text the assistant is asked to carry. The notes ride in every
 # system prompt the account ever sends (`chat.engine.persona`), so an unbounded
@@ -229,11 +228,9 @@ _MAX_NOTES = 2000
 
 
 def _profile_options() -> tuple[tuple[str, ...], ...]:
-    """(risk, horizon, focus, constraints), from the page's own tuples.
+    """(risk, horizon, focus, constraints), from `web.auth`'s own tuples.
 
-    Imported here rather than at module scope, the same way `/i18n` does it:
-    `stocks.web` pulls Streamlit in and a headless caller never needs it. The
-    lists come from `web.auth` rather than being restated because they are the
+    The lists come from there rather than being restated because they are the
     ones `chat.engine.persona` has English wording for — a value this route
     invented would store fine and then describe nobody.
     """
@@ -285,10 +282,9 @@ class InvestorProfile(BaseModel):
 def _in_offering_order(chosen: list[str], allowed: tuple[str, ...], field: str):
     """The picks that are real options, deduplicated, in the order they are offered.
 
-    Normalised rather than stored as sent, exactly as `auth.render_profile_form`
-    normalises the page's click order. The Profile page autosaves on a *field by
-    field* difference against what is stored, so a list that came back in a
-    different order would read as an edit on every rerun and toast "saved" at a
+    Normalised rather than stored as sent. The Profile page autosaves on a
+    *field by field* difference against what is stored, so a list that came
+    back in a different order would read as an edit and toast "saved" at a
     reader who touched nothing.
     """
     codes = [c.strip().lower() for c in chosen]
@@ -379,8 +375,8 @@ def save(account: Writer, body: ProfileWrite) -> InvestorProfile:
     """Store the whole profile and mark it set.
 
     A session only, like every other write here. And a merge into prefs.json
-    rather than a rewrite of it (`accounts.update_prefs`), so a Streamlit tab
-    open on the same account keeps whatever it saved next door.
+    rather than a rewrite of it (`accounts.update_prefs`), so another tab open
+    on the same account keeps whatever it saved next door.
     """
     from stocks.web.auth import load_profile
 

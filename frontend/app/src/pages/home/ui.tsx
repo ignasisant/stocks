@@ -3,9 +3,8 @@
  * ticker cell. The KPI tile and its delta pill are the shared ones in
  * `src/ui/Kpi.tsx`.
  *
- * They mirror `web/tables.py` — same tile, same pill, same colour rule — so the
- * rebuilt page and the Streamlit one beside it read as one app. Every colour is
- * a `--ag-*` custom property; none of it is written by hand here.
+ * Every colour is a `--ag-*` custom property; none of it is written by hand
+ * here.
  */
 
 import type { ReactNode } from "react";
@@ -38,17 +37,15 @@ export function Note({ children }: { children: ReactNode }) {
  * `<Loaded>`, with this page's own sentence for a section that failed.
  *
  * The shell's failure copy serves every screen and so cannot name anything;
- * this page draws four independent sections and degrades one at a time, which
- * is the behaviour `web/app_pages/home.py` has — a throttled earnings pass
- * leaves the glance, the transactions and the watchlist exactly where they
- * were. A bare "something went wrong" in the middle of that says nothing about
- * which part of the page is the part that is gone, so the catalog's specific
- * sentence goes here instead, under the card's own heading — again as in
- * Streamlit, which keeps the title and captions the failure beneath it.
+ * this page draws four independent sections and degrades one at a time — a
+ * throttled earnings pass leaves the glance, the transactions and the
+ * watchlist exactly where they were. A bare "something went wrong" in the
+ * middle of that says nothing about which part of the page is the part that
+ * is gone, so the catalog's specific sentence goes here instead, under the
+ * card's own heading, with the failure captioned beneath it.
  *
- * The retry is this shell's own improvement on the copy: the sentence says
- * "reload to retry" because a Streamlit page has no button to offer, and this
- * one does.
+ * The sentence still says "reload to retry"; the button beside it is the
+ * quicker way to do that.
  */
 export function CardQuery<T>({
   query,
@@ -87,10 +84,10 @@ export function CardQuery<T>({
 /**
  * A ticker, always as a link to its own page.
  *
- * House rule: every symbol on screen opens its analysis, behind the same
- * mirrored logo the Streamlit cell carries. The shell's cell collects a whole
- * table's worth of names into one `/market/profiles` call, so the marks cost
- * one request per screen rather than one per row.
+ * House rule: every symbol on screen opens its analysis, behind its mirrored
+ * logo. The shell's cell collects a whole table's worth of names into one
+ * `/market/profiles` call, so the marks cost one request per screen rather
+ * than one per row.
  */
 export function TickerCell({
   ticker,
@@ -98,9 +95,9 @@ export function TickerCell({
 }: {
   ticker: string;
   /**
-   * Print the company name after the symbol — `ticker_table_html`'s `names`.
-   * Off where Streamlit turns it off (the movers and recent-transactions
-   * tables) and where the cell is a chip with no room for it.
+   * Print the company name after the symbol. Off in the movers and
+   * recent-transactions tables and where the cell is a chip with no room for
+   * it.
    */
   name?: boolean;
 }) {

@@ -1,28 +1,28 @@
-"""The conversational walkthrough, for a front end that is not Streamlit.
+"""The conversational walkthrough, inside the assistant drawer.
 
-`web/guide.py` walks a new account through the app inside the assistant
-drawer: one step per turn, a card under each with "take me there" and "next",
-and steps the account has already switched on walked past with a one-line
-receipt. It is the default onboarding (`GUIDE_SURFACE` = "chat"); the modal
-tour is the rollback. This router is the same walkthrough for any client.
+The guide walks a new account through the app one step per turn: a card under
+each with "take me there" and "next", and steps the account has already
+switched on walked past with a one-line receipt. It is the default onboarding
+(`GUIDE_SURFACE` = "chat"); the modal tour is the rollback. `web/guide.py`
+holds the registry walk and the prefs keys; this router is the walkthrough.
 
-**The state is the account's, and it is one state.** The same prefs keys
-(`guide_step`, `guide_done`, `guide_thread`, `guide_opens`), the same
-conversation, and the same stored turns with the same `guide` marker — so a
-reader who starts the walkthrough in one front end finds it where they left it
-in the other, and neither can append a card the other already appended.
+**The state is the account's, and it is one state.** The prefs keys
+(`guide_step`, `guide_done`, `guide_thread`, `guide_opens`), the conversation,
+and the stored turns with their `guide` marker — so a reader who starts the
+walkthrough on the phone finds it where they left it on the laptop, and no two
+tabs can append the card the other already appended.
 
-**What does not come across is Streamlit's per-session plumbing**: "evaluated
-once this session", "the panel is parked on a phone". Those are facts about a
-browser tab, and the client that owns the tab keeps them. What this router
-answers is `auto_open` — whether the account is still owed an automatic open —
-and the client decides whether *this* load is the one that spends it.
+**What is not here is per-tab state**: "already opened in this tab", "the
+drawer is parked on a phone". Those are facts about a browser tab, and the
+client that owns the tab keeps them. What this router answers is `auto_open` —
+whether the account is still owed an automatic open — and the client decides
+whether *this* load is the one that spends it.
 
-**The model half is `chat/guide_ai.py`**, shared with the Streamlit guide: the
-one generated opening line lands here, on the advance to the second step, and
-the prompt fence and the jump marker ride on the chat turn itself
-(`api/routes/chat.py`) because that is where a mid-tour question is answered.
-All of it degrades to silence by design; the walkthrough is complete without.
+**The model half is `chat/guide_ai.py`**: the one generated opening line lands
+here, on the advance to the second step, and the prompt fence and the jump
+marker ride on the chat turn itself (`api/routes/chat.py`) because that is
+where a mid-tour question is answered. All of it degrades to silence by
+design; the walkthrough is complete without.
 
 Every route here writes except `GET`: moving the marker, stamping an open and
 appending a card are all stored state, so they are `Writer` like every other
@@ -38,7 +38,7 @@ from stocks import accounts, obs
 from stocks.accounts import UserPaths
 from stocks.api.deps import Account, Writer
 from stocks.chat import engine, guide_ai
-from stocks.web import guide, onboarding
+from stocks.web import guide, i18n, onboarding
 from stocks.web.i18n import translate
 
 router = APIRouter(prefix="/guide", tags=["onboarding"])
@@ -130,7 +130,7 @@ def _step(step: onboarding.Step, prefs: dict, paths: UserPaths) -> GuideStep:
     return GuideStep(
         id=step.id,
         icon=step.icon,
-        path=onboarding._url_path(step.page) if step.page else None,
+        path=step.page,
         params=dict(step.query or {}),
         session={k: str(v) for k, v in (step.session or {}).items()},
         gated=step.gated,
@@ -139,7 +139,7 @@ def _step(step: onboarding.Step, prefs: dict, paths: UserPaths) -> GuideStep:
         body_key=f"tour.{step.id}_body",
         cta_key=(
             f"tour.{step.id}_cta"
-            if onboarding.i18n.has(f"tour.{step.id}_cta")
+            if i18n.has(f"tour.{step.id}_cta")
             else None
         ),
     )
@@ -166,7 +166,7 @@ def _state(paths: UserPaths, prefs: dict, *, changed: bool = False) -> GuideStat
 
 
 def _card(step: onboarding.Step, lang: str) -> dict:
-    """The stored turn that presents one step — `guide.turn_for`, in `lang`."""
+    """The stored turn that presents one step, in `lang`."""
     return {
         "role": "assistant",
         "content": (
@@ -207,9 +207,9 @@ def _ensure_thread(paths: UserPaths, prefs: dict, lang: str) -> None:
 
 
 def _finish(paths: UserPaths, prefs: dict, reason: str) -> None:
-    """End the walkthrough for good — and, like the Streamlit guide, stamp the
-    tour done and the release seen: someone who just walked through everything
-    has no "what's new" to catch up on."""
+    """End the walkthrough for good — and stamp the tour done and the release
+    seen: someone who just walked through everything has no "what's new" to
+    catch up on."""
     step = guide.current(prefs)
     obs.event(
         "guide.exit", reason=reason, step=step.id if step else "",
@@ -223,7 +223,7 @@ def _finish(paths: UserPaths, prefs: dict, reason: str) -> None:
 
 
 def _sync(paths: UserPaths, prefs: dict, lang: str) -> bool:
-    """`guide.sync`, against the guide's own thread.
+    """Catch the guide's own thread up with the account.
 
     Walks past every step whose capability the account now has — an import
     done in another tab shows up as progress, not as a step to re-read — and
@@ -277,14 +277,14 @@ def _narrate(
 ) -> bool:
     """The one generated line of the walkthrough, under the step just reached.
 
-    `guide.narrate`, for this front end: held back until the reader has pressed
+    Held back until the reader has pressed
     Next once (a wait is expected then, and it is the cheapest proof that the
     thing talking is not a slideshow), attempted once per account whether or
     not a provider answers, and appended after the step's card so it reads as
     the assistant adding something rather than as part of the script. Returns
     whether the thread changed. Blocks the advance for at most the narration's
-    own timeout per provider — the same wait the Streamlit panel shows a
-    shimmer for — and a silent chain costs the reader nothing but that.
+    own timeout per provider — the drawer shows its status line meanwhile —
+    and a silent chain costs the reader nothing but that.
     """
     from stocks.web import auth
 

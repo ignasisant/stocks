@@ -1,18 +1,17 @@
 /**
  * The guided tour and "what's new", over the shell rather than inside a page.
  *
- * Both are one registry (`/onboarding`) and one modal in two modes, exactly as
- * in the Streamlit app — a step explains a feature and offers to take you to
- * it; a card announces one thing that shipped and hands you to the step that
- * explains it. Keeping them together is not tidiness: a card whose step this
- * deploy does not carry is dropped server-side, and a client that fetched the
- * two separately could draw an announcement pointing nowhere.
+ * Both are one registry (`/onboarding`) and one modal in two modes — a step
+ * explains a feature and offers to take you to it; a card announces one thing
+ * that shipped and hands you to the step that explains it. Keeping them
+ * together is not tidiness: a card whose step this deploy does not carry is
+ * dropped server-side, and a client that fetched the two separately could draw
+ * an announcement pointing nowhere.
  *
- * The tour wins when both are owed, which is `onboarding.maybe_open()`'s rule
- * and not this file's to re-decide: an account that has never taken the
- * walkthrough is not the audience for "here is what changed" — it has no
- * before. What's new is for the account that already finished, and the missed
- * release stays owed until then.
+ * The tour wins when both are owed (`firstLoad`): an account that has never
+ * taken the walkthrough is not the audience for "here is what changed" — it
+ * has no before. What's new is for the account that already finished, and the
+ * missed release stays owed until then.
  *
  * Every way *out* stamps the account as caught up. That is the whole contract
  * of a modal that interrupts: it gets one chance, and a card shown twice is
@@ -79,11 +78,10 @@ type State = {
  * The query a step lands with.
  *
  * `params` is already query-shaped. `session` is not: the registry describes
- * what the Streamlit page seeds in session state, and this shell puts the same
- * intent in the URL — the Profile's tab is `?tab=`. Without this mapping every
- * Profile step lands on the default tab, so "set up Telegram" opened
- * Preferences and the reader was told to look for a control that was not
- * there.
+ * client state to seed on arrival, and this shell puts that intent in the
+ * URL — the Profile's tab is `?tab=`. Without this mapping every Profile step
+ * lands on the default tab, so "set up Telegram" opened Preferences and the
+ * reader was told to look for a control that was not there.
  */
 export function landing(step: {
   params: Record<string, string>;
@@ -144,8 +142,8 @@ export function firstLoad(
   if (guide.surface === "chat" && !guide.finished) {
     return { place: null, interrupted: true, forget };
   }
-  // The order the Streamlit modal uses: the walkthrough for an account that
-  // never finished it, "what's new" for one that did.
+  // The walkthrough for an account that never finished it, "what's new" for
+  // one that did.
   if (!state.tour_done && state.steps.length) {
     return { place: { mode: "tour", at: 0, open: true }, interrupted: true, forget };
   }
@@ -165,10 +163,9 @@ export function Tour() {
 
   const asked = params.get("tour");
   // The automatic decisions — restore a parked strip, open for a newcomer,
-  // announce a release — are taken once per document, as `maybe_open` takes
-  // them once per Streamlit session. Re-taking them when `?tour=` leaves the
-  // URL would race the stamp that just retired the tour, and re-open it at
-  // step one because the refetch beat the write.
+  // announce a release — are taken once per document. Re-taking them when
+  // `?tour=` leaves the URL would race the stamp that just retired the tour,
+  // and re-open it at step one because the refetch beat the write.
   const booted = useRef(false);
 
   useEffect(() => {
@@ -196,10 +193,9 @@ export function Tour() {
       .then(([next, guide]) => {
         if (!alive) return;
         setState(next);
-        // Asked for by URL (`?tour=1`, `?tour=import`) — the deep link the
-        // Streamlit tour answers, so a link shared into the app still lands on
-        // the step it names. A guest may ask too (Streamlit lets them): the
-        // steps that read somebody's own data are shown locked, not hidden.
+        // Asked for by URL (`?tour=1`, `?tour=import`), so a link shared into
+        // the app lands on the step it names. A guest may ask too: the steps
+        // that read somebody's own data are shown locked, not hidden.
         if (asked) {
           const index = next.steps.findIndex((s) => s.id === asked);
           booted.current = true;

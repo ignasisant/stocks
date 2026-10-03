@@ -146,9 +146,8 @@ def _view(paths: UserPaths, *, email: str, request: Request) -> BankState:
 def _account(acc: dict) -> BankAccount:
     """One account row, with its last read balance already picked.
 
-    Which balance that is belongs to `store`: the Streamlit page shows the
-    same one, and an account reading two different figures on two front ends
-    would be worse than either figure alone.
+    Which balance that is belongs to `store`: an account reading two different
+    figures in two places would be worse than either figure alone.
     """
     snapshot = acc.get("snapshot") or {}
     money = store.balance_money(snapshot.get("balances") or [])

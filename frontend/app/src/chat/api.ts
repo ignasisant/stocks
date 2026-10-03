@@ -170,7 +170,7 @@ export const storeKey = (provider: string, key: string) =>
   send<ChatState>("PUT", `/chat/keys/${id(provider)}`, { key });
 
 /**
- * The stored key, in full — the Streamlit panel's "Show key".
+ * The stored key, in full — what "Show key" reveals.
  *
  * A POST with an empty body rather than a GET: the one request any page can
  * make is a GET, and a secret has no business in a response a prefetch might

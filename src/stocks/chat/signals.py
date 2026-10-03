@@ -1031,7 +1031,7 @@ def market_candidates(
 
     Split from `candidates()` because these are the only ones with an input the
     dashboard does not already hold: index and sector-ETF closes. The caller
-    fetches them (web/market_data.py caches the download across sessions) and
+    fetches them (api/briefing.py caches the download across accounts) and
     passes frames in, so this stays as pure and as testable as the rest.
 
     Every argument is optional and every signal is independent: a book whose
@@ -1208,7 +1208,7 @@ def candidates(
     ones `repeat()` lets through, within `_CAP` per kind and `_FAMILY_CAP` per
     family so one crowded family cannot take the whole card, and after
     `decay()`, so a family that had its turn yesterday gives way today. Ties
-    keep ticker order, which keeps the list stable between reruns of an
+    keep ticker order, which keeps the list stable between runs of an
     unchanged book.
 
     `market` and `macro` are the lists `market_candidates()` and

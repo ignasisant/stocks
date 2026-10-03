@@ -339,11 +339,11 @@ export type Fees = {
 };
 
 /**
- * The windows the Allocation & risk tab offers — the Streamlit page's, in its
- * order, since inception first and the default. Both `/portfolio/risk` and
- * `/portfolio/performance` take them, so one selector drives both cards. The
- * API still accepts "max" for older clients; the page does not offer it,
- * because an IPO-to-date backtest describes the stock rather than the book.
+ * The windows the Allocation & risk tab offers, since inception first and the
+ * default. Both `/portfolio/risk` and `/portfolio/performance` take them, so
+ * one selector drives both cards. The API still accepts "max" for older
+ * clients; the page does not offer it, because an IPO-to-date backtest
+ * describes the stock rather than the book.
  */
 export const RISK_PERIODS = ["inception", "6mo", "1y", "2y", "5y"] as const;
 export type RiskPeriod = (typeof RISK_PERIODS)[number];

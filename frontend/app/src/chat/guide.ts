@@ -1,11 +1,10 @@
 /**
  * The walkthrough's API, and what the drawer needs to know about it.
  *
- * The state is the account's and lives on the server (`/guide`): the same
- * prefs keys and the same thread the Streamlit guide writes, so a reader who
- * started the walkthrough in one front end finds it where they left it in the
- * other. What lives here is only what belongs to this browser tab — whether
- * this load has already had its automatic open.
+ * The state is the account's and lives on the server (`/guide`, over
+ * `web/guide`), so a reader who started the walkthrough on one device finds
+ * it where they left it on another. What lives here is only what belongs to
+ * this browser tab — whether this load has already had its automatic open.
  */
 
 import { get, send } from "../shell/api";
@@ -62,9 +61,9 @@ export const finishGuide = (reason: string) =>
 /**
  * Whether this tab has already evaluated the automatic open.
  *
- * Per tab, like the Streamlit guide's own "evaluated once per session" flag:
- * a reload in the same tab is the same visit, and reopening the drawer on
- * every one of them would spend all three automatic opens in a minute.
+ * Per tab: a reload in the same tab is the same visit, and reopening the
+ * drawer on every one of them would spend all three automatic opens in a
+ * minute.
  */
 const SEEN = "ag_guide_auto_seen";
 
@@ -86,6 +85,6 @@ export function markAutoSeen(): void {
   }
 }
 
-/** `:material/name:` — Streamlit's icon shortcode, which the stored copy carries. */
+/** `:material/name:` — an icon shortcode the stored copy carries. */
 export const unshortcode = (text: string) =>
   text.replace(/:material\/[a-z0-9_]+:\s?/g, "");

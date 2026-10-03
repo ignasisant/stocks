@@ -25,9 +25,9 @@ Usage:
     with obs.swallow("logo.mirror", ticker=t):   # log instead of silent pass
         ...
 
-Local runs get a compact human line instead of JSON. Nothing here imports
-Streamlit or any third-party package: the CLI, the workers and the dashboard
-all share one setup.
+Local runs get a compact human line instead of JSON. Nothing here imports a
+third-party package: the CLI, the workers and the dashboard all share one
+setup.
 """
 
 from __future__ import annotations
@@ -175,7 +175,7 @@ class PlainFormatter(logging.Formatter):
 
 
 def setup(level: str | int | None = None, *, force: bool = False) -> None:
-    """Install the root handler. Idempotent — safe on every Streamlit rerun.
+    """Install the root handler. Idempotent — safe to call more than once.
 
     Level comes from STOCKS_LOG_LEVEL (default INFO); set it to DEBUG on a
     revision to turn up detail without a code change.
@@ -288,9 +288,8 @@ def timed(
     swallow.
 
     `passthrough` names exception types that are control flow rather than
-    failure (Streamlit's st.stop()/st.rerun() raise, and a page that stops
-    early is a normal run): they are timed as successes and re-raised
-    untouched.
+    failure (a block that stops early is a normal run): they are timed as
+    successes and re-raised untouched.
     """
     extra: dict = dict(fields)
     started = time.perf_counter()

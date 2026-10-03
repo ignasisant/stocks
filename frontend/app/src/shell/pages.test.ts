@@ -2,11 +2,10 @@
  * The page registry resolves the URLs this app inherited, not just its own.
  *
  * `pageFor` falls back to Home for anything it does not recognise, which is
- * right for a typo and wrong for a bookmark: two of the Streamlit paths this
- * shell replaces do not match its slugs — Home is served at the root, and
- * Import is `import_transactions` because Streamlit derives a page's URL from
- * its filename. Without the aliases both of those load the dashboard and look
- * like they worked.
+ * right for a typo and wrong for a bookmark: two of the paths old links carry
+ * do not match its slugs — Home is served at the root, and Import at
+ * `import_transactions`. Without the aliases both of those load the dashboard
+ * and look like they worked.
  *
  * `tests/test_frontend_nav_parity.py` checks the same thing from the other
  * side, against `stocks.navigation`. This one checks the resolution itself.
@@ -23,7 +22,7 @@ describe("the page registry", () => {
     }
   });
 
-  it("resolves the Streamlit URL each page replaced", () => {
+  it("resolves the old paths links still carry", () => {
     expect(canonical("import_transactions")).toBe("import");
     expect(canonical("")).toBe("home");
   });
@@ -38,13 +37,13 @@ describe("the page registry", () => {
   });
 
   it("lists the ticker page in the rail, under Market", () => {
-    // The Streamlit menu has it (`stocks.navigation.DESTINATIONS`); without a
-    // symbol it opens on its own picker.
+    // The menu has it (`stocks.navigation.DESTINATIONS`); without a symbol it
+    // opens on its own picker.
     expect(pageFor("ticker").hidden).toBeFalsy();
     expect(pageFor("ticker").section).toBe("nav.section_market");
   });
 
-  it("groups the rail the way the Streamlit menu does", () => {
+  it("groups the rail the way the navigation table does", () => {
     // `stocks.navigation.sections()`: Home alone with no header, then
     // Portfolio, Market and Account — in that order, bank left out.
     expect(sections().map((group) => group.section)).toEqual([

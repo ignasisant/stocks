@@ -7,10 +7,9 @@
  * reading at this size: green means the book is worth more than what was put
  * into it.
  *
- * Fails to nothing. The Streamlit page drops this sparkline and keeps the rest
- * of the card when the price span cannot be built, and so does this: a glance
- * card that renders an error where a picture goes is worse than one that is
- * simply a little shorter.
+ * Fails to nothing. When the price span cannot be built the sparkline drops
+ * out and the rest of the card stays: a glance card that renders an error
+ * where a picture goes is worse than one that is simply a little shorter.
  */
 
 import { useRef, useState } from "react";
@@ -31,13 +30,12 @@ const SMA_WINDOW = 20;
  * The windows the selector offers, in the order they widen, and how many
  * calendar days back from the series' last day each one reaches.
  *
- * The same six the Streamlit card shows, under the same literal labels (no
- * i18n — "1w" is "1w" in every catalog the app has). It opens on `1y`: a year
- * is the view the home card is for, and `all` is the wrong one for a book that
- * took a transfer, because one step dwarfs every month of market movement
- * around it. The spans are `_HISTORY_SPANS` in `api/routes/portfolio.py`,
- * counted from the same end, so a slice here is the window the server would
- * have cut.
+ * Literal labels (no i18n — "1w" is "1w" in every catalog the app has). It
+ * opens on `1y`: a year is the view the home card is for, and `all` is the
+ * wrong one for a book that took a transfer, because one step dwarfs every
+ * month of market movement around it. The spans are `_HISTORY_SPANS` in
+ * `api/routes/portfolio.py`, counted from the same end, so a slice here is the
+ * window the server would have cut.
  */
 const RANGES = {
   "1w": 7,
@@ -144,9 +142,9 @@ export function Spark({ history }: { history: History | null }) {
   const maxIndex = days.findIndex((day) => day.value === maxValue);
 
   /**
-   * What Streamlit's unified hover label says about one day
-   * (`home.spark_hover_tmpl`), in the same order: worth (colored by gain or
-   * loss), what went in, and the gap between them as an amount and a percent.
+   * What the hover label says about one day, in this order: worth (colored by
+   * gain or loss), what went in, and the gap between them as an amount and a
+   * percent.
    */
   const tipRows = (day: (typeof days)[number]) => {
     const gain = day.value >= day.injected;
@@ -278,10 +276,9 @@ export function Spark({ history }: { history: History | null }) {
               />
             ) : null}
           </svg>
-          {/* Streamlit's unified hover label (`home.spark_hover_tmpl`), as a
-            positioned box rather than the browser's native `<title>` — which
-            only answered on the day under the cursor's own thin column, after
-            its own OS delay. */}
+          {/* The hover label, as a positioned box rather than the browser's
+            native `<title>` — which only answered on the day under the
+            cursor's own thin column, after its own OS delay. */}
           {hovered ? (
             <div
               className={
@@ -308,9 +305,9 @@ export function Spark({ history }: { history: History | null }) {
             </div>
           ) : null}
         </div>
-        {/* The two ends of the scale, pinned to the window's own extremes as the
-          Streamlit chart's ticks are: without them the line has a shape and no
-          size, and a reader cannot tell a €200 swing from a €20k one. */}
+        {/* The two ends of the scale, pinned to the window's own extremes:
+          without them the line has a shape and no size, and a reader cannot
+          tell a €200 swing from a €20k one. */}
         <div className="hm-spark-scale">
           <span>{high}</span>
           <span>{low}</span>

@@ -8,11 +8,11 @@
  * is, and a thread you cannot re-follow is worse than the modal it replaced,
  * which at least had a Back button.
  *
- * Next takes the reader to the new step's page on a wide screen, the way the
- * Streamlit guide's `advance` does: a card describing Pulse while the reader
- * is still looking at Home is describing something that is not on screen. A
- * phone declines it — there the drawer *is* the viewport, and a jump on every
- * Next would spend the walkthrough reopening it.
+ * Next takes the reader to the new step's page on a wide screen: a card
+ * describing Pulse while the reader is still looking at Home is describing
+ * something that is not on screen. A phone declines it — there the drawer
+ * *is* the viewport, and a jump on every Next would spend the walkthrough
+ * reopening it.
  */
 
 import { useState } from "react";
@@ -30,11 +30,11 @@ export const phone = () =>
  * Take the reader to a step's page — the card's "take me there", and the jump
  * an answer on the walkthrough's thread earned (`Turn`'s `Jump`).
  *
- * One function for both because they are one navigation in the Streamlit guide
- * too (`guide.goto`): switch page, seed what the step needs, and on a phone
- * step the drawer aside — it is the whole viewport there, and staying open
- * would hide the very page the reader was sent to look at. `onLeave` is what
- * the drawer does about that: it closes and leaves the parked strip behind.
+ * One function for both because they are one navigation: switch page, seed
+ * what the step needs, and on a phone step the drawer aside — it is the whole
+ * viewport there, and staying open would hide the very page the reader was
+ * sent to look at. `onLeave` is what the drawer does about that: it closes and
+ * leaves the parked strip behind.
  */
 export function useVisit(onLeave: () => void) {
   const { go } = useRoute();

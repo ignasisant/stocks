@@ -1,7 +1,6 @@
 /**
  * The Preferences tab: interface, tax residence, the data and the account
- * itself — in the Streamlit page's order — and a rail carrying the guided tour
- * and a summary of what is set.
+ * itself, and a rail carrying the guided tour and a summary of what is set.
  *
  * Every row saves itself the moment it is changed — the tab strip promises it,
  * and a Save button here would be the one place that broke the promise. The
@@ -217,8 +216,7 @@ export function Preferences({
                 </div>
               </details>
             )}
-            {/* What is behind the disclosure, without opening it — the
-                Streamlit row prints the same line under its popover. Codes
+            {/* What is behind the disclosure, without opening it. Codes
                 only, so there is nothing in it to translate. */}
             {rest.length > 0 && <span className="pr-morehint">{rest.join(" · ")}</span>}
             <Failure message={fail("currency")} />
@@ -392,9 +390,9 @@ export function Preferences({
           </Row>
           {/* The other half of the promise the privacy policy makes: the data
               can be taken out, and it can be erased. Never offered to the
-              owner, as the Streamlit page never offers it: that "account" is
-              the repo-root files the CLI shares, and `DELETE /account` refuses
-              it — a button that can only fail is not a control. */}
+              owner: that "account" is the repo-root files the CLI shares, and
+              `DELETE /account` refuses it — a button that can only fail is not
+              a control. */}
           {owner === false && <DeleteAccount />}
         </Card>
         {/* Draws nothing while the deployment has no connector and nothing is
@@ -421,9 +419,9 @@ export function Preferences({
             <div className="pr-sum-row">
               <span>{t("profile.tax_section")}</span>
               <b>
-                {/* Behind its flag, as `tax_ui.label` draws it there: eleven
-                    countries is where a list of names wants something to
-                    scan by, and the flag comes off the row, not a table. */}
+                {/* Behind its flag: eleven countries is where a list of names
+                    wants something to scan by, and the flag comes off the row,
+                    not a table. */}
                 {active
                   ? `${active.flag ? `${active.flag} ` : ""}${(
                       t(`profile.tax_residence_${active.code.toLowerCase()}`).split(

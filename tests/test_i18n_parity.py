@@ -94,9 +94,9 @@ def test_validation_issue_keys_match_the_catalog():
 
 
 def test_every_language_has_a_flag_on_both_sides():
-    """The Profile selector draws each language with a flag, in Streamlit from
-    `LANGUAGE_FLAGS` and in React from its copy in `profile/data.ts`. A language
-    added to one table and not the other ships flagless in that selector."""
+    """The Profile selector draws each language with a flag from
+    `profile/data.ts`, the copy of `LANGUAGE_FLAGS`. A language added to
+    `LANGUAGES` and not to both tables ships flagless in that selector."""
     from stocks.web.i18n import LANGUAGE_FLAGS
 
     assert set(LANGUAGE_FLAGS) == set(LANGUAGES)

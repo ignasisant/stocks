@@ -1,9 +1,9 @@
 /**
  * Held and favourite names sitting within 2% of a 52-week high or low.
  *
- * The scope is the server's (`api/home.py`): the book's own positions, whether
- * or not they are on the watchlist, plus the starred names, crypto left out —
- * `home.py`'s `_xt_tickers`. When that set is empty there is nothing to scan
+ * The scope is the server's (`stocks.api.home.extremes_scope`): the book's own
+ * positions, whether or not they are on the watchlist, plus the starred names,
+ * crypto left out. When that set is empty there is nothing to scan
  * and the card does not come at all, which is a different state from a scan
  * that found no name at an edge (`home.no_extremes`).
  *

@@ -1,11 +1,11 @@
-"""Design tokens and translated strings, served to a front end that is not
-Streamlit.
+"""Design tokens and translated strings, served to the front end.
 
 Both are shipped files rather than anybody's data, so both are open — and that
 is the thing worth testing, because "open" is a decision and not an oversight.
-The rest guards the property that makes serving them worthwhile at all: the two
-front ends read the same colours and the same strings, from the same source, so
-they cannot drift apart while both still look right in isolation.
+The rest guards the property that makes serving them worthwhile at all: the
+shell reads the same colours and strings the server renders with, from the
+same source, so the two cannot drift apart while both still look right in
+isolation.
 """
 
 from __future__ import annotations

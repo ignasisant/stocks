@@ -9,7 +9,7 @@
 
 export type T = (key: string, slots?: Record<string, string | number>) => string;
 
-/** Not a figure — the em dash the Streamlit page prints for the same gap. */
+/** Not a figure: what a missing number prints as. */
 const DASH = "—";
 
 export function eps(value: number | null): string {
@@ -41,31 +41,31 @@ function parts(iso: string): [number, number, number] {
   return [Number(year), Number(month), Number(day)];
 }
 
-/** "Sep 18, 2026" — the shape `earnings_ui._long_date` prints, via the same keys. */
+/** "Sep 18, 2026", off the catalog's month keys. */
 export function longDate(iso: string, t: T): string {
   const [year, month, day] = parts(iso);
   return `${t(`earnings.mon_${month}`)} ${String(day).padStart(2, "0")}, ${year}`;
 }
 
 /**
- * Catalog copy written for Streamlit's markdown, as plain text.
+ * Catalog copy that carries markdown, as plain text.
  *
  * Several earnings strings are stored with their emphasis in them —
- * `**Upcoming**`, `:gray[Reported Sep 18, 2026]` — because the Python page
- * hands them straight to `st.markdown`. React renders text, not markdown, so
- * those markers would print literally. Stripping them here keeps one catalog
- * for both front ends instead of a second set of keys that says the same thing.
+ * `**Upcoming**`, `:gray[Reported Sep 18, 2026]`. React renders text, not
+ * markdown, so those markers would print literally. Stripping them here keeps
+ * the catalog as it is instead of a second set of keys that says the same
+ * thing.
  */
 export function plain(value: string): string {
   return value.replace(/\*\*/g, "").replace(/^:[a-z-]+\[(.*)\]$/, "$1");
 }
 
 /**
- * Compact money — "$81.60B", "€1.24T" — the shape `earnings_ui._money` prints.
+ * Compact money — "$81.60B", "€1.24T".
  *
- * `prefix` is the server's `currency_symbol`, not a code the client maps: the
- * two runtimes then agree on every currency, including the ones it leaves
- * bare (a yen statement prints as plain figures there, and so it does here).
+ * `prefix` is the server's `currency_symbol` (`stocks.config`), not a code the
+ * client maps, so every currency prints as the server spells it — including
+ * the ones it leaves bare (a yen statement prints as plain figures).
  * Share counts go through the same function with no prefix.
  */
 export function money(value: number | null | undefined, prefix = ""): string {

@@ -1,6 +1,6 @@
-"""Reading a price frame's index (stocks.web.frames).
+"""Reading a price frame's index (stocks.frames).
 
-Thin wrappers, but they are the one place the web layer asserts that a price
+Thin wrappers, but they are the one place the app asserts that a price
 history's index really is a DatetimeIndex — pandas types it as the plain
 `Index` base and attaches the date fields dynamically, so nothing else catches
 a frame that arrives keyed by something else.
@@ -8,7 +8,7 @@ a frame that arrives keyed by something else.
 
 import pandas as pd
 
-from stocks.web import frames
+from stocks import frames
 
 
 def frame(stamps, closes=None):

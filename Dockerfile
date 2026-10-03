@@ -1,7 +1,6 @@
 # TopStocks — container image for any container host. The live deploy is
 # Cloud Run (see scripts/deploy.sh), a source deploy of this image. Serves the
-# React shell on $PORT (default 8501), with Streamlit mounted read-only at
-# /legacy.
+# app — landing, React shell and HTTP API — on $PORT (default 8501).
 #
 # Secrets: bind-mount the real .streamlit/secrets.toml (what deploy/ does), or
 # set STREAMLIT_SECRETS_TOML to its full contents and the entrypoint writes it

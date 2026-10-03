@@ -1,11 +1,10 @@
 /**
- * The Portfolio charts' parity claims with the Streamlit (Plotly) ones.
+ * What the Portfolio charts must keep saying.
  *
- * Three things a hand-drawn chart has to do on purpose that Plotly did for
- * free, each easy to lose in a refactor without any screen going blank: a
- * value axis with round labels, the history tooltip's P/L as an amount and a
- * percentage, the value line coloured by the sign of that P/L, and the
- * correlation grid's −1…+1 colour scale.
+ * Things a hand-drawn chart has to do on purpose, each easy to lose in a
+ * refactor without any screen going blank: a value axis with round labels, the
+ * history tooltip's P/L as an amount and a percentage, the value line coloured
+ * by the sign of that P/L, and the correlation grid's −1…+1 colour scale.
  *
  * `token()` reads computed styles off the document, which a node test does not
  * have — stubbed to "no token set", which is all a markup assertion needs.
@@ -21,12 +20,14 @@ import {
   Donut,
   Heatmap,
   PeriodBars,
+  ReturnLines,
   bookRatesTip,
   bookTip,
   correlationBand,
   correlationStats,
   foldSlices,
   lineMoney,
+  dateTicks,
   niceTicks,
   sliceTip,
   type SliceDetail,
@@ -432,5 +433,97 @@ describe("Donut", () => {
       '<span class="pf-donut-center-label">Technology</span><strong>75.0%</strong>',
     );
     expect(html).toContain("€750");
+  });
+});
+
+/** Every calendar day from `from` through `to`, as ISO dates. */
+const days = (from: string, to: string) => {
+  const out: string[] = [];
+  const end = new Date(`${to}T00:00:00Z`);
+  for (let at = new Date(`${from}T00:00:00Z`); at <= end;) {
+    out.push(at.toISOString().slice(0, 10));
+    at.setUTCDate(at.getUTCDate() + 1);
+  }
+  return out;
+};
+
+describe("dateTicks", () => {
+  const span = days("2022-04-11", "2026-10-02");
+
+  it("labels whole months across a wide plot, not whichever days the ends are", () => {
+    const { indices, yearly } = dateTicks(span, 1800);
+    expect(yearly).toBe(false);
+    expect(indices.every((index) => span[index]!.endsWith("-01"))).toBe(true);
+    expect(indices.map((index) => span[index])).toContain("2024-01-01");
+  });
+
+  it("falls back to years on a phone", () => {
+    const { indices, yearly } = dateTicks(span, 300);
+    expect(yearly).toBe(true);
+    expect(indices.map((index) => span[index])).toEqual([
+      "2023-01-01",
+      "2024-01-01",
+      "2025-01-01",
+      "2026-01-01",
+    ]);
+  });
+
+  it("keeps start, middle and end for a window inside one month", () => {
+    const short = days("2026-09-02", "2026-09-30");
+    expect(dateTicks(short, 600).indices).toEqual([0, 14, 28]);
+  });
+});
+
+describe("ReturnLines", () => {
+  const dates = days("2025-01-01", "2025-12-31");
+  const ramp = (to: number) => dates.map((_, i) => (to * i) / (dates.length - 1));
+  const render = (label?: string) =>
+    renderToStaticMarkup(
+      <ReturnLines
+        dates={dates}
+        label={label}
+        format={(v) => `${(v * 100).toFixed(1)}%`}
+        tickFormat={(v) => `${Math.round(v * 100)}%`}
+        formatDate={(iso) => iso.slice(0, 7)}
+        legendValues
+        series={[
+          { label: "Mine", points: ramp(0.3), color: "#fff", focal: true },
+          { label: "Basket", points: ramp(0.2), color: "#bbb", dashed: true },
+          { label: "SPY", points: ramp(0.1), color: "#00f" },
+        ]}
+      />,
+    );
+
+  it("says where each line ends on its legend entry", () => {
+    const out = render();
+    expect(out).toMatch(/Mine<\/span><strong class="pf-legend-value">30\.0%</);
+    expect(out).toMatch(/SPY<\/span><strong class="pf-legend-value">10\.0%</);
+  });
+
+  it("draws the focal line last, heavier, with a dot where it ends", () => {
+    const out = render();
+    const order = [...out.matchAll(/data-series="([^"]+)"/g)].map((m) => m[1]);
+    expect(order.at(-1)).toBe("Mine");
+    expect(out).toMatch(/data-series="Mine"[^>]*stroke-width="2"/);
+    expect(out).toMatch(/data-series="SPY"[^>]*stroke-width="1.5"/);
+    expect(out.match(/<circle/g)).toHaveLength(1);
+  });
+
+  it("keys a solid line by a stroke and the backtest by a dashed one", () => {
+    const out = render();
+    expect(out.match(/pf-swatch pf-swatch-line/g)).toHaveLength(2);
+    expect(out.match(/pf-swatch pf-swatch-dashed/g)).toHaveLength(1);
+  });
+
+  it("labels the value axis with the tick format, not the reading's", () => {
+    const out = render();
+    expect(out).toMatch(/text-anchor="end"[^>]*>10%</);
+    expect(out).not.toMatch(/text-anchor="end"[^>]*>10\.0%</);
+  });
+
+  it("is a focusable, named plot", () => {
+    const out = render("Return vs benchmarks");
+    expect(out).toMatch(/<svg[^>]*role="img"[^>]*aria-label="Return vs benchmarks"/);
+    expect(out).toMatch(/<svg[^>]*tabindex="0"/);
   });
 });

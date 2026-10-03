@@ -59,8 +59,7 @@ FACTOR_BETAS = (("duration", "TLT"), ("credit", "HYG"), ("em", "EEM"))
 # What the sector ETFs' excess returns are measured against. SPY, not ^GSPC:
 # the sector funds are total-return-ish ETFs and SPY is the ETF of the same
 # index, so fund against fund keeps the dividend drag and the trading calendar
-# on both sides. Streamlit's rotation table and book notes both read SPY, and
-# the two apps must agree on which sectors "led".
+# on both sides.
 ROTATION_BENCH = "SPY"
 
 
@@ -160,7 +159,7 @@ def pulse() -> Pulse:
                 # The reading in its own units, formatted by the registry that
                 # knows them: the eight raws are a percent, a ratio, an index
                 # level and a spread, and a client handed only `raw` has to
-                # guess which — Streamlit prints exactly this string.
+                # guess which.
                 text=component.text if component.raw == component.raw else None,
                 then=_num(component.then),
             )
@@ -176,9 +175,9 @@ def pulse() -> Pulse:
         stock_bond_correlation=corr,
         stock_bond_correlation_then=corr_then,
         # The page's "loaded …" caption, in the server's own clock and
-        # spelling — `macro.as_of()`, the same call Streamlit makes — rather
-        # than the browser's, which is neither UTC-honest on every device nor
-        # the machine that fetched the prices.
+        # spelling (`macro.as_of()`) rather than the browser's, which is
+        # neither UTC-honest on every device nor the machine that fetched the
+        # prices.
         loaded_at=macro.as_of(),
     )
 
@@ -211,7 +210,7 @@ def book(account: Account, base: Base = None) -> PulseBook:
     # The book's own shape first, because it needs no benchmark series: which
     # currencies the value is priced in and which sectors it sits in are read
     # off the positions, and a Yahoo throttle on the index closes is no reason
-    # to blank them. `sentiment.py` keeps these tiles through the same outage.
+    # to blank them.
     currency = report.allocation("currency")
     answer.currency_weights = {
         str(name): float(weight) for name, weight in currency.items()
@@ -252,7 +251,7 @@ def book(account: Account, base: Base = None) -> PulseBook:
                 else "track"
             )
 
-    # The other three betas the Streamlit card quotes: to the long bond, to
+    # The other three betas the card quotes: to the long bond, to
     # high-yield credit and to emerging markets. The same regression as the
     # equity one, on the same EUR-rebased basket returns — a product decision,
     # so all five tiles read on one currency basis rather than four in euros
@@ -324,10 +323,10 @@ BLOCKS = (
 )
 # Rows each block is configured to carry — the tab badges. Read off the same
 # registries the blocks iterate, so a series added to one of them moves its
-# badge too. Fixed rather than counted from what drew: `sentiment.py` puts
-# these on the tab strip before any fetch, and a tab whose count vanished
-# during a throttle reads as a block with nothing in it. Inflation is its
-# Eurostat areas plus the US CPI row `macro.inflation()` appends.
+# badge too. Fixed rather than counted from what drew: the tab strip shows
+# these before any fetch, and a tab whose count vanished during a throttle
+# reads as a block with nothing in it. Inflation is its Eurostat areas plus
+# the US CPI row `macro.inflation()` appends.
 EXPECTED = {
     "indices": len(sm.INDICES),
     "gauges": len(sm.GAUGES),

@@ -2,20 +2,20 @@
  * The two first-run groups: what this account has switched on, and the three
  * things that need nothing switched on at all.
  *
- * `web/app_pages/home.py` draws both inside one bordered card, and keeps them
- * apart on purpose. The first is a list of what is still missing — Google
- * sign-in, a ledger import, a provider key, Telegram — and a list of what is
- * missing is a poor answer to "what can I do here": an account that has
+ * Both sit inside one bordered card, kept apart on purpose. The first is a
+ * list of what is still missing — Google sign-in, a ledger import, a provider
+ * key, Telegram — and a list of what is missing is a poor answer to "what can
+ * I do here": an account that has
  * connected nothing can still look a company up, ask the assistant on the free
  * chain and make the watchlist its own, right now. The second group is what
  * says that, which is why it never gates the dismiss — it is an invitation,
  * not a chore.
  *
  * Every state on screen is the server's. `/onboarding` derives both from the
- * registry the Streamlit card and the guided tour already read
- * (`onboarding.setup_state` / `explore_state`), so the three surfaces cannot
- * disagree about whether this account has Telegram linked. Nothing here
- * re-computes any of it, and nothing here reads prefs.
+ * registry the guided tour already reads (`stocks.web.onboarding`'s
+ * `setup_state` / `explore_state`), so the card and the tour cannot disagree
+ * about whether this account has Telegram linked. Nothing here re-computes
+ * any of it, and nothing here reads prefs.
  */
 
 import { useState } from "react";
@@ -36,9 +36,8 @@ import { Badge } from "../../ui/Badge";
 
 /*
  * The dismissal is an account setting (`setup_card_dismissed` in prefs.json),
- * not a browser one — the same key the Streamlit card writes. A reader who put
- * the checklist away has put it away, and meeting it again on their phone is
- * the app forgetting a decision they made.
+ * not a browser one. A reader who put the checklist away has put it away, and
+ * meeting it again on their phone is the app forgetting a decision they made.
  */
 
 /**
@@ -97,10 +96,9 @@ function Check({
     </>
   );
   if (row.key === "login" && !on) {
-    // A guest's pending sign-in is the action itself, as Streamlit's pill is a
-    // link to the login route. A deployment with no identity provider has
-    // nowhere to send anybody, so the row states the capability and stops —
-    // `home.py` disables the pill for the same reason.
+    // A guest's pending sign-in is the action itself: a link to the login
+    // route. A deployment with no identity provider has nowhere to send
+    // anybody, so the row states the capability and stops.
     return signIn ? (
       <a className={className} href={signIn}>
         {body}

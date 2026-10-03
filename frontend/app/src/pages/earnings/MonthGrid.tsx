@@ -3,12 +3,12 @@
  *
  * Every chip is a button that hands its event to `onPick`, and the page opens
  * one dialog for whichever was clicked (`EventDetail`): a past print gets the
- * result overview the Streamlit calendar pops, every other kind a short card
- * on what the date means for the reader — a dividend, what lands in the
- * account. The dialogs link on to the ticker; a chip never navigates by itself.
+ * result overview, every other kind a short card on what the date means for
+ * the reader — a dividend, what lands in the account. The dialogs link on to
+ * the ticker; a chip never navigates by itself.
  *
- * Results are drawn before upcoming prints inside a cell, matching the Python
- * page: on the one day that carries both, what already happened reads first.
+ * Results are drawn before upcoming prints inside a cell: on the one day that
+ * carries both, what already happened reads first.
  * The reader's own dates lead — tax deadlines, then the day a loss sold can
  * be bought back, then the Fed and ECB — and ex-dividend chips go last: a
  * print moves a price, an ex-date only docks it by the payment.
@@ -63,7 +63,7 @@ function named(ticker: string, name: string | undefined): string {
 /**
  * The chip's mark. Same batched `/market/profiles` lookup the ticker cells use,
  * so a month of chips costs one request, and a chip nobody has a logo for is
- * just its symbol — as it is in the Streamlit grid.
+ * just its symbol.
  */
 function Mark({ logo }: { logo: string | null | undefined }) {
   return logo ? <img src={logo} alt="" loading="lazy" /> : null;

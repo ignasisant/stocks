@@ -31,7 +31,9 @@ What imports, and how:
   the ledger models stock/ETF positions only.
 * ``Dividends``/``Dividendos`` — the ticker is parsed from the description
   prefix ("AAPL(US03…) Cash Dividend…"); amount is the gross payment.
-  Per-currency ``Total`` summary rows are dropped.
+  Per-currency ``Total`` summary rows are dropped. A line whose description
+  says "(Return of Capital)" books as a return of capital instead: no income,
+  a lower cost on the position (see positions.build).
 * ``Withholding Tax``/``Retención de impuestos`` — the tax withheld at source
   belongs on its dividend as the fee (the Spanish double-tax credit
   convention), so a row that can only mean one payment is put there: exactly
@@ -80,7 +82,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
-from stocks.portfolio.ledger import Transaction
+from stocks.portfolio.ledger import RETURN_OF_CAPITAL, Transaction
 from stocks.portfolio.statement import ParseResult, money, parse_date
 from stocks.portfolio.transfers import TRANSFER_IN
 
@@ -396,6 +398,11 @@ def _trade_row(
         )
 
 
+# How a Dividends line says the payment was capital, not income — matched
+# against _norm(description), so unaccented.
+_CAPITAL_RETURN = ("return of capital", "devolucion de capital")
+
+
 def _dividend_row(
     line: int, section: _Section, row: list[str], result: ParseResult
 ) -> None:
@@ -407,14 +414,19 @@ def _dividend_row(
         m = _DESC_TICKER.match(desc)
         if not m:
             raise ValueError(f"cannot read ticker from description {desc!r}")
+        action = (
+            RETURN_OF_CAPITAL
+            if any(k in _norm(desc) for k in _CAPITAL_RETURN)
+            else "dividend"
+        )
         amount = money(section.get(row, "amount"))
         if amount <= 0:
-            raise ValueError(f"dividend amount {amount:g} is not positive")
+            raise ValueError(f"{action} amount {amount:g} is not positive")
         result.transactions.append(
             Transaction(
                 date=parse_date(section.get(row, "date")),
                 ticker=m.group(1).strip(),
-                action="dividend",
+                action=action,
                 price=amount,
                 currency=currency,
                 note="ibkr",

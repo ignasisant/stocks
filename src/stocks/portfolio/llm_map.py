@@ -48,7 +48,7 @@ from stocks import obs
 from stocks.chat import structured
 from stocks.data import crypto
 from stocks.portfolio import instruments, lexicon
-from stocks.portfolio.ledger import ACTIONS, Transaction
+from stocks.portfolio.ledger import ACTIONS, RETURN_OF_CAPITAL, Transaction
 from stocks.portfolio.statement import ParseResult
 
 if TYPE_CHECKING:
@@ -297,10 +297,14 @@ Rules:
   dividend. Many exports carry both: map both. Never map one column to the
   other's name, and leave "amount" null when the file has no total column.
 - For a split, "quantity" is the ratio.
+- "capital" is a return of capital: a payment the issuer makes out of
+  capital rather than profit (devolución de prima de emisión), never an
+  ordinary dividend.
 - "action_map" needs one entry per distinct value you can see in the action
   column, including the ones you would ignore — map those to the closest of
-  buy/sell/dividend/fee/split, and leave out only values that are clearly not
-  transactions (cash top-ups, transfers, balance lines).
+  buy/sell/dividend/fee/split/capital, and leave out only values
+  that are clearly not transactions (cash top-ups, transfers, balance
+  lines).
 - When that column is a sentence that differs in every row ("YOU BOUGHT
   PROSHARES ULTRAPRO QQQ (TQQQ) (Cash)"), key the map on the phrase that
   names the action ("you bought"), never on the whole sentence.
@@ -800,7 +804,7 @@ def apply_mapping(grid: list[list[str]], mapping: dict) -> ParseResult:
             # For a trade this divides the total, which carries the fee with
             # it — a cent or two per share, and only ever when the export
             # gave no unit price at all.
-            price = amount if action in ("dividend", "fee") else (
+            price = amount if action in ("dividend", "fee", RETURN_OF_CAPITAL) else (
                 amount / quantity if quantity else 0.0)
         try:
             result.transactions.append(Transaction(
@@ -844,6 +848,9 @@ Rules:
   digit strings and identify the row, not the instrument.
 - "quantity" and "price" are per share, unsigned; the action carries the
   direction. For a dividend, "price" is the total amount received.
+- "capital" is a return of capital: a payment out of capital rather than
+  profit (devolución de prima de emisión), never an ordinary dividend; its
+  "price" is the total amount received, as for a dividend.
 - "currency" is the instrument's currency, not the account's, when they differ.
   It is never the answer for "ticker": a dividend row names its instrument in
   one column and its currency in another, so read the instrument column.

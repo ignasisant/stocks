@@ -1,4 +1,4 @@
-"""Who gets to see the bank feature.
+"""Who gets to see the bank feature (stocks.bank.access).
 
 The app has other signed-in Google accounts on it, and the Enable Banking
 application runs in restricted mode — the API strips any account that was not
@@ -11,68 +11,56 @@ from __future__ import annotations
 
 import pytest
 
-from stocks.bank import enablebanking
-from stocks.web import auth, bank_ui
+from stocks import accounts
+from stocks.bank import access, enablebanking
 
 OWNER = "owner@example.com"
 GUEST = "someone@else.com"
 
 
-@pytest.fixture
-def signed_in(monkeypatch):
-    """Credentials present, an authenticated session, no secrets configured."""
+@pytest.fixture(autouse=True)
+def configured(monkeypatch):
+    """Credentials present, no owner and no allowlist configured."""
     monkeypatch.setattr(enablebanking, "configured", lambda: True)
-    monkeypatch.setattr(auth, "is_logged_in", lambda: True)
-    monkeypatch.setattr(bank_ui.st, "secrets", {})
+    monkeypatch.setattr(accounts, "configured_owner", lambda: None)
     monkeypatch.setenv("EB_ALLOWED_EMAILS", "")
 
-    def _as(email: str):
-        monkeypatch.setattr(auth, "current_email", lambda: email)
 
-    return _as
-
-
-def test_nobody_gets_in_when_the_allowlist_is_empty(signed_in):
-    signed_in(OWNER)
-    assert bank_ui.available() is False
+@pytest.fixture
+def owner(monkeypatch):
+    monkeypatch.setattr(accounts, "configured_owner", lambda: OWNER)
 
 
-def test_the_owner_is_allowed(signed_in, monkeypatch):
-    monkeypatch.setattr(bank_ui.st, "secrets", {"app": {"owner_email": OWNER}})
-    signed_in(OWNER)
-    assert bank_ui.available() is True
+def test_nobody_gets_in_when_the_allowlist_is_empty():
+    assert access.available(OWNER) is False
 
 
-def test_another_signed_in_account_is_not(signed_in, monkeypatch):
-    monkeypatch.setattr(bank_ui.st, "secrets", {"app": {"owner_email": OWNER}})
-    signed_in(GUEST)
-    assert bank_ui.available() is False
+def test_the_owner_is_allowed(owner):
+    assert access.available(OWNER) is True
 
 
-def test_the_allowlist_admits_named_accounts_case_insensitively(signed_in, monkeypatch):
+def test_another_signed_in_account_is_not(owner):
+    assert access.available(GUEST) is False
+
+
+def test_the_allowlist_admits_named_accounts_case_insensitively(monkeypatch):
     monkeypatch.setenv("EB_ALLOWED_EMAILS", f" {GUEST.upper()} , third@example.com")
-    signed_in(GUEST)
-    assert bank_ui.available() is True
+    assert access.available(GUEST) is True
 
 
-def test_missing_credentials_close_the_feature_for_everyone(signed_in, monkeypatch):
-    monkeypatch.setattr(bank_ui.st, "secrets", {"app": {"owner_email": OWNER}})
+def test_missing_credentials_close_the_feature_for_everyone(owner, monkeypatch):
     monkeypatch.setattr(enablebanking, "configured", lambda: False)
-    signed_in(OWNER)
-    assert bank_ui.available() is False
+    assert access.available(OWNER) is False
 
 
-def test_an_anonymous_visitor_is_closed_out(signed_in, monkeypatch):
-    monkeypatch.setattr(bank_ui.st, "secrets", {"app": {"owner_email": OWNER}})
-    monkeypatch.setattr(auth, "is_logged_in", lambda: False)
-    signed_in(OWNER)
-    assert bank_ui.available() is False
+def test_an_anonymous_visitor_is_closed_out(owner):
+    """No session means no email, and no email is never on the list."""
+    assert access.available("") is False
 
 
-def test_an_empty_email_never_matches_an_empty_allowlist_entry(signed_in, monkeypatch):
+def test_an_empty_email_never_matches_an_empty_allowlist_entry(monkeypatch):
     monkeypatch.setenv("EB_ALLOWED_EMAILS", ",,  ,")
-    signed_in("")
-    assert bank_ui.available() is False
+    assert access.available("") is False
 
 
 # ------------------------------------------------------------- redirect URL
@@ -80,7 +68,7 @@ def test_an_empty_email_never_matches_an_empty_allowlist_entry(signed_in, monkey
 
 def test_the_configured_redirect_url_wins(monkeypatch):
     monkeypatch.setenv("EB_REDIRECT_URL", "https://topstocks.app/bank")
-    assert bank_ui.redirect_url() == "https://topstocks.app/bank"
+    assert access.redirect_url("https://elsewhere.example/") == "https://topstocks.app/bank"
 
 
 @pytest.mark.parametrize(
@@ -98,11 +86,4 @@ def test_the_configured_redirect_url_wins(monkeypatch):
 )
 def test_the_redirect_url_is_derived_from_the_served_url(monkeypatch, url, expected):
     monkeypatch.setenv("EB_REDIRECT_URL", "")
-
-    class Context:
-        pass
-
-    ctx = Context()
-    ctx.url = url
-    monkeypatch.setattr(bank_ui.st, "context", ctx)
-    assert bank_ui.redirect_url() == expected
+    assert access.redirect_url(url, "/bank") == expected

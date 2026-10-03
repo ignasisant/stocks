@@ -1,10 +1,9 @@
 """Search and social metadata for the static landing pages.
 
 Everything here exists because the landing is served as a real HTML document
-(see `landing_static` and `server`) rather than rendered inside the Streamlit
-app: a Streamlit page owns exactly one `<head>` for the whole app, which no
-script run can add a description, a canonical URL or Open Graph tags to. A
-plain Starlette response can.
+(see `landing_static` and `server`) rather than drawn by the app's JavaScript:
+a crawler or a link preview reads the `<head>` it is sent, so the description,
+the canonical URL and the Open Graph tags have to be in it.
 
 Three things are worth knowing about the choices below.
 
@@ -53,12 +52,12 @@ OG_IMAGE_TYPE = "image/png"
 ICON_SVG = f"{ASSET_BASE}topstocks-icon.svg"
 APPLE_ICON = f"{ASSET_BASE}apple-touch-icon.png"
 
-# Page background from .streamlit/config.toml — paints the browser chrome on
-# mobile and the loading canvas before the CSS lands.
+# Page background (`ds.SURFACE_PAGE`) — paints the browser chrome on mobile
+# and the loading canvas before the CSS lands.
 THEME_COLOR = "#18161C"
 
-# The landing's faces. config.toml loads these for the app; a static document
-# is outside that, so it links them itself. One stylesheet, one round trip:
+# The landing's faces, also linked into the shell's document (`server._faces`).
+# One stylesheet, one round trip:
 # Instrument Sans (body), Epilogue (display figures), Martian Mono (tickers).
 FONTS_HREF = (
     "https://fonts.googleapis.com/css2"
@@ -84,12 +83,11 @@ def _alternates(jurisdiction: str) -> dict[str, str]:
 _OG_LOCALE = {"en": "en_US", "es": "es_ES"}
 
 
-# Where the app's own machinery lives: the retired Streamlit app, kept at a
-# prefix of its own while it is still worth being able to look at (see
-# `server.LEGACY_PATH`), the mirrored logos, the sign-in routes (`web/oidc.py`)
-# and the API. Transport and machinery, never content — disallowed in
-# robots.txt, and accepted by the not-found gate in `server` so a real internal
-# request is never turned away.
+# Where the app's own machinery lives: the retired Streamlit app's prefix
+# (redirected to the shell now, see `server.LEGACY_PATH`), the mirrored logos,
+# the sign-in routes (`web/oidc.py`) and the API. Transport and machinery,
+# never content — disallowed in robots.txt, and accepted by the not-found gate
+# in `server` so a real internal request is never turned away.
 APP_PREFIXES = (
     "/legacy/",
     "/app/static/",

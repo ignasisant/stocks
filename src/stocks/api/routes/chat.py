@@ -1,8 +1,6 @@
 """The assistant over HTTP: its threads, its settings, and one streaming turn.
 
-The Streamlit side panel (`web/chat_core.py`) is 3,600 lines of drawer built on
-`st.session_state`, and none of that is the assistant — it is the drawer. What
-the assistant *is* lives in `stocks.chat.engine`: the provider chain, the free
+The assistant itself lives in `stocks.chat.engine`: the provider chain, the free
 quota, skill routing, the web grounding, and a turn that ends with a completed
 user+assistant pair on disk. This router is the second binding of that engine
 (the Telegram bot is the first), so a React drawer and a chat window in Telegram
@@ -504,12 +502,11 @@ class Verdict(BaseModel):
 class Where(BaseModel):
     """The run's `state`: where the reader is when they ask.
 
-    The page slug and the ticker on screen. The Streamlit panel has always told
-    the model both (`chat_core._view_context`) — "is this a good entry?" means
-    nothing without the page it was asked on — and the focused symbol also
-    feeds the quote lookup and the gather, so a price for "it" is fetched even
-    when the message never names a ticker. Unknown slugs and anything that is
-    not a symbol are dropped, not echoed.
+    The page slug and the ticker on screen. The model is told both — "is this a
+    good entry?" means nothing without the page it was asked on — and the
+    focused symbol also feeds the quote lookup and the gather, so a price for
+    "it" is fetched even when the message never names a ticker. Unknown slugs
+    and anything that is not a symbol are dropped, not echoed.
     """
 
     model_config = {"extra": "forbid"}
@@ -608,9 +605,8 @@ def session_keys(provider: str | None, key: str | None) -> dict[str, str]:
     The React drawer's "this session only" key: held in the tab's
     sessionStorage and sent on each request that needs it, used for that
     request, and never written anywhere — not to prefs, not to a log line
-    (nothing in this API logs headers), not to the response. It is what the
-    Streamlit panel does with `st.session_state`, and it is the one way to use
-    a key of your own on a deployment with no encryption secret.
+    (nothing in this API logs headers), not to the response. It is the one way
+    to use a key of your own on a deployment with no encryption secret.
 
     Only for a provider this deployment offers and that takes a key; anything
     else is ignored rather than refused, because a stale tab holding a key for
@@ -1678,8 +1674,7 @@ class RevealedKey(BaseModel):
 def reveal_key(provider: str, paths: Writer) -> JSONResponse:
     """The stored key, decrypted, for the reader who stored it.
 
-    The Streamlit panel's "Show key" toggle, and the one route in this API that
-    hands a secret *out*. Three things fence it:
+    The one route in this API that hands a secret *out*. Three things fence it:
 
     * `Writer`, so a signed-in session and nothing else. A bearer token reads
       an account but names nobody, and a key is not something any holder of a

@@ -108,10 +108,9 @@ def _own_import_diagnostics():
 
     `portfolio.diagnostics.DIAGNOSTICS_DIR` is the real `data/imports`, and
     since `/v1/import/preview` and `/commit` file a fingerprint for every
-    attempt the way the Streamlit page does, every API test that previews a
-    deliberately broken statement would otherwise leave a JSON file under
-    version control. Its own temporary directory for the reason
-    `_own_guest_dir` gives, restored by hand likewise.
+    attempt, every API test that previews a deliberately broken statement
+    would otherwise leave a JSON file under version control. Its own temporary
+    directory for the reason `_own_guest_dir` gives, restored by hand likewise.
     """
     import shutil
     import tempfile
@@ -254,8 +253,8 @@ def cookie_secret(monkeypatch) -> str:
     """Sign this test's session cookies with a known secret.
 
     Through the environment, because `secrets_env.secret` is env-first — so no
-    secrets.toml to write, no Streamlit config singleton to reset, and nothing
-    that has to be torn down in the right order.
+    secrets.toml to write and nothing that has to be torn down in the right
+    order.
     """
     monkeypatch.setenv("AUTH_COOKIE_SECRET", AUTH_COOKIE_SECRET)
     return AUTH_COOKIE_SECRET

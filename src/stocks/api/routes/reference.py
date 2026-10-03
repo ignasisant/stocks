@@ -27,6 +27,24 @@ from stocks.portfolio import tax
 
 router = APIRouter(tags=["reference"])
 
+# ISO 3166-1 alpha-2 for the flag, where the jurisdiction code is not it.
+# "UK" is how everyone writes the tax code; the country code is GB.
+_FLAG_ALPHA2 = {"UK": "GB"}
+
+
+def flag_emoji(code: str) -> str:
+    """The jurisdiction's flag, built from its code rather than a table.
+
+    Regional indicator symbols — "ES" is U+1F1EA U+1F1F8 — so a new
+    jurisdiction gets its flag for free and only a code that is not ISO
+    3166-1 alpha-2 needs an entry above. Empty for anything else, so a caller
+    can concatenate unconditionally.
+    """
+    alpha2 = _FLAG_ALPHA2.get(code.upper(), code.upper())
+    if len(alpha2) != 2 or not alpha2.isalpha():
+        return ""
+    return "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in alpha2)
+
 
 @router.get("/kpi-sources", response_model=KpiSources, summary="Where each KPI is from")
 def kpi_sources() -> KpiSources:
@@ -75,8 +93,8 @@ def nav() -> Navigation:
 
     Reference like the KPI table: a front end that keeps its own copy of the
     menu drops a page the day one is added, and nobody reports a page they
-    cannot see. `stocks.navigation` is the same table the Streamlit sidebar and
-    the phone tab bar are built from.
+    cannot see. `stocks.navigation` is the same table the server routes the
+    shell's pages from.
     """
     return Navigation(
         destinations=[
@@ -190,12 +208,6 @@ def jurisdictions() -> Jurisdictions:
     the eleventh country the day it ships, and nobody reports a country they
     cannot see — they just file under somebody else's rules.
     """
-    # Imported here, not at module scope: `stocks.web` pulls Streamlit in, and
-    # a headless caller of this API should never need it loaded. The flag comes
-    # from there rather than being rebuilt because it is one decision — which
-    # alpha-2 a tax code maps to, "UK" being GB — and two copies of it drift.
-    from stocks.web.tax_ui import flag_emoji
-
     return Jurisdictions(
         default=tax.DEFAULT_CODE,
         jurisdictions=[

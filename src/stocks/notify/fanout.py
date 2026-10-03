@@ -191,7 +191,7 @@ def iter_accounts() -> list[dict]:
     """Every account's registration dates — the roster behind `stocks users`.
 
     Cheaper than iter_all_users(): the dates (first_seen/last_seen, stamped by
-    auth.mark_login) live in prefs.json, so nothing else is restored. Same
+    accounts.stamp_login) live in prefs.json, so nothing else is restored. Same
     discovery as the crons — the bucket when configured, the local filesystem
     otherwise — so it answers from a bare checkout with no user data in it.
     """

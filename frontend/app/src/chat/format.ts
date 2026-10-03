@@ -3,9 +3,7 @@
  * source came from, and which wall a refusal hit.
  *
  * Times are formatted by the browser in the account's language rather than
- * built out of catalog strings — "14:32" and "8.4s" are readings, not copy,
- * and the Streamlit drawer prints both the same way (`chat_core._clock`,
- * `_took`).
+ * built out of catalog strings — "14:32" and "8.4s" are readings, not copy.
  */
 
 type T = (key: string, slots?: Record<string, string | number>) => string;

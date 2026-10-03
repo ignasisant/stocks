@@ -17,8 +17,8 @@ name go to Yahoo's search endpoint (data/symbols.py). Everything degrades to
 egress IPs) or a slow call all yield [], and the answer proceeds on the web
 hits and the model's own knowledge.
 
-Streamlit-free like the rest of stocks.chat, and the fetcher is injectable so
-the parsing and formatting are testable without a network.
+The fetcher is injectable so the parsing and formatting are testable without a
+network.
 """
 
 from __future__ import annotations

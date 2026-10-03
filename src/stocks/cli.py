@@ -409,9 +409,7 @@ def cmd_tv(args: argparse.Namespace) -> None:
 
 def cmd_dashboard(args: argparse.Namespace) -> None:
     # web/server.py is the ASGI entry point: the landing, the React app and the
-    # API, with the retired Streamlit app mounted at /legacy. A plain Starlette
-    # app, so any ASGI server runs it; uvicorn is the one Streamlit already
-    # brings along.
+    # API. A plain Starlette app, so any ASGI server runs it.
     cmd = [sys.executable, "-m", "uvicorn", "stocks.web.server:app",
            "--host", args.host, "--port", str(args.port),
            # stocks.obs already logs every request, with its latency.
@@ -432,7 +430,7 @@ def cmd_dashboard(args: argparse.Namespace) -> None:
     # unwinds into the `finally`. Which asks rather than kills: uvicorn's
     # reloader SIGKILLed leaves its worker serving the port on its own.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    print(f"TopStocks at http://{args.host}:{args.port}/  (old app at /legacy/)")
+    print(f"TopStocks at http://{args.host}:{args.port}/")
     children = [c for c in (vite, subprocess.Popen(cmd, cwd=PROJECT_ROOT, env=env)) if c]
     try:
         children[-1].wait()
@@ -1413,7 +1411,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="per-share native ccy (dividend, capital: gross total)")
     p_add.add_argument("--currency", default="USD")
     p_add.add_argument("--fee", type=float, default=0.0,
-                       help="commission (dividend: tax withheld)")
+                       help="commission (dividend, capital: tax withheld)")
     p_add.add_argument("--note", default="")
 
     p_imp = tx_sub.add_parser("import", help="bulk import from CSV")

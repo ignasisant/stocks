@@ -1,8 +1,8 @@
 """The Home page's scopes and frames, shared by the routes that draw it.
 
-`web/app_pages/home.py` is one script, so the watchlist rows, the 52-week scan
-and the daily card all read the same local variables: one set of held names,
-one year of closes, one enriched positions frame. Over HTTP those are three
+The watchlist rows, the 52-week scan and the daily card have to read the same
+scope: one set of held names, one year of closes, one enriched positions
+frame. Over HTTP those are three
 routes (`/home/closes`, `/extremes`, `/daily`), and the moment each of them
 decides its own scope they disagree — which is exactly how `/extremes` came to
 scan the whole watchlist, crypto pairs included, while missing a held name the
@@ -10,15 +10,15 @@ reader never starred. So the decisions live here, once, and every route asks.
 
 Two of them are worth saying out loud:
 
-* **A guest holds nothing.** The Streamlit page reads the ledger as
-  `DB if is_logged_in() else None`: the demo book a guest can open on Portfolio
-  is not *their* book, and Home does not pretend it is. The guest's Home is the
-  shared watchlist and nothing else.
+* **A guest holds nothing.** Home reads the ledger only for a signed-in
+  account: the demo book a guest can open on Portfolio is not *their* book,
+  and Home does not pretend it is. The guest's Home is the shared watchlist
+  and nothing else.
 * **One year-of-closes download per page.** The watchlist rows and the 52-week
   scan both read `closes_tuple()`, the watchlist plus every held non-crypto
   name, so a held name missing from the list rides along in the same bulk
-  request instead of costing a second one — `home.py`'s `_wl_tickers`, and the
-  reason that page stopped getting itself rate-limited.
+  request instead of costing a second one, which is the reason the page
+  stopped getting itself rate-limited.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ def closes_tuple(entries: list[Holding], owned: set[str]) -> tuple[str, ...]:
 
 
 def extremes_scope(entries: list[Holding], owned: set[str]) -> tuple[str, ...]:
-    """Held ∪ favourites, crypto excluded — `home.py`'s `_xt_tickers`.
+    """Held ∪ favourites, crypto excluded.
 
     Not the whole watchlist: a name somebody added once and never starred is
     not one they want a card about, and the scan stays small. Crypto has no
@@ -144,9 +144,9 @@ def scan_extremes(
 ) -> list[tuple[str, float, str, float | None]]:
     """(ticker, last close, "high"/"low", distance) within EDGE_BAND of an edge.
 
-    The tuple shape is `home.py`'s `_year_extremes`, on purpose: it is what
-    `chat.daily.build_facts` and `chat.signals` read, so the daily card is fed
-    the very rows the extremes card shows. Distance is None at or beyond the
+    The tuple shape is on purpose: it is what `chat.daily.build_facts` and
+    `chat.signals` read, so the daily card is fed the very rows the extremes
+    card shows. Distance is None at or beyond the
     extreme — a different fact from being 0% away.
     """
     out: list[tuple[str, float, str, float | None]] = []
@@ -165,7 +165,7 @@ def scan_extremes(
 def last_closes(
     tickers: list[str], year: dict[str, list[float]]
 ) -> dict[str, tuple[float | None, float | None, str | None]]:
-    """{ticker: (last close, day %, as_of)} with `home.py`'s off-session rule.
+    """{ticker: (last close, day %, as_of)}, with an off-session rule.
 
     Close-to-close from the daily bars, except for names whose own exchange is
     not in a regular session right now: there the newest bar can be a flat
@@ -196,14 +196,12 @@ def last_closes(
 
 
 def enriched(db: str, mtime: float, base: str) -> pd.DataFrame:
-    """`web.portfolio_data.enriched_positions`, over this API's own loaders.
+    """The positions frame plus weight / day / day_pct / day_asof, by weight.
 
-    The positions frame plus weight / day / day_pct / day_asof, sorted by
-    weight — the frame the daily card's facts and signals are written from.
-    Same recipe as the page's: the day move is the basket's last two bars
-    (FX included), re-read from the quote burst for names whose exchange is
-    shut, and dated with the session it belongs to so the card never calls a
-    last-completed-session move "today".
+    The frame the daily card's facts and signals are written from. The day
+    move is the basket's last two bars (FX included), re-read from the quote
+    burst for names whose exchange is shut, and dated with the session it
+    belongs to so the card never calls a last-completed-session move "today".
 
     A copy, always: `positions_table` is a cached frame shared by every reader
     of this book, and adding columns to it in place would leak this route's

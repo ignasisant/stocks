@@ -22,9 +22,9 @@ estimate lands weeks before the US print), so every row this module returns
 carries its own reference period. Nothing here aligns them into one column.
 
 Responses are cached to disk under ``data/macro/`` for six hours — these are
-daily-at-best series and a Streamlit page refetches on every widget click. A
-failed refresh falls back to the stale file rather than raising: a throttled
-host should show yesterday's yield curve, not an empty card.
+daily-at-best series. A failed refresh falls back to the stale file rather
+than raising: a throttled host should show yesterday's yield curve, not an
+empty card.
 """
 
 from __future__ import annotations

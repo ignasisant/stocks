@@ -1,15 +1,13 @@
 /**
  * Who to compare this company against.
  *
- * Three sources, the same three the Streamlit page offers and in the same
- * order: names already on the watchlist, Yahoo's "people also follow"
- * suggestions, and a free symbol search for the competitor the account never
- * followed — which is routinely a foreign listing, and used to have to be known
- * by heart.
+ * Three sources, in this order: names already on the watchlist, Yahoo's
+ * "people also follow" suggestions, and a free symbol search for the competitor
+ * the account never followed — which is routinely a foreign listing, and used
+ * to have to be known by heart.
  *
  * Nothing is compared until something is picked. Each peer is a fundamentals
- * pull, so a table nobody asked for spends those requests on a guess; the app
- * starts empty for the same reason.
+ * pull, so a table nobody asked for spends those requests on a guess.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -90,10 +88,10 @@ export function PeerPicker({
     return entry.ticker.includes(needle) || entry.name.toUpperCase().includes(needle);
   });
 
-  // Yahoo's suggestions minus anything the watchlist group already offers —
-  // Streamlit's `s not in peer_pool`. The same name as a chip in two groups
-  // reads as two different things to compare, and the watchlist copy is the
-  // one that carries the reader's own name for it.
+  // Yahoo's suggestions minus anything the watchlist group already offers.
+  // The same name as a chip in two groups reads as two different things to
+  // compare, and the watchlist copy is the one that carries the reader's own
+  // name for it.
   const inPool = new Set(pool.map((entry) => entry.ticker.toUpperCase()));
   const suggested = related.filter(
     (peer) => !inPool.has(peer.ticker.toUpperCase()) && !peers.includes(peer.ticker),
@@ -129,9 +127,9 @@ export function PeerPicker({
           <label className="tk-peers-label" htmlFor="tk-peer-filter">
             {t("ticker.peers_watchlist")}
           </label>
-          {/* Every name on the list, as Streamlit's multiselect offers them, with
-              the filter to narrow it; a long list scrolls inside its own box
-              rather than pushing the comparison table off the screen. */}
+          {/* Every name on the list, with the filter to narrow it; a long list
+              scrolls inside its own box rather than pushing the comparison
+              table off the screen. */}
           <input
             id="tk-peer-filter"
             className="tk-field"

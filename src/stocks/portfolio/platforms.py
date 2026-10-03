@@ -33,7 +33,7 @@ from stocks.portfolio.statement import ParseResult
 class Platform:
     key: str  # stable id, stored in the last-import record
     label: str
-    file_types: tuple[str, ...]  # extensions st.file_uploader accepts
+    file_types: tuple[str, ...]  # extensions the upload accepts
     hint: str  # one-liner: where to find the export on that platform
     parse: Callable[[str, bytes], ParseResult]  # (filename, raw bytes)
     domain: str | None = None  # brand website, for the selector logo

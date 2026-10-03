@@ -240,7 +240,7 @@ def _mirror(stem: str, resolve_url, static_dir: Path) -> str | None:
 def mirror_logo(ticker: str, static_dir: Path) -> str | None:
     """Mirror a ticker's logo into `static_dir`; returns the file name.
 
-    The dashboard serves logos same-origin (Streamlit static serving) so the
+    The dashboard serves logos same-origin (`server.static_file`) so the
     logo hosts (FMP, Clearbit, Google) never learn which tickers a viewer
     looks at — only the server fetches each image, once per ticker. Returns
     e.g. "AAPL.png", or None when no source resolved or the download failed.

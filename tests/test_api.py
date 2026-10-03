@@ -549,15 +549,13 @@ def test_the_batch_is_bounded(client, token):
 # -------------------------------------------------------------- the API is read-only
 
 
-# The one route allowed to write, and why: a recent-search list that never
-# grows is worse than none, because the reader would see five names frozen at
-# whatever the Streamlit page last stored. Written as an allowlist so adding a
-# second write endpoint fails here and has to be argued for.
 # Every route that changes something. The list is written out rather than
 # derived so that adding a write is a deliberate edit to this file: the
 # question "should this be writable over HTTP, by whom, and what happens if a
 # client half-completes it" is not one to answer by accident.
 WRITES = {
+    # Recent searches: a list that never grows is worse than none, because the
+    # reader would see five names frozen at whatever was stored last.
     ("/v1/search/recent", "post"),
     ("/v1/prefs", "patch"),
     # The investor profile, replaced whole. A write because it is what the
@@ -674,9 +672,8 @@ WRITES = {
     ("/v1/notify/telegram", "post"),
     ("/v1/notify/telegram", "delete"),
     ("/v1/notify/telegram/test", "post"),
-    # Feedback. A write because it stores a file against this account; there is
-    # no anonymous variant, which is a real difference from the Streamlit page
-    # and is stated where the button is drawn.
+    # Feedback. A write because it stores a file. The one a guest may make too —
+    # see `guest.OPEN_WRITES`.
     ("/v1/feedback", "post"),
     # Erasing the account. The most destructive route here, and the clearest
     # case for the session-only rule: a token names any account it likes.
@@ -708,8 +705,8 @@ WRITES = {
 
 
 def test_the_writes_are_the_ones_we_meant_to_ship(client):
-    """Everything else still goes through the app, so nothing here can leave a
-    ledger in a state the UI did not produce."""
+    """Every route that changes state is on the list on purpose: a new one is
+    added there, with its reason, before it ships."""
     writing = {
         (path, method)
         for path, item in fastapi_app.openapi()["paths"].items()

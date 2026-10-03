@@ -5,8 +5,8 @@
  * that one lists what is switched *on* — Google, an import, a provider key,
  * Telegram — and this one says what to *do* next, in order, in prose. A
  * reader who has connected everything still gets that one; a reader who has
- * imported nothing needs this one, and neither answers for the other. The
- * Streamlit page draws both, above everything else, for the same reason.
+ * imported nothing needs this one, and neither answers for the other. Both sit
+ * above everything else on the page, for the same reason.
  *
  * Shown only while the ledger is empty, which is what "new here" means: an
  * account that has imported has done step two, and the card would be telling
@@ -29,7 +29,7 @@ import { Markdown } from "../../chat/markdown";
 import { Card } from "./ui";
 import type { Transactions } from "./types";
 
-/** Streamlit's icon tokens — `:material/waving_hand:` and friends. */
+/** The catalog's icon tokens — `:material/waving_hand:` and friends. */
 const ICON = /:material\/[a-z0-9_]+:/g;
 
 export function FirstRun({ ledger }: { ledger: Query<Transactions> }) {
@@ -49,9 +49,9 @@ export function FirstRun({ ledger }: { ledger: Query<Transactions> }) {
       <div className="hm-prose">
         {/* The icon token comes off and the `**` stays: `plain()` strips both,
             which is right for a heading rendered as text and wrong here, where
-            the emphasis is the markdown this renders. Streamlit draws
-            `:material/…:` from a font this app does not load for page content,
-            and the literal token on screen is worse than no icon. */}
+            the emphasis is the markdown this renders. `:material/…:` names a
+            font this app does not load for page content, and the literal token
+            on screen is worse than no icon. */}
         <Markdown text={t("home.onboarding_md").replace(ICON, "").trimStart()} />
       </div>
       <div className="hm-firstrun-actions">
@@ -61,8 +61,7 @@ export function FirstRun({ ledger }: { ledger: Query<Transactions> }) {
           onClick={() => {
             // Hidden first, saved after — the press is the decision, and a
             // failed write is worth one card coming back rather than an error
-            // in front of somebody tidying their screen. Same key the
-            // Streamlit page writes, so this is put away on both.
+            // in front of somebody tidying their screen.
             setDismissed(true);
             void send("PATCH", "/prefs", { onboarding_dismissed: true })
               .then(reload)

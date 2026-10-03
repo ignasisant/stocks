@@ -25,10 +25,13 @@ dependencies = [
     "ddgs>=9.15.0",
     "fastapi>=0.120",
     "google-genai>=1.0",
-    # Both arrive transitively today — httpx through the LLM clients, itsdangerous
-    # through Streamlit. The session cookie is signed with itsdangerous and the
-    # OIDC client talks over httpx, so neither may depend on a package we are in
-    # the middle of shedding.
+    # uvicorn's `--http auto` parses with httptools when it is installed and
+    # falls back to pure-Python h11 when it is not. Streamlit used to bring it;
+    # named so the server keeps the parser it has run on.
+    "httptools>=0.8",
+    # Named although something else brings each: the session cookie is signed
+    # with itsdangerous and the OIDC client talks over httpx, so neither may
+    # hang on whichever package happens to pull it in today.
     "httpx>=0.28",
     "itsdangerous>=2.2",
     "lxml>=6.1.1",
@@ -38,17 +41,20 @@ dependencies = [
     "openpyxl>=3.1",
     "pandas>=3.0.5",
     "pdfplumber>=0.11.10",
-    "plotly>=6.9.0",
+    # pandas 3 stores the default `str` dtype in Arrow when pyarrow is there and
+    # falls back to Python objects when it is not — slower, and a different
+    # dtype under the same name. Streamlit used to bring it; nothing else does.
+    "pyarrow>=24.0",
     "pydantic>=2.13.4",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
     "sqlite-vec>=0.1.9",
-    "streamlit>=1.60.0",
+    # The server (stocks.web.server) is a Starlette app; FastAPI brings it, but
+    # the server imports it directly, so it is named.
+    "starlette>=1.6",
     "tiktoken>=0.14.0",
     "trafilatura>=2.2.0",
-    # The server (stocks.web.server is a plain Starlette app since Streamlit
-    # moved to /legacy). Streamlit brings it too, which is exactly why it is
-    # named here: it has to outlive that dependency.
+    # Serves stocks.web.server (`stocks dashboard`, the container entrypoint).
     "uvicorn>=0.53",
     "yfinance>=1.5.2",
 ]
@@ -98,5 +104,4 @@ dev = [
     "pytest-playwright>=0.9.0",
     "ruff>=0.16.0",
     "ty>=0.0.1a21",
-    "watchdog>=6.0.0",
 ]

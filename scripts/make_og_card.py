@@ -31,7 +31,7 @@ ASSETS = ROOT / "src" / "stocks" / "web" / "assets"
 
 W, H = 1200, 630
 
-# .streamlit/config.toml, and widgets.py's --ag-* tokens.
+# stocks.web.ds tokens.
 BG = (24, 22, 28)  # neutral-950
 CARD = (40, 38, 45)  # neutral-900
 BORDER = (59, 57, 66)  # neutral-800

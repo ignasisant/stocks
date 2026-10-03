@@ -73,10 +73,9 @@ export function Source({
           {/* The address the choice lives at, so a link can land on it. */}
           <span className="im-param">?platform={platform.key}</span>
         </div>
-        {/* One control at every width. Seven brand names do not fit a phone
-            row side by side, which is why the Streamlit page falls back to a
-            dropdown there; letting them wrap solves the same problem without
-            a second control to keep in step. */}
+        {/* One control at every width. Seven brand names do not fit a phone row
+            side by side; letting them wrap solves that without a second control
+            (a dropdown) to keep in step. */}
         <div aria-labelledby="im-platform" className="im-chips" role="group">
           {platforms.map((entry) => (
             <button
@@ -116,13 +115,12 @@ export function Source({
         <Eyebrow id="im-file-label" n={2}>
           {t("import.statement_from", { platform: platform.label })}
         </Eyebrow>
-        {/* The drop zone the Streamlit uploader draws, in this app's words: a
-            bare <input type=file> prints "Choose File / No file chosen" in the
-            browser's language rather than the reader's, and says nothing about
-            what it takes. The input is still the control — visually hidden,
-            focusable, inside the label that opens it — so the keyboard and a
-            screen reader get the native dialog, and a drop lands on the same
-            pipeline as a pick. */}
+        {/* A drop zone in this app's words: a bare <input type=file> prints
+            "Choose File / No file chosen" in the browser's language rather than
+            the reader's, and says nothing about what it takes. The input is
+            still the control — visually hidden, focusable, inside the label
+            that opens it — so the keyboard and a screen reader get the native
+            dialog, and a drop lands on the same pipeline as a pick. */}
         <label
           className={dragging ? "im-drop im-drop-on" : "im-drop"}
           onDragEnter={(event) => {
@@ -204,8 +202,7 @@ export function Source({
             <label className="im-label" htmlFor="im-paste">
               {t("import.paste_label", { platform: platform.label })}
             </label>
-            {/* No button: a text area commits on blur, which is the same
-                moment the Streamlit widget hands its value over. */}
+            {/* No button: the text area commits on blur. */}
             <textarea
               className="im-paste"
               id="im-paste"

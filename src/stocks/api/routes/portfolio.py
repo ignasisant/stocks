@@ -155,13 +155,12 @@ def _day_moves(
 ) -> dict[str, tuple[float | None, float | None]]:
     """{ticker: (today's move in `ccy`, as a fraction)} for the table's rows.
 
-    The Streamlit page's `enriched_positions`, on the API's loaders: the last
-    two rows of the fixed-quantity basket (so the FX move is in it, and a
-    deposit is not), then — for every name whose own exchange is shut — the
-    session quote takes over, because the newest daily bar is stale or flat
-    there and would print the "+0.00% today" a reader gets at eight in the
-    morning. The money figure is re-derived from the row's own value so the
-    amount and the percentage are always the same move.
+    The last two rows of the fixed-quantity basket (so the FX move is in it,
+    and a deposit is not), then — for every name whose own exchange is shut —
+    the session quote takes over, because the newest daily bar is stale or
+    flat there and would print the "+0.00% today" a reader gets at eight in
+    the morning. The money figure is re-derived from the row's own value so
+    the amount and the percentage are always the same move.
 
     Best effort, and never the reason the table fails: the positions are the
     ledger's and their value is already priced; a throttled basket or quote
@@ -390,8 +389,8 @@ def transactions(
 def _cash_in(t, ccy: str) -> float | None:
     """The cash a row moved, in `ccy` at its trade date's rate, or None.
 
-    `home.py`'s `_tx_amount`: a buy costs its shares plus the fee, a sale
-    brings them in less the fee, a dividend is its amount and a fee is itself.
+    A buy costs its shares plus the fee, a sale brings them in less the fee, a
+    dividend or a return of capital is its amount and a fee is itself.
     A split or a transfer moves no cash, and a zero there would read as a free
     trade. The rate is the one the ledger replay above already prefetched, so
     this resolves from the on-disk FX cache; a date it cannot price is None,
@@ -403,6 +402,7 @@ def _cash_in(t, ccy: str) -> float | None:
         "buy": t.quantity * t.price + t.fee,
         "sell": t.quantity * t.price - t.fee,
         "dividend": t.price,
+        "capital": t.price,
         "fee": t.fee,
     }.get(t.action)
     if amount is None:
@@ -830,13 +830,11 @@ def monthly(account: Account, base: Base = None, window: str = "inception") -> M
 
 @ttl_cache(3600.0, max_entries=8)
 def _ledger_csv(db: str, mtime: float, base: str) -> bytes:
-    """The export, memoized on (db, ledger mtime, base) like the page's copy.
+    """The export, memoized on (db, ledger mtime, base).
 
     Worth caching because it is not a dump: every row is priced at the ECB rate
     for its own trade date, which is a fetch per currency in the book.
     """
-    # Imported here, not at module scope: `stocks.web` pulls Streamlit in, and
-    # a headless caller of this API should never need it loaded.
     from stocks.web.exports import ledger_csv
 
     return ledger_csv(db, base)
@@ -910,9 +908,9 @@ def fees_(
     # The spread needs the trade-day bars; the commissions do not. A throttled
     # or offline Yahoo therefore degrades this endpoint to its ledger half
     # instead of 503-ing a question the ledger can answer on its own — and so
-    # does any other failure on that half (a malformed frame, an FX gap), as
-    # the Streamlit tab does: it is an estimate, and losing it must not take
-    # the ledger's facts down with it. Only the unexpected ones are logged.
+    # does any other failure on that half (a malformed frame, an FX gap): it is
+    # an estimate, and losing it must not take the ledger's facts down with it.
+    # Only the unexpected ones are logged.
     spreads: dict[str, fees.SpreadStats] = {}
     measured = False
     try:
@@ -1234,13 +1232,12 @@ def tax_(account: Account) -> TaxReport:
 def _reporting_flags(account, jurisdiction, settings) -> list[TaxFlag]:
     """Foreign-asset thresholds (Modelo 720, FBAR, Form 8938…) against the book.
 
-    The Streamlit tab's recipe: the open book marked to market off the shared
-    positions table — a name with no price counts at its cost rather than
-    vanishing from a total whose whole point is "how much is held abroad" —
-    then converted to the jurisdiction's currency at today's spot. That is a
-    threshold check and not a basis, so one live rate is the right tool (FBAR's
-    year-end Treasury rate is not worth a second replay for a line that only
-    says "may apply").
+    The open book marked to market off the shared positions table — a name
+    with no price counts at its cost rather than vanishing from a total whose
+    whole point is "how much is held abroad" — then converted to the
+    jurisdiction's currency at today's spot. That is a threshold check and not
+    a basis, so one live rate is the right tool (FBAR's year-end Treasury rate
+    is not worth a second replay for a line that only says "may apply").
 
     Best effort both ways: a price pass or a rate that failed leaves no line
     at all, never a threshold measured against a total that is missing half

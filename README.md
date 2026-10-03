@@ -41,7 +41,8 @@ under [Usage](#usage).
 - **[uv](https://docs.astral.sh/uv/)** — Python + dependency manager (Python 3.12)
 - **yfinance** — price data (no API key needed)
 - **pandas** — data wrangling
-- **Streamlit + Plotly** — the dashboard / "website"
+- **Starlette + React** — the website: `web/server.py` serves the landing, the
+  HTTP API and the React shell in `frontend/app`
 - **BYOK LLMs** (Claude / ChatGPT / Gemini SDKs, optional) — the portfolio-aware
   chat assistant; see [AI assistant](#ai-assistant--chat-with-your-portfolio)
 - **pytest + ruff** — tests and linting
@@ -81,10 +82,8 @@ Configure:
 The app runs the authorization-code round trip itself (`web/oidc.py`, at
 `/auth/login`, `/oauth2callback` and `/auth/logout`) and mints its own signed
 session cookie (`stocks/session.py`). One sign-in therefore covers the
-app, the `/api/v1` calls it makes and the old Streamlit app at `/legacy`: the
-API verifies the cookie in `api/security.py`, the old pages read it off
-`st.context.cookies`, and neither can disagree with the other about who is
-signed in.
+app and the `/api/v1` calls it makes: the API verifies the cookie in
+`api/security.py`.
 
 `secrets.toml` is git-ignored; never commit it. When deploying, add the
 deployed URL + `/oauth2callback` to both the Google client and
@@ -421,8 +420,8 @@ yours to own — the output is **derived**, only as good as the assumptions.
 
 ## Portfolio analytics, sector screen & alerts
 
-Decision-support layer over the watchlist — dashboard pages (Streamlit
-`st.navigation` multipage, under `web/app_pages/`) and matching CLI commands:
+Decision-support layer over the watchlist — app pages (the React shell,
+under `frontend/app/src/pages/`) and matching CLI commands:
 
 - **Portfolio analytics** (`stocks portfolio`, 📊 page): allocation by
   sector / geography / currency, concentration (top-5 weight, effective number
@@ -663,8 +662,9 @@ in-page toggles switch one axis at a time.
 Planning aid, not tax advice. All tax and matching logic is pure and
 unit-tested (`tests/test_ledger.py`, `tests/test_positions_s104.py`,
 `tests/test_positions_average.py`, then `test_tax_es | us | uk | de | fr | it |
-ie | pt | ca | au.py`, plus `tests/test_portfolio_tax_tab.py` rendering the tab
-once per jurisdiction); FX is injectable so tests run offline.
+ie | pt | ca | au.py`, plus `tests/test_api_portfolio.py` serving the tax
+endpoint in the account's own jurisdiction); FX is injectable so tests run
+offline.
 
 ## Layout
 
@@ -699,16 +699,17 @@ src/stocks/
   notify/narrative.py  optional LLM lines for the crons (digest highlight, alert note)
   notify/deliver.py    push alerts to Telegram / email (env-gated, console fallback)
   web/server.py        ASGI entry point: static landing at / + the app behind it
-  web/app.py           Streamlit app (st.navigation + page config/CSS + global ticker picker)
-  web/landing.py       landing markup (sections, CSS, i18n copy) — no Streamlit runtime
+  web/landing.py       landing markup (sections, CSS, i18n copy)
   web/landing_static.py  the landing as a standalone HTML document
   web/seo.py           title/description/canonical/hreflang/OG/JSON-LD, robots.txt, sitemap.xml
-  web/auth.py          Google OIDC login gate + per-account data paths/prefs
+  web/oidc.py          Google sign-in round trip, minting the session cookie
+  web/auth.py          per-account data files: prefs, chat book, watchlist
   web/onboarding.py    guided tour + per-release "what's new" (one step registry)
-  web/chat_core.py     portfolio-aware assistant panel: context + BYOK key + conversation
   web/llm.py           multi-provider LLM registry (Claude/ChatGPT/Gemini), streaming + error map
-  web/app_pages/       pages: Home, Ticker, Portfolio, Screener, Earnings, Valuation, Import, Profile
+  chat/engine.py       portfolio-aware assistant: context + BYOK key + conversation
+  api/                 the HTTP API every app page reads and writes through
   cli.py               `stocks` command
+frontend/app/              the React shell: one page per route, the chat drawer
 scripts/update_prices.py   standalone refresh (cron-friendly)
 tests/                     smoke tests (no network)
 data/                      cached CSVs (gitignored)
@@ -731,8 +732,8 @@ uv run scripts/make_og_card.py   # redraw the share card after a brand change
 procedures a coding agent should follow that the code itself cannot express
 (currently: keeping the in-app tutorial in step with shipped features). See
 [.claude/skills/README.md](.claude/skills/README.md) for the convention and
-how to add one. Only `settings.local.json` and the Streamlit symlink in there
-are per-machine and gitignored.
+how to add one. Only `settings.local.json` in there is per-machine and
+gitignored.
 
 ## The landing page and the app share one port
 
@@ -748,8 +749,7 @@ source under Vite, hot-reloaded; see `frontend/README.md`):
 | `/robots.txt`, `/sitemap.xml` | generated for whichever host answered |
 | `/api/v1/*` | the HTTP API (see below) |
 | `/portfolio`, `/ticker`, … | the app: the React shell (`frontend/app`), stamped `X-Robots-Tag: noindex` |
-| `/next/*` | redirected to the same page at the root (the shell's address while it was built) |
-| `/legacy/*` | the Streamlit app it replaced, kept for reference |
+| `/next/*`, `/legacy/*` | redirected (301) to the same page at the root, query kept — the shell's address while it was built, and the Streamlit app it replaced |
 
 The landing is a plain HTML response: the copy is in the document, so it is
 crawlable and paints without any JavaScript, and it carries a `<title>`, a
@@ -758,14 +758,11 @@ visit (no parameter, no cookie) is the landing, every CTA click arrives with a
 parameter, and the cookie is set on every app response so returning visitors
 skip the pitch. Crawlers send no cookies, so they always see the landing.
 
-**The old app at `/legacy`.** The Streamlit app is mounted whole under that
-prefix (`st.App` supports being a sub-application), started on the first
-request there rather than at boot, with a banner on every page saying what it
-is. It reads and writes the same account files as the app, so it is for
-looking, not for working in. The last commit where it was the app is tagged
+**The Streamlit app is gone.** It was the first front end, then stayed
+read-only at `/legacy` while the shell took over; links there now land on the
+same page at the root. The last commit where it was the app is tagged
 `streamlit-final`; `git worktree add ../stocks-streamlit streamlit-final` gets
-that state back in full. Once nobody needs to look, it goes: `app_pages/`, the
-Streamlit-only modules and the `streamlit` dependency.
+that state back in full.
 
 **Set `[app] public_url` in secrets (or `APP_PUBLIC_URL`) on any real deploy** —
 not only behind a custom domain. Cloud Run answers on more than one hostname by
@@ -773,33 +770,28 @@ default, and unset, each one serves a full copy of the site that canonicalizes
 to *itself*: duplicate content, split link equity, and Google choosing which
 copy ranks. Set, it is the base for every canonical, hreflang, Open Graph and
 sitemap URL, and every other hostname 301s to it (GET/HEAD only, and never
-`/legacy/_stcore/` — moving a live websocket would break the session a visitor
-is already in). Nothing else needs configuring, and the OIDC redirect URI is
-unchanged.
+the API, the OIDC return or the health probes). Nothing else needs
+configuring, and the OIDC redirect URI is unchanged.
 
-Unknown paths return a real **404**. Streamlit's static mount answers anything
-it does not recognise with the app shell and a 200, which turns every typo and
-stale link into a soft 404. The gate in `server.py` knows the whole served
-surface — the marketing pages, Streamlit's own endpoints, and the app's pages
-derived from `app_pages/` so a new page needs no edit — and 404s the rest.
+Unknown paths return a real **404**. The shell's router answers any slug with
+a page, which would turn every typo and stale link into a soft 404. The gate in
+`server.py` knows the whole served surface — the marketing pages, the API, and
+the shell's pages from `navigation.SHELL_PATHS`, so a new page needs no edit
+there — and 404s the rest.
 
 ## HTTP API (read-only)
 
-`stocks.api` puts an HTTP surface on the same domain packages the pages use —
-`stocks.portfolio`, `stocks.analysis`, `stocks.data`, none of which import
-Streamlit. It exists so something other than a browser session can read a book:
-a cron job, the Telegram bot, a phone, a front end that is not Streamlit.
+`stocks.api` is the HTTP surface over the domain packages —
+`stocks.portfolio`, `stocks.analysis`, `stocks.data`. The React shell reads and
+writes every book through it, and so can something other than a browser: a
+cron job, the Telegram bot, a phone.
 
 It is mounted at `/api` inside `web/server.py`, so it deploys with the app and
-answers on the same hostname. The dependency points one way — `stocks.web` does
-not import `stocks.api` — so deleting `src/stocks/api/` leaves the app exactly
-as it was.
+answers on the same hostname.
 
-**Every route is a GET but one.** `POST /api/v1/search/recent` appends to the
-account's recent-search list, because a recents list that never grows is worse
-than none. Imports, preferences and watchlist edits still go through the app, so
-nothing here can leave a ledger in a state the UI did not produce —
-`tests/test_api.py` asserts that allowlist of one.
+**Writes are an allowlist.** Every route that changes something — the
+recent-search list, a watchlist edit, an import commit, a chat attachment — is named
+in `tests/test_api.py`, so a new one fails there until someone argues for it.
 
 ### Configuring it
 
@@ -876,11 +868,10 @@ is **not** enough to hand to a browser or to a third party. A public front end
 needs per-user credentials (the OIDC session the web app already has), which is
 a different piece of work.
 
-Two things the API does not inherit from the pages, by design:
+Two things about how it serves, by design:
 
-- **No `st.cache_data`.** That decorator needs a script run to key against, so
-  the loaders in `stocks/api/loaders.py` use a plain TTL memo (`api/cache.py`)
-  on the same keys the pages use — `(db path, ledger mtime, base currency)` — so
+- **A TTL memo keyed on the file.** The loaders in `stocks/api/loaders.py`
+  cache through `api/cache.py` on `(db path, ledger mtime, base currency)`, so
   an import invalidates a book the moment the file changes.
 - **No app cookie.** `/api/*` is exempt from `ts_app` and from the canonical-host
   redirect: a client is not a browser that has "been to the app", and a cross-host
@@ -890,25 +881,20 @@ A throttled or unreachable upstream is a **503**, never a 500, and the body
 carries `reason` (`rate_limited` | `offline`) beside `detail`. Yahoo rate-limits
 datacenter egress IPs as a matter of course; that is weather, not a fault in
 this service, and a client has to be able to tell "try again shortly" from "this
-request will never work". The pages classify the same two exceptions into the
-same two kinds (`web/notices.py`), so the word a client reads here is the word
-the app prints.
+request will never work".
 
 A third seam came out of the same work: `stocks.identity` resolves a stored
 broker label to the symbol it stands for, finds a company name for it and
 locates its logo. The ledger keeps what the broker wrote — an ISIN, a local
 Revolut code — because that string is the audit trail; every screen prints what
-it resolves to. `web/logos.py` is the `st.cache_data` wrapper around it and
-`api/loaders.py` is the TTL one.
+it resolves to, and `api/loaders.py` caches it on the TTL memo.
 
-Shared arithmetic lives in the domain, not in either caller:
+Shared arithmetic lives in the domain, not in a caller:
 `analysis.portfolio.book_history` computes injected-vs-value, the flow-adjusted
-TWR and the list of names it could not price, and both `web/portfolio_data.py`
-and `api/loaders.py` call it. `stocks.search` owns which search tier answers
-first and how the tiers dedup, and both the Streamlit top bar and `/api/v1/search`
-read it — each supplying its own cache, since `st.cache_data` and the TTL memo
-cannot substitute for one another. When a number or a ranking needs changing it
-changes once.
+TWR and the list of names it could not price, and `api/loaders.py` calls it.
+`stocks.search` owns which search tier answers first and how the tiers dedup,
+and the CLI, the chat and `/api/v1/search` all read it. When a number or a
+ranking needs changing it changes once.
 
 ## Observability — production logs
 
@@ -917,8 +903,8 @@ Cloud Logging, which indexes those keys as queryable fields, so production
 questions are queries rather than grep:
 
 ```json
-{"severity":"ERROR","message":"page.render","event":"page.render","ok":false,
- "duration_ms":812,"page":"Cartera","user":"a_b_c_1f2e3d4c","error_type":"KeyError"}
+{"severity":"ERROR","message":"yahoo.quotes","event":"yahoo.quotes","ok":false,
+ "duration_ms":812,"symbols":14,"error_type":"YFRateLimitError"}
 ```
 
 Emit side — `stocks.obs`, no dependencies, shared by the dashboard, the CLI and
@@ -928,22 +914,21 @@ the scheduled jobs:
 from stocks import obs
 
 obs.event("chat.answered", provider="free", chars=120)   # a fact
-with obs.timed("page.render", page=title) as extra:      # + duration_ms, ok
+with obs.timed("yahoo.quotes", symbols=n) as extra:      # + duration_ms, ok
     extra["rows"] = len(df)
 with obs.swallow("logo.mirror", ticker=t):               # degrade, but leave a trace
     mirror(t)
 ```
 
-`stocks.web.telemetry.bind_run()` runs once per Streamlit script run and binds
-`session`, `user` and `page` onto every record the run emits — from any module
-— so one visit reads as one timeline. `user` is the account slug (the same key
-its data directory uses), never the raw address; `STOCKS_LOG_USER=0` drops it.
+`obs.bind()` and `obs.context()` put fields on every record the current thread
+or task emits — from any module — so one piece of work reads as one timeline.
+Where a record names an account, `user` is its slug (the same key its data
+directory uses), never the raw address.
 Verbosity is `STOCKS_LOG_LEVEL` (default `INFO`), so a revision can be turned
 up to `DEBUG` without a code change. Locally the same calls print a compact
 human line instead of JSON.
 
-What is instrumented today: page renders and page crashes, sign-in, the free
-LLM chain (which backend answered, which failed and why), Telegram chat
+What is instrumented today: sign-in, the free LLM chain (which backend answered, which failed and why), Telegram chat
 replies, and Yahoo rate limiting.
 
 Query side — `stocks logs`, which shells out to `gcloud` (whoever is logged in
@@ -1162,7 +1147,7 @@ Setup (one-time):
 1. @BotFather → `/newbot` → copy the token and the bot's username.
 2. `cp .notify_secrets.env.example .notify_secrets.env`, paste the bot token,
    username, a random `TELEGRAM_WEBHOOK_SECRET` and the four
-   `STOCKS_STORAGE_*` values (same creds the Streamlit deploy uses).
+   `STOCKS_STORAGE_*` values (same creds the app's deploy uses).
 3. `./scripts/setup_notify_secrets.sh` — pushes every GitHub Actions secret
    (harvesting `CHAT_ENC_KEY` and the `FREE_LLM_*` keys from your local
    `.streamlit/secrets.toml`) and prints the `[telegram]` block to add to
@@ -1171,14 +1156,15 @@ Setup (one-time):
    `workers/telegram-webhook/README.md`. Rollback any time with
    `uv run stocks telegram-chat --delete-webhook` (restores `getUpdates`
    polling).
-5. Reboot the Streamlit app, link your account on the Profile page, then
+5. Ship the updated `secrets.toml` to the deploy (see "Secrets rotation" in
+   `docs/RUNBOOK.md`), link your account on the Profile page, then
    Actions → notifications → Run workflow → **test** to confirm delivery
    (see below).
 
 Testing delivery, cheapest first:
 
 - **In the app**: Profile → Notifications → *Send test message* — one message
-  to the logged-in account, straight from the Streamlit deploy's
+  to the logged-in account, straight from the app deploy's
   `[telegram] bot_token`.
 - **Locally**: `uv run stocks notify-test` sends through the env-configured
   channels (`TELEGRAM_CHAT_ID`, `SMTP_*`) — the same path as

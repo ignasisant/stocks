@@ -179,7 +179,7 @@ def clear_history_cache() -> None:
 def fetch_history(ticker: str) -> DividendHistory:
     """Full dividend history for one ticker via yfinance; empty on any failure.
 
-    Memoized for the process: a book of 30 names re-reads this on every rerun
+    Memoized for the process: a book of 30 names re-reads this on every render
     and the series only changes when a payment goes ex. The currency comes
     from the history metadata the same call already downloaded, so knowing
     what the amounts are denominated in costs no extra request.

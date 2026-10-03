@@ -7,11 +7,11 @@
  * throttled. Keeping them apart is what lets the rows stand with "n/a" in the
  * price cells when Yahoo says no, instead of the group vanishing with them.
  *
- * The figures are `home.py`'s, not a live quote's: the column says *last
+ * The figures are daily closes, not a live quote: the column says *last
  * close*, and the day % is close-to-close — re-read from the quote burst only
  * for a name whose own exchange is shut, where the newest bar can be a flat
  * premarket 0%. A name whose market is not quoting right now has its day
- * figure greyed, like the Streamlit table's muted cells: real, not moving.
+ * figure greyed: real, not moving.
  */
 
 import type { ReactNode } from "react";
@@ -34,8 +34,8 @@ export function WatchlistGroups({
   nonce: number;
   onRefresh: () => void;
   /**
-   * The book has positions. The refresh button is `home.py`'s escape hatch for
-   * stale prices anywhere on the page — the glance and movers included — so it
+   * The book has positions. The refresh button is the escape hatch for stale
+   * prices anywhere on the page — the glance and movers included — so it
    * stays for a book whose watchlist is empty.
    */
   holdsPositions?: boolean;
@@ -59,9 +59,8 @@ export function WatchlistGroups({
 
 /**
  * "Refresh prices". The page's handler drops the server's price caches before
- * it asks again (`POST /home/refresh`), which is what the Streamlit button's
- * `.clear()` calls do — without that, asking again answers from the very TTL
- * caches the reader pressed the button to get past.
+ * it asks again (`POST /home/refresh`) — without that, asking again answers
+ * from the very TTL caches the reader pressed the button to get past.
  */
 function RefreshButton({ onRefresh }: { onRefresh: () => void }) {
   const t = useT();

@@ -1,10 +1,10 @@
 /**
  * Bank — read-only PSD2 account information, through Enable Banking.
  *
- * Same page as `web/app_pages/bank.py`, and the same three things on it: the
- * banks already connected with what they last reported, the button that reads
- * them again, and the picker that starts a new consent. Nothing here initiates
- * a payment, which the page says twice because it is the question a reader has.
+ * Three things on it: the banks already connected with what they last reported,
+ * the button that reads them again, and the picker that starts a new consent.
+ * Nothing here initiates a payment, which the page says twice because it is the
+ * question a reader has.
  *
  * This is also the OAuth-style landing spot, and that is what shapes the file.
  * The bank sends the reader back to the *registered redirect URL* with
@@ -38,9 +38,7 @@ import "./bank.css";
 import { Badge } from "../../ui/Badge";
 
 /** Countries Enable Banking covers that this app is likely to be used from;
-    the bank list itself comes from the API per country. Same table as the
-    Streamlit page — a country offered on one front end and not the other
-    would be a bank somebody can only connect from one of them. */
+    the bank list itself comes from the API per country. */
 const COUNTRIES = [
   "ES",
   "PT",
@@ -193,7 +191,7 @@ function Connection({
         </button>
         {confirming ? (
           <span className="bk-confirm">
-            {/* The Streamlit popover's copy, inline: the emphasis markers in
+            {/* The confirmation copy, inline: the emphasis markers in
                 the catalog string are the bank's name and read fine as text. */}
             <span className="bk-note">
               {t("bank.disconnect_confirm", { bank: connection.name }).replaceAll(
@@ -275,8 +273,8 @@ function AddBank({
 
       {/* Not the shell's generic failure: a bank list that will not load is
           the one thing standing between the reader and a consent, and the
-          catalog has the sentence that says so — the Streamlit page prints
-          the same one, with the same reason from the API. */}
+          catalog has the sentence that says so, with the reason from the
+          API. */}
       {banks.state === "failed" ? (
         <p className="bk-warn">
           {t("bank.aspsps_failed", {

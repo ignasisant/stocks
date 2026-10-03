@@ -3,13 +3,13 @@
  *
  * Every one of these writes to this account's watchlist, and every one of them
  * is an upsert: favouriting or tagging a symbol that is only held — or only
- * searched for — lists it, exactly as the Streamlit app has always behaved.
- * That is why they go through POST /watchlist rather than PATCH, which answers
- * 404 for precisely the symbols somebody is most likely to be starring.
+ * searched for — lists it. That is why they go through POST /watchlist rather
+ * than PATCH, which answers 404 for precisely the symbols somebody is most
+ * likely to be starring.
  *
- * The alert editor asks the server what a rule can ask for (`/alert-types`).
- * The app's widget reads the same table from the domain, so a type added there
- * shows up in both editors without either one being edited.
+ * The alert editor asks the server what a rule can ask for (`/alert-types`,
+ * from `config.ALERT_FORMS`), so a type added there shows up here without this
+ * editor being edited.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -312,8 +312,7 @@ export function Actions({
           onRules={writeAlerts}
         />
       </Popover>
-      {/* The groups this ticker is in, readable without opening anything — the
-          Streamlit page prints them under the header row for the same reason. */}
+      {/* The groups this ticker is in, readable without opening anything. */}
       {tags.length > 0 ? (
         <span className="tk-groups">
           {tags.map((tag) => (

@@ -22,7 +22,7 @@ telegram_bot_token = ""
 app_public_url = "" # e.g. https://topstocks.example
 
 # Optional — digest highlight LLM chain
-chat_enc_key        = "" # must equal Streamlit [chat] enc_key
+chat_enc_key        = "" # must equal the app's [chat] enc_key
 free_llm_groq       = ""
 free_llm_cerebras   = ""
 free_llm_openrouter = ""

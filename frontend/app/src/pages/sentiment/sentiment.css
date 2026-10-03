@@ -2,9 +2,9 @@
  * The Pulse page's own sheet.
  *
  * No hex literals: every colour is an `--ag-*` custom property that the server
- * inlines into the document, so this page and the Streamlit page beside it
- * cannot drift apart. Tone lives here rather than in the markup — a component
- * decides WHETHER a move is welcome, and this decides what welcome looks like.
+ * inlines into the document, so this page and the rest of the app cannot drift
+ * apart. Tone lives here rather than in the markup — a component decides
+ * WHETHER a move is welcome, and this decides what welcome looks like.
  */
 
 .sn-page {
@@ -230,9 +230,8 @@
   font-size: var(--ag-fs-md, 1rem);
 }
 
-/* The regime meter. The Streamlit page interpolates three literal steps
-   through this ramp; they are not tokens, so the gradient here runs between
-   the ones that are and lets the browser find the middle. */
+/* The regime meter. The ramp runs between tokens only, with no literal steps
+   in between, and lets the browser find the middle. */
 .sn-meter {
   position: relative;
   height: 16px;

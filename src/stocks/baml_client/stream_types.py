@@ -80,7 +80,7 @@ class ColumnMap(BaseModel):
     decimal: typing.Optional[str] = Field(default=None, description='the decimal separator, \'.\' or \',\'')
     thousands: typing.Optional[str] = Field(default=None, description='the thousands separator, or an empty string')
     asset_class: typing.Optional[types.AssetClass] = None
-    action_map: typing.Optional[typing.Dict[str, str]] = Field(default=None, description='the exact text in the action column -> buy, sell, dividend, fee or split')
+    action_map: typing.Optional[typing.Dict[str, str]] = Field(default=None, description='the exact text in the action column -> buy, sell, dividend, fee, split or capital')
 
 class Columns(BaseModel):
     date: typing.Optional[int] = None
@@ -122,7 +122,7 @@ class StatementPage(BaseModel):
 class StatementRow(BaseModel):
     date: typing.Optional[str] = Field(default=None, description='YYYY-MM-DD')
     ticker: typing.Optional[str] = Field(default=None, description='symbol or ISIN')
-    action: typing.Optional[str] = Field(default=None, description='buy, sell, dividend, fee or split')
+    action: typing.Optional[str] = Field(default=None, description='buy, sell, dividend, fee, split or capital')
     quantity: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a plain number')
     price: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a plain number')
     currency: typing.Optional[str] = Field(default=None, description='3-letter code')

@@ -93,9 +93,9 @@ async function record(): Promise<Recording> {
 /**
  * The words in a clip, or a locale key to say why there are none.
  *
- * The server answers refusals with the key the drawer already renders
- * (`chat.voice_silent`, `chat.voice_too_long`, …), so both front ends say the
- * same thing about the same recording in the reader's own language.
+ * The server answers refusals with a catalog key (`chat.voice_silent`,
+ * `chat.voice_too_long`, …), so the drawer says why in the reader's own
+ * language.
  */
 async function transcribe(clip: Blob, lang: string): Promise<string> {
   const buffer = await clip.arrayBuffer();

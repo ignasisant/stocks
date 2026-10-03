@@ -1,9 +1,9 @@
 /**
  * The switcher, the filters and the month the grid is parked on.
  *
- * All three are local state. The Streamlit page keeps them in `session_state`
- * and nothing about this screen is deep-linked — there is no `?view=` or
- * `?month=` on it to keep working — so nothing here writes to the query string.
+ * All three are local state, and nothing about this screen is deep-linked —
+ * there is no `?view=` or `?month=` on it — so nothing here writes to the
+ * query string.
  *
  * Filtering is done on data already in hand: one `/earnings` call fetched the
  * whole watchlist, so toggling a pill or paging a month is a re-render, never a
@@ -51,10 +51,9 @@ const GROUP_KEYS: Record<string, string> = {
 /**
  * Phones open on the list, desktops on the grid.
  *
- * The Python page decides this from the User-Agent because Streamlit renders
- * server-side and has no viewport to ask. Here the viewport is the honest
- * question, and 640px is the same breakpoint the shell's stylesheet uses to
- * turn the nav rail into a tab bar.
+ * The viewport is the honest question here, not the User-Agent, and 640px is
+ * the same breakpoint the shell's stylesheet uses to turn the nav rail into a
+ * tab bar.
  */
 function initialView(): View {
   return window.matchMedia("(max-width: 640px)").matches ? "list" : "calendar";

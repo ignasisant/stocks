@@ -46,7 +46,7 @@ import {
 import type { Column } from "./ui";
 
 /**
- * The jurisdiction's own wording, most specific first — `web/tax_ui.key()`.
+ * The jurisdiction's own wording, most specific first.
  *
  * A key the catalog is missing renders as the dotted key itself (the shell and
  * the Python side agree on that), which is what makes "does this string
@@ -150,9 +150,9 @@ function Report({ report }: { report: TaxReport }) {
   const periods = report.years.map((year) => year.period);
   const latest = periods[periods.length - 1] ?? "";
   const [year, setYear] = useState(latest);
-  // The aggregate sits after the years, as the Streamlit selector puts it. It
-  // only exists for a book with more than one — a single year is already all
-  // of them, and an option that repeats the view below it does nothing.
+  // The aggregate sits after the years. It only exists for a book with more
+  // than one — a single year is already all of them, and an option that
+  // repeats the view below it does nothing.
   const options = report.all_years ? [...periods, ALL_YEARS] : periods;
   const [grain, setGrain] = useState<"year" | "month">(
     report.years.length > 1 ? "year" : "month",
@@ -340,8 +340,7 @@ function Report({ report }: { report: TaxReport }) {
 
       <Card>
         {/* Few fiscal years read faster as buttons than as a dropdown — up to
-            four options counting "all years", where the Streamlit page
-            switches too. */}
+            four options counting "all years". */}
         {options.length <= 4 ? (
           <Segmented
             label={words.say("fiscal_year")}
@@ -392,9 +391,8 @@ function Report({ report }: { report: TaxReport }) {
           })}
           {/* Every sentence the jurisdiction appends to the year — a deferred
               loss, an allowance used, a fund exemption nobody could apply —
-              in its own wording, after the summary as the Streamlit caption
-              runs them on. The aggregate carries none: every note is about
-              one year. */}
+              in its own wording, run on after the summary. The aggregate
+              carries none: every note is about one year. */}
           {total
             ? null
             : selected.notes.map((note) => words.say(note.key, note.kwargs)).join("")}
@@ -572,7 +570,7 @@ function SalesTable({ report, sales }: { report: TaxReport; sales: TaxSale[] }) 
 }
 
 /**
- * One foreign-asset reporting line — `web/tax_ui.flag_caption`, in TypeScript.
+ * One foreign-asset reporting line.
  *
  * The outer sentence is `flag_<name>` with the inner clause (`_reportable` or
  * `_ok`, carrying the total and the threshold) as its `message`. A flag nobody

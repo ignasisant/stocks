@@ -26,7 +26,7 @@ Three properties shape everything here:
     writes every section, and the card spends at most FREE_UNITS of the
     account's free allowance a day (`spend_unit`): that is what makes an
     always-on card affordable on the free chain, so the stored copy
-    (auth.load_action / save_action) is authoritative and a rerun never
+    (auth.load_action / save_action) is authoritative and a reload never
     regenerates.
 
   - It never blocks the dashboard. Generation runs through
@@ -40,9 +40,8 @@ Three properties shape everything here:
     history, the earnings calendar, the 52-week scan), so the briefing costs no
     extra network work.
 
-Headless by construction: paths and language come in as arguments, the module
-imports no Streamlit, and stocks/web/daily_ui.py is the thin Streamlit layer
-over it.
+Headless by construction: paths and language come in as arguments, and
+stocks/api/briefing.py is the layer over it.
 """
 
 from __future__ import annotations
@@ -364,8 +363,8 @@ def _pct(value) -> float | None:
 
 
 def _asof(tbl, ticker) -> str | None:
-    """The session date `tbl` carries for one row (portfolio_data.enriched_
-    positions writes `day_asof`), or None on a frame built without it."""
+    """The session date `tbl` carries for one row (`api.home.enriched` writes
+    `day_asof`), or None on a frame built without it."""
     if "day_asof" not in getattr(tbl, "columns", ()):
         return None
     try:
@@ -416,8 +415,8 @@ def build_facts(
     some real trigger did not get.
 
     Args:
-        tbl: the live-priced positions frame (web/portfolio_data.enriched_
-            positions) — value/cost/pnl/weight/day_pct per ticker, plus the
+        tbl: the live-priced positions frame (api/home.enriched) —
+            value/cost/pnl/weight/day_pct per ticker, plus the
             `day_asof` stamp saying which session each day_pct is from (the
             last completed one, off-hours).
         hist: fixed-basket daily values (basket_history), for the week and
@@ -1859,7 +1858,6 @@ def thread_text(action: DailyAction) -> str:
 
 def record(chat_path, action: DailyAction) -> str:
     """File `action` in the account's chat; the thread's id, "" on failure.
-    A `chat_path` of None is the signed-in account's (`auth.user_paths`).
 
     Never raises: a card that could not be filed is still the card, and its
     "Ask" falls back to opening the assistant on whatever thread is active."""

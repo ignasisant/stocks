@@ -1,18 +1,20 @@
-"""Local page-render benchmark: one page per process, network stubbed + counted.
+"""Local page-load benchmark: one page per process, network stubbed + counted.
 
     uv run python scripts/bench_page.py home [--runs 3] [--profile] [--json out.json]
 
-Pages: home, sentiment, ticker (--ticker AAPL), portfolio, earnings, sector,
-profile, import_transactions. Run each page in its own process — a second
-AppTest in one process trips Streamlit's component registry.
+Pages: the keys of `PAGES` below (home, portfolio, ticker --ticker AAPL,
+earnings, sector, sentiment, profile, import). Each is the list of GET calls
+the shell's page makes when it mounts, read off `frontend/app/src/pages/`.
+Run each page in its own process, so a cold run really starts cold.
 
-Drives src/stocks/web/app.py through AppTest as a signed-in account with the
-demo ledger and a ~30-name watchlist. Every Yahoo / FX / macro / LLM call is
-replaced by a deterministic stub that COUNTS itself, and every other socket is
-blocked, so the numbers are:
+Drives the API (`stocks.api.app`) in-process through a TestClient, signed in
+as an account with the demo ledger and a ~30-name watchlist. The calls go one
+after another, where the browser fires them together, so the wall time is the
+sum of the endpoints rather than the slowest. Every Yahoo / FX / macro / LLM
+call is replaced by a deterministic stub that COUNTS itself, and every other
+socket is blocked, so the numbers are:
 
-  * render wall time (cold = empty caches, warm = plain rerun)
-  * obs `page.render` duration_ms (the prod KPI, same code path)
+  * wall time per endpoint and for the page (cold = empty caches, warm = again)
   * requests the page would have made per kind (the driver of prod p95)
   * warn/error events emitted during the run (the "degraded" KPI)
 """
@@ -35,9 +37,9 @@ from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
 
-os.environ.setdefault("STREAMLIT_CLIENT_SHOW_ERROR_DETAILS", "full")
 os.environ.setdefault("STOCKS_LOG_LEVEL", "INFO")
-os.environ.setdefault("STREAMLIT_SERVER_HEADLESS", "true")
+# The session cookie the bench signs in with is minted with this.
+os.environ.setdefault("AUTH_COOKIE_SECRET", "bench-cookie-secret")
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
@@ -320,17 +322,14 @@ def install_stubs():
         raise urllib.error.URLError("network disabled by bench")
     shttp.get_bytes = _get_bytes
 
-    from stocks.web import logos
-    logos.mirror_logo = lambda t, d: None
-    logos.logo_url = lambda t: None
+    from stocks.data import logo
+    logo.mirror_logo = lambda t, d: None
+    logo.logo_url = lambda t: None
 
-    try:
-        from stocks.web import search
-        search.sec_matches = lambda q: []
-        search.world_matches = lambda q: []
-        search.sec_title = lambda t: None
-    except Exception:
-        pass
+    from stocks.api import loaders
+    loaders.sec_matches = lambda q: []
+    loaders.world_matches = lambda q: []
+    loaders.sec_title = lambda t: None
 
     from stocks.chat import daily, engine
     daily.generate = lambda *a, **k: _hit("llm.daily")
@@ -346,13 +345,6 @@ def install_stubs():
     funds.TYPE_CACHE = scratch / "quote_types.json"
     funds._types = None
 
-    # Modals that would otherwise cover the page (guide panel / what's new /
-    # profile nudge). They are gated on prefs we also stamp, belt and braces.
-    from stocks.web import auth, guide, onboarding
-    guide.maybe_start = lambda: False
-    onboarding.maybe_open = lambda: False
-    auth.maybe_prompt_profile = lambda: False
-
     # Any other socket = a fetch site this bench does not know about. Fail
     # fast and count it instead of hanging on DNS.
     def _blocked(*a, **kw):
@@ -366,6 +358,7 @@ def install_stubs():
 def install_account(tmp: Path):
     import yaml
 
+    from stocks import accounts
     from stocks.portfolio import demo
     from stocks.web import auth, onboarding
 
@@ -391,13 +384,70 @@ def install_account(tmp: Path):
     paths.watchlist.write_text(yaml.safe_dump(wl, sort_keys=False))
     demo.seed(paths.db)
 
-    for name in ("require_login", "user_paths", "resolve_user"):
-        setattr(auth, name, lambda: paths)
-    auth.db_path = lambda: paths.db
-    auth.watchlist_path = lambda: paths.watchlist
-    auth.current_email = lambda: "bench@example.com"
-    auth.is_logged_in = lambda: True
+    # Every request resolves its account through `accounts.paths_for`; point
+    # it at the scratch one and keep the bucket out of it.
+    accounts.configured_owner = lambda: None
+    accounts.paths_for = lambda email, owner=None, users_dir=None: paths
+    accounts.restore_account = lambda *a, **k: False
     return paths, len(rows)
+
+
+# The GET calls each page of the shell makes when it mounts. Taken from the
+# `get<…>("/…")` calls under frontend/app/src/pages/<page>/; the ones a click
+# or a scroll triggers are left out.
+PAGES: dict[str, list[str]] = {
+    "home": [
+        "/v1/onboarding", "/v1/daily", "/v1/market/status",
+        "/v1/portfolio/summary", "/v1/portfolio/positions",
+        "/v1/portfolio/performance", "/v1/portfolio/history",
+        "/v1/portfolio/transactions", "/v1/home/closes", "/v1/movers",
+        "/v1/extremes", "/v1/earnings", "/v1/watchlist",
+    ],
+    "portfolio": [
+        "/v1/market/status", "/v1/portfolio/summary",
+        "/v1/portfolio/positions", "/v1/portfolio/performance",
+        "/v1/portfolio/history", "/v1/portfolio/monthly", "/v1/movers",
+        "/v1/portfolio/risk", "/v1/portfolio/dividends", "/v1/portfolio/fees",
+        "/v1/portfolio/tax", "/v1/portfolio/projection",
+        "/v1/portfolio/transactions",
+    ],
+    "ticker": [
+        "/v1/ticker/{t}/quote", "/v1/ticker/{t}/bars", "/v1/ticker/{t}/profile",
+        "/v1/ticker/{t}/metrics", "/v1/ticker/{t}/valuation",
+        "/v1/ticker/{t}/financials", "/v1/ticker/{t}/events",
+        "/v1/ticker/{t}/peers", "/v1/ticker/{t}/position",
+        "/v1/ticker/{t}/insiders", "/v1/kpi-sources", "/v1/watchlist",
+        "/v1/watchlist/tags", "/v1/alert-types",
+    ],
+    "earnings": ["/v1/earnings"],
+    "sector": ["/v1/sectors"],
+    "sentiment": ["/v1/pulse", "/v1/pulse/book", "/v1/pulse/tables"],
+    "profile": [
+        "/v1/me", "/v1/profile", "/v1/profile-options", "/v1/jurisdictions",
+        "/v1/onboarding", "/v1/import/last", "/v1/notify/telegram",
+        "/v1/watchlist", "/v1/watchlist/suggestions",
+        "/v1/portfolio/transactions",
+    ],
+    "import": [
+        "/v1/import/platforms", "/v1/import/last", "/v1/import/moves/scan",
+        "/v1/import/splits/scan", "/v1/portfolio/performance",
+        "/v1/portfolio/dividends",
+    ],
+}
+
+
+def client():
+    """A TestClient on the API, signed in as the bench account."""
+    from fastapi.testclient import TestClient
+
+    from stocks import session
+    from stocks.api.app import app
+
+    c = TestClient(app, raise_server_exceptions=False)
+    c.cookies.set(session.COOKIE, session.mint({
+        "email": "bench@example.com", "email_verified": True, "name": "Bench",
+    }))
+    return c
 
 
 class _Capture(logging.Handler):
@@ -429,7 +479,7 @@ def _profile_top(pr: cProfile.Profile, n: int = 40) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("page")
+    ap.add_argument("page", choices=sorted(PAGES))
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--profile", action="store_true")
     ap.add_argument("--json")
@@ -442,14 +492,8 @@ def main() -> None:
     logging.getLogger("stocks").addHandler(_Capture())
     logging.getLogger("stocks").setLevel(logging.INFO)
 
-    from streamlit.testing.v1 import AppTest
-
-    at = AppTest.from_file(str(REPO / "src/stocks/web/app.py"), default_timeout=300)
-    if args.page != "home":
-        at.switch_page(f"app_pages/{args.page}.py")
-    if args.page == "ticker":
-        at.session_state["picker_selected"] = args.ticker
-        at.session_state["_url_ticker"] = args.ticker
+    api = client()
+    calls = [path.format(t=args.ticker) for path in PAGES[args.page]]
 
     results = []
     for i in range(args.runs):
@@ -457,34 +501,35 @@ def main() -> None:
         EVENTS.clear()
         DETAIL.clear()
         pr = cProfile.Profile() if args.profile else None
+        endpoints = []
         t0 = time.perf_counter()
         if pr:
             pr.enable()
-        at.run()
+        for path in calls:
+            t = time.perf_counter()
+            status = api.get(path).status_code
+            endpoints.append({
+                "path": path, "status": status,
+                "ms": round((time.perf_counter() - t) * 1000),
+            })
         if pr:
             pr.disable()
         wall = time.perf_counter() - t0
-        render = [e for e in EVENTS if e["event"] == "page.render"]
-        skipped = [e for e in EVENTS if e["event"] == "page.skipped"]
-        prelude = [e for e in EVENTS if e["event"] == "app.prelude"]
         warns = [e for e in EVENTS if e["level"] in ("WARNING", "ERROR")]
         row = {
             "run": "cold" if i == 0 else f"warm{i}",
             "wall_ms": round(wall * 1000),
-            "page_render_ms": render[-1]["duration_ms"] if render else None,
-            "prelude_ms": prelude[-1]["duration_ms"] if prelude else None,
-            "skipped": [e["error"] or "" for e in skipped],
-            "exception": str(at.exception[0].value)[:300] if at.exception else None,
+            "endpoints": endpoints,
+            "failed": [e["path"] for e in endpoints if e["status"] >= 400],
             "warnings": Counter(e["event"] for e in warns),
             "counts": dict(sorted(COUNTS.items())),
         }
         results.append(row)
-        print(f"\n=== {args.page} [{row['run']}] wall={row['wall_ms']}ms "
-              f"page.render={row['page_render_ms']}ms prelude={row['prelude_ms']}ms")
-        if row["exception"]:
-            print("  EXCEPTION:", row["exception"])
-        if row["skipped"]:
-            print("  page.skipped:", row["skipped"])
+        print(f"\n=== {args.page} [{row['run']}] wall={row['wall_ms']}ms")
+        for e in sorted(endpoints, key=lambda e: -e["ms"]):
+            print(f"  {e['ms']:>6}ms {e['status']} {e['path']}")
+        if row["failed"]:
+            print("  FAILED:", row["failed"])
         print("  requests:", json.dumps(row["counts"]))
         if DETAIL:
             print("  bulk     :", ", ".join(DETAIL))

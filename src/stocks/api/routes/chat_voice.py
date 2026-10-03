@@ -1,11 +1,10 @@
 """A voice note, turned into the question it was.
 
-The Streamlit composer has had a microphone since `st.chat_input` grew one: the
-clip is transcribed by `web.stt` (Whisper on the free chain's own key) and the
-words are sent down the same path typed text takes. This is that one step for
-any other front end — transcription and nothing else, because a spoken question
-*is* a question, and a client that had to send it through a second, different
-route would have a second, different turn.
+The composer's microphone: the clip is transcribed by `web.stt` (Whisper on the
+free chain's own key) and the words are sent down the same path typed text
+takes. This is that one step — transcription and nothing else, because a spoken
+question *is* a question, and a client that had to send it through a second,
+different route would have a second, different turn.
 
 **The audio never lands on disk**, here or anywhere: it is decoded, sent to the
 backend, and dropped. There is nothing to keep — the transcript is what the
@@ -14,8 +13,8 @@ last thing this app should be accumulating.
 
 **A refusal is a locale key, not a sentence.** `TranscriptionFailed` carries the
 key the drawer already renders (`chat.voice_too_long`, `chat.voice_silent`, …)
-with its parameters, so both front ends say the same thing about the same clip
-in the reader's own language, and the API stays out of the copywriting.
+with its parameters, so the refusal reads in the reader's own language and the
+API stays out of the copywriting.
 
 **`available()` decides whether the button exists.** A deployment with no
 transcription key answers 503 here and says so in `/chat/state`, because a

@@ -8,7 +8,8 @@ only safe while both of its promises hold:
 * it is **recognisable as fake** — every row carries the `demo` origin the
   Fees and Custody views read, and the page it fills says so;
 * it is **gone the moment anything real arrives** — the first import wipes it,
-  from the Import page and from the assistant alike, so an invented cost basis
+  from the Import page and from the assistant alike (test_api_demo.py and
+  test_api_chat_attach.py hold that over HTTP), so an invented cost basis
   can never end up mixed into a real one and reported as tax.
 
 The rest of these tests keep the book worth showing: prices near the real ones
@@ -18,20 +19,12 @@ every tab has something to draw.
 
 from __future__ import annotations
 
-import json
 from collections import Counter
-
-import pytest
-from streamlit.testing.v1 import AppTest
 
 from stocks.portfolio import demo, platforms
 from stocks.portfolio.fees import broker_of
 from stocks.portfolio.ledger import Transaction, add_many, all_transactions
-from stocks.web import auth
-
-IMPORT_PAGE = "../src/stocks/web/app_pages/import_transactions.py"
-PORTFOLIO_PAGE = "src/stocks/web/app_pages/portfolio.py"
-
+from stocks.web import onboarding
 
 # ---------------------------------------------------------------- the book
 
@@ -103,7 +96,7 @@ def test_seeding_an_empty_ledger_writes_the_whole_book(tmp_path):
 
 def test_seeding_twice_does_not_stack_a_second_copy(tmp_path):
     """The offer only shows on the empty path, but a double click and a stale
-    rerun both reach here — and a doubled book is a doubled cost basis."""
+    tab both reach here — and a doubled book is a doubled cost basis."""
     db = tmp_path / "portfolio.db"
     demo.seed(db)
     assert demo.seed(db) == []
@@ -142,86 +135,13 @@ def test_without_drops_the_demo_rows_from_a_validation_baseline():
     assert demo.without([*demo.transactions(), real]) == [real]
 
 
-# -------------------------------------------------------------- the pages
-
-
-@pytest.fixture
-def paths(tmp_path):
-    p = auth.paths_for("newbie@example.com", users_dir=tmp_path)
-    p.root.mkdir(parents=True, exist_ok=True)
-    p.prefs.write_text(json.dumps(dict(auth.DEFAULT_PREFS) | {"language": "en"}))
-    return p
-
-
-@pytest.fixture
-def import_page(monkeypatch, paths):
-    monkeypatch.setattr(auth, "require_login", lambda: paths)
-    monkeypatch.setattr(auth, "user_paths", lambda: paths)
-    monkeypatch.setattr(auth, "db_path", lambda: paths.db)
-    monkeypatch.setattr(auth, "watchlist_path", lambda: paths.watchlist)
-    return AppTest.from_file(IMPORT_PAGE, default_timeout=120)
-
-
-def test_the_portfolio_empty_card_offers_the_demo_book_under_its_cta():
-    """Source-level: running the page for real would fetch prices for whatever
-    the click just seeded. What matters here is that the offer is on the empty
-    path and that it is the card's `extra`, not a second way out."""
-    src = open(PORTFOLIO_PAGE).read()
-    assert "else _demo_offer" in src  # the card's `extra`, guests excepted
-    assert "demo.seed(auth.db_path())" in src
-    assert 'tr("portfolio.demo_banner")' in src  # and the page says whose
-
-
-def test_a_guest_gets_the_portfolio_page_instead_of_a_login_screen():
-    """Everything on that page derives from a ledger, so without this a
-    visitor who has not signed in met a login screen on the one page the app
-    is about. Source-level for the same reason as the test above: running it
-    would price whatever the guest ledger holds.
-
-    Both of the page's writes stay behind an account — the guest dir is shared
-    by every anonymous visitor, so a "remove demo data" click there would
-    empty the page for all of them at once."""
-    src = open(PORTFOLIO_PAGE).read()
-    assert "auth.require_login_or_demo()" in src
-    assert "GUEST = not auth.is_logged_in()" in src
-    assert 'tr("portfolio.guest_demo_banner")' in src  # and says whose numbers
-    assert "extra=None if GUEST else _demo_offer" in src  # no seeding either
-    # The remove button hangs off the signed-in branch, never the guest one.
-    assert "elif demo.active(auth.db_path()):" in src
+# --------------------------------------------------------------- the tour
 
 
 def test_the_tour_no_longer_locks_the_portfolio_steps_for_guests():
     """Those four steps land on a page a guest can now read, so a disabled
     "take me there" would be the tour lying about its own app."""
-    from stocks.web import onboarding
-
     steps = {s.id: s for s in onboarding.STEPS}
     assert not any(steps[i].gated for i in ("positions", "risk", "tax", "income"))
     # Import and Profile still write personal data: those stay gated.
     assert steps["import"].gated and steps["notify"].gated
-
-
-def test_a_demo_only_ledger_is_still_offered_the_example_statement(
-    import_page, paths
-):
-    """A demo book is nothing to lose — the sample offer is gated on having no
-    real rows, not on the table being empty."""
-    demo.seed(paths.db)
-    import_page.run()
-    assert not import_page.exception
-    assert [b for b in import_page.button if b.label == "Load an example statement"]
-
-
-def test_the_first_real_import_wipes_the_demo_book(import_page, paths):
-    """The promise the whole thing rests on: what lands in the ledger after an
-    import is the imported statement and nothing invented."""
-    demo.seed(paths.db)
-    import_page.run()
-    offer = [b for b in import_page.button if b.label == "Load an example statement"]
-    offer[0].click().run()
-    [b for b in import_page.button if b.label == "Commit to ledger"][0].click().run()
-
-    assert not import_page.exception
-    rows = all_transactions(paths.db)
-    assert rows and not any(demo.is_demo(t) for t in rows)
-    assert {t.note.split()[0] for t in rows} == {"revolut"}

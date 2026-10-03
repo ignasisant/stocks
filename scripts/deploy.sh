@@ -73,12 +73,11 @@ case "$ENV" in
         # requests is not billed. A visitor meets a cold start only after an
         # OOM, a deploy or a scale-in Cloud Run decides on its own.
         MIN_INSTANCES="${MIN_INSTANCES:-0}"
-        # One replica, not three: a Streamlit session lives in the instance
-        # that holds its websocket, and the file-upload PUT is a separate HTTP
-        # request. Cloud Run's session affinity is best-effort, so with more
-        # than one instance the upload regularly lands on the wrong replica
-        # and fails with "Invalid session_id" (a red file chip in the chat and
-        # Import pages). Concurrency is 80 — one instance is plenty here.
+        # One replica, not three: each process pulls an account's files from
+        # the bucket once and then works on its local copy
+        # (accounts.restore_account), so two replicas would each hold their
+        # own copy of a book and diverge on the first write. Concurrency is 80
+        # — one instance is plenty here.
         MAX_INSTANCES=1
         ;;
     staging)
@@ -202,7 +201,6 @@ ARGS=(
     --project "$PROJECT"
     --region "$REGION"
     --port 8080
-    --session-affinity           # Streamlit needs sticky sessions
     --min-instances "$MIN_INSTANCES"
     --max-instances "$MAX_INSTANCES"
     # Update, never set: --labels/--set-env-vars would drop everything the

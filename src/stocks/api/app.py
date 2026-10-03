@@ -2,8 +2,8 @@
 
 Mounted at `/api` by `stocks.web.server`, so every path below is reachable as
 `/api/v1/…` on the same hostname the app answers on. Versioned from the first
-commit: this is meant to outlive the Streamlit front end, and a client pinned
-to `/api/v1` must keep working while a `/api/v2` is being shaped beside it.
+commit: a client pinned to `/api/v1` must keep working while a `/api/v2` is
+being shaped beside it.
 
 The token gate is declared on the router that carries the data, not per route,
 so a new endpoint is authenticated by default. `/health` sits outside it on
@@ -70,11 +70,11 @@ job sends `Authorization: Bearer <token>` (`[api] token`, or `API_TOKEN`); that
 token names nobody, so it has to pass `?account=`, and any holder of it can read
 every account on the deployment.
 
-Read-only but for one route: `POST /v1/search/recent` appends to the account's
-recent-search list, which is what keeps the search box's history alive for a
-client that is not the Streamlit app. Nothing else writes — imports,
-preferences and watchlist edits still go through the app, so this API cannot
-leave a ledger in a state the UI did not produce.
+Writes take a session only. Imports, preferences, watchlist edits, the chat
+and the guide all write through this API — it is the app's one way into an
+account — but every route that changes state answers a bearer token 403: the
+token names nobody, and a change in somebody's name has to come from their own
+signed-in browser.
 """
 
 
@@ -85,10 +85,8 @@ async def _lifespan(app: FastAPI):
     The guest book at boot rather than on the first anonymous request, so
     that no request path can write the guest directory — see `api.guestbook`.
     """
-    # Here and not only in the Streamlit pages (`web.telemetry`): since the
-    # React shell this process serves no page unless /legacy is asked for, and
-    # without it every event went out through logging's last resort — bare
-    # text, fields lost, yfinance's misses still at ERROR.
+    # At boot: without it every event goes out through logging's last resort —
+    # bare text, fields lost, yfinance's misses still at ERROR.
     obs.setup()
     guestbook.provision()
     # The price memos for the accounts seen lately, on a thread of its own,
@@ -134,10 +132,9 @@ async def _stale_since(request: Request, call_next):
 
 
 # ------------------------------------------------------ whose request this is
-# Every record a request writes carries its account, the way the Streamlit
-# pages' did (`web.telemetry.bind_run`). Without it every API-era event — the
-# import diagnostics among them — logged `user="-"`, and a "this user could not
-# import" report could only be traced by IP. Here and not in a dependency: a
+# Every record a request writes carries its account. Without it every event —
+# the import diagnostics among them — logged `user="-"`, and a "this user could
+# not import" report could only be traced by IP. Here and not in a dependency: a
 # sync dependency runs on a copy of the context, so what it binds is gone
 # before the endpoint runs, while what is bound around `call_next` reaches the
 # endpoint, its threadpool work and a streamed body alike.
@@ -145,7 +142,7 @@ LOG_USER = os.getenv("STOCKS_LOG_USER", "1") != "0"
 
 
 def _log_user(request: Request) -> str:
-    """The slug `web.telemetry` logs for the same person, or what stands in."""
+    """The account's slug (`accounts.slug`), or what stands in for one."""
     if not LOG_USER:
         return "anon"
     try:
@@ -211,12 +208,6 @@ async def _mem_step(request: Request, call_next):
 # dies on a dropped network. Both are ordinary weather, not a fault in this
 # service, and neither is something the caller can fix by changing its request
 # — so they are 503 with a reason the client can branch on, never a 500.
-#
-# This mirrors what the pages do: `web/notices.data_toast` classifies the same
-# two exceptions and the section degrades in place. The classification lives
-# in both because the shapes differ (a toast versus a status code), but the
-# two kinds must not: a client that learns "rate_limited" from here reads the
-# same word the app prints.
 
 _UPSTREAM = {
     "rate_limited": "the upstream data provider is rate limiting this deployment",

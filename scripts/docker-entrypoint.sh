@@ -4,9 +4,10 @@
 #
 # STREAMLIT_SECRETS_TOML — full contents of .streamlit/secrets.toml ([auth],
 # [app], [storage], [chat], [free_llm], [telegram]). Container hosts inject
-# secrets as env vars while st.secrets only reads files, so we write it out
-# here. Left unset, the app boots without secrets (auth setup screen), or
-# with a mounted .streamlit/secrets.toml when running docker locally.
+# secrets as env vars, and stocks.secrets_env reads every key that has no env
+# var of its own from that file, so we write it out here. Left unset, the app
+# boots without secrets (no sign-in), or with a mounted .streamlit/secrets.toml
+# when running docker locally.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -17,11 +18,9 @@ if [ -n "${STREAMLIT_SECRETS_TOML:-}" ]; then
     umask 022
 fi
 
-# server.py, not app.py: it is the ASGI entry point that serves the React
-# shell at every route, redirects /next, and mounts the Streamlit app
-# read-only at /legacy (`st.App` detects the module-level mount and serves it
-# directly). Pointing this at app.py still boots a working dashboard, just
-# with no React shell, no landing SEO, and Streamlit back on every route.
+# stocks.web.server is the ASGI entry point: the landing, the React shell at
+# every app route, the HTTP API under /api, and 301s from the shell's old
+# addresses (/next, /legacy) to the same page at the root.
 exec .venv/bin/uvicorn stocks.web.server:app \
     --host 0.0.0.0 \
     --port "${PORT:-8501}" \

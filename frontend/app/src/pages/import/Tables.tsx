@@ -3,7 +3,7 @@
  *
  * Columns keep their English names internally — the ledger, the parsers, the
  * CLI and every test agree on those words — and only the header text is
- * translated, exactly as the Streamlit page does it.
+ * translated.
  *
  * Rejected rows do not link their symbol. They are rejected precisely because
  * something about them is malformed, and a ticker cell that links a malformed

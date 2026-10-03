@@ -4,22 +4,17 @@
 document that puts them together — the thing `server.py` writes to the socket
 for `GET /` and `GET /es/`.
 
-Why a document at all, when the same markup used to render inside the app: a
-Streamlit page cannot own its `<head>`. No script run can set a title, a
-description, a canonical URL or an Open Graph image, because by the time the
-script runs the browser has already been served Streamlit's own shell. It also
-cannot be read without JavaScript, and the shell has to boot a websocket before
-the first pixel of copy appears. Serving the bytes directly fixes all of that at
-once: the copy is in the response, the metadata is in the head, and the app
-starts only when a visitor asks for it.
+Why a document rather than a page of the app: the copy is in the response,
+readable without JavaScript, the metadata is in the head, and the app starts
+only when a visitor asks for it.
 
 Two details that follow from being static:
 
 * **Everything is inline.** One request, no render-blocking asset of our own —
   the tokens, the stylesheet and the reveal script all ship in the document.
   The only external request is the font stylesheet, preconnected in `seo.head`.
-* **The phone check moved into the page.** The app version asked
-  `widgets.is_mobile()` on the server; a cached static document cannot, so the
+* **The phone check lives in the page.** A cached static document cannot
+  ask the server which device is reading it, so the
   User-Agent block ships disabled (`media="not all"`) and a one-line script
   enables it for phone User-Agents before the first paint. The width-driven
   640px block in the stylesheet is unaffected and does the real work.
@@ -30,12 +25,12 @@ from __future__ import annotations
 from functools import lru_cache
 
 from stocks.web import landing, seo
+from stocks.web.ds import ds_vars_css
 from stocks.web.i18n import DEFAULT_LANG, LANGUAGES
-from stocks.web.widgets import ds_vars_css
 
-# The reset Streamlit used to provide. Only what the design assumes: no page
-# gutter, and the page colour painted over the full viewport (`.ag-l` colours
-# itself, but a short page would otherwise show white below the footer).
+# The reset, and only what the design assumes: no page gutter, and the page
+# colour painted over the full viewport (`.ag-l` colours itself, but a short
+# page would otherwise show white below the footer).
 _RESET = """
 <style>
   html, body { margin: 0; padding: 0; }

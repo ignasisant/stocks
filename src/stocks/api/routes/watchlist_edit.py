@@ -49,8 +49,8 @@ class EntryBody(BaseModel):
     tags: list[str] | None = Field(
         default=None, description="Replaces the whole list; [] removes them all."
     )
-    # Non-negative, as the Streamlit grid's `min_value=0.0` has it: a short
-    # position is not something a hand-typed watchlist row can express.
+    # Non-negative: a short position is not something a hand-typed watchlist
+    # row can express.
     shares: float | None = Field(
         default=None,
         ge=0,

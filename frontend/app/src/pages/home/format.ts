@@ -14,17 +14,16 @@ export type Translate = (
   slots?: Record<string, string | number>,
 ) => string;
 
-/** `:material/bolt:` icon tokens and `**bold**` markers, as Streamlit stores them. */
+/** `:material/bolt:` icon tokens and `**bold**` markers, as the catalog stores them. */
 const MARKUP = /:material\/[a-z0-9_]+:|\*\*/g;
 
 /**
- * A catalog string with its Streamlit markup taken off.
+ * A catalog string with its markup taken off.
  *
- * Several headings are stored as `":material/event: **Earnings**"` because the
- * Python side renders them through `st.markdown`. Re-keying them would fork the
- * catalog in two, so the markers come off here instead — the icon font the rail
- * uses is not loaded for page content, and a literal `**` on screen is worse
- * than no emphasis at all.
+ * Several headings are stored as `":material/event: **Earnings**"`. Re-keying
+ * them would fork the catalog in two, so the markers come off here instead —
+ * the icon font the rail uses is not loaded for page content, and a literal
+ * `**` on screen is worse than no emphasis at all.
  */
 export function plain(label: string): string {
   return label.replace(MARKUP, "").trim();
@@ -114,8 +113,8 @@ export function dayKey(date: Date): string {
 /**
  * "2 Sep" — day plus the month name from the catalog.
  *
- * The month comes from `home.mon_*` rather than `Intl`, which is what the
- * Streamlit card does: the two front ends print the same twelve words.
+ * The month comes from `home.mon_*` rather than `Intl`, so it reads in the
+ * catalog's own twelve words.
  */
 export function monthDay(iso: string | null | undefined, t: Translate): string | null {
   const date = parseDay(iso);

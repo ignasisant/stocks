@@ -72,9 +72,9 @@ def token(monkeypatch):
 def offline(monkeypatch, tmp_path):
     """No Yahoo and no repo writes from the validation's live lookups.
 
-    Validation now asks the market what the Streamlit page asks it — does an
-    unfamiliar symbol trade, did an oversold ticker split — and files an
-    anonymised diagnostic for every attempt. Neither belongs in a unit test:
+    Validation asks the market — does an unfamiliar symbol trade, did an
+    oversold ticker split — and files an anonymised diagnostic for every
+    attempt. Neither belongs in a unit test:
     the lookups answer "could not check" and no splits unless a test says
     otherwise, the memo starts empty, no buy has a quote to measure its gain
     against, and diagnostics land in tmp rather than in the checkout's
@@ -140,8 +140,8 @@ def test_the_platforms_say_what_they_accept(client, account):
 def test_a_branded_platform_carries_its_logo_and_a_generic_one_none(
     client, account, monkeypatch
 ):
-    """The picker draws the brand mark beside the name, as Streamlit does; a
-    platform with no brand site gets no image rather than a broken one."""
+    """The picker draws the brand mark beside the name; a platform with no
+    brand site gets no image rather than a broken one."""
     from stocks.api import loaders
 
     monkeypatch.setattr(
@@ -1463,9 +1463,8 @@ def test_a_wipe_is_previewed_against_the_ledger_it_will_leave_behind(
 
 # ------------------------------------------------------------ who read it
 # The anonymised diagnostics carry the reader's slug, so three failures can be
-# told apart as three readers or one retrying. On the Streamlit pages that was
-# bound by `web.telemetry`; on the API it is the request middleware's job, and
-# without it every React-era diagnostic said `user="-"`.
+# told apart as three readers or one retrying. The request middleware binds
+# it, and without it every diagnostic said `user="-"`.
 
 
 def _filed() -> list[dict]:

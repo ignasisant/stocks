@@ -2,11 +2,11 @@
  * The drawer's account-level settings: who answers, on which model, with whose
  * key — and the one destructive action the thread list should not carry.
  *
- * A view rather than a strip above the conversation, for the reason the
- * Streamlit panel moved it there too: provider, model and key are set once and
- * then left alone for months, so they have no business taking room over every
- * message. Here they get room, and deleting a conversation ends up where a
- * destructive action belongs — at the bottom, behind a confirmation.
+ * A view rather than a strip above the conversation: provider, model and key
+ * are set once and then left alone for months, so they have no business
+ * taking room over every message. Here they get room, and deleting a
+ * conversation ends up where a destructive action belongs — at the bottom,
+ * behind a confirmation.
  *
  * Every control writes through `PATCH /chat/settings` (or the key routes),
  * each of which answers with the whole state: picking a provider that needs a
@@ -18,11 +18,10 @@
  * a key — the case this screen exists to resolve — and a tile that un-pressed
  * itself would tell the reader their choice did not take.
  *
- * A key is either stored encrypted on the account or held by this tab alone —
- * the Streamlit panel's "Remember" checkbox, with the tab's sessionStorage in
- * the role `st.session_state` plays there (`sessionKey.ts`). A deployment with
- * no encryption secret offers only the second, and says so before the reader
- * types anything rather than refusing the key on submit.
+ * A key is either stored encrypted on the account or held by this tab alone,
+ * in its sessionStorage (`sessionKey.ts`) — the "Remember" checkbox decides.
+ * A deployment with no encryption secret offers only the second, and says so
+ * before the reader types anything rather than refusing the key on submit.
  *
  * Memory has two switches, because they stop two different things: what the
  * reader asked the assistant to remember (read into every prompt) and the
@@ -49,7 +48,7 @@ function Group({ children }: { children: string }) {
 }
 
 /**
- * The key in use, masked, with an opt-in reveal — `chat_core._show_key`.
+ * The key in use, masked, with an opt-in reveal.
  *
  * Masked by default because a settings screen is the one a reader opens with
  * somebody looking over their shoulder; the tail alone is enough to tell two

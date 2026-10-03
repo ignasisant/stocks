@@ -1,12 +1,11 @@
 /**
  * Profile — who this account is, what it has set, and what it follows.
  *
- * Rebuilt from the same canvas as `web/app_pages/profile.py`: every setting is
- * a row with its label and explanation on the left and its control on the
- * right, the rows are grouped into cards rather than floating on the page, and
- * a sticky rail carries a read-only summary of what is set. Nothing has a Save
- * button — each control writes itself, which is what the strip beside the tabs
- * promises.
+ * Every setting is a row with its label and explanation on the left and its
+ * control on the right, the rows are grouped into cards rather than floating on
+ * the page, and a sticky rail carries a read-only summary of what is set.
+ * Nothing has a Save button — each control writes itself, which is what the
+ * strip beside the tabs promises.
  *
  * Three scopes, one tab each, deep-linked as `?tab=` so a link into the
  * watchlist editor stays a link into the watchlist editor.
@@ -49,8 +48,7 @@ const TABS = [
 
 /**
  * Two initials for the avatar when there is no picture: off the display name
- * when the provider gave one (as the Streamlit card takes them), else off the
- * address.
+ * when the provider gave one, else off the address.
  */
 export function initials(email: string, name?: string | null): string {
   const source = name?.trim()
@@ -132,10 +130,10 @@ function Settings() {
             <span className="pr-ident-note">{t("profile.account_scope")}</span>
           </div>
           {/* A real link, not a fetch: signing out is the server clearing the
-              cookie both front ends are authenticated by, and the page that
-              comes back has to be one rendered without it. Streamlit serves
-              the route; this app never runs a second sign-in flow, and it must
-              not run a second sign-out either. */}
+              session cookie, and the page that comes back has to be one
+              rendered without it. `web/oidc.py` serves the route; this app
+              never runs a second sign-in flow, and it must not run a second
+              sign-out either. */}
           <a className="pr-signout" href="/auth/logout">
             {t("common.log_out")}
           </a>

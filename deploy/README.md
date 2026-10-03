@@ -49,7 +49,7 @@ the default list **→ Add Ingress Rules**, twice:
 
 ## 4. Secrets on the VM
 
-From your Mac, copy the real Streamlit secrets up:
+From your Mac, copy the real app secrets up:
 
 ```bash
 scp .streamlit/secrets.toml ubuntu@<VM_IP>:/opt/aguait-stocks/deploy/secrets.toml
@@ -89,7 +89,7 @@ above).
 cd /opt/aguait-stocks/deploy
 docker compose up -d --build      # first build ~3-5 min on ARM
 docker compose logs -f caddy      # expect "certificate obtained successfully"
-docker compose logs -f app        # expect "You can now view your Streamlit app"
+docker compose logs -f app        # expect "Uvicorn running on http://0.0.0.0:8501"
 ```
 
 Open `https://<ip-with-dashes>.sslip.io` — full page, real HTTPS, no

@@ -4,12 +4,11 @@ The ledger keeps whatever the broker wrote — an ISIN ("US4131971040"), a local
 Revolut code ("RCF") — because that string is the audit trail and the key
 positions are booked under. It is also unreadable, so every screen prints the
 resolved symbol and a company name instead. That resolution is the same three
-questions wherever it is asked, and it is asked from two front ends now.
+questions wherever it is asked.
 
-Nothing here is cached and nothing here imports a UI framework. Both are on
-purpose: every function below reaches the network on a cold path, and the
-caller owns the cache because the two runtimes cannot share one —
-`st.cache_data` needs a script run, `api.cache.ttl_cache` does not have one.
+Nothing here is cached, on purpose: every function below reaches the network
+on a cold path, and the caller owns the cache (`api.cache.ttl_cache` in the
+API).
 """
 
 from __future__ import annotations
@@ -19,17 +18,15 @@ from pathlib import Path
 from stocks.config import load_watchlist
 from stocks.data.logo import logo_url, mirror_logo
 
-# Where Streamlit serves `web/static` from, relative to the document. Relative
-# on purpose: the app is served at "/" locally, at "/~/+/" behind Streamlit
-# Cloud's shell iframe, and at "/<prefix>/" under server.baseUrlPath, and only
-# a relative URL lands on the right mount in all three.
+# Where the server serves the mirrored logos (`server.STATIC_PATH`), without
+# the leading slash; the API hands it out absolute (`api.loaders.logo`).
 STATIC_PREFIX = "app/static/logos/"
 
 # Where the mirrored images actually sit. Named here, beside the prefix that
-# serves them, because two runtimes now mirror into the same directory and a
-# second copy of this path is a second chance to get it wrong. It points into
-# `web/` because that is the directory Streamlit serves; `logo_src` still takes
-# it as an argument, so nothing is forced to use this one.
+# serves them, because more than one caller mirrors into the same directory and
+# a second copy of this path is a second chance to get it wrong. It points into
+# `web/static` because that is the directory the server serves; `logo_src`
+# still takes it as an argument, so nothing is forced to use this one.
 STATIC_LOGO_DIR = Path(__file__).parent / "web" / "static" / "logos"
 
 

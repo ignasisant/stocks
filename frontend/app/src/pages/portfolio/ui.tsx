@@ -1,11 +1,10 @@
 /**
  * The handful of shapes every tab on this page is built from.
  *
- * The Streamlit original draws bordered containers, TIKR-style KPI tiles with
- * a "?" pill, and one HTML table helper shared by five tables. These are the
- * same four things, and they exist here for the same reason: five tabs written
- * five ways drift, and this page is the one where a number formatted loosely
- * turns into a tax figure somebody files.
+ * Bordered cards, TIKR-style KPI tiles with a "?" pill, and one table shared
+ * by five tables. They exist because five tabs written five ways drift, and
+ * this page is the one where a number formatted loosely turns into a tax
+ * figure somebody files.
  */
 
 import { Fragment, useMemo, useState, type ReactNode } from "react";
@@ -17,12 +16,11 @@ import { TickerCell as Cell } from "../../shell/tickers";
 import { DenseRows, Responsive, StackCards, type DenseSpec } from "../../ui/Rows";
 
 /**
- * The two emphases the catalogs use, which Streamlit got for free.
+ * The two emphases the catalogs use.
  *
  * A few strings were written for a Markdown renderer — `**{region}**` in the
  * unmodelled-jurisdiction warning, `*savings base*` in the Spanish tax caption
- * — and printed raw they would show their asterisks. Editing the catalogs to
- * suit this front end would break the Streamlit one, so they are parsed here.
+ * — and printed raw they would show their asterisks, so they are parsed here.
  */
 function Markup({ text }: { text: string }) {
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
@@ -387,7 +385,7 @@ export function Segmented<T extends string>({
 
 /**
  * The same choice as a dropdown, for when there are too many of them to sit in
- * a row — the Streamlit page switches at four fiscal years for the same reason.
+ * a row.
  */
 export function Dropdown<T extends string>({
   label,
@@ -424,9 +422,9 @@ export function Dropdown<T extends string>({
 /**
  * Nothing to show, and what to do about it.
  *
- * Every empty state on the Streamlit page says why the tab is blank and, where
- * there is one, points at the single action that fills it — almost always the
- * Import page, because everything here derives from the ledger.
+ * Every empty state says why the tab is blank and, where there is one, points
+ * at the single action that fills it — almost always the Import page, because
+ * everything here derives from the ledger.
  */
 export function Empty({
   title,

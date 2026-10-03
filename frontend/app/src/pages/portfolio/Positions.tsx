@@ -52,10 +52,8 @@ const WINDOWS = [
  * What to print under the day tiles when the figure is not a live one.
  *
  * `/market/status` decides the state and hands back a stem; the sentence is
- * this page's own, the one `portfolio.py` prints under its delta row. Spelled
- * out rather than templated so the catalog keys stay greppable — the parity
- * test reads this file to decide whether the React page says what the
- * Streamlit one says.
+ * this page's own, printed under the delta row. Spelled out rather than
+ * templated so the catalog keys stay greppable.
  */
 const MARKET_NOTES: Record<string, string> = {
   market_closed: "portfolio.market_closed_note",
@@ -64,8 +62,8 @@ const MARKET_NOTES: Record<string, string> = {
 };
 
 /**
- * One position's custody as the Streamlit column words it: "Revolut", or
- * "Revolut 60% · ClickTrade 40%" when the shares sit at more than one broker.
+ * One position's custody: "Revolut", or "Revolut 60% · ClickTrade 40%" when
+ * the shares sit at more than one broker.
  * `withShares: false` is the phone's shorter line under the ticker, where the
  * split would not fit and the name is the point.
  */
@@ -91,8 +89,8 @@ function realizedChip(summary: Summary, lang: string) {
 }
 
 /**
- * "Today" while the US regular session is shut, as `portfolio.py` takes it:
- * the per-row day moves summed, over the book's value before them.
+ * "Today" while the US regular session is shut: the per-row day moves summed,
+ * over the book's value before them.
  *
  * The basket's close-to-close is the wrong reading then — before the open it
  * compares yesterday's close with itself and prints a flat 0% while the
@@ -114,8 +112,7 @@ function Positions() {
 
   // Three windows, three calls, because `/movers` answers one at a time — and
   // all three read the same cached basket the Home page already asked for, so
-  // the cost is three round trips rather than three price bursts. The Streamlit
-  // page takes them off one `basket_history` frame; the arithmetic is the same.
+  // the cost is three round trips rather than three price bursts.
   const query = useApi(
     () =>
       Promise.all([
@@ -158,8 +155,8 @@ function Positions() {
       key: "shares",
       label: t("portfolio.col_shares"),
       sort: (row) => row.shares,
-      // Four decimals always, as the Streamlit table prints them: a whole
-      // share and a fractional one line up in the column.
+      // Four decimals always: a whole share and a fractional one line up in
+      // the column.
       cell: (row) => <Figure value={formatShares(lang, row.shares, true)} />,
     },
     {
@@ -200,10 +197,10 @@ function Positions() {
       key: "day",
       label: t("portfolio.today"),
       sort: (row) => row.day,
-      // Amount and percentage of today's move in one cell, as the Streamlit
-      // table pairs them. A name with no live quote (its exchange is shut and
-      // it is not in a US extended window) keeps its figures but greys them:
-      // that is the last session's move, not today's.
+      // Amount and percentage of today's move in one cell. A name with no
+      // live quote (its exchange is shut and it is not in a US extended
+      // window) keeps its figures but greys them: that is the last session's
+      // move, not today's.
       cell: (row) =>
         priced(
           <span className={row.market_active ? "pf-pair" : "pf-pair pf-dim"}>
@@ -244,9 +241,9 @@ function Positions() {
       rows={positions}
       rowKey={(row) => row.ticker}
       initial={{ key: pending ? "cost" : "weight", desc: true }}
-      // The phone's row, as `portfolio.py` lays it out: value and
-      // today's move on the right, the total result as a pill by the
-      // symbol, weight and custodians on the dim line.
+      // The phone's row: value and today's move on the right, the total
+      // result as a pill by the symbol, weight and custodians on the dim
+      // line.
       dense={{
         ticker: (row) => row.ticker,
         badge: (row) =>
@@ -341,9 +338,9 @@ function Positions() {
                           },
                   },
                   // The closed side of the same book. A book that never sold
-                  // reads +0 with no chip, as the Streamlit tile does: the
-                  // four-tile row keeps its shape, and the missing chip is
-                  // what says no result was taken (a 0% chip would claim one).
+                  // reads +0 with no chip: the four-tile row keeps its
+                  // shape, and the missing chip is what says no result was
+                  // taken (a 0% chip would claim one).
                   {
                     label: t("portfolio.realised_pl"),
                     value: money(summary.realized ?? 0, { signed: true }),

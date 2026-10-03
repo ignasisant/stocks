@@ -2,8 +2,8 @@
  * What a URL means, including the bookmarks this app inherited.
  *
  * `routeFor` is the pure half of the router: the redirects that would hurt if
- * they were wrong are the old `/?ticker=SYM` links, which Streamlit served from
- * any page and which live on in bookmarks and old digests.
+ * they were wrong are the old `/?ticker=SYM` links, which the old app served
+ * from any page and which live on in bookmarks and old digests.
  */
 
 import { describe, expect, it } from "vitest";

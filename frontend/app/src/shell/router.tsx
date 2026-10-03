@@ -2,9 +2,9 @@
  * The smallest router that serves this app, and no library for it.
  *
  * Every route is one path segment under the app's own base, and the only other
- * navigation state is the query string — which the Streamlit pages already use
- * for deep links (`?ticker=AAPL`, `?tab=fees`) and which has to keep working,
- * because those URLs are bookmarked and shared.
+ * navigation state is the query string — deep links (`?ticker=AAPL`,
+ * `?tab=fees`) that have to keep working, because those URLs are bookmarked
+ * and shared.
  *
  * So: no nested routes, no params in the path, no history abstraction. Pushing
  * a URL and re-reading `location` is the whole model, and `popstate` makes the
@@ -18,8 +18,8 @@ import { canonical } from "./pages";
 /**
  * Where the app is mounted: the root. Kept here so nothing else hardcodes it.
  *
- * It was `/next` while the shell was being built beside the Streamlit app; the
- * server now redirects that prefix here, and serves the old app at `/legacy`.
+ * It was `/next` while the shell was being built; the server redirects that
+ * prefix, and `/legacy`, to the same page here.
  */
 export const BASE = "";
 
@@ -43,17 +43,17 @@ export type Route = { page: string; params: URLSearchParams };
 /**
  * The page a URL means — which is not always the one its path names.
  *
- * `?ticker=SYM` on any page opens that ticker's page, as `app.py` has always
- * done: the pre-refactor app served every symbol at `/?ticker=`, and those
- * links are in bookmarks, old Telegram digests and shared chats. No other page
+ * `?ticker=SYM` on any page opens that ticker's page: the pre-refactor app
+ * served every symbol at `/?ticker=`, and those links are in bookmarks, old
+ * Telegram digests and shared chats. No other page
  * gives `ticker` a meaning of its own, so there is nothing for the jump to
  * shadow. Pure, so the rule can be tested without a location to read.
  */
 export function routeFor(path: string, search: string): Route {
   const params = new URLSearchParams(search);
-  // Canonical, not literal: a bookmark of the Streamlit URL this page
-  // replaced (`/import_transactions`) has to light the same nav entry and
-  // load the same chunk as the new one, rather than falling through to Home.
+  // Canonical, not literal: a bookmark of a page's old path
+  // (`/import_transactions`) has to light the same nav entry and load the
+  // same chunk as the new one, rather than falling through to Home.
   const page = canonical(path || "home");
   if (page !== "ticker" && (params.get("ticker") ?? "").trim()) {
     return { page: "ticker", params };
@@ -108,8 +108,8 @@ export function useRoute(): Route & {
    * Change the query without adding a history entry.
    *
    * Switching a tab is not a navigation the back button should have to walk
-   * back through — the Streamlit pages write the tab to the URL for the same
-   * reason (a shareable link) and do not stack history for it either.
+   * back through: the tab is in the URL for a shareable link, not as a step
+   * in history.
    */
   const setParams = useCallback((params: Record<string, string | undefined>) => {
     const next = new URLSearchParams(window.location.search);

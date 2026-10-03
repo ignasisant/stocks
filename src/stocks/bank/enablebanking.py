@@ -22,7 +22,7 @@ every account call fails and the user has to re-authorise: that case is raised
 as ConsentError so the UI can offer a reconnect instead of an error page.
 
 Fetching is rate limited at the *bank* end, commonly four background fetches
-per account per day, so callers cache and refresh on demand — never per rerun.
+per account per day, so callers cache and refresh on demand — never per page load.
 """
 
 from __future__ import annotations

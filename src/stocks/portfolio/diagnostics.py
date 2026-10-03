@@ -292,10 +292,8 @@ def fingerprint(
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "platform": platform,
         "surface": surface,
-        # The same pseudonymous slug the logs already carry (bound once per run
-        # by stocks.web.telemetry), so three failures can be told apart as
-        # three readers or as one reader retrying. Read off the obs context
-        # rather than auth, which would drag Streamlit into this module.
+        # The pseudonymous slug bound into the obs context, if any, so three
+        # failures can be told apart as three readers or as one reader retrying.
         "user": obs.current().get("user", "-"),
         **sniff(filename, data),
         "imported": len(result.transactions) if result else 0,
@@ -382,7 +380,7 @@ def report(
     """Fingerprint one attempt, log it, and keep the failures.
 
     The single call every import surface makes. `user`, `session` and `page`
-    are already bound by stocks.web.telemetry, so they need not be passed.
+    come from the obs context, so they need not be passed.
     """
     fp = fingerprint(
         platform, filename, data, result, validation,

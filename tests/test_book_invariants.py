@@ -874,7 +874,7 @@ def test_a_partly_overlapping_statement_only_adds_what_is_new():
 # ------------------------------------------- the price side sees what is held
 
 
-def test_every_open_position_is_asked_for_a_price(tmp_path, monkeypatch):
+def test_every_open_position_is_asked_for_a_price(tmp_path):
     """The regression behind an intact book reading -60%.
 
     `held_closes` collected its download list from buy/sell rows alone, under
@@ -884,9 +884,8 @@ def test_every_open_position_is_asked_for_a_price(tmp_path, monkeypatch):
     price frame, so the market-value tile summed a fraction of the book
     against the whole of its cost basis.
     """
-    from stocks.analysis import portfolio as analysis
+    from stocks.api import loaders
     from stocks.portfolio import ledger
-    from stocks.web import portfolio_data
 
     db = tmp_path / "book.db"
     ledger.add_many(
@@ -898,14 +897,8 @@ def test_every_open_position_is_asked_for_a_price(tmp_path, monkeypatch):
         ],
         path=db,
     )
-    asked: list[str] = []
-
-    def _record(tickers, period="1y"):
-        asked.extend(tickers)
-        return {}
-
-    monkeypatch.setattr(analysis, "load_closes", _record)
-    portfolio_data.held_closes(str(db), db.stat().st_mtime)
+    # The download list `held_closes` asks for, read without downloading it.
+    _, asked = loaders._held(str(db))
 
     positions, _ = build(ledger.all_transactions(db), to_base=_fx)
     missing = [p.ticker for p in positions if p.ticker not in set(asked)]

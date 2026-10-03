@@ -1,9 +1,7 @@
 /*
  * The calendar's own rules. Every colour, radius and type size is an `--ag-*`
- * custom property the document already carries, so this page and the Streamlit
- * one it replaces cannot drift — the grid below is the same chip palette
- * `ds.calendar_css("earn", …)` writes, expressed as CSS grid instead of a
- * table because the chips no longer have to travel back to Python.
+ * custom property the document already carries, so this page and the rest of
+ * the app cannot drift.
  *
  * No hex literals. A colour written here is a colour the design system does
  * not know about, and it will be wrong in one of the two themes.
@@ -452,10 +450,9 @@
   background: var(--ag-surface-page-veil);
 }
 
-/* Wide enough for the GAAP line-item table and three tiles abreast — the
-   Streamlit dialog opens `width="large"` for the same reason — and tall only
-   up to the viewport: the breakdown scrolls inside the card, so the scrim and
-   the Close button stay where the reader left them. */
+/* Wide enough for the GAAP line-item table and three tiles abreast, and tall
+   only up to the viewport: the breakdown scrolls inside the card, so the scrim
+   and the Close button stay where the reader left them. */
 .earn-modal-card {
   width: 100%;
   max-width: 46rem;

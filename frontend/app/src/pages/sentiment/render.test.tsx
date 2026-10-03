@@ -1,11 +1,10 @@
 /**
  * What the "why" rows and the book card draw from a given payload.
  *
- * Two parity claims with the Streamlit page, each easy to regress silently:
- * the input rows print the raw reading the server formatted (+4.2%, 15.2),
- * never the 0-100 score the bar already encodes; and the book card carries all
- * the betas Streamlit's does — equity, duration, credit, emerging markets —
- * each with its own drift pill.
+ * Two claims, each easy to regress silently: the input rows print the raw
+ * reading the server formatted (+4.2%, 15.2), never the 0-100 score the bar
+ * already encodes; and the book card carries all the betas — equity, duration,
+ * credit, emerging markets — each with its own drift pill.
  *
  * Rendered to static markup, with no catalog loaded, so every label prints as
  * its key — which is exactly what makes the tiles countable here.
@@ -80,10 +79,10 @@ describe("book card", () => {
   });
 });
 
-// Observed during a Yahoo throttle: the legacy page kept every heading and
-// printed the reason with "last attempt hh:mm · source Yahoo Finance", while
-// these blocks blanked to a generic "data unavailable". Each block now draws
-// the server's `unavailable` itself.
+// Observed during a Yahoo throttle: these blocks blanked to a generic "data
+// unavailable" instead of keeping their headings and printing the reason
+// ("last attempt hh:mm · source Yahoo Finance"). Each block now draws the
+// server's `unavailable` itself.
 describe("a throttled composite", () => {
   const down: Pulse = {
     ...pulse,

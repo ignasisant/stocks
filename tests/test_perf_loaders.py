@@ -15,7 +15,6 @@ import pytest
 
 from stocks.analysis import portfolio as ap
 from stocks.data import fetch, profiles
-from stocks.web import portfolio_data as pdata
 
 
 @pytest.fixture(autouse=True)
@@ -87,49 +86,6 @@ def test_a_known_fund_still_fetches_its_look_through(monkeypatch):
 def _series(days: int, tz: str | None = None) -> pd.Series:
     idx = pd.bdate_range(end=pd.Timestamp.today().normalize(), periods=days, tz=tz)
     return pd.Series(range(1, days + 1), index=idx, dtype=float)
-
-
-def test_ledger_period_widens_with_the_span():
-    today = date.today()
-    assert pdata.ledger_period((today - timedelta(days=100)).isoformat()) == "2y"
-    assert pdata.ledger_period((today - timedelta(days=1000)).isoformat()) == "5y"
-    assert pdata.ledger_period((today - timedelta(days=3000)).isoformat()) == "max"
-
-
-def test_window_slices_the_tail_whatever_the_timezone():
-    closes = {"A": _series(600), "B": _series(600, tz="America/New_York")}
-    out = pdata._window(closes, 3)
-    for s in out.values():
-        assert 55 <= len(s) <= 70  # ~3 months of sessions
-        assert s.iloc[-1] == 600.0  # the latest bar survives
-
-
-def test_window_drops_a_series_with_nothing_in_range():
-    old = pd.Series([1.0], index=pd.DatetimeIndex([pd.Timestamp("2015-01-02")]))
-    assert pdata._window({"OLD": old}, 3) == {}
-
-
-def test_year_closes_takes_held_names_from_the_book_download(monkeypatch):
-    asked: list[tuple] = []
-    monkeypatch.setattr(pdata, "held_closes", lambda db, mtime: {"AAPL": _series(600)})
-    monkeypatch.setattr(
-        pdata, "watchlist_closes",
-        lambda tickers: asked.append(tickers) or {t: [1.0, 2.0] for t in tickers},
-    )
-    out = pdata.year_closes(("AAPL", "NVDA", "SAP"), "book.db", 1.0)
-    assert asked == [("NVDA", "SAP")]  # the held name never reaches Yahoo twice
-    assert 240 <= len(out["AAPL"]) <= 265 and out["AAPL"][-1] == 600.0
-    assert out["NVDA"] == [1.0, 2.0]
-
-
-def test_year_closes_for_a_guest_is_the_watchlist_download_alone(monkeypatch):
-    monkeypatch.setattr(
-        pdata, "held_closes", lambda db, mtime: pytest.fail("no ledger for a guest")
-    )
-    monkeypatch.setattr(
-        pdata, "watchlist_closes", lambda tickers: {t: [3.0] for t in tickers}
-    )
-    assert pdata.year_closes(("AAPL",), None) == {"AAPL": [3.0]}
 
 
 def test_position_value_frames_accepts_closes_and_skips_the_download(monkeypatch):

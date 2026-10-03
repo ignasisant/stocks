@@ -1,4 +1,4 @@
-r"""Every literal catalog key the React front ends use actually ships.
+r"""Every literal catalog key the React app uses actually ships.
 
 A key that does not exist does not fail anywhere: `useT` falls back to the key
 itself, so the screen prints `profile.iv_risk_help` where a sentence belongs and
@@ -35,7 +35,7 @@ _FIELD = re.compile(
     r'\b(?:label|tile|title|help|key)\s*:\s*"([a-z][a-z0-9_]*\.[a-z0-9_.]+)"'
 )
 
-# Keys the front ends compose from a stem the server sends. Listed rather than
+# Keys the app composes from a stem the server sends. Listed rather than
 # pattern-matched: a prefix that silently swallowed real keys would turn this
 # test into decoration.
 _SERVER_STEMS = ("chat.free_", "chat.skill.")

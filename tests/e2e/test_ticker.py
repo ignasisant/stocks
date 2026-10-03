@@ -63,7 +63,7 @@ def test_a_guest_is_offered_a_sign_in_instead_of_the_star(page: Page):
 
 def test_no_ticker_in_the_link_opens_the_first_favorite(page: Page, sign_in):
     """The bare `/ticker` a menu link lands on picks a company rather than an
-    empty page: the first favourite, as the Streamlit page did."""
+    empty page: the first favourite."""
     sign_in()
     page.goto("/ticker")
     expect(page).to_have_url(re.compile(r"/ticker\?ticker=AAPL$"))

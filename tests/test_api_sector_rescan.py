@@ -1,4 +1,4 @@
-"""The live sector rescan over HTTP — the Streamlit page's refresh button.
+"""The live sector rescan over HTTP — the sector page's refresh button.
 
 What a scan *is* (the ETF basket, the metrics, the podium rule) is
 `analysis.sectors`' job and tested there. What is tested here is what the two
@@ -142,8 +142,8 @@ def test_a_rescan_lands_and_the_cohort_answers_with_it(signed_in, stored, inline
 def test_the_rescan_keeps_the_peers_the_nightly_job_validated(
     signed_in, stored, inline
 ):
-    """The Streamlit button rescans the ETF basket alone and drops them; a
-    refresh that shrinks the cohort is not a refresh."""
+    """Rescanning the ETF basket alone would drop them; a refresh that shrinks
+    the cohort is not a refresh."""
     signed_in.post(f"/v1/sectors/{TECH}/rescan")
     assert inline["asked"] == [(TECH, ("AAPL", "MSFT", "ASML"))]
 

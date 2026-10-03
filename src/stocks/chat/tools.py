@@ -20,9 +20,9 @@ tool calling: the keyless free chain hops across OpenAI-compatible backends
 whose tool support varies, and Provider only exposes a text stream. A native
 adapter can be added per provider later without touching the tools themselves.
 
-Streamlit-free (auth is imported lazily inside the runners) so parsing stays
-trivially testable; all UI — confirmation bubbles, i18n — lives in the two
-surfaces that dispatch here (web/chat_core.py and chat/engine.py).
+Auth is imported lazily inside the runners so parsing stays trivially
+testable; all UI — confirmation cards, i18n — lives with the caller that
+dispatches here (chat/engine.py).
 """
 
 from __future__ import annotations
@@ -196,7 +196,7 @@ def _holding(ticker: str, path: Path):
 
 
 def _auth():
-    from stocks.web import auth  # deferred: keeps this module streamlit-free
+    from stocks.web import auth  # deferred: parsing never needs it
 
     return auth
 
@@ -558,10 +558,9 @@ def detect(
     return _action_from(call.model_dump())
 
 
-def execute(action: Action, path: Path | None = None) -> None:
+def execute(action: Action, path: Path) -> None:
     """Apply an Action to the account's watchlist."""
-    p = path or _auth().watchlist_path()
-    TOOLS[action.kind].run(action, p)
+    TOOLS[action.kind].run(action, path)
 
 
 def _slots(action: Action, translate: Callable[..., str]) -> dict[str, str]:

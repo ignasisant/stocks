@@ -116,8 +116,8 @@ export type Work =
 
 export function useChat(live: boolean) {
   const lang = useLang();
-  // Where the reader is, told to the model with every question — the
-  // Streamlit panel's `_view_context`. The Ticker page's company is its
+  // Where the reader is, told to the model with every question
+  // (`chat.engine.view_context`). The Ticker page's company is its
   // `?ticker=` (the page writes its default there when the URL has none), and
   // no other page has a single company in focus, so no other page names one:
   // a symbol left over in some other page's URL is not what "this" means.
@@ -137,9 +137,8 @@ export function useChat(live: boolean) {
   const [ready, setReady] = useState(false);
   // The statement waiting on its button, and the file being read into one.
   // Session-only on purpose: the preview card is not a turn, so a reload
-  // leaves the note the server filed and drops the card — which is the same
-  // thing a closed Streamlit session does, and for the same reason (the
-  // uploaded bytes are never kept anywhere).
+  // leaves the note the server filed and drops the card, because the uploaded
+  // bytes are never kept anywhere.
   const [preview, setPreview] = useState<Preview | null>(null);
   // Which of the two waits a statement is in, and on which file — the drawer
   // says so while it lasts, because the clip going grey is not an answer.
@@ -381,7 +380,7 @@ export function useChat(live: boolean) {
           }));
           await refresh().catch(() => {});
         } else if (failure instanceof ApiError && failure.status === 429) {
-          // The burst wall, shared with the Streamlit composer. Not a fault,
+          // The burst wall (`web/ratelimit.allow`). Not a fault,
           // and not unfiled forever either: Retry lands once the window moves.
           write((turn) => ({
             ...turn,
@@ -575,7 +574,7 @@ export function useChat(live: boolean) {
 
   /**
    * Take the unanswered question off the thread, refusal and all — the
-   * Streamlit composer's "Discard question" beside Retry.
+   * "Discard question" beside Retry.
    *
    * Local only, and correctly so: a refused or stopped turn is never written
    * (the engine saves the pair only once an answer exists), so the thread on

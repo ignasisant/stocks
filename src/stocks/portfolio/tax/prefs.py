@@ -1,14 +1,8 @@
 """Where the filer's tax knobs live, and how a stored preference becomes rules.
 
-Split out of `web.tax_ui` so both runtimes can read the same settings: the
-Streamlit pages get them through that module as before, and the HTTP API — an
-ASGI worker with no `st.context` and no session — gets them here. Nothing in
-this file imports Streamlit, which is the whole point.
-
-`resolve` takes the browser region as an argument rather than reading it,
-because that is the one input the two runtimes come by differently: a page has
-`st.context.locale`, a request has an `Accept-Language` header or nothing at
-all.
+`resolve` takes the browser region as an argument rather than reading it: a
+request has an `Accept-Language` header or nothing at all, and the caller is
+the one holding it.
 """
 
 from __future__ import annotations

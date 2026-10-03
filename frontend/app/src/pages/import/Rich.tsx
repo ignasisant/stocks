@@ -1,12 +1,10 @@
 /**
  * The catalog's inline markdown, rendered as elements rather than as asterisks.
  *
- * Several of this page's strings were written for `st.markdown` and carry
- * `**bold**` and `` `code` `` — `import.last_import_summary` bolds the
- * filename. Showing the raw
- * punctuation would be a visible regression against the page being replaced,
- * and rewriting the copy to drop it would change strings two languages share
- * with Streamlit.
+ * Several of this page's strings carry `**bold**` and `` `code` `` —
+ * `import.last_import_summary` bolds the filename. Showing the raw punctuation
+ * would read as a bug, and rendering it here is cheaper than rewriting the
+ * copy in every language.
  *
  * Deliberately two constructs and no HTML: the text is parsed into elements,
  * never handed to `dangerouslySetInnerHTML`, so a translation can never inject

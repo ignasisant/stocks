@@ -1,22 +1,15 @@
-"""Does the React Ticker page still say what the Streamlit one says?
+"""Does the React Ticker page say only what the app can say?
 
-Step 3 of the migration is one page rebuilt on `/api/v1`, kept side by side
-with the original behind `?legacy=1`. The thing that decides whether it was
-worth it is not how it looks in a screenshot — two renderers will never agree
-pixel for pixel, and a diff of those is noise. It is whether the two front ends
-make the same claims, in the same words, about the same company.
+Two questions, both answerable without a browser:
 
-Three questions, all answerable without a browser:
-
-1. Every string the React page prints exists in the catalog. Inventing a key is
-   the failure that looks fine in English (the key falls through to itself) and
-   ships a dotted slug to a Spanish reader.
-2. Every section the Streamlit page renders is either ported or waived, in
-   writing, with a reason. Adding a section to `app_pages/ticker.py` therefore
-   fails this test until somebody decides about it — which is the whole point
-   of a parity harness, as opposed to a parity memory.
-3. Every endpoint the client calls exists on the server. A typed client cannot
+1. Every string the page prints exists in the catalog, in both languages.
+   Inventing a key is the failure that looks fine in English (the key falls
+   through to itself) and ships a dotted slug to a Spanish reader.
+2. Every endpoint the client calls exists on the server. A typed client cannot
    catch a path that was renamed underneath it.
+
+The parity half — every section and string of the Streamlit page ported or
+waived — went with that page; the React one is the only one left to compare.
 """
 
 from __future__ import annotations
@@ -41,7 +34,6 @@ TICKER_PAGE = FRONTEND / "pages" / "ticker"
 # the page's own list of calls. A page reaching past those two is a rule the
 # shell's README already forbids, not something this test has to discover.
 CLIENTS = (FRONTEND / "shell" / "api.ts", TICKER_PAGE / "data.ts")
-PAGE = REPO / "src" / "stocks" / "web" / "app_pages" / "ticker.py"
 
 pytestmark = pytest.mark.skipif(
     not FRONTEND.exists(), reason="frontend sources not checked out"
@@ -67,37 +59,9 @@ _TEMPLATES = {
     # The number a rule asks for, whose label is the `field` the API names.
     "widgets.alert_": ("price", "pct", "level"),
     "portfolio.broker_": ("manual", "unknown"),
-    # The drawer's width presets, which are `chat/width.ts`'s three keys and
-    # the same three `web/chat_core._WIDTHS` names.
+    # The drawer's width presets, which are `chat/width.ts`'s three keys.
     "chat.width_": ("compact", "wide", "full"),
 }
-
-# Sections the Streamlit page renders that the React one deliberately does not,
-# and why. A waiver is a decision, so each one carries its reason in the value.
-WAIVED: dict[str, str] = {}
-
-# The same, one string at a time. A section can be "ported" and still say less
-# than the original — that is how the React page went live with a KPI grid of
-# English labels, a fund card missing its basket, and an insider block showing
-# the count of buyers where the app shows the count of buys. Every string the
-# app prints has to be printed here too, or be written down as a decision.
-WAIVED_STRINGS: dict[str, str] = {
-    "ticker.ai_analyze": "the assistant is the app shell's, not this page's",
-    "ticker.ai_analyze_help": "…and so is its tooltip",
-    # Both of these are strings the *Plotly* page needs and a hand-drawn chart
-    # does not. The claim each one makes is still made — which is what this
-    # test is for — just not in those words.
-    "ticker.eps_hover_reported": (
-        "a Plotly hovertemplate; the SVG chart's tooltip pushes `k_reported` "
-        "as its own line, which is the same claim about the same figure"
-    ),
-    "ticker.history_failed": (
-        "the shell's `Loaded` renders every failed section alike — "
-        "`common.data_unavailable` or `common.failed`, plus a retry this page "
-        "never offered"
-    ),
-}
-
 
 def _sources() -> list[Path]:
     """The page's own sources.
@@ -185,71 +149,7 @@ def test_the_spanish_catalog_answers_everything_the_page_asks_for():
     assert not missing, f"untranslated on the React ticker page: {missing}"
 
 
-def test_every_string_the_app_prints_is_printed_here_or_waived():
-    """Section titles are not what a page says — this is.
-
-    The scan is deliberately loose on the React side: any key-shaped literal
-    counts, wherever it sits, because a tile's label can be an entry in an
-    array that is translated a line later. Being loose is the point — a false
-    pass here costs nothing, while a false failure would train somebody to
-    silence the test.
-    """
-    app_keys = set(re.findall(r'tr\(\s*"([\w.]+)"', PAGE.read_text()))
-    # The KPI grid's labels are named by the domain and travel as key names in
-    # the payload, so neither front end mentions them in its own source. They
-    # have their own test above; counting them here would only fail it.
-    app_keys -= {
-        key for tile in _grid_tiles() for key in (tile.label, tile.help) if key
-    }
-    text = _frontend_text()
-    said = set(re.findall(r'"((?:ticker|widgets|common|kpi|portfolio)\.[\w.]+)"', text))
-    # `` t(`ticker.period_${x}`) `` covers every key with that prefix.
-    for prefix in re.findall(r"t\(`([\w.]+?)\$", text):
-        said |= {key for key in app_keys if key.startswith(prefix)}
-
-    unsaid = sorted(key for key in app_keys if key not in said | set(WAIVED_STRINGS))
-    assert not unsaid, (
-        "the Streamlit page prints these and the React one does not: "
-        f"{unsaid}. Print them, or add each to WAIVED_STRINGS with a reason."
-    )
-
-
-def test_a_string_waiver_carries_a_reason():
-    assert all(reason.strip() for reason in WAIVED_STRINGS.values())
-
-
-def _grid_tiles():
-    from stocks.analysis.fundamentals import FUNDAMENTAL_TILES
-
-    return FUNDAMENTAL_TILES
-
-
-# ------------------------------------------------------ 2. the sections match
-
-
-def test_every_section_of_the_streamlit_page_is_ported_or_waived():
-    """The harness that survives the next feature.
-
-    A new `st.subheader(tr(...))` on the Streamlit page fails this until it is
-    either built in React or written into WAIVED with a reason — so the two
-    cannot drift quietly, only deliberately.
-    """
-    source = PAGE.read_text()
-    titles = set(re.findall(r'st\.(?:subheader|expander)\(tr\("([\w.]+)"\)', source))
-    assert titles, "no section titles found — the page's shape changed"
-    used = _keys_used()
-    unported = sorted(key for key in titles if key not in used and key not in WAIVED)
-    assert not unported, (
-        "the Streamlit ticker page renders these sections and the React one "
-        f"does not: {unported}. Port them, or add them to WAIVED with a reason."
-    )
-
-
-def test_a_waiver_carries_a_reason():
-    assert all(reason.strip() for reason in WAIVED.values())
-
-
-# --------------------------------------------------------- 3. the client fits
+# --------------------------------------------------------- 2. the client fits
 
 
 def test_every_endpoint_the_client_calls_exists_on_the_server():

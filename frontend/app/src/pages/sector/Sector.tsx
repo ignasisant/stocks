@@ -12,9 +12,9 @@
  * The written verdict sits between the podium and the table (`Verdict.tsx`),
  * over `/sectors/{sector}/verdict`.
  *
- * The live "refresh this sector" button sits beside the picker and in the
- * empty card, as on the Streamlit page (`Rescan.tsx`): it starts a server-side
- * rescan, polls until it lands, then reloads the cohort underneath.
+ * The live "refresh this sector" button sits beside the picker and in the empty
+ * card (`Rescan.tsx`): it starts a server-side rescan, polls until it lands,
+ * then reloads the cohort underneath.
  */
 
 import { useState } from "react";
@@ -110,9 +110,8 @@ function Screen({ sectors }: { sectors: SectorSummary[] }) {
       <Loaded query={cohort} skeleton={<Skeleton rows={8} />}>
         {(data) =>
           data.as_of === null || data.rows.length === 0 ? (
-            // Never scanned. The rescan is the card's only way out, as on the
-            // Streamlit page — a guest, who may not start one, gets the
-            // explanation alone.
+            // Never scanned. The rescan is the card's only way out — a guest,
+            // who may not start one, gets the explanation alone.
             <div className="ag-sec-card">
               <h2 className="ag-sec-h2">{t("sector.empty_title")}</h2>
               <p className="ag-sec-caption">{t("sector.empty_body")}</p>

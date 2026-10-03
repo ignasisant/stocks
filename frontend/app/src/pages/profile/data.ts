@@ -30,8 +30,8 @@ export const CURRENCIES = [
 
 /**
  * The five in daily use lead the chip row; the rest sit behind a disclosure.
- * Eleven chips in a row was the widest control on the Streamlit page and the
- * reason its settings column had no room for a rail (canvas 1a).
+ * Eleven chips in a row would be the widest control on the page and leave the
+ * settings column no room for a rail (canvas 1a).
  */
 export const TOP_CURRENCIES = ["EUR", "USD", "GBP", "CHF", "SEK"] as const;
 
@@ -62,8 +62,7 @@ export function currencyLabel(code: string): string {
 
 /**
  * `stocks.web.i18n.LANGUAGES`. Endonyms: a language names itself the same way
- * in every catalog, which is why the Streamlit page does not translate them
- * either.
+ * in every catalog, which is why they are not translated.
  */
 export const LANGUAGES: Record<string, string> = { en: "English", es: "Español" };
 
@@ -124,9 +123,8 @@ function lookup(table: Jurisdictions, code: string | null | undefined) {
  *
  * `tax.prefs.resolve`: the preference, else the browser's region when it is one
  * of ours, else the table's own default. The region comes off
- * `navigator.language` exactly as the Streamlit page reads it off
- * `st.context.locale` — and, as there, a region we do not model (an "en-GB"
- * browser: GB is not UK) lands on the default.
+ * `navigator.language`, and a region we do not model (an "en-GB" browser: GB
+ * is not UK) lands on the default.
  *
  * Null only for a table with no jurisdictions at all, which is a broken API
  * rather than a state to word: the caller draws nothing.

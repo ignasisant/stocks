@@ -8,10 +8,7 @@ session instead of by calendar, because five days of 30-minute bars is five
 *sessions*, not five days.
 
 All of it is pandas over a downloaded frame, with no UI in it, so it lives here
-rather than in the page: the Streamlit page and the HTTP API both ask for "1y of
-AAPL" and must get the same bars, the same indicator columns and the same axis
-breaks. A chart that disagrees with itself across two front ends is worse than
-either one being wrong.
+rather than in the page.
 """
 
 from __future__ import annotations

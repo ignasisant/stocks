@@ -133,13 +133,13 @@ def test_the_guest_list_is_not_silently_growing():
     visitor may read should be a decision somebody made in `api/guest.py`, not
     a line that rode in on a feature branch."""
     # 43: `GET /sectors/{sector}/verdict` — the computed stand-in, which is
-    # what the Streamlit card has always shown a visitor with no account.
+    # what the card shows a visitor with no account.
     # 45: `GET /movers` and `GET /extremes` — cards the guest's Home and
     # Portfolio already drew, over the shared demo book and watchlist.
     # 46: `GET /earnings/{symbol}/result` — the dialog a past calendar chip
-    # opens, which the guest calendar already offered in Streamlit.
+    # opens, which the guest calendar already offers.
     # 47: `GET /home/closes` — the guest Home's watchlist rows, last close and
-    # day %, which Streamlit has always drawn over the shared list.
+    # day %, drawn over the shared list.
     # 49: `GET /portfolio/monthly` and `GET /portfolio/projection` — the
     # Overview and Projection tabs, which shipped without them and painted an
     # error for every guest (caught by tests/e2e/test_portfolio.py).

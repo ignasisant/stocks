@@ -1,8 +1,8 @@
 """The ticker search box, and the short history behind it.
 
 The ranking is not here and must not be: `stocks.search` owns which tier
-answers first and how the tiers dedup, and the Streamlit top bar reads it from
-the same place. This route is the binding — the account's own list, the caches
+answers first and how the tiers dedup. This route is the binding — the
+account's own list, the caches
 that keep a keystroke off the network, and the JSON shape.
 """
 
@@ -86,7 +86,7 @@ def _recents(account, tickers: list[str]) -> Recents:
     """The list plus a name for each entry that has one.
 
     The name remembered at pick time first; then `company_name`, for entries
-    recorded before names were, or by the Streamlit box, which stores none.
+    recorded without one.
     """
     stored = accounts.load_recent_names(account.prefs)
     watchlist = str(account.watchlist)
@@ -110,10 +110,6 @@ def remember(
     name: Annotated[str, Body(embed=True, max_length=120)] = "",
 ) -> Recents:
     """Push a ticker onto the account's recent list.
-
-    It exists because a recents list that never grows is worse than none: the
-    reader would see five names frozen at whatever the Streamlit page last
-    stored.
 
     A session only, like every write here. A bearer token names nobody and any
     holder can name any account, so a token that could write this would be able

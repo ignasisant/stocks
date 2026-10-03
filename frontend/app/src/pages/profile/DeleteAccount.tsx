@@ -3,15 +3,15 @@
  *
  * Two things make this different from every other control on the page. It is
  * not autosaved — a destructive control opens something before it can do
- * anything, which is where the Streamlit page puts it too. And it is not
- * confirmed by a tick: `DELETE /account` wants the signed-in address typed
- * back, so the request names the account it erases rather than merely asking
- * for one. A 422 means the address did not match and nothing was removed.
+ * anything. And it is not confirmed by a tick: `DELETE /account` wants the
+ * signed-in address typed back, so the request names the account it erases
+ * rather than merely asking for one. A 422 means the address did not match and
+ * nothing was removed.
  *
  * Afterwards the browser is sent to the path the response carries. The data is
- * gone but the cookie is not — it belongs to the Streamlit sign-in the whole
- * deployment shares — and only a real navigation gets it cleared, which is why
- * this is `location.assign` and not a fetch.
+ * gone but the session cookie is not — `/auth/logout`, that path, clears it —
+ * and only a real navigation gets it cleared, which is why this is
+ * `location.assign` and not a fetch.
  */
 
 import { useEffect, useState } from "react";

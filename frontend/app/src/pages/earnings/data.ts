@@ -147,7 +147,7 @@ export type EarningsCalendar = {
  * Ratios are fractions (0.183 is 18.3%), as `stocks.data.earnings` computes
  * them; `price_reaction` alone is a percentage, like `surprise_pct`. Every
  * comparison the tiles print (YoY, bps, TTM, the GAAP gap) arrives computed,
- * so this dialog and the Streamlit one cannot disagree about a number.
+ * so the dialog does no arithmetic of its own.
  */
 export type QuarterFigures = {
   /** Fiscal quarter end, ISO — not the report date. */
@@ -260,7 +260,7 @@ export function addMonths(
 export function monthWeeks(year: number, month: number, now: string): Day[][] {
   const first = new Date(year, month - 1, 1);
   // getDay() is Sunday-first; (day + 6) % 7 makes Monday 0, which is the
-  // weekday order the header row and the Python grid both use.
+  // weekday order the header row and `month_weeks` both use.
   const cursor = new Date(year, month - 1, 1 - ((first.getDay() + 6) % 7));
   const last = new Date(year, month, 0);
   const weeks: Day[][] = [];

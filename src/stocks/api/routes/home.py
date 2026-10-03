@@ -3,14 +3,13 @@
 `/market/quotes` is a live snapshot, and the Home watchlist is not: its column
 says *last close*, and its day % is close-to-close — re-read from the quote
 burst only for names whose own exchange is shut, where the newest daily bar can
-be a flat premarket 0%. That is `home.py`'s `_watch_table`, and printing a live
-premarket price under a "last close" header is the kind of small untruth this
-page exists not to tell. So the rows get their own route, reading the page's
-one year-of-closes download (`api/home.py`).
+be a flat premarket 0%. Printing a live premarket price under a "last close"
+header is the kind of small untruth this page exists not to tell. So the rows
+get their own route, reading the page's one year-of-closes download
+(`api/home.py`).
 
-And the refresh. The Streamlit button drops the page's price caches and
-reruns; the React one used to ask again, which answers from the same TTL caches
-it meant to get past. `POST /home/refresh` is that button's server half.
+And the refresh. The button used to ask again, which answers from the same TTL
+caches it meant to get past. `POST /home/refresh` is that button's server half.
 """
 
 from __future__ import annotations
@@ -80,7 +79,7 @@ class Refreshed(BaseModel):
 
 @router.get("/home/closes", response_model=Closes, summary="Watchlist closes")
 def closes(account: Account) -> Closes:
-    """Last close and day % for every watchlist name, with `home.py`'s rule.
+    """Last close and day % for every watchlist name.
 
     One row per watchlist entry, in list order. A name the download missed
     still gets its row, with null figures, so the group keeps its shape and the
@@ -115,12 +114,11 @@ def closes(account: Account) -> Closes:
 def refresh(account: Writer) -> Refreshed:
     """Drop the price caches, so the next reads download again.
 
-    The same set `home.py`'s button clears — watchlist closes (the rows and the
-    52-week scan), the book's close download and everything priced off it
-    (positions, the basket, the history) — plus the quote burst, which is what
-    the off-session day figures read. The ledger replays stay hot: a refresh is
-    about prices, and the ledger only changes on an import, which rekeys its
-    own entries by mtime.
+    Watchlist closes (the rows and the 52-week scan), the book's close download
+    and everything priced off it (positions, the basket, the history), plus the
+    quote burst, which is what the off-session day figures read. The ledger
+    replays stay hot: a refresh is about prices, and the ledger only changes
+    on an import, which rekeys its own entries by mtime.
 
     Process-wide, because the caches are: a price download is shared by every
     account tracking the same names. Hence the cooldown. A session only, like

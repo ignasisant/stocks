@@ -1,17 +1,16 @@
 /**
  * The page's three pictures, drawn as SVG and CSS from design tokens.
  *
- * The Streamlit page draws these in Plotly; this bundle has no Plotly and is
- * not getting one, so what survives is mostly the reading: an allocation donut
- * with its percentages on the legend, a correlation grid on the same diverging
- * ramp with its −1…+1 scale under it, the realized-result bars with the net as
- * a diamond over them, and value axes on all three. Plotly's two interactions
- * come across: drag-to-zoom with a refitted axis on the book's history, and
- * `hovermode="x"` — a pointer anywhere across the plot reads the nearest day
+ * This bundle has no charting library and is not getting one, so what a chart
+ * keeps is mostly the reading: an allocation donut with its percentages on the
+ * legend, a correlation grid on a diverging ramp with its −1…+1 scale under it,
+ * the realized-result bars with the net as a diamond over them, and value axes
+ * on all three. Two interactions: drag-to-zoom with a refitted axis on the
+ * book's history, and a pointer anywhere across the plot reads the nearest day
  * (or bar) off one overlay, with a crosshair and a styled box (`ChartTip`).
  *
  * Colours come from `token()` — the `--ag-*` custom properties the server
- * inlines — so these agree with the Streamlit charts and with both themes.
+ * inlines — so these follow both themes.
  */
 
 import {
@@ -27,12 +26,12 @@ import {
 import { createPortal } from "react-dom";
 import { token } from "../../shell/theme";
 import { TickerCell } from "../../shell/tickers";
+import { useWidth } from "../../shell/useWidth";
 import type { TaxPeriod } from "./api";
 
 /**
- * The DS categorical ramp, in `ds.py`'s order and minus its one unpublished
- * hue (chart magenta is not in `tokens()`), so slice colours line up with the
- * Streamlit donuts for as far as the published palette goes.
+ * The DS categorical ramp, in `ds.py`'s order (`CATEGORICAL_COLORS`) minus its
+ * one unpublished hue: chart magenta is not in `tokens()`.
  */
 const categorical = (): string[] => [
   token("brand-accent"),
@@ -47,9 +46,8 @@ const categorical = (): string[] => [
 /**
  * Three to five round values spanning [low, high] — the value axis's labels.
  *
- * Plotly picks these for the Streamlit charts; a hand-drawn chart has to. The
- * step is the 1-2-5 ladder scaled to the span, so a €12k book reads 10k/11k/12k
- * and not 11,843/12,261, and every label lands inside the plot.
+ * The step is the 1-2-5 ladder scaled to the span, so a €12k book reads
+ * 10k/11k/12k and not 11,843/12,261, and every label lands inside the plot.
  */
 export function niceTicks(low: number, high: number, count = 4): number[] {
   const span = high - low;
@@ -113,7 +111,13 @@ function ValueAxis({
 }
 
 /** One row of a chart's hover box: the series' swatch, its name, its figure. */
-export type TipRow = { label: string; value: string; color?: string };
+export type TipRow = {
+  label: string;
+  value: string;
+  color?: string;
+  /** Keyed by a short stroke rather than a box: a line series' row. */
+  mark?: "line" | "dashed";
+};
 
 /**
  * The hover box, Plotly's unified `hovermode="x"` label.
@@ -188,7 +192,16 @@ function ChartTip({
       {rows.map((row) => (
         <span className="pf-tip-row" key={row.label}>
           {row.color ? (
-            <span className="pf-tip-swatch" style={{ background: row.color }} />
+            <span
+              className={
+                row.mark === "dashed"
+                  ? "pf-tip-swatch pf-swatch-dashed"
+                  : row.mark === "line"
+                    ? "pf-tip-swatch pf-swatch-line"
+                    : "pf-tip-swatch"
+              }
+              style={{ background: row.color }}
+            />
           ) : null}
           <span className="pf-muted">{row.label}</span>
           <strong>{row.value}</strong>
@@ -1085,6 +1098,10 @@ export type ReturnSeries = {
   /** Dotted, for a line that is a hypothesis rather than a record. */
   dashed?: boolean;
   color?: string;
+  /** The line the chart is about — the reader's own money. Drawn heavier and
+      over the others, with a dot where it ends, so it leads before the legend
+      is read; the rest step back a little. */
+  focal?: boolean;
   /** A second reading shown in parentheses in the tooltip, e.g. a percentage
       beside an amount; null leaves the row as the bare figure. */
   tipNote?: (index: number, value: number) => string | null;
@@ -1131,15 +1148,86 @@ export function lineMoney(
 /** Where the plot sits inside the 720-wide viewBox; the left gutter holds the value axis. */
 const PLOT = { width: 720, height: 300, top: 8, right: 8, bottom: 24, left: 64 };
 
+/** The return chart's margins; its width is measured and its left gutter
+    sized to the labels it holds. */
+const RETURN = { fallback: 720, top: 10, right: 10, bottom: 24 };
+
+/** Tall enough on a phone to follow a crossing, never a poster across a
+    desktop row. */
+const returnHeight = (width: number) =>
+  Math.round(Math.min(380, Math.max(220, width * 0.4)));
+
+/** The room 11px axis labels need — a digit is ~6.4px — plus their 6px gap. */
+const gutterFor = (labels: string[]) =>
+  Math.max(32, Math.ceil(Math.max(0, ...labels.map((one) => one.length)) * 6.4) + 10);
+
+/** Month steps a date axis can label at, and the room a label of each needs. */
+const MONTH_STEPS = [1, 3, 6, 12, 24, 60];
+const TICK_ROOM = { month: 96, year: 56 };
+
+/**
+ * Calendar-aligned date ticks on an index axis: the first day of every n-th
+ * month, n the smallest step whose labels sit far enough apart to read.
+ *
+ * Start, middle and end landed on whichever days those happened to be — "abr
+ * 22 · jul 24 · oct 26" over four years — and left the years between
+ * uncounted, which is what a reader counts by. `yearly` says the step is a
+ * year or more, so each label can be the year alone (and need less room). A
+ * window too short to hold two boundaries keeps start, middle and end.
+ */
+export function dateTicks(
+  dates: string[],
+  plotW: number,
+): { indices: number[]; yearly: boolean } {
+  const count = dates.length;
+  const unit = plotW / Math.max(1, count - 1);
+  const opens: { index: number; month: number }[] = [];
+  for (let i = 1; i < count; i++) {
+    const at = dates[i]!;
+    if (at.slice(0, 7) === dates[i - 1]!.slice(0, 7)) continue;
+    const [year = 0, month = 1] = at.split("-").map(Number);
+    opens.push({ index: i, month: year * 12 + month - 1 });
+  }
+  for (const step of MONTH_STEPS) {
+    const picked = opens.filter((one) => one.month % step === 0);
+    if (picked.length < 2) break;
+    const room = step >= 12 ? TICK_ROOM.year : TICK_ROOM.month;
+    const apart = picked.every(
+      (one, k) => k === 0 || (one.index - picked[k - 1]!.index) * unit >= room,
+    );
+    if (apart) return { indices: picked.map((one) => one.index), yearly: step >= 12 };
+  }
+  return { indices: [0, Math.floor(count / 2), count - 1], yearly: false };
+}
+
+/** A series' last drawn value: where its line ends. */
+const lastValue = (points: (number | null)[]) => {
+  for (let i = points.length - 1; i >= 0; i--) {
+    const value = points[i];
+    if (value !== null && value !== undefined) return value;
+  }
+  return null;
+};
+
 /**
  * Several cumulative-return lines on one axis, rebased to the window.
  *
- * The comparison the Streamlit page draws in Plotly: what the account earned,
- * what today's holdings would have earned over the same window, and what each
- * benchmark did. Percentages against a zero line — the axis every one of them
- * starts from — so the question "did I beat it" is answered by which line is
- * higher, not by reading two scales. The value axis carries its percentages,
- * as Plotly's `%` axis does, so "how much higher" is readable too.
+ * What the account earned, what today's holdings would have earned over the
+ * same window, and what each benchmark did. Percentages against a zero line —
+ * the axis every one of them starts from — so the question "did I beat it" is
+ * answered by which line is higher, not by reading two scales. The value axis
+ * carries its percentages, so "how much higher" is readable too.
+ *
+ * Drawn at the width it is given rather than in a fixed viewBox: scaled up
+ * across a desktop row, a 720-unit frame printed its 11px labels at 29px and
+ * grew taller than the screen. Five lines that cross all year are spaghetti
+ * until one leads, so a `focal` series is drawn heavier and on top, and the
+ * legend picks any one out: hover or keyboard focus previews it, a click (or
+ * tap) holds it, and every other line drops back. With `money` the pointer
+ * singles out the line under it too, and each entry names that line's worth;
+ * with `legendValues` it says where the line ends instead, so who finished
+ * ahead reads without hovering at all. The plot itself takes focus: the arrow
+ * keys walk the crosshair a day at a time.
  *
  * The basket's line is dotted on purpose: it is a backtest of holdings that
  * have not been held that way all along, and drawing it like a record would
@@ -1149,14 +1237,19 @@ export function ReturnLines({
   dates,
   series,
   format,
+  tickFormat = format,
   formatDate,
   bands = [],
   marker,
   money,
+  label,
+  legendValues = false,
 }: {
   dates: string[];
   series: ReturnSeries[];
   format: (value: number) => string;
+  /** The value axis's labels, which need fewer decimals than a reading. */
+  tickFormat?: (value: number) => string;
   formatDate: (iso: string) => string;
   /** Shaded ranges drawn under the lines, widest first. */
   bands?: ReturnBand[];
@@ -1166,20 +1259,23 @@ export function ReturnLines({
   /** The money behind the lines: a tooltip in euros, a legend that names
       each line's worth, and the line under the pointer singled out. */
   money?: LineMoney;
+  /** What the plot shows, for a screen reader. */
+  label?: string;
+  /** Print each line's last value on its legend entry. */
+  legendValues?: boolean;
 }) {
   const [pointer, setHover] = useState<number | null>(null);
-  // The line singled out: from the legend, else the one nearest the pointer.
-  const [lit, setLit] = useState<string | null>(null);
+  const [peek, setPeek] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<string | null>(null);
+  // With money, the line nearest the pointer, when no legend entry picks one.
   const [near, setNear] = useState<string | null>(null);
+  const [frame, width] = useWidth(RETURN.fallback);
   const svg = useRef<SVGSVGElement>(null);
   const drawn = series.filter((one) => one.points.some((v) => v !== null));
   if (dates.length < 2 || !drawn.length) return null;
   // A shorter window can arrive under a pointer still resting on the old one.
   const hover = pointer !== null && pointer < dates.length ? pointer : null;
-
-  const { width, height } = PLOT;
-  const plotW = width - PLOT.left - PLOT.right;
-  const plotH = height - PLOT.top - PLOT.bottom;
+  const last = dates.length - 1;
 
   const values = [
     ...drawn.flatMap((one) => one.points),
@@ -1187,17 +1283,41 @@ export function ReturnLines({
   ].filter((v): v is number => v !== null);
   // Zero is always on the axis: a chart of returns that crops it hides whether
   // the line is above water, which is the first thing anybody reads off it.
-  const low = Math.min(0, ...values);
-  const high = Math.max(0, ...values);
+  // A little air past an extreme, so a peak does not graze the frame — none
+  // under a zero that is the floor.
+  const floor = Math.min(0, ...values);
+  const ceiling = Math.max(0, ...values);
+  const air = (ceiling - floor) * 0.04;
+  const low = floor < 0 ? floor - air : 0;
+  const high = ceiling > 0 ? ceiling + air : 0;
   const span = high - low || 1;
-  const x = (index: number) => PLOT.left + (index / (dates.length - 1)) * plotW;
-  const y = (value: number) => PLOT.top + (1 - (value - low) / span) * plotH;
+
+  const height = returnHeight(width);
+  const plotH = height - RETURN.top - RETURN.bottom;
+  const yTicks = niceTicks(low, high, Math.max(3, Math.min(6, Math.round(plotH / 56))));
+  const left = gutterFor([...yTicks, 0].map(tickFormat));
+  const right = width - RETURN.right;
+  const plotW = right - left;
+  const x = (index: number) => left + (index / last) * plotW;
+  const y = (value: number) => RETURN.top + (1 - (value - low) / span) * plotH;
 
   const ramp = categorical();
   const colored = drawn.map((one, index) => ({
     ...one,
     color: one.color ?? ramp[index % ramp.length]!,
   }));
+  const listed = colored.filter((one) => !one.tipOnly);
+  const wanted = peek ?? pinned;
+  // A held name can outlive its line when the window refetches without it.
+  const picked = listed.some((one) => one.label === wanted) ? wanted : null;
+  const active = picked ?? (money && hover !== null ? near : null);
+  const led = listed.some((one) => one.focal);
+  const opacity = (one: ReturnSeries) =>
+    active !== null ? (one.label === active ? 1 : 0.2) : !led || one.focal ? 1 : 0.8;
+  // Drawn last is drawn on top: the singled-out line, then the focal one.
+  const rank = (one: ReturnSeries) => (one.label === active ? 2 : one.focal ? 1 : 0);
+  const stacked = [...listed].sort((a, b) => rank(a) - rank(b));
+  const ring = token("surface-card");
 
   /** Contiguous runs of drawn points, so a gap breaks the line instead of
       jumping across it. */
@@ -1236,7 +1356,10 @@ export function ReturnLines({
     return out;
   };
 
-  const ticks = [0, Math.floor(dates.length / 2), dates.length - 1];
+  const xTicks = dateTicks(dates, plotW);
+  // A label near an edge hangs inward instead of past the frame.
+  const anchor = (at: number) =>
+    at - left < 24 ? "start" : right - at < 24 ? "end" : "middle";
 
   /** The stroked line nearest viewBox y `at` on day `index`, if close enough
       to be the one the pointer means. */
@@ -1252,11 +1375,10 @@ export function ReturnLines({
     }
     return best;
   };
-  const active = money ? (lit ?? (hover === null ? null : near)) : null;
   const point = (event: PointerEvent<SVGSVGElement>) => {
     const at = viewX(event, svg.current, width);
     if (at === null) return;
-    const index = nearest(at, PLOT.left, plotW, dates.length);
+    const index = nearest(at, left, plotW, dates.length);
     setHover(index);
     if (money) setNear(closest(viewY(event, svg.current, width), index));
   };
@@ -1270,49 +1392,53 @@ export function ReturnLines({
   return (
     <div className="pf-chart">
       <ul className="pf-legend-inline">
-        {colored
-          .filter((one) => !one.tipOnly)
-          .map((one) => {
-            const swatch = (
-              <span
-                className={one.dashed ? "pf-swatch pf-swatch-dashed" : "pf-swatch"}
-                style={{ background: one.color }}
-              />
-            );
-            if (!money)
-              return (
-                <li className="pf-legend-row" key={one.label}>
-                  {swatch}
-                  <span>{one.label}</span>
-                </li>
-              );
-            const value = shown === null ? null : one.points[shown];
-            const base = shown === null ? null : money.invested[shown];
-            return (
-              <li key={one.label}>
-                <button
-                  type="button"
+        {listed.map((one) => {
+          const end = legendValues && !money ? lastValue(one.points) : null;
+          const value = shown === null ? null : one.points[shown];
+          const base = shown === null || !money ? null : money.invested[shown];
+          return (
+            <li key={one.label}>
+              <button
+                type="button"
+                className="pf-legend-key"
+                aria-pressed={pinned === one.label}
+                data-dim={active !== null && active !== one.label ? "" : undefined}
+                // A touch has no hover to preview with: the tap holds instead.
+                onPointerEnter={(event) => {
+                  if (event.pointerType === "mouse") setPeek(one.label);
+                }}
+                onPointerLeave={() => setPeek(null)}
+                // Only keyboard focus previews: a click's focus would keep the
+                // line picked after the click that let it go.
+                onFocus={(event) => {
+                  if (event.currentTarget.matches(":focus-visible")) setPeek(one.label);
+                }}
+                onBlur={() => setPeek(null)}
+                onClick={() =>
+                  setPinned((held) => (held === one.label ? null : one.label))
+                }
+              >
+                <span
                   className={
-                    active === one.label
-                      ? "pf-legend-row pf-line-key pf-legend-on"
-                      : "pf-legend-row pf-line-key"
+                    one.dashed
+                      ? "pf-swatch pf-swatch-dashed"
+                      : "pf-swatch pf-swatch-line"
                   }
-                  onPointerEnter={() => setLit(one.label)}
-                  onPointerLeave={() => setLit(null)}
-                  onFocus={() => setLit(one.label)}
-                  onBlur={() => setLit(null)}
-                >
-                  {swatch}
-                  <span>{one.label}</span>
-                  {value != null && base != null ? (
-                    <span className="pf-muted">
-                      {money.money(lineMoney(base, value, null).worth)}
-                    </span>
-                  ) : null}
-                </button>
-              </li>
-            );
-          })}
+                  style={{ background: one.color }}
+                />
+                <span>{one.label}</span>
+                {money && value != null && base != null ? (
+                  <span className="pf-muted">
+                    {money.money(lineMoney(base, value, null).worth)}
+                  </span>
+                ) : null}
+                {end === null ? null : (
+                  <strong className="pf-legend-value">{format(end)}</strong>
+                )}
+              </button>
+            </li>
+          );
+        })}
         {bands.map((band) => (
           <li className="pf-legend-row" key={band.label}>
             <span className="pf-swatch" style={{ background: band.color }} />
@@ -1320,12 +1446,15 @@ export function ReturnLines({
           </li>
         ))}
       </ul>
-      <div className="pf-plot">
+      <div className="pf-plot" ref={frame}>
         <svg
           ref={svg}
+          className="pf-return-plot"
           viewBox={`0 0 ${width} ${height}`}
           width="100%"
           role="img"
+          aria-label={label}
+          tabIndex={0}
           onPointerMove={point}
           // A tap is a pointer that never moves: it answers too, on a phone.
           onPointerDown={point}
@@ -1336,30 +1465,59 @@ export function ReturnLines({
             setHover(null);
             setNear(null);
           }}
+          // The crosshair by keyboard: arrows step a day (with shift, ten),
+          // Home and End jump to the edges, Escape puts it away.
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setHover(null);
+              setNear(null);
+              return;
+            }
+            const at = hover ?? last;
+            const step = event.shiftKey ? 10 : 1;
+            const next =
+              event.key === "ArrowLeft"
+                ? at - step
+                : event.key === "ArrowRight"
+                  ? at + step
+                  : event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? last
+                      : null;
+            if (next === null) return;
+            event.preventDefault();
+            setHover(Math.max(0, Math.min(last, next)));
+          }}
+          onFocus={(event) => {
+            if (event.currentTarget.matches(":focus-visible"))
+              setHover((at) => at ?? last);
+          }}
+          onBlur={() => setHover(null)}
         >
           <ValueAxis
-            ticks={niceTicks(low, high).filter((tick) => tick !== 0)}
+            ticks={yTicks.filter((tick) => tick !== 0)}
             y={y}
-            left={PLOT.left}
-            right={width - PLOT.right}
-            format={format}
+            left={left}
+            right={right}
+            format={tickFormat}
           />
           <line
-            x1={PLOT.left}
-            x2={width - PLOT.right}
+            x1={left}
+            x2={right}
             y1={y(0)}
             y2={y(0)}
             stroke={token("border")}
             strokeWidth="1"
           />
           <text
-            x={PLOT.left - 6}
+            x={left - 6}
             y={y(0) + 4}
             fill={token("text-muted")}
             fontSize="11"
             textAnchor="end"
           >
-            {format(0)}
+            {tickFormat(0)}
           </text>
           {bands.map((band) =>
             areas(band).map((d, index) => (
@@ -1376,14 +1534,14 @@ export function ReturnLines({
               <line
                 x1={x(marker.index)}
                 x2={x(marker.index)}
-                y1={PLOT.top}
-                y2={PLOT.top + plotH}
+                y1={RETURN.top}
+                y2={RETURN.top + plotH}
                 stroke={token("border")}
                 strokeWidth="1"
               />
               <text
                 x={x(marker.index) + 4}
-                y={PLOT.top + 11}
+                y={RETURN.top + 11}
                 fill={token("text-muted")}
                 fontSize="11"
               >
@@ -1391,24 +1549,41 @@ export function ReturnLines({
               </text>
             </g>
           ) : null}
-          {/* The line singled out is drawn last, over the ones it crosses. */}
-          {colored
-            .filter((one) => !one.tipOnly)
-            .sort((a, b) => Number(a.label === active) - Number(b.label === active))
-            .map((one) =>
-              paths(one.points).map((d, index) => (
-                <path
-                  key={`${one.label}-${index}`}
-                  className="pf-line"
-                  d={d}
-                  fill="none"
-                  stroke={one.color}
-                  strokeWidth={active === one.label ? 2.5 : 1.5}
-                  strokeOpacity={active && active !== one.label ? 0.3 : 1}
-                  strokeDasharray={one.dashed ? "4 3" : undefined}
-                />
-              )),
-            )}
+          {stacked.map((one) =>
+            paths(one.points).map((d, index) => (
+              <path
+                key={`${one.label}-${index}`}
+                className="pf-line"
+                data-series={one.label}
+                d={d}
+                fill="none"
+                stroke={one.color}
+                strokeWidth={one.label === active ? 2.5 : one.focal ? 2 : 1.5}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                strokeDasharray={one.dashed ? "4 3" : undefined}
+                style={{ strokeOpacity: opacity(one) }}
+              />
+            )),
+          )}
+          {/* Where the reader's own line ends, ringed in the card's surface so
+            it stays one dot where the others run into it. */}
+          {stacked.map((one) => {
+            const end = one.points[last];
+            return !one.focal || end === null || end === undefined ? null : (
+              <circle
+                key={`${one.label}-end`}
+                className="pf-line"
+                cx={x(last)}
+                cy={y(end)}
+                r="4"
+                fill={one.color}
+                stroke={ring}
+                strokeWidth="2"
+                style={{ opacity: opacity(one) }}
+              />
+            );
+          })}
           {/* Plotly's `hovermode="x"`: the whole plot answers, nearest day by
             the pointer's x, with a crosshair and a dot on every line there. */}
           {hover === null ? null : (
@@ -1416,8 +1591,8 @@ export function ReturnLines({
               <line
                 x1={x(hover)}
                 x2={x(hover)}
-                y1={PLOT.top}
-                y2={PLOT.top + plotH}
+                y1={RETURN.top}
+                y2={RETURN.top + plotH}
                 stroke={token("text-faint")}
                 strokeDasharray="2 2"
               />
@@ -1428,25 +1603,26 @@ export function ReturnLines({
                     key={one.label}
                     cx={x(hover)}
                     cy={y(value)}
-                    r="3"
+                    r="4"
                     fill={one.color}
+                    stroke={ring}
+                    strokeWidth="2"
+                    opacity={opacity(one)}
                   />
                 );
               })}
             </g>
           )}
-          {ticks.map((index) => (
+          {xTicks.indices.map((index) => (
             <text
               key={index}
               x={x(index)}
               y={height - 6}
               fill={token("text-muted")}
               fontSize="11"
-              textAnchor={
-                index === 0 ? "start" : index === dates.length - 1 ? "end" : "middle"
-              }
+              textAnchor={anchor(x(index))}
             >
-              {formatDate(dates[index]!)}
+              {xTicks.yearly ? dates[index]!.slice(0, 4) : formatDate(dates[index]!)}
             </text>
           ))}
         </svg>
@@ -1485,6 +1661,7 @@ export function ReturnLines({
                     ? "—"
                     : withNote(format(value), one.tipNote?.(hover, value)),
                 color: one.color,
+                mark: one.dashed ? "dashed" : "line",
               };
             })}
           />
@@ -1570,8 +1747,7 @@ function withNote(text: string, note: string | null | undefined): string {
  * contiguous run of the same sign. A run is extended by one point on each side
  * so neighbouring bands meet instead of leaving a seam at the crossover. The
  * value line is cut on the same runs and coloured by them — green above what
- * went in, red below — as the Streamlit trace is: the overlapping point keeps
- * the two colours joined.
+ * went in, red below; the overlapping point keeps the two colours joined.
  */
 function gainBands(
   points: { value: number; base: number }[],
@@ -1641,22 +1817,21 @@ export function bookTip(
 /**
  * Injected capital against market value, one point per day.
  *
- * The Streamlit page draws this in Plotly with a band between the two lines,
- * green where the book is worth more than what went into it and red where it
- * is not. That band is the reading — the gap is the profit, and its colour is
- * the answer to "am I up?" before any number is read.
+ * A band runs between the two lines, green where the book is worth more than
+ * what went into it and red where it is not. That band is the reading — the gap
+ * is the profit, and its colour is the answer to "am I up?" before any number
+ * is read.
  *
  * Built as one polygon per contiguous stretch of the same sign rather than as
  * one shape clipped twice: a fill that crosses the crossover point would paint
  * the wrong colour on one side of it, and the crossover is exactly the day a
  * reader is looking for.
  *
- * Plotly's two interactions come across. Drag across the plot to zoom into
- * those days, with the value axis refitted to them — the Streamlit page's
- * y-refit, since a €40k book's March wobble is invisible on an axis sized for
- * its whole life. Double-click, or the reset button, puts the window back.
- * The tooltip carries what Plotly's did: value, injected, and the P/L between
- * them as an amount and a percentage.
+ * Drag across the plot to zoom into those days, with the value axis refitted to
+ * them, since a €40k book's March wobble is invisible on an axis sized for its
+ * whole life. Double-click, or the reset button, puts the window back. The
+ * tooltip carries value, injected, and the P/L between them as an amount and a
+ * percentage.
  */
 export function BookHistory({
   points,

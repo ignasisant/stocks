@@ -341,18 +341,16 @@ def _central_banks(today: date) -> list[CentralBankDecision]:
 
 
 # ------------------------------------------------------------ one past print
-# What the Streamlit result dialog (`web.earnings_ui.render_result_body`)
-# draws under its headline tiles, as data. Same functions, same windows, same
-# caches' lifetimes: the dialog there caches `reaction` and `quarter_detail` for
-# six hours, and so does this. The caches live here rather than in `loaders`
-# because nothing else reads them — the result dialog is their only caller.
+# What the result dialog draws under its headline tiles, as data. The reaction
+# and the quarter detail are cached for six hours, and the caches live here
+# rather than in `loaders` because the result dialog is their only caller.
 
 # Quarters the trend bars and detail tables show. yfinance publishes five
 # quarters of the income statement, so a taller stack would draw empty rows.
 TREND_QUARTERS = 5
 
-# The per-period grid under the outlook, in the order the Streamlit expander
-# lists it: the quarter in flight, the next, then both fiscal years.
+# The per-period grid under the outlook, in reading order: the quarter in
+# flight, the next, then both fiscal years.
 OUTLOOK_PERIODS = (CURRENT_Q, NEXT_Q, CURRENT_FY, NEXT_FY)
 
 _DETAIL_TTL = 6 * 3600.0
@@ -409,9 +407,8 @@ def _bps(current: float | None, previous: float | None) -> float | None:
 def _breakdown(quarters: list[Quarter], q: Quarter) -> QuarterBreakdown:
     """The reported quarter and its comparisons, exactly as the tiles take them.
 
-    TTM reads the LATEST four quarters, not the four ending at `q` — the
-    Streamlit tile does, and for the print a reader opens most (the last one)
-    the two are the same four.
+    TTM reads the LATEST four quarters, not the four ending at `q`: for the
+    print a reader opens most (the last one) the two are the same four.
     """
     prev_y = year_ago(quarters, q)
     last_four = [x.revenue for x in quarters[:4]]
@@ -473,8 +470,8 @@ def result_detail(
     reaction) always answers: those come from caches that degrade to empty
     rather than raise. The breakdown underneath is three more Yahoo payloads —
     the quarterly income statement, its filing currency, the estimates — and
-    when those fail the response says `unavailable` instead of failing whole,
-    because the Streamlit dialog does the same: a toast, and the tiles stay.
+    when those fail the response says `unavailable` instead of failing whole:
+    a toast, and the tiles stay.
 
     Any ticker, not only the watchlist's: the Home screen opens this from its
     own past-earnings chips, and a print is public information.
@@ -493,9 +490,8 @@ def result_detail(
         result=_result(printed) if printed else None,
         history=[_result(r) for r in history],
     )
-    # A date the feed has no figures for gets the bare header, like the
-    # Streamlit dialog's "no reported figures": nothing below it would be about
-    # a print that exists.
+    # A date the feed has no figures for gets the bare header: nothing below it
+    # would be about a print that exists.
     if printed is None:
         return detail
 

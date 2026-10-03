@@ -4,9 +4,8 @@
  * A markdown package is the largest thing this drawer could have added to a
  * bundle every page pays for, and it would buy footnotes, tables and HTML
  * passthrough that no answer in this app has ever needed. What is here is what
- * `chat_core._rich()` and the Streamlit bubble around it actually show:
- * paragraphs, headings, bold, emphasis, inline and fenced code, ordered and
- * unordered lists, rules, and links.
+ * the answers actually use: paragraphs, headings, bold, emphasis, inline and
+ * fenced code, ordered and unordered lists, rules, and links.
  *
  * Everything is built as React elements rather than an HTML string, so escaping
  * is React's and there is no sanitiser to get wrong. The only thing that can
@@ -15,8 +14,8 @@
  *
  * Tables are the one block here that exists because the answers use it: the
  * skills that compare holdings, brokers or tax years lay their result out as a
- * GFM table, and the Streamlit bubble renders those. Printing the pipes
- * instead was the drawer saying less than the page it replaces.
+ * GFM table, and printing the pipes would be the drawer saying less than the
+ * answer does.
  *
  * A table also has to fit the drawer, which is 420px wide and a phone's width
  * on a phone. A column of sentences wraps instead of running off the side, and

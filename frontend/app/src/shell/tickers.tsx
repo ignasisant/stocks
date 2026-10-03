@@ -1,12 +1,12 @@
 /**
  * A ticker on screen is a logo and a link — everywhere, and in one request.
  *
- * The house rule (`ticker_cell` in the Streamlit app) is that a bare symbol is
- * never enough: a reader scanning a table recognises a mark long before they
- * read four letters, and a symbol with nowhere to click is a dead end. Getting
- * that right per row would be one `/ticker/{symbol}/profile` call per row, and
- * a seventeen-name cohort answering in seventeen requests is how a table gets
- * itself rate limited — which is what `/market/profiles` exists to prevent.
+ * The house rule is that a bare symbol is never enough: a reader scanning a
+ * table recognises a mark long before they read four letters, and a symbol
+ * with nowhere to click is a dead end. Getting that right per row would be
+ * one `/ticker/{symbol}/profile` call per row, and a seventeen-name cohort
+ * answering in seventeen requests is how a table gets itself rate limited —
+ * which is what `/market/profiles` exists to prevent.
  *
  * So every cell asks this module, and this module asks the server once per
  * render pass: the registrations that happen while a table mounts are
@@ -118,7 +118,7 @@ export function useTickerProfile(ticker: string): Profile | null {
 
 /**
  * The cell itself: the mark, the resolved symbol, the company's name, and the
- * link to its page — "ASML.AS — ASML Holding", as `ticker_cell` prints it.
+ * link to its page — "ASML.AS — ASML Holding".
  *
  * The symbol printed is the *resolved* one (`symbol`), and the link carries the
  * stored label (`ticker`): an ISIN-keyed holding reads as the ticker a reader

@@ -3,9 +3,9 @@
  * on its own.
  *
  * What an alert *is* — which types exist, which number each asks for, what to
- * prefill — is the server's answer (`/alert-types`, from `config.ALERT_FORMS`),
- * the same table the Streamlit watchlist widget reads. What is decided here is
- * only how a rule reads back and when a draft is worth sending.
+ * prefill — is the server's answer (`/alert-types`, from `config.ALERT_FORMS`).
+ * What is decided here is only how a rule reads back and when a draft is worth
+ * sending.
  */
 
 import type { Translate } from "./format";

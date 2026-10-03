@@ -1,13 +1,11 @@
 /**
  * The written read under the podium.
  *
- * Streamlit's card, over `GET`/`POST /sectors/{sector}/verdict`. The GET never
- * spends and answers with the stored read or the computed stand-in; the POST
- * has one written. For a signed-in reader the page asks for it on arrival,
- * exactly as the Streamlit card starts its generation when the page draws — a
- * read that has to be requested with a button is a read nobody requests — and
- * the server keys the stored one by tonight's scan, so arriving twice the same
- * night spends once.
+ * Over `GET`/`POST /sectors/{sector}/verdict`. The GET never spends and answers
+ * with the stored read or the computed stand-in; the POST has one written. For
+ * a signed-in reader the page asks for it on arrival — a read that has to be
+ * requested with a button is a read nobody requests — and the server keys the
+ * stored one by tonight's scan, so arriving twice the same night spends once.
  *
  * Its own card, like the podium above it. Without one the read sits loose
  * between the podium and the table and parses as page copy, which is the wrong
@@ -45,7 +43,7 @@ export function Verdict({ sector }: { sector: string }) {
         const stored = await get<Read>(at, { lang });
         if (!alive) return;
         // A guest can store nothing and may spend nothing: the stand-in is
-        // their answer, as it is on the Streamlit card.
+        // their answer.
         if (stored.written || guest) {
           setRead(stored);
           return;

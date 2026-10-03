@@ -91,7 +91,7 @@ def test_erasing_removes_the_account(client, account, signed_in, monkeypatch):
     response = signed_in.request("DELETE", "/v1/account", json={"confirm": EMAIL})
     assert response.status_code == 200
     assert gone == [account.root]
-    # The browser still holds Streamlit's cookie, so the client is told where
+    # The browser still holds the session cookie, so the client is told where
     # to go next rather than left signed in to an account that is not there.
     assert response.json()["sign_out"] == "/auth/logout"
 
@@ -225,7 +225,7 @@ def test_a_provider_that_refuses_the_message_is_not_a_500(
 
 
 def test_a_linked_chat_names_its_handle(client, account, signed_in, monkeypatch):
-    """The @username the link job recorded, which the Streamlit page prints
+    """The @username the link job recorded, which the Profile page prints
     beside "connected" — and nothing once the chat is gone, so the next link
     does not come back wearing the previous chat's name."""
     monkeypatch.setattr(telegram, "configured", lambda: True)
@@ -299,7 +299,7 @@ def test_feedback_is_stored_against_this_account(
     assert response.status_code == 201
     text, kind, page, sender, lang = filed[0]
     assert (text, kind, page, lang) == ("the chart is wrong", "bug", "portfolio", "es")
-    # The account, not "guest": there is no Streamlit session to read it off.
+    # The account, not "guest": the sender is whoever the request signed in as.
     assert sender == account.root.name
 
 

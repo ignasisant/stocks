@@ -101,7 +101,7 @@
   "tour.news_2026_09_4_projection_title": "Where your portfolio could be in five years",
   "tour.news_2026_09_4_projection_body": "A new **Projection** tab in Portfolio draws the fan of values your book could reach in 1, 3, 5 or 10 years, with stocks and crypto modelled separately, index references for growth and the **chance of reaching your target**.",
   "tour.news_2026_09_3_newapp_title": "The app, rebuilt",
-  "tour.news_2026_09_3_newapp_body": "Every screen — dashboard, portfolio, pulse, sectors, earnings, import, the ticker page and the assistant — has been rebuilt as a single front end, reading the same data through one API. Same links, same numbers: it loads once and moves between pages without reloading. The previous version stays at **/legacy** for a while, to compare against if something looks different.",
+  "tour.news_2026_09_3_newapp_body": "Every screen — dashboard, portfolio, pulse, sectors, earnings, import, the ticker page and the assistant — has been rebuilt as a single front end, reading the same data through one API. Same links, same numbers: it loads once and moves between pages without reloading.",
   "tour.news_2026_09_5_daily_more_title": "The daily action, analysed line by line",
   "tour.news_2026_09_5_daily_more_body": "Each line of Home's daily card opens its own **analysis**: rather than suggesting a comparison, it makes it — the company against its peers, its sector and the S&P 500, what a sale saves in tax, which positions explain a month behind the index — with the tables beside it. The card also **remembers what it told you**, so it changes every day instead of repeating itself.",
   "tour.news_2026_09_6_import_title": "Import, rebuilt around its four steps",

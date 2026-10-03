@@ -1,4 +1,4 @@
-"""ASGI entry point: the marketing site, the React app, the API — and the old app.
+"""ASGI entry point: the marketing site, the React app and the API.
 
 Run: uv run stocks dashboard   (or: uv run uvicorn stocks.web.server:app)
 
@@ -20,7 +20,8 @@ One process on one port, one Starlette app in front of everything:
     /next-assets/* that shell's bundle
     /app/static/*  the mirrored logos (same-origin, see stocks.identity)
     /next/*        the shell's address while it was being built, redirected
-    /legacy/*      the Streamlit app it replaced, read-only in spirit
+    /legacy/*      the Streamlit app's address after the shell replaced it,
+                   redirected the same way
 
 `/` is shared: a request for it gets the landing only when it carries no query
 parameter and no `ts_app` cookie, which is exactly the state of a first-time
@@ -30,13 +31,9 @@ cookies, so the pages Google sees at `/` and `/es/` are the pages a first-time
 human sees. The app routes are marked `noindex` on the way out, because they are
 a JavaScript shell over somebody's positions.
 
-**Why the Streamlit app is still here.** The React shell replaced it screen for
-screen, but "the old one showed something different" is a question worth being
-able to answer by looking, for a while. So it is mounted whole at `/legacy`
-(`st.App` supports being a sub-application) rather than deleted: same account,
-same cookie, same data. It is started on the first request under that prefix,
-not at boot, so a deployment nobody opens it on pays nothing for it. The last
-commit where it was the app is tagged `streamlit-final`.
+The Streamlit app the shell replaced stayed mounted at `/legacy` for a while,
+for side-by-side checks, and is gone now. The last commit where it was the app
+is tagged `streamlit-final`.
 """
 
 from __future__ import annotations
@@ -52,7 +49,6 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote
 
-import streamlit as st
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -125,13 +121,13 @@ _APP_SOURCE = _HERE.parents[2] / "frontend" / "app" / "index.html"
 # here.
 NEXT_PATH = "/next"
 
-# The retired Streamlit app, mounted whole (see the module docstring).
+# Where the Streamlit app answered once the shell had replaced it. Redirected
+# like `/next`: the "what's new" card and old bookmarks pointed at it, and
+# `/legacy/portfolio` is a page the shell has under its own name.
 LEGACY_PATH = "/legacy"
 
-# The mirrored logos. Streamlit's static serving (`enableStaticServing`) used to
-# answer this at the root; it now answers it only under `/legacy`, and the API
-# hands out `/app/static/logos/…` absolute (`api.loaders.logo`), so the root
-# serves the same directory itself.
+# The mirrored logos, at the path they have always had: the API hands it out
+# absolute (`api.loaders.logo`).
 STATIC_PATH = "/app/static/"
 _STATIC = _HERE / "static"
 
@@ -159,11 +155,12 @@ _HOST_RE = re.compile(r"^[A-Za-z0-9.\-]+(:\d+)?$")
 
 _HTML = "text/html; charset=utf-8"
 
-# Paths the canonical-host redirect must leave alone: the old app's transport
-# (an in-flight session moves with it and breaks), the OIDC return (the
-# hostname is registered with Google and is not ours to change mid-flight),
-# and the health probes. Those three answer *about the container handling the
-# request*, so sending them to the canonical host defeats their whole purpose:
+# Paths the canonical-host redirect must leave alone: the OIDC return (the
+# hostname is registered with Google and is not ours to change mid-flight), the
+# API (a fetch that is redirected breaks the page that made it rather than
+# moving it), and the health probes. Those three answer *about the container
+# handling the request*, so sending them to the canonical host defeats their
+# whole purpose:
 # a canary lives at a tagged hostname (candidate---<service>…), and redirecting
 # its /status hands back the revision already serving 100% of traffic. That is
 # how scripts/deploy.sh came to smoke-test the old revision and refuse to
@@ -172,9 +169,8 @@ _HTML = "text/html; charset=utf-8"
 # metadata and posts its calls where it was told to, and follows no redirect.
 # `/authorize` and the consent page are left out on purpose — a browser goes
 # there, and a browser should land on the canonical host its session is on.
-_NEVER_REDIRECT = (f"{LEGACY_PATH}/_stcore/", "/oauth2callback", "/livez",
-                   "/healthz", "/status", API_PREFIX, connector_oauth.MCP_PATH,
-                   "/.well-known/oauth-")
+_NEVER_REDIRECT = ("/oauth2callback", "/livez", "/healthz", "/status",
+                   API_PREFIX, connector_oauth.MCP_PATH, "/.well-known/oauth-")
 _NEVER_REDIRECT_EXACT = frozenset({"/token", "/register", "/revoke"})
 
 
@@ -232,9 +228,10 @@ def base_url(request: Request) -> str:
 def _gzipped(lang: str, origin: str, jurisdiction: str) -> bytes:
     """The landing document, pre-compressed once per variant and host.
 
-    Streamlit's own gzip middleware sits *inside* this module's, and the gate
-    answers before reaching it, so compressing here is what keeps a ~90KB
-    document from going out uncompressed. mtime is zeroed to keep the bytes
+    Compressed here rather than by the GZip middleware so a ~90KB document is
+    compressed once per variant and host, at the highest level, instead of on
+    every request; the middleware passes a response that already carries a
+    Content-Encoding through untouched. mtime is zeroed to keep the bytes
     reproducible.
     """
     body = landing_static.document(lang, origin, jurisdiction).encode("utf-8")
@@ -320,9 +317,9 @@ def canonical_redirect(request: Request) -> str | None:
     One site, one hostname: without this, every alias Cloud Run answers on
     serves a full copy of the landing that canonicalizes to itself, which is
     duplicate content in the most literal sense. GET/HEAD only, and never for
-    `/_stcore/` — redirecting a live websocket or an XHR would break the
-    session a visitor is already in rather than move it. The OIDC callback is
-    exempt for the same reason from the other end: Google sends the browser to
+    the API — redirecting a fetch would break the page a visitor is already on
+    rather than move it. The OIDC callback is exempt for the same reason from
+    the other end: Google sends the browser to
     the exact URI registered with it, and bouncing that response to another
     hostname lands the login on an origin the round trip did not start on.
     """
@@ -383,23 +380,16 @@ def not_found(request: Request) -> Response:
 
 
 # Requests one client may make per window before it is turned away. Counted
-# per document, not per asset: one page load pulls a dozen bundle chunks, and
-# the old app's every websocket frame is a chat message, so metering those
-# would either lock out a normal first visit or have to be set so high it
-# meters nothing.
+# per document, not per asset: one page load pulls a dozen bundle chunks, so
+# metering those would either lock out a normal first visit or have to be set
+# so high it meters nothing.
 # Documents are the expensive part anyway — a landing render, an app shell.
 CLIENT_MAX_DOCS = 60
 CLIENT_WINDOW_S = 60
 
-# Not metered: the transport the old app needs to keep a session alive (it has
-# its own per-account limit on what arrives over it, see web/ratelimit.py's use
-# in chat_core) and its bundle, the mirrored logos, the shell's bundle and the
-# landing's assets, and the probes an uptime monitor hits on a schedule.
-_UNMETERED = (
-    *(f"{LEGACY_PATH}{p}" for p in ("/_stcore/", "/static/", "/app/static/",
-                                     "/media/", "/component/")),
-    ASSET_BASE, "/livez", "/healthz", STATIC_PATH, APP_ASSETS,
-)
+# Not metered: the mirrored logos, the shell's bundle and the landing's
+# assets, and the probes an uptime monitor hits on a schedule.
+_UNMETERED = (ASSET_BASE, "/livez", "/healthz", STATIC_PATH, APP_ASSETS)
 
 # The API gets its own budget, on its own key. A document and an API call are
 # not the same unit of work: the shell's ticker page asks for its price bars,
@@ -494,15 +484,14 @@ class ClientThrottle(BaseHTTPMiddleware):
 class SecurityHeaders(BaseHTTPMiddleware):
     """Baseline hardening headers on every response, marketing and app alike.
 
-    Deliberately not a full Content-Security-Policy: Streamlit's shell relies
-    on inline scripts/styles and a websocket, so a source allowlist would
-    either break the app or be wide enough to mean nothing. What is set here
-    is the uncontroversial floor:
+    Not a full Content-Security-Policy: that is a source allowlist written
+    against the landing and the shell as they are (inline design tokens,
+    Google Fonts), a change of its own. What is set here is the
+    uncontroversial floor:
 
     * `nosniff` — responses execute as their declared type only.
     * `frame-ancestors 'self'` (+ the legacy X-Frame-Options) — nobody frames
-      the app on another origin to clickjack a logged-in session. Streamlit's
-      own component iframes are same-origin and unaffected.
+      the app on another origin to clickjack a logged-in session.
     * a tight Referrer-Policy — app URLs can carry tickers and view state;
       other origins get the origin, not the path.
     * HSTS, only when the request already arrived on TLS (Cloud Run
@@ -797,7 +786,7 @@ def _app_document(mtime: float) -> bytes:  # noqa: ARG001 — mtime keys the cac
 
 def _filled(html: str) -> bytes:
     """`html` with the token and font markers replaced (see `_app_document`)."""
-    from stocks.web.widgets import ds_vars_css
+    from stocks.web.ds import ds_vars_css
 
     html = html.replace("<!--AG-TOKENS-->", ds_vars_css())
     icon = f'<link rel="icon" type="image/svg+xml" href="{ASSET_BASE}topstocks-icon.svg">'
@@ -833,10 +822,9 @@ def _dev_document(vite: str) -> bytes:
 def _faces() -> str:
     """Link tags for the DS typefaces.
 
-    `seo.FONTS_HREF` is the stylesheet the landing already links; Streamlit
-    loads the same faces from config.toml. A React document that links neither
-    declares Instrument Sans in its CSS and paints in system-ui — which reads
-    as nothing being wrong.
+    `seo.FONTS_HREF` is the stylesheet the landing already links. A document
+    that does not link it declares Instrument Sans in its CSS and paints in
+    system-ui — which reads as nothing being wrong.
     """
     from stocks.web.seo import FONTS_HREF
 
@@ -872,16 +860,11 @@ async def app_shell(request: Request) -> Response:
     )
 
 
-async def next_redirect(request: Request) -> Response:
-    """`/next/<page>` → `/<page>`, query and all, permanently."""
+async def moved(request: Request) -> Response:
+    """`/next/<page>` and `/legacy/<page>` → `/<page>`, query and all, permanently."""
     rest = request.path_params.get("path", "").strip("/")
     query = f"?{request.url.query}" if request.url.query else ""
     return RedirectResponse(f"/{rest}{query}", status_code=301)
-
-
-async def legacy_slash(request: Request) -> Response:
-    """`/legacy` → `/legacy/`: the old app resolves its assets from the slash."""
-    return RedirectResponse(f"{LEGACY_PATH}/", status_code=301)
 
 
 async def static_file(request: Request) -> Response:
@@ -921,9 +904,8 @@ async def app_asset(request: Request) -> Response:
 async def asset(request: Request) -> Response:
     """`/lp/<file>` — the landing's brand mark and share card.
 
-    Its own mount rather than Streamlit's `app/static`: that one is served at a
-    path relative to wherever the app document lives, which `/es/` is one
-    segment away from, and these files have to resolve from both pages.
+    Apart from `/app/static/`: these ship with the code, the logos there are
+    mirrored at runtime.
     """
     name = request.path_params.get("path", "")
     target = (_ASSETS / name).resolve()
@@ -933,11 +915,6 @@ async def asset(request: Request) -> Response:
         target, headers={"Cache-Control": "public, max-age=3600"}
     )
 
-
-# The retired Streamlit app. The script path is absolute on purpose: `st.App`
-# resolves a relative one against the working directory when an ASGI server
-# (rather than `streamlit run`) loads it.
-legacy = st.App(str(_HERE / "app.py"))
 
 routes = [
     *(
@@ -968,10 +945,9 @@ routes = [
     Route("/", app_shell, methods=["GET", "HEAD"]),
     *(Route(f"/{slug}", app_shell, methods=["GET", "HEAD"])
       for slug in navigation.SHELL_PATHS),
-    Route(NEXT_PATH, next_redirect, methods=["GET", "HEAD"]),
-    Route(f"{NEXT_PATH}/{{path:path}}", next_redirect, methods=["GET", "HEAD"]),
-    Route(LEGACY_PATH, legacy_slash, methods=["GET", "HEAD"]),
-    Mount(LEGACY_PATH, app=legacy),
+    *(Route(old, moved, methods=["GET", "HEAD"]) for old in (NEXT_PATH, LEGACY_PATH)),
+    *(Route(f"{old}/{{path:path}}", moved, methods=["GET", "HEAD"])
+      for old in (NEXT_PATH, LEGACY_PATH)),
 ]
 
 
@@ -994,8 +970,8 @@ app = Starlette(
     lifespan=lifespan,
     # First is outermost: the security headers wrap everything, including the
     # gate's own short-circuit responses (landing, redirects, 404s). Compression
-    # sits inside them and skips what is already compressed (the landing, the
-    # old app's own gzip) and what must not be buffered (the chat's stream).
+    # sits inside them and skips what is already compressed (the landing) and
+    # what must not be buffered (the chat's stream).
     middleware=[
         Middleware(ClientThrottle),
         Middleware(SecurityHeaders),

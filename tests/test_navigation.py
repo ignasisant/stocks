@@ -1,18 +1,17 @@
-"""The app's menu: one table, four readers.
+"""The app's menu: one table, two readers.
 
-`stocks.navigation` says which pages exist. `st.navigation` builds the sidebar
-from it, `web/nav.py` builds the phone tab bar, and `/v1/nav` hands it to the
-React shell. What is tested here is that the table itself stays answerable —
-every page it names exists, every label it names is translated, and the phone
-bar names pages rather than strings nobody routed.
+`stocks.navigation` says which pages exist. `/v1/nav` hands it to the React
+shell, which draws the left menu and the phone tab bar from it, and the server
+routes its paths to the shell. What is tested here is that the table itself
+stays answerable — every label it names is translated, and the phone bar names
+pages rather than strings nobody routed. That every page has a screen in the
+shell is `test_frontend_nav_parity.py`'s.
 
 A page missing from one menu is not a bug anybody reports. It is a page nobody
 finds.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,7 +20,6 @@ from stocks import navigation
 from stocks.api.app import app as fastapi_app
 from stocks.web.i18n import catalog
 
-PAGES = Path(__file__).resolve().parents[1] / "src" / "stocks" / "web" / "app_pages"
 TOKEN = "s3cret-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -29,15 +27,6 @@ AUTH = {"Authorization": f"Bearer {TOKEN}"}
 @pytest.fixture(autouse=True)
 def token(monkeypatch):
     monkeypatch.setenv("API_TOKEN", TOKEN)
-
-
-def test_every_destination_points_at_a_page_that_exists():
-    missing = [
-        d.module
-        for d in navigation.DESTINATIONS
-        if not (PAGES / f"{d.module}.py").exists()
-    ]
-    assert not missing, f"the menu offers pages that are not there: {missing}"
 
 
 def test_every_label_is_translated_in_both_languages():
@@ -55,7 +44,7 @@ def test_every_label_is_translated_in_both_languages():
 def test_the_default_page_is_the_only_one_served_at_the_root():
     roots = [d for d in navigation.DESTINATIONS if d.path == ""]
     assert len(roots) == 1, "two default pages is one page nobody reaches"
-    assert roots[0].module == "home"
+    assert roots[0].label == "nav.home"
 
 
 def test_paths_are_unique():

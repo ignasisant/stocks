@@ -111,8 +111,8 @@ describe("topSectors", () => {
     expect(result.lagging).toEqual([]);
   });
 
-  // `sentiment.py` takes the book's top three first and drops the ones with no
-  // sector fund second. Filtering to the funded sectors first would promote
+  // The book's top three are taken first and the ones with no sector fund are
+  // dropped second. Filtering to the funded sectors first would promote
   // Energy — the fourth-largest holding — into a sentence about the largest
   // three, because the book's second-largest bucket has no ETF.
   it("picks the book's top three before dropping sectors with no fund", () => {

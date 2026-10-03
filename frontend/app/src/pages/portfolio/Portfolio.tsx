@@ -9,10 +9,9 @@
  * entry — switching a tab is not a navigation the back button should have to
  * walk back through.
  *
- * Only the open tab's component is mounted, so only its fetch runs. That is
- * the same arrangement as the Streamlit page's dynamic tabs, and for the same
- * reason: the price-and-profile burst behind "Allocation & risk" must not
- * block the tabs that do not need it.
+ * Only the open tab's component is mounted, so only its fetch runs: the
+ * price-and-profile burst behind "Allocation & risk" must not block the tabs
+ * that do not need it.
  */
 
 import { useLayoutEffect, useRef, useState } from "react";
@@ -161,7 +160,7 @@ export default function Page() {
   );
 
   // Ledger rows that never made a position — only deposits, fees or rows the
-  // replay could not match — leave every tab with nothing to say. Streamlit
+  // replay could not match — leave every tab with nothing to say. The page
   // says so once and stops rather than drawing five empty tabs; the same
   // cached summary the Positions tab reads answers it here. Never blocking:
   // while it loads, or if it fails, the tabs draw as usual.

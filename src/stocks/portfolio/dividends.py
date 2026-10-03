@@ -2,6 +2,9 @@
 
 Ledger convention for a dividend row: action='dividend', price = GROSS dividend
 total in native ccy, fee = tax withheld at source in native ccy. Net = price-fee.
+A return of capital row (action "capital") is spelled the same way and is no
+income — it lowers the shares' cost instead (positions.build) — so it is left
+out of every figure here unless `by_year(capital=True)` asks for it.
 
 For a Spanish resident, dividends join the savings base (taxed with capital
 gains). Foreign withholding is relieved via the double-taxation credit, capped
@@ -18,7 +21,7 @@ from math import prod
 
 from stocks.data.dividends import DividendHistory
 from stocks.data.fx import ToBase, converter, prefetch
-from stocks.portfolio.ledger import Transaction
+from stocks.portfolio.ledger import RETURN_OF_CAPITAL, Transaction
 
 # Spain double-taxation treaty cap on dividend withholding (creditable ceiling).
 TREATY_WHT_CAP = 0.15
@@ -54,9 +57,18 @@ def by_year(
     transactions: list[Transaction],
     to_base: ToBase | None = None,
     base: str = "EUR",
+    *,
+    capital: bool = False,
 ) -> dict[int, DividendYear]:
-    """Aggregate dividends into per-calendar-year summaries in `base`."""
-    dividends = [t for t in transactions if t.action == "dividend"]
+    """Aggregate dividends into per-calendar-year summaries in `base`.
+
+    `capital=True` counts returns of capital as paid too. That is the footing
+    of the reconciliation against Yahoo, whose history lists them as one more
+    dividend — without them a payment that did land reads as one that never
+    imported — and never a tax one: they are not income.
+    """
+    kinds = ("dividend", RETURN_OF_CAPITAL) if capital else ("dividend",)
+    dividends = [t for t in transactions if t.action in kinds]
     if to_base is None:
         prefetch((t.date, t.currency) for t in dividends)
         to_base = converter(base)
@@ -316,6 +328,9 @@ def unbooked(
 ) -> list[EstimatedPayment]:
     """The estimated payments no ledger dividend row accounts for, oldest first.
 
+    A return of capital answers for one too: Yahoo's history lists it as one
+    more dividend, the same footing as `by_year(capital=True)`.
+
     What `unrecorded_by_year` sums, one payment at a time — the rows a list of
     recent activity can show for a statement that stops before the book does.
     A broker books a dividend on its pay date, which trails the ex-date by
@@ -333,7 +348,7 @@ def unbooked(
     for p in sorted(payments, key=lambda p: p.ex_date):
         pending.setdefault(p.ticker, []).append(p)
     for t in sorted(transactions, key=lambda t: (t.date, t.id or 0)):
-        if t.action != "dividend" or not pending.get(t.ticker):
+        if t.action not in ("dividend", RETURN_OF_CAPITAL) or not pending.get(t.ticker):
             continue
         paid = _date.fromisoformat(t.date[:10])
         earliest = (paid - _timedelta(days=lag_days)).isoformat()

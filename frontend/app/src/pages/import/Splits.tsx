@@ -8,7 +8,7 @@
  * *sell* comes up short, and a position nobody sold never comes up short, which
  * is why this repair exists at all and why it is reachable without an import.
  *
- * Two things the Streamlit page does that are not presentation:
+ * Two things here that are not presentation:
  *
  * * the scan runs on request, never on load — it is a Yahoo round-trip per
  *   holding, seconds rather than milliseconds;

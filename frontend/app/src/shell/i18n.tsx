@@ -1,5 +1,5 @@
 /**
- * Translated strings, from the same catalogs the Streamlit pages read.
+ * Translated strings, from the catalogs the server reads (`web/locales/`).
  *
  * `/api/v1/i18n/{lang}` serves them flat with English underneath, so a key the
  * translation is missing renders in English rather than as a dotted key on
@@ -47,12 +47,10 @@ const PINNED = "guestLang";
  * The language a landing CTA pinned for this tab, or null.
  *
  * The landing links into the app with `?lang=` set to the language the visitor
- * was reading, and Streamlit honours it for a signed-out session
- * (`landing.consume_params`). Here the parameter would be gone after the first
- * in-app navigation — the router writes fresh query strings — so the choice is
- * remembered in `sessionStorage`, the same lifetime as the Streamlit session
- * state it mirrors. For a guest only: a signed-in account has a stored
- * preference, and a marketing link must not overrule it.
+ * was reading. The parameter would be gone after the first in-app navigation —
+ * the router writes fresh query strings — so the choice is remembered in
+ * `sessionStorage`, for the life of the tab. For a guest only: a signed-in
+ * account has a stored preference, and a marketing link must not overrule it.
  */
 export function pinnedLang(search: string, storage?: Storage | null): string | null {
   const asked = (new URLSearchParams(search).get("lang") ?? "").trim().toLowerCase();

@@ -25,7 +25,7 @@ env:
   STOCKS_STORAGE_ACCESS_KEY_ID: ${{ secrets.STOCKS_STORAGE_ACCESS_KEY_ID }}
   STOCKS_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.STOCKS_STORAGE_SECRET_ACCESS_KEY }}
   TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-  # Same Fernet key as Streamlit's [chat] enc_key — decrypts each user's own
+  # Same Fernet key as the app's [chat] enc_key — decrypts each user's own
   # (BYOK) LLM key from their prefs. Optional; without it only the free chain.
   CHAT_ENC_KEY: ${{ secrets.CHAT_ENC_KEY }}
   # Keyless free-chain backends (same as the web panel's "TopStocks AI").

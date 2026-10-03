@@ -1,16 +1,15 @@
-"""A tiny TTL memo — what `st.cache_data` does, without Streamlit.
+"""A tiny TTL memo for the page loaders.
 
-The page loaders in `stocks.web.portfolio_data` are all wrapped in
-`@st.cache_data`, and for good reason: a ledger replay plus a price burst for
-a whole book is seconds of work and a pile of Yahoo requests. That decorator
-needs a script run to key against, so it cannot cross into an ASGI worker.
+The loaders in `stocks.api.loaders` are memoised for good reason: a ledger
+replay plus a price burst for a whole book is seconds of work and a pile of
+Yahoo requests.
 
-This is the replacement, kept deliberately small: one dict, one lock, a TTL
-and a cap. Keying follows the same convention as the pages — `(db path,
-ledger mtime, base currency)` — so an import invalidates a book's entries the
-moment the file changes rather than when a timer runs out.
+Kept deliberately small: one dict, one lock, a TTL and a cap. Keying follows
+one convention — `(db path, ledger mtime, base currency)` — so an import
+invalidates a book's entries the moment the file changes rather than when a
+timer runs out.
 
-Three things `st.cache_data` never had to solve:
+Three things a plain TTL memo does not solve:
 
 * The shell opens a page as a dozen concurrent requests, and on a cold
   process every one of them misses the same key at the same moment. A memo

@@ -1,11 +1,11 @@
 """Optional S3-compatible persistence for user data (Cloudflare R2, S3, MinIO).
 
-Deploy targets with ephemeral filesystems (containers, Streamlit Community
-Cloud) lose data/users/ and the imported ledgers on every restart or
-redeploy. When a bucket is configured, every user-data write is mirrored to
-it (persist) and each account's files are pulled back on first access after
-a boot (restore_user). Unconfigured, every function is a no-op, so local
-dev, tests and the CLI keep working on the plain filesystem.
+Deploy targets with ephemeral filesystems (containers, Cloud Run) lose
+data/users/ and the imported ledgers on every restart or redeploy. When a
+bucket is configured, every user-data write is mirrored to it (persist) and
+each account's files are pulled back on first access after a boot
+(restore_once). Unconfigured, every function is a no-op, so local dev, tests
+and the CLI keep working on the plain filesystem.
 
 Configuration — [storage] in .streamlit/secrets.toml, or the equivalent
 STOCKS_STORAGE_* environment variables (env wins):
@@ -34,7 +34,7 @@ import os
 import threading
 from pathlib import Path
 
-from stocks import atomic
+from stocks import atomic, secrets_env
 from stocks.config import PROJECT_ROOT
 
 _ENV_PREFIX = "STOCKS_STORAGE_"
@@ -44,16 +44,8 @@ _cached: dict[str, object] = {}
 
 
 def _secrets_section() -> dict:
-    """[storage] from .streamlit/secrets.toml, {} when unavailable.
-
-    Imported lazily so the CLI never pays for (or requires) streamlit.
-    """
-    try:
-        import streamlit as st
-
-        return dict(st.secrets.get("storage", {}))
-    except Exception:
-        return {}
+    """[storage] from .streamlit/secrets.toml, {} when unavailable."""
+    return secrets_env.section("storage")
 
 
 def _config() -> dict | None:
@@ -253,7 +245,7 @@ def restore_once(group: Path, files: tuple[Path, ...]) -> None:
     """Restore a group of files the first time `group` is touched this process.
 
     After that the local copies are authoritative (every write persists), so
-    reruns and later sessions skip the bucket round-trips.
+    later requests skip the bucket round-trips.
     """
     if not enabled():
         return

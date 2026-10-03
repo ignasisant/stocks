@@ -12,7 +12,7 @@
  * label: the filename is what picks the branch inside a parser (Revolut PDF vs
  * CSV, ClickTrade xlsx vs csv), so handing a parser a format it does not read
  * would fail deep inside it instead of here, where the page can name the
- * problem. Mirrors `_pasted_file` in `web/app_pages/import_transactions.py`.
+ * problem.
  */
 
 /** Enough of a blob that a short CSV of pure letters cannot be mistaken for one. */
@@ -65,8 +65,8 @@ export function pastedFile(text: string, types: readonly string[]): Pasted {
     }
   }
   return {
-    // Same name the Streamlit page gives it, and the extension matters: the
-    // parsers read it to decide how to read the bytes.
+    // The extension matters: the parsers read it to decide how to read the
+    // bytes.
     filename: "pasted.csv",
     blob: new Blob([text], { type: "text/csv" }),
   };

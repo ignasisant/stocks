@@ -19,9 +19,9 @@
  * engine writes one thread, and a queued question would land inside the first
  * answer's history half-written. The field stays open the whole time, because
  * being unable to type the next question is not the same as being unable to
- * send it. While an answer is being written, Send *is* Stop — the Streamlit
- * composer's `submit_mode="stop"`: the one control a reader looks for when an
- * answer is going the wrong way is the one their thumb is already on.
+ * send it. While an answer is being written, Send *is* Stop: the one control a
+ * reader looks for when an answer is going the wrong way is the one their
+ * thumb is already on.
  *
  * The paperclip is the other control, and it is the one that does not change
  * the next answer but replaces it: a statement attached here is an import — a

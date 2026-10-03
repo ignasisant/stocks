@@ -3,12 +3,9 @@
 Ported from the Claude Design canvas file `Aguait Landing.dc.html`. This module
 owns only the *markup*: `landing_static` wraps these sections in a standalone
 HTML document (head, SEO tags, JSON-LD) that `server.py` serves at `/` and
-`/es/` straight from Starlette — no Streamlit script run, no websocket, no
-`st.html`. That is what makes the page crawlable and instant; the app itself
-starts at the first CTA click.
-
-`consume_params()` is the other half: the CTAs are links carrying query
-parameters, and `app.py` calls it once per rerun to act on them.
+`/es/` straight from Starlette, with no script of the app's own to wait for.
+That is what makes the page crawlable and instant; the app itself starts at
+the first CTA click.
 
 Two things shape how this is written:
 
@@ -16,7 +13,7 @@ Two things shape how this is written:
   action inside flex rows, sticky bars and centred hero blocks; a static page
   has no widget layer to put a button in anyway. Every CTA is an anchor
   carrying a query parameter, and any query parameter on `/` is what tells
-  `server.py` to hand the request to Streamlit instead of the landing —
+  `server.py` to hand the request to the app instead of the landing —
   `?signin=1` is taken by `server.LandingGate`, which bounces the visitor
   into the app's own sign-in, `?guest=1` drops them straight into the app
   as a guest.
@@ -25,7 +22,7 @@ Two things shape how this is written:
   and reappears as a fixed bottom bar (`.ag-l-mbar`) that follows the reader
   down. Everything else is width-driven CSS — see `_MOBILE_RULES`.
 * **No raw colour literals.** Everything reads `var(--ag-*)` from
-  `widgets.ds_vars_css()`, which `landing_static` inlines into the document
+  `ds.ds_vars_css()`, which `landing_static` inlines into the document
   head. Tints the tokens don't ship are derived with `color-mix()` rather than
   hard-coded rgba, so the palette stays single-source.
 """
@@ -35,13 +32,12 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 
-import streamlit as st
-
 from stocks.portfolio import tax
 from stocks.web.i18n import DEFAULT_LANG, LANGUAGES, has, translate
 from stocks.web.markup import esc
 
-# Query parameters the in-page anchors set. Read by consume_params().
+# Query parameters the in-page anchors set. Read by `server.LandingGate` and
+# `server._entry_kind`.
 PARAM_SIGNIN = "signin"
 PARAM_GUEST = "guest"
 
@@ -127,11 +123,7 @@ def render_language(lang: str, jurisdiction: str | None = None):
 
 
 def active_language() -> str:
-    """The language this render is for — never Streamlit session state.
-
-    The page is built outside a script run (there is no session), so it cannot
-    go through `i18n.active_language()`.
-    """
+    """The language this render is for, as `render_language()` set it."""
     return _LANG.get()
 
 
@@ -301,20 +293,7 @@ _CHECK_MARK = (
 # Plain (non-f) string: it is full of CSS braces, and every value it needs is
 # already a custom property. Tints the token set doesn't ship are derived with
 # color-mix() off the same tokens rather than hard-coded rgba.
-#
-# NOTE: never introduce a raw "less-than" character anywhere in this block,
-# comments included — DOMPurify drops the entire style element when it sees one.
 _BASE_CSS = """
-/* --- suppress the app chrome; the landing owns the whole viewport --- */
-section[data-testid="stSidebar"],
-[data-testid="stSidebarCollapsedControl"],
-header[data-testid="stHeader"],
-.topstocks-topbar { display: none !important; }
-[data-testid="stMainBlockContainer"], .block-container {
-  padding: 0 !important; max-width: 100% !important;
-}
-[data-testid="stMain"] { background: var(--ag-surface-page); }
-
 /* --- page --- */
 .ag-l {
   background: var(--ag-surface-page);
@@ -419,9 +398,8 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 /* --- hero --- */
 /* Every auto-fit grid here writes its minimum as min(Npx, 100%). A bare
    minmax(Npx, 1fr) track does not shrink below Npx, so in a container narrower
-   than that — a phone, or the main area with the sidebar open — the row
-   overflows to the right and Streamlit's main container clips it rather than
-   scrolling. min(Npx, 100%) caps the minimum at the container itself. */
+   than that — a phone — the row overflows to the right and the page clips
+   it rather than scrolling. min(Npx, 100%) caps the minimum at the container itself. */
 .ag-l-hero {
   padding-top: 72px; padding-bottom: 56px;
   display: grid; grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr));
@@ -1123,7 +1101,6 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 # Phone layout. Kept as bare rules rather than a media block because it is
 # applied two ways (see _mobile_css()): by viewport width, and again by the
 # User-Agent check for phones whose CSS viewport is wider than the breakpoint.
-# Same DOMPurify rule as above — no "less-than" character anywhere in here.
 #
 # What actually changes on a ~360px screen, beyond narrower gutters:
 #   * the header CTA moves to a fixed bottom bar, so it is one thumb-tap away
@@ -1361,7 +1338,7 @@ def _app_href(param: str) -> str:
     """The app entry URL for a CTA.
 
     Always root-absolute with the query parameter: `server.py` hands any
-    parameterised request for `/` to Streamlit, so this one link both leaves
+    parameterised request for `/` to the app, so this one link both leaves
     the landing and tells the app what the visitor asked for. The Spanish page
     carries its language along, since the app resolves that per session.
     """
@@ -1999,16 +1976,13 @@ def _mobile_bar() -> str:
 
 # The bar's reveal. An IntersectionObserver on the two in-page CTA rows,
 # toggling one class on the page root — no scroll handler, no layout reads.
-# Wired once per session (Streamlit re-runs script elements on every rerun) and
-# retried through a MutationObserver, because this block can reach the DOM
-# before the markup it observes. Its failure mode is the bar staying visible,
-# which is the state the stylesheet already gives it.
-#
-# No "less-than" character in here either: same sanitiser, same rule.
+# Wired once per document and retried through a MutationObserver, because this
+# block can reach the DOM before the markup it observes. Its failure mode is
+# the bar staying visible, which is the state the stylesheet already gives it.
 _BAR_JS = """
 <script>
 (function () {
-  if (window.__topstocksLandingBar) return;  /* survive reruns — wire once */
+  if (window.__topstocksLandingBar) return;  /* wire once */
   window.__topstocksLandingBar = true;
   const wire = () => {
     const root = document.querySelector(".ag-l");
@@ -2046,8 +2020,6 @@ _BAR_JS = """
 # `web.attribution` owns the vocabulary — the parameter name and the shape of a
 # token are asserted equal on both sides in `tests/test_attribution.py`, so this
 # cannot quietly drift into forwarding something the server then drops.
-#
-# No "less-than" character in here either: same sanitiser, same rule.
 _SRC_JS = """
 <script>
 (function () {
@@ -2113,34 +2085,6 @@ def bar_script() -> str:
 def source_script() -> str:
     """The CTA source-carrying script, in its `<script>` element (`_SRC_JS`)."""
     return _SRC_JS
-
-
-def consume_params() -> None:
-    """Act on the landing CTAs' query parameters. Called once per app rerun.
-
-    The CTAs are links, so arriving in the app *is* the click: `?signin=1`
-    starts the OIDC round-trip, `?lang=` pins the copy to the language the
-    visitor was reading, and `?guest=1` means "in as a guest" — nothing to do
-    beyond clearing it out of the URL. Left alone otherwise, so the app's own
-    `?ticker=` deep links pass straight through.
-
-    `?lang=` stays in the URL on purpose: `app.py` re-resolves the language
-    from prefs on every rerun, and the parameter is what keeps re-applying the
-    visitor's choice for the rest of a signed-out session.
-    """
-    params = st.query_params
-
-    lang = (params.get("lang") or "").strip().lower()
-    if lang in LANGUAGES:
-        st.session_state["active_lang"] = lang
-
-    if params.get(PARAM_GUEST):
-        del params[PARAM_GUEST]  # in-session rerun; nothing else to keep
-
-    # `?signin=1` is answered by `server.LandingGate`, one layer up, where a
-    # redirect is an actual 302 rather than a message enqueued mid-render. The
-    # parameter and every CTA that carries it are unchanged; a request only
-    # reaches this function once the gate has decided not to act on it.
 
 
 def page_body() -> str:

@@ -1,11 +1,9 @@
 """A statement dropped into the assistant, over HTTP.
 
-The Streamlit drawer has taken attachments since the composer grew a paperclip
-(`web/chat_core._ingest_uploads`): the file is detected — by a parser that owns
+A file dropped on the composer's paperclip is detected — by a parser that owns
 it, or by one cheap model call that maps its columns — validated against the
 account's own ledger, previewed as a table inside the bubble, and written only
-when the reader presses the button. This is that flow for any other front end,
-split into the two calls the drawer makes in one process.
+when the reader presses the button. This is that flow, split into two calls.
 
 **It reads and validates the way `/import/preview` does, because it is that
 code.** The model reads first and the parsers check it (`autodetect.read`), and
@@ -67,8 +65,8 @@ from stocks.web import i18n, tx_text
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-# The cap the composer is drawn with (`chat_core.MAX_UPLOAD_MB`), on the decoded
-# bytes: a caller cannot spend the worker's memory by sending base64 instead.
+# The cap the composer is drawn with, on the decoded bytes: a caller cannot
+# spend the worker's memory by sending base64 instead.
 MAX_UPLOAD_MB = 10
 MAX_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
@@ -302,8 +300,7 @@ def _row(tx: Transaction, why: str = "") -> Row:
 
 
 def _issues(checked: list, lang: str) -> list[Row]:
-    """Rows with their issues in the reader's language — passed in, because
-    under the API `tx_text` has no Streamlit session to read one from."""
+    """Rows with their issues in the reader's language."""
     return [
         _row(c.tx, tx_text.issues_text(c.errors or c.warnings, lang))
         for c in checked

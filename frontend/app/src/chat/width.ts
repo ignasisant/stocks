@@ -1,14 +1,11 @@
 /**
  * How wide the drawer is, and where that is remembered.
  *
- * The same three presets the Streamlit panel offers (`web/chat_core._WIDTHS`)
- * and the same drag handle beside them, written to the same custom property
- * under the same localStorage key: a reader who widened the drawer in the app
- * finds it wide here, and the two surfaces cannot disagree about a choice that
- * is about this screen.
+ * Three presets and a drag handle beside them, written to one custom property
+ * (`--chat-w`) and kept under one localStorage key.
  *
- * Per browser rather than in `/prefs` for that reason — how much of a monitor
- * a conversation may take is a property of the monitor, not of the account.
+ * Per browser rather than in `/prefs` — how much of a monitor a conversation
+ * may take is a property of the monitor, not of the account.
  */
 
 export const WIDTHS = [
@@ -19,10 +16,10 @@ export const WIDTHS = [
 
 export type WidthKey = (typeof WIDTHS)[number]["key"];
 
-/** The key the Streamlit drawer stores its width under. */
+/** Where the width is kept. Older builds wrote here too, so it stays. */
 const STORED = "chatPanelWidth";
 
-/** The clamp the drag handle honours — `chat_core._MIN_WIDTH/_MAX_WIDTH`. */
+/** The clamp the drag handle honours. */
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 1500;
 
@@ -105,8 +102,7 @@ export function restoreWidth(): void {
   if (!raw) return;
   // Bare integers are what every build before the presets wrote, and they must
   // get their unit back: `min(380, 100vw)` is invalid, which drops the width
-  // declaration and stretches the panel across the page. The Streamlit drawer
-  // rewrites them once too, and whichever surface opens first does it.
+  // declaration and stretches the panel across the page. Rewritten once, here.
   const css = /^\d+$/.test(raw) ? `${raw}px` : raw;
   // A dragged width is honoured as-is: it is this browser's choice too, and
   // the panel's own `min(..., 100vw)` keeps an absurd one on screen.

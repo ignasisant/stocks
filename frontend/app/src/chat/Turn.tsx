@@ -1,9 +1,9 @@
 /**
  * One turn, drawn the way it will be drawn again on the next reload.
  *
- * Reading order is prose first, then provenance, then process — the same
- * collapse the Streamlit drawer made when an answer had grown five rows of
- * chrome all weighted like captions. Above the bubble: which lens produced it.
+ * Reading order is prose first, then provenance, then process — an answer
+ * once grew five rows of chrome all weighted like captions, and this is that
+ * collapsed. Above the bubble: which lens produced it.
  * Below it: how many pages it stands on, and when it was written.
  *
  * The clock and the elapsed cost only appear on a turn this session watched
@@ -405,8 +405,8 @@ export function Turn({
   cap: number | null;
   onRetry: () => void;
   /**
-   * Take a refused turn off the thread — the Streamlit composer's "Discard
-   * question" beside Retry. Absent: nothing to offer.
+   * Take a refused turn off the thread — "Discard question" beside Retry.
+   * Absent: nothing to offer.
    */
   onDrop?: () => void;
   /** Answer a proposal card. Absent: its buttons are not drawn. */

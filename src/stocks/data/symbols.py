@@ -156,8 +156,8 @@ def search_symbols(query: str, limit: int = 6) -> list[tuple[str, str, str]]:
 # own search resolves an ISIN to the line it quotes, so a freshly imported
 # DEGIRO statement reads as NOW and META before anyone edits a mapping file.
 #
-# Display only. The ledger keeps the ISIN it was given (stocks.web.logos
-# .display_symbol), so nothing here can move a position onto another symbol.
+# Display only. The ledger keeps the ISIN it was given (stocks.identity
+# .yahoo_symbol), so nothing here can move a position onto another symbol.
 
 ISIN_CACHE = DATA_DIR / "isin_symbols.json"
 

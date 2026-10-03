@@ -13,11 +13,6 @@
  * - `useGuest()` where a **parent owns the query**. Home holds one ledger query
  *   that three children share, and no wrapper can un-fire a hook its parent
  *   already called. Same idiom as the conditional fetch in `Ticker.tsx`.
- *
- * Saying it once here rather than at each site is also what makes the i18n
- * parity check pass: `test_page_parity._said` scans `pages/<slug>` plus
- * `shell/`, so `common.sign_in_google` said once in this file closes the Home
- * and Portfolio waivers together.
  */
 
 import { useState, type ReactNode } from "react";
@@ -87,18 +82,15 @@ export function SignedInOnly({
  * The banner that says what this book is, at the top of a screen showing one.
  *
  * Two phrasings and both ship already — the long one names what a guest has,
- * the short one is for a screen whose own empty states say the rest. Streamlit
- * picks between them the same way; this is the same decision moved, not a new
- * one.
+ * the short one is for a screen whose own empty states say the rest.
  */
 /**
  * Whether a dismissible banner was put away in this tab.
  *
- * `sessionStorage`, because that is the lifetime Streamlit gives the same
- * button (`guest_banner_dismissed` in session state): a guest has no account to
- * remember a preference in, and the shared guest prefs.json is read-only — so
- * the banner comes back on the next visit, which is right for a line that is
- * the visitor's way to an account of their own.
+ * `sessionStorage`, because a guest has no account to remember a preference
+ * in, and the shared guest prefs.json is read-only — so the banner comes back
+ * on the next visit, which is right for a line that is the visitor's way to an
+ * account of their own.
  */
 export function bannerDismissed(key: string, storage?: Storage | null): boolean {
   try {
@@ -126,17 +118,15 @@ export function GuestBanner({
   /**
    * The wording for a deployment with no identity provider.
    *
-   * Both phrasings already ship, and `home.py` picks between them the same
-   * way: the long one ends "sign in to build your own", which is a sentence
-   * that must not be printed beside no button. This is that decision moved,
-   * not a new one.
+   * The long one ends "sign in to build your own", which is a sentence that
+   * must not be printed beside no button.
    */
   short?: string;
   /**
    * Offer "Dismiss", remembered for this tab under this key. Home's welcome
-   * banner has one in Streamlit (`home.py`); the Portfolio's "these trades are
-   * invented" deliberately does not — every figure under it is fiction, and
-   * that is not a line to put away.
+   * banner has one; the Portfolio's "these trades are invented" deliberately
+   * does not — every figure under it is fiction, and that is not a line to
+   * put away.
    */
   dismissible?: string;
   /** A second action beside the sign-in, where a page has one. */
@@ -200,14 +190,13 @@ export function SignInWall({
  * What of the shell's own chrome a guest gets, as a table rather than as `guest
  * &&` scattered through `Layout`.
  *
- * Mirrors what the Streamlit sidebar does for an anonymous visitor, which is
- * the specification for all of this: the rail and the search box are how a
- * visitor moves at all, feedback is offered to guests on purpose, the tour is
- * mounted but never opens itself at somebody who has not arrived anywhere yet
- * (`?tour=1` opens it, with the steps that read somebody's own data locked),
- * and the chat drawer spends the operator's API keys and writes a file every
- * visitor would share. The investor-profile nudge is an account's, and voice
- * dictation in feedback spends the transcription key a `Writer` route guards.
+ * The rail and the search box are how a visitor moves at all, feedback is
+ * offered to guests on purpose, the tour is mounted but never opens itself at
+ * somebody who has not arrived anywhere yet (`?tour=1` opens it, with the
+ * steps that read somebody's own data locked), and the chat drawer spends the
+ * operator's API keys and writes a file every visitor would share. The
+ * investor-profile nudge is an account's, and voice dictation in feedback
+ * spends the transcription key a `Writer` route guards.
  */
 export const GUEST_CHROME = {
   nav: true,

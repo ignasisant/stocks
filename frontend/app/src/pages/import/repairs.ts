@@ -18,9 +18,9 @@ export const moveKey = (move: Move): string =>
   `${[...move.out_ids].sort((a, b) => a - b).join(",")}|${move.in_id ?? ""}`;
 
 /**
- * "20:1" for a 20-for-1 split — the ratio as the Streamlit page prints it
- * (`f"{ratio:g}:1"`), which is a shape and not a measured figure, so it is not
- * localised and not padded.
+ * "20:1" for a 20-for-1 split — the ratio as `stocks.portfolio.validate` writes
+ * it into a split's note (`f"{ratio:g}:1"`), which is a shape and not a
+ * measured figure, so it is not localised and not padded.
  */
 export const ratioLabel = (ratio: number): string => `${ratio}:1`;
 

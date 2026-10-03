@@ -136,10 +136,10 @@ describe("the settings view", () => {
 /**
  * A key of your own, stored or held by this tab.
  *
- * The Streamlit panel's `_show_key` and "Remember" checkbox: a key in use is
- * shown masked (its tail only) with a reveal beside it, says whether it is
- * stored or this tab's, and a deployment that cannot store one offers the tab
- * and nothing else — before the reader types, not as a 503 after.
+ * A key in use is shown masked (its tail only) with a reveal beside it, says
+ * whether it is stored or this tab's, and a deployment that cannot store one
+ * offers the tab and nothing else — before the reader types, not as a 503
+ * after.
  */
 describe("a key of your own", () => {
   const anthropic = (over: Partial<ProviderInfo>) =>

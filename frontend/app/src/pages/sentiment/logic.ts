@@ -62,13 +62,13 @@ export function quadrant(rates: TrendBlock | null | undefined): Quadrant | null 
 /**
  * The reader's largest sectors, split by whether they beat the index this month.
  *
- * The largest three are chosen from the BOOK's own sector split and filtered
- * second, as `sentiment.py` does (`book["sector"].head(3)`, then only the ones
- * with an excess return). The order matters: the rotation block only carries
- * sectors a SPDR fund tracks, so choosing from it would skip an "Unknown" or a
- * crypto sleeve that is one of the reader's three largest and promote a
- * smaller holding into a list that claims to be the top three. A top sector
- * with no fund, or too new to have a month, drops out of the sentence instead.
+ * The largest three are chosen from the BOOK's own sector split first, and only
+ * then filtered to the ones with an excess return. The order matters: the
+ * rotation block only carries sectors a SPDR fund tracks, so choosing from it
+ * would skip an "Unknown" or a crypto sleeve that is one of the reader's three
+ * largest and promote a smaller holding into a list that claims to be the top
+ * three. A top sector with no fund, or too new to have a month, drops out of
+ * the sentence instead.
  *
  * `changes.month` is the sector's excess return over the index — the server's
  * own comparison, not one made here. Without a book split (a server too old

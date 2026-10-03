@@ -2,16 +2,14 @@
  * The daily-glance cut of the Portfolio page: the headline figures, the
  * today / 1 week / 1 month deltas, and the movers card under them.
  *
- * One query behind both cards, on purpose. The Streamlit page reserves the two
- * slots in the same breath because they read the same price burst — if the
- * prices are gone, neither card has anything to say, and letting them fail
+ * One query behind both cards, on purpose: they read the same price burst — if
+ * the prices are gone, neither card has anything to say, and letting them fail
  * apart would put a movers table under an empty glance.
  *
  * The headline figures are two rows that add up: injected + total gain =
  * value, then realised + unrealised = total gain beside the IRR and the TWR.
- * They replaced the Streamlit glance's cost / value / unrealised / realised
- * row, which never said how much had been put in. The delta tiles lead with
- * money and chip the percentage, as the Streamlit tiles do.
+ * A cost / value / unrealised / realised row never said how much had been put
+ * in. The delta tiles lead with money and chip the percentage.
  */
 
 import { useState } from "react";
@@ -37,7 +35,7 @@ import type {
   Transactions,
 } from "./types";
 
-/** The windows the card offers, and the labels the Streamlit selector uses. */
+/** The windows the card offers, and the labels its range selector uses. */
 const WINDOWS = [
   { key: "day", label: "1d", tile: "home.today" },
   { key: "week", label: "1w", tile: "home.one_week" },
@@ -50,11 +48,8 @@ type WindowKey = (typeof WINDOWS)[number]["key"];
  * What to print under the day figure when it is not a live one.
  *
  * `/market/status` decides the state and hands back a stem; the sentence stays
- * the page's own, and is the same one `home.py` prints under its delta row.
- * Spelled out rather than built with a template literal so the catalog keys are
- * greppable — `test_page_parity` reads this file to decide whether the React
- * page says what the Streamlit one says, and a key it cannot see is a gap it
- * cannot report.
+ * the page's own. Spelled out rather than built with a template literal so the
+ * catalog keys are greppable.
  */
 const MARKET_NOTES: Record<string, string> = {
   market_closed: "home.market_closed_note",
@@ -120,9 +115,9 @@ export function Glance({
   const everTraded = ledger.state === "loaded" && ledger.data.total > 0;
 
   return (
-    // No heading over the failure, deliberately: the Streamlit page only prints
-    // "Portfolio" once it knows the book has something in it, and a query that
-    // failed has not answered that.
+    // No heading over the failure, deliberately: "Portfolio" goes up only once
+    // the book is known to have something in it, and a query that failed has
+    // not answered that.
     <CardQuery
       query={query}
       note={t("home.data_unavailable")}
@@ -131,9 +126,8 @@ export function Glance({
       {(book) => {
         if (book.summary.positions === 0) {
           // Every position closed: the heading still goes up — the book has a
-          // history, which is what `home.py` keys it on (`positions or
-          // realized`) — and so does the demo caption, because an example
-          // book whose lots were all sold is still an example book.
+          // history — and so does the demo caption, because an example book
+          // whose lots were all sold is still an example book.
           return everTraded ? (
             <section className="hm-section">
               <h2 className="hm-h2">{plain(t("home.portfolio_title"))}</h2>
@@ -306,9 +300,9 @@ function GlanceCard({ book }: { book: Book }) {
             // window. That is "we cannot say", not "the book was flat".
             const { basket, amount, base } = book.movers[key];
             const figure = percent(basket, lang, { signed: true });
-            // Money leads and the percentage chips it, as the Streamlit tiles do.
-            // Printing the fraction in both slots states one fact twice and
-            // leaves out the one a reader came for: how much moved.
+            // Money leads and the percentage chips it. Printing the fraction in
+            // both slots states one fact twice and leaves out the one a reader
+            // came for: how much moved.
             const cash = money(amount, base || currency, lang, { signed: true });
             return (
               <Kpi
@@ -332,10 +326,9 @@ function GlanceCard({ book }: { book: Book }) {
 /**
  * The biggest moves among open positions over the selected window.
  *
- * All three windows come back with the page, as they do in Streamlit: picking
- * a range is then a choice between things already in hand, and the card's own
- * gate needs all three anyway — a flat day still deserves the card when the
- * week moved.
+ * All three windows come back with the page: picking a range is then a choice
+ * between things already in hand, and the card's own gate needs all three
+ * anyway — a flat day still deserves the card when the week moved.
  */
 function MoversCard({
   movers,
@@ -435,8 +428,8 @@ function MoverTable({
                 return (
                   <tr key={row.ticker}>
                     <td>
-                      {/* Symbol alone, as `home.py` draws the movers (`names=False`):
-                      five columns in half a card have no room for a name. */}
+                      {/* Symbol alone: five columns in half a card have no
+                      room for a name. */}
                       <TickerCell ticker={row.ticker} name={false} />
                     </td>
                     {/* In the currency the name trades in — a share price is

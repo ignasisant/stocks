@@ -1,14 +1,10 @@
 /**
  * The price block: range control, chart, and the figures beside it.
  *
- * This is the part of the page the rebuild is actually meant to improve. In
- * Streamlit it is an `@st.fragment` that reruns the whole block to change a
- * range, and the zoom readout is hand-written JS that has to survive `newPlot`
- * purging its handlers off the div. Here the range is state and the window is
- * a slice.
+ * The range is state and the zoom window is a slice of the bars.
  *
  * The holding is folded into the hero on a phone and into the price row on
- * desktop — both where Streamlit puts it, beside the price it is valued at.
+ * desktop — either way beside the price it is valued at.
  *
  * The figures beside the price are the asset kind's (`layout.ts`): momentum
  * and trend for a share, a fund of shares or a coin; payout and duration for
@@ -68,9 +64,9 @@ export function PriceSection({
 }: {
   /**
    * The bars as a query rather than as data, because the controls do not wait
-   * on them: Streamlit keeps the range pills and the chart toggle in place
-   * when the fetch fails and clears only the figures and the chart, so a
-   * reader can pick another range instead of facing a lone Retry.
+   * on them: a failed fetch clears only the figures and the chart, and the
+   * range pills and the chart toggle stay, so a reader can pick another range
+   * instead of facing a lone Retry.
    */
   query: Query<Bars | null>;
   quote: Quote | null;
@@ -96,8 +92,8 @@ export function PriceSection({
   const mobile = useMobile();
   const [window, setWindow] = useState<Window>(null);
   const bars = query.state === "loaded" ? query.data : null;
-  // No figures over bars that have nothing to show: Streamlit clears the
-  // metric row whenever the chart under it cannot draw.
+  // No figures over bars that have nothing to show: the metric row clears
+  // whenever the chart under it cannot draw.
   const drawable = Boolean(bars && bars.dates.length > 0);
   // The quote's move when there is one; the bars' own otherwise, so a
   // throttled quote costs the page its live figure and not the day change.
@@ -191,10 +187,9 @@ export function PriceSection({
           t={t}
         />
       ) : (
-        // The kind's cells, then the holding's four — Streamlit's
-        // `metric_cells(7 if my_pos else 3)` for a share: the holding sits in
-        // the price row, beside the price it is valued at, rather than in a
-        // card further down.
+        // The kind's cells, then the holding's four: the holding sits in the
+        // price row, beside the price it is valued at, rather than in a card
+        // further down.
         <Metrics>
           <Metric
             // Extended hours are named in the label, the way the page names
@@ -282,8 +277,8 @@ function LastBuy({
   units: boolean;
   t: Translate;
 }) {
-  // The latest-DATED priced buy, as Streamlit picks it (`max(key=date)`), not
-  // the last in ledger order: an import appends an older statement's rows.
+  // The latest-DATED priced buy, not the last in ledger order: an import
+  // appends an older statement's rows.
   const latestBuy = (position?.trades ?? [])
     .filter((fill) => fill.action === "buy" && fill.price)
     .reduce<Trade | undefined>(
@@ -322,7 +317,7 @@ function LastBuy({
  * The phone summary: a price hero, then the holding as 2×2 tiles.
  *
  * Not a restyle of the desktop metric row — it is the layout the design
- * specifies for a 390px screen, and the Streamlit page builds the same one.
+ * specifies for a 390px screen.
  */
 function Hero({
   price,
@@ -363,9 +358,9 @@ function Hero({
   const held = position?.held ? position : null;
   const lines = cells.filter((one) => one.value !== DASH).map(inline);
   // Not held: no tiles to fold the first figure into, so what the desktop row
-  // carries stands on its own line under the price — Streamlit's "RSI 45.3 ·
-  // neutral · SMA20 187.40 · above" for a share. Without it a phone reader of
-  // a name they do not own gets a price and nothing to read it against.
+  // carries stands on its own line under the price — "RSI 45.3 · neutral ·
+  // SMA20 187.40 · above" for a share. Without it a phone reader of a name
+  // they do not own gets a price and nothing to read it against.
   const trendLine = lines.join(" · ");
 
   return (
@@ -403,8 +398,7 @@ function Hero({
 
 /**
  * The "≈ €12,345.67" under the native value: the holding in the reporting
- * currency, with its mark ahead of the figure as Streamlit's `REPORT_SYM`
- * prints it, not the code after it.
+ * currency, with its mark ahead of the figure, not the code after it.
  */
 function approx(value: number, base: string | null | undefined): string {
   return `≈ ${currencySymbol(base)}${money(value)}`;
@@ -631,8 +625,8 @@ function holding(position: TickerPosition, last: number | null) {
 }
 
 /**
- * The holding as four cells of the desktop price row, in Streamlit's order:
- * value, weight, P/L, average cost (`_position_metrics`).
+ * The holding as four cells of the desktop price row, in this order: value,
+ * weight, P/L, average cost.
  */
 /** "67 shares", or "0.0773 units" for a coin, which has no shares. */
 function countNote(t: Translate, count: number, units: boolean): string {

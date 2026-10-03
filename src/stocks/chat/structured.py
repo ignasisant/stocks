@@ -35,8 +35,6 @@ model and attempt the caller bound with `obs.context`.
 Errors are raised, not swallowed: the caller decides what a dead model costs.
 A provider/network exception propagates untouched (nothing to repair);
 `OffContract` means every attempt came back unusable.
-
-Streamlit-free, like the callers it serves.
 """
 
 from __future__ import annotations

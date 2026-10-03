@@ -1,9 +1,9 @@
 /**
- * The price chart's hover box and fills against the Plotly chart they replace.
+ * The price chart's hover box and fills.
  *
- * Every assertion here is a field Streamlit's unified box prints, in the form
- * it prints it: which fills are drawn at all, which close a buy's return is
- * measured to, what a sell leaves out, where the one colour in a row lands.
+ * Every assertion here is a field the hover box prints, in the form it prints
+ * it: which fills are drawn at all, which close a buy's return is measured to,
+ * what a sell leaves out, where the one colour in a row lands.
  * None of it would show up wrong in a screenshot of an empty hover.
  *
  * The catalog strings are the English ones verbatim, markup and all, because
@@ -69,7 +69,6 @@ describe("which fills the chart draws", () => {
   });
 
   it("leaves out a fill older than the range instead of piling it on bar 0", () => {
-    // Streamlit's `_chart_ts(t.date) >= chart_start`.
     const fills = placeFills(
       [trade("2022-05-24", "buy"), trade("2025-01-02", "sell")],
       DAYS,
@@ -87,7 +86,7 @@ describe("which fills the chart draws", () => {
       ],
       DAYS,
     );
-    // No aggregation: Streamlit draws one marker per ledger row.
+    // No aggregation: one marker per ledger row.
     expect(fills.map((fill) => fill.index)).toEqual([2, 2, 2]);
   });
 
@@ -178,7 +177,7 @@ describe("the hover box", () => {
     expect(rows[1]?.parts.filter((part) => part.tone)).toEqual([
       { text: "+2.0%", bold: true, tone: "up" },
     ]);
-    // The move is context, uncoloured, as Streamlit prints it.
+    // The move is context, uncoloured.
     expect(rows[2]?.parts.some((part) => part.tone)).toBe(false);
   });
 

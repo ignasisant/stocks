@@ -47,7 +47,7 @@ and produced rows worth writing.
 **The demo rows are never the baseline.** A commit clears them (an invented
 cost basis must not mix into a real one), so validating an incoming batch
 against them would be checking it against lots that are about to stop
-existing — `demo.without`, exactly as the page does.
+existing — `demo.without`.
 
 **The two repairs sit beside the import**, because a statement cannot express
 either: splits the book never heard about (`stocks.portfolio.corporate`, which
@@ -114,16 +114,13 @@ router = APIRouter(prefix="/import", tags=["import"])
 
 # Statements are small — a Revolut CSV is tens of kilobytes and its PDF a
 # couple of megabytes — but not all of them: a decade of IBKR activity as a
-# PDF, or a bank's statement with a scanned page in it, runs to tens. The
-# Streamlit uploader takes 200 MB (its default; `.streamlit/config.toml` sets
-# no `maxUploadSize`), and a file that page accepts should not be one this
-# route refuses. It cannot take the same 200 MB, though: here the file is
-# base64 inside a JSON body, so one request holds the text (4/3 of the file),
-# the parsed JSON string and the decoded bytes at once — roughly three copies
-# on a 1-vCPU, memory-capped Cloud Run worker. 50 MB decoded keeps a single
-# upload well under ~250 MB of transient memory and still covers every real
-# statement seen in the import diagnostics by an order of magnitude. The cap
-# is on the decoded bytes, so a caller cannot spend the worker's memory by
+# PDF, or a bank's statement with a scanned page in it, runs to tens. The file
+# is base64 inside a JSON body, so one request holds the text (4/3 of the
+# file), the parsed JSON string and the decoded bytes at once — roughly three
+# copies on a 1-vCPU, memory-capped Cloud Run worker. 50 MB decoded keeps a
+# single upload well under ~250 MB of transient memory and still covers every
+# real statement seen in the import diagnostics by an order of magnitude. The
+# cap is on the decoded bytes, so a caller cannot spend the worker's memory by
 # sending a gigabyte of base64 either.
 MAX_BYTES = 50 * 1024 * 1024
 
@@ -156,8 +153,8 @@ class Upload(BaseModel):
             "How the file reached the client: picked from disk, or pasted as "
             "text into the fallback box. Only the anonymised import "
             "diagnostics read it — the two doors break differently (a paste "
-            "loses its encoding and its line endings on the way), and the "
-            "Streamlit page records them apart for that reason."
+            "loses its encoding and its line endings on the way), so they are "
+            "recorded apart."
         ),
     )
     wipe: bool = Field(
@@ -358,22 +355,21 @@ def _unreadable(found: autodetect.Detected) -> str | None:
 
 
 # ------------------------------------------------ the live lookups validation uses
-# Validation asks the market two things the ledger cannot answer, exactly as
-# the Streamlit page asks them (`import_transactions._ticker_exists` and
-# `fetch.splits`): does a symbol the EDGAR map and the watchlist have never
-# heard of trade at all — so an ordinary European listing stops arriving with
-# an "unknown ticker" warning — and did a ticker whose sells overshoot split
-# in between, so a statement that prints trades and no corporate actions is
-# rescued with the split row instead of rejected as an oversell.
+# Validation asks the market two things the ledger cannot answer
+# (`_ticker_exists` and `fetch.splits`): does a symbol the EDGAR map and the
+# watchlist have never heard of trade at all — so an ordinary European listing
+# stops arriving with an "unknown ticker" warning — and did a ticker whose
+# sells overshoot split in between, so a statement that prints trades and no
+# corporate actions is rescued with the split row instead of rejected as an
+# oversell.
 #
-# The page can afford to ask naively: a Streamlit run is one reader waiting on
-# one spinner. Here the same call holds an ASGI worker thread, so every answer
-# is bounded — per symbol, and in total per statement — and a throttled host
-# is not asked at all. Running out of budget answers None, which validation
-# already reads as "could not check": the warning stays, nothing is rejected
-# on its account, and the reader is exactly where they were before this
-# lookup existed. Only definite answers are remembered — "network down" is not
-# "ticker invalid", and caching it would make the outage outlive itself.
+# Each call holds an ASGI worker thread, so every answer is bounded — per
+# symbol, and in total per statement — and a throttled host is not asked at
+# all. Running out of budget answers None, which validation already reads as
+# "could not check": the warning stays, nothing is rejected on its account,
+# and the reader is exactly where they were before this lookup existed. Only
+# definite answers are remembered — "network down" is not "ticker invalid",
+# and caching it would make the outage outlive itself.
 
 LOOKUP_BUDGET_S = 4.0  # one symbol's existence check
 SPLITS_BUDGET_S = 8.0  # one ticker's corporate-actions history
@@ -409,9 +405,9 @@ def _within(fn, budget: float, default, **fields):
 def _ticker_exists(ticker: str) -> bool | None:
     """Does Yahoo quote this symbol? None when it could not be asked.
 
-    The Streamlit page's check, verbatim in what it asks: a last price means a
-    listing. A rate limit trips the host-wide cooldown (`fetch.trip_throttle`)
-    so the next statement does not ask again into a throttle and deepen it.
+    A last price means a listing. A rate limit trips the host-wide cooldown
+    (`fetch.trip_throttle`) so the next statement does not ask again into a
+    throttle and deepen it.
     """
     import yfinance as yf
     from yfinance.exceptions import YFRateLimitError
@@ -856,10 +852,9 @@ def _validated(account, parsed: ParseResult, *, wipe: bool = False):
     behind, or every row it re-imports comes back flagged as a duplicate of one
     that is on its way out.
 
-    Validated with the Streamlit page's two live lookups (`_Lookup`, `_splits`)
-    — without them the same statement read clean on one surface and warned or
-    rejected on the other. An ISIN the cached map resolves is known without
-    asking Yahoo, which quotes symbols, not ISINs.
+    Validated with the two live lookups (`_Lookup`, `_splits`). An ISIN the
+    cached map resolves is known without asking Yahoo, which quotes symbols,
+    not ISINs.
 
     `known` loses whatever Yahoo has disowned since: a bare broker code that
     is already in the ledger would otherwise pass as known on every later
@@ -1722,10 +1717,9 @@ def _move_key(move: transfers.Move) -> tuple[tuple[int, ...], int | None]:
 def _propose(account) -> list[transfers.Move]:
     """Moves this ledger's own rows look like, ISIN lookups included.
 
-    `loaders.display_symbol` is this API's cached copy of the app's ISIN ->
-    symbol lookup, which answers what `web.logos.yahoo_symbol` answers for the
-    page. One resolver for one question, or two surfaces offering one repair
-    would come to mean two different things by "the same security".
+    `loaders.display_symbol` is the app's cached ISIN -> symbol lookup. One
+    resolver for one question, or two surfaces offering one repair would come
+    to mean two different things by "the same security".
     `transfers.propose` consults it only for a departure that already matches
     an arrival on every other count, so a book with nothing to repair asks
     nobody anything.

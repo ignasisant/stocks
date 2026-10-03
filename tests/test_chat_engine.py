@@ -142,8 +142,8 @@ def test_system_prompt_names_the_language_to_answer_in():
 
 
 def test_system_prompt_without_a_locale_is_unchanged():
-    """The caller that does not know the user's language (the Streamlit panel)
-    gets exactly the prompt it got before, byte for byte."""
+    """A caller that does not know the user's language gets the prompt with no
+    locale in it, byte for byte the one passing None gets."""
     assert engine.system_prompt({"set": False}, "x", []) == engine.system_prompt(
         {"set": False}, "x", [], None
     )
@@ -694,11 +694,9 @@ def test_the_prompt_closes_with_the_disclosure_rules():
 
 
 # ------------------------------------------------------- an interruptible wait
-# in_parallel used to block on each future in one call, which on Streamlit
-# meant a turn spent its slowest stretch touching nothing the runtime could
-# act on: a stop pressed during routing or a page read did nothing until the
-# pass returned. With a tick the wait is a poll, and whatever the tick raises
-# comes out of the wait.
+# Blocking on each future in one call leaves a stop pressed during routing
+# or a page read with nothing to act on until the pass returns. With a tick
+# the wait is a poll, and whatever the tick raises comes out of the wait.
 
 
 def test_a_tick_runs_while_a_lookup_is_still_out():
@@ -723,7 +721,7 @@ def test_what_the_tick_raises_ends_the_wait():
     import threading
 
     class _Pressed(BaseException):
-        """Stands in for StopException: Streamlit's is a BaseException too."""
+        """A pressed stop, raised as a BaseException the way stop signals are."""
 
     never = threading.Event()
 
@@ -748,9 +746,9 @@ def test_a_lookup_that_overruns_its_deadline_yields_none():
 # ------------------------------------------------------- where the reader is
 
 
-def test_the_view_sentence_is_the_panel_s_own():
-    """`chat_core._view_context`, headless: the same words, so a prompt built
-    for the React drawer and one built for the Streamlit panel agree."""
+def test_the_view_sentence_names_the_page_and_the_focus():
+    """The sentence that tells the model which page the reader is on and which
+    ticker is in focus; nothing at all without a view."""
     assert engine.view_context("Ticker", "NVDA") == (
         "Current view: The user is currently on the Ticker page. "
         "The ticker in focus is NVDA.\n\n"

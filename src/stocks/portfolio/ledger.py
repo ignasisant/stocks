@@ -19,8 +19,13 @@ from stocks.config import DATA_DIR
 
 DB_PATH = DATA_DIR / "portfolio.db"
 
-ACTIONS = {"buy", "sell", "dividend", "fee", "split", "capital",
-           "transfer_in", "transfer_out"}
+# A return of capital is booked like a dividend (price = gross total, fee =
+# tax withheld) but is no income: it lowers the cost of the shares it was paid
+# on (see positions.build).
+RETURN_OF_CAPITAL = "capital"
+
+ACTIONS = {"buy", "sell", "dividend", "fee", "split",
+           "transfer_in", "transfer_out", RETURN_OF_CAPITAL}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS transactions (
@@ -195,7 +200,7 @@ def all_transactions(path: Path = DB_PATH) -> list[Transaction]:
 def has_transactions(path: Path = DB_PATH) -> bool:
     """Whether the ledger holds anything at all.
 
-    "Has this account imported yet" is asked on every Home rerun and once per
+    "Has this account imported yet" is asked on every Home load and once per
     guided-tour step, and it used to be answered by loading the whole table
     and mapping every row into a Transaction just to take its truthiness. One
     row is enough.

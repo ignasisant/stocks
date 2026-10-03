@@ -1,9 +1,9 @@
 /**
  * The panel's body: two header rows, and whichever view the drawer is on.
  *
- * The rows cost about 70px between them and answer the two questions the old
- * Streamlit settings expander only answered once opened — which thread is
- * this, and what is answering it, on how much allowance left.
+ * The rows cost about 70px between them and answer two questions without
+ * opening anything — which thread is this, and what is answering it, on how
+ * much allowance left.
  *
  * This module is everything the drawer needs *after* it is opened, and it is
  * imported that way: the launcher and the state that outlives a close are in
@@ -47,8 +47,7 @@ import {
 } from "./width";
 
 /**
- * The grab strip on the panel's left edge — the Streamlit drawer's handle,
- * in the front end that owns its own DOM.
+ * The grab strip on the panel's left edge.
  *
  * The three presets cover the three shapes a conversation takes; this covers
  * the reader who wants their own. Pointer events rather than mouse ones, and
@@ -264,10 +263,9 @@ export default function Panel({
             {quota}
           </span>
         )}
-        {/* The three widths the Streamlit header offers, and for the same
-            reason: a table or a set of sources is unreadable in a 380px
-            column, and an import review wants the screen. Hidden on a phone,
-            where the panel is already the whole viewport. */}
+        {/* Three widths, because a table or a set of sources is unreadable in
+            a 380px column, and an import review wants the screen. Hidden on a
+            phone, where the panel is already the whole viewport. */}
         <div className="ag-chat-widths" role="group" aria-label={t("chat.width")}>
           {WIDTHS.map(({ key, icon }) => (
             <button

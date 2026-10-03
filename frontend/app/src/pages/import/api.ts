@@ -18,9 +18,9 @@
 import { keyHeaders } from "../../chat/sessionKey";
 import { ApiError, get, send } from "../../shell/api";
 
-/** Mirrors `MAX_BYTES` in `api/routes/import_statement.py` (50 MB — why not
- *  Streamlit's 200 is explained there). Checked here so a file too big to send
- *  is refused before it is uploaded, not after. */
+/** Mirrors `MAX_BYTES` in `api/routes/import_statement.py` (50 MB — why that
+ *  size is explained there). Checked here so a file too big to send is refused
+ *  before it is uploaded, not after. */
 export const MAX_BYTES = 50 * 1024 * 1024;
 
 export type Platform = {
@@ -179,7 +179,7 @@ export const isDemo = (note: string): boolean =>
  *
  * `surface` is which door it came through — picked from disk or pasted as text
  * — and only the anonymised import diagnostics read it: the two break
- * differently, and the Streamlit page records them apart.
+ * differently, so they are recorded apart.
  */
 export type Staged = {
   filename: string;

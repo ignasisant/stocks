@@ -26,10 +26,9 @@ import { TaxTable } from "./Tax";
 import { DenseRows, Responsive } from "../../ui/Rows";
 
 /**
- * Logo, symbol and — under it — the company's name, as the Streamlit list's
- * `ticker_table_html` cell draws it. The name rides the same batched profile
- * lookup the logo does, so it costs nothing extra, and it is simply absent
- * while no catalog knows it rather than a placeholder.
+ * Logo, symbol and — under it — the company's name. The name rides the same
+ * batched profile lookup the logo does, so it costs nothing extra, and it is
+ * simply absent while no catalog knows it rather than a placeholder.
  */
 function Ticker({ ticker }: { ticker: string }) {
   const profile = useTickerProfile(ticker);

@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-// The mark the Streamlit app and the landing already draw (`web/assets/`),
+// The mark the landing and the favicon already draw (`web/assets/`),
 // imported rather than copied into this app: two files would be one logo only
 // until somebody changed one of them. Vite hashes it into the build and emits
 // it beside the bundle; `vite.config.ts` grants the dev server the read.
@@ -133,10 +133,10 @@ function Nav() {
   }, [folded, peek]);
 
   const label = t(folded ? "nav.expand" : "nav.collapse");
-  // Grouped under the Streamlit menu's headers (`stocks.navigation.sections`):
-  // Home on its own, then Portfolio, Market and Account. Bank joins the
-  // Account group only for a reader `/me` says is on its allowlist — for
-  // everyone else the page stays reachable by URL and absent from the rail.
+  // Grouped under the menu's headers (`stocks.navigation.sections`): Home on
+  // its own, then Portfolio, Market and Account. Bank joins the Account group
+  // only for a reader `/me` says is on its allowlist — for everyone else the
+  // page stays reachable by URL and absent from the rail.
   const groups = sections(PAGES, useBank() ? ["bank"] : []);
   return (
     <nav
@@ -195,12 +195,12 @@ function Nav() {
           ))}
         </div>
       ))}
-      {/* Foot of the rail, where the Streamlit sidebar puts it: reachable from
-          every page, in the way of none of them. Feedback is offered to guests
-          as well — a visitor who bounced telling us why is worth more than a
-          login, which is why the API keeps one unauthenticated write. The
-          sign-in is the one thing the rail gains for a guest: the way out of
-          the demo. On a phone both move into the "More" sheet. */}
+      {/* Foot of the rail: reachable from every page, in the way of none of
+          them. Feedback is offered to guests as well — a visitor who bounced
+          telling us why is worth more than a login, which is why the API keeps
+          one unauthenticated write. The sign-in is the one thing the rail
+          gains for a guest: the way out of the demo. On a phone both move
+          into the "More" sheet. */}
       <div className="ag-nav-foot">
         {!guest || GUEST_CHROME.feedback ? <Feedback /> : null}
         {guest ? <SignIn className="ag-btn ag-nav-signin" /> : null}
@@ -291,8 +291,8 @@ export function Layout({ children }: { children: ReactNode }) {
       <main className="ag-main">
         {/* Above the page rather than in a bar of its own: the rail is this
             app's only chrome, and a second horizontal band would cost a phone
-            the height the page needs. Both of these are on every screen in the
-            Streamlit app too, which is the whole reason they live out here. */}
+            the height the page needs. Both of these are on every screen, which
+            is the whole reason they live out here. */}
         <Search />
         <StaleNotice />
         {/* Inside the page column, above the body: when the tour is parked

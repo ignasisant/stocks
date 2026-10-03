@@ -138,8 +138,7 @@ export function MoatSection({ moat }: { moat: Moat }) {
     >
       <KpiGrid>
         {/* The band's tone from the server and the KPI's own description on
-            the tooltip — Streamlit's `verdict("moat")` chip and `kpi_desc`,
-            which is where the reader learns ≥70 is "wide". */}
+            the tooltip, which is where the reader learns ≥70 is "wide". */}
         <Kpi
           label={t("ticker.moat_score")}
           help={orElse(t, "kpi.moat.desc", "") || undefined}
@@ -185,9 +184,9 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
   const mobile = useMobile();
   const summary = insiders.summary;
 
-  // No source is two different findings, and the Streamlit page words them
-  // differently: a US filer whose insiders have not traded, or an issuer that
-  // files no Form 4 at all. Saying nothing would read as neither.
+  // No source is two different findings, worded differently: a US filer whose
+  // insiders have not traded, or an issuer that files no Form 4 at all. Saying
+  // nothing would read as neither.
   if (!insiders.source) {
     return (
       <Card title={t("ticker.insider_activity")}>
@@ -272,8 +271,8 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
             >
               <p className="tk-stack-title">{trade.insider}</p>
               <Line label={t("ticker.col_date")} value={trade.date ?? DASH} />
-              {/* Untranslated, as on the Streamlit page: its table labels only
-                  Date/Shares/Price/Value, and Role is the filer's own words. */}
+              {/* Untranslated: the catalog labels only Date/Shares/Price/Value,
+                  and Role is the filer's own words. */}
               <Line label="Role" value={trade.role} />
               <Line label={t("ticker.col_type")} value={codeLabel(t, trade)} />
               <Line
@@ -679,11 +678,10 @@ function FundHoldings({ fund }: { fund: Fund }) {
               <tr key={holding.symbol || holding.name}>
                 <td>
                   {/* House rule: every symbol on screen opens its analysis, and
-                      reads under the app's own name for it ("Nvidia"), as
-                      Streamlit's `ticker_cell` prints it — not Yahoo's
-                      "NVIDIA Corp", which would name one company two ways
-                      across two screens. A line Yahoo gives no symbol for has
-                      no page to open, so its own name is all there is. */}
+                      reads under the app's own name for it ("Nvidia"), not
+                      Yahoo's "NVIDIA Corp", which would name one company two
+                      ways across two screens. A line Yahoo gives no symbol for
+                      has no page to open, so its own name is all there is. */}
                   {holding.symbol ? (
                     <TickerCell ticker={holding.symbol} />
                   ) : (

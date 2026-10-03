@@ -24,7 +24,7 @@ seed([
 const html = (node: React.ReactElement) => renderToStaticMarkup(node);
 
 describe("TickerCell", () => {
-  it("prints the resolved symbol and the company, as ticker_cell does", () => {
+  it("prints the resolved symbol and the company", () => {
     const out = html(<TickerCell ticker="ASML" />);
     expect(out).toContain("ASML.AS");
     expect(out).toContain("— ASML Holding");

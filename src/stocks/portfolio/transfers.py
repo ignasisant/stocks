@@ -65,8 +65,8 @@ _EPS = 1e-9
 _ISIN = re.compile(r"[A-Z]{2}[A-Z0-9]{9}[0-9]")
 
 # resolve(ISIN) -> the symbol another broker would use, "" when unknowable.
-# stocks.web.logos.yahoo_symbol is the one the app passes (cached on disk, so
-# a given ISIN is looked up once ever).
+# The app passes stocks.identity.yahoo_symbol, through `api.loaders.display_symbol`
+# (cached on disk, so a given ISIN is looked up once ever).
 Resolver = Callable[[str], str]
 
 
