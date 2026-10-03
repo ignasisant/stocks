@@ -48,6 +48,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from stocks import atomic, obs, storage
+from stocks.chat import structured
 
 FILE = "chat_learnings.json"
 
@@ -705,16 +706,13 @@ def lesson_prompt(items: list[Learning]) -> str:
         "each text as a short first-person statement in the language the "
         "user wrote in, reusing their own words, tickers and numbers, at "
         f"most {LESSON_CHARS} characters.\n"
-        "Reply with JSON only, no prose: "
-        '{"ops": [{"op": "add", "kind": "preference", "text": "..."}, '
-        '{"op": "update", "id": "m_...", "text": "..."}, '
-        '{"op": "delete", "id": "m_..."}]}. '
-        f"At most {MAX_LESSONS} ops. Most messages hold nothing worth "
-        'keeping: then reply {"ops": []}.'
+        "Each op is an add (kind and text), an update (id and text) or a "
+        f"delete (id). At most {MAX_LESSONS} ops. Most messages hold nothing "
+        "worth keeping: then reply with an empty `ops` list."
     )
 
 
-def lesson_request(newest: str, earlier: list[str]) -> list[dict]:
+def lesson_request(newest: str, earlier: list[str]) -> str:
     """The one user turn the extraction reads: the newest message, and the
     user's own earlier ones for what its pronouns point at."""
     parts = []
@@ -723,7 +721,15 @@ def lesson_request(newest: str, earlier: list[str]) -> list[dict]:
                      + "\n".join(f"- {_quote(m, _CONTEXT_CHARS)}"
                                  for m in earlier))
     parts.append("Newest message:\n" + _quote(newest, _QUOTE_CHARS))
-    return [{"role": "user", "content": "\n\n".join(parts)}]
+    return "\n\n".join(parts)
+
+
+def lesson_call(items: list[Learning], newest: str,
+                earlier: list[str]) -> tuple[str, list[dict]]:
+    """(system, messages) for the extraction: `lesson_prompt` with the reply's
+    shape appended by BAML (ExtractLessons in baml_src/chat.baml)."""
+    return structured.render("ExtractLessons", lesson_prompt(items),
+                             lesson_request(newest, earlier))
 
 
 @dataclass(frozen=True)
@@ -769,9 +775,6 @@ def _same(kept: str, new: str) -> bool:
     return bool(x and y) and (y <= x or len(x & y) / len(x | y) >= 0.7)
 
 
-_JSON_RE = re.compile(r"\{.*\}", re.S)
-
-
 def lessons(raw: str, items: list[Learning], newest: str,
             said: str) -> list[Lesson] | None:
     """The changes in an extraction's reply that hold up, or None when the
@@ -780,13 +783,14 @@ def lessons(raw: str, items: list[Learning], newest: str,
     `said` is all the user text the extraction was handed: what an addition
     has to be made of. A proposal that fails a check is dropped on its own;
     the rest of the reply still counts."""
-    hit = _JSON_RE.search(raw or "")
     try:
-        body = json.loads(hit.group(0)) if hit else None
-    except ValueError:
+        body = structured.parse(raw, "ExtractLessons")
+    except structured.OffContract:
         return None
-    ops = body.get("ops") if isinstance(body, dict) else None
-    if not isinstance(ops, list):
+    ops = body.get("ops")
+    # An object that is not `{"ops": ...}` at all comes back from the parser
+    # as one empty op: it is the wrong answer, not an answer with nothing in it.
+    if not isinstance(ops, list) or (ops and not any(op.get("op") for op in ops)):
         return None
     known = {i.id: i for i in items}
     taken: set[str] = set()

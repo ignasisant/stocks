@@ -315,9 +315,9 @@ def _catalog() -> str:
     return "\n".join(f'- "{t.name}": {t.summary}' for t in TOOLS.values())
 
 
+# The reply's shape is BAML's (DetectAction in baml_src/chat.baml), appended
+# after this by structured.render.
 _SYSTEM = f"""You turn requests from a stock-tracker chat into ONE app action.
-Reply with ONLY a JSON object, no prose, no code fences:
-{{"action": "<action name>" or null, "ticker": "<symbol>", <action fields>}}
 
 Actions:
 {_catalog()}
@@ -328,7 +328,7 @@ Rules:
 - "ticker": the symbol the action targets. Resolve "this"/"it" ("esto") from
   the context's ticker in focus; resolve company names against the watchlist
   listing and reuse the symbol exactly as listed there.
-- Include only the fields the chosen action names; leave the rest out.
+- Fill only the fields the chosen action names; leave the rest null.
 """
 
 
@@ -336,11 +336,13 @@ class ActionCall(structured.Contract):
     """The router's contract: which tool, on which symbol.
 
     ``extra="allow"`` because the tool-specific fields ("alerts", "tags",
-    "shares"…) are the registry's business, not this model's — TOOLS grows
-    without a field being added here, exactly like Action.args. Both keys are
-    optional at this level so a shapeless answer still decodes and gets
-    rejected by _action_from with a reason, instead of burning a repair call
-    on a model that correctly answered "no action" ({"action": null}).
+    "shares"…) are the registry's business, not this model's — exactly like
+    Action.args. The model only sees the ones DetectAction's reply class in
+    baml_src/chat.baml declares, so a tool with a new field adds it there.
+    Both keys are optional at this level so a shapeless answer still decodes
+    and gets rejected by _action_from with a reason, instead of burning a
+    repair call on a model that correctly answered "no action"
+    ({"action": null}).
     """
 
     model_config = ConfigDict(extra="allow")
@@ -375,7 +377,7 @@ def parse_action(raw: str) -> Action | None:
     The tolerant reading, for callers holding a reply and no provider:
     anything missing, unknown or malformed yields None."""
     try:
-        call = structured.decode(raw, ActionCall)
+        call = structured.decode(raw, "DetectAction", ActionCall)
     except structured.OffContract:
         return None
     return _action_from(call.model_dump())
@@ -394,7 +396,8 @@ def detect(
     does not, so the common case (a question, not a command) stays one call."""
     user = (context + "\n\n" if context else "") + f"User message: {message}"
     try:
-        call = structured.ask(provider, api_key, _SYSTEM, user, ActionCall)
+        call = structured.ask(provider, api_key, "DetectAction", _SYSTEM, user,
+                              ActionCall)
     except Exception:
         return None
     return _action_from(call.model_dump())

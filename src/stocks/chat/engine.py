@@ -660,7 +660,12 @@ def complete_attempts(
         pool = ThreadPoolExecutor(max_workers=1)
         try:
             future = pool.submit(provider.complete, key, model, system, messages)
-            out = keep(future.result(timeout=timeout_s))
+            raw = future.result(timeout=timeout_s)
+            # Bound for `accept`, so a reply it rejects is logged against the
+            # provider that sent it (structured.parse's llm.off_contract).
+            with obs.context(provider=getattr(provider, "id", ""),
+                             model=model or getattr(provider, "default_model", "")):
+                out = keep(raw)
             if out is not None:
                 return out
         except Exception as exc:
@@ -1978,8 +1983,8 @@ def learn(prefs: dict, chat_path: Path, history: list[dict], watchlist: Path,
                 return
             items = learnings.load(path)
             kept = complete_attempts(
-                asked, learnings.lesson_prompt(items),
-                learnings.lesson_request(newest, earlier), LEARN_TIMEOUT,
+                asked, *learnings.lesson_call(items, newest, earlier),
+                LEARN_TIMEOUT,
                 spend_free=spend_free_global,
                 accept=lambda raw: learnings.lessons(
                     raw, items, newest, "\n".join([*earlier, newest])),

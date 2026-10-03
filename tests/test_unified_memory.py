@@ -184,7 +184,10 @@ def test_the_analysis_reads_the_memory_about_its_line(provider, chat, monkeypatc
     assert asked == [["NVDA"]]
     system = provider.systems[0]
     assert SAID in system and engine.MEMORY_USE in system
-    assert system.endswith(daily._HOUSE_RULES)  # the rules still close it
+    # The rules still close the instructions; only the reply's shape follows.
+    rules = system.index(daily._HOUSE_RULES)
+    assert rules > system.index(engine.MEMORY_USE)
+    assert "Reply with ONLY a JSON object" in system[rules:]
     assert "la mantengo pase lo que pase" in provider.contents[0]
 
 

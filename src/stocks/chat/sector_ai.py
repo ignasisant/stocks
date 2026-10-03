@@ -30,7 +30,7 @@ from pydantic import field_validator
 from stocks import obs
 from stocks.chat import engine
 from stocks.chat.daily import audit
-from stocks.chat.structured import Contract, decode
+from stocks.chat.structured import Contract, decode, render
 
 # The verdict is read on a page that is already waiting on Yahoo; the daily
 # card's budget is the right one, for the same reason.
@@ -69,12 +69,14 @@ class PeerPicks(Contract):
         return out[:12]
 
 
+# The reply's shape is BAML's (ProposePeers in baml_src/briefing.baml),
+# appended after this by structured.render.
 _PEERS_SYSTEM = (
-    "You list stock ticker symbols. Reply with JSON only: "
-    '{"symbols": ["ASML.AS", "7203.T"]}.\n'
+    "You list stock ticker symbols.\n"
     "Rules:\n"
     "- Symbols must be spelled as Yahoo Finance spells them, including the "
-    "exchange suffix for non-US listings (.AS, .PA, .DE, .L, .T, .HK, .SW).\n"
+    "exchange suffix for non-US listings (.AS, .PA, .DE, .L, .T, .HK, .SW): "
+    "ASML.AS, 7203.T.\n"
     "- Every company must be listed, currently trading, and operate mainly in "
     "the named sector.\n"
     "- Exclude anything listed in the United States, and exclude ETFs, funds "
@@ -114,16 +116,19 @@ def propose_peers(
 
     def accept(raw: str):
         try:
-            picks = decode(raw, PeerPicks)
+            picks = decode(raw, "ProposePeers", PeerPicks)
         except ValueError:
             return None
         fresh = [s for s in picks.symbols if s not in seen][:count]
         return fresh or None
 
+    system, messages = render(
+        "ProposePeers", _PEERS_SYSTEM, peers_prompt(sector, known, count)
+    )
     out = engine.complete_attempts(
         prefs,
-        _PEERS_SYSTEM,
-        [{"role": "user", "content": peers_prompt(sector, known, count)}],
+        system,
+        messages,
         timeout_s,
         spend_free=spend_free,
         accept=accept,

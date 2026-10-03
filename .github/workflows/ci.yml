@@ -21,6 +21,19 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - run: uv sync --frozen
       - run: uv run ruff check .
+      # The BAML client is generated from baml_src/ and committed (the image
+      # never runs the generator), so an edited .baml file pushed without
+      # `baml-cli generate` would ship the old prompts and parsers silently.
+      - name: the committed BAML client is the one baml_src generates
+        run: |
+          uv run baml-cli generate
+          stale=$(git status --porcelain -- src/stocks/baml_client)
+          if [ -n "$stale" ]; then
+            echo "$stale"
+            echo "::error::src/stocks/baml_client is not what baml_src generates."
+            echo "run: uv run baml-cli generate && git add src/stocks/baml_client"
+            exit 1
+          fi
 
   # Type checking over all of src/stocks (see [tool.ty.src] in pyproject.toml).
   # A red run here means a new annotation slipped.

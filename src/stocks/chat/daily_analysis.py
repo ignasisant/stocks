@@ -29,7 +29,7 @@ import re
 from datetime import date
 
 from stocks import obs
-from stocks.chat import daily, engine, memory, signals
+from stocks.chat import daily, engine, memory, signals, structured
 
 VERDICT_CHARS = 320
 TITLE_CHARS = 48
@@ -88,10 +88,11 @@ _EVIDENCE = (
     "available — say so, never fill it in."
 )
 
+# What each field of the reply holds. The reply's shape itself is BAML's
+# (WriteAnalysis in baml_src/briefing.baml), appended to the system prompt by
+# structured.render.
 _SHAPE = (
-    "Answer with a single JSON object and nothing else — no prose around it, "
-    "no code fence:\n"
-    '{"verdict": "...", "points": [{"title": "...", "text": "..."}]}\n'
+    "The reply:\n"
     f"- verdict: 1 or 2 sentences, at most {VERDICT_CHARS} characters: what the "
     "evidence points to, and how clearly — e.g. 'The fall is the company's "
     "own: its peers and its sector are flat over the same three months.'\n"
@@ -161,7 +162,7 @@ def prompt(
         system += "\n\n" + engine.MEMORY_USE
     system += daily._HOUSE_RULES
     content = memory.augment(json.dumps(payload), list(talk or []))
-    return system, [{"role": "user", "content": content}]
+    return structured.render("WriteAnalysis", system, content)
 
 
 # A difference in points ("16.0 pp", "11 puntos") is a claim like any
@@ -191,8 +192,9 @@ def parse(raw: str, card: daily.DailyAction, evidence: dict, lang: str) -> dict 
     The verdict must pass the audit — it is the sentence a reader keeps — and
     so must at least POINTS_MIN points; a point that fails is dropped alone.
     """
-    data = daily._json_object(raw)
-    if not data:
+    try:
+        data = structured.parse(raw, "WriteAnalysis")
+    except structured.OffContract:
         return None
     pool = _pool(card, evidence)
     verdict = _text(data.get("verdict"), VERDICT_CHARS)
@@ -206,8 +208,6 @@ def parse(raw: str, card: daily.DailyAction, evidence: dict, lang: str) -> dict 
         return None
     points: list[dict] = []
     for entry in data.get("points") or []:
-        if not isinstance(entry, dict):
-            continue
         title = _text(entry.get("title"), TITLE_CHARS)
         text = _text(entry.get("text"), POINT_CHARS)
         if not title or not text:

@@ -91,17 +91,18 @@ class Result:
 
 # ------------------------------------------------------------- planner
 
+# The reply's shape is BAML's (PlanQueries in baml_src/chat.baml), appended
+# after this by structured.render.
 _PLANNER_SYSTEM = (
     "You decide whether answering the latest message in a stock-tracker chat "
     "needs fresh information from the web — news, prices beyond the app "
     "context, current events, recent filings or releases, or anything likely "
-    "newer than the model's training data. Reply with ONLY a JSON object of "
-    f'the form {{"queries": [...]}} holding at most {MAX_QUERIES} web search '
-    "queries — or an empty list when the message needs none (greetings, app "
-    "questions, the user's own positions, math, long-settled facts). Write "
-    "queries in the language most likely to find good sources (usually "
-    "English), include tickers or company names, and put the current year in "
-    "time-sensitive queries. No prose, no code fences."
+    f"newer than the model's training data. Give at most {MAX_QUERIES} web "
+    "search queries — or an empty list when the message needs none "
+    "(greetings, app questions, the user's own positions, math, long-settled "
+    "facts). Write queries in the language most likely to find good sources "
+    "(usually English), include tickers or company names, and put the current "
+    "year in time-sensitive queries."
 )
 
 
@@ -140,7 +141,7 @@ def parse_queries(raw: str, limit: int = MAX_QUERIES) -> list[str]:
     contract directly so it can tell "no search needed" from "unreadable".
     """
     try:
-        return structured.decode(raw, QueryPlan).queries[:limit]
+        return structured.decode(raw, "PlanQueries", QueryPlan).queries[:limit]
     except structured.OffContract:
         return []
 
@@ -204,8 +205,8 @@ def plan(
     a dead classifier model must not silently take the web away."""
     user = (context + "\n\n" if context else "") + f"User message: {question}"
     try:
-        chosen = structured.ask(provider, api_key, _PLANNER_SYSTEM, user,
-                                QueryPlan)
+        chosen = structured.ask(provider, api_key, "PlanQueries",
+                                _PLANNER_SYSTEM, user, QueryPlan)
         return chosen.queries[:MAX_QUERIES]
     except Exception:  # off-contract, network, quota — all cost relevance only
         return heuristic_queries(question, context)

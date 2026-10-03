@@ -37,7 +37,10 @@ daily_ui.render(
 # point of test_a_card_quoting_a_figure_the_book_lacks_never_reaches_the_page.
 REPLY = {
     "headline": "Nvidia carries the day",
-    "bullets": ["Book +1.2% today — check NVDA's weight", "ASML reports in 4 days"],
+    "items": [
+        {"line": "Book +1.2% today — check NVDA's weight"},
+        {"line": "ASML reports in 4 days"},
+    ],
     "focus": ["NVDA"],
 }
 
@@ -114,7 +117,7 @@ def test_a_card_quoting_a_figure_the_book_lacks_never_reaches_the_page(
     gets the computed figures instead, and nothing false is stored."""
     free.reply = json.dumps({
         "headline": "Nvidia carries the day",
-        "bullets": ["NVDA +37.4% today", "ASML reports in 4 days"],
+        "items": [{"line": "NVDA +37.4% today"}, {"line": "ASML reports in 4 days"}],
         "focus": ["NVDA"],
     })
     page.run()
@@ -148,9 +151,11 @@ def test_regenerating_redraws_the_card_in_place(page, free):
     card must never be left cleared while a provider is called."""
     page.run()
     assert len(free.calls) == 1
-    free.reply = json.dumps(
-        {"headline": "Second look", "bullets": ["one", "two"], "focus": []}
-    )
+    free.reply = json.dumps({
+        "headline": "Second look",
+        "items": [{"line": "one"}, {"line": "two"}],
+        "focus": [],
+    })
     page.button(key="daily_action_refresh").click().run()
     assert not page.exception
     assert len(free.calls) == 2
@@ -171,9 +176,10 @@ def test_the_prompt_carries_the_figure_the_page_is_showing(page, free):
 
 
 def test_model_text_is_escaped(page, free, stored):
-    free.reply = json.dumps(
-        {"headline": "<img src=x onerror=alert(1)>", "bullets": ["a & b", "c"]}
-    )
+    free.reply = json.dumps({
+        "headline": "<img src=x onerror=alert(1)>",
+        "items": [{"line": "a & b"}, {"line": "c"}],
+    })
     page.run()
     body = _card(page)
     assert "<img src=x" not in body
@@ -247,7 +253,10 @@ def test_the_users_own_alert_reaches_the_prompt_and_the_card(page, free):
 
     free.reply = json.dumps({
         "headline": "ASML hit your exit",
-        "bullets": ["Review ASML: your 300 exit fired at 280", "Nothing else"],
+        "items": [
+            {"line": "Review ASML: your 300 exit fired at 280"},
+            {"line": "Nothing else"},
+        ],
         "focus": ["ASML"],
     })
     page.session_state["holdings"] = [
@@ -368,9 +377,11 @@ def test_a_slow_regenerate_clears_the_card_it_replaces(page, free, monkeypatch):
     assert page.button(key="daily_action_refresh").disabled
     assert not page.caption                          # nothing yet to disclaim
 
-    free.reply = json.dumps(
-        {"headline": "Second look", "bullets": ["one", "two"], "focus": []}
-    )
+    free.reply = json.dumps({
+        "headline": "Second look",
+        "items": [{"line": "one"}, {"line": "two"}],
+        "focus": [],
+    })
     gate.set()
     page.session_state["daily_action_job"]["thread"].join(10)
     page.run()
