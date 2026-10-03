@@ -1,8 +1,8 @@
 """Per-account bank state: the pending-authorisation guard and connections.
 
 The pending entries are the security-relevant part — they are what ties a
-bank redirect back to the account that started it, across a page load that
-destroys the Streamlit session.
+bank redirect back to the account that started it, across the full page
+load the redirect makes.
 """
 
 from __future__ import annotations

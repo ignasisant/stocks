@@ -25,7 +25,7 @@ class ColumnMap {
   decimal string? @description("the decimal separator, '.' or ','")
   thousands string? @description("the thousands separator, or an empty string")
   asset_class AssetClass?
-  action_map map<string, string>? @description("the exact text in the action column -> buy, sell, dividend, fee or split")
+  action_map map<string, string>? @description("the exact text in the action column -> buy, sell, dividend, fee, split or capital")
 }
 
 function MapColumns(instructions: string, input: string) -> ColumnMap {
@@ -47,7 +47,7 @@ enum DocumentKind {
 class StatementRow {
   date string? @description("YYYY-MM-DD")
   ticker string? @description("symbol or ISIN")
-  action string? @description("buy, sell, dividend, fee or split")
+  action string? @description("buy, sell, dividend, fee, split or capital")
   quantity (float | string)? @description("a plain number")
   price (float | string)? @description("a plain number")
   currency string? @description("3-letter code")

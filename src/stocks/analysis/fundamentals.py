@@ -448,7 +448,7 @@ def format_value(key: str, value: float | str | None) -> str:
 
 
 # Rule-of-thumb interpretation bands per KPI: value-ascending
-# (upper_bound_exclusive, label, streamlit-color). The color already encodes the
+# (upper_bound_exclusive, label, color name). The color already encodes the
 # verdict, so metrics where higher is better (ROIC, FCF yield) simply end green
 # and multiples where lower is cheaper end red — no direction flag needed. Bands
 # are rough and sector-agnostic: a fast visual cue, never the comps table.
@@ -491,7 +491,7 @@ _VERDICT_BANDS: dict[str, list[tuple[float, str, str]]] = {
 
 
 def verdict(key: str, value: float | str | None) -> tuple[str, str] | None:
-    """Cheap/fair/expensive read on a KPI: (label, streamlit color).
+    """Cheap/fair/expensive read on a KPI: (label, color name).
 
     None when there is no band for `key` or the value is missing / non-numeric.
     Booleans are rejected too (they are int subclasses but never real KPIs).

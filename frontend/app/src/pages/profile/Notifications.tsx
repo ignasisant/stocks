@@ -48,9 +48,9 @@ export function Notifications({ prefs, saving, failure, save }: Settings) {
             {configured === true && linked && (
               <span className="pr-chips">
                 <span className="pr-badge">{t("profile.notify_connected")}</span>
-                {/* Which chat gets the messages, as the Streamlit page names
-                    it — a reader with two accounts needs to tell them apart.
-                    A chat with no public username reads as it does there. */}
+                {/* Which chat gets the messages — a reader with two accounts
+                    needs to tell them apart. A chat with no public username
+                    gets the line without a handle. */}
                 <span className="pr-hint">
                   {t("profile.tg_linked_as", {
                     handle: tg.state?.username ? `@${tg.state.username}` : "",

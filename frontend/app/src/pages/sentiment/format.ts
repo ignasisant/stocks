@@ -9,10 +9,9 @@
  *   widening credit spread and a falling index are both bad news, and a page
  *   that paints on sign paints half of itself backwards.
  *
- * Everything is formatted the way the Streamlit page formats it — C locale,
- * dot decimals, comma groups — because these numbers sit beside the same
- * figures on the pages that have not migrated yet, and two spellings of the
- * same yield on two screens is worse than one that ignores the locale.
+ * Everything is formatted in the C locale — dot decimals, comma groups —
+ * because two spellings of the same yield on two screens is worse than one
+ * that ignores the locale.
  */
 
 /** What a figure that could not be computed reads as. Never `0`, never a dash. */
@@ -99,7 +98,7 @@ export function toneClass(value: number): string {
  * A ticker as an i18n key fragment: `^GSPC` to `gspc`, `GC=F` to `gc_f`.
  *
  * The catalogs key their per-row explanations this way (`sentiment.tip_index_gspc`),
- * so this has to match `sentiment.py::_slug` character for character.
+ * so this has to match those keys character for character.
  */
 export function slug(ticker: string): string {
   return ticker

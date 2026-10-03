@@ -1,8 +1,7 @@
 /**
  * The first screen for an account whose chosen provider cannot answer yet.
  *
- * The Streamlit panel's setup screen, and for the reason it was rebuilt: a
- * reader arriving with no key was once shown a provider list and an API-key
+ * A reader arriving with no key was once shown a provider list and an API-key
  * field, which reads as "you cannot use this yet". The free assistant is the
  * primary button, and the key sits below it for the reader who already knows
  * which provider they want — in the settings view, which is where the form

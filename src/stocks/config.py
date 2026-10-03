@@ -46,7 +46,7 @@ DATA_DIR.mkdir(exist_ok=True)
 # Alert types that only need the latest price (evaluated by Alert.triggered).
 # Reporting currencies the app can reckon in, and how their amounts are
 # prefixed. Here rather than in web/auth.py because the headless senders (the
-# Telegram digest, the CLI) format money too and must not import Streamlit.
+# Telegram digest, the CLI) format money too.
 # Frankfurter serves any ECB-quoted base, so adding one is a line here. The
 # Nordic currencies all write "kr", so they take the code-prefix form rather
 # than a symbol nobody could tell apart in a table.
@@ -85,9 +85,9 @@ class AlertForm:
     "above" needs a price and no window, and an editor that gets that wrong
     writes a rule the evaluator will never fire.
 
-    It lives in the domain because two editors now ask the question — the app's
-    watchlist widget and the React ticker page — and a second copy of the field
-    list is a second place for a new alert type to be forgotten.
+    It lives in the domain, served to the React ticker page by
+    api/routes/reference.py, because a second copy of the field list is a second
+    place for a new alert type to be forgotten.
     """
 
     type: str
@@ -252,7 +252,7 @@ def tv_symbols(path: Path = WATCHLIST_FILE) -> dict[str, str]:
 def load_watchlist(path: Path = WATCHLIST_FILE) -> list[Holding]:
     """Parse watchlist.yaml into Holding objects. Empty list if missing.
 
-    Reads through `_yaml`, so the eight-odd calls a single rerun makes (the
+    Reads through `_yaml`, so the eight-odd calls a single page makes (the
     topbar, the page, search, chat) share one parse. The Holdings themselves
     are rebuilt per call on purpose: they are mutable dataclasses carrying
     mutable `tags`/`alerts` lists, and handing every caller the same instances

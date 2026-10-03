@@ -7,7 +7,7 @@ API can enforce it. Two claims are worth a file of their own.
 **Serving a guest writes nothing.** Every anonymous visitor reads one shared
 directory, so a single stray write is not one person's bug — it is one person's
 tickers appearing in the next person's screen. That has happened once already
-(`web.auth.push_recent_search`, fixed with `accounts.writable`), and it happened
+(`accounts.push_recent_search`, fixed with `accounts.writable`), and it happened
 because the write was somewhere nobody thought to look. So the test here is not
 a list of places to check: it walks `guest.OPEN` and asserts the directory did
 not move. A guest route added next year is covered without anyone adding a test.

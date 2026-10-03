@@ -2,19 +2,16 @@
  * Where a parked tour is, and what each way out of the modal does to it.
  *
  * Pure, so the rules that decide whether an account is stamped can be tested
- * without a DOM — and those rules are the whole point of this file. The
- * Streamlit tour (`web/onboarding.py`) draws the line in one place: **leaving
- * to look at something is not leaving.** Closing the guided tour with X or
- * Escape parks it in a strip above the page (`_minimize`), and a what's-new
- * card's "take me there" parks the list on the card it was on (`_news_park`).
- * Neither stamps anything. Only the ways *out* do — finishing, "end tour",
+ * without a DOM — and those rules are the whole point of this file. The line
+ * is drawn in one place: **leaving to look at something is not leaving.**
+ * Closing the guided tour with X or Escape parks it in a strip above the page,
+ * and a what's-new card's "take me there" parks the list on the card it was
+ * on. Neither stamps anything. Only the ways *out* do — finishing, "end tour",
  * "skip the rest", the list's own X — because those are the reader saying they
  * are done, and a parked list abandoned half-read is still owed.
  *
- * The parked position lives in `sessionStorage`: the same lifetime as the
- * Streamlit session state it mirrors (one tab, gone when the tab is), and it
- * survives a reload, which is the one thing a single-page app does that a
- * Streamlit rerun never did.
+ * The parked position lives in `sessionStorage`: one tab, gone when the tab
+ * is, and it survives a reload.
  */
 
 export type Mode = "tour" | "news";
@@ -46,10 +43,9 @@ export function after(
 ): { place: Place | null; stamp: Stamp } {
   switch (action) {
     case "dismiss":
-      // The tour parks; what's new does not. That asymmetry is Streamlit's
-      // (`on_dismiss=_minimize` for one dialog, `_dismiss_news` for the other)
-      // and it is deliberate: the tour is what the reader came for, the news
-      // list is an interruption, and closing an interruption means "enough".
+      // The tour parks; what's new does not. That asymmetry is deliberate:
+      // the tour is what the reader came for, the news list is an
+      // interruption, and closing an interruption means "enough".
       return place.mode === "tour"
         ? { place: { ...place, open: false }, stamp: null }
         : { place: null, stamp: {} };
@@ -109,11 +105,11 @@ export function clamp(at: number, length: number): number {
 /**
  * Whether the first load of this document already interrupted the reader.
  *
- * Streamlit's rule (`app.py`): the walkthrough, then "what's new", then the
- * investor-profile nudge — one modal per first load, and the nudge only when
- * neither of the others took the slot. The tour decides asynchronously (it has
- * to fetch `/onboarding` first), so the nudge waits on this rather than racing
- * it. Settled exactly once; later calls are ignored.
+ * The walkthrough, then "what's new", then the investor-profile nudge — one
+ * modal per first load, and the nudge only when neither of the others took the
+ * slot. The tour decides asynchronously (it has to fetch `/onboarding` first),
+ * so the nudge waits on this rather than racing it. Settled exactly once; later
+ * calls are ignored.
  */
 let settleFirstLoad: (interrupted: boolean) => void = () => undefined;
 const firstLoadDecided = new Promise<boolean>((resolve) => {

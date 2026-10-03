@@ -1,9 +1,8 @@
-"""The React front ends may only name design tokens the design system publishes.
+"""The React app may only name design tokens the design system publishes.
 
-Both of them — the Ticker page and the app shell — read `--ag-*` custom
-properties back out of the document through their own `theme.ts`, and every
-rule in their stylesheets is written in them. Both carry a
-fallback, which is the trap: a name that `ds.tokens()` does not publish does not
+It reads `--ag-*` custom properties back out of the document through
+`theme.ts`, and every rule in its stylesheets is written in them. Each read
+carries a fallback, which is the trap: a name that `ds.tokens()` does not publish does not
 fail, it silently freezes at whatever hex was typed beside it and drifts from
 the app the next time the palette moves. That is exactly how `candle-up`,
 `candle-down`, `sma-fast` and `sma-slow` sat hardcoded in the chart.
@@ -23,8 +22,7 @@ import pytest
 from stocks.web.ds import tokens
 
 REPO = Path(__file__).resolve().parents[1]
-# Both front ends, because a token frozen at a hex is the same bug in either —
-# and the app shell is where the pages the Ticker page has not absorbed land.
+# A list so a second bundle, if one ever ships, is one more entry here.
 FRONTENDS = [REPO / "frontend" / "app" / "src"]
 
 # `var(--ag-name)` in CSS or TSX, and `token("name")` in theme.ts.

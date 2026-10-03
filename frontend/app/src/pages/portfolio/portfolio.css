@@ -2,8 +2,8 @@
  * The Portfolio page's own stylesheet, loaded with its chunk.
  *
  * No hex literals: every colour is a `--ag-*` custom property the server
- * already inlined on `:root`, so this page and the Streamlit one beside it
- * cannot drift, and neither can the two themes.
+ * already inlined on `:root`, so this page and the rest of the app cannot
+ * drift, and neither can the two themes.
  *
  * Layout is `auto-fit` grids rather than breakpoints wherever it can be, so a
  * KPI row that is four across on a desktop is two on a tablet and one on a
@@ -410,6 +410,85 @@
   list-style: none;
   font-size: var(--ag-fs-xs, 0.78rem);
   color: var(--ag-text-secondary, var(--ag-text-primary));
+}
+
+/* A return chart's legend entry is a control: hover or focus previews its
+   line, a press holds it (charts.tsx ReturnLines). It reads as a legend row
+   until touched — no fill, no border — and the figure where the line ends
+   sits beside the name in primary ink, never the series colour. */
+.pf-legend-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 28px;
+  margin: 0 -0.4rem;
+  padding: 0 0.4rem;
+  border: 0;
+  border-radius: var(--ag-radius-sm, 8px);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: opacity 120ms ease;
+}
+
+.pf-legend-key:hover {
+  color: var(--ag-text-primary);
+}
+
+.pf-legend-key[aria-pressed="true"] {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-primary);
+}
+
+.pf-legend-key[data-dim] {
+  opacity: 0.55;
+}
+
+.pf-legend-key:focus-visible,
+.pf-return-plot:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 1px;
+}
+
+.pf-return-plot {
+  display: block;
+  border-radius: var(--ag-radius-sm, 8px);
+}
+
+.pf-return-plot:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.pf-legend-value {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The lines' own fade when the legend picks one out. */
+.pf-line {
+  transition:
+    stroke-opacity 120ms ease,
+    opacity 120ms ease;
+}
+
+/* A chart's caption is copy: a sentence across a 1900px card is unreadable,
+   so it stops at a paragraph's measure while the plot above runs the width. */
+.pf-chart ~ .pf-caption {
+  max-width: 80ch;
+  text-wrap: pretty;
+}
+
+@container ag-main (max-width: 640px) {
+  .pf-legend-key {
+    min-height: 44px;
+  }
+  .pf-legend-inline:has(.pf-legend-key) {
+    gap: 0 0.9rem;
+    margin-bottom: 0.2rem;
+  }
 }
 
 /* The correlation grid: one square per pair, labels down and across. */
@@ -967,6 +1046,14 @@
   mask: repeating-linear-gradient(90deg, black 0 4px, transparent 4px 7px);
 }
 
+/* A solid line's key is a short stroke, as the dashed one is: a box keys an
+   area, and the chart has none. */
+.pf-swatch-line {
+  height: 2px;
+  width: 0.9rem;
+  border-radius: 1px;
+}
+
 @media (max-width: 900px) {
   .pf-proj-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -989,7 +1076,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pf-proj-main {
+  .pf-proj-main,
+  .pf-legend-key,
+  .pf-line {
     transition: none;
   }
 }
@@ -1091,22 +1180,6 @@
   transition:
     stroke-width 120ms ease,
     stroke-opacity 120ms ease;
-}
-
-/* The inline legend as keys that single a line out. */
-.pf-line-key {
-  margin: 0 -0.3rem;
-  padding: 0.1rem 0.3rem;
-  border: 0;
-  border-radius: var(--ag-radius-xs, 4px);
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.pf-line-key:hover {
-  background: var(--ag-surface-hover);
 }
 
 /* A KPI chip that carries a sentence ("15,8 % · pesa 11,1 %") wraps inside

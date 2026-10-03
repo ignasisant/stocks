@@ -1,18 +1,17 @@
 /**
  * The investor-profile nudge: once per session, for an account with no profile.
  *
- * `auth.maybe_prompt_profile()` in the Streamlit app, moved. The assistant is
- * told who it is advising from exactly these five fields
+ * The assistant is told who it is advising from exactly these five fields
  * (`chat.engine.persona`), and an account that never filled them in gets
  * generic advice without knowing why — so a signed-in account whose profile was
  * never saved is asked, once per session, with "skip for now" one press away.
  * It nags again next session until the profile is saved here or on the Profile
- * page, which is Streamlit's rule too.
+ * page.
  *
  * Last in line on a first load. The walkthrough and "what's new" come first,
- * and only one modal gets a first load (`app.py`); the tour says whether it
- * took the slot (`whenFirstLoadDecided`), and if it did this waits for the next
- * session rather than stacking a second dialog on the first.
+ * and only one modal gets a first load; the tour says whether it took the slot
+ * (`whenFirstLoadDecided`), and if it did this waits for the next session
+ * rather than stacking a second dialog on the first.
  *
  * Its own small form rather than the Profile page's: that page is a lazy chunk
  * with its own autosaving cards, and pulling it into the shell to draw a dialog

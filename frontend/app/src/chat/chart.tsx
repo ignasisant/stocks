@@ -24,7 +24,7 @@
  * the change alone, under the name the server sent.
  */
 
-import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Chart,
   Legend,
@@ -40,6 +40,7 @@ import {
 import "../pages/ticker/ticker.css";
 import { useLang } from "../shell/i18n";
 import { chart as palette } from "../shell/theme";
+import { useWidth } from "../shell/useWidth";
 
 export type Line = {
   symbol: string;
@@ -56,23 +57,6 @@ const named = (line: Line) => line.label || line.symbol;
 
 /** What the chart is drawn at before it has been measured, and on the server. */
 const FALLBACK = 360;
-
-/** The width the chart has, followed as the drawer is dragged wider. */
-function useWidth(): [RefObject<HTMLDivElement | null>, number] {
-  const node = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(FALLBACK);
-  useEffect(() => {
-    const el = node.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const seen = new ResizeObserver(([entry]) => {
-      const next = Math.round(entry?.contentRect.width ?? 0);
-      if (next > 0) setWidth(next);
-    });
-    seen.observe(el);
-    return () => seen.disconnect();
-  }, []);
-  return [node, width];
-}
 
 const time = (stamp: string) =>
   Date.parse(stamp.length > 10 ? stamp : `${stamp}T00:00`);
@@ -151,7 +135,7 @@ export function LineChart({
   label: string;
 }) {
   const lang = useLang();
-  const [node, width] = useWidth();
+  const [node, width] = useWidth(FALLBACK);
   const [hover, setHover] = useState<number | null>(null);
   const colors = palette();
   const hues = [colors.brandAccent, colors.info, colors.smaFast];

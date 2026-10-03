@@ -176,8 +176,8 @@ def test_an_unreachable_yahoo_leaves_the_spread_null_not_zero(
 
 def test_any_spread_failure_degrades_to_the_ledger_half(client, book, monkeypatch):
     """Not just a throttle: whatever breaks the estimate (a malformed frame, an
-    FX gap) leaves the commissions standing, as the Streamlit tab does, rather
-    than 500-ing the whole tab."""
+    FX gap) leaves the commissions standing rather than 500-ing the whole
+    tab."""
     book(trades())
 
     def broken(db, mtime):
@@ -746,12 +746,12 @@ def test_an_empty_book_has_no_risk_figures_rather_than_zeroed_ones(
     assert payload["weights"] == {}
 
 
-# --------------------------------------------------- what the Streamlit tab had
+# ------------------------------------------------------------ the tabs' details
 
 
 def test_tax_years_carry_their_label_and_their_notes(client, book):
     """The UK writes a tax year as "2024/25", and a deferred loss is a sentence
-    under the figures — both were the page's and the API had neither."""
+    under the figures — both travel with the year."""
     book(
         [
             Transaction("2023-01-02", "AAPL", "buy", 10, 10.0, "GBP", 0.0),
@@ -849,8 +849,8 @@ def _history(start: str, days: int):
 
 
 def test_performance_is_retaken_from_the_window_start(client, book, monkeypatch):
-    """The "real performance" tiles follow the window selector, as the page's
-    do — a one-year TWR compounds a year of days, not the book's whole life."""
+    """The "real performance" tiles follow the window selector — a one-year
+    TWR compounds a year of days, not the book's whole life."""
     book(trades())
     today = pd.Timestamp.today().normalize()
     hist, twr = _history(str((today - pd.Timedelta(days=799)).date()), 800)

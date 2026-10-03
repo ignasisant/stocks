@@ -1,11 +1,7 @@
 """Writing the daily card over HTTP: the facts, the job, and what a poll sees.
 
-`web/daily_ui.py` is the Streamlit half of this: it builds the facts from the
-frames Home already loaded, starts `chat.daily.generate` in a thread, waits
-`GRACE_S` for it, and otherwise paints the computed card with a line saying a
-briefing is still being written while a timed fragment polls for the answer.
-The React Home has none of those frames and no script run to hang a thread off,
-so this module is the same machine rebuilt around requests:
+A generation is a model call that can outlast a request, so the card is a
+small machine built around requests:
 
 * `POST /daily` asks for today's card. A stored one that still stands comes
   straight back and spends nothing. Otherwise the facts are built from this
@@ -20,17 +16,16 @@ so this module is the same machine rebuilt around requests:
   not quietly hand the reader yesterday's briefing.
 
 The job applies its own side effects when it finishes, on its own thread: the
-spent free unit goes to prefs.json and the card to daily_action.json. In
-Streamlit that is `_collect()` on the script thread, because a session owns its
-files and its toasts; here nothing owns the request after it has answered, and
-a card that was paid for must be stored whether or not anybody polls for it.
+spent free unit goes to prefs.json and the card to daily_action.json. Nothing
+owns the request after it has answered, and a card that was paid for must be
+stored whether or not anybody polls for it.
 
 Attempted at most once per account per key (action day, language, session):
 a provider that is down stays down for the next few seconds, and a client that
 re-POSTs on every mount would otherwise spend the allowance on the same
 failure. "Regenerate" is the explicit way past that guard, and it abandons a
 job already in flight rather than waiting on it — the unit that job spent is
-lost, which is the cheaper of the two prices, exactly as in `daily_ui`.
+lost, which is the cheaper of the two prices.
 
 Process-local, like every cache in this API. A second container knows nothing
 of a job the first one started; the worst that costs is one more generation,
@@ -47,6 +42,7 @@ from datetime import date, datetime
 import pandas as pd
 
 from stocks import accounts, obs
+from stocks.analysis import sentiment as sm
 from stocks.analysis.portfolio import basket_change, us_market_open
 from stocks.api import home, loaders
 from stocks.api.cache import ttl_cache
@@ -55,9 +51,9 @@ from stocks.chat import daily, daily_book, daily_routines, engine, signals
 from stocks.data.crypto import is_crypto
 
 # How long `POST /daily` holds the request for a briefing before answering
-# `pending`. The same number the Streamlit card waits: the free chain usually
-# answers well inside it, and everything past it is a spinner on a card the
-# reader could already be reading the computed version of.
+# `pending`. The free chain usually answers well inside it, and everything past
+# it is a spinner on a card the reader could already be reading the computed
+# version of.
 GRACE_S = 2.5
 
 # What the client is told to wait between polls. Reported, not enforced: the
@@ -104,16 +100,24 @@ def key_for(day: date, lang: str, session: str | None) -> tuple:
 
 # ------------------------------------------------------------------- facts
 
+# The card's market lines need prices for symbols nobody holds, the one input
+# Home does not already have in hand: SPY for the index and as the sector ETFs'
+# benchmark, the eleven sector ETFs for rotation and trend breadth, EUR/USD for
+# the currency line. Thirteen, not the Pulso page's fifty — Yahoo throttles
+# datacenter IPs and the card runs on every Home load. Sorted so the tuple is
+# stable. Two years, because trend breadth is read against a 200-session
+# average and a one-year window leaves the first half of it undefined.
+CARD_TICKERS: tuple[str, ...] = tuple(
+    sorted({"SPY", "EURUSD=X", *sm.SECTOR_ETFS.values()})
+)
+CARD_PERIOD = "2y"
+
 
 @ttl_cache(900.0, max_entries=1, persist="card_closes")
 def _card_closes() -> dict[str, pd.Series]:
-    """The market symbols the card reads — `web.market_data.card_closes`.
-
-    The Streamlit loader is an `st.cache_data`; this is the same one request,
-    shared by every account in the process, behind this API's own memo.
-    """
+    """The market symbols the card reads, in ONE bulk request shared by every
+    account in the process: an index close is not personal data."""
     from stocks.analysis.portfolio import load_closes
-    from stocks.web.market_data import CARD_PERIOD, CARD_TICKERS
 
     return load_closes(list(CARD_TICKERS), period=CARD_PERIOD)
 
@@ -141,15 +145,52 @@ def book_sectors(tbl) -> pd.Series:
     )
 
 
+def index_month_base(closes: dict[str, pd.Series], base: str = "EUR") -> float:
+    """SPY's month, in the reader's own currency.
+
+    The book's month comes off a basket valued in `base`; the index's comes off
+    a series quoted in dollars. Subtracting one from the other without this
+    conversion reports the currency's move as skill, in whichever direction it
+    happened to go — which is the single easiest way for this card to tell a
+    reader something false about their own performance.
+    """
+    in_base = index_in_base(closes, base)
+    if in_base is None:
+        return float("nan")
+    return sm.pct_over(in_base, signals.MONTH_SESSIONS)
+
+
+def index_in_base(closes: dict[str, pd.Series], base: str = "EUR") -> pd.Series | None:
+    """SPY's closes in the reader's own currency, or None without them.
+
+    Only the euro pair is downloaded, so any base other than EUR reads the
+    index in its own dollars rather than inventing a cross rate.
+    """
+    index = closes.get("SPY")
+    if index is None or index.dropna().empty:
+        return None
+    series = index.dropna()
+    if base != "EUR":
+        return series
+    pair = closes.get("EURUSD=X")
+    if pair is None or pair.dropna().empty:
+        return None
+    # EURUSD=X is dollars per euro, so dividing a dollar price by it gives the
+    # price in euros. Both sides are reindexed onto the index's own sessions:
+    # FX quotes on days the New York market is closed, and an unaligned divide
+    # would compare Monday's price against Sunday's rate.
+    rate = pair.dropna().reindex(series.index, method="ffill")
+    in_base = (series / rate).dropna()
+    return in_base if not in_base.empty else None
+
+
 def _market(tbl, hist, currency: str) -> list:
-    """The market-wide candidates, or none of them — `daily_ui._market`.
+    """The market-wide candidates, or none of them.
 
     The one part of the card with a download of its own, and the only part
     that can be slow or fail on its own: a card that says nothing about the
     index is the card this was before, so any failure is an empty list.
     """
-    from stocks.web.market_data import index_month_base
-
     try:
         closes = _card_closes()
         sectors = book_sectors(tbl)
@@ -221,9 +262,9 @@ def _jurisdiction(prefs: dict):
 def _day_move(tbl, hist) -> tuple[float, float] | None:
     """The "Today" figure the KPI row shows, so the card cannot contradict it.
 
-    `home.py`'s rule: in a regular US session the basket's close-to-close day;
-    outside one, the per-row day (already re-read from the quote burst) summed
-    against the value it moved from.
+    In a regular US session the basket's close-to-close day; outside one, the
+    per-row day (already re-read from the quote burst) summed against the
+    value it moved from.
     """
     if tbl is None or tbl.empty:
         return None
@@ -238,16 +279,15 @@ def _day_move(tbl, hist) -> tuple[float, float] | None:
 def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
     """What today's card is written from, or None when there is nothing to say.
 
-    Everything `daily_ui.render` is handed by the page — positions, the basket
-    history, the "Today" figure, the earnings pass, the 52-week scan, the
-    watchlist's alerts and the realised sales — read here off the same loaders
-    the other Home routes use, so the briefing is written from the numbers on
-    the screen beside it and the downloads are the ones those routes already
-    paid for. Each input degrades alone: a throttled calendar is a card with no
-    earnings line, not a card that is not there.
+    Positions, the basket history, the "Today" figure, the earnings pass, the
+    52-week scan, the watchlist's alerts and the realised sales — read off the
+    same loaders the other Home routes use, so the briefing is written from the
+    numbers on the screen beside it and the downloads are the ones those routes
+    already paid for. Each input degrades alone: a throttled calendar is a card
+    with no earnings line, not a card that is not there.
 
-    None for an account with neither a position nor a watchlist entry, which is
-    the one case the Streamlit page clears the slot for.
+    None for an account with neither a position nor a watchlist entry: there
+    is nothing to brief on.
     """
     db = str(paths.db)
     mtime = loaders.db_mtime(db)
@@ -384,7 +424,7 @@ def _save_counters(paths, prefs: dict) -> None:
 
 
 def _store(paths, job: Job, prefs: dict, facts: dict, stored, spent: bool) -> None:
-    """Apply a finished generation's side effects — `daily_ui._collect`.
+    """Apply a finished generation's side effects.
 
     The card the reader is shown is stored whoever wrote it: the model's, or
     the computed stand-in when no model answered. Memory is about what the

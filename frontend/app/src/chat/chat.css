@@ -2,7 +2,7 @@
  * The assistant drawer.
  *
  * Every colour is a `--ag-*` token the server inlines, so this agrees with the
- * Streamlit panel and with both themes. The panel is an overlay: it never
+ * rest of the shell and with both themes. The panel is an overlay: it never
  * changes the page's own layout, and the page keeps its scroll position while
  * the drawer is open — the conversation scrolls its own region.
  */
@@ -41,10 +41,9 @@
   inset: 0 0 0 auto;
   z-index: 70;
   display: flex;
-  /* `--chat-w` is the Streamlit drawer's own custom property, set from the
-     same three presets and stored under the same localStorage key — a reader
-     who widened the panel there finds it wide here. Unset, the drawer is the
-     width it has always been. */
+  /* `--chat-w` is set from the three presets or the drag handle and kept in
+     localStorage (`width.ts`). Unset, the drawer is the width it has always
+     been. */
   width: min(var(--chat-w, 420px), 100vw);
   flex-direction: column;
   border-left: 1px solid var(--ag-border);
@@ -53,18 +52,18 @@
 }
 
 /* An open drawer takes its width off the page instead of covering it: a
-   portfolio table read at half a row is worse than one that is narrower. The
-   Streamlit shell pads its main block by the same figure with the same cap —
-   60% of the viewport, past which the page would be surrendering more than it
-   keeps, and the rest of the panel simply overlaps. No transition on purpose:
-   the padding tracks `--chat-w` live while the handle is dragged. */
+   portfolio table read at half a row is worse than one that is narrower.
+   Capped at 60% of the viewport, past which the page would be surrendering
+   more than it keeps, and the rest of the panel simply overlaps. No
+   transition on purpose: the padding tracks `--chat-w` live while the handle
+   is dragged. */
 :root[data-chat="open"] .ag-shell {
   padding-right: calc(min(var(--chat-w, 420px), 60vw) + 20px);
 }
 
 /* The one fixed thing the page has left: the "thanks, sent" toast. It would
    otherwise appear under the panel, which is where a confirmation is worth
-   nothing. The Streamlit shell moves its own the same way. */
+   nothing. */
 :root[data-chat="open"] .ag-fb-sent {
   right: calc(min(var(--chat-w, 420px), 100vw) + 20px);
 }
@@ -72,7 +71,7 @@
 /* The drag handle: a grab strip straddling the panel's left border, sitting
    over the page behind it so there is something to aim at. Invisible until it
    is hovered or focused — the border is the affordance, the strip is the
-   target. The Streamlit drawer draws the same 6px line at the same edge. */
+   target. */
 .ag-chat-grip {
   position: absolute;
   inset: 0 auto 0 0;
@@ -865,8 +864,7 @@
 /* ------------------------------------------------- the attached statement */
 
 /* The clip sits inside the input bar, left of the field: the reader already
-   looks there for a way to attach something, and it is the same place the
-   Streamlit composer puts it. */
+   looks there for a way to attach something. */
 .ag-chat-clip {
   display: flex;
   flex: 0 0 auto;
@@ -1723,8 +1721,7 @@ a.ag-chat-btn {
   }
   .ag-chat-widths {
     /* Three buttons that all mean "the whole screen" on a screen this size,
-       taking room from the thread's own name. The Streamlit header drops them
-       below 1100px for the same reason. */
+       taking room from the thread's own name. */
     display: none;
   }
   .ag-chat-fab,

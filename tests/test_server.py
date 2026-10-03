@@ -6,10 +6,8 @@ the app cookie, the app for everyone else. That rule is the whole design (see
 nobody notices — a leak in either direction either hides the app from returning
 users or hides the pitch from Google.
 
-The app shell is a stand-in document on disk, and the retired Streamlit app at
-`/legacy` is stubbed with a catch-all. Booting the real one would need a
-runtime, a websocket and a secrets file; what these tests are about is which
-requests reach each at all, and what the response carries when they do.
+The app shell is a stand-in document on disk: what these tests are about is
+which requests reach it at all, and what the response carries when they do.
 """
 
 import asyncio
@@ -18,14 +16,13 @@ import pytest
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.responses import PlainTextResponse
-from starlette.routing import Mount, Route
+from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from stocks import session
 from stocks.web import landing_static, server
 
 STUB = "APP-SHELL"
-LEGACY = "STREAMLIT-APP"
 
 
 @pytest.fixture(autouse=True)
@@ -43,22 +40,10 @@ def shell(tmp_path, monkeypatch):
     server._app_document.cache_clear()
 
 
-def _legacy_stub() -> Starlette:
-    async def stub(request):
-        return PlainTextResponse(LEGACY, media_type="text/html")
-
-    return Starlette(routes=[Route("/{path:path}", stub, methods=["GET", "POST"])])
-
-
 def served(*middleware: type) -> Starlette:
-    """server.py's routes behind `middleware`, the old app stubbed out."""
-    routes = [
-        Mount(server.LEGACY_PATH, app=_legacy_stub())
-        if isinstance(r, Mount) and r.path == server.LEGACY_PATH
-        else r
-        for r in server.routes
-    ]
-    return Starlette(routes=routes, middleware=[Middleware(m) for m in middleware])
+    """server.py's routes behind `middleware`."""
+    return Starlette(routes=server.routes,
+                     middleware=[Middleware(m) for m in middleware])
 
 
 @pytest.fixture
@@ -124,7 +109,7 @@ def test_app_pages_are_untouched_by_the_gate(client):
 
 def test_the_app_is_marked_noindex(client):
     """A JavaScript shell over somebody's positions has no business ranking."""
-    for path in ("/portfolio", "/?guest=1", "/legacy/_stcore/health"):
+    for path in ("/portfolio", "/?guest=1"):
         assert client.get(path).headers["x-robots-tag"] == "noindex, nofollow"
 
 
@@ -299,12 +284,6 @@ def test_the_redirect_keeps_the_query_string(pinned_client):
     assert r.headers["location"] == "https://topstocks.example/ticker?ticker=AAPL"
 
 
-def test_a_live_session_is_not_redirected_out_from_under_itself(pinned_client):
-    # Moving a websocket or an XHR mid-session breaks the page the visitor is
-    # already looking at; the document redirect is what moves them.
-    assert pinned_client.get("/legacy/_stcore/health").status_code == 200
-
-
 def test_the_health_probes_answer_on_any_host(pinned_client):
     # A canary is reachable only at its tagged hostname, so a redirect to the
     # canonical host would smoke the revision already serving and report its
@@ -338,9 +317,7 @@ def test_an_unknown_path_is_a_404_not_the_app_shell(client):
 @pytest.mark.parametrize(
     "path",
     ["/portfolio", "/ticker", "/sector", "/earnings", "/profile",
-     "/import_transactions", "/import", "/home", "/bank",
-     "/legacy/", "/legacy/portfolio", "/legacy/_stcore/health",
-     "/legacy/media/abc", "/legacy/component/x/y"],
+     "/import_transactions", "/import", "/home", "/bank"],
 )
 def test_everything_that_is_really_served_survives_the_gate(client, path):
     assert client.get(path).status_code == 200
@@ -370,8 +347,8 @@ def test_our_auth_routes_answer(client, path):
 
 
 def test_the_signin_parameter_bounces_into_the_apps_own_sign_in(client):
-    """The landing's CTA. It used to reach `st.login()` inside a Streamlit run;
-    it is answered here now, because this is the layer that can return a 302."""
+    """The landing's CTA. It is answered here, because this is the layer that
+    can return a 302."""
     r = client.get("/?signin=1", follow_redirects=False)
     assert r.status_code == 302
     assert r.headers["location"].startswith(session.LOGIN_PATH)
@@ -508,7 +485,7 @@ def test_the_api_is_reachable_through_the_gate(client):
     response = client.get("/api/v1/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert STUB not in response.text, "Streamlit must not answer for the API"
+    assert STUB not in response.text, "the shell must not answer for the API"
 
 
 def test_an_unknown_api_path_is_the_apis_own_404(client):
@@ -638,21 +615,19 @@ def test_the_old_next_address_is_redirected_home(client):
         assert response.headers["location"] == new, old
 
 
-def test_the_old_app_answers_under_its_own_prefix(client):
-    assert LEGACY in client.get("/legacy/portfolio").text
-    assert STUB not in client.get("/legacy/portfolio").text
-    response = client.get("/legacy", follow_redirects=False)
-    assert response.status_code == 301
-    assert response.headers["location"] == "/legacy/"
-
-
-def test_the_old_app_is_kept_out_of_the_index(client):
-    assert client.get("/legacy/").headers["X-Robots-Tag"] == "noindex, nofollow"
+def test_the_old_app_address_lands_on_the_same_page_of_the_shell(client):
+    """The Streamlit app answered at `/legacy` once the shell replaced it, and
+    the what's-new card linked there: a bookmark must reach the page it named."""
+    for old, new in (("/legacy", "/"), ("/legacy/", "/"),
+                     ("/legacy/portfolio?tab=fees", "/portfolio?tab=fees"),
+                     ("/legacy/ticker?ticker=AAPL", "/ticker?ticker=AAPL")):
+        response = client.get(old, follow_redirects=False)
+        assert response.status_code == 301, old
+        assert response.headers["location"] == new, old
 
 
 def test_the_mirrored_logos_are_served_at_the_root(client, tmp_path, monkeypatch):
-    """The API hands them out as `/app/static/logos/…`, absolute — the old
-    app's static serving answers only under `/legacy` now."""
+    """The API hands them out as `/app/static/logos/…`, absolute."""
     static = tmp_path / "static"
     (static / "logos").mkdir(parents=True)
     (static / "logos" / "AAPL.png").write_bytes(b"png")
@@ -665,8 +640,8 @@ def test_the_mirrored_logos_are_served_at_the_root(client, tmp_path, monkeypatch
 
 def test_the_shell_carries_the_design_tokens_inlined(client):
     """Inlined so the page paints in the right colours on its first frame, and
-    so the charts read their palette from the same custom properties the
-    old app uses rather than fetching a second copy."""
+    so the charts read their palette from those custom properties rather than
+    fetching a second copy."""
     body = client.get("/portfolio").text
     assert "<!--AG-TOKENS-->" not in body
     assert "--ag-" in body
@@ -770,8 +745,8 @@ def test_the_dev_document_reads_the_real_source_entry():
 
 
 def test_the_entry_point_is_a_plain_asgi_app():
-    """Not an `st.App`: `streamlit run` would find one and serve it, and the
-    Streamlit app is a tenant of this server now, not its owner."""
+    """What uvicorn loads as `stocks.web.server:app` (Dockerfile, `stocks
+    dashboard`): one Starlette app in front of everything."""
     assert isinstance(server.app, Starlette)
 
 

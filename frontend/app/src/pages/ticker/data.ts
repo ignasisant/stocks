@@ -94,8 +94,8 @@ export const searchTickers = (q: string, limit = 12) =>
   get<{ query: string; matches: SearchMatch[] }>("/search", { q, limit });
 
 /**
- * An upsert, like the Streamlit app: favouriting or tagging a symbol that is
- * only held — or only searched for — lists it. PATCH would 404 on exactly the
+ * An upsert: favouriting or tagging a symbol that is only held — or only
+ * searched for — lists it. PATCH would 404 on exactly the
  * symbols somebody is most likely to be starring.
  */
 export const follow = (ticker: string, fields: EntryFields) =>

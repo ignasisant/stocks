@@ -47,12 +47,8 @@ Supporting files (templates, examples, longer references) live beside
 
 ## What is not shared
 
-Two things in `.claude/` stay per-machine and are gitignored:
-
-- `settings.local.json` — personal permissions and preferences.
-- `skills/developing-with-streamlit` — a symlink into `.venv`, shipped by the
-  installed Streamlit package. It only exists where that package is installed,
-  which is why `/.claude/` used to be ignored wholesale.
+One thing in `.claude/` stays per-machine and is gitignored:
+`settings.local.json`, personal permissions and preferences.
 
 Shared agent configuration, if we ever need it, goes in a versioned
 `.claude/settings.json` next to this folder.

@@ -88,9 +88,9 @@ export function Podium({
                     {ticker}
                   </TickerCell>
                 </div>
-                {/* The name under the symbol, as the Streamlit podium's
-                    `ticker_cell` prints it: three medals over bare symbols ask
-                    the reader to know every listing in the sector by heart. */}
+                {/* The name under the symbol: three medals over bare symbols
+                    ask the reader to know every listing in the sector by
+                    heart. */}
                 <CompanyName ticker={ticker} className="ag-sec-pod-name" />
                 <div className="ag-sec-score">
                   {typeof score === "number" ? Math.round(score * 100) : na}

@@ -209,7 +209,7 @@ class ActionCallAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
         self._bldr = _tb.class_("ActionCall")
-        self._properties: typing.Set[str] = set([  "action",  "ticker",  "alerts",  "tags",  "name",  "shares",  "cost",  ])
+        self._properties: typing.Set[str] = set([  "action",  "ticker",  "alerts",  "tags",  "name",  "shares",  "cost",  "broker",  "to_broker",  "date",  "since",  "until",  "trade",  "quantity",  "price",  "fee",  "currency",  "to",  "ids",  "new_date",  "new_quantity",  "new_price",  "new_fee",  ])
         self._props = ActionCallProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
@@ -264,6 +264,70 @@ class ActionCallProperties:
     @property
     def cost(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("cost"))
+    
+    @property
+    def broker(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("broker"))
+    
+    @property
+    def to_broker(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("to_broker"))
+    
+    @property
+    def date(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("date"))
+    
+    @property
+    def since(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("since"))
+    
+    @property
+    def until(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("until"))
+    
+    @property
+    def trade(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("trade"))
+    
+    @property
+    def quantity(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("quantity"))
+    
+    @property
+    def price(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("price"))
+    
+    @property
+    def fee(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("fee"))
+    
+    @property
+    def currency(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("currency"))
+    
+    @property
+    def to(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("to"))
+    
+    @property
+    def ids(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("ids"))
+    
+    @property
+    def new_date(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("new_date"))
+    
+    @property
+    def new_quantity(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("new_quantity"))
+    
+    @property
+    def new_price(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("new_price"))
+    
+    @property
+    def new_fee(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("new_fee"))
     
     
 

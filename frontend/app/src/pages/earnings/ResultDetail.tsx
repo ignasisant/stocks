@@ -1,12 +1,12 @@
 /**
  * The overview a past chip opens: how the quarter landed, section by section.
  *
- * Same dialog as the Streamlit one (`web.earnings_ui.render_result_body`): the
- * headline first — reported EPS against the estimate, and the price reaction —
- * then the print broken down into revenue, margins, the GAAP result, EPS
- * quality and next quarter's consensus. Each section leads with a visual (bars,
- * gauges, a dispersion range) and parks the numbers in a collapsed "Detail", so
- * the dialog answers "how did it go?" at a glance without becoming a sheet.
+ * First the headline — reported EPS against the estimate, and the price
+ * reaction — then the print broken down into revenue, margins, the GAAP result,
+ * EPS quality and next quarter's consensus. Each section leads with a visual
+ * (bars, gauges, a dispersion range) and parks the numbers in a collapsed
+ * "Detail", so the dialog answers "how did it go?" at a glance without becoming
+ * a sheet.
  *
  * The headline can paint before the network answers. A caller that already
  * holds the calendar row passes it as `result`, and the three EPS figures show
@@ -16,8 +16,7 @@
  * tiles around as it lands.
  *
  * Exported for the Home screen's past-earnings chips as well as this page's
- * calendar: the Streamlit app shares the one dialog between both, so the two
- * cannot drift, and so does this.
+ * calendar: one dialog for both, so the two cannot drift.
  */
 
 import { useEffect } from "react";
@@ -88,7 +87,7 @@ type TileSpec = {
   label: string;
   value: string;
   chip?: Chip;
-  /** Hover help — the Streamlit tile's `help=`. */
+  /** Hover help. */
   tip?: string;
 };
 
@@ -473,9 +472,8 @@ function GaapSection({
           },
         ]}
       />
-      {/* Quarters down the rows and line items across, the way the Streamlit
-          table reads once its phone cards transpose it — here it is simply
-          the orientation that scrolls sideways least. */}
+      {/* Quarters down the rows and line items across: the orientation that
+          scrolls sideways least. */}
       <Detail
         head={[
           t("earnings.col_quarter"),

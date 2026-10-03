@@ -1,8 +1,8 @@
 /**
  * The last five ledger rows — what this book did recently, not what it holds.
  *
- * Every amount is in the reporting currency at the trade date's ECB rate, as
- * the Streamlit strip prints it: `/portfolio/transactions` converts each row
+ * Every amount is in the reporting currency at the trade date's ECB rate:
+ * `/portfolio/transactions` converts each row
  * server-side with the rate the ledger replay already fetched. A row the
  * server could not convert falls back to the currency it was booked in rather
  * than to today's rate — guessing a two-year-old buy at this morning's rate
@@ -203,8 +203,7 @@ export function RecentTransactions({ query }: { query: Query<Transactions> }) {
                       <th>{t("home.col_date")}</th>
                       <th>{t("home.col_type")}</th>
                       <th>{t("home.col_ticker")}</th>
-                      {/* The column is one currency, so the header names it —
-                      Streamlit heads it with the code alone. */}
+                      {/* The column is one currency, so the header names it. */}
                       <th className="hm-num">
                         {data.base
                           ? `${t("home.col_amount")} (${data.base})`

@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from stocks.notify import links
-
-WEB = Path(__file__).resolve().parents[1] / "src" / "stocks" / "web"
 
 
 @pytest.fixture
@@ -41,7 +37,7 @@ def test_page_url_builds_paths_and_query(origin):
 
 
 def test_ticker_url_uppercases_and_uses_the_param_the_app_reads(origin):
-    # app.py hydrates from `?ticker=`, not `?symbol=`.
+    # The ticker page reads `?ticker=`, not `?symbol=`.
     assert links.ticker_url("nvda") == "https://topstocks.example/ticker?ticker=NVDA"
 
 
@@ -58,16 +54,13 @@ def test_an_explicit_base_wins_over_the_environment(monkeypatch):
 
 
 def test_linked_pages_are_pages_that_exist():
-    """The paths mirror what st.navigation derives from each page module's
-    filename, so a page renamed in web/app.py must rename the link too."""
-    for path in (links.PORTFOLIO, links.IMPORT, links.EARNINGS):
-        assert (WEB / "app_pages" / f"{path}.py").exists(), path
-    # And the menu agrees about where each of them lives. Asked of the table
-    # rather than of app.py's source: the pages are built from it now, so this
-    # is the claim itself instead of a grep for the line that used to make it.
+    """A link is only as good as the page the shell answers at its path, so a
+    page renamed in the navigation table must rename the link too."""
     from stocks import navigation
 
-    for path in (links.PORTFOLIO, links.IMPORT, links.EARNINGS, "ticker"):
+    for path in (links.PORTFOLIO, links.IMPORT, links.EARNINGS, links.TICKER):
+        assert path in navigation.SHELL_PATHS, path
         assert navigation.by_path(path) is not None, path
     assert links.TICKER == "ticker"
-    assert (WEB / "app_pages" / "home.py").exists() and links.HOME == ""
+    # Home is the shell's root, which is the empty path rather than a page.
+    assert links.HOME == ""

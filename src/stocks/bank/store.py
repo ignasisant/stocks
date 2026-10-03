@@ -3,15 +3,15 @@
 Two things live here:
 
 * `pending` — authorisations in flight. The bank redirect is a full page load,
-  so the Streamlit session that started the round trip is gone by the time the
-  user comes back: session_state cannot hold the `state` parameter. It is
+  so nothing in memory carries the `state` parameter from the request that
+  started the round trip to the one that brings the user back. It is
   written here instead, tied to the email that started it and short-lived, and
   consumed exactly once on the way back. That is what stops a `state` observed
   (or invented) elsewhere from attaching someone else's consent to this book.
 * `connections` — the sessions that survived: which bank, which accounts, and
   when the consent runs out. Plus the last fetch per account, because banks
   cap background fetches (commonly four a day) and the UI must not refetch on
-  every rerun.
+  every load.
 
 No secrets are stored: the session id is a handle that only works with our
 signed JWT, and the account uid is opaque. The IBAN is kept because the user

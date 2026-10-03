@@ -1,8 +1,6 @@
 """The assistant over HTTP: its threads, its settings, and one streaming turn.
 
-The Streamlit side panel (`web/chat_core.py`) is 3,600 lines of drawer built on
-`st.session_state`, and none of that is the assistant — it is the drawer. What
-the assistant *is* lives in `stocks.chat.engine`: the provider chain, the free
+The assistant itself lives in `stocks.chat.engine`: the provider chain, the free
 quota, skill routing, the web grounding, and a turn that ends with a completed
 user+assistant pair on disk. This router is the second binding of that engine
 (the Telegram bot is the first), so a React drawer and a chat window in Telegram
@@ -140,13 +138,47 @@ class Step(BaseModel):
     out: str = ""
 
 
+class Undone(BaseModel):
+    """A ledger proposal taken back: the line that says so and its new state."""
+
+    text: str
+    proposal: dict
+
+
+@router.post("/proposals/{pid}/undo", response_model=Undone,
+             summary="Take back a ledger edit the chat made")
+def undo(pid: str, paths: Writer, lang: str | None = None) -> Undone:
+    """Undo a ledger proposal that was approved (`engine.undo_proposal`).
+
+    The change is reversed through the book's journal, exactly as an undo
+    from the portfolio API, and the thread gets a line saying so. A proposal
+    this thread does not hold is a 404; one that is not an applied ledger edit
+    (a watchlist action, a pending or already undone one) or whose rows were
+    changed again since is a 409 naming why.
+    """
+    lang = (lang or _prefs(paths).get("language") or "en").strip().lower()
+    try:
+        reply = engine.undo_proposal(chat_path=paths.chat, db=paths.db,
+                                     proposal_id=pid, lang=lang)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"no proposal {pid} on this thread",
+        ) from exc
+    except engine.ProposalError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail=exc.code) from exc
+    return Undone(text=reply.text, proposal=dict(reply.proposal or {}))
+
+
 class ToolCallOut(BaseModel):
     """One frontend tool call on a stored turn.
 
     `navigate` with `{step}` is a walkthrough step the model offered
     (`guide_goto` on disk), with `{page, tab?, ticker?}` a page link (`nav`).
     `confirm_action` is a proposal (`proposal`), and `state` says whether it is
-    still waiting ("pending") or was answered ("done", "cancelled").
+    still waiting ("pending") or was answered ("done", "cancelled"); a ledger
+    edit taken back is "undone".
     """
 
     id: str
@@ -470,12 +502,11 @@ class Verdict(BaseModel):
 class Where(BaseModel):
     """The run's `state`: where the reader is when they ask.
 
-    The page slug and the ticker on screen. The Streamlit panel has always told
-    the model both (`chat_core._view_context`) — "is this a good entry?" means
-    nothing without the page it was asked on — and the focused symbol also
-    feeds the quote lookup and the gather, so a price for "it" is fetched even
-    when the message never names a ticker. Unknown slugs and anything that is
-    not a symbol are dropped, not echoed.
+    The page slug and the ticker on screen. The model is told both — "is this a
+    good entry?" means nothing without the page it was asked on — and the
+    focused symbol also feeds the quote lookup and the gather, so a price for
+    "it" is fetched even when the message never names a ticker. Unknown slugs
+    and anything that is not a symbol are dropped, not echoed.
     """
 
     model_config = {"extra": "forbid"}
@@ -574,9 +605,8 @@ def session_keys(provider: str | None, key: str | None) -> dict[str, str]:
     The React drawer's "this session only" key: held in the tab's
     sessionStorage and sent on each request that needs it, used for that
     request, and never written anywhere — not to prefs, not to a log line
-    (nothing in this API logs headers), not to the response. It is what the
-    Streamlit panel does with `st.session_state`, and it is the one way to use
-    a key of your own on a deployment with no encryption secret.
+    (nothing in this API logs headers), not to the response. It is the one way
+    to use a key of your own on a deployment with no encryption secret.
 
     Only for a provider this deployment offers and that takes a key; anything
     else is ignored rather than refused, because a stale tab holding a key for
@@ -666,7 +696,12 @@ def _activities(raw: dict, lang: str) -> list[dict]:
     ]
     offer = raw.get("proposal")
     if not (isinstance(offer, dict) and offer.get("state") == "pending"
-            and offer.get("id") and offer.get("kind") in tools.TOOLS):
+            and offer.get("id")):
+        return stored
+    if isinstance(offer.get("book"), dict) and offer["book"].get("ops"):
+        diff = a2ui.ledger_diff(offer, lambda key, **kw: translate(key, lang, **kw))
+        return [*stored, a2ui.activity(f"diff_{offer['id']}", diff)]
+    if offer.get("kind") not in tools.TOOLS:
         return stored
     form = a2ui.proposal_form(offer, lambda key: translate(key, lang))
     return [*stored, a2ui.activity(f"form_{offer['id']}", form)]
@@ -1226,8 +1261,14 @@ def _events(
 
 def _call_args(offer: dict) -> dict:
     """A proposal as `confirm_action`'s arguments — what would run."""
-    return {"kind": offer["kind"], "ticker": offer["ticker"],
-            "args": dict(offer.get("args") or {})}
+    out = {"kind": offer["kind"], "ticker": offer["ticker"],
+           "args": dict(offer.get("args") or {})}
+    held = offer.get("book")
+    if isinstance(held, dict):
+        # A ledger edit: no form to edit, and once done a change to undo.
+        out["book"] = {"summary": str(held.get("summary") or ""),
+                       "change": held.get("change")}
+    return out
 
 
 def _result(reply: engine.Reply) -> dict:
@@ -1370,6 +1411,7 @@ def ask(
                 chat_path=paths.chat, watchlist=paths.watchlist,
                 proposal_id=entry.interrupt_id, approve=said.approved, lang=lang,
                 ticker=said.ticker, args=said.args, form=said.form,
+                db=paths.db,
             )
         except LookupError as exc:
             raise HTTPException(
@@ -1632,8 +1674,7 @@ class RevealedKey(BaseModel):
 def reveal_key(provider: str, paths: Writer) -> JSONResponse:
     """The stored key, decrypted, for the reader who stored it.
 
-    The Streamlit panel's "Show key" toggle, and the one route in this API that
-    hands a secret *out*. Three things fence it:
+    The one route in this API that hands a secret *out*. Three things fence it:
 
     * `Writer`, so a signed-in session and nothing else. A bearer token reads
       an account but names nobody, and a key is not something any holder of a

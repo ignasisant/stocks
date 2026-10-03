@@ -57,7 +57,7 @@ class Me(BaseModel):
         description=(
             "The display name the identity provider gave, from the session's "
             "claims. Null when it gave none — the card falls back to the "
-            "address, as the Streamlit one does."
+            "address."
         ),
     )
     picture: str | None = Field(
@@ -82,7 +82,7 @@ class Me(BaseModel):
             "repo-root files the CLI shares. The owner's is not an account "
             "that can be deleted (`DELETE /account` answers 403), so a client "
             "hides the control rather than offering a button that can only "
-            "fail — the Streamlit page's `paths.root == PROJECT_ROOT` rule."
+            "fail."
         ),
     )
 

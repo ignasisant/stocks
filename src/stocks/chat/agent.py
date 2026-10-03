@@ -1,7 +1,7 @@
 """Model-directed gathering: let the model fetch what the question needs.
 
 The turn still ends the way it always has — one streamed answer through the
-provider chain in web/chat_core.py — because streaming is most of what the chat
+provider chain in chat/engine.py — because streaming is most of what the chat
 feels like. What changes is what that answer is grounded in. Instead of the
 fixed pre-flight's guess (route skills, plan a search, fetch quotes for any
 ticker mentioned, every single turn), a cheap tool loop runs first and the model

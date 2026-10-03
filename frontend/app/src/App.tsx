@@ -20,8 +20,8 @@ function Offline({ retry, error }: { retry: () => void; error?: unknown }) {
   const t = useT();
   // The one failure worth naming: the account's cloud copy could not be read,
   // so the API refused to serve an empty book whose next save would overwrite
-  // it. The server says so with the catalog key the Streamlit app prints for
-  // the same outage; anything else is the generic "data unavailable".
+  // it. The server says so with the catalog key for that outage; anything
+  // else is the generic "data unavailable".
   const storage =
     error instanceof ApiError && error.detail === "common.storage_restore_failed";
   return (
@@ -84,8 +84,7 @@ export default function App() {
     // The language is the account's preference, and the catalog cannot be
     // fetched until we know it — so the session resolves first and the
     // translations wrap only what is inside it. A guest has no preference, so
-    // `/prefs` answers null and the browser's own language wins, which is what
-    // the Streamlit app does for an anonymous visitor too.
+    // `/prefs` answers null and the browser's own language wins.
     //
     // `<Layout>` is inside all of this rather than inside the account branch:
     // a guest gets the chrome. Without the rail and the search box an anonymous

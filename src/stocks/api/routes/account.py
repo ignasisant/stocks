@@ -7,8 +7,8 @@ irreversible action has to be *named* by the caller who wants it, not merely
 requested, which is the same bar `DELETE /portfolio/transactions` sets for
 emptying a ledger.
 
-Deleting the data does not sign the browser out: the cookie is Streamlit's and
-is cleared by its own `/auth/logout`. A client sends the reader there next, and
+Deleting the data does not sign the browser out: the session cookie is cleared
+by `/auth/logout`. A client sends the reader there next, and
 the order matters — signing out first would take away the session this route
 authenticates with.
 """

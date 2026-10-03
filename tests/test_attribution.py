@@ -111,8 +111,6 @@ def test_the_landing_script_forwards_exactly_what_the_server_reads():
         assert f'q.get("{key}")' in js
     assert f'"&{attribution.PARAM_SRC}="' in js
     assert f"slice(0, {attribution.MAX_LEN})" in js
-    # Same sanitiser rule as the rest of the landing's inline scripts.
-    assert "<" not in js.replace("<script>", "").replace("</script>", "")
 
 
 # ------------------------------------------------------------------ the chain

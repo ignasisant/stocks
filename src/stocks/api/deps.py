@@ -46,8 +46,7 @@ def _valid(address: str) -> str:
 
 #: The 503 detail when the bucket round trip fails. An i18n key rather than a
 #: sentence, like `chat.rate_limited`: the shell renders it in the reader's
-#: language, and it is the same message the Streamlit app shows for the same
-#: outage (`web.auth.ensure_user_data`).
+#: language.
 STORAGE_RESTORE_FAILED = "common.storage_restore_failed"
 
 
@@ -88,7 +87,7 @@ def _session_account(email: str) -> UserPaths:
     bucket round trip failed, a data dir wiped under a live session — and each
     of those used to answer "unknown account" forever, which the shell can only
     render as its offline screen. So the cookie path heals instead: the same
-    `accounts.provision` + `stamp_login` the Streamlit session runs.
+    `accounts.provision` + `stamp_login` the OIDC callback runs.
 
     A token or `?account=` caller never reaches this; they go through
     `_resolve`, which still refuses to call an address into existence.
@@ -284,9 +283,8 @@ def _burst(scope: str):
     The daily free cap is not enough on its own: an account with its own key
     has no cap at all, and every turn fans out into routing, searches and a
     model call — so a runaway client (or a pasted loop) has to hit a wall
-    before the providers do. Keyed exactly as the Streamlit composer keys it
-    (`chat::<data dir>`), so the two front ends share one budget rather than
-    granting each reader twice as much through two doors.
+    before the providers do. Keyed by the account's data dir (`chat::<data dir>`),
+    so every door into one account spends one budget rather than one each.
 
     A dependency, not a check inside the handler: a refusal written in a body
     runs after body validation, and a turn is a streaming response whose status

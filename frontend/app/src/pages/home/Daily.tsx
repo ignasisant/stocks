@@ -1,12 +1,10 @@
 /**
  * The assistant's one-a-day briefing, first thing on the page.
  *
- * `web/daily_ui.py` is the specification, and its shape is the one this
- * component keeps: the day's first visit writes the card, a provider that
- * answers inside a couple of seconds lands straight away, and a slower one
- * leaves the computed card up — the same triggers, stated without a model —
- * with a pulsing line saying the real one is still being written, until it
- * swaps itself in. The section is never an empty slot and never a spinner.
+ * The day's first visit writes the card, a provider that answers inside a
+ * couple of seconds lands straight away, and a slower one leaves the computed
+ * card up — the same triggers, stated without a model — with a pulsing line
+ * saying the real one is still being written, until it swaps itself in. The section is never an empty slot and never a spinner.
  *
  * Three requests carry that over HTTP, and they are split on purpose:
  *
@@ -17,14 +15,14 @@
  *   one generation per account per key; asking again after a failure returns
  *   the computed card rather than calling the same dead provider.
  * - While the answer says `pending`, the card polls `GET /daily` every
- *   `POLL_MS` — `daily_ui`'s timed fragment — and stops the moment it does not.
+ *   `POLL_MS` and stops the moment it does not.
  *
  * "Regenerate" is `POST /daily?force=true`: the old card goes the instant it
  * is pressed (the reader just dismissed it; leaving it up would have them
  * reading a briefing they asked to replace), the button stays disabled while
  * its own rewrite is out, and a second press cannot start a second paid
- * generation. "Ask the assistant" opens the drawer, as the Streamlit button
- * does — it asks nothing on the reader's behalf.
+ * generation. "Ask the assistant" opens the drawer — it asks nothing on the
+ * reader's behalf.
  *
  * `source: "computed"` is the fallback built from the triggers alone when no
  * model answered. It is not prose, and it is not presented as a briefing: that
@@ -78,8 +76,7 @@ const POLL_MS = 1500;
  * Before the 09:00 cutoff the page shows *yesterday's* card (see
  * `daily.action_day`), so the date is never decoration: it is how the reader
  * knows the briefing predates this morning. The clock is the browser's own,
- * which is the reader's zone — the one thing the Streamlit page has to ask the
- * browser for.
+ * which is the reader's zone.
  */
 export function stampOf(
   card: Pick<DailyCard, "day" | "action_day" | "generated">,
@@ -211,9 +208,9 @@ export function Daily() {
         return;
       }
       asked.current = stored.action_day;
-      // An older card is not what `daily_ui.reserve` shows while today's is
-      // written either: it says who is working, so the wait reads as writing
-      // rather than as a page that broke.
+      // An older card is not what shows while today's is written either: the
+      // slot says who is working, so the wait reads as writing rather than as
+      // a page that broke.
       setState({ kind: "writing" });
       try {
         const card = await write(false);
@@ -223,8 +220,8 @@ export function Daily() {
         if (live) setState({ kind: "card", card: stored });
       }
     })().catch(() => {
-      // Never takes the dashboard down with it — the slot simply empties, as
-      // `daily_ui.render` clears it on any failure.
+      // Never takes the dashboard down with it — on any failure the slot
+      // simply empties.
       if (live) setState({ kind: "failed" });
     });
     return () => {

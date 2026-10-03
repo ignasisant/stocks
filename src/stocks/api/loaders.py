@@ -1,18 +1,14 @@
-"""Cached domain calls — this package's answer to `web.portfolio_data`.
+"""Cached domain calls, wrapped in `api.cache.ttl_cache`.
 
-Same job, same cache keys, different runtime. The page loaders are wrapped in
-`@st.cache_data`, which needs a script run to key against and so cannot cross
-into an ASGI worker; these are wrapped in `api.cache.ttl_cache`.
-
-The keys follow the pages' convention exactly — `(db path, ledger mtime, base
-currency)`. `mtime` invalidates a book the moment an import rewrites the file
+The keys follow one convention — `(db path, ledger mtime, base currency)`.
+`mtime` invalidates a book the moment an import rewrites the file
 rather than when a timer expires, and `base` is in the key because money is
 computed *in* the reporting currency (each leg at its own trade-date rate),
 so two accounts on different currencies must never share an entry.
 
 Nothing is reimplemented here: every function is a cache around a call into
 `stocks.portfolio` / `stocks.analysis`. When a number needs changing, it
-changes in the domain and both runtimes get it.
+changes in the domain and every caller gets it.
 
 The memos a page dies without when Yahoo says no — the book's frames, the
 watchlist's year, a chart's bars, a company's statements and calendar, the
@@ -290,8 +286,7 @@ def history(db: str, mtime: float, base: str, closes):
 
 
 # How far back the fixed basket reaches. The movers card's longest window is a
-# month, and three months is what `web.portfolio_data.basket_history` slices —
-# the same frame, so the two front ends anchor on the same rows.
+# month, and three months covers it with room to spare.
 _BASKET_MONTHS = 3
 
 
@@ -359,9 +354,7 @@ def _bars_download(ticker: str, period: str, interval: str) -> pd.DataFrame:
 def price_bars(ticker: str, label: str) -> pd.DataFrame:
     """OHLCV plus indicators for one range label, shaped by `analysis.history`.
 
-    Shared with the Ticker page down to the trimming and the indicator columns,
-    so the two front ends cannot draw different bars for the same range. The
-    memo is on the download, not the label: the four daily labels under a
+    The memo is on the download, not the label: the four daily labels under a
     year are one 2y frame cut four ways, and keying by label fetched it four
     times as a reader flipped through them.
     """
@@ -398,9 +391,8 @@ def earnings(ticker: str):
 def spot_rates(ccys: tuple[str, ...], base: str = "EUR") -> dict[str, float]:
     """{currency: native->`base` spot} for the currencies a book trades in.
 
-    The page's `web.portfolio_data.native_base_rates`, same ttl and same
-    contract: every money figure here is computed *in* the reporting currency,
-    so dividing one back by its rate is how a share price gets quoted in the
+    Every money figure here is computed *in* the reporting currency, so
+    dividing one back by its rate is how a share price gets quoted in the
     currency its market quotes it in. Pairs whose lookup fails are absent —
     the caller prints nothing rather than a dollar figure under a euro sign.
     """
@@ -658,10 +650,10 @@ def policy_rate(currency: str) -> tuple[str, float, date] | None:
 
 
 # ---------------------------------------------------------------- search tiers
-# The page wraps these five in `st.cache_data`; the tiers themselves live in
-# `stocks.search` and are handed whichever of the two a runtime owns. Every one
-# swallows its exceptions: search degrading to the tiers that answered is the
-# app's behaviour, and a dead Yahoo must not 500 a keystroke.
+# The tiers themselves live in `stocks.search`; these are the cached lookups it
+# is handed. Every one swallows its exceptions: search degrading to the tiers
+# that answered is the app's behaviour, and a dead Yahoo must not 500 a
+# keystroke.
 
 _SEARCH_TTL = 86400.0
 _WORLD_TTL = 3600.0
@@ -780,9 +772,8 @@ def company_name(ticker: str, watchlist: str) -> str | None:
 def logo(ticker: str) -> str | None:
     """Same-origin logo URL, absolute.
 
-    Absolute rather than the app's relative form because the React document is
-    served from `/ticker`, not from the Streamlit mount — a relative path would
-    resolve against whatever route the reader happens to be on.
+    Absolute, not relative: a relative path would resolve against whatever
+    route the reader happens to be on.
     """
     return identity.logo_src(ticker, prefix="/" + identity.STATIC_PREFIX)
 
@@ -890,7 +881,8 @@ def dividend_estimates(db: str, mtime: float, base: str = "EUR") -> tuple:
     estimated = div.estimate_by_year(payments, base=base)
     forward = div.forward_income(txs, history)
     totals = div.forward_totals(forward, base=base)
-    unrecorded = div.unrecorded_by_year(div.by_year(txs, base=base), estimated)
+    unrecorded = div.unrecorded_by_year(
+        div.by_year(txs, base=base, capital=True), estimated)
     return estimated, forward, totals, unrecorded
 
 
@@ -1068,8 +1060,7 @@ def basket_report_since(db: str, mtime: float, base: str):
     never held anything: a volatility and a drawdown for money that was not
     there, and betas taken over the same borrowed past. So the basket returns,
     each benchmark's returns and the correlation input all start at the first
-    transaction, exactly where the Streamlit tab's "since inception" starts
-    them.
+    transaction.
 
     A copy, never the cached report mutated in place: `basket_report` is
     memoized and shared with every other window (and with the Pulse page), and

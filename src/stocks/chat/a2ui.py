@@ -203,3 +203,41 @@ def column_mapping(mapping: dict, columns: list[str], translate) -> list[dict]:
                     for f in llm_map.FIELDS},
     }}
     return surface(sid, [root, intro, *pickers, again], data)
+
+
+def ledger_diff(offer: dict, translate) -> list[dict]:
+    """What a ledger proposal would change, as figures under its card.
+
+    Read-only: a book edit is committed exactly as planned (`chat/book.py`),
+    so there is no form — only the positions, the shares held and the gain
+    per tax year before and after. The same facts are lines in the turn's
+    text for a reader without the drawer (Telegram).
+    """
+    figures = (offer.get("book") or {}).get("impact") or {}
+    sid = f"diff_{offer['id']}"
+    metrics: list[dict] = []
+    before, after = (figures.get("positions") or [0, 0])[:2]
+    if before != after:
+        metrics.append(component(
+            "m_positions", "Metric",
+            label=translate("chat.book_metric_positions"),
+            value=f"{before} → {after}", tone="flat"))
+    for i, held in enumerate(figures.get("held") or []):
+        metrics.append(component(
+            f"m_held_{i}", "Metric", label=str(held["ticker"]),
+            value=f"{format(held['before'], '.10g')} → "
+                  f"{format(held['after'], '.10g')}",
+            tone="flat"))
+    for year, per in sorted((figures.get("realized") or {}).items()):
+        for currency, delta in sorted(per.items()):
+            metrics.append(component(
+                f"m_gain_{year}_{currency}", "Metric",
+                label=translate("chat.book_metric_realized", year=year),
+                value=f"{delta:+,.2f} {currency}",
+                tone="up" if delta > 0 else "down"))
+    if not metrics:
+        metrics.append(component(
+            "m_same", "Metric", label=translate("chat.book_metric_unchanged"),
+            value=translate("chat.book_metric_same"), tone="flat"))
+    root = component("root", "Row", children=[m["id"] for m in metrics])
+    return surface(sid, [root, *metrics], {})

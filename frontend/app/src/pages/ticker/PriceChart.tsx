@@ -166,15 +166,15 @@ export function PriceChart({
   const band = inner / Math.max(1, to - from + 1);
   const xOf = (index: number) => box.left + (index - from + 0.5) * band;
   /**
-   * Where an event's diamond sits: 1% over its bar's high, Streamlit's
-   * `High * 1.01` — above the candle it annotates, never on it. The close on a
-   * bar with no high, which a line chart's series can be.
+   * Where an event's diamond sits: 1% over its bar's high — above the candle
+   * it annotates, never on it. The close on a bar with no high, which a line
+   * chart's series can be.
    */
   const diamondY = (index: number) => (high[index] ?? close[index] ?? 0) * 1.01;
 
-  // Every buy and sell dated inside the range, on the bar it belongs to —
-  // Streamlit's `>= chart_start`, so an entry older than the window is off its
-  // left edge rather than stacked onto the first candle.
+  // Every buy and sell dated inside the range, on the bar it belongs to, so an
+  // entry older than the window is off its left edge rather than stacked onto
+  // the first candle.
   const fills = useMemo<Fill[]>(() => placeFills(trades, days), [trades, days]);
 
   const marks = useMemo(() => {
@@ -334,10 +334,10 @@ export function PriceChart({
   const tip = hover === null ? null : tooltip(hover);
 
   /**
-   * Streamlit's unified box for one bar, row for row and in its trace order:
-   * the price (and open/high/low on candles), SMA20, SMA50, SMA200 where they
-   * have a value, the fills on that bar, then its dividend and results
-   * diamonds. See `hover.ts` for what each row says.
+   * The hover box for one bar, row for row and in trace order: the price (and
+   * open/high/low on candles), SMA20, SMA50, SMA200 where they have a value,
+   * the fills on that bar, then its dividend and results diamonds. See
+   * `hover.ts` for what each row says.
    */
   function tooltip(index: number): { title: string; lines: TipLine[] } {
     const priceSwatch = candles ? colors.candleUp : colors.brandAccent;
@@ -361,7 +361,7 @@ export function PriceChart({
       if (value) lines.push(value);
     }
     // The return on a buy is to the range's LAST close, whatever window is
-    // zoomed — Streamlit's `last`, the same figure the price metric prints.
+    // zoomed — the same figure the price metric prints.
     const lastClose = latest(close);
     for (const fill of fills.filter((one) => one.index === index)) {
       const buy = fill.trade.action === "buy";
@@ -414,12 +414,12 @@ export function PriceChart({
           format={(v) => money(v, range.hi >= 100 ? 0 : 2)}
         />
 
-        {/* Corporate events, as Streamlit draws them: a quiet dotted
-            vertical, the kind's letter on top in its colour ("d" dividend,
-            "r" results), and a small diamond over the bar's high whose row in
-            the tooltip says what it was. On weekly or monthly bars only the
-            diamond: forty years of quarterly dividends is a vertical every
-            third candle, a curtain over the chart rather than a marker. */}
+        {/* Corporate events: a quiet dotted vertical, the kind's letter on top
+            in its colour ("d" dividend, "r" results), and a small diamond over
+            the bar's high whose row in the tooltip says what it was. On weekly
+            or monthly bars only the diamond: forty years of quarterly dividends
+            is a vertical every third candle, a curtain over the chart rather
+            than a marker. */}
         {[...marks.kinds.entries()]
           .filter(([index]) => index >= from && index <= to)
           .map(([index, kind]) => {
@@ -532,9 +532,9 @@ export function PriceChart({
           ));
         })}
 
-        {/* The reader's own fills: Streamlit's 12px triangles, buys up in the
-            primary text colour and sells down in the loss colour, outlined in
-            the canvas colour so they read against candles of either sign. */}
+        {/* The reader's own fills: 12px triangles, buys up in the primary
+            text colour and sells down in the loss colour, outlined in the
+            canvas colour so they read against candles of either sign. */}
         {fills
           .filter((fill) => fill.index >= from && fill.index <= to)
           .map((fill, at) => {

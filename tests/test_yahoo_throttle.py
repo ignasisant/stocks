@@ -4,7 +4,7 @@ Not to be confused with `test_throttle.py`, which is the per-client HTTP burst
 limit in front of the app — this one is about the provider throttling us.
 
 Both exist for the same failure: Yahoo refuses this host's egress IP, and the
-app spends minutes rediscovering that, once per block, on every rerun.
+app spends minutes rediscovering that, once per block, on every request.
 """
 
 import logging
@@ -97,7 +97,7 @@ def test_a_hung_download_gives_up_at_the_budget():
 
 
 def test_the_budget_does_not_open_the_cooldown():
-    """Slow is not the same claim as refused — the next rerun must try again."""
+    """Slow is not the same claim as refused — the next request must try again."""
     with pytest.raises(YFRateLimitError):
         fetch._budgeted(lambda: time.sleep(5), budget=0.1)
     assert fetch.throttle_remaining() == 0

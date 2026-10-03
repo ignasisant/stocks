@@ -1,5 +1,5 @@
 /**
- * "Refresh this sector" — the Streamlit page's live rescan, over
+ * "Refresh this sector" — the live rescan, over
  * `POST`/`GET /sectors/{sector}/rescan`.
  *
  * A rescan is one sector's whole cohort fetched from Yahoo again: about a
@@ -7,10 +7,10 @@
  * only starts it and this polls the GET until it lands, then asks the page to
  * reload the cohort — which the server now answers from the fresh scan.
  *
- * Two places offer it, as on the Streamlit page: beside the picker, quieter
- * than it (a rare action that costs a minute of Yahoo), and as the only way out
- * of the empty card for a sector the nightly job never reached. Both read the
- * same hook, so a scan started from one shows its progress in the other.
+ * Two places offer it: beside the picker, quieter than it (a rare action that
+ * costs a minute of Yahoo), and as the only way out of the empty card for a
+ * sector the nightly job never reached. Both read the same hook, so a scan
+ * started from one shows its progress in the other.
  *
  * A guest gets neither. The route is a write — it spends the account's hourly
  * budget and the deployment's standing with Yahoo — and a button that answers

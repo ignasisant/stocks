@@ -1,11 +1,9 @@
 /*
  * Home's own stylesheet. Every colour, radius and type step is an `--ag-*`
- * custom property the server inlines, so this page and the Streamlit one it
- * replaces cannot drift apart — and so there is no hex literal here for the
+ * custom property the server inlines, so there is no hex literal here for the
  * design system to disagree with.
  *
- * The card is deliberately the same shape `web/tables.py` draws; the KPI tile
- * and the delta pill are the app-wide ones in `src/ui/ui.css`.
+ * The KPI tile and the delta pill are the app-wide ones in `src/ui/ui.css`.
  */
 
 .hm-page {
@@ -318,8 +316,7 @@
 /* A ticker in a table cell: one line, mark and symbol side by side and
    centred on each other whatever height the mark arrives at. A row without a
    mark keeps the mark's slot empty rather than sliding its symbol left, so the
-   symbols stay in one column down the table — the Streamlit cell reserves the
-   same space (`tables.py`, the 30px spacer). */
+   symbols stay in one column down the table. */
 .hm-table .hm-ticker {
   display: flex;
   align-items: center;
@@ -896,8 +893,7 @@
 /* ------------------------------------------------------ the first-run card */
 
 /* Two stacked groups in one card. The gap between them is wider than the gap
-   inside one, so the grouping carries itself without a rule — the Streamlit
-   card sets the same two gaps for the same reason. */
+   inside one, so the grouping carries itself without a rule. */
 .hm-firstrun {
   gap: 1.1rem;
 }
@@ -1136,8 +1132,7 @@ button.hm-check-on:hover {
 /* The sparkline's key. Small and inline: it names two lines, it is not a
    chart legend in its own right. */
 /* The range selector sits over the chart, right-aligned, out of the way of the
-   legend under it — the Streamlit card puts its segmented control in the same
-   place. */
+   legend under it. */
 .hm-spark-head {
   display: flex;
   justify-content: flex-end;

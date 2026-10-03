@@ -17,6 +17,11 @@
  * The bubble above holds the question; the card holds only the controls, and
  * once answered, where the proposal ended up. Typing "yes" under it does the
  * same as pressing Confirm (the server settles it), and the card follows.
+ *
+ * A ledger edit (`args.book`, from `chat/book.py`) has no Edit: it was planned
+ * against the book on the server and commits exactly as the figures above it
+ * say. Once done it offers Undo, which takes the change back through the
+ * book's journal.
  */
 
 import { useRef, useState } from "react";
@@ -30,12 +35,15 @@ export function ActionCard({
   call,
   form,
   onDecide,
+  onUndo,
 }: {
   call: ToolCall;
   /** The edit form's A2UI messages, when the server sent one. */
   form?: A2uiMessage[];
   /** Answer it; resolves with the refusal's key, or null when it went through. */
   onDecide?: (id: string, approved: boolean, edits?: Edits) => Promise<string | null>;
+  /** Take back a ledger edit once done; resolves like `onDecide`. */
+  onUndo?: (id: string) => Promise<string | null>;
 }) {
   const t = useT();
   const [editing, setEditing] = useState(false);
@@ -45,7 +53,37 @@ export function ActionCard({
   // surface owns the typing, this card only needs the last value of it.
   const typed = useRef<Record<string, string> | null>(null);
 
-  if (call.state === "done") return <Badge>{t("chat.action_done")}</Badge>;
+  const book = call.args.book as { change?: number | null } | undefined;
+  if (call.state === "undone") return <Badge>{t("chat.action_undone")}</Badge>;
+  if (call.state === "done") {
+    if (!book?.change || !onUndo) return <Badge>{t("chat.action_done")}</Badge>;
+    const takeBack = async () => {
+      setSaving(true);
+      setError(null);
+      const refused = await onUndo(call.id);
+      setSaving(false);
+      setError(refused);
+    };
+    return (
+      <div className="ag-chat-act">
+        {error && <p className="ag-chat-hint ag-chat-act-error">{t(error)}</p>}
+        {saving ? (
+          <Status label={t("chat.action_working")} />
+        ) : (
+          <div className="ag-guide-acts">
+            <Badge>{t("chat.action_done")}</Badge>
+            <button
+              type="button"
+              className="ag-chat-btn"
+              onClick={() => void takeBack()}
+            >
+              {t("chat.action_undo")}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
   if (call.state === "cancelled") return <Badge>{t("chat.action_declined")}</Badge>;
   if (!onDecide) return null;
 
@@ -82,7 +120,7 @@ export function ActionCard({
           >
             {t("chat.action_approve")}
           </button>
-          {!editing && form && (
+          {!editing && form && !book && (
             <button
               type="button"
               className="ag-chat-btn"

@@ -1,16 +1,13 @@
 """The session cookie: who a request is signed in as, and who signed it.
 
 The other half of `stocks.accounts`. That module answers *where does this
-email's data live*; this one answers *who is this request*, and like it, it
-knows nothing about Streamlit — because more than one runtime asks:
+email's data live*; this one answers *who is this request* — for both sides
+that ask:
 
 * the Starlette flow that mints the cookie (`stocks.web.oidc`),
-* the internal HTTP API (`stocks.api.security`), for a browser caller,
-* the Streamlit pages (`stocks.web.auth`), which read it off `st.context`.
+* the internal HTTP API (`stocks.api.security`), for a browser caller.
 
-One codec, one cookie name, one place the claims are shaped. Before this, the
-cookie was Streamlit's `_streamlit_user` and only `st.login()` could create
-one, which meant the React shell could read a session and never start one.
+One codec, one cookie name, one place the claims are shaped.
 
 Nothing here raises. Every way a request can fail to carry an identity — no
 cookie, another secret, a tampered body, an expired stamp, a payload that is
@@ -44,11 +41,6 @@ FLOW_MAX_AGE = 600
 LOGIN_PATH = "/auth/login"
 LOGOUT_PATH = "/auth/logout"
 CALLBACK_PATH = "/oauth2callback"
-
-#: Cookies Streamlit's own `st.login()` wrote, read during the migration and
-#: cleared on the way out. Both go when the grace read does.
-LEGACY_COOKIE = "_streamlit_user"
-LEGACY_TOKENS_COOKIE = "_streamlit_user_tokens"
 
 #: The payload shape. A cookie stamped with a version this build does not know
 #: names nobody rather than being parsed as best it can.
@@ -84,23 +76,16 @@ def sign_in_configured() -> bool:
     )
 
 
-def _serializer(salt: str, *, legacy: bool = False) -> URLSafeTimedSerializer | None:
+def _serializer(salt: str) -> URLSafeTimedSerializer | None:
     """The signer for one cookie, or None when there is no secret to sign with.
 
     The salt is load-bearing: the session and the flow cookie share a secret,
     so without it a flow cookie could be presented as a session. SHA-256 is
-    pinned for ours because itsdangerous still defaults to SHA-1.
-
-    `legacy` drops that pin, because the cookie `st.login()` wrote was signed
-    with itsdangerous' defaults and the grace read has to reproduce them
-    exactly — the same secret and salt under a different digest verifies
-    nothing at all.
+    pinned because itsdangerous still defaults to SHA-1.
     """
     key = signing_secret()
     if not key:
         return None
-    if legacy:
-        return URLSafeTimedSerializer(key, salt=salt)
     return URLSafeTimedSerializer(
         key, salt=salt, signer_kwargs={"digest_method": hashlib.sha256}
     )
@@ -119,15 +104,14 @@ def _seal(salt: str, payload: dict) -> str | None:
     return value
 
 
-def _open(salt: str, raw: str, max_age: int, *, legacy: bool = False) -> dict | None:
+def _open(salt: str, raw: str, max_age: int) -> dict | None:
     """Verify one cookie value and return its object, or None.
 
-    Broad on purpose, and the breadth is the point. Reading the secret goes
-    through Streamlit's secrets loader, which raises on a malformed
-    secrets.toml — and a bad config file must degrade to "nobody is signed in",
-    not 500 every request on the deployment.
+    Broad on purpose, and the breadth is the point: whatever goes wrong reading
+    the secret or the cookie must degrade to "nobody is signed in", not 500
+    every request on the deployment.
     """
-    signer = _serializer(salt, legacy=legacy)
+    signer = _serializer(salt)
     if signer is None or not raw:
         return None
     try:
@@ -192,22 +176,11 @@ def mint(claims: Mapping[str, object]) -> str | None:
 
 
 def claims(cookies: Mapping[str, str]) -> dict | None:
-    """The identity claims this request carries, or None.
-
-    Falls back to the cookie `st.login()` used to write, signed with the same
-    secret under its own salt, so the change of issuer cannot sign anybody out
-    mid-session. That fallback — and the clearing of those cookies on sign-out
-    that goes with it — is temporary and leaves together.
-    """
+    """The identity claims this request carries, or None."""
     payload = _open(COOKIE, cookies.get(COOKIE, ""), MAX_AGE)
-    if payload is not None:
-        return payload if payload.get("v") == VERSION else None
-    # A chunked legacy cookie carries its marker inside the signed value, so
-    # json.loads fails and this reads as signed out rather than as somebody
-    # else. Google's claims are ~400 bytes, so chunking never happened here.
-    return _open(
-        LEGACY_COOKIE, cookies.get(LEGACY_COOKIE, ""), MAX_AGE, legacy=True
-    )
+    if payload is None:
+        return None
+    return payload if payload.get("v") == VERSION else None
 
 
 def signed_in_email(cookies: Mapping[str, str]) -> str | None:

@@ -303,8 +303,8 @@ def position(symbol: Symbol, account: Account, base: Base = None) -> TickerPosit
     ccy = reporting_currency(account, base)
     # The book's pricing pass is the one network-bound step here, and the
     # fills above do not need it. A throttled Yahoo must cost the reply its
-    # value and weight — Streamlit's `_position_values_safe` — not the whole
-    # answer: a 5xx here took every buy and sell marker off the chart with it.
+    # value and weight, not the whole answer: a 5xx here took every buy and
+    # sell marker off the chart with it.
     try:
         table = loaders.positions_table(db, mtime, ccy)
     except Exception as exc:
@@ -479,9 +479,8 @@ def financials(symbol: Symbol) -> Financials:
     estimate_ccy = None
     if not annual.empty:
         raw_estimates = loaders.estimates(ticker)
-        # Revenue's currency first, EPS's as the fallback — the same order the
-        # Streamlit page asks in, so the two agree on which currency the
-        # consensus is in when only one table carries a code.
+        # Revenue's currency first, EPS's as the fallback, for when only one
+        # table carries a code.
         estimate_ccy = estimate_currency(
             raw_estimates.revenue_estimate
         ) or estimate_currency(raw_estimates.earnings_estimate)
@@ -527,11 +526,11 @@ def _currency_clash(statements: str | None, estimates: str | None) -> bool:
 
     An ADR is the case this exists for: TSMC files in TWD while its analysts
     quote per USD ADS, so the "forecast" bar would sit next to the reported ones
-    thirty-odd times too short. Streamlit's `_projection` drops the whole path
-    then rather than converting it — a share-count ratio sits between the two as
-    well as a rate — and this route does the same, on the server, so no client
-    can forget the check and draw the cliff. Unknown on either side is not a
-    clash: most names carry no `financialCurrency` and are fine.
+    thirty-odd times too short. The whole path is dropped then rather than
+    converted — a share-count ratio sits between the two as well as a rate —
+    and on the server, so no client can forget the check and draw the cliff.
+    Unknown on either side is not a clash: most names carry no
+    `financialCurrency` and are fine.
     """
     return bool(statements and estimates and statements != estimates)
 
@@ -541,9 +540,9 @@ def _trades(
 ) -> list[Trade]:
     """The caller's buys and sells of one name, chart-ready.
 
-    Relabelling and split-scaling both live in `corporate.own_fills`, which the
-    Streamlit page calls too — the two corrections are invisible when missing,
-    and one place to forget them is enough. `code` is the charted listing's
+    Relabelling and split-scaling both live in `corporate.own_fills`: the two
+    corrections are invisible when missing, and one place to forget them is
+    enough. `code` is the charted listing's
     quote currency: the fills are priced in it first, so a dollar buy of a
     name charted in euros marks the euro price it paid.
     """
@@ -699,8 +698,7 @@ def moat(symbol: Symbol) -> Moat:
     """
     ticker = symbol.strip().upper()
     scored = moat_score(loaders.fundamentals(ticker))
-    # The tone off the same band table the KPI grid's verdicts use, so the chip
-    # is the colour Streamlit's `verdict("moat", …)` paints it.
+    # The tone off the same band table the KPI grid's verdicts use.
     banded = verdict("moat", scored.score)
     return Moat(
         ticker=ticker,
@@ -735,10 +733,10 @@ def insiders(symbol: Symbol) -> Insiders:
     source = "SEC" if trades else None
     filer = _sec_filer(ticker)
 
-    # BaFin only for a symbol the SEC has never heard of — Streamlit's rule. A
-    # US filer in a quiet quarter is an empty Form 4 list, not a German issuer,
-    # and asking BaFin by its name would spend a request and could match an
-    # unrelated company whose name happens to overlap.
+    # BaFin only for a symbol the SEC has never heard of. A US filer in a quiet
+    # quarter is an empty Form 4 list, not a German issuer, and asking BaFin by
+    # its name would spend a request and could match an unrelated company whose
+    # name happens to overlap.
     if not trades and filer is False:
         issuer = _issuer_name(ticker)
         if issuer:
@@ -747,9 +745,8 @@ def insiders(symbol: Symbol) -> Insiders:
 
     # Newest first, undated last: the table shows the first thirty and a feed
     # that arrives filing-ordered (or BaFin's publication order) would otherwise
-    # decide which thirty. `transactions_frame` sorts the Streamlit table the
-    # same way. The whole list still travels — the monthly flow chart and the
-    # summary read every row, as they do there.
+    # decide which thirty. The whole list still travels — the monthly flow
+    # chart and the summary read every row.
     trades = sorted(
         trades, key=lambda t: (t.date is not None, t.date or date.min), reverse=True
     )
@@ -770,8 +767,7 @@ def insiders(symbol: Symbol) -> Insiders:
                 shares=t.shares if t.acquired else -t.shares,
                 price=_num(t.price),
                 # Null with no notional, never a signed zero: a sale with no
-                # price printed as "-0" reads as a trade worth nothing, and
-                # Streamlit's frame leaves that cell blank.
+                # price printed as "-0" reads as a trade worth nothing.
                 value=_num(t.value if t.acquired else -t.value) if t.value else None,
                 is_open_market=t.is_open_market,
                 currency=getattr(t, "currency", None),
@@ -785,13 +781,13 @@ def insiders(symbol: Symbol) -> Insiders:
 def _issuer_name(ticker: str) -> str | None:
     """The company name BaFin's register is searched by.
 
-    Yahoo's `longName` first, as on the Streamlit page. Then its
-    `company_name()` fallback minus the watchlist leg: this route takes no
-    account — every figure on it is the company's — so a name somebody typed on
-    their own list is not available here, and the fund catalog and the SEC map
-    are what is left. Rarely reached: the common miss is Yahoo throttled, and a
-    German issuer is then usually still in neither list, in which case the card
-    says "not covered" rather than guessing.
+    Yahoo's `longName` first. Then the `company_name()` fallback minus the
+    watchlist leg: this route takes no account — every figure on it is the
+    company's — so a name somebody typed on their own list is not available
+    here, and the fund catalog and the SEC map are what is left. Rarely
+    reached: the common miss is Yahoo throttled, and a German issuer is then
+    usually still in neither list, in which case the card says "not covered"
+    rather than guessing.
     """
     issuer = str(loaders.fundamentals(ticker).info.get("longName") or "").strip()
     if issuer:

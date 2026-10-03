@@ -2,16 +2,14 @@
  * The drawing primitives every chart on this page shares: a frame, a scale,
  * nice axis ticks, a grid and a tooltip.
  *
- * These are SVG. The Streamlit page and the standalone `/ticker` document draw
- * the same charts in Plotly, and this shell has no Plotly in it — see
- * `Ticker.tsx` for why that is a decision and not an omission. What survives is
- * the reading rather than the interaction: every figure a Plotly hover box
- * carried is still on screen, in a tooltip this page draws itself, and the
- * price chart keeps the drag-to-zoom gesture the readout under it reports.
+ * These are SVG — see `Ticker.tsx` for why there is no charting library. What
+ * a chart keeps is the reading rather than the interaction: every figure is on
+ * screen, in a tooltip this page draws itself, and the price chart keeps the
+ * drag-to-zoom gesture the readout under it reports.
  *
  * Geometry lives in the markup and colour lives in `token()` — the `--ag-*`
- * custom properties the server inlines — so these agree with the Streamlit
- * charts and with both themes, and nothing here writes a colour by hand.
+ * custom properties the server inlines — so these follow both themes, and
+ * nothing here writes a colour by hand.
  */
 
 import type { ReactNode } from "react";

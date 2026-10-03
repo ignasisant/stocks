@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 
+from stocks import watchlist as wl
 from stocks.config import load_watchlist
 from stocks.web import auth
 
@@ -20,6 +21,13 @@ def watchlist(tmp_path):
     p = tmp_path / "watchlist.yaml"
     p.write_text(auth.STARTER_WATCHLIST)
     return p
+
+
+def take_up(rows: list[dict], path) -> None:
+    """What the page does with an offer: `POST /watchlist` once per row."""
+    for row in rows:
+        wl.add_entry(path, row["ticker"], row["name"])
+        wl.set_tags(path, row["ticker"], row["tags"])
 
 
 def test_no_declared_focus_means_no_offer(watchlist):
@@ -53,24 +61,13 @@ def test_the_offer_empties_out_once_it_has_been_taken_up(watchlist):
     focus = {"focus": ["dividends_value"]}
     first = auth.focus_suggestions(focus, watchlist)
     assert first
-    kept = [
-        {"ticker": h.ticker, "name": h.name, "favorite": h.favorite,
-         "shares": h.shares or None, "cost": h.cost, "tags": h.tags}
-        for h in load_watchlist(watchlist)
-    ]
-    auth.save_watchlist_entries(kept + first, watchlist)
+    take_up(first, watchlist)
     assert auth.focus_suggestions(focus, watchlist) == []
 
 
 def test_adding_them_keeps_every_row_the_watchlist_already_had(watchlist):
     before = load_watchlist(watchlist)
-    kept = [
-        {"ticker": h.ticker, "name": h.name, "favorite": h.favorite,
-         "shares": h.shares or None, "cost": h.cost, "tags": h.tags}
-        for h in before
-    ]
-    suggested = auth.focus_suggestions({"focus": ["tech"]}, watchlist)
-    auth.save_watchlist_entries(kept + suggested, watchlist)
+    take_up(auth.focus_suggestions({"focus": ["tech"]}, watchlist), watchlist)
 
     after = {h.ticker: h for h in load_watchlist(watchlist)}
     for h in before:
@@ -102,8 +99,8 @@ def test_the_registry_covers_every_area_the_form_can_select():
 
 
 def test_no_example_is_offered_under_two_areas(watchlist):
-    """Ticker in two areas would be added twice, and save_watchlist_entries
-    would silently drop the second — better not to promise it."""
+    """A ticker in two areas would be offered twice and listed once, the
+    second tagging silently replacing the first — better not to promise it."""
     everything = auth.focus_suggestions({"focus": list(auth.PROFILE_FOCUS)}, watchlist)
     tickers = [e["ticker"] for e in everything]
     assert len(tickers) == len(set(tickers))

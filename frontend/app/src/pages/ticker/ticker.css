@@ -3,10 +3,9 @@
  * with the shell's `ag-` classes or with a sibling page's.
  *
  * Every colour, radius and type step is a `--ag-*` custom property that
- * `web/ds.py` emits and `server.py` inlines into the document — the same tokens
- * the Streamlit app paints with. No hex is written here: a colour that is not a
- * token is a colour the design system does not know about, and it will be wrong
- * in one of the two themes.
+ * `web/ds.py` emits and `server.py` inlines into the document. No hex is
+ * written here: a colour that is not a token is a colour the design system
+ * does not know about, and it will be wrong in one of the two themes.
  */
 
 .tk-page {
@@ -225,9 +224,9 @@
 
 /* --------------------------------------------------------------------- tones
    One vocabulary for every coloured cue on the page, and it is the domain's:
-   `analysis.fundamentals` bands a KPI green / orange / red / gray and both
-   front ends print that word. Colouring by the LABEL instead needs a new rule
-   per band and shows every unseen one as neutral. */
+   `analysis.fundamentals` bands a KPI green / orange / red / gray, and that
+   word is the class. Colouring by the LABEL instead needs a new rule per band
+   and shows every unseen one as neutral. */
 
 .tk-is-green {
   color: var(--ag-up);
@@ -724,8 +723,7 @@
   cursor: progress;
 }
 
-/* Filled, not outlined: the favourited state takes the primary fill and keeps
-   the same star on both front ends. */
+/* Filled, not outlined: the favourited state takes the primary fill. */
 .tk-star-on {
   background: var(--ag-brand-cta);
   border-color: var(--ag-brand-cta);

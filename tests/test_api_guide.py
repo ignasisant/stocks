@@ -1,12 +1,12 @@
 """The conversational walkthrough, over HTTP.
 
 What the walkthrough *is* — which steps, which copy, what counts as done — is
-the registry's (`web/onboarding.py`) and is tested there, and the Streamlit
-rendering of it in `test_guide.py`. What is tested here is that the HTTP
-binding keeps the promises that make it the *same* walkthrough:
+the registry's (`web/onboarding.py`) and is tested there, and its pure state
+and model half in `test_guide.py`. What is tested here is that the HTTP
+binding keeps the walkthrough's promises:
 
 * one state: the same prefs keys and the same thread, so a reader who starts
-  in one front end finds it where they left it in the other;
+  in one tab finds it where they left it in another;
 * a card is written once, however often a client syncs;
 * a step the account has already switched on is walked past with a receipt;
 * only an automatic open spends one of the three, and a fourth is refused;
@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 
 from stocks import accounts
 from stocks.api.app import app as fastapi_app
+from stocks.chat import guide_ai
 from stocks.web import guide, onboarding
 
 TOKEN = "s3cret-token"
@@ -134,7 +135,7 @@ def test_starting_writes_the_first_card_into_its_own_thread(
     assert body["changed"] is True
     turns = thread(signed_in, body["thread"])
     assert [t["guide"] for t in turns] == [{"step": first()}]
-    # The same keys the Streamlit guide reads: one walkthrough, two doors.
+    # The registry's own keys: a reload, or another tab, resumes it here.
     stored = prefs(account)
     assert stored[guide.PREF_STEP] == first()
     assert stored[guide.PREF_THREAD] == body["thread"]
@@ -227,7 +228,7 @@ def test_moving_the_guide_is_a_write_so_a_token_may_not(client, account):
 def test_the_first_next_adds_one_line_about_the_account(
     client, account, signed_in, switched_on, narrator
 ):
-    """`guide.narrate`, over HTTP: a note under the second step's card."""
+    """The opening line, over HTTP: a note under the second step's card."""
     narrator.append("Start with your broker statement: no ledger, no book.")
     cid = signed_in.post("/v1/guide/start", json={}).json()["thread"]
     body = signed_in.post("/v1/guide/advance", json={}).json()
@@ -235,8 +236,8 @@ def test_the_first_next_adds_one_line_about_the_account(
     turns = thread(signed_in, cid)
     assert turns[-1]["guide"] == {"step": guide.steps()[1].id, "state": "note"}
     assert turns[-1]["content"].startswith("Start with your broker statement")
-    assert prefs(account)[guide.PREF_NARRATED] is True
-    # Counts, not holdings: the facts are what the Streamlit guide sends.
+    assert prefs(account)[guide_ai.PREF_NARRATED] is True
+    # Counts, not holdings: the account facts are tallies, never positions.
     assert narrator.calls[0]["messages"][0]["content"].startswith(
         "watchlist_tickers=1;"
     )
@@ -248,7 +249,7 @@ def test_a_silent_chain_costs_the_walkthrough_nothing_and_is_not_retried(
     cid = signed_in.post("/v1/guide/start", json={}).json()["thread"]
     signed_in.post("/v1/guide/advance", json={})
     assert [t["guide"].get("state") for t in thread(signed_in, cid)] == [None, None]
-    assert prefs(account)[guide.PREF_NARRATED] is True
+    assert prefs(account)[guide_ai.PREF_NARRATED] is True
     signed_in.post("/v1/guide/advance", json={})
     assert len(narrator.calls) == 1  # attempted once per account, ever
 

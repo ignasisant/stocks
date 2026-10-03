@@ -41,7 +41,7 @@ The service isn't answering at all.
 2. Revision unhealthy right after a deploy → roll back (below).
 3. No recent deploy → check quota/billing (budget email?) and Cloud Run
    outages, then `uv run stocks logs tail --since 30m` for boot errors
-   (a bad `STREAMLIT_SECRETS_TOML` version kills every page at import).
+   (a bad `STREAMLIT_SECRETS_TOML` version fails the boot).
 
 ## Alert: ERROR logs
 

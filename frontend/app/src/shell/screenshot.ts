@@ -4,10 +4,9 @@
  *
  * Two ways in, because one of them can fail on any given page:
  *
- * * **Capture** rasterises the viewport with html2canvas-pro — the same pinned
- *   build the Streamlit composer loads (`web/screenshot.LIB_URL`), and loaded
- *   the same way: imported from the CDN when the reader asks for a shot and not
- *   a byte before. It is ~210 KB that most readers never need, so it is not in
+ * * **Capture** rasterises the viewport with html2canvas-pro — a pinned build,
+ *   imported from the CDN when the reader asks for a shot and not a byte
+ *   before. It is ~210 KB that most readers never need, so it is not in
  *   the shell bundle. The `-pro` fork because this app's CSS is full of
  *   `color-mix()`, which the original throws on. The feedback dialog itself is
  *   left out of the picture: it is this widget's chrome, not the screen being

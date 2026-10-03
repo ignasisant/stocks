@@ -20,11 +20,21 @@ by country, so `build(matching=...)` takes the rule:
   FIFO one on the same trades.
 
 Acquisition cost includes buy commissions; sale proceeds are net of sell
-commissions. A return of capital (action ``"capital"``: a share-premium
-repayment, a nondividend distribution) gives back part of what the shares
-cost, so it lowers the basis of the shares held that day under every rule.
-This module is pure: the currency converter is injected so it can be
+commissions. This module is pure: the currency converter is injected so it can be
 unit-tested without network.
+
+A return of capital (action ``"capital"``) is neither a disposal nor income:
+it lowers the cost of the shares it was paid on, the same amount on every
+share — Spain's devolución de prima de emisión on a listed share (art. 25.1.e
+LIRPF), a US nondividend distribution (IRC §301(c)(2)), a Canadian ACB
+reduction. A basis
+stops at zero, and what is paid past it is taxed the day it lands (§301(c)(3),
+Canada's negative-ACB gain, Australia's CGT event G1), so it is booked as a
+realized parcel of no shares, matched "capital_return". Spain calls that
+excess capital-mobiliario income rather than a gain; both sit in the same
+savings base at the same rates. The UK deducts a small distribution from the
+pool the same way (TCGA s.122) and treats a large one as a part disposal,
+which this does not model.
 
 Money fields hold the *reporting* currency picked by `build(base=...)`: the
 account's own currency for the app's analytics, the tax jurisdiction's for a
@@ -40,7 +50,7 @@ from datetime import timedelta as _timedelta
 
 from stocks.data.fx import ToBase, converter, prefetch
 from stocks.portfolio import transfers
-from stocks.portfolio.ledger import Transaction
+from stocks.portfolio.ledger import RETURN_OF_CAPITAL, Transaction
 
 
 @dataclass
@@ -64,6 +74,9 @@ MATCH_AVERAGE = "average"
 MATCH_SAME_DAY = "same_day"
 MATCH_THIRTY_DAY = "thirty_day"
 MATCH_POOL = "pool"
+# A return of capital paid past the shares' whole basis: no shares, no cost,
+# the excess as proceeds.
+MATCH_CAPITAL_RETURN = "capital_return"
 
 MATCHING_MODES = ("fifo", "lifo", "average", "s104")
 # The modes whose cost is an average rather than one purchase's own.
@@ -113,6 +126,13 @@ class Position:
         return self.cost_native / self.quantity if self.quantity else 0.0
 
 
+def replay_order(tx: Transaction) -> tuple:
+    """Date order, ledger order within a day, and a return of capital first on
+    its day: it was paid on the shares held going into it, so a buy or a sell
+    on the pay date must not move what it lowers."""
+    return (tx.date, tx.action != RETURN_OF_CAPITAL, tx.id or 0)
+
+
 def build(
     transactions: list[Transaction],
     to_base: ToBase | None = None,
@@ -145,7 +165,7 @@ def build(
     lots: dict[str, deque[Lot]] = defaultdict(deque)
     realized: list[RealizedSale] = []
 
-    for tx in sorted(transactions, key=lambda t: (t.date, t.id or 0)):
+    for tx in sorted(transactions, key=replay_order):
         if tx.action == "buy":
             cost_native = tx.quantity * tx.price + tx.fee
             lots[tx.ticker].append(
@@ -162,8 +182,12 @@ def build(
             realized += _sell(lots[tx.ticker], tx, to_base, newest_first)
         elif tx.action == "split":
             _split(lots[tx.ticker], tx.quantity)
-        elif tx.action == "capital":
-            _return_capital(lots[tx.ticker], to_base(tx.price, tx.currency, tx.date))
+        elif tx.action == RETURN_OF_CAPITAL:
+            held = lots[tx.ticker]
+            own = held[0].currency if held else tx.currency
+            over = _return_capital(held, tx, to_base, own)
+            first = min((lot.date for lot in held), default=tx.date)
+            realized += _capital_excess(tx, over, first)
         # dividend / fee: not position-affecting (handled in dividends/cash)
 
     positions = [_aggregate(t, q) for t, q in lots.items() if _total_qty(q) > 1e-9]
@@ -228,24 +252,51 @@ def _split(queue: deque[Lot], ratio: float) -> None:
         lot.quantity *= ratio
 
 
-def _return_capital(holdings, amount: float) -> None:
-    """Lower the basis of what is held by `amount` (reporting ccy), pro rata.
+def _return_capital(holdings, tx: Transaction, to_base: ToBase, currency: str) -> float:
+    """Lower each holding's basis by its share of a return of capital.
 
-    The payment is per share, so each lot or pool gives up its shares' part of
-    it — not a part sized by its cost. Spain (art. 33.3.e LIRPF), the US (IRC
-    §301(c)(2)) and the UK (TCGA s.122) all take it off the acquisition value.
-    A basis cannot go below zero: what exceeds it is taxable income where it
-    is paid, which this replay does not book, so it is floored instead.
+    `holdings` (Lots, or one averaged _Pool) carry the shares it was paid on;
+    each gives up the same amount per share, its native cost exactly when the
+    payment is in the holding's own currency and pro rata otherwise. Returns
+    what was paid past the basis, in the reporting currency — all of it when
+    nothing was held.
     """
-    held = sum(h.quantity for h in holdings)
-    if held <= 1e-9 or amount <= 0:
-        return
+    paid = to_base(tx.price, tx.currency, tx.date)
+    shares = sum(h.quantity for h in holdings)
+    if shares <= 1e-9:
+        return paid
+    over = 0.0
     for h in holdings:
-        if h.cost <= 0:
+        part = h.quantity / shares
+        cut = paid * part
+        if cut >= h.cost:
+            over += cut - h.cost
+            h.cost = h.cost_native = 0.0
             continue
-        cut = min(h.cost, amount * h.quantity / held)
-        h.cost_native -= h.cost_native * cut / h.cost
+        native = (
+            tx.price * part if tx.currency == currency else h.cost_native * cut / h.cost
+        )
         h.cost -= cut
+        h.cost_native = max(0.0, h.cost_native - native)
+    return over
+
+
+def _capital_excess(tx: Transaction, over: float, buy_date: str) -> list[RealizedSale]:
+    """The part of a return of capital no basis was left to absorb, as a gain."""
+    if over <= 1e-9:
+        return []
+    return [
+        RealizedSale(
+            ticker=tx.ticker,
+            buy_date=buy_date,
+            sell_date=tx.date,
+            quantity=0.0,
+            cost=0.0,
+            proceeds=over,
+            currency=tx.currency,
+            matched=MATCH_CAPITAL_RETURN,
+        )
+    ]
 
 
 def _aggregate(ticker: str, queue: deque[Lot]) -> Position:
@@ -315,7 +366,7 @@ def _build_average(
     currency: dict[str, str] = {}
     realized: list[RealizedSale] = []
 
-    for tx in sorted(transactions, key=lambda t: (t.date, t.id or 0)):
+    for tx in sorted(transactions, key=replay_order):
         if tx.action == "buy":
             cost_native = tx.quantity * tx.price + tx.fee
             pools[tx.ticker].credit(
@@ -333,10 +384,12 @@ def _build_average(
         elif tx.action == "split" and tx.quantity > 0:
             # Total cost unchanged, more shares behind it (same as FIFO).
             pools[tx.ticker].quantity *= tx.quantity
-        elif tx.action == "capital":
-            _return_capital(
-                [pools[tx.ticker]], to_base(tx.price, tx.currency, tx.date)
-            )
+        elif tx.action == RETURN_OF_CAPITAL:
+            pool = pools[tx.ticker]
+            first = pool.first_date or tx.date
+            over = _return_capital(
+                [pool], tx, to_base, currency.get(tx.ticker, tx.currency))
+            realized += _capital_excess(tx, over, first)
 
     positions = [
         Position(
@@ -434,8 +487,8 @@ def _build_s104(
 ) -> tuple[list[Position], list[RealizedSale]]:
     """`build` for the UK rules. Same signature and outputs, other matching."""
     by_ticker: dict[str, list[Transaction]] = defaultdict(list)
-    for tx in sorted(transactions, key=lambda t: (t.date, t.id or 0)):
-        if tx.action in ("buy", "sell", "split", "capital"):
+    for tx in sorted(transactions, key=replay_order):
+        if tx.action in ("buy", "sell", "split", RETURN_OF_CAPITAL):
             by_ticker[tx.ticker].append(tx)
 
     positions: list[Position] = []
@@ -504,10 +557,12 @@ def _replay_s104(
                     if not acq.pooled:
                         acq.quantity *= tx.quantity
                         acq.remaining *= tx.quantity
-        elif tx.action == "capital":
+        elif tx.action == RETURN_OF_CAPITAL:
             # Only the pool held the shares on the day: flush has folded in
             # every earlier buy, and a same-day one bought after the record.
-            _return_capital([pool], to_base(tx.price, tx.currency, tx.date))
+            first = pool.first_date or tx.date
+            over = _return_capital([pool], tx, to_base, currency)
+            sales += _capital_excess(tx, over, first)
         elif tx.action == "sell":
             currency = tx.currency
             sales += _dispose_s104(ticker, tx, acquisitions, pool, to_base, flush)

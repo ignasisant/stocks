@@ -704,8 +704,8 @@ def test_a_format_no_backend_reads_is_refused(client, account, signed_in, monkey
 def test_what_the_clip_is_guilty_of_comes_back_as_the_key_that_says_so(
     client, account, signed_in, monkeypatch
 ):
-    """Both front ends say the same thing about the same clip, in the reader's
-    own language — so the API answers with the key, not with a sentence."""
+    """The client says what went wrong with the clip in the reader's own
+    language — so the API answers with the key, not with a sentence."""
     from stocks.web import stt
 
     monkeypatch.setattr("stocks.web.stt.available", lambda: True)
@@ -779,8 +779,8 @@ def test_an_empty_message_is_still_refused(client, account, signed_in):
 def test_a_burst_of_turns_hits_the_same_wall_the_composer_does(
     client, account, signed_in, served
 ):
-    """Keyed exactly as `chat_core` keys it, so a reader with two windows open
-    (one Streamlit, one React) gets one budget and not two."""
+    """Keyed by account, not by window, so a reader with two windows open gets
+    one budget and not two."""
     from stocks.web import ratelimit
 
     served()
@@ -941,8 +941,8 @@ class Recorder(FakeProvider):
 def test_the_page_and_the_ticker_on_screen_reach_the_prompt_and_the_lookup(
     client, account, signed_in, served, monkeypatch
 ):
-    """`chat_core._view_context`, for the drawer that has no session to read
-    it from: the page, the ticker, and a quote lookup aimed at "it"."""
+    """What the drawer says the reader is looking at: the page, the ticker,
+    and a quote lookup aimed at "it"."""
     provider = served(Recorder())
     focused: list[str] = []
     monkeypatch.setattr(
@@ -1009,7 +1009,7 @@ def test_a_question_on_the_guide_thread_is_fenced_and_its_marker_is_a_button(
     assert stored["tool_calls"] == [
         {"id": "goto", "name": "navigate", "args": {"step": "import"}, "state": None}
     ]
-    # On disk it is still `guide_goto`, which the Streamlit panel reads too.
+    # On disk it is still `guide_goto`, the key stored conversations carry.
     assert "guide_goto" in account.chat.read_text()
 
 
@@ -1690,8 +1690,8 @@ SESSION = {"X-Chat-Provider": "anthropic", "X-Chat-Key": "sk-ant-sessiononly1234
 def test_a_session_only_key_answers_the_turn_and_is_written_nowhere(
     client, account, signed_in, monkeypatch
 ):
-    """The Streamlit panel's "this session only" key, for a client whose
-    session is a browser tab: sent per request, used for it, never stored."""
+    """A "this session only" key, for a client whose session is a browser
+    tab: sent per request, used for it, never stored."""
     seen: list[dict | None] = []
 
     def chain(prefs, session_keys=None):

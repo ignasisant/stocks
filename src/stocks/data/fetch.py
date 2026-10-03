@@ -33,7 +33,7 @@ from stocks.data.symbols import code_symbol
 # it — and yfinance itself charges three or four round trips for a rejected
 # request (it re-mints the cookie and crumb, flips its cookie strategy and
 # replays the call). A Home render is ~50 symbols; one throttled Yahoo used to
-# cost the page all of that, on every rerun.
+# cost the page all of that, on every render.
 #
 # 300s is `data.symbols.COOLDOWN`, for the same reason it picked it: long
 # enough that the host stops making the throttle worse, short enough that a
@@ -257,8 +257,8 @@ def resolve(ticker: str) -> str:
 # The TTL is deliberately short. The same blob carries both facts that never
 # move (sector, country) and facts that move by the second (premarket price),
 # so it is pinned to the faster of the two — the point is to collapse the
-# several calls *within one render*, not to hold quotes. The web layer's own
-# st.cache_data wrappers still bound how often a render happens at all.
+# several calls *within one render*, not to hold quotes. The API's own
+# `ttl_cache` wrappers (api/cache.py) still bound how often a render happens.
 _INFO_TTL_S = 120.0
 _info_memo: dict[str, tuple[float, dict]] = {}
 _info_lock = threading.Lock()
@@ -450,7 +450,7 @@ def fetch_many(
     that times out every one of them turned a Home render into a nineteen-
     minute one. Over budget raises `YFRateLimitError`, which every caller
     already degrades on — but it does NOT open the cooldown, because slow is
-    not the same claim as refused, and the next rerun should try again.
+    not the same claim as refused, and the next request should try again.
 
     A name Yahoo answers "No data found" for is remembered as `unlisted`, so a
     caller judging whether the download was gutted can tell a book holding

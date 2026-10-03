@@ -1,4 +1,4 @@
-"""Skill library for the assistant panel (web/chat_core.py).
+"""Skill library for the assistant panel.
 
 A *skill* is a markdown file in web/skills/ holding an analysis framework the
 model should apply to a question — a sector lens (tech, energy…), a style lens
@@ -13,9 +13,6 @@ Auto mode routes every message through the provider's cheapest model
 (``Provider.classifier_model``): the catalog plus the question go in, a JSON
 list of at most MAX_AUTO skill ids comes out. Any failure — network, bad JSON,
 unknown ids — degrades to "no skills", never blocks the answer.
-
-This module is deliberately streamlit-free so it stays trivially testable; all
-UI (mode picker, multiselect, lens captions) lives in chat_core.
 """
 
 from __future__ import annotations

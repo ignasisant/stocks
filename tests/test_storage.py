@@ -234,45 +234,49 @@ def test_last_import_save_and_forget_persist(bucket, tmp_path):
     assert key not in bucket.objects
 
 
-def test_ensure_user_data_restores_before_seeding(bucket, tmp_path):
-    from stocks.web import auth
+def test_restore_account_restores_before_seeding(bucket, tmp_path):
+    from stocks import accounts
 
-    paths = auth.paths_for("jane@example.com", users_dir=tmp_path / "data" / "users")
-    key = f"data/users/{auth.slug('jane@example.com')}/watchlist.yaml"
+    paths = accounts.paths_for(
+        "jane@example.com", users_dir=tmp_path / "data" / "users"
+    )
+    key = f"data/users/{accounts.slug('jane@example.com')}/watchlist.yaml"
     bucket.objects[key] = b"watchlist:\n- ticker: NVDA\n"
 
-    auth.ensure_user_data(paths)
+    accounts.restore_account(paths)
     assert "NVDA" in paths.watchlist.read_text()  # restored copy, not the starter
 
 
-def test_ensure_user_data_seeds_and_persists_new_account(bucket, tmp_path):
-    from stocks.web import auth
+def test_restore_account_seeds_and_persists_new_account(bucket, tmp_path):
+    from stocks import accounts
 
-    paths = auth.paths_for("new@example.com", users_dir=tmp_path / "data" / "users")
-    auth.ensure_user_data(paths)
+    paths = accounts.paths_for(
+        "new@example.com", users_dir=tmp_path / "data" / "users"
+    )
+    accounts.restore_account(paths)
     assert "AAPL" in paths.watchlist.read_text()
-    key = f"data/users/{auth.slug('new@example.com')}/watchlist.yaml"
+    key = f"data/users/{accounts.slug('new@example.com')}/watchlist.yaml"
     assert key in bucket.objects
 
 
-def test_ensure_user_data_migrates_legacy_bucket_objects(bucket, tmp_path):
+def test_restore_account_migrates_legacy_bucket_objects(bucket, tmp_path):
     # An account whose data predates the digest-suffixed slug and survives
     # only in the bucket (ephemeral host): objects are restored, the dir is
     # renamed, and every object is re-keyed to the new slug.
-    from stocks.web import auth
+    from stocks import accounts
 
     users = tmp_path / "data" / "users"
     email = "jane@example.com"
-    paths = auth.paths_for(email, users_dir=users)
-    legacy = users / auth._legacy_slug(email)
-    legacy_key = f"data/users/{auth._legacy_slug(email)}/portfolio.db"
+    paths = accounts.paths_for(email, users_dir=users)
+    legacy = users / accounts.legacy_slug(email)
+    legacy_key = f"data/users/{accounts.legacy_slug(email)}/portfolio.db"
     bucket.objects[legacy_key] = b"ledgerbytes"
 
-    auth.ensure_user_data(paths, legacy_root=legacy)
+    accounts.restore_account(paths, legacy_root=legacy)
     assert paths.db.read_bytes() == b"ledgerbytes"
     assert not legacy.exists()
     assert legacy_key not in bucket.objects  # old key deleted
-    new_key = f"data/users/{auth.slug(email)}/portfolio.db"
+    new_key = f"data/users/{accounts.slug(email)}/portfolio.db"
     assert bucket.objects[new_key] == b"ledgerbytes"
 
 

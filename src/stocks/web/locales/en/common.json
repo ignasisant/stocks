@@ -34,7 +34,6 @@
   "nav.sentiment": "Pulse",
   "nav.ticker": "Ticker",
   "common.cancel": "Cancel",
-  "common.legacy_banner": "This is the **previous version** of TopStocks, kept for reference only. It reads and writes the same data as the app, so change things in [the app](/) rather than here.",
   "activity.title": "Still loading",
   "activity.progress": "{done} of {total}",
   "activity.book": "Pricing your portfolio",

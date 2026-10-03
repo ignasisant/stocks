@@ -3,8 +3,8 @@
 What belongs in the registry at all is `CLAUDE.md`'s rule and
 `tests/test_onboarding.py`'s job. What is tested here is the wire:
 
-* the steps and the cards come from the same registry the Streamlit modal
-  reads, so the two front ends cannot announce different things;
+* the steps and the cards come from the registry, so the tour and the
+  walkthrough cannot announce different things;
 * copy is named, never sent — a payload carrying strings would be a second
   catalog, stale in whichever language the reader picked;
 * `done` is `null` for a step that is nothing to switch on, because a tick
@@ -95,7 +95,8 @@ def test_the_step_carries_where_it_lands(client, account, signed_in):
     steps = {s["id"]: s for s in signed_in.get("/v1/onboarding").json()["steps"]}
     assert steps["import"]["path"] == "import_transactions"
     assert steps["tax"]["params"] == {"tab": "tax"}
-    # The default page is served at the root, and says so rather than guessing.
+    # Home is the root path; a step that lands nowhere says so with null.
+    assert steps["daily"]["path"] == ""
     assert steps["welcome"]["path"] is None
 
 
@@ -109,7 +110,7 @@ def test_a_new_account_is_owed_every_card(client, account, signed_in):
 def test_the_capabilities_are_read_for_this_account_not_a_session(
     client, account, signed_in
 ):
-    """There is no Streamlit session behind an API call. `login` is true because
+    """There is no ambient session behind an API call. `login` is true because
     the dependency proved it, and `import` is answered off this account's own
     ledger rather than off whichever one a session happened to hold."""
     body = signed_in.get("/v1/onboarding").json()

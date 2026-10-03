@@ -1,12 +1,11 @@
 /**
  * The nav's icons, inline.
  *
- * No icon font. Streamlit renders `:material/home:` itself, so nothing in this
- * app's documents ever loads Material Symbols — a `<span class="material-
- * symbols-rounded">home</span>` here would print the literal word "home" in the
- * rail. Loading the font for eight glyphs costs a request and a flash of
- * unstyled text on every cold visit, which is the same trade the ticker page
- * already declined.
+ * No icon font. Nothing in this app's documents loads Material Symbols — a
+ * `<span class="material-symbols-rounded">home</span>` here would print the
+ * literal word "home" in the rail. Loading the font for eight glyphs costs a
+ * request and a flash of unstyled text on every cold visit, which is the same
+ * trade the ticker page already declined.
  *
  * Paths are Material Symbols, traced at 24px and simplified. `currentColor` so
  * a nav item's own colour carries into the glyph and the design tokens stay the

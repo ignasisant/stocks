@@ -23,7 +23,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any, cast
 
-from stocks import obs
+from stocks import obs, secrets_env
 
 # Output ceiling per turn. It has to leave room for reasoning tokens as well as
 # the answer: on Opus 5 and Sonnet 5 adaptive thinking is on whenever `thinking`
@@ -516,12 +516,7 @@ def _live_model(b: _FreeBackend) -> str | None:
 
 
 def _free_secrets() -> dict:
-    try:
-        import streamlit as st
-
-        cfg = dict(st.secrets.get("free_llm", {}))
-    except Exception:  # no secrets.toml at all (bare local run / CI)
-        cfg = {}
+    cfg = secrets_env.section("free_llm")
     # Env overlay so headless jobs (GitHub Actions digest) can run the chain
     # without a secrets.toml: FREE_LLM_GROQ, FREE_LLM_GROQ_MODEL, ...
     import os

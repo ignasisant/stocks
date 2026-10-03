@@ -19,8 +19,13 @@ from stocks.config import DATA_DIR
 
 DB_PATH = DATA_DIR / "portfolio.db"
 
-ACTIONS = {"buy", "sell", "dividend", "fee", "split", "capital",
-           "transfer_in", "transfer_out"}
+# A return of capital is booked like a dividend (price = gross total, fee =
+# tax withheld) but is no income: it lowers the cost of the shares it was paid
+# on (see positions.build).
+RETURN_OF_CAPITAL = "capital"
+
+ACTIONS = {"buy", "sell", "dividend", "fee", "split",
+           "transfer_in", "transfer_out", RETURN_OF_CAPITAL}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS transactions (
@@ -37,6 +42,21 @@ CREATE TABLE IF NOT EXISTS transactions (
     currency TEXT    NOT NULL DEFAULT 'USD',
     fee      REAL    NOT NULL DEFAULT 0,-- commission in native ccy
     note     TEXT    NOT NULL DEFAULT ''
+);
+"""
+
+# The journal of hand edits (see stocks.portfolio.edits). A table of its own
+# beside `transactions`, not a change to its shape: created where missing on
+# every connect, so it needs no schema version and no migration, and living in
+# the same file means an edit and its record commit in one transaction.
+CHANGES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS changes (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    at        TEXT    NOT NULL,          -- ISO-8601 UTC
+    source    TEXT    NOT NULL,          -- chat | telegram | mcp | api | import
+    summary   TEXT    NOT NULL DEFAULT '',
+    rows      TEXT    NOT NULL,          -- JSON [{id, before, after}]
+    undone_at TEXT
 );
 """
 
@@ -103,6 +123,7 @@ def connect(path: Path = DB_PATH) -> sqlite3.Connection:
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='transactions'"
     ).fetchone()
     conn.execute(SCHEMA)
+    conn.execute(CHANGES_SCHEMA)
     if fresh:
         # A brand-new db is created in the current shape; the migrations
         # describe how *old* shapes get here and must not replay over it.
@@ -155,9 +176,15 @@ def add_many(txs: list[Transaction], path: Path = DB_PATH) -> list[int]:
 
 
 def clear(path: Path = DB_PATH) -> None:
-    """Delete every transaction (wipe the book — used before a clean re-import)."""
+    """Delete every transaction (wipe the book — used before a clean re-import).
+
+    The edit journal goes with it: an undo of a deletion checks only that the
+    row is still absent, which a wiped book always passes, and would put rows
+    back into a book that is somebody else's start.
+    """
     with closing(connect(path)) as conn, conn:
         conn.execute("DELETE FROM transactions")
+        conn.execute("DELETE FROM changes")
     storage.persist(path)
 
 
@@ -173,7 +200,7 @@ def all_transactions(path: Path = DB_PATH) -> list[Transaction]:
 def has_transactions(path: Path = DB_PATH) -> bool:
     """Whether the ledger holds anything at all.
 
-    "Has this account imported yet" is asked on every Home rerun and once per
+    "Has this account imported yet" is asked on every Home load and once per
     guided-tour step, and it used to be answered by loading the whole table
     and mapping every row into a Transaction just to take its truthiness. One
     row is enough.
@@ -206,11 +233,11 @@ def delete_many(tx_ids: list[int], path: Path = DB_PATH) -> int:
 def set_action(tx_ids: list[str | int], action: str, path: Path = DB_PATH) -> int:
     """Restate what the given rows *were*, leaving every other field alone.
 
-    The one edit the ledger allows on a committed row, because it is the one
-    the row can be wrong about in a way nothing else can fix: a statement that
-    prints a custody transfer as a sale (see stocks.portfolio.transfers) writes
-    a real trade the account never made, and deleting it would take the shares
-    with it. Returns rows changed.
+    The import repair's edit: a statement that prints a custody transfer as a
+    sale (see stocks.portfolio.transfers) writes a real trade the account never
+    made, and deleting it would take the shares with it. Edits a person asks
+    for by hand go through stocks.portfolio.edits instead, which journals them
+    and can undo them. Returns rows changed.
     """
     if action not in ACTIONS:
         raise ValueError(f"unknown action {action!r}; expected one of {ACTIONS}")

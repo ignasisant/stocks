@@ -130,7 +130,7 @@ def seed(path: Path = DB_PATH) -> list[int]:
     """Write the demo book. Returns the inserted ids.
 
     A ledger that already holds anything is left alone: the offer is only ever
-    made on the empty path, and a double click on it (or a stale rerun) must
+    made on the empty path, and a double click on it (or a retried request) must
     not stack a second copy on top of the first.
     """
     with closing(connect(path)) as conn:

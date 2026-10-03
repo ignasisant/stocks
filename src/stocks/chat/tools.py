@@ -20,9 +20,9 @@ tool calling: the keyless free chain hops across OpenAI-compatible backends
 whose tool support varies, and Provider only exposes a text stream. A native
 adapter can be added per provider later without touching the tools themselves.
 
-Streamlit-free (auth is imported lazily inside the runners) so parsing stays
-trivially testable; all UI — confirmation bubbles, i18n — lives in the two
-surfaces that dispatch here (web/chat_core.py and chat/engine.py).
+Auth is imported lazily inside the runners so parsing stays trivially
+testable; all UI — confirmation cards, i18n — lives with the caller that
+dispatches here (chat/engine.py).
 """
 
 from __future__ import annotations
@@ -51,7 +51,13 @@ _GATE_RE = re.compile(
     r"favou?rit|\bfav\b|alert|av[ií]s|notif|\btag\b|etiquet|group|grupo|"
     r"watchlist|seguimiento|a[ñn]ad|agreg|quita|elimin|\badd\b|\bremove\b|"
     r"\bdrop\b|shares|acciones|particip|position|posici[oó]n|"
-    r"precio medio|coste medio|cost basis",
+    r"precio medio|coste medio|cost basis|"
+    # The book: rows the reader wants shown, fixed, removed or undone.
+    r"transacci|transaction|operaci[oó]n|movimiento|\btrades?\b|borra|"
+    r"\bedit|corrig|correct|cambia|fusion|\bmerge\b|traspas|transfer|"
+    r"deshaz|deshacer|\bundo\b|revert|renombr|rename|duplicad|duplicate|"
+    r"\blibro\b|ledger|arregl|\bfix\b|apunta|registra|\brecord\b|"
+    r"\bbroker\b|historial",
     re.IGNORECASE,
 )
 
@@ -190,7 +196,7 @@ def _holding(ticker: str, path: Path):
 
 
 def _auth():
-    from stocks.web import auth  # deferred: keeps this module streamlit-free
+    from stocks.web import auth  # deferred: parsing never needs it
 
     return auth
 
@@ -308,11 +314,147 @@ TOOLS: dict[str, Tool] = {
     )
 }
 
-KINDS = tuple(TOOLS)
+# ------------------------------------------------------------------ the book
+# Edits to the ledger itself. Unlike the tools above these never run from the
+# classifier's answer: the model only names what the reader means — which
+# rows, in words (ticker, broker, dates) — and `chat/book.py` finds the rows,
+# builds the edit (`stocks.portfolio.edits`), plans it and puts its impact in
+# front of the reader. Every one is a proposal, on every surface, whatever
+# the account's confirm setting: a misread watchlist tag costs a click, a
+# misread delete costs a tax year.
+
+_ISO_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
+_TRADES = frozenset({"buy", "sell", "dividend", "fee", "split", "capital",
+                     "transfer_in", "transfer_out"})
+
+
+def _number(raw) -> float | None:
+    try:
+        value = float(str(raw).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
+
+def _book_args(data: dict) -> dict:
+    """Every ledger field the reply carried that reads as what it claims to be.
+
+    Shared by all the ledger tools — which fields each one needs is
+    `chat/book.py`'s call, made with the book in hand. A value that does not
+    read (a date like "ayer", a currency like "euros") is dropped rather than
+    guessed: the reader sees the rows it selects before anything happens.
+    """
+    out: dict = {}
+    for key in ("broker", "to_broker"):
+        text = str(data.get(key) or "").strip().lower()
+        if text and re.fullmatch(r"[\w.\-]{1,30}", text):
+            out[key] = text
+    for key in ("date", "since", "until", "new_date"):
+        text = str(data.get(key) or "").strip()
+        if _ISO_DAY.match(text):
+            out[key] = text
+    trade = str(data.get("trade") or "").strip().lower()
+    if trade in _TRADES:
+        out["trade"] = trade
+    for key in ("quantity", "price", "fee", "new_quantity", "new_price", "new_fee"):
+        if data.get(key) is not None and (value := _number(data[key])) is not None:
+            out[key] = value
+    currency = str(data.get("currency") or "").strip().upper()
+    if _CURRENCY_RE.match(currency):
+        out["currency"] = currency
+    to = str(data.get("to") or "").strip().upper()
+    if _TICKER_RE.match(to):
+        out["to"] = to
+    ids = []
+    for raw in data.get("ids") or []:
+        try:
+            ids.append(int(str(raw).lstrip("#")))
+        except (TypeError, ValueError):
+            continue
+    if ids:
+        out["ids"] = sorted(set(ids))[:50]
+    return out
+
+
+@dataclass(frozen=True)
+class BookTool:
+    name: str
+    summary: str  # the catalog line the router reads
+    needs_ticker: bool = False
+
+
+BOOK: dict[str, BookTool] = {
+    t.name: t
+    for t in (
+        BookTool(
+            "show_transactions",
+            "list the recorded trades the user asks about. Narrow with "
+            '"ticker", "broker", "trade", "since"/"until".',
+        ),
+        BookTool(
+            "edit_transaction",
+            "change a recorded trade. Say which with \"ticker\" plus any of "
+            '"broker", "date", "trade", "ids"; put the corrected values in '
+            '"new_date", "new_quantity", "new_price", "new_fee".',
+        ),
+        BookTool(
+            "delete_transactions",
+            "remove recorded trades. Say which with \"ticker\", \"broker\", "
+            '"date" or "since"/"until", "trade", "quantity", "ids".',
+        ),
+        BookTool(
+            "add_transaction",
+            'record a trade the book is missing: "ticker", "trade" (buy, '
+            'sell, dividend…), "quantity", "price", optional "date", '
+            '"currency", "fee", "broker".',
+            needs_ticker=True,
+        ),
+        BookTool(
+            "rename_security",
+            'book a company\'s rows under another symbol: "ticker" is the label '
+            'now, "to" the one to use; "broker" to rename only that broker\'s.',
+            needs_ticker=True,
+        ),
+        BookTool(
+            "mark_transfer",
+            "the user moved shares between brokers and the book shows a sale "
+            'and a purchase instead: "ticker", optional "broker" (where they '
+            'left) and "to_broker".',
+            needs_ticker=True,
+        ),
+        BookTool(
+            "move_position",
+            "the user moved a holding to another broker and nothing was "
+            'recorded: "ticker", "broker" (from), "to_broker", optional '
+            '"date" and "quantity".',
+            needs_ticker=True,
+        ),
+        BookTool(
+            "check_book",
+            "look for mistakes in the recorded trades (duplicates, transfers "
+            "read as sales, one company under two symbols). Optional "
+            '"ticker".',
+        ),
+        BookTool(
+            "undo_change",
+            "undo the last change made to the recorded trades.",
+        ),
+    )
+}
+
+KINDS = (*TOOLS, *BOOK)
+
+
+def is_book(kind: str) -> bool:
+    """Whether `kind` edits the ledger rather than the watchlist."""
+    return kind in BOOK
 
 
 def _catalog() -> str:
-    return "\n".join(f'- "{t.name}": {t.summary}' for t in TOOLS.values())
+    lines = [f'- "{t.name}": {t.summary}' for t in TOOLS.values()]
+    lines += [f'- "{t.name}": {t.summary}' for t in BOOK.values()]
+    return "\n".join(lines)
 
 
 # The reply's shape is BAML's (DetectAction in baml_src/chat.baml), appended
@@ -329,6 +471,11 @@ Rules:
   the context's ticker in focus; resolve company names against the watchlist
   listing and reuse the symbol exactly as listed there.
 - Fill only the fields the chosen action names; leave the rest null.
+- The recorded-trade actions ("show_transactions" … "undo_change") are for
+  the user's trades as the app has them. Dates are YYYY-MM-DD; resolve
+  "yesterday"/"in August" against the context's date. "broker" is a single
+  lowercase word (degiro, ibkr, revolut). A row number the user quotes
+  ("#123") goes in "ids".
 """
 
 
@@ -357,11 +504,19 @@ def _action_from(data: dict) -> Action | None:
     None covers the whole "not an app operation" family — action null, an
     unknown tool, an unusable ticker, missing required fields — and sends the
     message down the normal answer path."""
+    ticker = str(data.get("ticker") or "").strip().upper()
+    book = BOOK.get(data.get("action"))
+    if book is not None:
+        if ticker and not _TICKER_RE.match(ticker):
+            return None
+        if book.needs_ticker and not ticker:
+            return None
+        return Action(book.name, ticker, _book_args(data))
+
     tool = TOOLS.get(data.get("action"))
     if tool is None:
         return None
 
-    ticker = str(data.get("ticker") or "").strip().upper()
     if not _TICKER_RE.match(ticker):
         return None
 
@@ -403,10 +558,9 @@ def detect(
     return _action_from(call.model_dump())
 
 
-def execute(action: Action, path: Path | None = None) -> None:
+def execute(action: Action, path: Path) -> None:
     """Apply an Action to the account's watchlist."""
-    p = path or _auth().watchlist_path()
-    TOOLS[action.kind].run(action, p)
+    TOOLS[action.kind].run(action, path)
 
 
 def _slots(action: Action, translate: Callable[..., str]) -> dict[str, str]:

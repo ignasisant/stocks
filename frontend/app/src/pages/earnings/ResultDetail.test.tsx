@@ -1,5 +1,5 @@
 /**
- * The result dialog draws what the Streamlit one draws, from the same payload.
+ * What the result dialog draws from a given payload.
  *
  * Two things go wrong silently here. A section that should be there is not —
  * the React dialog shipped for months with only the EPS tiles — and a figure
@@ -8,7 +8,7 @@
  * and look for each section and for a few figures in their printed form.
  *
  * Rendered to static markup with no catalog loaded, so copy comes out as its
- * key: the assertions name the keys the Streamlit dialog uses.
+ * key: the assertions name the keys the dialog uses.
  */
 
 import { renderToStaticMarkup } from "react-dom/server";

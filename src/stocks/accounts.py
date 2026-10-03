@@ -1,22 +1,21 @@
-"""Account identity and per-account data paths, with no Streamlit in sight.
+"""Account identity and per-account data paths.
 
 This is the half of `stocks.web.auth` that has nothing to do with a browser
 session: given an email, where does that account's watchlist, ledger, prefs
 and chat memory live, and how is a brand-new account seeded from the bucket.
 
-It lives here rather than in `web/` because more than one runtime needs it and
-only one of them is Streamlit:
+It lives here rather than in `web/` because more than one runtime needs it:
 
-* the web app (`stocks.web.auth`, which re-exports every name below and adds
-  the OIDC gate and the session plumbing on top),
+* the web app (`stocks.web.oidc`, whose callback provisions the account, and
+  `stocks.web.auth`, which reads and writes the files under it),
 * the internal HTTP API (`stocks.api`), which authenticates with a bearer
   token and is handed an account address,
 * headless jobs — the Telegram digest, the CLI — which have a prefs.json and
   no session at all.
 
 Nothing here talks to a user. `restore_account` raises `StorageUnavailable`
-instead of painting an error, and each caller decides what that means: the web
-app stops the script with a message, the API answers 503.
+instead of painting an error, and each caller decides what that means: the
+OIDC callback logs it and lets the sign-in through, the API answers 503.
 """
 
 from __future__ import annotations
@@ -111,9 +110,8 @@ def legacy_slug(email: str) -> str:
 def configured_owner() -> str | None:
     """The account that maps to the repo-root files, if one is configured.
 
-    `[app] owner_email`, read through `secrets_env` rather than `st.secrets`
-    so the API and the cron jobs resolve the same owner the web app does
-    without importing Streamlit.
+    `[app] owner_email`, read through `secrets_env` so the web app and the
+    cron jobs resolve the same owner.
     """
     return secret("APP_OWNER_EMAIL", "app", "owner_email").strip().lower() or None
 
@@ -206,7 +204,7 @@ def restore_account(
     """Create the account's folder and seed a starter watchlist if it is new.
 
     Returns True when this call seeded a brand-new account — the one moment a
-    signup can be dated exactly, which `auth.mark_login()` records.
+    signup can be dated exactly, which `stamp_login` records.
 
     With [storage] configured, the account's files are pulled from the bucket
     first (once per process), so an ephemeral redeploy starts from the
@@ -217,8 +215,8 @@ def restore_account(
     Raises `StorageUnavailable` when the bucket round trip fails — see the
     exception's own note for why that must not be swallowed here. Pushing the
     freshly seeded watchlist is the one write that may fail harmlessly (the
-    local copy is already good), so it goes through `persist`: the web app
-    hands in a wrapper that toasts instead of raising.
+    local copy is already good), so it goes through `persist`, which a caller
+    can swap for one that logs instead of raising.
 
     `seed=False` restores and stops there. Reading an account is not the same
     act as creating one, and the API reads: without this, a bearer token could
@@ -265,10 +263,10 @@ def provision(
     `stamp_login` turns into an exact signup date.
 
     The one door through which an account comes into existence, shared by the
-    Streamlit session (`web.auth.resolve_user`), the OIDC callback and the API's
-    signed-in path. Only ever call it with an address a verified identity
-    carries: a bearer token or a `?account=` guess must never reach it, which is
-    why the API's read path calls `restore_account(seed=False)` instead.
+    OIDC callback and the API's signed-in path. Only ever call it with an
+    address a verified identity carries: a bearer token or a `?account=` guess
+    must never reach it, which is why the API's read path calls
+    `restore_account(seed=False)` instead.
 
     `USERS_DIR` is read at call time rather than bound as `paths_for`'s default,
     so a test that points it at a temporary directory really does keep every
@@ -311,9 +309,8 @@ def stamp_login(
     different link does not change that. Logs are kept 30 days and an account
     is kept for as long as it exists, so this is the only durable half.
 
-    Headless on purpose: `web.auth.mark_login` (Streamlit), the OIDC callback
-    and the API all stamp through here, so the three cannot disagree about what
-    a signup is.
+    Headless on purpose: the OIDC callback and the API both stamp through here,
+    so the two cannot disagree about what a signup is.
     """
     from datetime import UTC, datetime
 
@@ -350,16 +347,16 @@ def stamp_login(
 # dashboard's group expanders and the earnings filter pills; the untagged rows
 # keep the plain "Watchlist" group populated too.
 # ------------------------------------------------------------------ preferences
-# Every per-account setting lives in one prefs.json, read and written by path
-# so the ASGI worker can serve them without a Streamlit session to resolve.
-# `web.auth` binds these to the session's own path and memoizes the read; the
-# defaults and the file format live here so both runtimes agree on them.
+# Every per-account setting lives in one prefs.json, read and written by path:
+# the API, the cron and the CLI have no session to resolve one from. `web.auth`
+# memoizes the read; the defaults and the file format live here so every
+# caller agrees on them.
 
 DEFAULT_PREFS: dict = {  # language None = auto (browser)
     "currency": "EUR",
     "language": None,
     "recent_searches": [],  # tickers clicked from the top-bar search, newest first
-    # Registration accounting, stamped by mark_login(). first_seen is the
+    # Registration accounting, stamped by stamp_login(). first_seen is the
     # signup moment (ISO, UTC); last_seen is a date, rewritten once a day.
     "first_seen": None,
     "last_seen": None,
@@ -391,7 +388,7 @@ DEFAULT_PREFS: dict = {  # language None = auto (browser)
     "tax_subnational_rate": 0.0,
     # Whether the assistant drawer was open when the tab was last rendered, so
     # a reload puts the reader back in the conversation instead of behind the
-    # launcher icon. Written by chat_core.render_side_panel.
+    # launcher icon. Written by the chat drawer through `PATCH /prefs`.
     "chat_panel_open": False,
     # The assistant's memory (chat/learnings.py): whether it keeps what the
     # user tells it to remember and reads it into every conversation, and
@@ -434,8 +431,8 @@ def writable(path: Path) -> Path:
 
     One directory serves every anonymous visitor on the deployment, so a write
     there is a write into everybody's session at once — and prefs.json is where
-    exactly that has already happened once (`web.auth.push_recent_search` wrote
-    a guest's searches into the file the next guest reads).
+    exactly that has already happened once (a recent-search push wrote a
+    guest's searches into the file the next guest reads).
 
     The guard lives here rather than in every caller because the callers *are*
     the problem: a helper that saves a setting is easy to reach from a code path
@@ -467,7 +464,7 @@ def update_prefs(
 
     Read-modify-write over the file rather than a write of the changed keys
     alone, because the file is the unit the app stores: rewriting one key would
-    drop whatever a concurrent Streamlit run had just saved beside it. The read
+    drop whatever a concurrent request had just saved beside it. The read
     happens here, immediately before the write, to keep that window as short as
     this design allows — two writers racing is still last-write-wins, which is
     what a settings screen has always been.
@@ -480,8 +477,7 @@ def update_prefs(
 
 # ------------------------------------------------------------ recent searches
 # The last few tickers this account opened from the search box. Stored in
-# prefs.json like every other per-account setting, and read here by path so
-# the ASGI worker can serve them without a Streamlit session to resolve.
+# prefs.json like every other per-account setting.
 
 RECENT_SEARCHES_MAX = 5
 
@@ -504,8 +500,8 @@ def load_recent_searches(prefs: Path) -> list[str]:
 def load_recent_names(prefs: Path) -> dict[str, str]:
     """Company names remembered alongside the recent list; {} when none.
 
-    Kept in a key of its own, not folded into `recent_searches`, because the
-    Streamlit box still reads that list as bare strings.
+    Kept in a key of its own, not folded into `recent_searches`, because that
+    list is bare strings in every prefs.json already written.
     """
     try:
         stored = json.loads(prefs.read_text()).get("recent_names", {})
@@ -526,7 +522,7 @@ def push_recent_search(
 
     Read-modify-write over the whole prefs file, because that is the unit the
     app stores: rewriting only this key would drop every setting a concurrent
-    Streamlit run had just saved. Returns the new list.
+    request had just saved. Returns the new list.
 
     `name` is what the search row that was picked called the ticker. Remembered
     because the row knew it — a Korean or Frankfurt listing the SEC map has

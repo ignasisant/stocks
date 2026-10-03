@@ -1,6 +1,6 @@
-"""The walkthrough's model half, with no Streamlit session under it.
+"""The walkthrough's model half.
 
-`web/guide.py` walks a new account through the app inside the assistant
+`api/routes/guide.py` walks a new account through the app inside the assistant
 drawer, and most of it is deterministic: the registry decides the steps, the
 copy comes from the catalogs, and nothing calls a provider. Three pieces are
 not, and they are the ones that make the guide feel like an assistant rather
@@ -17,12 +17,9 @@ than a slideshow:
 * **the narration** — one generated sentence about the account, on the second
   step, attempted once ever.
 
-They used to live beside `st.session_state` and `auth.load_prefs()`, which the
-HTTP API has neither of — so the React drawer's guide had no fence, printed the
-marker verbatim, and never narrated. Everything here takes the account's prefs,
-paths and language as arguments instead, and both front ends call it: the
-Streamlit guide through thin wrappers that read the session, and
-`api/routes/chat.py` / `api/routes/guide.py` with what the request resolved.
+Everything here takes the account's prefs, paths and language as arguments,
+and `api/routes/chat.py` / `api/routes/guide.py` call it with what the request
+resolved.
 
 Every path through the model half degrades to silence rather than to an error:
 a brand-new account is on the reduced trial allowance and may have no key of
@@ -32,7 +29,7 @@ its own, and the walkthrough is complete without any of this.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable
 
 from stocks import obs
 from stocks.chat import engine
@@ -161,10 +158,9 @@ class MarkerFilter:
     back whenever it could still be the beginning of one — which costs a few
     characters of lag on prose containing "[", and nothing else.
 
-    A class rather than a generator because the two callers hold the stream
-    differently: Streamlit hands `st.write_stream` an iterator (`hide_markers`
-    below), and the HTTP route forwards engine events one at a time and needs
-    to push a chunk in and take the safe prefix out.
+    A class rather than a generator because the HTTP route forwards engine
+    events one at a time and needs to push a chunk in and take the safe
+    prefix out.
     """
 
     def __init__(self, pattern: re.Pattern[str] = MARKER_RE) -> None:
@@ -197,21 +193,6 @@ class MarkerFilter:
         return self._re.sub("", held)
 
 
-def hide_markers(chunks: Iterable, found: list[str]) -> Iterator[str]:
-    """Yield a provider's stream with any jump marker withheld, recording it."""
-    gate = MarkerFilter()
-    try:
-        for chunk in chunks:
-            out = gate.feed(str(chunk))
-            if out:
-                yield out
-        tail = gate.close()
-        if tail:
-            yield tail
-    finally:
-        found.extend(gate.found)
-
-
 def scrub(text: str) -> str:
     """The text with every marker removed, trailing space trimmed."""
     return MARKER_RE.sub("", str(text or "")).rstrip()
@@ -241,8 +222,7 @@ def claim_goto(turn: dict, found: list[str]) -> str | None:
 # --------------------------------------------------------------- the opening
 
 
-def facts(prefs: dict, paths: object | None = None, *,
-          signed_in: bool | None = None) -> str:
+def facts(prefs: dict, paths, *, signed_in: bool) -> str:
     """The little the opening line is allowed to know about the account.
 
     Counts, not holdings: the free chain is operator-funded and shared, and a
@@ -254,12 +234,7 @@ def facts(prefs: dict, paths: object | None = None, *,
     from stocks.web import onboarding
 
     try:
-        where = getattr(paths, "watchlist", None)
-        if where is None:
-            from stocks.web import auth
-
-            where = auth.watchlist_path()
-        tickers = len(load_watchlist(where))
+        tickers = len(load_watchlist(paths.watchlist))
     except Exception:
         tickers = 0
     try:
@@ -299,10 +274,9 @@ def generate(prefs: dict, step, lang: str, *, save: Callable[[dict], None],
     same sandbox the daily briefing runs in. A free unit spent on an attempt
     that answered nothing is handed back: the guide is not what should cost a
     new account one of its five trial messages. `save` writes prefs for the
-    caller that owns them (the Streamlit session's file, or the request's).
-    `memories` is what the user already told the chat (`engine.user_memory`),
-    so a walkthrough resumed after a few conversations speaks to the same
-    person they do.
+    caller that owns them. `memories` is what the user already told the chat
+    (`engine.user_memory`), so a walkthrough resumed after a few conversations
+    speaks to the same person they do.
     """
     from stocks.web.i18n import translate
 

@@ -1,1 +1,1 @@
-"""Streamlit dashboard."""
+"""The web app's server side."""

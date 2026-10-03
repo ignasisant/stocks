@@ -11,9 +11,9 @@
  * assembled, and re-opening shows what carried on without anyone watching.
  *
  * Open survives a reload, because a panel that collapsed back to its icon on
- * every navigation would lose a conversation mid-question. The flag is the one
- * the Streamlit drawer already stores (`chat_panel_open` in prefs), so the two
- * surfaces agree about whether this account keeps the assistant open.
+ * every navigation would lose a conversation mid-question. The flag is the
+ * account's (`chat_panel_open` in prefs), so every device agrees about whether
+ * this account keeps the assistant open.
  */
 
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
@@ -79,8 +79,8 @@ export function Drawer() {
   const [open, setOpen] = useState(prefs.chat_panel_open);
   const chat = useChat(open);
   // The walkthrough sent the reader to a page and the drawer stepped aside
-  // (phones only — see `GuideCard.useVisit`). Per tab and in memory, like the
-  // Streamlit session flag it mirrors; any open of the drawer clears it.
+  // (phones only — see `GuideCard.useVisit`). Per tab and in memory; any open
+  // of the drawer clears it.
   const [parked, setParked] = useState(false);
 
   const show = useCallback((next: boolean) => {

@@ -71,7 +71,7 @@ export type Channel = {
   unlink: () => void;
 };
 
-/** The Streamlit page's own interval. Slow enough to be free, fast enough to feel live. */
+/** Slow enough to be free, fast enough to feel live. */
 const POLL_MS = 3000;
 
 export function useTelegram(offline: string): Channel {

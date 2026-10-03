@@ -1,7 +1,8 @@
 /*
  * The shell's own stylesheet. Every colour is a `--ag-*` custom property that
- * server.py inlines into the document, so a page here and the Streamlit page
- * beside it cannot drift apart — and so dark mode is one definition, not two.
+ * server.py inlines into the document (`ds.ds_vars_css`, which the landing
+ * inlines too), so the two cannot drift apart — and so dark mode is one
+ * definition, not two.
  *
  * No hex literals in this file. A colour written here is a colour the design
  * system does not know about.
@@ -196,8 +197,7 @@ body {
 }
 
 /* "Send feedback" is a word, not a glyph, and 3.5rem does not hold it. It
-   goes with the labels — collapsing the Streamlit sidebar takes it away too,
-   and unfolding is one press. */
+   goes with the labels, and unfolding is one press. */
 :root[data-nav="folded"] .ag-fb-open {
   display: none;
 }
@@ -384,7 +384,7 @@ body {
   display: none;
 }
 
-/* Phones: the rail becomes a bottom tab bar, as it does in the Streamlit app. */
+/* Phones: the rail becomes a bottom tab bar. */
 @media (max-width: 640px) {
   .ag-shell {
     grid-template-columns: 1fr;
@@ -609,11 +609,10 @@ img.ag-search-logo {
    still set by its text — a logo that grew the row would relayout a table as
    the marks arrived.
 
-   On a light plate, as the Streamlit app draws every mark (ds.py: the primary
-   text neutral "also the logo plate"): most marks are drawn for a white page,
-   and a dark-blue or black one straight on this dark surface all but
-   disappears. The padding keeps the mark off the plate's edge, so the
-   rounded corner does not clip it. */
+   On a light plate (ds.py: the primary text neutral is "also the logo
+   plate"): most marks are drawn for a white page, and a dark-blue or black
+   one straight on this dark surface all but disappears. The padding keeps the
+   mark off the plate's edge, so the rounded corner does not clip it. */
 .ag-tick-logo {
   box-sizing: border-box;
   width: 1.2em;
@@ -626,10 +625,9 @@ img.ag-search-logo {
   vertical-align: -0.25em;
 }
 
-/* The guided tour and the what's-new modal — one dialog in two modes, the way
-   the Streamlit app has it. It interrupts, so it is the topmost thing on
-   screen and it is dismissible from anywhere: scrim, Escape, or its own
-   button. */
+/* The guided tour and the what's-new modal — one dialog in two modes. It
+   interrupts, so it is the topmost thing on screen and it is dismissible from
+   anywhere: scrim, Escape, or its own button. */
 .ag-tour-scrim {
   position: fixed;
   z-index: 90;
@@ -743,8 +741,8 @@ img.ag-search-logo {
   background: var(--ag-surface-hover);
 }
 
-/* Feedback. The trigger sits at the foot of the nav rail, where the Streamlit
-   sidebar puts it — out of the way of the page, on every screen. */
+/* Feedback. The trigger sits at the foot of the nav rail — out of the way of
+   the page, on every screen. */
 .ag-fb-open {
   margin-top: auto;
   padding: 6px 10px;

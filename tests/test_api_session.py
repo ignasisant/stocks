@@ -2,17 +2,11 @@
 
 Two things are being guarded here.
 
-The first is the cookie itself. `stocks.session` mints it and both front ends
-read it, so its codec is the one place where "who is this request" is decided.
-A change that quietly stopped recognising a valid cookie would turn every
+The first is the cookie itself. `stocks.session` mints it and the API reads
+it, so its codec is the one place where "who is this request" is decided. A
+change that quietly stopped recognising a valid cookie would turn every
 signed-in person anonymous and start asking them for a bearer token; a change
 that recognised an invalid one would be very much worse.
-
-There is one cookie this app did not sign and still honours: the
-`_streamlit_user` that `st.login()` wrote before the app ran its own OIDC flow.
-`test_a_cookie_streamlit_signed_is_still_one_we_can_read` is what makes the
-change of issuer unable to sign anybody out mid-session. It goes when that
-grace read does.
 
 The second is the authorization rule that makes a session worth having. A token
 names nobody, so its caller says which account it wants. A session names a
@@ -22,13 +16,14 @@ somebody else's book by editing a query string.
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
 from fastapi.testclient import TestClient
-from streamlit.web.server.starlette.starlette_app_utils import create_signed_value
+from itsdangerous import URLSafeTimedSerializer
 
-from stocks import accounts, session
+from stocks import accounts, secrets_env, session
 from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from tests.conftest import AUTH_COOKIE_SECRET as SECRET
@@ -52,10 +47,14 @@ def cookie_for(email: str, *, verified: bool = True) -> str:
     return session.mint({"email": email, "email_verified": verified, "name": "T"})
 
 
-def legacy_cookie_for(email: str, *, verified: bool = True, secret: str = SECRET) -> str:
-    """The cookie `st.login()` used to write, signed with Streamlit's own writer."""
-    claims = {"email": email, "email_verified": verified, "name": "T", "origin": "google"}
-    return create_signed_value(secret, session.LEGACY_COOKIE, json.dumps(claims)).decode()
+def forged_cookie_for(email: str, *, secret: str, salt: str = session.COOKIE,
+                      digest=hashlib.sha256) -> str:
+    """A cookie in our shape, signed by somebody who is not this deployment."""
+    claims = {"v": session.VERSION, "email": email, "email_verified": True}
+    signer = URLSafeTimedSerializer(
+        secret, salt=salt, signer_kwargs={"digest_method": digest}
+    )
+    return signer.dumps(json.dumps(claims))
 
 
 @pytest.fixture(autouse=True)
@@ -67,8 +66,8 @@ def _signing_secret(cookie_secret):
 def _no_identity_provider(monkeypatch):
     """No IdP configured, pinned rather than inherited.
 
-    `secrets_env.secret` falls back to `st.secrets`, so on a developer's own
-    checkout `sign_in_configured()` reads the real `[auth]` section out of
+    `secrets_env.secret` falls back to the secrets file, so on a developer's
+    own checkout `sign_in_configured()` reads the real `[auth]` section out of
     `.streamlit/secrets.toml` and `/me` answers a different `sign_in` here than
     it does in CI. Pinning it is what stops this file asserting a fact about
     whoever is running it.
@@ -130,13 +129,12 @@ def test_a_cookie_we_signed_is_one_we_can_read():
     assert session.signed_in_email(jar) == MINE
 
 
-def test_a_cookie_streamlit_signed_is_still_one_we_can_read():
-    """The grace read, and the reason the change of issuer signs nobody out.
-
-    Delete this the day `stocks.session` stops honouring `_streamlit_user` —
-    it is a migration guarantee, not a permanent one."""
-    jar = {session.LEGACY_COOKIE: legacy_cookie_for(MINE)}
-    assert session.signed_in_email(jar) == MINE
+def test_the_cookie_st_login_wrote_names_nobody_any_more():
+    """`_streamlit_user` was honoured while the app moved to its own sign-in.
+    That grace read is gone: a valid one, under our own secret, is nobody."""
+    jar = {"_streamlit_user": forged_cookie_for(
+        MINE, secret=SECRET, salt="_streamlit_user", digest=hashlib.sha1)}
+    assert session.signed_in_email(jar) is None
 
 
 def test_the_claims_we_depend_on_are_the_ones_the_cookie_carries():
@@ -163,7 +161,7 @@ def test_the_address_is_stored_lower_cased_so_both_front_ends_agree():
 
 
 def test_a_cookie_signed_with_another_secret_names_nobody():
-    jar = {session.LEGACY_COOKIE: legacy_cookie_for(MINE, secret="somebody-elses")}
+    jar = {session.COOKIE: forged_cookie_for(MINE, secret="somebody-elses")}
     assert session.signed_in_email(jar) is None
 
 
@@ -220,19 +218,14 @@ def test_no_configured_secret_names_nobody(monkeypatch):
     assert session.signed_in_email(jar) is None
 
 
-def test_an_unreadable_secret_degrades_instead_of_raising(monkeypatch):
+def test_an_unreadable_secret_degrades_instead_of_raising(monkeypatch, tmp_path):
     """A malformed secrets.toml must read as "nobody is signed in", not 500
     every request on the deployment."""
-    import streamlit as st
-
     jar = {session.COOKIE: cookie_for(MINE)}
     monkeypatch.delenv("AUTH_COOKIE_SECRET", raising=False)
-
-    class Boom:
-        def get(self, *a, **k):
-            raise RuntimeError("secrets.toml is not valid TOML")
-
-    monkeypatch.setattr(st, "secrets", Boom())
+    broken = tmp_path / "secrets.toml"
+    broken.write_text('[auth]\ncookie_secret = "not closed\n')
+    monkeypatch.setattr(secrets_env, "SECRETS_FILE", broken)
     assert session.signed_in_email(jar) is None
 
 
@@ -352,7 +345,7 @@ def test_me_carries_the_identity_card_for_the_session_itself(client, books):
 
 def test_me_names_the_owner_so_deletion_is_not_offered(client, books, monkeypatch):
     """The owner's book is the repo-root files: `DELETE /account` refuses it,
-    so the client hides the control, as the Streamlit page does."""
+    so the client hides the control."""
     from dataclasses import replace
 
     from stocks.config import PROJECT_ROOT

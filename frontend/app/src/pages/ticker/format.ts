@@ -22,12 +22,10 @@ export function known(value: Maybe): value is number {
 }
 
 /**
- * A price or an amount, in the C locale the Streamlit page prints.
+ * A price or an amount, in the C locale.
  *
- * Deliberately not `Intl` keyed on the reader's language: these figures sit
- * beside the same prices on the pages that have not migrated yet, and two
- * spellings of one share price across two screens is worse than one that
- * ignores the locale.
+ * Deliberately not `Intl` keyed on the reader's language: two spellings of one
+ * share price across two screens is worse than one that ignores the locale.
  */
 export function money(value: Maybe, digits = 2): string {
   if (!known(value)) return DASH;
@@ -118,8 +116,8 @@ export function currencySymbol(currency: string | null | undefined): string {
  * `stocks.formatting.compact_money`: "$394.3B", "-$1.2M", "€950".
  *
  * One decimal on a suffix and the sign ahead of the mark, so a market cap, an
- * AUM and an insider net read here exactly as they do on the Streamlit page —
- * and never `toPrecision(3)`, which prints "1.49T" beside Streamlit's "1.5T".
+ * AUM and an insider net read here exactly as the server prints them — and
+ * never `toPrecision(3)`, which prints "1.49T" where the server says "1.5T".
  */
 export function compactMoney(
   value: Maybe,
@@ -152,18 +150,17 @@ function mark(currency: string | null): string {
 }
 
 /**
- * An insider trade's price as Streamlit's table prints it — "$330.19" — and
- * blank when the filing carries none: a grant has no price, and a dash in
- * every grant row reads as thirty missing figures.
+ * An insider trade's price — "$330.19" — and blank when the filing carries
+ * none: a grant has no price, and a dash in every grant row reads as thirty
+ * missing figures.
  */
 export function insiderPrice(value: Maybe, currency: string | null): string {
   return known(value) ? `${mark(currency)}${money(value, 2)}` : "";
 }
 
 /**
- * …and its signed notional, whole units: "$-474,813", "$+12,000". The sign
- * sits after the mark because that is Streamlit's `{sym}{:+,.0f}`, and the two
- * tables should read alike. Blank with no notional.
+ * …and its signed notional, whole units, the sign after the mark:
+ * "$-474,813", "$+12,000". Blank with no notional.
  */
 export function insiderValue(value: Maybe, currency: string | null): string {
   return known(value) ? `${mark(currency)}${signed(value, 0)}` : "";
@@ -182,11 +179,11 @@ export function yoy(cur: Maybe, prev: Maybe): number | null {
  * Year-over-year growth for every bar of a results series whose first
  * `reported` values were filed and the rest are forecast.
  *
- * Streamlit's rule, bar for bar: a reported year is measured against the year
- * right before it — a gap stays a gap, so the year after a missing one has no
- * label — while the first forecast bar is measured against the last reported
- * year that *has* a value, and each later forecast against the one before it.
- * The forecast tail is what a reader checks "is consensus expecting growth"
+ * The rule, bar for bar: a reported year is measured against the year right
+ * before it — a gap stays a gap, so the year after a missing one has no label —
+ * while the first forecast bar is measured against the last reported year that
+ * *has* a value, and each later forecast against the one before it. The
+ * forecast tail is what a reader checks "is consensus expecting growth"
  * against, so it has to anchor on the filing, not on a hole.
  */
 export function barGrowth(
@@ -278,12 +275,11 @@ export function earliest(values: (number | null)[] | undefined): number | null {
 
 /**
  * The day's move off the bars, for when there is no quote to read it from:
- * Streamlit's `(last - prev) / prev` over the last two closes. On an intraday
- * range the bar before the last is five minutes ago, not yesterday, so there
- * the previous close is the last bar of the previous session instead. A
- * weekly or monthly bar ("max" over a long listing) has no yesterday in it at
- * all. A fraction, as the quote's `pct` is; null when there is nothing to
- * measure.
+ * `(last - prev) / prev` over the last two closes. On an intraday range the bar
+ * before the last is five minutes ago, not yesterday, so there the previous
+ * close is the last bar of the previous session instead. A weekly or monthly
+ * bar ("max" over a long listing) has no yesterday in it at all. A fraction, as
+ * the quote's `pct` is; null when there is nothing to measure.
  */
 export function barsDayPct(bars: Bars | null): number | null {
   if (!bars) return null;

@@ -226,6 +226,13 @@ ACTION_WORDS: dict[str, tuple[str, ...]] = {
     "split": (
         "split", "desdoblamiento", "contrasplit", "frazionamento",
     ),
+    # Longer than "dividend", so "Dividend (Return of capital)" lands here.
+    "capital": (
+        "return of capital", "capital return", "devolucion de capital",
+        "devolucion de prima", "devolucion de la prima",
+        "remboursement de capital", "rimborso di capitale",
+        "kapitalruckzahlung", "einlagenruckgewahr", "terugbetaling van kapitaal",
+    ),
 }
 
 # Longest phrase first, so "compraventa" is never read as "compra", and the

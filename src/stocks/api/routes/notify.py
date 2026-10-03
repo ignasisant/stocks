@@ -1,11 +1,9 @@
 """Linking a Telegram chat, and the two things you do with it afterwards.
 
-The Streamlit Profile page owns a four-step dance — press Connect, get a
-one-time code, press Start in Telegram, wait for the chat id to come back — and
-none of it is Streamlit's: the code is a secret in prefs.json, the return trip
-is the Actions chat job writing `telegram_chat_id` into the bucket, and the
-waiting is polling a file. All of that is exactly as true for a front end that
-is not Streamlit, which is why it is here rather than rebuilt beside it.
+Linking is a four-step dance — press Connect, get a one-time code, press Start
+in Telegram, wait for the chat id to come back. The code is a secret in
+prefs.json, the return trip is the Actions chat job writing `telegram_chat_id`
+into the bucket, and the waiting is polling a file.
 
 The code is session-scoped and random. That matters: an attacker sending
 "/start <guess>" from their own Telegram can only ever match a code somebody
@@ -26,9 +24,9 @@ from stocks.notify import telegram
 
 router = APIRouter(prefix="/notify/telegram", tags=["notify"])
 
-# How long a pending code stays matchable. The Streamlit page uses the same ten
-# minutes, and the code is retired server-side when it lapses rather than left
-# sitting in prefs for the next person who guesses it.
+# How long a pending code stays matchable: ten minutes, and the code is retired
+# server-side when it lapses rather than left sitting in prefs for the next
+# person who guesses it.
 LINK_TTL = 600
 
 
@@ -59,7 +57,7 @@ class Telegram(BaseModel):
         default=None,
         description=(
             "The linked chat's Telegram @handle, without the @, as the link "
-            "job recorded it — what the Streamlit page prints beside "
+            "job recorded it — what the Profile prints beside "
             '"connected" so a reader with two accounts can tell which one '
             "gets the messages. Null when not linked, or when the chat has no "
             "public username (Telegram does not require one)."
@@ -171,8 +169,8 @@ def unlink(account: Writer) -> Telegram:
     """Stop every message. Only the chat identity and any pending code go.
 
     The identity is the chat id with the handle and link time recorded beside
-    it — the three keys the Streamlit page's disconnect clears — so the next
-    link does not come back printing the previous chat's @username.
+    it, so the next link does not come back printing the previous chat's
+    @username.
 
     Not the toggles: a reader who disconnects and reconnects a month later
     should find the same three switches set the way they left them, and

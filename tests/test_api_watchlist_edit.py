@@ -146,7 +146,7 @@ def test_clearing_shares_does_not_touch_the_cost_basis(client, account, signed_i
 
 
 def test_the_position_is_read_back_where_it_is_written(client, account, signed_in):
-    """Shares and average cost, which the Streamlit grid shows and edits. A
+    """Shares and average cost, which the profile's watchlist shows and edits. A
     field the read side left out invited overwriting a stored value with zero;
     unset reads as null, not 0, so an empty cell means one thing."""
     patched = signed_in.patch(

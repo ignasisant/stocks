@@ -1,18 +1,18 @@
 /**
- * The phone rendering of a table — the two shapes `tables.py` gave Streamlit.
+ * The phone rendering of a table, in two shapes.
  *
  * A grid of six figures on a 390px screen either pans sideways or squeezes
  * every column to three characters, so below the main column's narrow width a
  * table is drawn again as one of these:
  *
- *   - `DenseRows`, for a list of tickers (`_ticker_rows_html`): one two-line
- *     row per name, Revolut-style, the whole row a link to the ticker's page.
+ *   - `DenseRows`, for a list of tickers: one two-line row per name,
+ *     Revolut-style, the whole row a link to the ticker's page.
  *
  *       [logo]  TICKER  (+54%)             €6,345
  *               Company · 9%                +1.2%
  *
- *   - `StackCards`, for everything else (`stacked_table_html`): one small
- *     card per row, one "label — value" line per column.
+ *   - `StackCards`, for everything else: one small card per row, one
+ *     "label — value" line per column.
  *
  * `Responsive` ships both renderings and a container query on `ag-main` picks
  * one by the room the page actually has — so the chat drawer opening on a
@@ -129,8 +129,8 @@ export function DenseRows<T>({
 export type StackLine<T> = { label: ReactNode; cell: (row: T) => ReactNode };
 
 /**
- * One card per row. Missing cells are dropped rather than printed as "n/a",
- * as Streamlit's cards did: on a phone a short card beats a complete one.
+ * One card per row. Missing cells are dropped rather than printed as "n/a":
+ * on a phone a short card beats a complete one.
  */
 export function StackCards<T>({
   rows,

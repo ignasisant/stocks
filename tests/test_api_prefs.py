@@ -9,7 +9,7 @@ is everything the route decides on top of them:
   rather than dropped on the floor, so a client never believes it saved
   something it did not;
 * a patch changes the keys it sent and nothing else, which is what keeps a
-  concurrent Streamlit run's save from being wiped;
+  another tab's concurrent save from being wiped;
 * null is a real value — "auto" — and is not the same as leaving a field out.
 """
 
@@ -107,7 +107,7 @@ def test_a_token_cannot_change_anybody_settings(client, account):
 
 def test_a_session_changes_only_what_it_sent(client, account, signed_in):
     """The file is the unit the app stores: a patch that rewrote it whole would
-    drop whatever a concurrent Streamlit run had just saved beside it."""
+    drop whatever a concurrent request had just saved beside it."""
     response = signed_in.patch("/v1/prefs", json={"currency": "USD"})
     assert response.status_code == 200
     assert response.json()["currency"] == "USD"
@@ -321,10 +321,10 @@ def test_saving_it_marks_it_set_and_leaves_the_settings_alone(
 def test_the_lists_come_back_in_the_order_the_form_offers_them(
     client, account, signed_in
 ):
-    """Normalised, exactly as `auth.render_profile_form` normalises the page's
-    click order. The Profile page autosaves on a field-by-field difference
-    against what is stored, so a list stored in click order would read as an
-    edit on every rerun and toast "saved" at a reader who touched nothing."""
+    """Normalised to the order the form offers them, not the click order. The
+    Profile page autosaves on a field-by-field difference against what is
+    stored, so a list stored in click order would read as an edit on every
+    load and toast "saved" at a reader who touched nothing."""
     from stocks.web.auth import PROFILE_CONSTRAINTS, PROFILE_FOCUS
 
     saved = signed_in.put(

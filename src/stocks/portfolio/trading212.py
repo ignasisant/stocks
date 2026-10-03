@@ -20,6 +20,9 @@ Shape notes this parser absorbs:
   double-tax credit reads (see revolut.py) — when it is reported in that same
   currency. If the per-share fields are blank the row falls back to the
   account-currency `Total` with fee 0.
+* "Dividend (Return of capital)" and its "non us" twin are read the same way
+  but book as a return of capital: no income, a lower cost on the position
+  (see positions.build).
 * Deposits, withdrawals, interest, currency conversions and result
   adjustments are skipped with a reason, never silently dropped. Stock-split
   rows keep the shared skipped-entry shape so validate.resolve_splits can
@@ -31,7 +34,7 @@ Nothing here writes to the ledger; the Import page previews and commits.
 from __future__ import annotations
 
 from stocks.portfolio import statement
-from stocks.portfolio.ledger import Transaction
+from stocks.portfolio.ledger import RETURN_OF_CAPITAL, Transaction
 from stocks.portfolio.statement import CsvFormat, ParseResult, Row, parse_date
 
 # Logical key -> exact Trading 212 header, lowercased (their export is stable,
@@ -62,6 +65,8 @@ def _map_action(rtype: str) -> str | None:
         return "buy"
     if t.endswith("sell"):
         return "sell"
+    if "return of capital" in t:  # Dividend (Return of capital[ non us])
+        return RETURN_OF_CAPITAL
     if t.startswith("dividend"):  # Dividend (Ordinary), (…US corporations), …
         return "dividend"
     return None
@@ -100,8 +105,8 @@ def _build_tx(row: Row, action: str) -> Transaction:
     if not ticker:
         raise ValueError("missing ticker")
 
-    if action == "dividend":
-        return _build_dividend(row, date, ticker)
+    if action in ("dividend", RETURN_OF_CAPITAL):
+        return _build_dividend(row, date, ticker, action)
 
     qty = row.money("shares")
     price = row.money("price")
@@ -121,7 +126,7 @@ def _build_tx(row: Row, action: str) -> Transaction:
     )
 
 
-def _build_dividend(row: Row, date: str, ticker: str) -> Transaction:
+def _build_dividend(row: Row, date: str, ticker: str, action: str) -> Transaction:
     qty = row.money("shares")
     per_share = row.money("price")
     inst_ccy = row.upper("price_ccy")
@@ -134,7 +139,7 @@ def _build_dividend(row: Row, date: str, ticker: str) -> Transaction:
         return Transaction(
             date=date,
             ticker=ticker,
-            action="dividend",
+            action=action,
             price=round(qty * per_share, 4),
             currency=inst_ccy,
             fee=wht if wht > 0 and wht_ccy == inst_ccy else 0.0,
@@ -144,11 +149,11 @@ def _build_dividend(row: Row, date: str, ticker: str) -> Transaction:
     total = row.money("total")
     total_ccy = row.text("total_ccy") or "USD"
     if total <= 0:
-        raise ValueError(f"dividend amount {total} is not positive")
+        raise ValueError(f"{action} amount {total} is not positive")
     return Transaction(
         date=date,
         ticker=ticker,
-        action="dividend",
+        action=action,
         price=total,
         currency=total_ccy,
         fee=wht if wht > 0 and wht_ccy == total_ccy.upper() else 0.0,

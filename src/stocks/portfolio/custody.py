@@ -38,7 +38,8 @@ from dataclasses import dataclass
 from stocks.data.fx import ToBase, converter, prefetch
 from stocks.portfolio import transfers
 from stocks.portfolio.fees import broker_of
-from stocks.portfolio.ledger import Transaction
+from stocks.portfolio.ledger import RETURN_OF_CAPITAL, Transaction
+from stocks.portfolio.positions import replay_order
 
 # Bucket for an open position no ledger row attributes to a broker. Can only
 # happen if the caller mixes frames from different books; kept so allocation
@@ -83,7 +84,7 @@ def by_position(
     # Shares that left a broker and have not been claimed by an arrival yet,
     # holding the basis they carried out so the receiving broker inherits it.
     in_flight: dict[str, list[_Lot]] = defaultdict(list)
-    for tx in sorted(transactions, key=lambda t: (t.date, t.id or 0)):
+    for tx in sorted(transactions, key=replay_order):
         if tx.action == "buy":
             cost_native = tx.quantity * tx.price + tx.fee
             lots[tx.ticker].append(
@@ -104,6 +105,8 @@ def by_position(
             # broker — total cost basis unchanged (same as positions._split).
             for lot in lots[tx.ticker]:
                 lot.quantity *= tx.quantity
+        elif tx.action == RETURN_OF_CAPITAL:
+            _return_capital(lots[tx.ticker], to_base(tx.price, tx.currency, tx.date))
 
     out: dict[str, dict[str, Custody]] = {}
     for ticker, queue in lots.items():
@@ -119,6 +122,17 @@ def by_position(
                 sorted(agg.items(), key=lambda kv: -kv[1].quantity)
             )
     return out
+
+
+def _return_capital(queue: list[_Lot], paid: float) -> None:
+    """Every open lot gives up the same basis per share, at every broker,
+    none below zero (positions._return_capital, without the excess: what no
+    basis absorbs is a tax figure, and those live in positions.build)."""
+    shares = sum(lot.quantity for lot in queue)
+    if shares <= 1e-9:
+        return
+    for lot in queue:
+        lot.cost = max(0.0, lot.cost - paid * lot.quantity / shares)
 
 
 def _sell(

@@ -125,6 +125,10 @@ def test_detect_action_declares_every_field_a_tool_reads():
         data = Reads()
         tool.parse(data)
         assert data.read <= declared, (tool.name, data.read - declared)
+    # The ledger tools share one reader.
+    data = Reads()
+    tools._book_args(data)
+    assert data.read <= declared, data.read - declared
 
 
 # ------------------------------------------------------------------- parse

@@ -11,10 +11,9 @@
  * same fold (`DayChips`, three to a cell here): tax deadlines, buy-back days,
  * Fed and ECB decisions, prints and ex-dividend dates. Names are scoped to the
  * union of the calendar's own filter sets (`portfolio`, `favorites` and one per
- * watchlist tag) — the held + starred + tagged set the Streamlit page builds
- * its grid from. The reader's own dates (tax, buy-backs) and the banks belong
- * to no name, so the scope leaves them alone; and as on the page, the banks
- * alone never make the card worth drawing.
+ * watchlist tag): the held + starred + tagged set. The reader's own dates (tax,
+ * buy-backs) and the banks belong to no name, so the scope leaves them alone;
+ * and as on the page, the banks alone never make the card worth drawing.
  *
  * Every chip opens the dialog the Earnings page opens (`EventDetail`): a past
  * print its result, a dividend what lands in the account, the rest what the

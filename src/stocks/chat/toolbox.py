@@ -41,9 +41,9 @@ _NO_DB = Path("/nonexistent/prices.db")
 class Context:
     """What the tools are allowed to look at: this account's own files.
 
-    Passed in rather than resolved inside, because the tools run off the
-    Streamlit script thread where session state (and so the current account) is
-    gone — the same rule engine.in_parallel documents.
+    Passed in rather than resolved inside, because the tools run on pool
+    threads, where the request (and so the current account) is gone — the same
+    rule engine.in_parallel documents.
     """
 
     watchlist: Path | None = None

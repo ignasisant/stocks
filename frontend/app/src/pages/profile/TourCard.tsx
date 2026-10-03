@@ -2,9 +2,9 @@
  * The walkthrough, offered by hand.
  *
  * The tour auto-opens once, and after that only for a release the account has
- * not seen. This card is the entry point for everybody else — the Streamlit
- * page keeps it in the same place, the Preferences rail, because that is where
- * a returning reader goes looking for it.
+ * not seen. This card is the entry point for everybody else, in the
+ * Preferences rail, because that is where a returning reader goes looking for
+ * it.
  *
  * Nothing here draws the tour. The shell owns it and reads `?tour=` off the
  * URL (`?tour=1` from the top, `?tour=<step id>` onto one step), which is also
@@ -13,8 +13,8 @@
  *
  * Under the button, how much of the app is switched on: the capabilities
  * `onboarding.setup_state` counts (the Home setup card's list), as a bar and a
- * "2/4" — the same line the Streamlit card draws, off the same `/onboarding`
- * read. A failed read draws no bar rather than a wrong one.
+ * "2/4", off the `/onboarding` read. A failed read draws no bar rather than a
+ * wrong one.
  */
 
 import { get } from "../../shell/api";

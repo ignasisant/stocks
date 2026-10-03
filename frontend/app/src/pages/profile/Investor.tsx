@@ -6,9 +6,9 @@
  * wrong answer in the chat drawer — which is why the rail says, in the app's
  * own words, that this is stored with the account and sent to the assistant.
  *
- * Three cards rather than one stack, the same split the Streamlit page makes:
- * the two scales that colour every answer, the lists that narrow it, then the
- * free text. And no Save button, because the tab strip promises there is none.
+ * Three cards rather than one stack: the two scales that colour every answer,
+ * the lists that narrow it, then the free text. And no Save button, because the
+ * tab strip promises there is none.
  */
 
 import { useEffect, useState } from "react";

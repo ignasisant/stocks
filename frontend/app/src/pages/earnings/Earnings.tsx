@@ -26,11 +26,10 @@ import { TaxReminders } from "./Tax";
 /**
  * Nothing came back at all — no dates, no groups, not even a skipped name.
  *
- * That is an empty watchlist rather than a quiet quarter, so it gets the same
- * card the Streamlit page shows: what this screen is for, and the one place to
- * fix it. Anything else — names that report but have no published date yet —
- * falls through to `no_dates` below, which does not accuse the reader of having
- * added nothing.
+ * That is an empty watchlist rather than a quiet quarter, so it gets its own
+ * card: what this screen is for, and the one place to fix it. Anything else —
+ * names that report but have no published date yet — falls through to
+ * `no_dates` below, which does not accuse the reader of having added nothing.
  */
 function NothingTracked() {
   const t = useT();

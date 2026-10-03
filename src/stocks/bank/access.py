@@ -1,10 +1,5 @@
 """Who may use the bank connection, and where the bank sends them back.
 
-Split out of `web/bank_ui.py` when the React app took over the flow: the rules
-are the same on both front ends, and the API cannot import Streamlit to read
-them. `bank_ui` now wraps this with the Streamlit session's own answers to
-"who is signed in" and "which URL is this being served on".
-
 Two gates, both deliberate:
 
 * credentials — no application id / private key, no feature. That alone keeps
@@ -29,10 +24,8 @@ from stocks import accounts
 from stocks.bank import enablebanking
 from stocks.secrets_env import secret
 
-#: Where the React shell answers, which is where the bank now redirects to.
-#: The Streamlit page keeps its own `/bank` (it passes its path explicitly):
-#: only one of the two can be the registered redirect URL, and the flow the
-#: app actually offers is the one in the shell.
+#: The bank's registered return address. `/next` redirects to the shell's own
+#: `/bank`; the address is changed in the Enable Banking panel, not here.
 APP_PATH = "/next/bank"
 
 

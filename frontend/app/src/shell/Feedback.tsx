@@ -1,18 +1,17 @@
 /**
- * "Send feedback", on every page — because in the Streamlit app it is on every
- * page, and dropping it in the rebuild would be the quietest way to stop
- * hearing about the bugs this rebuild introduces.
+ * "Send feedback", on every page — because a page without it is the quietest
+ * way to stop hearing about the bugs on that page.
  *
  * Offered to guests too: a visitor who bounced knowing why is worth more than a
  * login, which is why `POST /feedback` is the API's one unauthenticated write.
  *
- * What the Streamlit composer offers, this offers:
+ * Beside the text:
  *
- * * **A screenshot**, optional (`web/feedback._attachment`). Captured from this
- *   screen on request — the rasteriser is fetched only then, never in the
- *   shell bundle — or attached as an image file, or pasted into the box. Every
- *   route ends as one JPEG under the API's ceiling (`screenshot.ts`).
- * * **Dictation** (`web/feedback._transcribe`), through `POST /chat/voice`.
+ * * **A screenshot**, optional. Captured from this screen on request — the
+ *   rasteriser is fetched only then, never in the shell bundle — or attached
+ *   as an image file, or pasted into the box. Every route ends as one JPEG
+ *   under the API's ceiling (`screenshot.ts`).
+ * * **Dictation**, through `POST /chat/voice`.
  *   That route spends the operator's transcription key and is a `Writer`, so a
  *   guest never sees the microphone (`GUEST_CHROME.dictation`) — and neither
  *   does a deployment with no transcription key, which `/chat/state` says.

@@ -1,8 +1,8 @@
 /**
  * Which card may move the walkthrough.
  *
- * The rule the Streamlit guide is built on, and the one that is easy to lose
- * in a port: only the card for the step the account is *on* carries Next and
+ * The rule the guide is built on, and the one that is easy to lose in a
+ * rewrite: only the card for the step the account is *on* carries Next and
  * Skip. An older card keeps only its way there — pressing Next five turns up
  * would walk the guide backwards and the reader would never see why.
  *
@@ -93,7 +93,7 @@ describe("the walkthrough's cards", () => {
     expect(out).not.toContain("guide.skip");
   });
 
-  it("drops Streamlit's icon shortcodes from the stored copy", () => {
+  it("drops the icon shortcodes the stored copy carries", () => {
     expect(unshortcode(":material/check_circle: **Import** is set up.")).toBe(
       "**Import** is set up.",
     );

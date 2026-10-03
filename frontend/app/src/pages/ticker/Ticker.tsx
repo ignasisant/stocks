@@ -3,13 +3,10 @@
  * of it, what it earns, what it is worth against its own history, how defensible
  * it looks, who inside it has been dealing, and who to compare it against.
  *
- * Same running order as `web/app_pages/ticker.py`, which is the specification.
- *
- * **The company is the URL.** `?ticker=AAPL` — the param the Streamlit page
- * reads and writes, and the one every ticker cell in this shell already links
- * with — so a bookmark, a chat link or a notification lands on the same stock
- * whichever front end serves it. Written with `setParams`, which is what makes
- * a reload and a shared link agree.
+ * **The company is the URL.** `?ticker=AAPL` — the param every ticker cell in
+ * this shell already links with — so a bookmark, a chat link or a notification
+ * lands on the same stock. Written with `setParams`, which is what makes a
+ * reload and a shared link agree.
  *
  * **Every block degrades on its own.** Fourteen routes back this page and any
  * of them is a throttled Yahoo pull away from nothing, so each gets its own
@@ -21,11 +18,10 @@
  * "overbought". The header names the kind with one line on what to read, and
  * `layout.ts` says which figures, averages and sections that kind gets.
  *
- * **No Plotly here.** The Streamlit page and the standalone `/ticker` document
- * draw these charts with it; this shell has no Plotly dependency and a page is
- * not free to add one. The charts are SVG built from design tokens — see
- * `plot.tsx`. What is lost is the pan/box-select toolbar; what is kept is every
- * figure the hover boxes carried, plus drag-to-zoom on the price chart.
+ * **No Plotly here.** This shell has no charting dependency and a page is not
+ * free to add one. The charts are SVG built from design tokens — see
+ * `plot.tsx`. There is no pan/box-select toolbar; there is every figure a
+ * hover box needs, plus drag-to-zoom on the price chart.
  *
  * Deliberately absent, because the shell owns them: the chat drawer and the
  * guided tour, and with them the page's "Analyse with AI" button.
@@ -106,10 +102,9 @@ export default function Page() {
   const mobile = useMobile();
   const { params, setParams } = useRoute();
 
-  // `ticker` is the param every other page links with and the one the Streamlit
-  // page reads. `symbol` is accepted too and never written: the API names the
-  // resolved symbol that way, and a link built from a payload field should not
-  // be a dead end.
+  // `ticker` is the param every other page links with. `symbol` is accepted too
+  // and never written: the API names the resolved symbol that way, and a link
+  // built from a payload field should not be a dead end.
   const asked = (params.get("ticker") ?? params.get("symbol") ?? "")
     .trim()
     .toUpperCase();
@@ -149,8 +144,7 @@ export default function Page() {
     return [...merged.values()];
   }, [watchlist, written]);
 
-  // No company in the URL: the same default the Streamlit page picks — the first
-  // favourite, then the rest of the watchlist.
+  // No company in the URL: the first favourite, then the rest of the watchlist.
   const fallback = useMemo(() => {
     const ordered = [
       ...entries.filter((entry) => entry.favorite),
@@ -220,13 +214,12 @@ export default function Page() {
     [ticker],
   );
 
-  // What kind of symbol this is decides what the page draws at all (`layout.ts`)
-  // — the cut Streamlit makes with `st.stop()`, taken further. A coin gets its
-  // asset stats and nothing below; a fund gets its profile and nothing below;
-  // an index gets its chart and nothing below. Everything under those —
-  // results, fundamentals, valuation, moat, insiders, comps and the KPI
-  // sources — is a company's, and for the rest it would be a column of empty
-  // cards that each cost a fetch.
+  // What kind of symbol this is decides what the page draws at all
+  // (`layout.ts`). A coin gets its asset stats and nothing below; a fund gets
+  // its profile and nothing below; an index gets its chart and nothing below.
+  // Everything under those — results, fundamentals, valuation, moat, insiders,
+  // comps and the KPI sources — is a company's, and for the rest it would be a
+  // column of empty cards that each cost a fetch.
   //
   // The kind is the profile's (`stocks.data.asset_kind`). A fund is also
   // whatever `/fund` says once it answers — a catalog fund Yahoo files as a
@@ -350,15 +343,15 @@ export default function Page() {
           </SignedInOnly>
         ) : null}
         {/* No search box here: the shell's top-bar search is the one way to
-            change company, as on the Streamlit page — two boxes that both
-            navigate is one too many, and only the shell's keeps the recents. */}
+            change company — two boxes that both navigate is one too many, and
+            only the shell's keeps the recents. */}
       </header>
       {/* The one line on what the kind is and what to read it by — a reader
           who searched "xeon" learns here it is cash, not a share. */}
       {named?.help ? <p className="tk-kind-line">{t(named.help)}</p> : null}
 
-      {/* Nothing picked yet — the same invitation the Streamlit page opens with,
-          rather than a column of empty cards. */}
+      {/* Nothing picked yet — an invitation rather than a column of empty
+          cards. */}
       {!ticker ? (
         watchlist.state === "loading" ? (
           <Skeleton rows={6} />
@@ -369,7 +362,7 @@ export default function Page() {
         <>
           {/* The bars go down as a query: the price card keeps its range and
               chart controls through a failed fetch and shows the error in the
-              chart's slot, as Streamlit's does. */}
+              chart's slot. */}
           <PriceSection
             query={bars}
             quote={quote.state === "loaded" ? quote.data : null}
@@ -384,7 +377,7 @@ export default function Page() {
             fund={fund.state === "loaded" ? fund.data : null}
           />
 
-          {/* A fund stops here, as Streamlit's does. */}
+          {/* A fund stops here. */}
           {shape.sections.fund && fund.state === "loaded" && fund.data?.is_fund ? (
             <FundSection fund={fund.data} holdings={shape.sections.fundHoldings} />
           ) : null}
@@ -394,8 +387,8 @@ export default function Page() {
             <AssetStatsSection stats={stats.data} />
           ) : null}
 
-          {/* A company, in Streamlit's running order: annual results, then the
-              KPI grid, then the multiple against its own history. */}
+          {/* A company: annual results, then the KPI grid, then the multiple
+              against its own history. */}
           {financials.state === "loaded" && financials.data ? (
             <FinancialsChart data={financials.data} />
           ) : null}

@@ -173,9 +173,9 @@ def test_rows_the_ledger_already_holds_are_held_back_not_re_imported(
 def test_why_a_row_was_flagged_reads_in_the_account_language(
     client, account, signed_in, monkeypatch
 ):
-    """The issue text is rendered on the server, where `t` has no Streamlit
-    session and fell back to English: a Spanish account read every warning
-    of a Spanish-titled card in English."""
+    """The issue text is rendered on the server, where a language left
+    unpassed falls back to English: a Spanish account read every warning of
+    a Spanish-titled card in English."""
     monkeypatch.setattr(
         "stocks.api.routes.import_statement._ticker_exists", lambda t: None
     )

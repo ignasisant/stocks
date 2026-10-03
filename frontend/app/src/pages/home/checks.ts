@@ -3,7 +3,7 @@
  * on. No React: this is the part worth testing on its own.
  *
  * Whether a capability is *on* is never decided here — `/onboarding` answers
- * that from the same registry the Streamlit card and the guided tour read. All
+ * that from the registry the guided tour reads (`stocks.web.onboarding`). All
  * this file knows is which key in that payload a row shows, and which tour step
  * lands where the reader can act on it.
  */
@@ -24,20 +24,19 @@ export type Row = {
   /** Where to go when no step owns this row at all. */
   page?: string;
   /**
-   * Drawn disabled for a guest. `home.py` disables every pill whose target
-   * sits behind a sign-in — the import page, the assistant, Telegram, the
-   * watchlist editor — rather than hiding it: a guest should see what an
-   * account gets, and pressing into a wall is worse than a control that says
-   * plainly it is not theirs yet. Search is the one that stays live.
+   * Drawn disabled for a guest, rather than hidden, when its target sits
+   * behind a sign-in — the import page, the assistant, Telegram, the
+   * watchlist editor: a guest should see what an account gets, and pressing
+   * into a wall is worse than a control that says plainly it is not theirs
+   * yet. Search is the one that stays live.
    */
   signedIn?: boolean;
 };
 
 export const SETUP: Row[] = [
   // Sign-in has no step of its own. Done, it goes to Profile, where the
-  // account settings and the log-out live, as Streamlit's done pill does;
-  // pending — a guest — it is the sign-in link itself, which `Setup.tsx`
-  // draws in place of this destination.
+  // account settings and the log-out live; pending — a guest — it is the
+  // sign-in link itself, which `Setup.tsx` draws in place of this destination.
   { key: "login", label: "home.setup_google", page: "profile" },
   { key: "import", label: "home.setup_import", step: "import", signedIn: true },
   // The key gate lives inside the assistant drawer, which is not a page: the
@@ -88,8 +87,8 @@ export type Target =
  * capability without pretending to be a control. The tour makes the same call
  * on the same signal: no path, no "take me there".
  *
- * `canonical()` because the registry names the Streamlit page
- * (`import_transactions`) and this app serves it at its own slug.
+ * `canonical()` because the registry names a page by its Python slug
+ * (`import_transactions`) and this app serves it at its own.
  */
 export function target(row: Row, steps: TourStep[]): Target | null {
   if (row.page) return { kind: "page", page: row.page };

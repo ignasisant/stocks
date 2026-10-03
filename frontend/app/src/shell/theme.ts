@@ -31,10 +31,12 @@ export const chart = () => ({
   /* BRAND_ACCENT at 22% — the top of the price line's area fade. */
   accentArea: token("accent-area", "rgba(169,142,247,0.22)"),
   warn: token("warn", "#F4C600"),
+  warnOrange: token("warn-orange", "#EF752E"),
   eventLine: token("text-faint", "#696673"),
   surfacePage: token("surface-page", "#18161C"),
   surfaceCard: token("surface-card", "#28262D"),
   border: token("border", "#3B3942"),
   textPrimary: token("text-primary", "#F9F9FA"),
+  textSecondary: token("text-secondary", "#B3AFBD"),
   textMuted: token("text-muted", "#827F8C"),
 });

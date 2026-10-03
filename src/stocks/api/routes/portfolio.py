@@ -42,10 +42,16 @@ from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
     AllocationHolding,
     AllocationSlice,
+    BookFinding,
+    BookHealth,
     BrokerCost,
+    Change,
+    Changes,
     Custodian,
     Dividends,
     DividendYear,
+    EditEffect,
+    EditPlan,
     Fees,
     ForwardHolding,
     LedgerCleared,
@@ -57,6 +63,7 @@ from stocks.api.schemas import (
     Risk,
     RiskCurves,
     RiskName,
+    RowChange,
     Summary,
     TaxAllYears,
     TaxFlag,
@@ -72,7 +79,16 @@ from stocks.api.schemas import (
 from stocks.api.schemas import TaxPeriod as TaxPeriodOut
 from stocks.api.security import Authed
 from stocks.data import fetch
-from stocks.portfolio import custody, demo, dividends, fees, last_import, tax
+from stocks.portfolio import (
+    custody,
+    demo,
+    dividends,
+    doctor,
+    edits,
+    fees,
+    last_import,
+    tax,
+)
 from stocks.portfolio.custody import UNKNOWN as BROKER_UNKNOWN
 from stocks.portfolio.custody import mix as custody_mix
 from stocks.portfolio.ledger import all_transactions, clear
@@ -139,13 +155,12 @@ def _day_moves(
 ) -> dict[str, tuple[float | None, float | None]]:
     """{ticker: (today's move in `ccy`, as a fraction)} for the table's rows.
 
-    The Streamlit page's `enriched_positions`, on the API's loaders: the last
-    two rows of the fixed-quantity basket (so the FX move is in it, and a
-    deposit is not), then — for every name whose own exchange is shut — the
-    session quote takes over, because the newest daily bar is stale or flat
-    there and would print the "+0.00% today" a reader gets at eight in the
-    morning. The money figure is re-derived from the row's own value so the
-    amount and the percentage are always the same move.
+    The last two rows of the fixed-quantity basket (so the FX move is in it,
+    and a deposit is not), then — for every name whose own exchange is shut —
+    the session quote takes over, because the newest daily bar is stale or
+    flat there and would print the "+0.00% today" a reader gets at eight in
+    the morning. The money figure is re-derived from the row's own value so
+    the amount and the percentage are always the same move.
 
     Best effort, and never the reason the table fails: the positions are the
     ledger's and their value is already priced; a throttled basket or quote
@@ -310,16 +325,43 @@ def transactions(
     limit: Annotated[int, Query(ge=1, le=1000)] = 200,
     offset: Annotated[int, Query(ge=0)] = 0,
     base: Base = None,
+    ticker: Annotated[
+        str,
+        Query(
+            max_length=40,
+            description=(
+                "The security, however it is known: the stored label, the "
+                "label a transfer unifies it under, or the bare symbol across "
+                "venues (`GRF` finds `GRF.MC`)."
+            ),
+        ),
+    ] = "",
+    broker: Annotated[
+        str, Query(max_length=40, description="The note's first word, e.g. `ibkr`.")
+    ] = "",
+    action: Annotated[str, Query(max_length=20)] = "",
+    since: Annotated[
+        str, Query(alias="from", max_length=10, description="ISO date, inclusive.")
+    ] = "",
+    until: Annotated[
+        str, Query(alias="to", max_length=10, description="ISO date, inclusive.")
+    ] = "",
 ) -> Transactions:
-    """The ledger, newest first, paged.
+    """The ledger, newest first, paged, optionally narrowed.
 
     Raw rows as imported — not relabelled and not netted. A caller reconciling
     against a broker statement wants exactly what is stored; the analytics
-    endpoints are where transfers get unified into one position.
+    endpoints are where transfers get unified into one position. The filters
+    only choose rows; `total` counts the rows they chose.
     """
     ccy = reporting_currency(account, base)
     db = str(account.db)
     txs = loaders.ledger_state(db, loaders.db_mtime(db), ccy)[0]
+    wanted = edits.Selector(
+        ticker=ticker, broker=broker, action=action, since=since, until=until
+    )
+    if not wanted.empty():
+        txs = edits.select(txs, wanted)
     ordered = sorted(txs, key=lambda t: (t.date, t.id or 0), reverse=True)
     page = ordered[offset : offset + limit]
     return Transactions(
@@ -347,8 +389,8 @@ def transactions(
 def _cash_in(t, ccy: str) -> float | None:
     """The cash a row moved, in `ccy` at its trade date's rate, or None.
 
-    `home.py`'s `_tx_amount`: a buy costs its shares plus the fee, a sale
-    brings them in less the fee, a dividend is its amount and a fee is itself.
+    A buy costs its shares plus the fee, a sale brings them in less the fee, a
+    dividend or a return of capital is its amount and a fee is itself.
     A split or a transfer moves no cash, and a zero there would read as a free
     trade. The rate is the one the ledger replay above already prefetched, so
     this resolves from the on-disk FX cache; a date it cannot price is None,
@@ -360,6 +402,7 @@ def _cash_in(t, ccy: str) -> float | None:
         "buy": t.quantity * t.price + t.fee,
         "sell": t.quantity * t.price - t.fee,
         "dividend": t.price,
+        "capital": t.price,
         "fee": t.fee,
     }.get(t.action)
     if amount is None:
@@ -787,13 +830,11 @@ def monthly(account: Account, base: Base = None, window: str = "inception") -> M
 
 @ttl_cache(3600.0, max_entries=8)
 def _ledger_csv(db: str, mtime: float, base: str) -> bytes:
-    """The export, memoized on (db, ledger mtime, base) like the page's copy.
+    """The export, memoized on (db, ledger mtime, base).
 
     Worth caching because it is not a dump: every row is priced at the ECB rate
     for its own trade date, which is a fetch per currency in the book.
     """
-    # Imported here, not at module scope: `stocks.web` pulls Streamlit in, and
-    # a headless caller of this API should never need it loaded.
     from stocks.web.exports import ledger_csv
 
     return ledger_csv(db, base)
@@ -867,9 +908,9 @@ def fees_(
     # The spread needs the trade-day bars; the commissions do not. A throttled
     # or offline Yahoo therefore degrades this endpoint to its ledger half
     # instead of 503-ing a question the ledger can answer on its own — and so
-    # does any other failure on that half (a malformed frame, an FX gap), as
-    # the Streamlit tab does: it is an estimate, and losing it must not take
-    # the ledger's facts down with it. Only the unexpected ones are logged.
+    # does any other failure on that half (a malformed frame, an FX gap): it is
+    # an estimate, and losing it must not take the ledger's facts down with it.
+    # Only the unexpected ones are logged.
     spreads: dict[str, fees.SpreadStats] = {}
     measured = False
     try:
@@ -1191,13 +1232,12 @@ def tax_(account: Account) -> TaxReport:
 def _reporting_flags(account, jurisdiction, settings) -> list[TaxFlag]:
     """Foreign-asset thresholds (Modelo 720, FBAR, Form 8938…) against the book.
 
-    The Streamlit tab's recipe: the open book marked to market off the shared
-    positions table — a name with no price counts at its cost rather than
-    vanishing from a total whose whole point is "how much is held abroad" —
-    then converted to the jurisdiction's currency at today's spot. That is a
-    threshold check and not a basis, so one live rate is the right tool (FBAR's
-    year-end Treasury rate is not worth a second replay for a line that only
-    says "may apply").
+    The open book marked to market off the shared positions table — a name
+    with no price counts at its cost rather than vanishing from a total whose
+    whole point is "how much is held abroad" — then converted to the
+    jurisdiction's currency at today's spot. That is a threshold check and not
+    a basis, so one live rate is the right tool (FBAR's year-end Treasury rate
+    is not worth a second replay for a line that only says "may apply").
 
     Best effort both ways: a price pass or a rate that failed leaves no line
     at all, never a threshold measured against a total that is missing half
@@ -1675,6 +1715,167 @@ def wipe(caller: Authed, account: Writer, body: Wipe) -> LedgerCleared:
     last_import.forget(account.last_import)
     obs.event("ledger.wiped", rows=removed, via="api")
     return LedgerCleared(removed=removed)
+
+
+# ---------------------------------------------------------------- hand edits
+# One path for every edit a person asks for — here, in the chat, on Telegram
+# or through the Claude connector (`stocks.portfolio.edits`). Planning writes
+# nothing and returns what the edit does to holdings and realized gains;
+# committing needs the plan's token back, so what is applied is what was
+# shown, on the book it was shown on. Every commit can be undone by its id.
+
+
+class EditOps(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    ops: list[dict] = Field(
+        min_length=1,
+        max_length=edits.MAX_OPS,
+        description=(
+            "Applied in order. `add{row}`, `update{id, fields}`, `delete{ids}`, "
+            "`set_action{ids, action}`, `relabel{ids, to}`, "
+            "`split_row{id, quantity}`. A row an earlier op adds is addressed "
+            "as -1, -2, … by later ones."
+        ),
+    )
+
+
+class EditCommit(EditOps):
+    token: str = Field(
+        min_length=1, max_length=64, description="The token the plan returned."
+    )
+    summary: str = Field(
+        default="", max_length=300, description="What the edit is, in words."
+    )
+
+
+def _row_change(c: edits.RowChange) -> RowChange:
+    return RowChange(
+        id=c.id,
+        kind=c.kind,
+        before=Transaction(id=c.id, **c.before) if c.before else None,
+        after=Transaction(id=c.id, **c.after) if c.after else None,
+    )
+
+
+def _change(c: edits.Changeset) -> Change:
+    return Change(
+        id=c.id,
+        at=c.at,
+        source=c.source,
+        summary=c.summary,
+        changes=[_row_change(r) for r in c.changes],
+        undone_at=c.undone_at,
+    )
+
+
+@router.post("/changes/plan", response_model=EditPlan, summary="Preview an edit")
+def plan_change(account: Writer, body: EditOps) -> EditPlan:
+    """What an edit would do. Nothing is written.
+
+    A plan with `problems` is still returned — the caller shows why it cannot
+    go ahead — but it cannot be committed.
+    """
+    try:
+        planned = edits.plan(body.ops, account.db)
+    except edits.EditError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    return EditPlan(
+        ops=planned.ops,
+        changes=[_row_change(c) for c in planned.changes],
+        effects=[EditEffect(**vars(e)) for e in planned.effects],
+        positions_before=planned.positions_before,
+        positions_after=planned.positions_after,
+        problems=planned.problems,
+        token=planned.token,
+        ok=planned.ok,
+    )
+
+
+@router.post(
+    "/changes",
+    response_model=Change,
+    status_code=status.HTTP_201_CREATED,
+    summary="Apply a planned edit",
+)
+def commit_change(account: Writer, body: EditCommit) -> Change:
+    """Apply an edit `POST /changes/plan` showed, journalled and undoable.
+
+    409 when the book changed since the plan (or the token is another plan's):
+    plan again and show that. 422 when the edit is malformed or would leave a
+    sale without the shares it sells.
+    """
+    try:
+        done = edits.commit(
+            body.ops, body.token, source="api", summary=body.summary, path=account.db
+        )
+    except edits.Stale as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    except edits.EditError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    obs.event("ledger.edited", rows=len(done.changes), via="api")
+    return _change(done)
+
+
+@router.get("/changes", response_model=Changes, summary="Edit history")
+def list_changes(
+    account: Account, limit: Annotated[int, Query(ge=1, le=200)] = 50
+) -> Changes:
+    """The book's hand edits, newest first, each with the rows it touched."""
+    return Changes(changes=[_change(c) for c in edits.history(account.db, limit)])
+
+
+@router.delete("/changes/{change_id}", response_model=Change, summary="Undo an edit")
+def undo_change(account: Writer, change_id: int) -> Change:
+    """Put back what one edit replaced.
+
+    409 when any of its rows was changed again since: half an undo is a book
+    nobody wrote, so it is all or nothing.
+    """
+    try:
+        done = edits.undo(change_id, path=account.db)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
+    except edits.Conflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    obs.event("ledger.undone", rows=len(done.changes), via="api")
+    return _change(done)
+
+
+@router.get("/health", response_model=BookHealth, summary="What looks wrong")
+def health(account: Account) -> BookHealth:
+    """Mistakes two statements make together, each with the edit that fixes it.
+
+    Shares that only changed broker but read as a sale, one company under two
+    labels, a trade imported twice, a sale of shares that never arrived. Reads
+    the ledger and the label lookup the rest of the app already caches; the
+    demo book is left out, since nobody owns its mistakes.
+    """
+    rows = demo.without(all_transactions(account.db))
+    return BookHealth(
+        findings=[
+            BookFinding(
+                key=f.key,
+                kind=f.kind,
+                ticker=f.ticker,
+                ids=list(f.ids),
+                fix=f.fix,
+                detail=f.detail,
+                weight=_num(f.weight) or 0.0,
+            )
+            for f in doctor.scan(rows, resolve=loaders.display_symbol)
+        ]
+    )
 
 
 # ---------------------------------------------------------------- the demo book

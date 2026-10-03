@@ -1,7 +1,7 @@
 """The legal pages: privacy policy and terms of use, served as static HTML.
 
-Same delivery as the landing (see `server.py`): plain documents, no Streamlit
-boot, one per language via `?lang=es`. The copy lives here rather than in the
+Same delivery as the landing (see `server.py`): plain documents, one per
+language via `?lang=es`. The copy lives here rather than in the
 locale JSON because it is page-length prose that changes as a unit — a stamped
 `LAST_UPDATED` date and two parallel translations are easier to keep honest in
 one file than sprayed across catalogs.

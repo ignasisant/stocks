@@ -2,8 +2,7 @@
  * How a page hands a question to the assistant, without knowing it exists.
  *
  * The Ticker page's "Analyse with AI" is one press that opens the drawer with
- * the company already asked about. In Streamlit that is `chat_core.ask()`,
- * which reruns the whole script; here the drawer is a sibling of the page,
+ * the company already asked about. The drawer is a sibling of the page,
  * mounted once by the shell, and neither may import the other — a page that
  * reached into `src/chat/` would be a page that breaks when the drawer moves.
  *

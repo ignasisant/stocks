@@ -61,9 +61,8 @@ def test_a_caught_up_account_is_not_interrupted(page: Page, sign_in):
 def test_the_tour_opens_from_its_link_and_parks_on_escape(page: Page, sign_in):
     """`?tour=1` is the deep link Profile's "take the tour" and shared links
     use. Escape parks it in the strip above the page rather than ending it —
-    same rule as the first-load tour (Streamlit's `_minimize`: X, Escape and
-    click-outside all park, never stamp) — and only "End tour" on the strip
-    counts as taken."""
+    same rule as the first-load tour (X, Escape and click-outside all park,
+    never stamp) — and only "End tour" on the strip counts as taken."""
     root = sign_in({onboarding.PREF_DONE: False})
 
     page.goto("/home?tour=1")

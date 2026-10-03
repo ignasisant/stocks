@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      # Same Fernet key as Streamlit's [chat] enc_key — lets the digest use a
+      # Same Fernet key as the app's [chat] enc_key — lets the digest use a
       # user's own (BYOK) LLM key for the highlight line. Optional.
       CHAT_ENC_KEY: ${{ secrets.CHAT_ENC_KEY }}
       # Free-chain fallback for the highlight line. Optional.

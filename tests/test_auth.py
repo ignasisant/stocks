@@ -1,31 +1,30 @@
-"""Per-account data resolution: slugs, owner mapping, prefs, watchlist save."""
+"""Per-account data: slugs, owner mapping, seeding and login stamps, prefs,
+watchlist edits and account deletion."""
 
 import re
 
 import pytest
 import yaml
-from streamlit.testing.v1 import AppTest
 
-from stocks import session
+from stocks import accounts, secrets_env, session
+from stocks import watchlist as wl
 from stocks.config import DATA_DIR, PROJECT_ROOT, load_watchlist
-from stocks.portfolio import demo
-from stocks.portfolio.ledger import all_transactions
 from stocks.web import auth
 from stocks.web.auth import (
     DEFAULT_PREFS,
     _legacy_slug,
     all_tags,
-    ensure_user_data,
     load_prefs,
-    mark_login,
     paths_for,
     save_prefs,
-    save_watchlist_entries,
     set_tags,
     slug,
-    toggle_favorite,
 )
-from tests.conftest import AUTH_COOKIE_SECRET
+
+
+def restore(paths, legacy_root=None) -> bool:
+    """`accounts.restore_account`, with the bucket push left out of it."""
+    return accounts.restore_account(paths, legacy_root, persist=lambda _p: None)
 
 
 def test_slug_is_filesystem_safe():
@@ -63,15 +62,15 @@ def test_paths_for_owner_maps_to_root_files(tmp_path):
     assert other.root == tmp_path / slug("jane@example.com")
 
 
-def test_ensure_user_data_seeds_starter_watchlist(tmp_path):
+def test_restore_account_seeds_starter_watchlist(tmp_path):
     p = paths_for("jane@example.com", users_dir=tmp_path)
-    ensure_user_data(p)
+    restore(p)
     assert p.root.is_dir()
     holdings = load_watchlist(p.watchlist)
     assert holdings  # starter list is non-empty
-    ensure_user_data(p)  # idempotent — must not overwrite
+    restore(p)  # idempotent — must not overwrite
     p.watchlist.write_text("watchlist:\n  - ticker: NVDA\n")
-    ensure_user_data(p)
+    restore(p)
     assert [h.ticker for h in load_watchlist(p.watchlist)] == ["NVDA"]
 
 
@@ -107,196 +106,84 @@ def test_starter_watchlist_is_a_spread_of_live_tickers_and_no_positions(tmp_path
     assert any("." in t for t in tickers)  # a non-US listing, for FX
 
 
-def test_ensure_user_data_reports_only_the_seeding_call(tmp_path):
+def test_restore_account_reports_only_the_seeding_call(tmp_path):
     p = paths_for("jane@example.com", users_dir=tmp_path)
-    assert ensure_user_data(p) is True  # created the account
-    assert ensure_user_data(p) is False  # already there
+    assert restore(p) is True  # created the account
+    assert restore(p) is False  # already there
 
 
-def test_mark_login_dates_a_signup_exactly(tmp_path):
+def test_stamp_login_dates_a_signup_exactly(tmp_path):
     p = paths_for("jane@example.com", users_dir=tmp_path)
-    seeded = ensure_user_data(p)
-    assert mark_login(p, seeded=seeded) == "signup"
+    seeded = restore(p)
+    assert accounts.stamp_login(p, seeded=seeded) == "signup"
     prefs = load_prefs(p.prefs)
     assert prefs["first_seen"].startswith(prefs["last_seen"])  # ISO stamp, same day
     assert prefs["first_seen_estimated"] is False
 
     # Returning: first_seen is never restamped, and the account is not a
     # second signup.
-    assert mark_login(p, seeded=False) == "login"
+    assert accounts.stamp_login(p, seeded=False) == "login"
     assert load_prefs(p.prefs)["first_seen"] == prefs["first_seen"]
 
 
-def test_mark_login_backfills_an_account_it_did_not_create(tmp_path):
+def test_stamp_login_backfills_an_account_it_did_not_create(tmp_path):
     p = paths_for("jane@example.com", users_dir=tmp_path)
-    ensure_user_data(p)
+    restore(p)
     # No first_seen and nothing seeded this run -> the account predates the
     # bookkeeping: dated, flagged inexact, and NOT counted as a signup.
-    assert mark_login(p, seeded=False) == "login"
+    assert accounts.stamp_login(p, seeded=False) == "login"
     prefs = load_prefs(p.prefs)
     assert prefs["first_seen"]
     assert prefs["first_seen_estimated"] is True
 
 
-def test_mark_login_leaves_prefs_untouched_within_the_day(tmp_path):
+def test_stamp_login_leaves_prefs_untouched_within_the_day(tmp_path):
     p = paths_for("jane@example.com", users_dir=tmp_path)
-    mark_login(p, seeded=ensure_user_data(p))
+    accounts.stamp_login(p, seeded=restore(p))
     before = p.prefs.read_text()
-    mark_login(p, seeded=False)  # same day: no write, so no bucket PUT
+    accounts.stamp_login(p, seeded=False)  # same day: no write, so no bucket PUT
     assert p.prefs.read_text() == before
 
 
-def test_mark_login_keeps_the_rest_of_prefs(tmp_path):
+def test_stamp_login_keeps_the_rest_of_prefs(tmp_path):
     p = paths_for("jane@example.com", users_dir=tmp_path)
-    ensure_user_data(p)
+    restore(p)
     save_prefs({**DEFAULT_PREFS, "currency": "USD", "telegram_chat_id": 7}, p.prefs)
-    mark_login(p, seeded=False)
+    accounts.stamp_login(p, seeded=False)
     prefs = load_prefs(p.prefs)
     assert prefs["currency"] == "USD"
     assert prefs["telegram_chat_id"] == 7
 
 
-def test_ensure_user_data_migrates_legacy_dir(tmp_path):
+def test_restore_account_migrates_legacy_dir(tmp_path):
     email = "jane@example.com"
     p = paths_for(email, users_dir=tmp_path)
     legacy = tmp_path / _legacy_slug(email)
     legacy.mkdir(parents=True)
     (legacy / "watchlist.yaml").write_text("watchlist:\n  - ticker: NVDA\n")
-    ensure_user_data(p, legacy_root=legacy)
+    restore(p, legacy_root=legacy)
     assert not legacy.exists()  # renamed, not copied
     assert [h.ticker for h in load_watchlist(p.watchlist)] == ["NVDA"]
     # Idempotent: once the new dir exists the legacy path is ignored.
     legacy.mkdir()
     (legacy / "watchlist.yaml").write_text("watchlist:\n  - ticker: EVIL\n")
-    ensure_user_data(p, legacy_root=legacy)
+    restore(p, legacy_root=legacy)
     assert [h.ticker for h in load_watchlist(p.watchlist)] == ["NVDA"]
 
 
-def _signed_in(monkeypatch, tmp_path, email="jane@example.com", verified=True):
-    """resolve_user() against a fake Streamlit session, rooted at tmp_path.
-
-    The identity is a real signed cookie in a real (faked) jar, not a stubbed
-    `is_logged_in` — so this exercises `_jar()` and the verifier the way a
-    browser does, which is the whole path that replaced st.user.
-    """
-    # paths_for() binds users_dir as a default argument, so patching
-    # auth.USERS_DIR alone would let the account land in the real data dir.
-    monkeypatch.setattr(auth, "USERS_DIR", tmp_path)
-    monkeypatch.setattr(
-        auth, "paths_for",
-        lambda addr, owner=None: paths_for(addr, owner, users_dir=tmp_path),
-    )
-    monkeypatch.setattr(
-        auth, "guest_paths", lambda: paths_for("_guest", users_dir=tmp_path)
-    )
-    monkeypatch.setenv("AUTH_COOKIE_SECRET", AUTH_COOKIE_SECRET)
-    jar = {}
-    if email:
-        jar[session.COOKIE] = session.mint(
-            {"email": email, "email_verified": verified, "name": "Jane"}
-        )
-    monkeypatch.setattr(
-        auth.st, "context", type("C", (), {"cookies": jar})(), raising=False
-    )
-    monkeypatch.setattr(auth.st, "secrets", {}, raising=False)
-    monkeypatch.setattr(auth.st, "session_state", {}, raising=False)
-    return auth.st.session_state
-
-
-def test_resolve_user_stamps_a_signup_once_per_identity(monkeypatch, tmp_path):
-    state = _signed_in(monkeypatch, tmp_path)
-    paths = auth.resolve_user()
-    assert state["_login_kind"] == "signup"
-    assert state["_login_marked"] == "jane@example.com"
-    stamp = paths.prefs.read_text()
-
-    # Reruns must not re-read or rewrite prefs: prefs.json is mirrored to the
-    # bucket, so an unguarded stamp would be a PUT on every interaction.
-    monkeypatch.setattr(
-        auth, "mark_login", lambda *a, **k: pytest.fail("restamped on rerun")
-    )
-    auth.resolve_user()
-    assert paths.prefs.read_text() == stamp
-
-
-def test_resolve_user_clears_the_verdict_on_sign_out(monkeypatch, tmp_path):
-    state = _signed_in(monkeypatch, tmp_path)
-    auth.resolve_user()
-    monkeypatch.setattr(auth, "is_logged_in", lambda: False)
-    auth.resolve_user()
-    assert state["_login_kind"] == ""  # no auth.* event for a guest run
-    assert "_login_marked" not in state  # a later sign-in is evaluated again
-
-
-def test_resolve_user_does_not_stamp_a_guest(monkeypatch, tmp_path):
-    _signed_in(monkeypatch, tmp_path, email="")
-    paths = auth.resolve_user()
-    assert not paths.prefs.exists()
-
-
-# ------------------------------------------------ the guest demo gate
-# The Portfolio page is the one page the whole app is about, and everything on
-# it derives from a ledger — so an anonymous visitor used to find a login
-# screen there. require_login_or_demo() lets them in on the shared guest dir
-# with the demo book in it instead; these tests keep that from turning into
-# either of the two ways it could go wrong: a half-signed-in identity silently
-# downgraded to invented numbers, or a rerun writing to a dir every other
-# visitor is reading.
-
-
-def test_the_portfolio_gate_lets_a_guest_in_on_the_demo_book(monkeypatch, tmp_path):
-    _signed_in(monkeypatch, tmp_path, email="")
-    monkeypatch.setattr(
-        auth, "require_login", lambda: pytest.fail("a guest must not be stopped")
-    )
-
-    paths = auth.require_login_or_demo()
-
-    assert paths.root == paths_for("_guest", users_dir=tmp_path).root
-    rows = all_transactions(paths.db)
-    assert rows and all(demo.is_demo(t) for t in rows), "every row marked as demo"
-
-
-def test_the_guest_book_is_seeded_once_per_session(monkeypatch, tmp_path):
-    """The guest dir is shared and the gate runs on every rerun, so a seed per
-    run would be a pointless sqlite hit on a file other visitors are reading."""
-    _signed_in(monkeypatch, tmp_path, email="")
-    auth.require_login_or_demo()
-
-    monkeypatch.setattr(
-        auth.demo, "seed", lambda *a: pytest.fail("re-seeded on a rerun")
-    )
-    auth.require_login_or_demo()
-
-
-def test_a_guests_search_is_not_written_to_the_shared_dir(monkeypatch, tmp_path):
-    """The top bar draws for everybody, and its result rows push what was
-    picked into prefs. For a guest that file is the shared one — so an
-    anonymous visitor's searches would be read back out of the next anonymous
-    visitor's dropdown, and mirrored to the bucket on the way."""
-    _signed_in(monkeypatch, tmp_path, email="")
-    paths = auth.resolve_user()
-
-    auth.push_recent_search("AAPL")
-
-    assert not paths.prefs.exists(), "a guest wrote to the shared prefs file"
-    assert auth.load_recent_searches(auth.load_prefs()) == []
-
-
 def test_the_shared_prefs_file_refuses_a_write_whoever_is_asking():
-    """The backstop under the login check above.
+    """A guest never writes the shared prefs file.
 
     The guard is in the persistence layer rather than in each caller because
     the callers are the problem: a helper that saves a setting is easy to reach
-    from a code path that never asked who is asking, which is exactly how the
-    searches got there. A login check can be forgotten; this cannot.
+    from a code path that never asked who is asking, which is how an anonymous
+    visitor's searches once reached the next one's dropdown. A login check can
+    be forgotten; this cannot.
 
     `accounts.GUEST_DIR` is already a fresh directory of this test's own —
     `conftest._own_guest_dir` gives every test one, so that nothing in the suite
     reads or writes the checkout's real `data/users/_guest`.
     """
-    from stocks import accounts
-
     guest = accounts.guest_paths()
 
     with pytest.raises(accounts.GuestIsReadOnly):
@@ -307,55 +194,6 @@ def test_the_shared_prefs_file_refuses_a_write_whoever_is_asking():
     assert not guest.prefs.exists()
 
 
-def test_a_signed_in_search_is_still_remembered(monkeypatch, tmp_path):
-    """The guard is on the guest, not on the feature."""
-    _signed_in(monkeypatch, tmp_path)
-    auth.resolve_user()
-
-    auth.push_recent_search("AAPL")
-
-    assert auth.load_recent_searches(auth.load_prefs()) == ["AAPL"]
-
-
-def test_the_gate_still_stops_a_half_signed_in_identity(monkeypatch, tmp_path):
-    """An identity with no email claim, or an unverified one, must reach the
-    error require_login() renders — not be quietly downgraded to a guest
-    session reading a fabricated book."""
-    # A cookie the flow did mint, for an address Google did not verify.
-    _signed_in(monkeypatch, tmp_path, verified=False)
-    monkeypatch.setattr(auth.st, "secrets", {"auth": {}}, raising=False)
-    monkeypatch.setattr(auth, "require_login", lambda: "stopped")
-
-    assert auth.require_login_or_demo() == "stopped"
-
-
-def test_a_guest_seed_that_fails_still_leaves_the_page_standing(monkeypatch, tmp_path):
-    """A read-only disk is not worth a crash page: the Portfolio page falls
-    back to its empty state, which is what a guest saw before all this."""
-    _signed_in(monkeypatch, tmp_path, email="")
-
-    def boom(*_a):
-        raise OSError("read-only file system")
-
-    monkeypatch.setattr(auth.demo, "seed", boom)
-    paths = auth.require_login_or_demo()
-    assert paths.root == paths_for("_guest", users_dir=tmp_path).root
-    assert not all_transactions(paths.db)  # empty state, not a crash page
-
-
-def test_auth_configured_survives_a_checkout_with_no_secrets(monkeypatch):
-    """Same guard is_logged_in() needs, now that both read it from one place."""
-    import streamlit as st
-    from streamlit.errors import StreamlitSecretNotFoundError
-
-    class NoSecrets:
-        def __contains__(self, key):
-            raise StreamlitSecretNotFoundError("No secrets found.")
-
-    monkeypatch.setattr(st, "secrets", NoSecrets())
-    assert auth.auth_configured() is False
-
-
 def test_prefs_roundtrip_and_corrupt_fallback(tmp_path):
     path = tmp_path / "prefs.json"
     assert load_prefs(path) == DEFAULT_PREFS  # absent -> defaults
@@ -363,68 +201,6 @@ def test_prefs_roundtrip_and_corrupt_fallback(tmp_path):
     assert load_prefs(path)["currency"] == "USD"
     path.write_text("{not json")
     assert load_prefs(path) == DEFAULT_PREFS
-
-
-def test_save_watchlist_entries_preserves_alerts_and_aliases(tmp_path):
-    path = tmp_path / "watchlist.yaml"
-    path.write_text(
-        yaml.safe_dump(
-            {
-                "aliases": {"RCF": "TEP.PA"},
-                "watchlist": [
-                    {"ticker": "NVDA", "alerts": [{"type": "drawdown", "pct": 15}]},
-                    {"ticker": "AAPL", "name": "Apple"},
-                ],
-            }
-        )
-    )
-    save_watchlist_entries(
-        [
-            {
-                "ticker": "nvda",
-                "name": "Nvidia",
-                "favorite": True,
-                "shares": 10,
-                "cost": 100.0,
-            },
-            {"ticker": "MSFT", "name": "Microsoft"},
-            {"ticker": ""},  # no ticker -> dropped
-            {"ticker": "MSFT"},  # duplicate -> first row wins
-        ],
-        path,
-    )
-    raw = yaml.safe_load(path.read_text())
-    assert raw["aliases"] == {"RCF": "TEP.PA"}  # untouched
-    by_ticker = {i["ticker"]: i for i in raw["watchlist"]}
-    assert set(by_ticker) == {"NVDA", "MSFT"}  # AAPL removed, no empties
-    assert by_ticker["NVDA"]["alerts"] == [{"type": "drawdown", "pct": 15}]
-    assert by_ticker["NVDA"]["favorite"] is True
-    assert by_ticker["NVDA"]["shares"] == 10.0
-    assert by_ticker["MSFT"].get("name") == "Microsoft"
-    assert "alerts" not in by_ticker["MSFT"]
-
-    holdings = load_watchlist(path)  # round-trips through the app loader
-    assert {h.ticker for h in holdings} == {"NVDA", "MSFT"}
-
-
-def test_save_watchlist_entries_tags(tmp_path):
-    path = tmp_path / "watchlist.yaml"
-    path.write_text(
-        yaml.safe_dump({"watchlist": [{"ticker": "NVDA", "tags": ["semis"]}]})
-    )
-    save_watchlist_entries(
-        [
-            {"ticker": "NVDA"},  # no "tags" key -> existing tags carried over
-            {"ticker": "AAPL", "tags": [" Big Tech ", "big tech", ""]},
-            {"ticker": "MSFT", "tags": []},  # explicit empty -> no tags key
-        ],
-        path,
-    )
-    by_ticker = {h.ticker: h for h in load_watchlist(path)}
-    assert by_ticker["NVDA"].tags == ["semis"]
-    # Stripped, de-duped case-insensitively (first spelling wins), empties out.
-    assert by_ticker["AAPL"].tags == ["Big Tech"]
-    assert by_ticker["MSFT"].tags == []
 
 
 def test_toggle_favorite_creates_entry_and_flips(tmp_path):
@@ -440,10 +216,10 @@ def test_toggle_favorite_creates_entry_and_flips(tmp_path):
         )
     )
     # Unlisted symbol: favoriting adds it to the watchlist.
-    assert toggle_favorite("pltr", path) is True
+    assert wl.toggle_favorite(path, "pltr") is True
     by_ticker = {h.ticker: h for h in load_watchlist(path)}
     assert by_ticker["PLTR"].favorite is True
-    assert toggle_favorite("PLTR", path) is False
+    assert wl.toggle_favorite(path, "PLTR") is False
     assert not load_watchlist(path)[1].favorite
     # Neighbouring data untouched by the round-trips.
     raw = yaml.safe_load(path.read_text())
@@ -543,90 +319,15 @@ def test_delete_account_refuses_owner_and_guest(monkeypatch, tmp_path):
         auth.delete_account(stray)
 
 
-def test_a_checkout_with_no_secrets_reads_as_signed_out(monkeypatch):
-    """Membership on st.secrets *raises* when there is no secrets file at all
-    — a fresh clone, a CI checkout. is_logged_in is called by every page, so
-    an unguarded read takes the whole app down instead of degrading to the one
-    answer that is true without an IdP configured: nobody is signed in."""
-    import streamlit as st
-    from streamlit.errors import StreamlitSecretNotFoundError
 
-    class NoSecrets:
-        def __contains__(self, key):
-            raise StreamlitSecretNotFoundError("No secrets found.")
+def test_a_checkout_with_no_secrets_reads_as_signed_out(monkeypatch, tmp_path):
+    """A fresh clone or a CI checkout has no secrets file at all. Every request
+    asks who is signed in, so the read must degrade to the one answer that is
+    true without an IdP configured — nobody — instead of raising."""
+    for name in ("AUTH_COOKIE_SECRET", "AUTH_CLIENT_ID", "AUTH_CLIENT_SECRET",
+                 "AUTH_REDIRECT_URI"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(secrets_env, "SECRETS_FILE", tmp_path / "absent.toml")
 
-    monkeypatch.setattr(st, "secrets", NoSecrets())
-    assert auth.is_logged_in() is False
-
-
-# ------------------------------------------------- the investor-profile nudge
-# It reports whether it opened, because app.py stands the page down while a
-# modal is up: a dialog is a viewport-wide overlay, so the page rendering
-# behind it is invisible work that swallows the presses meant for the modal.
-
-
-def _profile_script() -> None:
-    """What app.py does with the nudge, and nothing else. At module level
-    because AppTest re-executes the function's own source as a script."""
-    import streamlit as st
-
-    from stocks.web import auth as _auth
-
-    st.session_state["opened"] = _auth.maybe_prompt_profile()
-
-
-@pytest.fixture
-def nudge(monkeypatch, tmp_path):
-    def make(*, logged_in: bool = True, profile_set: bool = False,
-             configured: bool = True) -> AppTest:
-        import streamlit as st
-
-        monkeypatch.setattr(st, "secrets", {"auth": {}} if configured else {})
-        monkeypatch.setattr(auth, "is_logged_in", lambda: logged_in)
-        monkeypatch.setattr(auth, "profile_is_set", lambda: profile_set)
-        # The dialog body draws the real profile form, which reads the
-        # account's files; point them at the sandbox.
-        monkeypatch.setattr(auth, "user_paths",
-                            lambda: paths_for("jane@example.com",
-                                              users_dir=tmp_path))
-        return AppTest.from_function(_profile_script, default_timeout=15)
-
-    return make
-
-
-def test_the_nudge_reports_the_modal_it_opened(nudge):
-    at = nudge().run()
-
-    assert not at.exception
-    assert at.session_state["opened"] is True
-
-
-def test_a_filled_profile_opens_nothing(nudge):
-    at = nudge(profile_set=True).run()
-
-    assert at.session_state["opened"] is False
-
-
-def test_a_guest_is_never_nudged(nudge):
-    at = nudge(logged_in=False).run()
-
-    assert at.session_state["opened"] is False
-
-
-def test_a_checkout_with_no_idp_opens_nothing(nudge):
-    at = nudge(configured=False).run()
-
-    assert at.session_state["opened"] is False
-
-
-def test_the_nudge_fires_once_per_session(nudge):
-    """The seen flag is what keeps a Skip closed for the rest of the session —
-    and it must also stop the *second* run reporting a modal that is not
-    there, or app.py would skip the page for nothing."""
-    at = nudge()
-    at.run()
-    assert at.session_state["opened"] is True
-
-    at.run()
-
-    assert at.session_state["opened"] is False
+    assert session.sign_in_configured() is False
+    assert session.signed_in_email({session.COOKIE: "anything"}) is None

@@ -3,10 +3,10 @@
  * (1a desktop, 1b phone, 1c states).
  *
  * No hex literals: every colour is an `--ag-*` custom property that server.py
- * inlines into the document, so this page and the Streamlit page it replaces
- * cannot drift, and dark mode stays one definition rather than two. The
- * canvas's in-between tints (a red ground under the rejected rows, a border one
- * step off a fill) are `color-mix` of two tokens rather than new hexes.
+ * inlines into the document, so this page and the rest of the app cannot drift,
+ * and dark mode stays one definition rather than two. The canvas's in-between
+ * tints (a red ground under the rejected rows, a border one step off a fill)
+ * are `color-mix` of two tokens rather than new hexes.
  *
  * Widths are the main column's (`@container ag-main`), never the viewport's:
  * an open chat drawer narrows the page without the window changing.

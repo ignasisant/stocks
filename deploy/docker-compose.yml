@@ -1,10 +1,10 @@
 # TopStocks — Oracle Cloud Always Free VM deploy (sslip.io + Caddy).
 #
 # Two containers on a private compose network:
-#   app   — the Streamlit dashboard (built from the repo-root Dockerfile),
+#   app   — the web app (built from the repo-root Dockerfile),
 #           listening on 8501, NOT published to the host.
 #   caddy — reverse proxy on :80/:443, auto-obtains a Let's Encrypt cert for
-#           $SITE_ADDRESS and proxies to app:8501 (WebSocket upgrade included).
+#           $SITE_ADDRESS and proxies to app:8501.
 #
 # Hostname = <vm-public-ip>.sslip.io (magic DNS, no signup, no updater). If the
 # VM's public IP changes, update SITE_ADDRESS + [auth] redirect_uri + the

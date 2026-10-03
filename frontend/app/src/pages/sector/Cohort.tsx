@@ -23,11 +23,11 @@ import { DenseRows, Responsive } from "../../ui/Rows";
 import { ToggleChip, ToggleRow } from "../../ui/Toggle";
 
 /**
- * The width the Streamlit tables switched at, 40rem, and the one `Responsive`
- * swaps the table for its dense rows on — read off the main column rather
- * than the viewport, so an open chat drawer narrows this page the way a phone
- * does. Read once, for what the page opens with (the columns a phone starts
- * on, whether the controls start folded); the swap itself is CSS.
+ * The width the table goes dense at, 40rem, and the one `Responsive` swaps the
+ * table for its dense rows on — read off the main column rather than the
+ * viewport, so an open chat drawer narrows this page the way a phone does.
+ * Read once, for what the page opens with (the columns a phone starts on,
+ * whether the controls start folded); the swap itself is CSS.
  */
 function narrowAtOpen(): boolean {
   const main = document.querySelector(".ag-main");
@@ -49,8 +49,7 @@ const SCREENS: { metric: string; kind: "min" | "max"; value: string }[] = [
 const NARROW_COLUMNS = 4;
 
 /**
- * The company's name, dim, beside or under its symbol — what the Streamlit
- * table prints on both layouts (`ticker_cell(name=True)`, `mobile_names`).
+ * The company's name, dim, beside or under its symbol, on both layouts.
  * Read off the same batched `/market/profiles` lookup `TickerCell` fills, so
  * seventeen rows cost one request, and nothing at all until it lands.
  */
@@ -65,7 +64,7 @@ export function CompanyName({
   return name ? <span className={className ?? "ag-sec-name"}>{name}</span> : null;
 }
 
-/** A catalog string with `**bold**` spans in it, as the Streamlit caption has. */
+/** A catalog string with `**bold**` spans in it. */
 function Marked({ text }: { text: string }) {
   return (
     <>

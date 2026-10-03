@@ -1,8 +1,9 @@
 # The app shell, and the contract a page keeps with it
 
-This is the React rebuild of the Streamlit app, page by page, against the HTTP
-API in `src/stocks/api`. The shell — routing, session, translations, design
-tokens, the four loading states — is written and is not a page's to change.
+This is the app, page by page, against the HTTP API in `src/stocks/api`;
+`stocks.web.server` serves it at `/`. The shell — routing, session,
+translations, design tokens, the four loading states — is written and is not a
+page's to change.
 
 ## What a page owns
 
@@ -20,11 +21,12 @@ in) after the module that produced it, so eight files called `Page` ship as
 `Page.js`, `Page2.js`, `Page3.js` — unreadable in a network tab, and a set of
 names that silently renumber when a page is added.
 
-Register it in `src/shell/pages.ts`. Where the slug differs from the Streamlit
-`url_path` it replaces, list the old path in `aliases`: `pageFor` falls back to
-Home for an unknown slug, so a bookmark of the old URL does not 404 — it quietly
-serves the dashboard instead. `tests/test_frontend_nav_parity.py` checks every
-path `stocks.navigation` ships is reachable here.
+Register it in `src/shell/pages.ts`. Where the slug differs from the path
+`stocks.navigation` ships, list that path in `aliases` so old bookmarks keep
+working: `pageFor` falls back to Home for an unknown slug, so a bookmark of the
+old URL does not 404 — it quietly serves the dashboard instead.
+`tests/test_frontend_nav_parity.py` checks every path `stocks.navigation`
+ships is reachable here.
 
 ## What the shell gives you
 
@@ -107,10 +109,6 @@ exactly this reason: an unpriced position has no value, a book with no history
 has no return, a spread nobody could measure is not a spread of zero. Render
 `null` as "n/a" or a dash — never as `0`, never as `—` dressed up as a figure.
 
-**Read the Streamlit page you are replacing.** It is the specification, and its
-comments explain decisions that are not obvious from the screen. Match what it
-shows and why; do not redesign it.
-
 **Deep links keep working.** `?ticker=AAPL`, `?tab=fees` and the rest are
 bookmarked URLs. Read them from `useRoute().params` and write them with
 `setParams`.
@@ -141,8 +139,8 @@ should use `get`/`send` like everything else.
 
 ## What is deliberately out of scope
 
-The guided tour and the "what's new" modal. They stay in Streamlit; a page
-should not try to render either.
+The guided tour and the "what's new" modal. The shell draws both
+(`src/shell/Tour.tsx`); a page should not try to render either.
 
 The assistant drawer is **not** out of scope any more — it lives in
 `src/chat/`, is mounted once by the shell, and renders over every page. A page

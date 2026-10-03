@@ -1,7 +1,7 @@
 """The landing as a standalone HTML document.
 
-The point of serving the page as bytes instead of rendering it in Streamlit is
-that a crawler and a first-time visitor get the whole thing in one response.
+The point of serving the page as bytes is that a crawler and a first-time
+visitor get the whole thing in one response.
 These checks are the ones that would silently undo that: markup that needs
 JavaScript to appear, an asset that costs a second round trip, or a head that
 lost its metadata.
@@ -99,10 +99,10 @@ def test_the_body_background_is_painted_by_the_document():
 
 
 def test_every_design_token_the_page_uses_is_defined_in_the_document():
-    """The app used to emit the tokens; the document has to carry them itself.
+    """The document carries every token it uses; nothing else defines them.
 
     A `var(--ag-x)` with no definition falls back to nothing — the element just
-    loses its colour, silently, on a page nobody reruns in development.
+    loses its colour, silently, on a page nobody reloads in development.
     """
     used = set(re.findall(r"var\((--ag-[a-z0-9-]+)", landing.stylesheet()))
     used |= set(re.findall(r"var\((--ag-[a-z0-9-]+)", landing.ua_mobile_rules()))
@@ -112,7 +112,7 @@ def test_every_design_token_the_page_uses_is_defined_in_the_document():
 
 
 def test_every_font_the_css_asks_for_is_actually_loaded():
-    """config.toml loads the app's faces; a static document loads its own."""
+    """A static document loads its own faces; nothing else on the page does."""
     css = landing.stylesheet()
     families = set(re.findall(r"font-family: '([^']+)'", css))
     for family in families:

@@ -178,9 +178,7 @@ export default function Page() {
   // is a claim about honesty rather than about cost. `/pulse/book` is the
   // regime projected onto a holder's own positions — a beta, a dollar share —
   // and over the shared demo ledger it would compute perfectly well and mean
-  // nothing: invented trades reading as this reader's exposure. `sentiment.py`
-  // draws `_side_invite` here for exactly the same reason, and calls the
-  // skipped call "stage 1 speed" on top of it.
+  // nothing: invented trades reading as this reader's exposure.
   const book = useApi(
     () =>
       guest
@@ -220,9 +218,9 @@ export default function Page() {
           </Resilient>
         </div>
         <div className="sn-hero-r">
-          {/* Where `sentiment.py` draws `_side_invite`: there is no honest
-              version of this panel without the reader's own book, so it says
-              what it would show and offers the one step that would fill it. */}
+          {/* There is no honest version of this panel without the reader's
+              own book, so a guest is told what it would show and offered the
+              one step that would fill it. */}
           {guest ? (
             <SignInWall
               text="sentiment.book_signed_out"

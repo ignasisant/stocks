@@ -85,9 +85,10 @@ class Client(OAuthClientInformationFull):
     kind: str = "dcr"  # "dcr" | "cimd"
 
     def validate_scope(self, requested_scope: str | None) -> list[str] | None:
-        # One scope exists. Asking for others is not an error worth failing a
-        # connection over — clients send "openid" or nothing — so the answer
-        # is always the one there is.
+        # Reading is what every connection asks for. Asking for other scopes is
+        # not an error worth failing a connection over — clients send "openid"
+        # or nothing — and writing is not the client's to ask for: the person
+        # ticks it on the consent screen, or the grant reads only.
         del requested_scope
         return [store.SCOPE]
 
@@ -148,7 +149,7 @@ def register(info: OAuthClientInformationFull) -> None:
             "invalid_client_metadata",
             f"token_endpoint_auth_method {method!r} is not supported",
         )
-    info.scope = store.SCOPE
+    info.scope = " ".join(store.SCOPES)
     info.grant_types = [g for g in info.grant_types if g in _GRANTS]
     if info.client_name:
         info.client_name = info.client_name.strip()[:80]
@@ -286,7 +287,7 @@ def _from_document(url: str, raw: bytes) -> Client:
             "redirect_uris": uris,
             "token_endpoint_auth_method": "none",
             "grant_types": [g for g in grants if g in _GRANTS],
-            "scope": store.SCOPE,
+            "scope": " ".join(store.SCOPES),
             "kind": "cimd",
         })
     except ValidationError as exc:

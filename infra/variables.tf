@@ -58,7 +58,7 @@ variable "app_public_url" {
 }
 
 variable "chat_enc_key" {
-  description = "Optional. Fernet key, must equal Streamlit [chat] enc_key — lets the digest use BYOK LLM keys. Empty = secret not created."
+  description = "Optional. Fernet key, must equal the app's [chat] enc_key — lets the digest use BYOK LLM keys. Empty = secret not created."
   type        = string
   sensitive   = true
   default     = ""

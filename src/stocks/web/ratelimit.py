@@ -34,7 +34,7 @@ def allow(key: str, *, max_events: int = CHAT_MAX_TURNS,
     """Record one event for `key`; False when the window is already full.
 
     `key` scopes the limit — use something account-stable (the user's data
-    dir), not the Streamlit session id, so reconnecting doesn't reset it.
+    dir), not a session id, so reconnecting doesn't reset it.
     """
     now = time.monotonic()
     with _lock:

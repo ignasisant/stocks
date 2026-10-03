@@ -1,14 +1,13 @@
 /**
  * The page registry: one entry per screen, and the only place that knows them.
  *
- * `slug` is the URL segment. Where it differs from the Streamlit page's own
- * `url_path`, the old path is listed in `aliases` and resolves to the same
- * page: every bookmark and every shared link has to keep working across the
- * migration, and two of them do not match (Home is served at the root, and
- * Import is `import_transactions` because Streamlit derives a page's URL from
- * its filename). `tests/test_frontend_nav_parity.py` checks that every path
- * `stocks.navigation` ships is reachable here, so a page renamed on one side
- * and not the other fails a test instead of silently landing on Home.
+ * `slug` is the URL segment. Where it differs from the path `stocks.navigation`
+ * ships, that path is listed in `aliases` and resolves to the same page, so old
+ * bookmarks and shared links keep working: Home is served at the root, and
+ * Import at `import_transactions`. `tests/test_frontend_nav_parity.py` checks
+ * that every path `stocks.navigation` ships is reachable here, so a page
+ * renamed on one side and not the other fails a test instead of silently
+ * landing on Home.
  *
  * `label` is an i18n key, never a string: the nav renders in two languages.
  *
@@ -30,14 +29,14 @@ export type Page = {
   label: string;
   icon: string;
   component: LazyExoticComponent<() => React.ReactNode>;
-  /** Paths that also mean this page — the Streamlit URL it is replacing. */
+  /** Paths that also mean this page, so old bookmarks keep landing on it. */
   aliases?: string[];
   /** Hidden from the nav — reachable by URL only (the bank's allowlist). */
   hidden?: boolean;
   /**
    * The i18n key of the rail group this page sits under — the `section` of its
    * `stocks.navigation.DESTINATIONS` entry. Absent is the top group (Home),
-   * which Streamlit draws with no header at all.
+   * which the rail draws with no header at all.
    */
   section?: string;
 };
@@ -48,9 +47,9 @@ export const PAGES: Page[] = [
     label: "nav.home",
     icon: "home",
     component: lazy(() => import("../pages/home/Home")),
-    // Streamlit serves the default page at the root; `read()` in the router
-    // already turns an empty path into this slug, and the alias is here so the
-    // parity check can see that "" is covered.
+    // The default page is served at the root; `read()` in the router already
+    // turns an empty path into this slug, and the alias is here so the parity
+    // check can see that "" is covered.
     aliases: [""],
   },
   {
@@ -74,10 +73,9 @@ export const PAGES: Page[] = [
     section: "nav.section_market",
     icon: "query_stats",
     component: lazy(() => import("../pages/ticker/Ticker")),
-    // In the rail, as it is in the Streamlit menu: without a ticker the page
-    // opens on its own picker, which is a destination in its own right — and
-    // hiding it left a reader with no way to look a symbol up except the
-    // search box.
+    // In the rail: without a ticker the page opens on its own picker, which
+    // is a destination in its own right — and hiding it left a reader with no
+    // way to look a symbol up except the search box.
   },
   {
     slug: "sentiment",

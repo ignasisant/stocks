@@ -66,7 +66,7 @@ export default defineConfig(({ mode }) => ({
     // relative it resolves against 8501, which has no source to give.
     origin: loadEnv(mode, ".", "STOCKS_VITE").STOCKS_VITE,
     // `/app/static/` is the logo mirror: the API hands a ticker's logo back as
-    // a path relative to the app document (see web/logos.py), which resolves
+    // a path on the page's own origin (`api.loaders.logo`), which resolves
     // against this dev server rather than the one holding the mirror — every
     // ticker cell drew a broken image until this proxied too.
     // `/auth` is the app's own sign-in (web/oidc.py). It has to be proxied or
@@ -80,10 +80,10 @@ export default defineConfig(({ mode }) => ({
       "/auth": "http://localhost:8501",
     },
     // The rail's brand mark is imported from `src/stocks/web/assets/` — the
-    // one the Streamlit app and the landing already draw, rather than a copy
-    // in this app that would be the same logo only until somebody changed one
-    // of them. It sits outside this app's root, and a dev server will not read
-    // a file it has not been told it may; the repo root is that permission.
+    // one the landing already draws, rather than a copy in this app that
+    // would be the same logo only until somebody changed one of them. It sits
+    // outside this app's root, and a dev server will not read a file it has
+    // not been told it may; the repo root is that permission.
     fs: { allow: ["../.."] },
   },
 }));

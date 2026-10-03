@@ -4,9 +4,8 @@ The API answers two very different callers and must not confuse them:
 
 * **A browser.** Carries the session cookie the app's own sign-in minted
   (`stocks/session.py`), which names a verified address. The *server* decides
-  whose book that is; the client cannot ask for another. This is what a front
-  end that is not Streamlit needs, and it is the only form strong enough to put
-  in front of a person.
+  whose book that is; the client cannot ask for another. It is the only form
+  strong enough to put in front of a person.
 * **A job.** Carries `Authorization: Bearer <token>` — one shared secret in
   `[api] token` or `API_TOKEN`, compared in constant time. It names nobody, so
   it has to say which account it wants, which means any holder can read every
@@ -38,8 +37,7 @@ from typing import Annotated, Literal, NoReturn
 
 from fastapi import Depends, Header, HTTPException, Request, status
 
-from stocks import obs
-from stocks.api import session
+from stocks import obs, session
 from stocks.secrets_env import secret
 
 

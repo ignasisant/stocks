@@ -1,4 +1,4 @@
-"""Web search for the assistant panel (web/chat_core.py).
+"""Web search for the assistant panel.
 
 Keyless like the free chain: DuckDuckGo via the ``ddgs`` package, no API key
 and no per-search billing. A *planner* call through the provider's cheapest
@@ -6,7 +6,7 @@ model (the same pattern as the skill auto-router) decides per message whether
 the answer needs fresh information from the web and emits at most MAX_QUERIES
 search queries; the hits are appended to the outgoing copy of the user's
 message — not the system prompt, so provider prompt caches stay warm — and the
-system prompt (chat_core._system_prompt) tells the model to ground on them and
+system prompt (chat/engine.system_prompt) tells the model to ground on them and
 cite URLs.
 
 The top hits are then *opened*: their article text (not DDG's two-sentence
@@ -22,8 +22,6 @@ empty result set all yield [], and the answer proceeds on the model's own
 knowledge plus the app context. A planner *failure* is the one case that does
 not silently drop the web — a keyword heuristic (`heuristic_queries`) takes
 over, so a dead classifier model costs relevance, not internet access.
-
-Streamlit-free so it stays trivially testable, like chat_skills/chat_actions.
 """
 
 from __future__ import annotations

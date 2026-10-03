@@ -7,10 +7,10 @@
  * cannot drop a holding outside it. The server's answer is what the list
  * re-renders from.
  *
- * Shares and average cost are here too, as the Streamlit grid has them: the
- * hand-typed position that weights the fallback analytics by value when no
- * ledger has been imported. `GET /watchlist` reads them back (null for "not
- * set"), so each field shows what is stored before anyone can overwrite it.
+ * Shares and average cost are here too: the hand-typed position that weights
+ * the fallback analytics by value when no ledger has been imported.
+ * `GET /watchlist` reads them back (null for "not set"), so each field shows
+ * what is stored before anyone can overwrite it.
  */
 
 import { useState } from "react";
@@ -61,10 +61,9 @@ const MODES: readonly Mode[] = ["tags", "favorites", "flat"];
 type Section = { id: string; label: string; rows: Entry[]; tag: string | null };
 
 /**
- * The list split into sections, as `watchlist_ui.groups` splits it: favorites
- * first (the app treats them as a group and Overview renders them first), then
- * every tag alphabetically, then whatever carries neither. A ticker in two
- * tags appears in both.
+ * The list split into sections: favorites first (the app treats them as a group
+ * and Overview renders them first), then every tag alphabetically, then
+ * whatever carries neither. A ticker in two tags appears in both.
  */
 function sections(
   entries: Entry[],
@@ -589,8 +588,8 @@ function Examples({ onAdded }: { onAdded: () => void }) {
 
 /**
  * The tab's body. The listing is read by the page, not here, because the tab
- * strip carries its count (the Streamlit tab's badge) — one request for both,
- * and an edit that reloads it moves the badge too.
+ * strip carries its count — one request for both, and an edit that reloads it
+ * moves the count too.
  */
 export function Watchlist({ query }: { query: Query<Listing> }) {
   return (

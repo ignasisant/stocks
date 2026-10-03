@@ -954,8 +954,8 @@ def load_closes(
     promotes a name to "at its high" that is nowhere near it.
     """
     # Imported here, not at module scope: this module is on the import chain of
-    # every page (via web.portfolio_data), and pulling yfinance in costs ~150 ms
-    # of a cold start for a dependency only the network functions below need.
+    # every screen (via api.loaders), and pulling yfinance in costs ~150 ms of a
+    # cold start for a dependency only the network functions below need.
     from stocks.data.fetch import fetch_many
 
     out: dict[str, pd.Series] = {}
@@ -1181,7 +1181,7 @@ def market_values(positions, max_workers: int = 8, base: str = "EUR") -> dict[st
     Positions whose price or FX is unavailable are absent from the result. A
     wholesale throttle is not silent: if nothing could be priced and Yahoo
     refused us, the `YFRateLimitError` propagates so the caller degrades in
-    place (and `st.cache_data` doesn't memoize the empty answer).
+    place (and the cache over it doesn't memoize the empty answer).
     """
     from yfinance.exceptions import YFRateLimitError
 
@@ -1325,7 +1325,7 @@ def positions_frame(
     """Per-position table in `base`: qty, cost, live value, unrealised P/L.
 
     `values` lets a caller hand in base-currency values it already holds. The
-    dashboard passes the basket history's last row (`web.portfolio_data`),
+    API passes the basket history's last row (`api.loaders._priced_positions`),
     which it downloads anyway for the day/week/month chips — so the page makes
     one price download instead of two, and a tile can't disagree with the
     chart beside it. Left out (the CLI, the chat tools), the frame prices

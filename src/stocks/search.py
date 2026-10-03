@@ -7,14 +7,13 @@ then coins, then the local fund catalog, then the SEC company map, then a
 worldwide Yahoo lookup, with an "analyze this anyway" escape hatch for a
 plausible symbol none of them knows.
 
-It lives here, outside `stocks.web`, because two front ends now ask the same
-question. Copying the tier order into the second one is how the two would drift
-until the same query answered differently depending on which page you were on.
+It lives here, outside `stocks.web`, so no front end keeps its own copy of the
+tier order: copies drift until the same query answers differently depending on
+which page you were on.
 
 The three expensive tiers arrive as callables (`sec`, `world`, and the name
-lookup for held-but-unlisted symbols) rather than being imported: each caller
-already owns a cache keyed to its own runtime — `st.cache_data` on the pages,
-`api.cache.ttl_cache` in the ASGI worker — and neither can use the other's.
+lookup for held-but-unlisted symbols) rather than being imported: the caller
+owns their cache (`api.cache.ttl_cache` in the ASGI worker).
 """
 
 from __future__ import annotations
@@ -35,9 +34,8 @@ SYMBOL = re.compile(r"[A-Z0-9.\-]{1,12}")
 # ("MIPS" vs "VIPSHOP" .55, "IWDA" vs "IDEA" .75).
 STRONG_MATCH = 0.8
 
-# What an own-list row is marked with. Names, not glyphs: the Streamlit rows
-# draw Material icons and the React rows draw their own, and neither front end
-# should be reading the other's alphabet out of the domain.
+# What an own-list row is marked with. Names, not glyphs: the front end draws
+# its own icon for each, and the domain should not carry its alphabet.
 FAVORITE = "favorite"
 HELD = "held"
 

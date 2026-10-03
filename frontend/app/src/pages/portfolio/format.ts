@@ -4,9 +4,7 @@
  * a formatted zero. The caller renders `t("portfolio.na")` in its place.
  *
  * Amounts go through `Intl.NumberFormat` in the account's own language, so a
- * Spanish reader gets "1.234 €" and an English one "€1,234" — the Streamlit
- * page prefixes a symbol by hand, which is the one thing here that is not a
- * transcription of it.
+ * Spanish reader gets "1.234 €" and an English one "€1,234".
  */
 
 type Maybe = number | null | undefined;
@@ -109,8 +107,8 @@ export function decimal(lang: string, value: Maybe, digits = 2): string | null {
  *
  * The ledger holds 0.0031 of a name as readily as 12 of another, and in a
  * list of payers "12.0000" beside it is noise. `fixed` is the ledger tables'
- * reading instead — positions and tax parcels, which the Streamlit page prints
- * at four decimals always, so the figures line up down the column.
+ * reading instead — positions and tax parcels, at four decimals always, so the
+ * figures line up down the column.
  */
 export function shares(lang: string, value: Maybe, fixed = false): string | null {
   if (!usable(value)) return null;
@@ -127,9 +125,8 @@ export function tone(value: Maybe): "up" | "down" | "flat" {
 }
 
 /**
- * The flag for a jurisdiction code, built from the code rather than a table —
- * exactly as `web/tax_ui.flag_emoji` does it, including the one code that is
- * not ISO 3166-1 alpha-2.
+ * The flag for a jurisdiction code, built from the code rather than a table,
+ * including the one code that is not ISO 3166-1 alpha-2.
  */
 export function flagOf(code: string): string {
   const alpha2 = code.toUpperCase() === "UK" ? "GB" : code.toUpperCase();

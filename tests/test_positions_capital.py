@@ -93,13 +93,14 @@ def test_a_basis_never_goes_below_zero():
     assert pos.quantity == 10
 
 
-def test_a_repayment_on_nothing_held_changes_nothing():
+def test_a_repayment_on_nothing_held_leaves_the_other_holdings_alone():
+    # No basis to absorb it, so all of it is excess (test_return_of_capital).
     positions, sales = replay(
         [buy("2025-01-02", 10, 1), capital("2025-03-03", 5, "COL.MC")]
     )
     assert [p.ticker for p in positions] == ["MRL.MC"]
     assert positions[0].cost == pytest.approx(10)
-    assert sales == []
+    assert [(s.ticker, s.proceeds) for s in sales] == [("COL.MC", 5)]
 
 
 def test_the_native_basis_falls_in_step_when_the_payment_is_in_another_currency():

@@ -11,8 +11,8 @@
  *
  * Unlike the split scan there is no button: this reads the ledger and, at most,
  * one ISIN lookup for a pair that already matches on everything else, so the
- * question is answered on every visit exactly as the Streamlit page answers it.
- * A book with nothing to repair says nothing at all.
+ * question is answered on every visit. A book with nothing to repair says
+ * nothing at all.
  *
  * Two ways in. `Moves` asks the question itself — the chat drawer offers it
  * after a statement it imported. `MoveList` is handed the answer — the Import

@@ -10,7 +10,7 @@ an unconfigured deploy simply has no microphone.
 The audio never lands on disk. ``transcribe`` takes the bytes the browser
 recorded, returns the text, and the caller drops the clip — the thread stores
 the transcript, so a voice note leaves the same trace as a typed message (see
-chat_core._transcribe).
+api/routes/chat_voice.py).
 """
 
 from __future__ import annotations
@@ -25,9 +25,9 @@ from stocks.web import llm
 
 # Groq's turbo Whisper: the cheapest of the three it serves and the only one
 # that is multilingual *and* fast enough to keep a voice note inside the pause
-# a reader will accept before a rerun. Overridable per deploy with
-# "groq_stt_model" in [free_llm] — a retired slug stays a config fix, the same
-# bargain the chat chain makes for its own models.
+# a reader will accept. Overridable per deploy with "groq_stt_model" in
+# [free_llm] — a retired slug stays a config fix, the same bargain the chat
+# chain makes for its own models.
 _BACKEND = "groq"
 _BASE_URL = "https://api.groq.com/openai/v1"
 _DEFAULT_MODEL = "whisper-large-v3-turbo"
@@ -42,7 +42,7 @@ MIN_SECONDS = 0.4  # a tap on the button, not a question
 
 # What the browser should record at. Whisper works internally at 16 kHz and
 # resamples anything else on arrival, so recording at it is free accuracy and
-# the smallest upload — st.chat_input takes it as audio_sample_rate.
+# the smallest upload.
 SAMPLE_RATE = 16_000
 
 _TIMEOUT = 30.0
@@ -77,9 +77,9 @@ def available() -> bool:
 def clip_seconds(audio: bytes) -> float | None:
     """Length of a WAV clip, or None when the bytes aren't a WAV we can read.
 
-    st.audio_input hands back WAV today, but the duration check is a courtesy
-    to the quota rather than a gate: an unreadable header falls through to the
-    byte cap instead of refusing a clip that may be perfectly fine.
+    The duration check is a courtesy to the quota rather than a gate: an
+    unreadable header falls through to the byte cap instead of refusing a clip
+    that may be perfectly fine.
     """
     try:
         with wave.open(io.BytesIO(audio), "rb") as w:
@@ -98,12 +98,11 @@ def transcribe(audio: bytes, *, language: str | None = None,
     the language by itself, but a two-second clip of Spanish is routinely
     detected as Portuguese, and the hint costs nothing.
 
-    `content_type` and `filename` travel together and default to the WAV
-    `st.audio_input` hands back. A browser recording through `MediaRecorder`
-    produces whatever its engine supports instead — WebM/Opus on Chrome and
-    Firefox, MP4/AAC on Safari — and both the name and the type have to say so,
-    because the backend picks its decoder off them and rejects a WebM
-    introduced as a WAV.
+    `content_type` and `filename` travel together and default to WAV. A
+    browser recording through `MediaRecorder` produces whatever its engine
+    supports instead — WebM/Opus on Chrome and Firefox, MP4/AAC on Safari —
+    and both the name and the type have to say so, because the backend picks
+    its decoder off them and rejects a WebM introduced as a WAV.
     """
     if not audio:
         raise TranscriptionFailed("chat.voice_empty")

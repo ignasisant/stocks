@@ -348,4 +348,5 @@ def test_system_prompt_lists_every_tool():
 
 
 def test_kinds_tracks_the_registry():
-    assert set(tools.KINDS) == set(tools.TOOLS)
+    assert set(tools.KINDS) == set(tools.TOOLS) | set(tools.BOOK)
+    assert not set(tools.TOOLS) & set(tools.BOOK)

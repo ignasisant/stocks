@@ -5,8 +5,7 @@ consensus is folded are `data.earnings` / `data.estimates`' business and tested
 there. What this endpoint decides, and what is pinned here:
 
 * the matched quarter's comparisons arrive computed (YoY, bps, TTM), so the
-  React dialog prints the same numbers as the Streamlit one without re-deriving
-  them;
+  dialog prints them rather than re-deriving them;
 * "not published yet" and "no statements at all" are told apart;
 * a failed statement fetch keeps the headline and says `unavailable`, rather
   than failing the whole dialog;
@@ -193,7 +192,8 @@ def test_no_statements_at_all_reads_none(client, account, feeds, monkeypatch):
 
 
 def test_a_rate_limit_keeps_the_headline(client, account, feeds, monkeypatch):
-    """The Streamlit dialog toasts and keeps its tiles; so does this."""
+    """Throttled: the headline still answers, flagged `unavailable`, so the
+    dialog keeps its tiles."""
 
     def throttled(ticker):
         raise YFRateLimitError()

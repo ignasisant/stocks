@@ -165,13 +165,18 @@ def open_request(raw: str) -> dict | None:
     return req
 
 
-def mint_code(email: str, req: dict, *, resource: str) -> str:
-    """A one-time code for `req` on behalf of `email` — the "Allow"."""
+def mint_code(email: str, req: dict, *, resource: str,
+              scopes: tuple[str, ...] = (store.SCOPE,)) -> str:
+    """A one-time code for `req` on behalf of `email` — the "Allow".
+
+    `scopes` is what the person ticked; the grant the code becomes carries
+    exactly those.
+    """
     code = secrets.token_urlsafe(32)
     now = time.time()
     pending = AuthorizationCode(
         code=code,
-        scopes=[store.SCOPE],
+        scopes=list(scopes),
         expires_at=now + CODE_TTL,
         client_id=req["client_id"],
         code_challenge=req["challenge"],
@@ -248,6 +253,7 @@ class Provider:
             email=email,
             client_id=client.client_id,
             redirect_host=clients.redirect_host(str(authorization_code.redirect_uri)),
+            scopes=tuple(authorization_code.scopes),
             **clients.describe(client),
         )
         with _codes_lock:
@@ -338,7 +344,7 @@ def metadata(origin: str) -> OAuthMetadata:
     return OAuthMetadata.model_validate({
         **base.model_dump(mode="json", exclude_none=True),
         "issuer": origin,
-        "scopes_supported": [store.SCOPE],
+        "scopes_supported": list(store.SCOPES),
         "token_endpoint_auth_methods_supported": _AUTH_METHODS,
         "revocation_endpoint_auth_methods_supported": _AUTH_METHODS,
         "client_id_metadata_document_supported": True,
@@ -420,7 +426,7 @@ def routes(provider: Provider) -> list[Route]:
     resource_metadata = ProtectedResourceMetadata.model_validate({
         "resource": provider.resource,
         "authorization_servers": [origin],
-        "scopes_supported": [store.SCOPE],
+        "scopes_supported": list(store.SCOPES),
         "resource_name": "TopStocks",
     })
     registration = RegistrationHandler(

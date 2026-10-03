@@ -126,14 +126,15 @@ def form_fields(html: str) -> dict[str, str]:
     return dict(re.findall(r'name="(req|csrf)" value="([^"]*)"', html))
 
 
-def decide(client: TestClient, consent_url: str, decision: str = "allow") -> str:
+def decide(client: TestClient, consent_url: str, decision: str = "allow",
+           **ticked: str) -> str:
     """Draw the consent page and press a button; where the browser goes next."""
     page = client.get(consent_url, follow_redirects=False)
     assert page.status_code == 200, page.text
     fields = form_fields(page.text)
     r = client.post(
         oauth.CONSENT_PATH,
-        data={**fields, "decision": decision},
+        data={**fields, **ticked, "decision": decision},
         headers={"Origin": ORIGIN},
         follow_redirects=False,
     )
@@ -159,12 +160,14 @@ def exchange(client: TestClient, client_id: str, code: str, verifier: str):
     })
 
 
-def connect(client: TestClient, sign_in) -> tuple[str, dict]:
+def connect(client: TestClient, sign_in, *, scope: str = store.SCOPE,
+            **ticked: str) -> tuple[str, dict]:
     """The whole dance; the client id and the token response."""
     sign_in(client, EMAIL)
     client_id = register(client)["client_id"]
     verifier, challenge = pkce()
-    code = code_from(decide(client, authorize(client, client_id, challenge)))
+    consent = authorize(client, client_id, challenge, scope=scope)
+    code = code_from(decide(client, consent, **ticked))
     r = exchange(client, client_id, code, verifier)
     assert r.status_code == 200, r.text
     return client_id, r.json()
@@ -201,6 +204,7 @@ def test_the_resource_names_this_site_as_its_authorization_server(site):
     body = r.json()
     assert body["resource"] == RESOURCE
     assert body["authorization_servers"] == [ORIGIN]
+    # What every call needs; edits are granted on the consent page, not asked.
     assert body["scopes_supported"] == [store.SCOPE]
 
 
@@ -232,6 +236,33 @@ def test_the_whole_flow_ends_in_a_working_token(site, sign_in, book):
     r = initialize(site, tokens["access_token"])
     assert r.status_code == 200, r.text
     assert r.json()["result"]["serverInfo"]["name"] == "TopStocks"
+
+
+def _tool_names(client: TestClient, token: str) -> set[str]:
+    listed = rpc(client, token, "tools/list").json()["result"]["tools"]
+    return {t["name"] for t in listed}
+
+
+def test_a_client_asking_to_write_still_only_reads_unless_the_box_is_ticked(
+    site, sign_in, book
+):
+    """Edits are the person's to grant, on the consent page; a client's own
+    scope request decides nothing."""
+    _, tokens = connect(site, sign_in, scope=" ".join(store.SCOPES))
+    assert tokens["scope"].split() == [store.SCOPE]
+    assert "delete_transactions" not in _tool_names(site, tokens["access_token"])
+    (row,) = store.ledger().grants_for(EMAIL)
+    assert row["write"] is False
+
+
+def test_ticking_allow_edits_grants_the_write_scope(site, sign_in, book):
+    sign_in(site, EMAIL)
+    page = site.get(authorize(site, register(site)["client_id"], pkce()[1]))
+    assert 'name="write"' in page.text and "checked" not in page.text
+    _, tokens = connect(site, sign_in, write="1")
+    assert set(tokens["scope"].split()) == set(store.SCOPES)
+    assert "delete_transactions" in _tool_names(site, tokens["access_token"])
+    assert any(row["write"] for row in store.ledger().grants_for(EMAIL))
 
 
 def test_nothing_is_kept_in_the_clear(site, sign_in, book):

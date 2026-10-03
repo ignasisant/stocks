@@ -111,11 +111,10 @@ export function Why({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => void }) 
                   )}
                 </span>
               )}
-              {/* The raw reading in its own units — +4.2%, 15.2, 1.19 — as the
-                  Streamlit row prints it. The bar already encodes the 0-100
-                  score; the number beside it is what the input actually read,
-                  formatted server-side by the registry that knows whether it
-                  is a percent, a ratio or a spread. */}
+              {/* The raw reading in its own units — +4.2%, 15.2, 1.19. The bar
+                  already encodes the 0-100 score; the number beside it is what
+                  the input actually read, formatted server-side by the registry
+                  that knows whether it is a percent, a ratio or a spread. */}
               <span className="sn-comp-v">{comp?.text ?? NA}</span>
             </div>
           );

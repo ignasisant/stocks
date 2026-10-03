@@ -5,7 +5,7 @@
  * answers first and how the tiers dedup, `/search` hands back one flat list
  * already in the order to draw, and this file groups consecutive rows by the
  * tier that produced them. A client that re-sorted would be a second opinion
- * about what "best match" means, and the Streamlit box would disagree with it.
+ * about what "best match" means.
  *
  * The last tier is a network round-trip (worldwide symbols, up to six seconds
  * on a cold query), which is why the panel opens with a "searching" row rather

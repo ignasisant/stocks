@@ -178,7 +178,7 @@ export type Metrics = {
   grid: MetricTile[];
   /** Market cap in the reader's own money; only computed with `?base=`. */
   market_cap_base: number | null;
-  /** …formatted by the server, so both front ends round it the same way. */
+  /** …formatted by the server, so the client never rounds it. */
   market_cap_base_formatted: string | null;
   fx_rate: number | null;
   fx_as_of: string | null;

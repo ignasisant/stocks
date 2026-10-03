@@ -1,16 +1,13 @@
-"""The app's own Google sign-in: three routes, one cookie, no Streamlit.
+"""The app's own Google sign-in: three routes, one cookie.
 
-Sign-in used to be `st.login()`, which meant only the Streamlit process could
-create a session — the React shell could read one and never start one. These
-routes run the authorization-code flow themselves and mint the cookie
-`stocks.session` defines, so both front ends are served by one sign-in.
+These routes run the authorization-code flow themselves and mint the cookie
+`stocks.session` defines, which the API reads on every request.
 
-They answer at the paths Streamlit used (`/auth/login`, `/auth/logout`,
-`/oauth2callback`) and shadow its own handlers, because user routes are matched
-first. Keeping the names is what makes this invisible from outside: the same
-redirect URI is registered with Google, the same `[auth] redirect_uri` is
-deployed, and the React shell's existing sign-out links still point at a route
-that exists.
+They answer at the paths sign-in has always had (`/auth/login`,
+`/auth/logout`, `/oauth2callback`). Keeping the names keeps them invisible
+from outside: the same redirect URI is registered with Google, the same
+`[auth] redirect_uri` is deployed, and old sign-out links still point at a
+route that exists.
 
 The one thing worth knowing before editing: **the session cookie is written
 exactly once, at the end of the callback, after every check has passed.** Never
@@ -225,10 +222,6 @@ async def callback(request: Request) -> Response:
             _provision, str(claims["email"]).strip().lower(), source
         )
     _set(response, session.COOKIE, cookie, session.MAX_AGE, request)
-    # A browser that signed in under the old build still carries Streamlit's
-    # cookie. Ours wins, but leaving it would mean two answers to "who is this"
-    # for thirty days.
-    _clear_legacy(response, request)
     return response
 
 
@@ -245,10 +238,9 @@ def _source(target: str) -> str:
 def _provision(email: str, source: str = "") -> None:
     """Create the account this sign-in names, and date the sign-in.
 
-    What `web.auth.resolve_user` does for a Streamlit session, done here because
-    the React shell has no script run to do it in: without it, a brand-new
-    address signs in, asks the API for its book, gets "unknown account" and sees
-    the offline screen forever.
+    Done here, at the one moment a new address is known to be real: without
+    it, a brand-new address signs in, asks the API for its book, gets "unknown
+    account" and sees the offline screen forever.
 
     Only for a verified address — the same rule `session.signed_in_email` uses
     to turn a cookie into an account, so nothing is created here that the
@@ -266,8 +258,8 @@ def _provision(email: str, source: str = "") -> None:
     except Exception as exc:  # noqa: BLE001 — see the docstring
         obs.error("auth.provision_failed", exc)
         return
-    # The two events `web.telemetry.bind_run` emits for a Streamlit session,
-    # so a signup through the React shell is on the same log timeline.
+    # `auth.signup` is the funnel's signup step (`logs_query.FUNNEL_STEPS`)
+    # and carries the campaign token; `auth.login` dates a returning visit.
     user = accounts.slug(email)
     obs.event("session.start", logged_in=True, user=user, via="oidc")
     obs.event(
@@ -286,21 +278,9 @@ async def logout(request: Request) -> Response:
     response = _home(request)
     _clear(response, session.COOKIE, request)
     _clear(response, session.FLOW_COOKIE, request)
-    # Security-critical while the grace read lives: without this, signing out
-    # with a valid Streamlit cookie still in the jar leaves you signed in.
-    _clear_legacy(response, request)
     # `ts_app` is deliberately untouched. It is not a session and not a login —
     # clearing it would send a returning visitor to the marketing landing.
     return response
-
-
-def _clear_legacy(response: Response, request: Request) -> None:
-    for name in (session.LEGACY_COOKIE, session.LEGACY_TOKENS_COOKIE):
-        _clear(response, name, request)
-    for name in request.cookies:
-        legacy = (f"{session.LEGACY_COOKIE}_", f"{session.LEGACY_TOKENS_COOKIE}_")
-        if name.startswith(legacy):
-            _clear(response, name, request)
 
 
 def _claims_options() -> dict:

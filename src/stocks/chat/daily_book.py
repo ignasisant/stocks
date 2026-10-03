@@ -11,11 +11,11 @@ back over the window, so a deposit inside the month is not a gain. It is the
 frame and the anchoring (`basket_change`) the KPI row and the card's `day` /
 `week` / `month` facts already use, so the chart ends where the month row
 says. The index is SPY in the reader's own currency
-(`market_data.index_in_base`): a euro book measured against a dollar index
+(`briefing.index_in_base`): a euro book measured against a dollar index
 reports the currency's move as skill.
 
-Headless like `daily`: Streamlit is only reached lazily, through
-`market_data`, which the API process loads anyway.
+Headless like `daily`: the API's `briefing` is only reached lazily, for the
+index conversion its market lines already make.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def index_series(closes: dict | None, currency: str) -> tuple[pd.Series | None, 
     """(SPY's closes in the reader's currency, the currency they are in).
     Only the euro pair is downloaded, so another base reads the index in its
     own dollars."""
-    from stocks.web.market_data import index_in_base
+    from stocks.api.briefing import index_in_base
 
     series = index_in_base(closes or {}, currency)
     if series is None or len(series) < 2:
@@ -113,7 +113,8 @@ def section(facts: dict) -> dict:
 
     Only with the index in the facts: the section is the book *against* it,
     and the book's own figures alone are the KPI row above the card. A card
-    built without it (the Streamlit card, a failed download) has none.
+    built without it (one stored before the section existed, a failed
+    download) has none.
     """
     index = (facts or {}).get("index") or {}
     found = rows(facts) if index else []

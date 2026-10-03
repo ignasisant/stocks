@@ -5,9 +5,9 @@
  * that per component is how a screen ends up rendering a spinner forever when
  * a call fails, or a zero where a number could not be fetched.
  *
- * Not a cache of its own. The API is cached server-side on the same keys the
- * Streamlit pages used, and `shell/api` keeps a one-minute memo of what a
- * screen opened with, so a page revisited draws from what it already had.
+ * Not a cache of its own. The API is cached server-side (`stocks.api.cache`),
+ * and `shell/api` keeps a one-minute memo of what a screen opened with, so a
+ * page revisited draws from what it already had.
  * This hook only decides when that memo may answer: a first fetch reads it, a
  * re-ask — retry, reload, or an input that changed under a mounted component —
  * drops it first, because those are a reader asking for the server's word.

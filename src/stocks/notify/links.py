@@ -7,10 +7,9 @@ design: the public origin is a deploy setting (`[app] public_url` /
 unset every function here returns None so the messages render exactly as they
 did before rather than emitting links to a hostname nobody can reach.
 
-Paths mirror what `st.navigation` derives from each page module's filename —
-`app_pages/portfolio.py` is served at `/portfolio` — so a page renamed in
-`web/app.py` renames the link here too. tests/test_links.py pins the pages
-that are linked to the modules that exist.
+Paths are the ones `stocks.navigation` gives each page, so a page renamed there
+must be renamed here too. tests/test_links.py pins the pages that are linked to
+the paths the shell answers.
 """
 
 from __future__ import annotations
@@ -19,8 +18,8 @@ import urllib.parse
 
 from stocks.secrets_env import secret
 
-# Page module stem -> url_path, as st.navigation derives it (home is the
-# default page and answers at the root).
+# Each page's path in `navigation.DESTINATIONS` (home is the default page and
+# answers at the root).
 HOME = ""
 PORTFOLIO = "portfolio"
 IMPORT = "import_transactions"

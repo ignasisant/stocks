@@ -77,7 +77,7 @@ const SCALES: [number, string][] = [
 ];
 
 /**
- * One metric as the Streamlit page prints it, or `na` when it is null.
+ * One metric as the table prints it, or `na` when it is null.
  *
  * Null is the whole point of the signature: a metric nobody could measure is
  * not a zero, and printing it as one would make the least measurable company

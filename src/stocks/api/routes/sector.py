@@ -9,9 +9,9 @@ The written verdict under the podium is one write here: a generated answer
 with a per-account daily budget. `GET …/verdict` serves what is stored (or the
 computed stand-in) and never spends; `POST …/verdict` writes one.
 
-The other is the live rescan — the Streamlit page's "refresh this sector"
-button. `POST …/rescan` starts one sector's scan in a background thread and
-answers at once; `GET …/rescan` is what a client polls until it lands.
+The other is the live rescan. `POST …/rescan` starts one sector's scan in a
+background thread and answers at once; `GET …/rescan` is what a client polls
+until it lands.
 """
 
 from __future__ import annotations
@@ -65,12 +65,11 @@ def _resolve(name: str) -> str:
 # ------------------------------------------------------------ the live rescan
 # One sector rebuilt on demand, held in this process beside the nightly file.
 #
-# In memory and not merged into `sector_scan.json`, which is what the Streamlit
-# button does too (its `_live` is a cache entry, never a save): the stored file
-# is the nightly job's, it is mirrored to the bucket, and a reader's click
-# should not be what publishes a cohort to every other instance. A live scan
-# wins only while it is at least as new as the stored one — the next nightly
-# run supersedes it without anybody having to evict it.
+# In memory and not merged into `sector_scan.json`: the stored file is the
+# nightly job's, it is mirrored to the bucket, and a reader's click should not
+# be what publishes a cohort to every other instance. A live scan wins only
+# while it is at least as new as the stored one — the next nightly run
+# supersedes it without anybody having to evict it.
 _live: dict[str, sector_scan.SectorScan] = {}
 _jobs: dict[str, RescanStatus] = {}
 _jobs_lock = threading.Lock()
@@ -258,11 +257,11 @@ def _answer(verdict, *, written: bool) -> SectorVerdict:
 def _stored(paths, scan, lang: str):
     """The verdict already paid for, if it read this scan in this language.
 
-    Keyed by (sector, the scan's date, language), as the Streamlit card keys it:
-    re-opening a sector the same night is free, and a new nightly scan is what
-    makes a read worth paying for again. Only a model's answer is ever stored —
-    a stand-in is free to rebuild, and keeping one would block the upgrade to a
-    real read once the allowance resets.
+    Keyed by (sector, the scan's date, language): re-opening a sector the same
+    night is free, and a new nightly scan is what makes a read worth paying for
+    again. Only a model's answer is ever stored — a stand-in is free to
+    rebuild, and keeping one would block the upgrade to a real read once the
+    allowance resets.
     """
     from stocks.chat import sector_ai
     from stocks.web import auth
@@ -416,11 +415,11 @@ def _why(exc: Exception) -> str:
 def _rescan(name: str) -> None:
     """The job: scan one sector and lay it over the stored one.
 
-    The stored cohort's own tickers ride along as `extra`. The Streamlit
-    button rescans the ETF basket alone, which silently drops the non-US peers
-    the nightly job validated — a refresh that shrinks the cohort is not a
-    refresh. They were validated when they were proposed, so passing them back
-    is exactly the contract `scan_sector` asks of `extra`.
+    The stored cohort's own tickers ride along as `extra`. The ETF basket
+    alone would silently drop the non-US peers the nightly job validated, and
+    a refresh that shrinks the cohort is not a refresh. They were validated
+    when they were proposed, so passing them back is exactly the contract
+    `scan_sector` asks of `extra`.
     """
     from stocks import obs
 

@@ -60,25 +60,24 @@ things that run without you (assistant, notifications), then settings.
     Step(
         id="my_feature",              # also the copy key prefix: tour.my_feature_*
         icon="rocket_launch",         # Material Symbols ligature, no colons
-        page="app_pages/thing.py",    # module path st.navigation knows; omit for
-                                      # an in-page target (e.g. the chat panel)
+        page="thing",                 # URL path the shell serves ("" is Home);
+                                      # omit for an in-page target (the chat drawer)
         query={"tab": "slug"},        # lands with ?tab=slug (Portfolio tabs)
-        session={"profile_tab": "x"}, # state seeded before navigating
-        reset_keys=("thing_tab",),    # widget keys to drop so `default=` wins again
-        gated=True,                   # target sits behind require_login()
+        session={"profile_tab": "x"}, # client state seeded on arrival
+        gated=True,                   # target needs a signed-in account
         done=lambda prefs: bool(prefs.get("my_pref")),  # "is it switched on?"
     ),
 ```
 
 Rules that matter:
 
-- `page` must be a real module under `src/stocks/web/`, written the way
-  `st.switch_page` takes it (`app_pages/foo.py`). A test checks the file
-  exists. Home is the default page and resolves to url_path `""` — that is
-  already handled by `_url_path`.
-- Set `gated=True` whenever the target calls `auth.require_login()`. Guests
-  then read the step with a disabled button and a sign-in hint instead of
-  being dropped on a login wall.
+- `page` must be a path the React shell serves — one of
+  `navigation.SHELL_PATHS` (`portfolio`, `profile`, `sector`…), with `""` for
+  Home. A test checks it. A new page means a new `Destination` in
+  `navigation.py` and a route in the shell first.
+- Set `gated=True` whenever the target needs a signed-in account (its API
+  routes refuse a guest). Guests then read the step with a disabled button
+  and a sign-in hint instead of being dropped on a login wall.
 - `done` is only for a capability the account switches **on** (a key, a link,
   a setting, an import). A page is not a capability — leave `done=None`.
 - A feature that can be absent for a whole deploy (credentials missing, an

@@ -158,9 +158,9 @@ export default function Dividends() {
           (year) => year.estimated_gross !== null,
         );
         // The entitlement pass never ran (Yahoo throttled or down), so every
-        // estimate below is missing rather than zero. Said up front, as the
-        // Streamlit tab warns, because an absent "Next year" or history card
-        // would otherwise read as a book that pays nothing.
+        // estimate below is missing rather than zero. Said up front, because
+        // an absent "Next year" or history card would otherwise read as a book
+        // that pays nothing.
         const unavailable = dividends.estimates_available ? null : (
           <Warn>{t("portfolio.data_unavailable")}</Warn>
         );

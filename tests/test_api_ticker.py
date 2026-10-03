@@ -551,7 +551,7 @@ def test_the_grid_is_the_domain_s_nine_tiles_and_names_its_strings(
     client, monkeypatch, no_fetch
 ):
     """The page draws a handful of KPIs, not all 23. Which handful is a domain
-    decision both front ends read, and the labels travel as i18n key NAMES —
+    decision, served from here, and the labels travel as i18n key NAMES —
     translating here would give this API a language."""
     from stocks.analysis.fundamentals import FUNDAMENTAL_TILES
 

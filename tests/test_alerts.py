@@ -68,9 +68,9 @@ def test_unknown_alert_type_rejected_at_construction():
 
 # ------------------------------------------------------------- the editor's half
 # Which types exist is one table; what each one asks a person for is another, and
-# two editors read the second one now — the app's watchlist widget and the React
-# ticker page, through /alert-types. A type added to `ALERT_TYPES` with no entry
-# in `ALERT_FORMS` is offered by neither, which is the silent half of the failure.
+# the ticker page's editor reads the second one, through /alert-types. A type
+# added to `ALERT_TYPES` with no entry in `ALERT_FORMS` is never offered, which
+# is the silent half of the failure.
 
 
 def test_every_alert_type_can_actually_be_entered():

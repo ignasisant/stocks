@@ -10,9 +10,9 @@
  * hidden the part a reader has to act on, which is the whole reason a bad
  * export cannot corrupt a cost basis here quietly.
  *
- * Warned rows appear twice on purpose, exactly as the Streamlit page shows
- * them: once among the rows that will be written, and again with their warning
- * spelled out, because a warning nobody reads is a warning that did not happen.
+ * Warned rows appear twice on purpose: once among the rows that will be
+ * written, and again with their warning spelled out, because a warning nobody
+ * reads is a warning that did not happen.
  *
  * The order is the reader's, not the pipeline's: the summary and a chip per
  * tier that jumps to it, the commit (`children`) pinned under them, then what

@@ -140,9 +140,8 @@ def test_an_adr_whose_consensus_is_in_another_currency_gets_no_projection(
     client, monkeypatch
 ):
     """TSMC files in TWD and its analysts quote per USD ADS: the forecast bar
-    would land thirty-odd times short of the reported ones. Streamlit drops
-    the whole path, and so does the route — on the server, where no client can
-    forget the check."""
+    would land thirty-odd times short of the reported ones. The route drops
+    the whole path — on the server, where no client can forget the check."""
     annual = pd.DataFrame({"Revenue": [2.2e12, 2.9e12]}, index=[2023, 2024])
     monkeypatch.setattr(
         loaders,
@@ -254,10 +253,10 @@ def test_the_multiple_says_which_feed_reconstructed_it(client, monkeypatch):
 
 
 def test_the_windows_offered_are_the_ones_the_page_can_select(client, monkeypatch):
-    """The selector's options are a domain table, not a page's constant: both
-    front ends draw it, and two different option sets are two different
-    questions wearing the same label. Each window carries its own span so a
-    client can trim the series without a second copy of the table."""
+    """The selector's options are a domain table, not a page's constant: two
+    different option sets are two different questions wearing the same
+    label. Each window carries its own span so a client can trim the series
+    without a second copy of the table."""
     from stocks.analysis.pe_history import DISPLAY_WINDOWS
 
     days = pd.date_range("2016-01-01", periods=2600, freq="D")
@@ -450,7 +449,7 @@ def test_a_german_issuer_falls_through_to_bafin(client, monkeypatch):
 
 
 def test_a_quiet_us_filer_is_not_sent_to_bafin(client, monkeypatch):
-    """Streamlit asks BaFin only when the SEC map has no CIK. A US filer whose
+    """BaFin is asked only when the SEC map has no CIK. A US filer whose
     insiders did not trade this quarter is an empty Form 4 list, not a German
     issuer — asking BaFin by its name spends a request and can match a
     stranger."""
@@ -467,8 +466,8 @@ def test_a_quiet_us_filer_is_not_sent_to_bafin(client, monkeypatch):
 
 
 def test_no_long_name_falls_back_to_the_catalog_name(client, monkeypatch):
-    """Yahoo throttled → no `longName`. Streamlit then searches BaFin by
-    `company_name()`; the route does the same with its account-free legs."""
+    """Yahoo throttled → no `longName`. The route then searches BaFin by
+    `company_name()`, through its account-free legs."""
     asked = []
     monkeypatch.setattr(loaders, "insiders", lambda t: [])
     monkeypatch.setattr("stocks.api.routes.ticker._sec_filer", lambda t: False)

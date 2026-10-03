@@ -1,8 +1,7 @@
 /*
- * Bank's own stylesheet. Every colour and radius is an `--ag-*` custom
- * property the server inlines, so this page and the Streamlit one it replaces
- * cannot drift apart — and so there is no hex literal here for the design
- * system to disagree with.
+ * Bank's own stylesheet. Every colour and radius is an `--ag-*` custom property
+ * the server inlines, so this page and the rest of the app cannot drift apart —
+ * and so there is no hex literal here for the design system to disagree with.
  */
 
 .bk-page {

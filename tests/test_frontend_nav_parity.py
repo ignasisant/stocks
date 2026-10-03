@@ -1,17 +1,17 @@
 """Every page the app ships is reachable in the React shell, under its own URL.
 
-`stocks.navigation` is the one table three menus are built from — the Streamlit
-sidebar, the phone tab bar and the shell's rail. The shell cannot read it at
-build time (it is a Python module and the rail is a bundled registry of lazy
-imports), so the two are kept in step by this test instead of by discipline.
+`stocks.navigation` is the one table the shell's rail and phone tab bar are
+built from, over `/v1/nav`. The shell cannot read it at build time (it is a
+Python module and the rail is a bundled registry of lazy imports), so the two
+are kept in step by this test instead of by discipline.
 
 Two failures it exists to catch, both silent in production:
 
 * **A page that is not in the shell at all.** `pageFor` falls back to Home for
   an unknown slug, so a page dropped from the registry does not 404 — it
   quietly serves the dashboard under the missing page's URL.
-* **A path that changed on one side only.** Streamlit derives a page's URL from
-  its filename, so Import is served at `/import_transactions` and Home at the
+* **A path that changed on one side only.** `navigation` keeps the paths old
+  links carry, so Import is served at `/import_transactions` and Home at the
   root; the shell calls them `import` and `home`. Those are declared as
   `aliases` in the registry. A rename on either side without the alias breaks
   every bookmark and every link ever shared, and breaks them into a page that
@@ -74,8 +74,8 @@ def test_no_slug_is_claimed_twice(registry):
 def test_the_two_paths_that_do_not_match_are_declared(registry):
     """The named ones, so the reason survives a refactor that 'tidies' them.
 
-    Home is Streamlit's default page and is served at the root; Import is
-    `import_transactions` because that is its module's filename. Neither is a
+    Home is the default page and is served at the root; Import is
+    `import_transactions` because that is the path old links carry. Neither is a
     name the shell would have chosen, and neither is free to drop.
     """
     aliases = {a for _, aliases in _entries(registry) for a in aliases}
@@ -98,8 +98,8 @@ def test_the_server_hands_the_shell_every_path_it_answers(registry):
 
 def test_the_phone_bar_is_the_four_navigation_names(registry):
     """`BOTTOM` in the registry is `navigation.BOTTOM_NAV` in the shell's slugs:
-    the Streamlit bar and the shell's must be the same four, and the DS bar is
-    four wide."""
+    the bar `/v1/nav` serves and the shell's must be the same four, and the DS
+    bar is four wide."""
     listed = re.search(r"export const BOTTOM = \[([^\]]*)\]", registry)
     assert listed, "no BOTTOM list in pages.ts"
     bottom = _STRING.findall(listed.group(1))

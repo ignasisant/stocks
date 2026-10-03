@@ -30,7 +30,7 @@ and only then commits (see the web Import page / ledger.add_many).
 from __future__ import annotations
 
 from stocks.portfolio import statement
-from stocks.portfolio.ledger import Transaction
+from stocks.portfolio.ledger import RETURN_OF_CAPITAL, Transaction
 from stocks.portfolio.statement import (
     CsvFormat,
     ParseResult,
@@ -69,10 +69,8 @@ def _map_action(rtype: str) -> str | None:
     # withholding adjustments that arrive in +/- pairs which cancel out.
     if "DIVIDEND" in t and "TAX" not in t:
         return "dividend"
-    # Cash back out of the share premium: it lowers the shares' cost basis
-    # (positions._return_capital), so it is a ledger row, not a skip.
     if "RETURN OF CAPITAL" in t:
-        return "capital"
+        return RETURN_OF_CAPITAL
     # split / cash / fee / transfer / reward are intentionally not auto-imported.
     return None
 
@@ -112,7 +110,7 @@ def _build_tx(row: Row, action: str) -> Transaction:
         raise ValueError("missing ticker")
     currency = row.text("currency") or "USD"
 
-    if action in ("dividend", "capital"):
+    if action in ("dividend", RETURN_OF_CAPITAL):
         total = row.money("amount")
         if total <= 0:
             raise ValueError(f"{action} amount {total} is not positive")

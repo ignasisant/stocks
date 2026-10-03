@@ -540,9 +540,8 @@
 
 /* ------------------------------------------------------ picker + rescan */
 
-/* The picker and the rescan share a row, bottom-aligned like the Streamlit
-   columns, and wrap onto two lines on a phone rather than squeezing the
-   select. */
+/* The picker and the rescan share a row, bottom-aligned, and wrap onto two
+   lines on a phone rather than squeezing the select. */
 .ag-sec-top {
   display: flex;
   flex-wrap: wrap;
@@ -589,8 +588,8 @@
 
 /* ------------------------------------------------------- company names */
 
-/* Symbol first, name after it and dimmer — the Streamlit `ticker_cell`
-   shape. The name gives way (ellipsis) before the numbers do. */
+/* Symbol first, name after it and dimmer. The name gives way (ellipsis)
+   before the numbers do. */
 .ag-sec-who {
   display: inline-flex;
   align-items: baseline;

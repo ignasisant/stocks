@@ -17,19 +17,19 @@ import type { EarningsEvent } from "./types";
 
 /**
  * A tooltip line, and whether it reads as good or bad news. `emphasis` is the
- * figure inside it that carries the tone — Streamlit colours the surprise, not
- * the whole EPS line — so a renderer can set only that part.
+ * figure inside it that carries the tone — the surprise, not the whole EPS
+ * line — so a renderer can set only that part.
  */
 export type EventLine = { text: string; tone?: "up" | "down"; emphasis?: string };
 
 /**
  * A sell marker's line.
  *
- * The catalogs only have this one as a Plotly hovertemplate — three positional
- * `%{…}` slots the library fills from the trace — because that is what the
- * Streamlit chart needs. This page draws its own tooltip, so it prefers a
- * `ticker.hover_sell` written with named slots like its buy twin, and fills the
- * template's three slots in their published order until that key exists.
+ * The catalogs only have this one as a Plotly hovertemplate: three positional
+ * `%{…}` slots a charting library fills from the trace. This page draws its
+ * own tooltip, so it prefers a `ticker.hover_sell` written with named slots
+ * like its buy twin, and fills the template's three slots in their published
+ * order until that key exists.
  * Getting that order wrong prints the quantity as a price, which is why the
  * fallback is here and not inline.
  */
@@ -115,8 +115,8 @@ export function resultsLines(
   const before = closes[at - 1];
   const after = closes[at + 1];
   if (daily && at > 0 && before && after !== null && after !== undefined) {
-    // Uncoloured, as Streamlit prints it: the move is context for the
-    // surprise above it, not a second verdict.
+    // Uncoloured: the move is context for the surprise above it, not a
+    // second verdict.
     const move = after / before - 1;
     lines.push({
       text: t("ticker.hover_move", {

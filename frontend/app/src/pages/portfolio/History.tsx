@@ -1,12 +1,12 @@
 /**
  * The book's own history: what was put in against what it is worth.
  *
- * Sits under the positions table, where the Streamlit page puts it, and asks
- * the server for the window rather than slicing a long series locally. That is
- * not laziness — the y-axis has to rescale to what is on screen, and the TWR
- * index the same endpoint carries is rebased to the requested window, so a
- * client that fetched everything and sliced it would draw a one-month chart
- * starting at last year's cumulative return.
+ * Sits under the positions table, and asks the server for the window rather
+ * than slicing a long series locally. That is not laziness — the y-axis has to
+ * rescale to what is on screen, and the TWR index the same endpoint carries is
+ * rebased to the requested window, so a client that fetched everything and
+ * sliced it would draw a one-month chart starting at last year's cumulative
+ * return.
  */
 
 import { useState } from "react";
@@ -21,9 +21,8 @@ import { BookHistory } from "./charts";
 import { compactMoneyIn, moneyIn, percent } from "./format";
 import { Caption, Card, Segmented } from "./ui";
 
-// The same codes the Streamlit range control offers and the API accepts, so a
-// page and a client open on two screens draw the same span. Only "all" is
-// translated: the rest are read as durations in every language this ships in.
+// The codes the API accepts. Only "all" is translated: the rest are read as
+// durations in every language this ships in.
 const WINDOWS = ["1m", "3m", "6m", "1y", "ytd", "all"] as const;
 type Window = (typeof WINDOWS)[number];
 

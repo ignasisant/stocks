@@ -1,20 +1,18 @@
 /**
- * What the price chart's hover box says, row for row the Plotly box it
- * replaces.
+ * What the price chart's hover box says.
  *
- * Streamlit draws the chart with `hovermode="x unified"`: one box per bar,
- * titled with the bar's own stamp, and one row per trace that has a point
- * there — the price (with OHLC under it on candles), each moving average, the
- * reader's fills, and the dividend and results diamonds. Each row wears its
- * trace's swatch, labels are muted and values bold, and the only colour inside
- * a row is the change it reports. This module builds those rows; the chart
- * only draws them.
+ * One box per bar, titled with the bar's own stamp, and one row per trace that
+ * has a point there — the price (with OHLC under it on candles), each moving
+ * average, the reader's fills, and the dividend and results diamonds. Each
+ * row wears its trace's swatch, labels are muted and values bold, and the only
+ * colour inside a row is the change it reports. This module builds those rows;
+ * the chart only draws them.
  *
  * The strings are the catalog's own, which are written for Plotly and carry
  * `<b>`, `<br>` and a `<span style='color:{color}'>` around the one figure a
  * row colours. `markup` reads that small dialect into parts instead of
- * stripping it, so the emphasis lands where Streamlit puts it rather than on
- * the whole line — and no catalog string is ever handed to the DOM as HTML.
+ * stripping it, so the emphasis lands where the catalog puts it rather than
+ * on the whole line — and no catalog string is ever handed to the DOM as HTML.
  *
  * Pure, and tested, because a return measured against the wrong close or a
  * fill on the wrong bar renders perfectly and means something else.
@@ -109,8 +107,8 @@ function rows(html: string, swatch?: string): HoverRow[] {
 
 /**
  * The box's title: the bar's own stamp — `%Y-%m-%d`, with the clock on an
- * intraday range — as Streamlit pins `hoverformat`. Not the axis label: on a
- * multi-year window that collapses to a month, over a bar that is one day.
+ * intraday range. Not the axis label: on a multi-year window that collapses
+ * to a month, over a bar that is one day.
  */
 export function hoverTitle(stamp: string, intraday: boolean): string {
   const clean = stamp.replace("T", " ");
@@ -120,10 +118,10 @@ export function hoverTitle(stamp: string, intraday: boolean): string {
 /**
  * A fill on the chart: the bar it is drawn on, and the fill.
  *
- * Streamlit draws every buy and every sell dated on or after the window's
- * first bar, and nothing older — a 2022 entry on a one-year chart is off the
- * left edge, not piled onto its first candle. A fill on a closed day lands on
- * the next bar, where Plotly's range breaks would have folded it too.
+ * Every buy and every sell dated on or after the window's first bar is drawn,
+ * and nothing older — a 2022 entry on a one-year chart is off the left edge,
+ * not piled onto its first candle. A fill on a closed day lands on the next
+ * bar.
  */
 export type Fill = { index: number; trade: Trade };
 
@@ -190,9 +188,9 @@ export function averageRow(name: string, value: number | null, swatch: string) {
 
 /**
  * A fill's rows. A buy: size @ price · date, then its return to the LAST CLOSE
- * OF THE RANGE (Streamlit's `last`, not the end of a zoom), then the blended
- * average so the lot can be read against the whole position. A sell: size @
- * price · date and nothing else — Streamlit prices no return on a sale.
+ * OF THE RANGE (not the end of a zoom), then the blended average so the lot
+ * can be read against the whole position. A sell: size @ price · date and
+ * nothing else — no return is priced on a sale.
  */
 export function fillRows(
   fill: Trade,
@@ -219,7 +217,7 @@ export function fillRows(
 
 /**
  * A dividend or results diamond's rows. The event line's `emphasis` is the one
- * figure Streamlit colours inside it (the surprise), in the line's tone; the
+ * figure coloured inside it (the surprise), in the line's tone; the
  * rest of the row stays neutral.
  */
 export function eventRows(lines: EventLine[], swatch: string): HoverRow[] {

@@ -395,9 +395,8 @@ export const CSS = `
   .pr-rail { position: static; flex: 1 1 auto; width: 100%; }
 }
 
-/* Then the rows stack — control under its label, as the Streamlit page lays
-   them — with a narrower gutter, down to a phone or a page beside the
-   drawer. */
+/* Then the rows stack — control under its label — with a narrower gutter,
+   down to a phone or a page beside the drawer. */
 @container ag-main (max-width: 44rem) {
   .pr-row { flex-direction: column; gap: 10px; padding: 14px 16px; }
   .pr-row-mid { align-items: stretch; }

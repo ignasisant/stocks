@@ -1,12 +1,11 @@
-"""Headless chat engine — the web assistant's brain without the Streamlit UI.
+"""Headless chat engine — the web assistant's brain, with no UI in it.
 
-Everything the side panel (web/chat_core.py) and the Telegram bot
+Everything the chat drawer (api/routes/chat.py) and the Telegram bot
 (stocks/chat/bot.py) share lives here: the persona built from the investor
 profile, the portfolio snapshot for the system prompt, skill routing, the
 BYOK→free provider resolution (also used by notify/narrative.py), the free
 -tier daily quota, and answer() — one complete chat turn against explicit
-paths, no session state. chat_core wraps these helpers with st.session_state
-and its cached loaders; this module never imports streamlit.
+paths, no session state.
 
 Write discipline: answer() saves chat.json only after a completed
 user+assistant pair (matching the web panel), and mutates/saves prefs.json
@@ -219,7 +218,7 @@ def touch_byok(prefs: dict, pid: str) -> bool:
     """Slide `pid`'s window after a successful use. True when prefs changed.
 
     Mutates `prefs` in place — the caller saves. Throttled to one write a day
-    so a busy panel doesn't re-upload prefs.json on every rerun.
+    so a busy panel doesn't re-upload prefs.json on every turn.
     """
     _, saved_k, first_k = byok_fields(pid)
     if not byok_alive(prefs, pid):
@@ -364,8 +363,8 @@ def attempts(prefs: dict, session_keys: dict[str, str] | None = None,
     or '' (callers substitute the provider default).
 
     `session_keys` are keys the caller holds for this one request and nothing
-    longer — the Streamlit panel's "this session only" key, and the React
-    drawer's, which travels in a request header (api/routes/chat.py). One wins
+    longer — the drawer's "this session only" key, which travels in a
+    request header (api/routes/chat.py). One wins
     over a stored key for the same provider, because it is the one the reader
     typed most recently. They are an argument, never a prefs entry: every
     path that spends a turn saves `prefs` afterwards, and a key smuggled into
@@ -742,7 +741,7 @@ def _join_en(parts: list[str]) -> str:
 
 def persona(prof: dict) -> str:
     """The 'who am I advising' sentence, from a loaded investor profile
-    (auth.load_profile()). Falls back to the historical default when the user
+    (auth.load_profile(prefs)). Falls back to the historical default when the user
     hasn't filled the form yet (prof['set'] is False)."""
     if not prof.get("set"):
         return "The signed-in user is an aggressive long-term (5y+) investor. "
@@ -861,7 +860,7 @@ def reporting_currency(prefs: dict | None) -> str:
 
 
 def portfolio_context(watchlist: Path, db: Path, currency: str = "EUR") -> str:
-    """Headless twin of chat_core._portfolio_context, from explicit paths."""
+    """The book snapshot for the system prompt, from explicit paths."""
     tbl = enriched_frame(db, currency) if db.exists() else None
     return book_snapshot(tbl, watchlist, currency)
 
@@ -1192,8 +1191,7 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
         # disk (they are the threads list), but no answer reads them.
         memory_db = auth.memory_path(chat_path) if recall_on(prefs) else None
         thread = auth.active_conversation(chat_path)["id"]
-    # `focus` is what "this" and "it" mean: the ticker on the reader's screen
-    # (chat_core._gather passes the same one from the Streamlit session).
+    # `focus` is what "this" and "it" mean: the ticker on the reader's screen.
     ctx = toolbox.Context(watchlist=watchlist, db=db, memory_db=memory_db,
                           thread=thread, focus=focus,
                           currency=reporting_currency(prefs))
@@ -1206,9 +1204,9 @@ def _settle(future, timeout: float | None,
     """One lookup's result, None if it raises or overruns `timeout`.
 
     With a `tick`, the wait is a poll rather than one long block: the caller
-    gets the thread back every `poll` seconds to do something with it — on
-    Streamlit, to let the runtime act on a stop the reader has pressed — and
-    whatever `tick` raises comes out of here.
+    gets the thread back every `poll` seconds to do something with it — act
+    on a stop the reader has pressed — and whatever `tick` raises comes out
+    of here.
     """
     left = timeout
     while True:
@@ -1243,12 +1241,11 @@ def in_parallel(*calls: Callable[[], object],
     inputs, and back to back they are the bulk of a turn's latency (two
     classifier calls, three page fetches, a Yahoo round-trip). A call that
     raises or overruns yields None: one dead lookup must not take the answer
-    with it. Callers on Streamlit must resolve session state *before* handing
-    a closure over — these run off the script thread.
+    with it. Callers resolve the account *before* handing a closure over —
+    these run on pool threads.
 
     `tick` is called every `poll` seconds while a lookup is still out. It is
-    what makes the wait interruptible: Streamlit only acts on a pending stop
-    where the script touches it, and these are the seconds in which a turn
+    what makes the wait interruptible: these are the seconds in which a turn
     touches nothing at all.
     """
     pool = ThreadPoolExecutor(max_workers=max(1, len(calls)))
@@ -1362,7 +1359,7 @@ def action_context(watchlist: Path) -> str:
     from stocks.config import load_watchlist
     from stocks.web import auth
 
-    bits = []
+    bits = [f"Today: {date.today().isoformat()}"]
     holds = load_watchlist(watchlist)
     if holds:
         bits.append("Watchlist: " + ", ".join(
@@ -1592,20 +1589,38 @@ class ProposalError(Exception):
 
 def _apply(offer: dict, approve: bool, *, watchlist: Path, lang: str,
            ticker: str | None = None, args: dict | None = None,
-           form: dict | None = None) -> str:
+           form: dict | None = None, db: Path | None = None,
+           source: str = "chat") -> str:
     """Run (or drop) one proposal in place; return the line that says so.
 
     Mutates `offer` — its state, and on approval the symbol and fields the
     reader may have edited — and raises ProposalError without touching it when
     the edit does not parse or the write fails, so the card stays up and
     pressable rather than claiming a change that never happened.
+
+    A ledger proposal (`offer["book"]`, from `chat/book.py`) is committed
+    exactly as planned: it has no form to edit, and a book that moved since
+    the plan refuses it rather than applying something nobody was shown.
     """
-    from stocks.chat import tools
+    from stocks.chat import book, tools
 
     if not approve:
         offer["state"] = "cancelled"
         obs.event("chat.action_cancelled", action=offer.get("kind"))
         return _tr("chat.action_cancelled", lang)
+    if isinstance(offer.get("book"), dict):
+        if db is None:
+            raise ProposalError("chat.action_failed")
+        try:
+            note = book.apply(offer, db=db, source=source,
+                              translate=lambda k, **kw: _tr(k, lang, **kw))
+        except book.Refused as exc:
+            obs.warn("chat.engine.book_refused", action=offer.get("kind"),
+                     code=exc.code, error=exc.detail[:300])
+            raise ProposalError(exc.code) from exc
+        offer["state"] = "done"
+        obs.event("chat.action_approved", action=offer.get("kind"), edited=False)
+        return note
     base = tools.Action(str(offer.get("kind")), str(offer.get("ticker") or ""),
                         dict(offer.get("args") or {}))
     if base.kind not in tools.TOOLS:
@@ -1632,7 +1647,8 @@ def _apply(offer: dict, approve: bool, *, watchlist: Path, lang: str,
 
 def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
                     approve: bool, lang: str = "en", ticker: str | None = None,
-                    args: dict | None = None, form: dict | None = None) -> Reply:
+                    args: dict | None = None, form: dict | None = None,
+                    db: Path | None = None) -> Reply:
     """The reader pressed Approve or Cancel on a proposal card.
 
     The asking turn is rewritten in place — its words become the confirmation
@@ -1655,7 +1671,7 @@ def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
     if offer.get("state") != "pending":
         raise ProposalError("chat.action_gone")
     note = _apply(offer, approve, watchlist=watchlist, lang=lang,
-                  ticker=ticker, args=args, form=form)
+                  ticker=ticker, args=args, form=form, db=db)
     entry["content"] = note
     if offer["state"] == "done":
         entry["action"] = offer["kind"]
@@ -1665,7 +1681,8 @@ def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
 
 def _typed_verdict(history: list[dict], index: int, approve: bool, *,
                    prefs: dict, chat_path: Path, watchlist: Path,
-                   lang: str) -> Reply:
+                   lang: str, db: Path | None = None,
+                   source: str = "chat") -> Reply:
     """A "yes" or "no" typed under a proposal: the same as the button.
 
     Unlike the button, the reader's words are part of the thread — so the
@@ -1676,7 +1693,8 @@ def _typed_verdict(history: list[dict], index: int, approve: bool, *,
 
     offer = history[index]["proposal"]
     try:
-        note = _apply(offer, approve, watchlist=watchlist, lang=lang)
+        note = _apply(offer, approve, watchlist=watchlist, lang=lang, db=db,
+                      source=source)
     except ProposalError as exc:
         return Reply(error=exc.code)
     entry: dict = {"role": "assistant", "content": note}
@@ -1685,6 +1703,72 @@ def _typed_verdict(history: list[dict], index: int, approve: bool, *,
     history.append(entry)
     auth.save_chat(history, chat_path)
     return Reply(text=note, proposal=dict(offer))
+
+
+def undo_proposal(*, chat_path: Path, db: Path, proposal_id: str,
+                  lang: str = "en") -> Reply:
+    """The reader pressed Undo on a ledger proposal that already went through.
+
+    The change is taken back through the journal (`edits.undo`), and the
+    thread says so in a new answer — the turn above keeps saying it was done,
+    which it was. Raises LookupError for an id this thread does not hold and
+    ProposalError for one that is not an applied ledger edit, or whose rows
+    something has changed since.
+    """
+    from stocks.chat import book
+    from stocks.web import auth
+
+    history = auth.load_chat(chat_path)
+    for entry in reversed(history):
+        offer = entry.get("proposal")
+        if isinstance(offer, dict) and offer.get("id") == proposal_id:
+            break
+    else:
+        raise LookupError(proposal_id)
+    if offer.get("state") != "done" or not isinstance(offer.get("book"), dict):
+        raise ProposalError("chat.action_gone")
+    try:
+        note = book.undo(offer, db=db, translate=lambda k, **kw: _tr(k, lang, **kw))
+    except book.Refused as exc:
+        raise ProposalError(exc.code) from exc
+    offer["state"] = "undone"
+    history.append({"role": "assistant", "content": note, "action": "undo_change"})
+    auth.save_chat(history, chat_path)
+    obs.event("chat.action_undone", action=offer.get("kind"))
+    return Reply(text=note, proposal=dict(offer))
+
+
+def _book_turn(act: Action, *, history: list[dict], prefs: dict, db: Path,
+               chat_path: Path, lang: str, typed: bool,
+               stored: Callable[[dict], dict] = lambda e: e) -> Reply:
+    """A ledger request (`chat/book.py`): drafted with the book in hand, and
+    put to the reader whenever it would change anything — on every surface.
+
+    `typed` is a surface with no card to press (the Telegram bot), so the
+    question ends by saying how to answer it in words.
+    """
+    from stocks.chat import book
+    from stocks.web import auth
+
+    try:
+        drafted = book.draft(act, db=db, resolve=book.resolver(),
+                             translate=lambda k, **kw: _tr(k, lang, **kw),
+                             currency=str(prefs.get("currency") or "EUR"))
+    except Exception as exc:
+        obs.warn("chat.engine.book_failed", action=act.kind,
+                 error_type=type(exc).__name__, error=str(exc)[:300])
+        return Reply(error="chat.action_failed")
+    entry: dict = {"role": "assistant", "content": drafted.text, "action": act.kind}
+    offer = None
+    if drafted.book is not None:
+        offer = {**_proposal(act), "book": drafted.book}
+        if typed:
+            entry["content"] += "\n\n" + _tr("chat.book_reply_yes", lang)
+        entry["proposal"] = offer
+        obs.event("chat.action_proposed", action=act.kind)
+    history.append(stored(entry))
+    auth.save_chat(history, chat_path)
+    return Reply(text=entry["content"], proposal=dict(offer) if offer else None)
 
 
 # ------------------------------------------------------------------ memory
@@ -2116,14 +2200,12 @@ def clean_focus(raw: str | None) -> str:
 
 
 def view_context(page: str = "", focus: str = "") -> str:
-    """What the reader is looking at — the headless twin of
-    `chat_core._view_context`, from values the caller already resolved.
+    """What the reader is looking at, from values the caller already resolved.
 
     "Is this a good entry?" means nothing without the page it was asked on,
-    and the Streamlit panel has always told the model which page and which
-    ticker; a client that has no session to read them from passes them in.
-    `page` is a human page name (already localized, as the Streamlit one is),
-    `focus` a symbol that has been through `clean_focus`.
+    so the model is told which page and which ticker; the client passes them
+    in. `page` is a human page name (already localized), `focus` a symbol
+    that has been through `clean_focus`.
     """
     bits = []
     if page:
@@ -2175,9 +2257,8 @@ class Turn:
 # ------------------------------------------------------------ the tool trace
 # The lines the panel draws behind its "N steps" counter, built here so every
 # binding of the engine can show them: what ran for this answer, in the order
-# it happened, with a one-line result. Same shape as `chat_core._steps` —
-# {tool, arg, out} — because the history turn stores it and both front ends
-# read it back.
+# it happened, with a one-line result, as {tool, arg, out}: the history turn
+# stores it and the drawer reads it back.
 
 _STEP_ARG_CHARS = 56  # of a tool's argument kept on its line
 _STEP_ARG_KEYS = ("query", "url", "tickers", "ticker", "symbol")
@@ -2327,13 +2408,18 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     # A proposal waiting on the turn above, answered in words: "sí" is the
     # button pressed, not a question for a model that would cheerfully reply
     # "done" without having done anything.
-    if confirm_actions:
-        held = _open_proposal(history[:-1])
-        said = tools.verdict(message) if held is not None else None
-        if held is not None and said is not None:
+    # A ledger proposal is asked on every surface, so it is answered on every
+    # surface too; on the bot ("sí" written) that is the only way to answer.
+    held = _open_proposal(history[:-1])
+    if held is not None and (confirm_actions
+                             or isinstance(history[held]["proposal"].get("book"), dict)):
+        said = tools.verdict(message)
+        if said is not None:
             return None, _typed_verdict(history, held, said, prefs=prefs,
                                         chat_path=chat_path,
-                                        watchlist=watchlist, lang=lang)
+                                        watchlist=watchlist, lang=lang, db=db,
+                                        source="chat" if confirm_actions
+                                        else "telegram")
 
     # Asked to import: there is nothing to execute and nothing worth asking a
     # model, since the statement itself is what an import needs and this
@@ -2345,8 +2431,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
 
         # `staged_import` names a statement the client is already showing a
         # preview of. Then the step that does work is the button under it, not
-        # attaching the file again — the answer the Streamlit drawer gives off
-        # its own session state, which a stateless caller has to pass in.
+        # attaching the file again. A stateless caller has to pass it in.
         note = (
             translate("chat.import_pending_hint", lang, filename=staged_import)
             if staged_import
@@ -2401,6 +2486,15 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     if tools.maybe_action(message):
         act = tools.detect(provider, key, message,
                            view + action_context(watchlist))
+        if act is not None and tools.is_book(act.kind):
+            reply = _book_turn(act, history=history, prefs=prefs, db=db,
+                               chat_path=chat_path, lang=lang,
+                               typed=not confirm_actions, stored=stored)
+            if not reply.error:
+                autotitle(chat_path, provider, key, history, lang)
+                _keep_byok(prefs, prefs_path, provider.id)
+                return settled(replace(reply, provider_id=provider.id))
+            act = None
         if act is not None and confirm_actions:
             offer = _proposal(act)
             note = tools.proposal(act, lambda k, **kw: _tr(k, lang, **kw))
@@ -2483,8 +2577,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     recalled_notes, recalled = earlier(prefs, chat_path, message)
     system = system_prompt(
         auth.load_profile(prefs),
-        # The order the Streamlit panel builds it in: where the reader is,
-        # what they hold, and — on the walkthrough's thread only — the fence.
+        # In this order: where the reader is, what they hold, and — on the
+        # walkthrough's thread only — the fence.
         context + view
         + portfolio_context(watchlist, db, reporting_currency(prefs))
         + tax_rules(prefs) + fence,
@@ -2493,8 +2587,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         memories=memory_block(prefs, chat_path) + card_block(chat_path),
     )
     # Everything fetched rides on the outgoing copy of the user turn, not the
-    # system prompt — the stored history keeps the user's own text (same as
-    # the panel).
+    # system prompt — the stored history keeps the user's own text.
     if evidence:
         msgs[-1]["content"] = evidence.augment(msgs[-1]["content"])
     msgs[-1]["content"] = memory.augment(msgs[-1]["content"], recalled_notes)
@@ -2725,8 +2818,7 @@ def answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
             text = (future.result(timeout=timeout_s) or "").strip()
         except Exception as exc:
             # timeout, bad key, rate limit — next candidate. The unit was taken
-            # before the call that never answered; the web panel refunds the
-            # same way (chat_core._refund_free_quota).
+            # before the call that never answered, so it goes back.
             _provider_failed(exc, provider, model)
             _refund(prefs, prefs_path, provider)
             continue

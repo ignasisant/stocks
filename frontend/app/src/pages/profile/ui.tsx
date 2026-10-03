@@ -2,11 +2,11 @@
  * The canvas's furniture: a card, a setting row, and the little renderer that
  * lets a catalog string keep its markdown.
  *
- * The catalogs were written for Streamlit, where `**bold**` and `` `code` ``
- * are markdown wherever they appear. Half the explanations on this page use
- * them, so a component that printed the raw text would show the asterisks.
- * This is deliberately not a markdown library: emphasis, code and bullets are
- * the whole of what those strings contain.
+ * The catalog strings carry markdown: `**bold**` and `` `code` `` wherever they
+ * appear. Half the explanations on this page use them, so a component that
+ * printed the raw text would show the asterisks. This is deliberately not a
+ * markdown library: emphasis, code and bullets are the whole of what those
+ * strings contain.
  */
 
 import { Fragment, type ReactNode } from "react";

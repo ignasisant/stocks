@@ -17,7 +17,7 @@ Shape notes this parser absorbs:
 
 * There is no ticker column — rows import with the **ISIN as the ticker**
   and the product name in the note. That is the label the ledger keeps; the
-  web layer resolves it to a symbol for display (``stocks.web.logos
+  web layer resolves it to a symbol for display (``stocks.identity
   .yahoo_symbol``) and Yahoo prices an ISIN directly, so an ``aliases:``
   entry in watchlist.yaml is now only how you pin a different listing.
 * Numbers are locale-formatted ("1.234,56" in the Spanish export) and dates

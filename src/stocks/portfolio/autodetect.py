@@ -33,7 +33,7 @@ note), so it keeps the file whenever it found at least as many rows. The model
 wins only when it found more — which is what a broker changing its layout
 under a parser looks like — and that case is logged, because it is a parser
 that needs fixing. `detect` is the older order (parsers, then the model for
-what none owns) and stays for the Streamlit pages.
+what none owns).
 """
 
 from __future__ import annotations

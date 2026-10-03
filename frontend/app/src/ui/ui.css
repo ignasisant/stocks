@@ -254,8 +254,8 @@
 
 /*
  * `Rows.tsx`: every table with figures ships twice, the column grid and its
- * phone rendering, and the main column's width picks one — 40rem is the 640px
- * the Streamlit tables switched at, measured on `ag-main` so an open chat
+ * phone rendering, and the main column's width picks one — 40rem, the 640px
+ * the shell's phone layout starts at, measured on `ag-main` so an open chat
  * drawer narrows a table the way a phone does.
  */
 .ag-resp-narrow {

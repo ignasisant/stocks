@@ -19,11 +19,11 @@ import { Kpi, KpiGrid, bandTone, chipFor } from "../../ui/Kpi";
 /**
  * Is this a phone?
  *
- * 640px, the same breakpoint `web/ds.py` uses and the same one this page's
- * stylesheet uses. A hook rather than a media query because the phone layout is
- * not a restyle of the desktop one: it drops two range pills, defaults to the
- * line chart, thins the axis and transposes two tables — decisions that have to
- * reach the data, not only the box model.
+ * 640px, the breakpoint this page's stylesheet uses. A hook rather than a
+ * media query because the phone layout is not a restyle of the desktop one: it
+ * drops two range pills, defaults to the line chart, thins the axis and
+ * transposes two tables — decisions that have to reach the data, not only the
+ * box model.
  */
 const PHONE = "(max-width: 640px)";
 
@@ -74,9 +74,8 @@ export function Note({ children }: { children: ReactNode }) {
 }
 
 /**
- * A reading the page makes out loud — `st.success` / `st.warning` on the
- * Streamlit page. These are claims rather than data, so they are set apart
- * from the figures around them.
+ * A reading the page makes out loud. These are claims rather than data, so they
+ * are set apart from the figures around them.
  */
 export function Banner({
   tone,
@@ -89,9 +88,8 @@ export function Banner({
 }
 
 /**
- * `**bold**`, because these strings are shared with a page that renders
- * markdown. Printed raw they would show their asterisks, and editing the
- * catalogs to suit this front end would break the Streamlit one.
+ * `**bold**`, as the catalog stores its emphasis. Printed raw these strings
+ * would show their asterisks.
  */
 export function Bold({ text }: { text: string }) {
   return (
@@ -110,8 +108,7 @@ export function Bold({ text }: { text: string }) {
  * one.
  *
  * House rule: every symbol on screen opens its analysis. `?ticker=` is the
- * param every other page in this shell links with and the one the Streamlit
- * page reads, so a link made here opens the same company on either front end.
+ * param every other page in this shell links with.
  */
 export function TickerLink({
   ticker,
@@ -208,8 +205,8 @@ export function Empty({ children }: { children: ReactNode }) {
  * A segmented control: the range pills, the chart type, the statement view.
  *
  * The options carry their own labels because every one of them is translated —
- * "1w" reads "1S" in Spanish, and shipping the English shorthand would be the
- * first visible place the two front ends disagree.
+ * "1w" reads "1S" in Spanish, and shipping the English shorthand would leave
+ * an English word on a Spanish page.
  */
 export function Segmented<T extends string>({
   label,
@@ -243,8 +240,7 @@ export function Segmented<T extends string>({
 
 /**
  * A button with a panel under it, closed by a click anywhere else — the same
- * interaction `st.popover` gives the Streamlit page, and the same one the
- * search box uses.
+ * interaction the search box uses.
  */
 export function Popover({
   label,

@@ -1,9 +1,8 @@
-"""The guided tour and "what's new", for a front end that is not Streamlit.
+"""The guided tour and "what's new", as data for the shell to draw.
 
-`web/onboarding.py` is two things wearing one coat: a registry — which steps
-exist, which releases shipped, and whether this account has each capability
-switched on — and a Streamlit modal that draws it. This router serves the
-registry. Nothing here draws anything, and nothing here decides what is worth
+`web/onboarding.py` is the registry — which steps exist, which releases
+shipped, and whether this account has each capability switched on. This router
+serves it. Nothing here draws anything, and nothing here decides what is worth
 announcing: `CLAUDE.md` sets that bar and the registry is where it is applied.
 
 Copy is not sent. Every step and every card names its catalog keys
@@ -25,7 +24,7 @@ from pydantic import BaseModel, Field
 from stocks import accounts
 from stocks.api.deps import Account, Writer
 from stocks.api.security import Who
-from stocks.web import onboarding
+from stocks.web import i18n, onboarding
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
@@ -41,10 +40,10 @@ class TourStep(BaseModel):
     params: dict[str, str] = {}
     # State the step wants seeded on arrival, in the registry's own words —
     # `profile_tab`, `chat_panel_open`. Deliberately not translated into query
-    # parameters here: the Streamlit page reads these off session state and
-    # this shell puts the Profile tab in `?tab=`, so the two encodings are the
-    # front end's business and the intent is the API's. A client that ignores
-    # this lands on the right page and the wrong tab.
+    # parameters here: the shell puts the Profile tab in `?tab=` and opens
+    # the drawer itself, so the encoding is the front end's business and the
+    # intent is the API's. A client that ignores this lands on the right page
+    # and the wrong tab.
     session: dict[str, str] = {}
     gated: bool = Field(
         description="Target sits behind a login; a guest reads the step anyway."
@@ -118,7 +117,7 @@ def _step(step: onboarding.Step, prefs: dict, paths) -> TourStep:
     return TourStep(
         id=step.id,
         icon=step.icon,
-        path=onboarding._url_path(step.page) if step.page else None,
+        path=step.page,
         params=dict(step.query or {}),
         session={k: str(v) for k, v in (step.session or {}).items()},
         gated=step.gated,
@@ -127,7 +126,7 @@ def _step(step: onboarding.Step, prefs: dict, paths) -> TourStep:
         body_key=f"tour.{step.id}_body",
         cta_key=(
             f"tour.{step.id}_cta"
-            if onboarding.i18n.has(f"tour.{step.id}_cta")
+            if i18n.has(f"tour.{step.id}_cta")
             else None
         ),
     )

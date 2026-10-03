@@ -2,11 +2,10 @@
  * Import: a broker statement becoming ledger rows.
  *
  * The flow this page has always had — pick a platform, upload, preview (which
- * writes nothing), read the tiers, commit — and the reason it is tiered is in
- * `web/app_pages/import_transactions.py`: a bad export must not be able to
- * corrupt a cost basis silently. So nothing here reports a count where it could
- * report the rows, and the commit's own answer is what gets shown afterwards,
- * not the preview's prediction of it.
+ * writes nothing), read the tiers, commit — is tiered because a bad export must
+ * not be able to corrupt a cost basis silently. So nothing here reports a count
+ * where it could report the rows, and the commit's own answer is what gets
+ * shown afterwards, not the preview's prediction of it.
  *
  * The layout is the canvas's ("Aguait Importar Refactor", 1a–1c): the task in
  * the wide column, in the order it is done, and the book beside it in a rail —
@@ -74,10 +73,10 @@ const STEPS = [
 ];
 
 export default function Page() {
-  // In the rail and refusing inside, as Streamlit does and for the reason
-  // given on Profile. A guest has no book to import into and the shared demo
-  // one is not it, so `/v1/import/*` is shut to them at the API too — the wall
-  // here is what makes that a sentence rather than a failed request.
+  // In the rail and refusing inside, for the reason given on Profile. A guest
+  // has no book to import into and the shared demo one is not it, so
+  // `/v1/import/*` is shut to them at the API too — the wall here is what makes
+  // that a sentence rather than a failed request.
   const guest = useGuest();
   const platforms = useApi(
     () => (guest ? Promise.resolve({ platforms: [] }) : listPlatforms()),

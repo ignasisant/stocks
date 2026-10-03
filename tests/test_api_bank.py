@@ -244,7 +244,7 @@ def test_refreshing_stores_what_the_bank_reported(signed_in, connected, monkeypa
     payload = signed_in.post("/v1/bank/connections/sid-1/refresh").json()
 
     account = payload["connections"][0]["accounts"][0]
-    # Booked wins over available: one figure, the same one on both front ends.
+    # Booked wins over available: one figure, not two.
     assert account["balance"] == pytest.approx(1234.56)
     assert account["balance_currency"] == "EUR"
     assert account["fetched_at"]

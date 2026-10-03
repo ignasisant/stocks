@@ -1,13 +1,14 @@
 """Where this app's pages are, what they are called, and how they group.
 
-One table, because three things draw the same menu and a fourth checks it: the
-Streamlit sidebar (`st.navigation`), the phone tab bar (`web/nav.py`), and the
-React shell, which asks the API for it. A page added to one menu and not the
-others is not a bug anybody reports — it is a page nobody finds.
+One table, because the menu is drawn in one place and its routes are answered
+in another: the React shell asks the API for it (`/v1/nav`) and draws the left
+menu and the phone tab bar from it, and the server routes the same paths to
+the shell (`SHELL_PATHS`). A page added to one and not the other is not a bug
+anybody reports — it is a page nobody finds, or one that 404s on reload.
 
-Labels are i18n *key names*, not strings. Nothing here imports Streamlit or a
-catalog: this module says which pages exist, and each caller says them in the
-reader's language.
+Labels are i18n *key names*, not strings. Nothing here imports a catalog: this
+module says which pages exist, and each caller says them in the reader's
+language.
 """
 
 from __future__ import annotations
@@ -19,7 +20,6 @@ from dataclasses import dataclass
 class Destination:
     """One page in the menu."""
 
-    module: str  # app_pages/<module>.py
     path: str  # its URL path; "" is the default page, served at /
     label: str  # i18n key
     icon: str  # Material Symbols ligature — the same glyph in every menu
@@ -27,24 +27,24 @@ class Destination:
 
 
 # In the order the design's left menu lists them: Inicio on its own, then the
-# portfolio pages, then the market ones, then the account. `st.navigation`
-# derives a page's URL from its filename, so `path` repeats that rather than
-# choosing it — except the default page, which Streamlit serves at the root.
+# portfolio pages, then the market ones, then the account. The paths are the
+# app's first ones, kept so old links and bookmarks still land; the default
+# page is served at the root.
 DESTINATIONS: tuple[Destination, ...] = (
-    Destination("home", "", "nav.home", "home"),
-    Destination("portfolio", "portfolio", "nav.portfolio", "pie_chart",
+    Destination("", "nav.home", "home"),
+    Destination("portfolio", "nav.portfolio", "pie_chart",
                 "nav.section_portfolio"),
-    Destination("import_transactions", "import_transactions", "nav.import",
+    Destination("import_transactions", "nav.import",
                 "upload_file", "nav.section_portfolio"),
-    Destination("ticker", "ticker", "nav.ticker", "query_stats",
+    Destination("ticker", "nav.ticker", "query_stats",
                 "nav.section_market"),
-    Destination("sentiment", "sentiment", "nav.sentiment", "speed",
+    Destination("sentiment", "nav.sentiment", "speed",
                 "nav.section_market"),
-    Destination("sector", "sector", "nav.sector", "donut_small",
+    Destination("sector", "nav.sector", "donut_small",
                 "nav.section_market"),
-    Destination("earnings", "earnings", "nav.earnings", "calendar_month",
+    Destination("earnings", "nav.earnings", "calendar_month",
                 "nav.section_market"),
-    Destination("profile", "profile", "nav.profile", "account_circle",
+    Destination("profile", "nav.profile", "account_circle",
                 "nav.section_account"),
 )
 
@@ -54,9 +54,9 @@ DESTINATIONS: tuple[Destination, ...] = (
 BOTTOM_NAV: tuple[str, ...] = ("", "portfolio", "sector", "profile")
 
 # Every first path segment the React shell answers, for the server that has to
-# hand it the document. The menu's own paths, plus the shell's names for the
-# two pages Streamlit named after its files (`home` for the root, `import` for
-# `import_transactions`) and the bank page, which is reached from Portfolio
+# hand it the document. The menu's own paths, plus the shell's own names for
+# two of them (`home` for the root, `import` for `import_transactions`) and the
+# bank page, which is reached from Portfolio
 # rather than from the menu. `tests/test_frontend_nav_parity.py` holds this to
 # the shell's registry: a slug missing here is a page that 404s on reload.
 SHELL_PATHS: tuple[str, ...] = tuple(

@@ -1,9 +1,8 @@
 """Ticker search as a domain question: which tier answers, and in what order.
 
-The ranking used to live inside the Streamlit top bar, where it could only be
-tested through a page run. It is `stocks.search` now because a second front end
-asks the same question, and these tests are what stops the two from drifting:
-every tier is fed by a callable, so nothing here touches the network.
+The ranking lives in `stocks.search`, outside any page, so it is tested
+without one: every tier is fed by a callable, so nothing here touches the
+network.
 """
 
 from __future__ import annotations

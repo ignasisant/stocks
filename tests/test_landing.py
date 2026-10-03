@@ -1,13 +1,7 @@
-"""The landing's CTA parameters, number formatting and markup.
+"""The landing's number formatting and markup.
 
-`AppTest` cannot cover the parameter half: it does not deliver query parameters
-to app.py at all (verified at the script's first executable line), which is also
-why the pre-existing `?ticker=` deep-link handler is untested there.
-`consume_params()` is pure enough to exercise directly, so it is.
-
-The markup half needs no Streamlit runtime either — the page is built as a
-string, outside any script run. See test_landing_static.py for the document
-that wraps it and test_server.py for the routes that serve it.
+The page is built as a string, outside any request. See test_landing_static.py
+for the document that wraps it and test_server.py for the routes that serve it.
 """
 
 import re
@@ -16,81 +10,6 @@ from contextlib import ExitStack
 import pytest
 
 from stocks.web import landing
-
-
-class _Params(dict):
-    """Stand-in for st.query_params — dict plus the .get()/del we rely on."""
-
-
-@pytest.fixture
-def gate(monkeypatch):
-    """Anonymous visitor, auth configured, no parameters yet."""
-    params, state, logins = _Params(), {}, []
-    monkeypatch.setattr(landing.st, "query_params", params)
-    monkeypatch.setattr(landing.st, "session_state", state)
-    monkeypatch.setattr(landing.st, "secrets", {"auth": {"client_id": "x"}})
-    monkeypatch.setattr(landing.st, "login", lambda *a, **k: logins.append(True))
-    return params, state, logins
-
-
-def test_no_parameters_is_a_no_op(gate):
-    """A plain app load must not touch the session or start a login."""
-    params, state, logins = gate
-    landing.consume_params()
-    assert (dict(params), state, logins) == ({}, {}, [])
-
-
-def test_the_signin_param_is_not_this_modules_job_any_more(gate):
-    """`?signin=1` is answered by `server.LandingGate` — see
-    `test_the_signin_parameter_bounces_into_the_apps_own_sign_in`. A request
-    only reaches `consume_params()` once the gate has declined to act, so it
-    must do nothing here rather than start a second round trip."""
-    params, state, logins = gate
-    params[landing.PARAM_SIGNIN] = "1"
-    landing.consume_params()
-    assert logins == []
-    assert params[landing.PARAM_SIGNIN] == "1", "the CTA link stays as it is"
-
-
-def test_guest_param_is_cleared_from_the_url(gate):
-    params, _, logins = gate
-    params[landing.PARAM_GUEST] = "1"
-    landing.consume_params()
-    assert landing.PARAM_GUEST not in params, "param must be cleared from the URL"
-    assert logins == [], "browsing as a guest must not start a login"
-
-
-def test_ticker_deep_link_passes_straight_through(gate):
-    """Shared ?ticker= URLs are handed out by the app and must be left alone."""
-    params, state, logins = gate
-    params["ticker"] = "AAPL"
-    landing.consume_params()
-    assert params["ticker"] == "AAPL"
-    assert (state, logins) == ({}, [])
-
-
-@pytest.mark.parametrize("lang", ["es", "en"])
-def test_lang_param_overrides_the_run_language(gate, lang):
-    params, state, _ = gate
-    params["lang"] = lang
-    landing.consume_params()
-    assert state["active_lang"] == lang
-
-
-def test_lang_param_survives_for_the_next_rerun(gate):
-    """app.py re-resolves the language every rerun; the parameter re-applies it."""
-    params, _, _ = gate
-    params["lang"] = "es"
-    landing.consume_params()
-    assert params["lang"] == "es"
-
-
-def test_unknown_lang_param_is_ignored(gate):
-    params, state, _ = gate
-    params["lang"] = "klingon"
-    landing.consume_params()
-    assert "active_lang" not in state
-
 
 # ------------------------------------------------------------------ numbers
 
@@ -199,20 +118,8 @@ def _style_body(block: str) -> str:
     return block[len("<style>") : -len("</style>")]
 
 
-@pytest.mark.parametrize("rules", ["_MOBILE_RULES", "_TINY_CSS", "_BASE_CSS"])
-def test_no_less_than_anywhere_in_the_css(rules):
-    """DOMPurify drops a whole style element when its text holds a "<"."""
-    assert "<" not in getattr(landing, rules)
-
-
-def test_bar_script_holds_no_less_than_either():
-    body = landing._BAR_JS.split("<script>")[1].split("</script>")[0]
-    assert "<" not in body
-
-
 def test_stylesheet_is_one_block_with_the_breakpoints_in_order():
     css = _style_body(landing._CSS)
-    assert "<" not in css
     assert css.count("{") == css.count("}")
     mobile = css.index("@media (max-width: 640px)")
     tiny = css.index("@media (max-width: 380px)")
@@ -401,9 +308,9 @@ def test_the_faq_renders_every_question_the_structured_data_claims(body):
 def test_no_grid_track_can_outgrow_its_container():
     """`minmax(Npx, 1fr)` does not shrink below N — it overflows and gets clipped.
 
-    Streamlit's main container hides horizontal overflow, so a 400px minimum
-    track inside a 370px phone viewport cut the hero card off at the right edge
-    rather than scrolling. Every auto-fit minimum is written min(Npx, 100%).
+    A 400px minimum track inside a 370px phone viewport cut the hero card off
+    at the right edge rather than scrolling. Every auto-fit minimum is written
+    min(Npx, 100%).
     """
     bare = re.findall(r"minmax\(\d+px", landing._CSS)
     assert not bare, f"unclamped grid minimums: {bare}"

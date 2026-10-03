@@ -1,11 +1,9 @@
 """Voice notes: the clip becomes text, the text becomes an ordinary question.
 
-Two promises are pinned here. The transcription guards refuse a clip before it
-costs the operator's Whisper quota — silence, a tap, a recording left running
-— and every refusal names a copy key that actually exists in the catalogs.
-And a transcript enters the conversation through the same seed a clicked
-suggestion uses, so it is rate-limited, stored and answered like any typed
-message, and carries a badge saying it was spoken.
+The transcription guards refuse a clip before it costs the operator's Whisper
+quota — silence, a tap, a recording left running — and every refusal names a
+copy key that actually exists in the catalogs. The route that hands the
+transcript back to the composer is held by test_api_chat.py.
 """
 
 from __future__ import annotations
@@ -16,9 +14,8 @@ import wave
 from pathlib import Path
 
 import pytest
-from streamlit.testing.v1 import AppTest
 
-from stocks.web import auth, chat_core, llm, stt
+from stocks.web import llm, stt
 
 CATALOG = (Path(__file__).resolve().parents[1] / "src" / "stocks" / "web"
            / "locales")
@@ -175,143 +172,3 @@ def test_every_refusal_has_copy_in_every_locale():
         catalog = json.loads((CATALOG / lang / "chat.json")
                              .read_text(encoding="utf-8"))
         assert keys <= set(catalog), f"{lang} is missing {keys - set(catalog)}"
-
-
-# ------------------------------------------------------- inside the drawer
-
-SCRIPT = """
-from stocks.web import chat_core
-chat_core.render_conversation("panel", chat_core.active_provider(), "m", "k")
-"""
-
-WATCHLIST = """\
-watchlist:
-  - ticker: NVDA
-    name: Nvidia
-"""
-
-
-class _Provider:
-    id = "free"
-    label = "Aguait AI"
-    needs_key = False
-    models = ("m",)
-    default_model = "m"
-
-    def stream(self, api_key, model, system, messages):
-        yield "the answer"
-
-    def error_key(self, exc):
-        return "chat.provider_busy"
-
-
-class _Clip:
-    """What st.chat_input hands back in `audio`: an UploadedFile-shaped WAV."""
-
-    def __init__(self, data: bytes) -> None:
-        self._data = data
-
-    def getvalue(self) -> bytes:
-        return self._data
-
-
-@pytest.fixture
-def paths(tmp_path):
-    p = auth.UserPaths(
-        root=tmp_path,
-        watchlist=tmp_path / "watchlist.yaml",
-        db=tmp_path / "portfolio.db",
-        last_import=tmp_path / "last_import.json",
-        prefs=tmp_path / "prefs.json",
-        chat=tmp_path / "chat.json",
-        bank=tmp_path / "bank.json",
-        action=tmp_path / "daily_action.json",
-    )
-    p.watchlist.write_text(WATCHLIST)
-    return p
-
-
-@pytest.fixture
-def app(monkeypatch, paths):
-    monkeypatch.setattr(auth, "user_paths", lambda: paths)
-    monkeypatch.setattr(auth, "watchlist_path", lambda: paths.watchlist)
-    monkeypatch.setattr(chat_core, "active_provider", lambda: _Provider())
-    monkeypatch.setattr(chat_core.engine, "attempts", lambda prefs: [])
-    monkeypatch.setattr(chat_core.engine, "in_parallel",
-                        lambda *fns, **kw: [None] * len(fns))
-    monkeypatch.setattr(chat_core, "_try_action", lambda *a: None)
-    monkeypatch.setattr(chat_core, "_maybe_autotitle", lambda *a: False)
-    return AppTest.from_string(SCRIPT, default_timeout=30)
-
-
-def _records(app) -> bool:
-    """Whether the composer drew the microphone beside its paperclip."""
-    return app.chat_input[0].proto.accept_audio
-
-
-def _speaks(monkeypatch, said: str | Exception, *, typed: str = ""):
-    """Submit a voice note through the composer's own return value.
-
-    AppTest cannot press a browser microphone, so the recording is injected
-    where st.chat_input would have handed it over — which is also the only
-    seam that exercises the real transcribe-then-ask path in render order.
-    """
-    monkeypatch.setattr(chat_core.stt, "available", lambda: True)
-    monkeypatch.setattr(chat_core, "_submitted",
-                        lambda value: (typed, [], _Clip(_wav())))
-
-    def _heard(audio, **kw):
-        if isinstance(said, Exception):
-            raise said
-        return said
-
-    monkeypatch.setattr(chat_core.stt, "transcribe", _heard)
-
-
-def test_the_composer_hides_the_microphone_when_nothing_can_transcribe(
-        app, monkeypatch):
-    monkeypatch.setattr(chat_core.stt, "available", lambda: False)
-    app.run()
-    assert not app.exception
-    assert _records(app) is False
-
-
-def test_the_composer_offers_the_microphone_when_a_key_is_set(app, monkeypatch):
-    monkeypatch.setattr(chat_core.stt, "available", lambda: True)
-    app.run()
-    assert not app.exception
-    assert _records(app) is True
-    # Recorded at Whisper's own rate, so nothing resamples on arrival.
-    assert app.chat_input[0].proto.audio_sample_rate == stt.SAMPLE_RATE
-
-
-def test_a_voice_note_is_asked_through_the_real_turn_pipeline(
-        app, monkeypatch, paths):
-    _speaks(monkeypatch, "how concentrated am I")
-    app.run()
-    assert not app.exception
-    thread = auth.load_chat(paths.chat)
-    asked = [m for m in thread if m["role"] == "user"]
-    assert [m["content"] for m in asked] == ["how concentrated am I"]
-    # Marked as spoken: a misheard ticker should be explainable on reload.
-    assert asked[0]["voice"] is True
-    # And answered, which is the point of joining the typed path at all.
-    assert thread[-1]["role"] == "assistant"
-
-
-def test_a_note_recorded_over_typed_text_arrives_as_one_question(
-        app, monkeypatch, paths):
-    _speaks(monkeypatch, "and how about ASML", typed="NVDA weight?")
-    app.run()
-    assert not app.exception
-    asked = [m for m in auth.load_chat(paths.chat) if m["role"] == "user"]
-    assert asked[0]["content"] == "NVDA weight? and how about ASML"
-
-
-def test_a_failed_transcription_leaves_no_question_behind(
-        app, monkeypatch, paths):
-    _speaks(monkeypatch, stt.TranscriptionFailed("chat.voice_failed"))
-    app.run()
-    assert not app.exception
-    assert not paths.chat.exists()
-    assert any("could not be transcribed" in m.value for m in app.markdown)

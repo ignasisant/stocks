@@ -140,7 +140,7 @@ function Annual({ data }: { data: Financials }) {
       : t("ticker.k_consensus");
   };
 
-  // Year-over-year per bar, the label Streamlit prints above each one. The
+  // Year-over-year per bar, the label printed above each one. The
   // first forecast bar is measured against the last *reported* year, and each
   // later one against the forecast before it — see `barGrowth`.
   const growth = bars.map((series) => barGrowth(series.values, years.length));

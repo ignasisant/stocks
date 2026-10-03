@@ -61,6 +61,22 @@ class ActionCall(BaseModel):
     name: typing.Optional[str] = None
     shares: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a plain number')
     cost: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a plain number')
+    broker: typing.Optional[str] = Field(default=None, description='one lowercase word: degiro, ibkr, revolut')
+    to_broker: typing.Optional[str] = Field(default=None, description='the broker the shares moved to')
+    date: typing.Optional[str] = Field(default=None, description='YYYY-MM-DD')
+    since: typing.Optional[str] = Field(default=None, description='YYYY-MM-DD')
+    until: typing.Optional[str] = Field(default=None, description='YYYY-MM-DD')
+    trade: typing.Optional[str] = Field(default=None, description='buy, sell, dividend, fee, split, transfer_in or transfer_out')
+    quantity: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a plain number')
+    price: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a plain number')
+    fee: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a plain number')
+    currency: typing.Optional[str] = Field(default=None, description='ISO code, like EUR')
+    to: typing.Optional[str] = Field(default=None, description='the symbol to book the rows under instead')
+    ids: typing.Optional[typing.List[typing.Union[int, str]]] = Field(default=None, description='row numbers the user quoted')
+    new_date: typing.Optional[str] = Field(default=None, description='YYYY-MM-DD')
+    new_quantity: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a plain number')
+    new_price: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a plain number')
+    new_fee: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a plain number')
 
 class AlertRule(BaseModel):
     type: typing.Optional[str] = Field(default=None, description='above or below')
@@ -91,7 +107,7 @@ class ColumnMap(BaseModel):
     decimal: typing.Optional[str] = Field(default=None, description='the decimal separator, \'.\' or \',\'')
     thousands: typing.Optional[str] = Field(default=None, description='the thousands separator, or an empty string')
     asset_class: typing.Optional[AssetClass] = None
-    action_map: typing.Optional[typing.Dict[str, str]] = Field(default=None, description='the exact text in the action column -> buy, sell, dividend, fee or split')
+    action_map: typing.Optional[typing.Dict[str, str]] = Field(default=None, description='the exact text in the action column -> buy, sell, dividend, fee, split or capital')
 
 class Columns(BaseModel):
     date: typing.Optional[int] = None
@@ -133,7 +149,7 @@ class StatementPage(BaseModel):
 class StatementRow(BaseModel):
     date: typing.Optional[str] = Field(default=None, description='YYYY-MM-DD')
     ticker: typing.Optional[str] = Field(default=None, description='symbol or ISIN')
-    action: typing.Optional[str] = Field(default=None, description='buy, sell, dividend, fee or split')
+    action: typing.Optional[str] = Field(default=None, description='buy, sell, dividend, fee, split or capital')
     quantity: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a plain number')
     price: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a plain number')
     currency: typing.Optional[str] = Field(default=None, description='3-letter code')

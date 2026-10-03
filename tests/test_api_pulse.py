@@ -166,7 +166,7 @@ def test_the_regime_is_open_to_a_guest_and_still_shut_about_an_account(
 ):
     """Inverted when guest mode landed. The regime is a reading of the market,
     identical for everybody looking at it, and it is the half of Sentiment the
-    Streamlit app has always shown an anonymous visitor.
+    app has always shown an anonymous visitor.
 
     `/v1/pulse/book` — the same numbers projected onto a holder's positions — is
     open too, because a guest has a book: the shared demo one. That one does
@@ -379,8 +379,7 @@ def test_a_throttled_price_burst_costs_the_betas_not_the_weights(
     client, account, basket, monkeypatch
 ):
     """The currency split and the sector weights are read off the positions,
-    and a throttle on the benchmark closes is no reason to blank them — the
-    Streamlit card keeps them through the same outage."""
+    and a throttle on the benchmark closes is no reason to blank them."""
     monkeypatch.setattr(loaders, "pulse_closes", _throttled)
     response = client.get("/v1/pulse/book", params={"account": EMAIL}, headers=AUTH)
     assert response.status_code == 200
@@ -507,7 +506,7 @@ def test_every_block_comes_back_by_default(client, account, sources):
 def test_each_block_carries_its_configured_count_even_when_down(
     client, account, sources, monkeypatch
 ):
-    """The tab badge is what the block holds when it is up — Streamlit draws
+    """The tab badge is what the block holds when it is up — the page draws
     it before any fetch — so a throttled block keeps its count."""
     monkeypatch.setattr(loaders, "pulse_closes", _throttled)
     by_block = blocks_of(
@@ -615,11 +614,9 @@ def test_rotation_reports_excess_over_the_index_not_the_raw_move(
     assert abs(row["changes"]["month"]) < 1.0
 
 
-def test_rotation_measures_excess_against_spy_like_streamlit(
-    client, account, sources
-):
-    """SPY, not ^GSPC: fund against fund, and the same benchmark the Streamlit
-    table reads — the two apps must agree on which sectors led."""
+def test_rotation_measures_excess_against_spy(client, account, sources):
+    """SPY, not ^GSPC: fund against fund — sector ETFs measured against the
+    S&P 500 ETF, not against an index no fund holds."""
     closes = loaders.pulse_closes()
     rotation = blocks_of(
         client.get(

@@ -1,5 +1,5 @@
 """Skill library loading, classifier-output parsing and prompt assembly — pure,
-no network, no streamlit."""
+no network."""
 
 import pytest
 

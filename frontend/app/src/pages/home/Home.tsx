@@ -1,32 +1,28 @@
 /**
  * Home — the daily glance: what's new, plus the key portfolio figures.
  *
- * Same running order as `web/app_pages/home.py`, which is the specification:
- * the AI "Daily action" card opens the page — one briefing a day on what to
- * look at — then the Portfolio page's headline metrics with the movers card
- * under them, then the "What's new" cards (earnings, recent transactions,
- * 52-week extremes), then the watchlist groups collapsed into expanders.
- * Every ticker cell links to its own page; the full ledger analytics stay on
- * Portfolio.
+ * The running order: the AI "Daily action" card opens the page — one briefing
+ * a day on what to look at — then the Portfolio page's headline metrics with
+ * the movers card under them, then the "What's new" cards (earnings, recent
+ * transactions, 52-week extremes), then the watchlist groups collapsed into
+ * expanders. Every ticker cell links to its own page; the full ledger
+ * analytics stay on Portfolio.
  *
  * Each card carries its own query, so a throttled price burst takes down the
- * card that needed it and nothing else — which is what the Streamlit page's
- * per-section toasts and cleared slots do. The one exception is the glance and
+ * card that needed it and nothing else. The one exception is the glance and
  * its movers, which read the same book and fail together on purpose.
  *
- * The first-run card opens the page, above the briefing, exactly as it does in
- * Streamlit: what is worth connecting, and what already works without
- * connecting anything, is the first thing a new account needs and the last
- * thing a settled one reads — which is why it collapses to two lines and then
- * to nothing.
+ * The first-run card opens the page, above the briefing: what is worth
+ * connecting, and what already works without connecting anything, is the
+ * first thing a new account needs and the last thing a settled one reads —
+ * which is why it collapses to two lines and then to nothing.
  *
  * Deliberately not here, because another pass owns them: the chat drawer and
  * the guided tour, both mounted by the shell.
  *
  * For a guest this page loses everything that is *somebody's* and keeps
- * everything that is the market's, which is exactly what `home.py` does: no
- * briefing, no glance, no recent transactions — its glance is per-account and
- * `home.py` reads the ledger as `DB if is_logged_in() else None` — but the
+ * everything that is the market's: no briefing, no glance, no recent
+ * transactions — the glance is per-account and a guest has no ledger — but the
  * watchlist, the earnings calendar and the 52-week extremes all stay, because
  * they are the same for everybody and they are what makes the demo worth
  * walking into.
@@ -55,7 +51,7 @@ export default function Page() {
   const t = useT();
   // Bumped by "Refresh prices": every section whose figures come off a quote
   // burst takes it as a dependency and asks again. The ledger below does not —
-  // the Streamlit button drops the price caches and leaves the ledger's hot.
+  // the refresh drops the price caches and leaves the ledger's hot.
   const [nonce, setNonce] = useState(0);
   const guest = useGuest();
   // The server's caches go first (`POST /home/refresh`), or asking again would
@@ -83,8 +79,8 @@ export default function Page() {
 
   return (
     <div className="hm-page">
-      {/* Above the checklist, as Streamlit draws it: what to do first comes
-          before what is switched on. Both vanish once they are answered.
+      {/* Above the checklist: what to do first comes before what is switched
+          on. Both vanish once they are answered.
 
           For a guest the checklist has nothing to check off, so the banner
           takes its place and says what this screen is instead. The setup card
@@ -99,8 +95,7 @@ export default function Page() {
           dismissible="home"
         >
           {/* Where a guest session is actually worth something, and the reason
-              `home.py` puts this link in the same row: Home's own glance is
-              per-account and stays empty, but Portfolio runs end to end on the
+              this link sits in the banner: Home's own glance is per-account and stays empty, but Portfolio runs end to end on the
               shared demo book. Without this the demo is a screen a visitor has
               to guess their way to. */}
           <Link className="ag-btn" page="portfolio">

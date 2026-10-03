@@ -171,10 +171,9 @@ function level(block: string, value: number | null): string {
  * The value column, which is not always a level.
  *
  * Rotation answers "which sectors led", and the answer is a difference of two
- * numbers rather than either of them: the sector ETF's own price says nothing
- * a reader can act on, so the column carries its excess return over the S&P
- * for the month — the same figure the Streamlit table quotes, under the same
- * heading.
+ * numbers rather than either of them: the sector ETF's own price says nothing a
+ * reader can act on, so the column carries its excess return over the S&P for
+ * the month.
  */
 function valueText(block: TrendBlock, row: TrendRow): string {
   if (block.block !== "rotation") return level(block.block, row.value);
@@ -496,9 +495,9 @@ function Table({
   // The Chicago Fed's financial conditions index rides in the rates block
   // because one FRED call fetches it, and it does not belong in that table: it
   // is an index, not a rate, so its level is not a percent and its changes are
-  // not basis points. Quoted as a sentence under the table instead, which is
-  // where the Streamlit page puts it — and taken out of the rows, or the
-  // block's own units would misread every figure on its line.
+  // not basis points. Quoted as a sentence under the table instead — and taken
+  // out of the rows, or the block's own units would misread every figure on
+  // its line.
   const conditions =
     block.block === "rates"
       ? (block.rows.find((row) => row.key === "NFCI") ?? null)
@@ -611,13 +610,13 @@ export function Detail({
       </div>
       <div className="sn-tabs" role="tablist">
         {SPECS.map((entry) => {
-          // The badge is the block's configured size, as `sentiment.py` draws
-          // it before any fetch: a tab whose count vanished while Yahoo was
-          // throttling reads as a block with nothing in it, which is the
-          // claim a down block must never make. Counted from the drawn rows
-          // only for a server too old to send `expected` — and then the
-          // financial-conditions index is left out, because the rates table
-          // lifts it into a sentence and it is not one of the rates.
+          // The badge is the block's configured size, known before any fetch: a
+          // tab whose count vanished while Yahoo was throttling reads as a
+          // block with nothing in it, which is the claim a down block must
+          // never make. Counted from the drawn rows only for a server too old
+          // to send `expected` — and then the financial-conditions index is
+          // left out, because the rates table lifts it into a sentence and it
+          // is not one of the rates.
           const found = tables.blocks.find((b) => b.block === entry.key);
           const rows =
             found?.expected ??

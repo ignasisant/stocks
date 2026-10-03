@@ -1,11 +1,10 @@
 /**
  * The names this page puts on screen, all of them out of the catalog.
  *
- * Metric labels are `kpi.<key>.label` with the definition at `kpi.<key>.desc`
- * — the same keys `web/kpi_text.py` reads, so the React table and the
- * Streamlit one beside it cannot end up calling the same column two things.
- * Sector names are Pulse's (`sentiment.sector_*`), which already ships all
- * eleven; this page adds no copy of its own for them.
+ * Metric labels are `kpi.<key>.label` with the definition at `kpi.<key>.desc` —
+ * the same keys the ticker page reads, so the two cannot end up calling the
+ * same metric two things. Sector names are Pulse's (`sentiment.sector_*`),
+ * which already ships all eleven; this page adds no copy of its own for them.
  */
 
 import { useT } from "../../shell/i18n";

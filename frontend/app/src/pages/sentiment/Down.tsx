@@ -3,10 +3,10 @@
  *
  * The page's promise is that every block degrades on its own and keeps its
  * heading, so the heading stays with the block that owns it and only the body
- * lives here: the title of the failure, the reason in the reader's own terms,
- * a way back, and "last attempt hh:mm · source …" — the line `sentiment.py`'s
- * `_source_down` prints, and the one that tells a reader whether it is worth
- * waiting (a Yahoo throttle clears in a minute; a FRED outage does not).
+ * lives here: the title of the failure, the reason in the reader's own terms, a
+ * way back, and "last attempt hh:mm · source …" — the line that tells a reader
+ * whether it is worth waiting (a Yahoo throttle clears in a minute; a FRED
+ * outage does not).
  *
  * The reason comes from the server in two shapes: an `unavailable` key on a
  * payload that still answered 200, or an `ApiError` whose `reason` the API's
@@ -39,7 +39,7 @@ export function reasonOf(error: unknown): string {
   return "no_data";
 }
 
-/** hh:mm, as the Streamlit stamp prints it — seconds would be false precision. */
+/** hh:mm — seconds would be false precision. */
 function clock(): string {
   return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }

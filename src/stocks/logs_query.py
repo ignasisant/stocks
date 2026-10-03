@@ -31,9 +31,9 @@ PROJECT = os.getenv("STOCKS_GCP_PROJECT", "topstocks-507209")
 SERVICE = os.getenv("STOCKS_GCP_SERVICE", "topstocks")
 LOGS_DIR = DATA_DIR / "logs"
 
-# The per-request access log. It is one entry per HTTP call — including
-# Streamlit's health checks and websocket polling — so it drowns everything
-# else unless asked for explicitly (`--http`).
+# The per-request access log. It is one entry per HTTP call — health checks
+# included — so it drowns everything else unless asked for explicitly
+# (`--http`).
 _REQUEST_LOG = "run.googleapis.com%2Frequests"
 
 

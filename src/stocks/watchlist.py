@@ -1,10 +1,9 @@
 """Editing one account's watchlist.yaml, without a UI framework.
 
-Split out of `web.auth` for the same reason `stocks.accounts` was: the HTTP API
-runs in an ASGI worker with no Streamlit session to resolve a path from, and
-two implementations of "what a watchlist edit means" would drift. The pages
-still reach these through `auth.`, which binds the session's own path and the
-app's own bucket-failure handling.
+Split out of `web.auth` for the same reason `stocks.accounts` was: more than
+one runtime edits a watchlist, and two implementations of "what a watchlist
+edit means" would drift. `web.auth` binds these to the app's own
+bucket-failure handling.
 
 Two rules hold across everything here:
 
@@ -18,7 +17,7 @@ Two rules hold across everything here:
   no-op, not an add followed by a delete.
 
 `persist` is injected rather than imported at the call site so the web layer
-can keep its own answer to a bucket outage (a toast, not an exception) while a
+can keep its own answer to a bucket outage (a warning, not an exception) while a
 headless caller gets the plain one.
 """
 

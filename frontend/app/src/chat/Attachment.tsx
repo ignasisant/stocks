@@ -1,12 +1,12 @@
 /**
  * The preview card: what the attached statement would write, before it does.
  *
- * Everything on it is the same offer the Streamlit drawer makes, key for key
- * (`chat.import_*`), because the promise is the safety property of the whole
- * feature: nothing reaches the ledger until somebody has seen the rows and
- * pressed the button. The tiers are folded away rather than hidden — warnings
- * and rejections are about rows that are (or are not) going in, and a reader
- * who wants to know why can open them.
+ * Every line on it is a catalog key (`chat.import_*`), and the promise it
+ * makes is the safety property of the whole feature: nothing reaches the
+ * ledger until somebody has seen the rows and pressed the button. The tiers
+ * are folded away rather than hidden — warnings and rejections are about rows
+ * that are (or are not) going in, and a reader who wants to know why can open
+ * them.
  *
  * The duplicates are the one tier that is *not* about to be written, so when
  * there is nothing else they open by themselves: the count in the note above

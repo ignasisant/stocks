@@ -1,14 +1,12 @@
 """One route so a reader can say what is wrong, from any screen.
 
-The Streamlit app puts this button in the sidebar of every page, guests
-included — a visitor who bounced knowing why is worth more than a login. That
-reasoning does not change with the front end, so the capability follows it here
-rather than being quietly dropped in the rebuild.
+Open to guests too — a visitor who bounced knowing why is worth more than a
+login.
 
 Stored, not sent anywhere: `web/feedback.py` writes a JSON file under
 `data/feedback/` and mirrors it to the bucket. This router is the binding, and
 it supplies the two things only a caller can know — who wrote it and in which
-language — because neither is derivable without a Streamlit session.
+language.
 
 The one unauthenticated write in the whole API, which is a thing to be careful
 about rather than a thing to be sorry about: free text plus an image, from
@@ -37,19 +35,16 @@ from stocks.web import ratelimit
 
 router = APIRouter(tags=["feedback"])
 
-# What an anonymous submission costs, per client address. Tighter than the
-# signed-in cap in `web/feedback.py` (5/hour) and for a different reason: that
-# one is there so somebody who is annoyed does not send the same thing nine
-# times, this one is there because nothing else stands between this route and a
-# script. `client_ip` is a speed bump, not an identity — see its docstring — so
-# the number is small enough that clearing it by hand is not worth anyone's
-# afternoon and large enough to send a bug, then the screenshot you forgot.
+# What an anonymous submission costs, per client address — there because
+# nothing else stands between this route and a script. `client_ip` is a speed
+# bump, not an identity — see its docstring — so the number is small enough
+# that clearing it by hand is not worth anyone's afternoon and large enough to
+# send a bug, then the screenshot you forgot.
 GUEST_MAX_PER_HOUR = 3
 GUEST_WINDOW_S = 3600
 
-# The screenshot the Streamlit composer offers. Decoded here so a client cannot
-# push an arbitrary blob through as an image; the size ceiling is the same one
-# `web/screenshot.py` applies before the page stores one.
+# The screenshot the composer offers. Decoded here so a client cannot push an
+# arbitrary blob through as an image.
 MAX_SHOT = 2 * 1024 * 1024
 
 
@@ -130,9 +125,9 @@ def submit(body: Feedback, from_: Sender) -> Sent:
 
     Not `Writer`, which every other write in this API is declared against, and
     the exception is deliberate rather than an oversight: `Writer` refuses a
-    guest, and the Streamlit app has always offered this button to anonymous
-    visitors. A reader who bounced off the pitch telling us why is worth more
-    than a login, and the rebuild does not get to quietly drop that. What it
+    guest, and this button has always been offered to anonymous visitors. A
+    reader who bounced off the pitch telling us why is worth more than a
+    login. What it
     keeps of `Writer`'s rule is in `sender` above.
 
     No `Account` dependency either: feedback is filed by whoever is asking, so
@@ -159,8 +154,6 @@ def submit(body: Feedback, from_: Sender) -> Sent:
         body.kind,
         page=body.page,
         shot=shot,
-        # The same vocabulary `web/feedback._sender()` writes, so one reader of
-        # `stocks feedback` sees one set of names whichever front end filed it.
         sender=from_,
         lang=body.lang or "",
     )

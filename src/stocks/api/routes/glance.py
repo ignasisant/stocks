@@ -101,7 +101,7 @@ def write_card(
         ),
     ] = False,
 ) -> DailyCard:
-    """Today's card, written if it has to be — `daily_ui._resolve`, over HTTP.
+    """Today's card, written if it has to be.
 
     In order: a generation already out is reported, not doubled; a stored card
     that still stands comes back and spends nothing; a key already tried today
@@ -136,8 +136,7 @@ def write_card(
     prefs = auth.load_prefs(account.prefs)
     facts = briefing.build_facts(account, prefs, day, stored)
     if facts is None:
-        # Neither a position nor a watchlist entry: nothing to brief on, and
-        # the Streamlit page clears the slot for exactly this account.
+        # Neither a position nor a watchlist entry: nothing to brief on.
         return _empty(day)
     briefing.start(account, prefs, facts, lang, day, stored, key=key, forced=force)
     return _status(account, lang)
@@ -346,8 +345,8 @@ def movers(
     changes = changes.dropna().sort_values(ascending=False)
 
     def mover(ticker, pct) -> Mover:
-        # Only today's figure can be a stale close — `home.py` dims the day
-        # column alone, for names whose market is not active right now.
+        # Only today's figure can be a stale close, so the day column alone is
+        # dimmed, for names whose market is not active right now.
         live = market_active(str(ticker)) if days <= 1 else None
         return Mover(ticker=str(ticker), pct=float(pct), active=live)
 
@@ -378,7 +377,7 @@ def _as_of(frame: pd.DataFrame, quotes: dict[str, dict] | None) -> str | None:
 def extremes(account: Account) -> Extremes:
     """Held and favourite names sitting within 2% of a 52-week high or low.
 
-    `home.py`'s scope, not the whole watchlist: the book's own positions —
+    Home's scope, not the whole watchlist: the book's own positions —
     whether or not they are on the list — plus the starred names, crypto left
     out (`home.extremes_scope`). A guest holds nothing, so theirs is the shared
     list's favourites. The year of closes is the page's one bulk download
