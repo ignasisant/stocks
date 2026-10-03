@@ -123,6 +123,12 @@ def delete_account(paths: UserPaths) -> None:
     if USERS_DIR.resolve() not in root.parents:
         raise ValueError(f"not an account dir: {root}")
 
+    # Connections first: whatever happens to the files below, nothing outside
+    # this app keeps reading an account its owner asked to erase.
+    from stocks.connector import store
+
+    store.revoke_account(paths)
+
     if storage.enabled():
         prefix = root.relative_to(PROJECT_ROOT.resolve()).as_posix()
         for key in storage.list_keys(prefix + "/"):

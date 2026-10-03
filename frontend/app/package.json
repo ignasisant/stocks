@@ -6,7 +6,7 @@
   "description": "The app shell and its pages, rebuilt off the HTTP API. See frontend/README.md.",
   "scripts": {
     "dev": "vite",
-    "build": "prettier --check src && tsc --noEmit && vitest run && vite build",
+    "build": "prettier --check src && tsc --noEmit && vitest run && vite build && vite build -c vite.mcp.config.ts",
     "preview": "vite preview",
     "format": "prettier --write src index.html",
     "test": "vitest run",
@@ -23,6 +23,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.1.1",
     "knip": "^6.38.0",
+    "preact": "^10.29.8",
     "prettier": "^3.9.9",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",

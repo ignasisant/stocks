@@ -510,6 +510,23 @@ def test_delete_account_erases_disk_and_bucket(monkeypatch, tmp_path):
     assert sorted(bucket) == [f"{other}/watchlist.yaml", "watchlist.yaml"]
 
 
+def test_delete_account_ends_its_connections_and_no_one_elses(monkeypatch, tmp_path):
+    """An app the owner let in must not keep reading after the erase."""
+    from stocks.connector import store
+
+    auth, users, _ = _deletion_sandbox(monkeypatch, tmp_path)
+    p = paths_for("jane@example.com", users_dir=users)
+    p.root.mkdir(parents=True)
+    for email in ("jane@example.com", "bob@example.com"):
+        store.ledger().issue(email=email, client_id="c", client_name="Claude",
+                             client_kind="cimd", redirect_host="claude.ai")
+
+    auth.delete_account(p)
+
+    assert store.ledger().grants_for("jane@example.com") == []
+    assert len(store.ledger().grants_for("bob@example.com")) == 1
+
+
 def test_delete_account_refuses_owner_and_guest(monkeypatch, tmp_path):
     import pytest
 

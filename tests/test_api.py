@@ -692,6 +692,10 @@ WRITES = {
     ("/v1/bank/session", "post"),
     ("/v1/bank/connections/{session_id}/refresh", "post"),
     ("/v1/bank/connections/{session_id}", "delete"),
+    # Revoking an app connected to the Claude connector. A token is exactly
+    # what could not be allowed here: the global one is never a grant, and if
+    # it could revoke grants it could cut off any account's Claude.
+    ("/v1/connections/{grant}", "delete"),
 }
 
 

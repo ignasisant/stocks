@@ -82,11 +82,11 @@ jobs:
         # `git status`, not `git diff`: a rebuild that *adds* a chunk file
         # leaves it untracked, and a diff would call that clean.
         run: |
-          stale=$(git status --porcelain -- src/stocks/web/static/app)
+          stale=$(git status --porcelain -- src/stocks/web/static/app src/stocks/web/static/mcp)
           if [ -n "$stale" ]; then
             echo "$stale"
             echo "::error::the committed bundle is not what these sources build."
-            echo "run: npm --prefix frontend/app run build && git add src/stocks/web/static/app"
+            echo "run: npm --prefix frontend/app run build && git add src/stocks/web/static/app src/stocks/web/static/mcp"
             exit 1
           fi
 

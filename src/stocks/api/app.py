@@ -31,6 +31,7 @@ from stocks.api.routes import (
     chat_memory,
     chat_voice,
     comparables,
+    connections,
     design,
     earnings,
     feedback,
@@ -308,6 +309,7 @@ _private.include_router(onboarding.router)
 _private.include_router(notify.router)
 _private.include_router(feedback.router)
 _private.include_router(account.router)
+_private.include_router(connections.router)
 _private.include_router(bank.router)
 
 app.include_router(_public)

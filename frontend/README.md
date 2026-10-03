@@ -5,6 +5,7 @@ The React rebuild, and the record of the experiment that decided to keep going.
 ```
 frontend/app/                source — the shell and every page (see its README)
 src/stocks/web/static/app/   the build output — committed, see below
+src/stocks/web/static/mcp/   the Claude connector's view, one HTML file — same
 ```
 
 There was a second directory here until 2026-09-19: `frontend/ticker`, one page
@@ -58,6 +59,13 @@ path that skips that step, including a plain local checkout.
 `npm run build` is the only thing that should ever write those files. It runs
 `prettier --check`, `tsc --noEmit` and `vitest run`, so a type error, an
 unformatted file or a failing test fails the build rather than shipping.
+
+It also builds `src/mcp/` — the view the Claude connector draws its portfolio
+tools with (`connector/views.py`) — through `vite.mcp.config.ts`, into one
+self-contained HTML file: a host fetches it as a single document and the frame
+it draws it in can load nothing else. That build swaps React for Preact
+(aliased, which is why knip is told `preact` is used), since the view is a few
+pure components and React's runtime would be most of the file.
 
 ## What it shares with the app, and what it does not
 

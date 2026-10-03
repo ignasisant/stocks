@@ -126,6 +126,16 @@ def _session_account(email: str) -> UserPaths:
     return paths
 
 
+def resolve_account(email: str) -> UserPaths:
+    """The account a bearer credential names — never created by asking.
+
+    For callers outside this app's dependency graph: the MCP connector's
+    tokens name a person the consent page saw signed in, but a token is not a
+    sign-in, so it takes the `_resolve` road like `API_TOKEN` does.
+    """
+    return _resolve(email)
+
+
 def account(
     caller: Who,
     email: Annotated[

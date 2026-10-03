@@ -67,6 +67,8 @@ from starlette.responses import (
 from starlette.routing import Mount, Route
 
 from stocks import api, navigation, obs, session
+from stocks.connector import oauth as connector_oauth
+from stocks.connector.server import door as connector_door
 from stocks.secrets_env import secret
 from stocks.web import (
     attribution,
@@ -166,8 +168,14 @@ _HTML = "text/html; charset=utf-8"
 # its /status hands back the revision already serving 100% of traffic. That is
 # how scripts/deploy.sh came to smoke-test the old revision and refuse to
 # promote a healthy candidate.
+# The MCP connector's machine paths join them: an MCP client fetches its
+# metadata and posts its calls where it was told to, and follows no redirect.
+# `/authorize` and the consent page are left out on purpose — a browser goes
+# there, and a browser should land on the canonical host its session is on.
 _NEVER_REDIRECT = (f"{LEGACY_PATH}/_stcore/", "/oauth2callback", "/livez",
-                   "/healthz", "/status", API_PREFIX)
+                   "/healthz", "/status", API_PREFIX, connector_oauth.MCP_PATH,
+                   "/.well-known/oauth-")
+_NEVER_REDIRECT_EXACT = frozenset({"/token", "/register", "/revoke"})
 
 
 def _is_marketing_path(path: str) -> bool:
@@ -323,10 +331,11 @@ def canonical_redirect(request: Request) -> str | None:
     origin = public_origin()
     if origin is None or origin == _request_origin(request):
         return None
-    if request.url.path.startswith(_NEVER_REDIRECT):
+    path = request.url.path
+    if path.startswith(_NEVER_REDIRECT) or path in _NEVER_REDIRECT_EXACT:
         return None
     query = f"?{request.url.query}" if request.url.query else ""
-    return f"{origin}{request.url.path}{query}"
+    return f"{origin}{path}{query}"
 
 
 def _is_known_path(path: str) -> bool:
@@ -342,6 +351,8 @@ def _is_known_path(path: str) -> bool:
     if path == PATH_EN or _is_marketing_path(path + "/") or _is_marketing_path(path):
         return True
     if path.startswith(API_PREFIX) or path + "/" == API_PREFIX:
+        return True
+    if path in connector_oauth.PATHS:
         return True
     if path.startswith(APP_ASSETS) or path.startswith(STATIC_PATH):
         return True
@@ -402,6 +413,25 @@ _UNMETERED = (
 # must not take the data with it.
 API_MAX_REQUESTS = 300
 
+# The MCP connector, on two more keys. `/mcp` is one request per tool call and
+# arrives from Claude's servers, which many people share, so this is only a
+# floor against a flood — each account has its own budget (connector/tools.py).
+# The OAuth paths are a handful of requests per connection.
+MCP_MAX_REQUESTS = 600
+OAUTH_MAX_REQUESTS = 120
+
+
+def _bucket(path: str) -> tuple[str, int]:
+    """The key prefix and the budget a path is metered on."""
+    if path == connector_oauth.MCP_PATH:
+        return "mcp", MCP_MAX_REQUESTS
+    if path in connector_oauth.PATHS:
+        return "oauth", OAUTH_MAX_REQUESTS
+    if path.startswith(API_PREFIX):
+        return "api", API_MAX_REQUESTS
+    return "http", CLIENT_MAX_DOCS
+
+
 # Both moved to `web/ratelimit.py`, beside the limiter they key, because the
 # API needs the same answer for `POST /v1/feedback` from a guest and cannot
 # import this module — it is the one that mounts the API. Re-exported under the
@@ -428,13 +458,12 @@ class ClientThrottle(BaseHTTPMiddleware):
         path = request.url.path
         if any(path.startswith(prefix) for prefix in _UNMETERED):
             return await call_next(request)
-        is_api = path.startswith(API_PREFIX)
+        kind, budget = _bucket(path)
+        machine = kind != "http"
         try:
-            key = f"{'api' if is_api else 'http'}::{client_ip(request)}"
+            key = f"{kind}::{client_ip(request)}"
             allowed = ratelimit.allow(
-                key,
-                max_events=API_MAX_REQUESTS if is_api else CLIENT_MAX_DOCS,
-                window_s=CLIENT_WINDOW_S,
+                key, max_events=budget, window_s=CLIENT_WINDOW_S
             )
         except Exception:
             return await call_next(request)
@@ -442,7 +471,7 @@ class ClientThrottle(BaseHTTPMiddleware):
             wait = ratelimit.retry_after(key, window_s=CLIENT_WINDOW_S)
             obs.warn("http.throttled", path=path, retry_after=wait)
             headers = {"Retry-After": str(max(1, wait))}
-            if is_api:
+            if machine:
                 # The API answers in JSON everywhere else, including its own
                 # 503 for an upstream that is rate limiting us. A caller that
                 # parses every other refusal should not have to special-case
@@ -577,7 +606,11 @@ class LandingGate(BaseHTTPMiddleware):
             # …but only a browser gets marked as having been to the app. An API
             # client is not one, and a Set-Cookie on its responses would be
             # noise at best and a stored credential it never asked for at worst.
-            if not path.startswith(API_PREFIX) and request.cookies.get(APP_COOKIE) != "1":
+            if (
+                not path.startswith(API_PREFIX)
+                and path not in connector_oauth.PATHS
+                and request.cookies.get(APP_COOKIE) != "1"
+            ):
                 # First app document this browser has been handed: the step
                 # between "read the pitch" and "has an account", and the only
                 # one no other event covers.
@@ -927,6 +960,9 @@ routes = [
     Route(f"{APP_ASSETS}{{path:path}}", app_asset, methods=["GET", "HEAD"]),
     Route(f"{STATIC_PATH}{{path:path}}", static_file, methods=["GET", "HEAD"]),
     *oidc.routes(),
+    # The MCP connector: the authorization server, the consent page and `/mcp`
+    # itself, all behind one door that is open only inside the lifespan.
+    *(Route(p, connector_door) for p in connector_oauth.PATHS),
     Mount(api.MOUNT_PATH, app=api.app),
     # `/` is the shell for whoever the gate lets through (see LandingGate).
     Route("/", app_shell, methods=["GET", "HEAD"]),
@@ -946,9 +982,10 @@ async def lifespan(app: Starlette):
     Starlette does not run a mounted sub-application's lifespan, so without
     this `api.app`'s — the one that provisions the shared guest book — never
     runs in the deployed process, and every anonymous request reads a ledger
-    that does not exist.
+    that does not exist. The MCP connector's door opens inside it too: its
+    session manager is per lifespan, not per import.
     """
-    async with api.app.router.lifespan_context(api.app):
+    async with api.app.router.lifespan_context(api.app), connector_door.lifespan():
         yield
 
 
