@@ -89,6 +89,11 @@ PAGES: dict[str, Page] = {
             ),
             "home.earnings_3w_caption": "…the same: `home.calendar_caption`",
             "home.no_reports_3w": "…the same: `home.calendar_empty`",
+            "home.cost_basis": (
+                "the glance says what the unsold gain is measured on as a phrase "
+                "(`home.unrealised_paid_note`, \"on 131k you paid\") instead of "
+                "a cost-basis label readers could not place"
+            ),
         },
     ),
     "portfolio": Page(
@@ -97,6 +102,20 @@ PAGES: dict[str, Page] = {
             "portfolio.hist_hover_tmpl": _HOVER,
             "portfolio.hover_correlation": _HOVER,
             "portfolio.hover_portfolio_twr": _HOVER,
+            "portfolio.div_kpi_next": (
+                "the rebuilt Dividends tab leads with the forward income as its "
+                "hero (`portfolio.div_forward_title`), not as a third tile"
+            ),
+            "portfolio.div_kpi_next_help": "…the same: `portfolio.div_hero_sub`",
+            "portfolio.col_unrecorded": (
+                "the year history draws the gap on each bar's tooltip "
+                "(`portfolio.div_year_unrecorded`) instead of a column"
+            ),
+            "portfolio.fees_pct_volume": (
+                "the rebuilt Fees tab says the share of volume in its hero line "
+                "(`portfolio.fees_hero_sub`) and per broker (`portfolio.col_cost_pct`)"
+            ),
+            "portfolio.fees_pct_volume_help": "…the same, no separate tile to explain",
             "portfolio.hover_current_basket": _HOVER,
             "portfolio.report_failed": (
                 "same: a risk report that did not build is a failed query, and "
@@ -212,8 +231,7 @@ PAGES: dict[str, Page] = {
                 "`import.tier_skipped_note`"
             ),
             "import.rejected_help": (
-                "`import.rejected_fix` beside the command itself, in a code "
-                "block with a copy button"
+                "the rejected tier's foot: `import.rejected_fix`"
             ),
             "import.commit_button": "the pinned bar's `import.confirm_button`",
             "import.commit_success": (

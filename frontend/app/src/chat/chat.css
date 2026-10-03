@@ -354,6 +354,224 @@
   text-decoration: none;
 }
 
+/* ---------------------------------------------------------------- memory */
+
+/* "Based on 2 earlier conversations": a quiet line above the answer, and the
+   conversations themselves once it is pressed. */
+.ag-chat-recall {
+  margin: 0 0 6px;
+}
+
+.ag-chat-recall > .ag-chat-meta-btn {
+  margin-left: -6px;
+  padding: 2px 6px;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-chat-recall-list[hidden] {
+  display: none;
+}
+
+.ag-chat-recall-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ag-chat-recall-item {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ag-chat-recall-item:hover:enabled {
+  background: var(--ag-surface-hover);
+}
+
+.ag-chat-recall-item:disabled {
+  cursor: default;
+}
+
+/* `min-width: 0` so a long title ellipses instead of pushing the date out. */
+.ag-chat-recall-head {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.ag-chat-recall-title {
+  overflow: hidden;
+  min-width: 0;
+  font-size: var(--ag-fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-chat-recall-when {
+  flex: none;
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs);
+}
+
+.ag-chat-recall-snip {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* "Memory updated", under the turn that changed it, with its undo. Tinted
+   like the reader's own words: it is what they asked for, kept. Wraps on a
+   phone so the two buttons drop under the line rather than squeezing it. */
+.ag-chat-memo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--ag-cta-tint-edge);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-cta-tint);
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-chat-memo-said {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1 1 14em;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  align-items: center;
+  color: var(--ag-text-secondary);
+}
+
+/* The icon stays with its label when a narrow drawer wraps the line. */
+.ag-chat-memo-head {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ag-chat-memo-head svg {
+  flex: none;
+}
+
+.ag-chat-memo-text {
+  overflow-wrap: anywhere;
+  color: var(--ag-text-primary);
+}
+
+/* A correction's old words: there to make the undo legible, so quieter than
+   the new ones and struck through. */
+.ag-chat-memo-was {
+  overflow-wrap: anywhere;
+  color: var(--ag-text-muted);
+  text-decoration: line-through;
+}
+
+.ag-chat-memo-acts {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.ag-chat-memo .ag-chat-meta-btn {
+  padding: 2px 6px;
+  color: var(--ag-brand-accent);
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-chat-memo .ag-chat-hint {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* The memory screen (`Memory.tsx`): rows are whole sentences, so they wrap
+   instead of ellipsing like a thread title, and the two icons hang top. */
+.ag-chat-memory-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ag-chat-memory-input {
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.ag-chat-memory-row {
+  align-items: flex-start;
+  border-color: var(--ag-border);
+}
+
+.ag-chat-memory-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+}
+
+.ag-chat-memory-text {
+  font-size: var(--ag-fs-sm);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.ag-chat-memory-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  align-items: baseline;
+}
+
+.ag-chat-memory-from {
+  overflow: hidden;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ag-brand-accent);
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ag-chat-memory-from:hover {
+  text-decoration: underline;
+}
+
+.ag-chat-memory-count {
+  margin: 0;
+}
+
+.ag-chat-memory-clear {
+  align-self: flex-start;
+  margin-top: 12px;
+}
+
 /* --------------------------------------------------- the answer's markup */
 
 .ag-chat-p {
@@ -1466,6 +1684,8 @@ a.ag-chat-btn {
 .ag-chat-select:focus-visible,
 .ag-chat-key input:focus-visible,
 .ag-chat-card-open:focus-visible,
+.ag-chat-recall-item:focus-visible,
+.ag-chat-memory-from:focus-visible,
 .ag-chat-input:focus-visible,
 .ag-chat-a:focus-visible {
   outline: 2px solid var(--ag-brand-accent);

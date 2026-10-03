@@ -203,15 +203,16 @@ def wants(message: str) -> bool:
         _COMPARE_RE.search(text) or _BEAT_RE.search(text) or _MARKET_RE.search(text)))
 
 
-def window_asked(message: str, today: date | None = None) -> str:
-    """The window the message names, or the default year."""
+def window_asked(message: str, today: date | None = None,
+                 default: str = DEFAULT) -> str:
+    """The window the message names, or `default` (the year) when none."""
     folded = _fold(message)
     for window, pattern in _WINDOW_RES:
         if pattern.search(folded):
             return window
     if str((today or date.today()).year) in folded:
         return "ytd"
-    return DEFAULT
+    return default
 
 
 def _blank(text: str, pattern: re.Pattern[str]) -> str:

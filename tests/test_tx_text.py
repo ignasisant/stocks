@@ -51,7 +51,7 @@ def test_english_is_the_source_language(monkeypatch):
 # Every branch of each parser's `_skip_reason`, by a type that reaches it.
 _SKIP_TYPES = {
     "revolut": [
-        "STOCK SPLIT", "DIVIDEND TAX (CORRECTION)", "RETURN OF CAPITAL",
+        "STOCK SPLIT", "DIVIDEND TAX (CORRECTION)",
         "REWARD", "CUSTODY FEE", "CASH TOP-UP", "CASH WITHDRAWAL", "SOMETHING NEW",
     ],
     "trading212": [
@@ -93,7 +93,7 @@ def test_a_skip_reads_in_the_reader_language_and_an_unnamed_one_as_written():
     assert tx_text.skip_text(cash, "es").startswith("Movimientos de efectivo — ")
     assert tx_text.skip_reason(cash) == ("import.skip_cash", False)
     assert tx_text.skip_reason(
-        "return of capital — reduces cost basis, adjust manually"
-    ) == ("import.skip_capital", True)
+        "dividend tax correction — arrives in +/- pairs, review manually"
+    ) == ("import.skip_div_tax", True)
     assert tx_text.skip_text("no symbol", "es") == "no symbol"
     assert tx_text.skip_reason("no symbol") == (None, False)

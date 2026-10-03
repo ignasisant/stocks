@@ -163,5 +163,10 @@
   "profile.notify_test_row": "Check the connection",
   "profile.notify_test_help": "Sends one message to the linked chat.",
   "profile.notify_unlink_row": "Disconnect",
-  "profile.notify_unlink_help": "Stops every message. Only your chat id is deleted."
+  "profile.notify_unlink_help": "Stops every message. Only your chat id is deleted.",
+  "profile.memory_title": "Assistant memory",
+  "profile.memory_caption": "What the assistant remembers about you, in the chat, the daily action and Telegram. You can see, correct and delete it.",
+  "profile.memory_count": "{n} of {max} memories saved",
+  "profile.memory_off": "Memory switched off",
+  "profile.memory_open": "View memory"
 }

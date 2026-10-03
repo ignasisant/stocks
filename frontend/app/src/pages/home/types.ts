@@ -7,6 +7,8 @@
  * renderer cannot quietly turn one into a zero.
  */
 
+import type { Line } from "../../chat/chart";
+
 export type DailyCard = {
   day: string | null;
   headline: string | null;
@@ -37,6 +39,16 @@ export type DailyCard = {
   upgradable: boolean;
   /** Keys of the lines whose analysis is already written (reading it is free). */
   analysed: string[];
+  /** The chat conversation the card is filed in — what "Ask" opens. */
+  thread?: string | null;
+  /**
+   * The Portfolio section: the book against the index, computed. Null for a
+   * watchlist-only account, a card stored before sections, or a day the
+   * index could not be downloaded.
+   */
+  book?: DailyBook | null;
+  /** What the reader asks every day, answered before they ask it. */
+  routines?: DailyRoutine[];
 };
 
 export type DailyItem = {
@@ -45,6 +57,35 @@ export type DailyItem = {
   kind: string;
   line: string;
   tickers: string[];
+  /** alerts — an alert of the reader's own fired; watch — everything else. */
+  section?: "alerts" | "watch";
+};
+
+export type DailyBookRow = {
+  window: "day" | "week" | "month";
+  /** Percent, already ×100: 0.8 is +0.8%. */
+  pct: number | null;
+  /** The move in the book's currency. */
+  amount: number | null;
+  index_pct: number | null;
+};
+
+export type DailyBook = {
+  /** The index's display name, "S&P 500". */
+  index: string;
+  currency: string;
+  rows: DailyBookRow[];
+  /** The month drawn: the book and the index as growth from 100. */
+  chart: Line[];
+};
+
+export type DailyRoutine = {
+  id: string;
+  /** The question, as the reader saved it. */
+  text: string;
+  /** Empty while the routine's figures are still being fetched. */
+  answer: string;
+  chart: { window: string; rebased: boolean; series: Line[] } | null;
 };
 
 /**

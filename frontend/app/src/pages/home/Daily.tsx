@@ -40,16 +40,33 @@
  * few points and the computed tables they can be checked against. Written on
  * the first click of that line, stored with the card and read for free after
  * that, so collapsing and reopening never asks twice.
+ *
+ * The card reads in the same four sections every day, in the same order, so
+ * the eye knows where to go: **Portfolio** (the book against the index today,
+ * this week and this month, computed and drawn with the drawer's own chart),
+ * **Today's alerts** (the reader's alerts that fired, always all of them),
+ * **Worth a look** (the rest of the triggers) and **Your routines** (the
+ * questions the reader asks every day, answered before they ask). A section
+ * with nothing in it is left out; a card stored before sections had none of
+ * them and keeps its plain list.
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { LineChart } from "../../chat/chart";
 import { get, send } from "../../shell/api";
 import { Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
-import { openAssistant } from "../../shell/assistant";
+import { openAssistant, openThread } from "../../shell/assistant";
 import { Card, TickerCell } from "./ui";
-import { dayKey, monthDay, type Translate } from "./format";
-import type { DailyAnalysis, DailyCard, DailyItem, DailyTable } from "./types";
+import { dayKey, money, monthDay, percent, type Translate } from "./format";
+import type {
+  DailyAnalysis,
+  DailyBook,
+  DailyCard,
+  DailyItem,
+  DailyRoutine,
+  DailyTable,
+} from "./types";
 import { Badge } from "../../ui/Badge";
 
 /** How often a card that is still being written asks whether it is done. */
@@ -99,6 +116,31 @@ export function linesOf(card: Pick<DailyCard, "items" | "bullets">): DailyItem[]
 /** Whether a line has an analysis to open: a trigger behind it. */
 export function opens(item: DailyItem): boolean {
   return item.kind !== "";
+}
+
+/** The lines split into the card's two trigger sections, alerts first. */
+export function sectionsOf(lines: DailyItem[]): {
+  alerts: DailyItem[];
+  watch: DailyItem[];
+} {
+  return {
+    alerts: lines.filter((item) => item.section === "alerts"),
+    watch: lines.filter((item) => item.section !== "alerts"),
+  };
+}
+
+/**
+ * Whether the card is drawn in sections: it has something besides the plain
+ * list. A card stored before sections (or one with only "worth a look" in it)
+ * reads as it always did — one heading over one list is a label, not a map.
+ */
+export function sectioned(
+  card: Pick<DailyCard, "book" | "routines">,
+  alerts: number,
+): boolean {
+  return (
+    Boolean(card.book?.rows.length) || Boolean(card.routines?.length) || alerts > 0
+  );
 }
 
 /**
@@ -274,6 +316,8 @@ export function Daily() {
               bullets: [],
               items: [],
               focus: [],
+              book: null,
+              routines: [],
               pending: true,
             },
           }
@@ -313,9 +357,43 @@ export function Daily() {
   const regenerating = !card.headline;
   const written = monthDay(card.day ?? card.action_day, t);
   const lines = linesOf(card);
+  const { alerts, watch } = sectionsOf(lines);
+  const routines = card.routines ?? [];
+  const book = card.book?.rows.length ? card.book : null;
+  const split = sectioned(card, alerts.length);
   // Not while a briefing is still being written: the stand-in on screen is
   // about to be replaced, and its lines with it.
   const canOpen = !regenerating && !card.pending;
+
+  const list = (items: DailyItem[]) => (
+    <ul className="hm-daily-list">
+      {items.map((item) => {
+        const panel = panels[item.key];
+        const expanded = panel !== undefined && panel.kind !== "failed";
+        const id = `${ids}-an-${lines.indexOf(item)}`;
+        return (
+          <li key={item.key}>
+            {item.line}
+            {canOpen && opens(item) ? (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  className="hm-daily-toggle"
+                  aria-expanded={expanded}
+                  aria-controls={panel ? id : undefined}
+                  onClick={() => toggle(item.key)}
+                >
+                  {expanded ? t("home.daily_an_hide") : t("home.daily_an_show")}
+                </button>
+                <AnalysisPanel id={id} panel={panel} />
+              </>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
 
   let note: string | null;
   if (regenerating) note = null;
@@ -334,35 +412,30 @@ export function Daily() {
             <span className="hm-daily-when">{stampOf(card, t)}</span>
           </div>
           <p className="hm-daily-headline">{card.headline}</p>
-          {lines.length > 0 ? (
-            <ul className="hm-daily-list">
-              {lines.map((item, n) => {
-                const panel = panels[item.key];
-                const expanded = panel !== undefined && panel.kind !== "failed";
-                const id = `${ids}-an-${n}`;
-                return (
-                  <li key={item.key}>
-                    {item.line}
-                    {canOpen && opens(item) ? (
-                      <>
-                        {" "}
-                        <button
-                          type="button"
-                          className="hm-daily-toggle"
-                          aria-expanded={expanded}
-                          aria-controls={panel ? id : undefined}
-                          onClick={() => toggle(item.key)}
-                        >
-                          {expanded ? t("home.daily_an_hide") : t("home.daily_an_show")}
-                        </button>
-                        <AnalysisPanel id={id} panel={panel} />
-                      </>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          ) : null}
+          {!split ? (
+            lines.length > 0 ? (
+              list(lines)
+            ) : null
+          ) : (
+            <>
+              {book ? (
+                <Section title={t("home.daily_sec_book")}>
+                  <BookSection book={book} />
+                </Section>
+              ) : null}
+              {alerts.length > 0 ? (
+                <Section title={t("home.daily_sec_alerts")}>{list(alerts)}</Section>
+              ) : null}
+              {watch.length > 0 ? (
+                <Section title={t("home.daily_sec_watch")}>{list(watch)}</Section>
+              ) : null}
+              {routines.length > 0 ? (
+                <Section title={t("home.daily_sec_routines")}>
+                  <Routines routines={routines} pending={card.pending} />
+                </Section>
+              ) : null}
+            </>
+          )}
           {card.focus.length > 0 ? (
             <div className="hm-daily-chips">
               {card.focus.map((ticker) => (
@@ -386,7 +459,14 @@ export function Daily() {
         </>
       )}
       <div className="hm-daily-actions">
-        <button type="button" className="ag-btn" onClick={() => openAssistant()}>
+        <button
+          type="button"
+          className="ag-btn"
+          // The card is filed as a conversation of its own: asking from it
+          // asks there, with the card above the question. A card not filed
+          // yet (still being written) opens the assistant as it stands.
+          onClick={() => (card.thread ? openThread(card.thread) : openAssistant())}
+        >
           <span className="hm-wide">{t("home.daily_ask")}</span>
           <span className="hm-narrow">{t("home.daily_ask_short")}</span>
         </button>
@@ -411,6 +491,120 @@ export function Daily() {
         </p>
       ) : null}
     </Card>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="hm-daily-sec">
+      <h3 className="hm-daily-sec-title">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+const WINDOWS = {
+  day: "home.daily_book_day",
+  week: "home.daily_book_week",
+  month: "home.daily_book_month",
+} as const;
+
+/** A move as the section prints it: signed, toned, "n/a" when unknown. */
+function Move({ pct }: { pct: number | null }) {
+  const t = useT();
+  const lang = useLang();
+  const text = pct === null ? null : percent(pct / 100, lang, { signed: true });
+  if (pct === null || text === null)
+    return <span className="hm-daily-na">{t("home.na")}</span>;
+  return <span className={pct < 0 ? "hm-an-down" : "hm-an-up"}>{text}</span>;
+}
+
+/**
+ * The book against the index: today, this week, this month, each figure the
+ * server computed, and the month drawn beside them with the drawer's chart.
+ */
+export function BookSection({ book }: { book: DailyBook }) {
+  const t = useT();
+  const lang = useLang();
+  return (
+    <div className="hm-daily-book">
+      <table className="hm-table hm-daily-book-table">
+        <thead>
+          <tr>
+            <th scope="col" />
+            <th scope="col" className="hm-num">
+              {t("home.daily_book_you")}
+            </th>
+            <th scope="col" className="hm-num">
+              {book.index}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {book.rows.map((row) => {
+            const amount = money(row.amount, book.currency, lang, { signed: true });
+            return (
+              <tr key={row.window}>
+                <th scope="row">{t(WINDOWS[row.window])}</th>
+                <td className="hm-num">
+                  <Move pct={row.pct} />
+                  {amount ? <span className="hm-daily-amount">{amount}</span> : null}
+                </td>
+                <td className="hm-num">
+                  <Move pct={row.index_pct} />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {book.chart.length > 0 ? (
+        <LineChart
+          series={book.chart}
+          rebased
+          label={t("home.daily_book_chart", { index: book.index })}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The reader's routines, each question over its answer. An empty answer is
+ * one still being fetched, said so while the card is being written; a card
+ * that is done always carries one, if only "no data today".
+ */
+export function Routines({
+  routines,
+  pending,
+}: {
+  routines: DailyRoutine[];
+  pending: boolean;
+}) {
+  const t = useT();
+  return (
+    <ul className="hm-daily-routines">
+      {routines.map((routine) => (
+        <li key={routine.id} className="hm-routine">
+          <p className="hm-routine-ask">{routine.text}</p>
+          {routine.answer ? (
+            <p className="hm-routine-answer">{routine.answer}</p>
+          ) : pending ? (
+            <p className="hm-daily-pending" role="status">
+              <span className="hm-daily-dot" aria-hidden="true" />
+              {t("home.daily_routine_pending")}
+            </p>
+          ) : null}
+          {routine.chart && routine.chart.series.length > 0 ? (
+            <LineChart
+              series={routine.chart.series}
+              rebased={routine.chart.rebased}
+              label={routine.text}
+            />
+          ) : null}
+        </li>
+      ))}
+    </ul>
   );
 }
 

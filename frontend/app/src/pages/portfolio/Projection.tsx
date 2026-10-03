@@ -7,7 +7,8 @@
  * neither: each gets its own growth rate and its own measured volatility,
  * correlated as they have been. Growth is the median compound rate — what
  * "8% a year" means to anyone reading it — and the stock presets are named
- * after the indices they come from, never the book's own past.
+ * after the indices they come from. The book's own rate (today's holdings
+ * over the volatility's window) is one more option, never the default.
  */
 
 import { useState, type ReactNode } from "react";
@@ -20,6 +21,7 @@ import { chart } from "../../shell/theme";
 import {
   CRYPTO_GROWTH,
   CRYPTO_SHARES,
+  OWN_GROWTH,
   PROJECTION_YEARS,
   STOCK_PRESETS,
   type Projection as ProjectionData,
@@ -29,7 +31,8 @@ import { ReturnLines, type ReturnSeries } from "./charts";
 import { Caption, Chip, Empty, Segmented } from "./ui";
 import { Help } from "../../ui/Kpi";
 
-type StockPreset = keyof typeof STOCK_PRESETS;
+type StockPreset = keyof typeof STOCK_PRESETS | typeof OWN_GROWTH;
+type CryptoGrowth = (typeof CRYPTO_GROWTH)[number] | typeof OWN_GROWTH;
 type CryptoShare = (typeof CRYPTO_SHARES)[number];
 
 export default function Projection() {
@@ -40,7 +43,7 @@ export default function Projection() {
   const compact = compactMoneyIn(lang, base);
   const [years, setYears] = useState<(typeof PROJECTION_YEARS)[number]>("5");
   const [stocks, setStocks] = useState<StockPreset>("world");
-  const [crypto, setCrypto] = useState<(typeof CRYPTO_GROWTH)[number]>("0");
+  const [crypto, setCrypto] = useState<CryptoGrowth>("0");
   const [share, setShare] = useState<CryptoShare>("today");
   const [real, setReal] = useState<"nominal" | "real">("nominal");
   const [target, setTarget] = useState<number | null>(null);
@@ -53,8 +56,12 @@ export default function Projection() {
       get<ProjectionData>("/portfolio/projection", {
         base,
         years,
-        stock_growth: STOCK_PRESETS[stocks] / 100,
-        crypto_growth: Number(crypto) / 100,
+        // "own" lets the server read the rate it measures, so it is never a
+        // stale number carried over from another currency's answer.
+        stock_growth: stocks === OWN_GROWTH ? undefined : STOCK_PRESETS[stocks] / 100,
+        stock_own: stocks === OWN_GROWTH ? "true" : undefined,
+        crypto_growth: crypto === OWN_GROWTH ? undefined : Number(crypto) / 100,
+        crypto_own: crypto === OWN_GROWTH ? "true" : undefined,
         crypto_share: share === "today" ? undefined : Number(share) / 100,
         monthly,
         real: real === "real" ? "true" : undefined,
@@ -94,6 +101,12 @@ export default function Projection() {
     end === null || !contributed ? null : end / contributed - 1;
   const end = data.dates.at(-1);
   const palette = chart();
+  // The book's own rate is offered only once there is a year of it to read.
+  const ownOption = <T extends string>(
+    options: readonly T[],
+    measured?: number | null,
+  ): readonly (T | typeof OWN_GROWTH)[] =>
+    measured === null || measured === undefined ? options : [...options, OWN_GROWTH];
 
   const panel = (
     <aside className="pf-proj-panel" aria-label={t("portfolio.projection_assumptions")}>
@@ -135,11 +148,18 @@ export default function Projection() {
       <PanelGroup title={t("portfolio.projection_assumptions")}>
         <Segmented
           label={t("portfolio.projection_stocks")}
-          options={Object.keys(STOCK_PRESETS) as StockPreset[]}
+          options={ownOption(
+            Object.keys(STOCK_PRESETS) as (keyof typeof STOCK_PRESETS)[],
+            stock?.own_growth,
+          )}
           value={stocks}
           onChange={setStocks}
           format={(option) =>
-            t(`portfolio.projection_preset_${option}`, { rate: STOCK_PRESETS[option] })
+            option === OWN_GROWTH
+              ? t("portfolio.projection_preset_own", { rate: pct(stock?.own_growth) })
+              : t(`portfolio.projection_preset_${option}`, {
+                  rate: STOCK_PRESETS[option],
+                })
           }
         />
         {/* Crypto gets its own growth and its own share of each
@@ -150,10 +170,16 @@ export default function Projection() {
               label={t("portfolio.projection_crypto", {
                 weight: pct(data.crypto_weight),
               })}
-              options={CRYPTO_GROWTH}
+              options={ownOption(CRYPTO_GROWTH, coin?.own_growth)}
               value={crypto}
               onChange={setCrypto}
-              format={(option) => `${option}%`}
+              format={(option) =>
+                option === OWN_GROWTH
+                  ? t("portfolio.projection_crypto_own", {
+                      rate: pct(coin?.own_growth),
+                    })
+                  : `${option}%`
+              }
             />
             <Segmented
               label={t("portfolio.projection_crypto_share")}
@@ -304,6 +330,9 @@ export default function Projection() {
                     vol: pct(coin.volatility),
                     corr: data.correlation === null ? "—" : data.correlation.toFixed(2),
                   })}`
+                : ""}
+              {stock?.growth_own || coin?.growth_own
+                ? ` ${t("portfolio.projection_note_own")}`
                 : ""}
               {` ${t("portfolio.projection_note")}`}
               {data.real

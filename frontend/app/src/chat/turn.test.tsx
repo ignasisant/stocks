@@ -14,9 +14,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const send = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock("../shell/api", async (original) => ({
+  ...(await original<typeof import("../shell/api")>()),
+  send,
+}));
+
 import { Attachment } from "./Attachment";
 import { Composer } from "./Composer";
-import { Turn } from "./Turn";
+import { Turn, undoMemory } from "./Turn";
 import type { ChatState, Preview, Turn as Stored } from "./types";
 
 beforeEach(() => {
@@ -378,5 +384,141 @@ describe("an answer that weighed a debate", () => {
 
   it("draws no debate on an answer that had none", () => {
     expect(drawn({})).not.toContain("chat.debate_");
+  });
+});
+
+describe("memory on a turn", () => {
+  const drawn = (over: Partial<Stored>, onMemory?: () => void) =>
+    renderToStaticMarkup(
+      <Turn
+        turn={{
+          role: "assistant",
+          content: "Answer.",
+          skills: [],
+          web: [],
+          action: null,
+          ...over,
+        }}
+        skills={[]}
+        providers={[]}
+        cap={null}
+        onRetry={() => {}}
+        onOpenThread={() => {}}
+        onMemory={onMemory}
+      />,
+    );
+  const saved = {
+    op: "added" as const,
+    id: "m1",
+    text: "I hold for 5 years",
+    kind: "goal",
+  };
+  const corrected = {
+    ...saved,
+    op: "updated" as const,
+    text: "I hold for 10 years",
+    before: "I hold for 5 years",
+    auto: true,
+  };
+  const earlier = {
+    thread: "c_old",
+    title: "Nvidia",
+    when: "2026-09-01T10:00:00Z",
+    snippet: "We said NVDA was dear",
+  };
+
+  it("says what was saved, with its undo and the way to the memory screen", () => {
+    const out = drawn({ learned: [saved] }, () => {});
+    expect(out).toContain("chat.mem_updated");
+    expect(out).toContain("I hold for 5 years");
+    expect(out).toContain("chat.mem_undo");
+    expect(out).toContain("chat.mem_manage");
+  });
+
+  it("does not quote a memory the command's own answer already quotes", () => {
+    const out = drawn({ action: "memory", learned: [saved] });
+    expect(out).toContain("chat.mem_updated");
+    expect(out).not.toContain("ag-chat-memo-text");
+  });
+
+  it("says a forgotten memory was forgotten", () => {
+    const out = drawn({ learned: [{ ...saved, op: "deleted" }] });
+    expect(out).toContain("chat.mem_forgotten");
+    expect(out).not.toContain("chat.mem_updated");
+  });
+
+  it("says a memory learned unasked was learned, and names it", () => {
+    const out = drawn({ action: "memory", learned: [{ ...saved, auto: true }] });
+    expect(out).toContain("chat.mem_learned");
+    expect(out).toContain("I hold for 5 years");
+    expect(out).not.toContain("chat.mem_updated");
+    expect(out).toContain("chat.mem_undo");
+  });
+
+  it("says one dropped unasked no longer applies", () => {
+    const out = drawn({ learned: [{ ...saved, op: "deleted", auto: true }] });
+    expect(out).toContain("chat.mem_dropped");
+    expect(out).not.toContain("chat.mem_forgotten");
+  });
+
+  it("says a routine went on the daily action", () => {
+    const routine = { ...saved, kind: "routine" };
+    const asked = drawn({ action: "memory", learned: [routine] });
+    expect(asked).toContain("chat.mem_routine_added");
+    expect(asked).not.toContain("chat.mem_updated");
+    const repeated = drawn({ learned: [{ ...routine, auto: true, repeated: 3 }] });
+    expect(repeated).toContain("chat.mem_routine_repeated");
+    expect(repeated).toContain("I hold for 5 years");
+    expect(repeated).toContain("chat.mem_undo");
+  });
+
+  it("says a corrected memory was corrected, beside what it said before", () => {
+    const out = drawn({ learned: [corrected] });
+    expect(out).toContain("chat.mem_corrected");
+    expect(out).toContain("I hold for 10 years");
+    expect(out).toContain("ag-chat-memo-was");
+    expect(out).toContain("chat.mem_undo");
+  });
+
+  it("undoes each change with the memory screen's inverse write", async () => {
+    send.mockClear();
+    await undoMemory(saved);
+    await undoMemory(corrected);
+    await undoMemory({ ...saved, op: "deleted" });
+    expect(send.mock.calls).toEqual([
+      ["DELETE", "/chat/memories/m1"],
+      ["PATCH", "/chat/memories/m1", { text: "I hold for 5 years" }],
+      ["POST", "/chat/memories", { text: "I hold for 5 years", kind: "goal" }],
+    ]);
+  });
+
+  it("still says what was saved when the question after it was refused", () => {
+    const out = drawn({ content: "", error: "chat.api_error", learned: [saved] });
+    expect(out).toContain("chat.retry");
+    expect(out).toContain("chat.mem_updated");
+  });
+
+  it("names the earlier conversations above the answer, closed until pressed", () => {
+    const out = drawn({ recalled: [earlier] });
+    expect(out).toContain("chat.recalled_one");
+    expect(out).toContain("Nvidia");
+    expect(out).toContain("We said NVDA was dear");
+    expect(out).toMatch(/<ul class="ag-chat-recall-list"[^>]*hidden=""/);
+    expect(out.indexOf("chat.recalled_one")).toBeLessThan(out.indexOf("Answer."));
+  });
+
+  it("counts several, and says so while the answer is still being written", () => {
+    const out = drawn({
+      content: "",
+      pending: true,
+      recalled: [earlier, { ...earlier, thread: "c_older" }],
+    });
+    expect(out).toContain("chat.recalled_n");
+  });
+
+  it("draws neither on a turn that had none", () => {
+    const out = drawn({});
+    expect(out).not.toContain("chat.recalled");
+    expect(out).not.toContain("chat.mem_");
   });
 });

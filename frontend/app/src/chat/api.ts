@@ -20,9 +20,13 @@ import type {
   Conversation,
   Done,
   ImportRow,
+  Learned,
   LiveStep,
+  Memories,
+  Memory,
   Meta,
   Preview,
+  Recalled,
   SettingsPatch,
   Thread,
   ToolCall,
@@ -193,6 +197,25 @@ export const pressSurface = (action: A2uiAction, lang?: string) =>
 /** Forget the stored key. 404 when there was none, which is not an error here. */
 export const forgetKey = (provider: string) =>
   send<ChatState>("DELETE", `/chat/keys/${id(provider)}`);
+
+// ------------------------------------------------------------ the memories
+
+/** Everything the assistant remembers about the account, and its switches. */
+export const readMemories = () => get<Memories>("/chat/memories");
+
+/** Save one memory. 409 when the list is full: one has to go first. */
+export const addMemory = (body: { text: string; kind?: string }) =>
+  send<Memory>("POST", "/chat/memories", body);
+
+export const editMemory = (lid: string, body: { text?: string; kind?: string }) =>
+  send<Memory>("PATCH", `/chat/memories/${id(lid)}`, body);
+
+/** Forget one. 404 when it is already gone — an undo that removed nothing. */
+export const dropMemory = (lid: string) =>
+  send<void>("DELETE", `/chat/memories/${id(lid)}`);
+
+/** Forget every memory. Conversations are not touched. */
+export const clearMemories = () => send<void>("DELETE", "/chat/memories");
 
 // --------------------------------------------------------------- the stream
 
@@ -380,6 +403,8 @@ export async function run(
   onTool?: (line: LiveStep) => void,
   /** A side of the bull/bear debate starting, speaking, ending or failing. */
   onSide?: (side: Arguing) => void,
+  /** The earlier conversations the answer was handed, before it is written. */
+  onRecalled?: (recalled: Recalled[]) => void,
 ): Promise<Done> {
   const response = await fetch("/api/v1/chat/runs", {
     method: "POST",
@@ -409,6 +434,9 @@ export async function run(
   const activities = new Map<string, Activity>();
   // The debate's sides by subagent run id, as they are argued.
   const sides = new Map<string, Arguing>();
+  // A memory command the run carried out before it failed: `RUN_ERROR` has
+  // no result, so the change arrives ahead of it on its own.
+  let learned: Learned[] | undefined;
   const side = (id: string, change: Partial<Arguing>) => {
     const was = sides.get(id);
     if (!was) return;
@@ -432,6 +460,9 @@ export async function run(
           break;
         case "CUSTOM":
           if (event.name === "chat.meta") onMeta(event.value as Meta);
+          else if (event.name === "chat.recalled")
+            onRecalled?.(event.value as Recalled[]);
+          else if (event.name === "chat.learned") learned = event.value as Learned[];
           break;
         case "TEXT_MESSAGE_CONTENT":
           // A subagent's words are its own: they never join the answer's.
@@ -509,7 +540,11 @@ export async function run(
           };
           break;
         case "RUN_ERROR":
-          done = { ...FAILED, error: event.code ?? "chat.api_error" };
+          done = {
+            ...FAILED,
+            error: event.code ?? "chat.api_error",
+            ...(learned ? { learned } : {}),
+          };
           break;
       }
     }

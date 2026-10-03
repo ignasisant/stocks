@@ -537,7 +537,14 @@ def _generate(prefs: dict, step: onboarding.Step) -> str | None:
         prefs, step, i18n.active_language(),
         save=lambda p: auth.save_prefs(p),
         account_facts=guide_ai.facts(prefs),
+        memories=engine.user_memory(prefs, _chat_path())[0],
     )
+
+
+def _chat_path():
+    """The account's chat.json, None in a session no user is resolved in."""
+    paths = st.session_state.get("user_paths")
+    return paths.chat if paths is not None else None
 
 
 def narrate(ns: str, history: list[dict], box) -> bool:

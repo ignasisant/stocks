@@ -20,7 +20,7 @@ from stocks.web.markup import esc
 PATH_PRIVACY = "/legal/privacy"
 PATH_TERMS = "/legal/terms"
 
-LAST_UPDATED = "2026-09-17"
+LAST_UPDATED = "2026-10-03"
 
 _CONTACT = f"{GITHUB_URL}/issues"
 
@@ -56,6 +56,33 @@ _PRIVACY = {
                 "99-99-9999, an amount 9.999,99); the statement itself is never "
                 "kept and never leaves your browser.",
             ]),
+            ("Bank connection (optional)", [
+                "You can connect a bank account so the app can reconcile the "
+                "money that moved in and out against what your broker "
+                "reported. It is off unless you turn it on, it covers only "
+                "the accounts you authorise, and while the connection runs in "
+                "restricted mode it is offered to a small allowlist of "
+                "accounts. If you never connect a bank, nothing in this "
+                "section applies to you.",
+                "The connection is made through Enable Banking Oy, a Finnish "
+                "account information service provider authorised under PSD2, "
+                "which holds the regulated link to your bank. You authenticate "
+                "on your bank's own pages: this app never sees your bank "
+                "credentials. The access is read-only account information — "
+                "no payment can be initiated and no money can be moved.",
+                "What is stored: the bank's name, an opaque session handle, "
+                "the date the consent expires and, for each account you "
+                "authorise, its name, currency and masked number "
+                "(ES12 ···· 3456 — the full IBAN is never written to disk) "
+                "together with the balances last read and when they were "
+                "read. It lives in your own private data folder with the rest "
+                "of your data, and no other user can see it.",
+                "A consent lasts up to 180 days and usually less, depending "
+                "on your bank. You can withdraw it at any time from the Bank "
+                "page (Disconnect, which also ends the session at Enable "
+                "Banking) or from your own bank's app. Deleting your account "
+                "removes the connection along with everything else.",
+            ]),
             ("Cookies", [
                 "One first-party cookie (ts_app) remembers that your browser "
                 "has used the app, so the address bar goes to the app instead "
@@ -72,6 +99,9 @@ _PRIVACY = {
                 "own API key it is stored encrypted.",
                 "If you link Telegram, your chat id is stored so notifications "
                 "you enabled can be sent to you.",
+                "If you connect a bank, the request goes to Enable Banking Oy, "
+                "the authorised account information provider named above; your "
+                "bank data is never shared with anyone else.",
                 "Your data is never sold and never used for advertising.",
             ]),
             ("Your rights and deletion", [
@@ -111,6 +141,34 @@ _PRIVACY = {
                 "99-99-9999; un importe, 9.999,99); el extracto en sí no se "
                 "guarda nunca ni sale de tu navegador.",
             ]),
+            ("Conexión bancaria (opcional)", [
+                "Puedes conectar una cuenta bancaria para que la app concilie "
+                "el dinero que entró y salió con lo que declaró tu bróker. "
+                "Está desactivada salvo que la actives, alcanza solo a las "
+                "cuentas que autorices y, mientras la conexión funciona en "
+                "modo restringido, se ofrece a una lista corta de cuentas. Si "
+                "nunca conectas un banco, nada de esta sección te afecta.",
+                "La conexión se hace a través de Enable Banking Oy, un "
+                "proveedor finlandés de servicios de información sobre "
+                "cuentas autorizado bajo la PSD2, que mantiene el enlace "
+                "regulado con tu banco. Te autenticas en las páginas de tu "
+                "propio banco: esta app nunca ve tus credenciales bancarias. "
+                "El acceso es de solo lectura sobre información de cuenta: no "
+                "puede iniciarse ningún pago ni moverse dinero.",
+                "Qué se guarda: el nombre del banco, un identificador opaco "
+                "de sesión, la fecha en que caduca el consentimiento y, por "
+                "cada cuenta que autorices, su nombre, divisa y número "
+                "enmascarado (ES12 ···· 3456; el IBAN completo no se escribe "
+                "nunca en disco) junto con los saldos leídos por última vez y "
+                "cuándo se leyeron. Todo ello vive en tu carpeta privada de "
+                "datos con el resto de tu información, y ningún otro usuario "
+                "puede verlo.",
+                "Un consentimiento dura como mucho 180 días, y normalmente "
+                "menos, según tu banco. Puedes retirarlo cuando quieras desde "
+                "la página Banco (Desconectar, que además cierra la sesión en "
+                "Enable Banking) o desde la app de tu propio banco. Borrar tu "
+                "cuenta elimina la conexión junto con todo lo demás.",
+            ]),
             ("Cookies", [
                 "Una cookie propia (ts_app) recuerda que tu navegador ya usó "
                 "la app, para llevarte a ella en vez de a la página de "
@@ -128,6 +186,9 @@ _PRIVACY = {
                 "aportas tu propia clave de API, se guarda cifrada.",
                 "Si vinculas Telegram, se guarda tu chat id para poder "
                 "enviarte las notificaciones que actives.",
+                "Si conectas un banco, la petición va a Enable Banking Oy, "
+                "el proveedor autorizado de información sobre cuentas "
+                "citado arriba; tus datos bancarios no se comparten con nadie más.",
                 "Tus datos nunca se venden ni se usan para publicidad.",
             ]),
             ("Tus derechos y la eliminación", [

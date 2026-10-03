@@ -38,17 +38,38 @@ _attempts = engine.attempts
 # ------------------------------------------------------------------ prompts
 
 
-def _persona(lang: str, task: str) -> str:
+def _persona(lang: str, task: str, prefs: dict | None = None) -> str:
+    """The prompt's opening. With `prefs`, it also says who the user is — the
+    investor profile the chat reads (`engine.persona`): a line in Telegram is
+    the same assistant as the chat, writing to the same person."""
+    who = ""
+    if prefs is not None:
+        from stocks.web import auth
+
+        who = engine.persona(auth.load_profile(prefs))
     return (
         "You are the portfolio assistant for TopStocks, a stock-tracking app. "
-        f"{task} in {_LANG_NAME.get(lang, 'English')}. Plain text only: no "
+        f"{who}{task} in {_LANG_NAME.get(lang, 'English')}. Plain text only: no "
         "markdown, no emoji, no preamble."
     )
 
 
-def _prompt(data, lang: str, recent: list[str]) -> tuple[str, list[dict]]:
+def _remembered(system: str, memories: str) -> str:
+    """`system` with the user's saved memories (`engine.memory_block`) and how
+    to read them. Last, so the line's own instructions come first and the
+    shared reading clause (`engine.MEMORY_USE`) sits right after the list."""
+    if not memories:
+        return system
+    return f"{system}\n\n{memories}{engine.MEMORY_USE}"
+
+
+def _prompt(
+    data, lang: str, recent: list[str], *, prefs: dict | None = None,
+    memories: str = "",
+) -> tuple[str, list[dict]]:
     system = _persona(
-        lang, "Given today's portfolio numbers, write exactly 1-2 sentences of insight"
+        lang, "Given today's portfolio numbers, write exactly 1-2 sentences of insight",
+        prefs,
     ) + (
         " Lead with what moved the book in money terms (contribution_to_day),"
         " not with the biggest percentage, and say how the day compares to the"
@@ -111,6 +132,7 @@ def _prompt(data, lang: str, recent: list[str]) -> tuple[str, list[dict]]:
             "payments": data.dividends_received[1],
         },
     }
+    system = _remembered(system, memories)
     return system, [{"role": "user", "content": json.dumps(facts)}]
 
 
@@ -133,11 +155,14 @@ def _benchmark_facts(data) -> dict | None:
     }
 
 
-def _weekly_prompt(data, lang: str) -> tuple[str, list[dict]]:
+def _weekly_prompt(
+    data, lang: str, *, prefs: dict | None = None, memories: str = ""
+) -> tuple[str, list[dict]]:
     system = _persona(
         lang,
         "Given this week's portfolio numbers, write exactly 1-2 sentences of "
         "review",
+        prefs,
     ) + (
         " Say what the week came down to and what the coming week sets up."
         " The figures are already in the message above yours, so interpret"
@@ -179,14 +204,18 @@ def _weekly_prompt(data, lang: str) -> tuple[str, list[dict]]:
             {"ticker": e.ticker, "in_days": e.days_until} for e in data.ex_dividends
         ],
     }
+    system = _remembered(system, memories)
     return system, [{"role": "user", "content": json.dumps(facts)}]
 
 
-def _alerts_prompt(hits, lang: str) -> tuple[str, list[dict]]:
+def _alerts_prompt(
+    hits, lang: str, *, prefs: dict | None = None, memories: str = ""
+) -> tuple[str, list[dict]]:
     system = _persona(
         lang,
         "The user's own price alerts just fired. Write exactly 1-2 sentences on "
         "what they have in common and what to watch next",
+        prefs,
     ) + (
         " The numbers are already in the message above yours, so do not repeat"
         " them. Never recommend buying, selling or holding anything."
@@ -203,6 +232,7 @@ def _alerts_prompt(hits, lang: str) -> tuple[str, list[dict]]:
         ],
         "total_fired": len(hits),
     }
+    system = _remembered(system, memories)
     return system, [{"role": "user", "content": json.dumps(facts)}]
 
 
@@ -270,6 +300,7 @@ def highlight(
     lang: str,
     timeout_s: float = 45.0,
     recent: list[str] | None = None,
+    memories: str = "",
 ) -> str | None:
     """1-2 sentence narrative for the digest, or None. Never raises.
 
@@ -277,9 +308,14 @@ def highlight(
     a reply that echoes one anyway is dropped rather than re-rolled. Dropping
     costs nothing; a second call costs another unit of the free pot, and a
     digest without the line is still a digest.
+
+    `memories` is what the user told the chat (`NotifyUser.memories`), the
+    block every other surface reads, so the line leads with what they said
+    matters to them. The weekly and alerts lines take it the same way.
     """
     try:
-        system, messages = _prompt(data, lang, recent or [])
+        system, messages = _prompt(data, lang, recent or [], prefs=prefs,
+                                   memories=memories)
     except Exception:
         return None
     out = _complete(prefs, system, messages, timeout_s)
@@ -288,7 +324,9 @@ def highlight(
     return out
 
 
-def weekly_line(data, prefs: dict, lang: str, timeout_s: float = 45.0) -> str | None:
+def weekly_line(
+    data, prefs: dict, lang: str, timeout_s: float = 45.0, memories: str = ""
+) -> str | None:
     """1-2 sentence review line for the weekly message, or None. Never raises.
 
     No repetition guard, unlike the daily `highlight`: this runs once a week
@@ -296,13 +334,15 @@ def weekly_line(data, prefs: dict, lang: str, timeout_s: float = 45.0) -> str | 
     for — yesterday's sentence with today's figures — has no room to happen.
     """
     try:
-        system, messages = _weekly_prompt(data, lang)
+        system, messages = _weekly_prompt(data, lang, prefs=prefs, memories=memories)
     except Exception:
         return None
     return _complete(prefs, system, messages, timeout_s)
 
 
-def alerts_line(hits, prefs: dict, lang: str, timeout_s: float = 45.0) -> str | None:
+def alerts_line(
+    hits, prefs: dict, lang: str, timeout_s: float = 45.0, memories: str = ""
+) -> str | None:
     """1-2 sentences of context for the alerts that just fired, or None.
 
     Called once per account per alerts run, only when something is actually
@@ -312,7 +352,7 @@ def alerts_line(hits, prefs: dict, lang: str, timeout_s: float = 45.0) -> str | 
     if not hits:
         return None
     try:
-        system, messages = _alerts_prompt(hits, lang)
+        system, messages = _alerts_prompt(hits, lang, prefs=prefs, memories=memories)
     except Exception:
         return None
     return _complete(prefs, system, messages, timeout_s)

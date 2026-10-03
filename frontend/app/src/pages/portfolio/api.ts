@@ -131,7 +131,23 @@ export type Performance = {
   missing: string[];
 };
 
-type AllocationSlice = { label: string; weight: number };
+type AllocationSlice = {
+  label: string;
+  weight: number;
+  /** Market value in `base` of the slice's priced holdings; null if none priced. */
+  value: number | null;
+  /** Cost basis of the same rows as `value`. */
+  cost: number | null;
+  /** What the slice is made of, largest value first. */
+  holdings: { ticker: string; value: number; cost: number }[];
+};
+
+export type RiskName = {
+  volatility: number | null;
+  betas: Record<string, number>;
+  /** Share of the basket's variance; the shares sum to one, negative hedges. */
+  risk_share: number | null;
+};
 
 export type Risk = {
   base: string;
@@ -145,6 +161,8 @@ export type Risk = {
   /** Keyed sector | country | currency | broker. */
   allocation: Record<string, AllocationSlice[]>;
   correlation: Record<string, Record<string, number>>;
+  /** Per held name: its own volatility, betas and share of the basket's risk. */
+  names: Record<string, RiskName>;
   /** The flow-matched return lines over this window; null when nothing to draw. */
   curves: RiskCurves | null;
   /** Held names with no price series, carried at cost inside `portfolio`. */
@@ -419,6 +437,11 @@ type ProjectionSleeve = {
   weight: number;
   /** Median compound annual return, as used. */
   growth: number;
+  /** True when `growth` is the sleeve's own measured rate. */
+  growth_own: boolean;
+  /** What today's holdings in the sleeve compounded at (up to 2 years); null
+   *  under a year of history. */
+  own_growth: number | null;
   volatility: number;
   volatility_measured: boolean;
   /** Share of each monthly contribution. */
@@ -472,5 +495,7 @@ export const PROJECTION_YEARS = ["1", "3", "5", "10"] as const;
 export const STOCK_PRESETS = { low: 4, mid: 6, world: 8, sp500: 10, ndx: 13 } as const;
 /** Median compound growth for the crypto sleeve, in percent. */
 export const CRYPTO_GROWTH = ["-20", "0", "10", "25"] as const;
+/** The growth option that is the sleeve's own measured rate, not a number. */
+export const OWN_GROWTH = "own";
 /** Share of each contribution that goes to crypto: as today, or a fixed one. */
 export const CRYPTO_SHARES = ["today", "0", "10", "25"] as const;

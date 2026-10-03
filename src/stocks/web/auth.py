@@ -27,7 +27,9 @@ they're reference data, not personal data.
 
 from __future__ import annotations
 
+import functools
 import json
+import threading
 import uuid
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -840,7 +842,26 @@ def _profile_dialog_body() -> None:
 
 CHAT_VERSION = 2
 MAX_CONVERSATIONS = 50  # oldest by last use pruned first; never the active one
+# Home's daily cards are filed as threads of their own (save_card_thread), one
+# a day. The ones nobody wrote in are kept on a budget of their own: a month of
+# cards must not push the reader's conversations out of MAX_CONVERSATIONS.
+MAX_CARD_THREADS = 30
 _TITLE_MAX = 80
+
+# Every write is a read-modify-write of the whole book, and since the daily
+# card files its thread from a background job, two can now overlap inside one
+# process: a card filed while a chat turn is being saved. One lock for all of
+# them. Re-entrant only so a writer may call another without deadlocking.
+_book_lock = threading.RLock()
+
+
+def _locked(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with _book_lock:
+            return fn(*args, **kwargs)
+
+    return wrapper
 
 
 def _now() -> str:
@@ -906,19 +927,40 @@ def load_book(path: Path | None = None) -> dict:
     return {"version": CHAT_VERSION, "active": active, "conversations": convs}
 
 
+def _unread_card(conv: dict) -> bool:
+    """A daily card's thread the reader never wrote in. Once they have, it is
+    a conversation like any other, and is kept like one."""
+    return bool(conv.get("daily")) and not any(
+        m.get("role") == "user" for m in conv["messages"]
+    )
+
+
 def _pruned(book: dict) -> dict:
     """The book capped at MAX_CONVERSATIONS, dropping least-recently-used
-    threads first and never the active one."""
+    threads first and never the active one — and the cards nobody answered
+    capped apart, at MAX_CARD_THREADS."""
     convs = book["conversations"]
-    if len(convs) <= MAX_CONVERSATIONS:
+
+    def card(c: dict) -> bool:
+        return _unread_card(c) and c["id"] != book["active"]
+
+    cards = [c for c in convs if card(c)]
+    talk = [c for c in convs if not card(c)]
+    if len(cards) <= MAX_CARD_THREADS and len(talk) <= MAX_CONVERSATIONS:
         return book
-    ranked = sorted(convs, key=lambda c: c.get("updated") or "", reverse=True)
-    keep = [c for c in ranked if c["id"] == book["active"]][:1]
-    keep += [c for c in ranked if c["id"] != book["active"]][
-        : MAX_CONVERSATIONS - len(keep)
-    ]
-    order = {c["id"]: i for i, c in enumerate(convs)}
-    return {**book, "conversations": sorted(keep, key=lambda c: order[c["id"]])}
+
+    def newest(group: list[dict], n: int) -> list[dict]:
+        return sorted(group, key=lambda c: c.get("updated") or "", reverse=True)[:n]
+
+    active = [c for c in talk if c["id"] == book["active"]][:1]
+    others = [c for c in talk if c["id"] != book["active"]]
+    keep = {
+        c["id"]
+        for c in active
+        + newest(others, MAX_CONVERSATIONS - len(active))
+        + newest(cards, MAX_CARD_THREADS)
+    }
+    return {**book, "conversations": [c for c in convs if c["id"] in keep]}
 
 
 def save_book(book: dict, path: Path | None = None) -> None:
@@ -945,6 +987,7 @@ def memory_path(path: Path | None = None) -> Path:
     return (path or user_paths().chat).parent / memory.FILE
 
 
+@_locked
 def save_chat(history: list[dict], path: Path | None = None) -> None:
     """Replace the active conversation's turns and stamp it as just used.
 
@@ -964,13 +1007,15 @@ def save_chat(history: list[dict], path: Path | None = None) -> None:
 
 
 def list_conversations(path: Path | None = None) -> list[dict]:
-    """Conversation metadata (no message bodies), most recently used first."""
+    """Conversation metadata (no message bodies), most recently used first.
+    `daily` is the card day of a daily card's thread, "" for any other."""
     book = load_book(path)
     metas = [
         {
             "id": c["id"], "title": c["title"], "title_auto": c["title_auto"],
             "created": c["created"], "updated": c["updated"],
             "messages": len(c["messages"]), "active": c["id"] == book["active"],
+            "daily": str(c.get("daily") or ""),
         }
         for c in book["conversations"]
     ]
@@ -983,6 +1028,7 @@ def active_conversation(path: Path | None = None) -> dict:
     return {k: v for k, v in c.items() if k != "messages"}
 
 
+@_locked
 def new_conversation(path: Path | None = None, title: str = "") -> str:
     """Start (and activate) an empty conversation; returns its id.
 
@@ -1000,6 +1046,7 @@ def new_conversation(path: Path | None = None, title: str = "") -> str:
     return conv["id"]
 
 
+@_locked
 def set_active_conversation(cid: str, path: Path | None = None) -> None:
     book = load_book(path)
     if any(c["id"] == cid for c in book["conversations"]):
@@ -1007,6 +1054,7 @@ def set_active_conversation(cid: str, path: Path | None = None) -> None:
         save_book(book, path)
 
 
+@_locked
 def rename_conversation(cid: str, title: str, path: Path | None = None) -> None:
     """User-set title — pins it, so auto-titling never overwrites it again."""
     book = load_book(path)
@@ -1018,6 +1066,7 @@ def rename_conversation(cid: str, title: str, path: Path | None = None) -> None:
             return
 
 
+@_locked
 def autotitle_conversation(cid: str, title: str, path: Path | None = None) -> None:
     """Title derived from the opening exchange; a no-op on a renamed thread."""
     book = load_book(path)
@@ -1028,6 +1077,7 @@ def autotitle_conversation(cid: str, title: str, path: Path | None = None) -> No
             return
 
 
+@_locked
 def delete_conversation(cid: str, path: Path | None = None) -> None:
     """Drop a conversation. Deleting the active one falls back to the most
     recently used survivor — or a fresh empty thread when it was the last."""
@@ -1046,6 +1096,44 @@ def delete_conversation(cid: str, path: Path | None = None) -> None:
     index = memory_path(path)
     if memory.forget(index, cid):
         _persist(index)
+
+
+@_locked
+def save_card_thread(day: str, title: str, text: str, path: Path | None = None) -> str:
+    """File a daily card in the chat as a thread of its own; returns its id.
+
+    One thread per card day, titled once ("Daily action · 3 Oct") and never
+    made active: the card is written in the background, and a reader halfway
+    through a conversation must not find it carrying on somewhere else.
+    Opening it is the card's "Ask" button, and the reader then asks with the
+    card in the thread above the question.
+
+    A card rewritten the same day (the computed stand-in, then the model's)
+    replaces its turn while nobody has answered it, and lands after the
+    reader's turns when somebody has — the thread is what the reader was
+    told, in order. Indexed like any turn, which is how the chat and the
+    Telegram bot can recall what a card said."""
+    book = load_book(path)
+    conv = next((c for c in book["conversations"] if c.get("daily") == day), None)
+    if conv is None:
+        conv = _blank_conversation(title[:_TITLE_MAX])
+        conv["title_auto"] = False
+        conv["daily"] = day
+        book["conversations"].append(conv)
+    turn = {"role": "assistant", "content": text, "daily": day}
+    msgs = conv["messages"]
+    if msgs and msgs[-1].get("daily") == day:
+        if msgs[-1].get("content") == text:
+            return conv["id"]  # the same card again: nothing to file
+        msgs[-1] = turn
+    else:
+        msgs.append(turn)
+    conv["updated"] = _now()
+    save_book(book, path)
+    index = memory_path(path)
+    if memory.remember(index, msgs, conv["id"]):
+        _persist(index)
+    return conv["id"]
 
 
 def reporting_currency() -> str:

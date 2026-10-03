@@ -7,13 +7,17 @@ rather than rendering as a dotted key on screen.
 
 Open, like `/health`. These are shipped files, identical for every visitor, and
 the sign-in screen needs them before anyone is signed in.
+
+A language nobody ships (a browser set to Italian) gets English, with `lang`
+saying so. The front end asks for whatever the browser reports, and a 404 there
+left it with no strings at all — every label rendered as its dotted key.
 """
 
 from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Path, Query, status
+from fastapi import APIRouter, Path, Query
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/i18n", tags=["i18n"])
@@ -45,11 +49,7 @@ def catalog(
     from stocks.web.i18n import DEFAULT_LANG, supported
     from stocks.web.i18n import catalog as strings_for
 
-    code = supported(lang)
-    if code is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"no catalog for {lang!r}"
-        )
+    code = supported(lang) or DEFAULT_LANG
     # Source language underneath, mirroring i18n.translate's per-key fallback:
     # an untranslated key reads in English instead of showing as `ticker.price`.
     strings = {**strings_for(DEFAULT_LANG), **strings_for(code)}

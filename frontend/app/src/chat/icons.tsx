@@ -36,6 +36,9 @@ const PATHS: Record<string, string> = {
   mic: "M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-4 4.9V20h3v2H8v-2h3v-4.1A5 5 0 0 1 7 11h2a3 3 0 0 0 6 0h2z",
   attach:
     "M16.5 6.5v9.75a4.25 4.25 0 0 1-8.5 0V5.5a2.75 2.75 0 0 1 5.5 0v9.75a1.25 1.25 0 0 1-2.5 0V6.5H9.5v8.75a2.75 2.75 0 0 0 5.5 0V5.5a4.25 4.25 0 0 0-8.5 0v10.75a5.75 5.75 0 0 0 11.5 0V6.5h-1.5z",
+  memory: "M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2zm0 15-5-2.2L7 18V5h10v13z",
+  history:
+    "M13 3a9 9 0 0 0-9 9H1l3.9 3.9.1.1L9 12H6a7 7 0 1 1 2.1 5l-1.4 1.4A9 9 0 1 0 13 3zm-1 5v5l4.3 2.5.7-1.2-3.5-2.1V8H12z",
   key: "M21 10h-8.35A5.99 5.99 0 0 0 7 6a6 6 0 1 0 5.65 8H13l2 2 2-2 2 2 3-3.05L21 10zM7 15a3 3 0 1 1 0-6 3 3 0 0 1 0 6z",
   // The three width presets, in the order they widen. The frame says how much
   // room the panel takes; the arrows inside it say which way the press moves.

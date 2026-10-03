@@ -5,7 +5,7 @@ alert that fired weeks ago led it day after day. So what is tested here is
 the card *not* repeating itself, and the calendars that give it something new
 to say instead:
 
-* a fired alert is an event for a few sessions, then a one-off "stale alert";
+* a fired alert is an event on the session it crossed, and then nothing;
 * a trigger already shown is held back until its figure moves, its phase
   advances or its cooldown runs out — and only what was actually shown counts;
 * the Fed / ECB decision around the corner, and the one just taken;
@@ -77,15 +77,31 @@ def remembered(*signals_: signals.Signal, last: date) -> dict:
 # ------------------------------------------------------------ alerts, by age
 
 
-def test_an_alert_that_just_crossed_is_an_event_with_its_age():
-    (hit,) = aapl_alert([250.0, 255.0, 262.0, 265.0])
-    assert hit.kind == signals.ALERT_HIT and hit.data["sessions"] == 2
+def test_an_alert_that_crossed_in_the_latest_session_is_todays_event():
+    (hit,) = aapl_alert([250.0, 255.0, 258.0, 265.0])
+    assert hit.kind == signals.ALERT_HIT and hit.data["price"] == 265.0
 
 
-def test_an_alert_past_its_level_for_weeks_is_a_stale_alert_not_news():
-    (stale,) = aapl_alert([250.0] + [265.0] * 20)
-    assert stale.kind == signals.ALERT_STALE and stale.data["sessions"] == 20
-    assert stale.urgency < signals._URGENCY[signals.ALERT_HIT]
+def test_an_alert_that_crossed_yesterday_is_not_todays_news():
+    """Only today's crossings: one the price went past a session ago was
+    said on that day's card, and is not repeated as something to do now."""
+    assert aapl_alert([250.0, 255.0, 262.0, 265.0]) == []
+
+
+def test_an_alert_past_its_level_for_weeks_says_nothing():
+    """What the card used to call a stale alert — the line that led it for
+    weeks — is now no line at all."""
+    assert aapl_alert([250.0] + [265.0] * 20) == []
+
+
+def test_a_single_close_cannot_say_it_crossed():
+    """Without the close before it, the price might have sat past the level
+    for a month: not an event."""
+    assert aapl_alert([265.0]) == []
+
+
+def test_an_alert_with_no_close_before_it_counts_as_not_crossed():
+    assert aapl_alert([float("nan"), 265.0]) == []
 
 
 def test_the_crossing_already_shown_is_not_shown_again():
@@ -102,7 +118,7 @@ def test_the_crossing_already_shown_is_not_shown_again():
 
 
 def test_a_fresh_crossing_after_a_retreat_is_news_again():
-    (hit,) = aapl_alert([262.0])
+    (hit,) = aapl_alert([250.0, 262.0])
     shown = remembered(hit, last=TODAY - timedelta(days=8))
     out = signals.candidates(
         holdings=[Holding("AAPL", alerts=[Alert("above", price=260.0)])],
@@ -126,17 +142,21 @@ def test_moving_the_alert_makes_it_news():
     assert [s.kind for s in out] == [signals.ALERT_HIT]
 
 
-def test_a_stale_alert_is_said_once_then_left_alone_for_its_cooldown():
-    closes = [250.0] + [265.0] * 20
-    (stale,) = aapl_alert(closes)
+def test_a_crossing_after_the_close_is_said_once_across_the_cutoff():
+    """Monday evening's card shows a crossing at Monday's close; on Tuesday
+    morning New York has not traded yet, so the latest close is still the
+    crossing one — the same event, not a second one."""
     kwargs = dict(
         holdings=[Holding("AAPL", alerts=[Alert("above", price=260.0)])],
-        closes={"AAPL": closes},
+        closes={"AAPL": [250.0, 262.0]},
     )
-    week = remembered(stale, last=TODAY - timedelta(days=7))
-    assert signals.candidates(**kwargs, shown=week, today=TODAY) == []
-    month = remembered(stale, last=TODAY - timedelta(days=20))
-    assert len(signals.candidates(**kwargs, shown=month, today=TODAY)) == 1
+    (hit,) = aapl_alert([250.0, 262.0])
+    monday = remembered(hit, last=TODAY - timedelta(days=1))
+    assert signals.candidates(**kwargs, shown=monday, today=TODAY) == []
+    # Shown on Friday, the same close on Tuesday is more than one session
+    # later — a crossing again after a retreat in between.
+    friday = remembered(hit, last=TODAY - timedelta(days=4))
+    assert len(signals.candidates(**kwargs, shown=friday, today=TODAY)) == 1
 
 
 # --------------------------------------------------- repeats, by their figure
@@ -406,13 +426,15 @@ def test_only_what_the_card_showed_is_remembered():
     })
     card = daily.parse(raw, day=TODAY, lang="en", facts=FACTS)
     stored = daily.to_store(None, card, FACTS)
-    assert set(stored["shown"]) == {"earnings:NVDA"}
+    # The fired alert is on every card (`_alert_items`), the Fed was left out.
+    assert set(stored["shown"]) == {"alert_hit:AAPL", "earnings:NVDA"}
     measured = stored["shown"]["earnings:NVDA"]["v"]
     assert measured == {"date": "2026-10-02", "phase": "soon"}
     line = {
         "day": TODAY.isoformat(), "key": "earnings:NVDA", "line": "NVDA reports in 3 days"
     }
-    assert stored["past"] == [line]
+    assert [p["key"] for p in stored["past"]] == ["alert_hit:AAPL", "earnings:NVDA"]
+    assert line in stored["past"]
 
 
 def test_a_computed_card_is_remembered_and_counted():

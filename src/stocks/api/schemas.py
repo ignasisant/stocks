@@ -1448,9 +1448,35 @@ class TaxReport(BaseModel):
 # did, and the two disagree whenever the book has changed shape.
 
 
+class AllocationHolding(BaseModel):
+    """The part of one holding that sits in a slice, in `base`."""
+
+    ticker: str
+    value: float = Field(description="Market value inside this slice.")
+    cost: float = Field(description="Cost basis of that same part.")
+
+
 class AllocationSlice(BaseModel):
     label: str
     weight: float
+    value: float | None = Field(
+        default=None,
+        description=(
+            "Market value in `base` of the priced holdings in this slice. Null "
+            "when none of them carried a live price."
+        ),
+    )
+    cost: float | None = Field(
+        default=None,
+        description=(
+            "Cost basis of the same rows as `value` — never the whole slice's "
+            "basis against a partial value."
+        ),
+    )
+    holdings: list[AllocationHolding] = Field(
+        default_factory=list,
+        description="What the slice is made of, largest value first.",
+    )
 
 
 class RiskCurves(BaseModel):
@@ -1497,6 +1523,23 @@ class RiskCurves(BaseModel):
     )
 
 
+class RiskName(BaseModel):
+    """One held name's own risk, read beside the correlation grid."""
+
+    volatility: float | None = Field(default=None, description="Annualised.")
+    betas: dict[str, float] = Field(
+        default_factory=dict, description="Beta per benchmark ticker."
+    )
+    risk_share: float | None = Field(
+        default=None,
+        description=(
+            "Share of the basket's variance this name carries "
+            "(w·cov(name, basket) / var(basket)); the shares sum to one. Above "
+            "the weight it adds risk, below it diversifies, negative it hedges."
+        ),
+    )
+
+
 class Risk(BaseModel):
     base: str
     period: str = Field(description="Window the returns were measured over.")
@@ -1518,6 +1561,10 @@ class Risk(BaseModel):
     )
     correlation: dict[str, dict[str, float]] = Field(
         default_factory=dict, description="Pairwise return correlation, held names."
+    )
+    names: dict[str, RiskName] = Field(
+        default_factory=dict,
+        description="Per held name: volatility, beta and share of the risk.",
     )
     curves: RiskCurves | None = Field(
         default=None,
@@ -1551,6 +1598,16 @@ class ProjectionSleeve(BaseModel):
     value: float = Field(description="Today's value of the sleeve, in `base`.")
     weight: float = Field(description="Share of today's value.")
     growth: float = Field(description="Median compound annual return, as used.")
+    growth_own: bool = Field(
+        default=False, description="True when `growth` is the sleeve's own measured rate."
+    )
+    own_growth: float | None = Field(
+        default=None,
+        description=(
+            "Compound annual return today's holdings in the sleeve showed (up to "
+            "2 years, a year at least); null when too short to annualise."
+        ),
+    )
     volatility: float = Field(description="Annual, as used.")
     volatility_measured: bool = Field(
         description="True when it is the sleeve's own; false when a default."
@@ -1567,7 +1624,8 @@ class Projection(BaseModel):
     correlated as they have been. Growth is read as the *median* compound
     annual return — what "4% a year" means to a reader — and defaults to a
     long-run equity figure for stocks and zero for crypto, never the book's
-    own past, which would project a lucky stretch forward as a plan.
+    own past, which would project a lucky stretch forward as a plan — that
+    rate is drawn only when asked for, and echoed as `own_growth` either way.
     """
 
     base: str
@@ -2613,6 +2671,68 @@ class DailyItem(BaseModel):
     )
     line: str
     tickers: list[str] = Field(default_factory=list)
+    section: Literal["alerts", "watch"] = Field(
+        default="watch",
+        description=(
+            "Where the card lists it: `alerts` for a price alert that fired "
+            "today, `watch` for the rest."
+        ),
+    )
+
+
+class DailyChartLine(BaseModel):
+    """One line of a chart on the daily card — the chat's chart, same shape."""
+
+    symbol: str = Field(description="A ticker, or `@BOOK` for the reader's book.")
+    currency: str = ""
+    dates: list[str]
+    values: list[float]
+    label: str | None = None
+    index: bool = Field(
+        default=False,
+        description="Growth from the window's first day, not a price.",
+    )
+
+
+class DailyBookRow(BaseModel):
+    window: Literal["day", "week", "month"]
+    pct: float | None = Field(default=None, description="The book's change, %.")
+    amount: float | None = Field(
+        default=None, description="The same change in the card's currency."
+    )
+    index_pct: float | None = Field(
+        default=None, description="The index's change over the window, %."
+    )
+
+
+class DailyBook(BaseModel):
+    """The card's Portfolio section: the book against the index."""
+
+    index: str = Field(description="The index measured against, e.g. `S&P 500`.")
+    currency: str
+    rows: list[DailyBookRow]
+    chart: list[DailyChartLine] = Field(
+        default_factory=list,
+        description="The month drawn, book and index rebased to 100.",
+    )
+
+
+class DailyRoutineChart(BaseModel):
+    window: str
+    rebased: bool = False
+    series: list[DailyChartLine]
+
+
+class DailyRoutine(BaseModel):
+    """One of the reader's daily questions, answered on the card."""
+
+    id: str
+    text: str = Field(description="The question, in the reader's words.")
+    answer: str = Field(
+        default="",
+        description="Empty while its data is still being fetched (`pending`).",
+    )
+    chart: DailyRoutineChart | None = None
 
 
 class DailyCard(BaseModel):
@@ -2698,6 +2818,25 @@ class DailyCard(BaseModel):
             "Keys of the lines whose analysis is already written: `POST "
             "/daily/analysis` returns it without spending anything."
         ),
+    )
+    thread: str | None = Field(
+        default=None,
+        description=(
+            "The chat conversation the card is filed in — what its 'Ask' "
+            "opens, so a question is asked with the card above it. Null for a "
+            "card not filed (still being written, or filing failed)."
+        ),
+    )
+    book: DailyBook | None = Field(
+        default=None,
+        description=(
+            "The Portfolio section. Null when the index could not be read, or "
+            "for an account with no positions."
+        ),
+    )
+    routines: list[DailyRoutine] = Field(
+        default_factory=list,
+        description="The reader's daily questions, answered, in saved order.",
     )
 
 

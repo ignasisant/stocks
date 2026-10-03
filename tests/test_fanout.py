@@ -230,7 +230,7 @@ def test_alert_note_is_appended_when_the_llm_answers(local, monkeypatch):
     seen = []
     monkeypatch.setattr(
         narrative, "alerts_line",
-        lambda hits, prefs, lang: seen.append((len(hits), lang)) or "Semis running.",
+        lambda hits, prefs, lang, **_: seen.append((len(hits), lang)) or "Semis running.",
     )
     sent = []
     monkeypatch.setattr(
@@ -301,7 +301,7 @@ def _digest_env(local, monkeypatch, highlight):
 def test_digest_highlight_is_remembered_for_the_next_run(local, monkeypatch):
     seen = []
 
-    def highlight(data, prefs, lang, recent=None):
+    def highlight(data, prefs, lang, recent=None, **_):
         seen.append(list(recent or []))
         return f"Line {len(seen)}."
 
@@ -323,7 +323,7 @@ def test_undelivered_highlight_is_not_remembered(local, monkeypatch):
     """A line the user never saw must not be treated as already said."""
     seen = []
 
-    def highlight(data, prefs, lang, recent=None):
+    def highlight(data, prefs, lang, recent=None, **_):
         seen.append(list(recent or []))
         return "Only line."
 

@@ -16,6 +16,22 @@ uv run stocks logs stats --since 2h         # which events, how slow
 A suspiciously **young `uptime_s`** in `/status` during an incident means the
 container is crash-looping — go straight to "Bad deploy / rollback".
 
+## Out of memory (instance restarted, `Memory limit of 1024 MiB exceeded`)
+
+The instance stays at 1 GiB — the app has to fit in the free tier, so the
+fix is never a bigger instance. On Cloud Run the filesystem is memory too:
+anything written at runtime (`data/memo`, R2 restores) counts with the
+process.
+
+1. `curl -s https://<service-url>/status | jq .memory` — `rss_mb` (the
+   process), `cgroup_mb` against `limit_mb` (what the OOM killer reads,
+   files included), `memo_mb` (the disk memo), `threads`.
+2. `uv run stocks logs tail --since 24h --event mem.step` — every request
+   that grew the process by 20 MB or more, with its path. Requests overlap,
+   so read them as leads.
+3. A `cgroup_mb` well above `rss_mb` means files: check `memo_mb` and the
+   `disk_max` of the memo that grew (`api/loaders.py`).
+
 ## Alert: `/healthz` down (uptime check)
 
 The service isn't answering at all.
@@ -80,8 +96,9 @@ timestamp is the only clue left.
 
 Rollback is traffic-only and instant; the bad revision keeps existing. It can
 only reach back as far as the images Artifact Registry still holds — the
-cleanup policy (`infra/registry-cleanup-policy.json`) keeps the 5 newest
-unconditionally. Fix forward on a branch, let CI go green, then
+cleanup policy (`infra/registry-cleanup-policy.json`) keeps the 2 newest
+unconditionally, so rollback reaches the previous release; older than that is
+a redeploy of the old commit. Fix forward on a branch, let CI go green, then
 `./scripts/deploy.sh prod`.
 
 ## Data: corrupt or lost user data
@@ -128,5 +145,7 @@ backfilling.
    egress.
 2. `uv run stocks logs usage --since 7d` — real users, or a crawler/abuser?
    A single hammering IP shows up in `--http` access logs.
-3. Emergency lever: `./scripts/deploy.sh prod --min-instances 0` (accepts
-   cold starts) and/or lower `--max-instances` in the script.
+3. Prod should already run with `--min-instances 0` (the default): check
+   `gcloud run services describe topstocks --format='value(spec.template.metadata.annotations)'`
+   for `minScale`. A redeploy with plain `./scripts/deploy.sh prod` puts it
+   back to 0; lower `--max-instances` in the script for a traffic spike.

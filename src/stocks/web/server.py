@@ -711,11 +711,12 @@ async def status(request: Request) -> Response:
     What it adds over `/healthz`: which revision is answering and the commit it
     was built from, how long this container has been up (a suspiciously young
     uptime during an incident means crash-looping), and whether persistence is
-    configured. Deliberately
+    configured, and where memory stands (`stocks.memstat`: the process, the
+    container against its limit, the disk memo). Deliberately
     no storage or market-data probe — this must stay cheap enough to curl in
     a loop mid-incident. See docs/RUNBOOK.md.
     """
-    from stocks import storage
+    from stocks import memstat, storage
 
     body = {
         "status": "ok",
@@ -726,6 +727,7 @@ async def status(request: Request) -> Response:
         "commit": os.getenv("STOCKS_COMMIT", "dev"),
         "uptime_s": int((datetime.now(UTC) - _BOOTED).total_seconds()),
         "storage": storage.enabled(),
+        "memory": memstat.snapshot(),
     }
     return Response(
         json.dumps(body),

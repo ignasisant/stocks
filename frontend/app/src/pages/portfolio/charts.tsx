@@ -20,9 +20,13 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type MouseEvent,
   type PointerEvent,
+  type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { token } from "../../shell/theme";
+import { TickerCell } from "../../shell/tickers";
 import type { TaxPeriod } from "./api";
 
 /**
@@ -128,12 +132,27 @@ function ChartTip({
   width,
   title,
   rows,
+  top,
+  up = false,
+  wide = false,
+  className,
+  children,
 }: {
   /** Anchor, in viewBox units. */
   x: number;
   width: number;
   title: string;
   rows: TipRow[];
+  /** Pixels down the frame, for a box that follows the pointer both ways. */
+  top?: number;
+  /** Opens above `top` rather than below it, for a pointer low in the frame. */
+  up?: boolean;
+  /** Allowed the frame's whole width, for a box with more than a figure a row. */
+  wide?: boolean;
+  /** Anything past the rows — a donut slice's holdings. */
+  children?: ReactNode;
+  /** One more class on the box, for a layout of its own. */
+  className?: string;
 }) {
   const left = (x / width) * 100;
   const box = useRef<HTMLDivElement>(null);
@@ -153,11 +172,16 @@ function ChartTip({
     const nudge = over > 0 ? -over : under > 0 ? under : 0;
     if (nudge) tip.style.left = `calc(${left}% + ${nudge}px)`;
   });
+  const classes = ["pf-tip"];
+  if (left > 55) classes.push("pf-tip-flip");
+  if (up) classes.push("pf-tip-up");
+  if (wide) classes.push("pf-tip-wide");
+  if (className) classes.push(className);
   return (
     <div
       ref={box}
-      className={left > 55 ? "pf-tip pf-tip-flip" : "pf-tip"}
-      style={{ left: `${left}%` }}
+      className={classes.join(" ")}
+      style={{ left: `${left}%`, ...(top === undefined ? {} : { top }) }}
       role="status"
     >
       <span className="pf-tip-title">{title}</span>
@@ -170,15 +194,24 @@ function ChartTip({
           <strong>{row.value}</strong>
         </span>
       ))}
+      {children}
     </div>
   );
 }
 
 /** Where a pointer sits on an SVG, in its viewBox's x units. */
-function viewX(event: PointerEvent<Element>, svg: SVGSVGElement | null, width: number) {
+function viewX(event: MouseEvent<Element>, svg: SVGSVGElement | null, width: number) {
   const box = svg?.getBoundingClientRect();
   if (!box || !box.width) return null;
   return ((event.clientX - box.left) / box.width) * width;
+}
+
+/** Where a pointer sits on an SVG, in viewBox y units (the box keeps its
+    aspect, so one scale serves both axes). */
+function viewY(event: PointerEvent<Element>, svg: SVGSVGElement | null, width: number) {
+  const box = svg?.getBoundingClientRect();
+  if (!box || !box.width) return null;
+  return ((event.clientY - box.top) / box.width) * width;
 }
 
 /** The nearest of `count` evenly spaced points to viewBox x `at`. */
@@ -187,7 +220,115 @@ function nearest(at: number, left: number, plotW: number, count: number): number
   return Math.max(0, Math.min(count - 1, index));
 }
 
-export type Slice = { label: string; weight: number };
+/** The part of one holding inside a slice, in the reporting currency. */
+type SliceHolding = { ticker: string; value: number; cost: number };
+
+export type Slice = {
+  label: string;
+  weight: number;
+  /** Market value of the slice's priced holdings; absent where none priced. */
+  value?: number | null;
+  /** Cost basis of the same rows as `value`, so the P/L is like-for-like. */
+  cost?: number | null;
+  /** What the slice is made of, largest value first. */
+  holdings?: SliceHolding[];
+};
+
+/** What a donut needs to read its slices as money, not only as shares. */
+export type SliceDetail = {
+  money: (value: number, signed?: boolean) => string;
+  /** A signed fraction — a P/L as a percentage. */
+  change: (fraction: number) => string;
+  labels: {
+    value: string;
+    invested: string;
+    result: string;
+    positions: string;
+    /** "+3 more" under a hover box's cut list. */
+    more: (count: number) => string;
+    /** The hint that a click keeps the breakdown open. */
+    pin: string;
+    close: string;
+  };
+};
+
+/** Holdings a hover box lists before it says how many more there are. */
+const TIP_HOLDINGS = 4;
+
+/**
+ * The tail past the palette's hues as the one "Others" slice. Money only from
+ * the parts that carried any, and holdings merged by ticker — a fund spread
+ * over two tail sectors is still one holding.
+ */
+export function foldSlices(tail: Slice[], label: string): Slice {
+  const priced = tail.filter((slice) => slice.value != null);
+  const merged = new Map<string, SliceHolding>();
+  for (const slice of tail) {
+    for (const one of slice.holdings ?? []) {
+      const seen = merged.get(one.ticker);
+      merged.set(
+        one.ticker,
+        seen
+          ? {
+              ticker: one.ticker,
+              value: seen.value + one.value,
+              cost: seen.cost + one.cost,
+            }
+          : { ...one },
+      );
+    }
+  }
+  return {
+    label,
+    weight: tail.reduce((sum, slice) => sum + slice.weight, 0),
+    value: priced.length
+      ? priced.reduce((sum, slice) => sum + (slice.value ?? 0), 0)
+      : null,
+    cost: priced.length
+      ? priced.reduce((sum, slice) => sum + (slice.cost ?? 0), 0)
+      : null,
+    holdings: [...merged.values()].sort((a, b) => b.value - a.value),
+  };
+}
+
+/**
+ * A slice's hover box: what it is worth, what went into it and the
+ * difference, and how many holdings make it up. Pure, like `bookTip`, so the
+ * wording is testable without a pointer. Empty for a slice nothing priced.
+ */
+export function sliceTip(slice: Slice, detail: SliceDetail): TipRow[] {
+  if (slice.value == null) return [];
+  const { money, change, labels } = detail;
+  const rows: TipRow[] = [{ label: labels.value, value: money(slice.value) }];
+  if (slice.cost != null) {
+    const pnl = slice.value - slice.cost;
+    rows.push(
+      { label: labels.invested, value: money(slice.cost), color: token("text-muted") },
+      {
+        label: labels.result,
+        value: `${money(pnl, true)}${slice.cost > 0 ? ` (${change(pnl / slice.cost)})` : ""}`,
+        color: pnl >= 0 ? token("up") : token("down"),
+      },
+    );
+  }
+  if (slice.holdings?.length) {
+    rows.push({ label: labels.positions, value: String(slice.holdings.length) });
+  }
+  return rows;
+}
+
+/** One holding's figures in a slice: its part's value and that part's P/L. */
+function HoldingFigures({ one, detail }: { one: SliceHolding; detail: SliceDetail }) {
+  const pnl = one.value - one.cost;
+  return (
+    <>
+      <span className="pf-donut-figure">{detail.money(one.value)}</span>
+      <span className={`pf-donut-figure ${pnl >= 0 ? "pf-up" : "pf-down"}`}>
+        {one.cost > 0 ? detail.change(pnl / one.cost) : "—"}
+      </span>
+    </>
+  );
+}
 
 /**
  * Allocation as a donut, percentages on the legend rather than the slices.
@@ -195,18 +336,37 @@ export type Slice = { label: string; weight: number };
  * Sliver slices under ~1% printed their labels on top of each other, which is
  * why the original moved them out too. More buckets than the palette has hues
  * folds the tail into one muted "Others" slice, never a cycled colour.
+ *
+ * The hole names one slice — the largest until the pointer picks another —
+ * so the ring carries a label without crowding its slivers. With `detail`, a
+ * slice under the pointer opens a box with its money: value, what went in,
+ * the P/L between them and the holdings it is made of. A click (a tap, on a
+ * phone, where there is no hover) keeps that breakdown open under the legend
+ * with every holding as a link, which a box that follows the pointer cannot
+ * offer. The legend rows answer the same way, and to the keyboard.
  */
 export function Donut({
   title,
   slices,
   otherLabel,
   format,
+  detail,
 }: {
   title: string;
   slices: Slice[];
   otherLabel: string;
   format: (fraction: number) => string;
+  detail?: SliceDetail;
 }) {
+  const plot = useRef<HTMLDivElement>(null);
+  const [hover, setHover] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<string | null>(null);
+  const [pointer, setPointer] = useState<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
   const colors = categorical();
   const total = slices.reduce((sum, slice) => sum + slice.weight, 0);
   if (!(total > 0)) return null;
@@ -216,12 +376,7 @@ export function Donut({
     sorted.length > colors.length
       ? [
           ...sorted.slice(0, colors.length - 1),
-          {
-            label: otherLabel,
-            weight: sorted
-              .slice(colors.length - 1)
-              .reduce((sum, slice) => sum + slice.weight, 0),
-          },
+          foldSlices(sorted.slice(colors.length - 1), otherLabel),
         ]
       : sorted;
   const palette =
@@ -233,49 +388,189 @@ export function Donut({
   const circumference = 2 * Math.PI * radius;
   let offset = 0;
 
+  const find = (label: string | null) => shown.find((slice) => slice.label === label);
+  const active = find(hover) ?? find(pinned);
+  const focus = active ?? shown[0];
+  const open = detail ? find(pinned) : undefined;
+  const toggle = (label: string) => setPinned((now) => (now === label ? null : label));
+  const track = (event: PointerEvent<HTMLDivElement>) => {
+    // A finger has no hover: a tap pins the breakdown instead, and a box
+    // that only lives while the finger is down would flash and vanish.
+    if (event.pointerType === "touch") return;
+    const box = plot.current?.getBoundingClientRect();
+    if (!box) return;
+    // Off the ring — in the hole or past its edge — nothing is under the
+    // pointer, whichever slice it last crossed. In viewBox units: the stroke
+    // spans 32.5…47.5 around the centre, a little more for the lifted one.
+    const reach =
+      (Math.hypot(
+        event.clientX - box.left - box.width / 2,
+        event.clientY - box.top - box.height / 2,
+      ) /
+        (box.width / 2)) *
+      50;
+    if (reach < 31 || reach > 49.5) setHover(null);
+    setPointer({
+      x: event.clientX - box.left,
+      y: event.clientY - box.top,
+      w: box.width,
+      h: box.height,
+    });
+  };
+  const tipped = hover !== null ? find(hover) : undefined;
+  const tipRows = tipped && detail ? sliceTip(tipped, detail) : [];
+  const tipHoldings = tipped?.holdings ?? [];
+
   return (
     <div className="pf-donut">
       <h3>{title}</h3>
-      <svg viewBox="0 0 100 100" role="img" aria-label={title}>
-        {shown.map((slice, index) => {
-          const fraction = slice.weight / total;
-          const length = fraction * circumference;
-          // A 1px surface gap so adjacent fills never touch, dropped when the
-          // slice is too thin to spare it.
-          const drawn = length > 2 ? length - 1 : length;
-          const start = offset;
-          offset += length;
-          return (
-            <circle
-              key={slice.label}
-              cx="50"
-              cy="50"
-              r={radius}
-              fill="none"
-              stroke={palette[index % palette.length] ?? token("text-faint")}
-              strokeWidth="15"
-              strokeDasharray={`${drawn} ${circumference - drawn}`}
-              strokeDashoffset={-start}
-              transform="rotate(-90 50 50)"
-            >
-              <title>{`${slice.label} · ${format(fraction)}`}</title>
-            </circle>
-          );
-        })}
-      </svg>
+      <div
+        ref={plot}
+        className="pf-donut-plot"
+        onPointerMove={track}
+        onPointerLeave={() => {
+          setHover(null);
+          setPointer(null);
+        }}
+      >
+        <svg viewBox="0 0 100 100" role="img" aria-label={title}>
+          {shown.map((slice, index) => {
+            const fraction = slice.weight / total;
+            const length = fraction * circumference;
+            // A 1px surface gap so adjacent fills never touch, dropped when the
+            // slice is too thin to spare it.
+            const drawn = length > 2 ? length - 1 : length;
+            const start = offset;
+            offset += length;
+            const on = active?.label === slice.label;
+            return (
+              <circle
+                key={slice.label}
+                className="pf-slice"
+                cx="50"
+                cy="50"
+                r={radius}
+                fill="none"
+                stroke={palette[index % palette.length] ?? token("text-faint")}
+                strokeWidth={on ? 18 : 15}
+                strokeOpacity={active && !on ? 0.35 : 1}
+                strokeDasharray={`${drawn} ${circumference - drawn}`}
+                strokeDashoffset={-start}
+                transform="rotate(-90 50 50)"
+                onPointerEnter={() => setHover(slice.label)}
+                onClick={() => toggle(slice.label)}
+              />
+            );
+          })}
+        </svg>
+        {focus ? (
+          <div className="pf-donut-center" aria-hidden="true">
+            <span className="pf-donut-center-label">{focus.label}</span>
+            <strong>{format(focus.weight / total)}</strong>
+            {detail && focus.value != null ? (
+              <span className="pf-donut-center-money">{detail.money(focus.value)}</span>
+            ) : null}
+          </div>
+        ) : null}
+        {tipped && pointer ? (
+          <ChartTip
+            x={pointer.x}
+            width={pointer.w}
+            top={pointer.y > pointer.h * 0.55 ? pointer.y - 12 : pointer.y + 16}
+            up={pointer.y > pointer.h * 0.55}
+            wide={Boolean(detail)}
+            title={`${tipped.label} · ${format(tipped.weight / total)}`}
+            rows={tipRows}
+          >
+            {detail && tipHoldings.length ? (
+              <span className="pf-tip-holdings">
+                {tipHoldings.slice(0, TIP_HOLDINGS).map((one) => (
+                  <span className="pf-tip-holding" key={one.ticker}>
+                    <TickerCell
+                      ticker={one.ticker}
+                      name={false}
+                      className="pf-ticker pf-tip-tick"
+                    />
+                    <HoldingFigures one={one} detail={detail} />
+                  </span>
+                ))}
+                {tipHoldings.length > TIP_HOLDINGS ? (
+                  <span className="pf-muted">
+                    {detail.labels.more(tipHoldings.length - TIP_HOLDINGS)}
+                  </span>
+                ) : null}
+                {pinned !== tipped.label ? (
+                  <span className="pf-tip-hint">{detail.labels.pin}</span>
+                ) : null}
+              </span>
+            ) : null}
+          </ChartTip>
+        ) : null}
+      </div>
       <ul className="pf-legend">
         {shown.map((slice, index) => (
-          <li className="pf-legend-row" key={slice.label}>
-            <span
-              className="pf-swatch"
-              style={{ background: palette[index % palette.length] }}
-            />
-            <span>
-              {slice.label} · {format(slice.weight / total)}
-            </span>
+          <li key={slice.label}>
+            <button
+              type="button"
+              className={
+                active?.label === slice.label
+                  ? "pf-legend-row pf-legend-btn pf-legend-on"
+                  : "pf-legend-row pf-legend-btn"
+              }
+              aria-pressed={detail ? pinned === slice.label : undefined}
+              onPointerEnter={() => setHover(slice.label)}
+              onPointerLeave={() => setHover(null)}
+              onFocus={() => setHover(slice.label)}
+              onBlur={() => setHover(null)}
+              onClick={() => toggle(slice.label)}
+            >
+              <span
+                className="pf-swatch"
+                style={{ background: palette[index % palette.length] }}
+              />
+              <span>
+                {slice.label} · {format(slice.weight / total)}
+              </span>
+            </button>
           </li>
         ))}
       </ul>
+      {open && detail ? (
+        <div className="pf-donut-detail">
+          <div className="pf-donut-detail-head">
+            <strong>{open.label}</strong>
+            <button
+              type="button"
+              className="pf-donut-detail-close"
+              aria-label={detail.labels.close}
+              onClick={() => setPinned(null)}
+            >
+              ×
+            </button>
+          </div>
+          <div className="pf-donut-detail-figures">
+            {sliceTip(open, detail).map((row) => (
+              <span className="pf-tip-row" key={row.label}>
+                {row.color ? (
+                  <span className="pf-tip-swatch" style={{ background: row.color }} />
+                ) : null}
+                <span className="pf-muted">{row.label}</span>
+                <strong>{row.value}</strong>
+              </span>
+            ))}
+          </div>
+          {open.holdings?.length ? (
+            <ul className="pf-donut-holdings">
+              {open.holdings.map((one) => (
+                <li key={one.ticker}>
+                  <TickerCell ticker={one.ticker} name={false} className="pf-ticker" />
+                  <HoldingFigures one={one} detail={detail} />
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -302,62 +597,206 @@ function correlationColor(value: number): string {
   return `color-mix(in srgb, ${high} ${(fraction * 100).toFixed(1)}%, ${low})`;
 }
 
+/** How strongly a pair moves together, in five words a reader can act on. */
+export type CorrelationBand = "very_high" | "high" | "moderate" | "low" | "negative";
+
+export function correlationBand(value: number): CorrelationBand {
+  if (value >= 0.7) return "very_high";
+  if (value >= 0.4) return "high";
+  if (value >= 0.2) return "moderate";
+  if (value > -0.2) return "low";
+  return "negative";
+}
+
+type Pair = { name: string; value: number };
+
+export type CorrelationStats = {
+  /** Mean pairwise correlation, each pair weighted by both its weights. */
+  average: number | null;
+  /** The pair that moves most alike. */
+  closest: { a: string; b: string; value: number } | null;
+  /** The name least like the rest of the book. */
+  diversifier: Pair | null;
+  /** Per name: its weighted mean correlation with the others, and the other
+      it is most and least like. */
+  perName: Record<
+    string,
+    { average: number | null; peer: Pair | null; hedge: Pair | null }
+  >;
+};
+
+/**
+ * What the grid says, summed up: how alike the book is on average, which pair
+ * is most alike, and which name diversifies the rest best. Weighted by the
+ * book's weights — a pair of 0.5 % positions moving together is not the
+ * book's risk — falling back to equal weights where none are known.
+ */
+export function correlationStats(
+  matrix: Record<string, Record<string, number>>,
+  weights: Record<string, number> = {},
+): CorrelationStats {
+  const names = Object.keys(matrix);
+  const known = names.some((name) => (weights[name] ?? 0) > 0);
+  const weight = (name: string) => (known ? (weights[name] ?? 0) : 1);
+  let sum = 0;
+  let mass = 0;
+  let closest: CorrelationStats["closest"] = null;
+  const perName: CorrelationStats["perName"] = {};
+  for (const a of names) {
+    let own = 0;
+    let ownMass = 0;
+    let peer: Pair | null = null;
+    let hedge: Pair | null = null;
+    for (const b of names) {
+      const value = matrix[a]?.[b];
+      if (a === b || value === undefined) continue;
+      own += weight(b) * value;
+      ownMass += weight(b);
+      sum += weight(a) * weight(b) * value;
+      mass += weight(a) * weight(b);
+      if (!peer || value > peer.value) peer = { name: b, value };
+      if (!hedge || value < hedge.value) hedge = { name: b, value };
+      if (a < b && (!closest || value > closest.value)) closest = { a, b, value };
+    }
+    perName[a] = { average: ownMass ? own / ownMass : null, peer, hedge };
+  }
+  let diversifier: Pair | null = null;
+  for (const name of names) {
+    const average = perName[name]?.average;
+    if (average == null || (known && !weight(name))) continue;
+    if (!diversifier || average < diversifier.value)
+      diversifier = { name, value: average };
+  }
+  return { average: mass ? sum / mass : null, closest, diversifier, perName };
+}
+
+type HeatFocus = { row: string; column: string; rect: DOMRect };
+
 /**
  * Pairwise return correlation as a grid of squares.
  *
  * A pair the API had no overlap for is absent from the matrix rather than 0 —
  * an uncorrelated pair and an unmeasurable one are not the same reading — so
  * those cells are left blank instead of painted at the neutral stop.
+ *
+ * Hovering a cell (tapping, on a phone) lights its row and column and opens
+ * `explain`'s reading of that pair beside it. The box is portalled to the
+ * body: the grid scrolls sideways inside its card, which would clip it, and
+ * the main column is a size container, which would anchor a fixed box to it.
  */
 export function Heatmap({
   matrix,
   format,
+  explain,
+  scale,
 }: {
   matrix: Record<string, Record<string, number>>;
   format: (value: number) => string;
+  /** The reading of one cell; a name against itself when row = column. */
+  explain?: (row: string, column: string) => ReactNode;
+  /** Words under the colour ramp's two ends and its middle. */
+  scale?: { low: string; mid: string; high: string };
 }) {
+  const [focus, setFocus] = useState<HeatFocus | null>(null);
+  // A tapped cell stays read until the page scrolls under it.
+  useEffect(() => {
+    if (!focus) return;
+    const clear = () => setFocus(null);
+    window.addEventListener("scroll", clear, { capture: true, passive: true });
+    return () => window.removeEventListener("scroll", clear, { capture: true });
+  }, [focus]);
   const names = Object.keys(matrix);
   if (!names.length) return null;
+  const open = (row: string, column: string, target: Element) =>
+    setFocus({ row, column, rect: target.getBoundingClientRect() });
+  const lit = (name: string) => focus?.row === name || focus?.column === name;
   return (
     <div className="pf-scroll">
       <div
-        className="pf-heat"
+        className={focus ? "pf-heat pf-heat-focus" : "pf-heat"}
         style={{
           gridTemplateColumns: `auto repeat(${names.length}, minmax(1.5rem, 1fr))`,
+        }}
+        onPointerLeave={(event) => {
+          if (event.pointerType !== "touch") setFocus(null);
         }}
       >
         <span />
         {names.map((name) => (
-          <span className="pf-heat-col" key={`head-${name}`}>
+          <span
+            className={lit(name) ? "pf-heat-col pf-heat-lit" : "pf-heat-col"}
+            key={`head-${name}`}
+          >
             {name}
           </span>
         ))}
         {names.map((row) => (
           <Fragment key={row}>
-            <span className="pf-heat-label">{row}</span>
+            <span className={lit(row) ? "pf-heat-label pf-heat-lit" : "pf-heat-label"}>
+              <TickerCell ticker={row} name={false} className="pf-ticker" />
+            </span>
             {names.map((column) => {
               const value = matrix[row]?.[column];
+              const on = focus?.row === row || focus?.column === column;
               return (
                 <span
-                  className="pf-heat-cell"
+                  className={on ? "pf-heat-cell pf-heat-on" : "pf-heat-cell"}
                   key={`${row}-${column}`}
                   style={{
                     background:
                       value === undefined ? "transparent" : correlationColor(value),
                   }}
-                  title={
+                  aria-label={
                     value === undefined
                       ? `${row} × ${column}`
                       : `${row} × ${column} — ${format(value)}`
                   }
+                  onPointerEnter={(event) => {
+                    if (event.pointerType !== "touch")
+                      open(row, column, event.currentTarget);
+                  }}
+                  onClick={(event) => {
+                    const same = focus?.row === row && focus?.column === column;
+                    if (same) setFocus(null);
+                    else open(row, column, event.currentTarget);
+                  }}
                 />
               );
             })}
           </Fragment>
         ))}
       </div>
-      <HeatLegend format={format} />
+      <HeatLegend format={format} scale={scale} />
+      {focus && explain ? (
+        <HeatTip rect={focus.rect}>{explain(focus.row, focus.column)}</HeatTip>
+      ) : null}
     </div>
+  );
+}
+
+/** The reading beside a cell: right of it, else left, kept on screen. */
+function HeatTip({ rect, children }: { rect: DOMRect; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const tip = box.current;
+    if (!tip) return;
+    const { width, height } = tip.getBoundingClientRect();
+    const gap = 10;
+    const room = window.innerWidth;
+    let left = rect.right + gap;
+    if (left + width > room - 8) left = rect.left - gap - width;
+    left = Math.max(8, Math.min(left, room - width - 8));
+    let top = rect.top + rect.height / 2 - height / 2;
+    top = Math.max(8, Math.min(top, window.innerHeight - height - 8));
+    tip.style.left = `${left}px`;
+    tip.style.top = `${top}px`;
+    tip.style.visibility = "visible";
+  });
+  return createPortal(
+    <div ref={box} className="pf-tip pf-heat-tip" role="status">
+      {children}
+    </div>,
+    document.body,
   );
 }
 
@@ -366,22 +805,38 @@ export function Heatmap({
  *
  * Without it the ramp is a guess: nothing on the grid says whether the deep
  * end is "moves together" or "moves apart". Drawn from the same
- * `correlationColor` the cells use, so the two cannot disagree.
+ * `correlationColor` the cells use, so the two cannot disagree. With `scale`
+ * the ends and the middle are also said in words.
  */
-function HeatLegend({ format }: { format: (value: number) => string }) {
+function HeatLegend({
+  format,
+  scale,
+}: {
+  format: (value: number) => string;
+  scale?: { low: string; mid: string; high: string };
+}) {
   const stops = [-1, -0.5, 0, 0.5, 1];
   return (
-    <div className="pf-heat-legend" aria-hidden="true">
-      <span>{format(-1)}</span>
-      <span
-        className="pf-heat-ramp"
-        style={{
-          background: `linear-gradient(to right, ${stops
-            .map((v) => correlationColor(v))
-            .join(", ")})`,
-        }}
-      />
-      <span>{format(1)}</span>
+    <div className="pf-heat-legend-wrap" aria-hidden="true">
+      <div className="pf-heat-legend">
+        <span>{format(-1)}</span>
+        <span
+          className="pf-heat-ramp"
+          style={{
+            background: `linear-gradient(to right, ${stops
+              .map((v) => correlationColor(v))
+              .join(", ")})`,
+          }}
+        />
+        <span>{format(1)}</span>
+      </div>
+      {scale ? (
+        <div className="pf-heat-words">
+          <span>{scale.low}</span>
+          <span>{scale.mid}</span>
+          <span>{scale.high}</span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -394,19 +849,29 @@ function HeatLegend({ format }: { format: (value: number) => string }) {
  * A value axis in the gutter, as Plotly draws one, so a bar's height reads as
  * an amount and not only as a shape; and one hover box per period — every
  * figure of that year or month together, wherever the pointer is in its slot,
- * not only over a bar thick enough to aim at.
+ * not only over a bar thick enough to aim at. `detail` adds what the bars
+ * cannot draw (the tax, the deferred losses, which sales made the result);
+ * a tap opens the box on a phone, and with `onPick` a click hands the period
+ * to whatever reads it in full, `picked` marking the one it shows.
  */
 export function PeriodBars({
   periods,
   labels,
   money,
   axisMoney,
+  detail,
+  onPick,
+  picked,
 }: {
   periods: TaxPeriod[];
   labels: { gains: string; losses: string; recovered: string; net: string };
   money: (value: number) => string;
   /** Compact formatter for the gutter; falls back to `money` when omitted. */
   axisMoney?: (value: number) => string;
+  /** More of a period in its hover box: rows under the bars' own, then any body. */
+  detail?: (period: TaxPeriod) => { rows?: TipRow[]; body?: ReactNode };
+  onPick?: (period: TaxPeriod) => void;
+  picked?: string;
 }) {
   const gutter = axisMoney ?? money;
   const [hover, setHover] = useState<number | null>(null);
@@ -457,6 +922,17 @@ export function PeriodBars({
   ];
 
   const at = hover === null ? null : periods[hover];
+  const pickedAt = periods.findIndex((period) => period.period === picked);
+  const more = at && detail ? detail(at) : null;
+  const slotAt = (event: MouseEvent<SVGSVGElement>) => {
+    const x = viewX(event, svg.current, width);
+    if (x === null) return null;
+    return Math.max(0, Math.min(periods.length - 1, Math.floor((x - left) / slot)));
+  };
+  const point = (event: PointerEvent<SVGSVGElement>) => {
+    const index = slotAt(event);
+    if (index !== null) setHover(index);
+  };
 
   return (
     <div className="pf-chart">
@@ -474,13 +950,18 @@ export function PeriodBars({
           viewBox={`0 0 ${width} ${height}`}
           width="100%"
           role="img"
-          onPointerMove={(event) => {
-            const x = viewX(event, svg.current, width);
-            if (x === null) return;
-            const index = Math.floor((x - left) / slot);
-            setHover(Math.max(0, Math.min(periods.length - 1, index)));
+          className={onPick ? "pf-bars-pick" : undefined}
+          onPointerMove={point}
+          onPointerDown={point}
+          onPointerLeave={(event) => {
+            // A tap ends in a leave: the box it opened stays until the next.
+            if (event.pointerType !== "touch") setHover(null);
           }}
-          onPointerLeave={() => setHover(null)}
+          onClick={(event) => {
+            const index = slotAt(event);
+            const period = index === null ? undefined : periods[index];
+            if (period && onPick) onPick(period);
+          }}
         >
           <ValueAxis
             ticks={niceTicks(-maxDown, maxUp).filter((tick) => tick !== 0)}
@@ -492,6 +973,19 @@ export function PeriodBars({
           <text x={left - 6} y={zero + 4} fill={text} fontSize="11" textAnchor="end">
             {gutter(0)}
           </text>
+          {/* The period read in full elsewhere keeps a faint slot, since a
+              monthly axis prints only every few labels. */}
+          {pickedAt < 0 || pickedAt === hover ? null : (
+            <rect
+              x={left + pickedAt * slot}
+              y={top}
+              width={slot}
+              height={plotH}
+              fill={token("surface-hover")}
+              opacity={0.55}
+              pointerEvents="none"
+            />
+          )}
           {hover === null ? null : (
             <rect
               x={left + hover * slot}
@@ -542,8 +1036,9 @@ export function PeriodBars({
                   <text
                     x={centre}
                     y={height - 6}
-                    fill={text}
+                    fill={period.period === picked ? token("text-primary") : text}
                     fontSize="11"
+                    fontWeight={period.period === picked ? 700 : undefined}
                     textAnchor="middle"
                   >
                     {period.period}
@@ -571,8 +1066,12 @@ export function PeriodBars({
                   ]
                 : []),
               { label: labels.net, value: money(at.net_taxable), color: netColor },
+              ...(more?.rows ?? []),
             ]}
-          />
+            wide={Boolean(more?.body)}
+          >
+            {more?.body}
+          </ChartTip>
         ) : null}
       </div>
     </div>
@@ -602,6 +1101,33 @@ export type ReturnBand = {
   color: string;
 };
 
+/**
+ * The euros behind return lines that all share one denominator: each line's
+ * value on a day is that day's net money in times one plus its return. With it
+ * the tooltip reads each line as money — worth, gain, and the gap to the first
+ * line — rather than as a bare percentage.
+ */
+export type LineMoney = {
+  /** Net money in per date, aligned to `dates`; null while nothing is in. */
+  invested: (number | null)[];
+  money: (value: number, signed?: boolean) => string;
+  change: (fraction: number) => string;
+  labels: { invested: string; value: string; gain: string; versus: string };
+};
+
+/** One line's money on one day, against the first line's. */
+export function lineMoney(
+  invested: number,
+  value: number,
+  first: number | null,
+): { worth: number; gain: number; versus: number | null } {
+  return {
+    worth: invested * (1 + value),
+    gain: invested * value,
+    versus: first === null ? null : invested * (value - first),
+  };
+}
+
 /** Where the plot sits inside the 720-wide viewBox; the left gutter holds the value axis. */
 const PLOT = { width: 720, height: 300, top: 8, right: 8, bottom: 24, left: 64 };
 
@@ -626,6 +1152,7 @@ export function ReturnLines({
   formatDate,
   bands = [],
   marker,
+  money,
 }: {
   dates: string[];
   series: ReturnSeries[];
@@ -636,8 +1163,14 @@ export function ReturnLines({
   /** A labelled vertical rule at one index — "today" between a record and a
       projection. */
   marker?: { index: number; label: string };
+  /** The money behind the lines: a tooltip in euros, a legend that names
+      each line's worth, and the line under the pointer singled out. */
+  money?: LineMoney;
 }) {
   const [pointer, setHover] = useState<number | null>(null);
+  // The line singled out: from the legend, else the one nearest the pointer.
+  const [lit, setLit] = useState<string | null>(null);
+  const [near, setNear] = useState<string | null>(null);
   const svg = useRef<SVGSVGElement>(null);
   const drawn = series.filter((one) => one.points.some((v) => v !== null));
   if (dates.length < 2 || !drawn.length) return null;
@@ -705,20 +1238,81 @@ export function ReturnLines({
 
   const ticks = [0, Math.floor(dates.length / 2), dates.length - 1];
 
+  /** The stroked line nearest viewBox y `at` on day `index`, if close enough
+      to be the one the pointer means. */
+  const closest = (at: number | null, index: number): string | null => {
+    if (at === null) return null;
+    let best: string | null = null;
+    let gap = 24;
+    for (const one of colored) {
+      const value = one.points[index];
+      if (one.tipOnly || value == null) continue;
+      const off = Math.abs(y(value) - at);
+      if (off < gap) [best, gap] = [one.label, off];
+    }
+    return best;
+  };
+  const active = money ? (lit ?? (hover === null ? null : near)) : null;
+  const point = (event: PointerEvent<SVGSVGElement>) => {
+    const at = viewX(event, svg.current, width);
+    if (at === null) return;
+    const index = nearest(at, PLOT.left, plotW, dates.length);
+    setHover(index);
+    if (money) setNear(closest(viewY(event, svg.current, width), index));
+  };
+  // The day the legend's figures are read on: the pointer's, else the last
+  // day with money in.
+  let shown = hover;
+  if (shown === null && money)
+    for (let i = money.invested.length - 1; i >= 0 && shown === null; i--)
+      if (money.invested[i] != null) shown = i;
+
   return (
     <div className="pf-chart">
       <ul className="pf-legend-inline">
         {colored
           .filter((one) => !one.tipOnly)
-          .map((one) => (
-            <li className="pf-legend-row" key={one.label}>
+          .map((one) => {
+            const swatch = (
               <span
                 className={one.dashed ? "pf-swatch pf-swatch-dashed" : "pf-swatch"}
                 style={{ background: one.color }}
               />
-              <span>{one.label}</span>
-            </li>
-          ))}
+            );
+            if (!money)
+              return (
+                <li className="pf-legend-row" key={one.label}>
+                  {swatch}
+                  <span>{one.label}</span>
+                </li>
+              );
+            const value = shown === null ? null : one.points[shown];
+            const base = shown === null ? null : money.invested[shown];
+            return (
+              <li key={one.label}>
+                <button
+                  type="button"
+                  className={
+                    active === one.label
+                      ? "pf-legend-row pf-line-key pf-legend-on"
+                      : "pf-legend-row pf-line-key"
+                  }
+                  onPointerEnter={() => setLit(one.label)}
+                  onPointerLeave={() => setLit(null)}
+                  onFocus={() => setLit(one.label)}
+                  onBlur={() => setLit(null)}
+                >
+                  {swatch}
+                  <span>{one.label}</span>
+                  {value != null && base != null ? (
+                    <span className="pf-muted">
+                      {money.money(lineMoney(base, value, null).worth)}
+                    </span>
+                  ) : null}
+                </button>
+              </li>
+            );
+          })}
         {bands.map((band) => (
           <li className="pf-legend-row" key={band.label}>
             <span className="pf-swatch" style={{ background: band.color }} />
@@ -732,11 +1326,16 @@ export function ReturnLines({
           viewBox={`0 0 ${width} ${height}`}
           width="100%"
           role="img"
-          onPointerMove={(event) => {
-            const at = viewX(event, svg.current, width);
-            if (at !== null) setHover(nearest(at, PLOT.left, plotW, dates.length));
+          onPointerMove={point}
+          // A tap is a pointer that never moves: it answers too, on a phone.
+          onPointerDown={point}
+          // A finger lifting is a leave too; the tapped day stays read until
+          // the next tap moves it.
+          onPointerLeave={(event) => {
+            if (event.pointerType === "touch") return;
+            setHover(null);
+            setNear(null);
           }}
-          onPointerLeave={() => setHover(null)}
         >
           <ValueAxis
             ticks={niceTicks(low, high).filter((tick) => tick !== 0)}
@@ -792,16 +1391,20 @@ export function ReturnLines({
               </text>
             </g>
           ) : null}
+          {/* The line singled out is drawn last, over the ones it crosses. */}
           {colored
             .filter((one) => !one.tipOnly)
+            .sort((a, b) => Number(a.label === active) - Number(b.label === active))
             .map((one) =>
               paths(one.points).map((d, index) => (
                 <path
                   key={`${one.label}-${index}`}
+                  className="pf-line"
                   d={d}
                   fill="none"
                   stroke={one.color}
-                  strokeWidth="1.5"
+                  strokeWidth={active === one.label ? 2.5 : 1.5}
+                  strokeOpacity={active && active !== one.label ? 0.3 : 1}
                   strokeDasharray={one.dashed ? "4 3" : undefined}
                 />
               )),
@@ -847,7 +1450,28 @@ export function ReturnLines({
             </text>
           ))}
         </svg>
-        {hover === null ? null : (
+        {hover === null ? null : money && money.invested[hover] != null ? (
+          <ChartTip
+            x={x(hover)}
+            width={width}
+            title={formatDate(dates[hover]!)}
+            rows={[
+              {
+                label: money.labels.invested,
+                value: money.money(money.invested[hover]!),
+              },
+            ]}
+            className="pf-tip-money"
+          >
+            <MoneyRows
+              lines={colored}
+              index={hover}
+              invested={money.invested[hover]!}
+              money={money}
+              active={active}
+            />
+          </ChartTip>
+        ) : (
           <ChartTip
             x={x(hover)}
             width={width}
@@ -867,6 +1491,73 @@ export function ReturnLines({
         )}
       </div>
     </div>
+  );
+}
+
+/** Each line on one day as money: worth, gain with its return, and the gap
+    to the first line — the book — in euros. */
+function MoneyRows({
+  lines,
+  index,
+  invested,
+  money,
+  active,
+}: {
+  lines: (ReturnSeries & { color: string })[];
+  index: number;
+  invested: number;
+  money: LineMoney;
+  active: string | null;
+}) {
+  const first = lines[0]?.points[index] ?? null;
+  return (
+    <span className="pf-tip-lines">
+      <span />
+      <span className="pf-tip-head">{money.labels.value}</span>
+      <span className="pf-tip-head">{money.labels.gain}</span>
+      <span className="pf-tip-head">{money.labels.versus}</span>
+      {lines.map((one, row) => {
+        const value = one.points[index];
+        const on = active === one.label ? " pf-tip-on" : "";
+        if (value == null)
+          return (
+            <span className={`pf-tip-line${on}`} key={one.label}>
+              <LineName one={one} />
+              <span className="pf-tip-num">—</span>
+              <span />
+              <span />
+            </span>
+          );
+        const figures = lineMoney(invested, value, row === 0 ? null : first);
+        return (
+          <span className={`pf-tip-line${on}`} key={one.label}>
+            <LineName one={one} />
+            <strong className="pf-tip-num">{money.money(figures.worth)}</strong>
+            <span className={`pf-tip-num ${figures.gain < 0 ? "pf-down" : "pf-up"}`}>
+              {money.money(figures.gain, true)} ({money.change(value)})
+            </span>
+            <span
+              className={
+                figures.versus === null
+                  ? "pf-tip-num"
+                  : `pf-tip-num ${figures.versus < 0 ? "pf-down" : "pf-up"}`
+              }
+            >
+              {figures.versus === null ? "" : money.money(figures.versus, true)}
+            </span>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function LineName({ one }: { one: ReturnSeries & { color: string } }) {
+  return (
+    <span className="pf-tip-name">
+      <span className="pf-tip-swatch" style={{ background: one.color }} />
+      <span>{one.label}</span>
+    </span>
   );
 }
 

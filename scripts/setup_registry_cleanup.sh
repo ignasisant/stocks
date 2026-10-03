@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # One-time Artifact Registry cleanup policy for the Cloud Run source-deploy
 # repository. Without it every deploy leaves its image behind forever: 12
-# images and 4.5 GB by September 2026, on a 0.5 GB free tier, growing with
-# every ship and never read again.
+# images and 4.5 GB by September 2026 (24 and 7.75 GB by October), on a
+# 0.5 GB free tier, growing with every ship and never read again.
 #
 # The policy (infra/registry-cleanup-policy.json) is two rules:
-#   keep-recent-5       keep the 5 newest versions whatever their age
-#   delete-untagged-14d delete untagged images older than 14 days
-# Keep rules win over Delete rules, so the newest 5 survive unconditionally —
+#   keep-recent-2       keep the 2 newest versions of each image whatever their age
+#   delete-untagged-2d  delete untagged images older than 2 days
+# Keep rules win over Delete rules, so the newest 2 survive unconditionally —
 # that is the floor under ./scripts/rollback.sh, which can only reach a
-# revision whose image still exists.
+# revision whose image still exists: the release before the current one. An
+# image is ~400 MB, so two of them sit just past the free tier (a few cents a
+# month); anything older is a redeploy of that commit with deploy.sh.
 #
 # Usage:
 #   ./scripts/setup_registry_cleanup.sh --dry-run   # log what it WOULD delete
@@ -50,8 +52,8 @@ esac
 
 if [ "${DRY[0]}" = "--no-dry-run" ]; then
     echo "This ARMS deletion on $REGION/$REPO (project $PROJECT)."
-    echo "Untagged images older than 14 days will be deleted permanently;"
-    echo "the 5 newest versions are kept whatever their age."
+    echo "Untagged images older than 2 days will be deleted permanently;"
+    echo "the 2 newest versions of each image are kept whatever their age."
     printf "Proceed? [y/N] "
     read -r reply
     case "$reply" in y|Y|yes) ;; *) echo "aborted"; exit 1 ;; esac

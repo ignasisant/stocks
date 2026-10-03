@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from stocks import atomic, storage
-from stocks.chat import memory
+from stocks.chat import learnings, memory
 from stocks.config import DATA_DIR, PROJECT_ROOT, WATCHLIST_FILE
 from stocks.secrets_env import secret
 
@@ -37,10 +37,12 @@ USERS_DIR = DATA_DIR / "users"
 GUEST_DIR = USERS_DIR / "_guest"
 
 # The files that make up one account, used by the legacy-dir migration and by
-# the bucket restore. `memory.FILE` is the chat memory database.
+# the bucket restore. `memory.FILE` is the chat's conversation index and
+# `learnings.FILE` the memories it keeps about the user.
 USER_FILES = (
     "watchlist.yaml", "portfolio.db", "last_import.json", "prefs.json", "chat.json",
     "bank.json", "daily_action.json", "sector_verdict.json", memory.FILE,
+    learnings.FILE,
 )
 
 
@@ -75,6 +77,16 @@ class UserPaths:
         UserPaths has to get right and can get wrong.
         """
         return self.action.with_name("sector_verdict.json")
+
+    @property
+    def memory_index(self) -> Path:
+        """The chat's conversation index (chat/memory.py), beside chat.json."""
+        return memory.path_for(self.chat.parent)
+
+    @property
+    def learnings(self) -> Path:
+        """What the chat keeps about the user (chat/learnings.py)."""
+        return learnings.path_for(self.chat)
 
 
 def slug(email: str) -> str:
@@ -226,7 +238,11 @@ def restore_account(
                 paths.chat,
                 paths.bank,
                 paths.action,
-                memory.path_for(paths.root),
+                # Beside chat.json, not under `root`: the two differ for the
+                # owner (repo root vs data/), and restoring the index from the
+                # root's key pulled a file nothing ever wrote or read.
+                paths.memory_index,
+                paths.learnings,
             ),
         )
     except Exception as exc:
@@ -377,6 +393,11 @@ DEFAULT_PREFS: dict = {  # language None = auto (browser)
     # a reload puts the reader back in the conversation instead of behind the
     # launcher icon. Written by chat_core.render_side_panel.
     "chat_panel_open": False,
+    # The assistant's memory (chat/learnings.py): whether it keeps what the
+    # user tells it to remember and reads it into every conversation, and
+    # whether it may search the account's earlier conversations (chat/memory.py).
+    "chat_memory": True,
+    "chat_recall": True,
 }
 
 

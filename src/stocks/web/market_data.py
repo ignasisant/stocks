@@ -98,21 +98,31 @@ def index_month_base(closes: dict[str, pd.Series], base: str = "EUR") -> float:
     happened to go — which is the single easiest way for this card to tell a
     reader something false about their own performance.
     """
+    in_base = index_in_base(closes, base)
+    if in_base is None:
+        return float("nan")
+    return sm.pct_over(in_base, MONTH_SESSIONS)
+
+
+def index_in_base(closes: dict[str, pd.Series], base: str = "EUR") -> pd.Series | None:
+    """SPY's closes in the reader's own currency, or None without them.
+
+    Only the euro pair is downloaded, so any base other than EUR reads the
+    index in its own dollars rather than inventing a cross rate.
+    """
     index = closes.get("SPY")
     if index is None or index.dropna().empty:
-        return float("nan")
+        return None
     series = index.dropna()
     if base != "EUR":
-        # Only the euro pair is downloaded; any other base reads the index in
-        # its own currency rather than inventing a cross rate.
-        return sm.pct_over(series, MONTH_SESSIONS)
+        return series
     pair = closes.get("EURUSD=X")
     if pair is None or pair.dropna().empty:
-        return float("nan")
+        return None
     # EURUSD=X is dollars per euro, so dividing a dollar price by it gives the
     # price in euros. Both sides are reindexed onto the index's own sessions:
     # FX quotes on days the New York market is closed, and an unaligned divide
     # would compare Monday's price against Sunday's rate.
     rate = pair.dropna().reindex(series.index, method="ffill")
     in_base = (series / rate).dropna()
-    return sm.pct_over(in_base, MONTH_SESSIONS)
+    return in_base if not in_base.empty else None

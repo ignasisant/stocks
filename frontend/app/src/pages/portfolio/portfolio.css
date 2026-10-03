@@ -11,6 +11,8 @@
  */
 
 .pf-tabs {
+  /* The offset parent of its tabs, so `Tabs` can centre the open one. */
+  position: relative;
   display: flex;
   gap: 0.25rem;
   flex-wrap: wrap;
@@ -256,6 +258,142 @@
   gap: 0.4rem;
 }
 
+/* A donut's legend rows are buttons: hovering one lifts its slice, and a
+   click keeps its breakdown open, as on the ring itself. */
+.pf-legend-btn {
+  box-sizing: border-box;
+  width: calc(100% + 0.6rem);
+  margin: 0 -0.3rem;
+  padding: 0.1rem 0.3rem;
+  border: 0;
+  border-radius: var(--ag-radius-xs, 4px);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pf-legend-btn:hover,
+.pf-legend-on {
+  background: var(--ag-surface-hover);
+}
+
+/* The ring and what sits on it: the label in the hole, the hover box. Sized
+   off the ring's own width, which is what the hole scales with. */
+.pf-donut-plot {
+  position: relative;
+  container-type: inline-size;
+}
+
+.pf-donut-plot svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.pf-slice {
+  cursor: pointer;
+  transition:
+    stroke-opacity 120ms ease,
+    stroke-width 120ms ease;
+}
+
+.pf-donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15em;
+  /* The hole is 65% of the ring; this keeps the text a margin inside it. */
+  padding: 0 24%;
+  text-align: center;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-donut-center-label {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  color: var(--ag-text-muted);
+  font-size: clamp(0.62rem, 5cqi, 0.9rem);
+  line-height: 1.2;
+}
+
+.pf-donut-center strong {
+  color: var(--ag-text-primary);
+  font-size: clamp(0.8rem, 10cqi, 1.9rem);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.pf-donut-center-money {
+  color: var(--ag-text-secondary, var(--ag-text-primary));
+  font-size: clamp(0.62rem, 5cqi, 0.95rem);
+}
+
+.pf-donut-figure {
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* A clicked slice's breakdown, under the legend: every holding, as a link. */
+.pf-donut-detail {
+  margin-top: 0.7rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  background: var(--ag-surface-sunken);
+  font-size: var(--ag-fs-xs, 0.78rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-donut-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.pf-donut-detail-close {
+  padding: 0 0.2rem;
+  border: 0;
+  background: none;
+  color: var(--ag-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pf-donut-detail-figures {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pf-donut-holdings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 10px;
+  max-height: 16rem;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0 0;
+  overflow: auto;
+  border-top: 1px solid var(--ag-border);
+  list-style: none;
+}
+
+.pf-donut-holdings li {
+  display: contents;
+}
+
 .pf-swatch {
   width: 0.6rem;
   height: 0.6rem;
@@ -303,10 +441,13 @@
   color: var(--ag-text-muted);
   writing-mode: vertical-rl;
   transform: rotate(180deg);
-  height: 3.6rem;
+  /* Long pair symbols (MOODENG-EUR) read whole; past this they trail off. */
+  max-height: 6.5rem;
+  align-self: end;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* -------------------------------------------------------------- empty states */
@@ -358,6 +499,7 @@
    placed as a percentage of the chart's rendered width (charts.tsx ChartTip). */
 .pf-plot {
   position: relative;
+  container: pf-plot / inline-size;
 }
 
 /* Plotly's unified hover label: date on top, one row per series with its
@@ -385,6 +527,52 @@
 /* Past the middle the box opens to the pointer's left, so it stays in the card. */
 .pf-tip-flip {
   transform: translateX(calc(-100% - 8px));
+}
+
+/* Low in a donut the box opens above the pointer, over the ring. */
+.pf-tip-up {
+  transform: translate(8px, -100%);
+}
+
+.pf-tip-flip.pf-tip-up {
+  transform: translate(calc(-100% - 8px), -100%);
+}
+
+.pf-tip-wide {
+  min-width: min(13rem, 100%);
+  max-width: min(300px, 100%);
+}
+
+/* A slice's holdings under its figures: symbol, value, P/L. */
+.pf-tip-holdings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 2px 10px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--ag-border);
+}
+
+.pf-tip-holding {
+  display: contents;
+}
+
+.pf-tip-holdings > .pf-muted,
+.pf-tip-hint {
+  grid-column: 1 / -1;
+}
+
+.pf-tip-hint {
+  margin-top: 2px;
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs, 0.72rem);
+}
+
+.pf-tip-tick {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pf-tip-title {
@@ -440,6 +628,90 @@
   border-radius: var(--ag-radius-pill, 999px);
 }
 
+/* The ramp's ends and middle in words, under the figures. Sized to the ramp
+   plus its two figures, so the words sit under the colours they name. */
+.pf-heat-legend-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  max-width: 100%;
+}
+
+.pf-heat-words {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.2rem;
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs, 0.72rem);
+}
+
+/* A cell under the pointer lights its row and column; the rest steps back. */
+.pf-heat-cell {
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.pf-heat-focus .pf-heat-cell:not(.pf-heat-on) {
+  opacity: 0.4;
+}
+
+.pf-heat-lit,
+.pf-heat-lit .pf-ticker {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+}
+
+.pf-heat-label .pf-ticker {
+  color: inherit;
+  font-weight: inherit;
+}
+
+/* The reading beside a cell, fixed to the viewport (it is portalled out of
+   the scrolling grid). Hidden until measured, so it never flashes at 0,0. */
+.pf-heat-tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  transform: none;
+  visibility: hidden;
+  width: max-content;
+  max-width: min(340px, calc(100vw - 16px));
+  white-space: normal;
+}
+
+.pf-heat-tip-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--ag-fs-sm, 0.875rem);
+  font-weight: 600;
+}
+
+.pf-heat-tip-story {
+  margin: 2px 0 4px;
+  color: var(--ag-text-secondary, var(--ag-text-primary));
+  line-height: 1.4;
+}
+
+/* The pair side by side: one row a name, its weight, swing, beta and share. */
+.pf-heat-tip-names {
+  display: grid;
+  grid-template-columns: auto repeat(4, auto);
+  gap: 2px 10px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--ag-border);
+  white-space: nowrap;
+}
+
+.pf-heat-tip-names > * {
+  text-align: right;
+}
+
+.pf-heat-tip-names > .pf-heat-tip-who {
+  text-align: left;
+}
+
 /* Real but not live: the last session's move while its exchange is shut. */
 .pf-dim {
   opacity: 0.55;
@@ -452,6 +724,10 @@
   .pf-tabs {
     overflow-x: auto;
     flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+  .pf-tabs::-webkit-scrollbar {
+    display: none;
   }
 }
 
@@ -505,7 +781,8 @@
   opacity: 0.6;
 }
 
-.pf-proj-hero {
+.pf-proj-hero,
+.pf-hero {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
@@ -514,20 +791,23 @@
   margin: 0 0 1.25rem;
 }
 
-.pf-proj-focus {
+.pf-proj-focus,
+.pf-hero-focus {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
 }
 
-.pf-proj-eyebrow {
+.pf-proj-eyebrow,
+.pf-hero-eyebrow {
   color: var(--ag-text-muted);
   font-size: var(--ag-fs-xs, 0.78rem);
   font-weight: 500;
 }
 
 /* The ticker hero's figure (.tk-hero-level): same step, same weight. */
-.pf-proj-figure {
+.pf-proj-figure,
+.pf-hero-figure {
   font-size: var(--ag-fs-3xl);
   line-height: 1.1;
   font-weight: 700;
@@ -535,7 +815,8 @@
   color: var(--ag-text-primary);
 }
 
-.pf-proj-sub {
+.pf-proj-sub,
+.pf-hero-sub {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -544,14 +825,16 @@
   font-variant-numeric: tabular-nums;
 }
 
-.pf-proj-facts {
+.pf-proj-facts,
+.pf-hero-facts {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem 1.75rem;
   margin: 0;
 }
 
-.pf-proj-fact dt {
+.pf-proj-fact dt,
+.pf-hero-fact dt {
   display: flex;
   align-items: center;
   gap: 0.35rem;
@@ -560,19 +843,22 @@
   margin-bottom: 0.2rem;
 }
 
-.pf-proj-fact dd {
+.pf-proj-fact dd,
+.pf-hero-fact dd {
   display: flex;
   flex-direction: column;
   margin: 0;
   font-variant-numeric: tabular-nums;
 }
 
-.pf-proj-fact-value {
+.pf-proj-fact-value,
+.pf-hero-fact-value {
   font-size: var(--ag-fs-base, 1rem);
   font-weight: 600;
 }
 
-.pf-proj-fact-note {
+.pf-proj-fact-note,
+.pf-hero-fact-note {
   color: var(--ag-text-muted);
   font-size: var(--ag-fs-xs, 0.78rem);
 }
@@ -729,4 +1015,313 @@
    tiles: its legend is the chart's, and read as a third row of tiles it is not. */
 .pf-card .ag-kpis + .pf-chart {
   margin-top: 0.9rem;
+}
+
+/* A return chart read as money: one grid, a line per row — name, worth,
+   gain with its return, and the gap to the book. Wider than the plain box;
+   on a narrow plot the gap column goes, the rest still fits. */
+/* Sized to its grid, not to the room left of its anchor: near the right
+   edge that room is a sliver and the name column collapsed into it. */
+.pf-tip-money {
+  width: max-content;
+  max-width: min(460px, 100%);
+}
+
+.pf-tip-lines {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 2px 10px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--ag-border);
+}
+
+.pf-tip-line {
+  display: contents;
+}
+
+.pf-tip-head {
+  color: var(--ag-text-faint);
+  white-space: nowrap;
+  font-size: var(--ag-fs-2xs, 0.72rem);
+  text-align: right;
+}
+
+.pf-tip-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ag-text-muted);
+  white-space: nowrap;
+}
+
+.pf-tip-name > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pf-tip-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.pf-tip-line strong {
+  font-weight: 600;
+}
+
+.pf-tip-on .pf-tip-name {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+}
+
+@container pf-plot (max-width: 520px) {
+  .pf-tip-lines {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .pf-tip-lines > :nth-child(4),
+  .pf-tip-line > :nth-child(4) {
+    display: none;
+  }
+}
+
+.pf-line {
+  transition:
+    stroke-width 120ms ease,
+    stroke-opacity 120ms ease;
+}
+
+/* The inline legend as keys that single a line out. */
+.pf-line-key {
+  margin: 0 -0.3rem;
+  padding: 0.1rem 0.3rem;
+  border: 0;
+  border-radius: var(--ag-radius-xs, 4px);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.pf-line-key:hover {
+  background: var(--ag-surface-hover);
+}
+
+/* A KPI chip that carries a sentence ("15,8 % · pesa 11,1 %") wraps inside
+   its tile on a phone instead of running past its edge. */
+.pf-card .ag-kpi .ag-chip {
+  max-width: 100%;
+  white-space: normal;
+}
+
+/* A heading across a hover box's grid of names. */
+.pf-tip-span {
+  grid-column: 1 / -1;
+  text-align: left;
+}
+
+/* Bars a click opens in full below. */
+.pf-bars-pick {
+  cursor: pointer;
+}
+
+/* The month a bar click narrowed the sales table to, and the way back. */
+.pf-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md, 8px);
+  background: var(--ag-surface-sunken);
+  font-size: var(--ag-fs-sm, 0.85rem);
+}
+
+/* ---------------------------------------------------------- hero (shared) */
+
+/* Dividends and Fees reuse the projection's hero above. Alone in its card it
+   needs no gap under it; above a table it keeps the projection's. */
+.pf-hero:last-child {
+  margin-bottom: 0;
+}
+
+.pf-hero-sub {
+  max-width: 60ch;
+  text-wrap: pretty;
+}
+
+/* --------------------------------------------------------------- share bars */
+
+/* A figure with its share of the column beside it. The figure keeps a fixed
+   width so bars line up down the column whatever the digits. */
+.pf-barcell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.pf-barcell-figure {
+  min-inline-size: 4.5rem;
+  text-align: right;
+}
+
+.pf-bar {
+  position: relative;
+  flex: none;
+  inline-size: 4.5rem;
+  block-size: 6px;
+  border-radius: var(--ag-radius-pill, 999px);
+  background: var(--ag-surface-sunken);
+  overflow: hidden;
+}
+
+.pf-bar-fill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-radius: inherit;
+  background: var(--ag-brand-accent);
+}
+
+/* Centred on zero: a cost runs right in the loss colour, a gain left. */
+.pf-bar-signed::after {
+  content: "";
+  position: absolute;
+  inset-block: -1px;
+  inset-inline-start: 50%;
+  inline-size: 1px;
+  background: var(--ag-border);
+}
+
+.pf-bar-signed .pf-bar-pos {
+  inset-inline-start: 50%;
+  border-radius: 0 999px 999px 0;
+  background: var(--ag-down);
+}
+
+.pf-bar-signed .pf-bar-neg {
+  inset-inline-start: auto;
+  inset-inline-end: 50%;
+  border-radius: 999px 0 0 999px;
+  background: var(--ag-up);
+}
+
+/* ---------------------------------------------------------------- dividends */
+
+/* Who pays beside the year-by-year record once there is room for both; the
+   payer table is the wider of the two, so it takes the larger share. */
+.pf-div-grid {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+  margin: 0 0 1rem;
+}
+
+.pf-div-grid .pf-card {
+  margin: 0;
+}
+
+.pf-div-side {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+@container ag-main (min-width: 72rem) {
+  .pf-div-grid {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+
+  .pf-div-grid > :only-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Booked against entitled: the dashed track is what the shares earned, the
+   fill what the book recorded, one scale for every year. */
+.pf-years-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 0.78rem);
+  margin: 0 0 0.75rem;
+}
+
+.pf-years-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pf-years-swatch {
+  inline-size: 0.8rem;
+  block-size: 0.5rem;
+  border-radius: 2px;
+  background: var(--ag-brand-accent);
+}
+
+.pf-years-swatch-track,
+.pf-years-track {
+  background: var(--ag-surface-sunken);
+  border: 1px dashed var(--ag-text-faint);
+  box-sizing: border-box;
+}
+
+.pf-years {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.pf-years-row {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: var(--ag-fs-sm, 0.875rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-years-label {
+  color: var(--ag-text-secondary, var(--ag-text-muted));
+  font-weight: 500;
+}
+
+.pf-years-bar {
+  position: relative;
+  block-size: 0.75rem;
+}
+
+.pf-years-track,
+.pf-years-fill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-radius: var(--ag-radius-xs, 4px);
+}
+
+.pf-years-fill {
+  background: var(--ag-brand-accent);
+}
+
+.pf-years-figures {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.pf-years-figures .pf-muted {
+  font-size: var(--ag-fs-xs, 0.78rem);
 }

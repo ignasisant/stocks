@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from stocks.portfolio import degiro
 from stocks.web.i18n import t, translate
 
 
@@ -86,10 +87,6 @@ SKIP_REASONS: dict[str, tuple[str, bool]] = {
         "import.skip_div_tax",
         True,
     ),
-    "return of capital — reduces cost basis, adjust manually": (
-        "import.skip_capital",
-        True,
-    ),
     "result adjustment — review manually": ("import.skip_adjustment", True),
     "reward — an acquisition at market value (taxable income in Spain); add "
     "manually as a buy at the reward-day price": ("import.skip_coin_reward", True),
@@ -99,6 +96,8 @@ SKIP_REASONS: dict[str, tuple[str, bool]] = {
     "disposal": ("import.skip_coin_transfer", True),
     "withholding tax — set it as the fee on the matching dividend row for the "
     "double-tax credit": ("import.skip_withholding", True),
+    degiro.WRONG_PORTFOLIO: ("import.skip_degiro_portfolio", True),
+    degiro.WRONG_ACCOUNT: ("import.skip_degiro_account", True),
 }
 
 

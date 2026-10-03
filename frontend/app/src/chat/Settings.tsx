@@ -23,6 +23,11 @@
  * the role `st.session_state` plays there (`sessionKey.ts`). A deployment with
  * no encryption secret offers only the second, and says so before the reader
  * types anything rather than refusing the key on submit.
+ *
+ * Memory has two switches, because they stop two different things: what the
+ * reader asked the assistant to remember (read into every prompt) and the
+ * earlier conversations an answer may search. Off is not forgotten — the list
+ * stays, and forgetting is the memory screen's own button.
  */
 
 import { useEffect, useId, useRef, useState } from "react";
@@ -323,6 +328,7 @@ export function Settings({
   onDeleteThread,
   connect = null,
   onConnectTaken,
+  onMemory,
 }: {
   state: ChatState;
   busy: boolean;
@@ -335,6 +341,8 @@ export function Settings({
   /** Back from a provider's sign-in, with the code still to be traded. */
   connect?: ConnectAsk | null;
   onConnectTaken?: () => void;
+  /** Open the saved-memories screen. */
+  onMemory?: () => void;
 }) {
   const t = useT();
   const tag = useTag();
@@ -470,6 +478,33 @@ export function Settings({
             )
           )}
         </>
+      )}
+
+      <Group>{t("chat.sec_memory")}</Group>
+      <label className="ag-chat-check">
+        <input
+          type="checkbox"
+          checked={state.memory ?? true}
+          disabled={busy}
+          onChange={(event) => onSave({ memory: event.target.checked })}
+        />
+        {t("chat.mem_switch")}
+      </label>
+      <label className="ag-chat-check">
+        <input
+          type="checkbox"
+          checked={state.recall ?? true}
+          disabled={busy}
+          onChange={(event) => onSave({ recall: event.target.checked })}
+        />
+        {t("chat.recall_switch")}
+      </label>
+      <p className="ag-chat-hint">{t("chat.mem_switch_note")}</p>
+      {onMemory && (
+        <button type="button" className="ag-chat-btn" onClick={onMemory}>
+          <Glyph name="memory" size={14} />
+          {t("chat.mem_manage")}
+        </button>
       )}
 
       <Group>{t("chat.sec_thread")}</Group>

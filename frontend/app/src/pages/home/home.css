@@ -579,6 +579,91 @@
   color: var(--ag-down);
 }
 
+/* The card's four sections: a quiet label over each, so the same thing sits
+   in the same place every morning without boxing the card into panels. */
+.hm-daily-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.hm-daily-sec-title {
+  margin: 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 11px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Portfolio: the three windows, then the month drawn. Side by side where the
+   page has the room, the chart taking what the table leaves. */
+.hm-daily-book {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.hm-daily-book .ag-a2ui-chart,
+.hm-routine .ag-a2ui-chart {
+  min-width: 0;
+  touch-action: pan-y;
+}
+
+@container ag-main (min-width: 48rem) {
+  .hm-daily-book {
+    grid-template-columns: minmax(16rem, 24rem) minmax(0, 1fr);
+  }
+}
+
+.hm-daily-book-table th[scope="row"] {
+  color: var(--ag-text-secondary);
+  font-weight: 500;
+  text-align: left;
+}
+
+.hm-daily-amount {
+  display: block;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 11px);
+}
+
+.hm-daily-na {
+  color: var(--ag-text-muted);
+}
+
+/* Your routines: the reader's own question, then the answer under it. */
+.hm-daily-routines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hm-routine {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.hm-routine-ask {
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm, 12px);
+  font-style: italic;
+}
+
+.hm-routine-answer {
+  margin: 0;
+  font-size: var(--ag-fs-base, 14px);
+  line-height: 1.45;
+}
+
 .hm-daily-chips {
   display: flex;
   flex-wrap: wrap;

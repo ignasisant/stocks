@@ -4,7 +4,7 @@
 # Usage:
 #   ./scripts/deploy.sh                    # -> topstocks-staging
 #   ./scripts/deploy.sh prod               # -> topstocks (gated)
-#   ./scripts/deploy.sh prod --min-instances 0    # accept cold starts, save €
+#   ./scripts/deploy.sh prod --min-instances 1    # warm 24/7, and billed for it
 #   ./scripts/deploy.sh staging --secret topstocks-secrets-staging:3
 #   ./scripts/deploy.sh prod --no-canary   # old behaviour: traffic on deploy
 #   ./scripts/deploy.sh prod --allow-unmerged     # ship a branch tip anyway
@@ -62,9 +62,17 @@ done
 case "$ENV" in
     prod)
         SERVICE="${STOCKS_GCP_SERVICE:-topstocks}"
-        # min 1 keeps one instance warm: Streamlit's cold start (container
-        # boot + first session) is seconds, long enough to lose a visitor.
-        MIN_INSTANCES="${MIN_INSTANCES:-1}"
+        # min 0: the app has to stay inside the free tier. A minimum instance
+        # is billed every idle second of the month — around 12 EUR at 1 vCPU
+        # and 1 GiB — while with min 0 only the seconds spent serving requests
+        # count (about 20 h a month in September 2026, against a free tier of
+        # 50 vCPU-hours and 100 GiB-hours). The instance stays warm anyway:
+        # the stocks-healthz uptime check (setup_monitoring.sh) hits /livez
+        # every 5 minutes from several regions, well inside the idle window
+        # Cloud Run waits before scaling to zero, and idle time between
+        # requests is not billed. A visitor meets a cold start only after an
+        # OOM, a deploy or a scale-in Cloud Run decides on its own.
+        MIN_INSTANCES="${MIN_INSTANCES:-0}"
         # One replica, not three: a Streamlit session lives in the instance
         # that holds its websocket, and the file-upload PUT is a separate HTTP
         # request. Cloud Run's session affinity is best-effort, so with more

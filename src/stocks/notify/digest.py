@@ -621,7 +621,8 @@ def run_digest_fanout(dry_run: bool = False) -> dict[str, str]:
             # it would spend a unit of the free pot to say "not much happened".
             if not data.quiet:
                 data.highlight = narrative.highlight(
-                    data, user.prefs, user.lang, recent=recent_highlights(state)
+                    data, user.prefs, user.lang, recent=recent_highlights(state),
+                    memories=user.memories(),
                 )
             origin = links.app_base()  # not `base`: that one is the currency
             text = render_digest(data, user.lang, origin)

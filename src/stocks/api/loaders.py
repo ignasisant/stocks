@@ -95,7 +95,12 @@ def _held(db: str) -> tuple[list, list[str]]:
 # Strict expiry, not stale-while-revalidate: the two memos derived from it
 # below are the ones that serve stale, and their background refresh has to
 # reach a real download here rather than be handed the same old frames back.
-@ttl_cache(_PRICES_TTL, max_entries=16, stale_s=0, persist="held_frames")
+#
+# Four books in memory and eight on disk: one entry is a whole book's OHLCV
+# (~6MB live, 3-5MB pickled, for 80 names) and each of the readings below
+# keeps its own copy, on an instance whose filesystem is memory too. A fifth
+# active book costs a pickle read, not a download — the disk copy is fresh.
+@ttl_cache(_PRICES_TTL, max_entries=4, stale_s=0, persist="held_frames", disk_max=8)
 def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
     """One bulk download covering every name the book has ever held.
 
@@ -138,7 +143,7 @@ def _close_series(frames: dict[str, pd.DataFrame], column: str) -> dict[str, pd.
     return out
 
 
-@ttl_cache(_PRICES_TTL, max_entries=16)
+@ttl_cache(_PRICES_TTL, max_entries=4)
 def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     """Adjusted close per name the book has ever held, from `_held_frames`.
 
@@ -154,7 +159,7 @@ def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     return plausible_closes(closes, txs)
 
 
-@ttl_cache(_PRICES_TTL, max_entries=16)
+@ttl_cache(_PRICES_TTL, max_entries=4)
 def held_printed_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     """Close as printed per held name, from the same download as `held_closes`.
 
@@ -214,7 +219,11 @@ def _on_download(fn):
             (db, mtime, base),
             fresh=lambda entry: entry[0] is closes,
             compute=lambda: (closes, fn(db, mtime, base, closes)),
-            max_entries=32,
+            # Each entry holds the `closes` it was built from, so an entry
+            # left behind by a newer download keeps that whole download alive
+            # after `held_closes` has let it go: the cap is per book, not per
+            # frame.
+            max_entries=8,
         )
 
     clearable: object = wrapper
@@ -342,7 +351,7 @@ _HISTORY_TTL = 300.0
 _EVENTS_TTL = 3600.0
 
 
-@ttl_cache(_HISTORY_TTL, max_entries=64, persist="bars")
+@ttl_cache(_HISTORY_TTL, max_entries=64, persist="bars", disk_max=64)
 def _bars_download(ticker: str, period: str, interval: str) -> pd.DataFrame:
     return bars_download(ticker, period, interval)
 

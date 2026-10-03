@@ -10,7 +10,15 @@
 
 import { describe, expect, it } from "vitest";
 
-import { linesOf, opens, stampOf, tone, wantsWriting } from "./Daily";
+import {
+  linesOf,
+  opens,
+  sectioned,
+  sectionsOf,
+  stampOf,
+  tone,
+  wantsWriting,
+} from "./Daily";
 import type { DailyCard } from "./types";
 
 const t = (key: string, slots?: Record<string, string | number>) =>
@@ -83,6 +91,53 @@ describe("linesOf / opens", () => {
     expect(linesOf(card({ bullets: ["Portfolio +0.4% today"] })).some(opens)).toBe(
       false,
     );
+  });
+});
+
+describe("sectionsOf / sectioned", () => {
+  const alert = {
+    key: "alert_hit:AAPL",
+    kind: "alert_hit",
+    line: "AAPL crossed 260",
+    tickers: ["AAPL"],
+    section: "alerts" as const,
+  };
+  const watch = {
+    key: "earnings:NVDA",
+    kind: "earnings",
+    line: "NVDA reports",
+    tickers: ["NVDA"],
+    section: "watch" as const,
+  };
+  const book = {
+    index: "S&P 500",
+    currency: "EUR",
+    rows: [{ window: "day" as const, pct: 0.8, amount: 120, index_pct: 0.3 }],
+    chart: [],
+  };
+
+  it("puts the fired alerts in their own section and the rest under watch", () => {
+    const { alerts, watch: rest } = sectionsOf([watch, alert]);
+    expect(alerts.map((i) => i.key)).toEqual(["alert_hit:AAPL"]);
+    expect(rest.map((i) => i.key)).toEqual(["earnings:NVDA"]);
+  });
+
+  it("reads a line stored before sections as worth a look", () => {
+    const { section: _, ...old } = watch;
+    expect(sectionsOf([old]).watch).toEqual([old]);
+  });
+
+  it("keeps a plain list when the card has nothing besides it", () => {
+    expect(sectioned(card(), 0)).toBe(false);
+    expect(sectioned(card({ book: null, routines: [] }), 0)).toBe(false);
+  });
+
+  it("draws sections once there is a book, a routine or an alert", () => {
+    expect(sectioned(card({ book }), 0)).toBe(true);
+    expect(sectioned(card({ book: { ...book, rows: [] } }), 0)).toBe(false);
+    const routine = { id: "r1", text: "how is NVDA", answer: "", chart: null };
+    expect(sectioned(card({ routines: [routine] }), 0)).toBe(true);
+    expect(sectioned(card(), 1)).toBe(true);
   });
 });
 

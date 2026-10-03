@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from stocks import accounts, session
 from stocks.api.security import Who
+from stocks.bank import access
 from stocks.config import PROJECT_ROOT
 
 router = APIRouter(tags=["identity"])
@@ -63,6 +64,17 @@ class Me(BaseModel):
         default=None,
         description="The provider's avatar URL, from the claims; null for none.",
     )
+    bank: bool = Field(
+        default=False,
+        description=(
+            "Whether this account may use the bank connection. It is an "
+            "allowlist that fails closed (`stocks.bank.access`), so for almost "
+            "every caller this is false and the page is not theirs to reach. "
+            "A front end reads it to decide whether the Bank entry belongs in "
+            "its navigation — the page itself is gated by the API regardless, "
+            "so this only spares a reader a door that opens onto a refusal."
+        ),
+    )
     owner: bool = Field(
         default=False,
         description=(
@@ -100,4 +112,5 @@ def me(who: Who, request: Request) -> Me:
         name=_claim(claims, "name"),
         picture=_claim(claims, "picture"),
         owner=root == PROJECT_ROOT,
+        bank=access.available(who.email),
     )

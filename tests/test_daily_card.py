@@ -258,7 +258,7 @@ def test_the_users_own_alert_reaches_the_prompt_and_the_card(page, free):
     _system, facts = free.calls[0]
     assert facts["actions"][0] == {
         "kind": "alert_hit", "ticker": "ASML", "rule": "below", "level": 300.0,
-        "price": 280.0, "held": False, "gap_pct": 6.67, "sessions": 1,
+        "price": 280.0, "held": False, "gap_pct": 6.67,
         "key": "alert_hit:ASML",
     }
     assert "ASML hit your exit" in _card(page)

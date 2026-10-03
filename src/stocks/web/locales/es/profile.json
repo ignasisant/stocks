@@ -163,5 +163,10 @@
   "profile.notify_test_row": "Comprobar la conexión",
   "profile.notify_test_help": "Envía un mensaje al chat vinculado.",
   "profile.notify_unlink_row": "Desconectar",
-  "profile.notify_unlink_help": "Corta todos los mensajes. Solo se borra tu id de chat."
+  "profile.notify_unlink_help": "Corta todos los mensajes. Solo se borra tu id de chat.",
+  "profile.memory_title": "Memoria del asistente",
+  "profile.memory_caption": "Lo que el asistente recuerda de ti, en el chat, la acción diaria y Telegram. Puedes verlo, corregirlo y borrarlo.",
+  "profile.memory_count": "{n} de {max} recuerdos guardados",
+  "profile.memory_off": "Memoria desactivada",
+  "profile.memory_open": "Ver memoria"
 }

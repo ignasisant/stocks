@@ -19,7 +19,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { send } from "../shell/api";
 import { useT } from "../shell/i18n";
-import { useAssistantAsks } from "../shell/assistant";
+import { useAssistantAsks, useAssistantThreads } from "../shell/assistant";
 import { useSession } from "../shell/session";
 import { Glyph } from "./icons";
 import { useRoute } from "../shell/router";
@@ -108,6 +108,19 @@ export function Drawer() {
   );
   useAssistantAsks(onAsk);
 
+  // A page opened one conversation (the daily card's "Ask"): the panel
+  // switches to it once the drawer has finished its own opening read, the way
+  // `memory` below hands it a view.
+  const [thread, setThread] = useState<string | null>(null);
+  const onThread = useCallback(
+    (cid: string) => {
+      setThread(cid);
+      show(true);
+    },
+    [show],
+  );
+  useAssistantThreads(onThread);
+
   const { state, busy, send: ask } = chat;
   useEffect(() => {
     if (!queued || !open || !state || busy) return;
@@ -174,6 +187,17 @@ export function Drawer() {
       show(true);
     });
   }, [code]);
+
+  // `?chat=memory` — the profile's link to what the assistant remembers. Read
+  // once and taken off the URL like `?guide=`; the drawer opens on that view.
+  const jump = params.get("chat");
+  const [memory, setMemory] = useState(false);
+  useEffect(() => {
+    if (jump !== "memory") return;
+    setParams({ chat: undefined });
+    setMemory(true);
+    show(true);
+  }, [jump]);
 
   // Started once the drawer has finished its own opening read — otherwise the
   // thread it was loading would land on top of the guide's.
@@ -281,6 +305,10 @@ export function Drawer() {
               chat={chat}
               connect={connect}
               onConnectTaken={() => setConnect(null)}
+              memory={memory}
+              onMemoryTaken={() => setMemory(false)}
+              thread={thread}
+              onThreadTaken={() => setThread(null)}
               onClose={() => show(false)}
               onPark={() => {
                 show(false);

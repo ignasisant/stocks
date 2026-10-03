@@ -46,9 +46,11 @@ remembers what it said (daily.DailyAction.shown: every key it showed, when,
 and the figure it showed it with), and `candidates()` drops a trigger that was
 on an earlier day's card and has not changed since (`repeat()`): its figure has
 not moved past `_MATERIAL`, its phase has not advanced, its cooldown has not
-run out. An alert is an event only on the sessions after it crossed; one that
-has been past its level for longer is `alert_stale`, said once — the level has
-stopped telling the user anything — and then left alone. `_CAP` and
+run out. An alert is an event only on the session it crossed: the close
+before it on one side of the level, the latest close (or the live price) on
+the other. One that has been past its level since before then is not on the
+card at all — it was news the day it crossed, and Telegram's own alerts say
+it once on that day too (notify/state.py). `_CAP` and
 `_FAMILY_CAP` still limit how many of one kind can reach the model at once, and
 `decay()` still sinks a standing trigger shown on consecutive days.
 """
@@ -79,10 +81,6 @@ EARNINGS_AHEAD = 14
 RESULT_DAYS = 3
 # Within this of the 52-week low, a watchlist name is worth a look.
 LOW_52W_PCT = 3.0
-# An alert whose price has stayed past the level for more sessions than this
-# is no longer an event: it fired, it was said, and the level has stopped
-# telling the user anything until they move it.
-ALERT_FRESH_SESSIONS = 5
 
 # --- the calendars ------------------------------------------------------------
 # A rate decision this close is worth planning around; one this recent is
@@ -135,7 +133,6 @@ FX_SHARE_PCT = 25.0
 # alert is the user's own trigger going off today; a concentration drift has
 # been true for weeks and will still be true tomorrow.
 ALERT_HIT = "alert_hit"
-ALERT_STALE = "alert_stale"
 HARVEST = "harvest"
 EARNINGS = "earnings"
 EARNINGS_RESULT = "earnings_result"
@@ -171,7 +168,6 @@ _URGENCY = {
     REPURCHASE_CLEAR: 47,
     LOW_52W: 45,
     VS_BENCH: 44,
-    ALERT_STALE: 42,
     FX: 40,
     CONCENTRATION: 35,
 }
@@ -201,7 +197,6 @@ _CAP_DEFAULT = 1
 _FAMILY = {
     ALERT_HIT: "alert",
     ALERT_NEAR: "alert",
-    ALERT_STALE: "alert",
     EARNINGS: "earnings",
     EARNINGS_RESULT: "earnings",
     MARKET: "macro",
@@ -222,7 +217,7 @@ _FAMILY_CAP = {"alert": 3, "earnings": 3, "macro": 2, "tax": 2}
 _STANDING = frozenset(
     {
         HARVEST, DRAWDOWN, CONCENTRATION, LOW_52W, SECTOR_TILT, FX, ALERT_NEAR,
-        ALERT_STALE, TAX_BRACKET,
+        TAX_BRACKET,
     }
 )
 # Urgency lost per consecutive day already offered, and the floor it stops at.
@@ -254,7 +249,6 @@ class _Rel:
 # "now") is how a print is allowed back onto the card as it gets closer.
 _MATERIAL: dict[str, dict] = {
     ALERT_HIT: {"rule": None, "level": None},
-    ALERT_STALE: {"rule": None, "level": None},
     ALERT_NEAR: {"rule": None, "level": None, "gap_pct": 1.5},
     HARVEST: {"offset": _Rel(0.25)},
     DRAWDOWN: {"pnl_pct": 5.0},
@@ -278,7 +272,6 @@ _MATERIAL: dict[str, dict] = {
 # never: an event is said once per phase, and its next phase is its reminder.
 _COOLDOWN: dict[str, int | None] = {
     ALERT_HIT: None,
-    ALERT_STALE: 14,
     ALERT_NEAR: 7,
     HARVEST: 7,
     DRAWDOWN: 10,
@@ -347,16 +340,15 @@ def _round(value, digits: int = 2) -> float | None:
 # ------------------------------------------------------------ the user's own
 
 
-def _sessions_past(alert, prices: list) -> int:
-    """How many closes in a row, counting back from the last, the alert has
-    been triggered on — the age of the crossing, in sessions."""
-    run = 0
-    for value in reversed(prices):
-        price = finite(value)
-        if price is None or not alert.triggered(price):
-            break
-        run += 1
-    return run
+def _crossed(alert, prices: list) -> bool:
+    """Whether the latest close is the one that took the price past the alert:
+    triggered now, and not on the close before it. A single close cannot say
+    — the alert might have been past its level for a month — so it is not a
+    crossing."""
+    if len(prices) < 2:
+        return False
+    before = finite(prices[-2])
+    return before is not None and not alert.triggered(before)
 
 
 def _alert_signals(holdings, closes: dict, held: set[str]) -> list[Signal]:
@@ -368,12 +360,12 @@ def _alert_signals(holdings, closes: dict, held: set[str]) -> list[Signal]:
     notify/alerts.py against a full price history — a fetch this card has no
     business making, and the notification path already covers them.
 
-    `closes` is each ticker's recent closes, oldest first, and the history is
-    what tells an event from a state: an alert past its level for at most
-    `ALERT_FRESH_SESSIONS` closes just crossed (`alert_hit`, with the count);
-    one past it for longer is `alert_stale` — the level is no longer telling
-    the user anything, which is its own, one-off, line. With only the last
-    close to go on (a caller that passes one) every fired alert reads fresh.
+    `closes` is each ticker's recent closes, oldest first — the last one may
+    be today's live price — and the close before the last is what tells an
+    event from a state: an alert is `alert_hit` only on the session it
+    crossed (`_crossed`). One already past its level the session before says
+    nothing: it was said the day it crossed, and a level the price has been
+    sitting past for a week is not something to do today.
 
     Comparison is in the ticker's own quote currency, because that is the
     currency the user typed the level in.
@@ -399,11 +391,8 @@ def _alert_signals(holdings, closes: dict, held: set[str]) -> list[Signal]:
                 "gap_pct": _round(abs(gap_pct)),
             }
             if alert.triggered(price):
-                sessions = _sessions_past(alert, prices)
-                kind = ALERT_HIT if sessions <= ALERT_FRESH_SESSIONS else ALERT_STALE
-                out.append(Signal(
-                    kind, h.ticker, _URGENCY[kind], data | {"sessions": sessions}
-                ))
+                if _crossed(alert, prices):
+                    out.append(Signal(ALERT_HIT, h.ticker, _URGENCY[ALERT_HIT], data))
             elif abs(gap_pct) <= NEAR_PCT:
                 out.append(Signal(ALERT_NEAR, h.ticker, _URGENCY[ALERT_NEAR], data))
     return out
@@ -1162,9 +1151,10 @@ def repeat(signal: Signal, shown: dict | None, today: date) -> bool:
     is `measure()` at the time. A trigger is a repeat when it was last shown
     before today (today's own card — a Regenerate — is free to show it again),
     its figures have not moved past `_MATERIAL`, and its `_COOLDOWN` has not
-    run out. A fired alert is the one case measured by time instead: it is the
-    crossing already shown while the price has stayed past the level since
-    the day it was shown — a fresh crossing after a retreat is news again.
+    run out. A fired alert is the one case measured by time instead: a
+    crossing is only ever a crossing on its own session, so one shown on the
+    last weekday before today (or a weekend's card ago) is the same crossing
+    still on screen — a later one after a retreat is news again.
 
     A memory entry from before the figures were stored ("v" missing) cannot
     say whether anything changed, so only its cooldown applies.
@@ -1184,7 +1174,7 @@ def repeat(signal: Signal, shown: dict | None, today: date) -> bool:
     if isinstance(before, dict) and _moved(before, now, rules):
         return False
     if signal.kind == ALERT_HIT:
-        return int(signal.data.get("sessions") or 1) >= _weekdays(last, today)
+        return _weekdays(last, today) <= 1
     cooldown = _COOLDOWN.get(signal.kind)
     if not isinstance(before, dict) and cooldown is None:
         # An event remembered without its phase: said once is enough until

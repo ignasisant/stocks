@@ -290,7 +290,8 @@ def accept(raw: str | None) -> str | None:
 
 def generate(prefs: dict, step, lang: str, *, save: Callable[[dict], None],
              account_facts: str,
-             session_keys: dict[str, str] | None = None) -> str | None:
+             session_keys: dict[str, str] | None = None,
+             memories: str = "") -> str | None:
     """One sentence about the step just reached, or None. Never raises.
 
     Goes through `engine.complete_attempts`, so a dead key, a spent allowance
@@ -299,6 +300,9 @@ def generate(prefs: dict, step, lang: str, *, save: Callable[[dict], None],
     that answered nothing is handed back: the guide is not what should cost a
     new account one of its five trial messages. `save` writes prefs for the
     caller that owns them (the Streamlit session's file, or the request's).
+    `memories` is what the user already told the chat (`engine.user_memory`),
+    so a walkthrough resumed after a few conversations speaks to the same
+    person they do.
     """
     from stocks.web.i18n import translate
 
@@ -323,6 +327,8 @@ def generate(prefs: dict, step, lang: str, *, save: Callable[[dict], None],
         "app. Plain text only: no markdown, no links, no lists, no emoji, no "
         "quotation marks."
     )
+    if memories:
+        system += f"\n\n{memories}{engine.MEMORY_USE}"
     try:
         line = engine.complete_attempts(
             prefs, system, [{"role": "user", "content": account_facts}],

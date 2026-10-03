@@ -91,3 +91,18 @@ def test_validation_issue_keys_match_the_catalog():
     catalog = _catalog(DEFAULT_LANG, "validate.json")
     assert set(catalog) == set(ISSUE_TEXT)
     assert catalog == ISSUE_TEXT, "English catalog has drifted from ISSUE_TEXT"
+
+
+def test_every_language_has_a_flag_on_both_sides():
+    """The Profile selector draws each language with a flag, in Streamlit from
+    `LANGUAGE_FLAGS` and in React from its copy in `profile/data.ts`. A language
+    added to one table and not the other ships flagless in that selector."""
+    from stocks.web.i18n import LANGUAGE_FLAGS
+
+    assert set(LANGUAGE_FLAGS) == set(LANGUAGES)
+    data = (
+        Path(__file__).resolve().parents[1]
+        / "frontend" / "app" / "src" / "pages" / "profile" / "data.ts"
+    ).read_text(encoding="utf-8")
+    for code, flag in LANGUAGE_FLAGS.items():
+        assert f'{code}: "{flag}"' in data, f"data.ts has no flag for {code}"

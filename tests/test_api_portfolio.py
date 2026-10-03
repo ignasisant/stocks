@@ -581,9 +581,87 @@ def test_risk_reports_the_shape_of_the_basket(client, book, monkeypatch):
     assert payload["effective_names"] == pytest.approx(1.6)
     assert payload["betas"] == {"^GSPC": pytest.approx(1.25)}
     assert payload["allocation"]["sector"] == [
-        {"label": "Technology", "weight": pytest.approx(1.0)}
+        {
+            "label": "Technology",
+            "weight": pytest.approx(1.0),
+            # Nothing priced (the autouse table is empty): no euros to show.
+            "value": None,
+            "cost": None,
+            "holdings": [],
+        }
     ]
     assert payload["correlation"]["AAPL"]["AAPL"] == pytest.approx(1.0)
+    # Each name's own risk, for the grid's hover: the benchmark here is AAPL
+    # itself, so AAPL's beta is exactly one; the shares split the variance.
+    aapl = payload["names"]["AAPL"]
+    assert aapl["betas"] == {"^GSPC": pytest.approx(1.0)}
+    assert aapl["volatility"] > 0
+    shares = [one["risk_share"] for one in payload["names"].values()]
+    assert sum(shares) == pytest.approx(1.0)
+
+
+def test_each_slice_says_what_it_is_worth_and_what_it_cost(
+    client, book, monkeypatch
+):
+    """The hover box's figures: a slice's value against its own cost, off the
+    same priced rows, with the holdings it is made of. An unpriced name stays
+    out of both sums rather than leaving its whole basis against no value."""
+    from stocks.portfolio.custody import Custody
+
+    book(trades())
+    basket = report()
+    basket.weights = {"AAPL": 0.5, "MSFT": 0.25, "SPY": 0.25}
+    basket.meta = {
+        **basket.meta,
+        "SPY": {"sector_weights": {"Technology": 0.4, "Energy": 0.6},
+                "country": "United States", "currency": "USD"},
+    }
+    monkeypatch.setattr(
+        loaders, "basket_report", lambda db, mtime, base, period: basket
+    )
+    table = pd.DataFrame(
+        {
+            "cost": [1_000.0, 800.0, 500.0, 300.0],
+            "value": [2_000.0, 1_000.0, 1_000.0, float("nan")],
+        },
+        index=pd.Index(["AAPL", "MSFT", "SPY", "ORGN"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    monkeypatch.setattr(
+        loaders,
+        "custody",
+        lambda db, mtime: {
+            "AAPL": {
+                "revolut": Custody("AAPL", "revolut", quantity=5.0),
+                "clicktrade": Custody("AAPL", "clicktrade", quantity=5.0),
+            },
+            "MSFT": {"revolut": Custody("MSFT", "revolut", quantity=5.0)},
+        },
+    )
+
+    alloc = client.get(
+        "/v1/portfolio/risk", params={"account": EMAIL}, headers=AUTH
+    ).json()["allocation"]
+    tech, energy = alloc["sector"]
+    assert tech["label"] == "Technology"
+    # AAPL and MSFT whole, plus the fund's 40% look-through on both sides.
+    assert tech["value"] == pytest.approx(2_000 + 1_000 + 400)
+    assert tech["cost"] == pytest.approx(1_000 + 800 + 200)
+    assert [h["ticker"] for h in tech["holdings"]] == ["AAPL", "MSFT", "SPY"]
+    assert tech["holdings"][2] == {
+        "ticker": "SPY", "value": pytest.approx(400.0), "cost": pytest.approx(200.0)
+    }
+    assert energy["value"] == pytest.approx(600.0)
+    assert energy["cost"] == pytest.approx(300.0)
+
+    brokers = {row["label"]: row for row in alloc["broker"]}
+    # AAPL halves by shares; SPY has no custody row and lands in unknown.
+    assert brokers["revolut"]["value"] == pytest.approx(1_000 + 1_000)
+    assert brokers["clicktrade"]["cost"] == pytest.approx(500.0)
+    assert brokers["unknown"]["holdings"] == [
+        {"ticker": "SPY", "value": pytest.approx(1_000.0),
+         "cost": pytest.approx(500.0)}
+    ]
 
 
 def test_a_single_broker_book_gets_no_broker_split(client, book, monkeypatch):
@@ -974,6 +1052,49 @@ def test_projection_fans_out_from_todays_value(client, book, monkeypatch):
     ).json()
     assert real["real"] is True
     assert real["contributed"][-1] < payload["contributed"][-1]
+
+
+def test_projection_grows_a_sleeve_at_its_own_rate_only_when_asked(
+    client, book, monkeypatch
+):
+    """`stock_own` swaps the preset for what today's stocks compounded at;
+    the rate is echoed either way, and a book under a year old has none, so
+    the ask falls back to the preset instead of annualising three months."""
+    book(trades())
+    index = pd.to_datetime(["2024-01-02", "2024-01-03"])
+    hist = pd.DataFrame(
+        {"value": [1000.0, 1200.0], "injected": [1000.0, 1000.0]}, index=index
+    )
+    empty = pd.Series(dtype=float)
+    monkeypatch.setattr(
+        loaders, "history", lambda db, mtime, base="EUR": (hist, empty, [])
+    )
+    days = pd.bdate_range("2023-01-02", "2025-01-02")
+    daily = 1.21 ** (1 / (len(days) - 1)) - 1  # +21% over two years: 10% a year
+    long = report()
+    long.returns = pd.DataFrame({"AAPL": daily, "MSFT": daily}, index=days)
+    monkeypatch.setattr(loaders, "basket_report", lambda db, mtime, base, period: long)
+
+    def ask(**params):
+        return client.get(
+            "/v1/portfolio/projection",
+            params={"account": EMAIL, **params},
+            headers=AUTH,
+        ).json()["sleeves"][0]
+
+    preset = ask(stock_growth=0.13)
+    assert preset["growth"] == 0.13 and preset["growth_own"] is False
+    assert preset["own_growth"] == pytest.approx(0.10, abs=0.005)
+    own = ask(stock_growth=0.13, stock_own="true")
+    assert own["growth_own"] is True
+    assert own["growth"] == pytest.approx(0.10, abs=0.005)
+
+    monkeypatch.setattr(
+        loaders, "basket_report", lambda db, mtime, base, period: report()
+    )
+    short = ask(stock_own="true")
+    assert short["own_growth"] is None
+    assert short["growth"] == 0.08 and short["growth_own"] is False
 
 
 def test_unpriced_positions_answer_from_the_ledger_alone(client, book, monkeypatch):

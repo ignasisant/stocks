@@ -357,7 +357,8 @@ def run_weekly_fanout(dry_run: bool = False) -> dict[str, str]:
                 data.drift = (
                     data.top_weight - previous if previous is not None else None
                 )
-            data.highlight = narrative.weekly_line(data, user.prefs, user.lang)
+            data.highlight = narrative.weekly_line(data, user.prefs, user.lang,
+                                                   memories=user.memories())
             origin = links.app_base()  # not `base`: that one is the currency
             text = render_weekly(data, user.lang, origin)
             if dry_run:

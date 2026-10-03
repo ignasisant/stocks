@@ -18,11 +18,18 @@ import type { TaxPeriod } from "./api";
 import {
   BookAndRates,
   BookHistory,
+  Donut,
   Heatmap,
   PeriodBars,
   bookRatesTip,
   bookTip,
+  correlationBand,
+  correlationStats,
+  foldSlices,
+  lineMoney,
   niceTicks,
+  sliceTip,
+  type SliceDetail,
 } from "./charts";
 
 beforeAll(() => {
@@ -283,5 +290,147 @@ describe("Heatmap", () => {
     expect(out).toContain("pf-heat-legend");
     expect(out).toContain("-1.00");
     expect(out).toContain("1.00");
+  });
+});
+
+describe("correlationStats", () => {
+  const matrix = {
+    A: { A: 1, B: 0.9, C: -0.1 },
+    B: { A: 0.9, B: 1, C: 0.3 },
+    C: { A: -0.1, B: 0.3, C: 1 },
+  };
+
+  it("finds the most alike pair and the name least like the rest", () => {
+    const stats = correlationStats(matrix);
+    expect(stats.closest).toEqual({ a: "A", b: "B", value: 0.9 });
+    expect(stats.diversifier?.name).toBe("C");
+    expect(stats.perName.A?.peer?.name).toBe("B");
+    expect(stats.perName.A?.hedge?.name).toBe("C");
+    // Equal weights: the plain mean of the three pairs.
+    expect(stats.average).toBeCloseTo((0.9 - 0.1 + 0.3) / 3);
+  });
+
+  it("weighs each pair by what the book holds of it", () => {
+    const stats = correlationStats(matrix, { A: 0.45, B: 0.45, C: 0.1 });
+    expect(stats.average).toBeGreaterThan(correlationStats(matrix).average!);
+  });
+
+  it("reads a value in words", () => {
+    expect(correlationBand(0.85)).toBe("very_high");
+    expect(correlationBand(0.5)).toBe("high");
+    expect(correlationBand(0.25)).toBe("moderate");
+    expect(correlationBand(0)).toBe("low");
+    expect(correlationBand(-0.4)).toBe("negative");
+  });
+});
+
+describe("lineMoney", () => {
+  it("reads a shared-denominator return as euros, and the gap to the book", () => {
+    // 10 000 in; the book is up 20 %, the index 35 %.
+    expect(lineMoney(10_000, 0.2, null)).toEqual({
+      worth: 12_000,
+      gain: 2_000,
+      versus: null,
+    });
+    const index = lineMoney(10_000, 0.35, 0.2);
+    expect(index.worth).toBeCloseTo(13_500);
+    expect(index.gain).toBeCloseTo(3_500);
+    expect(index.versus).toBeCloseTo(1_500);
+  });
+});
+
+describe("Donut", () => {
+  const detail: SliceDetail = {
+    money: (v, signed) => `${signed && v > 0 ? "+" : ""}€${v}`,
+    change: (v) => `${v > 0 ? "+" : ""}${(v * 100).toFixed(1)}%`,
+    labels: {
+      value: "Value",
+      invested: "Invested",
+      result: "P/L",
+      positions: "Positions",
+      more: (n) => `+${n} more`,
+      pin: "Click to pin",
+      close: "Close",
+    },
+  };
+
+  it("reads a slice as money: worth, what went in, and the P/L between", () => {
+    const rows = sliceTip(
+      {
+        label: "Technology",
+        weight: 0.4,
+        value: 1500,
+        cost: 1000,
+        holdings: [
+          { ticker: "NVDA", value: 1000, cost: 500 },
+          { ticker: "MSFT", value: 500, cost: 500 },
+        ],
+      },
+      detail,
+    );
+    expect(rows.map((row) => `${row.label} ${row.value}`)).toEqual([
+      "Value €1500",
+      "Invested €1000",
+      "P/L +€500 (+50.0%)",
+      "Positions 2",
+    ]);
+  });
+
+  it("says nothing in money for a slice nothing priced", () => {
+    expect(sliceTip({ label: "Unknown", weight: 0.1, value: null }, detail)).toEqual(
+      [],
+    );
+  });
+
+  it("folds the tail into one slice, one holding per ticker", () => {
+    const folded = foldSlices(
+      [
+        {
+          label: "Energy",
+          weight: 0.02,
+          value: 200,
+          cost: 100,
+          holdings: [{ ticker: "SPY", value: 200, cost: 100 }],
+        },
+        {
+          label: "Utilities",
+          weight: 0.01,
+          value: 150,
+          cost: 120,
+          holdings: [
+            { ticker: "SPY", value: 100, cost: 50 },
+            { ticker: "NEE", value: 50, cost: 70 },
+          ],
+        },
+        { label: "Unknown", weight: 0.01, value: null, cost: null },
+      ],
+      "Others",
+    );
+    expect(folded.weight).toBeCloseTo(0.04);
+    expect(folded.value).toBe(350);
+    expect(folded.cost).toBe(220);
+    expect(folded.holdings).toEqual([
+      { ticker: "SPY", value: 300, cost: 150 },
+      { ticker: "NEE", value: 50, cost: 70 },
+    ]);
+  });
+
+  it("names its largest slice in the hole and its money with it", () => {
+    const html = renderToStaticMarkup(
+      <Donut
+        title="Sector"
+        otherLabel="Others"
+        format={(f) => `${(f * 100).toFixed(1)}%`}
+        detail={detail}
+        slices={[
+          { label: "Health", weight: 0.25, value: 250, cost: 200 },
+          { label: "Technology", weight: 0.75, value: 750, cost: 500 },
+        ]}
+      />,
+    );
+    expect(html).toContain(
+      '<span class="pf-donut-center-label">Technology</span><strong>75.0%</strong>',
+    );
+    expect(html).toContain("€750");
   });
 });

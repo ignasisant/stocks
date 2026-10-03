@@ -956,10 +956,7 @@
 }
 
 .im-tier-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  margin: 0;
   color: var(--ag-text-muted);
   font-size: var(--ag-fs-sm);
 }
@@ -1066,16 +1063,6 @@
   min-height: 30px;
   padding: 0 10px;
   font-size: var(--ag-fs-sm);
-}
-
-.im-cli {
-  padding: 3px 8px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-nav);
-  background: var(--ag-surface-page);
-  color: var(--ag-purple-400);
-  font: 500 var(--ag-fs-xs) var(--ag-font-mono);
-  overflow-wrap: anywhere;
 }
 
 /* The skipped rows: folded by default, a box with its own header row. */

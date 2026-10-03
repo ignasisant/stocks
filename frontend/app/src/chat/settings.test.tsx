@@ -271,3 +271,33 @@ describe("a provider you sign in to", () => {
     expect(out).toContain("chat.forget");
   });
 });
+
+describe("memory", () => {
+  const drawn = (next: ChatState) =>
+    renderToStaticMarkup(
+      <Settings
+        state={next}
+        busy={false}
+        thread={null}
+        onBack={() => {}}
+        onSave={() => {}}
+        onState={() => {}}
+        onDeleteThread={() => {}}
+        onMemory={() => {}}
+      />,
+    );
+
+  it("offers both switches, on for an account that never touched them", () => {
+    const out = drawn(state({}));
+    expect(out).toContain("chat.sec_memory");
+    expect(out).toContain("chat.mem_switch");
+    expect(out).toContain("chat.recall_switch");
+    expect(out).toContain("chat.mem_manage");
+    expect(out.match(/checked=""/g)?.length).toBe(2);
+  });
+
+  it("shows a switch the account turned off as off", () => {
+    const out = drawn(state({ memory: false, recall: true }));
+    expect(out.match(/checked=""/g)?.length).toBe(1);
+  });
+});

@@ -51,7 +51,7 @@ from stocks.analysis.portfolio import basket_change, us_market_open
 from stocks.api import home, loaders
 from stocks.api.cache import ttl_cache
 from stocks.api.deps import reporting_currency
-from stocks.chat import daily, engine, signals
+from stocks.chat import daily, daily_book, daily_routines, engine, signals
 from stocks.data.crypto import is_crypto
 
 # How long `POST /daily` holds the request for a briefing before answering
@@ -303,6 +303,10 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
         day=_day_move(tbl, hist),
         earnings=events,
         extremes=extremes,
+        index=_index(ccy) if positions else None,
+        # The questions alone: their data is fetched on the job's thread
+        # (`start`), so the request is not held for it.
+        routines=daily_routines.seeded(daily_routines.load(prefs, paths.chat)),
         signals=signals.candidates(
             holdings=entries,
             tbl=tbl,
@@ -319,6 +323,34 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
             today=day,
         ),
     )
+
+
+def _index(currency: str) -> dict | None:
+    """The index's day, week and month for the Portfolio section, or None —
+    a section with the book's figures alone still stands."""
+    try:
+        return daily_book.index_facts(_card_closes(), currency)
+    except Exception as exc:  # noqa: BLE001 — best-effort, like the market block
+        obs.warn("daily_action.index_unavailable", error_type=type(exc).__name__)
+        return None
+
+
+def book_chart(paths, lang: str) -> list[dict]:
+    """The Portfolio section's month, drawn: the book and the index as
+    growth (`daily_book.chart`). Off the loaders `build_facts` just warmed,
+    so it costs no download; [] on any failure — the rows still stand."""
+    from stocks.web.i18n import translate
+
+    db = str(paths.db)
+    ccy = reporting_currency(paths)
+    try:
+        hist = loaders.basket_values(db, loaders.db_mtime(db), ccy).dropna(how="all")
+        return daily_book.chart(
+            hist, _card_closes(), ccy, label=translate("chat.chart_book", lang)
+        )
+    except Exception as exc:  # noqa: BLE001
+        obs.warn("daily_action.chart_unavailable", error_type=type(exc).__name__)
+        return []
 
 
 def _fund(ticker: str) -> bool:
@@ -341,7 +373,10 @@ def _save_counters(paths, prefs: dict) -> None:
     the work started, up to half a minute ago, and a settings change made in
     that window must not be undone by a card.
     """
-    counters = {k: v for k, v in prefs.items() if k.startswith("free_msgs::")}
+    counters = {
+        k: v for k, v in prefs.items()
+        if k.startswith("free_msgs::") or k == daily.UNITS_KEY
+    }
     try:
         accounts.update_prefs(paths.prefs, counters)
     except Exception as exc:  # noqa: BLE001 — a lost count, not a lost card
@@ -356,7 +391,8 @@ def _store(paths, job: Job, prefs: dict, facts: dict, stored, spent: bool) -> No
     reader saw (`daily.to_store` stamps the triggers on screen, so tomorrow's
     card does not say them again), and a computed card left unstored was a day
     the card forgot. `daily.wants_upgrade` is what keeps a stored stand-in
-    from ending the day's chances of a real briefing.
+    from ending the day's chances of a real briefing. It is filed in the chat
+    too (`daily.record`), for the same reason: what the reader was told.
     """
     from stocks.web import auth
 
@@ -371,8 +407,10 @@ def _store(paths, job: Job, prefs: dict, facts: dict, stored, spent: bool) -> No
         # A Regenerate that got nothing back leaves the written card standing
         # rather than swapping it for the stand-in.
         return
+    card = daily.to_store(stored, action, facts)
+    card["thread"] = daily.filed(stored, action, paths.chat)
     try:
-        auth.save_action(daily.to_store(stored, action, facts), paths.action)
+        auth.save_action(card, paths.action)
     except Exception as exc:  # noqa: BLE001 — the reader still gets the card
         obs.warn("daily_action.unsaved", error_type=type(exc).__name__)
 
@@ -395,12 +433,15 @@ def start(
     abandoned so it cannot store over the reader's fresh request.
     """
     from stocks.web import auth
+    from stocks.web.i18n import translate
 
-    job = Job(
-        key=key,
-        forced=forced,
-        computed=None if forced else daily.computed(facts, lang, day),
-    )
+    chart = book_chart(paths, lang) if facts.get("index") else []
+    drawn: dict[str, dict] = {}
+
+    def stand_in() -> daily.DailyAction | None:
+        return daily.dressed(daily.computed(facts, lang, day), chart, drawn)
+
+    job = Job(key=key, forced=forced, computed=None if forced else stand_in())
     with _lock:
         previous = _jobs.get(str(paths.root))
         if previous is not None and not previous.done:
@@ -416,17 +457,45 @@ def start(
         spent = spent or ok
         return ok
 
+    def _answer_routines() -> None:
+        """The routines' data, fetched on the job's thread: the reader already
+        has the stand-in, with the questions shown as being answered."""
+        routines = daily_routines.load(prefs, paths.chat)
+        if not routines:
+            return
+        try:
+            found, charts = daily_routines.gather(
+                routines,
+                watchlist=paths.watchlist,
+                db=paths.db,
+                base=str(facts.get("currency") or "EUR"),
+                translate=lambda k, **kw: translate(k, lang, **kw),
+            )
+        except Exception as exc:  # noqa: BLE001 — unanswered, not uncarded
+            obs.warn("daily_action.routines_failed", error_type=type(exc).__name__)
+            found, charts = [{"id": r.id, "ask": r.text} for r in routines], {}
+        facts["routines"] = found
+        drawn.update(charts)
+        if job.computed is not None:
+            job.computed = stand_in()
+
     def work() -> None:
         try:
-            job.action = daily.generate(
-                prefs,
-                profile,
-                facts,
-                lang,
-                day,
-                recent=stored.recent if stored else [],
-                past=stored.past if stored else [],
-                spend_free=spend,
+            _answer_routines()
+            job.action = daily.dressed(
+                daily.generate(
+                    prefs,
+                    profile,
+                    facts,
+                    lang,
+                    day,
+                    recent=stored.recent if stored else [],
+                    past=stored.past if stored else [],
+                    spend_free=spend,
+                    chat_path=paths.chat,
+                ),
+                chart,
+                drawn,
             )
         except Exception as exc:  # noqa: BLE001 — generate swallows its own; a
             # thread that died silently would leave the client polling forever.
@@ -441,7 +510,7 @@ def start(
                     # A forced job that got nothing still owes the reader a
                     # card: the computed one, built now rather than up front
                     # so a Regenerate shows its wait line and not a stand-in.
-                    job.computed = daily.computed(facts, lang, day)
+                    job.computed = stand_in()
                 _store(paths, job, prefs, facts, stored, spent)
             finally:
                 # Last, so a poll that sees `done` also sees the stored file.
@@ -608,7 +677,8 @@ def analysis(paths, prefs: dict, key: str) -> tuple[daily.DailyAction, dict] | N
             return ok
 
         written = daily_analysis.generate(
-            prefs, auth.load_profile(prefs), card, key, found, card.lang, spend_free=spend
+            prefs, auth.load_profile(prefs), card, key, found, card.lang,
+            spend_free=spend, chat_path=paths.chat,
         )
         if spent:
             _save_counters(paths, prefs)

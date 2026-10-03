@@ -19,13 +19,14 @@ from __future__ import annotations
 import json
 import math
 import queue
+import re
 import secrets
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from dataclasses import field as dc_field
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -39,7 +40,9 @@ from stocks.chat import (
     charts,
     debate,
     harvest,
+    learnings,
     market,
+    memory,
     rebalance,
     tokens,
     toolbox,
@@ -1028,9 +1031,14 @@ def language_rule(lang: str | None) -> str:
 
 def system_prompt(profile: dict, context: str,
                   skill_ids: list[str] | None = None,
-                  lang: str | None = None) -> str:
-    """Persona + the caller's context block (view + book snapshot) + the
-    analysis frameworks chosen for this turn + the answer's language."""
+                  lang: str | None = None, memories: str = "") -> str:
+    """Persona + the user's saved memories + the caller's context block (view
+    + book snapshot) + the analysis frameworks chosen for this turn + the
+    answer's language.
+
+    `memories` (`learnings.block`) sits between the fixed paragraphs and the
+    context: it changes when the user edits it, the context on every turn, so
+    this order keeps the longest prefix a provider can cache."""
     return (
         "You are a concise investing assistant embedded in a personal stock "
         "tracker. " + persona(profile) + "You are not a licensed financial "
@@ -1055,22 +1063,34 @@ def system_prompt(profile: dict, context: str,
         "never reaches you as text — if the conversation does not already "
         "show its parsed result, you have not seen its contents and must say "
         "so. Asked to import with nothing attached, say what to attach.\n\n"
-        f"{context}"
+        f"{memories}{context}"
         + chat_skills.skills_block(skill_ids or [])
         + RULES
         + language_rule(lang)
     )
 
 
+# What a daily card's thread opens with, as far as the model is concerned. The
+# thread starts with the card — an assistant turn nobody asked for — and a
+# conversation sent to a model has to open with the user.
+CARD_OPENER = "My daily action card on Home, for {day}."
+
+
 def recent(history: list[dict], limit: int = MAX_CONTEXT_MSGS) -> list[dict]:
     """The tail of the conversation sent to the model. Trims any leading
     assistant turn so the slice still opens with a user message (Anthropic
-    requires it; the others don't care). Rebuilt as bare role/content dicts —
+    requires it; the others don't care) — except a daily card's
+    (`auth.save_card_thread`), which is what the thread is about and gets
+    `CARD_OPENER` in front of it instead. Rebuilt as bare role/content dicts —
     stored turns carry extra keys (e.g. "skills") the provider APIs reject."""
     msgs = history[-limit:]
-    while msgs and msgs[0]["role"] != "user":
+    while msgs and msgs[0]["role"] != "user" and not msgs[0].get("daily"):
         msgs = msgs[1:]
-    return [{"role": m["role"], "content": m["content"]} for m in msgs]
+    out = [{"role": m["role"], "content": m["content"]} for m in msgs]
+    if msgs and msgs[0]["role"] != "user":
+        out.insert(0, {"role": "user",
+                       "content": CARD_OPENER.format(day=msgs[0]["daily"])})
+    return out
 
 
 def resolve_skills(prefs: dict, provider: Provider, api_key: str,
@@ -1163,7 +1183,9 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
 
     memory_db, thread = None, ""
     if chat_path is not None:
-        memory_db = auth.memory_path(chat_path)
+        # Off by the account's own switch: the earlier conversations stay on
+        # disk (they are the threads list), but no answer reads them.
+        memory_db = auth.memory_path(chat_path) if recall_on(prefs) else None
         thread = auth.active_conversation(chat_path)["id"]
     # `focus` is what "this" and "it" mean: the ticker on the reader's screen
     # (chat_core._gather passes the same one from the Streamlit session).
@@ -1660,6 +1682,354 @@ def _typed_verdict(history: list[dict], index: int, approve: bool, *,
     return Reply(text=note, proposal=dict(offer))
 
 
+# ------------------------------------------------------------------ memory
+# What the assistant keeps about the user (chat/learnings.py). Written only
+# from the user's own words — a command typed into the chat, the memory
+# screen, or a message read for it in the background (`learn`) — and read into
+# every prompt while the account has it switched on.
+
+
+def memory_on(prefs: dict) -> bool:
+    """Whether the account keeps saved memories and reads them into answers."""
+    return prefs.get("chat_memory", True) is not False
+
+
+def recall_on(prefs: dict) -> bool:
+    """Whether an answer may search the account's earlier conversations."""
+    return prefs.get("chat_recall", True) is not False
+
+
+def memory_block(prefs: dict, chat_path: Path, *, routines: bool = True) -> str:
+    """The prompt's saved-memories section, "" when off or empty.
+
+    Every surface that writes to the user reads this same block — the chat,
+    the Telegram bot and digests, the daily card and its analyses, the
+    walkthrough — so what the user told the assistant once steers all of
+    them, not only the conversation it was said in. `routines=False` is the
+    daily card's reading: it answers the routines from its own data
+    (`daily_routines`), so the block's "never unprompted" must not reach it."""
+    if not memory_on(prefs):
+        return ""
+    return learnings.block(learnings.load(learnings.path_for(chat_path)),
+                           routines=routines)
+
+
+def talk_about(prefs: dict, chat_path: Path, names: list[str], *,
+               exclude_thread: str = "",
+               limit: int = memory.ABOUT_LIMIT,
+               cards: bool = True) -> list[memory.Memory]:
+    """The earlier conversations' turns about `names`, [] when recall is off.
+
+    What `memory.about` finds, less the turns of a thread that is no longer
+    in the book: deleting a conversation is the reader's way of saying it
+    must not come back, and the index may not have caught up with that.
+    `cards=False` also drops what the assistant said in a daily card's
+    thread, and keeps what the user said there: the card reading its own
+    past lines back as "the user talking to you" would be the card quoting
+    itself — it has its own memory of those (`daily.past_lines`)."""
+    from stocks.web import auth
+
+    if not names or not recall_on(prefs) or not chat_path.exists():
+        return []
+    book = {c["id"]: c for c in auth.list_conversations(chat_path)}
+    # Over-fetched when some are going to be dropped, so the cap still counts
+    # what is left.
+    depth = limit if cards else limit * 3
+    hits = [h for h in memory.about(auth.memory_path(chat_path), names,
+                                    limit=depth, exclude_thread=exclude_thread)
+            if h.thread in book]
+    if not cards:
+        hits = [h for h in hits
+                if not (book[h.thread]["daily"] and h.role == "assistant")]
+    return hits[:limit]
+
+
+# How a surface that is not the chat reads `user_memory`. The card, the
+# digests and the walkthrough are the same assistant the user talks to, so
+# they pull the same way: what the user said they want, keep or avoid shapes
+# what leads and how it is put. Their audits check figures against their own
+# data only, so a figure lifted from a memory would be rejected — or worse,
+# be stale — and the clause on figures is what keeps it out.
+MEMORY_USE = (
+    "WHAT THE USER TOLD YOU. The saved memories above, and any earlier "
+    "conversations quoted after the data, are this user talking to you in "
+    "the chat. Keep what you write going their way: lead with what they said "
+    "matters to them, frame it by their stated goals and limits, and build on "
+    "a decision instead of re-raising it — a position they said they keep is "
+    "not a reason to suggest selling it again; say what changed since, if "
+    "anything did. They are context, not data: never quote a figure, a price "
+    "or a date from them — every figure comes from the data only."
+)
+
+
+def user_memory(prefs: dict, chat_path: Path | None, names: Iterable[str] = (),
+                *, routines: bool = True) -> tuple[str, list[memory.Memory]]:
+    """What the chat knows about this user, for a surface that is not the
+    chat: (`memory_block`, the earlier conversations' turns about `names`).
+
+    The card, its analyses, the digests and the walkthrough all write to the
+    same person the chat talks to, and read them through here so they pull
+    the same way. The turns leave out what earlier daily cards said
+    (`talk_about(cards=False)`): every one of these surfaces is written from
+    its own data, and an old card line is neither the user nor the data.
+    Never raises — a memory that cannot be read is a line written without
+    it, never a line that is not written."""
+    if chat_path is None:
+        return "", []
+    try:
+        block = memory_block(prefs, chat_path, routines=routines)
+    except Exception as exc:
+        obs.warn("chat.memory.block_failed", error_type=type(exc).__name__,
+                 error=str(exc)[:200])
+        block = ""
+    try:
+        talk = talk_about(prefs, chat_path, list(names), cards=False)
+    except Exception as exc:
+        obs.warn("chat.memory.talk_failed", error_type=type(exc).__name__,
+                 error=str(exc)[:200])
+        talk = []
+    return block, talk
+
+
+CARD_DAYS = 3  # a card older than this is not "the card" any more
+_CARD_CHARS = 1500
+
+
+def card_block(chat_path: Path, today: date | None = None) -> str:
+    """Home's latest daily card, for the chat's prompt — "" when there is
+    none from the last CARD_DAYS days.
+
+    The card is this assistant talking too: what it told the user this
+    morning is something a question in the drawer or on Telegram may be
+    about ("why does the card say to sell?"), and a message that names
+    nothing would not find it through the index. Its figures are as of the
+    session it was written from, so the context below wins on anything
+    current."""
+    from stocks.chat import daily
+
+    try:
+        raw = json.loads(daily.card_path(chat_path).read_text())
+    except (OSError, ValueError):
+        return ""
+    card = daily.DailyAction.from_dict(raw)
+    if card is None:
+        return ""
+    try:
+        age = ((today or date.today()) - date.fromisoformat(card.day)).days
+    except ValueError:
+        return ""
+    if not 0 <= age <= CARD_DAYS:
+        return ""
+    text = daily.thread_text(card)[:_CARD_CHARS]
+    session = f", from the session of {card.as_of}" if card.as_of else ""
+    return (
+        f"Home's daily card — what you told the user on the app's Home page "
+        f"for {card.day}{session}. When they ask about \"the card\" or "
+        f"today's action, this is it; for any current figure, the context "
+        f"below wins.\n{text}\n\n"
+    )
+
+
+_SNIPPET_CHARS = 140  # of a recalled turn, on the "based on" line
+
+
+def _snippet(text: str) -> str:
+    """A recalled turn's opening, without the markdown that dresses it."""
+    plain = " ".join(re.sub(r"[*_#|`>]+", " ", text).split())
+    return plain if len(plain) <= _SNIPPET_CHARS \
+        else plain[:_SNIPPET_CHARS - 1].rstrip() + "…"
+
+
+def earlier(prefs: dict, chat_path: Path, message: str,
+            ) -> tuple[list[memory.Memory], list[dict]]:
+    """The earlier conversations about what `message` names: (the turns to
+    staple onto it, the conversations they came from as `Reply.recalled`).
+
+    Run on every turn, unasked, and not behind `web_enabled` — it reads one
+    local file and reaches nothing. What it finds and why it is strict about
+    it is `memory.about`'s business. A turn from a thread that is no longer
+    in the book is dropped even if the index still has it: deleting a
+    conversation is the reader's way of saying it must not come back."""
+    from stocks.web import auth
+
+    names = market.named(message) if recall_on(prefs) else []
+    if not names or not chat_path.exists():
+        return [], []
+    current = auth.active_conversation(chat_path)["id"]
+    hits = talk_about(prefs, chat_path, names, exclude_thread=current)
+    if not hits:
+        return [], []
+    book = {c["id"]: c for c in auth.list_conversations(chat_path)}
+    hits = [h for h in hits if h.thread in book]
+    threads: dict[str, dict] = {}
+    for h in hits:
+        threads.setdefault(h.thread, {
+            "thread": h.thread, "title": book[h.thread]["title"],
+            "when": h.when, "snippet": _snippet(h.text)})
+    if hits:
+        obs.event("chat.memory_recalled", notes=len(hits), threads=len(threads))
+    return hits, list(threads.values())
+
+
+def _thread_id(chat_path: Path) -> str:
+    """The active conversation's id. A first turn's thread has no id on disk
+    yet — every read of a missing chat.json makes up a new one — so it is
+    pinned before it is named."""
+    from stocks.accounts import writable
+    from stocks.web import auth
+
+    if chat_path.exists():
+        return auth.active_conversation(chat_path)["id"]
+    return auth.new_conversation(writable(chat_path))
+
+
+def remember(order: learnings.Command, *, prefs: dict, chat_path: Path,
+             watchlist: Path, lang: str) -> tuple[str, list[dict]]:
+    """Carry out a memory command: (the note that says what happened, the
+    changes as `Reply.learned` files them — empty when nothing changed)."""
+    from stocks.accounts import GuestIsReadOnly
+
+    if not memory_on(prefs):
+        return _tr("chat.memory_off", lang), []
+    if order.everything:
+        # Not from a sentence: the one irreversible thing here waits for the
+        # button that says what it does, a press away in Settings.
+        return _tr("chat.memory_forget_all", lang), []
+    path = learnings.path_for(chat_path)
+    try:
+        if order.op == "forget":
+            hit = learnings.match(learnings.load(path), order.text)
+            if hit is None:
+                return _tr("chat.memory_no_match", lang, text=order.text), []
+            learnings.drop(path, hit.id)
+            obs.event("chat.memory_forgot", via="chat")
+            return (_tr("chat.memory_forgot", lang, text=hit.text),
+                    [learnings.change("deleted", hit)])
+        tickers = market.mentioned(order.text,
+                                   market.watchlist_names(watchlist),
+                                   lookup=lambda _name: "")
+        item, new = learnings.add(path, order.text, kind=order.kind or None,
+                                  tickers=tickers, thread=_thread_id(chat_path))
+    except learnings.RoutinesFull:
+        return _tr("chat.routines_full", lang, max=learnings.MAX_ROUTINES), []
+    except learnings.Full:
+        return _tr("chat.memory_full", lang, max=learnings.MAX_ITEMS), []
+    except GuestIsReadOnly:
+        return _tr("chat.memory_off", lang), []
+    if not new:
+        return _tr("chat.memory_known", lang, text=item.text), []
+    obs.event("chat.memory_saved", via="chat", kind=item.kind)
+    saved = "chat.routine_saved" if item.kind == "routine" else "chat.memory_saved"
+    return (_tr(saved, lang, text=item.text), [learnings.change("added", item)])
+
+
+LEARN_TIMEOUT = 45.0  # one provider's go at an extraction
+LEARN_GRACE = 2.0  # what a finished answer waits for an extraction still out
+_LEARN_EARLIER = 3  # earlier user messages handed over, for "that" and "it"
+
+
+def learn(prefs: dict, chat_path: Path, history: list[dict], watchlist: Path,
+          session_keys: dict[str, str] | None = None,
+          ) -> threading.Event | None:
+    """Read the newest message for something worth remembering about the
+    user, unasked — on a thread of its own. Returns the event set once it has
+    finished; None when there was nothing to read it for.
+
+    A question is also logged for the daily routines (`learnings.notice`):
+    asked on enough days, it is added to the daily card. No model in that,
+    but a write to the bucket, which is why it is on this thread too.
+
+    In the background because the free chain takes twenty-odd seconds, and a
+    memory is never worth a slower answer. What it changes is announced by
+    the stored turn (`_unseen`): this one if it finished in time, the next one
+    if not. Only messages that sound like the user talking about themselves
+    are read (`learnings.worth_learning`), and only the user's messages are
+    handed over — never a page, a tool result or an answer. A free-chain
+    extraction spends the shared pot, not the account's allowance: the reader
+    never asked for it and must not find a message missing because of it.
+    """
+    from stocks.accounts import GuestIsReadOnly, writable
+
+    said = [str(m.get("content") or "") for m in history
+            if m.get("role") == "user"]
+    if not said or not memory_on(prefs):
+        return None
+    extract = learnings.worth_learning(said[-1])
+    question = learnings.asks(said[-1])
+    if not (extract or question):
+        return None
+    path = learnings.path_for(chat_path)
+    try:
+        writable(path)
+        thread = _thread_id(chat_path)
+    except GuestIsReadOnly:
+        return None
+    newest, earlier = said[-1], said[-1 - _LEARN_EARLIER:-1]
+    names = market.watchlist_names(watchlist)
+    asked = dict(prefs)  # the turn charges its own copy on its own thread
+    done = threading.Event()
+
+    def work() -> None:
+        try:
+            if question:
+                _notice(path, newest, thread, names,
+                        opener=len(said) == 1 and not history[0].get("daily"))
+            if not extract:
+                return
+            items = learnings.load(path)
+            kept = complete_attempts(
+                asked, learnings.lesson_prompt(items),
+                learnings.lesson_request(newest, earlier), LEARN_TIMEOUT,
+                spend_free=spend_free_global,
+                accept=lambda raw: learnings.lessons(
+                    raw, items, newest, "\n".join([*earlier, newest])),
+                session_keys=session_keys,
+            )
+            made = learnings.apply(
+                path, kept or [], thread=thread,
+                tickers=lambda text: market.mentioned(
+                    text, names, lookup=lambda _name: ""))
+            if made:
+                obs.event("chat.memory_learned",
+                          ops=[c["op"] for c in made])
+        except Exception as exc:  # noqa: BLE001 — a memory never costs a turn
+            obs.warn("chat.engine.learn_failed", error_type=type(exc).__name__,
+                     error=str(exc)[:300])
+        finally:
+            done.set()
+
+    threading.Thread(target=work, name="chat-learn", daemon=True).start()
+    return done
+
+
+def _notice(path: Path, newest: str, thread: str, names: dict,
+            *, opener: bool) -> None:
+    """Log the question for the daily routines; a failure costs nothing but
+    the log entry."""
+    try:
+        made = learnings.notice(
+            path, newest, day=datetime.now(UTC).date().isoformat(),
+            thread=thread, opener=opener,
+            tickers=market.mentioned(newest, names, lookup=lambda _name: ""))
+    except Exception as exc:  # noqa: BLE001
+        obs.warn("chat.engine.notice_failed", error_type=type(exc).__name__,
+                 error=str(exc)[:300])
+        return
+    if made:
+        obs.event("chat.routine_noticed", days=made.get("repeated"))
+
+
+def _unseen(chat_path: Path) -> list[dict]:
+    """The unasked memory changes no turn has said yet, for the one about to
+    be stored to say."""
+    try:
+        return learnings.take_unseen(learnings.path_for(chat_path))
+    except Exception as exc:  # noqa: BLE001 — the answer is stored regardless
+        obs.warn("chat.engine.unseen_failed", error_type=type(exc).__name__,
+                 error=str(exc)[:300])
+        return []
+
+
 # ------------------------------------------------------------------ answer
 
 
@@ -1686,6 +2056,15 @@ class Reply:
     activities: tuple[dict, ...] = ()
     # The cases argued before it (`Turn.debate`), as stored.
     debate: tuple[dict, ...] = ()
+    # What changed in the saved memories (`learnings.change`): {op, id, text,
+    # kind} with op "added", "updated" or "deleted", plus `auto` when it was
+    # learned unasked and `before` on an update — the drawer's "memory
+    # updated" line and its undo. Stored on the turn under "learned" too.
+    learned: tuple[dict, ...] = ()
+    # The earlier conversations the answer was given (`earlier`), as
+    # {thread, title, when, snippet} — the drawer's "based on N earlier
+    # conversations" line. Stored on the turn under "recalled" too.
+    recalled: tuple[dict, ...] = ()
 
 
 def _keep_byok(prefs: dict, prefs_path: Path, pid: str) -> None:
@@ -1775,6 +2154,16 @@ class Turn:
     #: The bull and bear cases argued before the answer (`chat/debate.py`),
     #: as {side, text}. Stored on the answer.
     debate: list[dict] = dc_field(default_factory=list)
+    #: The memory command at the head of the question, already carried out
+    #: (`Reply.learned`) — `_record` adds what was learned unasked. Stored on
+    #: the answer.
+    learned: list[dict] = dc_field(default_factory=list)
+    #: The earlier conversations quoted onto the question (`earlier`), as
+    #: `Reply.recalled`. Stored on the answer.
+    recalled: list[dict] = dc_field(default_factory=list)
+    #: Set once the question's background read for memories (`learn`) is
+    #: done; None when none was started.
+    learning: threading.Event | None = None
 
 
 
@@ -1963,14 +2352,43 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         auth.save_chat(history, chat_path)
         return None, Reply(text=note)
 
+    # "Recuerda que…" / "olvida lo de…": the user editing the memory in words.
+    # Carried out here, before a provider is even resolved, for the reason the
+    # import is: it is a write the app makes, and a model must never be the
+    # one saying it happened. A question after the command ("recuerda que
+    # tengo 40 años, ¿cuánto en bonos?") still goes on to be answered, with
+    # the change carried on the answer.
+    learned: list[dict] = []
+    order = learnings.command(message)
+    if order is not None:
+        note, learned = remember(order, prefs=prefs, chat_path=chat_path,
+                                 watchlist=watchlist, lang=lang)
+        if not order.rest:
+            done: dict = {"role": "assistant", "content": note,
+                          "action": "memory"}
+            if learned:
+                done["learned"] = learned
+            history.append(done)
+            auth.save_chat(history, chat_path)
+            return None, Reply(text=note, learned=tuple(learned))
+
+    def settled(reply: Reply) -> tuple[None, Reply]:
+        # An early answer below still tells the reader what was saved.
+        return None, replace(reply, learned=tuple(learned)) if learned else reply
+
+    def stored(entry: dict) -> dict:
+        if learned:
+            entry["learned"] = learned
+        return entry
+
     atts = chain(prefs, session_keys)
     if not atts:
-        return None, Reply(error="chat.free_exhausted")
+        return settled(Reply(error="chat.free_exhausted"))
     # Everything below runs models on `live[0]`; `atts` still goes out whole
     # so `answer` charges and reports the walls exactly as before.
     live = answerable(prefs, atts)
     if not live:
-        return None, _exhausted(prefs, atts, capped=True)
+        return settled(_exhausted(prefs, atts, capped=True))
     provider, key, _ = live[0]
 
     # App actions first (favorite / alerts / groups): a deterministic
@@ -1981,14 +2399,14 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         if act is not None and confirm_actions:
             offer = _proposal(act)
             note = tools.proposal(act, lambda k, **kw: _tr(k, lang, **kw))
-            history.append({"role": "assistant", "content": note,
-                            "action": act.kind, "proposal": offer})
+            history.append(stored({"role": "assistant", "content": note,
+                                   "action": act.kind, "proposal": offer}))
             auth.save_chat(history, chat_path)
             autotitle(chat_path, provider, key, history, lang)
             _keep_byok(prefs, prefs_path, provider.id)
             obs.event("chat.action_proposed", action=act.kind)
-            return None, Reply(text=note, provider_id=provider.id,
-                               proposal=dict(offer))
+            return settled(Reply(text=note, provider_id=provider.id,
+                                 proposal=dict(offer)))
         if act is not None:
             try:
                 tools.execute(act, watchlist)
@@ -1998,12 +2416,12 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                 act = None
         if act is not None:
             note = action_reply(act, lang)
-            history.append({"role": "assistant", "content": note,
-                            "action": act.kind})
+            history.append(stored({"role": "assistant", "content": note,
+                                   "action": act.kind}))
             auth.save_chat(history, chat_path)
             autotitle(chat_path, provider, key, history, lang)
             _keep_byok(prefs, prefs_path, provider.id)
-            return None, Reply(text=note, provider_id=provider.id)
+            return settled(Reply(text=note, provider_id=provider.id))
 
     # Skill routing and the lookup are independent, so they run at the same
     # time rather than stacking their latencies. The lookup is the model's own
@@ -2018,6 +2436,12 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
 
     def watch(cid: str, call: ToolCall, done: bool) -> None:
         told(live_step(cid, call, lang, done))
+
+    # Started before the research and never waited on here: it reads only the
+    # user's words, and the answer does not need it (`learn`). A memory
+    # command already wrote what the message asked to keep.
+    learning = None if order is not None else learn(
+        prefs, chat_path, history, watchlist, session_keys)
 
     msgs = recent(history)
     say("gathering")
@@ -2051,6 +2475,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         # both have landed, already finished.
         for n, line in enumerate(trace(None, hits, live, lang)):
             told({"id": f"tool_pre{n}", **line, "args": {}})
+    recalled_notes, recalled = earlier(prefs, chat_path, message)
     system = system_prompt(
         auth.load_profile(prefs),
         # The order the Streamlit panel builds it in: where the reader is,
@@ -2060,12 +2485,14 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         + tax_rules(prefs) + fence,
         skills,
         lang,
+        memories=memory_block(prefs, chat_path) + card_block(chat_path),
     )
     # Everything fetched rides on the outgoing copy of the user turn, not the
     # system prompt — the stored history keeps the user's own text (same as
     # the panel).
     if evidence:
         msgs[-1]["content"] = evidence.augment(msgs[-1]["content"])
+    msgs[-1]["content"] = memory.augment(msgs[-1]["content"], recalled_notes)
     if hits:
         msgs[-1]["content"] = chat_web.augment(msgs[-1]["content"], hits)
     if live:
@@ -2139,6 +2566,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         lang=lang,
         activities=activities,
         debate=sides,
+        learned=learned,
+        recalled=recalled,
+        learning=learning,
     ), None
 
 
@@ -2179,7 +2609,8 @@ def _provider_failed(exc: Exception, provider: Provider, model: str) -> None:
 
 def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
             prefs: dict, prefs_path: Path, chat_path: Path,
-            polish: Callable[[dict], None] | None = None) -> Reply:
+            polish: Callable[[dict], None] | None = None,
+            grace: float | None = None) -> Reply:
     """Store a served answer and build the Reply both callers hand back.
 
     `polish` edits the entry before it is written — the walkthrough's jump
@@ -2187,9 +2618,18 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
     (chat/guide_ai.py). Before the write, not after: a second save to move a
     marker would race the next turn, and the Reply is built from what was
     stored, so the client and a reload read the same words.
+
+    `grace` is how long the answer waits for this question's memory read
+    (`learn`) still out — LEARN_GRACE unless the caller can afford more.
     """
     from stocks.web import auth
 
+    # What was learned unasked rides on the answer: this question's if its
+    # read is done (a moment's grace, it is usually ahead of the answer), and
+    # an earlier one's that finished after its own answer was stored.
+    if turn.learning is not None:
+        turn.learning.wait(LEARN_GRACE if grace is None else grace)
+    turn.learned = [*turn.learned, *_unseen(chat_path)]
     entry: dict = {"role": "assistant", "content": text}
     if turn.skills:
         entry["skills"] = list(turn.skills)
@@ -2201,6 +2641,10 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
         entry["activities"] = list(turn.activities)
     if turn.debate:
         entry["debate"] = list(turn.debate)
+    if turn.learned:
+        entry["learned"] = list(turn.learned)
+    if turn.recalled:
+        entry["recalled"] = list(turn.recalled)
     if polish is not None:
         polish(entry)
         text = str(entry.get("content") or "")
@@ -2214,21 +2658,26 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
     return Reply(text=text, skills=tuple(turn.skills),
                  sources=tuple(turn.sources), provider_id=provider.id,
                  steps=tuple(turn.steps), activities=tuple(turn.activities),
-                 debate=tuple(turn.debate))
+                 debate=tuple(turn.debate), learned=tuple(turn.learned),
+                 recalled=tuple(turn.recalled))
 
 
 def _exhausted(prefs: dict, atts: list[tuple[Provider, str, str]],
-               capped: bool) -> Reply:
-    """The Reply for a chain that ran out — and which wall it hit."""
+               capped: bool, learned: tuple[dict, ...] = ()) -> Reply:
+    """The Reply for a chain that ran out — and which wall it hit.
+
+    `learned` is a memory command the turn already carried out: it stands
+    whether or not anybody answered the question after it, so the refusal
+    still says what was saved (and still offers the undo)."""
     obs.warn("chat.failed", reason="free_cap" if capped else "api_error",
              providers=[p.id for p, _k, _m in atts])
     if not capped:
-        return Reply(error="chat.api_error")
+        return Reply(error="chat.api_error", learned=learned)
     # Which wall: this account's allowance (back tomorrow), the shared pot
     # (everyone's, and possibly back within the hour), or a policy that never
     # let this account near the chain — telling that last reader they spent
     # messages they never sent is how a refusal becomes a bug report.
-    return Reply(error=FREE_CAP_ERRORS[free_cap_reason(prefs)])
+    return Reply(error=FREE_CAP_ERRORS[free_cap_reason(prefs)], learned=learned)
 
 
 def answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
@@ -2236,13 +2685,15 @@ def answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
            context: str = TELEGRAM_CONTEXT, timeout_s: float = 90.0,
            staged_import: str = "", view: str = "", focus: str = "",
            fence: str = "", session_keys: dict[str, str] | None = None,
-           polish: Callable[[dict], None] | None = None) -> Reply:
+           polish: Callable[[dict], None] | None = None,
+           learn_grace: float | None = None) -> Reply:
     """One complete chat turn: load history, resolve provider/skills, ask,
     append the completed pair, save. Mirrors the web panel's turn logic.
 
     On any failure the history is left unsaved (no dangling user turn) and
     the Reply carries a locale key: chat.free_cap, chat.free_exhausted or
-    chat.api_error.
+    chat.api_error. `learn_grace` overrides how long the answer waits for
+    what the message is teaching the memory (`_record`).
     """
     turn, settled = prepare(prefs=prefs, prefs_path=prefs_path,
                             chat_path=chat_path, watchlist=watchlist, db=db,
@@ -2279,9 +2730,9 @@ def answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
         if text:
             return _record(turn, text, provider, model, key, prefs=prefs,
                            prefs_path=prefs_path, chat_path=chat_path,
-                           polish=polish)
+                           polish=polish, grace=learn_grace)
 
-    return _exhausted(prefs, turn.attempts, capped)
+    return _exhausted(prefs, turn.attempts, capped, tuple(turn.learned))
 
 
 def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
@@ -2303,7 +2754,9 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     `("tool", step)` for each piece of research as it starts and returns
     (`live_step`), `("subagent", event)` for the bull/bear debate when
     `debating` (`chat/debate.py`) — and, when `draws`, a price chart among
-    the turn's surfaces for a message that asks for one (`prepare`) — then
+    the turn's surfaces for a message that asks for one (`prepare`) —
+    `("recalled", [...])` once the turn is built if earlier conversations
+    were quoted onto it (`earlier`), then
     `("meta", {...})` once a provider has actually started answering,
     then `("text", chunk)` per piece, and always exactly one `("done", Reply)`
     last — so a caller can render progressively and still get the same Reply
@@ -2355,6 +2808,10 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
         assert settled is not None
         yield ("done", settled)
         return
+    # Said before the model starts, not with the answer: the reader is told
+    # which earlier conversations it was handed while it is still writing.
+    if turn.recalled:
+        yield ("recalled", list(turn.recalled))
 
     capped = False
     for provider, key, model in turn.attempts:
@@ -2389,4 +2846,4 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                                    chat_path=chat_path, polish=polish))
             return
 
-    yield ("done", _exhausted(prefs, turn.attempts, capped))
+    yield ("done", _exhausted(prefs, turn.attempts, capped, tuple(turn.learned)))

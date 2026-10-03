@@ -68,6 +68,13 @@ export function currencyLabel(code: string): string {
 export const LANGUAGES: Record<string, string> = { en: "English", es: "Español" };
 
 /**
+ * `stocks.web.i18n.LANGUAGE_FLAGS`. A language has no flag of its own, so this
+ * is the country its catalog is written for — the same glyph the residence
+ * picker below it draws, which is what the eye matches the two rows by.
+ */
+export const LANGUAGE_FLAGS: Record<string, string> = { en: "🇬🇧", es: "🇪🇸" };
+
+/**
  * `stocks.portfolio.tax.de.CHURCH_TAX_RATES` — stored as fractions.
  *
  * Still here because no route serves it: `/jurisdictions` says *that* Germany

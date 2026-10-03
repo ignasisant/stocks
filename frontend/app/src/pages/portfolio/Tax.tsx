@@ -19,6 +19,7 @@ import { get } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
+import { TickerCell as Cell } from "../../shell/tickers";
 import type { TaxFlag, TaxPeriod, TaxReport, TaxSale } from "./api";
 import {
   compactMoneyIn,
@@ -27,7 +28,7 @@ import {
   percent,
   shares as formatShares,
 } from "./format";
-import { PeriodBars } from "./charts";
+import { PeriodBars, type TipRow } from "./charts";
 import {
   Caption,
   Card,
@@ -79,17 +80,36 @@ function useTaxWords(code: string) {
  * wrong). If the counts and the list ever disagree the split is abandoned
  * rather than guessed at, and every sale is shown.
  */
-function salesByPeriod(report: TaxReport): Map<string, TaxSale[]> | null {
-  const counted = report.years.reduce((sum, year) => sum + year.sales, 0);
-  if (counted !== report.sales.length) return null;
+function salesByPeriod(
+  periods: TaxPeriod[],
+  sales: TaxSale[],
+): Map<string, TaxSale[]> | null {
+  const counted = periods.reduce((sum, period) => sum + period.sales, 0);
+  if (counted !== sales.length) return null;
   const split = new Map<string, TaxSale[]>();
   let at = 0;
-  for (const year of report.years) {
-    split.set(year.period, report.sales.slice(at, at + year.sales));
-    at += year.sales;
+  for (const period of periods) {
+    split.set(period.period, sales.slice(at, at + period.sales));
+    at += period.sales;
   }
   return split;
 }
+
+/** How many sales of each name a period holds and what they made, largest
+    result (either way) first — what a bar is made of. */
+export function salesByTicker(sales: TaxSale[]) {
+  const byTicker = new Map<string, { ticker: string; count: number; gain: number }>();
+  for (const sale of sales) {
+    const one = byTicker.get(sale.ticker) ?? { ticker: sale.ticker, count: 0, gain: 0 };
+    one.count += 1;
+    one.gain += sale.gain;
+    byTicker.set(sale.ticker, one);
+  }
+  return [...byTicker.values()].sort((a, b) => Math.abs(b.gain) - Math.abs(a.gain));
+}
+
+/** Names listed in a bar's hover box before the rest fold into "+n more". */
+const TIP_SALES = 6;
 
 export default function Tax() {
   const t = useT();
@@ -137,6 +157,13 @@ function Report({ report }: { report: TaxReport }) {
   const [grain, setGrain] = useState<"year" | "month">(
     report.years.length > 1 ? "year" : "month",
   );
+  // A month bar clicked in the monthly view narrows the sales below to it.
+  // Any other way of choosing what the card shows lets it go again.
+  const [month, setMonth] = useState<string | null>(null);
+  const pickYear = (next: string) => {
+    setYear(next);
+    setMonth(null);
+  };
 
   const selected =
     report.years.find((period) => period.period === year) ?? report.years[0];
@@ -155,9 +182,109 @@ function Report({ report }: { report: TaxReport }) {
       }
     : selected;
 
-  const split = salesByPeriod(report);
-  const sales = total ? report.sales : (split?.get(selected.period) ?? report.sales);
+  const split = salesByPeriod(report.years, report.sales);
+  const monthSales = month
+    ? report.sales.filter((sale) => sale.sell_date.startsWith(month))
+    : null;
+  const sales =
+    monthSales ??
+    (total ? report.sales : (split?.get(selected.period) ?? report.sales));
+
+  // The fiscal year a month falls in: the one whose sales hold it — the UK's
+  // year straddles two calendar years — else the calendar year it names.
+  const yearOf = (period: string) =>
+    report.years.find((one) =>
+      split?.get(one.period)?.some((sale) => sale.sell_date.startsWith(period)),
+    )?.period ?? (periods.includes(period.slice(0, 4)) ? period.slice(0, 4) : year);
+  const monthName = (period: string) => {
+    const [y, m] = period.split("-").map(Number);
+    if (!y || !m) return period;
+    return new Intl.DateTimeFormat(lang, { month: "long", year: "numeric" }).format(
+      new Date(y, m - 1, 1),
+    );
+  };
   const bars: TaxPeriod[] = grain === "year" ? report.years : report.months;
+  const barSales =
+    grain === "year" ? split : salesByPeriod(report.months, report.sales);
+
+  // What a bar's box adds to its four figures: the tax that year, the losses
+  // the anti-churn rule held back, how many sales — and which names they were.
+  const barDetail = (period: TaxPeriod) => {
+    const rows: TipRow[] = [];
+    if (period.disallowed_loss > 0)
+      rows.push({
+        label: words.say("tip_deferred"),
+        value: money(period.disallowed_loss) ?? "",
+      });
+    // Brackets apply to the whole year: a month has no tax of its own.
+    if (grain === "year") {
+      rows.push({
+        label: words.say("estimated_tax"),
+        value: money(period.estimated_tax) ?? "",
+      });
+      if (period.net_taxable > 0 && period.estimated_tax > 0)
+        rows.push({
+          label: t("portfolio.tip_effective_rate"),
+          value:
+            percent(lang, period.estimated_tax / period.net_taxable, { digits: 1 }) ??
+            "",
+        });
+      if (period.carryforward_loss > 0)
+        rows.push({
+          label: words.say("carryforward_loss"),
+          value: money(period.carryforward_loss) ?? "",
+        });
+    }
+    rows.push({ label: t("portfolio.tip_sales"), value: String(period.sales) });
+    const names = salesByTicker(barSales?.get(period.period) ?? []);
+    const hint = grain === "year" ? period.period !== year : period.period !== month;
+    if (!names.length && !hint) return { rows };
+    return {
+      rows,
+      body: (
+        <span className="pf-tip-holdings">
+          {names.length ? (
+            <span className="pf-tip-head pf-tip-span">
+              {t("portfolio.tip_by_ticker")}
+            </span>
+          ) : null}
+          {names.slice(0, TIP_SALES).map((one) => (
+            <span className="pf-tip-holding" key={one.ticker}>
+              <Cell
+                ticker={one.ticker}
+                name={false}
+                className="pf-ticker pf-tip-tick"
+              />
+              <span className="pf-muted">
+                {one.count === 1
+                  ? t("portfolio.tip_sale_one")
+                  : t("portfolio.tip_sale_count", { n: one.count })}
+              </span>
+              <span
+                className={`pf-donut-figure ${one.gain >= 0 ? "pf-up" : "pf-down"}`}
+              >
+                {money(one.gain, { signed: true })}
+              </span>
+            </span>
+          ))}
+          {names.length > TIP_SALES ? (
+            <span className="pf-muted">
+              {t("portfolio.alloc_more", { n: names.length - TIP_SALES })}
+            </span>
+          ) : null}
+          {hint ? (
+            <span className="pf-tip-hint">
+              {t(
+                grain === "year"
+                  ? "portfolio.tip_pick_year"
+                  : "portfolio.tip_pick_month",
+              )}
+            </span>
+          ) : null}
+        </span>
+      ),
+    };
+  };
 
   return (
     <>
@@ -167,7 +294,10 @@ function Report({ report }: { report: TaxReport }) {
             label={t("portfolio.realized_granularity")}
             options={["year", "month"] as const}
             value={grain}
-            onChange={setGrain}
+            onChange={(next) => {
+              setGrain(next);
+              setMonth(null);
+            }}
             format={(option) =>
               t(
                 option === "year"
@@ -193,6 +323,13 @@ function Report({ report }: { report: TaxReport }) {
             }}
             money={(value) => money(value) ?? ""}
             axisMoney={(value) => axisMoney(value) ?? ""}
+            detail={barDetail}
+            onPick={(period) => {
+              if (grain === "year") return pickYear(period.period);
+              setYear(yearOf(period.period));
+              setMonth(period.period);
+            }}
+            picked={grain === "year" ? year : (month ?? undefined)}
           />
           <Caption>{words.say("realized_by_year_caption")}</Caption>
           {grain === "month" ? (
@@ -210,7 +347,7 @@ function Report({ report }: { report: TaxReport }) {
             label={words.say("fiscal_year")}
             options={options}
             value={year}
-            onChange={setYear}
+            onChange={pickYear}
             format={yearLabel}
           />
         ) : (
@@ -220,7 +357,7 @@ function Report({ report }: { report: TaxReport }) {
             // entry stays at the bottom, after the years.
             options={[...periods].reverse().concat(report.all_years ? [ALL_YEARS] : [])}
             value={year}
-            onChange={setYear}
+            onChange={pickYear}
             format={yearLabel}
           />
         )}
@@ -262,6 +399,28 @@ function Report({ report }: { report: TaxReport }) {
             ? null
             : selected.notes.map((note) => words.say(note.key, note.kwargs)).join("")}
         </Caption>
+        {month ? (
+          <div className="pf-filter" role="status">
+            <span>
+              {t("portfolio.tax_month_filter", {
+                month: monthName(month),
+                n: sales.length,
+                result:
+                  money(
+                    sales.reduce((sum, sale) => sum + sale.gain, 0),
+                    { signed: true },
+                  ) ?? "",
+              })}
+            </span>
+            <button
+              type="button"
+              className="ag-btn pf-zoom-reset"
+              onClick={() => setMonth(null)}
+            >
+              {t("portfolio.tax_month_clear")}
+            </button>
+          </div>
+        ) : null}
         {sales.length ? <SalesTable report={report} sales={sales} /> : null}
         {report.flags.map((flag) => (
           <Caption key={flag.name}>{flagCaption(flag, words, money)}</Caption>

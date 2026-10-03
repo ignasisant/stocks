@@ -350,3 +350,38 @@ def test_allocation_without_a_split_is_unchanged():
         "sector",
     )
     assert dict(alloc.round(4)) == {"Technology": 0.5, "Crypto": 0.5}
+
+
+def test_allocation_parts_spread_a_fund_by_ticker_and_stay_linear():
+    """Same fractions for a value as for a weight, so a slice's cost and its
+    value split alike and its P/L is like-for-like."""
+    from stocks.analysis.portfolio import allocation_parts
+
+    meta = {
+        "NVDA": {"sector": "Technology"},
+        "BND": {"sector_weights": {"Technology": 0.6}},
+    }
+    parts = allocation_parts({"NVDA": 100.0, "BND": 50.0}, meta, "sector")
+    assert parts["Technology"] == {
+        "NVDA": pytest.approx(100.0), "BND": pytest.approx(30.0)
+    }
+    assert parts["Unknown"] == {"BND": pytest.approx(20.0)}
+
+
+def test_risk_shares_carry_more_than_the_weight_when_a_name_moves_with_the_book():
+    """The Euler split: a name that moves with the basket carries more of its
+    variance than its weight; a hedge carries a negative share."""
+    from stocks.analysis.portfolio import portfolio_returns, risk_shares
+
+    returns = pd.DataFrame(
+        {
+            "BIG": [0.02, -0.03, 0.04, -0.01],
+            "PEER": [0.015, -0.02, 0.03, -0.01],
+            "HEDGE": [-0.01, 0.015, -0.02, 0.005],
+        }
+    )
+    weights = {"BIG": 0.5, "PEER": 0.3, "HEDGE": 0.2}
+    shares = risk_shares(returns, portfolio_returns(returns, weights), weights)
+    assert sum(shares.values()) == pytest.approx(1.0)
+    assert shares["BIG"] > weights["BIG"]
+    assert shares["HEDGE"] < 0

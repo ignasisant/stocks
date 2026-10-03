@@ -48,8 +48,52 @@ body {
   min-height: 100vh;
 }
 
-:root[data-nav="folded"] {
+:root[data-nav="folded"],
+:root[data-nav="peek"],
+:root[data-nav="peek-out"] {
   --rail: 3.5rem;
+}
+
+/* Peeking (Layout.tsx): a pointer on the folded rail draws the open rail over
+   the page, at the open width, without touching the grid column — nothing on
+   the page moves. Desktop only: below 640px the rail is the phone bar.
+
+   The motion is a reveal, not a resize: the rail takes its open width at once
+   and a clip-path uncovers it from the icon column outwards, so no frame runs
+   layout. Folded, the clip already sits at the column's edge (`100% - 3.5rem`
+   is zero there), which is what the reveal starts from; "peek-out" runs it
+   back at the open width before the rail drops to the column. The negative
+   inset on the open side leaves room for the shadow, which a clip would cut. */
+@media (min-width: 641px) {
+  :root[data-nav="folded"] .ag-nav,
+  :root[data-nav="peek-out"] .ag-nav {
+    clip-path: inset(0 calc(100% - 3.5rem) 0 0);
+    /* Leaving is quicker than arriving: the reader has already moved on. */
+    transition: clip-path 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  :root[data-nav="peek"] .ag-nav {
+    clip-path: inset(0 -24px 0 0);
+    transition: clip-path 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  :root[data-nav="peek"] .ag-nav,
+  :root[data-nav="peek-out"] .ag-nav {
+    width: 15rem;
+    z-index: 50;
+    box-shadow: var(--ag-shadow-overlay);
+  }
+  /* The glyphs stay exactly where the folded rail drew them — centred in its
+     2.3rem of content — so the icon under the pointer never slides away from
+     it as the labels arrive. */
+  :root[data-nav="peek"] .ag-nav-item,
+  :root[data-nav="peek-out"] .ag-nav-item {
+    padding-left: calc((2.3rem - 20px) / 2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-nav] .ag-nav {
+    transition: none;
+  }
 }
 
 /* No max-width, ever (CLAUDE.md): on a desktop the page runs to the right

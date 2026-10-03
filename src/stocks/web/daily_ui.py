@@ -316,6 +316,9 @@ def _start(
     is this session's own copy, and nothing writes it until _collect does.
     """
     profile = auth.load_profile(prefs)
+    # Resolved here, on the script thread: it reads the session's user.
+    user = st.session_state.get("user_paths")
+    chat = user.chat if user is not None else None
     job: dict = {
         "key": key,
         "forced": forced,
@@ -344,6 +347,7 @@ def _start(
                 recent=stored.recent if stored else [],
                 past=stored.past if stored else [],
                 spend_free=spend,
+                chat_path=chat,
             )
         except Exception as exc:  # daily.generate swallows its own, but a
             # thread that dies silently would leave the card polling forever.
@@ -387,8 +391,10 @@ def _save(stored, action: daily.DailyAction, facts: dict) -> None:
         and daily.is_fresh(stored, day, action.lang, action.as_of or None)
     ):
         return
+    card = daily.to_store(stored, action, facts)
+    card["thread"] = daily.filed(stored, action, None)  # the signed-in account's
     try:
-        auth.save_action(daily.to_store(stored, action, facts))
+        auth.save_action(card)
     except Exception as exc:  # the card is on screen either way
         obs.warn("daily_action.unsaved", error_type=type(exc).__name__)
 

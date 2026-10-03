@@ -7,11 +7,11 @@
  * prices are gone, neither card has anything to say, and letting them fail
  * apart would put a movers table under an empty glance.
  *
- * The realised P/L is the book's own FIFO figure and not the tax report's,
- * argued at the tile; beside it the row also carries the book's TWR and IRR,
- * which the Streamlit glance does not — kept, because they are the pair that
- * says how the money did. The delta tiles lead with money and chip the
- * percentage, as the Streamlit tiles do.
+ * The headline figures are two rows that add up: injected + total gain =
+ * value, then realised + unrealised = total gain beside the IRR and the TWR.
+ * They replaced the Streamlit glance's cost / value / unrealised / realised
+ * row, which never said how much had been put in. The delta tiles lead with
+ * money and chip the percentage, as the Streamlit tiles do.
  */
 
 import { useState } from "react";
@@ -184,8 +184,13 @@ function GlanceCard({ book }: { book: Book }) {
     );
   }
 
-  const gain = summary.pnl_pct;
-  const gainChip = chipFor(gain, percent(gain, lang, { signed: true, digits: 1 }));
+  const realized = summary.realized ?? 0;
+  const paid = money(summary.cost, currency, lang) ?? na;
+  const total = realized + summary.pnl;
+  const totalPct =
+    performance.injected && performance.injected > 0
+      ? total / performance.injected
+      : null;
   // Shut means shut: a pre/after-hours quote is live data and keeps its colour,
   // which is the distinction `/market/status` draws between `us_open` and
   // `us_extended`. `note` is null while the session is open — nothing to say.
@@ -195,37 +200,45 @@ function GlanceCard({ book }: { book: Book }) {
   return (
     <>
       <Card>
+        {/* Two rows that add up. The first is the money: what went in, what
+            it is worth, and the gain between them — value less injected to the
+            cent, both sides coming off the same ledger replay. The second
+            splits that gain into its realised and unrealised halves, then
+            says what it is a year, both ways. */}
         <KpiGrid>
           <Kpi
-            label={t("home.cost_basis")}
-            value={money(summary.cost, currency, lang) ?? na}
+            label={t("portfolio.series_injected")}
+            value={money(performance.injected, currency, lang) ?? na}
+            help={t("portfolio.overview_injected_help")}
           />
           <Kpi
             label={t("home.market_value")}
             value={money(summary.value, currency, lang) ?? na}
-            chip={gainChip}
+            help={t("portfolio.market_value_help")}
           />
+          {/* The chip is the gain over the money put in — the figure the
+              Portfolio overview chips its value with. */}
           <Kpi
-            label={t("home.unrealised_pl")}
-            value={money(summary.pnl, currency, lang, { signed: true }) ?? na}
-            chip={gainChip}
+            label={t("home.total_gain")}
+            value={money(total, currency, lang, { signed: true }) ?? na}
+            // The sum itself, in the reader's figures: the one sentence that
+            // makes "gain" mean "value less what went in".
+            help={t("home.total_gain_help", {
+              value: money(summary.value, currency, lang) ?? na,
+              injected: money(performance.injected, currency, lang) ?? na,
+              gain: money(total, currency, lang, { signed: true }) ?? na,
+            })}
+            chip={chipFor(total, percent(totalPct, lang, { signed: true, digits: 1 }))}
           />
-          {/* The realised side of the same book, and deliberately not the tax
-              report's figure: `/portfolio/tax` replays in the *jurisdiction's*
-              currency under its own share-matching rule and reports per tax
-              year, while this label promises all-time FIFO gains in the
-              account's reporting currency. `/portfolio/summary` carries this one
-              off the same replay as its cost and value, so the tile and its hint
-              agree.
-
-              Always on the row, as `home.py` draws it: a book that has never
-              sold reads +0 with no chip. The API sends null for that case — "no
-              sale" and "broke even" are different facts — and the difference is
-              kept where it matters, in the chip, which a zero cost basis cannot
-              carry. */}
+        </KpiGrid>
+        <KpiGrid>
+          {/* The book's own FIFO result and deliberately not the tax report's:
+              `/portfolio/tax` replays in the *jurisdiction's* currency under its
+              own matching rule. A book that has never sold sends null ("no
+              sale" is not "broke even"): the tile reads +0 and draws no chip. */}
           <Kpi
             label={t("home.realised_pl")}
-            value={money(summary.realized ?? 0, currency, lang, { signed: true }) ?? na}
+            value={money(realized, currency, lang, { signed: true }) ?? na}
             help={t("home.realised_pl_help")}
             chip={
               summary.realized === null
@@ -242,21 +255,32 @@ function GlanceCard({ book }: { book: Book }) {
                   )
             }
           />
-          {/* The two returns are the pair that belongs together: the TWR strips
-              out when money went in, the IRR leaves it in. Neither stands in for
-              the other, so both, never one. */}
           <Kpi
-            label={t("portfolio.annualised_return")}
+            label={t("home.unrealised_pl")}
+            value={money(summary.pnl, currency, lang, { signed: true }) ?? na}
+            chip={chipFor(
+              summary.pnl_pct,
+              percent(summary.pnl_pct, lang, { signed: true, digits: 1 }),
+            )}
+            help={t("home.unrealised_pl_help", { paid })}
+            // What the chip is measured on, as a phrase rather than a term:
+            // "cost basis" was the one figure here nobody could place.
+            note={t("home.unrealised_paid_note", { paid })}
+          />
+          {/* The pair that belongs together: the IRR leaves the timing of the
+              money in, the TWR strips it out. Neither stands in for the other. */}
+          <Kpi
+            label={t("home.irr_annualised")}
+            value={percent(performance.irr, lang, { signed: true, digits: 1 }) ?? na}
+            help={t("portfolio.mwr_help")}
+          />
+          <Kpi
+            label={t("home.twr_annualised")}
             value={
               percent(performance.twr_annualised, lang, { signed: true, digits: 1 }) ??
               na
             }
             help={t("portfolio.twr_return_help")}
-          />
-          <Kpi
-            label={t("portfolio.mwr")}
-            value={percent(performance.irr, lang, { signed: true, digits: 1 }) ?? na}
-            help={t("portfolio.mwr_help")}
           />
         </KpiGrid>
         {/* Every figure above is invented while the example book is loaded, and

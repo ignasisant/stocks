@@ -66,6 +66,10 @@ F = TypeVar("F", bound=Callable[..., Any])
 Entry = tuple
 
 MEMO_DIR = DATA_DIR / "memo"
+# Per memo. On Cloud Run the filesystem is memory — every file here counts
+# against the instance's 1GiB exactly like a live object does — so a memo
+# whose entries are big (a whole book's frames, a ticker's bars) declares a
+# tighter `disk_max` of its own.
 DISK_MAX_FILES = 256
 KEEP_DEFAULT_S = 3 * 86400.0
 
@@ -107,6 +111,7 @@ def coalesced(
     load: Callable[[], Entry | None] | None = None,
     salvage: Callable[[Entry], bool] | None = None,
     landed: Callable[[Entry], None] | None = None,
+    expired: Callable[[Entry], bool] | None = None,
 ) -> Any:
     """The value for `key`: from `store` while `fresh(entry)`, else computed once.
 
@@ -121,7 +126,8 @@ def coalesced(
     for a key the store has never seen (the disk). `salvage(entry)` says an
     entry too old even for `usable` may stand in when — and only when — the
     computation fails; that is the one path that marks the request stale.
-    `landed(entry)` is told about every entry that lands.
+    `landed(entry)` is told about every entry that lands. `expired(entry)`
+    says an entry can never answer again, and every landing sweeps those out.
     """
     if load is not None:
         with lock:
@@ -145,7 +151,7 @@ def coalesced(
             threading.Thread(
                 target=_land,
                 args=(store, flights, lock, key, flight, compute, max_entries),
-                kwargs={"background": True, "landed": landed},
+                kwargs={"background": True, "landed": landed, "expired": expired},
                 name="cache-refresh",
                 daemon=True,
             ).start()
@@ -157,7 +163,15 @@ def coalesced(
         return _fallback(entry, salvage, flight.error)
     try:
         return _land(
-            store, flights, lock, key, flight, compute, max_entries, landed=landed
+            store,
+            flights,
+            lock,
+            key,
+            flight,
+            compute,
+            max_entries,
+            landed=landed,
+            expired=expired,
         )
     except Exception as exc:
         return _fallback(entry, salvage, exc)
@@ -199,6 +213,7 @@ def _land(
     max_entries: int,
     background: bool = False,
     landed: Callable[[Entry], None] | None = None,
+    expired: Callable[[Entry], bool] | None = None,
 ) -> Any:
     """Run a flight to the ground: compute, store, release the waiters.
 
@@ -238,6 +253,14 @@ def _land(
         # entry that kept its original slot would be the first one dropped.
         store.pop(key, None)
         store[key] = entry
+        # The cap alone never frees anything below it, and most keys here
+        # carry the ledger's mtime: every import or edit strands the book's
+        # previous entries — whole frames — where no reader will ask for them
+        # again, until enough new keys push them out. Past the point where
+        # they could answer, they go now.
+        if expired is not None:
+            for old in [k for k, e in store.items() if k != key and expired(e)]:
+                del store[old]
         while len(store) > max_entries:
             store.pop(next(iter(store)))
         flights.pop(key, None)
@@ -255,7 +278,7 @@ def _disk_path(name: str, key: tuple) -> Path:
     return MEMO_DIR / name / f"{digest}.pkl"
 
 
-def _write(path: Path, entry: Entry) -> None:
+def _write(path: Path, entry: Entry, disk_max: int = DISK_MAX_FILES) -> None:
     """Land one entry on disk (atomically) and mirror it to the bucket.
 
     The mirror runs on its own thread: an upload is network time the reader
@@ -269,7 +292,7 @@ def _write(path: Path, entry: Entry) -> None:
         "since": entry[3] if len(entry) > 3 else None,
     }
     atomic.write_bytes(path, pickle.dumps(blob, protocol=pickle.HIGHEST_PROTOCOL))
-    _trim(path.parent)
+    _trim(path.parent, disk_max)
     threading.Thread(
         target=_mirror, args=(path,), name="cache-mirror", daemon=True
     ).start()
@@ -282,14 +305,14 @@ def _mirror(path: Path) -> None:
         storage.persist(path)
 
 
-def _trim(directory: Path) -> None:
-    """Keep a memo's directory to `DISK_MAX_FILES`, oldest written first out."""
+def _trim(directory: Path, disk_max: int = DISK_MAX_FILES) -> None:
+    """Keep a memo's directory to `disk_max` files, oldest written first out."""
     files = sorted(directory.glob("*.pkl"), key=lambda p: p.stat().st_mtime)
-    for old in files[: max(0, len(files) - DISK_MAX_FILES)]:
+    for old in files[: max(0, len(files) - disk_max)]:
         old.unlink(missing_ok=True)
 
 
-def _read(path: Path, not_before: float) -> Entry | None:
+def _read(path: Path, not_before: float, disk_max: int = DISK_MAX_FILES) -> Entry | None:
     """The entry on disk (the bucket's copy first on a fresh host), as a store
     entry whose age is what it was when it landed, or None.
 
@@ -303,6 +326,10 @@ def _read(path: Path, not_before: float) -> Entry | None:
             from stocks import storage
 
             storage.restore(path)
+        # The bucket keeps every copy ever written; the directory must not
+        # grow back past its cap one restore at a time.
+        if path.exists():
+            _trim(path.parent, disk_max)
     if not path.exists():
         return None
     try:
@@ -328,6 +355,7 @@ def ttl_cache(
     stale_s: float | None = None,
     persist: str | None = None,
     keep_s: float | None = None,
+    disk_max: int = DISK_MAX_FILES,
 ) -> Callable[[F], F]:
     """Memoize a function on its arguments for `ttl_s` seconds.
 
@@ -338,11 +366,14 @@ def ttl_cache(
     unless said otherwise; 0 for a strict expiry) while a background refresh
     replaces it. With `persist`, entries also land under `data/memo/<name>/`
     and stand in for a failed fetch for up to `keep_s` (three days unless
-    said otherwise) — see the module docstring.
+    said otherwise) — see the module docstring. `disk_max` caps the files
+    kept there.
 
-    Eviction is oldest-inserted-first once `max_entries` is reached. A book's
-    worth of cached frames is a few MB and this runs beside Streamlit in one
-    container, so the cap matters more than the hit rate.
+    Eviction is oldest-inserted-first once `max_entries` is reached, and an
+    entry past `ttl_s + stale_s` goes at the next landing whatever the count:
+    it can no longer answer, and a persisted one is back from disk if a failed
+    fetch needs it. A book's worth of cached frames is a few MB on a 1GiB
+    instance, so the cap matters more than the hit rate.
     """
     grace = 3 * ttl_s if stale_s is None else stale_s
     keep = (KEEP_DEFAULT_S if persist else 0.0) if keep_s is None else keep_s
@@ -367,15 +398,16 @@ def ttl_cache(
                 usable=lambda entry: time.monotonic() - entry[0] < ttl_s + grace,
                 compute=lambda: (time.monotonic(), fn(*args, **kwargs), time.time()),
                 max_entries=max_entries,
-                load=(lambda: _read(_disk_path(persist, key), cleared_at[0]))
+                load=(lambda: _read(_disk_path(persist, key), cleared_at[0], disk_max))
                 if persist
                 else None,
                 salvage=(lambda entry: time.time() - entry[2] < keep)
                 if keep > 0
                 else None,
-                landed=(lambda entry: _write(_disk_path(persist, key), entry))
+                landed=(lambda entry: _write(_disk_path(persist, key), entry, disk_max))
                 if persist
                 else None,
+                expired=lambda entry: time.monotonic() - entry[0] >= ttl_s + grace,
             )
 
         def cache_clear(expire: bool = True) -> None:

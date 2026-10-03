@@ -58,7 +58,7 @@ export const SPARK_WINDOW: Range = "5y";
  *
  * Sliced here rather than refetched per range, and that is the point: the
  * history arrives in the same burst as the tiles above it (`Glance`), so the
- * line ends on the "Valor de mercado" printed over it. A refetch on every click
+ * line ends on the "Valor hoy" printed over it. A refetch on every click
  * read whatever download the server held by then — fifteen minutes later, a
  * different one — and the period's max sat under the tile's value. Only the
  * level lines are drawn, and they are absolute: unlike the return index, which
@@ -329,7 +329,7 @@ export function Spark({ history }: { history: History | null }) {
  * whole history, not the chart's slice: the chart's window is the reader's
  * choice, and at `1w` it holds five sessions, which cannot average twenty. The
  * same array as the chart and the tiles, so the gap is measured from the value
- * the "Valor de mercado" tile prints.
+ * the "Valor hoy" tile prints.
  *
  * Nothing until there are twenty valued sessions: a mean of fewer is a
  * different figure under the same label.

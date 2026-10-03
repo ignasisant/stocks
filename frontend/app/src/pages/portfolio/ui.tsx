@@ -12,7 +12,7 @@ import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { Link } from "../../shell/router";
 import { useT } from "../../shell/i18n";
 import { tone } from "./format";
-import { Chip as Pill, Kpi, KpiGrid, toneOf } from "../../ui/Kpi";
+import { Chip as Pill, Help, Kpi, KpiGrid, toneOf } from "../../ui/Kpi";
 import { TickerCell as Cell } from "../../shell/tickers";
 import { DenseRows, Responsive, StackCards, type DenseSpec } from "../../ui/Rows";
 
@@ -133,6 +133,102 @@ export function Kpis({ items }: { items: KpiItem[] }) {
         />
       ))}
     </KpiGrid>
+  );
+}
+
+/**
+ * The tab's one figure, and the few that explain it.
+ *
+ * A row of equal tiles says every number matters the same, and on a tab that
+ * exists to answer one question that is never true. The focus is drawn at the
+ * ticker hero's step; the facts beside it are one tier down, label over value,
+ * with a muted note for the estimate or the share that qualifies each.
+ */
+export function Hero({
+  eyebrow,
+  value,
+  sub,
+  facts,
+}: {
+  eyebrow: string;
+  /** Already formatted, or null when the figure could not be computed. */
+  value: string | null;
+  sub?: ReactNode;
+  facts: FactItem[];
+}) {
+  const t = useT();
+  return (
+    <div className="pf-hero">
+      <div className="pf-hero-focus">
+        <span className="pf-hero-eyebrow">{eyebrow}</span>
+        <span className="pf-hero-figure">{value ?? t("portfolio.na")}</span>
+        {sub ? <span className="pf-hero-sub">{sub}</span> : null}
+      </div>
+      <dl className="pf-hero-facts">
+        {facts.map((fact) => (
+          <div key={fact.label} className="pf-hero-fact">
+            <dt>
+              <span>{fact.label}</span>
+              <Help text={fact.help} />
+            </dt>
+            <dd>
+              <span className="pf-hero-fact-value">
+                {fact.value === null ? (
+                  <span className="pf-muted">{t("portfolio.na")}</span>
+                ) : (
+                  fact.value
+                )}
+              </span>
+              {fact.note ? (
+                <span className="pf-hero-fact-note">{fact.note}</span>
+              ) : null}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+export type FactItem = {
+  label: string;
+  /** Formatted text or a coloured figure; null reads "n/a". */
+  value: ReactNode | null;
+  note?: string | null;
+  help?: string;
+};
+
+/**
+ * A figure's share of its column, drawn beside it.
+ *
+ * `share` is 0–1 of the largest magnitude in the column, so the longest bar is
+ * the biggest row and the eye finds concentration without reading digits.
+ * `signed` centres the track on zero for a figure that can go either way — a
+ * cost that beat the mid runs left, in the gain colour. Decorative: the figure
+ * beside it carries the number, so the bar is hidden from assistive tech.
+ */
+export function ShareBar({
+  share,
+  signed,
+  children,
+}: {
+  share: number | null;
+  signed?: boolean;
+  children: ReactNode;
+}) {
+  const size =
+    share === null || !Number.isFinite(share) ? 0 : Math.min(Math.abs(share), 1);
+  const side = signed && share !== null && share < 0 ? "pf-bar-neg" : "pf-bar-pos";
+  return (
+    <span className="pf-barcell">
+      <span className={signed ? "pf-bar pf-bar-signed" : "pf-bar"} aria-hidden="true">
+        <span
+          className={`pf-bar-fill ${side}`}
+          style={{ inlineSize: `${(signed ? size * 50 : size * 100).toFixed(1)}%` }}
+        />
+      </span>
+      <span className="pf-barcell-figure">{children}</span>
+    </span>
   );
 }
 

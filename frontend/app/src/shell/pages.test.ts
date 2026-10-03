@@ -65,4 +65,28 @@ describe("the page registry", () => {
         .some((p) => p.hidden),
     ).toBe(false);
   });
+
+  it("puts bank in the Account group for a reader allowed to use it", () => {
+    // The rail is drawn before anyone knows who is reading, so hidden is the
+    // default; `/me` saying this account is on the allowlist is what reveals
+    // it, and it belongs under Account rather than as a group of its own.
+    const account = sections(undefined, ["bank"]).find(
+      (group) => group.section === "nav.section_account",
+    );
+    expect(account!.pages.map((page) => page.slug)).toContain("bank");
+    expect(
+      sections()
+        .flatMap((group) => group.pages)
+        .map((page) => page.slug),
+    ).not.toContain("bank");
+  });
+
+  it("reveals nothing a reader was not named for", () => {
+    // Revealing is per slug, not a switch that opens every hidden page.
+    expect(
+      sections(undefined, ["nope"])
+        .flatMap((group) => group.pages)
+        .map((page) => page.slug),
+    ).not.toContain("bank");
+  });
 });

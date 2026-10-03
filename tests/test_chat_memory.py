@@ -152,6 +152,105 @@ def test_the_fts_query_is_the_words_the_user_typed():
     assert memory.fts_query("!!! ---") == ""
 
 
+# --------------------------------------------------------------- auto recall
+
+_FILLER = ("Antes de nada conviene repasar la cartera entera, el peso de cada "
+           "posición, la liquidez disponible y el horizonte que tienes para "
+           "este dinero. ") * 3  # well past the lead
+
+
+def _index(tmp_path, *turns, thread="t9"):
+    path = tmp_path / memory.FILE
+    memory.remember(path, [{"role": "assistant", "content": t} for t in turns],
+                    thread)
+    return path
+
+
+def test_about_finds_the_turn_that_names_it_early(index):
+    [hit] = memory.about(index, ["ASML"])
+    assert (hit.thread, hit.role, hit.rank) == ("t1", "user", 1)
+    assert hit.text == " ".join(_T1[0]["content"].split())
+
+
+def test_about_matches_a_name_in_any_case_or_accent(index):
+    assert [m.thread for m in memory.about(index, ["NVIDIA"])] == ["t2"]
+    assert [m.thread for m in memory.about(index, ["posición"])] == ["t1"]
+
+
+def test_a_single_passing_mention_is_not_what_a_turn_is_about(tmp_path):
+    path = _index(tmp_path, _FILLER + "Por cierto, ASML también cayó.")
+    assert len(_FILLER) > memory._LEAD
+    assert memory.about(path, ["ASML"]) == []
+
+
+def test_a_name_said_twice_is_what_a_turn_is_about_wherever_it_is(tmp_path):
+    path = _index(tmp_path, _FILLER + "ASML cayó, y ASML sigue cara.")
+    assert len(memory.about(path, ["ASML"])) == 1
+
+
+def test_about_ranks_the_turn_that_opens_with_the_name_first(tmp_path):
+    path = _index(tmp_path,
+                  "Sobre ASML: la cartera de pedidos es lo que mueve la acción "
+                  "este trimestre, más que el margen.",
+                  _FILLER + "ASML cayó, y ASML sigue cara, y ASML ya no es "
+                  "la que era.")
+    ranked = memory.about(path, ["ASML"])
+    assert [m.text[:10] for m in ranked] == ["Sobre ASML", _FILLER[:10]]
+    assert [m.rank for m in ranked] == [1, 2]
+
+
+def test_about_respects_the_limit(tmp_path):
+    turns = [f"ASML, nota {n}: la cartera de pedidos manda sobre el margen "
+             "este trimestre." for n in range(5)]
+    path = _index(tmp_path, *turns)
+    assert len(memory.about(path, ["ASML"])) == memory.ABOUT_LIMIT
+    assert len(memory.about(path, ["ASML"], limit=1)) == 1
+
+
+def test_about_skips_the_conversation_in_progress(index):
+    assert memory.about(index, ["ASML"], exclude_thread="t1") == []
+
+
+def test_a_tool_call_a_model_printed_is_not_a_memory_of_anything(tmp_path):
+    path = _index(tmp_path, '[{"tool": "quote", "args": {"ticker": "ASML"}}, '
+                            '{"tool": "news", "args": {"ticker": "ASML"}}]')
+    assert memory.about(path, ["ASML"]) == []
+
+
+def test_a_pair_is_found_however_its_hyphen_was_typed(tmp_path):
+    # U+2011, the non-breaking hyphen models like to print.
+    path = _index(tmp_path, "Tu SOL\u2011EUR ya pesa un 12% de la cartera, más "
+                            "de lo que dijiste que querías en cripto.")
+    assert len(memory.about(path, ["SOL-EUR"])) == 1
+    assert len(memory.about(path, ["SOL"])) == 1
+
+
+def test_a_name_made_of_one_letter_parts_is_still_found(tmp_path):
+    path = _index(tmp_path, "El S&P 500 lleva un 18% en el año y casi todo es "
+                            "cosa de siete compañías.")
+    assert len(memory.about(path, ["S&P"])) == 1
+
+
+def test_a_recalled_turn_is_quoted_up_to_its_share(tmp_path):
+    path = _index(tmp_path, "ASML " + "y la cartera de pedidos " * 60)
+    [hit] = memory.about(path, ["ASML"])
+    assert len(hit.text) == memory._QUOTE_CHARS
+
+
+def test_about_nothing_or_without_an_index_is_empty(index, tmp_path):
+    assert memory.about(index, []) == []
+    assert memory.about(index, ["!!!"]) == []
+    assert memory.about(tmp_path / "none.db", ["ASML"]) == []
+
+
+def test_augment_quotes_the_turns_under_the_message(index):
+    hits = memory.about(index, ["ASML"])
+    out = memory.augment("¿y ASML?", hits)
+    assert out.startswith("¿y ASML?\n\n---\n" + memory.QUOTE_HEADER)
+    assert out.endswith(hits[0].line())
+    assert memory.augment("¿y ASML?", []) == "¿y ASML?"
+
+
 # ---------------------------------------------------------------- forgetting
 
 
@@ -188,3 +287,4 @@ def test_an_unwritable_index_does_not_break_the_conversation(tmp_path):
     blocked.write_text("not a database")
     assert memory.remember(blocked, _T1, "t1") == 0
     assert memory.recall(blocked, "ASML") == []
+    assert memory.about(blocked, ["ASML"]) == []
