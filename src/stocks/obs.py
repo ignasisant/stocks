@@ -76,7 +76,7 @@ _STD_ATTRS = frozenset(
 # Libraries that log a line per HTTP call or per retry; at INFO they bury the
 # app's own events (and on Cloud Run, cost money to store).
 _NOISY = ("botocore", "boto3", "s3transfer", "urllib3", "httpx", "httpcore",
-          "matplotlib", "PIL", "asyncio", "watchdog", "peewee")
+          "matplotlib", "PIL", "asyncio", "watchdog", "peewee", "mcp")
 
 
 

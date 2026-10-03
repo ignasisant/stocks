@@ -223,6 +223,22 @@ def signed_in_email(cookies: Mapping[str, str]) -> str | None:
     return str(payload.get("email") or "").strip().lower() or None
 
 
+def seal(purpose: str, payload: dict) -> str | None:
+    """Sign `payload` for one named use outside the cookie jar.
+
+    The purpose is the salt, so a value sealed for one use never opens as
+    another — nor as a session or a flow cookie, whose salts are their cookie
+    names. The connector's consent step carries its authorization request and
+    its form token this way (`stocks.connector.consent`).
+    """
+    return _seal(purpose, payload)
+
+
+def unseal(purpose: str, raw: str, max_age: int) -> dict | None:
+    """The object `seal(purpose, …)` signed at most `max_age` seconds ago."""
+    return _open(purpose, raw, max_age)
+
+
 def seal_flow(payload: dict) -> str | None:
     """Sign the in-flight OIDC round trip (state, nonce, verifier, next)."""
     return _seal(FLOW_COOKIE, payload)

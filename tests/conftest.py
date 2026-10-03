@@ -391,3 +391,38 @@ def _no_statement_model():
         yield
     autodetect.forget()
     instruments._memo.clear()
+
+
+@pytest.fixture(autouse=True)
+def _own_connector_state():
+    """The MCP connector's grants and clients in a per-test directory.
+
+    `connector.store.DIR` is the checkout's real `data/mcp`, and the ledger
+    over it is a process singleton — without this a test that registered a
+    client or issued a token would leave it for every test after it (and on
+    disk). Its own temporary directory, not `tmp_path`, for the reason
+    `_own_guest_dir` gives. The in-memory halves go too: pending codes,
+    fetched client metadata documents, and the per-IP and per-account budgets
+    the connector spends from.
+    """
+    import shutil
+    import tempfile
+
+    from stocks.connector import clients, oauth, store
+    from stocks.web import ratelimit
+
+    def reset() -> None:
+        store._ledger = None
+        clients.forget_documents()
+        oauth.forget_codes()
+        for key in [k for k in ratelimit._events if k.startswith(("mcp", "oauth::"))]:
+            ratelimit._events.pop(key, None)
+
+    before = store.DIR
+    made = tempfile.mkdtemp(prefix="mcp-")
+    store.DIR = pathlib.Path(made)
+    reset()
+    yield
+    store.DIR = before
+    reset()
+    shutil.rmtree(made, ignore_errors=True)

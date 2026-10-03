@@ -258,11 +258,22 @@ class News:
     every locale. `step` names the tour step that explains it, which is what
     turns an announcement into somewhere to go; a feature whose step this
     deploy does not carry is not announced at all (see `unseen_news`).
+
+    `carried` is the same rule for a feature that lives inside a step every
+    deploy has but is itself only on some deploys: None for every deploy,
+    otherwise asked each time the cards are dealt.
     """
 
     slug: str
     icon: str
     step: str | None = None
+    carried: Callable[[], bool] | None = None
+
+    def announced(self, steps: set[str]) -> bool:
+        """Whether this deploy has the feature to send a reader to."""
+        if self.step is not None and self.step not in steps:
+            return False
+        return self.carried is None or self.carried()
 
 
 @dataclass(frozen=True)
@@ -317,6 +328,14 @@ class NewsCard:
 # the step copy for their feature, where it is read on the way to the thing
 # itself rather than in a card: the tax step names all twelve jurisdictions,
 # the import step every broker it reads.
+def _connector_open() -> bool:
+    """Whether this deploy serves the Claude connector, which needs the site's
+    public URL to name itself to Claude (`connector/server.py`)."""
+    from stocks.web.server import public_origin
+
+    return public_origin() is not None
+
+
 RELEASES: tuple[Release, ...] = (
     Release(
         version="2026.09",
@@ -413,6 +432,12 @@ RELEASES: tuple[Release, ...] = (
             # rebuilt under the reader (Portfolio, alerts, worth a look,
             # routines). The sections and the chart are the daily step's body.
             News(slug="routines", icon="tips_and_updates", step="daily"),
+            # One card: reading the book from inside Claude is somewhere the
+            # app could not be reached from at all. It is set up and revoked
+            # on the Profile card, so the card hands over to that step; the
+            # tools, the drawn view and the consent screen are the step's
+            # body, not cards of their own.
+            News(slug="claude", icon="hub", step="prefs", carried=_connector_open),
         ),
     ),
 )
@@ -541,7 +566,7 @@ def unseen_news(prefs: dict | None = None) -> tuple[NewsCard, ...]:
         NewsCard(version=rel.version, date=rel.date, item=item)
         for rel in reversed(unseen_releases(prefs))
         for item in rel.items
-        if item.step is None or item.step in shown
+        if item.announced(shown)
     )
 
 
@@ -895,13 +920,17 @@ def _news_body() -> None:
     cards = unseen_news()
     if not cards:
         # Nothing unseen: the modal was opened by hand, or the account was
-        # stamped between runs. Show the last release rather than an empty
-        # dialog.
-        last = RELEASES[-1]
-        cards = tuple(
-            NewsCard(version=last.version, date=last.date, item=item)
-            for item in last.items
-        )
+        # stamped between runs. Show the last release this deploy announces
+        # anything from rather than an empty dialog.
+        shown = {s.id for s in visible_steps()}
+        for last in reversed(RELEASES):
+            cards = tuple(
+                NewsCard(version=last.version, date=last.date, item=item)
+                for item in last.items
+                if item.announced(shown)
+            )
+            if cards:
+                break
     idx = _news_current(cards)
     card = cards[idx]
     step = by_id(card.item.step or "")

@@ -785,3 +785,63 @@ def test_booting_the_server_provisions_the_guest_book():
     with TestClient(server.app):
         assert (accounts.GUEST_DIR / "portfolio.db").is_file()
         assert (accounts.GUEST_DIR / "watchlist.yaml").is_file()
+
+
+# --------------------------------------------------------------- MCP connector
+# Claude reaches `/mcp` and the OAuth endpoints from Anthropic's servers, with
+# no cookies and no patience for a landing page. The gate must pass them
+# through untouched and the throttle must meter them as machines.
+
+
+@pytest.mark.parametrize("path", [
+    "/mcp", "/.well-known/oauth-authorization-server",
+    "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp",
+    "/authorize", "/token", "/register", "/revoke", "/oauth/consent",
+])
+def test_every_connector_path_is_known_to_the_gate(path):
+    assert server._is_known_path(path)
+
+
+@pytest.mark.parametrize("path", [
+    "/mcp", "/.well-known/oauth-authorization-server", "/token", "/register",
+])
+def test_a_machine_endpoint_is_never_moved_to_the_canonical_host(pinned_client, path):
+    """A client that discovered `/mcp` on one host follows the issuer it was
+    given; a 301 to another host is a failed connection, not a redirect."""
+    r = pinned_client.get(path, follow_redirects=False)
+    assert r.status_code != 301
+
+
+def test_the_connector_never_gets_the_app_cookie(client):
+    r = client.get("/.well-known/oauth-authorization-server")
+    assert server.APP_COOKIE not in r.cookies
+
+
+@pytest.mark.parametrize("path, kind", [
+    ("/mcp", "mcp"), ("/token", "oauth"), ("/authorize", "oauth"),
+    ("/.well-known/oauth-protected-resource/mcp", "oauth"),
+    ("/api/v1/health", "api"), ("/portfolio", "http"),
+])
+def test_each_kind_of_caller_has_its_own_budget(path, kind):
+    assert server._bucket(path)[0] == kind
+
+
+def test_a_throttled_connector_call_answers_in_json(metered, monkeypatch):
+    monkeypatch.setattr(server, "OAUTH_MAX_REQUESTS", 2)
+    codes(metered, "/.well-known/oauth-authorization-server", 3)
+    r = metered.get("/.well-known/oauth-authorization-server")
+    assert r.status_code == 429
+    assert r.json()["reason"] == "throttled"
+
+
+def test_the_connector_opens_with_the_server_and_again_on_reboot(monkeypatch):
+    """Built per lifespan entry: the SDK's session manager runs once per
+    instance, and this suite boots the server more than once."""
+    monkeypatch.setattr(server, "secret", lambda *a, **k: "https://testserver")
+    for _ in range(2):
+        with TestClient(server.app, base_url="https://testserver") as c:
+            r = c.get("/.well-known/oauth-authorization-server")
+            assert r.status_code == 200
+            assert r.json()["issuer"] == "https://testserver"
+    with TestClient(server.app, base_url="https://testserver") as c:
+        assert c.post("/mcp", json={}).status_code == 401

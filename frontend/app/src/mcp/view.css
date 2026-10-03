@@ -1,0 +1,390 @@
+/*
+ * The MCP App, drawn inside the host's conversation.
+ *
+ * Every colour is the host's first (`styles.variables`, which claude.ai sends
+ * so an app sits in its page rather than on it) and a DS token second. The
+ * tokens are the dark theme's; a host that says "light" without sending its
+ * variables gets the tokens that read on a light ground — the landing's
+ * white, the page colour as ink, the deep fills as up and down.
+ *
+ * The frame is the viewport here, so plain media queries measure the room the
+ * view actually has — there is no shell around it to subtract.
+ */
+
+:root {
+  color-scheme: dark;
+  --v-bg: var(--color-background-primary, var(--ag-surface-card));
+  --v-text: var(--color-text-primary, var(--ag-text-primary));
+  --v-muted: var(--color-text-secondary, var(--ag-text-muted));
+  --v-faint: var(--color-text-tertiary, var(--ag-text-faint));
+  --v-border: var(--color-border-primary, var(--ag-border));
+  --v-sunken: var(--color-background-secondary, var(--ag-surface-sunken));
+  /* A tile is the page ground inside the card, as on every page. */
+  --v-tile: var(--color-background-secondary, var(--ag-surface-page));
+  --v-up: var(--color-text-success, var(--ag-candle-up));
+  --v-down: var(--color-text-danger, var(--ag-candle-down));
+  --v-accent: var(--ag-brand-accent);
+  --v-track: var(--v-sunken);
+  --v-font: var(--font-sans, var(--ag-font-body));
+  --v-mono: var(--font-mono, var(--ag-font-mono));
+  /* The ring's slices, largest first — the Portfolio donut's order. */
+  --v-c1: var(--ag-brand-accent);
+  --v-c2: var(--ag-info);
+  --v-c3: var(--ag-sma-fast);
+  --v-c4: var(--ag-candle-up);
+  --v-c5: var(--ag-purple-300);
+  --v-c6: var(--ag-candle-down);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --v-bg: var(--color-background-primary, var(--ag-on-brand));
+  --v-text: var(--color-text-primary, var(--ag-surface-page));
+  --v-muted: var(--color-text-secondary, var(--ag-text-faint));
+  --v-faint: var(--color-text-tertiary, var(--ag-text-secondary));
+  --v-border: var(--color-border-primary, var(--ag-rule-soft));
+  /* The dark sink is a grey slab on white; a trace of the ink reads as one. */
+  --v-tile: var(
+    --color-background-secondary,
+    color-mix(in srgb, var(--ag-surface-page) 4%, transparent)
+  );
+  --v-up: var(--color-text-success, var(--ag-success-fill));
+  --v-down: var(--color-text-danger, var(--ag-critical-fill));
+  --v-accent: var(--ag-brand-cta);
+  --v-c1: var(--ag-brand-cta);
+  --v-c2: var(--ag-info-deep);
+  --v-c3: var(--ag-warn-orange);
+  --v-c4: var(--ag-success-fill);
+  --v-c5: var(--ag-purple-400);
+  --v-c6: var(--ag-critical-fill);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--v-bg);
+  color: var(--v-text);
+  font-family: var(--v-font);
+  font-size: var(--ag-fs-base);
+  line-height: 1.4;
+}
+
+/*
+ * The shared tile (`ui/ui.css`) reads `--ag-*` tokens, which are the dark
+ * theme's. Inside the view they are pointed at the `--v-*` colours, so the
+ * tile follows the host and the light theme like everything else here. Set on
+ * `#root` rather than `:root`, where the `--v-*` themselves are worked out
+ * from the tokens — there it would be a cycle. And `#root` is the main
+ * column's container, so the tile grid's `ag-main` queries measure the frame.
+ */
+#root {
+  padding: 16px;
+  container: ag-main / inline-size;
+  --ag-border: var(--v-border);
+  --ag-surface-page: var(--v-tile);
+  --ag-surface-sunken: var(--v-sunken);
+  --ag-text-primary: var(--v-text);
+  --ag-text-secondary: var(--v-muted);
+  --ag-text-muted: var(--v-muted);
+  --ag-up: var(--v-up);
+  --ag-down: var(--v-down);
+  --ag-font-body: var(--v-font);
+}
+
+/* The chip's bands are tuned for pale ink on dark; on a light ground the deep
+   up and down need a paler band of their own colour to stay legible. */
+:root[data-theme="light"] #root {
+  --ag-profit-band: color-mix(in srgb, var(--v-up) 12%, transparent);
+  --ag-loss-band: color-mix(in srgb, var(--v-down) 12%, transparent);
+}
+
+a {
+  color: inherit;
+}
+
+.v-wait,
+.v-empty {
+  margin: 0;
+  color: var(--v-muted);
+  max-width: 60ch;
+}
+
+.v-note {
+  margin: 12px 0 0;
+  color: var(--v-muted);
+  font-size: var(--ag-fs-sm);
+  max-width: 72ch;
+}
+
+.v-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-bottom: 12px;
+}
+
+.v-head h1 {
+  margin: 0;
+  font-size: var(--ag-fs-lg);
+  font-weight: 600;
+}
+
+.v-sub {
+  color: var(--v-muted);
+  font-size: var(--ag-fs-sm);
+}
+
+.v-muted {
+  color: var(--v-muted);
+}
+
+/* Headline figures: the site's own tile (`ui/Kpi.tsx`), placed, not restyled */
+
+.v-card .ag-kpis {
+  margin-bottom: 16px;
+}
+
+/* Ring and holdings */
+
+.v-split {
+  display: grid;
+  grid-template-columns: minmax(160px, 200px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.v-ringbox {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.v-ring {
+  width: 100%;
+  max-width: 160px;
+  aspect-ratio: 1;
+  align-self: center;
+}
+
+.v-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--ag-fs-sm);
+}
+
+.v-legend li {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.v-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.v-legend span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v-legend b {
+  font-weight: 500;
+  color: var(--v-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.v-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ag-fs-md);
+}
+
+.v-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--ag-fs-xs);
+  color: var(--v-muted);
+  padding: 0 8px 6px;
+  border-bottom: 1px solid var(--v-border);
+}
+
+.v-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--v-border);
+}
+
+.v-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.v-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.v-tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  min-width: 0;
+}
+
+.v-tick:hover .v-sym {
+  text-decoration: underline;
+}
+
+.v-logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex: none;
+  object-fit: contain;
+  background: var(--v-sunken);
+}
+
+.v-logo-i {
+  display: inline-grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--v-muted);
+}
+
+.v-sym {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Value against capital */
+
+.v-chart {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+}
+
+.v-chart svg {
+  width: 100%;
+  height: 160px;
+  display: block;
+}
+
+.v-axis-y {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: right;
+}
+
+.v-axis-y,
+.v-axis-x {
+  color: var(--v-faint);
+  font-size: var(--ag-fs-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.v-axis-x {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+}
+
+.v-line {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.v-line-val {
+  stroke: var(--v-accent);
+  stroke-width: 2;
+}
+
+.v-line-in {
+  stroke: var(--v-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.v-keys {
+  grid-column: 2;
+  display: flex;
+  gap: 16px;
+  color: var(--v-muted);
+  font-size: var(--ag-fs-xs);
+}
+
+.v-keys span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.v-keys i {
+  width: 14px;
+  height: 0;
+  border-top: 2px solid var(--v-accent);
+}
+
+.v-keys .v-key-in {
+  border-top: 2px dashed var(--v-muted);
+}
+
+.v-foot {
+  margin-top: 16px;
+  font-size: var(--ag-fs-sm);
+}
+
+.v-foot a {
+  color: var(--v-accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.v-foot a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 520px) {
+  #root {
+    padding: 12px;
+  }
+
+  .v-split {
+    grid-template-columns: 1fr;
+  }
+
+  .v-ringbox {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .v-ring {
+    width: 112px;
+    flex: none;
+  }
+
+  .v-legend {
+    flex: 1;
+    min-width: 0;
+  }
+}

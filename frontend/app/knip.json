@@ -1,5 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/**/*.test.{ts,tsx}"],
-  "project": ["src/**/*.{ts,tsx}"]
+  "entry": ["src/**/*.test.{ts,tsx}", "src/mcp/main.tsx"],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignoreDependencies": ["preact"]
 }

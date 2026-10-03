@@ -292,6 +292,37 @@ def test_unseen_news_drops_a_feature_this_deploy_does_not_carry(monkeypatch):
     assert got == ["here", "stepless"]
 
 
+def test_unseen_news_drops_a_feature_off_on_this_deploy(monkeypatch):
+    """`carried` gates a card whose step is shown everywhere but whose feature
+    is not — the step's page is there, the thing to do on it is not."""
+    releases = (
+        onboarding.Release(
+            version="1.0", date="2026-01",
+            items=(
+                onboarding.News(slug="on", icon="x", step="prefs",
+                                carried=lambda: True),
+                onboarding.News(slug="off", icon="x", step="prefs",
+                                carried=lambda: False),
+            ),
+        ),
+    )
+    monkeypatch.setattr(onboarding, "RELEASES", releases)
+    assert [c.item.slug for c in onboarding.unseen_news({})] == ["on"]
+
+
+@pytest.mark.parametrize(
+    ("origin", "shown"), [(None, False), ("https://x.example", True)]
+)
+def test_the_claude_card_needs_the_public_url(monkeypatch, origin, shown):
+    """The connector names itself to Claude by the site's public URL; without
+    one it is off and Profile has no Claude card to send the reader to."""
+    from stocks.web import server
+
+    monkeypatch.setattr(server, "public_origin", lambda: origin)
+    slugs = {(c.version, c.item.slug) for c in onboarding.unseen_news({})}
+    assert (("2026.10", "claude") in slugs) is shown
+
+
 # ----------------------------------------------------------------- auto-open
 def _flag(at: AppTest, key: str) -> bool:
     """A session flag, defaulting to False. AppTest's session state proxy has

@@ -273,6 +273,33 @@ export const CSS = `
   font-family: "Martian Mono", ui-monospace, monospace; font-size: var(--ag-fs-xs);
 }
 
+/* ------------------------------------------------- the Claude connector */
+/* Something to copy, beside the button that copies it. The text wraps rather
+   than scrolls: an address cut off at the card's edge is one a reader cannot
+   check against what they pasted. */
+.pr-copyline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pr-code {
+  flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere;
+  font-family: "Martian Mono", ui-monospace, monospace; font-size: var(--ag-fs-xs);
+  padding: 7px 10px; border-radius: var(--ag-radius-xs);
+  border: 1px solid var(--ag-border); background: var(--ag-surface-sunken);
+  color: var(--ag-text-primary);
+}
+.pr-copyline > .pr-btn { flex: 0 0 auto; }
+.pr-conns { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.pr-conn {
+  display: flex; align-items: center; gap: 14px; padding: 10px 0;
+  border-top: 1px solid var(--ag-border);
+}
+.pr-conn:first-child { border-top: 0; padding-top: 0; }
+.pr-conn-l { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.pr-conn-name {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-weight: 600; font-size: var(--ag-fs-md); overflow-wrap: anywhere;
+}
+.pr-conn-meta { font-size: var(--ag-fs-sm); color: var(--ag-text-muted); overflow-wrap: anywhere; }
+.pr-conn > .pr-btn { flex: 0 0 auto; }
+
 /* --------------------------------------------------------- the watchlist */
 .pr-ticks { display: flex; flex-wrap: wrap; gap: 8px; }
 .pr-tick {

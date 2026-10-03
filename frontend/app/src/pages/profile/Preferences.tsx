@@ -5,8 +5,8 @@
  *
  * Every row saves itself the moment it is changed — the tab strip promises it,
  * and a Save button here would be the one place that broke the promise. The
- * two exceptions prove it: the export is a download and the deletion is a
- * dialog, and neither is a setting.
+ * exceptions prove it: the export is a download, the deletion is a dialog and
+ * a connected app is revoked, and none of them is a setting.
  */
 
 import { useState } from "react";
@@ -23,6 +23,7 @@ import {
   currencyLabel,
 } from "./data";
 import type { Jurisdictions } from "./data";
+import { ConnectorCard } from "./ConnectorCard";
 import { DeleteAccount } from "./DeleteAccount";
 import type { Settings } from "./prefs";
 import { MemoryCard } from "./MemoryCard";
@@ -396,6 +397,9 @@ export function Preferences({
               it — a button that can only fail is not a control. */}
           {owner === false && <DeleteAccount />}
         </Card>
+        {/* Draws nothing while the deployment has no connector and nothing is
+            connected — there is nothing to offer and nothing to take back. */}
+        <ConnectorCard />
       </div>
 
       <aside className="pr-rail">

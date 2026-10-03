@@ -76,6 +76,9 @@ wheels/
 /data/daily_action.json
 /data/chat_memory.db
 /data/tg_updates/
+# The Claude connector's grants and registered apps (`stocks.connector.store`):
+# hashed tokens against account emails, restored from R2.
+/data/mcp/
 
 # Notebooks
 .ipynb_checkpoints/
