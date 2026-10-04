@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from dataclasses import dataclass
 from datetime import date
 
 import pandas as pd
@@ -358,3 +359,91 @@ def earnings_release(ticker: str, report: date) -> str | None:
     # print already days old, and asking again costs three SEC round trips.
     cached.write_text(text)
     return text or None
+
+
+# ── Current reports (8-K) ─────────────────────────────────────────────────
+#
+# What a US company told the SEC it had to say now: a deal, a departure, a
+# result, a restatement. Each 8-K lists the items it reports under, and the
+# item code says what kind of news it is without opening the document. Read
+# for the daily card's "filings" topic off the submissions feed the release
+# lookup above already reads.
+
+CURRENT_FORMS = ("8-K", "8-K/A")
+FILING_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{folder}/{document}"
+# Item 9.01 is the exhibit list every 8-K carries: never news on its own.
+ITEM_TOPICS = {
+    "1.01": "material agreement",
+    "1.02": "agreement terminated",
+    "1.03": "bankruptcy or receivership",
+    "1.05": "cybersecurity incident",
+    "2.01": "acquisition or disposal completed",
+    "2.02": "results of operations",
+    "2.03": "new debt obligation",
+    "2.04": "debt acceleration",
+    "2.05": "restructuring or exit costs",
+    "2.06": "impairment",
+    "3.01": "delisting notice",
+    "3.02": "unregistered sale of shares",
+    "3.03": "shareholder rights modified",
+    "4.01": "auditor change",
+    "4.02": "past financials no longer reliable",
+    "5.01": "change in control",
+    "5.02": "director or officer change",
+    "5.03": "bylaws or fiscal year amended",
+    "5.07": "shareholder vote results",
+    "7.01": "Regulation FD disclosure",
+    "8.01": "other events",
+}
+
+
+@dataclass(frozen=True)
+class CurrentReport:
+    form: str
+    filed: date
+    items: tuple[str, ...]
+    url: str
+
+    @property
+    def topics(self) -> list[str]:
+        return [ITEM_TOPICS[i] for i in self.items if i in ITEM_TOPICS]
+
+
+def parse_current_reports(cik: str, subs: dict, since: date) -> list[CurrentReport]:
+    """The 8-Ks in a submissions feed filed on or after `since`, newest first,
+    each with the news items it reports (an exhibits-only filing has none and
+    is left out)."""
+    recent = (subs.get("filings") or {}).get("recent") or {}
+    rows = zip(
+        recent.get("form") or [], recent.get("filingDate") or [],
+        recent.get("items") or [], recent.get("accessionNumber") or [],
+        recent.get("primaryDocument") or [], strict=False,
+    )
+    out: list[CurrentReport] = []
+    for form, day, items, accession, document in rows:
+        if form not in CURRENT_FORMS:
+            continue
+        try:
+            filed = date.fromisoformat(day)
+        except (TypeError, ValueError):
+            continue
+        if filed < since:
+            continue
+        codes = tuple(c for c in (s.strip() for s in str(items or "").split(","))
+                      if c in ITEM_TOPICS)
+        if not codes:
+            continue
+        url = FILING_URL.format(cik=int(cik), folder=str(accession).replace("-", ""),
+                                document=document) if document else ""
+        out.append(CurrentReport(form=form, filed=filed, items=codes, url=url))
+    return sorted(out, key=lambda r: r.filed, reverse=True)
+
+
+def current_reports(ticker: str, since: date) -> list[CurrentReport]:
+    """`ticker`'s 8-Ks filed since `since`; empty for a name that files no
+    8-Ks with the SEC. Raises on a refused request, so a caller can tell
+    "nothing filed" from "could not look"."""
+    cik = cik_for(ticker)
+    if not cik:
+        return []
+    return parse_current_reports(cik, _get_json(SUBMISSIONS_URL.format(cik=cik)), since)

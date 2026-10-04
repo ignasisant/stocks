@@ -135,8 +135,17 @@ def test_a_current_card_reads_fresh(client, account, monkeypatch):
     assert payload["source"] == "llm"
 
 
+def _brief(account, text: str) -> str:
+    """Save `text` as the account's brief; its signature."""
+    from stocks.chat import daily_routines, learnings
+
+    item, _ = learnings.add(account.learnings, text, kind="routine")
+    return daily_routines.signature([item])
+
+
 def test_the_card_reports_its_sections(client, account, monkeypatch):
-    """Portfolio rows and chart, each line's section, the routines answered."""
+    """Portfolio rows and chart, each line's section, the brief answered."""
+    sig = _brief(account, "how is NVDA doing")
     line = {"symbol": "@BOOK", "currency": "EUR", "dates": ["2026-09-01", "2026-09-29"],
             "values": [100.0, 101.2], "label": "Your portfolio", "index": True}
     card = today_card(
@@ -149,8 +158,12 @@ def test_the_card_reports_its_sections(client, account, monkeypatch):
         book={"index": "S&P 500", "currency": "EUR", "chart": [line],
               "rows": [{"window": "day", "pct": 0.8, "amount": 120.0,
                         "index_pct": 0.3}]},
-        routines=[{"id": "r1", "text": "how is NVDA", "answer": "NVDA at 182.50",
+        sections=[{"title": "NVDA", "asks": [1],
+                   "lines": [{"key": "brief:0:0", "kind": "", "line": "NVDA at 182.50",
+                              "tickers": ["NVDA"]}],
                    "chart": {"window": "1m", "rebased": False, "series": [line]}}],
+        brief="written",
+        brief_sig=sig,
     )
     monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: card)
     monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
@@ -159,8 +172,22 @@ def test_the_card_reports_its_sections(client, account, monkeypatch):
     assert [i["section"] for i in payload["items"]] == ["alerts", "watch"]
     assert payload["book"]["rows"][0]["index_pct"] == 0.3
     assert payload["book"]["chart"][0]["values"] == [100.0, 101.2]
-    assert payload["routines"][0]["answer"] == "NVDA at 182.50"
-    assert payload["routines"][0]["chart"]["series"][0]["symbol"] == "@BOOK"
+    assert payload["fresh"] is True and payload["brief"] == "written"
+    section = payload["sections"][0]
+    assert (section["title"], section["asks"]) == ("NVDA", [1])
+    assert section["lines"][0]["line"] == "NVDA at 182.50"
+    assert section["chart"]["series"][0]["symbol"] == "@BOOK"
+
+
+def test_a_brief_saved_since_stales_the_card(client, account, monkeypatch):
+    """Written for another brief, or for none: the reader asked for a
+    different card than the one on file."""
+    monkeypatch.setattr(loaders, "stored_action", lambda path, mtime: today_card())
+    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
+    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
+    assert client.get("/v1/daily", params=WHO, headers=AUTH).json()["fresh"] is True
+    _brief(account, "my insiders")
+    assert client.get("/v1/daily", params=WHO, headers=AUTH).json()["fresh"] is False
 
 
 def test_a_card_from_before_sections_reads_without_them(client, account, monkeypatch):
@@ -169,7 +196,7 @@ def test_a_card_from_before_sections_reads_without_them(client, account, monkeyp
     monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
     payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
     assert payload["book"] is None
-    assert payload["routines"] == []
+    assert payload["sections"] == [] and payload["brief"] == ""
 
 
 def test_a_language_switch_stales_a_card_whose_date_has_not_moved(

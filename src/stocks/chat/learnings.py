@@ -43,7 +43,7 @@ import secrets
 import threading
 import unicodedata
 from collections.abc import Callable, Iterable
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -54,6 +54,13 @@ FILE = "chat_learnings.json"
 
 MAX_ITEMS = 40
 MAX_CHARS = 240
+# A routine is a brief for the daily card, not a fact riding in every prompt:
+# "what to look at, which sources, how far ahead" takes a paragraph. The chat's
+# memory section still shows it cut to MAX_CHARS (`block`); the card and its
+# planner read all of it.
+MAX_ROUTINE_CHARS = 1000
+# …and may be laid out as a list: its line breaks are kept, up to this many.
+MAX_ROUTINE_LINES = 20
 # Shorter than this is not a statement about anybody ("eso", "lo de ayer").
 MIN_CHARS = 8
 
@@ -80,7 +87,9 @@ def path_for(chat: Path) -> Path:
 @dataclass(frozen=True)
 class Learning:
     """One saved statement. `thread` is the conversation it was said in, ""
-    when the user typed it into the memory screen directly."""
+    when the user typed it into the memory screen directly. `recipe` is a
+    routine's: what the daily card fetches to answer it (`routine_plan`),
+    {} until it has been worked out."""
 
     id: str
     text: str
@@ -89,10 +98,13 @@ class Learning:
     thread: str = ""
     created: str = ""
     updated: str = ""
+    recipe: dict = field(default_factory=dict, compare=False)
 
     def as_dict(self) -> dict:
         out = asdict(self)
         out["tickers"] = list(self.tickers)
+        if not self.recipe:
+            del out["recipe"]
         return out
 
 
@@ -134,14 +146,16 @@ def load(path: Path) -> list[Learning]:
         if not isinstance(item, dict) or not item.get("id") or not item.get("text"):
             continue
         kind = item.get("kind")
+        kind = kind if kind in KINDS else "context"
         out.append(Learning(
             id=str(item["id"]),
-            text=_clean(str(item["text"])),
-            kind=kind if kind in KINDS else "context",
+            text=_clean(str(item["text"]), _limit(kind), lines=kind == "routine"),
+            kind=kind,
             tickers=tuple(str(t) for t in item.get("tickers") or ()),
             thread=str(item.get("thread") or ""),
             created=str(item.get("created") or ""),
             updated=str(item.get("updated") or item.get("created") or ""),
+            recipe=item["recipe"] if isinstance(item.get("recipe"), dict) else {},
         ))
     return out
 
@@ -197,12 +211,31 @@ def _fold(text: str) -> str:
     return " ".join(re.findall(r"\w+", bare))
 
 
-def _clean(text: str) -> str:
-    """One line, capped, capitalised. `[[` is broken up because the drawer
-    reads `[[open:…]]` in an answer as a link, and this text is prompt."""
-    text = " ".join(str(text).split()).replace("[[", "[ [").strip(" ,;:")
-    if len(text) > MAX_CHARS:
-        text = text[: MAX_CHARS - 1].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+def _cut(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+
+
+def _limit(kind: str) -> int:
+    return MAX_ROUTINE_CHARS if kind == "routine" else MAX_CHARS
+
+
+def one_line(text: str) -> str:
+    """A routine's lines run together, for a prompt that lists one per line."""
+    return " ".join(text.split())
+
+
+def _clean(text: str, limit: int = MAX_CHARS, *, lines: bool = False) -> str:
+    """One line — or, for a routine, its non-blank lines — capped and
+    capitalised. `[[` is broken up because the drawer reads `[[open:…]]` in an
+    answer as a link, and this text is prompt."""
+    rows = [" ".join(row.split()) for row in str(text).splitlines()]
+    rows = [row for row in rows if row] or [""]
+    if lines:
+        rows = [*rows[: MAX_ROUTINE_LINES - 1], " ".join(rows[MAX_ROUTINE_LINES - 1:])]
+    text = ("\n" if lines else " ").join(row for row in rows if row)
+    text = _cut(text.replace("[[", "[ [").strip(" ,;:"), limit)
     return text[:1].upper() + text[1:]
 
 
@@ -213,7 +246,8 @@ def add(path: Path, text: str, *, kind: str | None = None, thread: str = "",
     Saying the same thing twice refreshes the one already there instead of
     keeping two copies; `Full` when there is no room for a new one, and
     `RoutinesFull` when it is a routine and MAX_ROUTINES are kept already."""
-    text = _clean(text)
+    kind = kind if kind in KINDS else guess_kind(_clean(text))
+    text = _clean(text, _limit(kind), lines=kind == "routine")
     if len(text) < MIN_CHARS:
         raise ValueError("too short to be worth remembering")
     with _LOCK:
@@ -253,19 +287,16 @@ def _new(text: str, kind: str | None, thread: str, tickers: Iterable[str],
 
 
 def edit(path: Path, lid: str, *, text: str | None = None,
-         kind: str | None = None) -> Learning | None:
-    """Change one learning's wording or kind. None when there is no such id."""
+         kind: str | None = None,
+         tickers: Iterable[str] | None = None) -> Learning | None:
+    """Change one learning's wording, kind or tickers. None when there is no
+    such id."""
     with _LOCK:
         items = load(path)
         for n, item in enumerate(items):
             if item.id != lid:
                 continue
             changes: dict = {"updated": _now()}
-            if text is not None:
-                cleaned = _clean(text)
-                if len(cleaned) < MIN_CHARS:
-                    raise ValueError("too short to be worth remembering")
-                changes["text"] = cleaned
             if kind is not None:
                 if kind not in KINDS:
                     raise ValueError(f"kind must be one of {', '.join(KINDS)}")
@@ -273,10 +304,37 @@ def edit(path: Path, lid: str, *, text: str | None = None,
                         and _routines(items) >= MAX_ROUTINES):
                     raise RoutinesFull(MAX_ROUTINES)
                 changes["kind"] = kind
+            # A routine turned into a fact sheds what only a routine may carry.
+            final = kind or item.kind
+            limit, lines = _limit(final), final == "routine"
+            if text is not None:
+                cleaned = _clean(text, limit, lines=lines)
+                if len(cleaned) < MIN_CHARS:
+                    raise ValueError("too short to be worth remembering")
+                changes["text"] = cleaned
+            elif item.text != _clean(item.text, limit, lines=lines):
+                changes["text"] = _clean(item.text, limit, lines=lines)
+            if tickers is not None:
+                changes["tickers"] = tuple(
+                    dict.fromkeys(t.upper() for t in tickers if t))[:5]
             items[n] = replace(item, **changes)
             _save(path, items)
             return items[n]
         return None
+
+
+def set_recipe(path: Path, lid: str, text: str, recipe: dict) -> bool:
+    """Keep a routine's recipe, worked out for its wording `text`. False,
+    keeping nothing, when that routine is gone or has been reworded since:
+    a recipe for words the user no longer says is not theirs."""
+    with _LOCK:
+        items = load(path)
+        for n, item in enumerate(items):
+            if item.id == lid and item.kind == "routine" and item.text == text:
+                items[n] = replace(item, recipe=dict(recipe))
+                _save(path, items)
+                return True
+        return False
 
 
 def drop(path: Path, lid: str) -> Learning | None:
@@ -602,8 +660,8 @@ def block(items: list[Learning], *, routines: bool = True) -> str:
             "Their daily card on Home answers these each morning; here they "
             "only tell you what the user follows. Answer one when it is asked, "
             "never unprompted.\n"
-            + "\n".join(f"- [{(i.created or '')[:10]}] {i.text}"
-                        for i in asks)
+            + "\n".join(f"- [{(i.created or '')[:10]}] "
+                        f"{_cut(one_line(i.text), MAX_CHARS)}" for i in asks)
             + "\n\n"
         )
     return out
@@ -678,7 +736,7 @@ def _quote(text: str, limit: int) -> str:
 
 def lesson_prompt(items: list[Learning]) -> str:
     """The extraction's instructions, with the saved list it edits."""
-    saved = "\n".join(f"- {i.id}: ({i.kind}) {i.text}" for i in items) \
+    saved = "\n".join(f"- {i.id}: ({i.kind}) {one_line(i.text)}" for i in items) \
         or "(none yet)"
     return (
         "You keep a short list of lasting facts about one investor, so that "

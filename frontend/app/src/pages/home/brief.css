@@ -1,0 +1,213 @@
+/* The daily card's brief editor (`BriefEditor.tsx`): the question, the box
+   the reader writes the card in, a line per thing, and what the card will
+   look at for it. It takes the card's place while open, as an inset panel. */
+
+.hm-br {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem 1rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  background: var(--ag-surface-sunken);
+}
+
+.hm-br .hm-note {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.hm-br-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hm-br-title {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: var(--ag-fs-md, 13px);
+  font-weight: 600;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+.hm-br-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.hm-br-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* Grows with what is written, from four lines to about fourteen; past that
+   it scrolls. A browser without field-sizing keeps the four rows and the
+   grip. The line breaks are the reader's: each is a section. */
+.hm-br-box {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: calc(4lh + 1rem + 2px);
+  max-height: calc(14lh + 1rem + 2px);
+  field-sizing: content;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-xs, 6px);
+  background: var(--ag-surface-page);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-base, 14px);
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.hm-br-box[aria-invalid="true"] {
+  border-color: var(--ag-down);
+}
+
+.hm-br-count {
+  align-self: flex-end;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 11px);
+  font-variant-numeric: tabular-nums;
+}
+
+.hm-br-templates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.hm-br-chip {
+  padding: 3px 10px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill, 9999px);
+  background: var(--ag-surface-page);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-sm, 12px);
+  cursor: pointer;
+}
+
+.hm-br-chip:hover {
+  border-color: var(--ag-brand-accent);
+  background: var(--ag-cta-tint);
+}
+
+.hm-br-chip:focus-visible,
+.hm-br-box:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+
+.hm-br-read {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.hm-br-got {
+  margin: 0;
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-sm, 12px);
+  font-weight: 600;
+}
+
+/* What the card will look at: one muted line, the symbols as chips. */
+.hm-br-plan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.5rem;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm, 12px);
+  line-height: 1.45;
+}
+
+.hm-br-symbols {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.hm-br-symbols .hm-ticker {
+  padding: 1px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill, 9999px);
+  background: var(--ag-surface-page);
+  font-size: var(--ag-fs-sm, 12px);
+}
+
+.hm-br-plan-rules {
+  flex-basis: 100%;
+  font-size: var(--ag-fs-xs, 11px);
+}
+
+.hm-br-acts,
+.hm-br-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hm-br-primary {
+  border-color: transparent;
+  background: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+}
+
+.hm-br-primary:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Going back to the default card is the rare way out: a text button, pushed
+   to the far end, so it never reads as the save. */
+.hm-br-quiet {
+  margin-left: auto;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ag-text-secondary);
+}
+
+.hm-br-quiet:hover {
+  color: var(--ag-text-primary);
+}
+
+.hm-br-danger {
+  border-color: var(--ag-down);
+  color: var(--ag-down);
+}
+
+.hm-br-off {
+  padding-left: 0.6rem;
+  border-left: 3px solid var(--ag-brand-accent);
+}
+
+.hm-br-failed {
+  color: var(--ag-down);
+}
+
+@container ag-main (max-width: 38rem) {
+  .hm-br {
+    padding: 0.75rem;
+  }
+
+  .hm-br-chip {
+    min-height: 36px;
+  }
+
+  .hm-br-acts .ag-btn {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .hm-br-quiet {
+    margin-left: 0;
+  }
+}

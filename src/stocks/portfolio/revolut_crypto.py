@@ -12,6 +12,14 @@ event) but differs in three ways this parser absorbs:
 * There is usually no currency column: the fiat currency is sniffed from the
   money fields' symbol/code (€, $, £, "1.234,56 EUR", …), defaulting to USD.
 * Fees come in an explicit column instead of being implied from the total.
+* A buy's Quantity is what the whole Value would have bought, but Revolut
+  takes the fee out of that Value first: 500 € at a 4.95 € fee buys 495.05 €
+  of coins, and that is what a later "sell everything" sells. The ledger
+  keeps the coins that arrived (`qty × (value − fee) / value`) at the
+  unrounded price (`value / qty`), so cost (net coins × price + fee) is the
+  500 € paid and a full sale leaves nothing behind. Rows written this way say
+  so in their note (`NET`); `portfolio/doctor.py` offers the same correction
+  to rows imported before.
 
 Buy / sell rows become Transactions. Everything else — send/receive,
 exchanges (coin-to-coin), staking/learn rewards — is reported as skipped
@@ -23,6 +31,8 @@ Nothing here writes to the ledger; the Import page previews and commits.
 """
 
 from __future__ import annotations
+
+from dataclasses import replace
 
 from stocks.data.crypto import to_pair
 from stocks.portfolio import lexicon, statement
@@ -42,9 +52,66 @@ _COLS = {
     "currency": ("currency", "fiat currency", "base currency"),
 }
 
+# Last word of a buy's note when its quantity is the coins that arrived, net
+# of the fee — what the doctor reads to leave a row it need not correct.
+NET = "net"
+
+
+_PREFIX = "revolut crypto"
+
+
+def statement_buy(tx: Transaction) -> bool:
+    """A buy this parser wrote, whichever way its quantity was booked — what
+    the import check matches a re-imported buy against by day, coin and fee,
+    since an older import, the doctor and this parser can each put it at a
+    slightly different quantity and price."""
+    return tx.action == "buy" and tx.note.lower().startswith(_PREFIX)
+
+
+def gross_buy(tx: Transaction) -> bool:
+    """A buy an older import wrote, its quantity still holding the fee's
+    coins — what the doctor offers to correct."""
+    return (statement_buy(tx) and tx.fee > 0 and tx.price > 0
+            and tx.note.split()[-1].lower() != NET)
+
+
 def parse_csv(text: str) -> ParseResult:
     """Parse Revolut crypto-statement CSV text (no side effects)."""
-    return statement.parse_csv(text, FORMAT)
+    result = statement.parse_csv(text, FORMAT)
+    _sweep(result.transactions)
+    return result
+
+
+def _sweep(txs: list[Transaction]) -> None:
+    """Take off the buys what a full sale leaves behind of the fees' cents.
+
+    The Fees column is cut to the cent (4.94 € printed for 0.99 % of
+    500 €), so the coins a fee took come out a cent's worth short, and selling
+    everything leaves that cent's worth — 0.19 CHILLGUY — on the book as a
+    position. A sale that leaves no more than a cent's worth of coins per buy
+    since the coin was last empty emptied it: the remainder comes off the
+    last of those buys.
+    """
+    order = sorted(range(len(txs)), key=lambda i: txs[i].date)  # stable
+    held: dict[str, float] = {}
+    since: dict[str, list[int]] = {}
+    for i in order:
+        tx = txs[i]
+        if tx.action == "buy":
+            held[tx.ticker] = held.get(tx.ticker, 0.0) + tx.quantity
+            since.setdefault(tx.ticker, []).append(i)
+            continue
+        buys = since.get(tx.ticker, [])
+        left = held.get(tx.ticker, 0.0) - tx.quantity
+        held[tx.ticker] = left
+        if not buys or left <= 0:
+            if left <= 0:
+                held[tx.ticker], since[tx.ticker] = 0.0, []
+            continue
+        if left <= sum(0.01 / txs[b].price for b in buys if txs[b].price > 0):
+            last = buys[-1]
+            txs[last] = replace(txs[last], quantity=txs[last].quantity - left)
+            held[tx.ticker], since[tx.ticker] = 0.0, []
 
 
 def _map_action(rtype: str) -> str | None:
@@ -125,6 +192,13 @@ def _parse_any_date(value: str | None) -> str:
     return lexicon.iso_date(value)
 
 
+def _places(text: str) -> int:
+    """Decimals the statement printed a quantity with; 8 when it does not say
+    (fewer than 4 is a whole or trimmed number, not the coin's precision)."""
+    _, dot, tail = "".join(c for c in text if c.isdigit() or c == ".").rpartition(".")
+    return len(tail) if dot and len(tail) >= 4 else 8
+
+
 def _build_tx(row: Row, action: str) -> Transaction:
     date = _parse_any_date(row.text("date"))
     coin = row.upper("symbol")
@@ -138,21 +212,32 @@ def _build_tx(row: Row, action: str) -> Transaction:
     fee = row.money("fee")
     if qty <= 0:
         raise ValueError(f"{action} row has no quantity")
-    if price == 0.0 and value and qty:  # derive when per-coin price is blank
+    if value > 0:
+        # Value is to the cent; the Price column is rounded for display
+        # ("0,05 €" for a coin at 0.0537), which misstates the basis by 7%.
+        # Checked against the printed price first, so a value from the wrong
+        # column is still refused below rather than trusted.
+        printed = price
         price = value / qty
+        if printed > 0 and abs(printed - price) > max(printed * 0.02, 0.006):
+            raise ValueError(
+                f"{action} row inconsistent: {qty:g} × {printed:g} = "
+                f"{qty * printed:.2f} but value is {value:.2f}"
+            )
     if price <= 0:
         raise ValueError(f"{action} row has no price")
     if fee < 0:
         raise ValueError(f"{action} row has negative fee {fee}")
-    # Value should be qty×price give or take the fee and price rounding;
-    # beyond that the row is corrupt (wrong column, truncated number).
-    if value > 0:
-        gross = qty * price
-        if abs(gross - value) > max(value * 0.02, fee + qty * 0.005 + 0.01):
-            raise ValueError(
-                f"{action} row inconsistent: {qty:g} × {price:g} = {gross:.2f} "
-                f"but value is {value:.2f}"
-            )
+    note = f"revolut crypto {coin}"
+    if action == "buy" and fee > 0:
+        if fee >= (value or qty * price):
+            raise ValueError(f"buy row fee {fee:g} is the whole value")
+        # The coins that arrived: the fee came out of the value first. Rounded
+        # as the statement prints coins, because the value and fee are only
+        # to the cent: unrounded, a 44M-coin buy kept 4e-5 coins that its own
+        # "sell all" never sold, and the position never closed.
+        qty = round(qty - fee / price, _places(row.text("quantity")))
+        note += f" {NET}"
     return Transaction(
         date=date,
         # Full Yahoo pair, in the statement's fiat — see module doc.
@@ -162,7 +247,7 @@ def _build_tx(row: Row, action: str) -> Transaction:
         price=price,
         currency=currency,
         fee=fee,
-        note=f"revolut crypto {coin}",
+        note=note,
     )
 
 

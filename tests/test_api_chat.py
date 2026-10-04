@@ -1327,12 +1327,16 @@ def test_a_run_that_is_two_things_or_none_is_refused(
 
 @pytest.fixture
 def holding(account, monkeypatch):
-    """Ten AAPL bought at 100 EUR, and a price of 150 today."""
+    """Ten AAPL bought at 100 EUR, and a price of 150 today — for the book's
+    valuation too, or the holding is worth nothing and there is no sale to
+    weigh."""
     from stocks.chat import whatif
+    from stocks.data import fetch
     from stocks.portfolio.ledger import Transaction, add_many
 
     add_many([Transaction("2025-01-02", "AAPL", "buy", 10, 100.0, "EUR")], account.db)
     monkeypatch.setattr(whatif, "_price", lambda ticker: (150.0, "EUR"))
+    monkeypatch.setattr(fetch, "latest_price", lambda ticker: 150.0)
 
 
 def test_a_sale_being_weighed_is_simulated_and_drawn_under_the_answer(

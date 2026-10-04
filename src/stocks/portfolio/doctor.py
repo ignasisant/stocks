@@ -6,6 +6,9 @@ a sale at one broker and a purchase at the other, one company kept under two
 labels because each broker spells it its own way, the same trade imported from
 two exports. Each one is invisible row by row and visible in every number
 downstream — a gain nobody made, a position held twice, a tax bill nobody owes.
+One more is a single statement read the way it was printed: crypto buys whose
+quantity still holds the coins the fee took, left over as a position nobody
+has once everything is sold.
 
 `scan` reads the ledger and nothing else (plus the label lookup it is given)
 and returns `Finding`s, largest first. A finding carries the edit that would
@@ -24,11 +27,13 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from stocks.portfolio import edits, transfers
+from stocks.portfolio import edits, revolut_crypto, transfers
 from stocks.portfolio.ledger import Transaction
 
-Kind = Literal["transfer", "two_labels", "oversold", "duplicate"]
-KINDS: tuple[Kind, ...] = ("transfer", "two_labels", "oversold", "duplicate")
+Kind = Literal["transfer", "two_labels", "oversold", "duplicate", "fee_in_coins"]
+KINDS: tuple[Kind, ...] = (
+    "transfer", "two_labels", "oversold", "duplicate", "fee_in_coins"
+)
 
 # Two fills this close in price on the same day are one trade printed twice.
 _SAME_PRICE = 0.005
@@ -71,6 +76,7 @@ def scan(
             joined.update((label, f.detail["currency"]) for label in f.detail["labels"])
     found += _oversold(rows, joined)
     found += _duplicates(rows)
+    found += _fee_in_coins(rows)
     order = {k: i for i, k in enumerate(KINDS)}
     found.sort(key=lambda f: (-f.weight, order[f.kind]))
     return found
@@ -241,3 +247,132 @@ def _duplicates(rows: list[Transaction]) -> list[Finding]:
                     )
                 )
     return out
+
+
+# A sale that leaves about the fees' worth of coins behind emptied the
+# position: what is left is those coins. Wider than the fee's own spread
+# (a price column rounded to two decimals is up to ~10% off on a cheap coin),
+# narrow enough that a real partial sale never reads as one.
+_FEES_LEFT = (0.6, 1.6)
+
+
+def _fee_in_coins(rows: list[Transaction]) -> list[Finding]:
+    """Revolut crypto buys booked with the fee still in their quantity — one
+    finding for them all, since they are one mistake made once per buy.
+
+    The export prints a buy's Quantity as the whole amount paid over the
+    price, but the fee comes out of that amount first, so fewer coins arrive
+    (`stocks.portfolio.revolut_crypto`, which now books what arrived and marks
+    the row ``net``). Imported before that, every buy holds the fee's worth of
+    coins nobody received, and "sell all" leaves them on the book.
+
+    Per coin, walking its Revolut rows in order: when a sale leaves about the
+    fees' worth of coins behind, the leftover is exactly the coins the fees
+    took. They come off the buys that carried them, and each buy's price
+    becomes its fee over those coins — which also undoes a Price column
+    printed rounded (0.05 € for 0.0536 €). A position still open loses each
+    fee's worth at the price booked, the best the book alone can say.
+    """
+    groups: dict[tuple[str, str], list[Transaction]] = defaultdict(list)
+    for tx in rows:
+        if tx.note.lower().startswith(_REVOLUT_CRYPTO):
+            groups[(tx.ticker, tx.currency)].append(tx)
+    fix: list[dict] = []
+    removed: dict[str, float] = {}
+    closed: list[str] = []
+    fees = 0.0
+    for (ticker, _currency), txs in sorted(groups.items()):
+        txs.sort(key=lambda t: (t.date, t.id or 0))
+        net: dict[int, tuple[Transaction, float, float]] = {}  # id: row, qty, price
+        held = 0.0
+        episode: list[Transaction] = []
+        emptied = False
+        for i, tx in enumerate(txs):
+            if tx.action in ("buy", "transfer_in"):
+                held += tx.quantity
+                if revolut_crypto.gross_buy(tx):
+                    episode.append(tx)
+            elif tx.action in ("sell", "transfer_out"):
+                held -= tx.quantity
+                if not episode:
+                    continue
+                owed = sum(_fee_coins(t) for t in episode)
+                if _FEES_LEFT[0] * owed <= held <= _FEES_LEFT[1] * owed:
+                    for t in episode:
+                        coins = held * _fee_coins(t) / owed
+                        net[t.id or 0] = (t, _less(t, coins), t.fee / coins)
+                    _settle(txs[: i + 1], net, episode[-1])
+                    held, episode, emptied = 0.0, [], True
+                elif held < _FEES_LEFT[0] * owed:
+                    episode = []  # emptied some other way; nothing to say
+        if episode and held >= sum(_fee_coins(t) for t in episode):
+            for t in episode:
+                net[t.id or 0] = (t, _less(t, _fee_coins(t)), t.price)
+        ops = [
+            {"op": "update", "id": t.id, "fields": {
+                "quantity": qty, "price": price,
+                "note": f"{t.note} {revolut_crypto.NET}"}}
+            for t, qty, price in net.values()
+        ]
+        if not ops or len(fix) + len(ops) > edits.MAX_OPS:
+            continue
+        if edits._plan(rows, ops).problems:
+            continue
+        fix += ops
+        removed[ticker] = sum(t.quantity - q for t, q, _p in net.values())
+        fees += sum(t.fee for t, _q, _p in net.values())
+        if emptied:
+            closed.append(ticker)
+    if not fix:
+        return []
+    return [
+        Finding(
+            kind="fee_in_coins",
+            # The coin a reader is likeliest to be looking at: one that shows
+            # a holding nobody has.
+            ticker=(closed or list(removed))[0],
+            ids=tuple(sorted(op["id"] for op in fix)),
+            fix=fix,
+            detail={"coins": removed, "closed": closed, "buys": len(fix),
+                    "fees": round(fees, 2)},
+            weight=fees,
+        )
+    ]
+
+
+_REVOLUT_CRYPTO = "revolut crypto"
+
+
+def _fee_coins(tx: Transaction) -> float:
+    """The coins a buy's fee took, at the price it was booked at."""
+    return tx.fee / tx.price
+
+
+def _less(tx: Transaction, coins: float) -> float:
+    """`tx`'s quantity without `coins`, to the decimals the broker printed."""
+    digits = repr(tx.quantity).partition(".")[2]
+    places = len(digits) if "e" not in digits else 10
+    return round(tx.quantity - coins, max(places, 4))
+
+
+def _settle(
+    upto: list[Transaction],
+    net: dict[int, tuple[Transaction, float, float]],
+    last: Transaction,
+) -> None:
+    """Leave exactly nothing after the sale that emptied the position.
+
+    Rounding each buy to its printed decimals, then subtracting sales in
+    float, can leave a few billionths — one ulp of a 44-million-coin holding
+    is 7e-9, and every replay counts more than 1e-9 as still held. Whatever
+    is left comes off the last buy."""
+    held = 0.0
+    for tx in upto:
+        qty = net[tx.id][1] if tx.id in net else tx.quantity
+        if tx.action in ("buy", "transfer_in"):
+            held += qty
+        elif tx.action in ("sell", "transfer_out"):
+            held -= qty
+    if held > 0:
+        t, qty, price = net[last.id or 0]
+        net[last.id or 0] = (t, qty - held, price)

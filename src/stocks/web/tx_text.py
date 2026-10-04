@@ -76,6 +76,25 @@ SKIP_REASONS: dict[str, tuple[str, bool]] = {
     "double-tax credit": ("import.skip_withholding", True),
     degiro.WRONG_PORTFOLIO: ("import.skip_degiro_portfolio", True),
     degiro.WRONG_ACCOUNT: ("import.skip_degiro_account", True),
+    # Any crypto exchange's export (crypto_map).
+    **dict.fromkeys((
+        "cash deposit, nothing to book", "cash withdrawal, nothing to book",
+        "cash fee, nothing to book", "cash interest is not tracked",
+        "currency exchange, no crypto",
+    ), ("import.skip_crypto_cash", False)),
+    "moves coins inside the exchange, nothing to book": (
+        "import.skip_crypto_internal", False),
+    "not a crypto asset": ("import.skip_crypto_not_coin", False),
+    "could not be valued that day": ("import.skip_crypto_unpriced", True),
+    "fee could not be valued, left out": ("import.skip_crypto_fee", True),
+    "coin code not supported": ("import.skip_crypto_unsupported", True),
+    **dict.fromkeys((
+        "date not recognised", "transaction type not recognised",
+        "trade direction unclear", "trade without its price or total",
+        "trade without its other side", "conversion without both sides",
+        "several assets traded at once, book by hand", "no quantity or asset",
+        "fee larger than the trade",
+    ), ("import.skip_crypto_unreadable", True)),
 }
 
 

@@ -182,24 +182,32 @@ export function Spark({ history }: { history: History | null }) {
 
   return (
     <>
-      <div className="hm-spark-head">{selector}</div>
-      {/* Two lines with no legend is a picture of nothing in particular: the
-          dashed one is what went in, the solid one what it is worth, and the
-          band between them is the answer the card exists to give. */}
-      <ul className="hm-spark-legend">
-        <li>
-          <span className="hm-spark-key hm-spark-injected" />
-          {t("home.chart_injected")}
-        </li>
-        <li>
-          <span className="hm-spark-key hm-spark-value" />
-          {t("home.chart_value")}
-        </li>
-        <li>
-          <span className="hm-spark-key hm-spark-max" />
-          {t("home.chart_period_max")}: {money(maxValue, base, lang)}
-        </li>
-      </ul>
+      {/* One toolbar: the key on the left, the window on the right. Stacked,
+          the selector floated over an empty row and the key sat alone under
+          it — two rows of chrome for one line of controls. Two lines with no
+          key are a picture of nothing in particular: the dashed one is what
+          went in, the solid one what it is worth, and the band between them
+          is the answer the card exists to give. */}
+      <div className="hm-spark-head">
+        <ul className="hm-spark-legend">
+          <li>
+            <span className="hm-spark-key hm-spark-injected" />
+            {t("home.chart_injected")}
+          </li>
+          <li>
+            <span className="hm-spark-key hm-spark-value" />
+            {t("home.chart_value")}
+          </li>
+          <li>
+            <span className="hm-spark-key hm-spark-max" />
+            {t("home.chart_period_max")}
+            <strong className="hm-spark-legend-figure">
+              {money(maxValue, base, lang)}
+            </strong>
+          </li>
+        </ul>
+        {selector}
+      </div>
       {/* The plot and its scale side by side: the two extremes at the top and
           bottom of the plot's right edge, where a y axis puts its ticks —
           underneath it, next to each other, they read as the x axis. */}

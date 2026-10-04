@@ -148,6 +148,9 @@ class Extraction:
     # Absent for a PDF, which is extracted rather than mapped.
     mapping: dict | None = None
     columns: tuple[str, ...] = ()
+    # Who the file turned out to be from ("Binance"), when it was read as a
+    # crypto export (crypto_map); empty otherwise.
+    label: str = ""
 
 
 # --------------------------------------------------------------- file to grid
@@ -1080,15 +1083,22 @@ def columns(grid: list[list[str]], header_row: int) -> tuple[str, ...]:
 
 
 def extract(filename: str, data: bytes, provider: Provider | None,
-            api_key: str = "", mapping: dict | None = None) -> Extraction:
+            api_key: str = "", mapping: dict | None = None,
+            fiat: str = "") -> Extraction:
     """Read one unrecognised export, by whichever route its format needs.
 
     `mapping` is one the reader corrected (`Extraction.mapping`, edited): it
     is checked exactly as a model's reply would be and applied with no model
     call at all, so a second read can only differ where the reader changed it.
+    A crypto export is read as one first (`_crypto`); `fiat` is the account's
+    currency, which a file traded only against stablecoins is booked in.
     """
     if mapping is not None and not filename.lower().endswith(".pdf"):
         return _remap(filename, data, provider, api_key, mapping)
+    if not filename.lower().endswith(".pdf"):
+        found = _crypto(read_grid(filename, data), provider, api_key, fiat)
+        if found is not None:
+            return found
     if provider is None:
         return Extraction(ParseResult(skipped=[{
             "row": 0, "type": "file", "reason": "no parser recognised this file",
@@ -1145,6 +1155,46 @@ def extract(filename: str, data: bytes, provider: Provider | None,
         mapping=used,
         columns=columns(grid, used["header_row"]) if used else (),
     )
+
+
+def _crypto(grid: list[list[str]], provider: Provider | None, api_key: str,
+            fiat: str) -> Extraction | None:
+    """The file read as a crypto export (crypto_map), or None to read it as shares.
+
+    A header we know is read with no model at all. Otherwise the model is
+    asked only when the file shows coins, and its reading is kept only when
+    it books something: a mapping that books nothing, a model that declines
+    or one that is down all leave the file to the share mapping, as before.
+    """
+    from stocks.portfolio import crypto_map
+
+    if len(grid) < 2:
+        return None
+    spec, via = crypto_map.preset_spec(grid), "preset"
+    if spec is None:
+        if provider is None or not crypto_map.looks_crypto(grid):
+            return None
+        try:
+            spec, via = crypto_map.map_crypto(provider, api_key, grid), "model"
+        except ProviderUnavailable:
+            return None
+        if spec is None:
+            return None
+    result = crypto_map.apply(grid, spec, fiat_hint=fiat)
+    obs.event("import.crypto.read", via=via, layout=spec.layout,
+              exchange=spec.exchange or "unknown",
+              rows=len(result.transactions), skipped=len(result.skipped))
+    if not result.transactions and via == "model":
+        return None
+    return Extraction(result, KIND_TRADES if result.transactions else KIND_NONE,
+                      label=crypto_map.label(spec.exchange))
+
+
+def preset_read(filename: str, data: bytes, fiat: str = "") -> Extraction | None:
+    """A crypto export whose header we know, read with no model; else None."""
+    if filename.lower().endswith(".pdf"):
+        return None
+    return _crypto(read_grid(filename, data), None, "", fiat)
 
 
 def _remap(filename: str, data: bytes, provider: Provider | None,

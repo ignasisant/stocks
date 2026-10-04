@@ -28,6 +28,9 @@ type_map = {
     "types.AnalysisReply": types.AnalysisReply,
     "stream_types.AnalysisReply": stream_types.AnalysisReply,
 
+    "types.BriefSection": types.BriefSection,
+    "stream_types.BriefSection": stream_types.BriefSection,
+
     "types.CardLine": types.CardLine,
     "stream_types.CardLine": stream_types.CardLine,
 
@@ -39,6 +42,12 @@ type_map = {
 
     "types.Columns": types.Columns,
     "stream_types.Columns": stream_types.Columns,
+
+    "types.CryptoColumns": types.CryptoColumns,
+    "stream_types.CryptoColumns": stream_types.CryptoColumns,
+
+    "types.CryptoMap": types.CryptoMap,
+    "stream_types.CryptoMap": stream_types.CryptoMap,
 
     "types.LessonOp": types.LessonOp,
     "stream_types.LessonOp": stream_types.LessonOp,
@@ -55,6 +64,12 @@ type_map = {
     "types.RoutineAnswer": types.RoutineAnswer,
     "stream_types.RoutineAnswer": stream_types.RoutineAnswer,
 
+    "types.RoutinePlan": types.RoutinePlan,
+    "stream_types.RoutinePlan": stream_types.RoutinePlan,
+
+    "types.RoutinePlans": types.RoutinePlans,
+    "stream_types.RoutinePlans": stream_types.RoutinePlans,
+
     "types.SkillPick": types.SkillPick,
     "stream_types.SkillPick": stream_types.SkillPick,
 
@@ -66,6 +81,8 @@ type_map = {
 
 
     "types.AssetClass": types.AssetClass,
+
+    "types.CryptoLayout": types.CryptoLayout,
 
     "types.DocumentKind": types.DocumentKind,
 

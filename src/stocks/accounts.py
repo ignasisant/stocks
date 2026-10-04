@@ -390,6 +390,9 @@ DEFAULT_PREFS: dict = {  # language None = auto (browser)
     # a reload puts the reader back in the conversation instead of behind the
     # launcher icon. Written by the chat drawer through `PATCH /prefs`.
     "chat_panel_open": False,
+    # The Home cards in the reader's order, as [{"id", "hidden"}]. None = the
+    # default layout; the client's registry resolves ids it no longer knows.
+    "home_layout": None,
     # The assistant's memory (chat/learnings.py): whether it keeps what the
     # user tells it to remember and reads it into every conversation, and
     # whether it may search the account's earlier conversations (chat/memory.py).

@@ -334,7 +334,7 @@ def drain(dry_run: bool = False) -> dict[str, str]:
             finally:
                 if not dry_run:
                     _delete_queue_object(key)
-            time.sleep(0.2)  # stay far below Telegram's global send rate
+            telegram.pace()
         if dry_run:
             break
     return status

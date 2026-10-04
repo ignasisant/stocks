@@ -47,6 +47,12 @@ class LlmResponseParser:
         __result__ = self.__options.merge_options(baml_options).parse_response(function_name="MapColumns", llm_response=llm_response, mode="request")
         return typing.cast(types.ColumnMap, __result__)
 
+    def MapCrypto(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> types.CryptoMap:
+        __result__ = self.__options.merge_options(baml_options).parse_response(function_name="MapCrypto", llm_response=llm_response, mode="request")
+        return typing.cast(types.CryptoMap, __result__)
+
     def PickSkills(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> types.SkillPick:
@@ -58,6 +64,12 @@ class LlmResponseParser:
     ) -> types.QueryPlan:
         __result__ = self.__options.merge_options(baml_options).parse_response(function_name="PlanQueries", llm_response=llm_response, mode="request")
         return typing.cast(types.QueryPlan, __result__)
+
+    def PlanRoutines(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> types.RoutinePlans:
+        __result__ = self.__options.merge_options(baml_options).parse_response(function_name="PlanRoutines", llm_response=llm_response, mode="request")
+        return typing.cast(types.RoutinePlans, __result__)
 
     def ProposePeers(
         self, llm_response: str, baml_options: BamlCallOptions = {},
@@ -115,6 +127,12 @@ class LlmStreamParser:
         __result__ = self.__options.merge_options(baml_options).parse_response(function_name="MapColumns", llm_response=llm_response, mode="stream")
         return typing.cast(stream_types.ColumnMap, __result__)
 
+    def MapCrypto(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> stream_types.CryptoMap:
+        __result__ = self.__options.merge_options(baml_options).parse_response(function_name="MapCrypto", llm_response=llm_response, mode="stream")
+        return typing.cast(stream_types.CryptoMap, __result__)
+
     def PickSkills(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> stream_types.SkillPick:
@@ -126,6 +144,12 @@ class LlmStreamParser:
     ) -> stream_types.QueryPlan:
         __result__ = self.__options.merge_options(baml_options).parse_response(function_name="PlanQueries", llm_response=llm_response, mode="stream")
         return typing.cast(stream_types.QueryPlan, __result__)
+
+    def PlanRoutines(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> stream_types.RoutinePlans:
+        __result__ = self.__options.merge_options(baml_options).parse_response(function_name="PlanRoutines", llm_response=llm_response, mode="stream")
+        return typing.cast(stream_types.RoutinePlans, __result__)
 
     def ProposePeers(
         self, llm_response: str, baml_options: BamlCallOptions = {},

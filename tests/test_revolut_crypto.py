@@ -1,5 +1,7 @@
 """Revolut crypto-statement parsing (stocks.portfolio.revolut_crypto)."""
 
+import pytest
+
 from stocks.portfolio.revolut_crypto import parse_csv
 
 HEADER = "Symbol,Type,Quantity,Price,Value,Fees,Date\n"
@@ -14,11 +16,64 @@ def test_buy_normalizes_to_pair_in_statement_currency():
     tx = result.transactions[0]
     assert tx.ticker == "BTC-EUR"  # coin + sniffed fiat -> Yahoo pair
     assert tx.action == "buy"
-    assert tx.quantity == 0.05
+    # The fee came out of the 3,000 € first: 2,955.15 € of coins arrived.
+    assert tx.quantity == round(0.05 * (3000 - 44.85) / 3000, 8)
     assert tx.price == 60_000.0
     assert tx.currency == "EUR"
     assert tx.fee == 44.85
     assert tx.date == "2025-03-04"
+    assert tx.note == "revolut crypto BTC net"
+    # What was paid is the cost: net coins at the price, plus the fee.
+    assert tx.quantity * tx.price + tx.fee == pytest.approx(3000.0)
+
+
+def test_selling_everything_a_buy_brought_leaves_nothing_behind():
+    """The CAT-EUR case: 500 € bought 44,471,331 coins by the Quantity
+    column, but only the 495.05 € left after the fee were converted — and
+    "sell all" sold 44,031,065. Booked gross, 440,266 coins stayed on the
+    book as a position nobody held."""
+    csv = ES_HEADER + (
+        "CAT,Compra,44471331.2889,0.00€,500.00€,4.95€,10 may 2025 10:00:00\n"
+        "CAT,Venta,44031065.1091,0.00€,49.87€,0.00€,18 jun 2026 10:00:00\n"
+    )
+    buy, sell = parse_csv(csv).transactions
+    assert buy.quantity == sell.quantity
+    assert buy.quantity * buy.price + buy.fee == pytest.approx(500.0)
+    assert sell.note == "revolut crypto CAT"  # a sale's quantity is what left
+
+
+def test_a_rounded_price_column_gives_way_to_the_value():
+    # "0.05 €" printed for a coin bought at 500 € / 9,302.55 = 0.0537.
+    csv = ES_HEADER + (
+        'CHILLGUY,Compra,"9,302.54766102",0.05€,500.00€,4.94€,8 may 2025 22:31:12\n'
+    )
+    (tx,) = parse_csv(csv).transactions
+    assert tx.price == pytest.approx(500.0 / 9302.54766102)
+    assert tx.quantity * tx.price + tx.fee == pytest.approx(500.0)
+
+
+def test_a_fee_cut_to_the_cent_leaves_nothing_after_selling_everything():
+    # The owner's export: 4.94 € printed for 0.99 % of 500 €, so the coins the
+    # fee took come out a cent's worth short and "sell all" sold 0.19 more
+    # CHILLGUY than the fee column says arrived.
+    csv = ES_HEADER + (
+        'CHILLGUY,Compra,"9,302.54766102",0.05€,500.00€,4.94€,8 may 2025 22:31:12\n'
+        'CHILLGUY,Venta,"9,210.45243918",0.07€,620.71€,6.15€,10 may 2025 02:55:17\n'
+        'CHILLGUY,Compra,"5,332.18434205",0.09€,500.00€,4.95€,12 may 2025 11:49:15\n'
+        'CHILLGUY,Venta,"5,279.39571706",0.01€,40.13€,0.00€,23 mar 2026 14:38:46\n'
+    )
+    buy, sell, buy2, sell2 = parse_csv(csv).transactions
+    assert buy.quantity - sell.quantity == 0
+    assert buy2.quantity - sell2.quantity == 0
+
+
+def test_a_partial_sale_keeps_the_rest():
+    csv = ES_HEADER + (
+        "METIS,Compra,25.60141493,19.53€,500.00€,4.95€,10 may 2025 02:18:57\n"
+        "METIS,Venta,25,20.00€,500.00€,4.95€,11 may 2025 02:18:57\n"
+    )
+    buy, sell = parse_csv(csv).transactions
+    assert buy.quantity - sell.quantity == pytest.approx(25.60141493 * 0.9901 - 25)
 
 
 def test_usd_statement_and_derived_price():
@@ -114,6 +169,17 @@ def test_spanish_types_and_month_names_import():
         ("2026-02-02", "ETH-EUR", "buy"),
     ]
     assert not result.skipped
+
+
+def test_a_buy_books_the_coins_its_staking_move_then_moved():
+    # The same export, one line apart: 1,000 € bought 5.144921 SOL by the
+    # Quantity column, and the coins staked a minute later were 5.093986 —
+    # the 9.90 € fee's worth fewer. The ledger keeps the second figure.
+    csv = ES_HEADER + (
+        'SOL,Compra,5.144921,194.37€,"1,000.00€",9.90€,3 feb 2025 09:21:06\n'
+    )
+    (tx,) = parse_csv(csv).transactions
+    assert tx.quantity == 5.093986
 
 
 def test_staking_moves_and_rewards_are_told_apart():

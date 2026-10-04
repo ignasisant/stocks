@@ -1,10 +1,11 @@
 /**
  * The daily-glance cut of the Portfolio page: the headline figures, the
- * today / 1 week / 1 month deltas, and the movers card under them.
+ * today / 1 week / 1 month deltas, and the movers card beside them.
  *
- * One query behind both cards, on purpose: they read the same price burst — if
- * the prices are gone, neither card has anything to say, and letting them fail
- * apart would put a movers table under an empty glance.
+ * One query behind both cards (`useBook`, called by the page), on purpose:
+ * they read the same price burst — if the prices are gone, neither card has
+ * anything to say, and letting them fail apart would put a movers table beside
+ * an empty glance.
  *
  * The headline figures are two rows that add up: injected + total gain =
  * value, then realised + unrealised = total gain beside the IRR and the TWR.
@@ -57,7 +58,7 @@ const MARKET_NOTES: Record<string, string> = {
   postmarket: "home.postmarket_note",
 };
 
-type Book = {
+export type Book = {
   summary: Summary;
   performance: Performance;
   positions: Positions;
@@ -77,15 +78,16 @@ type Book = {
   history: History | null;
 };
 
-export function Glance({
-  nonce,
-  ledger,
-}: {
-  nonce: number;
-  ledger: Query<Transactions>;
-}) {
-  const t = useT();
-  const query = useApi<Book>(async () => {
+/**
+ * The book behind the glance and the movers, fetched once for both.
+ *
+ * Called by the page rather than by either card, because each is a card of its
+ * own now and may be hidden, moved or drawn alone. `enabled` false — a guest,
+ * or both cards put away — answers null without a request.
+ */
+export function useBook(nonce: number, enabled: boolean): Query<Book | null> {
+  return useApi<Book | null>(async () => {
+    if (!enabled) return null;
     const [summary, performance, positions, day, week, month, market, history] =
       await Promise.all([
         get<Summary>("/portfolio/summary"),
@@ -107,7 +109,17 @@ export function Glance({
       market,
       history,
     };
-  }, [nonce]);
+  }, [nonce, enabled]);
+}
+
+export function Glance({
+  query,
+  ledger,
+}: {
+  query: Query<Book | null>;
+  ledger: Query<Transactions>;
+}) {
+  const t = useT();
 
   // The ledger read is shared with the recent-transactions strip; here it only
   // answers one question — whether a book with nothing open ever had anything
@@ -124,6 +136,7 @@ export function Glance({
       skeleton={<Skeleton rows={5} />}
     >
       {(book) => {
+        if (!book) return null;
         if (book.summary.positions === 0) {
           // Every position closed: the heading still goes up — the book has a
           // history — and so does the demo caption, because an example book
@@ -141,11 +154,42 @@ export function Glance({
           <section className="hm-section">
             <h2 className="hm-h2">{plain(t("home.portfolio_title"))}</h2>
             <GlanceCard book={book} />
-            <MoversCard movers={book.movers} positions={book.positions.positions} />
             <PortfolioLink />
           </section>
         );
       }}
+    </CardQuery>
+  );
+}
+
+/**
+ * The movers as a card of their own, over the same book as the glance.
+ *
+ * A failed book is the glance's to report when both are on the page; drawn
+ * alone, this card says so under its own heading instead of vanishing.
+ */
+export function MoversSlot({
+  query,
+  alone,
+}: {
+  query: Query<Book | null>;
+  /** The glance is not on the page to carry a failure. */
+  alone: boolean;
+}) {
+  const t = useT();
+  if (query.state === "failed" && !alone) return null;
+  return (
+    <CardQuery
+      query={query}
+      note={t("home.data_unavailable")}
+      title={plain(t("home.movers_title"))}
+      skeleton={<Skeleton rows={4} />}
+    >
+      {(book) =>
+        book && book.summary.positions > 0 ? (
+          <MoversCard movers={book.movers} positions={book.positions.positions} />
+        ) : null
+      }
     </CardQuery>
   );
 }

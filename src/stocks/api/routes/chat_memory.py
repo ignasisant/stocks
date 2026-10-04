@@ -74,15 +74,17 @@ class _Kinded(BaseModel):
         return value
 
 
+# The routine ceiling: a routine may be that long, and anything else is cut to
+# MAX_CHARS by `learnings` itself rather than refused.
 class NewMemory(_Kinded):
-    text: str = Field(min_length=1, max_length=learnings.MAX_CHARS)
+    text: str = Field(min_length=1, max_length=learnings.MAX_ROUTINE_CHARS)
 
 
 class EditMemory(_Kinded):
     """Only the fields sent are changed."""
 
     text: str | None = Field(default=None, min_length=1,
-                             max_length=learnings.MAX_CHARS)
+                             max_length=learnings.MAX_ROUTINE_CHARS)
 
 
 def _titles(paths: UserPaths) -> dict[str, str]:

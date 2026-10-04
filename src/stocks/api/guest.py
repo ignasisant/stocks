@@ -55,6 +55,8 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         ("/v1/extremes", "GET"),
         # The watchlist rows' last close and day %, over the shared list.
         ("/v1/home/closes", "GET"),
+        # The market strip: the Pulse's composite and series, no account.
+        ("/v1/home/market", "GET"),
         # --- Portfolio, every tab, over the shared demo book --------------
         ("/v1/portfolio/positions", "GET"),
         ("/v1/portfolio/summary", "GET"),

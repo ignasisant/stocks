@@ -265,13 +265,15 @@ def quotes(
     tickers: Iterable[str],
     fetch: Callable[[str], Quote | None] = _fetch_quote,
     timeout: float = LOOKUP_TIMEOUT,
+    limit: int = MAX_TICKERS,
 ) -> list[Quote]:
-    """Live snapshots for `tickers`, in order, skipping whatever failed.
+    """Live snapshots for `tickers` (the first `limit`), in order, skipping
+    whatever failed.
 
     Fetched concurrently and behind one wall-clock budget: a throttled Yahoo
     must cost the answer a few seconds, not the whole turn. No `with` on the
     pool — shutdown would block on the hung worker the timeout just escaped."""
-    names = [t for t in dict.fromkeys(t.upper() for t in tickers) if t][:MAX_TICKERS]
+    names = [t for t in dict.fromkeys(t.upper() for t in tickers) if t][:limit]
     if not names:
         return []
     pool = ThreadPoolExecutor(max_workers=len(names))

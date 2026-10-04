@@ -143,7 +143,9 @@ def test_the_guest_list_is_not_silently_growing():
     # 49: `GET /portfolio/monthly` and `GET /portfolio/projection` — the
     # Overview and Projection tabs, which shipped without them and painted an
     # error for every guest (caught by tests/e2e/test_portfolio.py).
-    assert len(guest.OPEN) == 49
+    # 50: `GET /home/market` — the Home market strip, the Pulse's composite and
+    # series compressed to one card; no account goes into it.
+    assert len(guest.OPEN) == 50
 
 
 def test_every_route_a_guest_may_read_is_a_read():

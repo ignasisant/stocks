@@ -1,10 +1,10 @@
 /**
- * What the card's Portfolio and Your routines sections draw from a card.
+ * What the card's Portfolio and brief sections draw from a card.
  *
  * Portfolio is computed: each window's own move beside the index's, a move
  * the index could not report printed as "n/a" rather than a zero, and the
- * month drawn with the drawer's chart. A routine still being fetched says it
- * is being answered — never an empty slot — and one that is answered says it.
+ * month drawn with the drawer's chart. A brief section draws the chart its
+ * figures came with, and nothing when they came with none.
  *
  * Rendered to static markup with no catalog: a key prints as itself. The
  * chart reads computed styles off the document, which a node test does not
@@ -14,8 +14,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BookSection, Routines } from "./Daily";
-import type { DailyBook, DailyRoutine } from "./types";
+import { BookSection, SectionChart } from "./Daily";
+import type { DailyBook, DailySection } from "./types";
 
 beforeEach(() => {
   vi.stubGlobal("window", {
@@ -83,40 +83,33 @@ describe("the Portfolio section", () => {
   });
 });
 
-describe("the routines", () => {
-  const asked = (over: Partial<DailyRoutine> = {}): DailyRoutine => ({
-    id: "r1",
-    text: "how is NVDA doing",
-    answer: "",
+describe("a brief section's chart", () => {
+  const section = (over: Partial<DailySection> = {}): DailySection => ({
+    title: "NVDA",
+    asks: [1],
+    lines: [],
     chart: null,
     ...over,
   });
 
-  it("says a routine is being answered while the card is written", () => {
-    const html = renderToStaticMarkup(<Routines routines={[asked()]} pending />);
-    expect(html).toContain("how is NVDA doing");
-    expect(html).toContain("home.daily_routine_pending");
-    expect(html).toContain('role="status"');
+  it("draws nothing when the figures came without one", () => {
+    expect(renderToStaticMarkup(<SectionChart section={section()} />)).toBe("");
+    const empty = section({ chart: { window: "1m", rebased: false, series: [] } });
+    expect(renderToStaticMarkup(<SectionChart section={empty} />)).toBe("");
   });
 
-  it("prints the answer and its chart once there is one", () => {
+  it("draws the series it came with", () => {
     const html = renderToStaticMarkup(
-      <Routines
-        routines={[
-          asked({
-            answer: "NVDA at 182.50 USD",
-            chart: {
-              window: "1m",
-              rebased: false,
-              series: [{ ...line, symbol: "NVDA" }],
-            },
-          }),
-        ]}
-        pending={false}
+      <SectionChart
+        section={section({
+          chart: {
+            window: "1m",
+            rebased: false,
+            series: [{ ...line, symbol: "NVDA" }],
+          },
+        })}
       />,
     );
-    expect(html).toContain("NVDA at 182.50 USD");
-    expect(html).not.toContain("home.daily_routine_pending");
     expect(html).toContain("ag-a2ui-chart");
   });
 });

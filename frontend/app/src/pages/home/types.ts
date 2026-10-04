@@ -47,8 +47,19 @@ export type DailyCard = {
    * index could not be downloaded.
    */
   book?: DailyBook | null;
-  /** What the reader asks every day, answered before they ask it. */
-  routines?: DailyRoutine[];
+  /**
+   * The reader's brief answered, a section per thing asked, in their order.
+   * When there are any they are the card: the fired alerts above them and
+   * nothing else (no Portfolio, no Worth a look).
+   */
+  sections?: DailySection[];
+  /**
+   * Where the brief stands on this card: "" — none, the default card;
+   * "pending" — the default card on screen while it is answered; "written" —
+   * `sections` answer it; "missed" — no model answered it today, so the card
+   * fell back to the default.
+   */
+  brief?: "" | "pending" | "written" | "missed";
 };
 
 export type DailyItem = {
@@ -79,12 +90,12 @@ export type DailyBook = {
   chart: Line[];
 };
 
-export type DailyRoutine = {
-  id: string;
-  /** The question, as the reader saved it. */
-  text: string;
-  /** Empty while the routine's figures are still being fetched. */
-  answer: string;
+export type DailySection = {
+  /** A few words naming what was asked. */
+  title: string;
+  /** Which lines of the brief it answers, from 1. */
+  asks: number[];
+  lines: DailyItem[];
   chart: { window: string; rebased: boolean; series: Line[] } | null;
 };
 
@@ -359,4 +370,37 @@ export type Onboarding = {
   setup: Record<string, boolean>;
   /** search | ask | watchlist — the three that need no setup at all. */
   explore: Record<string, boolean>;
+};
+
+/** `GET /home/market`: the Pulse compressed to one strip. */
+export type MarketWindow = "day" | "week" | "month";
+
+export type MarketTile = {
+  /** The catalog slug: sp500, nasdaq, vix, us10y… */
+  key: string;
+  symbol: string;
+  group: string;
+  /** `percent` changes are fractions; `basis_points` are already ×100. */
+  unit: "percent" | "basis_points";
+  value: number | null;
+  changes: Partial<Record<MarketWindow, number>>;
+  /** +1 a rise is good news for a holder, -1 bad (VIX, yields), 0 neither. */
+  welcome: number;
+  /** `sm.trend_state`: up / turning_up / turning_down / down / unknown. */
+  state: string | null;
+  /** The VIX's place in its own year, 0–100. */
+  percentile: number | null;
+  linkable: boolean;
+  as_of: string | null;
+};
+
+export type MarketGlance = {
+  score: number | null;
+  regime: string;
+  run: number | null;
+  history: number[];
+  tiles: MarketTile[];
+  breadth: { hits: number; total: number; window: number } | null;
+  as_of: string | null;
+  unavailable: string | null;
 };

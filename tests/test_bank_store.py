@@ -128,6 +128,9 @@ def test_remove_connection_reports_whether_it_removed_anything(path):
         ("", False),          # unknown: the API is the authority
         ("not-a-date", False),
     ],
+    # Named, not derived from the stamps: an id built from `now()` differs
+    # between two collections, which pytest-xdist refuses to run.
+    ids=["yesterday", "tomorrow", "empty", "junk"],
 )
 def test_expired_reads_the_consent_date(valid_until, gone):
     assert store.expired({"valid_until": valid_until}) is gone

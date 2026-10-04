@@ -212,3 +212,46 @@ def test_the_parsers_isins_ride_along_when_the_model_wins(monkeypatch):
     assert found.platform == autodetect.LLM_KEY
     assert len(found.result.transactions) == 2
     assert found.result.isins == {"MEQA": "ES0105025003"}
+
+
+def test_a_parser_that_explains_every_line_keeps_the_file(monkeypatch):
+    """The owner's Revolut crypto export: 34 trades and 437 staking moves and
+    rewards the parser skips on purpose, each with its reason. The model
+    booked the rewards as buys and dividends — and misread 5.144921 SOL as
+    five million — and won on row count. A parser that missed no line keeps
+    the file however many rows the model made up."""
+    from stocks.portfolio import llm_map
+    from stocks.portfolio.ledger import Transaction
+    from stocks.portfolio.statement import ParseResult
+
+    csv = (
+        "Symbol,Type,Quantity,Price,Value,Fees,Date\n"
+        'SOL,Compra,5.144921,194.37€,"1,000.00€",9.90€,3 feb 2025 09:21:06\n'
+        "SOL,Staking,5.093986,194.80€,992.30€,0.00€,3 feb 2025 09:22:03\n"
+        "SOL,Recompensa de staking,0.001771,,,,6 feb 2025 13:38:21\n"
+    )
+    junk = [Transaction("2025-02-03", "SOL-EUR", "buy", 5144921, 0.0, "EUR", 990.0)] * 4
+    model = llm_map.Extraction(ParseResult(transactions=junk), kind=llm_map.KIND_TRADES)
+    monkeypatch.setattr(autodetect, "_model_read", lambda *a: model)
+    found = autodetect.read("Crypt.csv", csv.encode(), _StubProvider(), "k")
+    assert found.platform == "revolut_crypto"
+    assert [tx.quantity for tx in found.result.transactions] == [5.093986]
+
+
+def test_a_parser_that_left_lines_unexplained_still_loses_to_more_rows(monkeypatch):
+    from stocks.portfolio import llm_map
+    from stocks.portfolio.ledger import Transaction
+    from stocks.portfolio.statement import ParseResult
+
+    csv = LEDGER_CSV + "2025-01-03,MSFT,buy,1,400,USD,1.0,second lot\n"
+    parsed = autodetect.Detected(
+        ParseResult(transactions=[Transaction("2025-01-02", "AAPL", "buy", 10, 180.5)]),
+        "generic", "Generic", llm_map.KIND_TRADES,
+    )
+    rows = [Transaction("2025-01-02", "AAPL", "buy", 10, 180.5),
+            Transaction("2025-01-03", "MSFT", "buy", 1, 400.0)]
+    model = llm_map.Extraction(ParseResult(transactions=rows), kind=llm_map.KIND_TRADES)
+    monkeypatch.setattr(autodetect, "_model_read", lambda *a: model)
+    monkeypatch.setattr(autodetect, "_parsers", lambda *a: (parsed, None, {}))
+    found = autodetect.read("ledger.csv", csv.encode(), _StubProvider(), "k")
+    assert found.platform == autodetect.LLM_KEY

@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from stocks import accounts
 from stocks.api.deps import Account, Writer
-from stocks.api.schemas import Prefs
+from stocks.api.schemas import HomeSlot, Prefs
 from stocks.api.security import Who
 from stocks.config import CURRENCIES
 from stocks.portfolio import tax
@@ -39,6 +39,10 @@ router = APIRouter(tags=["prefs"])
 _FILING_STATUSES = frozenset(
     {"single", *(s for c in tax.JURISDICTIONS for s in tax.get(c).filing_statuses)}
 )
+
+# More slots than the registry will ever hold, so a layout is never refused for
+# being long — only a client sending something that is not a layout is.
+_MAX_HOME_SLOTS = 32
 
 # Rates stored as fractions, not percentages. 0.09 is a church-tax rate; 9 is a
 # typo that would multiply somebody's tax bill by a hundred.
@@ -81,6 +85,21 @@ class PrefsPatch(BaseModel):
     chat_panel_open: bool | None = None
     setup_card_dismissed: bool | None = None
     onboarding_dismissed: bool | None = None
+    # The whole list every time: a PATCH replaces the key, it does not merge
+    # into it. null puts the default layout back.
+    home_layout: list[HomeSlot] | None = None
+
+    @field_validator("home_layout")
+    @classmethod
+    def _sane_layout(cls, value: list[HomeSlot] | None) -> list[HomeSlot] | None:
+        if value is None:
+            return value
+        if len(value) > _MAX_HOME_SLOTS:
+            raise ValueError(f"a Home holds at most {_MAX_HOME_SLOTS} cards")
+        ids = [slot.id for slot in value]
+        if len(set(ids)) != len(ids):
+            raise ValueError("each card appears once")
+        return value
 
     @field_validator("currency")
     @classmethod
@@ -170,7 +189,22 @@ def _view(stored: dict) -> Prefs:
         notify_alerts=bool(stored.get("notify_alerts")),
         telegram_linked=bool(stored.get("telegram_chat_id")),
         chat_panel_open=bool(stored.get("chat_panel_open")),
+        home_layout=_layout(stored.get("home_layout")),
     )
+
+
+def _layout(stored: object) -> list[HomeSlot] | None:
+    """The stored Home layout, or None for the default when it is not one.
+
+    Written only through `PrefsPatch`, so this is a hand-edited or corrupt
+    file's guard: a settings read must not 500 over one bad key.
+    """
+    if not isinstance(stored, list):
+        return None
+    try:
+        return [HomeSlot.model_validate(slot) for slot in stored]
+    except ValueError:
+        return None
 
 
 @router.get("/prefs", response_model=Prefs, summary="This account's settings")

@@ -259,6 +259,63 @@ def test_every_delivery_the_profile_page_writes_is_writable_here(
         assert response.json()[key] is False, key
 
 
+# ---------------------------------------------------------------- Home layout
+
+
+def test_an_untouched_home_reads_as_the_default_layout(client, account):
+    """null, not an empty list: an empty list would be a Home with every card
+    put away, which is a choice somebody could make."""
+    assert client.get("/v1/prefs", params=WHO, headers=AUTH).json()[
+        "home_layout"
+    ] is None
+
+
+def test_a_home_layout_round_trips_in_the_readers_order(client, account, signed_in):
+    layout = [
+        {"id": "watchlist", "hidden": False},
+        {"id": "market", "hidden": False},
+        {"id": "daily", "hidden": True},
+    ]
+    saved = signed_in.patch("/v1/prefs", json={"home_layout": layout}).json()
+    assert saved["home_layout"] == layout
+    assert json.loads(account.prefs.read_text())["home_layout"] == layout
+
+
+def test_null_puts_the_default_layout_back(client, account, signed_in):
+    signed_in.patch("/v1/prefs", json={"home_layout": [{"id": "daily"}]})
+    assert signed_in.patch("/v1/prefs", json={"home_layout": None}).json()[
+        "home_layout"
+    ] is None
+
+
+@pytest.mark.parametrize(
+    "layout",
+    [
+        [{"id": "daily"}, {"id": "daily"}],  # one card twice
+        [{"id": "Daily<script>"}],  # not a registry id
+        [{"id": "daily", "pinned": True}],  # a field nothing reads
+        [{"id": f"card_{chr(97 + i % 26)}{i}"} for i in range(40)],  # too many
+        {"id": "daily"},  # not a list
+    ],
+)
+def test_something_that_is_not_a_layout_is_refused(
+    client, account, signed_in, layout
+):
+    response = signed_in.patch("/v1/prefs", json={"home_layout": layout})
+    assert response.status_code == 422
+    assert "home_layout" not in json.loads(account.prefs.read_text())
+
+
+def test_a_corrupt_stored_layout_reads_as_the_default(client, account):
+    """Hand-edited or half-written: a settings read must not 500 over it."""
+    stored = json.loads(account.prefs.read_text())
+    stored["home_layout"] = [{"id": 7}]
+    account.prefs.write_text(json.dumps(stored))
+    assert client.get("/v1/prefs", params=WHO, headers=AUTH).json()[
+        "home_layout"
+    ] is None
+
+
 # ---------------------------------------------------------- the investor profile
 
 

@@ -318,3 +318,7 @@ VoiceNote = Annotated[UserPaths, Depends(_burst("voice"))]
 # budget: it spends no model call, and a reader exploring a slider would
 # otherwise wall their own next question.
 SurfaceAction = Annotated[UserPaths, Depends(_burst("surface"))]
+# A daily routine saved from Home's editor: each save plans the routine's
+# fetches with a model call (`routine_plan`), so a client looping on it has to
+# hit the same kind of wall a chat turn does — its own, not the chat's.
+RoutineSave = Annotated[UserPaths, Depends(_burst("routine"))]

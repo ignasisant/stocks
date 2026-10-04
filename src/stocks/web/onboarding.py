@@ -397,6 +397,23 @@ RELEASES: tuple[Release, ...] = (
             News(slug="fixbook", icon="build", step="assistant"),
         ),
     ),
+    Release(
+        version="2026.10.2",
+        date="2026-10",
+        items=(
+            # One card: Home was rebuilt under the reader — its order is now
+            # theirs to set, and it opens on the market. The Market strip and
+            # the four cards brought over from Portfolio and the Pulse are what
+            # the editor offers, so they are this card's body, not cards of
+            # their own; the daily step is Home's tour stop.
+            News(slug="home", icon="dashboard_customize", step="daily"),
+            # One card: the daily card was rebuilt around the reader's brief —
+            # what they write decides its sections, edited from the card's own
+            # pencil. The sources a line can draw on (events, insiders, exits,
+            # indices) are the daily step's body, not cards of their own.
+            News(slug="brief", icon="edit_note", step="daily"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

@@ -50,6 +50,8 @@ export type Prefs = {
   setup_card_dismissed: boolean;
   /** What to do first, put away — a different card and a different decision. */
   onboarding_dismissed: boolean;
+  /** Home's cards in the reader's order; null is the default page. */
+  home_layout: { id: string; hidden: boolean }[] | null;
 };
 
 /**

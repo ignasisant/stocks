@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import html
 import json
-import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -350,7 +349,7 @@ def run_alerts_fanout(now: datetime | None = None) -> dict[str, str]:
                 except telegram.TelegramBlocked:
                     mark_blocked(state, now)
                     status[user.label] = "blocked"
-                time.sleep(0.2)  # stay far below Telegram's global send rate
+                telegram.pace()
             else:
                 status[user.label] = "no hits"
             save_state(state, user.state_path, active_fingerprints=active_fps)

@@ -17,7 +17,6 @@ drops the week-ahead block and the review still sends.
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -381,7 +380,7 @@ def run_weekly_fanout(dry_run: bool = False) -> dict[str, str]:
                 mark_blocked(state, now)
                 save_state(state, user.state_path)
                 status[user.label] = "blocked"
-            time.sleep(0.2)  # stay far below Telegram's global send rate
+            telegram.pace()
         except Exception as exc:  # noqa: BLE001 — cron isolation per account
             status[user.label] = f"error: {exc}"
     return status

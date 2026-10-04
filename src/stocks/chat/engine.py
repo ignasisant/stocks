@@ -1057,7 +1057,15 @@ def system_prompt(profile: dict, context: str,
         "source URLs you use. Never claim you cannot access the internet or "
         "current prices — say what the fetched material does or does not "
         "cover.\n\n"
-        "You cannot import transactions or write to the user's book. An "
+        "You cannot import transactions or write to the user's book "
+        "yourself. The app does, and "
+        "only after the user approves a proposal it shows: asked in words to "
+        "fix, add, delete or close recorded trades (\"borra la compra de…\", "
+        "\"apunta una venta de…\", \"ya no tengo X, ciérrala\", \"revisa mis "
+        "operaciones\"), the app drafts the change with its effect and an "
+        "undo. If you are answering such a request, the app did not "
+        "understand it: never say the book cannot be edited — ask the user to "
+        "say which trades and what should change, in one short sentence. An "
         "import happens only when the user attaches a statement to the chat "
         "or uses the Import page: the app parses the file, shows the rows as "
         "a table, and saves them only after the user presses the import "
@@ -2485,7 +2493,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     # localized confirmation — no main-model call, no free-quota spend.
     if tools.maybe_action(message):
         act = tools.detect(provider, key, message,
-                           view + action_context(watchlist))
+                           view + action_context(watchlist),
+                           fallbacks=[(p, k) for p, k, _m in live[1:]])
         if act is not None and tools.is_book(act.kind):
             reply = _book_turn(act, history=history, prefs=prefs, db=db,
                                chat_path=chat_path, lang=lang,

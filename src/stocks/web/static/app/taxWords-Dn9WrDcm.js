@@ -1,0 +1,1 @@
+import{Ct as e}from"./app-B3INF9qq.js";function t(t){let n=e(),r=e=>{let r=`portfolio.${t.toLowerCase()}_${e}`;if(n(r)!==r)return r;let i=`portfolio.${e}`;return n(i)===i?null:i};return{has:e=>r(e)!==null,say:(e,t)=>n(r(e)??`portfolio.${e}`,t)}}export{t};

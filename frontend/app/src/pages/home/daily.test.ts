@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   linesOf,
   opens,
+  noteKey,
   sectioned,
   sectionsOf,
   stampOf,
@@ -129,15 +130,38 @@ describe("sectionsOf / sectioned", () => {
 
   it("keeps a plain list when the card has nothing besides it", () => {
     expect(sectioned(card(), 0)).toBe(false);
-    expect(sectioned(card({ book: null, routines: [] }), 0)).toBe(false);
+    expect(sectioned(card({ book: null, sections: [] }), 0)).toBe(false);
   });
 
-  it("draws sections once there is a book, a routine or an alert", () => {
+  it("draws sections once there is a book, a brief section or an alert", () => {
     expect(sectioned(card({ book }), 0)).toBe(true);
     expect(sectioned(card({ book: { ...book, rows: [] } }), 0)).toBe(false);
-    const routine = { id: "r1", text: "how is NVDA", answer: "", chart: null };
-    expect(sectioned(card({ routines: [routine] }), 0)).toBe(true);
+    const asked = { title: "NVDA", asks: [1], lines: [watch], chart: null };
+    expect(sectioned(card({ sections: [asked] }), 0)).toBe(true);
     expect(sectioned(card(), 1)).toBe(true);
+  });
+});
+
+describe("noteKey", () => {
+  const base = { pending: false, source: "llm", brief: "" as const };
+
+  it("leaves a written card to the disclaimer", () => {
+    expect(noteKey(base)).toBeNull();
+    expect(noteKey({ ...base, brief: "written" })).toBeNull();
+  });
+
+  it("says the stand-in is waiting on the brief when that is what is written", () => {
+    expect(noteKey({ ...base, pending: true, brief: "pending" })).toBe(
+      "home.daily_brief_wait",
+    );
+    expect(noteKey({ ...base, pending: true })).toBe("home.daily_computed_wait");
+  });
+
+  it("never passes the default card off as the brief answered", () => {
+    expect(noteKey({ ...base, source: "computed", brief: "missed" })).toBe(
+      "home.daily_brief_missed",
+    );
+    expect(noteKey({ ...base, source: "computed" })).toBe("home.daily_computed_note");
   });
 });
 

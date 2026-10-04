@@ -20,13 +20,13 @@ from .globals import DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIM
 class TypeBuilder(type_builder.TypeBuilder):
     def __init__(self):
         super().__init__(classes=set(
-          ["ActionCall","AlertRule","AnalysisPoint","AnalysisReply","CardLine","CardReply","ColumnMap","Columns","LessonOp","LessonOps","PeerPicks","QueryPlan","RoutineAnswer","SkillPick","StatementPage","StatementRow",]
+          ["ActionCall","AlertRule","AnalysisPoint","AnalysisReply","BriefSection","CardLine","CardReply","ColumnMap","Columns","CryptoColumns","CryptoMap","LessonOp","LessonOps","PeerPicks","QueryPlan","RoutineAnswer","RoutinePlan","RoutinePlans","SkillPick","StatementPage","StatementRow",]
         ), enums=set(
-          ["AssetClass","DocumentKind",]
+          ["AssetClass","CryptoLayout","DocumentKind",]
         ), runtime=DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIME)
 
     # #########################################################################
-    # Generated enums 2
+    # Generated enums 3
     # #########################################################################
 
     @property
@@ -34,12 +34,16 @@ class TypeBuilder(type_builder.TypeBuilder):
         return AssetClassViewer(self)
 
     @property
+    def CryptoLayout(self) -> "CryptoLayoutViewer":
+        return CryptoLayoutViewer(self)
+
+    @property
     def DocumentKind(self) -> "DocumentKindViewer":
         return DocumentKindViewer(self)
 
 
     # #########################################################################
-    # Generated classes 16
+    # Generated classes 21
     # #########################################################################
 
     @property
@@ -59,6 +63,10 @@ class TypeBuilder(type_builder.TypeBuilder):
         return AnalysisReplyViewer(self)
 
     @property
+    def BriefSection(self) -> "BriefSectionViewer":
+        return BriefSectionViewer(self)
+
+    @property
     def CardLine(self) -> "CardLineViewer":
         return CardLineViewer(self)
 
@@ -73,6 +81,14 @@ class TypeBuilder(type_builder.TypeBuilder):
     @property
     def Columns(self) -> "ColumnsViewer":
         return ColumnsViewer(self)
+
+    @property
+    def CryptoColumns(self) -> "CryptoColumnsViewer":
+        return CryptoColumnsViewer(self)
+
+    @property
+    def CryptoMap(self) -> "CryptoMapViewer":
+        return CryptoMapViewer(self)
 
     @property
     def LessonOp(self) -> "LessonOpViewer":
@@ -95,6 +111,14 @@ class TypeBuilder(type_builder.TypeBuilder):
         return RoutineAnswerViewer(self)
 
     @property
+    def RoutinePlan(self) -> "RoutinePlanViewer":
+        return RoutinePlanViewer(self)
+
+    @property
+    def RoutinePlans(self) -> "RoutinePlansViewer":
+        return RoutinePlansViewer(self)
+
+    @property
     def SkillPick(self) -> "SkillPickViewer":
         return SkillPickViewer(self)
 
@@ -109,7 +133,7 @@ class TypeBuilder(type_builder.TypeBuilder):
 
 
 # #########################################################################
-# Generated enums 2
+# Generated enums 3
 # #########################################################################
 
 class AssetClassAst:
@@ -150,6 +174,52 @@ class AssetClassValues:
     @property
     def Securities(self) -> type_builder.EnumValueViewer:
         return type_builder.EnumValueViewer(self.__bldr.value("Securities"))
+    
+    
+
+
+class CryptoLayoutAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.enum("CryptoLayout")
+        self._values: typing.Set[str] = set([  "Rows",  "Swaps",  "Ledger",  ])
+        self._vals = CryptoLayoutValues(self._bldr, self._values)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def values(self) -> "CryptoLayoutValues":
+        return self._vals
+
+
+class CryptoLayoutViewer(CryptoLayoutAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_values(self) -> typing.List[typing.Tuple[str, type_builder.EnumValueViewer]]:
+        return [(name, type_builder.EnumValueViewer(self._bldr.value(name))) for name in self._values]
+    
+
+class CryptoLayoutValues:
+    def __init__(self, enum_bldr: baml_py.EnumBuilder, values: typing.Set[str]):
+        self.__bldr = enum_bldr
+        self.__values = values # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def Rows(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("Rows"))
+    
+    @property
+    def Swaps(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("Swaps"))
+    
+    @property
+    def Ledger(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("Ledger"))
     
     
 
@@ -202,7 +272,7 @@ class DocumentKindValues:
 
 
 # #########################################################################
-# Generated classes 16
+# Generated classes 21
 # #########################################################################
 
 class ActionCallAst:
@@ -461,6 +531,53 @@ class AnalysisReplyProperties:
     
 
 
+class BriefSectionAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("BriefSection")
+        self._properties: typing.Set[str] = set([  "asks",  "title",  "lines",  ])
+        self._props = BriefSectionProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "BriefSectionProperties":
+        return self._props
+
+
+class BriefSectionViewer(BriefSectionAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class BriefSectionProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def asks(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("asks"))
+    
+    @property
+    def title(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("title"))
+    
+    @property
+    def lines(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("lines"))
+    
+    
+
+
 class CardLineAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
@@ -508,7 +625,7 @@ class CardReplyAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
         self._bldr = _tb.class_("CardReply")
-        self._properties: typing.Set[str] = set([  "headline",  "items",  "focus",  "routines",  ])
+        self._properties: typing.Set[str] = set([  "headline",  "items",  "focus",  "routines",  "sections",  ])
         self._props = CardReplyProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
@@ -551,6 +668,10 @@ class CardReplyProperties:
     @property
     def routines(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("routines"))
+    
+    @property
+    def sections(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("sections"))
     
     
 
@@ -685,6 +806,192 @@ class ColumnsProperties:
     @property
     def note(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("note"))
+    
+    
+
+
+class CryptoColumnsAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("CryptoColumns")
+        self._properties: typing.Set[str] = set([  "date",  "type",  "subtype",  "asset",  "pair",  "quantity",  "price",  "total",  "quote",  "fee",  "fee_asset",  "sent_quantity",  "sent_asset",  "received_quantity",  "received_asset",  "value",  "value_currency",  "group",  "direction",  "asset_class",  "note",  ])
+        self._props = CryptoColumnsProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "CryptoColumnsProperties":
+        return self._props
+
+
+class CryptoColumnsViewer(CryptoColumnsAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class CryptoColumnsProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def date(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("date"))
+    
+    @property
+    def type(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("type"))
+    
+    @property
+    def subtype(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("subtype"))
+    
+    @property
+    def asset(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("asset"))
+    
+    @property
+    def pair(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("pair"))
+    
+    @property
+    def quantity(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("quantity"))
+    
+    @property
+    def price(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("price"))
+    
+    @property
+    def total(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("total"))
+    
+    @property
+    def quote(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("quote"))
+    
+    @property
+    def fee(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("fee"))
+    
+    @property
+    def fee_asset(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("fee_asset"))
+    
+    @property
+    def sent_quantity(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("sent_quantity"))
+    
+    @property
+    def sent_asset(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("sent_asset"))
+    
+    @property
+    def received_quantity(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("received_quantity"))
+    
+    @property
+    def received_asset(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("received_asset"))
+    
+    @property
+    def value(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("value"))
+    
+    @property
+    def value_currency(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("value_currency"))
+    
+    @property
+    def group(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("group"))
+    
+    @property
+    def direction(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("direction"))
+    
+    @property
+    def asset_class(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("asset_class"))
+    
+    @property
+    def note(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("note"))
+    
+    
+
+
+class CryptoMapAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("CryptoMap")
+        self._properties: typing.Set[str] = set([  "exchange",  "layout",  "header_row",  "columns",  "date_format",  "decimal",  "thousands",  "type_map",  ])
+        self._props = CryptoMapProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "CryptoMapProperties":
+        return self._props
+
+
+class CryptoMapViewer(CryptoMapAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class CryptoMapProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def exchange(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("exchange"))
+    
+    @property
+    def layout(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("layout"))
+    
+    @property
+    def header_row(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("header_row"))
+    
+    @property
+    def columns(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("columns"))
+    
+    @property
+    def date_format(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("date_format"))
+    
+    @property
+    def decimal(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("decimal"))
+    
+    @property
+    def thousands(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("thousands"))
+    
+    @property
+    def type_map(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("type_map"))
     
     
 
@@ -896,6 +1203,100 @@ class RoutineAnswerProperties:
     @property
     def answer(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("answer"))
+    
+    
+
+
+class RoutinePlanAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("RoutinePlan")
+        self._properties: typing.Set[str] = set([  "id",  "markets",  "earnings",  "symbols",  "topics",  ])
+        self._props = RoutinePlanProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "RoutinePlanProperties":
+        return self._props
+
+
+class RoutinePlanViewer(RoutinePlanAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class RoutinePlanProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def id(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("id"))
+    
+    @property
+    def markets(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("markets"))
+    
+    @property
+    def earnings(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("earnings"))
+    
+    @property
+    def symbols(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("symbols"))
+    
+    @property
+    def topics(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("topics"))
+    
+    
+
+
+class RoutinePlansAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("RoutinePlans")
+        self._properties: typing.Set[str] = set([  "plans",  ])
+        self._props = RoutinePlansProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "RoutinePlansProperties":
+        return self._props
+
+
+class RoutinePlansViewer(RoutinePlansAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class RoutinePlansProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def plans(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("plans"))
     
     
 

@@ -283,7 +283,7 @@ def test_a_routine_past_the_cap_is_refused_in_words(tmp_path, monkeypatch):
                                     watchlist=tmp_path / "watchlist.yaml",
                                     lang="en")
     assert changes == []
-    assert str(learnings.MAX_ROUTINES) in note and "Settings → Memory" in note
+    assert str(learnings.MAX_ROUTINES) in note and "pencil" in note
 
 
 def test_a_plain_question_is_logged_without_a_model(tmp_path, monkeypatch):

@@ -29,8 +29,10 @@ before anything reaches the ledger, exactly as the Import page does.
 attached to the chat: the model reads every statement first, and the parsers
 read it too, as the check on the model. A parser that owns the file is exact
 where the model is approximate (its fees, its split and sign rules, its broker
-note), so it keeps the file whenever it found at least as many rows. The model
-wins only when it found more — which is what a broker changing its layout
+note), so it keeps the file whenever it found at least as many rows, or
+gave an account of every line — a row, or a skip with its reason, as a crypto
+export's staking rewards are. The model wins only when it found more and the
+parser left lines unexplained — which is what a broker changing its layout
 under a parser looks like — and that case is logged, because it is a parser
 that needs fixing. `detect` is the older order (parsers, then the model for
 what none owns).
@@ -190,8 +192,8 @@ def _parsers(filename: str, data: bytes, prefer: str | None = None,
 
 
 def _mapped(found: llm_map.Extraction) -> Detected:
-    return Detected(found.result, LLM_KEY, "", found.kind, found.unavailable,
-                    found.mapping, found.columns)
+    return Detected(found.result, LLM_KEY, found.label, found.kind,
+                    found.unavailable, found.mapping, found.columns)
 
 
 def _nothing() -> Detected:
@@ -253,17 +255,16 @@ def forget() -> None:
 
 
 def _model_read(filename: str, data: bytes, provider: Provider | None,
-                api_key: str, scope: str) -> llm_map.Extraction | None:
+                api_key: str, scope: str, fiat: str = "") -> llm_map.Extraction | None:
     """The model's reading of the file, or None when there is no model.
 
     A model read that raises is a model that could not read: it comes back
     `unavailable`, never as an exception, because the parsers can still read
-    the file without it.
+    the file without it. With no model, a crypto export whose header is a
+    known one is still read (`llm_map.preset_read`): that needs none.
     """
-    if provider is None:
-        return None
     key = (scope, hashlib.sha256(data).hexdigest(), _extension(filename),
-           getattr(provider, "id", ""))
+           getattr(provider, "id", ""), fiat)
     now = time.monotonic()
     if scope:
         with _model_lock:
@@ -272,14 +273,21 @@ def _model_read(filename: str, data: bytes, provider: Provider | None,
                 _model_memo.move_to_end(key)
                 return copy.deepcopy(hit[1])
     try:
-        found = llm_map.extract(filename, data, provider, api_key)
+        if provider is None:
+            found = llm_map.preset_read(filename, data, fiat)
+        else:
+            found = llm_map.extract(filename, data, provider, api_key, fiat=fiat)
     except Exception as exc:  # noqa: BLE001 — the parsers still get their turn
         obs.warn("import.read.model_failed", error_type=type(exc).__name__,
                  ext=_extension(filename))
+        if provider is None:
+            return None
         return llm_map.Extraction(ParseResult(skipped=[{
             "row": 0, "type": "file",
             "reason": f"the assistant could not read this file: {exc}"[:300],
         }]), unavailable=True)
+    if found is None:
+        return None
     if scope and not found.unavailable:
         with _model_lock:
             _model_memo[key] = (now, copy.deepcopy(found))
@@ -289,9 +297,25 @@ def _model_read(filename: str, data: bytes, provider: Provider | None,
     return found
 
 
+def _every_line(filename: str, data: bytes, result: ParseResult) -> bool:
+    """Whether the parser gave an account of every line of the file: a row,
+    or a skip with its reason. Then it missed nothing, and a model that found
+    more rows made them up — a Revolut crypto export is 34 trades and 437
+    staking rewards the parser leaves out on purpose, which a model books
+    as 742 buys and dividends. Only for a CSV, the one format whose lines
+    are the rows."""
+    if _extension(filename) != "csv":
+        return False
+    lines = len(llm_map.read_grid(filename, data)) - 1  # less the header
+    told = sum(1 for s in result.skipped if isinstance(s.get("row"), int)
+               and s["row"] > 0)
+    return lines > 0 and len(result.transactions) + told >= lines
+
+
 def read(filename: str, data: bytes, provider: Provider | None = None,
          api_key: str = "", *, prefer: str | None = None,
-         mapping: dict | None = None, scope: str = "") -> Detected:
+         mapping: dict | None = None, scope: str = "",
+         fiat: str = "") -> Detected:
     """Read a statement with the model first and the parsers as its check.
 
     Both read it; the reconciling rule is in the module docstring. When the
@@ -304,17 +328,20 @@ def read(filename: str, data: bytes, provider: Provider | None = None,
     as given, with no model call and no second opinion. `scope` names whose
     read this is (the account's directory), which is what lets a repeat read
     of the same bytes reuse the model's answer; empty, nothing is remembered.
-    Without a provider this is the parsers alone.
+    `fiat` is the account's currency, for a crypto export that names none.
+    Without a provider this is the parsers alone, plus the crypto exports
+    whose header is a known one.
     """
     if mapping is not None:
         return _mapped(llm_map.extract(filename, data, provider, api_key,
                                        mapping=mapping))
-    model = _model_read(filename, data, provider, api_key, scope)
+    model = _model_read(filename, data, provider, api_key, scope, fiat)
     parsed, quiet, declined = _parsers(filename, data, prefer)
     by_model = len(model.result.transactions) if model is not None else 0
     by_parser = len(parsed.result.transactions) if parsed is not None else 0
 
-    if parsed is not None and by_parser >= by_model:
+    if parsed is not None and (by_parser >= by_model
+                               or _every_line(filename, data, parsed.result)):
         winner = parsed
     elif model is not None and by_model:
         winner = _mapped(model)

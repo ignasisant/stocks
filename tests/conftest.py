@@ -1,8 +1,107 @@
 """Shared test fixtures."""
 
+import itertools
 import pathlib
 
 import pytest
+
+
+def pytest_xdist_auto_num_workers(config):
+    """Run in one process when the command names a few test files.
+
+    `-n auto` (pyproject's addopts) starts a worker per core, and each one
+    imports the app before its first test — about two seconds that a
+    `pytest tests/test_onboarding.py` spends twice over on startup alone. Three
+    files or fewer, given by path or node id rather than as a directory, run
+    in-process; anything wider keeps every core. `None` hands back to xdist.
+    """
+    args = [a for a in config.args if not a.startswith("-")]
+    files = {a.split("::")[0] for a in args}
+    if args and len(files) <= 3 and all(f.endswith(".py") for f in files):
+        return 0
+    return None
+
+
+@pytest.fixture(scope="session")
+def _scratch_root():
+    """One temporary directory per test process, removed when it ends.
+
+    The parent of every test's `_scratch`. Created once and deleted once:
+    `tmp_path` and a `mkdtemp`/`rmtree` pair per fixture per test cost about
+    two milliseconds a test between them, which across the suite was seconds
+    spent on directories nearly every test leaves empty. Per process, so each
+    pytest-xdist worker has its own.
+    """
+    import shutil
+    import tempfile
+
+    root = pathlib.Path(tempfile.mkdtemp(prefix="stocks-tests-"))
+    yield root
+    shutil.rmtree(root, ignore_errors=True)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _yahoo_offline():
+    """Answer every request yfinance sends as an offline machine would.
+
+    yfinance talks through `curl_cffi`, and a test that priced a book without
+    stubbing the fetch went to Yahoo for real — 116 requests a run on
+    2026-10-04, each a crumb round-trip worth up to a second, and a result that
+    depended on what Yahoo answered that minute (two chat suites passed only
+    because AAPL had a live price). The code under test already copes with no
+    network, so that is what it gets; a test that needs a price stubs it.
+
+    `ConnectionError` is what curl raises with the network down, so nothing
+    here takes a path production never would.
+    """
+    from curl_cffi import requests
+
+    def offline(self, method, url, *args, **kwargs):
+        raise requests.exceptions.ConnectionError(f"network is off in tests: {url}")
+
+    before = requests.Session.request
+    requests.Session.request = offline
+    yield
+    requests.Session.request = before
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _no_telegram_pause():
+    """Send the fan-outs' messages back to back.
+
+    Every loop over accounts waits `telegram.SEND_PAUSE` between two sends to
+    stay under Telegram's rate — real seconds in a suite that fans out to fake
+    accounts hundreds of times, with nothing on the other end to rate-limit.
+    """
+    from stocks.notify import telegram
+
+    before = telegram.SEND_PAUSE
+    telegram.SEND_PAUSE = 0
+    yield
+    telegram.SEND_PAUSE = before
+
+
+_scratch_seq = itertools.count()
+
+
+@pytest.fixture(autouse=True)
+def _scratch(_scratch_root) -> pathlib.Path:
+    """This test's own empty directory, for the fixtures below to carve up.
+
+    Never `tmp_path`: a handful of tests assert that `tmp_path` is *empty*, and
+    one that asked for it should find only what it put there. Not removed after
+    the test — the session root goes in one sweep at the end.
+    """
+    path = _scratch_root / str(next(_scratch_seq))
+    path.mkdir()
+    return path
+
+
+def _own(scratch: pathlib.Path, name: str) -> pathlib.Path:
+    """A fresh, existing directory `name` under this test's scratch."""
+    path = scratch / name
+    path.mkdir()
+    return path
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +127,7 @@ def _no_yahoo_cooldown():
 
 
 @pytest.fixture(autouse=True)
-def _own_free_llm_counter(tmp_path):
+def _own_free_llm_counter(_scratch):
     """Give every test its own global free-LLM counter, on its own path.
 
     The real one is a file under `data/`, read once per process and shared by
@@ -53,7 +152,7 @@ def _own_free_llm_counter(tmp_path):
         dict(engine._global_free),
         engine._global_free_loaded,
     )
-    engine.GLOBAL_FREE_FILE = tmp_path / "free_llm_global.json"
+    engine.GLOBAL_FREE_FILE = _scratch / "free_llm_global.json"
     engine._global_free = {"day": "", "used": 0}
     engine._global_free_loaded = False
     try:
@@ -67,7 +166,7 @@ def _own_free_llm_counter(tmp_path):
 
 
 @pytest.fixture(autouse=True)
-def _own_guest_dir():
+def _own_guest_dir(_scratch):
     """Give every test its own anonymous-visitor directory.
 
     `accounts.GUEST_DIR` is a module constant pointing at the checkout's real
@@ -81,29 +180,23 @@ def _own_guest_dir():
     at boot, and a test that wants a book in it should put one there where the
     reader can see it.
 
-    Its own temporary directory rather than a child of `tmp_path`, because a
-    handful of tests assert that `tmp_path` is *empty* — a fixture that put
-    something there would fail them for a reason with nothing to do with what
-    they are testing.
+    Under `_scratch` rather than `tmp_path`, because a handful of tests assert
+    that `tmp_path` is *empty* — a fixture that put something there would fail
+    them for a reason with nothing to do with what they are testing.
 
     Saved and restored by hand rather than through `monkeypatch`, for the reason
     `_own_free_llm_counter` gives above.
     """
-    import shutil
-    import tempfile
-
     from stocks import accounts
 
     before = accounts.GUEST_DIR
-    made = tempfile.mkdtemp(prefix="guest-")
-    accounts.GUEST_DIR = pathlib.Path(made)
+    accounts.GUEST_DIR = _own(_scratch, "guest")
     yield
     accounts.GUEST_DIR = before
-    shutil.rmtree(made, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
-def _own_import_diagnostics():
+def _own_import_diagnostics(_scratch):
     """Keep the anonymised import diagnostics out of the checkout.
 
     `portfolio.diagnostics.DIAGNOSTICS_DIR` is the real `data/imports`, and
@@ -112,21 +205,16 @@ def _own_import_diagnostics():
     would otherwise leave a JSON file under version control. Its own temporary
     directory for the reason `_own_guest_dir` gives, restored by hand likewise.
     """
-    import shutil
-    import tempfile
-
     from stocks.portfolio import diagnostics
 
     before = diagnostics.DIAGNOSTICS_DIR
-    made = tempfile.mkdtemp(prefix="imports-")
-    diagnostics.DIAGNOSTICS_DIR = pathlib.Path(made)
+    diagnostics.DIAGNOSTICS_DIR = _own(_scratch, "imports")
     yield
     diagnostics.DIAGNOSTICS_DIR = before
-    shutil.rmtree(made, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
-def _own_feedback_dir():
+def _own_feedback_dir(_scratch):
     """Keep test submissions out of the real feedback inbox.
 
     `web.feedback.FEEDBACK_DIR` is the checkout's `data/feedback`, and
@@ -135,17 +223,12 @@ def _own_feedback_dir():
     194 of them beside the 8 real ones on 2026-09-29. Its own temporary
     directory for the reason `_own_guest_dir` gives, restored by hand likewise.
     """
-    import shutil
-    import tempfile
-
     from stocks.web import feedback
 
     before = feedback.FEEDBACK_DIR
-    made = tempfile.mkdtemp(prefix="feedback-")
-    feedback.FEEDBACK_DIR = pathlib.Path(made)
+    feedback.FEEDBACK_DIR = _own(_scratch, "feedback")
     yield
     feedback.FEEDBACK_DIR = before
-    shutil.rmtree(made, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
@@ -281,7 +364,7 @@ def sign_in(cookie_secret):
 
 
 @pytest.fixture(autouse=True)
-def _own_memo_dir(tmp_path):
+def _own_memo_dir(_scratch):
     """The API cache's persisted memos (stocks.api.cache) land under a
     per-test directory, never in the checkout's data/memo — a test that
     priced a book would otherwise leave its frames for the next run to serve.
@@ -289,13 +372,13 @@ def _own_memo_dir(tmp_path):
     from stocks.api import cache
 
     before = cache.MEMO_DIR
-    cache.MEMO_DIR = tmp_path / "memo"
+    cache.MEMO_DIR = _scratch / "memo"
     yield
     cache.MEMO_DIR = before
 
 
 @pytest.fixture(autouse=True)
-def _own_symbol_kinds():
+def _own_symbol_kinds(_scratch):
     """Keep learned quoteTypes and asset kinds out of the checkout's data/.
 
     `funds.remember` runs on every Yahoo search row and `asset_kind.remember`
@@ -305,24 +388,20 @@ def _own_symbol_kinds():
     back as fact. Each test starts from the catalog seed alone, in its own
     directory, restored by hand for the reason `_own_free_llm_counter` gives.
     """
-    import shutil
-    import tempfile
-
     from stocks.data import asset_kind, funds
 
     before = (funds.TYPE_CACHE, funds._types, asset_kind.KIND_CACHE, asset_kind._kinds)
-    made = pathlib.Path(tempfile.mkdtemp(prefix="kinds-"))
+    made = _own(_scratch, "kinds")
     funds.TYPE_CACHE = made / "quote_types.json"
     funds._types = None
     asset_kind.KIND_CACHE = made / "asset_kinds.json"
     asset_kind._kinds = None
     yield
     funds.TYPE_CACHE, funds._types, asset_kind.KIND_CACHE, asset_kind._kinds = before
-    shutil.rmtree(made, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
-def _own_code_symbols():
+def _own_code_symbols(_scratch):
     """Keep the broker codes Yahoo's search resolved out of the checkout.
 
     `symbols.CODE_CACHE` is the real `data/code_symbols.json`, and
@@ -332,9 +411,6 @@ def _own_code_symbols():
     server. Each test starts with an empty map in its own directory, restored
     by hand for the reason `_own_free_llm_counter` gives.
     """
-    import shutil
-    import tempfile
-
     from stocks.data import symbols
 
     before = (
@@ -344,7 +420,7 @@ def _own_code_symbols():
         symbols._code_settled,
         symbols._listings_memo,
     )
-    made = pathlib.Path(tempfile.mkdtemp(prefix="codes-"))
+    made = _own(_scratch, "codes")
     symbols.CODE_CACHE = made / "code_symbols.json"
     symbols._code_memo = None
     symbols._code_misses = set()
@@ -358,7 +434,6 @@ def _own_code_symbols():
         symbols._code_settled,
         symbols._listings_memo,
     ) = before
-    shutil.rmtree(made, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
@@ -393,20 +468,17 @@ def _no_statement_model():
 
 
 @pytest.fixture(autouse=True)
-def _own_connector_state():
+def _own_connector_state(_scratch):
     """The MCP connector's grants and clients in a per-test directory.
 
     `connector.store.DIR` is the checkout's real `data/mcp`, and the ledger
     over it is a process singleton — without this a test that registered a
     client or issued a token would leave it for every test after it (and on
-    disk). Its own temporary directory, not `tmp_path`, for the reason
+    disk). Under `_scratch`, not `tmp_path`, for the reason
     `_own_guest_dir` gives. The in-memory halves go too: pending codes,
     fetched client metadata documents, and the per-IP and per-account budgets
     the connector spends from.
     """
-    import shutil
-    import tempfile
-
     from stocks.connector import clients, oauth, store
     from stocks.web import ratelimit
 
@@ -418,10 +490,8 @@ def _own_connector_state():
             ratelimit._events.pop(key, None)
 
     before = store.DIR
-    made = tempfile.mkdtemp(prefix="mcp-")
-    store.DIR = pathlib.Path(made)
+    store.DIR = _own(_scratch, "mcp")
     reset()
     yield
     store.DIR = before
     reset()
-    shutil.rmtree(made, ignore_errors=True)

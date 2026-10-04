@@ -14,6 +14,7 @@ resolve through a dict, so nothing here touches the network.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -272,3 +273,71 @@ def test_a_ledger_tool_that_needs_a_company_refuses_a_reply_without_one():
     assert tools.parse_action('{"action": "rename_security", "to": "GRF.MC"}') is None
     assert tools.parse_action('{"action": "undo_change"}') == Action(
         "undo_change", "", {})
+
+
+# ------------------------------------------------------------- closing
+
+
+# Revolut booked the fee inside the coins bought, so a sale of everything
+# left 1% behind — the CAT-EUR leftover a reader asked the chat to remove.
+DUST = [
+    Transaction("2025-05-10", "CAT-EUR", "buy", 44471331.2889, 1.1243198382163106e-05,
+                "EUR", 4.95, "revolut crypto CAT"),
+    Transaction("2026-06-18", "CAT-EUR", "sell", 44031065.1091,
+                1.1326094400949036e-06, "EUR", 0.0, "revolut crypto CAT"),
+]
+
+
+def _translate(key, **kw):
+    from stocks.web.i18n import translate
+
+    return translate(key, "en", **kw)
+
+
+def test_closing_a_revolut_leftover_takes_the_fee_coins_off_the_buy(tmp_path):
+    # The CAT-EUR case: the 440,266 coins left are the ones the 4.95 € fee
+    # took, booked into the buy by an older import. Fixing the buy also takes
+    # the fee out of the cost twice over; booking a sale would invent one.
+    db = tmp_path / "book.db"
+    add_many(DUST, db)
+    drafted = book.draft(Action("close_position", "CAT-EUR", {}), db=db,
+                         translate=_translate, resolve=lambda s: s)
+    (op,) = drafted.book["ops"]
+    assert op["op"] == "update"
+    assert op["fields"]["quantity"] == DUST[1].quantity
+    assert op["fields"]["note"] == "revolut crypto CAT net"
+    impact = drafted.book["impact"]
+    assert impact["positions"] == [1, 0]
+    assert impact["held"][0]["after"] == 0
+
+
+def test_closing_books_the_leftover_as_sold_on_the_emptying_sale(tmp_path):
+    db = tmp_path / "book.db"
+    add_many([replace(t, note="kraken CAT") for t in DUST], db)
+    drafted = book.draft(Action("close_position", "CAT-EUR", {}), db=db,
+                         translate=_translate, resolve=lambda s: s)
+    (op,) = drafted.book["ops"]
+    row = op["row"]
+    assert row["action"] == "sell" and row["date"] == "2026-06-18"
+    assert row["quantity"] == pytest.approx(440266.1798, abs=1e-3)
+    assert row["price"] == DUST[1].price and row["note"] == "kraken CAT"
+    impact = drafted.book["impact"]
+    assert impact["positions"] == [1, 0]
+    assert impact["held"][0]["after"] == 0
+
+
+def test_closing_asks_for_a_price_when_no_sale_emptied_it(tmp_path):
+    db = tmp_path / "book.db"
+    add_many(DUST[:1], db)
+    drafted = book.draft(Action("close_position", "CAT-EUR", {}), db=db,
+                         translate=_translate, resolve=lambda s: s)
+    assert drafted.book is None and "price" in drafted.text
+
+
+def test_closing_what_the_book_no_longer_holds_proposes_nothing(tmp_path):
+    db = tmp_path / "book.db"
+    add_many([*DUST, Transaction("2026-06-18", "CAT-EUR", "sell", 440266.1798,
+                                 1e-6, "EUR", 0.0, "revolut crypto CAT")], db)
+    drafted = book.draft(Action("close_position", "CAT-EUR", {}), db=db,
+                         translate=_translate, resolve=lambda s: s)
+    assert drafted.book is None and "no CAT-EUR" in drafted.text

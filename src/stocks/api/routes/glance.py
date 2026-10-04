@@ -38,13 +38,13 @@ from stocks.api.schemas import (
     DailyBook,
     DailyCard,
     DailyItem,
-    DailyRoutine,
+    DailySection,
     Extreme,
     Extremes,
     Mover,
     Movers,
 )
-from stocks.chat import daily
+from stocks.chat import daily, daily_routines
 
 router = APIRouter(tags=["glance"])
 
@@ -117,7 +117,7 @@ def write_card(
     from stocks.web import auth
 
     _, day = briefing.now_day()
-    key = briefing.key_for(day, lang, _last_session(account))
+    key = _key(account, day, lang)
     job = briefing.job_for(account, key)
     stored = _stored(account)
     if not force:
@@ -125,9 +125,7 @@ def write_card(
             # In flight: report it. Done: this key was tried today — the card
             # it left (stored, or the computed stand-in) is the answer.
             return _status(account, lang)
-        if daily.is_fresh(stored, day, lang, key[2] or None) and not daily.wants_upgrade(
-            stored
-        ):
+        if _stands(stored, day, lang, key) and not daily.wants_upgrade(stored):
             # A computed stand-in that stands still gets a few more tries at
             # a written briefing a day (`daily.wants_upgrade`); anything else
             # that stands costs nothing.
@@ -213,7 +211,8 @@ def _answer(action: daily.DailyAction, day, *, fresh: bool, pending=False) -> Da
         analysed=[k for k, v in action.analysis.items() if v],
         thread=action.thread or None,
         book=_book(action.book),
-        routines=[_routine(r) for r in action.routines],
+        sections=[sec for sec in map(_section, action.sections) if sec],
+        brief=action.brief if action.brief in daily.BRIEF_STATES else "",
     )
 
 
@@ -228,11 +227,15 @@ def _book(raw: dict) -> DailyBook | None:
         return None
 
 
-def _routine(raw: dict) -> DailyRoutine:
+def _section(raw: dict) -> DailySection | None:
+    lines = [DailyItem(**ln, section=daily.WATCH) for ln in raw.get("lines") or []]
     try:
-        return DailyRoutine(**raw)
+        return DailySection.model_validate({**raw, "lines": lines})
     except ValidationError:
-        return DailyRoutine.model_validate({**raw, "chart": None})
+        try:
+            return DailySection.model_validate({**raw, "lines": lines, "chart": None})
+        except ValidationError:
+            return None
 
 
 def _status(account, lang: str) -> DailyCard:
@@ -246,8 +249,8 @@ def _status(account, lang: str) -> DailyCard:
     marked as the older card it is.
     """
     _, day = briefing.now_day()
-    session = _last_session(account)
-    job = briefing.job_for(account, briefing.key_for(day, lang, session))
+    key = _key(account, day, lang)
+    job = briefing.job_for(account, key)
     stored = _stored(account)
     if job is not None and not job.done:
         if job.computed is None:
@@ -255,7 +258,7 @@ def _status(account, lang: str) -> DailyCard:
             answer.pending = True
             return answer
         return _answer(job.computed, day, fresh=True, pending=True)
-    if stored is not None and daily.is_fresh(stored, day, lang, session):
+    if stored is not None and _stands(stored, day, lang, key):
         return _answer(stored, day, fresh=True)
     if job is not None:
         # Done, and nothing fresh on disk: the model gave nothing back (or the
@@ -266,6 +269,27 @@ def _status(account, lang: str) -> DailyCard:
     if stored is None:
         return _empty(day)
     return _answer(stored, day, fresh=False)
+
+
+def _key(account, day, lang: str) -> tuple:
+    """`briefing.key_for` this account now: its last session and the wording
+    of its brief."""
+    from stocks.web import auth
+
+    try:
+        prefs = auth.load_prefs(account.prefs)
+        sig = daily_routines.signature(daily_routines.load(prefs, account.chat))
+    except Exception:  # noqa: BLE001 — read as no brief
+        sig = ""
+    return briefing.key_for(day, lang, _last_session(account), sig)
+
+
+def _stands(stored, day, lang: str, key: tuple) -> bool:
+    """`daily.is_fresh`, and written for the brief the reader has now: one
+    saved, reworded or dropped since — here, in the chat or by switching
+    memory off — rewrites the card."""
+    return daily.is_fresh(stored, day, lang, key[2] or None) and (
+        stored.brief_sig == key[3])
 
 
 def _last_session(account) -> str | None:

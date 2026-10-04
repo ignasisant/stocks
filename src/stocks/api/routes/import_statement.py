@@ -312,7 +312,10 @@ def _read(
 ) -> autodetect.Detected:
     """Read a statement the way both surfaces read it: model first, parsers as
     its check (`autodetect.read`), remembered per account so the commit that
-    follows a preview does not pay for a second model call."""
+    follows a preview does not pay for a second model call. A crypto export
+    traded only against stablecoins is booked in the account's currency."""
+    from stocks import accounts
+
     provider, api_key = _provider(account, held)
     return autodetect.read(
         filename,
@@ -322,6 +325,7 @@ def _read(
         prefer=prefer,
         mapping=mapping,
         scope=str(account.db),
+        fiat=accounts.load_prefs(account.prefs).get("currency") or "",
     )
 
 

@@ -110,6 +110,30 @@ def test_a_link_marker_and_a_wall_of_text_are_defused(path):
     assert len(item.text) <= learnings.MAX_CHARS and item.text.endswith("…")
 
 
+BRIEF = ("Cada día haz un resumen de los movimientos que afectan a mi cartera: "
+         + "grandes variaciones y noticias relevantes de la SEC y Yahoo, " * 12
+         + "y los eventos de la próxima semana")
+
+
+def test_a_routine_keeps_a_paragraph_and_the_chat_reads_its_start(path):
+    assert learnings.MAX_CHARS < len(BRIEF) <= learnings.MAX_ROUTINE_CHARS
+    item, _ = learnings.add(path, BRIEF, kind="routine")
+    assert item.text == BRIEF
+    [kept] = learnings.load(path)
+    assert kept.text == BRIEF
+    # The card reads all of it; every chat prompt only what the user follows.
+    line = learnings.block([kept]).strip().splitlines()[-1]
+    assert len(line) < learnings.MAX_CHARS + 20 and line.endswith("…")
+    assert learnings.add(path, "x " * 700, kind="routine")[0].text.endswith("…")
+
+
+def test_a_long_routine_turned_into_a_fact_is_cut_to_a_fact(path):
+    item, _ = learnings.add(path, BRIEF, kind="routine")
+    goal = learnings.edit(path, item.id, kind="goal")
+    assert len(goal.text) <= learnings.MAX_CHARS and goal.text.endswith("…")
+    assert learnings.add(path, BRIEF, kind="goal")[0].text == goal.text
+
+
 @pytest.mark.parametrize("text, kind", [
     ("Prefiero no pasar de un 10% en una posición", "preference"),
     ("Nunca compraré cripto", "constraint"),
