@@ -75,6 +75,7 @@ wheels/
 /data/chat.json
 /data/daily_action.json
 /data/chat_memory.db
+/data/chat_learnings.json
 /data/tg_updates/
 # The Claude connector's grants and registered apps (`stocks.connector.store`):
 # hashed tokens against account emails, restored from R2.
