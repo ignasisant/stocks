@@ -39,6 +39,7 @@ from datetime import date
 import pandas as pd
 
 from stocks.data.crypto import HALVINGS, NEXT_HALVING_EST
+from stocks.frames import midnights
 
 # A coin trades every day of the year.
 YEAR_DAYS = 365
@@ -134,8 +135,8 @@ def relative_return(
     a, b = _closes(asset), _closes(against)
     if a.empty or b.empty:
         return None
-    a.index = pd.DatetimeIndex(a.index).normalize()
-    b.index = pd.DatetimeIndex(b.index).normalize()
+    a.index = midnights(a.index)
+    b.index = midnights(b.index)
     shared = a.index.intersection(b.index)
     if len(shared) < 2:
         return None

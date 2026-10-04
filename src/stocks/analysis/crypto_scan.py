@@ -208,5 +208,5 @@ def run_scan(*, dry_run: bool = False) -> dict[str, str]:
         print(json.dumps(sample, indent=1, default=str))
     elif payload["coins"] or payload["global"] or payload["fear_greed"]:
         save_scan(payload)
-    obs.event("crypto.scan", **status)
+    obs.event("crypto.scan", parts=status)
     return status

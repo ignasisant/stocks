@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 from urllib.parse import urlencode
 
 from stocks import obs
@@ -170,10 +171,11 @@ def _binance(coin: str) -> Positioning | None:
             if getattr(exc, "code", None) == 400:
                 continue
             raise
-        history = get_json(
+        # A list, though `get_json` is typed for the usual object.
+        history = cast(list[dict], get_json(
             f"{BINANCE}/fapi/v1/fundingRate?{urlencode({'symbol': symbol, 'limit': 21})}",
             timeout=10,
-        )
+        ))
         oi = get_json(
             f"{BINANCE}/futures/data/openInterestHist?"
             f"{urlencode({'symbol': symbol, 'period': '1d', 'limit': 8})}",

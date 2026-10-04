@@ -141,7 +141,7 @@ export type AssetStats = {
 /** A figure, its band key (an i18n suffix) and its tone. */
 export type Banded = { value: number | null; band: string | null; tone: string | null };
 
-export type HalvingPhase = {
+type HalvingPhase = {
   last: string;
   days_since: number;
   next_est: string;
@@ -179,7 +179,7 @@ export type CryptoPositioning = {
   as_of: string;
 };
 
-export type CoinHarvest = {
+type CoinHarvest = {
   loss: number;
   saving: number | null;
   currency: string;

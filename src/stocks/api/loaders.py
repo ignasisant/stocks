@@ -41,6 +41,7 @@ from stocks.analysis.portfolio import (
     session_quotes,
 )
 from stocks.api.cache import Flight, coalesced, ttl_cache
+from stocks.frames import midnights
 from stocks.portfolio import fees, transfers
 from stocks.portfolio.custody import Custody, by_position
 from stocks.portfolio.ledger import all_transactions
@@ -947,7 +948,7 @@ def daily_closes(ticker: str, period: str = "max") -> pd.Series:
     if df is None or df.empty or "Close" not in df:
         return pd.Series(dtype=float)
     close = pd.to_numeric(df["Close"], errors="coerce").dropna()
-    close.index = pd.DatetimeIndex(close.index).tz_localize(None).normalize()
+    close.index = midnights(pd.DatetimeIndex(close.index).tz_localize(None))
     return close[~close.index.duplicated(keep="last")]
 
 
