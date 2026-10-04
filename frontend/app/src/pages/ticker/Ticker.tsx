@@ -40,6 +40,9 @@ import {
   getBars,
   getComparables,
   getCrypto,
+  getCryptoCycle,
+  getCryptoHolding,
+  getCryptoPositioning,
   getEvents,
   getFinancials,
   getFund,
@@ -55,6 +58,7 @@ import {
 import { PeerPicker } from "./Peers";
 import { PriceSection, isRange, type Range } from "./Price";
 import { AssetStatsSection, KpiSourcesSection } from "./Reference";
+import { CycleSection, HoldingSection, PositioningSection } from "./Crypto";
 import { askAssistant } from "../../shell/assistant";
 import {
   ComparablesSection,
@@ -215,7 +219,7 @@ export default function Page() {
   );
 
   // What kind of symbol this is decides what the page draws at all
-  // (`layout.ts`). A coin gets its asset stats and nothing below; a fund gets
+  // (`layout.ts`). A coin gets its own cards and nothing below; a fund gets
   // its profile and nothing below; an index gets its chart and nothing below.
   // Everything under those — results, fundamentals, valuation, moat, insiders,
   // comps and the KPI sources — is a company's, and for the rest it would be a
@@ -265,6 +269,28 @@ export default function Page() {
     () => (ticker && crypto ? getCrypto(ticker) : Promise.resolve(null)),
     [ticker, crypto],
   );
+  const cycle = useApi(
+    () =>
+      ticker && shape.sections.cycle ? getCryptoCycle(ticker) : Promise.resolve(null),
+    [ticker, shape.sections.cycle],
+  );
+  const positioning = useApi(
+    () =>
+      ticker && shape.sections.positioning
+        ? getCryptoPositioning(ticker)
+        : Promise.resolve(null),
+    [ticker, shape.sections.positioning],
+  );
+  // Only for a coin the book holds: `/position` answers first, and a coin
+  // nobody holds costs no replay.
+  const holds = Boolean(
+    shape.sections.holding && position.state === "loaded" && position.data?.held,
+  );
+  const coinHolding = useApi(
+    () => (ticker && holds ? getCryptoHolding(ticker, base) : Promise.resolve(null)),
+    [ticker, base, holds],
+  );
+  const coin = (drawn?.symbol || ticker || "").split("-")[0] ?? "";
   const comps = useApi(
     () =>
       ticker && peers.length
@@ -375,6 +401,8 @@ export default function Page() {
             onCandles={onCandles}
             shape={shape}
             fund={fund.state === "loaded" ? fund.data : null}
+            stats={stats.state === "loaded" ? stats.data : null}
+            cycle={events.state === "loaded" ? (events.data?.cycle ?? []) : []}
           />
 
           {/* A fund stops here. */}
@@ -383,6 +411,17 @@ export default function Page() {
           ) : null}
 
           {/* …and a coin pair here: no statements, no Form 4, no comps. */}
+          {/* Your coin first — the line no market source has — then where it
+              sits in its cycle, then how the leveraged crowd holds it. */}
+          {coinHolding.state === "loaded" && coinHolding.data ? (
+            <HoldingSection holding={coinHolding.data} coin={coin} />
+          ) : null}
+          {cycle.state === "loaded" && cycle.data ? (
+            <CycleSection cycle={cycle.data} coin={coin} />
+          ) : null}
+          {positioning.state === "loaded" && positioning.data ? (
+            <PositioningSection data={positioning.data} />
+          ) : null}
           {crypto && stats.state === "loaded" && stats.data ? (
             <AssetStatsSection stats={stats.data} />
           ) : null}

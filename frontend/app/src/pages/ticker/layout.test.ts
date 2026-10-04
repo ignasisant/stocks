@@ -45,6 +45,20 @@ describe("layout", () => {
     expect(units).toEqual(["crypto"]);
   });
 
+  it("reads a coin by its distance from the peak, not its SMA20", () => {
+    const shape = layout("crypto");
+    expect(shape.metrics).toEqual(["rsi", "ath_drawdown"]);
+    expect(shape.markers).toEqual(["cycle"]);
+    expect(shape.overlays).toContain("SMA20");
+  });
+
+  it("only a coin gets the cycle, positioning and holding cards", () => {
+    for (const section of ["cycle", "positioning", "holding"] as const) {
+      const kinds = ASSET_KINDS.filter((kind) => layout(kind).sections[section]);
+      expect(kinds).toEqual(["crypto"]);
+    }
+  });
+
   it("an unnamed kind is a share", () => {
     expect(layout(null)).toBe(layout("stock"));
     expect(layout(null).metrics).toEqual(["rsi", "sma20"]);

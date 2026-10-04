@@ -92,6 +92,110 @@ COINGECKO_IDS: dict[str, str] = {
     "CAT": "simon-s-cat",
 }
 
+# Coin code -> CoinGecko coin id, for the coin's METADATA only: all-time high,
+# supply, fully diluted value (`stocks.analysis.crypto_scan`). Kept apart from
+# `COINGECKO_IDS` on purpose — an entry there reroutes the coin's *price* away
+# from Yahoo, and Bitcoin's chart must not move because its tokenomics card
+# gained a source. Same rule as above: checked by hand (symbol and rank against
+# CoinGecko's own listing), never resolved by symbol search.
+GECKO_MARKET_IDS: dict[str, str] = {
+    "BTC": "bitcoin",
+    "ETH": "ethereum",
+    "USDT": "tether",
+    "BNB": "binancecoin",
+    "SOL": "solana",
+    "XRP": "ripple",
+    "USDC": "usd-coin",
+    "ADA": "cardano",
+    "DOGE": "dogecoin",
+    "TON": "the-open-network",
+    "TRX": "tron",
+    "AVAX": "avalanche-2",
+    "SHIB": "shiba-inu",
+    "DOT": "polkadot",
+    "LINK": "chainlink",
+    "BCH": "bitcoin-cash",
+    "LTC": "litecoin",
+    "MATIC": "matic-network",
+    "POL": "polygon-ecosystem-token",
+    "UNI": "uniswap",
+    "NEAR": "near",
+    "ICP": "internet-computer",
+    "APT": "aptos",
+    "XLM": "stellar",
+    "ETC": "ethereum-classic",
+    "FIL": "filecoin",
+    "ARB": "arbitrum",
+    "OP": "optimism",
+    "ATOM": "cosmos",
+    "SUI": "sui",
+    "HBAR": "hedera-hashgraph",
+    "VET": "vechain",
+    "IMX": "immutable-x",
+    "INJ": "injective-protocol",
+    "RNDR": "render-token",
+    "GRT": "the-graph",
+    "ALGO": "algorand",
+    "SEI": "sei-network",
+    "PEPE": "pepe",
+    "FTM": "fantom",
+    "RUNE": "thorchain",
+    "AAVE": "aave",
+    "MKR": "maker",
+    "EOS": "eos",
+    "XTZ": "tezos",
+    "SAND": "the-sandbox",
+    "MANA": "decentraland",
+    "CRO": "crypto-com-chain",
+    "KAS": "kaspa",
+    "DYDX": "dydx-chain",
+    **COINGECKO_IDS,
+}
+
+# What claim a coin is: the investment case and the way it fails differ
+# completely between a monetary asset, a platform that charges fees, an app
+# token and a meme. Hand-curated, because CoinGecko's own tags run to a dozen
+# per coin ("FTX Holdings", "Alleged SEC Securities") and none of them is the
+# one-word answer. A coin missing here has no category line — never a guess.
+COIN_CATEGORY: dict[str, str] = {
+    **dict.fromkeys(("BTC", "BCH", "LTC", "KAS"), "store_of_value"),
+    **dict.fromkeys(
+        (
+            "ETH", "SOL", "ADA", "TON", "TRX", "AVAX", "DOT", "NEAR", "ICP",
+            "APT", "ATOM", "SUI", "HBAR", "ALGO", "SEI", "FTM", "EOS", "XTZ",
+            "ETC",
+        ),
+        "smart_contract",
+    ),
+    **dict.fromkeys(("ARB", "OP", "MATIC", "POL", "IMX"), "layer2"),
+    **dict.fromkeys(("USDT", "USDC"), "stablecoin"),
+    **dict.fromkeys(("XRP", "XLM"), "payments"),
+    **dict.fromkeys(("BNB", "CRO"), "exchange"),
+    **dict.fromkeys(("UNI", "AAVE", "MKR", "RUNE", "DYDX", "INJ"), "defi"),
+    **dict.fromkeys(("LINK", "GRT", "FIL", "RNDR", "VET"), "infrastructure"),
+    **dict.fromkeys(("DOGE", "SHIB", "PEPE", "MOODENG", "CAT"), "meme"),
+    **dict.fromkeys(("SAND", "MANA"), "gaming"),
+}
+
+# A stablecoin tracks its peg: no cycle, no momentum, no perpetual worth
+# reading. Its page keeps the stats and drops the rest.
+STABLECOINS = frozenset(c for c, k in COIN_CATEGORY.items() if k == "stablecoin")
+
+# Bitcoin's block-subsidy halvings. The next one is an ESTIMATE — it lands on
+# block 1,050,000, whose date depends on hash rate — and is only ever printed
+# as "around".
+HALVINGS: tuple[str, ...] = ("2012-11-28", "2016-07-09", "2020-05-11", "2024-04-20")
+NEXT_HALVING_EST = "2028-04-15"
+
+# Dated events a coin's chart marks with a vertical, as the share chart marks
+# results: a move next to a halving or an ETF approval is a different fact
+# from a move next to nothing. Only events whose date is a matter of record.
+CYCLE_EVENTS: dict[str, tuple[tuple[str, str], ...]] = {
+    "BTC": tuple((day, "halving") for day in HALVINGS)
+    + (("2024-01-11", "etf"),),
+    "ETH": (("2022-09-15", "merge"), ("2024-07-23", "etf")),
+}
+
 
 def split_pair(ticker: str) -> tuple[str, str] | None:
     """(coin, fiat) for a crypto pair symbol, None for anything else.

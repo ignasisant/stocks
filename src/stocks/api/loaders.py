@@ -910,6 +910,57 @@ def crypto_info(ticker: str) -> dict:
         return {}
 
 
+@ttl_cache(_LEDGER_TTL, max_entries=1)
+def crypto_scan() -> dict:
+    """The nightly crypto scan (`analysis.crypto_scan`), shared by every account.
+
+    Rebuilt once a night, so the ledger's hour is plenty — the same reasoning
+    as `sector_scans`.
+    """
+    from stocks.analysis.crypto_scan import load_scan
+
+    return load_scan()
+
+
+@ttl_cache(900.0, max_entries=64, stale_s=900.0)
+def crypto_positioning(coin: str):
+    """A coin's perpetual swap on the first venue that lists it, or None.
+
+    Fifteen minutes: funding settles every eight hours (four, one, for some
+    coins) and the rate in between drifts slowly. Read live from the app
+    because the venues refuse US IPs, where the nightly runners are. Raises
+    when every venue failed, so the failure is not cached as "unlisted".
+    """
+    from stocks.data.crypto_market import positioning
+
+    return positioning(coin)
+
+
+def daily_closes(ticker: str, period: str = "max") -> pd.Series:
+    """Daily closes over `period` off the shared bar download, or empty."""
+    try:
+        df = _bars_download(ticker, period, "1d")
+    except Exception as exc:
+        obs.warn("api.daily_closes_failed", ticker=ticker,
+                 error_type=type(exc).__name__, error=str(exc)[:300])
+        return pd.Series(dtype=float)
+    if df is None or df.empty or "Close" not in df:
+        return pd.Series(dtype=float)
+    close = pd.to_numeric(df["Close"], errors="coerce").dropna()
+    close.index = pd.DatetimeIndex(close.index).tz_localize(None).normalize()
+    return close[~close.index.duplicated(keep="last")]
+
+
+@ttl_cache(_LEDGER_TTL, max_entries=16)
+def crypto_replay(db: str, mtime: float, prefs: str, prefs_mtime: float):
+    """The ledger replayed under the account's tax rules (`chat.whatif`), the
+    yardstick a coin's harvest line is measured against. Keyed on both files'
+    mtimes: a new trade or a changed residence each change the answer."""
+    from stocks.chat import whatif
+
+    return whatif.replay(db=Path(db), prefs_path=Path(prefs))
+
+
 # --------------------------------------------------------------- the book's cost
 # What the Portfolio page's Fees, Dividends and Risk tabs each need, with the
 # ttls those tabs already use. Same rule as everything above: the cache lives

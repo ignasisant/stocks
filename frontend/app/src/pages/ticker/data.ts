@@ -18,6 +18,9 @@ import type {
   AssetStats,
   Bars,
   Comparables,
+  CryptoCycle,
+  CryptoHolding,
+  CryptoPositioning,
   EntryFields,
   Financials,
   Fund,
@@ -74,6 +77,18 @@ export const getInsiders = (ticker: string) => get<Insiders>(`${at(ticker)}/insi
 export const getFund = (ticker: string) => get<Fund>(`${at(ticker)}/fund`);
 
 export const getCrypto = (ticker: string) => get<AssetStats>(`${at(ticker)}/crypto`);
+
+/** Sentiment, Mayer, 200-week, halving: the nightly scan plus the coin's closes. */
+export const getCryptoCycle = (ticker: string) =>
+  get<CryptoCycle>(`${at(ticker)}/crypto/cycle`);
+
+/** null — not an error — when no venue lists the coin's perpetual. */
+export const getCryptoPositioning = (ticker: string) =>
+  get<CryptoPositioning | null>(`${at(ticker)}/crypto/positioning`);
+
+/** The reader's coin against their crypto sleeve, in `base`. */
+export const getCryptoHolding = (ticker: string, base: string) =>
+  get<CryptoHolding>(`${at(ticker)}/crypto/holding`, { base });
 
 export const getPeers = (ticker: string) =>
   get<{ ticker: string; related: Peer[] }>(`${at(ticker)}/peers`);

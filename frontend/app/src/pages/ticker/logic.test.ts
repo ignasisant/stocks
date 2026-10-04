@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest";
 
 import { complete, draft, num, payload, summary } from "./alerts";
-import { dividendLine, resultsLines, snap } from "./events";
+import { cycleLine, cycleTag, dividendLine, resultsLines, snap } from "./events";
 import {
   barGrowth,
   compact,
@@ -38,6 +38,7 @@ const CATALOG: Record<string, string> = {
   "ticker.hover_move": "move {pct}% across print",
   "ticker.legend_latest": "{label} \u00b7 {val} latest",
   "ticker.legend_cagr": "{pct}%/yr CAGR",
+  "ticker.ev_halving": "<b>Bitcoin halving</b> · {date}",
 };
 
 /** `shell/i18n`'s lookup, reduced to what these functions use. */
@@ -214,6 +215,20 @@ describe("what a corporate-event marker says", () => {
     expect(snap(days, "2024-05-02")).toBe(1);
     // Past the end: the last bar, never -1 read as "the last element".
     expect(snap(days, "2025-01-01")).toBe(2);
+  });
+});
+
+describe("a coin's cycle markers", () => {
+  it("names the kinds it knows and tags each with its letter", () => {
+    expect(cycleLine("halving", "2024-04-20", t)?.text).toContain("2024-04-20");
+    expect(cycleTag("halving")).toBe("h");
+    expect(cycleTag("etf")).toBe("e");
+    expect(cycleTag("merge")).toBe("m");
+  });
+
+  it("draws nothing for a kind it has no words for", () => {
+    expect(cycleLine("airdrop", "2024-01-01", t)).toBeNull();
+    expect(cycleTag("airdrop")).toBe("");
   });
 });
 

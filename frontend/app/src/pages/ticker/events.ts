@@ -126,3 +126,35 @@ export function resultsLines(
   }
   return lines;
 }
+
+/**
+ * A coin's cycle event as its tooltip line — "Bitcoin halving · 2024-04-20".
+ * A switch of literal keys so the catalog scan sees each; a kind this page
+ * has no words for gets no line rather than a raw English slug.
+ */
+export function cycleLine(kind: string, date: string, t: Translate): EventLine | null {
+  switch (kind) {
+    case "halving":
+      return { text: t("ticker.ev_halving", { date }) };
+    case "etf":
+      return { text: t("ticker.ev_etf", { date }) };
+    case "merge":
+      return { text: t("ticker.ev_merge", { date }) };
+    default:
+      return null;
+  }
+}
+
+/** The letter over a cycle event's vertical: h, e, m. */
+export function cycleTag(kind: string): string {
+  switch (kind) {
+    case "halving":
+      return "h";
+    case "etf":
+      return "e";
+    case "merge":
+      return "m";
+    default:
+      return "";
+  }
+}

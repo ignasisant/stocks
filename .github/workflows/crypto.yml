@@ -1,0 +1,41 @@
+# Nightly crypto scan — the market-wide figures a coin's page reads.
+#
+# One file (data/crypto_scan.json in the R2 bucket) every account shares: coin
+# peaks, supply and fully diluted value from CoinGecko, bitcoin dominance, and
+# a year of the Crypto Fear & Greed Index. No user data, so no bot or Fernet
+# key here.
+#
+# Why a runner and not the app: CoinGecko's keyless tier rate-limits per IP,
+# and the app's Cloud Run egress is shared with everyone else's keyless calls.
+# Five requests a night from here never trip it. The derivatives venues are
+# the opposite case — they refuse US IPs, GitHub's runners included — so
+# funding and open interest are read live by the app instead.
+#
+# Timing: 03:30 UTC, after the sector scan's start and away from its Yahoo
+# burst; CoinGecko's daily figures roll over at 00:00 UTC.
+name: crypto
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: crypto
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      STOCKS_STORAGE_ENDPOINT_URL: ${{ secrets.STOCKS_STORAGE_ENDPOINT_URL }}
+      STOCKS_STORAGE_BUCKET: ${{ secrets.STOCKS_STORAGE_BUCKET }}
+      STOCKS_STORAGE_ACCESS_KEY_ID: ${{ secrets.STOCKS_STORAGE_ACCESS_KEY_ID }}
+      STOCKS_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.STOCKS_STORAGE_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --frozen --no-dev
+      - name: Scan
+        run: uv run stocks crypto-scan

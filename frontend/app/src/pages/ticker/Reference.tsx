@@ -9,7 +9,7 @@ import { useApi } from "../../shell/useApi";
 import { Loaded } from "../../shell/Layout";
 import { Responsive, StackCards } from "../../ui/Rows";
 import { useT } from "../../shell/i18n";
-import { DASH, compactMoney, money, orElse } from "./format";
+import { DASH, compactMoney, money, orElse, percent, type Translate } from "./format";
 import { Card, Metric, Metrics, Note, Scroll, Tag } from "./ui";
 import type { AssetStats, KpiSourceRow } from "./types";
 
@@ -31,6 +31,27 @@ export function AssetStatsSection({ stats }: { stats: AssetStats }) {
       t("ticker.circulating_supply"),
       cell(compactMoney(stats.circulating_supply, null)),
     ],
+    // Tokenomics: how much of the supply is out, and what the rest is
+    // already priced at. Rows the scan has no figure for are left out rather
+    // than printed as "n/a" — an uncapped coin has no hard cap to report.
+    ...(stats.max_supply
+      ? ([
+          [
+            t("ticker.max_supply"),
+            `${compactMoney(stats.max_supply, null)}${
+              stats.issued_pct !== null && stats.issued_pct !== undefined
+                ? ` · ${t("ticker.issued", { pct: percent(stats.issued_pct, 0) })}`
+                : ""
+            }`,
+          ],
+        ] as [string, string][])
+      : []),
+    ...(stats.fdv
+      ? ([[t("ticker.fdv"), compactMoney(stats.fdv, stats.quote)]] as [
+          string,
+          string,
+        ][])
+      : []),
     [
       t("ticker.range_52w"),
       // Half a range is not a range: one end missing leaves nothing to read
@@ -43,16 +64,74 @@ export function AssetStatsSection({ stats }: { stats: AssetStats }) {
         : na,
     ],
   ];
+  const ratio = stats.fdv_ratio ?? null;
+  const head = [
+    stats.rank ? t("ticker.rank", { n: stats.rank }) : "",
+    categoryLabel(t, stats.category),
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    <Card title={t("ticker.asset_stats")}>
+    <Card title={t("ticker.asset_stats")} note={head || undefined}>
       <Metrics>
         {rows.map(([label, value]) => (
           <Metric key={label} label={label} value={value} />
         ))}
+        {ratio !== null ? (
+          <Metric
+            label={t("ticker.fdv_ratio")}
+            help={t("ticker.fdv_ratio_help")}
+            value={`${ratio.toFixed(2)}×`}
+            note={dilutionBand(t, stats.dilution)}
+            // The server's band, coloured as `analysis.crypto_market` does.
+            noteTone={stats.dilution === "heavy" ? "orange" : null}
+          />
+        ) : null}
       </Metrics>
       <Note>{t("ticker.crypto_caption", { quote: stats.quote })}</Note>
     </Card>
   );
+}
+
+/** What claim a coin is, in words. Literal keys, for the catalog scan. */
+function categoryLabel(t: Translate, category: string | null | undefined): string {
+  switch (category) {
+    case "store_of_value":
+      return t("ticker.crypto_cat_store_of_value");
+    case "smart_contract":
+      return t("ticker.crypto_cat_smart_contract");
+    case "layer2":
+      return t("ticker.crypto_cat_layer2");
+    case "stablecoin":
+      return t("ticker.crypto_cat_stablecoin");
+    case "payments":
+      return t("ticker.crypto_cat_payments");
+    case "exchange":
+      return t("ticker.crypto_cat_exchange");
+    case "defi":
+      return t("ticker.crypto_cat_defi");
+    case "infrastructure":
+      return t("ticker.crypto_cat_infrastructure");
+    case "meme":
+      return t("ticker.crypto_cat_meme");
+    case "gaming":
+      return t("ticker.crypto_cat_gaming");
+    default:
+      return "";
+  }
+}
+
+function dilutionBand(t: Translate, band: string | null | undefined): string {
+  switch (band) {
+    case "none":
+      return t("ticker.dilution_none");
+    case "some":
+      return t("ticker.dilution_some");
+    case "heavy":
+      return t("ticker.dilution_heavy");
+    default:
+      return "";
+  }
 }
 
 /**

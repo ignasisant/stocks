@@ -79,6 +79,14 @@ def cmd_sector_scan(args: argparse.Namespace) -> None:
         print(f"{sector}: {result}")
 
 
+def cmd_crypto_scan(args: argparse.Namespace) -> None:
+    """Tonight's crypto market figures. Market-wide, so no account fan-out."""
+    from stocks.analysis.crypto_scan import run_scan
+
+    for part, result in run_scan(dry_run=args.dry_run).items():
+        print(f"{part}: {result}")
+
+
 def cmd_digest(args: argparse.Namespace) -> None:
     if args.all_users:
         from stocks.notify.digest import run_digest_fanout
@@ -1273,6 +1281,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="scan and print the result without writing the stored file",
     )
     p_sector.set_defaults(func=cmd_sector_scan)
+
+    p_crypto = sub.add_parser(
+        "crypto-scan",
+        help="fetch coin peaks, supply, market dominance and Fear & Greed (nightly cron)",
+    )
+    p_crypto.add_argument(
+        "--dry-run", action="store_true",
+        help="fetch and print the result without writing the stored file",
+    )
+    p_crypto.set_defaults(func=cmd_crypto_scan)
 
     p_ntest = sub.add_parser(
         "notify-test",
