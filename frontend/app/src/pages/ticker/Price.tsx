@@ -7,7 +7,8 @@
  * desktop — either way beside the price it is valued at.
  *
  * The figures beside the price are the asset kind's (`layout.ts`): momentum
- * and trend for a share, a fund of shares or a coin; payout and duration for
+ * and trend for a share or a fund of shares; momentum and the distance from the
+ * all-time high for a coin; payout and duration for
  * a bond fund; yield against the policy rate for a money-market fund; premium
  * to NAV for a closed-end fund.
  */
@@ -33,7 +34,16 @@ import { layout, type MetricId, type Shape } from "./layout";
 import { PriceChart, type Window } from "./PriceChart";
 import { Bold, Card, Empty, Metric, Metrics, Segmented, useMobile } from "./ui";
 import { Chip, Kpi, KpiGrid, chipFor } from "../../ui/Kpi";
-import type { Bars, EarningsEvent, Fund, Quote, TickerPosition, Trade } from "./types";
+import type {
+  AssetStats,
+  Bars,
+  CycleEvent,
+  EarningsEvent,
+  Fund,
+  Quote,
+  TickerPosition,
+  Trade,
+} from "./types";
 
 /** Range labels, in the order the app shows them (`analysis.history.PERIODS`). */
 const RANGES = ["1d", "1w", "1m", "3m", "6m", "1y", "2y", "5y", "max"] as const;
@@ -61,6 +71,8 @@ export function PriceSection({
   onCandles,
   shape = layout(null),
   fund = null,
+  stats = null,
+  cycle = [],
 }: {
   /**
    * The bars as a query rather than as data, because the controls do not wait
@@ -87,6 +99,10 @@ export function PriceSection({
   shape?: Shape;
   /** `/fund`'s answer — where a fund's figures beside the price come from. */
   fund?: Fund | null;
+  /** `/crypto`'s answer — where a coin's all-time high comes from. */
+  stats?: AssetStats | null;
+  /** A coin's dated cycle events, for the chart's verticals. */
+  cycle?: CycleEvent[];
 }) {
   const t = useT();
   const mobile = useMobile();
@@ -107,7 +123,7 @@ export function PriceSection({
   const live =
     quote?.market_open === false && quote.price !== null ? quote.price : last;
   const cells = shape.metrics.map((id) =>
-    cell(id, { bars, last, fund: fund?.is_fund ? fund : null, t }),
+    cell(id, { bars, last, fund: fund?.is_fund ? fund : null, stats, t }),
   );
   const extended = quote?.session === "pre" || quote?.session === "post";
   const sessionNote =
@@ -230,6 +246,7 @@ export function PriceSection({
         <PriceChart
           bars={bars}
           events={events}
+          cycle={cycle}
           trades={held?.trades ?? []}
           avgCost={held?.avg_cost_native ?? null}
           candles={shape.candles && candles}
@@ -362,6 +379,10 @@ function Hero({
   // SMA20 187.40 · above" for a share. Without it a phone reader of a name
   // they do not own gets a price and nothing to read it against.
   const trendLine = lines.join(" · ");
+  // Held: the first figure folds into the tiles and the rest keep a line of
+  // their own under them — a coin's distance from its peak is not dropped
+  // because its RSI took the only slot.
+  const restLine = lines.slice(1).join(" · ");
 
   return (
     <div className="tk-hero">
@@ -382,13 +403,16 @@ function Hero({
           would read as the reader's own money, and often is not. */}
       {approxLine ? <p className="tk-hero-trend">{approxLine}</p> : null}
       {held ? (
-        <PositionTiles
-          position={held}
-          last={last}
-          note={lines[0] ?? ""}
-          units={units}
-          t={t}
-        />
+        <>
+          <PositionTiles
+            position={held}
+            last={last}
+            note={lines[0] ?? ""}
+            units={units}
+            t={t}
+          />
+          {restLine ? <p className="tk-hero-trend">{restLine}</p> : null}
+        </>
       ) : trendLine ? (
         <p className="tk-hero-trend">{trendLine}</p>
       ) : null}
@@ -478,8 +502,15 @@ function cell(
     bars,
     last,
     fund,
+    stats,
     t,
-  }: { bars: Bars | null; last: number | null; fund: Fund | null; t: Translate },
+  }: {
+    bars: Bars | null;
+    last: number | null;
+    fund: Fund | null;
+    stats: AssetStats | null;
+    t: Translate;
+  },
 ): Cell {
   switch (id) {
     case "rsi": {
@@ -596,6 +627,30 @@ function cell(
         note: "",
         tone: null,
       };
+    case "ath_drawdown": {
+      const peak = stats?.ath ?? null;
+      // Measured against tonight's close, not a night-old peak's own price:
+      // a coin past last night's high is at its peak, never above it.
+      const drop = last !== null && peak ? Math.min(0, last / peak - 1) : null;
+      return {
+        id,
+        label: t("ticker.ath_label"),
+        short: t("ticker.ath_short"),
+        value: drop === null ? DASH : signedPercent(drop, 1),
+        help: t("ticker.ath_help"),
+        // A peak read off a year of bars is not an all-time high, and the
+        // cell says which one it is measured from.
+        note:
+          drop === null
+            ? ""
+            : stats?.ath_source === "52w"
+              ? t("ticker.ath_52w")
+              : stats?.ath_date
+                ? t("ticker.ath_on", { date: stats.ath_date })
+                : "",
+        tone: null,
+      };
+    }
   }
 }
 

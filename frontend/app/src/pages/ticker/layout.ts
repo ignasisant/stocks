@@ -8,8 +8,11 @@
  * "Analyse" button for an index nobody can buy. Each row here is what that kind
  * is actually read by:
  *
- * - a **share**, an **equity fund** and a **coin** trade on momentum and trend,
- *   so they keep the RSI / SMA20 row, all three averages and candles;
+ * - a **share** and an **equity fund** trade on momentum and trend, so they
+ *   keep the RSI / SMA20 row, all three averages and candles;
+ * - a **coin** too, except that its SMA20 cell gives way to its distance from
+ *   the all-time high, and it gets the cycle, positioning and holding cards a
+ *   share's company sections would otherwise fill;
  * - a **bond fund** is read by what it pays and how far a rate move pushes it;
  * - a **money-market fund** by its yield against the central bank's rate and
  *   its cost — its chart is a straight line, so no averages and no candles;
@@ -30,10 +33,11 @@ export type MetricId =
   | "policy"
   | "ter"
   | "premium"
-  | "cef_distribution";
+  | "cef_distribution"
+  | "ath_drawdown";
 
 export type Overlay = "SMA20" | "SMA50" | "SMA200";
-export type Marker = "results" | "dividends";
+export type Marker = "results" | "dividends" | "cycle";
 
 export type Shape = {
   kind: AssetKind;
@@ -52,6 +56,12 @@ export type Shape = {
     fundHoldings: boolean;
     /** A coin's supply, volume and 52-week range. */
     stats: boolean;
+    /** Where a coin sits in its cycle: sentiment, Mayer, 200-week, halving. */
+    cycle: boolean;
+    /** What the perpetual-swap crowd pays to hold it: funding, open interest. */
+    positioning: boolean;
+    /** The reader's coin against the rest of their crypto and their book. */
+    holding: boolean;
   };
   /** Whether a position block and the last-buy line apply. */
   holdable: boolean;
@@ -67,7 +77,15 @@ const ALL_AVERAGES: readonly Overlay[] = ["SMA20", "SMA50", "SMA200"];
 const SLOW_AVERAGES: readonly Overlay[] = ["SMA50", "SMA200"];
 const MOMENTUM: readonly MetricId[] = ["rsi", "sma20"];
 
-const NO_SECTIONS = { company: false, fund: false, fundHoldings: false, stats: false };
+const NO_SECTIONS = {
+  company: false,
+  fund: false,
+  fundHoldings: false,
+  stats: false,
+  cycle: false,
+  positioning: false,
+  holding: false,
+};
 const FUND = { ...NO_SECTIONS, fund: true, fundHoldings: true };
 
 const SHAPES: Record<AssetKind, Shape> = {
@@ -133,11 +151,20 @@ const SHAPES: Record<AssetKind, Shape> = {
   },
   crypto: {
     kind: "crypto",
-    metrics: MOMENTUM,
+    // A coin has no earnings to anchor it, so its peak stands in: how far under
+    // the all-time high it trades is the line a crypto reader looks at first.
+    // SMA20 moves out of the row (the chart still draws it).
+    metrics: ["rsi", "ath_drawdown"],
     overlays: ALL_AVERAGES,
     candles: true,
-    markers: [],
-    sections: { ...NO_SECTIONS, stats: true },
+    markers: ["cycle"],
+    sections: {
+      ...NO_SECTIONS,
+      stats: true,
+      cycle: true,
+      positioning: true,
+      holding: true,
+    },
     holdable: true,
     units: true,
     ai: "ticker.ai_prompt_crypto",

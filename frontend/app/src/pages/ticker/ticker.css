@@ -959,3 +959,43 @@
 .tk-ai:hover {
   background: var(--ag-purple-700);
 }
+
+/* -------------------------------------------------------------- coin cards
+   The Fear & Greed sparkline and the halving clock, under their tiles. Both
+   stretch to the tile: the tile's width is the room the grid gives it. */
+
+.tk-fg-spark {
+  display: block;
+  width: 100%;
+  height: 32px;
+  margin-top: 6px;
+  overflow: visible;
+}
+
+.tk-fg-line {
+  fill: none;
+  stroke: var(--ag-brand-accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.tk-fg-edge {
+  stroke: var(--ag-border);
+  stroke-dasharray: 2 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.tk-meter {
+  display: block;
+  height: 4px;
+  margin-top: 8px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-border);
+  overflow: hidden;
+}
+
+.tk-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--ag-brand-accent);
+}

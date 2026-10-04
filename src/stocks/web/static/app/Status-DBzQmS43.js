@@ -1,1 +1,0 @@
-import{wt as e}from"./app-B3INF9qq.js";var t=e();function n({label:e}){return(0,t.jsxs)(`div`,{className:`ag-work`,role:`status`,children:[(0,t.jsx)(`span`,{className:`ag-work-glyph`,"aria-hidden":`true`,children:`✻`}),e]})}export{n as t};

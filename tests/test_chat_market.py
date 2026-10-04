@@ -158,3 +158,69 @@ def test_augment_without_quotes_is_identity():
 def test_lookup_for_swallows_failures(monkeypatch):
     monkeypatch.setattr(market, "quotes", lambda *a, **k: 1 / 0)
     assert market.lookup_for("NVDA?", None) == []
+
+
+_SCAN = {
+    "saved": "2026-10-04",
+    "global": {"btc_dominance": 57.25},
+    "fear_greed": [["2026-10-03", 40], ["2026-10-04", 72]],
+    "coins": {
+        "SOL": {
+            "rank": 6,
+            "ath": {"eur": 250.0},
+            "ath_date": {"eur": "2025-01-19"},
+            "fdv": {"eur": 120e9},
+            "market_cap": {"eur": 80e9},
+        }
+    },
+}
+
+
+def test_a_coin_quote_carries_its_peak_and_the_market_mood():
+    from stocks.chat.market import crypto_context
+
+    line = crypto_context(Quote("SOL-EUR", price=100.0), _SCAN)
+    assert "all-time high 250 EUR on 2025-01-19 (-60% from it)" in line
+    assert "rank #6" in line
+    assert "smart contract" in line
+    assert "fully diluted value 1.5x" in line
+    assert "Fear & Greed 72/100 (greed)" in line
+    assert "bitcoin dominance 57.2%" in line
+
+
+def test_a_share_gets_no_crypto_context():
+    from stocks.chat.market import crypto_context
+
+    assert crypto_context(Quote("NVDA", price=100.0), _SCAN) == ""
+
+
+def test_the_market_line_rides_on_one_coin_only():
+    from stocks.chat.market import _with_crypto
+
+    got = _with_crypto(
+        [Quote("NVDA", price=1.0), Quote("SOL-EUR", price=100.0),
+         Quote("BTC-EUR", price=1.0)],
+        lambda: _SCAN,
+    )
+    assert got[0].context == ""
+    assert "Fear & Greed" in got[1].context
+    assert "Fear & Greed" not in got[2].context
+
+
+def test_a_failed_scan_read_leaves_the_quotes_alone():
+    from stocks.chat.market import _with_crypto
+
+    def boom():
+        raise OSError("bucket down")
+
+    quotes_ = [Quote("SOL-EUR", price=100.0)]
+    assert _with_crypto(quotes_, boom) == quotes_
+
+
+def test_no_coin_means_no_scan_read():
+    from stocks.chat.market import _with_crypto
+
+    def never():
+        raise AssertionError("scan read for a share")
+
+    assert _with_crypto([Quote("NVDA", price=1.0)], never)[0].context == ""

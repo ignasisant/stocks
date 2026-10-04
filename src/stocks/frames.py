@@ -24,6 +24,11 @@ def sessions(df: pd.DataFrame) -> pd.DatetimeIndex:
     return dates(df).normalize()  # ty: ignore[unresolved-attribute]
 
 
+def midnights(index) -> pd.DatetimeIndex:
+    """Any timestamp index at midnight — a series keyed by calendar day."""
+    return pd.DatetimeIndex(index).normalize()  # ty: ignore[unresolved-attribute]
+
+
 def weekdays(df: pd.DataFrame):
     """Monday=0 .. Sunday=6 for every bar."""
     return dates(df).dayofweek  # ty: ignore[unresolved-attribute]

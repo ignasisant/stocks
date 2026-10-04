@@ -33,6 +33,7 @@ from stocks.api.routes import (
     chat_voice,
     comparables,
     connections,
+    crypto,
     design,
     earnings,
     feedback,
@@ -281,6 +282,7 @@ _private.include_router(portfolio.router)
 _private.include_router(watchlist.router)
 _private.include_router(market.router)
 _private.include_router(ticker.router)
+_private.include_router(crypto.router)
 _private.include_router(comparables.router)
 _private.include_router(search.router)
 _private.include_router(sector.router)

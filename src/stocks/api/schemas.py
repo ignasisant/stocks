@@ -424,9 +424,20 @@ class EarningsEvent(BaseModel):
     )
 
 
+class CycleEvent(BaseModel):
+    """A dated event in a coin's history the chart marks: a halving, an ETF
+    approval, a protocol upgrade."""
+
+    date: str
+    kind: str = Field(description="halving | etf | merge.")
+
+
 class PriceEvents(BaseModel):
     ticker: str
     earnings: list[EarningsEvent] = Field(default_factory=list)
+    cycle: list[CycleEvent] = Field(
+        default_factory=list, description="A coin's dated events; empty for a share."
+    )
 
 
 class Custodian(BaseModel):
@@ -966,6 +977,167 @@ class AssetStats(BaseModel):
     circulating_supply: float | None = None
     high_52w: float | None = None
     low_52w: float | None = None
+    ath: float | None = Field(
+        default=None,
+        description=(
+            "All-time high in the pair's quote currency, from last night's scan; "
+            "the 52-week high when the scan does not cover the coin (`ath_source`)."
+        ),
+    )
+    ath_date: str | None = None
+    ath_source: str | None = Field(
+        default=None, description="`scan` (a true all-time high) | `52w` (the stand-in)."
+    )
+    fdv: float | None = Field(
+        default=None, description="Fully diluted value: price times the eventual supply."
+    )
+    fdv_ratio: float | None = Field(
+        default=None, description="FDV over market cap; 1.0 is everything already out."
+    )
+    dilution: str | None = Field(default=None, description="none | some | heavy.")
+    max_supply: float | None = Field(
+        default=None, description="Null for an uncapped coin."
+    )
+    total_supply: float | None = None
+    issued_pct: float | None = Field(
+        default=None, description="Circulating over max supply, 0..1."
+    )
+    rank: int | None = Field(default=None, description="Market-cap rank.")
+    category: str | None = Field(
+        default=None,
+        description=(
+            "store_of_value | smart_contract | layer2 | stablecoin | payments | "
+            "exchange | defi | infrastructure | meme | gaming. Null when uncurated."
+        ),
+    )
+
+
+class Banded(BaseModel):
+    """A figure, the band it falls in and that band's tone."""
+
+    value: float | None = None
+    band: str | None = Field(default=None, description="An i18n suffix.")
+    tone: str | None = Field(default=None, description="green | gray | orange | red.")
+
+
+class HalvingPhase(BaseModel):
+    last: str
+    days_since: int
+    next_est: str = Field(
+        description="An estimate: block 1,050,000 lands with hash rate."
+    )
+    days_to_next: int
+    progress: float = Field(description="0..1 of the way to the next halving.")
+
+
+class CryptoCycle(BaseModel):
+    """Where a coin and the market sit in the cycle — the stand-in for the
+    analyst consensus a coin does not have."""
+
+    ticker: str
+    quote: str
+    fear_greed: Banded | None = Field(
+        default=None, description="The Crypto Fear & Greed Index today, 0..100."
+    )
+    fear_greed_week: float | None = Field(
+        default=None, description="The index a week ago, for the direction."
+    )
+    fear_greed_history: list[tuple[str, int]] = Field(
+        default_factory=list, description="The past 90 days, oldest first."
+    )
+    btc_dominance: float | None = Field(default=None, description="Percent, 0..100.")
+    total_mcap: float | None = Field(
+        default=None, description="The whole market's capitalisation, in `quote`."
+    )
+    vol30: float | None = Field(
+        default=None, description="Annualised 30-day realised volatility."
+    )
+    mayer: Banded | None = Field(
+        default=None, description="Price over its 200-day average."
+    )
+    ratio_200w: Banded | None = Field(
+        default=None, description="Price over its 200-week average."
+    )
+    vs_btc_90d: float | None = Field(
+        default=None,
+        description=(
+            "How much the coin beat (+) or lagged bitcoin over 90 days; null for bitcoin."
+        ),
+    )
+    vs_nasdaq_90d: float | None = Field(
+        default=None, description="Bitcoin's own 90 days against the Nasdaq 100 (QQQ)."
+    )
+    halving: HalvingPhase | None = None
+    scan_date: str | None = Field(
+        default=None, description="When the market figures were read."
+    )
+
+
+class CryptoPositioning(BaseModel):
+    """The coin's perpetual swap: what leveraged longs pay, and how much is open."""
+
+    ticker: str
+    venue: str = Field(description="bybit | binance | okx.")
+    symbol: str
+    funding_8h: Banded | None = Field(
+        default=None, description="Current funding per eight hours, a fraction."
+    )
+    funding_7d_8h: Banded | None = Field(
+        default=None, description="The past week's mean, per eight hours."
+    )
+    annualized: float | None = Field(
+        default=None, description="What a long pays over a year at the weekly mean."
+    )
+    oi_usd: float | None = Field(default=None, description="Open interest, US dollars.")
+    oi_change_7d: float | None = Field(
+        default=None,
+        description="In contracts, so a price move does not read as positioning.",
+    )
+    as_of: str
+
+
+class CoinHarvest(BaseModel):
+    """Selling the whole coin today: the loss it books and the tax it saves."""
+
+    loss: float = Field(description="Negative, in `currency`.")
+    saving: float = Field(description="Tax saved this year, positive, in `currency`.")
+    currency: str
+    blocked: bool = Field(
+        default=False,
+        description="A repurchase inside the window would defer the loss.",
+    )
+    window: str | None = Field(
+        default=None,
+        description='The repurchase window as the engine labels it: "2m", "30d".',
+    )
+    clear_on: str | None = Field(
+        default=None, description="First day a buy-back no longer defers the loss."
+    )
+
+
+class CryptoHolding(BaseModel):
+    """The coin in this account's book — the line no market data source has."""
+
+    ticker: str
+    held: bool
+    crypto_weight: float | None = Field(
+        default=None, description="This coin's share of the book's crypto, 0..1."
+    )
+    crypto_share: float | None = Field(
+        default=None, description="All crypto's share of the whole book, 0..1."
+    )
+    sizing: str | None = Field(
+        default=None,
+        description=(
+            "under | within | over the 2-10% range a crypto sleeve is usually held at."
+        ),
+    )
+    custody: list[str] = Field(
+        default_factory=list, description="Brokers holding the coin, by display name."
+    )
+    harvest: CoinHarvest | None = Field(
+        default=None, description="Only when the coin is held at a loss."
+    )
 
 
 class KpiSourceRow(BaseModel):

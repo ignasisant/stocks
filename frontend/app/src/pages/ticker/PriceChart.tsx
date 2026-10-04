@@ -17,7 +17,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { chart as palette, token } from "../../shell/theme";
 import { useLang } from "../../shell/i18n";
-import { dividendLine, resultsLines, snap, type EventLine } from "./events";
+import {
+  cycleLine,
+  cycleTag,
+  dividendLine,
+  resultsLines,
+  snap,
+  type EventLine,
+} from "./events";
 import { latest, money, type Translate } from "./format";
 import {
   averageRow,
@@ -41,7 +48,7 @@ import {
   type TipLine,
 } from "./plot";
 import type { Marker, Overlay } from "./layout";
-import type { Bars, EarningsEvent, Trade } from "./types";
+import type { Bars, CycleEvent, EarningsEvent, Trade } from "./types";
 
 const ALL_OVERLAYS: readonly Overlay[] = ["SMA20", "SMA50", "SMA200"];
 const ALL_MARKERS: readonly Marker[] = ["results", "dividends"];
@@ -85,6 +92,7 @@ function labeller(lang: string, intraday: boolean): (stamp: string) => string {
 export function PriceChart({
   bars,
   events,
+  cycle = [],
   trades,
   avgCost,
   candles,
@@ -96,6 +104,8 @@ export function PriceChart({
 }: {
   bars: Bars;
   events: EarningsEvent[];
+  /** A coin's halvings, ETF approvals, the Merge — drawn when `markers` says. */
+  cycle?: CycleEvent[];
   trades: Trade[];
   /** The blended entry, so a single lot can be read against the position. */
   avgCost: number | null;
@@ -179,7 +189,10 @@ export function PriceChart({
 
   const marks = useMemo(() => {
     const lines = new Map<number, EventLine[]>();
-    const kinds = new Map<number, "dividend" | "results">();
+    const kinds = new Map<number, "dividend" | "results" | "cycle">();
+    // The letter a cycle vertical carries: one event per bar is all a coin
+    // has ever had, and the last one written wins if that ever changes.
+    const tags = new Map<number, string>();
     (markers.includes("dividends") ? (bars.dividends ?? []) : []).forEach(
       (value, index) => {
         const day = days[index];
@@ -204,8 +217,24 @@ export function PriceChart({
       ]);
       kinds.set(index, "results");
     }
-    return { lines, kinds };
-  }, [bars.dividends, days, close, events, markers, daily, intraday, t]);
+    for (const event of markers.includes("cycle") ? cycle : []) {
+      if (event.date < first || event.date > last) continue;
+      const line = cycleLine(event.kind, event.date, t);
+      if (!line) continue;
+      const index = snap(days, event.date);
+      lines.set(index, [...(lines.get(index) ?? []), line]);
+      kinds.set(index, "cycle");
+      tags.set(index, cycleTag(event.kind));
+    }
+    return { lines, kinds, tags };
+  }, [bars.dividends, days, close, events, cycle, markers, daily, intraday, t]);
+
+  const markColor = (kind: "dividend" | "results" | "cycle") =>
+    kind === "dividend"
+      ? colors.warn
+      : kind === "cycle"
+        ? colors.brandAccent
+        : colors.smaSlow;
 
   // The y range spans everything drawn in the window, as Plotly's autorange
   // does: the price, the averages, the fills (a lot bought below this year's
@@ -329,6 +358,9 @@ export function PriceChart({
     ...([...marks.kinds.values()].includes("results")
       ? [{ label: t("ticker.ev_results"), color: colors.smaSlow }]
       : []),
+    ...([...marks.kinds.values()].includes("cycle")
+      ? [{ label: t("ticker.ev_cycle"), color: colors.brandAccent }]
+      : []),
   ];
 
   const tip = hover === null ? null : tooltip(hover);
@@ -379,12 +411,7 @@ export function PriceChart({
     }
     const kind = marks.kinds.get(index);
     if (kind) {
-      lines.push(
-        ...eventRows(
-          marks.lines.get(index) ?? [],
-          kind === "dividend" ? colors.warn : colors.smaSlow,
-        ),
-      );
+      lines.push(...eventRows(marks.lines.get(index) ?? [], markColor(kind)));
     }
     return { title: hoverTitle(bars.dates[index] ?? "", intraday), lines };
   }
@@ -423,12 +450,15 @@ export function PriceChart({
         {[...marks.kinds.entries()]
           .filter(([index]) => index >= from && index <= to)
           .map(([index, kind]) => {
-            const color = kind === "dividend" ? colors.warn : colors.smaSlow;
+            const color = markColor(kind);
             const cx = xOf(index);
             const cy = y(diamondY(index));
             return (
               <g key={`ev-${index}`}>
-                {daily || intraday ? (
+                {/* A coin has a handful of cycle events in its whole life, so
+                    they keep their vertical on weekly bars too — the long
+                    ranges are where a halving is worth seeing. */}
+                {daily || intraday || kind === "cycle" ? (
                   <>
                     <line
                       className="tk-event"
@@ -445,7 +475,11 @@ export function PriceChart({
                       textAnchor="middle"
                       fill={color}
                     >
-                      {kind === "dividend" ? "d" : "r"}
+                      {kind === "cycle"
+                        ? (marks.tags.get(index) ?? "")
+                        : kind === "dividend"
+                          ? "d"
+                          : "r"}
                     </text>
                   </>
                 ) : null}

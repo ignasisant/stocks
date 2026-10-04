@@ -62,6 +62,8 @@ wheels/
 # Tonight's sector cohorts (`stocks sector-scan`) — market-wide runtime
 # state that lives in the bucket, and two hundred companies of it.
 /data/sector_scan.json
+# Tonight's crypto market figures (`stocks crypto-scan`), same story.
+/data/crypto_scan.json
 # The owner account's per-sector AI reads, like its daily_action.json.
 /data/sector_verdict.json
 

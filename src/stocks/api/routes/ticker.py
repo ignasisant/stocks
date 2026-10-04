@@ -18,6 +18,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Path, Query, status
 
 from stocks import obs
+from stocks.analysis import crypto_market
 from stocks.analysis.fundamentals import (
     FUNDAMENTAL_TILES,
     KPI_SOURCES,
@@ -48,6 +49,7 @@ from stocks.api.schemas import (
     CashYield,
     ClosedEnd,
     Custodian,
+    CycleEvent,
     EarningsEvent,
     Financials,
     Fund,
@@ -76,7 +78,7 @@ from stocks.api.schemas import (
 from stocks.config import CURRENCIES
 from stocks.data.asset_kind import BOND_FUND, CRYPTO, FUND_KINDS, MONEY_MARKET
 from stocks.data.bafin import insider_transactions as bafin_transactions
-from stocks.data.crypto import is_crypto, split_pair
+from stocks.data.crypto import COIN_CATEGORY, CYCLE_EVENTS, is_crypto, split_pair
 from stocks.data.estimates import estimate_currency, projection
 from stocks.data.funds import is_fund
 from stocks.data.insiders import CODE_LABELS, summarize
@@ -241,12 +243,19 @@ def events(symbol: Symbol) -> PriceEvents:
 
     A fund pays distributions but never reports, and a coin does neither, so
     both come back empty without spending a request on Yahoo answering "no
-    earnings dates found".
+    earnings dates found". A coin's verticals are its cycle instead: the
+    halvings, an ETF approval — dates of record, from `data.crypto`.
     """
     ticker = symbol.strip().upper()
     # A closed-end fund is asked from the cache only: `/profile` settles it on
     # the page's first request, and this one must not wait on EDGAR again.
-    if is_crypto(ticker) or is_fund(ticker) or loaders.is_closed_end(ticker, fetch=False):
+    if pair := split_pair(ticker):
+        return PriceEvents(
+            ticker=ticker,
+            cycle=[CycleEvent(date=day, kind=kind)
+                   for day, kind in CYCLE_EVENTS.get(pair[0], ())],
+        )
+    if is_fund(ticker) or loaders.is_closed_end(ticker, fetch=False):
         return PriceEvents(ticker=ticker, earnings=[])
     dates, results = loaders.earnings(ticker)
     reported = {r.date: r for r in results}
@@ -567,15 +576,44 @@ def crypto_stats(symbol: Symbol) -> AssetStats:
     if not is_crypto(ticker):
         return AssetStats(ticker=ticker)
     info = loaders.crypto_info(ticker)
-    _, quote = split_pair(ticker) or (ticker, "USD")
+    coin, quote = split_pair(ticker) or (ticker, "USD")
+    high_52w = _num(info.get("fiftyTwoWeekHigh"))
+    circulating = _num(info.get("circulatingSupply"))
+    # Peak, dilution and supply come from last night's scan, in the pair's own
+    # currency. A coin it does not cover still gets a peak line — the 52-week
+    # high, labelled as such — and no supply lines, never a guess.
+    entry = (loaders.crypto_scan().get("coins") or {}).get(coin) or {}
+    q = quote.lower()
+    ath = _num((entry.get("ath") or {}).get(q))
+    source = "scan" if ath is not None else ("52w" if high_52w is not None else None)
+    if ath is not None and high_52w is not None:
+        # A peak set since the scan ran is in the 52-week high already.
+        ath = max(ath, high_52w)
+    fdv = _num((entry.get("fdv") or {}).get(q))
+    ratio = crypto_market.fdv_ratio(fdv, _num((entry.get("market_cap") or {}).get(q)))
+    dilution = crypto_market.dilution_band(ratio)
+    max_supply = _num(entry.get("max_supply"))
+    rank = entry.get("rank")
     return AssetStats(
         ticker=ticker,
         quote=quote,
         market_cap=_num(info.get("marketCap")),
         volume_24h=_num(info.get("volume24Hr") or info.get("volume")),
-        circulating_supply=_num(info.get("circulatingSupply")),
-        high_52w=_num(info.get("fiftyTwoWeekHigh")),
+        circulating_supply=circulating,
+        high_52w=high_52w,
         low_52w=_num(info.get("fiftyTwoWeekLow")),
+        ath=ath if ath is not None else high_52w,
+        ath_date=(entry.get("ath_date") or {}).get(q) if source == "scan" else None,
+        ath_source=source,
+        fdv=fdv,
+        fdv_ratio=ratio,
+        dilution=dilution.key if dilution else None,
+        max_supply=max_supply,
+        total_supply=_num(entry.get("total_supply")),
+        issued_pct=crypto_market.issued_share(
+            _num(entry.get("circulating")) or circulating, max_supply),
+        rank=int(rank) if isinstance(rank, (int, float)) else None,
+        category=COIN_CATEGORY.get(coin),
     )
 
 

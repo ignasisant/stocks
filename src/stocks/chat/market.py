@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 MAX_TICKERS = 3  # quotes fetched per message
@@ -79,6 +79,9 @@ class Quote:
     year_high: float | None = None
     year_low: float | None = None
     market_cap: float | None = None
+    # Figures past the quote, already worded: a coin's peak, rank and the
+    # market's mood from the nightly scan (`crypto_context`).
+    context: str = ""
 
     @property
     def day_pct(self) -> float | None:
@@ -98,6 +101,8 @@ class Quote:
             bits.append(f"52w range {self.year_low:,.2f}–{self.year_high:,.2f}")
         if self.market_cap:
             bits.append(f"market cap {self.market_cap / 1e9:,.1f}B")
+        if self.context:
+            bits.append(self.context)
         return f"- {head}: " + " | ".join(bits) if bits else f"- {head}: no data"
 
 
@@ -292,6 +297,83 @@ def quotes(
         pool.shutdown(wait=False, cancel_futures=True)
 
 
+# ------------------------------------------------------------------ crypto
+
+
+def crypto_context(quote: Quote, scan: dict, market: bool = True) -> str:
+    """A coin quote's figures from the nightly scan, worded for the prompt.
+
+    The model's own idea of a coin's all-time high is a training-data figure,
+    and so is its sense of the market's mood; both are a night old at worst
+    here. Figures only, as the quote line is — the bands are the index's own
+    names, not a reading. `market` adds the market-wide half (Fear & Greed,
+    bitcoin dominance), which one coin per message is enough to carry.
+    """
+    from stocks.analysis import crypto_market as cm
+    from stocks.data.crypto import COIN_CATEGORY, split_pair
+
+    pair = split_pair(quote.ticker)
+    if pair is None or not scan:
+        return ""
+    coin, ccy = pair
+    q = ccy.lower()
+    entry = (scan.get("coins") or {}).get(coin) or {}
+    bits: list[str] = []
+    ath = (entry.get("ath") or {}).get(q)
+    drop = cm.from_peak(quote.price, ath)
+    if ath and drop is not None:
+        day = (entry.get("ath_date") or {}).get(q) or "?"
+        bits.append(f"all-time high {ath:,.6g} {ccy} on {day} ({drop:+.0%} from it)")
+    if entry.get("rank"):
+        bits.append(f"market-cap rank #{entry['rank']}")
+    if coin in COIN_CATEGORY:
+        bits.append(f"category {COIN_CATEGORY[coin].replace('_', ' ')}")
+    ratio = cm.fdv_ratio(
+        (entry.get("fdv") or {}).get(q), (entry.get("market_cap") or {}).get(q))
+    if ratio is not None and ratio > 1.1:
+        bits.append(f"fully diluted value {ratio:.1f}x market cap")
+    if market:
+        fg = scan.get("fear_greed") or []
+        if fg:
+            value = int(fg[-1][1])
+            band = cm.fear_greed_band(value)
+            bits.append(f"crypto Fear & Greed {value}/100"
+                        + (f" ({band.key.replace('_', ' ')})" if band else ""))
+        dom = (scan.get("global") or {}).get("btc_dominance")
+        if dom is not None:
+            bits.append(f"bitcoin dominance {dom:.1f}%")
+        if scan.get("saved"):
+            bits.append(f"scan of {scan['saved']}")
+    return " | ".join(bits)
+
+
+def _with_crypto(quotes_: list[Quote], scan: Callable[[], dict]) -> list[Quote]:
+    """`quotes_` with each coin's scan figures attached; the scan is only
+    read when a coin is among them, and a failed read changes nothing."""
+    from stocks.data.crypto import is_crypto
+
+    if not any(is_crypto(q.ticker) for q in quotes_):
+        return quotes_
+    try:
+        data = scan()
+    except Exception:
+        return quotes_
+    out, first = [], True
+    for q in quotes_:
+        if is_crypto(q.ticker):
+            context = crypto_context(q, data, market=first)
+            first = first and not context
+            q = replace(q, context=context) if context else q
+        out.append(q)
+    return out
+
+
+def _scan() -> dict:
+    from stocks.api import loaders
+
+    return loaders.crypto_scan()
+
+
 # ----------------------------------------------------------------- prompt
 
 
@@ -317,6 +399,6 @@ def lookup_for(
     degrades to []."""
     try:
         known = watchlist_names(watchlist) if watchlist else {}
-        return quotes(mentioned(message, known, focus))
+        return _with_crypto(quotes(mentioned(message, known, focus)), _scan)
     except Exception:
         return []

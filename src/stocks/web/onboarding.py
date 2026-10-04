@@ -414,6 +414,17 @@ RELEASES: tuple[Release, ...] = (
             News(slug="brief", icon="edit_note", step="daily"),
         ),
     ),
+    Release(
+        version="2026.10.3",
+        date="2026-10",
+        items=(
+            # One card: a coin's page was rebuilt around what a coin is read
+            # by — its peak, its cycle, the leverage on it, the reader's own
+            # holding. The cells and markers inside those cards are this
+            # card's body and the market step's, not cards of their own.
+            News(slug="crypto", icon="currency_bitcoin", step="market"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

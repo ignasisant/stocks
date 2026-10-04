@@ -120,6 +120,82 @@ export type AssetStats = {
   circulating_supply: number | null;
   high_52w: number | null;
   low_52w: number | null;
+  /** All-time high in the pair's quote; the 52-week high when the scan has none. */
+  ath?: number | null;
+  ath_date?: string | null;
+  /** "scan" (CoinGecko's peak) or "52w" (only the past year's). */
+  ath_source?: "scan" | "52w" | null;
+  fdv?: number | null;
+  fdv_ratio?: number | null;
+  /** none | some | heavy — the fdv_ratio's band. */
+  dilution?: string | null;
+  max_supply?: number | null;
+  total_supply?: number | null;
+  /** Circulating over the hard cap, 0..1; null for an uncapped coin. */
+  issued_pct?: number | null;
+  rank?: number | null;
+  /** A key of `ticker.crypto_cat_*`, or null — never a guess. */
+  category?: string | null;
+};
+
+/** A figure, its band key (an i18n suffix) and its tone. */
+export type Banded = { value: number | null; band: string | null; tone: string | null };
+
+type HalvingPhase = {
+  last: string;
+  days_since: number;
+  next_est: string;
+  days_to_next: number;
+  progress: number;
+};
+
+export type CryptoCycle = {
+  ticker: string;
+  quote: string;
+  fear_greed: Banded | null;
+  fear_greed_week: number | null;
+  /** The past 90 days, oldest first, as [day, 0..100]. */
+  fear_greed_history: [string, number][];
+  btc_dominance: number | null;
+  total_mcap: number | null;
+  vol30: number | null;
+  mayer: Banded | null;
+  ratio_200w: Banded | null;
+  vs_btc_90d: number | null;
+  vs_nasdaq_90d: number | null;
+  halving: HalvingPhase | null;
+  scan_date: string | null;
+};
+
+export type CryptoPositioning = {
+  ticker: string;
+  venue: string;
+  symbol: string;
+  funding_8h: Banded | null;
+  funding_7d_8h: Banded | null;
+  annualized: number | null;
+  oi_usd: number | null;
+  oi_change_7d: number | null;
+  as_of: string;
+};
+
+type CoinHarvest = {
+  loss: number;
+  saving: number | null;
+  currency: string;
+  blocked: boolean;
+  window: string | null;
+  clear_on: string | null;
+};
+
+export type CryptoHolding = {
+  ticker: string;
+  held: boolean;
+  crypto_weight: number | null;
+  crypto_share: number | null;
+  sizing: "under" | "within" | "over" | null;
+  custody: string[];
+  harvest: CoinHarvest | null;
 };
 
 export type KpiSourceRow = {
@@ -144,7 +220,15 @@ export type EarningsEvent = {
   beat: boolean | null;
 };
 
-export type PriceEvents = { ticker: string; earnings: EarningsEvent[] };
+/** A dated moment in a coin's history: halving, ETF approval, the Merge. */
+export type CycleEvent = { date: string; kind: string };
+
+export type PriceEvents = {
+  ticker: string;
+  earnings: EarningsEvent[];
+  /** A coin's cycle events; absent from an older server. */
+  cycle?: CycleEvent[];
+};
 
 type Kpi = {
   key: string;
