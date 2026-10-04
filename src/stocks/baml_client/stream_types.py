@@ -23,7 +23,7 @@ class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
     value: StreamStateValueT
     state: typing_extensions.Literal["Pending", "Incomplete", "Complete"]
 # #########################################################################
-# Generated classes (16)
+# Generated classes (21)
 # #########################################################################
 
 class ActionCall(BaseModel):
@@ -63,6 +63,11 @@ class AnalysisReply(BaseModel):
     verdict: typing.Optional[str] = None
     points: typing.Optional[typing.List["AnalysisPoint"]] = None
 
+class BriefSection(BaseModel):
+    asks: typing.Optional[typing.List[int]] = Field(default=None, description='the `n` of the brief lines this section answers')
+    title: typing.Optional[str] = None
+    lines: typing.Optional[typing.List["CardLine"]] = None
+
 class CardLine(BaseModel):
     key: typing.Optional[str] = Field(default=None, description='the key of the action the line is about, copied exactly')
     line: typing.Optional[str] = None
@@ -72,6 +77,7 @@ class CardReply(BaseModel):
     items: typing.Optional[typing.List["CardLine"]] = None
     focus: typing.Optional[typing.List[str]] = None
     routines: typing.Optional[typing.List["RoutineAnswer"]] = None
+    sections: typing.Optional[typing.List["BriefSection"]] = None
 
 class ColumnMap(BaseModel):
     header_row: typing.Optional[int] = Field(default=None, description='index of the row holding the column headers')
@@ -93,6 +99,39 @@ class Columns(BaseModel):
     fee: typing.Optional[int] = None
     note: typing.Optional[int] = None
 
+class CryptoColumns(BaseModel):
+    date: typing.Optional[int] = None
+    type: typing.Optional[int] = None
+    subtype: typing.Optional[int] = None
+    asset: typing.Optional[int] = None
+    pair: typing.Optional[int] = None
+    quantity: typing.Optional[int] = None
+    price: typing.Optional[int] = None
+    total: typing.Optional[int] = None
+    quote: typing.Optional[int] = None
+    fee: typing.Optional[int] = None
+    fee_asset: typing.Optional[int] = None
+    sent_quantity: typing.Optional[int] = None
+    sent_asset: typing.Optional[int] = None
+    received_quantity: typing.Optional[int] = None
+    received_asset: typing.Optional[int] = None
+    value: typing.Optional[int] = None
+    value_currency: typing.Optional[int] = None
+    group: typing.Optional[int] = None
+    direction: typing.Optional[int] = None
+    asset_class: typing.Optional[int] = None
+    note: typing.Optional[int] = None
+
+class CryptoMap(BaseModel):
+    exchange: typing.Optional[str] = Field(default=None, description='the platform\'s name, when the file shows it')
+    layout: typing.Optional[types.CryptoLayout] = Field(default=None, description='null when the file is not a crypto transaction list')
+    header_row: typing.Optional[int] = Field(default=None, description='index of the row holding the column headers')
+    columns: typing.Optional["CryptoColumns"] = Field(default=None, description='0-based column index per role, null when absent')
+    date_format: typing.Optional[str] = Field(default=None, description='strftime format of the date cells, e.g. %Y-%m-%d %H:%M:%S')
+    decimal: typing.Optional[str] = Field(default=None, description='the decimal separator, \'.\' or \',\'')
+    thousands: typing.Optional[str] = Field(default=None, description='the thousands separator, or an empty string')
+    type_map: typing.Optional[typing.Dict[str, str]] = Field(default=None, description='the exact text in the type column -> buy, sell, trade, convert, reward, receive, send, move, fee or ignore')
+
 class LessonOp(BaseModel):
     op: typing.Optional[str] = Field(default=None, description='add, update or delete')
     id: typing.Optional[str] = Field(default=None, description='the saved item\'s id, for update and delete')
@@ -111,6 +150,16 @@ class QueryPlan(BaseModel):
 class RoutineAnswer(BaseModel):
     id: typing.Optional[str] = Field(default=None, description='the `id` of the routine in the data, copied exactly')
     answer: typing.Optional[str] = None
+
+class RoutinePlan(BaseModel):
+    id: typing.Optional[str] = Field(default=None, description='the `id` of the routine, copied exactly')
+    markets: typing.Optional[typing.List[str]] = Field(default=None, description='market groups to quote, from the listed ones; empty when the routine is not about markets')
+    earnings: typing.Optional[str] = Field(default=None, description='none, book, named or large')
+    symbols: typing.Optional[typing.List[str]] = Field(default=None, description='Yahoo Finance symbols of the instruments the routine names')
+    topics: typing.Optional[typing.List[str]] = Field(default=None, description='any of events, insiders, exits, news, filings, holders; empty when the routine asks for none')
+
+class RoutinePlans(BaseModel):
+    plans: typing.Optional[typing.List["RoutinePlan"]] = None
 
 class SkillPick(BaseModel):
     skills: typing.Optional[typing.List[str]] = Field(default=None, description='skill ids from the catalog')
@@ -135,7 +184,7 @@ class StatementRow(BaseModel):
 
 
 # #########################################################################
-# Model rebuilds (16)
+# Model rebuilds (21)
 # #########################################################################
 # Resolve string forward references now that every model above is defined so
 # class declaration order never breaks Pydantic construction (issue #793).
@@ -145,15 +194,20 @@ ActionCall.model_rebuild()
 AlertRule.model_rebuild()
 AnalysisPoint.model_rebuild()
 AnalysisReply.model_rebuild()
+BriefSection.model_rebuild()
 CardLine.model_rebuild()
 CardReply.model_rebuild()
 ColumnMap.model_rebuild()
 Columns.model_rebuild()
+CryptoColumns.model_rebuild()
+CryptoMap.model_rebuild()
 LessonOp.model_rebuild()
 LessonOps.model_rebuild()
 PeerPicks.model_rebuild()
 QueryPlan.model_rebuild()
 RoutineAnswer.model_rebuild()
+RoutinePlan.model_rebuild()
+RoutinePlans.model_rebuild()
 SkillPick.model_rebuild()
 StatementPage.model_rebuild()
 StatementRow.model_rebuild()

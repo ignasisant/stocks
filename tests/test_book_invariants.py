@@ -797,7 +797,8 @@ def test_crypto_rows_import_as_pair_symbols_and_conserve_their_cost():
     )
     assert {t.ticker for t in got.transactions} == {"BTC-EUR"}
     positions, realized = build(got.transactions, to_base=_fx)
-    assert positions[0].quantity == pytest.approx(0.03)
+    # The 2.5 € fee came out of the 1,500 € before any coin was bought.
+    assert positions[0].quantity == pytest.approx(0.05 * (1 - 2.5 / 1500) - 0.02)
     assert sum(p.cost for p in positions) + sum(
         s.cost for s in realized
     ) == pytest.approx(_spent(got.transactions))

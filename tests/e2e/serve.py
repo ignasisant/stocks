@@ -29,6 +29,11 @@ What is sealed, and why each one:
   a page here that renders nowhere else.
 * **the chat** answers from a script: no provider, no key, no daily cap, and
   the same words every time.
+* **the secrets file** is one that does not exist: a developer machine's
+  `.streamlit/secrets.toml` carries the free model chain's keys, and with them
+  every statement preview asked a model first — refused at the socket, then
+  retried after `llm_map`'s pause — and took longer than the import test
+  waits, on that machine only. CI has no file; now neither does anyone else.
 * **the burst limit** is lifted: the whole suite is one client on loopback.
 * **the network** refuses anything but loopback, so the next outbound call
   somebody adds fails loudly here instead of making the suite flaky.
@@ -93,6 +98,12 @@ def _seal_accounts(root: Path) -> None:
     cache.MEMO_DIR = root / "memo"
     insiders.FORM4_CACHE = root / "form4.json"
     insiders.clear_form4_cache()
+
+
+def _seal_secrets(root: Path) -> None:
+    from stocks import secrets_env
+
+    secrets_env.SECRETS_FILE = root / "no-secrets.toml"
 
 
 def _seal_yahoo() -> None:
@@ -164,6 +175,7 @@ def main() -> None:
     os.environ.setdefault("AUTH_REDIRECT_URI", f"http://127.0.0.1:{port}/oauth2callback")
 
     _seal_network()
+    _seal_secrets(root)
     _seal_accounts(root)
     _seal_yahoo()
     _script_fx(root)

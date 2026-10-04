@@ -28,13 +28,14 @@ dispatches here (chat/engine.py).
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import ConfigDict
 
+from stocks import obs
 from stocks.chat import structured
 
 if TYPE_CHECKING:
@@ -301,7 +302,9 @@ TOOLS: dict[str, Tool] = {
         ),
         Tool(
             "remove_ticker",
-            "stop tracking a symbol — drops it from the watchlist entirely.",
+            "stop tracking a symbol — drops it from the watchlist entirely. "
+            "Never for a holding the user wants gone from the portfolio: "
+            "that is a recorded-trade action.",
             _no_args, _run_remove_ticker, "chat.action_removed",
         ),
         Tool(
@@ -431,6 +434,13 @@ BOOK: dict[str, BookTool] = {
             needs_ticker=True,
         ),
         BookTool(
+            "close_position",
+            "the user sold everything but the portfolio still shows some of "
+            'it (a leftover that is not real): "ticker", optional "date" and '
+            '"price" of the sale that emptied it.',
+            needs_ticker=True,
+        ),
+        BookTool(
             "check_book",
             "look for mistakes in the recorded trades (duplicates, transfers "
             "read as sales, one company under two symbols). Optional "
@@ -476,6 +486,11 @@ Rules:
   "yesterday"/"in August" against the context's date. "broker" is a single
   lowercase word (degiro, ibkr, revolut). A row number the user quotes
   ("#123") goes in "ids".
+- The portfolio ("cartera", "portfolio", "posición", "lo que tengo") is the
+  recorded trades; the watchlist ("lista de seguimiento", "seguimiento",
+  "favoritos") is only what the user follows. Removing something from the
+  portfolio is a recorded-trade action — "close_position" when the user says
+  they no longer hold it — never "remove_ticker".
 """
 
 
@@ -539,23 +554,37 @@ def parse_action(raw: str) -> Action | None:
 
 
 def detect(
-    provider: Provider, api_key: str, message: str, context: str = ""
+    provider: Provider, api_key: str, message: str, context: str = "",
+    *, fallbacks: Sequence[tuple[Provider, str]] = (),
 ) -> Action | None:
     """Parse a message into an Action via the provider's cheapest model.
 
     None on any failure — network, bad JSON, no action — and the caller
     proceeds with the normal answer. Same BYOK key as the conversation.
 
+    A provider that does not answer at all hands the message to the next of
+    `fallbacks` — the same chain the answer itself falls down. Left at the
+    head, a dead BYOK key turned every "borra esta operación" into a plain
+    answer from the free model, which then said the book could not be edited.
+    A provider that answered off contract is not retried elsewhere: the
+    message was read, and reading it twice more is a bill for a guess.
+
     A reply that is not the requested object at all gets one repair turn
     (chat/structured.py); a reply that *is* the object and says "no action"
     does not, so the common case (a question, not a command) stays one call."""
     user = (context + "\n\n" if context else "") + f"User message: {message}"
-    try:
-        call = structured.ask(provider, api_key, "DetectAction", _SYSTEM, user,
-                              ActionCall)
-    except Exception:
-        return None
-    return _action_from(call.model_dump())
+    for prov, key in ((provider, api_key), *fallbacks):
+        try:
+            call = structured.ask(prov, key, "DetectAction", _SYSTEM, user,
+                                  ActionCall)
+        except structured.OffContract:
+            return None
+        except Exception as exc:
+            obs.warn("chat.tools.detect_failed", provider=getattr(prov, "id", ""),
+                     error_type=type(exc).__name__, error=str(exc)[:300])
+            continue
+        return _action_from(call.model_dump())
+    return None
 
 
 def execute(action: Action, path: Path) -> None:

@@ -187,6 +187,31 @@ BROKER_NAMES = {
     "saxo": "Saxo",
 }
 
+# Crypto exchanges and wallets a file can come from. No parser of their own:
+# crypto_map reads them (a known header, or the model's reading of the file),
+# and stamps these keys. key -> (display name, brand website for the logo).
+CRYPTO_EXCHANGES: dict[str, tuple[str, str]] = {
+    "binance": ("Binance", "binance.com"),
+    "coinbase": ("Coinbase", "coinbase.com"),
+    "kraken": ("Kraken", "kraken.com"),
+    "bitpanda": ("Bitpanda", "bitpanda.com"),
+    "crypto_com": ("Crypto.com", "crypto.com"),
+    "kucoin": ("KuCoin", "kucoin.com"),
+    "bitstamp": ("Bitstamp", "bitstamp.net"),
+    "nexo": ("Nexo", "nexo.com"),
+    "koinly": ("Koinly", "koinly.io"),
+    "bitvavo": ("Bitvavo", "bitvavo.com"),
+    "bit2me": ("Bit2Me", "bit2me.com"),
+    "okx": ("OKX", "okx.com"),
+    "bybit": ("Bybit", "bybit.com"),
+    "etoro": ("eToro", "etoro.com"),
+    "gemini": ("Gemini", "gemini.com"),
+    "bitget": ("Bitget", "bitget.com"),
+    "young_platform": ("Young Platform", "youngplatform.com"),
+    "cointracking": ("CoinTracking", "cointracking.info"),
+}
+BROKER_NAMES.update({k: name for k, (name, _) in CRYPTO_EXCHANGES.items()})
+
 
 def broker_label(key: str) -> str:
     """Display name for a ledger broker prefix; unknown ones title-case."""
@@ -199,6 +224,8 @@ def broker_domain(key: str) -> str | None:
     for p in PLATFORMS:
         if p.key == key:
             return p.domain
+    if key in CRYPTO_EXCHANGES:
+        return CRYPTO_EXCHANGES[key][1]
     return None
 
 

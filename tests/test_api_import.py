@@ -1181,7 +1181,7 @@ def model(monkeypatch):
 
     calls: list[str] = []
 
-    def extract(filename, data, provider, api_key, mapping=None):
+    def extract(filename, data, provider, api_key, mapping=None, fiat=""):
         calls.append(filename)
         return llm_map.Extraction(
             ParseResult(transactions=[Transaction(

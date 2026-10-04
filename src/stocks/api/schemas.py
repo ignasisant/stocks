@@ -2298,6 +2298,81 @@ class PulseBook(BaseModel):
     )
 
 
+class MarketTile(BaseModel):
+    """One reading on the Home market strip: a level and how far it moved."""
+
+    key: str = Field(description="i18n slug: sp500 | nasdaq | vix | us10y | gold | …")
+    symbol: str = Field(description="The Yahoo ticker or FRED id it was read off.")
+    group: str = Field(description="equity | risk | rates | fx | commodity | crypto")
+    unit: str = Field(
+        description=(
+            "How `changes` reads: percent (a price move, as a fraction) or "
+            "basis_points (a rate's move)."
+        )
+    )
+    value: float | None = None
+    changes: dict[str, float] = Field(
+        default_factory=dict,
+        description="day / week / month, absent where the series is too short.",
+    )
+    welcome: int = Field(
+        default=1,
+        description=(
+            "+1 a rise is good news, -1 a rise is bad news (VIX, yields), 0 neither."
+        ),
+    )
+    state: str | None = Field(
+        default=None, description="up | turning_down | turning_up | down."
+    )
+    percentile: float | None = Field(
+        default=None, description="Where the level sits in its own year (VIX only)."
+    )
+    linkable: bool = Field(
+        default=True,
+        description="Whether the symbol has a ticker page (FRED ids do not).",
+    )
+    as_of: str | None = None
+
+
+class MarketGlance(BaseModel):
+    """What the market did, compressed to one Home card.
+
+    The regime is the Pulse's own composite, not a second opinion; the tiles
+    are a fixed handful of the series the Pulse already downloads, with the
+    one horizon the Pulse never quotes — the day.
+    """
+
+    score: float | None = None
+    regime: str = "unknown"
+    run: int | None = Field(default=None, description="Sessions in the current band.")
+    history: list[float] = Field(
+        default_factory=list,
+        description="The composite's last 30 readings, oldest first.",
+    )
+    tiles: list[MarketTile] = Field(default_factory=list)
+    breadth: Breadth | None = None
+    as_of: str | None = None
+    unavailable: str | None = Field(
+        default=None,
+        description="rate_limited | offline | no_data when the price burst died.",
+    )
+
+
+class HomeSlot(BaseModel):
+    """One card on the account's Home, in the order the reader put it.
+
+    The ids are the client's card registry, not a list the server keeps: a
+    card a later release removes is dropped where the layout is drawn, and one
+    it adds is slotted in there too, so the stored list never has to be
+    migrated. The server checks the shape only.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    id: str = Field(pattern=r"^[a-z_]{1,24}$")
+    hidden: bool = False
+
+
 class Prefs(BaseModel):
     """The account's settings as a client renders them.
 
@@ -2329,6 +2404,13 @@ class Prefs(BaseModel):
     # live portfolio. It says what to *do*; `setup_card_dismissed` hides what is
     # switched *on*.
     onboarding_dismissed: bool = False
+    home_layout: list[HomeSlot] | None = Field(
+        default=None,
+        description=(
+            "The Home cards in the reader's order, each shown or hidden. null "
+            "means the default layout."
+        ),
+    )
     telegram_linked: bool = Field(
         default=False,
         description=(
@@ -2731,12 +2813,15 @@ class BookFinding(BaseModel):
     key: str = Field(
         description="Names this finding on this book; the same on a rescan."
     )
-    kind: Literal["transfer", "two_labels", "oversold", "duplicate"] = Field(
+    kind: Literal[
+        "transfer", "two_labels", "oversold", "duplicate", "fee_in_coins"
+    ] = Field(
         description=(
             "`transfer`: a sale at one broker and an arrival at another that "
             "are one move of shares. `two_labels`: one security kept under two "
             "labels. `oversold`: a sale of shares the book never saw arrive. "
-            "`duplicate`: one trade imported from two brokers."
+            "`duplicate`: one trade imported from two brokers. `fee_in_coins`: "
+            "Revolut crypto buys booked with the coins their fee took."
         )
     )
     ticker: str = Field(description="The label a fix keeps.")
@@ -2817,22 +2902,22 @@ class DailyBook(BaseModel):
     )
 
 
-class DailyRoutineChart(BaseModel):
+class DailySectionChart(BaseModel):
     window: str
     rebased: bool = False
     series: list[DailyChartLine]
 
 
-class DailyRoutine(BaseModel):
-    """One of the reader's daily questions, answered on the card."""
+class DailySection(BaseModel):
+    """One part of the reader's brief, answered on the card."""
 
-    id: str
-    text: str = Field(description="The question, in the reader's words.")
-    answer: str = Field(
-        default="",
-        description="Empty while its data is still being fetched (`pending`).",
+    title: str = Field(description="A few words naming what it covers.")
+    asks: list[int] = Field(
+        default_factory=list,
+        description="The brief's lines it answers, numbered from 1.",
     )
-    chart: DailyRoutineChart | None = None
+    lines: list[DailyItem]
+    chart: DailySectionChart | None = None
 
 
 class DailyCard(BaseModel):
@@ -2934,9 +3019,22 @@ class DailyCard(BaseModel):
             "for an account with no positions."
         ),
     )
-    routines: list[DailyRoutine] = Field(
+    sections: list[DailySection] = Field(
         default_factory=list,
-        description="The reader's daily questions, answered, in saved order.",
+        description=(
+            "The reader's brief, answered: one section per line they wrote, "
+            "in their order, below the alerts that fired (`items`). Empty "
+            "for the default card."
+        ),
+    )
+    brief: Literal["", "pending", "written", "missed"] = Field(
+        default="",
+        description=(
+            "Where the reader's brief stands: empty with none (the default "
+            "card); `pending` while its data is fetched and written; "
+            "`written` when `sections` hold it; `missed` when no model wrote "
+            "it today and the default card stands in."
+        ),
     )
 
 

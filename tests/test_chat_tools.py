@@ -201,6 +201,22 @@ def test_detect_swallows_provider_errors():
     assert detect(_StubProvider(boom=True), "key", "fav this") is None
 
 
+def test_detect_falls_down_the_chain_when_a_provider_does_not_answer():
+    # A dead BYOK key must not turn a ledger request into a plain answer.
+    dead = _StubProvider(boom=True)
+    alive = _StubProvider('{"action": "favorite", "ticker": "NVDA"}')
+    act = detect(dead, "k1", "fav this", fallbacks=[(alive, "k2")])
+    assert act == Action("favorite", "NVDA")
+    assert alive.calls[0][0] == "k2"
+
+
+def test_detect_does_not_ask_again_after_an_off_contract_reply():
+    garbled = _StubProvider("I cannot help with that")
+    alive = _StubProvider('{"action": "favorite", "ticker": "NVDA"}')
+    assert detect(garbled, "k1", "fav this", fallbacks=[(alive, "k2")]) is None
+    assert alive.calls == []
+
+
 # ------------------------------------------------------------------ execute
 
 

@@ -144,6 +144,13 @@ const BROKER_NAMES: Record<string, string> = {
   ibkr: "IBKR",
   clicktrade: "ClickTrade",
   saxo: "Saxo",
+  // platforms.CRYPTO_EXCHANGES — only the ones title-casing gets wrong.
+  crypto_com: "Crypto.com",
+  kucoin: "KuCoin",
+  bit2me: "Bit2Me",
+  okx: "OKX",
+  etoro: "eToro",
+  cointracking: "CoinTracking",
 };
 
 /**

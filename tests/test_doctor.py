@@ -2,6 +2,8 @@
 
 from dataclasses import replace
 
+import pytest
+
 from stocks.portfolio import doctor, edits, ledger
 from stocks.portfolio.ledger import Transaction
 
@@ -110,3 +112,77 @@ def test_a_key_still_names_its_finding_on_a_rescan():
     [finding] = doctor.scan(rows, resolve)
     assert doctor.by_key(rows, finding.key, resolve) == finding
     assert doctor.by_key(rows, "transfer:9-9", resolve) is None
+
+
+# ------------------------------------------- Revolut crypto: fee left in coins
+#
+# Revolut's crypto export prints a buy's Quantity before the fee comes out;
+# older imports booked it as printed. Rows below are the owner's book.
+
+CAT = [
+    Transaction("2025-05-10", "CAT-EUR", "buy", 44471331.2889, 1.1243198382163106e-05,
+                "EUR", 4.95, "revolut crypto CAT"),
+    Transaction("2026-06-18", "CAT-EUR", "sell", 44031065.1091, 1.13e-06, "EUR", 0,
+                "revolut crypto CAT"),
+]
+CHILLGUY = [
+    Transaction("2025-05-08", "CHILLGUY-EUR", "buy", 9302.54766102, 0.05, "EUR", 4.94,
+                "revolut crypto CHILLGUY"),
+    Transaction("2025-05-10", "CHILLGUY-EUR", "sell", 9210.45243918, 0.07, "EUR", 6.15,
+                "revolut crypto CHILLGUY"),
+    Transaction("2025-05-12", "CHILLGUY-EUR", "buy", 5332.18434205, 0.09, "EUR", 4.95,
+                "revolut crypto CHILLGUY"),
+    Transaction("2026-03-23", "CHILLGUY-EUR", "sell", 5279.39571706, 0.01, "EUR", 0,
+                "revolut crypto CHILLGUY"),
+]
+METIS = Transaction("2025-05-10", "METIS-EUR", "buy", 25.60141493, 19.53, "EUR", 4.95,
+                    "revolut crypto METIS")
+
+
+def test_the_coins_a_sale_leaves_behind_are_the_fees(tmp_path):
+    db = tmp_path / "portfolio.db"
+    ledger.add_many([*CAT, *CHILLGUY, METIS], db)
+    [finding] = doctor.scan(ledger.all_transactions(db))
+    assert finding.kind == "fee_in_coins" and finding.ticker == "CAT-EUR"
+    assert finding.detail["closed"] == ["CAT-EUR", "CHILLGUY-EUR"]
+    assert finding.detail["buys"] == 4
+    fields = {op["id"]: op["fields"] for op in finding.fix}
+    # Emptied: each buy keeps what its sale sold, at fee / fee's coins — the
+    # price the rounded 0.05 € column stood for (500 € / 9,302.55), within
+    # the cent the Fees column was cut by.
+    assert fields[1]["quantity"] == CAT[1].quantity
+    assert fields[3]["quantity"] == CHILLGUY[1].quantity
+    assert fields[3]["price"] == pytest.approx(500 / 9302.54766102, rel=3e-3)
+    assert fields[5]["quantity"] == CHILLGUY[3].quantity
+    # Still held: the fee's worth at the booked price, to the printed decimals.
+    assert fields[7]["quantity"] == round(25.60141493 - 4.95 / 19.53, 8)
+    assert fields[7]["price"] == 19.53 and fields[7]["note"].endswith(" net")
+
+    planned = edits.plan(finding.fix, db)
+    assert planned.ok and planned.positions_after == 1
+    metis = next(e for e in planned.effects if e.ticker == "METIS-EUR")
+    assert metis.cost_after == pytest.approx(500.0, abs=0.01)  # what was paid
+    edits.commit(finding.fix, planned.token, source="chat", path=db)
+    assert doctor.scan(ledger.all_transactions(db)) == []
+
+
+def test_a_book_imported_net_or_already_cleaned_up_has_nothing_to_fix():
+    net = _ledger(replace(CAT[0], quantity=CAT[1].quantity,
+                          note="revolut crypto CAT net"), CAT[1])
+    assert doctor.scan(net) == []
+    # The dust was sold by hand: nothing left, nothing to say.
+    swept = _ledger(*CAT, Transaction("2026-06-19", "CAT-EUR", "sell", 440266.1798,
+                                      1e-6, "EUR", 0, "revolut crypto CAT"))
+    assert doctor.scan(swept) == []
+
+
+def test_a_partial_sale_is_not_read_as_emptying_the_position():
+    rows = _ledger(METIS, Transaction("2025-06-01", "METIS-EUR", "sell", 20, 25.0,
+                                      "EUR", 1, "revolut crypto METIS"))
+    [finding] = doctor.scan(rows)
+    assert finding.detail["closed"] == []
+    assert finding.fix[0]["fields"]["quantity"] == round(25.60141493 - 4.95 / 19.53, 8)
+
+
+def test_other_brokers_crypto_is_left_alone():
+    assert doctor.scan(_ledger(*(replace(t, note="kraken CAT") for t in CAT))) == []

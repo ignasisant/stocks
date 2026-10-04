@@ -153,7 +153,7 @@
   "landing.faq_q1": "¿De verdad es gratis?",
   "landing.faq_a1": "Sí. Licencia MIT, sin tarjeta y sin plan de pago.",
   "landing.faq_q2": "¿Qué brókers puedo importar?",
-  "landing.faq_a2": "Revolut (CSV o PDF), Revolut cripto, Trading 212, DEGIRO, Interactive Brokers, ClickTrade / Saxo (XLSX o CSV), además de un esquema CSV genérico y entrada manual para cualquier otro.",
+  "landing.faq_a2": "Revolut (CSV o PDF), Revolut cripto, Trading 212, DEGIRO, Interactive Brokers, ClickTrade / Saxo (XLSX o CSV), el extracto de cualquier exchange cripto (Binance, Coinbase, Kraken, Bitpanda, Crypto.com, Koinly…), además de un esquema CSV genérico y entrada manual para cualquier otro.",
   "landing.faq_q3": "¿Os conectáis a mi cuenta del bróker?",
   "landing.faq_a3": "No. Tú subes un fichero de extracto. TopStocks nunca ve las credenciales de tu bróker.",
   "landing.faq_q4": "¿Puedo probarlo sin cuenta?",

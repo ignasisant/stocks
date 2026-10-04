@@ -7,6 +7,7 @@ Both exist for the same failure: Yahoo refuses this host's egress IP, and the
 app spends minutes rediscovering that, once per block, on every request.
 """
 
+import functools
 import logging
 import threading
 import time
@@ -117,18 +118,29 @@ def test_an_error_under_budget_propagates_unchanged():
 
 def test_fetch_many_bounds_the_whole_retry_ladder(monkeypatch):
     """The budget wraps the retries, not each one: three attempts must not buy
-    three budgets."""
+    three budgets.
+
+    The abandoned ladder is let go and waited for before the test ends. Left to
+    hang it outlived the test by twenty seconds, logged into a closed stream
+    and, on its last rung, tripped the process-wide breaker in the middle of
+    whichever test that worker had moved on to."""
     monkeypatch.setattr(fetch, "ticker_aliases", dict)
+    monkeypatch.setattr(fetch, "retry", functools.partial(fetch.retry, base_delay=0))
+    released = threading.Event()
 
     def hang(*a, **k):
-        time.sleep(5)
+        released.wait(timeout=5)
         raise YFRateLimitError()
 
     monkeypatch.setattr(fetch.yf, "download", hang)
+    before = set(threading.enumerate())
     started = time.monotonic()
     with pytest.raises(YFRateLimitError):
         fetch.fetch_many(["AAPL", "NVDA"], budget=0.2)
     assert time.monotonic() - started < 2
+    released.set()
+    for worker in set(threading.enumerate()) - before:
+        worker.join(timeout=5)
 
 
 def test_fetch_many_still_returns_frames(monkeypatch):
@@ -282,6 +294,8 @@ def yahoo(monkeypatch):
     """
     monkeypatch.setattr(fetch, "ticker_aliases", dict)
     monkeypatch.setattr(fetch.profiles, "remember", lambda *a, **k: None)
+    # The ladder's rungs, without its real back-off between them.
+    monkeypatch.setattr(fetch, "retry", functools.partial(fetch.retry, base_delay=0))
     fetch.clear_info_cache()
     seen = {"log": [], "built": [], "limit_on": None}
 

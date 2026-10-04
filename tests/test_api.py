@@ -588,6 +588,11 @@ WRITES = {
     # Its "see more": the same allowance spent the first time, and the
     # paragraphs stored onto the same card.
     ("/v1/daily/analysis", "post"),
+    # The card's brief editor. Each save is a memory written and, usually, a
+    # model call planning it — the chat memory's twin, refused for the same
+    # reason.
+    ("/v1/daily/brief", "put"),
+    ("/v1/daily/brief", "delete"),
     # Home's "Refresh prices". It writes nothing, but it drops process-wide
     # price caches — every account's downloads — so it is a pressed button,
     # and only a signed-in reader presses buttons.

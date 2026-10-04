@@ -75,7 +75,11 @@ build-backend = "uv_build"
 testpaths = ["tests"]
 # The browser tests (tests/e2e) need Chromium, which `uv sync` does not
 # install; they run on request: `uv run pytest -m e2e`. A later `-m` wins.
-addopts = ["-m", "not e2e"]
+# Spread over every core (pytest-xdist); `-n0` runs in one process, for a
+# debugger or `-x` on a single test. A later `-n` wins too. Work stealing
+# rather than fixed chunks: a few API files carry most of the wall time, and
+# an idle worker taking from a busy one saved ~3 s of 18 on 2026-10-04.
+addopts = ["-m", "not e2e", "-n", "auto", "--dist", "worksteal"]
 markers = ["e2e: drives the built app in a real browser (tests/e2e)"]
 
 # Type checking. The whole of src/stocks is checked and CI keeps it that way,
@@ -102,6 +106,7 @@ select = ["E", "F", "I", "UP", "B"]
 dev = [
     "pytest>=9.1.1",
     "pytest-playwright>=0.9.0",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.16.0",
     "ty>=0.0.1a21",
 ]

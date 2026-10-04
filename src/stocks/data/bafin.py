@@ -63,6 +63,15 @@ ROLES = {
 }
 
 
+# German venues on Yahoo: Xetra and the regional floors. A name listed there
+# is one this register may speak for.
+GERMAN_VENUES = (".DE", ".F", ".BE", ".DU", ".HM", ".HA", ".MU", ".SG")
+
+
+def german_listing(ticker: str) -> bool:
+    return ticker.upper().endswith(GERMAN_VENUES)
+
+
 def _search_url(*, issuer: str | None = None, isin: str | None = None) -> str:
     """Export URL for one issuer search (by ISIN when known, else by name)."""
     params = {

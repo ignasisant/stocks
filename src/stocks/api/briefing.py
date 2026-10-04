@@ -47,7 +47,7 @@ from stocks.analysis.portfolio import basket_change, us_market_open
 from stocks.api import home, loaders
 from stocks.api.cache import ttl_cache
 from stocks.api.deps import reporting_currency
-from stocks.chat import daily, daily_book, daily_routines, engine, signals
+from stocks.chat import daily, daily_book, daily_routines, engine, routine_plan, signals
 from stocks.data.crypto import is_crypto
 
 # How long `POST /daily` holds the request for a briefing before answering
@@ -87,15 +87,17 @@ def job_for(paths, key: tuple) -> Job | None:
     return job if job is not None and job.key == key else None
 
 
-def key_for(day: date, lang: str, session: str | None) -> tuple:
+def key_for(day: date, lang: str, session: str | None, brief: str = "") -> tuple:
     """What a card and its one generation attempt are keyed on.
 
     The session is in it for the reason `daily.is_fresh` gives: a card written
     before the open quotes the previous close, and when the next session lands
     that card is stale hours before the 09:00 rollover. Rekeying retires the
-    "already tried" guard with it.
+    "already tried" guard with it. So is the brief's wording
+    (`daily_routines.signature`): a reader who rewrites it wants the card
+    they just asked for, not the one tried this morning.
     """
-    return (day.isoformat(), lang, session or "")
+    return (day.isoformat(), lang, session or "", brief)
 
 
 # ------------------------------------------------------------------- facts
@@ -311,11 +313,7 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
             tbl = hist = None
 
     owned = {p.ticker for p in positions}
-    tags = {h.ticker for h in entries if h.tags}
-    favourites = {h.ticker for h in entries if h.favorite}
-    earn = tuple(
-        sorted(t for t in owned | favourites | tags if not is_crypto(t) and not _fund(t))
-    )
+    earn = _reporting(owned, entries)
     events, results = [], []
     try:
         if earn:
@@ -344,9 +342,9 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
         earnings=events,
         extremes=extremes,
         index=_index(ccy) if positions else None,
-        # The questions alone: their data is fetched on the job's thread
+        # The brief's lines alone: their data is fetched on the job's thread
         # (`start`), so the request is not held for it.
-        routines=daily_routines.seeded(daily_routines.load(prefs, paths.chat)),
+        brief=daily_routines.seeded(daily_routines.load(prefs, paths.chat)),
         signals=signals.candidates(
             holdings=entries,
             tbl=tbl,
@@ -391,6 +389,59 @@ def book_chart(paths, lang: str) -> list[dict]:
     except Exception as exc:  # noqa: BLE001
         obs.warn("daily_action.chart_unavailable", error_type=type(exc).__name__)
         return []
+
+
+def _reporting(owned: set[str], entries) -> tuple[str, ...]:
+    """The names whose earnings the card follows: held, favourite or tagged,
+    coins and funds left out. Sorted, so the calendar's cache key is the same
+    for every caller (`loaders.earnings_calendar`)."""
+    tags = {h.ticker for h in entries if h.tags}
+    favourites = {h.ticker for h in entries if h.favorite}
+    return tuple(
+        sorted(t for t in owned | favourites | tags if not is_crypto(t) and not _fund(t))
+    )
+
+
+def _followed(paths) -> tuple[str, ...]:
+    """`_reporting` for an account, read again on the job's thread: a
+    routine about "my companies' results" means these. () when unreadable."""
+    try:
+        db = str(paths.db)
+        _, positions, _ = loaders.ledger_state(
+            db, loaders.db_mtime(db), reporting_currency(paths))
+        return _reporting({p.ticker for p in positions}, home.holdings(paths))
+    except Exception:  # noqa: BLE001 — the routine falls back to large caps
+        return ()
+
+
+def _sources(paths, prefs: dict, facts: dict) -> daily_routines.Sources:
+    """What the brief is answered from, off the API's own cached loaders."""
+    from stocks.chat import learnings
+    from stocks.portfolio.tax import prefs as tax_prefs
+
+    try:
+        tax_code = tax_prefs.resolve(prefs)[0]
+    except Exception:  # noqa: BLE001 — no tax calendar, the rest still stands
+        tax_code = None
+    try:
+        notes = tuple(n for n in learnings.load(paths.learnings)
+                      if n.kind in daily_routines.NOTE_KINDS)
+    except Exception:  # noqa: BLE001
+        notes = ()
+    return daily_routines.Sources(
+        calendar=loaders.earnings_calendar,
+        insiders=loaders.insiders,
+        eu_insiders=loaders.eu_insiders,
+        news=loaders.headlines,
+        filings=loaders.current_reports,
+        holders=loaders.institutions,
+        ex_dividends=loaders.ex_dividends,
+        tax_code=tax_code,
+        held=tuple(str(r["ticker"]) for r in facts.get("top_weights") or []),
+        followed=_followed(paths),
+        entries=tuple(home.holdings(paths)),
+        notes=notes,
+    )
 
 
 def _fund(ticker: str) -> bool:
@@ -443,9 +494,10 @@ def _store(paths, job: Job, prefs: dict, facts: dict, stored, spent: bool) -> No
         return
     if job.action is None and stored is not None and stored.from_model and daily.is_fresh(
         stored, date.fromisoformat(action.day), action.lang, action.as_of or None
-    ):
+    ) and stored.brief_sig == action.brief_sig:
         # A Regenerate that got nothing back leaves the written card standing
-        # rather than swapping it for the stand-in.
+        # rather than swapping it for the stand-in — unless it was written
+        # for another brief.
         return
     card = daily.to_store(stored, action, facts)
     card["thread"] = daily.filed(stored, action, paths.chat)
@@ -476,7 +528,7 @@ def start(
     from stocks.web.i18n import translate
 
     chart = book_chart(paths, lang) if facts.get("index") else []
-    drawn: dict[str, dict] = {}
+    drawn: dict[int, dict] = {}
 
     def stand_in() -> daily.DailyAction | None:
         return daily.dressed(daily.computed(facts, lang, day), chart, drawn)
@@ -497,31 +549,35 @@ def start(
         spent = spent or ok
         return ok
 
-    def _answer_routines() -> None:
-        """The routines' data, fetched on the job's thread: the reader already
-        has the stand-in, with the questions shown as being answered."""
+    def _gather_brief() -> None:
+        """The brief's data, fetched on the job's thread: the reader already
+        has the stand-in, saying their card is on its way."""
         routines = daily_routines.load(prefs, paths.chat)
         if not routines:
             return
         try:
+            # What the brief needs fetched, planned once per wording.
+            routines = routine_plan.ensure(prefs, paths.chat, routines, day,
+                                           spend_free=spend)
             found, charts = daily_routines.gather(
                 routines,
                 watchlist=paths.watchlist,
                 db=paths.db,
                 base=str(facts.get("currency") or "EUR"),
                 translate=lambda k, **kw: translate(k, lang, **kw),
+                day=day,
+                sources=_sources(paths, prefs, facts),
             )
         except Exception as exc:  # noqa: BLE001 — unanswered, not uncarded
-            obs.warn("daily_action.routines_failed", error_type=type(exc).__name__)
-            found, charts = [{"id": r.id, "ask": r.text} for r in routines], {}
-        facts["routines"] = found
+            obs.warn("daily_action.brief_failed", error_type=type(exc).__name__)
+            found = {"asks": daily_routines.asks(routines), "missing": ["all"]}
+            charts = {}
+        facts["brief"] = found
         drawn.update(charts)
-        if job.computed is not None:
-            job.computed = stand_in()
 
     def work() -> None:
         try:
-            _answer_routines()
+            _gather_brief()
             job.action = daily.dressed(
                 daily.generate(
                     prefs,
@@ -546,10 +602,12 @@ def start(
             )
         finally:
             try:
-                if job.computed is None and job.action is None:
+                if job.action is None and (job.computed is None or facts.get("brief")):
                     # A forced job that got nothing still owes the reader a
                     # card: the computed one, built now rather than up front
                     # so a Regenerate shows its wait line and not a stand-in.
+                    # A brief no model wrote is rebuilt too, so the card
+                    # says it was missed rather than still on its way.
                     job.computed = stand_in()
                 _store(paths, job, prefs, facts, stored, spent)
             finally:

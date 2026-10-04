@@ -500,6 +500,85 @@ def insiders(ticker: str):
         return []
 
 
+def issuer_name(ticker: str) -> str | None:
+    """The company name a register or a headline is searched by.
+
+    Yahoo's `longName` first. Then the fund catalog and the SEC map, without
+    any watchlist: a name somebody typed on their own list is theirs, not the
+    company's. Rarely reached: the common miss is Yahoo throttled, and a German
+    issuer is then usually in neither list, so the caller says "not covered"
+    rather than guessing.
+    """
+    issuer = str(fundamentals(ticker).info.get("longName") or "").strip()
+    if issuer:
+        return issuer
+    try:
+        from stocks.data.funds import fund_name
+
+        resolved = display_symbol(ticker)
+        return fund_name(resolved) or sec_title(resolved)
+    except Exception:
+        return None
+
+
+@ttl_cache(_EVENTS_TTL, max_entries=32)
+def eu_insiders(ticker: str):
+    """BaFin's Art. 19 MAR notifications for a German issuer, searched by the
+    company's name; [] for any other listing, a name not found or a failed
+    search (the register's reader never raises)."""
+    from stocks.data.bafin import german_listing
+    from stocks.data.bafin import insider_transactions as bafin_transactions
+
+    if not german_listing(ticker):
+        return []
+    issuer = issuer_name(ticker)
+    return bafin_transactions(ticker, issuer=issuer) if issuer else []
+
+
+@ttl_cache(3600.0, max_entries=64)
+def headlines(ticker: str):
+    """The last days' headlines that name `ticker`'s company (`data.news`).
+    The SEC map's title first — a local file, no request — then Yahoo's name.
+    Raises on a failed search."""
+    from stocks.data import edgar, news
+
+    try:
+        name = edgar.title_for(ticker)
+    except Exception:  # noqa: BLE001 — the name is a help, not a need
+        name = None
+    if not name:
+        try:
+            name = issuer_name(ticker)
+        except Exception:  # noqa: BLE001
+            name = None
+    return news.headlines(ticker, name)
+
+
+# 8-Ks are read a month back and narrowed by the caller: one cached feed per
+# name serves a Monday card and a Thursday one alike.
+FILINGS_DAYS = 30
+
+
+@ttl_cache(10800.0, max_entries=64)
+def current_reports(ticker: str):
+    """`ticker`'s 8-Ks over FILINGS_DAYS (`data.edgar`); [] for a name that
+    does not file with the SEC. Raises on a refused request."""
+    from datetime import timedelta
+
+    from stocks.data import edgar
+
+    return edgar.current_reports(ticker, date.today() - timedelta(days=FILINGS_DAYS))
+
+
+@ttl_cache(86400.0, max_entries=64)
+def institutions(ticker: str):
+    """`ticker`'s institutional holders (`data.holders`), or None. A day's
+    ttl: the figures move once a quarter. Raises on a failed request."""
+    from stocks.data import holders
+
+    return holders.institutions(ticker)
+
+
 @ttl_cache(86400.0, max_entries=32)
 def fund_profile(ticker: str):
     """What a fund is and what it holds, or None for an ordinary company.

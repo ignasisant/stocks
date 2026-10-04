@@ -49,16 +49,6 @@
   flex-wrap: wrap;
 }
 
-/* Every auto-fit track is floored at `min(…, 100%)`: a page beside a wide
-   chat drawer can be narrower than the nominal minimum, and a track that will
-   not go below it pushes the whole column off the side of the page. */
-.hm-pair {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
-  gap: 0.75rem;
-  align-items: start;
-}
-
 .hm-note {
   margin: 0;
   color: var(--ag-text-muted);
@@ -88,6 +78,128 @@
   text-decoration: underline;
 }
 
+/* ------------------------------------------------------------- the layout */
+
+/* The reader's cards, in the reader's order (`cards.ts`). A flex row that
+   wraps rather than a grid, so a half card with no half beside it simply
+   grows to the full row and the order the reader chose is never rearranged
+   to fill a hole. Every card is a full row until the page has room for two;
+   that is the width of the page, not the window, so an open chat drawer
+   stacks them the same way a phone does. */
+.hm-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 0.75rem;
+}
+
+.hm-slot {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+/* A card with nothing to say (no movers today, no ledger yet) renders
+   nothing; its slot takes no room and its neighbour closes up. */
+.hm-slot:empty {
+  display: none;
+}
+
+/* Two halves side by side end level, whichever has more rows. */
+.hm-slot-half > .hm-card:last-child {
+  flex: 1 0 auto;
+}
+
+@container ag-main (min-width: 56rem) {
+  .hm-slot-half {
+    flex-basis: calc(50% - 0.375rem);
+  }
+}
+
+/* "Customise" takes no row of its own: it sits at the right end of the lead
+   card's heading line, and that line keeps room for it. A card drawn as a
+   bordered box has its heading inside the padding; a section (the portfolio's
+   title, the watchlist's first group) starts at the top edge. */
+.hm-slot-lead {
+  --hm-lead-room: 8.5rem;
+  position: relative;
+}
+
+.hm-slot-lead > .hm-customize {
+  position: absolute;
+  top: calc(1rem - 4px);
+  right: 1rem;
+  z-index: 1;
+}
+
+.hm-slot-lead[data-card="glance"] > .hm-customize {
+  top: 0;
+  right: 0;
+}
+
+.hm-slot-lead[data-card="watchlist"] > .hm-customize {
+  top: 0.35rem;
+  right: 0.5rem;
+}
+
+/* Nothing drawn beside it (all cards put away, or the lead one empty). */
+.hm-slot-lead > .hm-customize:only-child {
+  position: static;
+  align-self: flex-end;
+}
+
+.hm-customize + .hm-card > :first-child,
+.hm-customize + .ag-skeleton,
+.hm-customize + .hm-section > .hm-h2,
+.hm-customize + .hm-section > .hm-group:first-child > summary {
+  padding-right: var(--hm-lead-room);
+}
+
+.hm-customize {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-sm, 12px);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hm-customize:hover {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+}
+
+.hm-customize:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 2px;
+}
+
+/* A phone keeps the glyph; the button's accessible name still says it. */
+@container ag-main (max-width: 38rem) {
+  .hm-slot-lead {
+    --hm-lead-room: 2.5rem;
+  }
+
+  .hm-customize {
+    width: 28px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .hm-customize-text {
+    display: none;
+  }
+}
+
 /* ------------------------------------------------------------ the selectors */
 
 .hm-segmented {
@@ -100,6 +212,8 @@
 }
 
 .hm-seg {
+  min-width: 32px;
+  min-height: 26px;
   padding: 2px 10px;
   border: none;
   border-radius: var(--ag-radius-xs, 4px);
@@ -107,7 +221,20 @@
   color: var(--ag-text-muted);
   font: inherit;
   font-size: var(--ag-fs-md, 13px);
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
+  transition-property: background-color, color;
+  transition-duration: 120ms;
+  transition-timing-function: ease-out;
+}
+
+.hm-seg:hover:not(.hm-seg-on) {
+  color: var(--ag-text-primary);
+}
+
+.hm-seg:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 1px;
 }
 
 .hm-seg-on {
@@ -115,8 +242,17 @@
   color: var(--ag-text-primary);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .hm-seg {
+    transition: none;
+  }
+}
+
 /* ------------------------------------------------------------- the tables */
 
+/* Every auto-fit track is floored at `min(…, 100%)`: a page beside a wide
+   chat drawer can be narrower than the nominal minimum, and a track that will
+   not go below it pushes the whole column off the side of the page. */
 .hm-split {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
@@ -125,7 +261,6 @@
 
 /* The movers' five columns in a squeezed page scroll inside their own half
    rather than widening the card past the page. */
-.hm-pair > *,
 .hm-split > * {
   min-width: 0;
 }
@@ -386,6 +521,62 @@
   gap: 0.5rem;
 }
 
+/* Edit the brief, regenerate, ask: the card's three controls, icons at the
+   header's far end, named by their label and tooltip. */
+.hm-daily-tools {
+  display: flex;
+  gap: 0.15rem;
+  margin-left: auto;
+}
+
+.hm-icon-btn {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ag-radius-xs, 6px);
+  background: transparent;
+  color: var(--ag-text-secondary);
+  cursor: pointer;
+}
+
+.hm-icon-btn:hover:not(:disabled),
+.hm-icon-btn[aria-pressed="true"] {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-primary);
+}
+
+.hm-icon-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.hm-icon-btn:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+
+/* The DS 44px touch target on a phone. */
+@container ag-main (max-width: 38rem) {
+  .hm-icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* A line's tickers, at its end: logo and link, no chip row of their own. */
+.hm-daily-tks {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.5rem;
+  margin-left: 0.4rem;
+  vertical-align: baseline;
+  font-size: var(--ag-fs-sm, 12px);
+}
+
 .hm-daily-when {
   color: var(--ag-text-muted);
   font-size: var(--ag-fs-xs, 11px);
@@ -576,7 +767,7 @@
   color: var(--ag-down);
 }
 
-/* The card's four sections: a quiet label over each, so the same thing sits
+/* The card's sections: a quiet label over each, so the same thing sits
    in the same place every morning without boxing the card into panels. */
 .hm-daily-sec {
   display: flex;
@@ -604,7 +795,7 @@
 }
 
 .hm-daily-book .ag-a2ui-chart,
-.hm-routine .ag-a2ui-chart {
+.hm-daily-sec .ag-a2ui-chart {
   min-width: 0;
   touch-action: pan-y;
 }
@@ -629,50 +820,6 @@
 
 .hm-daily-na {
   color: var(--ag-text-muted);
-}
-
-/* Your routines: the reader's own question, then the answer under it. */
-.hm-daily-routines {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.hm-routine {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
-}
-
-.hm-routine-ask {
-  margin: 0;
-  color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-sm, 12px);
-  font-style: italic;
-}
-
-.hm-routine-answer {
-  margin: 0;
-  font-size: var(--ag-fs-base, 14px);
-  line-height: 1.45;
-}
-
-.hm-daily-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.hm-daily-chips .hm-ticker {
-  padding: 2px 9px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill, 9999px);
-  background: var(--ag-surface-page);
-  font-size: var(--ag-fs-md, 13px);
 }
 
 /* The line under a briefing that is still being written, and the wait line
@@ -725,42 +872,6 @@
   .hm-daily-dot {
     animation: none;
     opacity: 0.6;
-  }
-}
-
-.hm-daily-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-/* Two lengths of one label: the long one where there is room, the short one
-   on a phone, where "Ask the assistant" beside "Regenerate" wraps each to two
-   lines and the pair reads as one smudge. */
-.hm-narrow {
-  display: none;
-}
-
-/* By the page's own width (`ag-main` is a size container), so the short
-   labels also take over beside a wide chat drawer, which a viewport query
-   cannot see. */
-@container ag-main (max-width: 38rem) {
-  .hm-wide {
-    display: none;
-  }
-
-  .hm-narrow {
-    display: inline;
-  }
-
-  /* Stacked full width, both under the thumb, at the DS 44px target. */
-  .hm-daily-actions {
-    flex-direction: column;
-  }
-
-  .hm-daily-actions .ag-btn {
-    width: 100%;
-    min-height: 44px;
   }
 }
 
@@ -1129,14 +1240,34 @@ button.hm-check-on:hover {
   font-size: var(--ag-fs-md, 13px);
 }
 
-/* The sparkline's key. Small and inline: it names two lines, it is not a
-   chart legend in its own right. */
-/* The range selector sits over the chart, right-aligned, out of the way of the
-   legend under it. */
+/* The chart's toolbar: key on the left, range selector on the right, one
+   row. Wraps on a narrow card (or beside a wide chat drawer) with the selector
+   keeping the right edge; `margin-left: auto` also holds it there when a short
+   window leaves it without a key. */
 .hm-spark-head {
   display: flex;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
   margin-top: 12px;
+}
+
+.hm-spark-head > .hm-segmented {
+  margin-left: auto;
+}
+
+/* On a phone the key fills its row, so the selector gets one of its own:
+   full width with even segments, a bigger target under a thumb. */
+@container ag-main (max-width: 38rem) {
+  .hm-spark-head > .hm-segmented {
+    flex: 1 1 100%;
+  }
+
+  .hm-spark-head .hm-seg {
+    flex: 1;
+    min-height: 32px;
+  }
 }
 
 /* The window's own extremes, one at each end of the plot's height: the line
@@ -1155,10 +1286,14 @@ button.hm-check-on:hover {
   font-variant-numeric: tabular-nums;
 }
 
+/* The sparkline's key. Small and inline: it names two lines, it is not a
+   chart legend in its own right. */
 .hm-spark-legend {
   display: flex;
-  gap: 14px;
-  margin: 10px 0 0;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  min-width: 0;
+  margin: 0;
   padding: 0;
   list-style: none;
   color: var(--ag-text-muted);
@@ -1167,8 +1302,17 @@ button.hm-check-on:hover {
 
 .hm-spark-legend li {
   display: flex;
-  gap: 5px;
+  gap: 6px;
   align-items: center;
+  white-space: nowrap;
+}
+
+/* The period's peak is a figure, not a label: set apart from its name by
+   weight, on fixed-width digits so a range switch does not jog the key. */
+.hm-spark-legend-figure {
+  color: var(--ag-text-secondary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .hm-spark-key {
@@ -1188,4 +1332,409 @@ button.hm-check-on:hover {
 
 .hm-spark-max {
   border-top: 2px dashed var(--ag-text-faint);
+}
+
+/* ------------------------------------------------------------- the market */
+
+.hm-market-title,
+.hm-market-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.75rem;
+}
+
+/* The Pulse's band, in the Pulse's colours — the `sn-regime-*` rules live in
+   a stylesheet Home does not load, so the pairs are restated here. */
+.hm-regime {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: var(--ag-radius-pill, 999px);
+  font-size: var(--ag-fs-sm, 12px);
+  white-space: nowrap;
+}
+
+.hm-regime strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.hm-regime-up {
+  background: var(--ag-success-fill);
+  color: var(--ag-up);
+}
+
+.hm-regime-down {
+  background: var(--ag-down-fill);
+  color: var(--ag-down);
+}
+
+.hm-regime-warn {
+  background: var(--ag-warn-fill);
+  color: var(--ag-warn);
+}
+
+.hm-regime-flat {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-secondary);
+}
+
+.hm-regime-delta {
+  font-size: var(--ag-fs-xs, 11px);
+  opacity: 0.85;
+}
+
+.hm-regime-spark polyline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+/* One row on a desktop page; a narrow one scrolls the strip sideways rather
+   than stacking eleven tiles into a column nobody reads as "the market". */
+.hm-market-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(6.25rem, 100%), 1fr));
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@container ag-main (max-width: 38rem) {
+  .hm-market-strip {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scroll-snap-type: x mandatory;
+  }
+
+  .hm-market-strip > li {
+    flex: 0 0 7rem;
+    scroll-snap-align: start;
+  }
+}
+
+.hm-mtile {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--ag-rule-soft);
+  border-radius: var(--ag-radius-md, 10px);
+  background: var(--ag-surface-sunken);
+  color: inherit;
+  text-decoration: none;
+}
+
+a.hm-mtile:hover {
+  background: var(--ag-surface-hover);
+}
+
+a.hm-mtile:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 2px;
+}
+
+.hm-mtile-label {
+  overflow: hidden;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 11px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hm-mtile-value {
+  font-size: var(--ag-fs-base, 14px);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hm-mtile-move {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--ag-fs-sm, 12px);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hm-mtile-arrow {
+  font-size: var(--ag-fs-2xs, 10px);
+}
+
+.hm-mtile-sub {
+  color: var(--ag-text-faint);
+  font-size: var(--ag-fs-2xs, 10px);
+  white-space: nowrap;
+}
+
+.hm-tone-up {
+  color: var(--ag-up);
+}
+
+.hm-tone-down {
+  color: var(--ag-down);
+}
+
+.hm-tone-warn {
+  color: var(--ag-warn);
+}
+
+.hm-tone-flat {
+  color: var(--ag-text-secondary);
+}
+
+/* ---------------------------------------------------- the optional cards */
+
+/* A sentence that needs acting on: tinted, but read as text, not as a badge. */
+.hm-callout {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--ag-radius-sm, 8px);
+  font-size: var(--ag-fs-md, 13px);
+  line-height: 1.45;
+  text-wrap: pretty;
+  max-width: 72ch;
+}
+
+.hm-callout-warn {
+  background: var(--ag-warn-fill);
+  color: var(--ag-text-primary);
+  box-shadow: inset 3px 0 0 var(--ag-warn);
+}
+
+.hm-extra-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  font-size: var(--ag-fs-md, 13px);
+  list-style: none;
+}
+
+.hm-extra-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.hm-extra-list li > :last-child {
+  margin-left: auto;
+}
+
+.hm-extra-list a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.hm-extra-list a:hover {
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------- the editor */
+
+.hm-edit-title:focus {
+  outline: none;
+}
+
+.hm-edit-title:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 4px;
+  border-radius: var(--ag-radius-xs);
+}
+
+.hm-edit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hm-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+}
+
+.hm-edit-dragging {
+  position: relative;
+  z-index: 1;
+  box-shadow: var(--ag-shadow-overlay);
+}
+
+.hm-edit-tray-title {
+  margin: 0.4rem 0 0;
+  font-weight: 600;
+}
+
+.hm-edit-tray .hm-edit-row {
+  border-style: dashed;
+  background: var(--ag-surface-sunken);
+}
+
+/* The handle alone starts a drag, and owns its touches: the rest of the row
+   still scrolls the page under a thumb. */
+.hm-edit-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ag-radius-xs);
+  background: none;
+  color: var(--ag-text-muted);
+  cursor: grab;
+  touch-action: none;
+}
+
+.hm-edit-handle:hover {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+}
+
+.hm-edit-handle:active {
+  cursor: grabbing;
+}
+
+.hm-edit-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.hm-edit-text strong {
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+}
+
+.hm-edit-text .hm-caption {
+  text-wrap: pretty;
+}
+
+.hm-edit-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Same face as `.ag-btn`, at the height of a row's controls; 32px keeps a
+   thumb on the one it meant. */
+.hm-edit-icon,
+.hm-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 32px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-xs);
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hm-edit-icon {
+  width: 32px;
+  padding: 0;
+}
+
+.hm-edit-btn {
+  padding: 0 10px;
+}
+
+.hm-edit-icon:hover,
+.hm-edit-btn:hover {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+}
+
+.hm-edit-icon[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.hm-edit-icon[aria-disabled="true"]:hover {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-secondary);
+}
+
+.hm-edit-handle:focus-visible,
+.hm-edit-icon:focus-visible,
+.hm-edit-btn:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 2px;
+}
+
+.hm-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+}
+
+.hm-edit-spacer {
+  flex: 1;
+}
+
+/* One step up from the rows' controls, not the page's body size. */
+.hm-edit-actions .ag-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 14px;
+  font-size: var(--ag-fs-md);
+}
+
+.hm-btn-primary {
+  border-color: transparent;
+  background: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+}
+
+.hm-btn-primary:disabled,
+.hm-edit-actions .ag-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hm-edit-row {
+    transition: none !important;
+  }
+}
+
+/* A phone keeps the name and the controls; the line under the name goes. */
+@container ag-main (max-width: 38rem) {
+  .hm-edit-text .hm-caption {
+    display: none;
+  }
+
+  .hm-edit-row {
+    padding: 0.4rem;
+    gap: 0.4rem;
+  }
 }

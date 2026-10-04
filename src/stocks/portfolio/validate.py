@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
@@ -37,7 +37,7 @@ from pathlib import Path
 from stocks.config import DATA_DIR, WATCHLIST_FILE, load_watchlist, ticker_aliases
 from stocks.data.crypto import crypto_name, is_crypto
 from stocks.data.symbols import resolved_codes
-from stocks.portfolio import transfers
+from stocks.portfolio import revolut_crypto, transfers
 from stocks.portfolio.ledger import DB_PATH, Transaction
 from stocks.portfolio.statement import ParseResult
 
@@ -258,6 +258,7 @@ def validate(
     txs = list(result.transactions) + resolve_splits(result, prior)
     seen = {_dupe_key(t) for t in prior}
     similar = {_loose_key(t) for t in prior if _quantified(t)}
+    rebooked = Counter(_buy_key(t) for t in prior if revolut_crypto.statement_buy(t))
     checked = [Checked(tx=t) for t in txs]
 
     for c in checked:
@@ -266,6 +267,7 @@ def validate(
         if c.tx.action == "sell" and c.tx.price == 0:
             c.issues.append(Issue("warning", "price", "validate.zero_price_sell"))
         _check_duplicate(c, seen, similar)
+        _check_rebooked(c, rebooked)
     _rescue_fills(checked, prior)
     _check_oversells(checked, prior, splits)
     return Validation(checked=checked)
@@ -417,6 +419,28 @@ def _check_duplicate(c: Checked, seen: set, similar: set) -> None:
     seen.add(key)
     if _quantified(c.tx):
         similar.add(_loose_key(c.tx))
+
+
+def _check_rebooked(c: Checked, booked: Counter) -> None:
+    """A Revolut crypto buy the ledger already has at another quantity.
+
+    Older imports booked the fee's coins into the quantity, the doctor takes
+    them off at the price then booked, and the parser now at the statement's
+    unrounded one — three quantities for one buy, none equal to the others.
+    The day, coin and fee still are, matched one for one so two equal buys
+    on one day stay two. Without this a re-imported statement doubles them.
+    """
+    if c.duplicate or not revolut_crypto.statement_buy(c.tx):
+        return
+    key = _buy_key(c.tx)
+    if not booked[key]:
+        return
+    booked[key] -= 1
+    c.issues.append(Issue("warning", DUPLICATE, "validate.duplicate"))
+
+
+def _buy_key(t: Transaction) -> tuple:
+    return (t.date, t.ticker, round(t.fee, 2))
 
 
 def _rescue_fills(checked: list[Checked], prior: list[Transaction]) -> None:

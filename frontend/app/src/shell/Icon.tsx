@@ -1,5 +1,5 @@
 /**
- * The nav's icons, inline.
+ * The app's icons, inline.
  *
  * No icon font. Nothing in this app's documents loads Material Symbols — a
  * `<span class="material-symbols-rounded">home</span>` here would print the
@@ -28,17 +28,24 @@ const PATHS: Record<string, string> = {
     "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4a3 3 0 1 1 0 6 3 3 0 0 1 0-6zm0 14a7.9 7.9 0 0 1-5.6-2.3c.6-1.9 3-3 5.6-3s5 1.1 5.6 3A7.9 7.9 0 0 1 12 20z",
   query_stats: "M4 20V10h3v10H4zm6.5 0V4h3v16h-3zM17 20v-7h3v7h-3z",
   menu: "M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z",
+  drag_indicator:
+    "M9 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM9 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM9 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z",
+  arrow_upward: "M11 20V7.8l-5.6 5.6L4 12l8-8 8 8-1.4 1.4L13 7.8V20h-2z",
+  arrow_downward: "M11 4v12.2l-5.6-5.6L4 12l8 8 8-8-1.4-1.4-5.6 5.6V4h-2z",
+  add: "M11 19v-6H5v-2h6V5h2v6h6v2h-6v6h-2z",
+  dashboard_customize:
+    "M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm11-2h2v3h3v2h-3v3h-2v-3h-3v-2h3v-3z",
 };
 
-export function Icon({ name }: { name: string }) {
+export function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const path = PATHS[name];
   if (!path) return null;
   return (
     <svg
       className="ag-icon"
       viewBox="0 0 24 24"
-      width="20"
-      height="20"
+      width={size}
+      height={size}
       fill="currentColor"
       aria-hidden="true"
       focusable="false"

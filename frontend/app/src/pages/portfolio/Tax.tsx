@@ -19,6 +19,7 @@ import { get } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
+import { useTaxWords } from "./taxWords";
 import { TickerCell as Cell } from "../../shell/tickers";
 import type { TaxFlag, TaxPeriod, TaxReport, TaxSale } from "./api";
 import {
@@ -44,31 +45,6 @@ import {
   Warn,
 } from "./ui";
 import type { Column } from "./ui";
-
-/**
- * The jurisdiction's own wording, most specific first.
- *
- * A key the catalog is missing renders as the dotted key itself (the shell and
- * the Python side agree on that), which is what makes "does this string
- * exist?" answerable here without a second endpoint.
- */
-function useTaxWords(code: string) {
-  const t = useT();
-  const resolve = (name: string): string | null => {
-    const specific = `portfolio.${code.toLowerCase()}_${name}`;
-    if (t(specific) !== specific) return specific;
-    const neutral = `portfolio.${name}`;
-    return t(neutral) !== neutral ? neutral : null;
-  };
-  return {
-    has: (name: string) => resolve(name) !== null,
-    // A name neither spelling covers renders as its own dotted key, which is
-    // what the Python side does too: a blank is invisible in review, and a key
-    // on screen is a bug report that writes itself.
-    say: (name: string, slots?: Record<string, string | number>) =>
-      t(resolve(name) ?? `portfolio.${name}`, slots),
-  };
-}
 
 /**
  * Which sales belong to which fiscal year.

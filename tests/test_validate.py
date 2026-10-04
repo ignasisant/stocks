@@ -347,3 +347,23 @@ def test_a_curated_coin_needs_no_watchlist_entry():
     ])
     checked = validate(result, [], known=set())
     assert not checked.flagged  # no "unknown ticker": crypto is never in EDGAR
+
+
+def test_a_revolut_crypto_buy_booked_gross_is_the_same_buy_reimported_net():
+    """Older imports booked a Revolut crypto buy with the fee's coins still in
+    its quantity; the statement re-read now books the coins that arrived. One
+    buy at two quantities — matched by day, coin and fee, one for one."""
+    note = "revolut crypto SOL"
+    gross = Transaction("2025-02-03", "SOL-EUR", "buy", 5.144921, 194.37, "EUR", 9.9,
+                        note)
+    net = Transaction("2025-02-03", "SOL-EUR", "buy", 5.093986, 194.3664, "EUR", 9.9,
+                      note + " net")
+    again = Transaction("2025-02-03", "SOL-EUR", "buy", 5.082114, 194.82, "EUR", 9.9,
+                        note + " net")
+    v = validate(_result([net, again]), [gross], known={"SOL-EUR"}, today=TODAY)
+    # A second 1,000 € buy that day, a minute later, is a buy of its own.
+    assert len(v.duplicates) == 1 and v.fresh == [again]
+    # Another broker's buy of the coin the same day is not Revolut's.
+    other = Transaction("2025-02-03", "SOL-EUR", "buy", 5.0, 194.0, "EUR", 9.9, "kraken")
+    assert validate(_result([other]), [gross], known={"SOL-EUR"},
+                    today=TODAY).fresh == [other]

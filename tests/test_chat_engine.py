@@ -158,6 +158,13 @@ def test_system_prompt_bans_inventing_an_import():
     assert "never invent transactions" in out
 
 
+def test_system_prompt_never_says_the_book_cannot_be_edited():
+    """The chat edits the book through proposals; an answer that reaches the
+    model means the request was not understood, not that it is impossible."""
+    out = engine.system_prompt({"set": False}, "CONTEXT-BLOCK")
+    assert "never say the book cannot be edited" in out
+
+
 # --------------------------------------------------------------- attempts
 
 

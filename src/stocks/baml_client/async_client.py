@@ -142,6 +142,21 @@ class BamlAsyncClient:
                 "instructions": instructions,"input": input,
             })
             return typing.cast(types.ColumnMap, __result__.cast_to(types, types, stream_types, False, __runtime__))
+    async def MapCrypto(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> types.CryptoMap:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            # Use streaming internally when on_tick is provided
+            __stream__ = self.stream.MapCrypto(instructions=instructions,input=input,
+                baml_options=baml_options)
+            return await __stream__.get_final_response()
+        else:
+            # Original non-streaming code
+            __result__ = await self.__options.merge_options(baml_options).call_function_async(function_name="MapCrypto", args={
+                "instructions": instructions,"input": input,
+            })
+            return typing.cast(types.CryptoMap, __result__.cast_to(types, types, stream_types, False, __runtime__))
     async def PickSkills(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> types.SkillPick:
@@ -172,6 +187,21 @@ class BamlAsyncClient:
                 "instructions": instructions,"input": input,
             })
             return typing.cast(types.QueryPlan, __result__.cast_to(types, types, stream_types, False, __runtime__))
+    async def PlanRoutines(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> types.RoutinePlans:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            # Use streaming internally when on_tick is provided
+            __stream__ = self.stream.PlanRoutines(instructions=instructions,input=input,
+                baml_options=baml_options)
+            return await __stream__.get_final_response()
+        else:
+            # Original non-streaming code
+            __result__ = await self.__options.merge_options(baml_options).call_function_async(function_name="PlanRoutines", args={
+                "instructions": instructions,"input": input,
+            })
+            return typing.cast(types.RoutinePlans, __result__.cast_to(types, types, stream_types, False, __runtime__))
     async def ProposePeers(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> types.PeerPicks:
@@ -289,6 +319,18 @@ class BamlStreamClient:
           lambda x: typing.cast(types.ColumnMap, x.cast_to(types, types, stream_types, False, __runtime__)),
           __ctx__,
         )
+    def MapCrypto(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlStream[stream_types.CryptoMap, types.CryptoMap]:
+        __ctx__, __result__ = self.__options.merge_options(baml_options).create_async_stream(function_name="MapCrypto", args={
+            "instructions": instructions,"input": input,
+        })
+        return baml_py.BamlStream[stream_types.CryptoMap, types.CryptoMap](
+          __result__,
+          lambda x: typing.cast(stream_types.CryptoMap, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.CryptoMap, x.cast_to(types, types, stream_types, False, __runtime__)),
+          __ctx__,
+        )
     def PickSkills(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlStream[stream_types.SkillPick, types.SkillPick]:
@@ -311,6 +353,18 @@ class BamlStreamClient:
           __result__,
           lambda x: typing.cast(stream_types.QueryPlan, x.cast_to(types, types, stream_types, True, __runtime__)),
           lambda x: typing.cast(types.QueryPlan, x.cast_to(types, types, stream_types, False, __runtime__)),
+          __ctx__,
+        )
+    def PlanRoutines(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlStream[stream_types.RoutinePlans, types.RoutinePlans]:
+        __ctx__, __result__ = self.__options.merge_options(baml_options).create_async_stream(function_name="PlanRoutines", args={
+            "instructions": instructions,"input": input,
+        })
+        return baml_py.BamlStream[stream_types.RoutinePlans, types.RoutinePlans](
+          __result__,
+          lambda x: typing.cast(stream_types.RoutinePlans, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.RoutinePlans, x.cast_to(types, types, stream_types, False, __runtime__)),
           __ctx__,
         )
     def ProposePeers(self, instructions: str,input: str,
@@ -397,6 +451,13 @@ class BamlHttpRequestClient:
             "instructions": instructions,"input": input,
         }, mode="request")
         return __result__
+    async def MapCrypto(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="MapCrypto", args={
+            "instructions": instructions,"input": input,
+        }, mode="request")
+        return __result__
     async def PickSkills(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
@@ -408,6 +469,13 @@ class BamlHttpRequestClient:
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="PlanQueries", args={
+            "instructions": instructions,"input": input,
+        }, mode="request")
+        return __result__
+    async def PlanRoutines(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="PlanRoutines", args={
             "instructions": instructions,"input": input,
         }, mode="request")
         return __result__
@@ -475,6 +543,13 @@ class BamlHttpStreamRequestClient:
             "instructions": instructions,"input": input,
         }, mode="stream")
         return __result__
+    async def MapCrypto(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="MapCrypto", args={
+            "instructions": instructions,"input": input,
+        }, mode="stream")
+        return __result__
     async def PickSkills(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
@@ -486,6 +561,13 @@ class BamlHttpStreamRequestClient:
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="PlanQueries", args={
+            "instructions": instructions,"input": input,
+        }, mode="stream")
+        return __result__
+    async def PlanRoutines(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="PlanRoutines", args={
             "instructions": instructions,"input": input,
         }, mode="stream")
         return __result__

@@ -17,11 +17,11 @@
  * - While the answer says `pending`, the card polls `GET /daily` every
  *   `POLL_MS` and stops the moment it does not.
  *
- * "Regenerate" is `POST /daily?force=true`: the old card goes the instant it
+ * Regenerate is `POST /daily?force=true`: the old card goes the instant it
  * is pressed (the reader just dismissed it; leaving it up would have them
  * reading a briefing they asked to replace), the button stays disabled while
  * its own rewrite is out, and a second press cannot start a second paid
- * generation. "Ask the assistant" opens the drawer — it asks nothing on the
+ * generation. Ask opens the drawer — it asks nothing on the
  * reader's behalf.
  *
  * `source: "computed"` is the fallback built from the triggers alone when no
@@ -39,14 +39,25 @@
  * the first click of that line, stored with the card and read for free after
  * that, so collapsing and reopening never asks twice.
  *
- * The card reads in the same four sections every day, in the same order, so
- * the eye knows where to go: **Portfolio** (the book against the index today,
- * this week and this month, computed and drawn with the drawer's own chart),
- * **Today's alerts** (the reader's alerts that fired, always all of them),
- * **Worth a look** (the rest of the triggers) and **Your routines** (the
- * questions the reader asks every day, answered before they ask). A section
- * with nothing in it is left out; a card stored before sections had none of
- * them and keeps its plain list.
+ * By default the card reads in the same three sections every day, in the
+ * same order, so the eye knows where to go: **Portfolio** (the book against
+ * the index today, this week and this month, computed and drawn with the
+ * drawer's own chart), **Today's alerts** (the reader's alerts that fired,
+ * always all of them) and **Worth a look** (the rest of the triggers). A
+ * section with nothing in it is left out; a card stored before sections had
+ * none of them and keeps its plain list.
+ *
+ * A reader who wrote a brief gets their own card instead: a section per line
+ * of it, titled by what was asked, under the fired alerts, which always stay
+ * on top (`card.sections`). The pencil in the header opens the brief editor
+ * (`BriefEditor.tsx`) in the card's place; a change rewrites the card there
+ * and then, since a card written for the old brief no longer stands. While
+ * the brief is being answered the default card stands in, and on a day no
+ * model answered it the card says so rather than pass the default off as it.
+ *
+ * The header carries the card's three controls as icons — edit the brief,
+ * regenerate, ask — each with its name as a label and tooltip; there is no
+ * row of buttons under the card. A line's tickers sit at its end.
  */
 
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
@@ -55,6 +66,9 @@ import { get, send } from "../../shell/api";
 import { Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { openAssistant, openThread } from "../../shell/assistant";
+import { useGuest } from "../../shell/session";
+import { BriefEditor } from "./BriefEditor";
+import { Glyph } from "../../chat/icons";
 import { Card, TickerCell } from "./ui";
 import { dayKey, money, monthDay, percent, type Translate } from "./format";
 import type {
@@ -62,7 +76,7 @@ import type {
   DailyBook,
   DailyCard,
   DailyItem,
-  DailyRoutine,
+  DailySection,
   DailyTable,
 } from "./types";
 import { Badge } from "../../ui/Badge";
@@ -132,12 +146,29 @@ export function sectionsOf(lines: DailyItem[]): {
  * reads as it always did — one heading over one list is a label, not a map.
  */
 export function sectioned(
-  card: Pick<DailyCard, "book" | "routines">,
+  card: Pick<DailyCard, "book" | "sections">,
   alerts: number,
 ): boolean {
   return (
-    Boolean(card.book?.rows.length) || Boolean(card.routines?.length) || alerts > 0
+    Boolean(card.book?.rows.length) || Boolean(card.sections?.length) || alerts > 0
   );
+}
+
+/**
+ * The note a card earns under it, or null for the model's own disclaimer: the
+ * stand-in while the brief or the briefing is written, the default card on a
+ * day the brief went unanswered, the computed card said for what it is.
+ */
+export function noteKey(
+  card: Pick<DailyCard, "pending" | "source" | "brief">,
+): string | null {
+  if (card.pending)
+    return card.brief === "pending"
+      ? "home.daily_brief_wait"
+      : "home.daily_computed_wait";
+  if (card.brief === "missed") return "home.daily_brief_missed";
+  if (card.source === "computed") return "home.daily_computed_note";
+  return null;
 }
 
 /**
@@ -176,6 +207,12 @@ type State =
 export function Daily() {
   const t = useT();
   const lang = useLang();
+  const guest = useGuest();
+  // The brief editor, open in the card's place; and a count bumped when it
+  // closes on a change, which reads the card again — the one on screen was
+  // written for the old brief.
+  const [editing, setEditing] = useState(false);
+  const [reload, setReload] = useState(0);
   const [state, setState] = useState<State>({ kind: "loading" });
   // Which action day this page has already asked the server to write. The
   // server has its own once-a-day guard; this one stops a re-render from
@@ -227,7 +264,7 @@ export function Daily() {
     return () => {
       live = false;
     };
-  }, [lang, write]);
+  }, [lang, write, reload]);
 
   // The poll: only while a briefing is being written, and one request at a
   // time — the next is scheduled when the last one has answered.
@@ -314,7 +351,7 @@ export function Daily() {
               items: [],
               focus: [],
               book: null,
-              routines: [],
+              sections: [],
               pending: true,
             },
           }
@@ -355,22 +392,31 @@ export function Daily() {
   const written = monthDay(card.day ?? card.action_day, t);
   const lines = linesOf(card);
   const { alerts, watch } = sectionsOf(lines);
-  const routines = card.routines ?? [];
-  const book = card.book?.rows.length ? card.book : null;
+  const answered = card.sections ?? [];
+  // The brief is the card: no Portfolio beside it, whatever a server sends.
+  const book = !answered.length && card.book?.rows.length ? card.book : null;
   const split = sectioned(card, alerts.length);
   // Not while a briefing is still being written: the stand-in on screen is
   // about to be replaced, and its lines with it.
   const canOpen = !regenerating && !card.pending;
+  const note = regenerating ? null : noteKey(card);
 
   const list = (items: DailyItem[]) => (
     <ul className="hm-daily-list">
       {items.map((item) => {
         const panel = panels[item.key];
         const expanded = panel !== undefined && panel.kind !== "failed";
-        const id = `${ids}-an-${lines.indexOf(item)}`;
+        const id = `${ids}-an-${item.key}`;
         return (
           <li key={item.key}>
             {item.line}
+            {item.tickers.length > 0 ? (
+              <span className="hm-daily-tks">
+                {item.tickers.map((ticker) => (
+                  <TickerCell key={ticker} ticker={ticker} name={false} />
+                ))}
+              </span>
+            ) : null}
             {canOpen && opens(item) ? (
               <>
                 {" "}
@@ -392,22 +438,63 @@ export function Daily() {
     </ul>
   );
 
-  let note: string | null;
-  if (regenerating) note = null;
-  else if (card.pending) note = t("home.daily_computed_wait");
-  else if (card.source === "computed") note = t("home.daily_computed_note");
-  else note = null; // the model disclaimer, in its two lengths, below
+  const tools = (
+    <div className="hm-daily-tools">
+      {!guest ? (
+        // The brief is the account's: a guest has none to write.
+        <IconButton
+          icon="edit"
+          label={t("home.daily_edit")}
+          pressed={editing}
+          disabled={regenerating}
+          onClick={() => setEditing((was) => !was)}
+        />
+      ) : null}
+      <IconButton
+        icon="refresh"
+        label={t("home.daily_refresh")}
+        // Disabled while its own rewrite is out: a second press would spend a
+        // second unit of the allowance on a card already being written.
+        disabled={regenerating || editing}
+        onClick={regenerate}
+      />
+      <IconButton
+        icon="forum"
+        label={t("home.daily_ask")}
+        // The card is filed as a conversation of its own: asking from it asks
+        // there, with the card above the question. A card not filed yet
+        // (still being written) opens the assistant as it stands.
+        onClick={() => (card.thread ? openThread(card.thread) : openAssistant())}
+      />
+    </div>
+  );
+
+  if (regenerating) {
+    return (
+      <Card className="hm-daily">
+        <Waiting title="home.daily_regen_title" tools={tools} />
+      </Card>
+    );
+  }
 
   return (
     <Card className="hm-daily">
-      {regenerating ? (
-        <Waiting title="home.daily_regen_title" />
+      <div className="hm-daily-head">
+        <Badge tone="brand">{t("home.daily_badge")}</Badge>
+        <span className="hm-daily-when">{stampOf(card, t)}</span>
+        {tools}
+      </div>
+      {editing ? (
+        <BriefEditor
+          onClose={(changed) => {
+            setEditing(false);
+            if (!changed) return;
+            asked.current = null;
+            setReload((n) => n + 1);
+          }}
+        />
       ) : (
         <>
-          <div className="hm-daily-head">
-            <Badge tone="brand">{t("home.daily_badge")}</Badge>
-            <span className="hm-daily-when">{stampOf(card, t)}</span>
-          </div>
           <p className="hm-daily-headline">{card.headline}</p>
           {!split ? (
             lines.length > 0 ? (
@@ -423,23 +510,17 @@ export function Daily() {
               {alerts.length > 0 ? (
                 <Section title={t("home.daily_sec_alerts")}>{list(alerts)}</Section>
               ) : null}
-              {watch.length > 0 ? (
+              {watch.length > 0 && !answered.length ? (
                 <Section title={t("home.daily_sec_watch")}>{list(watch)}</Section>
               ) : null}
-              {routines.length > 0 ? (
-                <Section title={t("home.daily_sec_routines")}>
-                  <Routines routines={routines} pending={card.pending} />
+              {answered.map((section, n) => (
+                <Section key={n} title={section.title}>
+                  {section.lines.length > 0 ? list(section.lines) : null}
+                  <SectionChart section={section} />
                 </Section>
-              ) : null}
+              ))}
             </>
           )}
-          {card.focus.length > 0 ? (
-            <div className="hm-daily-chips">
-              {card.focus.map((ticker) => (
-                <TickerCell key={ticker} ticker={ticker} name={false} />
-              ))}
-            </div>
-          ) : null}
           {card.pending ? (
             // The difference between a card that looks final and one the
             // reader knows will improve on its own.
@@ -453,41 +534,43 @@ export function Daily() {
               {t("home.daily_stale", { date: written ?? card.day ?? "" })}
             </p>
           ) : null}
+          {note ? (
+            <p className="hm-note">{t(note)}</p>
+          ) : !card.pending ? (
+            <p className="hm-note">{t("home.daily_disclaimer")}</p>
+          ) : null}
         </>
       )}
-      <div className="hm-daily-actions">
-        <button
-          type="button"
-          className="ag-btn"
-          // The card is filed as a conversation of its own: asking from it
-          // asks there, with the card above the question. A card not filed
-          // yet (still being written) opens the assistant as it stands.
-          onClick={() => (card.thread ? openThread(card.thread) : openAssistant())}
-        >
-          <span className="hm-wide">{t("home.daily_ask")}</span>
-          <span className="hm-narrow">{t("home.daily_ask_short")}</span>
-        </button>
-        <button
-          type="button"
-          className="ag-btn"
-          onClick={regenerate}
-          // Disabled while its own rewrite is out: a second press would spend
-          // a second unit of the allowance on a card already being written.
-          disabled={regenerating}
-        >
-          {t("home.daily_refresh")}
-        </button>
-      </div>
-      {note ? <p className="hm-note">{note}</p> : null}
-      {!regenerating && !card.pending && card.source !== "computed" ? (
-        // Three lines on a phone under a card whose whole point is to be
-        // skimmed in one; the short form says the same two things.
-        <p className="hm-note">
-          <span className="hm-wide">{t("home.daily_disclaimer")}</span>
-          <span className="hm-narrow">{t("home.daily_disclaimer_short")}</span>
-        </p>
-      ) : null}
     </Card>
+  );
+}
+
+/** One of the header's controls: an icon, its name as label and tooltip. */
+function IconButton({
+  icon,
+  label,
+  onClick,
+  disabled,
+  pressed,
+}: {
+  icon: string;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  pressed?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className="hm-icon-btn"
+      title={label}
+      aria-label={label}
+      aria-pressed={pressed}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <Glyph name={icon} size={17} />
+    </button>
   );
 }
 
@@ -566,42 +649,15 @@ export function BookSection({ book }: { book: DailyBook }) {
   );
 }
 
-/**
- * The reader's routines, each question over its answer. An empty answer is
- * one still being fetched, said so while the card is being written; a card
- * that is done always carries one, if only "no data today".
- */
-export function Routines({
-  routines,
-  pending,
-}: {
-  routines: DailyRoutine[];
-  pending: boolean;
-}) {
-  const t = useT();
+/** A brief section's chart, when its figures drew one. */
+export function SectionChart({ section }: { section: DailySection }) {
+  if (!section.chart?.series.length) return null;
   return (
-    <ul className="hm-daily-routines">
-      {routines.map((routine) => (
-        <li key={routine.id} className="hm-routine">
-          <p className="hm-routine-ask">{routine.text}</p>
-          {routine.answer ? (
-            <p className="hm-routine-answer">{routine.answer}</p>
-          ) : pending ? (
-            <p className="hm-daily-pending" role="status">
-              <span className="hm-daily-dot" aria-hidden="true" />
-              {t("home.daily_routine_pending")}
-            </p>
-          ) : null}
-          {routine.chart && routine.chart.series.length > 0 ? (
-            <LineChart
-              series={routine.chart.series}
-              rebased={routine.chart.rebased}
-              label={routine.text}
-            />
-          ) : null}
-        </li>
-      ))}
-    </ul>
+    <LineChart
+      series={section.chart.series}
+      rebased={section.chart.rebased}
+      label={section.title}
+    />
   );
 }
 
@@ -710,12 +766,13 @@ function AnalysisTable({ table }: { table: DailyTable }) {
 }
 
 /** The card chrome with a line naming who is writing, over a text shimmer. */
-function Waiting({ title }: { title: string }) {
+function Waiting({ title, tools }: { title: string; tools?: ReactNode }) {
   const t = useT();
   return (
     <>
       <div className="hm-daily-head">
         <Badge tone="brand">{t("home.daily_badge")}</Badge>
+        {tools}
       </div>
       <p className="hm-daily-wait" role="status">
         <b>{t(title)}</b> {t("home.daily_wait_body")}

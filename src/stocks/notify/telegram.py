@@ -15,6 +15,7 @@ restores polling and the pre-webhook Profile linking flow).
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -25,6 +26,14 @@ from stocks.secrets_env import secret
 API = "https://api.telegram.org/bot{token}/{method}"
 MAX_LEN = 4096  # Telegram hard limit per message
 _cached: dict[str, str] = {}
+#: Seconds between two sends in a loop over accounts — far below Telegram's
+#: global send rate. A module value so the test suite can set it to zero.
+SEND_PAUSE = 0.2
+
+
+def pace() -> None:
+    """Wait out SEND_PAUSE before the next account's message."""
+    time.sleep(SEND_PAUSE)
 
 
 class TelegramBlocked(Exception):

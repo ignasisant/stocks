@@ -779,26 +779,8 @@ def insiders(symbol: Symbol) -> Insiders:
 
 
 def _issuer_name(ticker: str) -> str | None:
-    """The company name BaFin's register is searched by.
-
-    Yahoo's `longName` first. Then the `company_name()` fallback minus the
-    watchlist leg: this route takes no account — every figure on it is the
-    company's — so a name somebody typed on their own list is not available
-    here, and the fund catalog and the SEC map are what is left. Rarely
-    reached: the common miss is Yahoo throttled, and a German issuer is then
-    usually still in neither list, in which case the card says "not covered"
-    rather than guessing.
-    """
-    issuer = str(loaders.fundamentals(ticker).info.get("longName") or "").strip()
-    if issuer:
-        return issuer
-    try:
-        from stocks.data.funds import fund_name
-
-        resolved = loaders.display_symbol(ticker)
-        return fund_name(resolved) or loaders.sec_title(resolved)
-    except Exception:
-        return None
+    """The company name BaFin's register is searched by (`loaders.issuer_name`)."""
+    return loaders.issuer_name(ticker)
 
 
 def _insider_summary(trades) -> InsiderSummary:

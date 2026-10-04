@@ -245,6 +245,74 @@ def _move(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
                     summary, ctx)
 
 
+def _fee_in_coins_for(
+    ticker: str, rows: list[Transaction], ctx: _Ctx
+) -> Draft | None:
+    """The part of the doctor's fee-in-coins fix that empties `ticker`, or
+    None when its leftover is not the fees' coins."""
+    mine = {t.id for t in edits.select(rows, edits.Selector(ticker=ticker),
+                                       ctx.resolve)}
+    for f in doctor.scan(rows, ctx.resolve):
+        if f.kind != "fee_in_coins":
+            continue
+        labels = [lb for lb in f.detail["closed"]
+                  if any(t.ticker == lb and t.id in mine for t in rows)]
+        ops = [op for op in f.fix if op["id"] in mine]
+        if labels and ops:
+            summary = ctx.tr("chat.book_summary_fee_in_coins", count=len(ops),
+                             tickers=", ".join(labels))
+            return _planned(ops, summary, ctx)
+    return None
+
+
+def _close(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
+    """A position the reader emptied that the book still holds some of.
+
+    The leftover is booked as sold: on the day and at the price of the sale
+    that emptied it (the reader's, else the book's last sale after its last
+    purchase), so the realized gain moves by what that remainder really was.
+    The rows that put it there stay as they are — a sale is what happened at
+    the broker, and the card shows its effect on the year before it is kept.
+
+    Unless the doctor knows where the leftover came from: Revolut crypto buys
+    booked with the fee's coins still in them. Then the fix is to those buys
+    (`doctor._fee_in_coins`), which corrects the cost too, not a sale that
+    never happened.
+    """
+    fee = _fee_in_coins_for(act.ticker, rows, ctx)
+    if fee is not None:
+        return fee
+    found = edits.select(rows, edits.Selector(ticker=act.ticker), ctx.resolve)
+    # A remainder in float noise is no position: 44M coins bought and sold
+    # leave 4e-9 behind, which no sale can take without "exceeding" it.
+    bought = sum(t.quantity for t in found if t.action in ("buy", "transfer_in"))
+    held = {k: s for k, s in edits._replay(found).items()
+            if s.held > 1e-12 * max(bought, 1000.0)}
+    if not held:
+        return Draft(ctx.tr("chat.book_nothing_left", ticker=act.ticker))
+    a = act.args
+    ops: list[dict] = []
+    for (label, currency), state in held.items():
+        mine = [t for t in found if t.currency == currency]
+        last_buy = max((t.date for t in mine if t.action in ("buy", "transfer_in")),
+                       default="")
+        sale = next((t for t in sorted(mine, key=lambda t: (t.date, t.id or 0),
+                                       reverse=True)
+                     if t.action == "sell" and t.date >= last_buy), None)
+        price = a.get("price", sale.price if sale else None)
+        if price is None:
+            return Draft(ctx.tr("chat.book_close_what", ticker=label))
+        ops.append({"op": "add", "row": {
+            "date": a.get("date") or (sale.date if sale else ctx.today),
+            "ticker": label, "action": "sell", "quantity": state.held,
+            "price": price, "currency": currency, "fee": 0.0,
+            "note": sale.note if sale else "",
+        }})
+    summary = ctx.tr("chat.book_summary_close", ticker=_names(found),
+                     quantity=_n(sum(s.held for s in held.values())))
+    return _planned(ops, summary, ctx)
+
+
 def _check(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
     found = doctor.scan(rows, ctx.resolve)
     if act.ticker:
@@ -282,6 +350,7 @@ _DRAFTS: dict[str, Callable[[Action, list[Transaction], _Ctx], Draft]] = {
     "rename_security": _rename,
     "mark_transfer": _transfer,
     "move_position": _move,
+    "close_position": _close,
     "check_book": _check,
     "undo_change": _undo,
 }
@@ -464,6 +533,9 @@ def _value(key: str, value, ctx: _Ctx) -> str:
 
 def _finding_line(f: doctor.Finding, ctx: _Ctx) -> str:
     d = f.detail
+    if f.kind == "fee_in_coins":
+        return ctx.tr("chat.book_finding_fee_in_coins", count=d["buys"],
+                      tickers=", ".join(d["coins"]))
     if f.kind == "transfer":
         return ctx.tr("chat.book_finding_transfer", ticker=f.ticker,
                       broker_out=d["broker_out"], broker_in=d["broker_in"],
@@ -478,6 +550,9 @@ def _finding_line(f: doctor.Finding, ctx: _Ctx) -> str:
 
 def _finding_summary(f: doctor.Finding, ctx: _Ctx) -> str:
     d = f.detail
+    if f.kind == "fee_in_coins":
+        return ctx.tr("chat.book_summary_fee_in_coins", count=d["buys"],
+                      tickers=", ".join(d["coins"]))
     if f.kind == "transfer":
         return ctx.tr("chat.book_summary_transfer", ticker=f.ticker,
                       broker_out=d["broker_out"], broker_in=d["broker_in"])

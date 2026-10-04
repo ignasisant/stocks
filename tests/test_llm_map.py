@@ -58,6 +58,12 @@ def clear_symbol_memo():
     instruments._memo.clear()
 
 
+@pytest.fixture(autouse=True)
+def no_resolve_retry_wait(monkeypatch):
+    """The retry's real pause is eight seconds; no test here is about the pause."""
+    monkeypatch.setattr(llm_map, "RESOLVE_RETRY_SECONDS", 0)
+
+
 class _StubProvider:
     classifier_model = "stub-mini"
     default_model = "stub"

@@ -26,6 +26,7 @@ from stocks.api import cache, guest, guestbook, security, warm
 from stocks.api.routes import (
     account,
     bank,
+    brief,
     chat,
     chat_attach,
     chat_memory,
@@ -296,6 +297,7 @@ _private.include_router(chat.router)
 _private.include_router(chat_attach.router)
 _private.include_router(chat_voice.router)
 _private.include_router(chat_memory.router)
+_private.include_router(brief.router)
 _private.include_router(onboarding.router)
 _private.include_router(notify.router)
 _private.include_router(feedback.router)
