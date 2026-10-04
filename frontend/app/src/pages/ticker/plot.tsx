@@ -13,7 +13,8 @@
  */
 
 import type { ReactNode } from "react";
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useTouchHold } from "../../shell/useTouchHold";
 
 /**
  * A chart's box, in viewBox units.
@@ -133,6 +134,13 @@ export function Chart({
   className?: string;
 }) {
   const node = useRef<SVGSVGElement>(null);
+  // A finger's last reading, left up after the lift until a touch elsewhere.
+  const [held, setHeld] = useState(false);
+  const drop = useCallback(() => {
+    setHeld(false);
+    onLeave?.();
+  }, [onLeave]);
+  useTouchHold(node, held, drop);
 
   const at = useCallback(
     (event: { clientX: number; clientY: number }): [number, number] => {
@@ -158,13 +166,18 @@ export function Chart({
           onPointer(x, y);
         })
       }
-      onPointerLeave={onLeave}
-      onPointerDown={
-        onDown &&
-        ((event) => {
-          onDown(at(event)[0]);
-        })
-      }
+      // A finger lifting is a leave too; the bar it read stays up until the
+      // reader touches elsewhere, since only then is the hand off the chart.
+      onPointerLeave={(event) => {
+        if (event.pointerType === "touch" && onPointer) setHeld(true);
+        else onLeave?.();
+      }}
+      onPointerDown={(event) => {
+        const [x, y] = at(event);
+        // A tap is a pointer that never moves: it reads the bar too.
+        if (event.pointerType === "touch") onPointer?.(x, y);
+        onDown?.(x);
+      }}
       onPointerUp={
         onUp &&
         ((event) => {

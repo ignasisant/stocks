@@ -581,6 +581,29 @@
   container: pf-plot / inline-size;
 }
 
+/* A plot is a scrub surface: a sideways finger reads the days, a vertical one
+   still scrolls the page, and a held finger neither selects the axis labels
+   nor opens iOS's callout — which is what "the chart got selected" was. */
+.pf-plot > svg {
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Where nothing hovers, the reading is driven by a finger that is on the plot
+   and a hand that covers it from below: a box at the top of the plot beside
+   the crosshair sat under the fingertip. Lifted out over the legend instead,
+   still tracking the day across, so it is clear of the hand wherever the
+   finger is (charts.tsx ChartTip, `pf-tip-x`). */
+@media (hover: none) {
+  .pf-tip.pf-tip-x {
+    top: auto;
+    bottom: calc(100% + 6px);
+  }
+}
+
 /* Plotly's unified hover label: date on top, one row per series with its
    swatch, name muted and figure bold. Never takes the pointer. */
 .pf-tip {

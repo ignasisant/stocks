@@ -16,6 +16,7 @@ import { useRef, useState } from "react";
 import { useT, useLang } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { token } from "../../shell/theme";
+import { useTouchHold } from "../../shell/useTouchHold";
 import { money, monthDay, percent } from "./format";
 import { Kpi, chipFor } from "../../ui/Kpi";
 import type { History } from "./types";
@@ -78,6 +79,7 @@ export function Spark({ history }: { history: History | null }) {
   const [range, setRange] = useState<Range>("1y");
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
+  useTouchHold(wrap, hoverIndex !== null, setHoverIndex);
   // The history failed with the tiles still standing: no picture, and no
   // selector either — every range is a slice of the same missing array.
   if (!history) return null;
@@ -219,7 +221,13 @@ export function Spark({ history }: { history: History | null }) {
           className="hm-spark-wrap"
           ref={wrap}
           onPointerMove={(event) => setHoverIndex(dayAt(event.clientX))}
-          onPointerLeave={() => setHoverIndex(null)}
+          // A tap is a pointer that never moves: it reads the day too.
+          onPointerDown={(event) => setHoverIndex(dayAt(event.clientX))}
+          // A finger lifting is a leave too; the day stays up until the reader
+          // touches elsewhere, the only moment the hand is off the plot.
+          onPointerLeave={(event) => {
+            if (event.pointerType !== "touch") setHoverIndex(null);
+          }}
         >
           {/* Stretched, not letterboxed: the viewBox is only a coordinate system
             here, and `none` lets it fill whatever width the card has at the

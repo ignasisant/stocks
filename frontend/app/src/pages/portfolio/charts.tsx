@@ -26,6 +26,7 @@ import {
 import { createPortal } from "react-dom";
 import { token } from "../../shell/theme";
 import { TickerCell } from "../../shell/tickers";
+import { useTouchHold } from "../../shell/useTouchHold";
 import { useWidth } from "../../shell/useWidth";
 import type { TaxPeriod } from "./api";
 
@@ -177,6 +178,10 @@ function ChartTip({
     if (nudge) tip.style.left = `calc(${left}% + ${nudge}px)`;
   });
   const classes = ["pf-tip"];
+  // A box that follows only the pointer's x sits at the top of the plot, which
+  // is where a finger scrubbing it is; the stylesheet lifts it out of the plot
+  // on a touch screen. One placed both ways (a donut's) already dodges.
+  if (top === undefined) classes.push("pf-tip-x");
   if (left > 55) classes.push("pf-tip-flip");
   if (up) classes.push("pf-tip-up");
   if (wide) classes.push("pf-tip-wide");
@@ -889,6 +894,7 @@ export function PeriodBars({
   const gutter = axisMoney ?? money;
   const [hover, setHover] = useState<number | null>(null);
   const svg = useRef<SVGSVGElement>(null);
+  useTouchHold(svg, hover !== null, setHover);
   if (!periods.length) return null;
 
   const up = token("candle-up");
@@ -1271,6 +1277,7 @@ export function ReturnLines({
   const [near, setNear] = useState<string | null>(null);
   const [frame, width] = useWidth(RETURN.fallback);
   const svg = useRef<SVGSVGElement>(null);
+  useTouchHold(svg, pointer !== null, setHover);
   const drawn = series.filter((one) => one.points.some((v) => v !== null));
   if (dates.length < 2 || !drawn.length) return null;
   // A shorter window can arrive under a pointer still resting on the old one.
@@ -1866,6 +1873,7 @@ export function BookHistory({
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
   const [hover, setHover] = useState<number | null>(null);
   const svg = useRef<SVGSVGElement>(null);
+  useTouchHold(svg, hover !== null, setHover);
   // A new window from the server is a new series: yesterday's zoom indexes
   // into days that are no longer the same days.
   const first = all[0]?.date;
@@ -1970,8 +1978,15 @@ export function BookHistory({
           role="img"
           className="pf-zoomable"
           onPointerDown={(event) => {
-            if (event.button !== 0) return;
             const at = dayAt(event);
+            // A finger scrubs, it does not zoom: on a phone the drag that
+            // drew a window was the only way to read a day, so every attempt
+            // to read one ended zoomed into a sliver of it.
+            if (event.pointerType === "touch") {
+              setHover(at);
+              return;
+            }
+            if (event.button !== 0) return;
             setDrag({ from: at, to: at });
           }}
           onPointerMove={(event) => {
@@ -1980,8 +1995,10 @@ export function BookHistory({
             if (drag) setDrag({ ...drag, to: at });
           }}
           onPointerUp={finish}
-          onPointerLeave={() => {
-            setHover(null);
+          // A finger lifting is a leave too: the day it read stays up until
+          // the reader touches elsewhere (useTouchHold).
+          onPointerLeave={(event) => {
+            if (event.pointerType !== "touch") setHover(null);
             finish();
           }}
           onDoubleClick={() => setZoom(null)}
@@ -2205,6 +2222,7 @@ export function BookAndRates({
 }) {
   const [pointer, setHover] = useState<number | null>(null);
   const svg = useRef<SVGSVGElement>(null);
+  useTouchHold(svg, pointer !== null, setHover);
   // Both legs or the month is not comparable, as on the history chart.
   const book = points.filter(
     (point): point is BookRatePoint & { value: number; invested: number } =>
@@ -2284,6 +2302,10 @@ export function BookAndRates({
     )
     .map(({ index }) => index);
   const hovered = hover === null ? null : book[hover]!;
+  const track = (event: PointerEvent<SVGSVGElement>) => {
+    const at = viewX(event, svg.current, width);
+    if (at !== null) setHover(nearest(at, left, plotW, book.length));
+  };
 
   const tipRows = (index: number, point: (typeof book)[number]): TipRow[] =>
     bookRatesTip(index, point, {
@@ -2348,11 +2370,12 @@ export function BookAndRates({
           viewBox={`0 0 ${width} ${height}`}
           width="100%"
           role="img"
-          onPointerMove={(event) => {
-            const at = viewX(event, svg.current, width);
-            if (at !== null) setHover(nearest(at, left, plotW, book.length));
+          onPointerMove={track}
+          // A tap is a pointer that never moves: it answers too, on a phone.
+          onPointerDown={track}
+          onPointerLeave={(event) => {
+            if (event.pointerType !== "touch") setHover(null);
           }}
-          onPointerLeave={() => setHover(null)}
         >
           {rules.map((index) => (
             <line

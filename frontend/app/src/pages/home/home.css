@@ -940,6 +940,13 @@
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
+  /* A scrub surface: sideways reads days, vertical scrolls the page, and a
+     held finger selects nothing and opens no callout. */
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .hm-spark {
@@ -974,6 +981,15 @@
 /* Past the middle the box opens to the pointer's left, so it stays on the card. */
 .hm-spark-tip-flip {
   transform: translateX(calc(-100% - 8px));
+}
+
+/* Where nothing hovers the 56px plot is entirely under the fingertip, and so
+   was a box inside it: lifted out above the plot, over the key. */
+@media (hover: none) {
+  .hm-spark-tip {
+    top: auto;
+    bottom: calc(100% + 6px);
+  }
 }
 
 .hm-spark-tip-title {
