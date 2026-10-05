@@ -26,9 +26,10 @@ process.
 1. `curl -s https://<service-url>/status | jq .memory` — `rss_mb` (the
    process), `cgroup_mb` against `limit_mb` (what the OOM killer reads,
    files included), `memo_mb` (the disk memo), `threads`.
-2. `uv run stocks logs tail --since 24h --event mem.step` — every request
-   that grew the process by 20 MB or more, with its path. Requests overlap,
-   so read them as leads.
+2. `uv run stocks logs tail --since 24h --event mem.step` — every request,
+   or burst of overlapping ones, that grew the process by 20 MB or more.
+   `concurrent: 1` names the culprit; above 1 the line lists every path that
+   ran together and the growth is shared — read it as a lead.
 3. A `cgroup_mb` well above `rss_mb` means files: check `memo_mb` and the
    `disk_max` of the memo that grew (`api/loaders.py`).
 
