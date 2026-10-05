@@ -205,6 +205,29 @@ def _sniff_xlsx(data: bytes) -> dict:
 # ------------------------------------------------------------------ rollups
 
 
+# Skips a statement always carries, which say nothing about the parser: a
+# Revolut statement's top-ups, a crypto export's staking moves. Counted apart
+# (`routine`) so an import that read every trade and skipped only these is not
+# filed as a failure — every Revolut PDF was. Worded exactly as the parsers
+# word them (web/tx_text.py SKIP_REASONS lists the same strings for the reader).
+ROUTINE_SKIPS = frozenset({
+    "cash movement — not position-affecting",
+    "reward — cash credit, not position-affecting",
+    "interest — cash credit, not position-affecting",
+    "currency conversion — not position-affecting",
+    "moved in or out of staking — the same coins, no acquisition and no "
+    "disposal; nothing to import",
+    "accrued dividend — not cash yet; it imports from the Dividends section "
+    "of the statement covering its pay date",
+    "cash deposit, nothing to book",
+    "cash withdrawal, nothing to book",
+    "cash fee, nothing to book",
+    "cash interest is not tracked",
+    "currency exchange, no crypto",
+    "moves coins inside the exchange, nothing to book",
+})
+
+
 def reasons(result: ParseResult | None) -> dict[str, int]:
     """Redacted skip reasons and how many rows each one took.
 
@@ -298,6 +321,8 @@ def fingerprint(
         **sniff(filename, data),
         "imported": len(result.transactions) if result else 0,
         "skipped": len(result.skipped) if result else 0,
+        "routine": sum(1 for e in result.skipped
+                       if e.get("reason") in ROUTINE_SKIPS) if result else 0,
         "reasons": reasons(result),
     }
     hint = date_hint(result)
@@ -319,7 +344,7 @@ def failed(fp: dict) -> bool:
     """Whether this attempt is worth keeping a durable artifact for."""
     return bool(
         fp.get("error_type")
-        or fp.get("skipped")
+        or (fp.get("skipped") or 0) > (fp.get("routine") or 0)
         or fp.get("rejected")
         or not fp.get("imported")
     )
