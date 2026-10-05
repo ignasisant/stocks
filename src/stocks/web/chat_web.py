@@ -92,15 +92,17 @@ class Result:
 # The reply's shape is BAML's (PlanQueries in baml_src/chat.baml), appended
 # after this by structured.render.
 _PLANNER_SYSTEM = (
-    "You decide whether answering the latest message in a stock-tracker chat "
-    "needs fresh information from the web — news, prices beyond the app "
-    "context, current events, recent filings or releases, or anything likely "
-    f"newer than the model's training data. Give at most {MAX_QUERIES} web "
-    "search queries — or an empty list when the message needs none "
-    "(greetings, app questions, the user's own positions, math, long-settled "
-    "facts). Write queries in the language most likely to find good sources "
-    "(usually English), include tickers or company names, and put the current "
-    "year in time-sensitive queries."
+    "You write the web searches for the latest message in a stock-tracker "
+    "chat. Searching is the default: anything about a company, ticker, fund, "
+    "coin, market, the economy or an event gets searched, even when you think "
+    "you know the answer — prices, news and the reasons behind a move change "
+    f"daily. Give at most {MAX_QUERIES} web search queries. Return an empty "
+    "list only when the message needs nothing from the outside world: "
+    "greetings and thanks, questions about how the app works, the user's own "
+    "positions and their arithmetic, or definitions of long-settled terms. "
+    "Write queries in the language most likely to find good sources (usually "
+    "English), include tickers or company names, and put the current year in "
+    "time-sensitive queries."
 )
 
 
@@ -164,10 +166,35 @@ _FRESH_RE = re.compile(
     r"split|merger|fusi[oó]n|acquisi|adquisi|\bipo\b|filing|10-[kq]|8-k|"
     r"\bsec\b|\bfed\b|tipos de inter|\brates\b|inflation|inflaci|market|"
     r"mercado|why .{0,30}(up|down|drop|fell|rose|surge)|"
-    r"por qu[eé] .{0,30}(sub|baj|cay|dispar)|\b20\d\d\b",
+    r"por qu[eé] .{0,30}(sub|baj|cay|dispar)|\b20\d\d\b|"
+    r"internet|\bweb\b|\bbusca|\bsearch|\bgoogle|look (it )?up|"
+    r"motivo|raz[oó]n|\breason",
     re.IGNORECASE,
 )
-_FOCUS_RE = re.compile(r"ticker in focus is ([A-Z0-9][A-Z0-9.\-]{0,14})", re.IGNORECASE)
+# What a message with no fresh wording and no ticker must look like to go
+# without a search: small talk, a definition, or the reader's own book —
+# everything else searches, because searching is the default.
+_QUIET_RE = re.compile(
+    r"^(hola|hi|hello|hey|buenas|buenos d[ií]as|buenas (tardes|noches)|"
+    r"gracias|muchas gracias|thanks|thank you|thx|ok|okay|vale|perfecto|genial|"
+    r"de acuerdo|adi[oó]s|bye|s[ií]|no)\b[\s!.?¡¿]*$",
+    re.IGNORECASE,
+)
+_TIMELESS_RE = re.compile(
+    r"^¿?\s*(qu[eé] (es|son|significa)|what (is|are) (a|an)\b|what does .{1,30} mean|"
+    r"define\b|definici[oó]n|explain (what|how)|expl[ií]ca(me)? (qu[eé]|c[oó]mo))",
+    re.IGNORECASE,
+)
+_BOOK_RE = re.compile(
+    r"\b(mi|mis) (cartera|posici|acciones|valores|portfolio|inversi)|"
+    r"\bmy (portfolio|positions?|holdings|book|investments)\b|"
+    r"\bcu[aá]nto (tengo|he ganado|he perdido|llevo)|\bhow much (do i|have i)|"
+    r"\b(app|aplicaci[oó]n|importar|import)\b",
+    re.IGNORECASE,
+)
+_FOCUS_RE = re.compile(
+    r"(?:ticker in focus is|conversation is about) ([A-Z0-9][A-Z0-9.\-]{0,14})",
+    re.IGNORECASE)
 _CAPS_RE = re.compile(r"\b[A-Z]{2,5}(?:[.\-][A-Z]{1,4})?\b")
 _TODAY_RE = re.compile(r"Today is (\d{4})-\d{2}-\d{2}")
 
@@ -175,16 +202,20 @@ _TODAY_RE = re.compile(r"Today is (\d{4})-\d{2}-\d{2}")
 def heuristic_queries(question: str, context: str = "") -> list[str]:
     """One search query built without a model, or [].
 
-    Fires only when the message looks time-sensitive (or names a ticker in
-    caps): everything else — greetings, "what is a P/E", questions about the
-    user's own book — is answered from the prompt as before."""
+    Searching is the default. Time-sensitive wording or a ticker always
+    searches; otherwise only small talk, a definition ("what is a P/E") or a
+    question about the reader's own book goes without, since none of those
+    needs the outside world."""
     try:  # the same "that caps word is not a ticker" screen the quotes use
         from stocks.chat.market import NOT_TICKERS
     except Exception:  # pragma: no cover - defensive
         NOT_TICKERS = set()
     q = " ".join(question.split())
     names_ticker = any(t not in NOT_TICKERS for t in _CAPS_RE.findall(q))
-    if not (_FRESH_RE.search(q) or names_ticker):
+    if not q.strip("¿?¡!. "):
+        return []
+    if not (_FRESH_RE.search(q) or names_ticker) and (
+            _QUIET_RE.search(q) or _TIMELESS_RE.search(q) or _BOOK_RE.search(q)):
         return []
     focus = _FOCUS_RE.search(context)
     year = _TODAY_RE.search(context)

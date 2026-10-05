@@ -17,6 +17,11 @@
  * its undo, so a memory is never kept behind the reader's back; one that was
  * handed earlier conversations names them above the answer, so "as we
  * discussed" points at something the reader can open.
+ *
+ * A conversation is rated once, in the foot of its latest answer (or of the
+ * one already rated). A thumbs-down asks why, once, under the foot — the reason is what says how an answer missed, and
+ * the vote alone is already sent when it is pressed, so closing the question
+ * loses nothing.
  */
 
 import { useId, useState } from "react";
@@ -25,7 +30,7 @@ import { useLang, useT } from "../shell/i18n";
 import { Glyph } from "./icons";
 import { Markdown } from "./markdown";
 import { Status } from "../ui/Status";
-import { addMemory, dropMemory, editMemory } from "./api";
+import { addMemory, dropMemory, editMemory, rateTurn } from "./api";
 import {
   capMessage,
   clock,
@@ -46,6 +51,8 @@ import type {
   Edits,
   Learned,
   LiveStep,
+  Rating,
+  RatingReason,
   Recalled as Earlier,
   SkillInfo,
   Step,
@@ -360,6 +367,199 @@ function Changes({ turn, onMemory }: { turn: Stored; onMemory?: () => void }) {
   );
 }
 
+const REASONS: RatingReason[] = ["made_up", "wrong", "missed", "other"];
+
+type Rate = {
+  vote: Rating | null;
+  asking: boolean;
+  thanked: boolean;
+  failed: boolean;
+  press: (vote: Rating) => void;
+  explain: (reason: RatingReason, note: string) => Promise<void>;
+  dismiss: () => void;
+};
+
+/**
+ * Which turn carries the conversation's thumbs, or -1 for none yet.
+ *
+ * Asked once per conversation, and only once something was answered: the
+ * answer that was rated keeps them, and until one is, the latest finished
+ * answer does. The walkthrough's lines are the app talking, not the model,
+ * and an answer stored before answers had ids cannot be named — neither is
+ * offered.
+ */
+export function rateAt(turns: Stored[]): number {
+  const rated = turns.findIndex((turn) => turn.rating);
+  if (rated >= 0) return rated;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const turn = turns[i];
+    if (
+      turn &&
+      turn.role === "assistant" &&
+      turn.id &&
+      !turn.pending &&
+      !turn.error &&
+      !turn.guide
+    )
+      return i;
+  }
+  return -1;
+}
+
+/**
+ * One conversation's thumbs. Optimistic: the thumb fills on the press and
+ * goes back if the write failed. A second press on the same thumb takes it
+ * back. `onRated` tells the thread, so the next answer does not ask again.
+ */
+function useRate(turn: Stored, onRated?: (vote: Rating | null) => void): Rate {
+  const lang = useLang();
+  const [vote, setVote] = useState<Rating | null>(turn.rating ?? null);
+  const [asking, setAsking] = useState(false);
+  const [thanked, setThanked] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const tid = turn.id ?? "";
+
+  const press = (pressed: Rating) => {
+    const was = vote;
+    const next = was === pressed ? null : pressed;
+    setVote(next);
+    setAsking(next === "down");
+    setThanked(next === "up");
+    setFailed(false);
+    onRated?.(next);
+    rateTurn(tid, { vote: next, lang }).catch(() => {
+      setVote(was);
+      onRated?.(was);
+      setAsking(false);
+      setThanked(false);
+      setFailed(true);
+    });
+  };
+
+  const explain = async (reason: RatingReason, note: string) => {
+    setFailed(false);
+    try {
+      await rateTurn(tid, { vote: "down", reason, note: note.trim(), lang });
+      setAsking(false);
+      setThanked(true);
+    } catch {
+      setFailed(true);
+    }
+  };
+
+  return {
+    vote,
+    asking,
+    thanked,
+    failed,
+    press,
+    explain,
+    dismiss: () => setAsking(false),
+  };
+}
+
+/** The two thumbs, at the end of the foot. */
+function Thumbs({ rate }: { rate: Rate }) {
+  const t = useT();
+  return (
+    <span className="ag-chat-thumbs">
+      {(["up", "down"] as const).map((vote) => {
+        const on = rate.vote === vote;
+        return (
+          <button
+            key={vote}
+            type="button"
+            className={`ag-chat-meta-btn ag-chat-thumb${on ? " ag-chat-thumb-on" : ""}`}
+            aria-pressed={on}
+            aria-label={t(`chat.rate_${vote}`)}
+            title={t(`chat.rate_${vote}`)}
+            onClick={() => rate.press(vote)}
+          >
+            <Glyph name={on ? `thumb_${vote}_on` : `thumb_${vote}`} size={14} />
+          </button>
+        );
+      })}
+    </span>
+  );
+}
+
+/** Under the foot: why a thumbs-down, then the thanks. */
+function Why({ rate }: { rate: Rate }) {
+  const t = useT();
+  const uid = useId();
+  const [reason, setReason] = useState<RatingReason | null>(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!rate.asking) {
+    return (
+      <>
+        {rate.thanked && (
+          <p className="ag-chat-hint" role="status">
+            {t("chat.rate_thanks")}
+          </p>
+        )}
+        {rate.failed && <p className="ag-chat-hint">{t("chat.api_error")}</p>}
+      </>
+    );
+  }
+  const send = async () => {
+    if (!reason) return;
+    setBusy(true);
+    await rate.explain(reason, note);
+    setBusy(false);
+  };
+  return (
+    <div className="ag-chat-why" role="group" aria-labelledby={`${uid}-why`}>
+      <div className="ag-chat-why-head">
+        <span id={`${uid}-why`}>{t("chat.rate_why")}</span>
+        <button
+          type="button"
+          className="ag-chat-meta-btn ag-chat-icon"
+          aria-label={t("chat.close")}
+          onClick={rate.dismiss}
+        >
+          <Glyph name="close" size={14} />
+        </button>
+      </div>
+      <div className="ag-chat-why-chips">
+        {REASONS.map((r) => (
+          <button
+            key={r}
+            type="button"
+            className={`ag-chat-chip${reason === r ? " ag-chat-chip-on" : ""}`}
+            aria-pressed={reason === r}
+            onClick={() => setReason(r)}
+          >
+            {t(`chat.rate_${r}`)}
+          </button>
+        ))}
+      </div>
+      <textarea
+        className="ag-chat-why-note"
+        rows={2}
+        maxLength={1000}
+        placeholder={t("chat.rate_note")}
+        aria-label={t("chat.rate_note")}
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+      />
+      {busy ? (
+        <Status label={t("chat.rate_send")} />
+      ) : (
+        <button
+          type="button"
+          className="ag-chat-btn"
+          disabled={!reason}
+          onClick={() => void send()}
+        >
+          {t("chat.rate_send")}
+        </button>
+      )}
+      {rate.failed && <p className="ag-chat-hint">{t("chat.api_error")}</p>}
+    </div>
+  );
+}
+
 /**
  * The button an answer on the walkthrough's thread earned by ending in a valid
  * `[[goto:<step>]]` — `guide.render_jump`, and a `navigate` call with `{step}`
@@ -395,6 +595,8 @@ export function Turn({
   onPress,
   onOpenThread,
   onMemory,
+  askRating,
+  onRated,
   walk,
 }: {
   turn: Stored;
@@ -421,6 +623,10 @@ export function Turn({
   onOpenThread?: (cid: string) => void;
   /** Open the memory screen. Absent: the memory line offers only its undo. */
   onMemory?: () => void;
+  /** This turn carries the conversation's thumbs (`rateAt`). */
+  askRating?: boolean;
+  /** The conversation's vote changed on this turn. */
+  onRated?: (vote: Rating | null) => void;
   /** The walkthrough, for a turn it wrote. Absent: no guide on this server. */
   walk?: {
     state: GuideState;
@@ -441,6 +647,10 @@ export function Turn({
     : "";
   const when = clock(turn.ts, lang);
   const spent = took(turn.took);
+  const rate = useRate(turn, onRated);
+  // The thread decides which turn asks (`rateAt`); this only refuses one that
+  // could not be named.
+  const rateable = !!askRating && !mine && !turn.pending && !!turn.id && !turn.guide;
   // One provider answered for another. Session-only: a stored turn records
   // neither, so a reloaded thread names nobody rather than naming today's
   // head of the chain.
@@ -576,15 +786,21 @@ export function Turn({
             />
           ) : null;
         })()}
-      {(turn.web.length > 0 || when || spent || (turn.steps?.length ?? 0) > 0) && (
+      {(turn.web.length > 0 ||
+        when ||
+        spent ||
+        (turn.steps?.length ?? 0) > 0 ||
+        rateable) && (
         <div className="ag-chat-foot">
           {turn.web.length > 0 && <Sources web={turn.web} />}
           {/* The cost rides on the trace counter for an answer, so the clock
               beside it only says when. */}
           {!mine && !turn.pending && <Trace steps={turn.steps ?? []} spent={spent} />}
           {when && <span className="ag-chat-clock">{when}</span>}
+          {rateable && <Thumbs rate={rate} />}
         </div>
       )}
+      {rateable && <Why rate={rate} />}
     </div>
   );
 }

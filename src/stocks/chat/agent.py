@@ -39,8 +39,13 @@ GATHER_SYSTEM = (
     "You are the research step of an investing assistant. Do NOT answer the "
     "user's question. Use the tools to fetch only what answering it will "
     "actually require, then stop and reply with the single word DONE.\n\n"
-    "- Call nothing when the question needs nothing fetched: small talk, "
-    "definitions, arithmetic, or something the conversation already covered.\n"
+    "- Search the web by default: anything about a company, a ticker, a "
+    "fund, a coin, a market, the economy or an event gets at least one "
+    "search_web, even when you think you know — prices, news and the reasons "
+    "behind a move change daily. Read the best page when the snippets do not "
+    "say why.\n"
+    "- Call nothing only for small talk, definitions, arithmetic, how the app "
+    "works, or something this conversation already fetched.\n"
     "- Prefer one good call over three speculative ones. Every call costs the "
     "user seconds of waiting.\n"
     "- Use portfolio_snapshot for anything about what the user owns, "
@@ -174,6 +179,9 @@ def gather(
     try:
         run_result = pool.submit(run).result(timeout=timeout)
     except Exception as exc:
+        from stocks.web import llm
+
+        llm.note_failure(provider, api_key, exc)
         obs.warn("chat.gather_failed", provider=provider.id, model=picked,
                  error_type=type(exc).__name__, error=str(exc)[:300])
         return Evidence(ok=False)

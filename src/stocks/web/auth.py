@@ -543,6 +543,44 @@ def delete_conversation(cid: str, path: Path) -> None:
 
 
 @_locked
+def rate_turn(tid: str, vote: str | None, path: Path) -> dict | None:
+    """Set (or, with None, clear) the reader's thumbs on a conversation.
+
+    One rating per conversation, carried by the answer it was pressed on:
+    found by the id `_record` gave it, in whichever thread holds it (the
+    reader may have switched threads since), and any rating an earlier answer
+    of the same thread carried is dropped — the panel asks once per thread,
+    on its latest answer, and a vote pressed later replaces the earlier one.
+
+    Returns {"answer": entry, "question": text, "thread": id, "history":
+    the turns above that question}, or None for an id no thread holds. `updated` is left
+    alone: a thumbs is not a use, and it must not lift an old thread to the
+    top of the list.
+    """
+    if not tid:
+        return None
+    book = load_book(path)
+    for conv in book["conversations"]:
+        msgs = conv["messages"]
+        for i, m in enumerate(msgs):
+            if m.get("role") != "assistant" or m.get("id") != tid:
+                continue
+            for other in msgs:
+                other.pop("rating", None)
+            if vote is not None:
+                m["rating"] = vote
+            save_book(book, path)
+            at = next((j for j in range(i - 1, -1, -1)
+                       if msgs[j].get("role") == "user"), None)
+            asked = str(msgs[at].get("content") or "") if at is not None else ""
+            return {"answer": dict(m), "question": asked, "thread": conv["id"],
+                    "history": [{"role": str(q.get("role") or ""),
+                                 "content": str(q.get("content") or "")}
+                                for q in msgs[:at or 0]]}
+    return None
+
+
+@_locked
 def save_card_thread(day: str, title: str, text: str, path: Path) -> str:
     """File a daily card in the chat as a thread of its own; returns its id.
 

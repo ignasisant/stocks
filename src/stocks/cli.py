@@ -1115,12 +1115,41 @@ def cmd_feedback(args: argparse.Namespace) -> None:
     if not items:
         print("(no feedback yet)")
         return
+    # A thumbs-down is sent on the press and again with its reason, and a
+    # reader may change their mind: a conversation is rated once, so its last
+    # rating is its verdict (one stored before ratings named their thread
+    # falls back to its answer).
+    def rated(it):
+        return (it.get("user"), it.get("thread") or it.get("turn"))
+
+    last = {rated(it): i for i, it in enumerate(items)
+            if it.get("kind") == "rating" and it.get("turn")}
+    items = [it for i, it in enumerate(items)
+             if it.get("kind") != "rating" or not it.get("turn")
+             or last[rated(it)] == i]
     for it in items:
         head = f"{it.get('ts', '?')}  [{it.get('kind', '?'):<5}]"
         head += f"  {it.get('user', '?')}  ({it.get('page', '-')})"
+        if it.get("kind") == "rating":
+            # A thumbs on an answer: what it was pressed on is the report.
+            head += f"  {it.get('vote', '?')}"
+            if it.get("reason"):
+                head += f" ({it['reason']})"
+            head += f"  via {it.get('provider') or '?'}"
         print(head)
         for line in str(it.get("text", "")).splitlines():
             print(f"    {line}")
+        if it.get("kind") == "rating":
+            # The turns above the rated answer, oldest first, one line each.
+            for h in it.get("history") or []:
+                who = "U" if h.get("role") == "user" else "A"
+                print(f"    {who}: {' '.join(str(h.get('content', '')).split())[:120]}")
+            print(f"    Q: {' '.join(str(it.get('question', '')).split())[:200]}")
+            print(f"    A: {' '.join(str(it.get('answer', '')).split())[:200]}")
+            for st in it.get("steps") or []:
+                print(f"    · {st.get('tool', '')} {st.get('arg', '')}".rstrip())
+            for url in it.get("web") or []:
+                print(f"    ↳ {url}")
         # The picture, when one came with it — fetched out of the bucket on
         # demand, so this works on a checkout that has never seen the file.
         shot = feedback.shot_path(str(it.get("shot", "")))

@@ -103,6 +103,12 @@ export type Learned = {
  */
 export type Recalled = { thread: string; title: string; when: string; snippet: string };
 
+/** A thumbs on one answer. */
+export type Rating = "up" | "down";
+
+/** Why a thumbs-down, as the panel offers it (`/chat/turns/{id}/rating`). */
+export type RatingReason = "made_up" | "wrong" | "missed" | "other";
+
 /** One stored turn, as the API returns it. */
 type Message = {
   role: string;
@@ -131,6 +137,10 @@ type Message = {
   learned?: Learned[];
   /** The earlier conversations the answer was handed. */
   recalled?: Recalled[];
+  /** A stored answer's id — what a thumbs names it by. None on older turns. */
+  id?: string;
+  /** The reader's thumbs on this answer. */
+  rating?: Rating | null;
 };
 
 /**
@@ -414,4 +424,6 @@ export type Done = {
   learned?: Learned[];
   /** The earlier conversations the answer was handed. */
   recalled?: Recalled[];
+  /** The stored answer's id, for its thumbs. Absent when nothing was stored. */
+  id?: string;
 };

@@ -795,3 +795,49 @@ def available_providers() -> list[Provider]:
     """Usable providers, registry order (TopStocks AI, Claude, ChatGPT, Gemini,
     OpenRouter)."""
     return [p for p in PROVIDERS.values() if p.available()]
+
+
+# ------------------------------------------------------------- rejected keys
+
+# A key the provider has refused (401/403) is remembered for a while, by
+# fingerprint, so the turns after it stop spending their research on it. The
+# answer always fell through to the next candidate on a dead key; the cheap
+# calls before it — the tool-using lookup, the web planner, the skill router —
+# all ran on the head of the chain and simply failed, so a reader whose stored
+# ChatGPT key had gone bad got answers built with no search at all, every turn,
+# with nothing on screen saying why. Process-local and timed: a key fixed in
+# the provider's console works again without anyone telling this process.
+REJECTED_TTL_S = 15 * 60
+_rejected: dict[str, float] = {}
+
+
+def _fingerprint(provider_id: str, key: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(f"{provider_id}\0{key}".encode()).hexdigest()[:16]
+
+
+def note_failure(provider: Provider, key: str, exc: Exception) -> None:
+    """Remember `key` as refused when `exc` says the provider refused it."""
+    if not key or not getattr(provider, "needs_key", True):
+        return
+    try:
+        refused = provider.error_key(exc) == "chat.invalid_key"
+    except Exception:  # an SDK missing on this host: not a verdict on the key
+        return
+    if refused:
+        _rejected[_fingerprint(provider.id, key)] = time.monotonic()
+
+
+def rejected(provider: Provider, key: str) -> bool:
+    """Whether `key` was refused by `provider` within REJECTED_TTL_S."""
+    if not key:
+        return False
+    fp = _fingerprint(provider.id, key)
+    at = _rejected.get(fp)
+    if at is None:
+        return False
+    if time.monotonic() - at > REJECTED_TTL_S:
+        _rejected.pop(fp, None)
+        return False
+    return True

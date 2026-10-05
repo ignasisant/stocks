@@ -84,6 +84,8 @@ _TOUCH_TARGETS = [
     ("pages/sector/sector.css", ".ag-sec-controls > summary", r"min-height\s*:\s*44px"),
     ("pages/profile/styles.ts", ".pr-signout", r"min-height\s*:\s*44px"),
     ("pages/profile/styles.ts", ".pr-more > summary", r"min-height\s*:\s*44px"),
+    ("chat/chat.css", ".ag-chat-thumb", r"min-height\s*:\s*44px"),
+    ("chat/chat.css", ".ag-chat-why-chips .ag-chat-chip", r"min-height\s*:\s*44px"),
 ]
 
 

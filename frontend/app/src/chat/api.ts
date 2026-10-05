@@ -27,6 +27,8 @@ import type {
   Meta,
   Preview,
   Proposal,
+  Rating,
+  RatingReason,
   Recalled,
   SettingsPatch,
   Thread,
@@ -205,6 +207,15 @@ export const undoProposal = (pid: string, lang?: string) =>
     `/chat/proposals/${id(pid)}/undo${lang ? `?lang=${encodeURIComponent(lang)}` : ""}`,
     {},
   );
+
+/**
+ * Thumbs on one stored answer; `vote: null` takes it back. 404 for an answer
+ * the server never stored with an id (older turns, a deleted thread).
+ */
+export const rateTurn = (
+  tid: string,
+  body: { vote: Rating | null; reason?: RatingReason; note?: string; lang?: string },
+) => send<{ vote: Rating | null }>("PUT", `/chat/turns/${id(tid)}/rating`, body);
 
 /** Forget the stored key. 404 when there was none, which is not an error here. */
 export const forgetKey = (provider: string) =>

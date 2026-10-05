@@ -21,7 +21,7 @@ vi.mock("../shell/api", async (original) => ({
 
 import { Attachment } from "./Attachment";
 import { Composer } from "./Composer";
-import { Turn, undoMemory } from "./Turn";
+import { rateAt, Turn, undoMemory } from "./Turn";
 import type { ChatState, Preview, Turn as Stored } from "./types";
 
 beforeEach(() => {
@@ -44,7 +44,7 @@ const refused = (over: Partial<Stored> = {}): Stored => ({
   ...over,
 });
 
-const drawTurn = (turn: Stored, onDrop?: () => void) =>
+const drawTurn = (turn: Stored, onDrop?: () => void, askRating = true) =>
   renderToStaticMarkup(
     <Turn
       turn={turn}
@@ -53,6 +53,7 @@ const drawTurn = (turn: Stored, onDrop?: () => void) =>
       cap={null}
       onRetry={() => {}}
       onDrop={onDrop}
+      askRating={askRating}
     />,
   );
 
@@ -586,5 +587,90 @@ describe("memory on a turn", () => {
     const out = drawn({});
     expect(out).not.toContain("chat.recalled");
     expect(out).not.toContain("chat.mem_");
+  });
+});
+
+describe("an answer's thumbs", () => {
+  const answer = (over: Partial<Stored> = {}): Stored => ({
+    role: "assistant",
+    content: "SHOP rose on earnings.",
+    skills: [],
+    web: [],
+    action: null,
+    id: "a1b2c3",
+    ...over,
+  });
+
+  it("draws both thumbs, unpressed, on a stored answer", () => {
+    const out = drawTurn(answer());
+    expect(out).toContain('aria-label="chat.rate_up"');
+    expect(out).toContain('aria-label="chat.rate_down"');
+    expect(out).not.toContain('aria-pressed="true"');
+  });
+
+  it("draws the stored vote pressed", () => {
+    const out = drawTurn(answer({ rating: "down" }));
+    expect(out.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(out).toContain("ag-chat-thumb-on");
+  });
+
+  it("is not offered where there is nothing to rate", () => {
+    for (const turn of [
+      answer({ id: undefined }),
+      answer({ pending: true }),
+      answer({ role: "user" }),
+      answer({ guide: { step: "home" } }),
+    ]) {
+      expect(drawTurn(turn)).not.toContain("chat.rate_up");
+    }
+  });
+
+  it("is drawn only on the turn the thread asks on", () => {
+    expect(drawTurn(answer(), undefined, false)).not.toContain("chat.rate_up");
+  });
+
+  it("asks once per conversation, and only once something was answered", () => {
+    const ask = (content: string): Stored => ({
+      ...answer(),
+      role: "user",
+      content,
+      id: undefined,
+    });
+    expect(rateAt([])).toBe(-1);
+    expect(rateAt([ask("hola")])).toBe(-1);
+    expect(rateAt([ask("hola"), answer({ pending: true })])).toBe(-1);
+    // Until one is rated, the latest finished answer asks.
+    const thread = [ask("a"), answer({ id: "x" }), ask("b"), answer({ id: "y" })];
+    expect(rateAt(thread)).toBe(3);
+    // A failed or still-streaming last turn leaves it on the one before.
+    expect(
+      rateAt([...thread, ask("c"), answer({ id: "z", error: "chat.api_error" })]),
+    ).toBe(3);
+    expect(
+      rateAt([...thread, ask("c"), answer({ id: undefined, pending: true })]),
+    ).toBe(3);
+    // Once rated, that answer keeps it, however long the thread grows.
+    const rated = [
+      ask("a"),
+      answer({ id: "x", rating: "up" }),
+      ask("b"),
+      answer({ id: "y" }),
+    ];
+    expect(rateAt(rated)).toBe(1);
+    // The walkthrough's lines are never asked on.
+    expect(rateAt([answer({ guide: { step: "home" } })])).toBe(-1);
+  });
+
+  it("is a PUT on the answer's id", async () => {
+    const { rateTurn } = await import("./api");
+    send.mockClear();
+    await rateTurn("a/1", { vote: "down", reason: "made_up", note: "" });
+    expect(send.mock.calls).toEqual([
+      [
+        "PUT",
+        "/chat/turns/a%2F1/rating",
+        { vote: "down", reason: "made_up", note: "" },
+      ],
+    ]);
   });
 });
