@@ -74,8 +74,23 @@
   text-decoration: none;
 }
 
-.hm-link:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .hm-link:hover {
+    text-decoration: underline;
+  }
+}
+
+/* A line of text: the hit area reaches 44px by an invisible inset. */
+@media (pointer: coarse) {
+  .hm-link {
+    position: relative;
+  }
+
+  .hm-link::before {
+    content: "";
+    position: absolute;
+    inset: -14px -8px;
+  }
 }
 
 /* ------------------------------------------------------------- the layout */
@@ -173,14 +188,29 @@
   cursor: pointer;
 }
 
-.hm-customize:hover {
-  background: var(--ag-surface-hover);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .hm-customize:hover {
+    background: var(--ag-surface-hover);
+    color: var(--ag-text-primary);
+  }
 }
 
 .hm-customize:focus-visible {
   outline: 2px solid var(--ag-border-focus);
   outline-offset: 2px;
+}
+
+/* The button stays 28px; an invisible inset makes it a 44px target. */
+@media (pointer: coarse) {
+  .hm-customize:only-child {
+    position: relative;
+  }
+
+  .hm-customize::before {
+    content: "";
+    position: absolute;
+    inset: -8px;
+  }
 }
 
 /* A phone keeps the glyph; the button's accessible name still says it. */
@@ -228,8 +258,10 @@
   transition-timing-function: ease-out;
 }
 
-.hm-seg:hover:not(.hm-seg-on) {
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .hm-seg:hover:not(.hm-seg-on) {
+    color: var(--ag-text-primary);
+  }
 }
 
 .hm-seg:focus-visible {
@@ -240,6 +272,13 @@
 .hm-seg-on {
   background: var(--ag-purple-900);
   color: var(--ag-text-primary);
+}
+
+@media (pointer: coarse) {
+  .hm-seg,
+  .hm-spark-head .hm-segmented .hm-seg {
+    min-height: 44px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -279,7 +318,7 @@
   padding: 4px 6px;
   border-bottom: 1px solid var(--ag-border);
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-sm, 12px);
   font-weight: 500;
   text-align: left;
   white-space: nowrap;
@@ -324,8 +363,10 @@
   cursor: pointer;
 }
 
-.hm-owed-toggle:hover {
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  .hm-owed-toggle:hover {
+    background: var(--ag-surface-hover);
+  }
 }
 
 .hm-owed-toggle:focus-visible,
@@ -444,8 +485,10 @@
   text-decoration: none;
 }
 
-.hm-ticker:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .hm-ticker:hover {
+    text-decoration: underline;
+  }
 }
 
 /* A ticker in a table cell: one line, mark and symbol side by side and
@@ -543,10 +586,16 @@
   cursor: pointer;
 }
 
-.hm-icon-btn:hover:not(:disabled),
 .hm-icon-btn[aria-pressed="true"] {
   background: var(--ag-surface-sunken);
   color: var(--ag-text-primary);
+}
+
+@media (hover: hover) {
+  .hm-icon-btn:hover:not(:disabled) {
+    background: var(--ag-surface-sunken);
+    color: var(--ag-text-primary);
+  }
 }
 
 .hm-icon-btn:disabled {
@@ -612,8 +661,10 @@
   cursor: pointer;
 }
 
-.hm-daily-toggle:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .hm-daily-toggle:hover {
+    text-decoration: underline;
+  }
 }
 
 .hm-daily-toggle:focus-visible {
@@ -886,7 +937,7 @@
 .hm-cal th {
   padding: 2px 4px;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs, 10px);
+  font-size: var(--ag-fs-2xs, 11px);
   font-weight: 500;
   text-align: left;
 }
@@ -910,7 +961,7 @@
 
 .hm-cal-day {
   color: var(--ag-text-faint);
-  font-size: var(--ag-fs-2xs, 10px);
+  font-size: var(--ag-fs-2xs, 11px);
   line-height: 1.4;
 }
 
@@ -918,12 +969,25 @@
    not a seventh of a page, and three of them have to fit its 62px. */
 .hm-cal .earn-chip {
   margin: 2px 0 0;
-  font-size: var(--ag-fs-2xs, 10px);
+  font-size: var(--ag-fs-2xs, 11px);
+}
+
+/* Three chips share a cell, so they grow only to 28px here and lean on the
+   inset for the rest; neighbours overlap a little, the later one wins. */
+@media (pointer: coarse) {
+  .hm-cal .earn-chip {
+    min-height: 28px;
+    margin: 4px 0 0;
+  }
+
+  .hm-cal .earn-chip::before {
+    inset: -8px 0;
+  }
 }
 
 .hm-cal .earn-more {
   padding: 0 4px;
-  font-size: var(--ag-fs-2xs, 10px);
+  font-size: var(--ag-fs-2xs, 11px);
 }
 
 /* The glance sparkline. Sits between the tile rows at a fixed height so the
@@ -955,6 +1019,15 @@
   height: 56px;
 }
 
+/* Two days being compared: the stretch between them and an edge at each. */
+.hm-spark-span rect {
+  fill: var(--ag-accent-band);
+}
+.hm-spark-span line {
+  stroke: var(--ag-brand-accent);
+  stroke-width: 1;
+}
+
 /* Plotly's unified hover label, redrawn: date on top, one row per line with
    its figure bold and the value row coloured by gain or loss. Never takes the
    pointer, so it never fights the wrap's own pointermove. */
@@ -967,6 +1040,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* Sized by its text, not by the room right of the pointer (see `.tk-tip`). */
+  width: max-content;
   max-width: min(240px, 90%);
   padding: 6px 8px;
   background: var(--ag-surface-page);
@@ -1119,9 +1194,11 @@
   cursor: pointer;
 }
 
-.hm-quiet:hover {
-  color: var(--ag-text-primary);
-  text-decoration: underline;
+@media (hover: hover) {
+  .hm-quiet:hover {
+    color: var(--ag-text-primary);
+    text-decoration: underline;
+  }
 }
 
 .hm-quiet:focus-visible,
@@ -1155,8 +1232,10 @@ button.hm-check {
   cursor: pointer;
 }
 
-button.hm-check:hover {
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  button.hm-check:hover {
+    background: var(--ag-surface-hover);
+  }
 }
 
 /* The onward chevron on a row still to do, nudged on hover so the pill
@@ -1167,9 +1246,11 @@ button.hm-check:hover {
   transition: transform 150ms ease-out;
 }
 
-.hm-check:hover .hm-check-go {
-  transform: translateX(2px);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .hm-check:hover .hm-check-go {
+    transform: translateX(2px);
+    color: var(--ag-text-primary);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1183,8 +1264,10 @@ a.hm-check {
   text-decoration: none;
 }
 
-a.hm-check:hover {
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  a.hm-check:hover {
+    background: var(--ag-surface-hover);
+  }
 }
 
 /* Behind a sign-in: shown, so a guest sees what an account gets, and plainly
@@ -1195,8 +1278,10 @@ button.hm-check:disabled,
   cursor: not-allowed;
 }
 
-button.hm-check:disabled:hover {
-  background: var(--ag-surface-page);
+@media (hover: hover) {
+  button.hm-check:disabled:hover {
+    background: var(--ag-surface-page);
+  }
 }
 
 /* Done recedes to a muted tick: the badge already counts them, and four
@@ -1209,8 +1294,10 @@ button.hm-check:disabled:hover {
   color: var(--ag-text-muted);
 }
 
-button.hm-check-on:hover {
-  background: var(--ag-surface-sunken);
+@media (hover: hover) {
+  button.hm-check-on:hover {
+    background: var(--ag-surface-sunken);
+  }
 }
 
 .hm-mark {
@@ -1223,7 +1310,7 @@ button.hm-check-on:hover {
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-pill, 9999px);
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs, 10px);
+  font-size: var(--ag-fs-2xs, 11px);
   line-height: 1;
 }
 
@@ -1447,8 +1534,10 @@ button.hm-check-on:hover {
   text-decoration: none;
 }
 
-a.hm-mtile:hover {
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  a.hm-mtile:hover {
+    background: var(--ag-surface-hover);
+  }
 }
 
 a.hm-mtile:focus-visible {
@@ -1481,12 +1570,12 @@ a.hm-mtile:focus-visible {
 }
 
 .hm-mtile-arrow {
-  font-size: var(--ag-fs-2xs, 10px);
+  font-size: var(--ag-fs-2xs, 11px);
 }
 
 .hm-mtile-sub {
   color: var(--ag-text-faint);
-  font-size: var(--ag-fs-2xs, 10px);
+  font-size: var(--ag-fs-2xs, 11px);
   white-space: nowrap;
 }
 
@@ -1551,8 +1640,10 @@ a.hm-mtile:focus-visible {
   text-decoration: none;
 }
 
-.hm-extra-list a:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .hm-extra-list a:hover {
+    text-decoration: underline;
+  }
 }
 
 /* ------------------------------------------------------------- the editor */
@@ -1620,9 +1711,11 @@ a.hm-mtile:focus-visible {
   touch-action: none;
 }
 
-.hm-edit-handle:hover {
-  background: var(--ag-surface-hover);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .hm-edit-handle:hover {
+    background: var(--ag-surface-hover);
+    color: var(--ag-text-primary);
+  }
 }
 
 .hm-edit-handle:active {
@@ -1681,10 +1774,12 @@ a.hm-mtile:focus-visible {
   padding: 0 10px;
 }
 
-.hm-edit-icon:hover,
-.hm-edit-btn:hover {
-  background: var(--ag-surface-hover);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .hm-edit-icon:hover,
+  .hm-edit-btn:hover {
+    background: var(--ag-surface-hover);
+    color: var(--ag-text-primary);
+  }
 }
 
 .hm-edit-icon[aria-disabled="true"] {
@@ -1692,9 +1787,11 @@ a.hm-mtile:focus-visible {
   opacity: 0.35;
 }
 
-.hm-edit-icon[aria-disabled="true"]:hover {
-  background: var(--ag-surface-sunken);
-  color: var(--ag-text-secondary);
+@media (hover: hover) {
+  .hm-edit-icon[aria-disabled="true"]:hover {
+    background: var(--ag-surface-sunken);
+    color: var(--ag-text-secondary);
+  }
 }
 
 .hm-edit-handle:focus-visible,
@@ -1752,5 +1849,35 @@ a.hm-mtile:focus-visible {
   .hm-edit-row {
     padding: 0.4rem;
     gap: 0.4rem;
+  }
+}
+
+/* ------------------------------------------------------ the KPI block, narrow */
+
+/* On a phone the first screen was seven full-width tiles and the chart began
+   below the fold. Two columns throughout instead: the money row's third tile
+   (the gain, the one with the chip) takes the full row, the four under it
+   pair up, and the tiles shed padding and figure size to match. Home-scoped:
+   the shared grid's three-in-a-column is right on pages with nothing to
+   fold. */
+@container ag-main (max-width: 38rem) {
+  .hm-card .ag-kpis {
+    gap: 6px;
+  }
+  .hm-card .ag-kpis:has(> :nth-child(3):last-child) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .hm-card .ag-kpis:has(> :nth-child(3):last-child) > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+  .hm-card .ag-kpi {
+    gap: 2px;
+    padding: 7px 9px;
+  }
+  .hm-card .ag-kpi-value {
+    font-size: var(--ag-fs-lg, 16px);
+  }
+  .hm-card .ag-kpi-note {
+    line-height: 1.3;
   }
 }

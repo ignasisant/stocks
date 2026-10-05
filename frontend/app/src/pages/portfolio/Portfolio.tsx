@@ -14,12 +14,13 @@
  * that do not need it.
  */
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import { get, send } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
+import { useTabStrip } from "../../shell/useTabStrip";
 import { useRoute } from "../../shell/router";
 import { GuestBanner } from "../../shell/guest";
 import { useCurrency, useGuest } from "../../shell/session";
@@ -106,30 +107,16 @@ function DemoBook({ book, onChange }: { book: Transactions; onChange: () => void
 }
 
 /**
- * The tab strip. On a phone it is one scrolling row wider than the screen, and
- * the open tab is kept in its middle so the one before and the one after are
- * both in view, each a tap away — a tab picked at the edge slides to the
- * centre rather than leaving its neighbour off-screen. Only the strip scrolls:
- * `scrollIntoView` would also move the page under the reader. Where every tab
- * fits there is nothing to scroll and this does nothing.
+ * The tab strip. On a phone it is one scrolling row wider than the screen:
+ * `useTabStrip` keeps the open tab in its middle and fades the edge that has
+ * more tabs past it.
  */
 function Tabs({ active, onPick }: { active: string; onPick: (tab: string) => void }) {
   const t = useT();
-  const strip = useRef<HTMLDivElement>(null);
-  // The first centring is instant — the page opened on that tab, nothing moved.
-  const moved = useRef(false);
-
-  useLayoutEffect(() => {
-    const row = strip.current;
-    const on = row?.querySelector<HTMLElement>('[aria-selected="true"]');
-    if (!row || !on) return;
-    const left = on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2;
-    row.scrollTo({ left, behavior: moved.current ? "smooth" : "auto" });
-    moved.current = true;
-  }, [active]);
+  const strip = useTabStrip(active);
 
   return (
-    <div className="pf-tabs" role="tablist" ref={strip}>
+    <div className="pf-tabs ag-fade-x" role="tablist" ref={strip}>
       {TABS.map(([name, label]) => (
         <button
           key={name}

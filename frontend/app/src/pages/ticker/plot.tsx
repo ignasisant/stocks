@@ -14,15 +14,18 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
+import { type Span, useSpan } from "../../shell/useSpan";
 import { useTouchHold } from "../../shell/useTouchHold";
 
 /**
  * A chart's box, in viewBox units.
  *
- * The SVG is laid out at a fixed width and scaled to its container by CSS
- * (`width: 100%; height: auto`), so the rendered aspect ratio always matches
- * this one — which is what makes a pointer position convertible back into
- * these coordinates exactly.
+ * A chart passes the width its container actually has (`shell/useWidth`), so
+ * one unit is one pixel: an 11px label prints at 11px on a phone as on a
+ * desktop. The 760 default is only what a render without layout sees. CSS
+ * still sizes the SVG (`width: 100%; height: auto`), so the rendered aspect
+ * ratio always matches this one — which is what makes a pointer position
+ * convertible back into these coordinates exactly.
  */
 export type Frame = {
   width: number;
@@ -43,6 +46,16 @@ export function frame(over: Partial<Frame> = {}): Frame {
     bottom: 30,
     ...over,
   };
+}
+
+/**
+ * How tall a chart is drawn at a measured width: `max` wherever there is room,
+ * and no shorter than `min` on a phone. Drawn at the real width a chart is no
+ * longer shrunk by the scale, but a desktop height on a 360px screen would be
+ * all of it — so a narrow chart keeps a squarer shape instead.
+ */
+export function fitHeight(width: number, max: number, min = 240): number {
+  return Math.round(Math.min(max, Math.max(min, width * 0.8)));
 }
 
 export const plotWidth = (f: Frame) => f.width - f.left - f.right;
@@ -105,11 +118,17 @@ export function bounds(
   return { lo: lo - pad, hi: hi + pad };
 }
 
+export type { Span } from "../../shell/useSpan";
+
 /**
  * The responsive SVG every chart draws into.
  *
  * `role="img"` with a label, because these carry figures: a screen reader that
  * is handed an unlabelled canvas is handed nothing.
+ *
+ * `onSpan` is the measuring gesture (`shell/useSpan`): two fingers, or a
+ * secondary click and the pointer. A chart that passes none keeps the
+ * browser's context menu.
  */
 export function Chart({
   frame: f,
@@ -120,6 +139,7 @@ export function Chart({
   onDown,
   onUp,
   onDouble,
+  onSpan,
   className,
 }: {
   frame: Frame;
@@ -131,6 +151,8 @@ export function Chart({
   onDown?: (x: number) => void;
   onUp?: (x: number) => void;
   onDouble?: () => void;
+  /** Two places being compared, or null once the comparison is put away. */
+  onSpan?: (span: Span | null) => void;
   className?: string;
 }) {
   const node = useRef<SVGSVGElement>(null);
@@ -141,6 +163,8 @@ export function Chart({
     onLeave?.();
   }, [onLeave]);
   useTouchHold(node, held, drop);
+
+  const span = useSpan(onSpan);
 
   const at = useCallback(
     (event: { clientX: number; clientY: number }): [number, number] => {
@@ -159,31 +183,37 @@ export function Chart({
       viewBox={`0 0 ${f.width} ${f.height}`}
       role="img"
       aria-label={label}
-      onPointerMove={
-        onPointer &&
-        ((event) => {
-          const [x, y] = at(event);
-          onPointer(x, y);
-        })
-      }
+      onPointerMove={(event) => {
+        const [x, y] = at(event);
+        if (span.move(event, x)) return;
+        onPointer?.(x, y);
+      }}
       // A finger lifting is a leave too; the bar it read stays up until the
       // reader touches elsewhere, since only then is the hand off the chart.
       onPointerLeave={(event) => {
-        if (event.pointerType === "touch" && onPointer) setHeld(true);
-        else onLeave?.();
+        span.leave(event);
+        if (event.pointerType === "touch") {
+          if (onPointer || onSpan) setHeld(true);
+          return;
+        }
+        onLeave?.();
       }}
+      onPointerCancel={span.cancel}
       onPointerDown={(event) => {
         const [x, y] = at(event);
+        if (span.down(event, x)) return;
         // A tap is a pointer that never moves: it reads the bar too.
         if (event.pointerType === "touch") onPointer?.(x, y);
+        // The secondary button is the measuring click, never a drag.
+        else if (event.button !== 0) return;
         onDown?.(x);
       }}
-      onPointerUp={
-        onUp &&
-        ((event) => {
-          onUp(at(event)[0]);
-        })
-      }
+      onPointerUp={(event) => {
+        if (span.up(event)) return;
+        if (event.pointerType !== "touch" && event.button !== 0) return;
+        onUp?.(at(event)[0]);
+      }}
+      onContextMenu={span.menu && ((event) => span.menu?.(event, at(event)[0]))}
       onDoubleClick={onDouble}
     >
       {children}
@@ -191,9 +221,26 @@ export function Chart({
   );
 }
 
+type GridProps = {
+  frame: Frame;
+  lo: number;
+  hi: number;
+  format: (value: number) => string;
+  count?: number;
+  /**
+   * Set each label just above its gridline, inside the plot, instead of in a
+   * gutter to its left. On a phone the gutter is a seventh of the width; the
+   * labels sit over the series instead, haloed in the card colour so both
+   * stay legible — drawn by `YLabels`, last, since in SVG whatever is drawn
+   * later covers what came before.
+   */
+  inside?: boolean;
+};
+
 /**
  * Horizontal gridlines with their labels. The only rules on these charts:
  * a vertical grid would compete with the event verticals that mean something.
+ * With `inside`, only the lines: the chart closes with `YLabels`.
  */
 export function YGrid({
   frame: f,
@@ -201,23 +248,42 @@ export function YGrid({
   hi,
   format,
   count = 4,
-}: {
-  frame: Frame;
-  lo: number;
-  hi: number;
-  format: (value: number) => string;
-  count?: number;
-}) {
+  inside = false,
+}: GridProps) {
   const y = scale(lo, hi, f.height - f.bottom, f.top);
   return (
     <g className="tk-grid">
       {ticks(lo, hi, count).map((value) => (
         <g key={value}>
           <line x1={f.left} x2={f.width - f.right} y1={y(value)} y2={y(value)} />
-          <text x={f.left - 8} y={y(value) + 4} textAnchor="end">
-            {format(value)}
-          </text>
+          {inside ? null : (
+            <text x={f.left - 8} y={y(value) + 4} textAnchor="end">
+              {format(value)}
+            </text>
+          )}
         </g>
+      ))}
+    </g>
+  );
+}
+
+/** The labels of an `inside` grid, over the series. Nothing in a gutter. */
+export function YLabels({
+  frame: f,
+  lo,
+  hi,
+  format,
+  count = 4,
+  inside = false,
+}: GridProps) {
+  if (!inside) return null;
+  const y = scale(lo, hi, f.height - f.bottom, f.top);
+  return (
+    <g className="tk-grid tk-grid-in" aria-hidden="true">
+      {ticks(lo, hi, count).map((value) => (
+        <text key={value} x={f.left + 2} y={y(value) - 4} textAnchor="start">
+          {format(value)}
+        </text>
       ))}
     </g>
   );
@@ -245,25 +311,35 @@ export type TipLine = {
  * container width, and inside the SVG it would be scaled with the chart.
  * Positioned as a percentage of the frame so it lands with the cursor whatever
  * the rendered size, and flipped to the left half once the cursor passes the
- * middle so it never leaves the card.
+ * middle so it never leaves the card. Where nothing hovers it is not a box at
+ * all but a readout strip over the plot (`ticker.css`).
  */
 export function Tooltip({
   frame: f,
   x,
   title,
   lines,
+  more = false,
 }: {
   frame: Frame;
   /** Anchor, in viewBox units. */
   x: number;
   title: string;
   lines: TipLine[];
+  /**
+   * The bar carries more than its prices — a fill, an event. On a phone the
+   * reading is a one-line strip; this lets it grow down over the plot rather
+   * than cut the rows the reader pointed at it for.
+   */
+  more?: boolean;
 }) {
   const left = (x / f.width) * 100;
   const flip = left > 55;
   return (
     <div
-      className={flip ? "tk-tip tk-tip-flip" : "tk-tip"}
+      className={["tk-tip", flip ? "tk-tip-flip" : "", more ? "tk-tip-more" : ""]
+        .filter(Boolean)
+        .join(" ")}
       style={{ left: `${left}%` }}
       role="status"
     >
@@ -300,24 +376,56 @@ export function Tooltip({
  * A legend: swatch, label, one row each.
  *
  * Under the chart rather than inside it. Plotly floats these over the plot and
- * they cover the series they name at narrow widths.
+ * they cover the series they name at narrow widths. One row that scrolls
+ * sideways rather than a wrapped block: on a phone a second line of legend is
+ * a second line of chart the reader has to get past.
+ *
+ * With `onToggle`, an item that carries a `key` is a button that hides or
+ * shows the series it names (`hidden` holds the keys switched off); without
+ * it the legend is a plain list.
  */
 export function Legend({
   items,
+  onToggle,
+  hidden,
 }: {
-  items: { label: string; color: string; dashed?: boolean }[];
+  items: { label: string; color: string; dashed?: boolean; key?: string }[];
+  onToggle?: (key: string) => void;
+  hidden?: ReadonlySet<string>;
 }) {
   return (
     <ul className="tk-legend">
-      {items.map((item) => (
-        <li key={item.label}>
+      {items.map((item) => {
+        const swatch = (
           <span
             className={item.dashed ? "tk-swatch tk-swatch-dash" : "tk-swatch"}
             style={{ background: item.color }}
           />
-          <span>{item.label}</span>
-        </li>
-      ))}
+        );
+        const key = item.key;
+        if (!onToggle || key === undefined) {
+          return (
+            <li key={item.label}>
+              {swatch}
+              <span>{item.label}</span>
+            </li>
+          );
+        }
+        const off = hidden?.has(key) ?? false;
+        return (
+          <li key={item.label}>
+            <button
+              type="button"
+              className={off ? "tk-legend-btn tk-legend-off" : "tk-legend-btn"}
+              aria-pressed={!off}
+              onClick={() => onToggle(key)}
+            >
+              {swatch}
+              <span>{item.label}</span>
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }

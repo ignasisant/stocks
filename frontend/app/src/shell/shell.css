@@ -148,8 +148,10 @@
   cursor: pointer;
 }
 
-.ag-guest-dismiss:hover {
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .ag-guest-dismiss:hover {
+    color: var(--ag-text-primary);
+  }
 }
 
 /* The ticker cell: the symbol reads first, the company after it in a quieter

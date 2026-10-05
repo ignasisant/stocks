@@ -7,15 +7,20 @@
  * reading at this size: green means the book is worth more than what was put
  * into it.
  *
+ * Two fingers, or a secondary click with a mouse (`useSpan`), compare two days:
+ * how much the value moved, how much of it was money put in, and the rest —
+ * what the market did. Amounts only, since money flowed through the span.
+ *
  * Fails to nothing. When the price span cannot be built the sparkline drops
  * out and the rest of the card stays: a glance card that renders an error
  * where a picture goes is worse than one that is simply a little shorter.
  */
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useT, useLang } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { token } from "../../shell/theme";
+import { useSpan } from "../../shell/useSpan";
 import { useTouchHold } from "../../shell/useTouchHold";
 import { money, monthDay, percent } from "./format";
 import { Kpi, chipFor } from "../../ui/Kpi";
@@ -31,8 +36,8 @@ const SMA_WINDOW = 20;
  * The windows the selector offers, in the order they widen, and how many
  * calendar days back from the series' last day each one reaches.
  *
- * Literal labels (no i18n — "1w" is "1w" in every catalog the app has). It
- * opens on `1y`: a year is the view the home card is for, and `all` is the
+ * The labels are the keys, except the week and the month, which read as words
+ * ("Semana", "Mes") like the market card's selector does. It opens on `1y`: a year is the view the home card is for, and `all` is the
  * wrong one for a book that took a transfer, because one step dwarfs every
  * month of market movement around it. The spans are `_HISTORY_SPANS` in
  * `api/routes/portfolio.py`, counted from the same end, so a slice here is the
@@ -48,6 +53,12 @@ const RANGES = {
 } as const;
 
 type Range = keyof typeof RANGES;
+
+/** The windows labelled by a word, and the word. */
+const WORDS = {
+  "1w": "home.market_window_week",
+  "1m": "home.market_window_month",
+} as const;
 
 /** The window the glance fetches: the widest the selector offers. */
 export const SPARK_WINDOW: Range = "5y";
@@ -78,8 +89,20 @@ export function Spark({ history }: { history: History | null }) {
   const base = useCurrency();
   const [range, setRange] = useState<Range>("1y");
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  // Two days being compared, in day order. The span's units are day indices:
+  // the wrap's handlers read the day before handing it on.
+  const [measure, setMeasure] = useState<{ from: number; to: number } | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
-  useTouchHold(wrap, hoverIndex !== null, setHoverIndex);
+  const drop = useCallback(() => {
+    setHoverIndex(null);
+    setMeasure(null);
+  }, []);
+  useTouchHold(wrap, hoverIndex !== null || measure !== null, drop);
+  const spanned = useSpan((pair) => {
+    if (!pair) return setMeasure(null);
+    setHoverIndex(null);
+    setMeasure({ from: Math.min(...pair), to: Math.max(...pair) });
+  });
   // The history failed with the tiles still standing: no picture, and no
   // selector either — every range is a slice of the same missing array.
   if (!history) return null;
@@ -91,9 +114,12 @@ export function Spark({ history }: { history: History | null }) {
           type="button"
           className={key === range ? "hm-seg hm-seg-on" : "hm-seg"}
           aria-pressed={key === range}
-          onClick={() => setRange(key)}
+          onClick={() => {
+            setRange(key);
+            setMeasure(null);
+          }}
         >
-          {key}
+          {key in WORDS ? t(WORDS[key as keyof typeof WORDS]) : key}
         </button>
       ))}
     </div>
@@ -179,8 +205,41 @@ export function Spark({ history }: { history: History | null }) {
     );
   };
 
-  const hovered = hoverIndex === null ? null : days[hoverIndex];
-  const tipLeft = hoverIndex === null ? 0 : (x(hoverIndex) / WIDTH) * 100;
+  // A comparison drawn on a window since narrowed points past its days.
+  const compared =
+    measure && measure.to < days.length && measure.to > measure.from ? measure : null;
+  const hovered = hoverIndex === null || measure ? null : days[hoverIndex];
+  const tipAt = compared ? (compared.from + compared.to) / 2 : hoverIndex;
+  const tipLeft = tipAt === null ? 0 : (x(tipAt) / WIDTH) * 100;
+  const tipTitle = compared
+    ? [compared.from, compared.to]
+        .map((index) => monthDay(days[index]!.date, t) ?? days[index]!.date)
+        .join(" → ")
+    : hovered
+      ? (monthDay(hovered.date, t) ?? hovered.date)
+      : null;
+
+  /** What the label says between the two days being compared. */
+  const spanRows = (from: (typeof days)[number], to: (typeof days)[number]) => {
+    const moved = to.value - from.value;
+    const put = to.injected - from.injected;
+    const signed = (value: number) => money(value, base, lang, { signed: true });
+    return [
+      {
+        label: t("home.chart_value"),
+        value: signed(moved),
+        color: moved >= 0 ? token("up") : token("down"),
+      },
+      { label: t("home.chart_injected"), value: signed(put) },
+      { label: t("home.chart_market"), value: signed(moved - put) },
+    ];
+  };
+  const rows = compared
+    ? spanRows(days[compared.from]!, days[compared.to]!)
+    : hovered
+      ? tipRows(hovered)
+      : null;
+  const indexAt = (event: { clientX: number }) => dayAt(event.clientX) ?? 0;
 
   return (
     <>
@@ -220,14 +279,24 @@ export function Spark({ history }: { history: History | null }) {
         <div
           className="hm-spark-wrap"
           ref={wrap}
-          onPointerMove={(event) => setHoverIndex(dayAt(event.clientX))}
+          onPointerMove={(event) => {
+            if (spanned.move(event, indexAt(event))) return;
+            setHoverIndex(dayAt(event.clientX));
+          }}
           // A tap is a pointer that never moves: it reads the day too.
-          onPointerDown={(event) => setHoverIndex(dayAt(event.clientX))}
+          onPointerDown={(event) => {
+            if (spanned.down(event, indexAt(event))) return;
+            setHoverIndex(dayAt(event.clientX));
+          }}
+          onPointerUp={spanned.up}
           // A finger lifting is a leave too; the day stays up until the reader
           // touches elsewhere, the only moment the hand is off the plot.
           onPointerLeave={(event) => {
+            spanned.leave(event);
             if (event.pointerType !== "touch") setHoverIndex(null);
           }}
+          onPointerCancel={spanned.cancel}
+          onContextMenu={(event) => spanned.menu?.(event, indexAt(event))}
         >
           {/* Stretched, not letterboxed: the viewBox is only a coordinate system
             here, and `none` lets it fill whatever width the card has at the
@@ -279,7 +348,29 @@ export function Spark({ history }: { history: History | null }) {
               r="2"
               fill={token("text-faint")}
             />
-            {hoverIndex !== null ? (
+            {measure && measure.to < days.length ? (
+              <g className="hm-spark-span" pointerEvents="none">
+                {compared ? (
+                  <rect
+                    x={x(compared.from)}
+                    y={0}
+                    width={x(compared.to) - x(compared.from)}
+                    height={HEIGHT}
+                  />
+                ) : null}
+                {[measure.from, measure.to].map((index, at) => (
+                  <line
+                    key={at}
+                    x1={x(index)}
+                    x2={x(index)}
+                    y1={0}
+                    y2={HEIGHT}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+              </g>
+            ) : null}
+            {hovered && hoverIndex !== null ? (
               <line
                 x1={x(hoverIndex)}
                 x2={x(hoverIndex)}
@@ -295,7 +386,7 @@ export function Spark({ history }: { history: History | null }) {
           {/* The hover label, as a positioned box rather than the browser's
             native `<title>` — which only answered on the day under the
             cursor's own thin column, after its own OS delay. */}
-          {hovered ? (
+          {rows && tipTitle ? (
             <div
               className={
                 tipLeft > 55 ? "hm-spark-tip hm-spark-tip-flip" : "hm-spark-tip"
@@ -303,10 +394,8 @@ export function Spark({ history }: { history: History | null }) {
               style={{ left: `${tipLeft}%` }}
               role="status"
             >
-              <span className="hm-spark-tip-title">
-                {monthDay(hovered.date, t) ?? hovered.date}
-              </span>
-              {tipRows(hovered).map((row, index) => (
+              <span className="hm-spark-tip-title">{tipTitle}</span>
+              {rows.map((row, index) => (
                 <span className="hm-spark-tip-row" key={index}>
                   {row.color ? (
                     <span

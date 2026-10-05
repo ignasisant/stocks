@@ -114,19 +114,73 @@
 
 /* -------------------------------------------------------------- the "?" mark */
 
+.ag-kpi-help-wrap {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+
 .ag-kpi-help {
+  position: relative;
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   width: 14px;
   height: 14px;
+  padding: 0;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-pill, 9999px);
+  background: none;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs, 10px);
+  font: inherit;
+  font-size: var(--ag-fs-2xs, 11px);
   line-height: 1;
   cursor: help;
+}
+
+/* A 14px mark is not a thing a thumb can hit. The pseudo-element grows the
+   target to 32px without moving anything around it. */
+.ag-kpi-help::before {
+  content: "";
+  position: absolute;
+  inset: -9px;
+}
+
+.ag-kpi-help[aria-expanded="true"] {
+  color: var(--ag-text-primary);
+  border-color: var(--ag-text-muted);
+}
+
+@media (hover: hover) {
+  .ag-kpi-help:hover {
+    color: var(--ag-text-primary);
+    border-color: var(--ag-text-muted);
+  }
+}
+
+/* Under the mark, clamped to the viewport by the component's translateX. */
+.ag-kpi-help-pop {
+  position: absolute;
+  z-index: 60;
+  left: -0.5rem;
+  top: calc(100% + 0.45rem);
+  width: max-content;
+  max-width: min(20rem, calc(100vw - 16px));
+  white-space: normal;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--ag-fs-xs, 0.8rem);
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--ag-text-secondary);
+  background: var(--ag-surface-card);
+  border: 1px solid var(--ag-border-focus);
+  border-radius: var(--ag-radius-sm, 8px);
+  box-shadow: var(--ag-shadow-overlay);
+  padding: 0.5rem 0.65rem;
 }
 
 /* ----------------------------------------------------------------- the pill */
@@ -205,9 +259,11 @@
   touch-action: manipulation;
 }
 
-.ag-toggle:hover:not(:disabled) {
-  border-color: var(--ag-border-focus);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .ag-toggle:hover:not(:disabled) {
+    border-color: var(--ag-border-focus);
+    color: var(--ag-text-primary);
+  }
 }
 
 .ag-toggle:focus-visible {
@@ -226,6 +282,13 @@
   color: var(--ag-text-primary);
 }
 
+@media (pointer: coarse) {
+  .ag-toggle {
+    min-height: 44px;
+    padding-inline: 14px;
+  }
+}
+
 /* ---------------------------------------------------------------- the badge */
 
 .ag-badge {
@@ -234,7 +297,7 @@
   align-self: center;
   padding: 1px 8px;
   border-radius: var(--ag-radius-pill, 9999px);
-  font-size: var(--ag-fs-2xs, 10px);
+  font-size: var(--ag-fs-2xs, 11px);
   font-weight: 600;
   line-height: 1.5;
   white-space: nowrap;
@@ -518,8 +581,14 @@
 /* Recording. After the hover rule, which would otherwise take the fill away
    from a mouse resting on the button it just pressed. */
 .ag-box-rec,
-.ag-box-rec:hover:not(:disabled),
 .ag-box-rec:active:not(:disabled) {
   background: var(--ag-critical-fill);
   color: var(--ag-on-brand);
+}
+
+@media (hover: hover) {
+  .ag-box-rec:hover:not(:disabled) {
+    background: var(--ag-critical-fill);
+    color: var(--ag-on-brand);
+  }
 }

@@ -316,6 +316,7 @@ function MonthlyCard() {
                 }}
                 labels={{
                   invested: t("portfolio.series_injected"),
+                  value: t("portfolio.hist_value"),
                   profit: t("portfolio.series_value_profit"),
                   loss: t("portfolio.series_value_loss"),
                   gain: t("portfolio.overview_bridge_gain"),
@@ -327,7 +328,7 @@ function MonthlyCard() {
               />
               {yearOne ? <Caption>{yearOne}</Caption> : null}
               <Caption>
-                {t("portfolio.overview_monthly_note")}
+                {t("portfolio.overview_monthly_note")} {t("portfolio.span_hint")}
                 {data.missing.length
                   ? ` ${t("portfolio.hist_note_missing", {
                       tickers: data.missing.join(", "),

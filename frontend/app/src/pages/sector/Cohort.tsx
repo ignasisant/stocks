@@ -98,6 +98,9 @@ export function Cohort({ data }: { data: SectorCohort }) {
   // prop nothing writes to would slam the panel shut on the next keystroke.
   const [open, setOpen] = useState(!narrow);
   const [on, setOn] = useState<Record<string, boolean>>({});
+  // The column last toggled: its definition reads under the chips, because a
+  // chip's `title` is a hover hint and a phone has no hover.
+  const [lastMetric, setLastMetric] = useState<string | null>(null);
   const [thresholds, setThresholds] = useState<Record<string, string>>(() =>
     Object.fromEntries(SCREENS.map((screen) => [screen.metric, screen.value])),
   );
@@ -185,19 +188,25 @@ export function Cohort({ data }: { data: SectorCohort }) {
                 key={key}
                 title={labels.describe(key)}
                 on={picked}
-                onClick={() =>
+                onClick={() => {
+                  setLastMetric(key);
                   setColumns((current) =>
                     picked
                       ? current.filter((column) => column !== key)
                       : [...current, key],
-                  )
-                }
+                  );
+                }}
               >
                 {labels.metric(key)}
               </ToggleChip>
             );
           })}
         </ToggleRow>
+        {lastMetric && labels.describe(lastMetric) ? (
+          <p className="ag-sec-caption" aria-live="polite">
+            <strong>{labels.metric(lastMetric)}</strong> — {labels.describe(lastMetric)}
+          </p>
+        ) : null}
 
         <p className="ag-sec-label">{t("sector.filters_caption")}</p>
         {/* The threshold stays on screen while its filter is off, so the reader

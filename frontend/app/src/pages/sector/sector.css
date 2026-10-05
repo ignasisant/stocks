@@ -69,10 +69,12 @@
   transition: border-color 100ms ease-out;
 }
 
-.ag-sec-pick select:hover,
-.ag-sec-field select:hover,
-.ag-sec-filter > input:hover {
-  border-color: var(--ag-border-focus);
+@media (hover: hover) {
+  .ag-sec-pick select:hover,
+  .ag-sec-field select:hover,
+  .ag-sec-filter > input:hover {
+    border-color: var(--ag-border-focus);
+  }
 }
 
 .ag-sec-pick select:focus-visible,
@@ -155,8 +157,10 @@
   text-decoration: none;
 }
 
-.ag-sec-sym:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .ag-sec-sym:hover {
+    text-decoration: underline;
+  }
 }
 
 .ag-sec-score {
@@ -246,6 +250,13 @@
   outline: 2px solid var(--ag-brand-cta);
   outline-offset: 2px;
   border-radius: var(--ag-radius-xs);
+}
+
+@media (pointer: coarse) {
+  .ag-sec-controls > summary,
+  .ag-sec-help > summary {
+    min-height: 44px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -428,8 +439,10 @@
   transition: color 100ms ease-out;
 }
 
-.ag-sec-head:hover {
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .ag-sec-head:hover {
+    color: var(--ag-text-primary);
+  }
 }
 
 .ag-sec-head:focus-visible {
@@ -462,8 +475,10 @@
   transition: background-color 100ms ease-out;
 }
 
-.ag-sec-table tbody tr:hover > * {
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  .ag-sec-table tbody tr:hover > * {
+    background: var(--ag-surface-hover);
+  }
 }
 
 .ag-sec-table .ag-sec-who a {
@@ -471,8 +486,10 @@
   text-decoration: none;
 }
 
-.ag-sec-table .ag-sec-who a:hover b {
-  text-decoration: underline;
+@media (hover: hover) {
+  .ag-sec-table .ag-sec-who a:hover b {
+    text-decoration: underline;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -564,8 +581,10 @@
   transition: border-color 100ms ease-out;
 }
 
-.ag-sec-rescan:hover:not(:disabled) {
-  border-color: var(--ag-border-focus);
+@media (hover: hover) {
+  .ag-sec-rescan:hover:not(:disabled) {
+    border-color: var(--ag-border-focus);
+  }
 }
 
 .ag-sec-rescan:disabled {

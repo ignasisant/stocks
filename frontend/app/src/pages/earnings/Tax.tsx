@@ -12,7 +12,7 @@
  */
 
 import type { EventPick, TaxDeadline } from "./data";
-import { days, longDate, plain } from "./format";
+import { longDate } from "./format";
 import type { T } from "./format";
 import { useT } from "../../shell/i18n";
 
@@ -22,11 +22,6 @@ export function taxTitle(deadline: TaxDeadline, t: T): string {
 
 export function taxBody(deadline: TaxDeadline, t: T): string {
   return t(`earnings.tax_${deadline.key}_body`, { year: deadline.year });
-}
-
-function when(deadline: TaxDeadline, t: T): string {
-  const mark = deadline.approximate ? t("earnings.tax_approx_mark") : "";
-  return `${mark}${longDate(deadline.date, t)}`;
 }
 
 /** The ones inside the 30-day window, said before anything else on the page. */
@@ -78,41 +73,6 @@ export function TaxChip({
         {taxTitle(deadline, t)}
       </span>
     </button>
-  );
-}
-
-/** The list view's section: only what is still ahead. */
-export function TaxTable({ deadlines }: { deadlines: TaxDeadline[] }) {
-  const t = useT();
-  const ahead = deadlines.filter((deadline) => deadline.days_until >= 0);
-  if (ahead.length === 0) return null;
-  return (
-    <section className="earn-block">
-      <h2 className="earn-h2">{plain(t("earnings.tax_deadlines"))}</h2>
-      <table className="earn-table">
-        <thead>
-          <tr>
-            <th className="left">{t("earnings.tax_col_deadline")}</th>
-            <th className="left">{t("earnings.list_col_date")}</th>
-            <th>{t("earnings.list_col_days_out")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {ahead.map((deadline) => (
-            <tr
-              key={`${deadline.key}-${deadline.year}`}
-              className={deadline.remind ? "earn-tax-soon" : undefined}
-            >
-              <td className="left" title={taxBody(deadline, t)}>
-                {taxTitle(deadline, t)}
-              </td>
-              <td className="left">{when(deadline, t)}</td>
-              <td>{days(deadline.days_until)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
   );
 }
 

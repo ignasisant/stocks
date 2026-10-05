@@ -50,7 +50,11 @@ export default function History() {
         value={window}
         onChange={setWindow}
         format={(option) =>
-          option === "all" ? t("portfolio.range_all") : option.toUpperCase()
+          option === "all"
+            ? t("portfolio.range_all")
+            : option === "1m"
+              ? t("portfolio.range_1m")
+              : option.toUpperCase()
         }
       />
       <Loaded query={query} skeleton={<Skeleton rows={6} />}>
@@ -63,6 +67,7 @@ export default function History() {
                 points={history.points}
                 labels={{
                   injected: t("portfolio.series_injected"),
+                  value: t("portfolio.hist_value"),
                   profit: t("portfolio.series_value_profit"),
                   loss: t("portfolio.series_value_loss"),
                   pnl: t("portfolio.hist_pnl"),
@@ -74,7 +79,8 @@ export default function History() {
                 formatDate={formatDate}
               />
               <Caption>
-                {t("portfolio.hist_note_injected")} {t("portfolio.zoom_hint")}
+                {t("portfolio.hist_note_injected")} {t("portfolio.zoom_hint")}{" "}
+                {t("portfolio.span_hint")}
                 {history.missing.length
                   ? ` ${t("portfolio.hist_note_missing", {
                       tickers: history.missing.join(", "),

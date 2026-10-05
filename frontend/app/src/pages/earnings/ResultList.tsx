@@ -1,15 +1,15 @@
 /**
- * The flat view: what is coming, then what already printed — with the tax
- * dates, the buy-back windows, the rate decisions and the book's dividends
- * between them.
+ * The flat view: what is coming, week by week (`Agenda`), then the dividends
+ * that already went ex and what already printed.
  *
  * The phone default, and the reason the grid is not the only view — seven
  * columns at 390px squeeze a day cell to about 55px and the chips ellipsize to
  * nothing. Two plain tables say the same thing with the numbers left legible.
  */
 
+import { useState } from "react";
 import { useT } from "../../shell/i18n";
-import { CentralBankTable } from "./CentralBanks";
+import Agenda from "./Agenda";
 import type {
   CalendarDividend,
   CalendarEvent,
@@ -19,10 +19,8 @@ import type {
   TaxDeadline,
 } from "./data";
 import { DividendTable } from "./Dividends";
-import { RepurchaseTable } from "./Repurchase";
-import { days, eps, longDate, plain, signedPct, tone } from "./format";
+import { eps, longDate, plain, signedPct, tone } from "./format";
 import { TickerCell, useTickerProfile } from "../../shell/tickers";
-import { TaxTable } from "./Tax";
 import { DenseRows, Responsive } from "../../ui/Rows";
 
 /**
@@ -42,55 +40,13 @@ function Ticker({ ticker }: { ticker: string }) {
   );
 }
 
-function Upcoming({ events }: { events: CalendarEvent[] }) {
-  const t = useT();
-  return (
-    <section className="earn-block">
-      <h2 className="earn-h2">{plain(t("earnings.upcoming"))}</h2>
-      <Responsive
-        wide={
-          <table className="earn-table">
-            <thead>
-              <tr>
-                <th className="left">{t("earnings.list_col_ticker")}</th>
-                <th className="left">{t("earnings.list_col_date")}</th>
-                <th>{t("earnings.list_col_days_out")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.map((event) => (
-                <tr key={event.ticker}>
-                  <td className="left">
-                    <Ticker ticker={event.ticker} />
-                  </td>
-                  <td className="left">
-                    {event.date === null ? "" : longDate(event.date, t)}
-                  </td>
-                  <td>{days(event.days_until)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        }
-        narrow={
-          <DenseRows
-            rows={events}
-            rowKey={(event) => event.ticker}
-            spec={{
-              ticker: (event) => event.ticker,
-              names: true,
-              value: (event) => days(event.days_until),
-              delta: (event) => (event.date === null ? "" : longDate(event.date, t)),
-            }}
-          />
-        }
-      />
-    </section>
-  );
-}
+/** Past prints shown before "show more": the latest are the ones worth a look. */
+const PAST_ROWS = 8;
 
-function Past({ results }: { results: CalendarResult[] }) {
+function Past({ all }: { all: CalendarResult[] }) {
   const t = useT();
+  const [cap, setCap] = useState(PAST_ROWS);
+  const results = all.slice(0, cap);
   return (
     <section className="earn-block">
       <h2 className="earn-h2">{plain(t("earnings.past_results"))}</h2>
@@ -145,6 +101,15 @@ function Past({ results }: { results: CalendarResult[] }) {
           />
         }
       />
+      {all.length > cap && (
+        <button
+          type="button"
+          className="ag-btn earn-show-more"
+          onClick={() => setCap(cap + PAST_ROWS)}
+        >
+          {t("earnings.show_more_results")}
+        </button>
+      )}
     </section>
   );
 }
@@ -166,12 +131,15 @@ export default function ResultList({
 }) {
   return (
     <>
-      {events.length > 0 && <Upcoming events={events} />}
-      <TaxTable deadlines={deadlines} />
-      <RepurchaseTable windows={windows} />
-      <CentralBankTable decisions={banks} />
-      <DividendTable dividends={dividends} />
-      {results.length > 0 && <Past results={results} />}
+      <Agenda
+        events={events}
+        deadlines={deadlines}
+        windows={windows}
+        banks={banks}
+        dividends={dividends}
+      />
+      <DividendTable dividends={dividends.filter((d) => d.days_until < 0)} />
+      {results.length > 0 && <Past all={results} />}
     </>
   );
 }

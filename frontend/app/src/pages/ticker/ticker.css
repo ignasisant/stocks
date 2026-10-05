@@ -196,9 +196,11 @@
   min-height: 32px;
 }
 
-.tk-seg button:hover {
-  background: var(--ag-surface-hover);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .tk-seg button:hover {
+    background: var(--ag-surface-hover);
+    color: var(--ag-text-primary);
+  }
 }
 
 .tk-seg button.tk-seg-on {
@@ -321,11 +323,20 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Labels inside the plot (phone): a halo in the card colour keeps them
+   legible where a series runs under them. */
+.tk-grid-in text {
+  paint-order: stroke;
+  stroke: var(--ag-surface-card);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
 /* Per-bar YoY on the results chart: secondary text, never the bar's colour —
    a green "+8%" above a blue bar reads as a third series. */
 .tk-bar-label {
   fill: var(--ag-text-secondary);
-  font-size: 10px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -356,6 +367,31 @@
   stroke-width: 1;
 }
 
+/* Two bars being compared: the stretch between them and an edge at each. */
+.tk-span {
+  pointer-events: none;
+}
+
+.tk-span rect {
+  fill: var(--ag-accent-band);
+}
+
+.tk-span line {
+  stroke: var(--ag-brand-accent);
+  stroke-width: 1;
+}
+
+/* How to measure, worded for the input the device has. */
+.tk-hint {
+  margin: 4px 0 0;
+  font-size: var(--ag-fs-2xs);
+  color: var(--ag-text-faint);
+}
+
+.tk-hint-touch {
+  display: none;
+}
+
 .tk-tip {
   position: absolute;
   top: 8px;
@@ -365,7 +401,12 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-width: min(280px, 60%);
+  /* Sized by its text, not by the room left to the right of its anchor: an
+     absolute box shrinks to that room, and at the plot's edge it went a thin
+     column. The clamp keeps it inside the frame; the flip keeps it on it. */
+  width: max-content;
+  min-width: 9rem;
+  max-width: min(280px, 90%);
   padding: 8px 10px;
   background: var(--ag-surface-page);
   border: 1px solid var(--ag-border);
@@ -382,12 +423,70 @@
 }
 
 /* Where nothing hovers, a finger drives the crosshair and the hand covers the
-   plot from below: a box at the plot's top beside the crosshair sat under the
-   fingertip. Lifted out above the plot instead, still tracking the bar across. */
+   plot: a box beside the crosshair sat under the fingertip, and one floated
+   above the card covered the tiles over it and clipped at the screen's edge.
+   It is a readout strip instead, pinned across the top of the chart's own card
+   in space the card reserves, so nothing jumps when a finger lands or lifts.
+   The title leads and the rows follow on one line each, cut off rather than
+   allowed to overflow. */
 @media (hover: none) {
-  .tk-tip {
-    top: auto;
-    bottom: calc(100% + 6px);
+  .tk-plot {
+    padding-top: var(--tk-readout, 44px);
+  }
+
+  .tk-hint-touch {
+    display: inline;
+  }
+
+  .tk-hint-mouse {
+    display: none;
+  }
+
+  .tk-plot .tk-tip {
+    top: 0;
+    left: 0 !important;
+    right: 0;
+    height: calc(var(--tk-readout, 44px) - 6px);
+    transform: none;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 0 12px;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    padding: 4px 8px;
+    overflow: hidden;
+    box-shadow: none;
+    background: var(--ag-surface-sunken);
+  }
+
+  .tk-plot .tk-tip-flip {
+    transform: none;
+  }
+
+  /* A fill or an event under the finger: grow down over the plot rather than
+     cut the rows the reader pointed at the bar for. */
+  .tk-plot .tk-tip.tk-tip-more {
+    height: auto;
+    min-height: calc(var(--tk-readout, 44px) - 6px);
+    /* The strip's tint is translucent; over the plot it needs a solid floor. */
+    background:
+      linear-gradient(var(--ag-surface-sunken), var(--ag-surface-sunken)),
+      var(--ag-surface-card);
+    box-shadow: var(--ag-shadow-overlay);
+  }
+
+  .tk-tip-t,
+  .tk-tip-l {
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tk-tip-t {
+    flex-basis: 100%;
   }
 }
 
@@ -424,13 +523,50 @@
 
 .tk-legend {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px 16px;
   margin: 4px 0 0;
   padding: 0;
   list-style: none;
   font-size: var(--ag-fs-2xs);
   color: var(--ag-text-muted);
+  /* One row, scrolled sideways when it does not fit. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tk-legend::-webkit-scrollbar {
+  display: none;
+}
+
+.tk-legend li {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* A legend entry that hides and shows its series. */
+.tk-legend-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tk-legend-off {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+@media (pointer: coarse) {
+  .tk-legend-btn {
+    min-height: 44px;
+    padding: 0 6px;
+  }
 }
 
 .tk-legend li {
@@ -603,7 +739,7 @@
   text-align: left;
   font-weight: 500;
   color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-xs);
+  font-size: var(--ag-fs-sm, 12px);
   padding: 6px 10px 6px 0;
   white-space: nowrap;
 }
@@ -636,8 +772,10 @@
   border-bottom: 1px solid var(--ag-border);
 }
 
-.tk-ticker:hover {
-  border-bottom-color: var(--ag-brand-accent);
+@media (hover: hover) {
+  .tk-ticker:hover {
+    border-bottom-color: var(--ag-brand-accent);
+  }
 }
 
 .tk-ticker-logo {
@@ -750,10 +888,16 @@
   position: relative;
 }
 
-.tk-pop-btn:hover,
 .tk-pop-open {
   background: var(--ag-surface-hover);
   color: var(--ag-text-primary);
+}
+
+@media (hover: hover) {
+  .tk-pop-btn:hover {
+    background: var(--ag-surface-hover);
+    color: var(--ag-text-primary);
+  }
 }
 
 .tk-pop-panel {
@@ -897,8 +1041,10 @@
   cursor: pointer;
 }
 
-.tk-x:hover {
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .tk-x:hover {
+    color: var(--ag-text-primary);
+  }
 }
 
 /* ------------------------------------------------------------------- phone */
@@ -953,7 +1099,7 @@
   }
 
   .tk-tip {
-    max-width: 80%;
+    max-width: 90%;
   }
 }
 
@@ -972,8 +1118,10 @@
   cursor: pointer;
 }
 
-.tk-ai:hover {
-  background: var(--ag-purple-700);
+@media (hover: hover) {
+  .tk-ai:hover {
+    background: var(--ag-purple-700);
+  }
 }
 
 /* -------------------------------------------------------------- coin cards

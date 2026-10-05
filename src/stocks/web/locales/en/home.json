@@ -74,6 +74,7 @@
   "home.refresh_prices": "Refresh prices",
   "home.chart_injected": "Contributed",
   "home.chart_value": "Value",
+  "home.chart_market": "Market",
   "home.sma20_tile": "20-day average",
   "home.sma20_help": "Mean portfolio value over the last 20 sessions. The chip is today's value against it.",
   "home.chart_period_max": "Period max",

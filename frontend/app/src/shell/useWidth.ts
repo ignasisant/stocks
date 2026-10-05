@@ -7,20 +7,20 @@
  * label the size it says, whether the chat drawer is shut, open or being
  * dragged wider.
  *
- * Measured once before the first paint, so the chart does not draw a frame at
- * the fallback width and then jump; `fallback` is only what a render without
- * layout (the server, a test) sees.
+ * Measured before the first paint, so the chart does not draw a frame at the
+ * fallback width and then jump; `fallback` is only what a render without
+ * layout (the server, a test) sees. A callback ref rather than an effect: a
+ * chart whose first render draws nothing yet (no data, no range) mounts its
+ * box later, and an effect run once on mount would never see it.
  */
 
-import { type RefObject, useLayoutEffect, useRef, useState } from "react";
+import { type RefCallback, useCallback, useState } from "react";
 
 export function useWidth<T extends HTMLElement = HTMLDivElement>(
   fallback: number,
-): [RefObject<T | null>, number] {
-  const node = useRef<T>(null);
+): [RefCallback<T>, number] {
   const [width, setWidth] = useState(fallback);
-  useLayoutEffect(() => {
-    const el = node.current;
+  const node = useCallback((el: T | null) => {
     if (!el) return;
     const first = Math.round(el.getBoundingClientRect().width);
     if (first > 0) setWidth(first);

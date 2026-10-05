@@ -621,8 +621,21 @@
   cursor: pointer;
 }
 
-.sn-tab:hover {
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .sn-tab:hover {
+    color: var(--ag-text-primary);
+  }
+}
+
+@media (pointer: coarse) {
+  .sn-tab {
+    min-height: 44px;
+  }
+  .sn-more {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
 }
 
 .sn-tab-on {
@@ -693,8 +706,10 @@
   border-bottom: 0;
 }
 
-.sn-trend-row:hover {
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  .sn-trend-row:hover {
+    background: var(--ag-surface-hover);
+  }
 }
 
 .sn-trend-l {
@@ -722,63 +737,6 @@
   align-items: center;
   gap: 0.3rem;
   min-width: 0;
-}
-
-/* The info dot. Outside .sn-trend-l on purpose: that span clips its overflow
-   to draw the ellipsis, and a panel anchored inside it would be cut off at the
-   name. Focusable so a phone, which has no hover, opens it with a tap. */
-.sn-trend-i {
-  position: relative;
-  flex: none;
-  box-sizing: border-box;
-  width: 13px;
-  height: 13px;
-  border-radius: var(--ag-radius-pill, 999px);
-  border: 1px solid var(--ag-border-focus);
-  color: var(--ag-text-muted);
-  font-size: 9px;
-  line-height: 11px;
-  font-weight: 700;
-  text-align: center;
-  cursor: help;
-}
-
-.sn-trend-i:hover,
-.sn-trend-i:focus {
-  color: var(--ag-text-primary);
-  border-color: var(--ag-text-muted);
-  outline: none;
-}
-
-.sn-trend-i::after {
-  content: attr(data-tip);
-  position: absolute;
-  z-index: 60;
-  left: -0.5rem;
-  top: calc(100% + 0.4rem);
-  width: max-content;
-  max-width: min(24rem, 70vw);
-  white-space: normal;
-  text-align: left;
-  letter-spacing: 0;
-  font-size: var(--ag-fs-xs, 0.8rem);
-  line-height: 1.5;
-  font-weight: 400;
-  color: var(--ag-text-secondary);
-  background: var(--ag-surface-card);
-  border: 1px solid var(--ag-border-focus);
-  border-radius: var(--ag-radius-sm, 8px);
-  box-shadow: var(--ag-shadow-overlay);
-  padding: 0.5rem 0.65rem;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-}
-
-.sn-trend-i:hover::after,
-.sn-trend-i:focus::after {
-  opacity: 1;
-  visibility: visible;
 }
 
 .sn-trend-sub {
@@ -992,8 +950,5 @@
     font-size: var(--ag-fs-2xs, 0.7rem);
     font-weight: 500;
     color: var(--ag-text-faint);
-  }
-  .sn-trend-i::after {
-    max-width: 76vw;
   }
 }

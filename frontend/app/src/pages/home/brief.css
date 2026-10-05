@@ -93,9 +93,11 @@
   cursor: pointer;
 }
 
-.hm-br-chip:hover {
-  border-color: var(--ag-brand-accent);
-  background: var(--ag-cta-tint);
+@media (hover: hover) {
+  .hm-br-chip:hover {
+    border-color: var(--ag-brand-accent);
+    background: var(--ag-cta-tint);
+  }
 }
 
 .hm-br-chip:focus-visible,
@@ -175,8 +177,10 @@
   color: var(--ag-text-secondary);
 }
 
-.hm-br-quiet:hover {
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .hm-br-quiet:hover {
+    color: var(--ag-text-primary);
+  }
 }
 
 .hm-br-danger {

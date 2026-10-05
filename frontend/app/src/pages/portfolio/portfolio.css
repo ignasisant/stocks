@@ -34,8 +34,10 @@
   white-space: nowrap;
 }
 
-.pf-tab:hover {
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .pf-tab:hover {
+    color: var(--ag-text-primary);
+  }
 }
 
 .pf-tab-on {
@@ -111,7 +113,7 @@
 
 .pf-table th {
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs, 0.72rem);
+  font-size: var(--ag-fs-sm, 12px);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -125,8 +127,10 @@
   text-align: left;
 }
 
-.pf-table tbody tr:hover {
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  .pf-table tbody tr:hover {
+    background: var(--ag-surface-hover);
+  }
 }
 
 .pf-sortable {
@@ -164,9 +168,11 @@
   text-decoration: none;
 }
 
-.pf-ticker:hover {
-  color: var(--ag-brand-accent);
-  text-decoration: underline;
+@media (hover: hover) {
+  .pf-ticker:hover {
+    color: var(--ag-brand-accent);
+    text-decoration: underline;
+  }
 }
 
 /* ------------------------------------------------------------------ controls */
@@ -206,13 +212,31 @@
   border-left: 1px solid var(--ag-border);
 }
 
-.pf-seg button:hover {
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .pf-seg button:hover {
+    color: var(--ag-text-primary);
+  }
 }
 
 .pf-seg .pf-seg-on {
   background: var(--ag-surface-hover);
   color: var(--ag-text-primary);
+}
+
+/* Under a finger a period button is 44px tall. The row may outgrow a phone
+   (four long projection scenarios), so it wraps by segment instead of
+   spilling: the borders sit on each button, not on the row. */
+@media (pointer: coarse) {
+  .pf-seg {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+
+  .pf-seg button {
+    min-height: 44px;
+    padding-inline: 0.85rem;
+    flex: 1 1 auto;
+  }
 }
 
 .pf-dropdown {
@@ -274,9 +298,26 @@
   cursor: pointer;
 }
 
-.pf-legend-btn:hover,
 .pf-legend-on {
   background: var(--ag-surface-hover);
+}
+
+@media (hover: hover) {
+  .pf-legend-btn:hover {
+    background: var(--ag-surface-hover);
+  }
+}
+
+/* Stacked rows are 17px apart at rest, so a finger lands on the neighbour:
+   on touch each row is its own 44px target and the gap goes. */
+@media (pointer: coarse) {
+  .pf-legend:has(.pf-legend-btn) {
+    gap: 0;
+  }
+
+  .pf-legend-btn {
+    min-height: 44px;
+  }
 }
 
 /* The ring and what sits on it: the label in the hole, the hover box. Sized
@@ -321,7 +362,7 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   color: var(--ag-text-muted);
-  font-size: clamp(0.62rem, 5cqi, 0.9rem);
+  font-size: clamp(0.6875rem, 5cqi, 0.9rem);
   line-height: 1.2;
 }
 
@@ -334,7 +375,7 @@
 
 .pf-donut-center-money {
   color: var(--ag-text-secondary, var(--ag-text-primary));
-  font-size: clamp(0.62rem, 5cqi, 0.95rem);
+  font-size: clamp(0.6875rem, 5cqi, 0.95rem);
 }
 
 .pf-donut-figure {
@@ -433,8 +474,10 @@
   transition: opacity 120ms ease;
 }
 
-.pf-legend-key:hover {
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .pf-legend-key:hover {
+    color: var(--ag-text-primary);
+  }
 }
 
 .pf-legend-key[aria-pressed="true"] {
@@ -481,7 +524,35 @@
   text-wrap: pretty;
 }
 
+/* The legend's scroller. Wide, it is only the list's wrapper; on a phone it
+   becomes one row that scrolls sideways (useTabStrip fades the edge with
+   entries past it), where a long legend wrapped into a block as tall as the
+   plot it labels. */
+.pf-legend-strip {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 @container ag-main (max-width: 640px) {
+  .pf-legend-strip {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .pf-legend-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .pf-legend-strip .pf-legend-inline {
+    flex-wrap: nowrap;
+    width: max-content;
+  }
+
+  .pf-legend-strip .pf-legend-inline > li {
+    flex: none;
+    white-space: nowrap;
+  }
+
   .pf-legend-key {
     min-height: 44px;
   }
@@ -511,6 +582,18 @@
   display: flex;
   align-items: center;
   white-space: nowrap;
+}
+
+/* Wider than the card, the grid scrolls sideways; the names stay put so a
+   cell scrolled to the far end can still be read against its row. */
+@container ag-main (max-width: 40rem) {
+  .pf-heat > :nth-child(-n + 1),
+  .pf-heat-label {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--ag-surface-card);
+  }
 }
 
 /* Column names read bottom-to-top, so a fifteen-name basket still fits the
@@ -574,6 +657,15 @@
   touch-action: pan-y;
 }
 
+/* Two days being compared: the stretch between them and an edge at each. */
+.pf-span rect {
+  fill: var(--ag-accent-band);
+}
+.pf-span line {
+  stroke: var(--ag-brand-accent);
+  stroke-width: 1;
+}
+
 /* The plot and its hover box share a positioned frame, so the box can be
    placed as a percentage of the chart's rendered width (charts.tsx ChartTip). */
 .pf-plot {
@@ -593,15 +685,71 @@
 }
 
 /* Where nothing hovers, the reading is driven by a finger that is on the plot
-   and a hand that covers it from below: a box at the top of the plot beside
-   the crosshair sat under the fingertip. Lifted out over the legend instead,
-   still tracking the day across, so it is clear of the hand wherever the
-   finger is (charts.tsx ChartTip, `pf-tip-x`). */
+   and a hand that covers it from below, so the box has nowhere to float: over
+   the plot it sat under the fingertip, and lifted out above it, it covered
+   whatever came before the chart and clipped at the card's edge. It is a
+   readout strip instead — the first thing in the plot's own frame, in flow's
+   place — with its height reserved (`pf-scrub`'s padding) so the day arriving
+   or leaving moves nothing. The day still tracks the finger, in the strip's
+   figures and the crosshair; the strip is laid edge to edge, one run of
+   "name figure" pairs that wraps to a second line and is cut after it, a
+   label that cannot fit ending in an ellipsis. Left out of it: what needs a
+   box to itself — the money chart's per-line grid (the legend above already
+   prints each line's worth for the day) and a bar's detail body. */
 @media (hover: none) {
-  .pf-tip.pf-tip-x {
-    top: auto;
-    bottom: calc(100% + 6px);
+  .pf-scrub > .pf-tip.pf-tip-x {
+    /* In the strip `pf-scrub` reserves at the top of the frame. */
+    top: 0;
+    bottom: auto;
+    /* Over the box's own placement, which is set inline to follow the pointer. */
+    left: 0 !important;
+    right: 0;
+    box-sizing: border-box;
+    flex-flow: row wrap;
+    align-content: flex-start;
+    align-items: baseline;
+    gap: 2px 14px;
+    width: auto;
+    max-width: none;
+    height: 3.4rem;
+    padding: 6px 10px;
+    overflow: hidden;
+    transform: none;
+    box-shadow: none;
+    background: var(--ag-surface-sunken);
   }
+
+  .pf-scrub {
+    padding-top: 3.4rem;
+  }
+
+  .pf-scrub > .pf-tip.pf-tip-x > :not(.pf-tip-title, .pf-tip-row) {
+    display: none;
+  }
+
+  .pf-scrub > .pf-tip.pf-tip-x .pf-tip-title {
+    color: var(--ag-text-secondary, var(--ag-text-primary));
+    font-weight: 600;
+  }
+
+  .pf-scrub > .pf-tip.pf-tip-x .pf-tip-row {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .pf-scrub > .pf-tip.pf-tip-x .pf-tip-row strong {
+    margin-left: 0;
+    padding-left: 0;
+  }
+}
+
+/* A value label sitting on its gridline, inside the plot: a halo in the
+   card's surface keeps a line that passes behind it from striking it out. */
+.pf-halo {
+  paint-order: stroke;
+  stroke: var(--ag-surface-card);
+  stroke-width: 3px;
+  stroke-linejoin: round;
 }
 
 /* Plotly's unified hover label: date on top, one row per series with its
@@ -615,7 +763,12 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-width: min(280px, 60%);
+  /* Sized by its text, not by the room left to the right of its anchor: an
+     absolute box shrinks to that room, and near the plot's right edge it went
+     a thin column. The flip keeps it on the card. */
+  width: max-content;
+  min-width: 9rem;
+  max-width: min(280px, 90%);
   padding: 8px 10px;
   background: var(--ag-surface-page);
   border: 1px solid var(--ag-border);

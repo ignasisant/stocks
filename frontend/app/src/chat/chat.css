@@ -11,8 +11,8 @@
 
 .ag-chat-fab {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
   display: grid;
   place-items: center;
   width: 48px;
@@ -30,8 +30,10 @@
   z-index: 60;
 }
 
-.ag-chat-fab:hover {
-  background: var(--ag-purple-700);
+@media (hover: hover) {
+  .ag-chat-fab:hover {
+    background: var(--ag-purple-700);
+  }
 }
 
 /* ---------------------------------------------------------------- the panel */
@@ -94,9 +96,14 @@
   transition: opacity 120ms ease;
 }
 
-.ag-chat-grip:hover::before,
 .ag-chat-grip:focus-visible::before {
   opacity: 1;
+}
+
+@media (hover: hover) {
+  .ag-chat-grip:hover::before {
+    opacity: 1;
+  }
 }
 
 .ag-chat-grip:focus-visible {
@@ -216,8 +223,10 @@
   touch-action: manipulation;
 }
 
-.ag-chat-down:hover {
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .ag-chat-down:hover {
+    color: var(--ag-text-primary);
+  }
 }
 
 .ag-chat-view {
@@ -258,11 +267,13 @@
   white-space: nowrap;
 }
 
-.ag-chat-thread-btn:hover,
-.ag-chat-icon:hover,
-.ag-chat-back:hover,
-.ag-chat-meta-btn:hover {
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  .ag-chat-thread-btn:hover,
+  .ag-chat-icon:hover,
+  .ag-chat-back:hover,
+  .ag-chat-meta-btn:hover {
+    background: var(--ag-surface-hover);
+  }
 }
 
 .ag-chat-untitled {
@@ -397,8 +408,10 @@
   touch-action: manipulation;
 }
 
-.ag-chat-recall-item:hover:enabled {
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  .ag-chat-recall-item:hover:enabled {
+    background: var(--ag-surface-hover);
+  }
 }
 
 .ag-chat-recall-item:disabled {
@@ -558,8 +571,10 @@
   touch-action: manipulation;
 }
 
-.ag-chat-memory-from:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .ag-chat-memory-from:hover {
+    text-decoration: underline;
+  }
 }
 
 .ag-chat-memory-count {
@@ -818,9 +833,11 @@
   cursor: pointer;
 }
 
-.ag-chat-regen:hover {
-  border-color: var(--ag-border-focus);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .ag-chat-regen:hover {
+    border-color: var(--ag-border-focus);
+    color: var(--ag-text-primary);
+  }
 }
 
 /* The drop target, drawn only while something is being dragged over the
@@ -879,9 +896,11 @@
   cursor: pointer;
 }
 
-.ag-chat-clip:hover:not(:disabled) {
-  background: var(--ag-surface-sunken);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .ag-chat-clip:hover:not(:disabled) {
+    background: var(--ag-surface-sunken);
+    color: var(--ag-text-primary);
+  }
 }
 
 .ag-chat-clip:disabled {
@@ -1040,9 +1059,11 @@
   touch-action: manipulation;
 }
 
-.ag-chat-btn:hover:not(:disabled) {
-  border-color: var(--ag-border-focus);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .ag-chat-btn:hover:not(:disabled) {
+    border-color: var(--ag-border-focus);
+    color: var(--ag-text-primary);
+  }
 }
 
 /* Save stays disabled until a key is typed; drawn at full strength it read as
@@ -1223,8 +1244,10 @@ a.ag-chat-btn {
   overflow-wrap: anywhere;
 }
 
-.ag-guide-skip:hover {
-  color: var(--ag-text-secondary);
+@media (hover: hover) {
+  .ag-guide-skip:hover {
+    color: var(--ag-text-secondary);
+  }
 }
 
 /* ---------------------------------------------------------------- settings */
@@ -1274,8 +1297,10 @@ a.ag-chat-btn {
   cursor: pointer;
 }
 
-.ag-chat-back:hover {
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .ag-chat-back:hover {
+    color: var(--ag-text-primary);
+  }
 }
 
 /* Two per row at 380px, and they wrap rather than shrink: four brand names in
@@ -1300,8 +1325,10 @@ a.ag-chat-btn {
   cursor: pointer;
 }
 
-.ag-chat-tile:hover:not(:disabled) {
-  border-color: var(--ag-border-focus);
+@media (hover: hover) {
+  .ag-chat-tile:hover:not(:disabled) {
+    border-color: var(--ag-border-focus);
+  }
 }
 
 .ag-chat-tile-on {
@@ -1364,7 +1391,7 @@ a.ag-chat-btn {
   width: 14px;
   height: 14px;
   border-radius: var(--ag-radius-xs);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .ag-chat-provider .ag-chat-mark img {
@@ -1524,8 +1551,10 @@ a.ag-chat-btn {
   color: var(--ag-text-primary);
 }
 
-.ag-chat-card:hover {
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  .ag-chat-card:hover {
+    background: var(--ag-surface-hover);
+  }
 }
 
 .ag-chat-card-on {
@@ -1637,9 +1666,11 @@ a.ag-chat-btn {
   cursor: pointer;
 }
 
-.ag-chat-starter:hover {
-  border-color: var(--ag-border-focus);
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  .ag-chat-starter:hover {
+    border-color: var(--ag-border-focus);
+    background: var(--ag-surface-hover);
+  }
 }
 
 .ag-chat-caps {
@@ -1726,8 +1757,9 @@ a.ag-chat-btn {
   }
   .ag-chat-fab,
   .ag-guide-strip {
-    /* Clear of the bottom tab bar, which is fixed at the same corner. */
-    bottom: 76px;
+    /* Clear of the bottom tab bar, which is fixed at the same corner, and of
+       the home indicator under it. */
+    bottom: calc(76px + env(safe-area-inset-bottom));
   }
   /* Every row above and below the conversation is height taken from it, and
      on a phone there is little to take from. The header tightens, the

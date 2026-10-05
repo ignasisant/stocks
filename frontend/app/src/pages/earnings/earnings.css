@@ -70,8 +70,10 @@
   transform: rotate(90deg);
 }
 
-.earn-key summary:hover {
-  color: var(--ag-text-secondary);
+@media (hover: hover) {
+  .earn-key summary:hover {
+    color: var(--ag-text-secondary);
+  }
 }
 
 .earn-key summary:focus-visible {
@@ -129,6 +131,12 @@
 .earn-seg button[aria-pressed="true"] {
   background: var(--ag-surface-sunken);
   color: var(--ag-text-primary);
+}
+
+@media (pointer: coarse) {
+  .earn-seg button {
+    min-height: 44px;
+  }
 }
 
 /* The kind pills' dot: the colour each kind's chips are drawn in. */
@@ -197,9 +205,11 @@
   border-left: 1px solid var(--ag-border);
 }
 
-.earn-step button:hover:not(:disabled) {
-  background: var(--ag-surface-hover);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .earn-step button:hover:not(:disabled) {
+    background: var(--ag-surface-hover);
+    color: var(--ag-text-primary);
+  }
 }
 
 .earn-step button:focus-visible {
@@ -301,9 +311,11 @@
   cursor: pointer;
 }
 
-.earn-more:hover {
-  background: var(--ag-surface-hover);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .earn-more:hover {
+    background: var(--ag-surface-hover);
+    color: var(--ag-text-primary);
+  }
 }
 
 .earn-more:focus-visible,
@@ -334,10 +346,28 @@
   cursor: pointer;
 }
 
-/* A ring in the chip's own ink, so the hover reads on every kind without a
-   hover colour per kind. The kinds that do darken their fill say so below. */
-.earn-chip:hover {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 45%, transparent);
+@media (hover: hover) {
+  /* A ring in the chip's own ink, so the hover reads on every kind without a
+     hover colour per kind. The kinds that do darken their fill say so below. */
+  .earn-chip:hover {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 45%, transparent);
+  }
+}
+
+/* The chip is 18px tall: on touch it grows to 36 and a transparent inset
+   brings the hit area to 44, the margins sized so neighbours just meet. */
+@media (pointer: coarse) {
+  .earn-chip {
+    position: relative;
+    min-height: 36px;
+    margin: 4px 0;
+  }
+
+  .earn-chip::before {
+    content: "";
+    position: absolute;
+    inset: -4px 0;
+  }
 }
 
 .earn-chip span {
@@ -361,11 +391,13 @@
   color: var(--ag-down);
 }
 
-/* Last, so the hover state wins on a past chip whichever verdict class it
-   also carries. */
-.earn-chip.past:hover {
-  background: var(--ag-purple-700);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  /* Last, so the hover state wins on a past chip whichever verdict class it
+     also carries. */
+  .earn-chip.past:hover {
+    background: var(--ag-purple-700);
+    color: var(--ag-text-primary);
+  }
 }
 
 /* ---------------------------------------------------------------- the tables */
@@ -383,7 +415,7 @@
 .earn-table th {
   padding: 0.4rem 0.5rem;
   border-bottom: 1px solid var(--ag-border);
-  font-size: var(--ag-fs-xs);
+  font-size: var(--ag-fs-sm, 12px);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -409,8 +441,10 @@
   text-decoration: none;
 }
 
-.earn-ticker:hover {
-  color: var(--ag-brand-accent);
+@media (hover: hover) {
+  .earn-ticker:hover {
+    color: var(--ag-brand-accent);
+  }
 }
 
 .earn-name {
@@ -659,8 +693,10 @@
   cursor: pointer;
 }
 
-.earn-detail summary:hover {
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .earn-detail summary:hover {
+    color: var(--ag-text-primary);
+  }
 }
 
 /* The GAAP grid is eight columns: on a phone it scrolls, it does not squash. */
@@ -739,8 +775,10 @@
   color: var(--ag-info);
 }
 
-.earn-chip.div:hover {
-  background: color-mix(in srgb, var(--ag-info) 30%, transparent);
+@media (hover: hover) {
+  .earn-chip.div:hover {
+    background: color-mix(in srgb, var(--ag-info) 30%, transparent);
+  }
 }
 
 .earn-div-next td {
@@ -755,8 +793,10 @@
   outline-offset: -1px;
 }
 
-.earn-chip.div.projected:hover {
-  background: color-mix(in srgb, var(--ag-info) 12%, transparent);
+@media (hover: hover) {
+  .earn-chip.div.projected:hover {
+    background: color-mix(in srgb, var(--ag-info) 12%, transparent);
+  }
 }
 
 .earn-div-projected td {
@@ -773,8 +813,10 @@
   color: var(--ag-warn);
 }
 
-.earn-chip.rebuy:hover {
-  background: var(--ag-warn-fill);
+@media (hover: hover) {
+  .earn-chip.rebuy:hover {
+    background: var(--ag-warn-fill);
+  }
 }
 
 /* ----------------------------------------------------------- rate decisions */
@@ -888,4 +930,38 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 1rem;
+}
+
+/* ---------------------------------------------------------- the week agenda */
+
+/* A week header stays under the thumb while its rows scroll past it. */
+.earn-week-h {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 0.45rem 2px;
+  background: var(--ag-surface-page);
+  border-bottom: 1px solid var(--ag-border);
+  font-size: var(--ag-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ag-text-muted);
+}
+
+.earn-week {
+  margin-bottom: 0.75rem;
+}
+
+/* Not `.earn-more`: that is the calendar cell's "+N" fold, a flat chip. */
+.earn-show-more {
+  display: block;
+  margin: 0.5rem auto 0;
+}
+
+@media (pointer: coarse) {
+  .earn-show-more {
+    min-height: 44px;
+  }
 }
