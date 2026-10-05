@@ -33,14 +33,30 @@ def _context() -> ssl.SSLContext | None:
         return None
 
 
-def get_bytes(url: str, *, user_agent: str = DEFAULT_UA, timeout: float = 30) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": user_agent})
+def get_bytes(
+    url: str,
+    *,
+    user_agent: str = DEFAULT_UA,
+    timeout: float = 30,
+    headers: dict[str, str] | None = None,
+) -> bytes:
+    req = urllib.request.Request(
+        url, headers={"User-Agent": user_agent, **(headers or {})}
+    )
     with urllib.request.urlopen(req, timeout=timeout, context=_context()) as resp:
         return resp.read()
 
 
-def get_json(url: str, *, user_agent: str = DEFAULT_UA, timeout: float = 30) -> dict:
-    return json.loads(get_bytes(url, user_agent=user_agent, timeout=timeout))
+def get_json(
+    url: str,
+    *,
+    user_agent: str = DEFAULT_UA,
+    timeout: float = 30,
+    headers: dict[str, str] | None = None,
+) -> dict:
+    return json.loads(
+        get_bytes(url, user_agent=user_agent, timeout=timeout, headers=headers)
+    )
 
 
 def get_bytes_and_type(

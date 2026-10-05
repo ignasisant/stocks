@@ -127,6 +127,25 @@ def _no_yahoo_cooldown():
 
 
 @pytest.fixture(autouse=True)
+def _finnhub_off():
+    """Start every test with the Finnhub quote fallback keyless and reset.
+
+    The key is env-first and then the checkout's secrets file, so a machine
+    that has one would send every quote test that leaves Yahoo unanswered to
+    Finnhub for real. A test about the fallback patches `finnhub.api_key`.
+    Restored by hand for the reason `_own_free_llm_counter` gives.
+    """
+    from stocks.data import finnhub
+
+    before = finnhub.api_key
+    finnhub.api_key = lambda: None
+    finnhub.clear()
+    yield
+    finnhub.api_key = before
+    finnhub.clear()
+
+
+@pytest.fixture(autouse=True)
 def _own_free_llm_counter(_scratch):
     """Give every test its own global free-LLM counter, on its own path.
 

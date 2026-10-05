@@ -89,6 +89,19 @@ app and the `/api/v1` calls it makes: the API verifies the cookie in
 deployed URL + `/oauth2callback` to both the Google client and
 `redirect_uri`.
 
+### US quotes when Yahoo throttles (`[finnhub]`)
+
+Yahoo throttles shared datacenter IPs, and while it does the day-change
+column has no quote to read. With a free [Finnhub](https://finnhub.io) key the
+US symbols Yahoo did not answer for are quoted there instead (60 requests a
+minute, real-time, US listings only — European and Asian names still wait for
+Yahoo). Optional; unset means Yahoo only.
+
+```toml
+[finnhub]
+api_key = "..."   # or FINNHUB_API_KEY in the environment
+```
+
 ### Persistent user data (deploys)
 
 Container hosts (and most PaaS) have an **ephemeral filesystem**: `data/users/` and every imported ledger vanish on
