@@ -125,9 +125,12 @@ def load_prefs(path: Path) -> dict:
     Read on nearly every request by a dozen callers (the language resolver,
     the setup card, the tour, the chat), so the file read and parse are
     memoized while the merge stays per-call: the result is mutable and callers
-    edit it in place before `save_prefs`.
+    edit it in place before `save_prefs` — which, the dict being an
+    `accounts.LoadedPrefs`, writes back only what they edited.
     """
-    return {**DEFAULT_PREFS, **_prefs_stored(path, stat_key(path))}
+    return accounts.LoadedPrefs(
+        {**DEFAULT_PREFS, **_prefs_stored(path, stat_key(path))}
+    )
 
 
 def save_prefs(prefs: dict, path: Path) -> None:
