@@ -109,6 +109,15 @@ def test_plan_does_not_spend_a_repair_call_on_an_empty_plan():
     assert len(p.calls) == 1
 
 
+def test_plan_reads_a_null_plan_as_no_search():
+    # The shape BAML shows reads `queries: string[] or null`: null is an answer
+    # it offered, not a contract breach worth a repair call and the heuristic.
+    for reply in ('{"queries": null}', "{}"):
+        p = _StubProvider(reply)
+        assert plan(p, "k", "any news today?") == []
+        assert len(p.calls) == 1
+
+
 def test_plan_respects_an_explicit_empty_plan():
     # A well-formed "no search needed" is obeyed — no heuristic second-guess.
     assert plan(_StubProvider('{"queries": []}'), "k", "any news today?") == []

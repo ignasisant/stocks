@@ -109,16 +109,21 @@ class QueryPlan(structured.Contract):
 
     The list is cleaned rather than rejected — a stray non-string or a
     duplicate is the model being sloppy inside a shape it got right, and a
-    second call would buy nothing. A missing or non-list "queries" *is* a
-    rejection: that is the model answering a different question. Capping is
-    the caller's, so a caller asking for a different limit still gets one.
+    second call would buy nothing. A null or absent "queries" is no search:
+    the shape BAML shows the model reads `queries: string[] or null`, so null
+    is an answer it was offered, and rejecting it spent a repair call and then
+    handed the turn to the keyword heuristic. A reply in someone else's shape
+    never gets here — structured.parse rejects it. Capping is the caller's, so
+    a caller asking for a different limit still gets one.
     """
 
-    queries: list[str]
+    queries: list[str] = []
 
     @field_validator("queries", mode="before")
     @classmethod
     def _clean(cls, v):
+        if v is None:
+            return []
         if not isinstance(v, list):
             return v  # not a list -> let the type error reject it
         out: list[str] = []
