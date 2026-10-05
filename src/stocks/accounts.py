@@ -20,9 +20,11 @@ OIDC callback logs it and lets the sign-in through, the API answers 503.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -415,14 +417,35 @@ def stored_prefs(prefs: Path) -> dict:
     return stored if isinstance(stored, dict) else {}
 
 
+class LoadedPrefs(dict):
+    """A prefs dict that remembers what it was when it was read.
+
+    Callers load prefs, mutate the dict and hand it back to `save_prefs` —
+    sometimes much later: a chat turn saves the dict it read before calling a
+    model, the walkthrough after its narration. Written back whole, that dict
+    undoes whatever landed in the file meanwhile, and the value it most often
+    undid was a provider key saved from the settings screen in another request.
+    So the read is kept beside the dict, and `save_prefs` writes only what this
+    holder changed, onto the file as it is now.
+
+    A plain dict (a copy, a literal) still saves whole, as it always did.
+    """
+
+    __slots__ = ("base",)
+
+    def __init__(self, values: dict) -> None:
+        super().__init__(values)
+        self.base = copy.deepcopy(values)
+
+
 def load_prefs(prefs: Path) -> dict:
     """This account's preferences with the defaults filled in.
 
     A fresh dict every call: callers mutate what they get back and hand it to
     `save_prefs`, so sharing one would let one caller's half-made edit surface
-    in another's.
+    in another's. It is a `LoadedPrefs`, so that save writes only the edit.
     """
-    return {**DEFAULT_PREFS, **stored_prefs(prefs)}
+    return LoadedPrefs({**DEFAULT_PREFS, **stored_prefs(prefs)})
 
 
 class GuestIsReadOnly(RuntimeError):
@@ -452,12 +475,44 @@ def writable(path: Path) -> Path:
     return path
 
 
+# One lock per prefs file: two requests of one account each read-modify-write
+# the same file, and the bucket must receive the writes in the order the disk
+# took them.
+_prefs_locks: dict[str, threading.RLock] = {}
+_prefs_locks_guard = threading.Lock()
+
+
+def _prefs_lock(prefs: Path) -> threading.RLock:
+    with _prefs_locks_guard:
+        return _prefs_locks.setdefault(str(prefs.resolve()), threading.RLock())
+
+
 def save_prefs(
     prefs: Path, values: dict, persist: Callable[[Path], None] | None = None
 ) -> None:
-    """Write the whole prefs file, then mirror it to the bucket."""
-    atomic.write_json(writable(prefs), values, indent=2)
-    (persist or storage.persist)(prefs)
+    """Write the prefs file, then mirror it to the bucket.
+
+    A `LoadedPrefs` writes only the keys it changed since it was read (set,
+    changed or removed), merged onto the file as it is now; nothing changed,
+    nothing written. Anything else replaces the file whole.
+    """
+    with _prefs_lock(prefs):
+        if isinstance(values, LoadedPrefs):
+            base = values.base
+            changed = {k: v for k, v in values.items()
+                       if k not in base or base[k] != v}
+            removed = [k for k in base if k not in values]
+            if not changed and not removed:
+                return
+            stored = stored_prefs(prefs)
+            stored.update(changed)
+            for k in removed:
+                stored.pop(k, None)
+            atomic.write_json(writable(prefs), stored, indent=2)
+            values.base = copy.deepcopy(dict(values))
+        else:
+            atomic.write_json(writable(prefs), values, indent=2)
+        (persist or storage.persist)(prefs)
 
 
 def update_prefs(
@@ -472,9 +527,10 @@ def update_prefs(
     this design allows — two writers racing is still last-write-wins, which is
     what a settings screen has always been.
     """
-    stored = stored_prefs(prefs)
-    stored.update(changes)
-    save_prefs(prefs, stored, persist)
+    with _prefs_lock(prefs):
+        stored = stored_prefs(prefs)
+        stored.update(changes)
+        save_prefs(prefs, stored, persist)
     return {**DEFAULT_PREFS, **stored}
 
 

@@ -73,6 +73,67 @@ def submit(
     return path
 
 
+# A thumbs on an answer. Filed beside the widget's submissions (kind
+# "rating"), because what a thumbs-down is worth is the turn it was pressed on:
+# the question, the answer, who wrote it, what it searched and read. That is
+# the reader's own chat, already in the bucket under their account; this copy
+# is the operator's, kept so `stocks feedback` can read why answers miss
+# without opening anyone's account.
+RATING_REASONS = ("made_up", "wrong", "missed", "other")
+_ANSWER_CHARS = 4000
+_QUESTION_CHARS = 1000
+_HISTORY_TURNS = 12
+_HISTORY_CHARS = 600
+
+
+def rate(vote: str, turn: dict, question: str, *, reason: str = "",
+         note: str = "", sender: str = "guest", lang: str = "",
+         thread: str = "", history: list[dict] | None = None) -> Path:
+    """Persist one conversation's rating (disk + bucket) and log it.
+
+    `turn` is the stored answer it was pressed on and `history` the turns
+    above it (`auth.rate_turn`) — the last _HISTORY_TURNS of them, each cut,
+    since a conversation that went wrong rarely went wrong on its last line.
+    Only a thumbs-down asks why, so `reason` and `note` are kept only on one."""
+    down = vote == "down"
+    reason = reason if down and reason in RATING_REASONS else ""
+    note = note.strip()[:MAX_CHARS] if down else ""
+    stamp = time.strftime("%Y-%m-%dT%H-%M-%SZ", time.gmtime())
+    path = FEEDBACK_DIR / f"{stamp}-{uuid.uuid4().hex[:6]}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    web = [str(w.get("url") or "") for w in turn.get("web") or []
+           if isinstance(w, dict)]
+    steps = [{"tool": str(st.get("tool") or ""), "arg": str(st.get("arg") or "")}
+             for st in turn.get("steps") or [] if isinstance(st, dict)]
+    payload = {
+        "ts": stamp,
+        "kind": "rating",
+        "vote": vote,
+        "reason": reason,
+        "text": note,
+        "page": "chat",
+        "user": sender,
+        "lang": lang or DEFAULT_LANG,
+        "turn": str(turn.get("id") or ""),
+        "provider": str(turn.get("provider") or ""),
+        "skills": [str(x) for x in turn.get("skills") or []],
+        "web": web,
+        "steps": steps,
+        "thread": thread,
+        "history": [{"role": str(h.get("role") or ""),
+                     "content": str(h.get("content") or "")[:_HISTORY_CHARS]}
+                    for h in (history or [])[-_HISTORY_TURNS:]],
+        "question": question[:_QUESTION_CHARS],
+        "answer": str(turn.get("content") or "")[:_ANSWER_CHARS],
+    }
+    atomic.write_json(path, payload, ensure_ascii=False, indent=2)
+    storage.persist(path)
+    obs.event("chat.rated", vote=vote, reason=reason,
+              provider=payload["provider"], web=len(web), steps=len(steps),
+              note=len(note))
+    return path
+
+
 def _store_shot(path: Path, shot: bytes) -> str:
     """Write the screenshot beside its submission; "" if it could not be kept.
 

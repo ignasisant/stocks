@@ -10,6 +10,11 @@ So the whole page becomes one request.
 
 The crumb/cookie dance that endpoint requires is `yfinance`'s (`YfData`), not
 ours; we borrow its authenticated session rather than re-implement it.
+
+When Yahoo will not answer — the cooldown is open, a chunk failed, the budget
+ran out — the US symbols it never quoted go to Finnhub instead (`data.finnhub`,
+only with a key). Symbols Yahoo answered for and simply skipped are not asked
+again: a delisted name is missing everywhere.
 """
 
 from __future__ import annotations
@@ -17,7 +22,8 @@ from __future__ import annotations
 import time
 
 from stocks import obs
-from stocks.data.fetch import resolve, throttle_remaining, trip_throttle
+from stocks.data import finnhub
+from stocks.data.fetch import resolve, throttle_remaining, trip_throttle, unlisted
 
 QUOTE_URL = "https://query1.finance.yahoo.com/v7/finance/quote?"
 
@@ -29,6 +35,10 @@ TIMEOUT = 8.0
 # book plus its benchmarks can run long; this keeps every request well inside
 # any gateway's line limit.
 CHUNK = 50
+
+# The least the Finnhub fallback gets, even when Yahoo spent the whole budget
+# hanging: without it the fallback would never run in the case it exists for.
+FALLBACK_FLOOR = 2.5
 
 # The cooldown lives in `data.fetch`: Yahoo throttles the host, not the
 # endpoint, so a quote that comes back 429 is also a statement about the next
@@ -61,47 +71,57 @@ def quotes(
     a missing row, not an error.
 
     Never raises: a throttle, a timeout or a mangled response all return what
-    arrived (possibly nothing) and open the cooldown. The callers here render
-    a day-change cell; none of them has anything better to do with an
-    exception than drop the column.
+    arrived (possibly nothing, or what Finnhub filled in for the US names) and
+    open the cooldown. The callers here render a day-change cell; none of them
+    has anything better to do with an exception than drop the column.
     """
     if not tickers:
         return {}
+    symbol_of = {t: resolve(t) for t in tickers}
+    ticker_of = {s: t for t, s in symbol_of.items()}  # last alias wins, as fetch does
+    symbols = list(dict.fromkeys(symbol_of.values()))
+
+    out: dict[str, dict] = {}
+    answered: set[str] = set()  # symbols in a chunk Yahoo did answer
+    deadline = time.monotonic() + timeout
     cooling = throttle_remaining()
     if cooling > 0:
         obs.event(
             "yahoo.quotes.cooling_off",
             tickers=len(tickers), remaining_s=round(cooling, 1),
         )
-        return {}
+    else:
+        with obs.timed("yahoo.quotes", symbols=len(symbols)) as rec:
+            for i in range(0, len(symbols), CHUNK):
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    obs.warn("yahoo.quotes.budget_spent", got=len(out), want=len(symbols))
+                    break
+                chunk = symbols[i : i + CHUNK]
+                try:
+                    rows = _fetch(chunk, timeout=left)
+                except Exception as exc:  # noqa: BLE001 — a quote is never fatal
+                    trip_throttle()
+                    obs.warn("yahoo.quotes.failed", symbols=len(chunk), error=repr(exc))
+                    break
+                answered.update(chunk)
+                for row in rows:
+                    ticker = ticker_of.get(str(row.get("symbol") or ""))
+                    if ticker is not None:
+                        out[ticker] = row
+            rec["quotes"] = len(out)
 
-    symbol_of = {t: resolve(t) for t in tickers}
-    ticker_of = {s: t for t, s in symbol_of.items()}  # last alias wins, as fetch does
-    symbols = list(dict.fromkeys(symbol_of.values()))
-
-    out: dict[str, dict] = {}
-    deadline = time.monotonic() + timeout
-    with obs.timed("yahoo.quotes", symbols=len(symbols)) as rec:
-        for i in range(0, len(symbols), CHUNK):
-            left = deadline - time.monotonic()
-            if left <= 0:
-                obs.warn("yahoo.quotes.budget_spent", got=len(out), want=len(symbols))
-                break
-            chunk = symbols[i : i + CHUNK]
-            try:
-                rows = _fetch(chunk, timeout=left)
-            except Exception as exc:  # noqa: BLE001 — a quote is never fatal
-                trip_throttle()
-                obs.warn("yahoo.quotes.failed", symbols=len(chunk), error=repr(exc))
-                break
-            for row in rows:
-                ticker = ticker_of.get(str(row.get("symbol") or ""))
-                if ticker is not None:
-                    out[ticker] = row
-        rec["quotes"] = len(out)
+    # A bare broker code Yahoo disowned (SAN for Santander) is not the US
+    # listing that shares its letters: hold it out of the US-only fallback.
+    disowned = {symbol_of[t] for t in unlisted(tickers)}
+    missing = [s for s in symbols if s not in answered and s not in disowned]
+    if missing:
+        left = max(deadline - time.monotonic(), FALLBACK_FLOOR)
+        for symbol, row in finnhub.quotes(missing, timeout=left).items():
+            out[ticker_of[symbol]] = row
     return out
 
 
 def quote(ticker: str, *, timeout: float = TIMEOUT) -> dict:
-    """The quote blob for one ticker, `{}` when Yahoo has none."""
+    """The quote blob for one ticker, `{}` when neither Yahoo nor Finnhub has one."""
     return quotes([ticker], timeout=timeout).get(ticker, {})

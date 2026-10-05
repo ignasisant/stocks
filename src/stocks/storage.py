@@ -40,6 +40,12 @@ from stocks.config import PROJECT_ROOT
 _ENV_PREFIX = "STOCKS_STORAGE_"
 _lock = threading.Lock()
 _restored: set[str] = set()
+# One lock per restore group, held for the whole download. A group is marked
+# restored only once its files are on disk, so a second request for the same
+# account waits for the first one's restore instead of running against an
+# empty directory — where it read prefs as {} and could write that back over
+# the bucket copy, provider keys and all.
+_group_locks: dict[str, threading.Lock] = {}
 _cached: dict[str, object] = {}
 
 
@@ -67,6 +73,11 @@ def _config() -> dict | None:
         needed = ("bucket", "access_key_id", "secret_access_key")
         _cached["config"] = section if all(section.get(k) for k in needed) else None
     return _cached["config"]  # ty: ignore[invalid-return-type]
+
+
+def _group_lock(tag: str) -> threading.Lock:
+    with _lock:
+        return _group_locks.setdefault(tag, threading.Lock())
 
 
 def enabled() -> bool:
@@ -157,13 +168,15 @@ def restore_dir(directory: Path) -> None:
     if prefix is None:
         return
     tag = f"dir:{directory.resolve()}"
-    with _lock:
+    if tag in _restored:
+        return
+    # A failure raises before the tag is added, so the next touch retries
+    # instead of caching a half-restore.
+    with _group_lock(tag):
         if tag in _restored:
             return
-        _restored.add(tag)
-    cfg = _config() or {}
-    client = _client()
-    try:
+        cfg = _config() or {}
+        client = _client()
         pages = client.get_paginator("list_objects_v2").paginate(
             Bucket=cfg["bucket"], Prefix=prefix + "/"
         )
@@ -178,10 +191,8 @@ def restore_dir(directory: Path) -> None:
                 body = client.get_object(Bucket=cfg["bucket"], Key=obj["Key"])["Body"]
                 directory.mkdir(parents=True, exist_ok=True)
                 atomic.write_bytes(dest, body.read())
-    except Exception:
-        with _lock:  # let the next touch retry instead of caching a half-restore
-            _restored.discard(tag)
-        raise
+        with _lock:
+            _restored.add(tag)
 
 
 def read_key(key: str) -> bytes | None:
@@ -245,19 +256,20 @@ def restore_once(group: Path, files: tuple[Path, ...]) -> None:
     """Restore a group of files the first time `group` is touched this process.
 
     After that the local copies are authoritative (every write persists), so
-    later requests skip the bucket round-trips.
+    later requests skip the bucket round-trips. A request arriving while the
+    restore runs waits for it: the group counts as restored only once every
+    file is down. A failure leaves it unmarked, so the next touch retries
+    instead of caching a half-restore.
     """
     if not enabled():
         return
     tag = str(group.resolve())
-    with _lock:
+    if tag in _restored:
+        return
+    with _group_lock(tag):
         if tag in _restored:
             return
-        _restored.add(tag)
-    try:
         for f in files:
             restore(f)
-    except Exception:
-        with _lock:  # let the next touch retry instead of caching a half-restore
-            _restored.discard(tag)
-        raise
+        with _lock:
+            _restored.add(tag)

@@ -436,5 +436,15 @@
   "chat.book_close_what": "At what price did you sell the last of {ticker}?",
   "chat.book_summary_close": "Close {ticker}: book the {quantity} left as sold",
   "chat.action_undo": "Undo",
-  "chat.action_undone": "Undone"
+  "chat.action_undone": "Undone",
+  "chat.rate_up": "Good answer",
+  "chat.rate_down": "Bad answer",
+  "chat.rate_why": "What was wrong?",
+  "chat.rate_made_up": "Guessed instead of looking it up",
+  "chat.rate_wrong": "Wrong facts or figures",
+  "chat.rate_missed": "Didn't answer my question",
+  "chat.rate_other": "Something else",
+  "chat.rate_note": "Anything else? (optional)",
+  "chat.rate_send": "Send",
+  "chat.rate_thanks": "Thanks — this helps fix it."
 }

@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Iterator
+from typing import Literal
 
 from ag_ui.core import (
     ActivitySnapshotEvent,
@@ -71,6 +72,7 @@ from stocks.chat import (
     tools,
     whatif,
 )
+from stocks.config import PROJECT_ROOT
 from stocks.portfolio import autodetect
 from stocks.web import chat_skills, llm, stt
 
@@ -257,6 +259,11 @@ class Message(BaseModel):
     learned: list[Learned] = []
     # The earlier conversations quoted onto the question it answers.
     recalled: list[Recalled] = []
+    # A model's answer carries the id a rating names it by
+    # (`PUT /chat/turns/{id}/rating`), and the reader's thumbs once pressed.
+    # "" on the user's turns and on answers written before turns had ids.
+    id: str = ""
+    rating: str | None = None
 
 
 class Conversation(BaseModel):
@@ -680,6 +687,8 @@ def _turn(raw: dict, lang: str = "en") -> Message:
             for r in (raw.get("recalled") or [])
             if isinstance(r, dict) and r.get("thread")
         ],
+        id=str(raw.get("id") or ""),
+        rating=raw.get("rating") if raw.get("rating") in ("up", "down") else None,
     )
 
 
@@ -927,6 +936,55 @@ def drop(cid: str, paths: Writer) -> None:
             status_code=status.HTTP_404_NOT_FOUND, detail=f"no conversation {cid}"
         )
     auth.delete_conversation(cid, paths.chat)
+
+
+class Rating(BaseModel):
+    """A thumbs on one answer. `vote` None takes it back; `reason` and `note`
+    say what was wrong, and are kept only on a thumbs-down."""
+
+    model_config = {"extra": "forbid"}
+
+    vote: Literal["up", "down"] | None
+    reason: Literal["made_up", "wrong", "missed", "other"] | None = None
+    note: str = Field(default="", max_length=1000)
+    lang: str | None = None
+
+
+class Rated(BaseModel):
+    vote: Literal["up", "down"] | None
+
+
+@router.put(
+    "/turns/{tid}/rating", response_model=Rated, summary="Rate an answer"
+)
+def rate(tid: str, body: Rating, paths: Writer) -> Rated:
+    """Thumbs up or down on a conversation, pressed on (and named by) the id
+    of its latest answer. One per thread: a vote replaces any earlier one.
+
+    Two writes: the vote on the turn itself, so a reload draws the thumb the
+    reader pressed, and a copy for the operator with the question, the answer
+    and what it was built from (`web/feedback.rate`) — the part that says why
+    an answer missed. Clearing a vote writes only the first.
+
+    404 for an id no thread holds: an answer written before turns had ids, or
+    a thread since deleted.
+    """
+    from stocks.web import auth, feedback
+
+    found = auth.rate_turn(tid, body.vote, paths.chat)
+    if found is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"no answer {tid}"
+        )
+    if body.vote is not None:
+        feedback.rate(
+            body.vote, found["answer"], found["question"],
+            reason=body.reason or "", note=body.note,
+            sender="owner" if paths.root == PROJECT_ROOT else paths.root.name,
+            lang=body.lang or str(_prefs(paths).get("language") or ""),
+            thread=found["thread"], history=found["history"],
+        )
+    return Rated(vote=body.vote)
 
 
 @router.patch("/settings", response_model=State, summary="Change the drawer's settings")
@@ -1279,6 +1337,9 @@ def _result(reply: engine.Reply) -> dict:
         "sources": list(reply.sources),
         "provider": reply.provider_id or None,
         "steps": list(reply.steps),
+        # What a rating names the stored answer by; absent on a turn no model
+        # wrote, which has nothing to rate.
+        **({"id": reply.turn_id} if reply.turn_id else {}),
         # Only on a turn that asked or settled one: every other result keeps
         # the shape it has always had.
         **({"proposal": dict(reply.proposal)} if reply.proposal else {}),

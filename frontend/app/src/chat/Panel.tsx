@@ -32,7 +32,7 @@ import { Settings } from "./Settings";
 import { Setup, needsSetup } from "./Setup";
 import { Threads } from "./Threads";
 import { Status } from "../ui/Status";
-import { Turn } from "./Turn";
+import { rateAt, Turn } from "./Turn";
 import type { ConnectAsk } from "./connect";
 import type { Chat } from "./useChat";
 import {
@@ -215,6 +215,15 @@ export default function Panel({
   });
 
   const open = chat.threads?.find((c) => c.id === chat.activeId);
+  // Regenerate, for a finished answer: a refusal carries its own Retry.
+  const last = chat.turns[chat.turns.length - 1];
+  const regen =
+    !chat.busy &&
+    !chat.reading &&
+    chat.turns.length > 1 &&
+    last?.role === "assistant" &&
+    !last.error &&
+    !last.stopped;
   const named = (open?.title || "").trim();
   const state = chat.state;
   const provider = state?.providers.find((p) => p.id === state.answering);
@@ -402,10 +411,13 @@ export default function Panel({
                 {t("chat.drop_zone", { mb: state.upload_max_mb })}
               </p>
             )}
-            <div className="ag-chat-scroll" ref={scrollRef}>
+            <div
+              className={`ag-chat-scroll${regen ? " ag-chat-scroll-regen" : ""}`}
+              ref={scrollRef}
+            >
               <div className="ag-chat-stream" ref={contentRef}>
                 {chat.turns.length ? (
-                  chat.turns.map((turn, i) => (
+                  chat.turns.map((turn, i, all) => (
                     <Turn
                       key={i}
                       turn={turn}
@@ -432,6 +444,8 @@ export default function Panel({
                       onPress={(activity, action) => chat.press(i, activity, action)}
                       onOpenThread={openThread}
                       onMemory={() => setView("memory")}
+                      askRating={i === rateAt(all)}
+                      onRated={(vote) => turn.id && chat.rated(turn.id, vote)}
                     />
                   ))
                 ) : chat.opening ? (
@@ -489,25 +503,16 @@ export default function Panel({
             {/* Regenerate, and only that: clearing the thread is destructive
                 and lives in the settings view, behind a confirmation. Drawn
                 for a finished answer — a refusal carries its own Retry. */}
-            {!chat.busy &&
-              !chat.reading &&
-              chat.turns.length > 1 &&
-              chat.turns[chat.turns.length - 1]?.role === "assistant" &&
-              !chat.turns[chat.turns.length - 1]?.error &&
-              !chat.turns[chat.turns.length - 1]?.stopped && (
-                <button
-                  type="button"
-                  className="ag-chat-regen"
-                  onClick={chat.regenerate}
-                >
-                  <Glyph name="refresh" size={13} />
-                  {t("chat.regenerate")}
-                </button>
-              )}
+            {regen && (
+              <button type="button" className="ag-chat-regen" onClick={chat.regenerate}>
+                <Glyph name="refresh" size={13} />
+                {t("chat.regenerate")}
+              </button>
+            )}
             {!isAtBottom && chat.turns.length > 0 && (
               <button
                 type="button"
-                className="ag-chat-down"
+                className={`ag-chat-down${regen ? " ag-chat-down-over" : ""}`}
                 title={t("chat.scroll_down")}
                 aria-label={t("chat.scroll_down")}
                 onClick={() => void scrollToBottom(calm ? "instant" : undefined)}

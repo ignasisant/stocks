@@ -56,6 +56,7 @@ import type {
   ImportRow,
   Preview,
   Proposal,
+  Rating,
   SettingsPatch,
   ToolCall,
   Turn,
@@ -330,6 +331,7 @@ export function useChat(live: boolean) {
           debate: done.debate ?? [],
           learned: done.learned ?? [],
           recalled: done.recalled ?? [],
+          ...(done.id ? { id: done.id } : {}),
           pending: false,
           phase: undefined,
           live: undefined,
@@ -593,6 +595,22 @@ export function useChat(live: boolean) {
     });
   }, [busy]);
 
+  /**
+   * The conversation's thumbs moved to `tid` (or, with null, came off it).
+   * One per thread, as the server keeps them: any other turn's goes.
+   */
+  const rated = useCallback((tid: string, vote: Rating | null) => {
+    setTurns((list) =>
+      list.map((turn) =>
+        turn.id === tid
+          ? { ...turn, rating: vote }
+          : turn.rating
+            ? { ...turn, rating: null }
+            : turn,
+      ),
+    );
+  }, []);
+
   const open = useCallback(async (cid: string) => {
     setActiveId(cid);
     setTurns([]);
@@ -839,6 +857,7 @@ export function useChat(live: boolean) {
     undo,
     press,
     drop,
+    rated,
     open,
     create,
     rename,

@@ -156,6 +156,44 @@ def test_restore_once_retries_after_failure(bucket, tmp_path, monkeypatch):
     assert (group / "a.txt").read_bytes() == b"a"
 
 
+def test_restore_once_makes_a_concurrent_caller_wait(bucket, tmp_path, monkeypatch):
+    """The second request of a fresh boot must not run against an empty dir.
+
+    It used to return at once, while the first request was still downloading,
+    and read prefs.json as absent — then write that back over the bucket copy.
+    """
+    import threading
+
+    group = tmp_path / "u"
+    bucket.objects["u/a.txt"] = b"a"
+    real = storage.restore
+    started, release = threading.Event(), threading.Event()
+
+    def slow(path):
+        started.set()
+        release.wait(5)
+        return real(path)
+
+    monkeypatch.setattr(storage, "restore", slow)
+    first = threading.Thread(target=storage.restore_once,
+                             args=(group, (group / "a.txt",)))
+    first.start()
+    assert started.wait(5)
+    seen: list[bool] = []
+    second = threading.Thread(
+        target=lambda: (storage.restore_once(group, (group / "a.txt",)),
+                        seen.append((group / "a.txt").exists()))
+    )
+    second.start()
+    second.join(0.2)
+    assert second.is_alive()  # waiting on the first restore, not racing past it
+    release.set()
+    first.join(5)
+    second.join(5)
+    assert seen == [True]
+    assert bucket.calls.count(("get", "u/a.txt")) == 1
+
+
 def test_restore_dir_pulls_flat_pool_once(bucket, tmp_path):
     d = tmp_path / "src/stocks/web/static/logos"
     bucket.objects["src/stocks/web/static/logos/AAPL.png"] = b"a"

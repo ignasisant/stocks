@@ -1157,12 +1157,39 @@ def plan_web(prefs: dict, provider: Provider, api_key: str,
     prior user turns riding along for topic continuity."""
     if not web_enabled():
         return []
+    return chat_web.plan(provider, api_key, history[-1]["content"],
+                         web_context(history, context))
+
+
+def web_context(history: list[dict], context: str = "") -> str:
+    """What a search plan is written against: the date, where the reader is,
+    the last user turns and the ticker the conversation is about."""
     prior = [m["content"][:200] for m in history[:-1] if m["role"] == "user"][-2:]
     ctx = f"Today is {date.today().isoformat()}." + (
         "\n" + context.strip() if context.strip() else "")
     if prior:
         ctx += "\nEarlier user messages (topic continuity): " + " | ".join(prior)
-    return chat_web.plan(provider, api_key, history[-1]["content"], ctx)
+    topic = topic_ticker(history[:-1])
+    if topic and "ticker in focus is" not in ctx:
+        ctx += f"\nThe conversation is about {topic}."
+    return ctx
+
+
+def topic_ticker(history: list[dict], window: int = 6) -> str:
+    """The ticker the last few turns were about, or "".
+
+    Read off the page link an answer offered (`nav`), which the server checked
+    against a real ticker before storing it — not off capitals in the prose,
+    where "GMV" and "ETF" look like symbols too. It is what a follow-up means:
+    "¿por qué ha subido hoy?" two turns after "¿por qué ha subido Shopify?"
+    searched the web for "por qué ha subido hoy" and read four pages about
+    nothing.
+    """
+    for m in reversed(history[-window:]):
+        nav = m.get("nav") if m.get("role") == "assistant" else None
+        if isinstance(nav, dict) and nav.get("ticker"):
+            return str(nav["ticker"]).upper()
+    return ""
 
 
 def ground_web(prefs: dict, provider: Provider, api_key: str,
@@ -2162,6 +2189,9 @@ class Reply:
     # {thread, title, when, snippet} — the drawer's "based on N earlier
     # conversations" line. Stored on the turn under "recalled" too.
     recalled: tuple[dict, ...] = ()
+    # The stored answer's id (`_record`), which a rating names it by. "" on a
+    # turn no model wrote — a refusal, a deterministic confirmation.
+    turn_id: str = ""
 
 
 def _keep_byok(prefs: dict, prefs_path: Path, pid: str) -> None:
@@ -2348,6 +2378,14 @@ def answerable(prefs: dict, atts: list[tuple[Provider, str, str]],
     here, not charged: those calls are the cost of a turn the cap already
     priced, and the reader who is out today makes none of them.
     """
+    from stocks.web import llm
+
+    # A key the provider refused minutes ago goes to the back rather than out:
+    # the research runs on the head of this list, and leading with a dead key
+    # costs the turn its search. Kept at all so a reader with nothing else
+    # still gets the provider's own refusal, not a silent "no provider".
+    good = [a for a in atts if not llm.rejected(a[0], a[1])]
+    atts = good + [a for a in atts if a not in good]
     if not any(p.id == "free" for p, _k, _m in atts):
         return atts
     if free_eligible(prefs) and free_left(prefs) > 0:
@@ -2408,7 +2446,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     told it is there. Off for the Telegram bot, which has nowhere to draw it.
     """
     from stocks.chat import tools
-    from stocks.web import auth
+    from stocks.web import auth, llm
 
     history = auth.load_chat(chat_path)
     history.append({"role": "user", "content": message})
@@ -2570,19 +2608,38 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     )
     skills = skills or []
     evidence = evidence or agent.Evidence(ok=False)
-    hits, live = [], []
+    hits, quotes = [], []
     if not evidence.ok:
         say("searching")
-        hits, live = in_parallel(
-            lambda: ground_web(prefs, provider, key, history, view),
+        # The lookup may have just found the head's key refused: the planner
+        # then runs on the next candidate that is not, or it fails the same
+        # way and the search falls to keywords.
+        scout, scout_key = next(
+            ((p, k) for p, k, _m in live if not llm.rejected(p, k)),
+            (provider, key))
+        hits, quotes = in_parallel(
+            lambda: ground_web(prefs, scout, scout_key, history, view),
             lambda: market.lookup_for(message, watchlist, focus=focus),
             timeout=timeout_s,
         )
-        hits, live = hits or [], live or []
+        hits, quotes = hits or [], quotes or []
         # No loop to watch here: the search and the quotes are told once
         # both have landed, already finished.
-        for n, line in enumerate(trace(None, hits, live, lang)):
+        for n, line in enumerate(trace(None, hits, quotes, lang)):
             told({"id": f"tool_pre{n}", **line, "args": {}})
+    elif web_enabled() and not any(
+            c.name in ("search_web", "read_page") for c in evidence.calls):
+        # Searching is the default, and the model's own lookup skipped it.
+        # Keywords decide instead — no second planner call — so small talk,
+        # a definition or a question about the reader's own book still goes
+        # without, and everything else reads the web.
+        queries = chat_web.heuristic_queries(message, web_context(history, view))
+        if queries:
+            say("searching")
+            hits = in_parallel(lambda: chat_web.collect(queries, message),
+                               timeout=timeout_s)[0] or []
+            for n, line in enumerate(trace(None, hits, [], lang)):
+                told({"id": f"tool_pre{n}", **line, "args": {}})
     recalled_notes, recalled = earlier(prefs, chat_path, message)
     system = system_prompt(
         auth.load_profile(prefs),
@@ -2602,8 +2659,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     msgs[-1]["content"] = memory.augment(msgs[-1]["content"], recalled_notes)
     if hits:
         msgs[-1]["content"] = chat_web.augment(msgs[-1]["content"], hits)
-    if live:
-        msgs[-1]["content"] = market.augment(msgs[-1]["content"], live)
+    if quotes:
+        msgs[-1]["content"] = market.augment(msgs[-1]["content"], quotes)
     if isinstance(sale, whatif.Scenario):
         msgs[-1]["content"] += sale.line()
     if isinstance(chart, charts.Chart):
@@ -2628,7 +2685,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             msgs = tokens.fit(msgs, system=system)
 
     say("writing")
-    steps = trace(evidence, hits, live, lang)
+    steps = trace(evidence, hits, quotes, lang)
     activities: list[dict] = []
     if isinstance(sale, whatif.Scenario):
         steps.append(_sale_step(sale, lang))
@@ -2706,10 +2763,15 @@ def _refund(prefs: dict, prefs_path: Path, provider: Provider) -> None:
     auth.save_prefs(prefs, prefs_path)
 
 
-def _provider_failed(exc: Exception, provider: Provider, model: str) -> None:
+def _provider_failed(exc: Exception, provider: Provider, model: str,
+                     key: str = "") -> None:
     """Logged because the user only ever sees chat.api_error; without this the
     reason for a dead chain (retired model, free tier gone paid) is
-    unrecoverable."""
+    unrecoverable. A refused key is also remembered (`llm.note_failure`), so
+    the next turn's research skips it."""
+    from stocks.web import llm
+
+    llm.note_failure(provider, key, exc)
     obs.warn("chat.provider_failed", provider=provider.id, model=model,
              error_type=type(exc).__name__, error=str(exc)[:300])
 
@@ -2737,7 +2799,10 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
     if turn.learning is not None:
         turn.learning.wait(LEARN_GRACE if grace is None else grace)
     turn.learned = [*turn.learned, *_unseen(chat_path)]
-    entry: dict = {"role": "assistant", "content": text}
+    # `id` is what a rating names the turn by (`rate_turn`); `provider` is who
+    # wrote it, which a thumbs-down needs and the turn never said before.
+    entry: dict = {"role": "assistant", "content": text,
+                   "id": secrets.token_hex(6), "provider": provider.id}
     if turn.skills:
         entry["skills"] = list(turn.skills)
     if turn.sources:
@@ -2766,7 +2831,7 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
                  sources=tuple(turn.sources), provider_id=provider.id,
                  steps=tuple(turn.steps), activities=tuple(turn.activities),
                  debate=tuple(turn.debate), learned=tuple(turn.learned),
-                 recalled=tuple(turn.recalled))
+                 recalled=tuple(turn.recalled), turn_id=entry["id"])
 
 
 def _exhausted(prefs: dict, atts: list[tuple[Provider, str, str]],
@@ -2828,7 +2893,7 @@ def answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
         except Exception as exc:
             # timeout, bad key, rate limit — next candidate. The unit was taken
             # before the call that never answered, so it goes back.
-            _provider_failed(exc, provider, model)
+            _provider_failed(exc, provider, model, key)
             _refund(prefs, prefs_path, provider)
             continue
         finally:
@@ -2941,7 +3006,7 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                 parts.append(chunk)
                 yield ("text", chunk)
         except Exception as exc:
-            _provider_failed(exc, provider, model)
+            _provider_failed(exc, provider, model, key)
             if not parts:
                 _refund(prefs, prefs_path, provider)
                 continue

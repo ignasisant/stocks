@@ -660,6 +660,8 @@ WRITES = {
     ("/v1/chat/conversations/{cid}", "patch"),
     ("/v1/chat/conversations/{cid}", "delete"),
     ("/v1/chat/settings", "patch"),
+    # A thumbs on an answer copies the question and answer to the operator.
+    ("/v1/chat/turns/{tid}/rating", "put"),
     # The saved memories. They ride in every system prompt, so a token that
     # could add one could tell the account's assistant what to believe about
     # its user.

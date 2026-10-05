@@ -198,6 +198,12 @@
   padding: 12px;
 }
 
+/* Regenerate floats over the end of the region; the last answer's foot (its
+   thumbs) scrolls clear of it instead of sitting underneath. */
+.ag-chat-scroll-regen {
+  padding-bottom: 44px;
+}
+
 /* `useStickToBottom` measures this element rather than the region, so it has
    to be the thing that grows: a wrapper that collapsed to the region's height
    would report no resize and the stream would not follow. */
@@ -221,6 +227,12 @@
   cursor: pointer;
   place-items: center;
   touch-action: manipulation;
+}
+
+/* Over Regenerate when both are drawn: same corner, stacked, never on top
+   of each other. */
+.ag-chat-down-over {
+  bottom: 44px;
 }
 
 @media (hover: hover) {
@@ -326,6 +338,84 @@
   margin-top: 4px;
   color: var(--ag-text-faint);
   font-size: var(--ag-fs-2xs);
+}
+
+/* An answer's thumbs ride the end of its foot; a thumbs-down asks why under
+   it. Quiet until pressed: they sit under every answer. */
+.ag-chat-thumbs {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.ag-chat-thumb {
+  padding: 4px 6px;
+  color: var(--ag-text-faint);
+}
+
+.ag-chat-thumb-on {
+  color: var(--ag-brand-accent);
+}
+
+.ag-chat-why {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  max-width: 60ch;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-chat-why-head {
+  display: flex;
+  align-self: stretch;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--ag-text-secondary);
+}
+
+.ag-chat-why-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ag-chat-why-note {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  resize: vertical;
+}
+
+.ag-chat-why .ag-chat-hint {
+  margin: 0;
+}
+
+@media (pointer: coarse) {
+  .ag-chat-thumb,
+  .ag-chat-why .ag-chat-icon {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .ag-chat-why-chips .ag-chat-chip {
+    min-height: 44px;
+  }
+
+  .ag-chat-why-note {
+    font-size: 16px;
+  }
 }
 
 .ag-chat-clock,
@@ -1704,6 +1794,7 @@ a.ag-chat-btn {
 .ag-chat-icon:focus-visible,
 .ag-chat-back:focus-visible,
 .ag-chat-meta-btn:focus-visible,
+.ag-chat-why-note:focus-visible,
 .ag-chat-btn:focus-visible,
 .ag-chat-chip:focus-visible,
 .ag-chat-send:focus-visible,

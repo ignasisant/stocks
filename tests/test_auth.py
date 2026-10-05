@@ -203,6 +203,51 @@ def test_prefs_roundtrip_and_corrupt_fallback(tmp_path):
     assert load_prefs(path) == DEFAULT_PREFS
 
 
+def test_a_late_save_does_not_undo_a_key_stored_meanwhile(tmp_path):
+    """A dict read before a key was stored writes back only its own edit.
+
+    The chat turn reads prefs, spends a free unit, waits on a model and saves;
+    a provider key stored from the settings screen in that window used to be
+    wiped by that save, because the turn wrote its whole stale dict back.
+    """
+    path = tmp_path / "prefs.json"
+    save_prefs({"currency": "USD"}, path)
+    turn = load_prefs(path)  # the turn's read
+    accounts.update_prefs(path, {"openai_key_enc": "ct", "openai_key_saved_at": 1},
+                          persist=lambda p: None)  # the settings screen, meanwhile
+    turn["free_msgs::2026-10-05"] = 1
+    save_prefs(turn, path)
+    stored = accounts.stored_prefs(path)
+    assert stored["openai_key_enc"] == "ct"
+    assert stored["free_msgs::2026-10-05"] == 1
+    assert stored["currency"] == "USD"
+
+
+def test_a_loaded_save_removes_what_it_removed_and_nothing_else(tmp_path):
+    path = tmp_path / "prefs.json"
+    save_prefs({"tg_link_code": "x", "currency": "USD"}, path)
+    held = load_prefs(path)
+    accounts.update_prefs(path, {"gemini_key_enc": "ct"}, persist=lambda p: None)
+    held.pop("tg_link_code")
+    save_prefs(held, path)
+    assert accounts.stored_prefs(path) == {"currency": "USD", "gemini_key_enc": "ct"}
+
+
+def test_an_unchanged_loaded_save_writes_nothing(tmp_path):
+    path = tmp_path / "prefs.json"
+    accounts.save_prefs(path, {"currency": "USD"}, persist=lambda p: None)
+    pushed: list = []
+    held = accounts.load_prefs(path)
+    accounts.save_prefs(path, held, persist=pushed.append)
+    assert pushed == []  # no bucket PUT for a save that changed nothing
+    held["currency"] = "EUR"
+    accounts.save_prefs(path, held, persist=pushed.append)
+    accounts.save_prefs(path, held, persist=pushed.append)  # already written
+    assert pushed == [path]
+    # Defaults the dict carried in are not written into the file.
+    assert accounts.stored_prefs(path) == {"currency": "EUR"}
+
+
 def test_toggle_favorite_creates_entry_and_flips(tmp_path):
     path = tmp_path / "watchlist.yaml"
     path.write_text(
