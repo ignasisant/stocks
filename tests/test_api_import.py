@@ -5,8 +5,9 @@ to `stocks.portfolio` and are tested there, per broker. What is tested here is
 the contract the two endpoints add:
 
 * a preview writes nothing, whatever it says;
-* the model reads first and the parsers check it: the platform a request names
-  is tried first and trusted no further, and the preview says who read it;
+* the parsers read first and the model checks them, unless a parser accounted
+  for every line: the platform a request names is tried first and trusted no
+  further, and the preview says who read it;
 * a commit does not trust the preview — the rows it sends back, or the file
   read again, are validated again, because the ledger is shared and moves
   under both;
@@ -1239,13 +1240,13 @@ def test_the_model_reads_a_file_no_parser_owns(client, account, signed_in, model
 def test_a_parser_that_reads_as_much_as_the_model_wins(
     client, account, signed_in, model
 ):
-    """The model found one row, the parser two: the parser's read is kept, and
-    a tie would go to the parser as well — it is exact where a model is only
-    likely."""
+    """The parser read every line of the ledger: its read is kept and the
+    model is not asked to check it — it is exact where a model is only
+    likely, and a model that found more would have made them up."""
     payload = signed_in.post("/v1/import/preview", json=body()).json()
     assert payload["platform"] == "generic"
     assert [r["ticker"] for r in payload["importable"]] == ["AAPL", "MSFT"]
-    assert model == ["ledger.csv"], "the model was asked first all the same"
+    assert model == [], "a parser that missed no line is not second-guessed"
 
 
 def test_a_commit_of_the_previewed_file_does_not_ask_the_model_twice(
