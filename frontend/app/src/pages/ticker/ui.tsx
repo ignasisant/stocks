@@ -19,25 +19,44 @@ import { Kpi, KpiGrid, bandTone, chipFor } from "../../ui/Kpi";
 /**
  * Is this a phone?
  *
- * 640px, the breakpoint this page's stylesheet uses. A hook rather than a
- * media query because the phone layout is not a restyle of the desktop one: it
- * drops two range pills, defaults to the line chart, thins the axis and
- * transposes two tables — decisions that have to reach the data, not only the
- * box model.
+ * 640px, the breakpoint this page's stylesheet uses, measured on the shell's
+ * `ag-main` column rather than the viewport: an open chat drawer narrows the
+ * page without touching the window, and the page has to go phone-shaped with
+ * it. A hook rather than a container query because the phone layout is not a
+ * restyle of the desktop one: it drops two range pills, defaults to the line
+ * chart, thins the axis and transposes two tables — decisions that have to
+ * reach the data, not only the box model. Without a shell around it (a test,
+ * the server) the viewport decides.
  */
-const PHONE = "(max-width: 640px)";
+const PHONE_PX = 640;
+const PHONE = `(max-width: ${PHONE_PX}px)`;
+
+function column(): HTMLElement | null {
+  return typeof document === "undefined" ? null : document.querySelector(".ag-main");
+}
+
+export function phoneNow(): boolean {
+  const main = column();
+  const width = main?.getBoundingClientRect().width ?? 0;
+  if (width > 0) return width <= PHONE_PX;
+  return typeof matchMedia === "function" && matchMedia(PHONE).matches;
+}
 
 export function useMobile(): boolean {
-  const [mobile, setMobile] = useState(
-    () => typeof matchMedia === "function" && matchMedia(PHONE).matches,
-  );
+  const [mobile, setMobile] = useState(phoneNow);
   useEffect(() => {
+    const update = () => setMobile(phoneNow());
+    update();
+    const main = column();
+    if (main && typeof ResizeObserver !== "undefined") {
+      const seen = new ResizeObserver(update);
+      seen.observe(main);
+      return () => seen.disconnect();
+    }
     if (typeof matchMedia !== "function") return;
     const query = matchMedia(PHONE);
-    const onChange = () => setMobile(query.matches);
-    query.addEventListener("change", onChange);
-    onChange();
-    return () => query.removeEventListener("change", onChange);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
   }, []);
   return mobile;
 }
@@ -205,7 +224,7 @@ export function Empty({ children }: { children: ReactNode }) {
  * A segmented control: the range pills, the chart type, the statement view.
  *
  * The options carry their own labels because every one of them is translated —
- * "1w" reads "1S" in Spanish, and shipping the English shorthand would leave
+ * "1w" reads "Semana" in Spanish, and shipping the English shorthand would leave
  * an English word on a Spanish page.
  */
 export function Segmented<T extends string>({

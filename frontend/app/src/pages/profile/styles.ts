@@ -77,7 +77,9 @@ export const CSS = `
   font: inherit; font-size: var(--ag-fs-md); color: var(--ag-text-muted);
   padding: 9px 14px; border-bottom: 2px solid transparent; margin-bottom: -1px;
 }
-.pr-tab:hover { color: var(--ag-text-primary); }
+@media (hover: hover) {
+  .pr-tab:hover { color: var(--ag-text-primary); }
+}
 .pr-tab-on { color: var(--ag-text-primary); border-bottom-color: var(--ag-purple-400); }
 .pr-tab-n {
   margin-left: 7px; border-radius: var(--ag-radius-pill); padding: 1px 7px;
@@ -163,7 +165,9 @@ export const CSS = `
   padding: 5px 12px; color: var(--ag-text-primary);
   background: var(--ag-surface-page);
 }
-.pr-download:hover { border-color: var(--ag-border-focus); }
+@media (hover: hover) {
+  .pr-download:hover { border-color: var(--ag-border-focus); }
+}
 .pr-muted { color: var(--ag-text-muted); font-size: var(--ag-fs-sm); }
 .pr-signout {
   margin-left: auto; align-self: center; white-space: nowrap;
@@ -171,7 +175,9 @@ export const CSS = `
   border: 1px solid var(--ag-border); border-radius: var(--ag-radius-pill);
   padding: 5px 12px; text-decoration: none;
 }
-.pr-signout:hover { border-color: var(--ag-border-focus); color: var(--ag-text-primary); }
+@media (hover: hover) {
+  .pr-signout:hover { border-color: var(--ag-border-focus); color: var(--ag-text-primary); }
+}
 .pr-more { margin-top: 4px; }
 .pr-more > summary {
   cursor: pointer; list-style: none; display: inline-block;
@@ -180,13 +186,20 @@ export const CSS = `
 }
 .pr-more > summary::-webkit-details-marker { display: none; }
 .pr-more > div { margin-top: 10px; }
+@media (pointer: coarse) {
+  .pr-signout, .pr-more > summary { display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box; }
+  .pr-btn { min-height: 44px; }
+  .pr-download, .pr-linkbtn { display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box; }
+}
 .pr-btn {
   appearance: none; font: inherit; font-size: var(--ag-fs-sm); cursor: pointer;
   border: 1px solid var(--ag-border); border-radius: var(--ag-radius-xs);
   background: var(--ag-surface-sunken); color: var(--ag-text-primary);
   padding: 6px 12px;
 }
-.pr-btn:hover:enabled { border-color: var(--ag-border-focus); }
+@media (hover: hover) {
+  .pr-btn:hover:enabled { border-color: var(--ag-border-focus); }
+}
 .pr-btn:disabled { opacity: 0.5; cursor: default; }
 .pr-btn-p {
   background: var(--ag-purple-900); border-color: var(--ag-purple-800);
@@ -205,7 +218,9 @@ export const CSS = `
   border: 1px solid var(--ag-purple-800); border-radius: var(--ag-radius-xs);
   background: var(--ag-purple-900); color: var(--ag-text-primary);
 }
-.pr-linkbtn:hover { border-color: var(--ag-border-focus); }
+@media (hover: hover) {
+  .pr-linkbtn:hover { border-color: var(--ag-border-focus); }
+}
 /* In a column that stretches its children, a button that should not. */
 .pr-selfstart { align-self: flex-start; }
 /* The same for a lone button as a row's control: a Delete bar the width of
@@ -256,7 +271,9 @@ export const CSS = `
   cursor: pointer; font-size: var(--ag-fs-sm); font-weight: 600;
   color: var(--ag-text-secondary);
 }
-.pr-persona > summary:hover { color: var(--ag-text-primary); }
+@media (hover: hover) {
+  .pr-persona > summary:hover { color: var(--ag-text-primary); }
+}
 .pr-persona > * { margin-top: 8px; }
 .pr-persona-text {
   display: block; padding: 10px 12px; border-radius: var(--ag-radius-sm);
@@ -308,7 +325,9 @@ export const CSS = `
   font-family: "Martian Mono", ui-monospace, monospace; font-size: var(--ag-fs-xs);
   color: var(--ag-text-primary); text-decoration: none;
 }
-.pr-tick:hover { border-color: var(--ag-border-focus); }
+@media (hover: hover) {
+  .pr-tick:hover { border-color: var(--ag-border-focus); }
+}
 .pr-res { display: flex; flex-direction: column; gap: 6px; }
 .pr-resrow {
   display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: left;
@@ -341,7 +360,9 @@ export const CSS = `
   font-size: var(--ag-fs-sm); font-weight: 600; color: var(--ag-text-primary);
   text-decoration: none; overflow: hidden; text-overflow: ellipsis;
 }
-.pr-wsym:hover { color: var(--ag-purple-400); }
+@media (hover: hover) {
+  .pr-wsym:hover { color: var(--ag-purple-400); }
+}
 .pr-wname { flex: 1 1 12rem; min-width: 8rem; }
 .pr-wnum { flex: 0 1 6.5rem; min-width: 5rem; text-align: right; }
 .pr-wnum { flex: 0 0 7rem; }

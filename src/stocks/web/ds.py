@@ -150,7 +150,7 @@ FONT_MONO = "'Martian Mono', ui-monospace, monospace"
 # Type scale — the DS heading sizes (28/22/18/16/14/12) extended down with
 # the three chrome steps the app needs. px, like the DS scale, so a root
 # font-size change never silently rescales our own HTML.
-FS_2XS = "10px"   # nav-section caps, dense calendar chips — DS floor, never below
+FS_2XS = "11px"   # nav-section caps, dense calendar chips — DS floor; a phone reads nothing smaller
 FS_XS = "11px"    # captions, tile labels, small pills
 FS_SM = "12px"    # metric labels, muted secondary lines
 FS_MD = "13px"    # nav rows, selector chips, table cells

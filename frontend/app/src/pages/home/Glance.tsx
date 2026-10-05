@@ -38,9 +38,9 @@ import type {
 
 /** The windows the card offers, and the labels its range selector uses. */
 const WINDOWS = [
-  { key: "day", label: "1d", tile: "home.today" },
-  { key: "week", label: "1w", tile: "home.one_week" },
-  { key: "month", label: "1m", tile: "home.one_month" },
+  { key: "day", label: "home.market_window_day", tile: "home.today" },
+  { key: "week", label: "home.market_window_week", tile: "home.one_week" },
+  { key: "month", label: "home.market_window_month", tile: "home.one_month" },
 ] as const;
 
 type WindowKey = (typeof WINDOWS)[number]["key"];
@@ -403,7 +403,7 @@ function MoversCard({
               aria-pressed={key === range}
               onClick={() => setRange(key)}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>

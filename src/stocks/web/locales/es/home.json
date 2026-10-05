@@ -74,6 +74,7 @@
   "home.refresh_prices": "Actualizar precios",
   "home.chart_injected": "Aportado",
   "home.chart_value": "Valor",
+  "home.chart_market": "Mercado",
   "home.sma20_tile": "Media 20 días",
   "home.sma20_help": "Valor medio de la cartera en las últimas 20 sesiones. El porcentaje compara el valor de hoy con esa media.",
   "home.chart_period_max": "Máximo del período",

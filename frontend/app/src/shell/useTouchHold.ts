@@ -22,9 +22,12 @@ export function useTouchHold(
 ): void {
   useEffect(() => {
     if (!held || typeof document === "undefined") return;
+    // The path the event was dispatched along, not `target`'s ancestors now:
+    // the chart's own handler runs first and may re-render the touched mark
+    // out of the tree, and a detached target reads as a touch elsewhere.
     const away = (event: PointerEvent) => {
-      const target = event.target;
-      if (target instanceof Node && plot.current?.contains(target)) return;
+      const node = plot.current;
+      if (node && event.composedPath().includes(node)) return;
       clear(null);
     };
     document.addEventListener("pointerdown", away);

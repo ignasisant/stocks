@@ -14,11 +14,10 @@
  */
 
 import { useLang, useT } from "../../shell/i18n";
-import { TickerCell, useTickerProfile } from "../../shell/tickers";
-import { DenseRows, Responsive } from "../../ui/Rows";
+import { useTickerProfile } from "../../shell/tickers";
 import { moneyIn } from "../portfolio/format";
 import type { EventPick, RepurchaseWindow } from "./data";
-import { days, longDate, plain } from "./format";
+import { longDate } from "./format";
 import type { T } from "./format";
 
 const DASH = "—";
@@ -61,64 +60,6 @@ export function RepurchaseChip({
       {profile?.logo && <img src={profile.logo} alt="" loading="lazy" />}
       <span>{t("earnings.rebuy_chip", { ticker: window.ticker })}</span>
     </button>
-  );
-}
-
-/** The list view's section, soonest first: the order the API sends. */
-export function RepurchaseTable({ windows }: { windows: RepurchaseWindow[] }) {
-  const t = useT();
-  const lang = useLang();
-  if (windows.length === 0) return null;
-  const key = (w: RepurchaseWindow) => `${w.ticker}-${w.sell_date}`;
-  return (
-    <section className="earn-block">
-      <h2 className="earn-h2">{plain(t("earnings.rebuy_windows"))}</h2>
-      <Responsive
-        wide={
-          <table className="earn-table">
-            <thead>
-              <tr>
-                <th className="left">{t("earnings.list_col_ticker")}</th>
-                <th className="left">{t("earnings.rebuy_col_sold")}</th>
-                <th className="left">{t("earnings.rebuy_col_free")}</th>
-                <th>{t("earnings.rebuy_col_loss")}</th>
-                <th>{t("earnings.list_col_days_out")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {windows.map((w) => (
-                <tr key={key(w)} title={rebuyTitle(w, lang, t)}>
-                  <td className="left">
-                    <TickerCell className="earn-ticker" ticker={w.ticker}>
-                      {w.ticker}
-                    </TickerCell>
-                  </td>
-                  <td className="left">{longDate(w.sell_date, t)}</td>
-                  <td className="left">{longDate(w.date, t)}</td>
-                  <td className="earn-down">{loss(lang, w)}</td>
-                  <td>{days(w.days_until)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        }
-        narrow={
-          <DenseRows
-            rows={windows}
-            rowKey={key}
-            spec={{
-              ticker: (w) => w.ticker,
-              value: (w) => days(w.days_until),
-              delta: (w) => longDate(w.date, t),
-              sub: (w) => [
-                `${t("earnings.rebuy_col_sold")} ${longDate(w.sell_date, t)}`,
-                `${t("earnings.rebuy_col_loss")} ${loss(lang, w)}`,
-              ],
-            }}
-          />
-        }
-      />
-    </section>
   );
 }
 

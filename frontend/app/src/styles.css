@@ -30,6 +30,39 @@
   }
 }
 
+/* No grey flash over a pressed control: the system's highlight is a rectangle
+   that ignores the control's radius. In its place, a press dims whatever was
+   pressed, so a tap is still acknowledged where a component draws no `:active`
+   of its own (low specificity: any component rule overrides it). */
+button,
+a,
+summary,
+[role="button"],
+[role="tab"] {
+  -webkit-tap-highlight-color: transparent;
+}
+:is(button:not(:disabled), a[href], summary, [role="button"], [role="tab"]):active {
+  opacity: 0.8;
+}
+
+/* A row that scrolls sideways fades the edge that has more past it. The hook
+   (`useTabStrip`) sets `data-more` from the scroll position. */
+.ag-fade-x[data-more="end"] {
+  mask-image: linear-gradient(to right, black calc(100% - 2rem), transparent);
+}
+.ag-fade-x[data-more="start"] {
+  mask-image: linear-gradient(to left, black calc(100% - 2rem), transparent);
+}
+.ag-fade-x[data-more="both"] {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 2rem,
+    black calc(100% - 2rem),
+    transparent
+  );
+}
+
 body {
   margin: 0;
   background: var(--ag-surface-page);
@@ -47,6 +80,9 @@ body {
      column open and slid under the chat drawer instead of making room. */
   grid-template-columns: var(--rail, 15rem) minmax(0, 1fr);
   min-height: 100vh;
+  /* The small-viewport-aware height: on a phone `100vh` is the page with the
+     browser's toolbars retracted, so a short page ran under them. */
+  min-height: 100dvh;
 }
 
 :root[data-nav="folded"],
@@ -164,9 +200,11 @@ body {
   cursor: pointer;
 }
 
-.ag-nav-fold:hover {
-  background: var(--ag-surface-sunken);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .ag-nav-fold:hover {
+    background: var(--ag-surface-sunken);
+    color: var(--ag-text-primary);
+  }
 }
 
 .ag-nav-item {
@@ -206,9 +244,11 @@ body {
   flex: 0 0 auto;
 }
 
-.ag-nav-item:hover {
-  background: var(--ag-surface-sunken);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .ag-nav-item:hover {
+    background: var(--ag-surface-sunken);
+    color: var(--ag-text-primary);
+  }
 }
 
 .ag-nav-on {
@@ -391,7 +431,7 @@ body {
     /* What a page pinning something to the foot of the screen has to clear:
        this bar's padding, a row of 20px glyphs in their padded links, and its
        top rule. Import's confirm bar reads it. */
-    --dock: calc(1.8rem + 21px);
+    --dock: calc(1.8rem + 21px + env(safe-area-inset-bottom));
   }
   /* A tab bar has no width to fold and no room for a wordmark: the phone
      header already carries the mark. Folded or not, this is the same bar. */
@@ -399,7 +439,12 @@ body {
     display: none;
   }
   .ag-main {
-    padding: 1rem 1rem 5rem;
+    /* Under the notch at the top, and at the foot clear of everything fixed
+       there: the tab bar (`--dock`, which carries the home indicator's inset)
+       plus the assistant's launcher and the gap above it, so the last row of
+       a page is never under either. */
+    padding: calc(1rem + env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+      calc(var(--dock) + 4.5rem) max(1rem, env(safe-area-inset-left));
   }
   .ag-nav {
     position: fixed;
@@ -410,7 +455,7 @@ body {
     justify-content: space-around;
     border-right: none;
     border-top: 1px solid var(--ag-border);
-    padding: 0.4rem 0.2rem;
+    padding: 0.4rem 0.2rem calc(0.4rem + env(safe-area-inset-bottom));
     z-index: 20;
   }
   .ag-nav-label {
@@ -514,8 +559,10 @@ body {
   cursor: pointer;
 }
 
-.ag-search-row:hover {
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  .ag-search-row:hover {
+    background: var(--ag-surface-hover);
+  }
 }
 
 .ag-search-mark {
@@ -736,9 +783,11 @@ img.ag-search-logo {
   color: var(--ag-text-muted);
 }
 
-.ag-tour-btn:hover,
-.ag-tour-quiet:hover {
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  .ag-tour-btn:hover,
+  .ag-tour-quiet:hover {
+    background: var(--ag-surface-hover);
+  }
 }
 
 /* Feedback. The trigger sits at the foot of the nav rail — out of the way of
@@ -755,9 +804,11 @@ img.ag-search-logo {
   cursor: pointer;
 }
 
-.ag-fb-open:hover {
-  border-color: var(--ag-border-focus);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .ag-fb-open:hover {
+    border-color: var(--ag-border-focus);
+    color: var(--ag-text-primary);
+  }
 }
 
 .ag-fb-sent {

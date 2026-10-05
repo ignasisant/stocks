@@ -262,16 +262,20 @@
   color: var(--ag-on-brand);
 }
 
-.im-btn-primary:hover:not(:disabled) {
-  background: var(--ag-purple-700);
+@media (hover: hover) {
+  .im-btn-primary:hover:not(:disabled) {
+    background: var(--ag-purple-700);
+  }
 }
 
 .im-btn-outline {
   border-color: var(--ag-border-focus);
 }
 
-.im-btn-outline:hover:not(:disabled) {
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  .im-btn-outline:hover:not(:disabled) {
+    background: var(--ag-surface-hover);
+  }
 }
 
 .im-btn-text {
@@ -279,13 +283,20 @@
   color: var(--ag-brand-accent);
 }
 
-.im-btn-text:hover:not(:disabled) {
-  color: var(--ag-purple-400);
+@media (hover: hover) {
+  .im-btn-text:hover:not(:disabled) {
+    color: var(--ag-purple-400);
+  }
 }
 
-.im-btn-danger,
-.im-btn-danger:hover:not(:disabled) {
+.im-btn-danger {
   color: var(--ag-candle-down);
+}
+
+@media (hover: hover) {
+  .im-btn-danger:hover:not(:disabled) {
+    color: var(--ag-candle-down);
+  }
 }
 
 .im-btn-danger-outline {
@@ -293,8 +304,10 @@
   color: var(--ag-candle-down);
 }
 
-.im-btn-danger-outline:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--ag-down-fill) 18%, var(--ag-surface-card));
+@media (hover: hover) {
+  .im-btn-danger-outline:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--ag-down-fill) 18%, var(--ag-surface-card));
+  }
 }
 
 .im-btn-destructive {
@@ -440,16 +453,25 @@
     border-color 50ms ease-in-out;
 }
 
-.im-chip:hover {
-  background: var(--ag-surface-hover);
-  color: var(--ag-text-primary);
+@media (hover: hover) {
+  .im-chip:hover {
+    background: var(--ag-surface-hover);
+    color: var(--ag-text-primary);
+  }
 }
 
-.im-chip-on,
-.im-chip-on:hover {
+.im-chip-on {
   border-color: var(--ag-brand-cta);
   background: var(--ag-purple-900);
   color: var(--ag-text-primary);
+}
+
+@media (hover: hover) {
+  .im-chip-on:hover {
+    border-color: var(--ag-brand-cta);
+    background: var(--ag-purple-900);
+    color: var(--ag-text-primary);
+  }
 }
 
 .im-chip:focus-visible {
@@ -498,8 +520,10 @@
   cursor: pointer;
 }
 
-.im-drop:hover {
-  border-color: var(--ag-brand-accent);
+@media (hover: hover) {
+  .im-drop:hover {
+    border-color: var(--ag-brand-accent);
+  }
 }
 
 /* The input keeps its focus, so the ring belongs to the zone around it. */
@@ -508,11 +532,18 @@
   outline-offset: 2px;
 }
 
-.im-drop-on,
-.im-drop-on:hover {
+.im-drop-on {
   border-style: solid;
   border-color: var(--ag-brand-accent);
   background: var(--ag-purple-900);
+}
+
+@media (hover: hover) {
+  .im-drop-on:hover {
+    border-style: solid;
+    border-color: var(--ag-brand-accent);
+    background: var(--ag-purple-900);
+  }
 }
 
 /* Out of sight and still in the tab order: the zone is what is seen, the
@@ -845,9 +876,11 @@
   background: var(--ag-text-faint);
 }
 
-.im-jump-ok:hover,
-.im-jump-skip:hover {
-  border-color: var(--ag-border-focus);
+@media (hover: hover) {
+  .im-jump-ok:hover,
+  .im-jump-skip:hover {
+    border-color: var(--ag-border-focus);
+  }
 }
 
 /* Step four, pinned over the tiers so the press never scrolls away. */
@@ -1209,8 +1242,10 @@
   text-decoration: none;
 }
 
-.im-skip-what a.ag-tick:hover .ag-tick-sym {
-  text-decoration: underline;
+@media (hover: hover) {
+  .im-skip-what a.ag-tick:hover .ag-tick-sym {
+    text-decoration: underline;
+  }
 }
 
 .im-skip-amount {
@@ -1284,7 +1319,7 @@
   border-bottom-color: var(--ag-border);
   background: var(--ag-rule-panel);
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs);
+  font-size: var(--ag-fs-sm, 12px);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1294,8 +1329,10 @@
   background: var(--ag-surface-band);
 }
 
-.im-table tbody tr:hover td {
-  background: var(--ag-surface-hover);
+@media (hover: hover) {
+  .im-table tbody tr:hover td {
+    background: var(--ag-surface-hover);
+  }
 }
 
 /* Ticker cells: the symbol bold, the name muted, and a long name cut short
@@ -1308,11 +1345,13 @@
   text-decoration: none;
 }
 
-.im-table a.ag-tick:hover .ag-tick-sym,
-.im-rcard a.ag-tick:hover .ag-tick-sym,
-.im-pick a.ag-tick:hover .ag-tick-sym,
-.im-mini a.ag-tick:hover .ag-tick-sym {
-  text-decoration: underline;
+@media (hover: hover) {
+  .im-table a.ag-tick:hover .ag-tick-sym,
+  .im-rcard a.ag-tick:hover .ag-tick-sym,
+  .im-pick a.ag-tick:hover .ag-tick-sym,
+  .im-mini a.ag-tick:hover .ag-tick-sym {
+    text-decoration: underline;
+  }
 }
 
 .im-tick .ag-tick-sym {

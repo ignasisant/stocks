@@ -12,6 +12,7 @@
 import { useMemo, useState } from "react";
 import { useT } from "../../shell/i18n";
 import { chart as palette } from "../../shell/theme";
+import { useWidth } from "../../shell/useWidth";
 import {
   DASH,
   barGrowth,
@@ -26,7 +27,9 @@ import {
   Legend,
   Tooltip,
   YGrid,
+  YLabels,
   bounds,
+  fitHeight,
   frame,
   plotWidth,
   scale,
@@ -36,6 +39,26 @@ import {
 import { Banner, Card, Empty, Note, Segmented, Subhead, useMobile } from "./ui";
 import { Kpi, KpiGrid, bandTone } from "../../ui/Kpi";
 import type { Financials, Fund, Insiders, Valuation } from "./types";
+
+/** Where the layout reads as a phone: the page's own flag, or a card too
+ *  narrow for a gutter of axis labels whichever the viewport says. */
+const NARROW = 480;
+
+/** The width these charts draw at before layout has measured them. */
+const FALLBACK = 760;
+
+/**
+ * Every how-many-th label to print so none overprint: the longest label's
+ * rough width (11px text, ~6.5 a character) over the room each one has.
+ * Derived from the real band, so a chart is as dense as it can afford at
+ * 330px and at 1400px alike.
+ */
+function stride(count: number, band: number, longest: number): number {
+  return Math.max(1, Math.min(count, Math.ceil((longest * 6.5 + 10) / band)));
+}
+
+/** An axis label: `compact`, except that a zero is "0", not "0.00". */
+const axisCompact = (value: number) => (value === 0 ? "0" : compact(value));
 
 // ------------------------------------------------------------- results chart
 
@@ -55,6 +78,8 @@ function Annual({ data }: { data: Financials }) {
   const mobile = useMobile();
   const colors = palette();
   const [hover, setHover] = useState<number | null>(null);
+  const [node, measured] = useWidth(FALLBACK);
+  const narrow = mobile || measured < NARROW;
 
   const years = data.annual.map((row) => row.year);
   const projection = data.projection.filter(
@@ -109,10 +134,14 @@ function Annual({ data }: { data: Financials }) {
       : []),
   ];
 
+  // Drawn at the real width, one unit a pixel. Narrow, the money axis moves
+  // inside the plot (`YGrid inside`) so the gutter shrinks to nothing; the EPS
+  // axis stays on the right, where its few labels need ~40.
   const box = frame({
-    height: mobile ? 260 : 320,
-    left: 52,
-    right: epsPoints.length ? 46 : 16,
+    width: measured,
+    height: fitHeight(measured, 320, 240),
+    left: narrow ? 8 : 52,
+    right: epsPoints.length ? (narrow ? 40 : 46) : 16,
     bottom: 30,
     top: 24,
   });
@@ -130,7 +159,13 @@ function Annual({ data }: { data: Financials }) {
 
   const band = plotWidth(box) / Math.max(1, periods.length);
   const xOf = (index: number) => box.left + (index + 0.5) * band;
-  const width = Math.min(34, (band * 0.7) / Math.max(1, bars.length));
+  // Capped so a handful of years on a wide card stay bars, not slabs.
+  const width = Math.min(narrow ? 34 : 48, (band * 0.7) / Math.max(1, bars.length));
+  const every = stride(
+    periods.length,
+    band,
+    Math.max(1, ...periods.map((period) => period.length)),
+  );
 
   const kindOf = (index: number): string => {
     const row = projection[index - years.length];
@@ -159,7 +194,7 @@ function Annual({ data }: { data: Financials }) {
   }
 
   return (
-    <div className="tk-plot">
+    <div className="tk-plot" ref={node}>
       <Chart
         frame={box}
         label={t("ticker.chart_annual_title")}
@@ -195,7 +230,14 @@ function Annual({ data }: { data: Financials }) {
           </pattern>
         </defs>
 
-        <YGrid frame={box} lo={left.lo} hi={left.hi} format={(v) => compact(v)} />
+        <YGrid
+          frame={box}
+          lo={left.lo}
+          hi={left.hi}
+          format={axisCompact}
+          count={narrow ? 3 : 4}
+          inside={narrow}
+        />
         {/* The zero rule: a loss below the axis has to be visibly below it. */}
         <line
           x1={box.left}
@@ -227,7 +269,7 @@ function Annual({ data }: { data: Financials }) {
                   opacity={forecast ? 0.75 : 1}
                   stroke={forecast ? series.color : "none"}
                 />
-                {label && !mobile ? (
+                {label && !narrow ? (
                   <text
                     className="tk-bar-label"
                     x={x + Math.max(1, width - 2) / 2}
@@ -284,7 +326,7 @@ function Annual({ data }: { data: Financials }) {
             nobody can read, which is the thing Plotly's `yaxis2` was doing. */}
         {yEps && epsRange ? (
           <g className="tk-grid tk-grid-right">
-            {ticks(epsRange.lo, epsRange.hi, 3).map((value) => (
+            {ticks(epsRange.lo, epsRange.hi, narrow ? 2 : 3).map((value) => (
               <text
                 key={`eps-${value}`}
                 x={box.width - box.right + 8}
@@ -301,12 +343,22 @@ function Annual({ data }: { data: Financials }) {
         ) : null}
 
         <g className="tk-xlabels">
-          {periods.map((period, index) => (
-            <text key={period} x={xOf(index)} y={box.height - 8} textAnchor="middle">
-              {period}
-            </text>
-          ))}
+          {periods.map((period, index) =>
+            index % every === 0 ? (
+              <text key={period} x={xOf(index)} y={box.height - 8} textAnchor="middle">
+                {period}
+              </text>
+            ) : null,
+          )}
         </g>
+        <YLabels
+          frame={box}
+          lo={left.lo}
+          hi={left.hi}
+          format={axisCompact}
+          count={narrow ? 3 : 4}
+          inside={narrow}
+        />
       </Chart>
 
       {hover !== null && periods[hover] ? (
@@ -393,18 +445,30 @@ function Quarterly({ data }: { data: Financials }) {
   const mobile = useMobile();
   const colors = palette();
   const [hover, setHover] = useState<number | null>(null);
+  const [node, measured] = useWidth(FALLBACK);
+  const narrow = mobile || measured < NARROW;
   const rows = data.quarterly_eps;
   const values = rows.map((row) => row.eps);
-  const box = frame({ height: mobile ? 240 : 280, bottom: 30 });
+  const box = frame({
+    width: measured,
+    height: fitHeight(measured, 280, 230),
+    left: narrow ? 8 : 52,
+    bottom: 30,
+  });
   const range = bounds([values], { zero: true });
   if (!range) return null;
   const y = scale(range.lo, range.hi, box.height - box.bottom, box.top);
   const band = plotWidth(box) / Math.max(1, rows.length);
   const xOf = (index: number) => box.left + (index + 0.5) * band;
+  const every = stride(
+    rows.length,
+    band,
+    Math.max(1, ...rows.map((row) => row.period.length)),
+  );
   const point = hover === null ? null : values[hover];
 
   return (
-    <div className="tk-plot">
+    <div className="tk-plot" ref={node}>
       <Chart
         frame={box}
         label={t("ticker.chart_quarterly_title")}
@@ -415,7 +479,14 @@ function Quarterly({ data }: { data: Financials }) {
         }
         onLeave={() => setHover(null)}
       >
-        <YGrid frame={box} lo={range.lo} hi={range.hi} format={(v) => v.toFixed(2)} />
+        <YGrid
+          frame={box}
+          lo={range.lo}
+          hi={range.hi}
+          format={(v) => v.toFixed(2)}
+          count={narrow ? 3 : 4}
+          inside={narrow}
+        />
         {runs(values).map((run) => (
           <polyline
             key={`q-${run[0]}`}
@@ -428,7 +499,7 @@ function Quarterly({ data }: { data: Financials }) {
         ))}
         <g className="tk-xlabels">
           {rows.map((row, index) =>
-            index % Math.max(1, Math.ceil(rows.length / (mobile ? 4 : 8))) === 0 ? (
+            index % every === 0 ? (
               <text
                 key={row.period}
                 x={xOf(index)}
@@ -440,6 +511,14 @@ function Quarterly({ data }: { data: Financials }) {
             ) : null,
           )}
         </g>
+        <YLabels
+          frame={box}
+          lo={range.lo}
+          hi={range.hi}
+          format={(v) => v.toFixed(2)}
+          count={narrow ? 3 : 4}
+          inside={narrow}
+        />
       </Chart>
       {hover !== null && rows[hover] ? (
         <Tooltip
@@ -509,6 +588,10 @@ export function ValuationChart({
   const colors = palette();
   const [range, setRange] = useState("5y");
   const [hover, setHover] = useState<number | null>(null);
+  // On a wrapper that is always there: the chart itself comes and goes with
+  // the range, and the width is measured once, on mount.
+  const [node, measured] = useWidth(FALLBACK);
+  const narrow = mobile || measured < NARROW;
 
   const window =
     data.windows.find((one) => one.window === range) ??
@@ -557,7 +640,12 @@ export function ValuationChart({
       : 0;
 
   const values = kept.map((row) => row.value);
-  const box = frame({ height: mobile ? 220 : 260, bottom: 30 });
+  const box = frame({
+    width: measured,
+    height: fitHeight(measured, 260, 230),
+    left: narrow ? 8 : 52,
+    bottom: 30,
+  });
   const span = bounds([values, window.mean === null ? [] : [window.mean]]);
   const y = span ? scale(span.lo, span.hi, box.height - box.bottom, box.top) : null;
   const band_ = plotWidth(box) / Math.max(1, kept.length);
@@ -619,94 +707,115 @@ export function ValuationChart({
         </Banner>
       ) : null}
 
-      <Subhead>{t("ticker.chart_pe_title")}</Subhead>
-      {span && y && kept.length > 1 ? (
-        <div className="tk-plot">
-          <Chart
-            frame={box}
-            label={t("ticker.chart_pe_title")}
-            onPointer={(x) =>
-              setHover(
-                Math.max(
-                  0,
-                  Math.min(kept.length - 1, Math.floor((x - box.left) / band_)),
-                ),
-              )
-            }
-            onLeave={() => setHover(null)}
-          >
-            <YGrid frame={box} lo={span.lo} hi={span.hi} format={(v) => v.toFixed(0)} />
-            {window.mean !== null ? (
-              <line
-                className="tk-event"
-                x1={box.left}
-                x2={box.width - box.right}
-                y1={y(window.mean)}
-                y2={y(window.mean)}
-                stroke={colors.textMuted}
-              />
-            ) : null}
-            {runs(values).map((run) => (
-              <polyline
-                key={`pe-${run[0]}`}
-                className="tk-line"
-                points={run.map((i) => `${xOf(i)},${y(values[i] as number)}`).join(" ")}
-                stroke={colors.brandAccent}
-                strokeWidth={1.8}
-              />
-            ))}
-            {hover !== null ? (
-              <line
-                className="tk-cross"
-                x1={xOf(hover)}
-                x2={xOf(hover)}
-                y1={box.top}
-                y2={box.height - box.bottom}
-              />
-            ) : null}
-            <g className="tk-xlabels">
-              {[0, Math.floor(kept.length / 2), kept.length - 1].map((index) => {
-                const row = kept[index];
-                if (!row) return null;
-                return (
-                  <text
-                    key={`x-${index}`}
-                    x={Math.min(
-                      box.width - box.right - 24,
-                      Math.max(box.left + 24, xOf(index)),
-                    )}
-                    y={box.height - 8}
-                    textAnchor="middle"
-                  >
-                    {row.day.slice(0, 7)}
-                  </text>
-                );
-              })}
-            </g>
-          </Chart>
-          {hover !== null && kept[hover] ? (
-            <Tooltip
+      <div ref={node}>
+        <Subhead>{t("ticker.chart_pe_title")}</Subhead>
+        {span && y && kept.length > 1 ? (
+          <div className="tk-plot">
+            <Chart
               frame={box}
-              x={xOf(hover)}
-              title={kept[hover]?.day.slice(0, 10) ?? ""}
-              lines={[
-                {
-                  text: `P/E ${known(values[hover]) ? (values[hover] as number).toFixed(1) : DASH}`,
-                },
-                ...(window.mean === null
-                  ? []
-                  : [
-                      {
-                        text: t("ticker.pe_avg_line", { avg: window.mean.toFixed(1) }),
-                      },
-                    ]),
-              ]}
-            />
-          ) : null}
-        </div>
-      ) : (
-        <Empty>{t("ticker.pe_insufficient")}</Empty>
-      )}
+              label={t("ticker.chart_pe_title")}
+              onPointer={(x) =>
+                setHover(
+                  Math.max(
+                    0,
+                    Math.min(kept.length - 1, Math.floor((x - box.left) / band_)),
+                  ),
+                )
+              }
+              onLeave={() => setHover(null)}
+            >
+              <YGrid
+                frame={box}
+                lo={span.lo}
+                hi={span.hi}
+                format={(v) => v.toFixed(0)}
+                count={narrow ? 3 : 4}
+                inside={narrow}
+              />
+              {window.mean !== null ? (
+                <line
+                  className="tk-event"
+                  x1={box.left}
+                  x2={box.width - box.right}
+                  y1={y(window.mean)}
+                  y2={y(window.mean)}
+                  stroke={colors.textMuted}
+                />
+              ) : null}
+              {runs(values).map((run) => (
+                <polyline
+                  key={`pe-${run[0]}`}
+                  className="tk-line"
+                  points={run
+                    .map((i) => `${xOf(i)},${y(values[i] as number)}`)
+                    .join(" ")}
+                  stroke={colors.brandAccent}
+                  strokeWidth={1.8}
+                />
+              ))}
+              {hover !== null ? (
+                <line
+                  className="tk-cross"
+                  x1={xOf(hover)}
+                  x2={xOf(hover)}
+                  y1={box.top}
+                  y2={box.height - box.bottom}
+                />
+              ) : null}
+              <g className="tk-xlabels">
+                {[0, Math.floor(kept.length / 2), kept.length - 1].map((index) => {
+                  const row = kept[index];
+                  if (!row) return null;
+                  return (
+                    <text
+                      key={`x-${index}`}
+                      x={Math.min(
+                        box.width - box.right - 24,
+                        Math.max(box.left + 24, xOf(index)),
+                      )}
+                      y={box.height - 8}
+                      textAnchor="middle"
+                    >
+                      {row.day.slice(0, 7)}
+                    </text>
+                  );
+                })}
+              </g>
+              <YLabels
+                frame={box}
+                lo={span.lo}
+                hi={span.hi}
+                format={(v) => v.toFixed(0)}
+                count={narrow ? 3 : 4}
+                inside={narrow}
+              />
+            </Chart>
+            {hover !== null && kept[hover] ? (
+              <Tooltip
+                frame={box}
+                x={xOf(hover)}
+                title={kept[hover]?.day.slice(0, 10) ?? ""}
+                lines={[
+                  {
+                    text: `P/E ${known(values[hover]) ? (values[hover] as number).toFixed(1) : DASH}`,
+                  },
+                  ...(window.mean === null
+                    ? []
+                    : [
+                        {
+                          text: t("ticker.pe_avg_line", {
+                            avg: window.mean.toFixed(1),
+                          }),
+                        },
+                      ]),
+                ]}
+              />
+            ) : null}
+          </div>
+        ) : (
+          <Empty>{t("ticker.pe_insufficient")}</Empty>
+        )}
+      </div>
       {/* Which filing feed backed the reconstruction. Not a footnote. */}
       <Note>{t("ticker.pe_caption", { source: data.source })}</Note>
     </Card>
@@ -762,6 +871,8 @@ export function InsiderFlow({ insiders }: { insiders: Insiders }) {
   const mobile = useMobile();
   const colors = palette();
   const [hover, setHover] = useState<number | null>(null);
+  const [node, measured] = useWidth(FALLBACK);
+  const narrow = mobile || measured < NARROW;
 
   const months = useMemo(() => {
     const cells = new Map<string, { buy: number; sell: number }>();
@@ -779,7 +890,13 @@ export function InsiderFlow({ insiders }: { insiders: Insiders }) {
 
   if (months.length === 0) return null;
   const ccy = insiders.trades[0]?.currency ?? "";
-  const box = frame({ height: mobile ? 200 : 230, bottom: 28, top: 14 });
+  const box = frame({
+    width: measured,
+    height: fitHeight(measured, 230, 210),
+    left: narrow ? 8 : 52,
+    bottom: 28,
+    top: 14,
+  });
   const range = bounds([months.map(([, cell]) => Math.max(cell.buy, cell.sell))], {
     zero: true,
     pad: 0.08,
@@ -788,13 +905,14 @@ export function InsiderFlow({ insiders }: { insiders: Insiders }) {
   const y = scale(range.lo, range.hi, box.height - box.bottom, box.top);
   const band = plotWidth(box) / months.length;
   const xOf = (index: number) => box.left + (index + 0.5) * band;
-  const width = Math.min(18, (band * 0.7) / 2);
+  const width = Math.min(narrow ? 16 : 26, (band * 0.7) / 2);
+  const every = stride(months.length, band, 7);
   const row = hover === null ? null : months[hover];
 
   return (
     <>
       <Subhead>{t("ticker.chart_insider_title", { ccy })}</Subhead>
-      <div className="tk-plot">
+      <div className="tk-plot" ref={node}>
         <Chart
           frame={box}
           label={t("ticker.chart_insider_title", { ccy })}
@@ -812,8 +930,9 @@ export function InsiderFlow({ insiders }: { insiders: Insiders }) {
             frame={box}
             lo={range.lo}
             hi={range.hi}
-            format={(v) => compact(v)}
+            format={axisCompact}
             count={3}
+            inside={narrow}
           />
           {months.map(([month, cell], index) => (
             <g key={month}>
@@ -835,13 +954,21 @@ export function InsiderFlow({ insiders }: { insiders: Insiders }) {
           ))}
           <g className="tk-xlabels">
             {months.map(([month], index) =>
-              index % Math.max(1, Math.ceil(months.length / (mobile ? 3 : 8))) === 0 ? (
+              index % every === 0 ? (
                 <text key={month} x={xOf(index)} y={box.height - 8} textAnchor="middle">
                   {month}
                 </text>
               ) : null,
             )}
           </g>
+          <YLabels
+            frame={box}
+            lo={range.lo}
+            hi={range.hi}
+            format={axisCompact}
+            count={3}
+            inside={narrow}
+          />
         </Chart>
         {row ? (
           <Tooltip

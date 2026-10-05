@@ -15,6 +15,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { TaxPeriod } from "./api";
 import {
+  AxisLabel,
   BookAndRates,
   BookHistory,
   Donut,
@@ -22,6 +23,7 @@ import {
   PeriodBars,
   ReturnLines,
   bookRatesTip,
+  bookSpanTip,
   bookTip,
   correlationBand,
   correlationStats,
@@ -29,6 +31,7 @@ import {
   lineMoney,
   dateTicks,
   niceTicks,
+  plotHeightFor,
   sliceTip,
   type SliceDetail,
 } from "./charts";
@@ -57,7 +60,13 @@ describe("BookHistory", () => {
     pnl_pct: (i * 10) / 1000,
   }));
 
-  const labels = { injected: "Injected", profit: "Profit", loss: "Loss", pnl: "P/L" };
+  const labels = {
+    injected: "Injected",
+    value: "Value",
+    profit: "Profit",
+    loss: "Loss",
+    pnl: "P/L",
+  };
   const money = (v: number, signed?: boolean) => `${signed && v > 0 ? "+" : ""}€${v}`;
   const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 
@@ -72,6 +81,20 @@ describe("BookHistory", () => {
     expect(bookTip({ value: 900, injected: 1000 }, labels, money, pct)[0]?.label).toBe(
       "Loss",
     );
+  });
+
+  it("splits a span's change into money put in and what the market did", () => {
+    const rows = bookSpanTip(
+      { value: 1000, injected: 1000 },
+      { value: 1600, injected: 1500 },
+      labels,
+      money,
+    );
+    expect(rows.map((row) => `${row.label} ${row.value}`)).toEqual([
+      "Value +€600",
+      "Injected +€500",
+      "P/L +€100",
+    ]);
   });
 
   it("draws the value line in two colours across a crossover", () => {
@@ -102,6 +125,7 @@ describe("BookHistory", () => {
         points={points}
         labels={{
           injected: "Injected",
+          value: "Value",
           profit: "Profit",
           loss: "Loss",
           pnl: "P/L",
@@ -133,7 +157,13 @@ describe("BookAndRates", () => {
           { label: "Your money", points: rate },
           { label: "Your picks", points: [0, 0.1, -0.05, 0.2], dashed: true },
         ]}
-        labels={{ invested: "Injected", profit: "Profit", loss: "Loss", gain: "Gain" }}
+        labels={{
+          invested: "Injected",
+          value: "Value",
+          profit: "Profit",
+          loss: "Loss",
+          gain: "Gain",
+        }}
         money={(v) => `€${v}`}
         format={(v) => `${(v * 100).toFixed(0)}%`}
         formatDate={(iso) => iso}
@@ -164,7 +194,13 @@ describe("BookAndRates", () => {
         points={points}
         series={[{ label: "Your money", points: [null, null, null, null] }]}
         bars={{ label: "That month", points: [0.02, -0.03, null, 0.05] }}
-        labels={{ invested: "Injected", profit: "Profit", loss: "Loss", gain: "Gain" }}
+        labels={{
+          invested: "Injected",
+          value: "Value",
+          profit: "Profit",
+          loss: "Loss",
+          gain: "Gain",
+        }}
         money={(v) => `€${v}`}
         format={(v) => `${(v * 100).toFixed(0)}%`}
         formatDate={(iso) => iso}
@@ -241,7 +277,13 @@ describe("BookAndRates", () => {
       <BookAndRates
         points={points.slice(0, 1)}
         series={[]}
-        labels={{ invested: "Injected", profit: "Profit", loss: "Loss", gain: "Gain" }}
+        labels={{
+          invested: "Injected",
+          value: "Value",
+          profit: "Profit",
+          loss: "Loss",
+          gain: "Gain",
+        }}
         money={(v) => `€${v}`}
         format={(v) => `${v}`}
         formatDate={(iso) => iso}
@@ -525,5 +567,63 @@ describe("ReturnLines", () => {
     const out = render("Return vs benchmarks");
     expect(out).toMatch(/<svg[^>]*role="img"[^>]*aria-label="Return vs benchmarks"/);
     expect(out).toMatch(/<svg[^>]*tabindex="0"/);
+  });
+});
+
+describe("narrow plots", () => {
+  it("takes a squarer shape as the plot narrows, and the desktop's past 480", () => {
+    // A 350px phone: four fifths of the width, not the desktop's 300 and not
+    // the half-height strip a scaled viewBox gave.
+    expect(plotHeightFor(350, 300)).toBe(280);
+    // Never under 240, never over the desktop height.
+    expect(plotHeightFor(240, 300)).toBe(240);
+    expect(plotHeightFor(720, 300)).toBe(300);
+    expect(plotHeightFor(720, 240)).toBe(240);
+  });
+
+  const label = (props: Partial<Parameters<typeof AxisLabel>[0]>) =>
+    renderToStaticMarkup(
+      <svg>
+        <AxisLabel text="10k" at={100} left={8} right={342} {...props} />
+      </svg>,
+    );
+
+  it("centres a gutter label on its line, right-aligned", () => {
+    expect(label({ left: 64 })).toMatch(/x="58" y="104"[^>]*text-anchor="end"/);
+  });
+
+  it("sits an inside label on its line, haloed, and starts it at the plot's edge", () => {
+    const out = label({ inside: true });
+    expect(out).toMatch(/x="12" y="96"[^>]*text-anchor="start"[^>]*class="pf-halo"/);
+    // The rates' side hangs from the right edge instead.
+    expect(label({ inside: true, side: "right" })).toMatch(
+      /x="338" y="96"[^>]*text-anchor="end"/,
+    );
+  });
+
+  it("drops a label on the top edge under its line rather than past the card", () => {
+    expect(label({ inside: true, at: 8, top: 8 })).toMatch(/y="20"/);
+  });
+
+  it("keeps every chart's legend in a scroller and its plot a scrub surface", () => {
+    const out = renderToStaticMarkup(
+      <PeriodBars
+        periods={[
+          {
+            period: "2024",
+            realized_gain: 1,
+            deductible_loss: 0,
+            recovered_loss: 0,
+            net_taxable: 1,
+          } as unknown as TaxPeriod,
+        ]}
+        labels={{ gains: "Gains", losses: "Losses", recovered: "Rec", net: "Net" }}
+        money={(v) => `€${v}`}
+      />,
+    );
+    expect(out).toContain('class="pf-legend-strip ag-fade-x"');
+    expect(out).toContain('class="pf-plot pf-scrub"');
+    // Drawn 1:1 at the measured width (the fallback, here): no scaled frame.
+    expect(out).toContain('viewBox="0 0 720 240"');
   });
 });

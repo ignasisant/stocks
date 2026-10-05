@@ -15,6 +15,7 @@
 
 import { useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
+import { Help } from "../../ui/Kpi";
 import { DownBody, YAHOO } from "./Down";
 import { Spark } from "./Spark";
 import {
@@ -406,17 +407,13 @@ function Row({
     <div className={row.stale ? "sn-trend-row sn-dim" : "sn-trend-row"}>
       <div className="sn-trend-lc">
         <span className="sn-trend-n">
-          <span className="sn-trend-l" title={meta.tip ?? meta.label}>
+          <span className="sn-trend-l" title={meta.label}>
             {meta.label}
           </span>
           {/* The dot only appears where there is something to say. A row whose
               name explains itself would gain nothing from one, and a dot on
               every row teaches the reader to stop looking. */}
-          {meta.tip && (
-            <span className="sn-trend-i" tabIndex={0} data-tip={meta.tip}>
-              i
-            </span>
-          )}
+          {meta.tip && <Help text={meta.tip} />}
         </span>
         {note && <span className="sn-trend-sub">{note}</span>}
       </div>

@@ -15,6 +15,7 @@
 
 import {
   Fragment,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -26,6 +27,8 @@ import {
 import { createPortal } from "react-dom";
 import { token } from "../../shell/theme";
 import { TickerCell } from "../../shell/tickers";
+import { useTabStrip } from "../../shell/useTabStrip";
+import { useSpan } from "../../shell/useSpan";
 import { useTouchHold } from "../../shell/useTouchHold";
 import { useWidth } from "../../shell/useWidth";
 import type { TaxPeriod } from "./api";
@@ -66,6 +69,65 @@ export function niceTicks(low: number, high: number, count = 4): number[] {
   return out;
 }
 
+/** Under this measured width a plot is a phone's: no gutters, labels inside. */
+const NARROW = 480;
+
+/**
+ * The height a chart draws at, in pixels now that a unit is one.
+ *
+ * Drawn in a fixed viewBox, a chart shrank with its card — a phone's plot came
+ * out at half its desktop height, a strip. At 1:1 the desktop height would be
+ * all of a 360px screen, so a narrow plot takes a squarer shape instead: four
+ * fifths of its width, no shorter than `min` and never past `max`.
+ */
+export function plotHeightFor(width: number, max: number, min = 240): number {
+  return Math.round(Math.min(max, Math.max(min, width * 0.8)));
+}
+
+/** One value-axis label. Beside the plot it sits in the gutter, vertically
+    centred on its gridline; `inside`, on a narrow plot, it sits on the line
+    instead — above it, in the plot's own space, haloed in the card's surface
+    (`pf-halo`) so a line passing behind it stays readable. */
+export function AxisLabel({
+  text,
+  at,
+  left,
+  right,
+  side = "left",
+  inside = false,
+  top = 0,
+}: {
+  text: string;
+  /** The gridline's y. */
+  at: number;
+  left: number;
+  right: number;
+  side?: "left" | "right";
+  inside?: boolean;
+  /** The plot's top edge, below which a label may not rise. */
+  top?: number;
+}) {
+  const edge = side === "left" ? left : right;
+  // A tick on the top edge would put its label over the card's padding: it
+  // hangs under that line instead.
+  const y = inside ? (at - 4 < top + 8 ? at + 12 : at - 4) : at + 4;
+  const x = inside
+    ? edge + (side === "left" ? 4 : -4)
+    : edge + (side === "left" ? -6 : 6);
+  return (
+    <text
+      x={x}
+      y={y}
+      fill={token("text-muted")}
+      fontSize="11"
+      textAnchor={(side === "left") === inside ? "start" : "end"}
+      className={inside ? "pf-halo" : undefined}
+    >
+      {text}
+    </text>
+  );
+}
+
 /** The value axis: faint gridlines with their labels, right-aligned in the
     left gutter — or left-aligned in the right one, for a chart whose second
     floor reads off that side. */
@@ -76,6 +138,8 @@ function ValueAxis({
   right,
   format,
   side = "left",
+  inside = false,
+  top,
 }: {
   ticks: number[];
   y: (value: number) => number;
@@ -83,6 +147,8 @@ function ValueAxis({
   right: number;
   format: (value: number) => string;
   side?: "left" | "right";
+  inside?: boolean;
+  top?: number;
 }) {
   return (
     <g>
@@ -96,18 +162,30 @@ function ValueAxis({
             stroke={token("rule-soft")}
             strokeWidth="1"
           />
-          <text
-            x={side === "left" ? left - 6 : right + 6}
-            y={y(tick) + 4}
-            fill={token("text-muted")}
-            fontSize="11"
-            textAnchor={side === "left" ? "end" : "start"}
-          >
-            {format(tick)}
-          </text>
+          <AxisLabel
+            text={format(tick)}
+            at={y(tick)}
+            left={left}
+            right={right}
+            side={side}
+            inside={inside}
+            top={top}
+          />
         </g>
       ))}
     </g>
+  );
+}
+
+/** A chart's legend: one row that scrolls sideways on a phone, with a fade on
+    the edge that still has entries past it, where it used to wrap into a
+    block that took the plot's height. */
+function Legend({ children }: { children: ReactNode }) {
+  const strip = useTabStrip("");
+  return (
+    <div className="pf-legend-strip ag-fade-x" ref={strip}>
+      <ul className="pf-legend-inline">{children}</ul>
+    </div>
   );
 }
 
@@ -792,7 +870,12 @@ export function Heatmap({
   );
 }
 
-/** The reading beside a cell: right of it, else left, kept on screen. */
+/**
+ * The reading beside a cell: right of it, else left, kept on screen. Where
+ * nothing hovers a finger covers the cell and what is beside it, so the box
+ * sits above the cell instead (below when there is no room), as the other
+ * charts lift theirs.
+ */
 function HeatTip({ rect, children }: { rect: DOMRect; children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -801,10 +884,16 @@ function HeatTip({ rect, children }: { rect: DOMRect; children: ReactNode }) {
     const { width, height } = tip.getBoundingClientRect();
     const gap = 10;
     const room = window.innerWidth;
+    const touch = !!window.matchMedia?.("(hover: none)").matches;
     let left = rect.right + gap;
-    if (left + width > room - 8) left = rect.left - gap - width;
+    if (touch) left = rect.left + rect.width / 2 - width / 2;
+    else if (left + width > room - 8) left = rect.left - gap - width;
     left = Math.max(8, Math.min(left, room - width - 8));
     let top = rect.top + rect.height / 2 - height / 2;
+    if (touch) {
+      top = rect.top - gap - height;
+      if (top < 8) top = rect.bottom + gap;
+    }
     top = Math.max(8, Math.min(top, window.innerHeight - height - 8));
     tip.style.left = `${left}px`;
     tip.style.top = `${top}px`;
@@ -872,15 +961,7 @@ function HeatLegend({
  * a tap opens the box on a phone, and with `onPick` a click hands the period
  * to whatever reads it in full, `picked` marking the one it shows.
  */
-export function PeriodBars({
-  periods,
-  labels,
-  money,
-  axisMoney,
-  detail,
-  onPick,
-  picked,
-}: {
+type PeriodBarsProps = {
   periods: TaxPeriod[];
   labels: { gains: string; losses: string; recovered: string; net: string };
   money: (value: number) => string;
@@ -890,12 +971,28 @@ export function PeriodBars({
   detail?: (period: TaxPeriod) => { rows?: TipRow[]; body?: ReactNode };
   onPick?: (period: TaxPeriod) => void;
   picked?: string;
-}) {
+};
+
+export function PeriodBars(props: PeriodBarsProps) {
+  // Split so the measured frame exists whenever the chart does: a hook that
+  // measures a node mounted later (an empty list that fills) never sees it.
+  return props.periods.length ? <PeriodBarsPlot {...props} /> : null;
+}
+
+function PeriodBarsPlot({
+  periods,
+  labels,
+  money,
+  axisMoney,
+  detail,
+  onPick,
+  picked,
+}: PeriodBarsProps) {
   const gutter = axisMoney ?? money;
   const [hover, setHover] = useState<number | null>(null);
+  const [frame, width] = useWidth(BARS.fallback);
   const svg = useRef<SVGSVGElement>(null);
   useTouchHold(svg, hover !== null, setHover);
-  if (!periods.length) return null;
 
   const up = token("candle-up");
   const down = token("candle-down");
@@ -915,9 +1012,9 @@ export function PeriodBars({
   const maxDown = Math.max(...bottoms, 0);
   const span = maxUp + maxDown || 1;
 
-  const width = 720;
-  const height = 240;
-  const left = PLOT.left;
+  const narrow = width < NARROW;
+  const height = plotHeightFor(width, BARS.height);
+  const left = narrow ? NARROW_PAD : PLOT.left;
   const top = 8;
   const footer = 22;
   const plotW = width - left - PLOT.right;
@@ -928,8 +1025,12 @@ export function PeriodBars({
   const slot = plotW / periods.length;
   const bar = Math.min(46, slot * 0.6);
   // Thin the labels to what the width can print without two of them touching
-  // — a monthly run is easily sixty periods long.
-  const step = Math.max(1, Math.ceil(periods.length / 14));
+  // — a monthly run is easily sixty periods long. Fourteen across a desktop
+  // plot; fewer as the plot narrows.
+  const step = Math.max(
+    1,
+    Math.ceil(periods.length / Math.max(2, Math.min(14, Math.floor(plotW / 46)))),
+  );
 
   const legend: [string, string][] = [
     [labels.gains, up],
@@ -955,15 +1056,15 @@ export function PeriodBars({
 
   return (
     <div className="pf-chart">
-      <ul className="pf-legend-inline">
+      <Legend>
         {legend.map(([label, color]) => (
           <li className="pf-legend-row" key={label}>
             <span className="pf-swatch" style={{ background: color }} />
             <span>{label}</span>
           </li>
         ))}
-      </ul>
-      <div className="pf-plot">
+      </Legend>
+      <div className="pf-plot pf-scrub" ref={frame}>
         <svg
           ref={svg}
           viewBox={`0 0 ${width} ${height}`}
@@ -983,15 +1084,24 @@ export function PeriodBars({
           }}
         >
           <ValueAxis
-            ticks={niceTicks(-maxDown, maxUp).filter((tick) => tick !== 0)}
+            ticks={niceTicks(-maxDown, maxUp, narrow ? 3 : 4).filter(
+              (tick) => tick !== 0,
+            )}
             y={y}
             left={left}
             right={width - PLOT.right}
             format={gutter}
+            inside={narrow}
+            top={top}
           />
-          <text x={left - 6} y={zero + 4} fill={text} fontSize="11" textAnchor="end">
-            {gutter(0)}
-          </text>
+          <AxisLabel
+            text={gutter(0)}
+            at={zero}
+            left={left}
+            right={width - PLOT.right}
+            inside={narrow}
+            top={top}
+          />
           {/* The period read in full elsewhere keeps a faint slot, since a
               monthly axis prints only every few labels. */}
           {pickedAt < 0 || pickedAt === hover ? null : (
@@ -1053,12 +1163,15 @@ export function PeriodBars({
                 />
                 {index % step === 0 ? (
                   <text
-                    x={centre}
+                    x={centre < 24 ? 0 : width - centre < 24 ? width : centre}
                     y={height - 6}
                     fill={period.period === picked ? token("text-primary") : text}
                     fontSize="11"
                     fontWeight={period.period === picked ? 700 : undefined}
-                    textAnchor="middle"
+                    // A label past the frame's edge hangs inward instead.
+                    textAnchor={
+                      centre < 24 ? "start" : width - centre < 24 ? "end" : "middle"
+                    }
                   >
                     {period.period}
                   </text>
@@ -1151,8 +1264,17 @@ export function lineMoney(
   };
 }
 
-/** Where the plot sits inside the 720-wide viewBox; the left gutter holds the value axis. */
-const PLOT = { width: 720, height: 300, top: 8, right: 8, bottom: 24, left: 64 };
+/** Where a plot sits in its frame: the left gutter holds the value axis, and
+    `height` is the desktop one — a narrow plot is squarer (`plotHeightFor`).
+    The frame is the measured width, so every figure here is in pixels. */
+const PLOT = { height: 300, top: 8, right: 8, bottom: 24, left: 64 };
+
+/** The margin of a narrow plot, whose value labels sit inside it. */
+const NARROW_PAD = 8;
+
+/** The realized-result bars: the width a render without layout sees, and
+    their desktop height. */
+const BARS = { fallback: 720, height: 240 };
 
 /** The return chart's margins; its width is measured and its left gutter
     sized to the labels it holds. */
@@ -1161,7 +1283,9 @@ const RETURN = { fallback: 720, top: 10, right: 10, bottom: 24 };
 /** Tall enough on a phone to follow a crossing, never a poster across a
     desktop row. */
 const returnHeight = (width: number) =>
-  Math.round(Math.min(380, Math.max(220, width * 0.4)));
+  width < NARROW
+    ? plotHeightFor(width, 380)
+    : Math.round(Math.min(380, Math.max(220, width * 0.4)));
 
 /** The room 11px axis labels need — a digit is ~6.4px — plus their 6px gap. */
 const gutterFor = (labels: string[]) =>
@@ -1301,9 +1425,15 @@ export function ReturnLines({
 
   const height = returnHeight(width);
   const plotH = height - RETURN.top - RETURN.bottom;
-  const yTicks = niceTicks(low, high, Math.max(3, Math.min(6, Math.round(plotH / 56))));
-  const left = gutterFor([...yTicks, 0].map(tickFormat));
-  const right = width - RETURN.right;
+  const narrow = width < NARROW;
+  const yTicks = niceTicks(
+    low,
+    high,
+    Math.max(3, Math.min(narrow ? 4 : 6, Math.round(plotH / 56))),
+  );
+  // A narrow plot has no gutter: its value labels sit inside, on their lines.
+  const left = narrow ? NARROW_PAD : gutterFor([...yTicks, 0].map(tickFormat));
+  const right = width - (narrow ? NARROW_PAD : RETURN.right);
   const plotW = right - left;
   const x = (index: number) => left + (index / last) * plotW;
   const y = (value: number) => RETURN.top + (1 - (value - low) / span) * plotH;
@@ -1398,7 +1528,7 @@ export function ReturnLines({
 
   return (
     <div className="pf-chart">
-      <ul className="pf-legend-inline">
+      <Legend>
         {listed.map((one) => {
           const end = legendValues && !money ? lastValue(one.points) : null;
           const value = shown === null ? null : one.points[shown];
@@ -1452,8 +1582,8 @@ export function ReturnLines({
             <span>{band.label}</span>
           </li>
         ))}
-      </ul>
-      <div className="pf-plot" ref={frame}>
+      </Legend>
+      <div className="pf-plot pf-scrub" ref={frame}>
         <svg
           ref={svg}
           className="pf-return-plot"
@@ -1508,6 +1638,8 @@ export function ReturnLines({
             left={left}
             right={right}
             format={tickFormat}
+            inside={narrow}
+            top={RETURN.top}
           />
           <line
             x1={left}
@@ -1517,15 +1649,14 @@ export function ReturnLines({
             stroke={token("border")}
             strokeWidth="1"
           />
-          <text
-            x={left - 6}
-            y={y(0) + 4}
-            fill={token("text-muted")}
-            fontSize="11"
-            textAnchor="end"
-          >
-            {tickFormat(0)}
-          </text>
+          <AxisLabel
+            text={tickFormat(0)}
+            at={y(0)}
+            left={left}
+            right={right}
+            inside={narrow}
+            top={RETURN.top}
+          />
           {bands.map((band) =>
             areas(band).map((d, index) => (
               <path
@@ -1822,6 +1953,32 @@ export function bookTip(
 }
 
 /**
+ * What the history's box says between two days being compared: how much the
+ * value moved, how much of that was money put in or taken out, and the rest —
+ * what the market did to the book. Amounts only: a percentage over a span
+ * that money flowed through would read the deposits as returns.
+ */
+export function bookSpanTip(
+  from: { value: number; injected: number },
+  to: { value: number; injected: number },
+  labels: { value: string; injected: string; pnl: string },
+  money: (value: number, signed?: boolean) => string,
+): TipRow[] {
+  const moved = to.value - from.value;
+  const put = to.injected - from.injected;
+  const gain = moved - put;
+  return [
+    {
+      label: labels.value,
+      value: money(moved, true),
+      color: moved >= 0 ? token("up") : token("down"),
+    },
+    { label: labels.injected, value: money(put, true), color: token("text-muted") },
+    { label: labels.pnl, value: money(gain, true) },
+  ];
+}
+
+/**
  * Injected capital against market value, one point per day.
  *
  * A band runs between the two lines, green where the book is worth more than
@@ -1838,19 +1995,15 @@ export function bookTip(
  * them, since a €40k book's March wobble is invisible on an axis sized for its
  * whole life. Double-click, or the reset button, puts the window back. The
  * tooltip carries value, injected, and the P/L between them as an amount and a
- * percentage.
+ * percentage. Two fingers, or a secondary click with a mouse (`useSpan`),
+ * compare two days instead (`bookSpanTip`).
  */
-export function BookHistory({
-  points,
-  labels,
-  money,
-  axisMoney,
-  percent,
-  formatDate,
-}: {
+type BookHistoryProps = {
   points: BookPoint[];
   labels: {
     injected: string;
+    /** The value line on its own, for the change between two days. */
+    value: string;
     profit: string;
     loss: string;
     pnl: string;
@@ -1861,19 +2014,41 @@ export function BookHistory({
   axisMoney?: (value: number) => string;
   percent: (value: number) => string;
   formatDate: (iso: string) => string;
-}) {
-  const gutter = axisMoney ?? ((value: number) => money(value));
+};
+
+type BookDay = BookPoint & { injected: number; value: number };
+
+export function BookHistory({ points, ...rest }: BookHistoryProps) {
   // Both legs present or the day is not comparable: a value without its
-  // reference line cannot be shaded against anything.
+  // reference line cannot be shaded against anything. Split from the drawing
+  // so the measured frame exists whenever the chart does.
   const all = points.filter(
-    (point): point is BookPoint & { injected: number; value: number } =>
-      point.injected !== null && point.value !== null,
+    (point): point is BookDay => point.injected !== null && point.value !== null,
   );
+  return all.length < 2 ? null : <BookHistoryPlot all={all} {...rest} />;
+}
+
+function BookHistoryPlot({
+  all,
+  labels,
+  money,
+  axisMoney,
+  percent,
+  formatDate,
+}: Omit<BookHistoryProps, "points"> & { all: BookDay[] }) {
+  const gutter = axisMoney ?? ((value: number) => money(value));
+  const [frame, width] = useWidth(BARS.fallback);
   const [zoom, setZoom] = useState<{ from: number; to: number } | null>(null);
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
   const [hover, setHover] = useState<number | null>(null);
+  // Two visible days being compared (`useSpan`), in day order.
+  const [measure, setMeasure] = useState<{ from: number; to: number } | null>(null);
   const svg = useRef<SVGSVGElement>(null);
-  useTouchHold(svg, hover !== null, setHover);
+  const drop = useCallback(() => {
+    setHover(null);
+    setMeasure(null);
+  }, []);
+  useTouchHold(svg, hover !== null || measure !== null, drop);
   // A new window from the server is a new series: yesterday's zoom indexes
   // into days that are no longer the same days.
   const first = all[0]?.date;
@@ -1882,13 +2057,14 @@ export function BookHistory({
     setZoom(null);
     setDrag(null);
     setHover(null);
+    setMeasure(null);
   }, [first, last, all.length]);
 
-  if (all.length < 2) return null;
-
   const days = zoom ? all.slice(zoom.from, zoom.to + 1) : all;
-  const { width, height } = PLOT;
-  const plotW = width - PLOT.left - PLOT.right;
+  const narrow = width < NARROW;
+  const height = plotHeightFor(width, PLOT.height);
+  const left = narrow ? NARROW_PAD : PLOT.left;
+  const plotW = width - left - PLOT.right;
   const plotH = height - PLOT.top - PLOT.bottom;
 
   const values = days.flatMap((day) => [day.injected, day.value]);
@@ -1900,7 +2076,7 @@ export function BookHistory({
   const low = rawLow - pad;
   const high = rawHigh + pad;
   const span = high - low;
-  const x = (index: number) => PLOT.left + (index / (days.length - 1)) * plotW;
+  const x = (index: number) => left + (index / (days.length - 1)) * plotW;
   const y = (value: number) => PLOT.top + (1 - (value - low) / span) * plotH;
 
   const line = (pick: (day: (typeof days)[number]) => number) =>
@@ -1915,11 +2091,17 @@ export function BookHistory({
   const ticks = [0, Math.floor(days.length / 2), days.length - 1];
   const offsetOf = zoom ? zoom.from : 0;
 
-  /** Which visible day a pointer is over, from its position on the SVG. */
-  const dayAt = (event: PointerEvent<SVGSVGElement>) => {
-    const at = viewX(event, svg.current, width);
-    return at === null ? 0 : nearest(at, PLOT.left, plotW, days.length);
-  };
+  /** Where a pointer is on the SVG, in viewBox x. */
+  const xAt = (event: MouseEvent<SVGSVGElement>) =>
+    viewX(event, svg.current, width) ?? left;
+  /** Which visible day a viewBox x is over. */
+  const dayOf = (at: number) => nearest(at, left, plotW, days.length);
+  const spanned = useSpan((pair) => {
+    if (!pair) return setMeasure(null);
+    const [a, b] = pair.map(dayOf) as [number, number];
+    setHover(null);
+    setMeasure({ from: Math.min(a, b), to: Math.max(a, b) });
+  });
 
   const finish = () => {
     if (!drag) return;
@@ -1940,7 +2122,7 @@ export function BookHistory({
   return (
     <div className="pf-chart">
       <div className="pf-chart-head">
-        <ul className="pf-legend-inline">
+        <Legend>
           <li className="pf-legend-row">
             <span className="pf-swatch" style={{ background: token("text-muted") }} />
             <span>{labels.injected}</span>
@@ -1959,7 +2141,7 @@ export function BookHistory({
               <span>{labels.loss}</span>
             </li>
           ) : null}
-        </ul>
+        </Legend>
         {zoom ? (
           <button
             className="ag-btn pf-zoom-reset"
@@ -1970,7 +2152,7 @@ export function BookHistory({
           </button>
         ) : null}
       </div>
-      <div className="pf-plot">
+      <div className="pf-plot pf-scrub" ref={frame}>
         <svg
           ref={svg}
           viewBox={`0 0 ${width} ${height}`}
@@ -1978,7 +2160,8 @@ export function BookHistory({
           role="img"
           className="pf-zoomable"
           onPointerDown={(event) => {
-            const at = dayAt(event);
+            if (spanned.down(event, xAt(event))) return;
+            const at = dayOf(xAt(event));
             // A finger scrubs, it does not zoom: on a phone the drag that
             // drew a window was the only way to read a day, so every attempt
             // to read one ended zoomed into a sliver of it.
@@ -1990,25 +2173,34 @@ export function BookHistory({
             setDrag({ from: at, to: at });
           }}
           onPointerMove={(event) => {
-            const at = dayAt(event);
+            if (spanned.move(event, xAt(event))) return;
+            const at = dayOf(xAt(event));
             setHover(at);
             if (drag) setDrag({ ...drag, to: at });
           }}
-          onPointerUp={finish}
+          onPointerUp={(event) => {
+            if (spanned.up(event)) return;
+            finish();
+          }}
           // A finger lifting is a leave too: the day it read stays up until
           // the reader touches elsewhere (useTouchHold).
           onPointerLeave={(event) => {
+            spanned.leave(event);
             if (event.pointerType !== "touch") setHover(null);
             finish();
           }}
+          onPointerCancel={spanned.cancel}
+          onContextMenu={(event) => spanned.menu?.(event, xAt(event))}
           onDoubleClick={() => setZoom(null)}
         >
           <ValueAxis
-            ticks={niceTicks(low, high)}
+            ticks={niceTicks(low, high, narrow ? 3 : 4)}
             y={y}
-            left={PLOT.left}
+            left={left}
             right={width - PLOT.right}
             format={gutter}
+            inside={narrow}
+            top={PLOT.top}
           />
           {bands.map((band, index) => (
             <path
@@ -2033,7 +2225,28 @@ export function BookHistory({
               strokeWidth="2"
             />
           ))}
-          {hovered && hover !== null ? (
+          {measure ? (
+            <g className="pf-span" pointerEvents="none">
+              {measure.to > measure.from ? (
+                <rect
+                  x={x(measure.from)}
+                  y={PLOT.top}
+                  width={x(measure.to) - x(measure.from)}
+                  height={plotH}
+                />
+              ) : null}
+              {[measure.from, measure.to].map((index, at) => (
+                <line
+                  key={at}
+                  x1={x(index)}
+                  x2={x(index)}
+                  y1={PLOT.top}
+                  y2={PLOT.top + plotH}
+                />
+              ))}
+            </g>
+          ) : null}
+          {hovered && hover !== null && !measure ? (
             <g pointerEvents="none">
               <line
                 x1={x(hover)}
@@ -2065,7 +2278,7 @@ export function BookHistory({
           {ticks.map((index) => (
             <text
               key={index}
-              x={Math.min(Math.max(x(index), PLOT.left + 24), width - 24)}
+              x={Math.min(Math.max(x(index), left + 24), width - 24)}
               y={height - 6}
               textAnchor="middle"
               fontSize="11"
@@ -2075,7 +2288,14 @@ export function BookHistory({
             </text>
           ))}
         </svg>
-        {hovered && hover !== null && !drag ? (
+        {measure && measure.to > measure.from ? (
+          <ChartTip
+            x={(x(measure.from) + x(measure.to)) / 2}
+            width={width}
+            title={`${formatDate(days[measure.from]!.date)} → ${formatDate(days[measure.to]!.date)}`}
+            rows={bookSpanTip(days[measure.from]!, days[measure.to]!, labels, money)}
+          />
+        ) : hovered && hover !== null && !drag && !measure ? (
           <ChartTip
             x={x(hover)}
             width={width}
@@ -2088,11 +2308,11 @@ export function BookHistory({
   );
 }
 
-/** The two floors inside the 720-wide viewBox: money over rates with no gap
+/** The two floors of the book-and-rates frame: money over rates with no gap
     between them, one date axis under both, money's gutter on the left and the
-    rates' on the right. `inset` keeps a rate line off the seam. */
+    rates' on the right. `money` and `rates` are the desktop heights, and the
+    ratio a narrow frame keeps them in. `inset` keeps a rate line off the seam. */
 const FLOORS = {
-  width: 720,
   left: 64,
   right: 52,
   top: 8,
@@ -2199,8 +2419,40 @@ export function bookRatesTip(
  * point from zero: a figure that is that point's own (the month's return)
  * next to rates that run from the first trade, on the same percentage axis.
  */
-export function BookAndRates({
-  points,
+type BookAndRatesProps = {
+  points: BookRatePoint[];
+  series: ReturnSeries[];
+  bars?: RateBars;
+  labels: {
+    invested: string;
+    /** The value line on its own, for the change between two points. */
+    value: string;
+    profit: string;
+    loss: string;
+    gain: string;
+  };
+  money: (value: number, signed?: boolean) => string;
+  /** Compact formatter for the money gutter; falls back to `money`. */
+  axisMoney?: (value: number) => string;
+  /** The rates' formatter, for their gutter and the box. */
+  format: (value: number) => string;
+  formatDate: (iso: string) => string;
+};
+
+type BookRateDay = BookRatePoint & { value: number; invested: number };
+
+export function BookAndRates({ points, ...rest }: BookAndRatesProps) {
+  // Both legs or the month is not comparable, as on the history chart. Split
+  // from the drawing so the measured frame exists whenever the chart does.
+  const book = points.filter(
+    (point): point is BookRateDay => point.value !== null && point.invested !== null,
+  );
+  if (book.length < 2 || book.length !== points.length) return null;
+  return <BookAndRatesPlot book={book} {...rest} />;
+}
+
+function BookAndRatesPlot({
+  book,
   series,
   bars,
   labels,
@@ -2208,36 +2460,36 @@ export function BookAndRates({
   axisMoney,
   format,
   formatDate,
-}: {
-  points: BookRatePoint[];
-  series: ReturnSeries[];
-  bars?: RateBars;
-  labels: { invested: string; profit: string; loss: string; gain: string };
-  money: (value: number, signed?: boolean) => string;
-  /** Compact formatter for the money gutter; falls back to `money`. */
-  axisMoney?: (value: number) => string;
-  /** The rates' formatter, for their gutter and the box. */
-  format: (value: number) => string;
-  formatDate: (iso: string) => string;
-}) {
+}: Omit<BookAndRatesProps, "points"> & { book: BookRateDay[] }) {
   const [pointer, setHover] = useState<number | null>(null);
+  // Two points being compared (`useSpan`), in date order.
+  const [measure, setMeasure] = useState<{ from: number; to: number } | null>(null);
+  const [frame, width] = useWidth(BARS.fallback);
   const svg = useRef<SVGSVGElement>(null);
-  useTouchHold(svg, pointer !== null, setHover);
-  // Both legs or the month is not comparable, as on the history chart.
-  const book = points.filter(
-    (point): point is BookRatePoint & { value: number; invested: number } =>
-      point.value !== null && point.invested !== null,
-  );
-  if (book.length < 2 || book.length !== points.length) return null;
-  // A shorter window can arrive under a pointer still resting on the old one.
-  const hover = pointer !== null && pointer < book.length ? pointer : null;
+  const drop = useCallback(() => {
+    setHover(null);
+    setMeasure(null);
+  }, []);
+  useTouchHold(svg, pointer !== null || measure !== null, drop);
+  // A shorter window can arrive under a pointer still resting on the old one,
+  // or under a comparison drawn on it.
+  const hover = pointer !== null && pointer < book.length && !measure ? pointer : null;
+  const compared = measure && measure.to < book.length ? measure : null;
 
-  const { width, left, right } = FLOORS;
+  const narrow = width < NARROW;
+  const left = narrow ? NARROW_PAD : FLOORS.left;
+  const right = narrow ? NARROW_PAD : FLOORS.right;
   const plotW = width - left - right;
   const moneyTop = FLOORS.top;
-  const ratesTop = moneyTop + FLOORS.money;
-  const bottom = ratesTop + FLOORS.rates;
-  const height = bottom + FLOORS.bottom;
+  // The desktop floors' total, and a squarer one on a phone, split in the
+  // desktop's own proportion.
+  const floors = FLOORS.money + FLOORS.rates;
+  const height = plotHeightFor(width, FLOORS.top + floors + FLOORS.bottom);
+  const room = height - FLOORS.top - FLOORS.bottom;
+  const moneyH = Math.round((room * FLOORS.money) / floors);
+  const ratesH = room - moneyH;
+  const ratesTop = moneyTop + moneyH;
+  const bottom = ratesTop + ratesH;
   const x = (index: number) => left + (index / (book.length - 1)) * plotW;
 
   const levels = book.flatMap((point) => [point.value, point.invested]);
@@ -2247,7 +2499,7 @@ export function BookAndRates({
   const moneyLow = rawLow - pad;
   const moneySpan = rawHigh + pad - moneyLow;
   const yMoney = (value: number) =>
-    moneyTop + (1 - (value - moneyLow) / moneySpan) * FLOORS.money;
+    moneyTop + (1 - (value - moneyLow) / moneySpan) * moneyH;
 
   const drawn = series.filter((one) => one.points.some((v) => v !== null));
   const barred = bars?.points.some((v) => v !== null) ? bars : undefined;
@@ -2258,7 +2510,7 @@ export function BookAndRates({
   // Zero stays on the rates' axis, as on every return chart here.
   const rateLow = Math.min(0, ...rates);
   const rateSpan = Math.max(0, ...rates) - rateLow || 1;
-  const rateH = FLOORS.rates - 2 * FLOORS.inset;
+  const rateH = ratesH - 2 * FLOORS.inset;
   const yRate = (value: number) =>
     ratesTop + FLOORS.inset + (1 - (value - rateLow) / rateSpan) * rateH;
 
@@ -2306,6 +2558,22 @@ export function BookAndRates({
     const at = viewX(event, svg.current, width);
     if (at !== null) setHover(nearest(at, left, plotW, book.length));
   };
+  /** Where a pointer is on the SVG, in viewBox x. */
+  const xAt = (event: MouseEvent<SVGSVGElement>) =>
+    viewX(event, svg.current, width) ?? left;
+  const spanned = useSpan((pair) => {
+    if (!pair) return setMeasure(null);
+    const [a, b] = pair.map((at) => nearest(at, left, plotW, book.length)) as [
+      number,
+      number,
+    ];
+    setHover(null);
+    setMeasure({ from: Math.min(a, b), to: Math.max(a, b) });
+  });
+  const leg = (point: (typeof book)[number]) => ({
+    value: point.value,
+    injected: point.invested,
+  });
 
   const tipRows = (index: number, point: (typeof book)[number]): TipRow[] =>
     bookRatesTip(index, point, {
@@ -2323,7 +2591,7 @@ export function BookAndRates({
 
   return (
     <div className="pf-chart">
-      <ul className="pf-legend-inline">
+      <Legend>
         <li className="pf-legend-row">
           <span
             className="pf-swatch pf-swatch-dashed"
@@ -2363,19 +2631,27 @@ export function BookAndRates({
             <span>{one.label}</span>
           </li>
         ))}
-      </ul>
-      <div className="pf-plot">
+      </Legend>
+      <div className="pf-plot pf-scrub" ref={frame}>
         <svg
           ref={svg}
           viewBox={`0 0 ${width} ${height}`}
           width="100%"
           role="img"
-          onPointerMove={track}
+          onPointerMove={(event) => {
+            if (!spanned.move(event, xAt(event))) track(event);
+          }}
           // A tap is a pointer that never moves: it answers too, on a phone.
-          onPointerDown={track}
+          onPointerDown={(event) => {
+            if (!spanned.down(event, xAt(event))) track(event);
+          }}
+          onPointerUp={spanned.up}
           onPointerLeave={(event) => {
+            spanned.leave(event);
             if (event.pointerType !== "touch") setHover(null);
           }}
+          onPointerCancel={spanned.cancel}
+          onContextMenu={(event) => spanned.menu?.(event, xAt(event))}
         >
           {rules.map((index) => (
             <line
@@ -2389,11 +2665,13 @@ export function BookAndRates({
             />
           ))}
           <ValueAxis
-            ticks={niceTicks(moneyLow, moneyLow + moneySpan)}
+            ticks={niceTicks(moneyLow, moneyLow + moneySpan, narrow ? 3 : 4)}
             y={yMoney}
             left={left}
             right={width - right}
             format={axisMoney ?? ((value) => money(value))}
+            inside={narrow}
+            top={moneyTop}
           />
           {bands.map((band, index) => (
             <path
@@ -2431,7 +2709,7 @@ export function BookAndRates({
             strokeWidth="1"
           />
           <ValueAxis
-            ticks={niceTicks(rateLow, rateLow + rateSpan, 3).filter(
+            ticks={niceTicks(rateLow, rateLow + rateSpan, narrow ? 2 : 3).filter(
               (tick) => tick !== 0,
             )}
             y={yRate}
@@ -2439,6 +2717,8 @@ export function BookAndRates({
             right={width - right}
             format={format}
             side="right"
+            inside={narrow}
+            top={ratesTop}
           />
           {barred?.points.map((value, index) =>
             value === null ? null : (
@@ -2463,15 +2743,15 @@ export function BookAndRates({
             strokeWidth="1"
             strokeDasharray="2 3"
           />
-          <text
-            x={width - right + 6}
-            y={yRate(0) + 4}
-            fill={token("text-muted")}
-            fontSize="11"
-            textAnchor="start"
-          >
-            {format(0)}
-          </text>
+          <AxisLabel
+            text={format(0)}
+            at={yRate(0)}
+            left={left}
+            right={width - right}
+            side="right"
+            inside={narrow}
+            top={ratesTop}
+          />
           {colored.map((one) =>
             runs(one.points).map((d, index) => (
               <path
@@ -2485,6 +2765,21 @@ export function BookAndRates({
             )),
           )}
 
+          {compared ? (
+            <g className="pf-span" pointerEvents="none">
+              {compared.to > compared.from ? (
+                <rect
+                  x={x(compared.from)}
+                  y={moneyTop}
+                  width={x(compared.to) - x(compared.from)}
+                  height={bottom - moneyTop}
+                />
+              ) : null}
+              {[compared.from, compared.to].map((index, at) => (
+                <line key={at} x1={x(index)} x2={x(index)} y1={moneyTop} y2={bottom} />
+              ))}
+            </g>
+          ) : null}
           {hovered && hover !== null ? (
             <g pointerEvents="none">
               <line
@@ -2530,7 +2825,19 @@ export function BookAndRates({
             </text>
           ))}
         </svg>
-        {hovered && hover !== null ? (
+        {compared && compared.to > compared.from ? (
+          <ChartTip
+            x={(x(compared.from) + x(compared.to)) / 2}
+            width={width}
+            title={`${formatDate(book[compared.from]!.date)} → ${formatDate(book[compared.to]!.date)}`}
+            rows={bookSpanTip(
+              leg(book[compared.from]!),
+              leg(book[compared.to]!),
+              { value: labels.value, injected: labels.invested, pnl: labels.gain },
+              money,
+            )}
+          />
+        ) : hovered && hover !== null ? (
           <ChartTip
             x={x(hover)}
             width={width}

@@ -15,7 +15,15 @@
  * `chipFor` returned and never writes the `null` check itself.
  */
 
-import type { ReactNode } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { useTouchHold } from "../shell/useTouchHold";
 import "./ui.css";
 
 /**
@@ -71,15 +79,94 @@ export function Chip({ chip }: { chip: ChipSpec | null | undefined }) {
   return <span className={`ag-chip ag-chip-${chip.tone}`}>{chip.text}</span>;
 }
 
+/** Breathing room kept between the popover and the viewport edge, in px. */
+const HELP_MARGIN = 8;
+
 /**
- * The definition marker beside a label. The text rides a native `title` — the
- * one hover hint that needs no popover behind it, and costs no layout.
+ * How far to slide a popover sideways so it sits inside the viewport. Positive
+ * pushes it right (it overran the left edge), negative pulls it left. When the
+ * panel is wider than the room, the left edge wins: the start of a sentence is
+ * the part that has to be readable.
+ */
+export function helpShift(left: number, right: number, viewport: number): number {
+  if (left < HELP_MARGIN) return HELP_MARGIN - left;
+  if (right > viewport - HELP_MARGIN) {
+    return Math.max(viewport - HELP_MARGIN - right, HELP_MARGIN - left);
+  }
+  return 0;
+}
+
+/**
+ * The definition marker beside a label.
+ *
+ * It used to ride a native `title`, which a phone cannot show: no hover, so
+ * the definition behind every tile was simply unreachable. It is a button now
+ * — a tap opens the text under the mark, a tap anywhere else or Escape puts it
+ * away (`useTouchHold` is the same "touch elsewhere" dismissal the charts
+ * use), and a mouse still gets it on hover or keyboard focus. The panel is
+ * measured once it is up and slid back inside the viewport, since a tile's
+ * mark can sit at either edge of a 390px screen. The 14px mark keeps its
+ * footprint; the finger-sized hit area is a pseudo-element in `ui.css`.
  */
 export function Help({ text }: { text: string | null | undefined }) {
+  const [pinned, setPinned] = useState(false);
+  const [hover, setHover] = useState(false);
+  const [shift, setShift] = useState(0);
+  const wrap = useRef<HTMLSpanElement>(null);
+  const panel = useRef<HTMLSpanElement>(null);
+  const id = useId();
+  const unpin = useCallback(() => setPinned(false), []);
+  useTouchHold(wrap, pinned, unpin);
+
+  const shown = pinned || hover;
+  useLayoutEffect(() => {
+    if (!shown || !panel.current) return;
+    // Measure from the unshifted position, so a re-open never compounds.
+    const rect = panel.current.getBoundingClientRect();
+    const unshifted = { left: rect.left - shift, right: rect.right - shift };
+    setShift(helpShift(unshifted.left, unshifted.right, window.innerWidth));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown, text]);
+
   if (!text) return null;
   return (
-    <span className="ag-kpi-help" title={text} aria-label={text}>
-      ?
+    <span
+      className="ag-kpi-help-wrap"
+      ref={wrap}
+      onPointerEnter={(event) => event.pointerType === "mouse" && setHover(true)}
+      onPointerLeave={() => setHover(false)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          setPinned(false);
+          setHover(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        className="ag-kpi-help"
+        aria-expanded={pinned}
+        aria-describedby={shown ? id : undefined}
+        aria-label={text}
+        onClick={() => setPinned((open) => !open)}
+        onFocus={(event) =>
+          event.currentTarget.matches(":focus-visible") && setHover(true)
+        }
+        onBlur={() => setHover(false)}
+      >
+        ?
+      </button>
+      {shown && (
+        <span
+          className="ag-kpi-help-pop"
+          id={id}
+          role="tooltip"
+          ref={panel}
+          style={{ transform: `translateX(${shift}px)` }}
+        >
+          {text}
+        </span>
+      )}
     </span>
   );
 }

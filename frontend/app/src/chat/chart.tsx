@@ -137,6 +137,8 @@ export function LineChart({
   const lang = useLang();
   const [node, width] = useWidth(FALLBACK);
   const [hover, setHover] = useState<number | null>(null);
+  // Two places being compared (`Chart`'s `onSpan`), in viewBox x, in order.
+  const [span, setSpan] = useState<[number, number] | null>(null);
   const colors = palette();
   const hues = [colors.brandAccent, colors.info, colors.smaFast];
 
@@ -232,6 +234,38 @@ export function LineChart({
         };
       })
     : [];
+  // Between two places: each line's nearest session at either end, and what
+  // it did across them. A span of one place is a mouse anchor just dropped.
+  const ends = span
+    ? lines.map((_, at): [number, number] => [
+        nearest(xs[at] as number[], span[0]),
+        nearest(xs[at] as number[], span[1]),
+      ])
+    : null;
+  const [from, to]: [number, number] = ends?.[0] ?? [0, 0];
+  const measured = ends !== null && to > from ? ends : null;
+  const spanTip: TipLine[] = measured
+    ? lines.map((line, at) => {
+        const [a, b] = measured[at] as [number, number];
+        const start = line.raw[a] as number;
+        const end = line.raw[b] as number;
+        const swing = start ? end / start - 1 : 0;
+        const tone = swing >= 0 ? ("up" as const) : ("down" as const);
+        const swatch = byTime ? hues[at % hues.length] : undefined;
+        const levels = line.index ? "" : `${price(start)} → ${price(end)}  `;
+        return {
+          text: `${named(line)}  ${levels}${change(swing)}`,
+          swatch,
+          parts: [
+            { text: `${named(line)}  `, tone: "dim" as const },
+            ...(levels ? [{ text: levels }] : []),
+            { text: change(swing), bold: true, tone },
+          ],
+        };
+      })
+    : [];
+  const clamp = (x: number) => Math.max(box.left, Math.min(box.left + inner, x));
+
   const xLabels = [0, 0.5, 1].map((share) => {
     const i = Math.round((first.dates.length - 1) * share);
     return { x: (xs[0] as number[])[i] as number, stamp: first.dates[i] as string };
@@ -242,8 +276,19 @@ export function LineChart({
       <Chart
         frame={box}
         label={`${label}: ${lines.map(named).join(", ")}`}
-        onPointer={(x) => setHover(Math.max(box.left, Math.min(box.left + inner, x)))}
-        onLeave={() => setHover(null)}
+        onPointer={(x) => setHover(clamp(x))}
+        onLeave={() => {
+          setHover(null);
+          setSpan(null);
+        }}
+        onSpan={(pair) =>
+          setSpan(
+            pair && [
+              clamp(Math.min(pair[0], pair[1])),
+              clamp(Math.max(pair[0], pair[1])),
+            ],
+          )
+        }
       >
         <YGrid frame={box} lo={range.lo} hi={range.hi} format={format} count={4} />
         {rebased && range.lo < 0 && range.hi > 0 ? (
@@ -278,7 +323,31 @@ export function LineChart({
             />
           );
         })}
-        {picked ? (
+        {ends ? (
+          <g className="tk-span">
+            {measured ? (
+              <rect
+                x={(xs[0] as number[])[from]}
+                y={box.top}
+                width={
+                  ((xs[0] as number[])[to] as number) -
+                  ((xs[0] as number[])[from] as number)
+                }
+                height={box.height - box.bottom - box.top}
+              />
+            ) : null}
+            {[from, to].map((i, slot) => (
+              <line
+                key={slot}
+                x1={(xs[0] as number[])[i]}
+                x2={(xs[0] as number[])[i]}
+                y1={box.top}
+                y2={box.height - box.bottom}
+              />
+            ))}
+          </g>
+        ) : null}
+        {picked && !measured ? (
           <g>
             <line
               className="tk-cross"
@@ -316,7 +385,18 @@ export function LineChart({
           ))}
         </g>
       </Chart>
-      {picked ? (
+      {measured ? (
+        <Tooltip
+          frame={box}
+          x={
+            (((xs[0] as number[])[from] as number) +
+              ((xs[0] as number[])[to] as number)) /
+            2
+          }
+          title={`${dates.long(first.dates[from] as string)} → ${dates.long(first.dates[to] as string)}`}
+          lines={spanTip}
+        />
+      ) : picked ? (
         <Tooltip
           frame={box}
           x={(xs[0] as number[])[lead] as number}

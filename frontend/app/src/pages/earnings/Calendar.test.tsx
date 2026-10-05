@@ -9,10 +9,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { CentralBankChip, CentralBankTable } from "./CentralBanks";
+import Agenda from "./Agenda";
+import { CentralBankChip } from "./CentralBanks";
 import type { CentralBankDecision, RepurchaseWindow } from "./data";
 import MonthGrid from "./MonthGrid";
-import { RepurchaseChip, RepurchaseLegend, RepurchaseTable } from "./Repurchase";
+import { RepurchaseChip, RepurchaseLegend } from "./Repurchase";
 
 const window: RepurchaseWindow = {
   ticker: "NVDA",
@@ -28,6 +29,24 @@ const fed: CentralBankDecision = { bank: "fed", date: "2026-10-28", days_until: 
 const ecb: CentralBankDecision = { bank: "ecb", date: "2026-10-29", days_until: 27 };
 const far: CentralBankDecision = { bank: "fed", date: "2027-03-17", days_until: 166 };
 const gone: CentralBankDecision = { bank: "ecb", date: "2026-09-10", days_until: -22 };
+
+function agenda({
+  windows = [],
+  banks = [],
+}: {
+  windows?: RepurchaseWindow[];
+  banks?: CentralBankDecision[];
+}) {
+  return renderToStaticMarkup(
+    <Agenda
+      events={[]}
+      deadlines={[]}
+      windows={windows}
+      banks={banks}
+      dividends={[]}
+    />,
+  );
+}
 
 function grid(month: number) {
   return renderToStaticMarkup(
@@ -58,15 +77,15 @@ describe("buy-back windows", () => {
     expect(chip).not.toContain("href");
   });
 
-  it("list what was sold, when it frees up and the loss at stake", () => {
-    const html = renderToStaticMarkup(<RepurchaseTable windows={[window]} />);
+  it("list the ticker, the day it frees up and the loss at stake", () => {
+    const html = agenda({ windows: [window] });
     expect(html).toContain("NVDA");
     expect(html).toContain("101.40");
-    expect(html).toContain("earnings.rebuy_col_free");
+    expect(html).toContain("earnings.mon_11");
   });
 
   it("say nothing where there is nothing to wait for", () => {
-    expect(renderToStaticMarkup(<RepurchaseTable windows={[]} />)).toBe("");
+    expect(agenda({})).toBe("");
     expect(renderToStaticMarkup(<RepurchaseLegend windows={[]} />)).toBe("");
   });
 });
@@ -80,12 +99,12 @@ describe("rate decisions", () => {
     ).toContain("earnings.cb_ecb");
   });
 
-  it("list only the quarter ahead", () => {
-    const html = renderToStaticMarkup(
-      <CentralBankTable decisions={[gone, fed, ecb, far]} />,
-    );
-    expect(html.match(/<tr>/g)).toHaveLength(3); // header + fed + ecb
-    expect(renderToStaticMarkup(<CentralBankTable decisions={[gone, far]} />)).toBe("");
+  it("list only what is ahead, one week at a time", () => {
+    const html = agenda({ banks: [gone, fed, ecb, far] });
+    // fed and ecb share a week; the past one is gone, the far one is a week of its own.
+    expect(html.match(/earn-week-h/g)).toHaveLength(2);
+    expect(html.match(/earnings\.cb_/g)).toHaveLength(3);
+    expect(agenda({ banks: [gone] })).toBe("");
   });
 });
 
