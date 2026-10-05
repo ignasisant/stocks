@@ -2322,7 +2322,7 @@ const FLOORS = {
   bottom: 24,
 };
 
-export type BookRatePoint = {
+type BookRatePoint = {
   date: string;
   value: number | null;
   /** What the book had put to work by this date — the base the gain is over. */
