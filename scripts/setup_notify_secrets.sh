@@ -15,7 +15,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-REPO="ignasisant/AguaitStocks"
+REPO="ignasisant/stocks"
 ENV_FILE=".notify_secrets.env"
 
 [ -f "$ENV_FILE" ] || {

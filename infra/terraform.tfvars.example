@@ -10,7 +10,7 @@ cloudflare_account_id = "" # 32-hex id from the R2 endpoint URL or dashboard sid
 # GitHub — `gh auth token`, or a PAT with secrets write on the repo
 github_token = ""
 # github_owner = "ignasisant"
-# github_repo  = "AguaitStocks"
+# github_repo  = "stocks"
 
 # R2 — must match the existing bucket when importing
 # r2_bucket_name = "aguait-user-data"

@@ -26,7 +26,7 @@ variable "github_owner" {
 variable "github_repo" {
   description = "Repository name (no owner prefix)."
   type        = string
-  default     = "AguaitStocks"
+  default     = "stocks"
 }
 
 # --- R2 -------------------------------------------------------------------------
