@@ -251,14 +251,17 @@ def _anthropic_error(exc):
 # ------------------------------------------------------------- ChatGPT (OpenAI)
 
 
-def _openai_compat_stream(base_url: str | None = None):
+def _openai_compat_stream(base_url: str | None = None, **client_opts):
     """Streaming generator for OpenAI and any OpenAI-compatible endpoint
-    (Groq, Cerebras, OpenRouter, ...) — only the base_url differs."""
+    (Groq, Cerebras, OpenRouter, ...) — only the base_url differs.
+
+    `client_opts` reach the OpenAI client as given (the free chain passes
+    `_FREE_CLIENT`)."""
 
     def _stream(api_key, model, system, messages):
         from openai import OpenAI
 
-        client = OpenAI(api_key=api_key, base_url=base_url)
+        client = OpenAI(api_key=api_key, base_url=base_url, **client_opts)
         stream = client.chat.completions.create(
             model=model,
             messages=[{"role": "system", "content": system}, *messages],
@@ -276,7 +279,7 @@ def _openai_compat_stream(base_url: str | None = None):
 _openai_stream = _openai_compat_stream()
 
 
-def _openai_compat_tools(base_url: str | None = None):
+def _openai_compat_tools(base_url: str | None = None, **client_opts):
     """The same loop over any OpenAI-compatible host: OpenAI itself, and every
     backend in the free chain (groq and openrouter both speak it).
 
@@ -290,7 +293,7 @@ def _openai_compat_tools(base_url: str | None = None):
 
         from openai import OpenAI
 
-        client = OpenAI(api_key=api_key, base_url=base_url)
+        client = OpenAI(api_key=api_key, base_url=base_url, **client_opts)
         schema = [{"type": "function",
                    "function": {"name": t.name, "description": t.description,
                                 "parameters": t.schema}} for t in tools]
@@ -302,6 +305,11 @@ def _openai_compat_tools(base_url: str | None = None):
                 model=model, max_tokens=MAX_TOKENS, messages=convo,
                 tools=cast(Any, schema),
             )
+            if not resp.choices:
+                # OpenRouter answers an upstream failure with HTTP 200 and an
+                # "error" object where the choices should be.
+                err = (getattr(resp, "model_extra", None) or {}).get("error")
+                raise RuntimeError(f"no choices in the reply: {err or 'empty'}")
             msg = resp.choices[0].message
             text = msg.content or ""
             if not msg.tool_calls:
@@ -449,6 +457,15 @@ _FREE_TPM: dict[str, int] = {"groq": 8000}
 # template, so plan to this share of the limit.
 _TPM_MARGIN = 0.9
 
+# The SDK's defaults (two retries honouring retry-after, a 600 s timeout) are
+# for a caller with one backend. The chain has a next one: groq's 429s ask for
+# 4-21 s each, so two retries held a request ~25 s before the fallback got its
+# turn, and an OpenRouter free model once took 180 s to read one PDF page
+# block. One retry still rides out a short groq window; past that it is the
+# next backend's turn. `timeout` is httpx's, per read — a stream that keeps
+# producing is never cut.
+_FREE_CLIENT: dict[str, Any] = {"max_retries": 1, "timeout": 60.0}
+
 
 class FreeTierExhausted(Exception):
     """Every configured free backend failed before producing any output."""
@@ -567,7 +584,8 @@ def _free_backends() -> list[_FreeBackend]:
         except (TypeError, ValueError):
             tpm = _FREE_TPM.get(bid, 0)
         out.append(_FreeBackend(bid, key, model,
-                                _openai_compat_stream(base_url), base_url, tpm))
+                                _openai_compat_stream(base_url, **_FREE_CLIENT),
+                                base_url, tpm))
     return out
 
 
@@ -684,7 +702,7 @@ def _free_tools(api_key, model, system, messages, tools, execute, rounds):
     for attempt, (b, thread) in enumerate(
             _free_plan(backends, system, messages, extra=schema)):
         try:
-            return _openai_compat_tools(b.base_url or None)(
+            return _openai_compat_tools(b.base_url or None, **_FREE_CLIENT)(
                 b.api_key, b.model, system, thread, tools, execute, rounds)
         except Exception as exc:
             obs.warn("llm.free.tools_failed", backend=b.id, model=b.model,

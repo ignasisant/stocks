@@ -28,7 +28,7 @@ runcmd:
   - netfilter-persistent save || true
   - systemctl enable --now docker
   # --- Clone the repo so `docker compose build` has the source ---
-  - git clone https://github.com/ignasisant/AguaitStocks.git /opt/aguait-stocks
+  - git clone https://github.com/ignasisant/stocks.git /opt/aguait-stocks
   - chown -R ubuntu:ubuntu /opt/aguait-stocks
 
 # After boot, SSH in as `ubuntu` and finish:

@@ -1,4 +1,4 @@
-# infra/ — Terraform for AguaitStocks
+# infra/ — Terraform for the stocks repo
 
 Manages the parts of the deployment that have Terraform providers:
 

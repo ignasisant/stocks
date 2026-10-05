@@ -26,20 +26,32 @@ Detection is read-only — the caller still validates (validate.py) and previews
 before anything reaches the ledger, exactly as the Import page does.
 
 `read` is the order both HTTP surfaces use — the Import page and a file
-attached to the chat: the model reads every statement first, and the parsers
-read it too, as the check on the model. A parser that owns the file is exact
-where the model is approximate (its fees, its split and sign rules, its broker
-note), so it keeps the file whenever it found at least as many rows, or
-gave an account of every line — a row, or a skip with its reason, as a crypto
+attached to the chat: the parsers read every statement, and the model reads
+it too, as the check on them. A parser that owns the file is exact where the
+model is approximate (its fees, its split and sign rules, its broker note),
+so it keeps the file whenever it found at least as many rows, or gave an
+account of every line — a row, or a skip with its reason, as a crypto
 export's staking rewards are. The model wins only when it found more and the
 parser left lines unexplained — which is what a broker changing its layout
 under a parser looks like — and that case is logged, because it is a parser
 that needs fixing. `detect` is the older order (parsers, then the model for
 what none owns).
+
+The parsers go first because they are instant and the model is not. A
+parser that accounted for every line is not second-guessed at all — no
+model call. One that read the file without that proof waits for the model
+only `MODEL_WAIT_S`: past that the parser's rows stand, rather than holding
+the upload behind a free chain that is queueing on rate limits (a 53-row
+Revolut PDF once took 204 s to preview, every one of them spent on a model
+read that found 9 rows and lost). The late read still finishes in the
+background and is remembered, so the reader's next preview of the same file
+gets the full comparison. A file no parser read waits for the model in full:
+there it is the only reader.
 """
 
 from __future__ import annotations
 
+import contextvars
 import copy
 import hashlib
 import threading
@@ -244,6 +256,9 @@ def detect(filename: str, data: bytes, provider: Provider | None = None,
 MODEL_TTL_S = 600.0
 MODEL_MAX = 32
 
+# How long a parser's read waits for the model's check before it stands alone.
+MODEL_WAIT_S = 20.0
+
 _model_memo: OrderedDict[tuple, tuple[float, llm_map.Extraction]] = OrderedDict()
 _model_lock = threading.Lock()
 
@@ -297,6 +312,28 @@ def _model_read(filename: str, data: bytes, provider: Provider | None,
     return found
 
 
+def _model_read_within(wait: float, *args: Any) -> tuple[llm_map.Extraction | None, bool]:
+    """`_model_read` given `wait` seconds: its answer, and whether it was late.
+
+    A late read is not cancelled — it runs on, in the caller's context (the
+    obs binding names whose upload it is), and lands in the memo for the
+    next read of the same bytes."""
+    box: dict[str, llm_map.Extraction | None] = {}
+    done = threading.Event()
+    ctx = contextvars.copy_context()
+
+    def run() -> None:
+        try:
+            box["found"] = ctx.run(_model_read, *args)
+        finally:
+            done.set()
+
+    threading.Thread(target=run, name="import-model-read", daemon=True).start()
+    if not done.wait(wait):
+        return None, True
+    return box.get("found"), False
+
+
 def _every_line(filename: str, data: bytes, result: ParseResult) -> bool:
     """Whether the parser gave an account of every line of the file: a row,
     or a skip with its reason. Then it missed nothing, and a model that found
@@ -316,9 +353,10 @@ def read(filename: str, data: bytes, provider: Provider | None = None,
          api_key: str = "", *, prefer: str | None = None,
          mapping: dict | None = None, scope: str = "",
          fiat: str = "") -> Detected:
-    """Read a statement with the model first and the parsers as its check.
+    """Read a statement with the parsers and the model as their check.
 
-    Both read it; the reconciling rule is in the module docstring. When the
+    The reconciling rule, and when the model is skipped or not waited for,
+    are in the module docstring. When the
     model wins over a parser that also read the file, the rows take that
     parser's broker, because the parser recognising the layout is evidence of
     where it came from that the model's rows do not carry.
@@ -335,13 +373,22 @@ def read(filename: str, data: bytes, provider: Provider | None = None,
     if mapping is not None:
         return _mapped(llm_map.extract(filename, data, provider, api_key,
                                        mapping=mapping))
-    model = _model_read(filename, data, provider, api_key, scope, fiat)
     parsed, quiet, declined = _parsers(filename, data, prefer)
+    complete = parsed is not None and _every_line(filename, data, parsed.result)
+    model_read = "done"
+    if complete:
+        model, model_read = None, "skipped"
+    elif parsed is not None and provider is not None:
+        model, late = _model_read_within(MODEL_WAIT_S, filename, data, provider,
+                                         api_key, scope, fiat)
+        if late:
+            model_read = "late"
+    else:
+        model = _model_read(filename, data, provider, api_key, scope, fiat)
     by_model = len(model.result.transactions) if model is not None else 0
     by_parser = len(parsed.result.transactions) if parsed is not None else 0
 
-    if parsed is not None and (by_parser >= by_model
-                               or _every_line(filename, data, parsed.result)):
+    if parsed is not None and (by_parser >= by_model or complete):
         winner = parsed
     elif model is not None and by_model:
         winner = _mapped(model)
@@ -377,6 +424,7 @@ def read(filename: str, data: bytes, provider: Provider | None = None,
         "parser": by_parser,
         "parser_key": parsed.platform if parsed is not None else "",
         "unavailable": bool(model is not None and model.unavailable),
+        "model_read": model_read,
         "declined": _summarise(declined),
     }
     if winner.recognised:

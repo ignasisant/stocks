@@ -186,6 +186,25 @@ def test_failed_is_true_for_an_import_that_produced_nothing():
     assert not diagnostics.failed({"imported": 5, "skipped": 0})
 
 
+def test_routine_skips_alone_are_not_a_failure():
+    # A Revolut statement's top-ups are skipped by design; 53 trades read and
+    # 46 cash rows left out is a clean import, not a diagnostic to keep.
+    cash = "cash movement — not position-affecting"
+    clean = ParseResult(skipped=[{"row": i, "reason": cash} for i in range(3)])
+    fp = diagnostics.fingerprint("revolut", "s.pdf", b"%PDF", clean)
+    assert fp["skipped"] == 3 and fp["routine"] == 3
+    assert not diagnostics.failed({**fp, "imported": 5})
+    odd = ParseResult(skipped=[*clean.skipped, {"row": 9, "reason": "missing ticker"}])
+    assert diagnostics.failed(
+        {**diagnostics.fingerprint("revolut", "s.pdf", b"%PDF", odd), "imported": 5})
+
+
+def test_routine_skips_match_the_parsers_wording():
+    from stocks.web.tx_text import SKIP_REASONS
+
+    assert diagnostics.ROUTINE_SKIPS <= set(SKIP_REASONS)
+
+
 # -------------------------------------------------------------------- sinks
 
 

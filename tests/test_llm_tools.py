@@ -234,13 +234,45 @@ def test_openai_stops_at_the_round_cap(openai_client):
     assert len(client.sent) == 2
 
 
+def test_a_reply_without_choices_names_the_upstream_error(monkeypatch):
+    # OpenRouter answers an upstream failure with HTTP 200 and no choices; that
+    # used to surface as "'NoneType' object is not subscriptable".
+    import openai
+
+    reply = SimpleNamespace(choices=None,
+                            model_extra={"error": {"message": "provider down"}})
+    client = SimpleNamespace(chat=SimpleNamespace(
+        completions=SimpleNamespace(create=lambda **kw: reply)))
+    monkeypatch.setattr(openai, "OpenAI", lambda **kw: client)
+    with pytest.raises(RuntimeError, match="provider down"):
+        llm._openai_tools("k", "m", "sys", [], _TOOLS, _echo, 2)
+
+
+def test_the_free_chain_caps_retries_and_waits(monkeypatch):
+    import openai
+
+    made = []
+    client = _OpenAIClient(_Message(content="DONE"))
+
+    def factory(**kw):
+        made.append(kw)
+        return client
+
+    monkeypatch.setattr(openai, "OpenAI", factory)
+    monkeypatch.setattr(llm, "_free_secrets", lambda: {"groq": "gsk-x"})
+    run = llm._free_tools("", "auto", "sys", [], _TOOLS, _echo, 2)
+    assert run.text == "DONE"
+    assert made[0]["max_retries"] == llm._FREE_CLIENT["max_retries"]
+    assert made[0]["timeout"] == llm._FREE_CLIENT["timeout"]
+
+
 # ------------------------------------------------------------- free chain
 
 
 def test_the_free_chain_moves_on_when_a_backend_refuses(monkeypatch):
     tried = []
 
-    def backend(base_url):
+    def backend(base_url, **_opts):
         def run(api_key, model, system, messages, tools, execute, rounds):
             tried.append(base_url)
             if base_url == "one":
@@ -258,7 +290,7 @@ def test_the_free_chain_moves_on_when_a_backend_refuses(monkeypatch):
 
 
 def test_the_free_chain_raises_when_every_backend_refuses(monkeypatch):
-    monkeypatch.setattr(llm, "_openai_compat_tools", lambda url: (
+    monkeypatch.setattr(llm, "_openai_compat_tools", lambda url, **_: (
         lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("429"))))
     monkeypatch.setattr(llm, "_free_backends", lambda: [
         llm._FreeBackend("a", "k", "m", None, "one")])

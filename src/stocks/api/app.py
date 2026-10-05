@@ -164,28 +164,30 @@ async def _bind_user(request: Request, call_next):
 # The instance has 1GiB and the platform's metric says how full it is, never
 # which request filled it. A request that grows the process by more than
 # `memstat.STEP_MB` says so, by path (no query, so no account), so a
-# climb towards an OOM can be read back as the requests that made it. Requests
-# overlap, so a step is a lead, not a verdict.
+# climb towards an OOM can be read back as the requests that made it.
+# Overlapping requests share one resident set, so they report as one burst
+# (`memstat.Steps`): one line, every path in it, `concurrent` > 1.
+_steps = memstat.Steps()
+
+
 @app.middleware("http")
 async def _mem_step(request: Request, call_next):
     before = memstat.rss_mb()
     if before is None:  # no /proc: not Linux, nothing to measure
         return await call_next(request)
-    response = await call_next(request)
+    _steps.start(request.url.path, before)
+    try:
+        response = await call_next(request)
+    except BaseException:
+        _steps.end(None)
+        raise
 
     def report() -> None:
-        after = memstat.rss_mb()
-        if after is None or after - before < memstat.STEP_MB:
+        step = _steps.end(memstat.rss_mb())
+        if step is None:
             return
         used, limit = memstat.cgroup_mb()
-        obs.warn(
-            "mem.step",
-            path=request.url.path,
-            delta_mb=round(after - before, 1),
-            rss_mb=after,
-            cgroup_mb=used,
-            limit_mb=limit,
-        )
+        obs.warn("mem.step", **step, cgroup_mb=used, limit_mb=limit)
 
     # A streamed answer (the chat) does its work after the headers go out,
     # which is when `call_next` returns — so the reading waits for the body.

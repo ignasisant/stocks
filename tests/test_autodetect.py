@@ -255,3 +255,65 @@ def test_a_parser_that_left_lines_unexplained_still_loses_to_more_rows(monkeypat
     monkeypatch.setattr(autodetect, "_parsers", lambda *a: (parsed, None, {}))
     found = autodetect.read("ledger.csv", csv.encode(), _StubProvider(), "k")
     assert found.platform == autodetect.LLM_KEY
+
+
+def test_a_parser_that_explains_every_line_never_asks_the_model(monkeypatch):
+    asked = []
+    monkeypatch.setattr(autodetect, "_model_read", lambda *a: asked.append(a))
+    found = autodetect.read("ledger.csv", LEDGER_CSV.encode(), _StubProvider(), "k")
+    assert found.platform == "generic"
+    assert asked == []  # the parser missed no line: nothing to check it against
+
+
+def test_a_slow_model_does_not_hold_up_a_parser_that_read_the_file(monkeypatch):
+    """A Revolut PDF the parser reads in full once waited 204 s on a free
+    chain queueing on 429s, for a model read that found fewer rows and lost.
+    The parser's rows stand once the model is late; the read itself runs on."""
+    import threading
+
+    from stocks import obs
+    from stocks.portfolio import llm_map
+    from stocks.portfolio.ledger import Transaction
+    from stocks.portfolio.statement import ParseResult
+
+    parsed = autodetect.Detected(
+        ParseResult(transactions=[Transaction("2025-01-02", "AAPL", "buy", 10, 180.5)]),
+        "revolut", "Revolut", llm_map.KIND_TRADES,
+    )
+    release, finished = threading.Event(), threading.Event()
+
+    def slow(*a):
+        release.wait(5)
+        finished.set()
+        return llm_map.Extraction(ParseResult(), kind=llm_map.KIND_TRADES)
+
+    logged = []
+    monkeypatch.setattr(autodetect, "MODEL_WAIT_S", 0.05)
+    monkeypatch.setattr(autodetect, "_model_read", slow)
+    monkeypatch.setattr(autodetect, "_parsers", lambda *a: (parsed, None, {}))
+    monkeypatch.setattr(obs, "event", lambda name, **kw: logged.append((name, kw)))
+    found = autodetect.read("statement.pdf", b"%PDF", _StubProvider(), "k")
+    assert found is parsed
+    assert logged[-1][1]["model_read"] == "late"
+    assert not finished.is_set()  # still reading when the parser's rows stood
+    release.set()
+    assert finished.wait(5)
+
+
+def test_a_file_no_parser_reads_waits_for_the_model(monkeypatch):
+    from stocks.portfolio import llm_map
+    from stocks.portfolio.ledger import Transaction
+    from stocks.portfolio.statement import ParseResult
+
+    rows = [Transaction("2025-01-02", "AAPL", "buy", 10, 180.5)]
+
+    def slow(*a):
+        import time
+        time.sleep(0.2)
+        return llm_map.Extraction(ParseResult(transactions=rows),
+                                  kind=llm_map.KIND_TRADES)
+
+    monkeypatch.setattr(autodetect, "MODEL_WAIT_S", 0.01)
+    monkeypatch.setattr(autodetect, "_model_read", slow)
+    found = autodetect.read("odd.csv", UNKNOWN_CSV.encode(), _StubProvider(), "k")
+    assert found.platform == autodetect.LLM_KEY and len(found.result.transactions) == 1

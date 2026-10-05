@@ -9,8 +9,8 @@ binding = "BUCKET"
 bucket_name = "aguait-user-data"
 
 [vars]
-GITHUB_REPO = "ignasisant/AguaitStocks"
+GITHUB_REPO = "ignasisant/stocks"
 
 # Secrets (set with `wrangler secret put <NAME>`, never in this file):
 #   WEBHOOK_SECRET — random string; also passed to setWebhook as secret_token
-#   GITHUB_PAT     — fine-grained PAT, repo AguaitStocks, Contents: read+write
+#   GITHUB_PAT     — fine-grained PAT, repo stocks, Contents: read+write

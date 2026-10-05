@@ -10,7 +10,7 @@ webhook secret and a GitHub PAT. R2 is reached through a native binding.
 
 ## Deploy
 
-1. Create a fine-grained GitHub PAT: repo `ignasisant/AguaitStocks`,
+1. Create a fine-grained GitHub PAT: repo `ignasisant/stocks`,
    permission **Contents: read and write** (that's what `repository_dispatch`
    requires). Set a long expiry — replace it when it lapses.
 2. Check `wrangler.toml`: `bucket_name` must equal the app's
