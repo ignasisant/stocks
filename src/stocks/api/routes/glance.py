@@ -52,9 +52,10 @@ router = APIRouter(tags=["glance"])
 # same five days here as it does on the page.
 WINDOWS = {"day": 1, "week": 7, "month": 30}
 
-# How many names each side of a movers card shows. More than this and it stops
+# How many names each side of a movers card can show. The card draws as many
+# rows as the 52-week card beside it, from 3 up to this; more and it stops
 # being a glance.
-SHOWN = 6
+SHOWN = 7
 
 # How close to an extreme still counts as being at it — `api/home.py` owns the
 # number, because the daily card's 52-week line reads the same scan.
