@@ -1037,7 +1037,7 @@ scale-to-zero service (`topstocks-staging`, free when idle). `scripts/deploy.sh`
 wraps the source deploy:
 
 ```bash
-./scripts/deploy.sh                 # staging — try the change on a real URL
+./scripts/deploy.sh staging         # try the change on a real URL (no default: name the target)
 ./scripts/deploy.sh prod            # gated: clean tree + on origin/main + green CI
 ./scripts/deploy.sh prod --allow-unmerged    # ship a branch tip anyway
 ./scripts/deploy.sh prod --min-instances 1   # keep one warm 24/7 (billed)

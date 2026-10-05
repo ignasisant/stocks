@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Deploy to Cloud Run — staging by default, prod behind a CI check + confirm.
+# Deploy to Cloud Run — staging or prod, named every time; prod behind a CI
+# check + confirm.
 #
 # Usage:
-#   ./scripts/deploy.sh                    # -> topstocks-staging
+#   ./scripts/deploy.sh staging            # -> topstocks-staging
 #   ./scripts/deploy.sh prod               # -> topstocks (gated)
 #   ./scripts/deploy.sh prod --min-instances 1    # warm 24/7, and billed for it
 #   ./scripts/deploy.sh staging --secret topstocks-secrets-staging:3
@@ -42,8 +43,16 @@ cd "$(dirname "$0")/.."
 PROJECT="${STOCKS_GCP_PROJECT:-topstocks-507209}"
 REGION="${STOCKS_GCP_REGION:-europe-west1}"
 
-ENV="${1:-staging}"
-shift || true
+# No default target. A bare run used to mean staging, which quietly recreated
+# the staging service (and its images in the registry, which cost money past
+# the free 0.5 GB) whenever it had been deleted.
+USAGE="usage: $0 staging|prod [--min-instances N] [--secret NAME:VER] [--no-canary] [--allow-unmerged]"
+ENV="${1:-}"
+if [ -z "$ENV" ]; then
+    echo "$USAGE" >&2
+    exit 1
+fi
+shift
 
 MIN_INSTANCES=""
 SECRET=""
@@ -85,7 +94,7 @@ case "$ENV" in
         MIN_INSTANCES="${MIN_INSTANCES:-0}" # scale-to-zero: staging is free when idle
         MAX_INSTANCES=1
         ;;
-    *) echo "usage: $0 [staging|prod] [--min-instances N] [--secret NAME:VER] [--no-canary] [--allow-unmerged]" >&2
+    *) echo "$USAGE" >&2
        exit 1 ;;
 esac
 
