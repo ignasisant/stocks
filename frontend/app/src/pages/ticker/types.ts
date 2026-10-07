@@ -94,6 +94,37 @@ export type TickerPosition = {
   custody: Custodian[];
 };
 
+/** A forward split this name's ledger lacks, with the price that gave it away. */
+export type TickerSplit = {
+  date: string;
+  /** Shares out per share in — 20 for a 20-for-1. */
+  ratio: number;
+  held_before: number;
+  held_after: number;
+  /** The pre-split buy price, as the statement printed it, and its day. */
+  priced_at: number;
+  priced_on: string;
+  /** Yahoo's split-adjusted close that day. */
+  market_close: number;
+  currency: string;
+  /** Written once and undone by the reader: never written again unasked. */
+  declined: boolean;
+};
+
+export type TickerSplits = {
+  ticker: string;
+  splits: TickerSplit[];
+  /** Yahoo was refusing us: an empty list means "could not tell". */
+  throttled: boolean;
+};
+
+export type TickerSplitsApplied = {
+  ticker: string;
+  /** The journal entry; deleting `/portfolio/changes/{id}` undoes it. */
+  change_id: number;
+  splits: TickerSplit[];
+};
+
 export type Profile = {
   /** As stored: the label the ledger and every link keep. */
   ticker: string;

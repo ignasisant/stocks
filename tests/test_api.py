@@ -618,6 +618,9 @@ WRITES = {
     # the body names which of the proposals it accepts and never what they are.
     ("/v1/import/splits/apply", "post"),
     ("/v1/import/moves/apply", "post"),
+    # The same split repair, from the Ticker page that shows the gap: the page
+    # writes it unasked, so the scan proposes and the body only names its days.
+    ("/v1/ticker/{symbol}/splits", "post"),
     # The line a code nobody can place trades on. The pick writes the code map,
     # which is every account's: it is checked against the fills before it is
     # kept, and a token may not make one. The offer only reads, and is here for
@@ -744,6 +747,7 @@ def test_no_write_will_answer_a_bearer_token(client, token, account):
     for path, method in sorted(WRITES):
         url = (
             path.replace("{ticker}", "AAPL")
+            .replace("{symbol}", "AAPL")
             .replace("{tag}", "Tech")
             .replace("{change_id}", "1")
         )
