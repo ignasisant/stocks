@@ -25,36 +25,26 @@ def enc(monkeypatch):
 
 
 def read(prefs: dict, pid: str) -> tuple[str, bool]:
-    """What a surface does on a read: decrypt, then slide and prune."""
-    key = engine.decrypt_byok(prefs, pid)
-    return key, engine.maintain_byok(prefs, pid if key else None)
+    """What a surface does on a read: decrypt, then prune."""
+    return engine.decrypt_byok(prefs, pid), engine.prune_byok(prefs)
 
 
-def test_save_stamps_both_clocks():
+def test_save_stamps_the_entry():
     prefs: dict = {}
     assert engine.save_byok(prefs, "anthropic", "sk-user")
     assert prefs["anthropic_key_saved_at"] == prefs["anthropic_key_first_at"]
     assert read(prefs, "anthropic")[0] == "sk-user"
 
 
-def test_reading_a_stale_key_slides_it():
+def test_reading_a_key_writes_nothing():
     prefs: dict = {}
     engine.save_byok(prefs, "anthropic", "sk-user")
-    old = int(time.time()) - 60 * 24 * 3600
-    prefs["anthropic_key_saved_at"] = old
-    first = prefs["anthropic_key_first_at"]
-
-    assert read(prefs, "anthropic") == ("sk-user", True)
-    assert prefs["anthropic_key_saved_at"] > old
-    assert prefs["anthropic_key_first_at"] == first  # the cap never moves
-
-
-def test_reading_twice_in_a_day_writes_once():
-    prefs: dict = {}
-    engine.save_byok(prefs, "anthropic", "sk-user")
+    prefs["anthropic_key_first_at"] = int(time.time()) - 60 * 24 * 3600
+    before = dict(prefs)
     for _ in range(3):
-        # The save was the write; the slide is throttled to one a day.
         assert read(prefs, "anthropic") == ("sk-user", False)
+    assert prefs == before
+    assert engine.byok_days_left(prefs, "anthropic") == 30
 
 
 def test_expired_key_is_deleted_not_just_refused():
@@ -67,10 +57,10 @@ def test_expired_key_is_deleted_not_just_refused():
     assert not any(k.startswith("anthropic_key") for k in prefs)
 
 
-def test_capped_key_is_deleted_however_recently_used():
+def test_old_entry_is_deleted_however_recently_saved():
     prefs: dict = {}
     engine.save_byok(prefs, "anthropic", "sk-user")
-    prefs["anthropic_key_first_at"] = int(time.time()) - engine.BYOK_MAX_AGE - 60
+    prefs["anthropic_key_first_at"] = int(time.time()) - engine.BYOK_TTL - 60
 
     assert read(prefs, "anthropic") == ("", True)
     assert not any(k.startswith("anthropic_key") for k in prefs)
