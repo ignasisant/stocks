@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FinancialsChart, InsiderFlow, ValuationChart } from "./Charts";
+import { InsidersSection } from "./Sections";
 import type { Financials, Insiders, Valuation } from "./types";
 
 // The palette reads CSS tokens off the document; with none, each is "".
@@ -114,5 +115,16 @@ describe("results, P/E and insider charts", () => {
   it("put the axis inside the plot on a phone", () => {
     dom(380);
     for (const html of render()) expect(html).toContain("tk-grid-in");
+  });
+});
+
+describe("insider card", () => {
+  it("keeps the trade table behind its button until asked", () => {
+    dom();
+    const html = renderToStaticMarkup(<InsidersSection insiders={insiders} />);
+    expect(html).toContain("tk-show-more");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain("tk-table");
+    expect(html).not.toContain("tk-stack-card");
   });
 });

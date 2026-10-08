@@ -49,7 +49,7 @@
   "kpi.share_dilution.desc": "Variación anual del número de acciones diluidas. Positivo = te estás diluyendo (normalmente por retribución en acciones); negativo = recompras netas que reducen el número de acciones.",
   "kpi.share_dilution.note": "positivo = dilución (SBC), negativo = recompras netas",
   "kpi.moat.label": "Foso (moat)",
-  "kpi.moat.desc": "Heurístico de 0-100 sobre cuánta *evidencia* de foso muestran las cuentas: ROIC persistente (30%), márgenes brutos estables (25%), crecimiento duradero (15%), conversión de caja (15%), disciplina en el número de acciones (15%). ≥70 foso amplio, 45-70 foso estrecho, <45 sin foso. Es un filtro, no un veredicto.",
+  "kpi.moat.desc": "Heurístico de 0-100 sobre cuánta *evidencia* de foso muestran las cuentas: ROIC persistente (35%), márgenes operativos estables (25%), conversión de caja (20%), crecimiento duradero (15%), sin dilución (5%). ≥70 foso amplio, 45-70 foso estrecho, <45 sin foso. Es un filtro, no un veredicto.",
   "kpi.moat.note": "solo proxies cuantitativos: no capta marca, efectos de red ni costes de cambio",
   "kpi.level.fact": "hecho",
   "kpi.level.consensus": "consenso",

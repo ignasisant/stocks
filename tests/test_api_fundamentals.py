@@ -9,7 +9,7 @@ told apart from "nothing happened".
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -293,6 +293,8 @@ class FakePillar:
     label: str
     score: float | None
     detail: str
+    kind: str = "missing"
+    facts: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -312,7 +314,9 @@ def test_an_unscored_pillar_is_null_not_zero(client, monkeypatch):
         lambda raw: FakeMoat(
             "AAPL",
             (
-                FakePillar("roic", "ROIC", 88.0, "10y mean 42%"),
+                FakePillar(
+                    "roic", "ROIC", 88.0, "10y mean 42%", "roic", {"roic": 0.42}
+                ),
                 FakePillar("dilution", "Dilution", None, "no share count"),
             ),
             83.5,
@@ -327,6 +331,42 @@ def test_an_unscored_pillar_is_null_not_zero(client, monkeypatch):
     assert body["rating"] == "wide" and body["years"] == 10
     # The chip's colour off the domain's band, not a client's copy of it.
     assert body["rating_tone"] == "green"
+
+
+def test_moat_names_keys_so_a_client_words_it(client, monkeypatch):
+    """The API has no language: it names catalog keys and hands the numbers
+    over raw, with the English words kept as the fallback."""
+    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    monkeypatch.setattr(
+        "stocks.api.routes.ticker.moat_score",
+        lambda raw: FakeMoat(
+            "AAPL",
+            (
+                FakePillar(
+                    "roic",
+                    "ROIC",
+                    88.0,
+                    "median ROIC 42%, ≥10% in 4/4 years",
+                    "roic",
+                    {"roic": 0.42, "above": 4, "years": 4},
+                ),
+                FakePillar("dilution", "Dilution", None, "no share count"),
+            ),
+            40.0,
+            "no moat",
+            4,
+        ),
+    )
+    body = client.get("/v1/ticker/AAPL/moat", headers=AUTH).json()
+    roic, dilution = body["pillars"]
+    assert roic["label_key"] == "ticker.moat_pillar_roic"
+    assert roic["detail_key"] == "ticker.moat_detail_roic"
+    assert roic["facts"] == {"roic": 0.42, "above": 4, "years": 4}
+    assert roic["tone"] == "green" and dilution["tone"] is None
+    assert roic["detail"].startswith("median ROIC")
+    assert dilution["detail_key"] == "ticker.moat_detail_missing"
+    assert dilution["facts"] == {}
+    assert body["rating_key"] == "ticker.moat_rating_no_moat"
 
 
 def test_too_few_pillars_means_no_composite(client, monkeypatch):
@@ -726,3 +766,56 @@ def test_a_verdict_ships_the_tone_its_band_carries(client, monkeypatch):
     )
     assert kpis["net_debt_ebitda"]["verdict"] == "net cash"
     assert kpis["net_debt_ebitda"]["verdict_tone"] == "green"
+
+
+
+# --------------------------------------------------------------------- analysts
+
+
+def _estimates(counts: dict[str, int], targets: dict | None = None):
+    from stocks.data.estimates import RawEstimates
+
+    recs = pd.DataFrame([{"period": "0m", **counts}])
+    return RawEstimates(ticker="AAPL", price_targets=targets or {}, recommendations=recs)
+
+
+def test_analysts_carry_targets_against_the_price_and_the_split(client, monkeypatch):
+    raw = _estimates(
+        {"strongBuy": 5, "buy": 10, "hold": 4, "sell": 1, "strongSell": 0},
+        {"current": 100.0, "low": 80.0, "high": 160.0, "mean": 120.0, "median": 110.0},
+    )
+    monkeypatch.setattr(loaders, "estimates", lambda t: raw)
+    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    body = client.get("/v1/ticker/AAPL/analysts", headers=AUTH).json()
+    assert body["covered"] is True and body["analysts"] == 20
+    assert body["currency"] == "USD"
+    assert body["months"][-1]["buy"] == 10
+    targets = body["targets"]
+    assert targets["upside_mean"] == pytest.approx(0.20)
+    assert targets["upside_median"] == pytest.approx(0.10)
+    assert targets["dispersion"] == pytest.approx(80.0 / 120.0)
+
+
+def test_too_few_analysts_is_not_a_consensus(client, monkeypatch):
+    """One rating drawn as a 100% buy bar reads as a unanimous street."""
+    raw = _estimates({"strongBuy": 0, "buy": 2, "hold": 0, "sell": 0, "strongSell": 0})
+    monkeypatch.setattr(loaders, "estimates", lambda t: raw)
+    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw())
+    body = client.get("/v1/ticker/AAPL/analysts", headers=AUTH).json()
+    assert body["covered"] is False and body["analysts"] == 2
+    assert body["targets"] is None
+
+
+def test_no_coverage_is_an_empty_view_not_an_error(client, monkeypatch):
+    from stocks.data.estimates import RawEstimates
+
+    monkeypatch.setattr(loaders, "estimates", lambda t: RawEstimates(ticker="AAPL"))
+
+    def _down(t):
+        raise RuntimeError("throttled")
+
+    monkeypatch.setattr(loaders, "fundamentals", _down)
+    body = client.get("/v1/ticker/AAPL/analysts", headers=AUTH).json()
+    assert body["analysts"] == 0 and body["covered"] is False
+    assert body["months"] == [] and body["revisions"] == []
+    assert body["currency"] is None

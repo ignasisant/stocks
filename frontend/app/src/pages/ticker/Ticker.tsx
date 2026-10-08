@@ -35,8 +35,10 @@ import { useCurrency } from "../../shell/session";
 import { useRoute } from "../../shell/router";
 import { Actions } from "./Actions";
 import { SignIn, SignedInOnly } from "../../shell/guest";
+import { AnalystsSection } from "./Analysts";
 import { FinancialsChart, ValuationChart } from "./Charts";
 import {
+  getAnalysts,
   getBars,
   getComparables,
   getCrypto,
@@ -223,9 +225,9 @@ export default function Page() {
   // What kind of symbol this is decides what the page draws at all
   // (`layout.ts`). A coin gets its own cards and nothing below; a fund gets
   // its profile and nothing below; an index gets its chart and nothing below.
-  // Everything under those — results, fundamentals, valuation, moat, insiders,
-  // comps and the KPI sources — is a company's, and for the rest it would be a
-  // column of empty cards that each cost a fetch.
+  // Everything under those — results, fundamentals, valuation, analysts, moat,
+  // insiders, comps and the KPI sources — is a company's, and for the rest it
+  // would be a column of empty cards that each cost a fetch.
   //
   // The kind is the profile's (`stocks.data.asset_kind`). A fund is also
   // whatever `/fund` says once it answers — a catalog fund Yahoo files as a
@@ -264,6 +266,10 @@ export default function Page() {
   );
   const insiders = useApi(
     () => (ticker && company ? getInsiders(ticker) : Promise.resolve(null)),
+    [ticker, company],
+  );
+  const analysts = useApi(
+    () => (ticker && company ? getAnalysts(ticker) : Promise.resolve(null)),
     [ticker, company],
   );
 
@@ -449,6 +455,11 @@ export default function Page() {
 
           {valuation.state === "loaded" && valuation.data ? (
             <ValuationChart data={valuation.data} fundamentalPe={gridPe} />
+          ) : null}
+
+          {/* What the street makes of it, right after what it is priced at. */}
+          {analysts.state === "loaded" && analysts.data ? (
+            <AnalystsSection data={analysts.data} />
           ) : null}
 
           {moat.state === "loaded" && moat.data ? (

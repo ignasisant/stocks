@@ -246,9 +246,9 @@ KPI_SOURCES: dict[str, KpiSource] = {
         "your own qualitative judgement + Morningstar moat rating",
         "quant proxies only — cannot see brand, network effects or switching costs",
         desc="0-100 heuristic of how much moat *evidence* the filings show: "
-        "persistent ROIC (30%), stable gross margins (25%), durable growth (15%), "
-        "cash conversion (15%), share-count discipline (15%). ≥70 wide, 45-70 "
-        "narrow, <45 no moat. A screen, not a verdict.",
+        "persistent ROIC (35%), steady operating margins (25%), cash conversion "
+        "(20%), durable growth (15%), no dilution (5%). ≥70 wide, 45-70 narrow, "
+        "<45 no moat. A screen, not a verdict.",
     ),
 }
 

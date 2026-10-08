@@ -15,6 +15,7 @@ import { get, send } from "../../shell/api";
 import type {
   AlertForm,
   AlertRule,
+  Analysts,
   AssetStats,
   Bars,
   Comparables,
@@ -86,6 +87,9 @@ export const getValuation = (ticker: string) =>
 export const getMoat = (ticker: string) => get<Moat>(`${at(ticker)}/moat`);
 
 export const getInsiders = (ticker: string) => get<Insiders>(`${at(ticker)}/insiders`);
+
+/** Rating split, price targets and EPS revisions — all of it consensus. */
+export const getAnalysts = (ticker: string) => get<Analysts>(`${at(ticker)}/analysts`);
 
 export const getFund = (ticker: string) => get<Fund>(`${at(ticker)}/fund`);
 

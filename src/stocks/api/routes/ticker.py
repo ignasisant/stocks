@@ -43,6 +43,9 @@ from stocks.api.deps import Account, Base, Writer, reporting_currency
 from stocks.api.jsonsafe import num as _num
 from stocks.api.jsonsafe import scalar as _scalar
 from stocks.api.schemas import (
+    AnalystMonth,
+    Analysts,
+    AnalystTargets,
     AnnualRow,
     AssetStats,
     Bars,
@@ -51,6 +54,7 @@ from stocks.api.schemas import (
     Custodian,
     CycleEvent,
     EarningsEvent,
+    EpsRevisionRow,
     Financials,
     Fund,
     FundHolding,
@@ -83,7 +87,15 @@ from stocks.config import CURRENCIES
 from stocks.data.asset_kind import BOND_FUND, CRYPTO, FUND_KINDS, MONEY_MARKET
 from stocks.data.bafin import insider_transactions as bafin_transactions
 from stocks.data.crypto import COIN_CATEGORY, CYCLE_EVENTS, is_crypto, split_pair
-from stocks.data.estimates import estimate_currency, projection
+from stocks.data.estimates import (
+    MIN_COVERAGE,
+    consensus,
+    eps_revisions,
+    estimate_currency,
+    projection,
+    rating_trend,
+    target_dispersion,
+)
 from stocks.data.funds import is_fund
 from stocks.data.insiders import CODE_LABELS, summarize
 from stocks.portfolio import platforms
@@ -887,19 +899,122 @@ def moat(symbol: Symbol) -> Moat:
         ticker=ticker,
         score=_num(scored.score),
         rating=scored.rating,
+        rating_key=(
+            f"ticker.moat_rating_{scored.rating.replace(' ', '_')}"
+            if scored.rating
+            else None
+        ),
         rating_tone=banded[1] if banded else None,
         years=scored.years,
         pillars=[
             MoatPillar(
                 key=p.key,
                 label=p.label,
+                label_key=f"ticker.moat_pillar_{p.key}",
                 score=_num(p.score),
+                # Each bar on the composite's own bands, so a pillar reads
+                # strong or weak on the same scale as the rating chip.
+                tone=_band_tone("moat", p.score),
                 weight=PILLAR_WEIGHTS[p.key],
                 detail=p.detail,
+                detail_key=f"ticker.moat_detail_{p.kind}",
+                facts={k: v for k, v in p.facts.items() if _num(v) is not None},
             )
             for p in scored.pillars
         ],
     )
+
+
+def _band_tone(key: str, value: float | None) -> str | None:
+    banded = verdict(key, value)
+    return banded[1] if banded else None
+
+
+@router.get("/{symbol}/analysts", response_model=Analysts, summary="Sell-side view")
+def analysts(symbol: Symbol) -> Analysts:
+    """The analysts' verdict, their price targets and where EPS is being revised.
+
+    One pull of the same consensus the annual chart projects with. Nothing
+    here is fact, and below `MIN_COVERAGE` ratings `covered` is false so a
+    page says "too few analysts" instead of drawing one opinion as a split.
+    """
+    ticker = symbol.strip().upper()
+    raw = loaders.estimates(ticker)
+    cons = consensus(raw)
+    months = rating_trend(raw, date.today())
+    latest = months[-1] if months else None
+    count = latest.total if latest else 0
+
+    targets = None
+    if cons.target_mean is not None:
+        price = cons.price
+
+        def _upside(target: float | None) -> float | None:
+            return _num(target / price - 1) if target is not None and price else None
+
+        targets = AnalystTargets(
+            low=_num(cons.target_low),
+            median=_num(cons.target_median),
+            mean=_num(cons.target_mean),
+            high=_num(cons.target_high),
+            upside_mean=_upside(cons.target_mean),
+            upside_median=_upside(cons.target_median),
+            dispersion=_num(target_dispersion(cons)),
+        )
+
+    return Analysts(
+        ticker=ticker,
+        currency=_quote_currency(ticker),
+        price=_num(cons.price),
+        analysts=count,
+        covered=count >= MIN_COVERAGE,
+        min_coverage=MIN_COVERAGE,
+        rating=cons.rating,
+        rating_mean=_num(cons.rating_mean),
+        months=[
+            AnalystMonth(
+                month=m.month,
+                strong_buy=m.counts.get("strongBuy", 0),
+                buy=m.counts.get("buy", 0),
+                hold=m.counts.get("hold", 0),
+                sell=m.counts.get("sell", 0),
+                strong_sell=m.counts.get("strongSell", 0),
+                total=m.total,
+                mean=_num(m.mean),
+            )
+            for m in months
+        ],
+        targets=targets,
+        revisions=[
+            EpsRevisionRow(
+                period=r.period,
+                current=_num(r.current),
+                change_7d=_num(r.change(7)),
+                change_30d=_num(r.change(30)),
+                change_90d=_num(r.change(90)),
+                up_7d=r.up_7d,
+                up_30d=r.up_30d,
+                down_7d=r.down_7d,
+                down_30d=r.down_30d,
+            )
+            for r in eps_revisions(raw)
+        ],
+    )
+
+
+def _quote_currency(ticker: str) -> str | None:
+    """The currency the share quotes in, which its price targets are set in.
+
+    Off the fundamentals pull the KPI grid already made, so it costs a cache
+    read; None when that pull failed — a target then prints without a mark
+    rather than with a wrong one.
+    """
+    try:
+        info = loaders.fundamentals(ticker).info or {}
+    except Exception:  # noqa: BLE001 — a missing mark is not a failed section
+        return None
+    currency = info.get("currency")
+    return str(currency) if currency else None
 
 
 @router.get("/{symbol}/insiders", response_model=Insiders, summary="Insider dealing")

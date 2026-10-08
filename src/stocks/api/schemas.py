@@ -741,11 +741,27 @@ class Valuation(BaseModel):
 
 
 class MoatPillar(BaseModel):
+    """One pillar, with its English words and the keys to word it otherwise.
+
+    Like `MetricTile`, the API names i18n keys rather than translating: a
+    client words `detail_key` with `facts` (fractions as fractions, counts as
+    ints) and falls back to `label` / `detail` when its catalog lacks the key.
+    """
+
     key: str
     label: str
+    label_key: str = Field(
+        description="i18n key for its name, e.g. ticker.moat_pillar_roic."
+    )
     score: float | None = Field(default=None, description="0-100; null when unscored.")
+    tone: str | None = Field(
+        default=None,
+        description="The moat band's colour at this score (green | orange | red).",
+    )
     weight: float
-    detail: str = Field(description="What the score was computed from.")
+    detail: str = Field(description="What the score was computed from, in English.")
+    detail_key: str = Field(description="i18n key for `detail`, filled from `facts`.")
+    facts: dict[str, float] = Field(default_factory=dict)
 
 
 class Moat(BaseModel):
@@ -755,6 +771,9 @@ class Moat(BaseModel):
         description="Weighted composite 0-100; null when too few pillars scored.",
     )
     rating: str | None = Field(default=None, description="wide | narrow | no moat.")
+    rating_key: str | None = Field(
+        default=None, description="i18n key for `rating`, e.g. ticker.moat_rating_wide."
+    )
     rating_tone: str | None = Field(
         default=None,
         description=(
@@ -846,6 +865,89 @@ class Insiders(BaseModel):
             "never files Form 4 — and only this tells them apart."
         ),
     )
+
+
+class AnalystMonth(BaseModel):
+    """One month of the sell-side rating split."""
+
+    month: str = Field(description='Calendar month, "YYYY-MM".')
+    strong_buy: int = 0
+    buy: int = 0
+    hold: int = 0
+    sell: int = 0
+    strong_sell: int = 0
+    total: int = 0
+    mean: float | None = Field(
+        default=None, description="1 (strong buy) .. 5 (strong sell)."
+    )
+
+
+class AnalystTargets(BaseModel):
+    """The 12-month price targets, in the quote's currency. Consensus."""
+
+    low: float | None = None
+    median: float | None = None
+    mean: float | None = None
+    high: float | None = None
+    upside_mean: float | None = Field(
+        default=None, description="Mean target over the price, minus one."
+    )
+    upside_median: float | None = Field(
+        default=None,
+        description="The same against the median, which one outlier cannot drag.",
+    )
+    dispersion: float | None = Field(
+        default=None,
+        description="(high - low) / mean: how far apart the analysts are.",
+    )
+
+
+class EpsRevisionRow(BaseModel):
+    """One fiscal year's EPS consensus against itself 7/30/60/90 days ago."""
+
+    period: str = Field(description='"0y" (current FY) or "+1y" (next FY).')
+    current: float | None = None
+    change_7d: float | None = None
+    change_30d: float | None = None
+    change_90d: float | None = None
+    up_7d: int | None = None
+    up_30d: int | None = None
+    down_7d: int | None = None
+    down_30d: int | None = None
+
+
+class Analysts(BaseModel):
+    """What the sell side says about a share: verdict, targets, revisions.
+
+    All of it consensus — an aggregate of opinions with the sell side's
+    incentives, never a fact — and `covered` false when too few analysts
+    publish for any of it to be a consensus at all.
+    """
+
+    ticker: str
+    currency: str | None = Field(
+        default=None, description="The quote's currency, which the targets are in."
+    )
+    price: float | None = Field(
+        default=None, description="The price the targets were measured against."
+    )
+    analysts: int = Field(
+        default=0, description="Ratings in the latest month; 0 when nobody covers it."
+    )
+    covered: bool = Field(
+        default=False, description="At least MIN_COVERAGE ratings this month."
+    )
+    min_coverage: int = 3
+    rating: str | None = Field(
+        default=None,
+        description='"strong buy" | "buy" | "hold" | "sell" | "strong sell".',
+    )
+    rating_mean: float | None = None
+    months: list[AnalystMonth] = Field(
+        default_factory=list, description="Oldest month first."
+    )
+    targets: AnalystTargets | None = None
+    revisions: list[EpsRevisionRow] = Field(default_factory=list)
 
 
 class FundHolding(BaseModel):

@@ -97,13 +97,105 @@ def test_missing_statements_yield_none():
     assert all(p.score is None for p in ms.pillars)
 
 
-def test_snapshot_margin_fallback_alone_is_not_enough():
-    # Only info.grossMargins available -> 1 pillar scored -> composite None.
-    ms = moat_score(RawFundamentals("SNAP", info={"grossMargins": 0.55}))
-    margins = next(p for p in ms.pillars if p.key == "gross_margin")
-    assert margins.score is not None
-    assert "snapshot" in margins.detail
-    assert ms.score is None
+def _margin_raw(revenue: list[float], operating: list[float]) -> RawFundamentals:
+    """Income rows only, newest first like yfinance."""
+    income = pd.DataFrame(
+        {"Total Revenue": revenue, "Operating Income": operating},
+        index=YEARS[: len(revenue)],
+    ).T
+    return RawFundamentals("M", {}, income)
+
+
+def _margin(raw: RawFundamentals):
+    return next(p for p in moat_score(raw).pillars if p.key == "op_margin")
+
+
+def test_a_thin_steady_margin_is_moat_evidence():
+    """Costco's case: 3% that never moves. A level scale scored it 0; the
+    stability scale reads it for what it is."""
+    pillar = _margin(_margin_raw([250, 240, 230, 220], [8.0, 7.6, 7.2, 6.8]))
+    assert pillar.score is not None and pillar.score > 90
+    assert pillar.kind == "op_margin"
+    assert abs(pillar.facts["margin"] - 0.0318) < 1e-3
+
+
+def test_a_swinging_margin_scores_low_whatever_its_level():
+    """A 30% median that swings ±15pp is cyclical, not pricing power."""
+    pillar = _margin(_margin_raw([100, 100, 100, 100], [15, 45, 15, 45]))
+    assert pillar.score is not None and pillar.score < 30
+
+
+def test_a_falling_margin_costs_points_a_rising_one_does_not():
+    """Same swing, opposite direction: erosion is the moat failing."""
+    falling = _margin(_margin_raw([100, 100, 100, 100], [20, 22, 24, 26]))
+    rising = _margin(_margin_raw([100, 100, 100, 100], [26, 24, 22, 20]))
+    assert falling.facts["change"] < 0 < rising.facts["change"]
+    assert falling.score < rising.score
+
+
+def test_a_steady_loss_is_not_pricing_power():
+    pillar = _margin(_margin_raw([100, 100, 100], [-5, -5, -5]))
+    assert pillar.score == 0.0
+    assert pillar.kind == "op_margin_loss"
+
+
+def test_a_margin_needs_three_years_and_never_a_snapshot():
+    """Two points make no σ, and today's margin has no history at all — the
+    pillar stays unscored rather than guessing its stability."""
+    assert _margin(_margin_raw([100, 90], [30, 27])).score is None
+    snap = moat_score(RawFundamentals("SNAP", info={"operatingMargins": 0.4}))
+    assert next(p for p in snap.pillars if p.key == "op_margin").score is None
+    assert snap.score is None
+
+
+def test_buybacks_earn_nothing_past_a_flat_share_count():
+    """Shrinking the count with borrowed money is capital allocation, not an
+    advantage: flat and -5%/y both score 100, dilution costs points."""
+
+    def dilution(shares: list[float]) -> float | None:
+        income = pd.DataFrame(
+            {"Diluted Average Shares": shares}, index=YEARS[: len(shares)]
+        ).T
+        ms = moat_score(RawFundamentals("D", {}, income))
+        return next(p for p in ms.pillars if p.key == "dilution").score
+
+    assert dilution([10, 10, 10]) == 100
+    assert dilution([9.0, 9.5, 10]) == 100
+    assert dilution([10.7, 10.3, 10]) == 0  # +3.4%/y
+
+
+def test_a_good_roic_is_not_the_ceiling():
+    """The level scales top out where exceptional starts: a steady 25% ROIC
+    is good, and no longer scores like a 50% one."""
+
+    def roic(level: float) -> float | None:
+        income = pd.DataFrame(
+            {"EBIT": [level * 100] * 4, "Tax Rate For Calcs": [0.0] * 4},
+            index=YEARS[:4],
+        ).T
+        balance = pd.DataFrame({"Invested Capital": [100.0] * 4}, index=YEARS[:4]).T
+        ms = moat_score(RawFundamentals("R", {}, income, balance))
+        return next(p for p in ms.pillars if p.key == "roic").score
+
+    assert 70 < roic(0.25) < 100
+    assert roic(0.50) == 100
+
+
+def test_every_pillar_carries_its_facts():
+    """The client words each detail from these; a pillar without them would
+    fall back to English."""
+    ms = moat_score(wide_moat_raw())
+    kinds = {p.key: p.kind for p in ms.pillars}
+    assert kinds == {
+        "roic": "roic",
+        "op_margin": "op_margin",
+        "growth": "growth",
+        "fcf": "fcf",
+        "dilution": "dilution",
+    }
+    assert all(p.facts for p in ms.pillars)
+    dilution = next(p for p in ms.pillars if p.key == "dilution")
+    assert dilution.facts["shares"] < 0
 
 
 def test_moat_rating_bands():
