@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { ApiError } from "../shell/api";
+import { ApiError, scoped } from "../shell/api";
 import { useLang, useT } from "../shell/i18n";
 import { Status } from "../ui/Status";
 import { addMemory, clearMemories, dropMemory, editMemory, readMemories } from "./api";
@@ -310,12 +310,14 @@ export function MemoryView({
 
   useEffect(() => {
     let alive = true;
-    readMemories().then(
+    const scope = new AbortController();
+    scoped(scope.signal, readMemories).then(
       (got) => alive && setRead(got),
       () => alive && setFailed(true),
     );
     return () => {
       alive = false;
+      scope.abort();
     };
   }, []);
 

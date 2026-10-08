@@ -23,7 +23,7 @@
  */
 
 import { useEffect, useId, useRef, useState } from "react";
-import { ApiError, get, send } from "../../shell/api";
+import { ApiError, get, scoped, send } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { Status } from "../../ui/Status";
 import { Glyph } from "../../chat/icons";
@@ -183,7 +183,8 @@ export function BriefEditor({ onClose }: { onClose: (changed: boolean) => void }
 
   useEffect(() => {
     let alive = true;
-    get<Brief>("/daily/brief").then(
+    const scope = new AbortController();
+    scoped(scope.signal, () => get<Brief>("/daily/brief")).then(
       (got) => {
         if (!alive) return;
         setRead(got);
@@ -193,6 +194,7 @@ export function BriefEditor({ onClose }: { onClose: (changed: boolean) => void }
     );
     return () => {
       alive = false;
+      scope.abort();
     };
   }, []);
 
