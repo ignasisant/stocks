@@ -300,6 +300,15 @@ def test_the_consent_page_names_the_client_and_where_it_returns(site, sign_in):
     assert page.headers["x-frame-options"] == "DENY"
 
 
+def test_the_consent_page_lets_its_own_post_carry_an_origin(site, sign_in):
+    # `no-referrer` makes a browser send `Origin: null` on any POST, so the
+    # decision would always fail the origin check.
+    sign_in(site, EMAIL)
+    client_id = register(site)["client_id"]
+    page = site.get(authorize(site, client_id, pkce()[1]))
+    assert page.headers["referrer-policy"] == "same-origin"
+
+
 def test_the_consent_page_shows_copy_never_catalog_keys(site, sign_in):
     sign_in(site, EMAIL)
     client_id = register(site)["client_id"]

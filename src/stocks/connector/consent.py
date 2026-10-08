@@ -94,7 +94,9 @@ def _headers(form_target: str | None = None) -> dict[str, str]:
             "frame-ancestors 'none'; base-uri 'none'"
         ),
         "Cache-Control": "no-store",
-        "Referrer-Policy": "no-referrer",
+        # Not `no-referrer`: under it a browser sends `Origin: null` on the
+        # form's POST, even to this same site, and `_decide` refuses that.
+        "Referrer-Policy": "same-origin",
         "X-Frame-Options": "DENY",
     }
 
