@@ -28,7 +28,7 @@ class FakeClient:
     def __init__(self):
         self.objects: dict[str, bytes] = {}
 
-    def put_object(self, Bucket, Key, Body):
+    def put_object(self, Bucket, Key, Body, Metadata=None):
         self.objects[Key] = Body
 
     def get_object(self, Bucket, Key):

@@ -14,6 +14,7 @@ def _isolated_caches(tmp_path, monkeypatch):
     """Fresh disk cache and per-process memo for every test."""
     monkeypatch.setattr(logo_mod, "LOGO_CACHE", tmp_path / "logos.json")
     monkeypatch.setattr(logo_mod, "_inconclusive", {})
+    monkeypatch.setattr(logo_mod, "_bucket", {"fold": False, "push": False})
 
 
 @pytest.mark.parametrize(
@@ -82,11 +83,39 @@ def test_blocked_probe_returns_guess_without_disk_cache(monkeypatch):
 
     url = logo_mod.logo_url("AAPL")
     assert url == FMP_AAPL  # best guess still handed to the browser
-    # A blocked host must not poison the disk cache…
+    # A blocked host must not poison the definitive cache…
     assert "AAPL" not in logo_mod._load_cache()
     # …but the process memoizes instead of re-probing every render.
     assert logo_mod.logo_url("AAPL") == FMP_AAPL
     assert probes == [FMP_AAPL, FAVICON.format(domain="apple.com")]
+
+
+def test_blocked_verdict_outlives_the_process_for_a_week(monkeypatch):
+    """A reboot must not re-probe every blocked logo — a few seconds each, on
+    the first page anyone opens — but the host does try again after the TTL."""
+    probes = []
+
+    def fake_probe(url):
+        probes.append(url)
+        return "blocked"
+
+    monkeypatch.setattr(logo_mod, "_probe", fake_probe)
+    monkeypatch.setattr(logo_mod, "_company_domain", lambda t: None)
+    now = 1_000_000.0
+    monkeypatch.setattr(logo_mod.time, "time", lambda: now)
+
+    assert logo_mod.logo_url("AAPL") == FMP_AAPL
+    monkeypatch.setattr(logo_mod, "_inconclusive", {})  # "reboot"
+    assert logo_mod.logo_url("AAPL") == FMP_AAPL
+    assert probes == [FMP_AAPL]
+
+    now += logo_mod.BLOCKED_TTL + 1
+    monkeypatch.setattr(logo_mod, "_inconclusive", {})
+    monkeypatch.setattr(logo_mod, "_probe", lambda url: "ok")
+    assert logo_mod.logo_url("AAPL") == FMP_AAPL
+    # Settled for good, and the blocked entry is gone.
+    assert logo_mod._load_cache()["AAPL"] == FMP_AAPL
+    assert "AAPL" not in logo_mod._load_file()["_blocked"]
 
 
 def test_dead_everywhere_caches_negative(monkeypatch):
@@ -167,6 +196,16 @@ def test_mirror_logo_downloads_once_then_serves_from_disk(tmp_path, monkeypatch)
     # Second call finds the file — the logo host is contacted exactly once.
     assert logo_mod.mirror_logo("AAPL", tmp_path) == "AAPL.png"
     assert len(calls) == 1
+
+
+def test_mirror_logo_ignores_a_longer_stem(tmp_path, monkeypatch):
+    """BRK's glob also matches BRK.B.png; that is not BRK's logo."""
+    (tmp_path / "BRK.B.png").write_bytes(b"b")
+    monkeypatch.setattr(logo_mod, "logo_url", lambda t: "https://x/BRK.png")
+    monkeypatch.setattr(
+        logo_mod, "get_bytes_and_type", lambda url, **kw: (b"k", "image/png")
+    )
+    assert logo_mod.mirror_logo("BRK", tmp_path) == "BRK.png"
 
 
 def test_mirror_logo_unresolved_and_failed_download(tmp_path, monkeypatch):
