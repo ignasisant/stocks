@@ -396,3 +396,18 @@ def test_redirect_to_a_public_host_is_followed(monkeypatch):
                                    email.message.Message(),
                                    "https://news.example/b")
     assert got is not None and got.full_url == "https://news.example/b"
+
+
+def test_relevant_drops_hits_that_share_no_word_with_the_query():
+    hits = [
+        Result("Hoodstock", "https://en.wikipedia.org/wiki/Hoodstock", "A festival."),
+        Result("Kerem Hotiç", "https://en.wikipedia.org/wiki/Kerem_Hotiç", "Actor."),
+        Result("Hoth (HODO) stock", "https://example.com/hodo", "Shares rose"),
+    ]
+    kept = chat_web.relevant(hits, ["HODO stock news today"])
+    assert [r.url for r in kept] == ["https://example.com/hodo"]
+
+
+def test_relevant_keeps_everything_when_the_query_has_no_usable_word():
+    hits = [Result("Anything", "https://example.com", "x")]
+    assert chat_web.relevant(hits, ["stock news 2026"]) == hits

@@ -33,6 +33,8 @@ import type {
   Quote,
   SearchMatch,
   TickerPosition,
+  TickerSplits,
+  TickerSplitsApplied,
   Valuation,
   WatchlistEntry,
 } from "./types";
@@ -59,6 +61,17 @@ export const getProfile = (ticker: string) => get<Profile>(`${at(ticker)}/profil
 /** `base` is the account's reporting currency: value and weight are quoted in it. */
 export const getPosition = (ticker: string, base: string) =>
   get<TickerPosition>(`${at(ticker)}/position`, { base });
+
+/** Forward splits the book lacks for this name. Writes nothing. */
+export const getSplits = (ticker: string) => get<TickerSplits>(`${at(ticker)}/splits`);
+
+/** Write the named splits as one undoable edit; the server re-scans first. */
+export const applySplits = (ticker: string, dates: string[]) =>
+  send<TickerSplitsApplied>("POST", `${at(ticker)}/splits`, { dates });
+
+/** Take back an edit by its journal id — what `applySplits` answered with. */
+export const undoChange = (changeId: number) =>
+  send<unknown>("DELETE", `/portfolio/changes/${changeId}`);
 
 /** …and here it buys one tile: the market cap restated in the reader's money. */
 export const getMetrics = (ticker: string, base: string) =>

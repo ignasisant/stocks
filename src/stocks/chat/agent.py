@@ -25,10 +25,9 @@ import secrets
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import date
 
 from stocks import obs
-from stocks.chat import toolbox
+from stocks.chat import clock, toolbox
 from stocks.web.llm import Provider, ToolCall
 
 # The gather runs before a single character is on screen, so it is pure latency.
@@ -51,7 +50,7 @@ GATHER_SYSTEM = (
     "- Use portfolio_snapshot for anything about what the user owns, "
     "get_quotes for what something trades at now, and search_web/read_page "
     "for news, filings and anything newer than your training data.\n"
-    "Today is {today}."
+    "{today}."
 )
 
 
@@ -161,7 +160,7 @@ def gather(
     """
     if not available(provider) or not messages:
         return Evidence(ok=False)
-    system = GATHER_SYSTEM.format(today=date.today().isoformat())
+    system = GATHER_SYSTEM.format(today=clock.line())
     picked = model or provider.classifier_model or provider.default_model
 
     execute = toolbox.executor(ctx)

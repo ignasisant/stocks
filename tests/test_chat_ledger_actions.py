@@ -341,3 +341,42 @@ def test_closing_what_the_book_no_longer_holds_proposes_nothing(tmp_path):
     drafted = book.draft(Action("close_position", "CAT-EUR", {}), db=db,
                          translate=_translate, resolve=lambda s: s)
     assert drafted.book is None and "no CAT-EUR" in drafted.text
+
+
+def test_closing_finds_the_pair_under_its_bare_symbol(tmp_path):
+    # "ciérrala" said CAT, the book says CAT-EUR (and the other way round).
+    db = tmp_path / "book.db"
+    add_many([replace(t, note="kraken CAT") for t in DUST], db)
+    for said in ("CAT", "CAT-EUR"):
+        drafted = book.draft(Action("close_position", said, {}), db=db,
+                             translate=_translate, resolve=lambda s: s)
+        assert drafted.book is not None, said
+
+
+def test_closing_an_unknown_symbol_lists_the_closest_held(tmp_path):
+    db = tmp_path / "book.db"
+    add_many([*BOOK[:1], Transaction("2026-08-20", "CATX", "buy", 3, 5.0,
+                                     "EUR", 0.0, "ibkr")], db)
+    drafted = book.draft(Action("close_position", "CATT", {}), db=db,
+                         translate=_translate, resolve=lambda s: s)
+    assert drafted.book is None
+    assert "CATX" in drafted.text and "nothing to close" not in drafted.text
+
+
+def test_close_wording_reaches_the_action_classifier():
+    assert tools.maybe_action("ya no tengo CAT, ciérrala")
+    assert tools.maybe_action("I sold all my CAT, close it")
+
+
+def test_a_bare_symbol_does_not_select_the_coin_when_the_stock_is_held():
+    stock = Transaction("2026-08-20", "CAT", "buy", 2, 300.0, "USD", 0.0, "ibkr")
+    coin = Transaction("2026-08-21", "CAT-EUR", "buy", 100, 0.01, "EUR", 0.0,
+                       "kraken CAT")
+    picked = edits.select([stock, coin], edits.Selector(ticker="CAT"))
+    assert [t.ticker for t in picked] == ["CAT"]
+    picked = edits.select([coin], edits.Selector(ticker="CAT"))
+    assert [t.ticker for t in picked] == ["CAT-EUR"]
+
+
+def test_close_price_questions_do_not_wake_the_action_classifier():
+    assert not tools.maybe_action("what was NVDA's close price yesterday?")

@@ -433,6 +433,7 @@
   "chat.book_summary_fee_in_coins": "Take the fee's coins off {count} Revolut crypto buys ({tickers})",
   "chat.book_summary_undo": "Undo “{summary}” ({when})",
   "chat.book_nothing_left": "The book holds no {ticker} any more — nothing to close.",
+  "chat.book_close_unknown": "I find no {ticker} in the recorded trades. Closest held: {near}. Which one do you mean?",
   "chat.book_close_what": "At what price did you sell the last of {ticker}?",
   "chat.book_summary_close": "Close {ticker}: book the {quantity} left as sold",
   "chat.action_undo": "Undo",

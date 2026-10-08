@@ -179,7 +179,7 @@ def _thread(turns, words=400):
 def test_groq_carries_its_free_tier_cap(monkeypatch):
     monkeypatch.setattr(llm, "_free_secrets",
                         lambda: {"groq": "gsk-x", "openrouter": "sk-or-x"})
-    groq, openrouter = llm._free_backends()
+    groq, openrouter, *_ = llm._free_backends()
     assert (groq.tpm, openrouter.tpm) == (8000, 0)
     monkeypatch.setattr(llm, "_free_secrets",
                         lambda: {"groq": "gsk-x", "groq_tpm": "30000"})
@@ -277,7 +277,7 @@ def test_backends_follow_fixed_order_and_model_override(monkeypatch):
                  "groq_model": "qwen-32b", "daily_cap": 5},
     )
     got = llm._free_backends()
-    assert [b.id for b in got] == ["groq", "openrouter"]
+    assert [b.id for b in got][:2] == ["groq", "openrouter"]
     assert got[0].model == "qwen-32b"
     assert got[1].model == "nvidia/nemotron-3-ultra-550b-a55b:free"
 

@@ -171,10 +171,13 @@ export function Glance({
 export function MoversSlot({
   query,
   alone,
+  rows,
 }: {
   query: Query<Book | null>;
   /** The glance is not on the page to carry a failure. */
   alone: boolean;
+  /** Rows each side draws — the 52-week card's count (`moverRows`). */
+  rows: number;
 }) {
   const t = useT();
   if (query.state === "failed" && !alone) return null;
@@ -187,7 +190,11 @@ export function MoversSlot({
     >
       {(book) =>
         book && book.summary.positions > 0 ? (
-          <MoversCard movers={book.movers} positions={book.positions.positions} />
+          <MoversCard
+            movers={book.movers}
+            positions={book.positions.positions}
+            rows={rows}
+          />
         ) : null
       }
     </CardQuery>
@@ -377,9 +384,11 @@ function GlanceCard({ book }: { book: Book }) {
 function MoversCard({
   movers,
   positions,
+  rows,
 }: {
   movers: Record<WindowKey, Movers>;
   positions: Position[];
+  rows: number;
 }) {
   const t = useT();
   const [range, setRange] = useState<WindowKey>("day");
@@ -411,12 +420,12 @@ function MoversCard({
       <div className="hm-split">
         <MoverTable
           label={t("home.gainers")}
-          rows={shown.gainers.slice(0, 3)}
+          rows={shown.gainers.slice(0, rows)}
           held={held}
         />
         <MoverTable
           label={t("home.losers")}
-          rows={shown.losers.slice(0, 3)}
+          rows={shown.losers.slice(0, rows)}
           held={held}
         />
       </div>

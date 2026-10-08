@@ -249,6 +249,75 @@
   padding: 0.3rem 0.5rem;
 }
 
+/* The table's order as a control: a column and a direction, above the rows. */
+.pf-sortbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.6rem;
+}
+
+.pf-sortbar .pf-dropdown {
+  min-width: 0;
+}
+
+.pf-sort-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  background: none;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-xs, 0.78rem);
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  white-space: nowrap;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* A tap leaves `:hover` behind on a touch screen, so only a mouse gets it;
+   a finger gets `:active`, on the press rather than the release. */
+@media (hover: hover) and (pointer: fine) {
+  .pf-sort-dir:hover:not(:disabled) {
+    color: var(--ag-text-primary);
+  }
+}
+
+.pf-sort-dir:active:not(:disabled) {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-primary);
+}
+
+.pf-sort-dir:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pf-sortbar .pf-dropdown:focus-visible,
+.pf-sort-dir:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 1px;
+}
+
+/* Under a finger both halves are 44px, and the select reads at 16px so iOS
+   does not zoom the page when it opens. The select takes the row's spare
+   width; the direction keeps its words. */
+@media (pointer: coarse) {
+  .pf-sortbar .pf-dropdown {
+    flex: 1 1 auto;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .pf-sort-dir {
+    min-height: 44px;
+    padding-inline: 0.85rem;
+  }
+}
+
 /* -------------------------------------------------------------------- charts */
 
 .pf-donuts {

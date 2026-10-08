@@ -1044,6 +1044,11 @@ def cmd_imports(args: argparse.Namespace) -> None:
         return
 
     items = diag.recent(diag.stored(), hours=args.hours)
+    if not args.all:
+        # Test accounts and statements that only skipped what they always skip
+        # are not failures; `--all` for the ones filed before they were told apart.
+        items = [i for i in items
+                 if not diag.is_test_account(i.get("user")) and not diag.benign(i)]
     if args.platform:
         items = [i for i in items if i.get("platform") == args.platform]
 
@@ -1622,6 +1627,8 @@ def build_parser() -> argparse.ArgumentParser:
         parser.add_argument("--hours", type=int, default=24,
                             help="how far back to look (default 24)")
         parser.add_argument("--platform", help="only this platform key")
+        parser.add_argument("--all", action="store_true",
+                            help="include e2e accounts and routine-skip-only imports")
 
     _imports_common(imports_sub.add_parser("list", help="one line per failure"))
     p_imp_show = imports_sub.add_parser("show", help="the full fingerprint")

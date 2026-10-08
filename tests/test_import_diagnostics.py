@@ -349,3 +349,73 @@ def test_headers_survive_verbatim_because_they_are_the_brokers_schema():
     data = b"Fecha valor,Producto,ISIN,Numero,Precio\n2023-01-03,x,y,1,2\n"
     fp = diagnostics.fingerprint("degiro", "Transactions.csv", data)
     assert fp["headers"] == ["Fecha valor", "Producto", "ISIN", "Numero", "Precio"]
+
+
+# ----------------------------------------------------- noise and attribution
+
+INVENTORY = b"box_id,sku,qty,location\n1,A1,3,shelf\n"
+CASH = "cash movement — not position-affecting"
+
+
+def test_a_file_no_broker_owns_is_unrecognised_not_the_picked_platform(sandbox):
+    # The Import page tries the preselected platform first, so its refusal is
+    # what comes back — and used to be filed as a DEGIRO bug.
+    result = platforms.by_key("degiro").parse("inventory.csv", INVENTORY)
+    assert result.skipped and not result.transactions
+    fp = diagnostics.report("degiro", "inventory.csv", INVENTORY, result)
+    assert fp["platform"] == diagnostics.UNRECOGNISED
+    assert fp["named"] == "degiro"
+    assert fp["headers"] == ["box_id", "sku", "qty", "location"]
+
+
+def test_a_broker_file_that_breaks_keeps_its_platform(sandbox):
+    data = _revolut_csv_with_sentinels()
+    result = platforms.by_key("revolut").parse(FILENAME, data)
+    fp = diagnostics.report("revolut", FILENAME, data, result)
+    assert fp["platform"] == "revolut" and "named" not in fp
+
+
+def test_benign_judges_old_fingerprints_by_their_reasons():
+    old = {"imported": 25, "skipped": 1, "reasons": {CASH: 1}}  # no `routine`
+    assert diagnostics.benign(old)
+    assert not diagnostics.benign({**old, "reasons": {CASH: 1, "missing ticker": 1}})
+    assert not diagnostics.benign({**old, "imported": 0})
+    assert not diagnostics.benign({**old, "error_type": "ValueError"})
+    assert not diagnostics.benign({"imported": 3, "reasons": {}})
+
+
+def test_the_e2e_suites_accounts_are_recognised_and_never_kept(sandbox):
+    assert diagnostics.is_test_account("e2e_81372_1_example_com_7a1fd2c1")
+    assert not diagnostics.is_test_account("jane_example_com_7a1fd2c1")
+    fp = {"ts": "2026-10-07T10:00:00Z", "user": "e2e_1_2_example_com_ab"}
+    assert diagnostics.record(fp) is None
+    assert not sandbox.exists() or not list(sandbox.glob("*.json"))
+
+
+def test_imports_list_hides_test_accounts_and_routine_skips(sandbox, capsys):
+    import argparse
+    import time
+
+    from stocks import cli
+
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    sandbox.mkdir(parents=True)
+    rows = {
+        "a": {"user": "e2e_1_1_example_com_ab", "imported": 0, "skipped": 1,
+              "reasons": {"missing ticker": 1}},
+        "b": {"user": "jane", "imported": 25, "skipped": 1, "reasons": {CASH: 1}},
+        "c": {"user": "jane", "imported": 0, "skipped": 1,
+              "reasons": {"missing ticker": 1}},
+    }
+    for name, row in rows.items():
+        (sandbox / f"{name}.json").write_text(
+            json.dumps({"ts": now, "platform": "revolut", **row}))
+
+    def listing(show_all: bool) -> str:
+        cli.cmd_imports(argparse.Namespace(
+            imports_command="list", hours=24, platform=None, all=show_all))
+        return capsys.readouterr().out
+
+    out = listing(False)
+    assert "1 diagnostics" in out and "e2e_" not in out
+    assert "3 diagnostics" in listing(True)

@@ -72,3 +72,11 @@ def test_other_exceptions_not_retried(monkeypatch):
     with pytest.raises(ValueError):
         fetch.retry(fn)
     assert len(calls) == 1
+
+
+def test_yfinance_page_cache_is_bounded():
+    """yfinance's `cache_get` pins whole HTTP bodies (64 by default, ~100MB
+    after one earnings calendar); `data.fetch` keeps only the last few."""
+    from yfinance.data import YfData
+
+    assert YfData.cache_get.cache_info().maxsize == fetch.YAHOO_PAGE_CACHE <= 8

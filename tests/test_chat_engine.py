@@ -913,3 +913,19 @@ def test_every_jurisdiction_has_a_headline():
     for code in tax.codes():
         summary = tax.get(code).summary
         assert summary != code and " — " in summary
+
+
+def test_today_is_the_madrid_day_and_outranks_web_dates(monkeypatch):
+    from datetime import UTC, datetime
+
+    from stocks.chat import clock
+
+    class _Now(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 4, 23, 30, tzinfo=UTC).astimezone(tz)
+
+    monkeypatch.setattr(clock, "datetime", _Now)
+    assert clock.today().isoformat() == "2026-10-05"  # 01:30 in Madrid
+    assert "2026-10-05 (Europe/Madrid)" in clock.line()
+    assert "never today's" in clock.line()

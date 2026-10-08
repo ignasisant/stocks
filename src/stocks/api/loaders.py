@@ -77,6 +77,16 @@ def ledger_state(db: str, mtime: float, base: str = "EUR", matching: str = "fifo
     return txs, positions, realized
 
 
+def _currencies(txs) -> dict[str, str]:
+    """ticker -> the currency the book traded it in, for the price download's
+    venue search (`fetch_many(currencies=…)`)."""
+    out: dict[str, str] = {}
+    for t in txs:
+        if t.action in ("buy", "sell"):
+            out.setdefault(t.ticker, t.currency)
+    return out
+
+
 def _held(db: str) -> tuple[list, list[str]]:
     """(relabelled ledger, the names it ever held) — the book's price scope.
 
@@ -116,7 +126,12 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
         pd.Timestamp.today()
         - pd.Timestamp(min(t.date for t in txs if t.action in HELD_ACTIONS))
     ).days
-    frames = fetch_many(tickers, period=f"{max(1, span // 30 + 1)}mo", auto_adjust=False)
+    frames = fetch_many(
+        tickers,
+        period=f"{max(1, span // 30 + 1)}mo",
+        auto_adjust=False,
+        currencies=_currencies(txs),
+    )
     # Judged here, at the download, and only here: a gutted download memoised
     # as the book's frames would land on disk and in the bucket besides. The
     # two readings below trust what this returns — after a restart it comes
