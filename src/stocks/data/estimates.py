@@ -101,7 +101,7 @@ def fetch_estimates(ticker: str) -> RawEstimates:
     )
 
 
-def _pick(df: pd.DataFrame, period: str, col: str) -> float | None:
+def _pick(df: pd.DataFrame | None, period: str, col: str) -> float | None:
     """Value at (period, col) of an estimate frame; None when absent/NaN."""
     if df is None or df.empty or period not in df.index or col not in df.columns:
         return None

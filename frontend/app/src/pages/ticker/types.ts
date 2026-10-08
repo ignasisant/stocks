@@ -448,7 +448,7 @@ export type AnalystMonth = {
 };
 
 /** 12-month price targets, in the quote's currency. Consensus, never fact. */
-export type AnalystTargets = {
+type AnalystTargets = {
   low: number | null;
   median: number | null;
   mean: number | null;
