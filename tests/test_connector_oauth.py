@@ -300,6 +300,14 @@ def test_the_consent_page_names_the_client_and_where_it_returns(site, sign_in):
     assert page.headers["x-frame-options"] == "DENY"
 
 
+def test_the_consent_page_shows_copy_never_catalog_keys(site, sign_in):
+    sign_in(site, EMAIL)
+    client_id = register(site)["client_id"]
+    page = site.get(authorize(site, client_id, pkce()[1]))
+    assert "Your tax report" in page.text
+    assert "connector." not in page.text
+
+
 def test_a_decision_from_another_origin_is_refused(site, sign_in):
     sign_in(site, EMAIL)
     client_id = register(site)["client_id"]
