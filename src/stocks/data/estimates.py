@@ -13,6 +13,7 @@ pulled RawEstimates so tests run offline.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 
 import pandas as pd
 
@@ -36,6 +37,11 @@ class RawEstimates:
     revenue_estimate: pd.DataFrame = field(default_factory=pd.DataFrame)
     recommendations: pd.DataFrame = field(default_factory=pd.DataFrame)
     growth_estimates: pd.DataFrame = field(default_factory=pd.DataFrame)
+    # Plain `None` defaults, not factories: the memo persists this object as a
+    # pickle, and an entry written before these fields existed unpickles
+    # without them. A class-level default is what such an old entry reads.
+    eps_trend: pd.DataFrame | None = None  # EPS consensus now vs 7/30/60/90d ago
+    eps_revisions: pd.DataFrame | None = None  # analysts revising up/down
 
 
 @dataclass(frozen=True)
@@ -90,10 +96,12 @@ def fetch_estimates(ticker: str) -> RawEstimates:
         revenue_estimate=_safe(lambda: t.revenue_estimate, pd.DataFrame()),
         recommendations=_safe(lambda: t.recommendations, pd.DataFrame()),
         growth_estimates=_safe(lambda: t.growth_estimates, pd.DataFrame()),
+        eps_trend=_safe(lambda: t.eps_trend, pd.DataFrame()),
+        eps_revisions=_safe(lambda: t.eps_revisions, pd.DataFrame()),
     )
 
 
-def _pick(df: pd.DataFrame, period: str, col: str) -> float | None:
+def _pick(df: pd.DataFrame | None, period: str, col: str) -> float | None:
     """Value at (period, col) of an estimate frame; None when absent/NaN."""
     if df is None or df.empty or period not in df.index or col not in df.columns:
         return None
@@ -161,6 +169,140 @@ def consensus(raw: RawEstimates) -> Consensus:
         rev_next_fy=_pick(rev, NEXT_FY, "avg"),
         rev_growth_next_fy=_pick(rev, NEXT_FY, "growth"),
     )
+
+
+# Under this many ratings a "consensus" is one or two opinions: the page says
+# so rather than drawing a split and a target range around them.
+MIN_COVERAGE = 3
+
+# How far back yfinance's eps_trend looks, in days, as its column names say.
+TREND_DAYS = (7, 30, 60, 90)
+
+
+@dataclass(frozen=True)
+class RatingMonth:
+    """One month of the strong-buy..strong-sell split."""
+
+    month: str  # "YYYY-MM"
+    counts: dict[str, int]
+
+    @property
+    def total(self) -> int:
+        return sum(self.counts.values())
+
+    @property
+    def mean(self) -> float | None:
+        """1 (strong buy) .. 5 (strong sell); None with no votes."""
+        return rating_from_counts(self.counts)[1]
+
+
+def _months_back(today: date, n: int) -> str:
+    """The calendar month `n` months before `today`'s, as "YYYY-MM"."""
+    year, month = divmod(today.year * 12 + today.month - 1 - n, 12)
+    return f"{year:04d}-{month + 1:02d}"
+
+
+def rating_trend(raw: RawEstimates, today: date) -> list[RatingMonth]:
+    """The monthly rating split, oldest month first; [] with no coverage.
+
+    yfinance labels the rows relative to now ("0m", "-1m", …), so the month is
+    pinned against `today` here — a page printing "-2m" makes its reader do
+    the calendar arithmetic.
+    """
+    df = raw.recommendations
+    if df is None or df.empty or "period" not in df.columns:
+        return []
+    months: list[tuple[int, RatingMonth]] = []
+    for _, row in df.iterrows():
+        label = str(row["period"])
+        if not label.endswith("m"):
+            continue
+        try:
+            back = -int(label[:-1])
+        except ValueError:
+            continue
+        counts = {
+            k: int(row[k]) for k in _RATING_SCORE if k in row and pd.notna(row[k])
+        }
+        if back >= 0 and sum(counts.values()):
+            months.append((back, RatingMonth(_months_back(today, back), counts)))
+    return [m for _, m in sorted(months, key=lambda pair: pair[0], reverse=True)]
+
+
+@dataclass(frozen=True)
+class EpsRevision:
+    """Where one period's EPS consensus stood 7/30/60/90 days ago, and how
+    many analysts moved it up or down since."""
+
+    period: str  # "0y" | "+1y"
+    current: float | None
+    ago: dict[int, float | None]  # TREND_DAYS -> consensus then
+    up_7d: int | None = None
+    up_30d: int | None = None
+    down_7d: int | None = None
+    down_30d: int | None = None
+
+    def change(self, days: int) -> float | None:
+        """Move since `days` ago over the size of the old figure.
+
+        Over its magnitude, so a loss narrowing from -1.00 to -0.50 reads as
+        the improvement it is. None when either end is missing or the old
+        consensus was zero.
+        """
+        then = self.ago.get(days)
+        if self.current is None or then is None or then == 0:
+            return None
+        return (self.current - then) / abs(then)
+
+    @property
+    def empty(self) -> bool:
+        return self.current is None and all(v is None for v in self.ago.values())
+
+
+def _count_in(df: pd.DataFrame | None, period: str, name: str) -> int | None:
+    """An eps_revisions count, matching the column case-blind: yfinance spells
+    one of them `downLast7Days` and the rest `…days`."""
+    if df is None or df.empty or period not in df.index:
+        return None
+    for col in df.columns:
+        if str(col).lower() == name.lower():
+            value = df.loc[period, col]
+            return int(value) if pd.notna(value) else None
+    return None
+
+
+def eps_revisions(raw: RawEstimates) -> list[EpsRevision]:
+    """Current- and next-FY EPS revisions; periods with no figure are left out.
+
+    Fiscal years only: a quarter's consensus drifts toward the print as it
+    nears and reads as a revision when it is only the calendar.
+    """
+    trend, counts = raw.eps_trend, raw.eps_revisions
+    out: list[EpsRevision] = []
+    for period in (CURRENT_FY, NEXT_FY):
+        revision = EpsRevision(
+            period=period,
+            current=_pick(trend, period, "current"),
+            ago={d: _pick(trend, period, f"{d}daysAgo") for d in TREND_DAYS},
+            up_7d=_count_in(counts, period, "upLast7days"),
+            up_30d=_count_in(counts, period, "upLast30days"),
+            down_7d=_count_in(counts, period, "downLast7days"),
+            down_30d=_count_in(counts, period, "downLast30days"),
+        )
+        if not revision.empty:
+            out.append(revision)
+    return out
+
+
+def target_dispersion(c: Consensus) -> float | None:
+    """(high - low) / mean target: how far apart the analysts are.
+
+    A target range wider than the mean itself says the mean is an average of
+    disagreements, not a view anyone holds.
+    """
+    if c.target_high is None or c.target_low is None or not c.target_mean:
+        return None
+    return (c.target_high - c.target_low) / c.target_mean
 
 
 @dataclass(frozen=True)

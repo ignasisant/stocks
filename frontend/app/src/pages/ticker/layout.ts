@@ -48,7 +48,7 @@ export type Shape = {
   candles: boolean;
   markers: readonly Marker[];
   sections: {
-    /** Results, KPI grid, valuation, moat, insiders, comps, KPI sources. */
+    /** Results, KPI grid, valuation, analysts, moat, insiders, comps, KPI sources. */
     company: boolean;
     /** The fund card (a closed-end fund's is its CEF block). */
     fund: boolean;

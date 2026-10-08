@@ -360,18 +360,27 @@ export type Valuation = {
   windows: ValuationWindow[];
 };
 
-type MoatPillar = {
+export type MoatPillar = {
   key: string;
+  /** English; the fallback when the catalog lacks `label_key`. */
   label: string;
+  label_key: string;
   score: number | null;
+  /** The moat band's colour at this score (green | orange | red). */
+  tone: string | null;
   weight: number;
+  /** English; the fallback when the catalog lacks `detail_key`. */
   detail: string;
+  detail_key: string;
+  /** Fills `detail_key`: fractions as fractions, counts as counts. */
+  facts: Record<string, number>;
 };
 
 export type Moat = {
   ticker: string;
   score: number | null;
   rating: string | null;
+  rating_key: string | null;
   /** The band's tone (green | orange | red); null with no score. */
   rating_tone: string | null;
   years: number;
@@ -422,6 +431,64 @@ export type Insiders = {
    * issuer that never files Form 4".
    */
   sec_filer: boolean | null;
+};
+
+/** One month of the sell-side split. */
+export type AnalystMonth = {
+  /** "YYYY-MM". */
+  month: string;
+  strong_buy: number;
+  buy: number;
+  hold: number;
+  sell: number;
+  strong_sell: number;
+  total: number;
+  /** 1 (strong buy) .. 5 (strong sell). */
+  mean: number | null;
+};
+
+/** 12-month price targets, in the quote's currency. Consensus, never fact. */
+type AnalystTargets = {
+  low: number | null;
+  median: number | null;
+  mean: number | null;
+  high: number | null;
+  /** Fractions: 0.12 is a target 12% above the price. */
+  upside_mean: number | null;
+  upside_median: number | null;
+  /** (high - low) / mean. */
+  dispersion: number | null;
+};
+
+export type EpsRevisionRow = {
+  /** "0y" current FY, "+1y" next FY. */
+  period: string;
+  current: number | null;
+  /** Fractions over the old figure's magnitude. */
+  change_7d: number | null;
+  change_30d: number | null;
+  change_90d: number | null;
+  up_7d: number | null;
+  up_30d: number | null;
+  down_7d: number | null;
+  down_30d: number | null;
+};
+
+export type Analysts = {
+  ticker: string;
+  currency: string | null;
+  price: number | null;
+  /** Ratings in the latest month; 0 when nobody covers the name. */
+  analysts: number;
+  /** False under `min_coverage`: one or two opinions are not a consensus. */
+  covered: boolean;
+  min_coverage: number;
+  rating: string | null;
+  rating_mean: number | null;
+  /** Oldest month first. */
+  months: AnalystMonth[];
+  targets: AnalystTargets | null;
+  revisions: EpsRevisionRow[];
 };
 
 type FundHolding = { symbol: string; name: string; weight: number };

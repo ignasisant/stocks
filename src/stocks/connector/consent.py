@@ -42,8 +42,8 @@ FORM_PURPOSE = "mcp.consent"
 FORM_MAX_AGE = 600
 _BODY_LIMIT = 16 * 1024
 
-_READS = ("read_positions", "read_performance", "read_tax", "read_memory",
-          "read_market")
+_READS = ("consent_read_positions", "consent_read_performance", "consent_read_tax",
+          "consent_read_memory", "consent_read_market")
 
 
 def _digest(raw: str) -> str:

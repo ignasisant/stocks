@@ -425,6 +425,17 @@ RELEASES: tuple[Release, ...] = (
             News(slug="crypto", icon="currency_bitcoin", step="market"),
         ),
     ),
+    Release(
+        version="2026.10.4",
+        date="2026-10",
+        items=(
+            # One card: a share's page gained a section of its own — what the
+            # sell side says, where it puts the price and which way it is
+            # revising earnings. The blocks inside it are this card's body and
+            # the market step's, not cards of their own.
+            News(slug="analysts", icon="query_stats", step="market"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

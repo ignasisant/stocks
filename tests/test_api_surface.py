@@ -148,7 +148,9 @@ def test_the_guest_list_is_not_silently_growing():
     # 53: `GET /ticker/{symbol}/crypto/cycle`, `/positioning` and `/holding` —
     # a coin page's cards; the holding one reads the shared demo book as
     # `/position` already does.
-    assert len(guest.OPEN) == 53
+    # 54: `GET /ticker/{symbol}/analysts` — a share's sell-side card: market
+    # data like `/moat` and `/insiders`, no account goes into it.
+    assert len(guest.OPEN) == 54
 
 
 def test_every_route_a_guest_may_read_is_a_read():

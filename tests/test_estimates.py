@@ -1,5 +1,8 @@
 """Consensus-estimate normalization tests — synthetic data, no network."""
 
+import pickle
+from datetime import date
+
 import pandas as pd
 
 from stocks.data.estimates import (
@@ -7,11 +10,14 @@ from stocks.data.estimates import (
     Consensus,
     RawEstimates,
     consensus,
+    eps_revisions,
     estimate_currency,
     long_term_growth,
     projection,
     quarter_outlook,
     rating_from_counts,
+    rating_trend,
+    target_dispersion,
 )
 
 
@@ -162,3 +168,76 @@ def test_quarter_outlook_reads_the_next_quarter_row():
 def test_quarter_outlook_without_coverage_is_empty():
     view = quarter_outlook(RawEstimates(ticker="TEST"))
     assert view.empty and view.eps_avg is None and view.rev_analysts is None
+
+
+# ------------------------------------------------------------------ analysts
+
+
+def test_rating_trend_pins_relative_months_to_the_calendar_oldest_first():
+    """yfinance says "-2m"; a page printing that makes its reader count."""
+    months = rating_trend(sample_raw(), date(2026, 1, 15))
+    assert [m.month for m in months] == ["2025-11", "2025-12", "2026-01"]
+    latest = months[-1]
+    assert latest.total == 6 + 23 + 14 + 2 + 2
+    assert latest.mean == rating_from_counts(latest.counts)[1]
+
+
+def test_rating_trend_without_coverage_is_empty():
+    assert rating_trend(RawEstimates(ticker="TEST"), date(2026, 1, 1)) == []
+
+
+def _revision_raw() -> RawEstimates:
+    trend = pd.DataFrame(
+        {
+            "current": [1.98, 2.9, 8.82, 9.58],
+            "7daysAgo": [1.97, 2.9, 8.81, 9.57],
+            "30daysAgo": [1.97, 2.89, 8.0, 10.0],
+            "60daysAgo": [1.97, 2.9, 8.8, 9.55],
+            "90daysAgo": [2.0, 2.94, -1.0, 9.68],
+        },
+        index=["0q", "+1q", "0y", "+1y"],
+    )
+    # yfinance's own spelling: one column says "Days", the rest "days".
+    counts = pd.DataFrame(
+        {
+            "upLast7days": [1, 0, 1, 0],
+            "upLast30days": [7, 1, 3, 5],
+            "downLast30days": [14, 2, 2, 3],
+            "downLast7Days": [0, 1, 2, 1],
+        },
+        index=["0q", "+1q", "0y", "+1y"],
+    )
+    return RawEstimates(ticker="TEST", eps_trend=trend, eps_revisions=counts)
+
+
+def test_eps_revisions_read_both_fiscal_years_and_skip_quarters():
+    rows = eps_revisions(_revision_raw())
+    assert [r.period for r in rows] == ["0y", "+1y"]
+    fy = rows[0]
+    assert fy.change(30) == (8.82 - 8.0) / 8.0
+    assert (fy.up_30d, fy.down_30d, fy.up_7d, fy.down_7d) == (3, 2, 1, 2)
+    assert rows[1].change(30) < 0
+
+
+def test_a_revision_off_a_loss_is_measured_over_its_size():
+    """-1.00 to 8.82 is an improvement; over a signed base it reads as a cut."""
+    assert eps_revisions(_revision_raw())[0].change(90) > 0
+
+
+def test_eps_revisions_without_a_trend_is_empty():
+    assert eps_revisions(RawEstimates(ticker="TEST")) == []
+
+
+def test_a_pickle_from_before_the_revision_fields_still_reads():
+    """The memo persists RawEstimates; an entry written by the previous release
+    unpickles without the new attributes and must read them as absent."""
+    raw = RawEstimates(ticker="OLD")
+    del raw.__dict__["eps_trend"], raw.__dict__["eps_revisions"]
+    old = pickle.loads(pickle.dumps(raw))
+    assert old.eps_trend is None and eps_revisions(old) == []
+
+
+def test_target_dispersion():
+    c = consensus(sample_raw())
+    assert target_dispersion(c) == (400.0 - 215.0) / 318.81
+    assert target_dispersion(Consensus(ticker="X")) is None

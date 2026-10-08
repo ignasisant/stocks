@@ -167,6 +167,17 @@
   margin-bottom: 12px;
 }
 
+.tk-show-more {
+  display: block;
+  margin: 0 auto;
+}
+
+@media (pointer: coarse) {
+  .tk-show-more {
+    min-height: 44px;
+  }
+}
+
 .tk-down {
   display: flex;
   align-items: center;
@@ -663,45 +674,199 @@
 
 /* -------------------------------------------------------------------- moat */
 
-.tk-pillars {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.tk-pillar-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--ag-fs-sm);
-}
-
-/* The score is the row's last word, whatever sits between it and the name. */
-.tk-pillar-score {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-  color: var(--ag-text-secondary);
-}
-
-.tk-pillar-detail {
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs);
+/* A pillar's bar sits under its score, inked by the moat band the score
+   falls in — the same green / orange / red as the rating chip. */
+.tk-moat .tk-bar {
+  margin: 4px 0 2px;
 }
 
 .tk-bar {
   height: 4px;
-  background: var(--ag-surface-page);
+  background: var(--ag-surface-hover);
   border-radius: var(--ag-radius-pill);
   overflow: hidden;
-  margin: 4px 0;
 }
 
 .tk-bar-fill {
   height: 100%;
   background: var(--ag-brand-accent);
+}
+
+.tk-bar-up {
+  background: var(--ag-up);
+}
+
+.tk-bar-warn {
+  background: var(--ag-warn);
+}
+
+.tk-bar-down {
+  background: var(--ag-down);
+}
+
+/* Six tiles go 3 + 3, then 2 + 2 + 2 (the grid's own rules); on a phone a
+   pillar's sentence needs the whole width. */
+@container ag-main (max-width: 30rem) {
+  .tk-moat > .ag-kpis:has(> :nth-child(6):last-child) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ----------------------------------------------------------------- analysts */
+
+.tk-targets,
+.tk-ratings,
+.tk-revisions {
+  margin-top: 16px;
+}
+
+/* Low to high as a band; the price may sit outside it, so the track spans
+   whichever reaches further. */
+.tk-targets-track {
+  position: relative;
+  height: 24px;
+  margin: 8px 6px 4px;
+}
+
+.tk-targets-track::before {
+  content: "";
+  position: absolute;
+  inset: 11px 0;
+  background: var(--ag-surface-page);
+  border-radius: var(--ag-radius-pill);
+}
+
+.tk-targets-band {
+  position: absolute;
+  top: 8px;
+  height: 8px;
+  background: color-mix(in srgb, var(--ag-brand-accent) 35%, transparent);
+  border-radius: var(--ag-radius-pill);
+}
+
+.tk-targets-tick,
+.tk-targets-price {
+  position: absolute;
+  top: 4px;
+  width: 2px;
+  height: 16px;
+  margin-left: -1px;
+  background: var(--ag-brand-accent);
+}
+
+.tk-targets-tick-mean {
+  background: var(--ag-text-muted);
+}
+
+/* The one point that is the reader's: a dot, not a tick. */
+.tk-targets-price {
+  top: 6px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border: 2px solid var(--ag-surface-card);
+  border-radius: 50%;
+  background: var(--ag-text-primary);
+}
+
+.tk-targets-legend {
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.tk-targets-key {
+  width: 2px;
+  height: 10px;
+  background: var(--ag-brand-accent);
+}
+
+.tk-targets-key-mean {
+  background: var(--ag-text-muted);
+}
+
+.tk-targets-key-price {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ag-text-primary);
+}
+
+.tk-ratings-rows {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tk-ratings-row {
+  display: grid;
+  grid-template-columns: 4.5em 1fr 2.5em;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-ratings-month {
+  color: var(--ag-text-muted);
+}
+
+.tk-ratings-mean {
+  text-align: right;
+  color: var(--ag-text-secondary);
+}
+
+.tk-ratings-bar {
+  display: flex;
+  height: 20px;
+  gap: 2px;
+  border-radius: var(--ag-radius-xs);
+  overflow: hidden;
+}
+
+.tk-ratings-seg {
+  flex-basis: 0;
+  min-width: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-size: var(--ag-fs-2xs);
+  color: var(--ag-text-primary);
+}
+
+/* Strong ends saturated, the leaning buckets washed, hold neutral: the bar
+   reads as a lean before any count is read. */
+.tk-ratings-strong_buy {
+  background: color-mix(in srgb, var(--ag-up) 70%, var(--ag-surface-card));
+}
+
+.tk-ratings-buy {
+  background: color-mix(in srgb, var(--ag-up) 35%, var(--ag-surface-card));
+}
+
+.tk-ratings-hold {
+  background: var(--ag-surface-hover);
+}
+
+.tk-ratings-sell {
+  background: color-mix(in srgb, var(--ag-down) 35%, var(--ag-surface-card));
+}
+
+.tk-ratings-strong_sell {
+  background: color-mix(in srgb, var(--ag-down) 70%, var(--ag-surface-card));
+}
+
+/* Five buckets fit on a phone only wrapped; the chart legends scroll. */
+.tk-ratings .tk-legend {
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.tk-swatch.tk-ratings-hold {
+  outline: 1px solid var(--ag-border);
 }
 
 /* ------------------------------------------------------------ fund exposure */

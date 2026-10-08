@@ -1,32 +1,41 @@
 """Quantitative moat proxies from filed statement history [derived].
 
 A durable competitive advantage leaves numeric traces: returns on capital
-that stay above the cost of capital, gross margins that hold under attack,
-growth that persists, profits that convert to cash, a share count that
-shrinks instead of bloating. This module scores those traces 0-100 from
+that stay above the cost of capital, operating margins that hold under
+attack, growth that persists, profits that convert to cash, a share count
+that does not bloat. This module scores those traces 0-100 from
 the same yfinance statements the KPI block uses, so tests run offline.
 
 What it cannot see: brand, network effects, switching costs, regulation —
 the *causes* of a moat. Treat the score as a screen that asks "do the
 numbers look like a moat exists?", never as the qualitative verdict itself.
+
+Two choices keep it from rewarding the wrong things. Margins are judged on
+how *steady* they are against their own size, not on their level: a gross
+margin of 60% is software's normal and a retailer's impossibility, so a level
+scale reads sector, not moat — Costco's thin, unshakeable margin is the
+evidence. And buybacks earn nothing past a flat share count: shrinking it
+with borrowed money is capital allocation, not an advantage; only dilution,
+which can hide a weak business, costs points.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 
 from stocks.data.fundamentals import RawFundamentals
 
 # Pillar weights — returns on capital dominate (the moat's bottom line),
-# margin durability second (pricing power), the rest split evenly.
+# margin durability second (pricing power), cash and growth after; the share
+# count is a small penalty, since it says more about management than moat.
 PILLAR_WEIGHTS: dict[str, float] = {
-    "roic": 0.30,
-    "gross_margin": 0.25,
+    "roic": 0.35,
+    "op_margin": 0.25,
     "growth": 0.15,
-    "fcf": 0.15,
-    "dilution": 0.15,
+    "fcf": 0.20,
+    "dilution": 0.05,
 }
 
 # Composite bands: >=70 wide, >=45 narrow, below no moat.
@@ -39,6 +48,26 @@ _MIN_PILLARS = 3
 # ROIC above this clears any sane cost of capital.
 _ROIC_HURDLE = 0.10
 
+# Where each level scale tops out. Set where good stops and exceptional starts,
+# so the great compounders do not all pin at 100 and read alike.
+_ROIC_TOP = 0.35
+_FCF_MARGIN_TOP = 0.30
+_CAGR_TOP = 0.20
+
+# Margin swings are measured against the margin's own size, floored here so a
+# 1% margin wobbling by 1pp is not scored as wildly unstable — nor a thin one
+# as perfectly steady because its absolute moves are tiny.
+_MARGIN_FLOOR = 0.05
+# A yearly σ this large relative to the margin, or a fall this large since
+# the first year, scores nothing.
+_MARGIN_SPREAD_MAX = 0.30
+_MARGIN_FALL_MAX = 0.30
+# Fewer years than this and a σ is two points and a ruler.
+_MARGIN_MIN_YEARS = 3
+
+# Share count growth a year that scores nothing; flat or shrinking scores 100.
+_DILUTION_MAX = 0.03
+
 
 @dataclass(frozen=True)
 class MoatPillar:
@@ -46,6 +75,11 @@ class MoatPillar:
     label: str
     score: float | None  # 0-100, None when the inputs are missing
     detail: str  # what the score was computed from, for tooltips/reports
+    # The same detail as data, for a client that words it in its own language:
+    # `kind` names the template ("roic", "margin_snapshot", "missing"…) and
+    # `facts` fills it — fractions as fractions, counts as ints.
+    kind: str = "missing"
+    facts: dict[str, float | int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -82,7 +116,7 @@ def _series_cagr(series: pd.Series) -> float | None:
 
 
 def _roic_pillar(raw: RawFundamentals) -> MoatPillar:
-    """Level + persistence of ROIC: 60% median level (5%..25% -> 0..100),
+    """Level + persistence of ROIC: 60% median level (5%..35% -> 0..100),
     40% share of years clearing the 10% hurdle."""
     ebit = _row(raw.income, "EBIT")
     tax = _row(raw.income, "Tax Rate For Calcs")
@@ -96,64 +130,73 @@ def _roic_pillar(raw: RawFundamentals) -> MoatPillar:
         return MoatPillar("roic", "ROIC", None, "no overlapping statement years")
     median = float(roic.median())
     above = int((roic >= _ROIC_HURDLE).sum())
-    score = 0.6 * _scale(median, 0.05, 0.25) + 0.4 * (above / len(roic)) * 100
+    score = 0.6 * _scale(median, 0.05, _ROIC_TOP) + 0.4 * (above / len(roic)) * 100
     detail = f"median ROIC {median:.0%}, ≥10% in {above}/{len(roic)} years"
-    return MoatPillar("roic", "ROIC", score, detail)
+    facts = {"roic": median, "above": above, "years": len(roic)}
+    return MoatPillar("roic", "ROIC", score, detail, "roic", facts)
 
 
 def _margin_pillar(raw: RawFundamentals) -> MoatPillar:
-    """Gross margin level (20%..60% -> 0..100) minus a stability penalty:
-    each percentage point of yearly σ costs 4 points, capped at 40."""
+    """Operating-margin durability, whatever its level: 70% how little it
+    swings (yearly σ over the margin's own size, floored at _MARGIN_FLOOR),
+    30% how little it has fallen since the first year on the same measure.
+    A median loss scores 0 — losing money steadily is not pricing power."""
+    label = "Margin stability"
     rev = _row(raw.income, "Total Revenue")
-    gp = _row(raw.income, "Gross Profit")
-    if rev is not None and gp is not None:
-        gm = (gp / rev[rev > 0]).dropna()
-        if not gm.empty:
-            level = float(gm.median())
-            std = float(gm.std()) if len(gm) >= 2 else 0.0
-            score = max(0.0, _scale(level, 0.20, 0.60) - min(40.0, std * 400))
-            detail = (
-                f"median gross margin {level:.0%}, "
-                f"σ {std * 100:.1f}pp over {len(gm)} years"
-            )
-            return MoatPillar("gross_margin", "Margins", score, detail)
-    snapshot = raw.info.get("grossMargins")
-    if isinstance(snapshot, (int, float)) and not isinstance(snapshot, bool):
+    op = _row(raw.income, "Operating Income")
+    if op is None:
+        op = _row(raw.income, "EBIT")
+    if rev is None or op is None:
         return MoatPillar(
-            "gross_margin",
-            "Margins",
-            _scale(float(snapshot), 0.20, 0.60),
-            f"gross margin {snapshot:.0%} (snapshot only — no history for stability)",
+            "op_margin", label, None, "operating income or revenue rows missing"
         )
-    return MoatPillar("gross_margin", "Margins", None, "gross margin unavailable")
+    margin = (op / rev[rev > 0]).dropna().sort_index()
+    if len(margin) < _MARGIN_MIN_YEARS:
+        return MoatPillar(
+            "op_margin", label, None, f"needs ≥{_MARGIN_MIN_YEARS} margin years"
+        )
+    median = float(margin.median())
+    std = float(margin.std())
+    change = float(margin.iloc[-1] - margin.iloc[0])
+    facts = {"margin": median, "sd": std, "change": change, "years": len(margin)}
+    if median <= 0:
+        detail = f"median operating margin {median:.0%} over {len(margin)} years"
+        return MoatPillar("op_margin", label, 0.0, detail, "op_margin_loss", facts)
+    size = max(abs(median), _MARGIN_FLOOR)
+    steady = _scale(-std / size, -_MARGIN_SPREAD_MAX, 0.0)
+    held = _scale(min(0.0, change) / size, -_MARGIN_FALL_MAX, 0.0)
+    detail = (
+        f"median operating margin {median:.0%}, σ {std * 100:.1f}pp, "
+        f"{change * 100:+.1f}pp over {len(margin)} years"
+    )
+    return MoatPillar(
+        "op_margin", label, 0.7 * steady + 0.3 * held, detail, "op_margin", facts
+    )
 
 
 def _growth_pillar(raw: RawFundamentals) -> MoatPillar:
-    """Revenue durability: 50% CAGR level (0%..15% -> 0..100), 50% share of
+    """Revenue durability: 50% CAGR level (0%..20% -> 0..100), 50% share of
     up years — steady single-digit growth outscores one lucky spike."""
     rev = _row(raw.income, "Total Revenue")
     if rev is None or len(rev) < 2:
         return MoatPillar("growth", "Growth", None, "needs ≥2 revenue years")
     changes = rev.sort_index().pct_change().dropna()
     up = float((changes > 0).mean())
+    ups = int((changes > 0).sum())
     growth = _series_cagr(rev)
     if growth is None:
         score = up * 100
-        detail = (
-            f"revenue up in {int((changes > 0).sum())}/{len(changes)} years "
-            "(CAGR undefined)"
-        )
-    else:
-        score = 0.5 * _scale(growth, 0.0, 0.15) + 0.5 * up * 100
-        detail = (
-            f"revenue CAGR {growth:.0%}, up in "
-            f"{int((changes > 0).sum())}/{len(changes)} years"
-        )
-    return MoatPillar("growth", "Growth", score, detail)
+        detail = f"revenue up in {ups}/{len(changes)} years (CAGR undefined)"
+        facts: dict[str, float | int] = {"up": ups, "years": len(changes)}
+        return MoatPillar("growth", "Growth", score, detail, "growth_no_cagr", facts)
+    score = 0.5 * _scale(growth, 0.0, _CAGR_TOP) + 0.5 * up * 100
+    detail = f"revenue CAGR {growth:.0%}, up in {ups}/{len(changes)} years"
+    facts = {"cagr": growth, "up": ups, "years": len(changes)}
+    return MoatPillar("growth", "Growth", score, detail, "growth", facts)
 
 
 def _fcf_pillar(raw: RawFundamentals) -> MoatPillar:
-    """Cash generation: 60% median FCF margin (0%..20% -> 0..100), 40% share
+    """Cash generation: 60% median FCF margin (0%..30% -> 0..100), 40% share
     of FCF-positive years."""
     fcf = _row(raw.cashflow, "Free Cash Flow")
     rev = _row(raw.income, "Total Revenue")
@@ -164,16 +207,18 @@ def _fcf_pillar(raw: RawFundamentals) -> MoatPillar:
         return MoatPillar("fcf", "FCF", None, "no overlapping statement years")
     median = float(margin.median())
     positive = float((margin > 0).mean())
-    score = 0.6 * _scale(median, 0.0, 0.20) + 0.4 * positive * 100
+    positives = int((margin > 0).sum())
+    score = 0.6 * _scale(median, 0.0, _FCF_MARGIN_TOP) + 0.4 * positive * 100
     detail = (
-        f"median FCF margin {median:.0%}, positive in "
-        f"{int((margin > 0).sum())}/{len(margin)} years"
+        f"median FCF margin {median:.0%}, positive in {positives}/{len(margin)} years"
     )
-    return MoatPillar("fcf", "FCF", score, detail)
+    facts = {"margin": median, "positive": positives, "years": len(margin)}
+    return MoatPillar("fcf", "FCF", score, detail, "fcf", facts)
 
 
 def _dilution_pillar(raw: RawFundamentals) -> MoatPillar:
-    """Share-count discipline: -2%/y buybacks -> 100, +3%/y dilution -> 0."""
+    """Share-count discipline: flat or shrinking -> 100, +3%/y dilution -> 0.
+    Buybacks earn nothing beyond flat — see the module docstring."""
     shares = _row(raw.income, "Diluted Average Shares")
     growth = _series_cagr(shares) if shares is not None else None
     if growth is None:
@@ -181,8 +226,10 @@ def _dilution_pillar(raw: RawFundamentals) -> MoatPillar:
     return MoatPillar(
         "dilution",
         "Dilution",
-        _scale(-growth, -0.03, 0.02),
+        _scale(-growth, -_DILUTION_MAX, 0.0),
         f"share count {growth:+.1%}/year",
+        "dilution",
+        {"shares": growth},
     )
 
 

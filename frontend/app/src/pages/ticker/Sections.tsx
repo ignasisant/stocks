@@ -8,7 +8,7 @@
  * once you print them both as 0.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useT } from "../../shell/i18n";
 import { TickerCell } from "../../shell/tickers";
 import { InsiderFlow, FundExposure } from "./Charts";
@@ -25,7 +25,7 @@ import {
   signedPercent,
   type Translate,
 } from "./format";
-import { Banner, Bold, Card, Note, Scroll, Tag, TickerLink, useMobile } from "./ui";
+import { Banner, Bold, Card, Note, Scroll, TickerLink, useMobile } from "./ui";
 import { Kpi, KpiGrid, bandTone } from "../../ui/Kpi";
 import type {
   ClosedEnd,
@@ -35,6 +35,7 @@ import type {
   Insiders,
   Metrics,
   Moat,
+  MoatPillar,
   SourceCheck,
   SourcedFigure,
 } from "./types";
@@ -136,45 +137,90 @@ export function MoatSection({ moat }: { moat: Moat }) {
       title={t("ticker.moat")}
       note={t("ticker.moat_caption", { years: moat.years })}
     >
-      <KpiGrid>
-        {/* The band's tone from the server and the KPI's own description on
-            the tooltip, which is where the reader learns ≥70 is "wide". */}
-        <Kpi
-          label={t("ticker.moat_score")}
-          help={orElse(t, "kpi.moat.desc", "") || undefined}
-          value={moat.score.toFixed(0)}
-          chip={
-            moat.rating ? { text: moat.rating, tone: bandTone(moat.rating_tone) } : null
-          }
-        />
-      </KpiGrid>
-      <ul className="tk-pillars">
-        {moat.pillars.map((pillar) => (
-          <li key={pillar.key}>
-            <div className="tk-pillar-head">
-              <span>{pillar.label}</span>
-              {/* How much of the score this pillar decides. Without it the five
-                  read as equal, and they are not. */}
-              {pillar.score !== null ? (
-                <Tag>{t("ticker.weight", { pct: percent(pillar.weight, 0) })}</Tag>
-              ) : null}
-              <span className="tk-pillar-score">
-                {pillar.score === null ? DASH : pillar.score.toFixed(0)}
-              </span>
-            </div>
-            {/* An unscored pillar gets no bar rather than an empty one: a bar
-                at zero reads as a pillar that scored nothing. */}
-            {pillar.score === null ? null : (
-              <div className="tk-bar" aria-hidden="true">
-                <div className="tk-bar-fill" style={{ width: `${pillar.score}%` }} />
-              </div>
-            )}
-            <span className="tk-pillar-detail">{pillar.detail}</span>
-          </li>
-        ))}
-      </ul>
+      {/* The score and its five pillars as six tiles of one grid: three a row
+          on a desktop, two on a tablet, one on a phone — never one tile
+          stretched across the page with five bars as long as the screen. */}
+      <div className="tk-moat">
+        <KpiGrid>
+          {/* The band's tone from the server and the KPI's own description on
+              the tooltip, which is where the reader learns ≥70 is "wide". */}
+          <Kpi
+            label={t("ticker.moat_score")}
+            help={orElse(t, "kpi.moat.desc", "") || undefined}
+            value={moat.score.toFixed(0)}
+            chip={
+              moat.rating
+                ? {
+                    text: moat.rating_key
+                      ? orElse(t, moat.rating_key, moat.rating)
+                      : moat.rating,
+                    tone: bandTone(moat.rating_tone),
+                  }
+                : null
+            }
+          />
+          {moat.pillars.map((pillar) => (
+            <Kpi
+              key={pillar.key}
+              label={orElse(t, pillar.label_key, pillar.label)}
+              value={pillar.score === null ? DASH : pillar.score.toFixed(0)}
+              // How much of the score this pillar decides. Without it the five
+              // read as equal, and they are not.
+              chip={
+                pillar.score === null
+                  ? null
+                  : {
+                      text: t("ticker.weight", { pct: percent(pillar.weight, 0) }),
+                      tone: "flat",
+                    }
+              }
+            >
+              {/* An unscored pillar gets no bar rather than an empty one: a bar
+                  at zero reads as a pillar that scored nothing. The bar sits
+                  under the figure it draws, the sentence behind it last. */}
+              {pillar.score === null ? null : (
+                <div className="tk-bar" aria-hidden="true">
+                  <div
+                    className={`tk-bar-fill tk-bar-${bandTone(pillar.tone)}`}
+                    style={{ width: `${pillar.score}%` }}
+                  />
+                </div>
+              )}
+              <span className="ag-kpi-note">{moatDetail(t, pillar)}</span>
+            </Kpi>
+          ))}
+        </KpiGrid>
+      </div>
     </Card>
   );
+}
+
+/** How each moat fact prints inside its sentence. */
+const MOAT_FACTS: Record<string, (value: number) => string> = {
+  roic: (value) => percent(value, 0),
+  margin: (value) => percent(value, 0),
+  cagr: (value) => percent(value, 0),
+  // Percentage points; the unit is the sentence's, since it is worded per
+  // language ("pp", "p. p.").
+  sd: (value) => (value * 100).toFixed(1),
+  change: (value) => {
+    // Rounded first, so a drift too small to print reads +0.0, not -0.0.
+    const points = Math.round(value * 1000) / 10 || 0;
+    return `${points >= 0 ? "+" : ""}${points.toFixed(1)}`;
+  },
+  shares: (value) => signedPercent(value, 1),
+};
+
+/** The pillar's detail in the reader's language, or the API's English. */
+export function moatDetail(t: Translate, pillar: MoatPillar): string {
+  const values = Object.fromEntries(
+    Object.entries(pillar.facts).map(([name, value]) => [
+      name,
+      MOAT_FACTS[name]?.(value) ?? String(value),
+    ]),
+  );
+  const worded = t(pillar.detail_key, values);
+  return worded === pillar.detail_key ? pillar.detail : worded;
 }
 
 // ------------------------------------------------------------------ insiders
@@ -182,6 +228,10 @@ export function MoatSection({ moat }: { moat: Moat }) {
 export function InsidersSection({ insiders }: { insiders: Insiders }) {
   const t = useT();
   const mobile = useMobile();
+  // The trades are the evidence behind the tiles and the chart, not the
+  // reading itself: thirty rows of Form 4 lines push everything below the card
+  // off screen, so they wait behind a button.
+  const [showTrades, setShowTrades] = useState(false);
   const summary = insiders.summary;
 
   // No source is two different findings, worded differently: a US filer whose
@@ -262,7 +312,20 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
 
       <InsiderFlow insiders={insiders} />
 
-      {mobile ? (
+      {rows.length ? (
+        <button
+          type="button"
+          className="ag-btn tk-show-more"
+          aria-expanded={showTrades}
+          onClick={() => setShowTrades((was) => !was)}
+        >
+          {showTrades
+            ? t("ticker.insider_hide_trades")
+            : t("ticker.insider_show_trades", { n: rows.length })}
+        </button>
+      ) : null}
+
+      {!showTrades ? null : mobile ? (
         <div className="tk-stack">
           {rows.map((trade, index) => (
             <div
@@ -338,7 +401,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
           </table>
         </Scroll>
       )}
-      <Note>{t("ticker.signed_caption")}</Note>
+      {showTrades ? <Note>{t("ticker.signed_caption")}</Note> : null}
     </Card>
   );
 }
