@@ -33,6 +33,7 @@ import io
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
+from stocks.portfolio import consistency
 from stocks.portfolio.ledger import Transaction
 
 
@@ -155,7 +156,9 @@ class Row:
         return not any(self.text(k) for k in keys)
 
 
-def check_consistency(action: str, qty: float, price: float, amount: float) -> None:
+def check_consistency(
+    action: str, qty: float, price: float, amount: float, ticker: str = ""
+) -> None:
     """Reject rows whose qty×price strays >2% from the cash total.
 
     Within 2% the gap is cent-rounding of the per-share price plus commission
@@ -166,6 +169,14 @@ def check_consistency(action: str, qty: float, price: float, amount: float) -> N
         return
     gross = qty * price
     if abs(gross - amount) > max(amount * 0.02, qty * 0.005 + 0.01):
+        consistency.report(
+            "amount_mismatch",
+            source="import",
+            ticker=ticker,
+            key=(action, round(gross, 2), round(amount, 2)),
+            action=action,
+            off=consistency.ratio(gross, amount),
+        )
         raise ValueError(
             f"{action} row inconsistent: {qty:g} × {price:g} = {gross:.2f} "
             f"but total is {amount:.2f} ({abs(gross - amount) / amount:.1%} off)"

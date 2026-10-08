@@ -7,7 +7,7 @@
  * figure somebody files.
  */
 
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useId, useMemo, useState, type ReactNode } from "react";
 import { Link } from "../../shell/router";
 import { useT } from "../../shell/i18n";
 import { tone } from "./format";
@@ -241,6 +241,72 @@ export type Column<T> = {
 };
 
 /**
+ * An order the table offers with no column of its own: the percentage of a
+ * cell that sorts by its amount. `column` is the header it marks while active.
+ */
+export type SortOption<T> = {
+  key: string;
+  label: string;
+  sort: (row: T) => number | string | null;
+  column?: string;
+};
+
+/**
+ * The order as a control above the table: the phone's rows have no header to
+ * tap, so without it a list of twenty names reads in one fixed order.
+ */
+function SortBar({
+  options,
+  value,
+  onChange,
+  text,
+}: {
+  options: { key: string; label: string }[];
+  value: { key: string; desc?: boolean } | null;
+  onChange: (next: { key: string; desc: boolean }) => void;
+  /** The active order reads words, so its direction is A–Z rather than a size. */
+  text: boolean;
+}) {
+  const t = useT();
+  const id = useId();
+  const key = value?.key ?? "";
+  const desc = value?.desc ?? true;
+  const direction = text
+    ? t(desc ? "portfolio.sort_za" : "portfolio.sort_az")
+    : t(desc ? "portfolio.sort_desc" : "portfolio.sort_asc");
+  return (
+    <div className="pf-sortbar">
+      <label className="pf-control-label" htmlFor={id}>
+        {t("portfolio.sort_by")}
+      </label>
+      <select
+        id={id}
+        className="pf-dropdown"
+        value={key}
+        onChange={(event) => onChange({ key: event.target.value, desc })}
+      >
+        {key ? null : <option value="" disabled hidden />}
+        {options.map((option) => (
+          <option key={option.key} value={option.key}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {/* The visible words are the button's name; the arrow only echoes them. */}
+      <button
+        type="button"
+        className="pf-sort-dir"
+        disabled={!key}
+        onClick={() => onChange({ key, desc: !desc })}
+      >
+        <span aria-hidden="true">{desc ? "↓" : "↑"}</span>
+        {direction}
+      </button>
+    </div>
+  );
+}
+
+/**
  * One sortable table for all five tabs.
  *
  * `null` sorts last in both directions on purpose: an unpriced position or an
@@ -253,11 +319,20 @@ export function Table<T>({
   rowKey,
   initial,
   dense,
+  sorts,
+  picker,
 }: {
   columns: Column<T>[];
   rows: T[];
   rowKey: (row: T, index: number) => string;
   initial?: { key: string; desc?: boolean };
+  /** Orders beyond the columns', offered only in the sort control. */
+  sorts?: SortOption<T>[];
+  /**
+   * Show the sort control above the column grid too. The phone rendering
+   * always has it — its rows carry no header to tap.
+   */
+  picker?: boolean;
   /**
    * The phone's dense ticker row. Without one the phone gets a card per row,
    * headed by the first column, one line per other column.
@@ -266,10 +341,25 @@ export function Table<T>({
 }) {
   const [sort, setSort] = useState(initial ?? null);
 
+  const options = useMemo(
+    () => [
+      ...columns.flatMap((column) =>
+        column.sort
+          ? [{ key: column.key, label: column.label, sort: column.sort }]
+          : [],
+      ),
+      ...(sorts ?? []),
+    ],
+    [columns, sorts],
+  );
+  // The header that wears the arrow: an extra order marks the column it reads.
+  const marked = sorts?.find((option) => option.key === sort?.key)?.column ?? sort?.key;
+
+  const active = options.find((option) => option.key === sort?.key)?.sort;
+
   const ordered = useMemo(() => {
-    const column = columns.find((c) => c.key === sort?.key);
-    if (!column?.sort) return rows;
-    const read = column.sort;
+    const read = active;
+    if (!read) return rows;
     const sign = sort?.desc ? -1 : 1;
     return [...rows].sort((a, b) => {
       const left = read(a);
@@ -282,15 +372,25 @@ export function Table<T>({
       }
       return sign * (left - right);
     });
-  }, [columns, rows, sort]);
+  }, [active, rows, sort]);
 
   const toggle = (key: string) =>
     setSort((current) =>
       current?.key === key ? { key, desc: !current.desc } : { key, desc: true },
     );
 
+  const bar =
+    options.length > 1 ? (
+      <SortBar
+        options={options}
+        value={sort}
+        onChange={setSort}
+        text={rows.some((row) => typeof active?.(row) === "string")}
+      />
+    ) : null;
+
   const [head, ...rest] = columns;
-  const narrow = dense ? (
+  const rendered = dense ? (
     <DenseRows rows={ordered} rowKey={rowKey} spec={dense} />
   ) : (
     <StackCards
@@ -299,6 +399,12 @@ export function Table<T>({
       title={head?.cell}
       lines={rest.map((column) => ({ label: column.label, cell: column.cell }))}
     />
+  );
+  const narrow = (
+    <>
+      {picker ? null : bar}
+      {rendered}
+    </>
   );
 
   const wide = (
@@ -317,16 +423,16 @@ export function Table<T>({
                   .join(" ")}
                 onClick={column.sort ? () => toggle(column.key) : undefined}
                 aria-sort={
-                  sort?.key === column.key
-                    ? sort.desc
+                  marked === column.key
+                    ? sort?.desc
                       ? "descending"
                       : "ascending"
                     : undefined
                 }
               >
                 {column.label}
-                {sort?.key === column.key ? (
-                  <span className="pf-sort-mark">{sort.desc ? "▾" : "▴"}</span>
+                {marked === column.key ? (
+                  <span className="pf-sort-mark">{sort?.desc ? "▾" : "▴"}</span>
                 ) : null}
               </th>
             ))}
@@ -347,7 +453,12 @@ export function Table<T>({
     </div>
   );
 
-  return <Responsive wide={wide} narrow={narrow} />;
+  return (
+    <>
+      {picker ? bar : null}
+      <Responsive wide={wide} narrow={narrow} />
+    </>
+  );
 }
 
 export function Segmented<T extends string>({

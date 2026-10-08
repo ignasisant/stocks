@@ -62,7 +62,7 @@ import { Glance, MoversSlot, useBook } from "./Glance";
 import { MarketCard } from "./Market";
 import { EarningsCard } from "./Earnings";
 import { RecentTransactions } from "./Transactions";
-import { ExtremesCard } from "./Extremes";
+import { ExtremesCard, moverRows, useExtremes } from "./Extremes";
 import { WatchlistGroups } from "./Watchlist";
 import { DividendsCard, RiskCard, RotationCard, TaxCard } from "./Extras";
 import {
@@ -128,6 +128,8 @@ export default function Page() {
   // One read behind the glance and the movers, and none when neither is on
   // the page.
   const book = useBook(nonce, !guest && (shown.has("glance") || shown.has("movers")));
+  // Read here rather than in its card: the movers beside it match its rows.
+  const extremes = useExtremes(nonce, shown.has("extremes"));
 
   const draw = (id: CardId): ReactNode => {
     switch (id) {
@@ -138,9 +140,15 @@ export default function Page() {
       case "glance":
         return <Glance query={book} ledger={ledger} />;
       case "movers":
-        return <MoversSlot query={book} alone={!shown.has("glance")} />;
+        return (
+          <MoversSlot
+            query={book}
+            alone={!shown.has("glance")}
+            rows={moverRows(extremes)}
+          />
+        );
       case "extremes":
-        return <ExtremesCard nonce={nonce} />;
+        return <ExtremesCard query={extremes} />;
       case "earnings":
         return <EarningsCard />;
       case "transactions":

@@ -179,7 +179,7 @@
   "import.skip_adjustment": "Ajustes de resultado",
   "import.skip_adjustment_note": "revísalos a mano",
   "import.skip_coin_reward": "Recompensas en cripto",
-  "import.skip_coin_reward_note": "una adquisición a valor de mercado (rendimiento tributable en España); añade cada una como compra al precio de ese día",
+  "import.skip_coin_reward_note": "no se encontró el precio de ese día; es una adquisición a valor de mercado (rendimiento tributable en España), así que añade cada una como compra al precio de ese día",
   "import.skip_coin_swap": "Intercambios entre criptomonedas",
   "import.skip_coin_swap_note": "fiscalmente, una venta más una compra; añade las dos patas a mano a los precios de ese día",
   "import.skip_coin_transfer": "Transferencias de cripto",

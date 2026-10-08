@@ -48,6 +48,13 @@ class Platform:
     sample: str | None = None  # filename under web/assets/
 
 
+def _valuer():
+    # Late: crypto_map imports this module.
+    from stocks.portfolio import crypto_map
+
+    return crypto_map.Valuer()
+
+
 def _parse_revolut(filename: str, data: bytes) -> ParseResult:
     if filename.lower().endswith(".pdf"):
         return revolut_pdf.parse_pdf(data)
@@ -77,11 +84,12 @@ PLATFORMS: tuple[Platform, ...] = (
         file_types=("csv",),
         hint=(
             "Export from Revolut → Crypto → statement (CSV). Coins import as "
-            "Yahoo pairs in the statement currency (BTC → BTC-EUR); rewards, "
+            "Yahoo pairs in the statement currency (BTC → BTC-EUR); staking "
+            "and learn rewards import as a buy at that day's price, and "
             "transfers and coin-to-coin exchanges are listed as skipped."
         ),
         parse=lambda filename, data: revolut_crypto.parse_csv(
-            statement.decode(data)
+            statement.decode(data), _valuer()
         ),
         domain="revolut.com",
     ),

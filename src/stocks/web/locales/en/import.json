@@ -179,7 +179,7 @@
   "import.skip_adjustment": "Result adjustments",
   "import.skip_adjustment_note": "check them by hand",
   "import.skip_coin_reward": "Crypto rewards",
-  "import.skip_coin_reward_note": "an acquisition at market value (taxable income in Spain); add each as a buy at that day's price",
+  "import.skip_coin_reward_note": "no price for that day could be found; it is an acquisition at market value (taxable income in Spain), so add each as a buy at that day's price",
   "import.skip_coin_swap": "Coin-to-coin exchanges",
   "import.skip_coin_swap_note": "fiscally a sale plus a purchase; add both legs by hand at that day's prices",
   "import.skip_coin_transfer": "Crypto transfers",

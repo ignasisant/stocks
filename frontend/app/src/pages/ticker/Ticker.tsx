@@ -57,6 +57,7 @@ import {
 } from "./data";
 import { PeerPicker } from "./Peers";
 import { PriceSection, isRange, type Range } from "./Price";
+import { SplitRepair } from "./Splits";
 import { AssetStatsSection, KpiSourcesSection } from "./Reference";
 import { CycleSection, HoldingSection, PositioningSection } from "./Crypto";
 import { askAssistant } from "../../shell/assistant";
@@ -75,6 +76,7 @@ import { ASSETS, assetKind } from "../../shell/assets";
 import { layout, resolveKind } from "./layout";
 
 const RANGE_KEY = "ag-range";
+const noop = () => undefined;
 const CANDLES_KEY = "ag-candles";
 
 /**
@@ -389,6 +391,15 @@ export default function Page() {
           {/* The bars go down as a query: the price card keeps its range and
               chart controls through a failed fetch and shows the error in the
               chart's slot. */}
+          {/* Before the figures it corrects: a missing split makes every one
+              of them wrong, so the line that says so is read first. */}
+          {shape.holdable ? (
+            <SplitRepair
+              ticker={ticker}
+              position={held}
+              onChanged={position.state === "loaded" ? position.reload : noop}
+            />
+          ) : null}
           <PriceSection
             query={bars}
             quote={quote.state === "loaded" ? quote.data : null}

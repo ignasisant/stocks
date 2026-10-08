@@ -13,7 +13,7 @@
  */
 
 import { get } from "../../shell/api";
-import { useApi } from "../../shell/useApi";
+import { useApi, type Query } from "../../shell/useApi";
 import { Skeleton } from "../../shell/Layout";
 import { useT, useLang } from "../../shell/i18n";
 import { DenseRows, Responsive } from "../../ui/Rows";
@@ -29,10 +29,34 @@ function where(extreme: Extreme, t: Translate, lang: string): string {
   return t(high ? "home.from_52w_high" : "home.from_52w_low", { pct: gap });
 }
 
-export function ExtremesCard({ nonce }: { nonce: number }) {
+/**
+ * The scan, read by the page rather than by the card: the movers card beside
+ * it draws as many rows as this one does (`moverRows`). `enabled` false — the
+ * card put away — answers null without a request.
+ */
+export function useExtremes(nonce: number, enabled: boolean): Query<Extremes | null> {
+  return useApi<Extremes | null>(
+    () => (enabled ? get<Extremes>("/extremes") : Promise.resolve(null)),
+    [nonce, enabled],
+  );
+}
+
+/** Fewest and most rows a movers side draws, whatever the scan found. */
+const MOVER_ROWS = { min: 3, max: 7 } as const;
+
+/**
+ * How many rows each movers side draws: the extremes card's own count, so the
+ * two halves of the row end level, held between 3 and 7. A scan still in
+ * flight, failed, hidden or empty leaves the floor.
+ */
+export function moverRows(query: Query<Extremes | null>): number {
+  const count = query.state === "loaded" && query.data ? query.data.extremes.length : 0;
+  return Math.min(MOVER_ROWS.max, Math.max(MOVER_ROWS.min, count));
+}
+
+export function ExtremesCard({ query }: { query: Query<Extremes | null> }) {
   const t = useT();
   const lang = useLang();
-  const query = useApi(() => get<Extremes>("/extremes"), [nonce]);
   const na = t("home.na");
 
   return (
@@ -43,7 +67,7 @@ export function ExtremesCard({ nonce }: { nonce: number }) {
       skeleton={<Skeleton rows={4} />}
     >
       {(data) =>
-        data.scanned === 0 ? null : (
+        !data || data.scanned === 0 ? null : (
           <Card>
             <CardTitle>{plain(t("home.extremes_52w"))}</CardTitle>
             {data.extremes.length === 0 ? (
