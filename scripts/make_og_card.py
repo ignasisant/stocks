@@ -148,19 +148,19 @@ def build_card() -> Image.Image:
 
     d.text(
         (82, 250),
-        "Your real return, in euros.",
+        "An AI that has read your portfolio.",
         font=_load("display", 62, weight=700),
         fill=TEXT,
     )
     d.text(
         (82, 330),
-        "Broker statement in. FIFO positions, EUR P/L at the ECB rate,",
+        "Drop your broker statement, then ask: concentration, risk,",
         font=_load("body", 34, weight=400),
         fill=MUTED,
     )
     d.text(
         (82, 376),
-        "portfolio risk and your Spanish IRPF figures out.",
+        "what a sale would cost in tax. Answers from your own book.",
         font=_load("body", 34, weight=400),
         fill=MUTED,
     )
@@ -175,7 +175,7 @@ def build_card() -> Image.Image:
         fill=MUTED,
     )
 
-    _chips(d, ["FIFO", "EUR", "IRPF", "MIT licence"], 82, 534)
+    _chips(d, ["AI", "FIFO", "EUR", "Free"], 82, 534)
     # Bottom right: the one clear corner. Level with the chips, clear of the
     # headline above and the copy to its left.
     _sparkline(d, 730, 446, 390, 144)

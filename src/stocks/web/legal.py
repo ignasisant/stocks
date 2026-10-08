@@ -32,7 +32,7 @@ _PRIVACY = {
         "Privacy policy",
         [
             ("What this is", [
-                "TopStocks is an open-source, non-commercial portfolio tracker "
+                "TopStocks is a source-available, non-commercial portfolio tracker "
                 "operated by an individual. This page explains what data the "
                 "hosted app stores and why. Questions and requests: open an "
                 f"issue at {_CONTACT}.",
@@ -116,7 +116,7 @@ _PRIVACY = {
         "Política de privacidad",
         [
             ("Qué es esto", [
-                "TopStocks es un rastreador de carteras de código abierto y "
+                "TopStocks es un rastreador de carteras de código público y "
                 "sin ánimo comercial, operado por un particular. Esta página "
                 "explica qué datos almacena la app y por qué. Preguntas y "
                 f"solicitudes: abre una incidencia en {_CONTACT}.",
@@ -220,8 +220,9 @@ _TERMS = {
                 "your broker or an official source before acting on it.",
             ]),
             ("The service", [
-                "The app is open source (MIT licence) and provided free, "
-                "as-is and as-available, without warranty of any kind. To the "
+                "The app's source is public under the PolyForm Noncommercial "
+                "License 1.0.0, and the app is provided free, as-is and "
+                "as-available, without warranty of any kind. To the "
                 "extent permitted by law, the operator is not liable for any "
                 "loss arising from use of the app, including investment "
                 "losses and data loss. The service may change or stop at any "
@@ -260,8 +261,8 @@ _TERMS = {
                 "actuar.",
             ]),
             ("El servicio", [
-                "La app es de código abierto (licencia MIT) y se ofrece "
-                "gratis, tal cual y según disponibilidad, sin garantía de "
+                "El código de la app es público bajo la licencia PolyForm "
+                "Noncommercial 1.0.0, y la app se ofrece gratis, tal cual y según disponibilidad, sin garantía de "
                 "ningún tipo. En la medida en que la ley lo permita, el "
                 "operador no responde de pérdidas derivadas del uso de la "
                 "app, incluidas pérdidas de inversión y de datos. El servicio "
