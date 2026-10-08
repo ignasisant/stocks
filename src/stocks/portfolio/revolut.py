@@ -140,7 +140,7 @@ def _build_tx(row: Row, action: str) -> Transaction:
         raise ValueError(f"{action} row has zero price")
     if amount < 0:
         raise ValueError(f"{action} row has negative total {amount}")
-    check_consistency(action, qty, price, amount)
+    check_consistency(action, qty, price, amount, ticker=ticker)
     # A printed fee beats one inferred from a cent-rounded price: on 80 shares
     # the rounding alone moves the implied figure by up to 40 cents.
     printed = row.text("fee")

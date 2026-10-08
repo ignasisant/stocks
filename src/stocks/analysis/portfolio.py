@@ -26,7 +26,7 @@ from stocks.analysis import naive_dates
 from stocks.analysis.listing import price_units, quote_unit
 from stocks.config import Holding, load_watchlist
 from stocks.data.fx import ToBase, converter
-from stocks.portfolio import transfers
+from stocks.portfolio import consistency, transfers
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -1037,12 +1037,13 @@ def book_history(
     if unpriced:
         # Every render says "sin histórico" to the reader and nothing to us —
         # the only way a name like this reaches a human today is someone
-        # noticing the caption and asking. One line here is enough to grep
-        # `stocks logs stats --event portfolio.unknown_ticker` for which
-        # tickers keep showing up, without a second sink to maintain: unlike
-        # an import failure, there is no user file to redact here, just our
-        # own catalog symbols.
-        obs.warn("portfolio.unknown_ticker", tickers=unpriced, count=len(unpriced))
+        # noticing the caption and asking. One line per name is enough for
+        # `stocks logs stats --event data.inconsistency --by ticker` to show
+        # which keep turning up, without a second sink to maintain: unlike an
+        # import failure, there is no user file to redact here, just our own
+        # catalog symbols. Once per window, since every request replays it.
+        for ticker in unpriced:
+            consistency.report("unpriced_held", source="replay", ticker=ticker)
     missing = sorted(
         set(unpriced)
         | set(hist.attrs.get("carried_at_cost", []) if not hist.empty else [])

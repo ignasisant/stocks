@@ -17,8 +17,10 @@ and committing it like any hand edit: its impact is shown first, it is
 journalled, and it can be undone. A finding with no fix is one only the
 account can explain — a sale of shares the book never saw arrive.
 
-Nothing here writes, and nothing here decides: every finding is a proposal
-the reader accepts or ignores.
+Nothing here writes to the book, and nothing here decides: every finding is
+a proposal the reader accepts or ignores. Each one is also a
+`data.inconsistency` log line (stocks.portfolio.consistency), so we learn
+which contradictions books keep arriving with.
 """
 
 from __future__ import annotations
@@ -27,13 +29,22 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from stocks.portfolio import edits, revolut_crypto, transfers
+from stocks.portfolio import consistency, edits, revolut_crypto, transfers
 from stocks.portfolio.ledger import Transaction
 
 Kind = Literal["transfer", "two_labels", "oversold", "duplicate", "fee_in_coins"]
 KINDS: tuple[Kind, ...] = (
     "transfer", "two_labels", "oversold", "duplicate", "fee_in_coins"
 )
+
+# The doctor's kinds under the names every other detector logs them by.
+_LOGGED: dict[Kind, consistency.Kind] = {
+    "transfer": "transfer_as_trade",
+    "two_labels": "two_labels",
+    "oversold": "oversold",
+    "duplicate": "duplicate",
+    "fee_in_coins": "fee_in_coins",
+}
 
 # Two fills this close in price on the same day are one trade printed twice.
 _SAME_PRICE = 0.005
@@ -79,6 +90,10 @@ def scan(
     found += _fee_in_coins(rows)
     order = {k: i for i, k in enumerate(KINDS)}
     found.sort(key=lambda f: (-f.weight, order[f.kind]))
+    for f in found:
+        consistency.report(
+            _LOGGED[f.kind], source="doctor", ticker=f.ticker, key=f.key, rows=len(f.ids)
+        )
     return found
 
 

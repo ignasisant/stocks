@@ -32,6 +32,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from stocks.portfolio import consistency
 from stocks.portfolio.ledger import Transaction
 
 # splits(ticker) -> [(YYYY-MM-DD, ratio), …]; see data.fetch.splits.
@@ -79,12 +80,15 @@ def missing_splits(
     *,
     splits: SplitLookup,
     close_on: CloseLookup,
+    source: consistency.Source = "import",
 ) -> list[MissingSplit]:
     """Forward splits the ledger is missing, oldest first.
 
     A candidate has to clear all of: the ledger holds shares the day before
     it, no `split` row already covers that day, and the pre-split price
     evidence above. Tickers whose lookups fail are skipped, never guessed.
+    Each one found is a `data.inconsistency` line, `source` saying which
+    screen asked.
     """
     by_ticker: dict[str, list[Transaction]] = {}
     for t in transactions:
@@ -95,6 +99,16 @@ def missing_splits(
     for ticker, rows in sorted(by_ticker.items()):
         found += _ticker_gaps(ticker, rows, splits, close_on)
     found.sort(key=lambda m: (m.tx.date, m.ticker))
+    for gap in found:
+        consistency.report(
+            "split_missing",
+            source=source,
+            ticker=gap.ticker,
+            key=gap.tx.date,
+            split=gap.tx.date,
+            ratio=gap.tx.quantity,
+            off=consistency.ratio(gap.priced_at, gap.market_close),
+        )
     return found
 
 

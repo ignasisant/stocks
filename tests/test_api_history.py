@@ -320,8 +320,11 @@ def test_a_name_with_no_price_series_is_logged_for_us_too(
 
     get(client)
 
-    events = [f for n, f in seen if n == "portfolio.unknown_ticker"]
-    assert events and events[0]["tickers"] == ["ORGN"]
+    events = [
+        f for n, f in seen
+        if n == "data.inconsistency" and f["kind"] == "unpriced_held"
+    ]
+    assert [f["ticker"] for f in events] == ["ORGN"]
 
 
 def test_a_day_the_return_priced_below_minus_one_is_null_and_named(

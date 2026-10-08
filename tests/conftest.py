@@ -514,3 +514,13 @@ def _own_connector_state(_scratch):
     yield
     store.DIR = before
     reset()
+
+@pytest.fixture(autouse=True)
+def _forget_inconsistencies():
+    """`data.inconsistency` is said once per window per process, so a test
+    asserting the line would otherwise depend on which test said it first."""
+    from stocks.portfolio import consistency
+
+    consistency.clear()
+    yield
+    consistency.clear()

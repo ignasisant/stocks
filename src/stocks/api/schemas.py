@@ -518,6 +518,54 @@ class TickerPosition(BaseModel):
     )
 
 
+class TickerSplit(BaseModel):
+    """One forward split this name's ledger is missing, with its evidence."""
+
+    date: str = Field(description="The split's own day, YYYY-MM-DD.")
+    ratio: float = Field(description="Shares out per share in — 20.0 for 20-for-1.")
+    held_before: float
+    held_after: float
+    priced_at: float = Field(description="The pre-split buy price that gave it away.")
+    priced_on: str
+    market_close: float = Field(description="Yahoo's split-adjusted close that day.")
+    currency: str
+    declined: bool = Field(
+        default=False,
+        description=(
+            "This split was written once and the reader undid it. A client "
+            "repairing on its own must leave it alone: the reader has already "
+            "said no, and writing it back on every visit is an argument."
+        ),
+    )
+
+
+class TickerSplits(BaseModel):
+    ticker: str
+    splits: list[TickerSplit] = Field(default_factory=list)
+    throttled: bool = Field(
+        default=False,
+        description="Yahoo was refusing us: an empty list means 'could not tell'.",
+    )
+
+
+class TickerSplitsApplied(BaseModel):
+    ticker: str
+    change_id: int = Field(
+        description="The journal entry — `DELETE /v1/portfolio/changes/{id}` undoes it."
+    )
+    splits: list[TickerSplit] = Field(default_factory=list)
+
+
+class TickerSplitPick(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    dates: list[str] = Field(
+        min_length=1,
+        max_length=20,
+        description="Which of the scanned splits to write, by their YYYY-MM-DD.",
+    )
+
+
 # ------------------------------------------------- fundamentals, moat, insiders
 
 
