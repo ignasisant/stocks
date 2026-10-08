@@ -24,6 +24,8 @@ What is sealed, and why each one:
   holding dollars cannot be replayed without them, and a checkout's own
   `data/fx_history.json` would otherwise answer on a developer machine and
   leave CI with a 503 on every page that prices one.
+* **the import diagnostics** are filed under `<root>` too: they default to the
+  checkout's `data/imports`, which `stocks imports list` reads.
 * **the on-disk memos** (`data/memo/`, `data/form4.json`) live under `<root>`
   too, for the same reason: frames salvaged from a real session would render
   a page here that renders nowhere else.
@@ -79,6 +81,7 @@ def _seal_network() -> None:
 
 def _seal_accounts(root: Path) -> None:
     from stocks import accounts, storage
+    from stocks.portfolio import diagnostics
 
     users = root / "users"
     guest = root / "guest"
@@ -92,6 +95,9 @@ def _seal_accounts(root: Path) -> None:
     )
     accounts.configured_owner = lambda: None  # type: ignore[assignment]
     storage.enabled = lambda: False  # type: ignore[assignment]
+    # The import diagnostics are written under the checkout's `data/imports`
+    # otherwise — the suite's accounts landed in the developer's own list.
+    diagnostics.DIAGNOSTICS_DIR = root / "imports"
     from stocks.api import cache
     from stocks.data import insiders
 

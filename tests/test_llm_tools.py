@@ -273,7 +273,8 @@ def test_the_free_chain_moves_on_when_a_backend_refuses(monkeypatch):
     tried = []
 
     def backend(base_url, **_opts):
-        def run(api_key, model, system, messages, tools, execute, rounds):
+        def run(api_key, model, system, messages, tools, execute, rounds,
+                cap=0):
             tried.append(base_url)
             if base_url == "one":
                 raise RuntimeError("no tool support on this model")

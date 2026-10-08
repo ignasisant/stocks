@@ -26,7 +26,7 @@ from stocks.analysis import naive_dates
 from stocks.analysis.listing import price_units, quote_unit
 from stocks.config import Holding, load_watchlist
 from stocks.data.fx import ToBase, converter
-from stocks.portfolio import transfers
+from stocks.portfolio import consistency, transfers
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -474,7 +474,7 @@ def plausible_closes(
         if _close_matches_trades(px * scale, ticker, ccy.upper(), transactions):
             out[ticker] = s
         else:
-            obs.warn("portfolio.price_ticker_mismatch", ticker=ticker)
+            obs.warn_once("portfolio.price_ticker_mismatch", ticker, ticker=ticker)
     return out
 
 
@@ -540,7 +540,7 @@ def injected_vs_value(
             ccy = ccy.upper()
             px = px * scale
             if not _close_matches_trades(px, ticker, ccy, transactions):
-                obs.warn("portfolio.price_ticker_mismatch", ticker=ticker)
+                obs.warn_once("portfolio.price_ticker_mismatch", ticker, ticker=ticker)
             else:
                 rate = pd.Series(1.0, index=idx) if ccy == base else fx.get(ccy)
                 if rate is not None:
@@ -941,7 +941,10 @@ class PortfolioReport:
 
 
 def load_closes(
-    tickers: list[str], period: str = "1y", adjusted: bool = True
+    tickers: list[str],
+    period: str = "1y",
+    adjusted: bool = True,
+    currencies: dict[str, str] | None = None,
 ) -> dict[str, pd.Series]:
     """Close series per ticker from ONE bulk download; no-data tickers drop out.
 
@@ -959,7 +962,10 @@ def load_closes(
     from stocks.data.fetch import fetch_many
 
     out: dict[str, pd.Series] = {}
-    for t, df in fetch_many(tickers, period=period, auto_adjust=adjusted).items():
+    frames = fetch_many(
+        tickers, period=period, auto_adjust=adjusted, currencies=currencies
+    )
+    for t, df in frames.items():
         s = df["Close"].dropna() if "Close" in df else pd.Series(dtype=float)
         if not s.empty:
             out[t] = s.rename(t)
@@ -1016,7 +1022,8 @@ def book_history(
     first = min(t.date for t in held)
     if closes is None:
         months = max(1, (pd.Timestamp.today() - pd.Timestamp(first)).days // 30 + 1)
-        closes = load_closes(tickers, period=f"{months}mo")
+        traded_in = {t.ticker: t.currency for t in held if t.action in ("buy", "sell")}
+        closes = load_closes(tickers, period=f"{months}mo", currencies=traded_in)
     closes = {t: s for t, s in closes.items() if t in set(tickers)}
     # The closes convert at their listing's rate, the cash at the trade's —
     # so the FX paths are the union of both (stocks.analysis.listing).
@@ -1037,12 +1044,13 @@ def book_history(
     if unpriced:
         # Every render says "sin histórico" to the reader and nothing to us —
         # the only way a name like this reaches a human today is someone
-        # noticing the caption and asking. One line here is enough to grep
-        # `stocks logs stats --event portfolio.unknown_ticker` for which
-        # tickers keep showing up, without a second sink to maintain: unlike
-        # an import failure, there is no user file to redact here, just our
-        # own catalog symbols.
-        obs.warn("portfolio.unknown_ticker", tickers=unpriced, count=len(unpriced))
+        # noticing the caption and asking. One line per name is enough for
+        # `stocks logs stats --event data.inconsistency --by ticker` to show
+        # which keep turning up, without a second sink to maintain: unlike an
+        # import failure, there is no user file to redact here, just our own
+        # catalog symbols. Once per window, since every request replays it.
+        for ticker in unpriced:
+            consistency.report("unpriced_held", source="replay", ticker=ticker)
     missing = sorted(
         set(unpriced)
         | set(hist.attrs.get("carried_at_cost", []) if not hist.empty else [])

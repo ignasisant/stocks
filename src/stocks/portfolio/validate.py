@@ -37,7 +37,7 @@ from pathlib import Path
 from stocks.config import DATA_DIR, WATCHLIST_FILE, load_watchlist, ticker_aliases
 from stocks.data.crypto import crypto_name, is_crypto
 from stocks.data.symbols import resolved_codes
-from stocks.portfolio import revolut_crypto, transfers
+from stocks.portfolio import consistency, revolut_crypto, transfers
 from stocks.portfolio.ledger import DB_PATH, Transaction
 from stocks.portfolio.statement import ParseResult
 
@@ -502,6 +502,16 @@ def _check_oversells(
             checked.extend(added)
             short = _replay(checked, prior)
     for c, q in short:
+        # An overlapping re-export is the reader's everyday path and the
+        # duplicate check already drops it; a sale the book cannot cover is
+        # not — it is a missing buy, transfer or split upstream.
+        consistency.report(
+            "oversold",
+            source="import",
+            ticker=c.tx.ticker,
+            key=c.tx.date,
+            over=consistency.ratio(c.tx.quantity, q),
+        )
         c.issues.append(
             Issue(
                 "error",

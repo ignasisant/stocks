@@ -433,6 +433,7 @@
   "chat.book_summary_fee_in_coins": "Quitar las monedas de la comisión a {count} compras de cripto en Revolut ({tickers})",
   "chat.book_summary_undo": "Deshacer «{summary}» ({when})",
   "chat.book_nothing_left": "El libro ya no tiene {ticker}: no hay nada que cerrar.",
+  "chat.book_close_unknown": "No encuentro {ticker} en las operaciones registradas. Lo más parecido que tienes: {near}. ¿Cuál es?",
   "chat.book_close_what": "¿A qué precio vendiste lo último de {ticker}?",
   "chat.book_summary_close": "Cerrar {ticker}: apuntar como vendidas las {quantity} que quedan",
   "chat.action_undo": "Deshacer",

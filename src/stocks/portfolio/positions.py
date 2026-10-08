@@ -49,7 +49,7 @@ from datetime import date as _date
 from datetime import timedelta as _timedelta
 
 from stocks.data.fx import ToBase, converter, prefetch
-from stocks.portfolio import transfers
+from stocks.portfolio import consistency, transfers
 from stocks.portfolio.ledger import RETURN_OF_CAPITAL, Transaction
 
 
@@ -205,6 +205,7 @@ def _sell(
     remaining = tx.quantity
     held = _total_qty(queue)
     if remaining - held > 1e-9:
+        _note_oversold(tx.ticker, tx, held)
         raise ValueError(
             f"{tx.ticker}: sell of {tx.quantity} on {tx.date} exceeds held {held:.4f}"
         )
@@ -279,6 +280,17 @@ def _return_capital(holdings, tx: Transaction, to_base: ToBase, currency: str) -
         h.cost -= cut
         h.cost_native = max(0.0, h.cost_native - native)
     return over
+
+
+def _note_oversold(ticker: str, tx: Transaction, held: float) -> None:
+    """A replay tripped on a sale the book cannot cover: say so before raising."""
+    consistency.report(
+        "oversold",
+        source="replay",
+        ticker=ticker,
+        key=tx.date,
+        over=consistency.ratio(tx.quantity, held),
+    )
 
 
 def _capital_excess(tx: Transaction, over: float, buy_date: str) -> list[RealizedSale]:
@@ -413,6 +425,7 @@ def _dispose_average(
     if tx.quantity <= 1e-9:
         return None
     if tx.quantity - pool.quantity > 1e-9:
+        _note_oversold(tx.ticker, tx, pool.quantity)
         raise ValueError(
             f"{tx.ticker}: sell of {tx.quantity} on {tx.date} exceeds held "
             f"{pool.quantity:.4f}"
@@ -645,6 +658,7 @@ def _dispose_s104(
         remaining -= take
     if remaining > 1e-9:
         held = tx.quantity - remaining
+        _note_oversold(ticker, tx, held)
         raise ValueError(
             f"{ticker}: sell of {tx.quantity} on {tx.date} exceeds held {held:.4f}"
         )

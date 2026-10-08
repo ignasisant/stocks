@@ -39,7 +39,7 @@ from stocks.analysis.moat import PILLAR_WEIGHTS, moat_score
 from stocks.analysis.pe_history import DISPLAY_WINDOWS, window_stats
 from stocks.analysis.portfolio import market_live, session_quote
 from stocks.api import loaders
-from stocks.api.deps import Account, Base, reporting_currency
+from stocks.api.deps import Account, Base, Writer, reporting_currency
 from stocks.api.jsonsafe import num as _num
 from stocks.api.jsonsafe import scalar as _scalar
 from stocks.api.schemas import (
@@ -71,6 +71,10 @@ from stocks.api.schemas import (
     SourceCheck,
     SourcedFigure,
     TickerPosition,
+    TickerSplit,
+    TickerSplitPick,
+    TickerSplits,
+    TickerSplitsApplied,
     Trade,
     Valuation,
     ValuationWindow,
@@ -358,6 +362,147 @@ def position(symbol: Symbol, account: Account, base: Base = None) -> TickerPosit
         trades=fills,
         brokers={name: c.quantity for name, c in brokers.items()},
         custody=marks,
+    )
+
+
+# A broker statement prints trades, not corporate actions, so a share bought
+# before a split arrives as one AMZN at $2050 rather than twenty at $102.50, and
+# the page then reads a 20x cost basis against today's price. The evidence is
+# on this very page — the buy price against that day's close — so the page asks
+# for it and repairs the book itself, through the edit journal so the reader
+# can take it back (`corporate.missing_splits` holds the evidence rule).
+
+
+def _split_gaps(db, ticker: str) -> list:
+    """`corporate.missing_splits` for one name, on the unified labels.
+
+    Relabelled like `own_fills`: the URL speaks the label `positions.build`
+    unifies to, and a book that booked the buy under its ISIN would otherwise
+    have nothing to price. No buy, no Yahoo round trip.
+    """
+    from stocks.data import fetch
+    from stocks.portfolio import corporate, demo, transfers
+    from stocks.portfolio.ledger import all_transactions
+
+    rows = [
+        tx
+        for tx in transfers.relabel(demo.without(all_transactions(db)))
+        if tx.ticker.upper() == ticker
+    ]
+    if not any(tx.action == "buy" for tx in rows):
+        return []
+    return corporate.missing_splits(
+        rows, splits=fetch.splits, close_on=fetch.close_on, source="page"
+    )
+
+
+def _declined(db, ticker: str) -> set[str]:
+    """Split days of this name the reader has written and then undone."""
+    from stocks.portfolio import edits
+
+    days: set[str] = set()
+    for change in edits.history(db, limit=500):
+        if not change.undone_at:
+            continue
+        for row in change.changes:
+            after = row.after or {}
+            if (
+                row.before is None
+                and after.get("action") == "split"
+                and str(after.get("ticker", "")).upper() == ticker
+            ):
+                days.add(str(after.get("date", "")))
+    return days
+
+
+def _split(gap, declined: set[str] | None = None) -> TickerSplit:
+    return TickerSplit(
+        date=gap.tx.date,
+        ratio=gap.ratio,
+        held_before=gap.held_before,
+        held_after=gap.held_after,
+        priced_at=gap.priced_at,
+        priced_on=gap.priced_on,
+        market_close=gap.market_close,
+        currency=gap.tx.currency,
+        declined=gap.tx.date in (declined or set()),
+    )
+
+
+@router.get(
+    "/{symbol}/splits",
+    response_model=TickerSplits,
+    summary="Splits this name's ledger is missing",
+)
+def missing_splits(symbol: Symbol, account: Account) -> TickerSplits:
+    """Forward splits the book lacks for this name, oldest first.
+
+    Its own request rather than a field on `/position`: the evidence is a
+    Yahoo round trip (memoized per process), and the position's chart markers
+    must not wait on it. Writes nothing.
+    """
+    from stocks.data import fetch
+
+    ticker = symbol.strip().upper()
+    gaps = _split_gaps(account.db, ticker)
+    declined = _declined(account.db, ticker) if gaps else set()
+    return TickerSplits(
+        ticker=ticker,
+        splits=[_split(gap, declined) for gap in gaps],
+        throttled=fetch.throttle_remaining() > 0,
+    )
+
+
+@router.post(
+    "/{symbol}/splits",
+    response_model=TickerSplitsApplied,
+    status_code=status.HTTP_201_CREATED,
+    summary="Write the missing splits",
+)
+def apply_missing_splits(
+    symbol: Symbol, account: Writer, body: TickerSplitPick
+) -> TickerSplitsApplied:
+    """Write the named splits as one journalled, undoable edit.
+
+    The body names the days; the ratio and the row come from a scan run here
+    and now, so a client cannot invent a split nor replay a stale one — a
+    split another tab wrote a second ago is no longer missing. A day this scan
+    does not propose is a 409 and nothing is written.
+    """
+    from stocks.portfolio import edits
+
+    ticker = symbol.strip().upper()
+    found = {gap.tx.date: gap for gap in _split_gaps(account.db, ticker)}
+    picked = []
+    for day in dict.fromkeys(d.strip() for d in body.dates):
+        gap = found.get(day)
+        if gap is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"{ticker} on {day} is not a split this ledger is missing",
+            )
+        picked.append(gap)
+    ops = [
+        {"op": "add", "row": {k: getattr(gap.tx, k) for k in edits.FIELDS}}
+        for gap in picked
+    ]
+    summary = ", ".join(f"{ticker} {gap.ratio:g}:1 split {gap.tx.date}" for gap in picked)
+    try:
+        planned = edits.plan(ops, account.db)
+        done = edits.commit(
+            ops, planned.token, source="api", summary=summary, path=account.db
+        )
+    except edits.Stale as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    except edits.EditError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    obs.event("ledger.splits_repaired", n=len(picked), ticker=ticker, via="ticker")
+    return TickerSplitsApplied(
+        ticker=ticker, change_id=done.id, splits=[_split(gap) for gap in picked]
     )
 
 

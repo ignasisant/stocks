@@ -201,6 +201,15 @@ def _save_isin_cache(cache: dict[str, str]) -> None:
         pass  # a read-only data dir costs a lookup per boot, not a render
 
 
+def cached_isin_symbol(isin: str) -> str | None:
+    """The symbol an earlier lookup resolved `isin` to — the map only.
+
+    No network, ever: this sits in `fetch.resolve`, under every price lookup.
+    """
+    key = (isin or "").strip().upper()
+    return _load_isin_cache().get(key) if is_isin(key) else None
+
+
 def symbol_for_isin(isin: str) -> str | None:
     """Yahoo symbol for an ISIN, or None when nothing resolves it.
 

@@ -124,6 +124,29 @@
   line-height: 1.5;
 }
 
+/* A split the page wrote into the book by itself, or one it is offering to:
+   marked like the guest banner, since every figure under it depends on it. */
+.tk-split {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 12px;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--ag-border);
+  border-left: 3px solid var(--ag-brand-accent);
+  border-radius: var(--ag-radius-xs, 6px);
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-sm);
+}
+
+.tk-split p {
+  flex: 1 1 18rem;
+  margin: 0;
+  max-width: 70ch;
+}
+
 .tk-empty {
   margin: 0;
   color: var(--ag-text-muted);
