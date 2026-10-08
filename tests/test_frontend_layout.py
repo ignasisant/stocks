@@ -73,6 +73,8 @@ def test_charts_scrub_under_a_finger():
 _TOUCH_TARGETS = [
     ("pages/portfolio/portfolio.css", ".pf-seg button", r"min-height\s*:\s*44px"),
     ("pages/portfolio/portfolio.css", ".pf-legend-btn", r"min-height\s*:\s*44px"),
+    ("pages/portfolio/portfolio.css", ".pf-sort-dir", r"min-height\s*:\s*44px"),
+    ("pages/portfolio/portfolio.css", ".pf-sortbar .pf-dropdown", r"min-height\s*:\s*44px"),
     ("pages/ticker/ticker.css", ".tk-legend-btn", r"min-height\s*:\s*44px"),
     ("ui/ui.css", ".ag-toggle", r"min-height\s*:\s*44px"),
     ("pages/earnings/earnings.css", ".earn-seg button", r"min-height\s*:\s*44px"),
