@@ -179,3 +179,40 @@ def test_the_api_process_configures_logging_at_boot(monkeypatch):
 
     asyncio.run(boot())
     assert calls[0] == "obs"
+
+
+def test_yahoo_misses_stay_off_the_log_but_still_reach_fetch():
+    """yfinance's per-symbol misses are dropped at the handler, after the
+    logger's filters ran — `fetch._DownloadFailures` still reads them."""
+    from stocks.data import fetch
+
+    keep = obs._YahooMissIsNotNews()
+
+    def record(name, msg):
+        return logging.LogRecord(name, logging.WARNING, __file__, 1, msg, None, None)
+
+    for msg in (
+        "$ORGN: No data found, symbol may be delisted",
+        "$ORGN: possibly delisted; no timezone found",
+        "\n3 Failed downloads:",
+        "['CHILLGUY-EUR', 'METIS-EUR']: No data found, symbol may be delisted",
+        'HTTP Error 404: {"quoteSummary":{"result":null,"error":{"code":"Not Found"}}}',
+    ):
+        assert not keep.filter(record("yfinance", msg)), msg
+    assert keep.filter(record("yfinance", "Too Many Requests. Rate limited."))
+    assert keep.filter(record("stocks", "No data found"))
+
+    sink: dict[str, str] = {}
+    fetch._download_log.sink = sink
+    try:
+        logging.getLogger("yfinance").warning(
+            "['METIS-EUR']: No data found, symbol may be delisted")
+    finally:
+        fetch._download_log.sink = None
+    assert "METIS-EUR" in sink
+
+
+def test_sdk_http_clients_log_quietly():
+    obs.setup(force=True)
+    for name in ("httpx2", "primp", "google_genai"):
+        assert logging.getLogger(name).getEffectiveLevel() >= logging.WARNING

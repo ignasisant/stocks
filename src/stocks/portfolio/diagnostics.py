@@ -228,6 +228,35 @@ ROUTINE_SKIPS = frozenset({
 })
 
 
+# Reader accounts the browser suite creates (`e2e_<pid>_<n>_example_com_<hash>`,
+# tests/e2e/conftest.py). They are not readers, and a run that reached a real
+# store would bury the failures that are.
+_TEST_ACCOUNT = re.compile(r"^e2e_\d+_\d+_")
+
+
+def is_test_account(user: object) -> bool:
+    """Whether a fingerprint's `user` slug belongs to the e2e suite."""
+    return bool(_TEST_ACCOUNT.match(str(user)))
+
+
+def benign(fp: dict) -> bool:
+    """A stored fingerprint that records nothing but expected skips.
+
+    `failed` decides this for a new attempt (and so whether it is kept at all);
+    this asks it of an old one, filed before `routine` was counted — every
+    Revolut statement with a top-up was. Judged from the reasons themselves,
+    which carry no value, so the verdict needs no field the old files lack.
+    """
+    seen = fp.get("reasons") or {}
+    return bool(
+        fp.get("imported")
+        and not fp.get("error_type")
+        and not fp.get("rejected")
+        and seen
+        and set(seen) <= ROUTINE_SKIPS
+    )
+
+
 def reasons(result: ParseResult | None) -> dict[str, int]:
     """Redacted skip reasons and how many rows each one took.
 
@@ -297,6 +326,65 @@ def date_hint(result: ParseResult | None) -> dict | None:
     return {"likely": likely, "separator": separator, "samples": seen}
 
 
+# ------------------------------------------------------------ attribution
+
+UNRECOGNISED = "unrecognised"
+# Skip types that are about the file's form, not about any row in it.
+_FORM_SKIPS = ("header", "file")
+
+
+def _owned(filename: str, data: bytes) -> bool:
+    """Whether any broker parser recognises the file's layout.
+
+    A parser that reads a row — imports it, or skips it for its own reasons —
+    has found its format; one that only objects to the header has not. Run on
+    the failure path only, and each parser is guarded: a crash is a "no". The
+    permissive parsers (revolut reads any row it can) must show their
+    fingerprint header first, the same gate the cascade puts them behind.
+    """
+    from stocks.portfolio import autodetect, platforms
+
+    ext = _extension(filename)
+    head = autodetect._headers(filename, data)
+    for platform in platforms.PLATFORMS:
+        if ext not in platform.file_types:
+            continue
+        need = autodetect._FINGERPRINT.get(platform.key)
+        if need and head and not need <= head:
+            continue
+        try:
+            found = platform.parse(filename, data)
+        except Exception:  # noqa: BLE001
+            continue
+        if found.transactions or any(
+            s.get("type") not in _FORM_SKIPS for s in found.skipped
+        ):
+            return True
+    return False
+
+
+def attributed(
+    platform: str, filename: str, data: bytes, result: ParseResult | None
+) -> tuple[str, str]:
+    """(platform to file it under, the one the reader named when it differs).
+
+    The Import page tries the platform the reader picked first, so a file that
+    is no broker's export at all (an inventory sheet, say) comes back
+    attributed to whichever was preselected — and is counted against that
+    parser as a bug in it. A file nothing owns is filed as `unrecognised`.
+    """
+    if result is None or result.transactions or not result.skipped:
+        return platform, ""
+    if any(s.get("type") not in _FORM_SKIPS for s in result.skipped):
+        return platform, ""
+    try:
+        if _owned(filename, data):
+            return platform, ""
+    except Exception:  # noqa: BLE001
+        return platform, ""
+    return UNRECOGNISED, platform
+
+
 # -------------------------------------------------------------- fingerprint
 
 
@@ -311,6 +399,7 @@ def fingerprint(
     error: BaseException | None = None,
 ) -> dict:
     """The whole anonymised record of one import attempt."""
+    platform, named = attributed(platform, filename, data, result)
     out: dict = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "platform": platform,
@@ -318,6 +407,7 @@ def fingerprint(
         # The pseudonymous slug bound into the obs context, if any, so three
         # failures can be told apart as three readers or as one reader retrying.
         "user": obs.current().get("user", "-"),
+        **({"named": named} if named else {}),
         **sniff(filename, data),
         "imported": len(result.transactions) if result else 0,
         "skipped": len(result.skipped) if result else 0,
@@ -377,9 +467,14 @@ def _fields(fp: dict) -> dict:
 def record(fp: dict) -> Path | None:
     """Write the fingerprint to disk and the bucket; None if it couldn't be.
 
+    The e2e suite's accounts are never kept (belt and braces: its server seals
+    the bucket, but a leaked setting should cost nothing here).
+
     Swallowed on purpose: losing the artifact must not also lose the import
     page, which is still rendering an error the reader needs to see.
     """
+    if is_test_account(fp.get("user")):
+        return None
     try:
         DIAGNOSTICS_DIR.mkdir(parents=True, exist_ok=True)
         stamp = str(fp.get("ts", "")).replace(":", "-") or "unknown"

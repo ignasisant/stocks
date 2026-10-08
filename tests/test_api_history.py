@@ -115,7 +115,7 @@ def download(prices: dict[str, float]):
     equal, so which column a reader takes cannot move a figure.
     """
 
-    def fetch_many(tickers, period="1y", interval="1d", auto_adjust=True, budget=60.0):
+    def fetch_many(tickers, period="1y", interval="1d", auto_adjust=True, **_):
         return {
             ticker: pd.DataFrame({"Close": series, "Adj Close": series})
             for ticker, series in closes(prices).items()
