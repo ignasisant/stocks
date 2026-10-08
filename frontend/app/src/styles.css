@@ -118,11 +118,10 @@ body {
     z-index: 50;
     box-shadow: var(--ag-shadow-overlay);
   }
-  /* The glyphs stay exactly where the folded rail drew them — centred in its
-     2.3rem of content — so the icon under the pointer never slides away from
-     it as the labels arrive. */
-  :root[data-nav="peek"] .ag-nav-item,
-  :root[data-nav="peek-out"] .ag-nav-item {
+  /* The left inset is the one the folded rail centres a glyph at (20px in its
+     2.3rem of content), so open, folded and peeking all draw the icons on one
+     line and the icon under the pointer never slides as the labels arrive. */
+  .ag-nav > .ag-nav-group > .ag-nav-item {
     padding-left: calc((2.3rem - 20px) / 2);
   }
 }

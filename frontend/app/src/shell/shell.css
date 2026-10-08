@@ -18,14 +18,24 @@
   font-size: var(--ag-fs-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
-/* Peeking too: a header arriving would push every link below it down, out
-   from under the pointer that opened the rail. */
-:root[data-nav="folded"] .ag-nav-section,
-:root[data-nav="peek"] .ag-nav-section,
-:root[data-nav="peek-out"] .ag-nav-section {
-  display: none;
+/* Folded, a header keeps its room and loses its words: the glyphs sit at the
+   rows the open rail draws them on, so peeking (which shows the headers, like
+   the open rail) brings the words in without pushing a link out from under
+   the pointer that opened it. Clipped so the hidden text cannot widen the
+   3.5rem column into a horizontal scrollbar. Desktop only: the phone bar
+   drops the headers, and the "More" sheet always shows them. */
+@media (min-width: 641px) {
+  /* Starts where the glyphs do (styles.css, `.ag-nav-item`). */
+  .ag-nav > .ag-nav-group > .ag-nav-section {
+    padding-left: calc((2.3rem - 20px) / 2);
+  }
+  :root[data-nav="folded"] .ag-nav > .ag-nav-group > .ag-nav-section {
+    visibility: hidden;
+    overflow: hidden;
+  }
 }
 
 /* The phone bar has room for four glyphs, not for headers; the "More" sheet
