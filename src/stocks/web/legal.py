@@ -262,7 +262,8 @@ _TERMS = {
             ]),
             ("El servicio", [
                 "El código de la app es público bajo la licencia PolyForm "
-                "Noncommercial 1.0.0, y la app se ofrece gratis, tal cual y según disponibilidad, sin garantía de "
+                "Noncommercial 1.0.0, y la app se ofrece gratis, tal cual y "
+                "según disponibilidad, sin garantía de "
                 "ningún tipo. En la medida en que la ley lo permita, el "
                 "operador no responde de pérdidas derivadas del uso de la "
                 "app, incluidas pérdidas de inversión y de datos. El servicio "
