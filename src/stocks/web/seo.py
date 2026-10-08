@@ -133,7 +133,7 @@ def json_ld(lang: str, base_url: str, jurisdiction: str | None = None) -> str:
 
     A single `@graph` rather than three separate blocks — Google reads them the
     same way and one node can then reference another by `@id` (the app is
-    `publisher`-less on purpose: this is one person's open-source project, not
+    `publisher`-less on purpose: this is one person's source-available project, not
     an organisation, and claiming otherwise in structured data is a way to lose
     a rich result).
 
@@ -164,7 +164,7 @@ def json_ld(lang: str, base_url: str, jurisdiction: str | None = None) -> str:
             "inLanguage": sorted(LANGUAGES),
             "description": translate(jur_key("landing.seo_description", jur), lang),
             "image": _abs(base_url, OG_IMAGE),
-            "license": "https://opensource.org/licenses/MIT",
+            "license": "https://polyformproject.org/licenses/noncommercial/1.0.0",
             "isAccessibleForFree": True,
             "codeRepository": REPO_URL,
             # Free, and priced explicitly: an Offer with price 0 is what turns

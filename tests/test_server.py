@@ -138,7 +138,7 @@ def test_the_spanish_page_is_served_in_spanish(client):
     r = client.get("/es/")
     assert r.status_code == 200
     assert 'lang="es"' in r.text
-    assert "Tu rentabilidad real" in r.text
+    assert "Un asistente de IA que ya se ha leído" in r.text
 
 
 @pytest.mark.parametrize("path", ["/es", "/en-es", "/es-us"])

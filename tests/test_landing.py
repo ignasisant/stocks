@@ -297,8 +297,8 @@ def test_the_brand_mark_is_absolute(body):
 
 
 def test_the_copy_actually_changes_language(body):
-    assert "Your real return" in body("en")
-    assert "Tu rentabilidad real" in body("es")
+    assert "An AI assistant that has already read" in body("en")
+    assert "Un asistente de IA que ya se ha leído" in body("es")
 
 
 def test_the_faq_renders_every_question_the_structured_data_claims(body):
