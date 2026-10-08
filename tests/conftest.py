@@ -309,6 +309,26 @@ def _no_provider_logos():
 
 
 @pytest.fixture(autouse=True)
+def _own_logo_cache(_scratch):
+    """Keep resolved logo URLs out of the checkout's `data/logos.json`.
+
+    The file is under version control and shipped in the image, and a suite
+    that serves a fake probe for AAPL or MSFT wrote its verdict there — a dirty
+    tree after every full run in a fresh worktree. Each test starts from an
+    empty cache, no per-process memo and the bucket fold not yet done.
+    Restored by hand for the reason `_own_free_llm_counter` gives.
+    """
+    from stocks.data import logo
+
+    before = (logo.LOGO_CACHE, logo._inconclusive, logo._bucket)
+    logo.LOGO_CACHE = _own(_scratch, "logos") / "logos.json"
+    logo._inconclusive = {}
+    logo._bucket = {"fold": False, "push": False}
+    yield
+    logo.LOGO_CACHE, logo._inconclusive, logo._bucket = before
+
+
+@pytest.fixture(autouse=True)
 def _listing_at_the_ledgers_word():
     """Answer "which currency is this price series in" with "unknown".
 
