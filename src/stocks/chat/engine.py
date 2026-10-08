@@ -58,16 +58,12 @@ if TYPE_CHECKING:
     from stocks.chat.tools import Action
     from stocks.web.llm import Provider, ToolCall
 
-# Remembered-key lifetime. The window *slides*: every successful use of a
-# stored key pushes BYOK_TTL out again, so an active account never re-enters
-# its key, while an abandoned one goes cold on its own. BYOK_MAX_AGE is the
-# absolute ceiling measured from the moment the key was entered and is never
-# refreshed, so no stored key can live indefinitely. Expiry is not just a read
-# check: prune_byok deletes the ciphertext, so dead keys stop sitting in
+# Remembered-key lifetime, counted from the moment the key was entered and
+# never pushed back by use: the settings card counts it down one day at a time,
+# and re-entering the key is what starts a fresh 90 days. Expiry is not just a
+# read check: prune_byok deletes the ciphertext, so dead keys stop sitting in
 # prefs.json (and in the bucket mirror).
-BYOK_TTL = 90 * 24 * 3600  # sliding window, seconds
-BYOK_MAX_AGE = 180 * 24 * 3600  # hard cap since first save, seconds
-_BYOK_TOUCH_MIN = 24 * 3600  # slide at most once a day (each write hits the bucket)
+BYOK_TTL = 90 * 24 * 3600  # seconds since the key was entered
 _BYOK_ORDER = ("anthropic", "openai", "gemini", "openrouter")
 
 # The free chain runs on the operator's shared keys, so each account gets a
@@ -110,23 +106,26 @@ def byok_fields(pid: str) -> tuple[str, str, str]:
     return f"{pid}_key_enc", f"{pid}_key_saved_at", f"{pid}_key_first_at"
 
 
-def byok_alive(prefs: dict, pid: str) -> bool:
-    """True while `pid`'s stored key is inside both windows (sliding + cap).
+def _byok_entered(prefs: dict, pid: str) -> float | None:
+    """When `pid`'s stored key was entered, or None when none is stored.
 
-    Entries written before the cap existed have no `_key_first_at`; their own
-    save time stands in for it, so the ceiling counts from the true origin
-    rather than restarting on upgrade.
+    `_key_first_at` is the entry time. Entries written before it existed carry
+    only `_key_saved_at`, which stands in for it.
     """
     enc_k, saved_k, first_k = byok_fields(pid)
     if not prefs.get(enc_k):
-        return False
+        return None
     try:
         saved = float(prefs.get(saved_k, 0) or 0)
-        first = float(prefs.get(first_k, saved) or saved)
+        return float(prefs.get(first_k, saved) or saved)
     except (TypeError, ValueError):
-        return False
-    now = time.time()
-    return now - saved <= BYOK_TTL and now - first <= BYOK_MAX_AGE
+        return None
+
+
+def byok_alive(prefs: dict, pid: str) -> bool:
+    """True while `pid`'s stored key is younger than BYOK_TTL."""
+    entered = _byok_entered(prefs, pid)
+    return entered is not None and time.time() - entered <= BYOK_TTL
 
 
 def decrypt_byok(prefs: dict, pid: str) -> str:
@@ -149,9 +148,8 @@ def save_byok(prefs: dict, pid: str, api_key: str) -> bool:
     """Encrypt one provider key into `prefs`. False when nothing can encrypt it.
 
     The caller saves prefs; this only mutates the dict, so a surface that has
-    other edits in flight writes the file once. A fresh entry restarts both
-    clocks — the sliding window and the absolute cap the sliding one can never
-    outrun — because re-entering a key is the user saying it is current.
+    other edits in flight writes the file once. A fresh entry restarts the
+    90 days, because re-entering a key is the user saying it is current.
 
     False means the deployment has no `[chat] enc_key`, and the honest thing is
     to say so: storing a provider key in plaintext beside a portfolio is not a
@@ -195,42 +193,15 @@ def forget_byok(prefs: dict, pid: str) -> bool:
 
 
 def byok_days_left(prefs: dict, pid: str) -> int | None:
-    """Days before this stored key expires, or None when none is stored.
-
-    Whichever window binds first — the sliding one a use pushes forward, or the
-    absolute cap measured from when the key was first entered.
-    """
-    enc_k, saved_k, first_k = byok_fields(pid)
-    if not prefs.get(enc_k):
+    """Days before this stored key expires, or None when none is stored. One
+    less each day after the key was entered; use does not move it."""
+    entered = _byok_entered(prefs, pid)
+    if entered is None:
         return None
-    try:
-        saved = float(prefs.get(saved_k, 0) or 0)
-        first = float(prefs.get(first_k, saved) or saved)
-    except (TypeError, ValueError):
-        return None
-    now = time.time()
-    left = min(BYOK_TTL - (now - saved), BYOK_MAX_AGE - (now - first))
+    left = BYOK_TTL - (time.time() - entered)
     # Rounded up, not down: a key entered a second ago has 90 days, and
     # floor() would tell its owner 89 on the day they typed it in.
     return max(0, math.ceil(left / 86400))
-
-
-def touch_byok(prefs: dict, pid: str) -> bool:
-    """Slide `pid`'s window after a successful use. True when prefs changed.
-
-    Mutates `prefs` in place — the caller saves. Throttled to one write a day
-    so a busy panel doesn't re-upload prefs.json on every turn.
-    """
-    _, saved_k, first_k = byok_fields(pid)
-    if not byok_alive(prefs, pid):
-        return False
-    now = int(time.time())
-    saved = int(float(prefs.get(saved_k, 0) or 0))
-    if now - saved < _BYOK_TOUCH_MIN:
-        return False
-    prefs.setdefault(first_k, saved or now)  # legacy entry: origin = its save time
-    prefs[saved_k] = now
-    return True
 
 
 def prune_byok(prefs: dict) -> bool:
@@ -248,13 +219,6 @@ def prune_byok(prefs: dict) -> bool:
         for field in byok_fields(pid):
             changed = prefs.pop(field, None) is not None or changed
     return changed
-
-
-def maintain_byok(prefs: dict, pid: str | None = None) -> bool:
-    """Slide the key just used (if any) and drop the dead ones. True when
-    prefs changed and the caller should save."""
-    touched = touch_byok(prefs, pid) if pid else False
-    return prune_byok(prefs) or touched
 
 
 # Who may spend the operator's keyless chain. The per-account and global caps
@@ -2195,15 +2159,11 @@ class Reply:
     turn_id: str = ""
 
 
-def _keep_byok(prefs: dict, prefs_path: Path, pid: str) -> None:
-    """After a served turn: slide the key that served it, drop expired ones.
-
-    The free chain is the operator's key, so a free turn slides nothing — it
-    only gets the prune.
-    """
+def _keep_byok(prefs: dict, prefs_path: Path) -> None:
+    """After a served turn: drop the stored keys that have expired."""
     from stocks.web import auth
 
-    if maintain_byok(prefs, None if pid == "free" else pid):
+    if prune_byok(prefs):
         auth.save_prefs(prefs, prefs_path)
 
 
@@ -2540,7 +2500,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                                typed=not confirm_actions, stored=stored)
             if not reply.error:
                 autotitle(chat_path, provider, key, history, lang)
-                _keep_byok(prefs, prefs_path, provider.id)
+                _keep_byok(prefs, prefs_path)
                 return settled(replace(reply, provider_id=provider.id))
             act = None
         if act is not None and confirm_actions:
@@ -2550,7 +2510,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                                    "action": act.kind, "proposal": offer}))
             auth.save_chat(history, chat_path)
             autotitle(chat_path, provider, key, history, lang)
-            _keep_byok(prefs, prefs_path, provider.id)
+            _keep_byok(prefs, prefs_path)
             obs.event("chat.action_proposed", action=act.kind)
             return settled(Reply(text=note, provider_id=provider.id,
                                  proposal=dict(offer)))
@@ -2567,7 +2527,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                                    "action": act.kind}))
             auth.save_chat(history, chat_path)
             autotitle(chat_path, provider, key, history, lang)
-            _keep_byok(prefs, prefs_path, provider.id)
+            _keep_byok(prefs, prefs_path)
             return settled(Reply(text=note, provider_id=provider.id))
 
     # Skill routing and the lookup are independent, so they run at the same
@@ -2824,7 +2784,7 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
     turn.history.append(entry)
     auth.save_chat(turn.history, chat_path)
     autotitle(chat_path, provider, key, turn.history, turn.lang)
-    _keep_byok(prefs, prefs_path, provider.id)
+    _keep_byok(prefs, prefs_path)
     obs.event("chat.answered", provider=provider.id, model=model,
               chars=len(text), skills=list(turn.skills),
               web_sources=len(turn.sources))

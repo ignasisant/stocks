@@ -186,37 +186,29 @@ def test_attempts_empty_when_no_free(providers):
     assert engine.attempts({}) == []
 
 
-# ------------------------------------------------- sliding window + prune
+# ------------------------------------------------- fixed lifetime + prune
 
 
-def test_touch_slides_window_and_backfills_origin(enc):
-    old = int(time.time()) - 60 * 24 * 3600
-    prefs = enc("anthropic", saved_ago=60 * 24 * 3600)
-    assert engine.touch_byok(prefs, "anthropic") is True
-    assert prefs["anthropic_key_saved_at"] >= time.time() - 5
-    # legacy entry (no _key_first_at): the cap counts from its original save
-    assert abs(prefs["anthropic_key_first_at"] - old) <= 5
+def test_days_left_counts_down_from_entry(enc):
+    prefs = enc("anthropic")
+    assert engine.byok_days_left(prefs, "anthropic") == 90
+    prefs["anthropic_key_first_at"] = int(time.time()) - 10 * 24 * 3600
+    # however recently the key was used, ten days after entry it has eighty
+    assert engine.byok_days_left(prefs, "anthropic") == 80
 
 
-def test_touch_throttled_within_a_day(enc):
-    prefs = enc("anthropic", saved_ago=3600)
-    before = dict(prefs)
-    assert engine.touch_byok(prefs, "anthropic") is False
-    assert prefs == before
+def test_legacy_entry_counts_from_its_save(enc):
+    prefs = enc("anthropic", saved_ago=30 * 24 * 3600)  # no _key_first_at
+    assert engine.byok_days_left(prefs, "anthropic") == 60
 
 
-def test_touch_refuses_expired_key(enc):
-    prefs = enc("anthropic", saved_ago=engine.BYOK_TTL + 60)
-    assert engine.touch_byok(prefs, "anthropic") is False
-
-
-def test_absolute_cap_beats_a_slid_window(providers, enc):
+def test_use_does_not_revive_an_old_entry(providers, enc):
     prefs = enc("anthropic")  # saved just now...
-    # ...but first entered beyond the hard ceiling: no amount of use revives it
-    prefs["anthropic_key_first_at"] = int(time.time()) - engine.BYOK_MAX_AGE - 60
+    # ...but entered more than 90 days ago: expired
+    prefs["anthropic_key_first_at"] = int(time.time()) - engine.BYOK_TTL - 60
     assert engine.decrypt_byok(prefs, "anthropic") == ""
     assert [p.id for p, _, _ in engine.attempts(prefs)] == ["free"]
-    assert engine.touch_byok(prefs, "anthropic") is False
+    assert engine.byok_days_left(prefs, "anthropic") == 0
 
 
 def test_prune_deletes_expired_ciphertext_only(enc):
@@ -225,21 +217,6 @@ def test_prune_deletes_expired_ciphertext_only(enc):
     assert not any(k.startswith("anthropic_key") for k in prefs)
     assert prefs["openai_key_enc"]  # live key untouched
     assert engine.prune_byok(prefs) is False  # nothing left to drop
-
-
-def test_maintain_slides_the_used_key_and_prunes_the_dead(enc):
-    prefs = {**enc("anthropic", saved_ago=60 * 24 * 3600),
-             **enc("openai", saved_ago=engine.BYOK_TTL + 60)}
-    assert engine.maintain_byok(prefs, "anthropic") is True
-    assert prefs["anthropic_key_saved_at"] >= time.time() - 5
-    assert not any(k.startswith("openai_key") for k in prefs)
-
-
-def test_maintain_without_pid_only_prunes(enc):
-    prefs = enc("anthropic", saved_ago=60 * 24 * 3600)
-    before = dict(prefs)
-    assert engine.maintain_byok(prefs) is False
-    assert prefs == before
 
 
 # ------------------------------------------------------------- free quota
@@ -538,15 +515,16 @@ def test_answer_byok_first_then_free_on_failure(providers, enc, paths):
     assert providers["anthropic"].calls[0][1] == "default-model"
 
 
-def test_answer_slides_the_byok_key_it_used(providers, enc, paths):
+def test_answer_leaves_the_key_clock_alone(providers, enc, paths):
     prefs = {**BASE_PREFS, **enc("anthropic", saved_ago=60 * 24 * 3600)}
+    before = prefs["anthropic_key_saved_at"]
     reply = engine.answer(prefs=prefs, message="thoughts?", **paths)
     assert reply.provider_id == "anthropic"
-    saved = json.loads(paths["prefs_path"].read_text())
-    assert saved["anthropic_key_saved_at"] >= time.time() - 5
+    assert prefs["anthropic_key_saved_at"] == before
+    assert engine.byok_days_left(prefs, "anthropic") == 30
 
 
-def test_answer_on_free_prunes_but_slides_nothing(providers, enc, paths):
+def test_answer_on_free_prunes_expired_keys(providers, enc, paths):
     dead = enc("anthropic", saved_ago=engine.BYOK_TTL + 60)
     prefs = {**BASE_PREFS, **dead}
     reply = engine.answer(prefs=prefs, message="hola", **paths)

@@ -50,7 +50,7 @@ import {
 import { get, send } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { useT } from "../../shell/i18n";
-import { GuestBanner, SignInWall } from "../../shell/guest";
+import { GuestBanner, SignInWall, type GuestHighlight } from "../../shell/guest";
 import { useGuest, useSession } from "../../shell/session";
 import { Skeleton } from "../../shell/Layout";
 import { Link } from "../../shell/router";
@@ -78,6 +78,26 @@ import "./home.css";
 
 // The drag library rides with the editor, not with every Home visit.
 const Editor = lazy(() => import("./Editor"));
+
+/**
+ * What an account adds over this guest Home. The AI gets the cards — it is the
+ * part a visitor cannot try here at all (the drawer is closed to guests) — and
+ * the rest one ticked line under them.
+ */
+const GUEST_HIGHLIGHTS: GuestHighlight[] = [
+  { icon: "forum", title: "home.guest_ai_chat", body: "home.guest_ai_chat_body" },
+  { icon: "wb_sunny", title: "home.guest_ai_brief", body: "home.guest_ai_brief_body" },
+  {
+    icon: "lightbulb",
+    title: "home.guest_ai_memory",
+    body: "home.guest_ai_memory_body",
+  },
+];
+const GUEST_PERKS = [
+  "home.guest_perk_import",
+  "home.guest_perk_telegram",
+  "home.guest_perk_watchlist",
+];
 
 export default function Page() {
   const t = useT();
@@ -206,7 +226,10 @@ export default function Page() {
         <GuestBanner
           text="home.guest_banner"
           short="home.guest_banner_short"
+          title="home.guest_title"
           dismissible="home"
+          highlights={GUEST_HIGHLIGHTS}
+          perks={GUEST_PERKS}
         >
           {/* Where a guest session is actually worth something, and the reason
               this link sits in the banner: Home's own glance is per-account and

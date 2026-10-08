@@ -1,10 +1,9 @@
 """Optional LLM lines for the notification jobs — digest highlight, alert note.
 
 Provider resolution, first success wins:
-  1. The user's own BYOK key (Fernet-encrypted in prefs.json, same sliding
-     90-day TTL the chat honours) — their key, their billing, their provider
-     choice. The crons only *read* the key: they never slide the window, so
-     an account that stopped chatting still goes cold on schedule.
+  1. The user's own BYOK key (Fernet-encrypted in prefs.json, same 90-day
+     TTL from entry the chat honours) — their key, their billing, their
+     provider choice.
   2. The operator's free chain ([free_llm] secrets / FREE_LLM_* env), spent
      against the process-wide daily pot (see _complete).
   3. None — the notification ships computed-only.
@@ -21,7 +20,7 @@ import re
 
 from stocks.chat import engine
 
-_TTL = engine.BYOK_TTL  # the shared "remembered for 90 days, sliding" promise
+_TTL = engine.BYOK_TTL  # the shared "remembered for 90 days" promise
 _LANG_NAME = {"en": "English", "es": "Spanish"}
 MAX_CHARS = 300
 # How many alerts the narration call is shown. A watchlist that fires twenty

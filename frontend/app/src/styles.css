@@ -118,11 +118,10 @@ body {
     z-index: 50;
     box-shadow: var(--ag-shadow-overlay);
   }
-  /* The glyphs stay exactly where the folded rail drew them — centred in its
-     2.3rem of content — so the icon under the pointer never slides away from
-     it as the labels arrive. */
-  :root[data-nav="peek"] .ag-nav-item,
-  :root[data-nav="peek-out"] .ag-nav-item {
+  /* The left inset is the one the folded rail centres a glyph at (20px in its
+     2.3rem of content), so open, folded and peeking all draw the icons on one
+     line and the icon under the pointer never slides as the labels arrive. */
+  .ag-nav > .ag-nav-group > .ag-nav-item {
     padding-left: calc((2.3rem - 20px) / 2);
   }
 }
@@ -382,21 +381,198 @@ body {
    one line on the page a reader must not skim past, because every figure under
    it is real arithmetic over fiction. */
 .ag-guest {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--ag-border);
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--ag-border-brand-band);
   border-left: 3px solid var(--ag-brand-accent);
-  border-radius: var(--ag-radius-xs, 6px);
-  background: var(--ag-surface-sunken);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-brand-band);
   color: var(--ag-text-primary);
 }
 
 .ag-guest p {
-  flex: 1 1 18rem;
   margin: 0;
+  text-wrap: pretty;
+}
+
+/* Glyph, words, actions: one row while there is room, wrapping actions under
+   the words when there is not. */
+.ag-guest-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.ag-guest-copy {
+  display: grid;
+  flex: 1 1 22rem;
+  gap: 0.25rem;
+  max-width: 44rem;
+}
+
+.ag-guest-title {
+  margin: 0;
+  font-size: var(--ag-fs-xl);
+  font-weight: 600;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+/* Under a headline the sentence is the second voice. */
+.ag-guest-title + p {
+  color: var(--ag-text-secondary);
+}
+
+.ag-guest-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+/* The glyph in a tinted tile: says what this is about before the sentence
+   does. */
+.ag-guest-mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-cta-tint);
+  color: var(--ag-brand-accent);
+}
+
+/* What an account's AI does, a card each: the reason to sign in, read in one
+   pass — name in the primary voice, one line of why under it. */
+.ag-guest-highlights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ag-guest-highlights li {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--ag-cta-tint-edge);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-cta-tint);
+}
+
+.ag-guest-highlights strong {
+  display: block;
+  margin-bottom: 0.2rem;
+  font-weight: 600;
+}
+
+.ag-guest-highlights p {
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-md);
+  line-height: 1.45;
+}
+
+.ag-guest-highlight-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+}
+
+/* The lesser gains: one ticked line, quieter than the cards. */
+.ag-guest-perks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin: 0;
+  padding: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-md);
+  list-style: none;
+}
+
+.ag-guest-perks li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ag-guest-perks .ag-icon {
+  flex: none;
+  color: var(--ag-brand-accent);
+}
+
+/* Narrow: the tile would take a row of its own, and the actions stack as
+   full-width buttons rather than three ragged widths. */
+@container ag-main (max-width: 36rem) {
+  .ag-guest {
+    padding: 1rem;
+  }
+
+  .ag-guest-mark {
+    display: none;
+  }
+
+  .ag-guest-actions {
+    order: 1;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .ag-guest .ag-btn {
+    flex: 1 1 100%;
+    text-align: center;
+  }
+
+  /* On a phone the banner must not fill the screen: the cards keep their
+     names and drop the line of why. */
+  .ag-guest-highlights {
+    gap: 0.5rem;
+  }
+
+  .ag-guest-highlights li {
+    align-items: center;
+    padding: 0.625rem 0.75rem;
+  }
+
+  .ag-guest-highlights strong {
+    margin-bottom: 0;
+  }
+
+  .ag-guest-highlights p {
+    display: none;
+  }
+}
+
+/* The filled button — reserved for the one action a screen exists to get
+   done, so there is never more than one of it in view. */
+.ag-btn-cta {
+  border-color: transparent;
+  background: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+  font-weight: 600;
+}
+
+@media (hover: hover) {
+  .ag-btn-cta:hover {
+    background: var(--ag-purple-700);
+  }
+}
+
+.ag-btn-cta:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
 }
 
 /* The way out of the demo, at the foot of the rail. Full width so it reads as

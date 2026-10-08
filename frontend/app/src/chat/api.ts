@@ -103,6 +103,17 @@ export const saveSettings = (body: SettingsPatch) =>
   keyed<ChatState>("PATCH", "/chat/settings", body);
 
 /**
+ * Every model a provider serves, asked with the key this account would use —
+ * the session's when the tab holds one, hence `keyed`. `live` is false when
+ * the answer is only the curated list (no key yet, or the vendor would not say).
+ */
+export const readModels = (provider: string) =>
+  keyed<{ provider: string; models: string[]; live: boolean }>(
+    "GET",
+    `/chat/models/${encodeURIComponent(provider)}`,
+  );
+
+/**
  * Read a statement attached to the thread. Writes no ledger rows.
  *
  * The file travels as base64 inside a JSON body for the reason every write

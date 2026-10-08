@@ -19,6 +19,7 @@ import { useState, type ReactNode } from "react";
 import { useT } from "./i18n";
 import { useGuest, useSignIn } from "./session";
 import { BASE, pagePath } from "./router";
+import { Icon } from "./Icon";
 
 /**
  * Where the round trip should come back to: this document's own path.
@@ -108,10 +109,16 @@ export function dismissBanner(key: string, storage?: Storage | null): void {
   }
 }
 
+/** One thing an account adds, as a card: a glyph, a name, one line of why. */
+export type GuestHighlight = { icon: string; title: string; body: string };
+
 export function GuestBanner({
   text,
   short,
+  title,
   dismissible,
+  highlights,
+  perks,
   children,
 }: {
   text: string;
@@ -122,6 +129,8 @@ export function GuestBanner({
    * must not be printed beside no button.
    */
   short?: string;
+  /** A headline over `text`, where the banner is a pitch rather than a note. */
+  title?: string;
   /**
    * Offer "Dismiss", remembered for this tab under this key. Home's welcome
    * banner has one; the Portfolio's "these trades are invented" deliberately
@@ -129,6 +138,13 @@ export function GuestBanner({
    * put away.
    */
   dismissible?: string;
+  /**
+   * What an account adds, worth a card each — the reason to sign in, read
+   * before the button rather than after it.
+   */
+  highlights?: GuestHighlight[];
+  /** The lesser gains, one ticked line under the cards. */
+  perks?: string[];
   /** A second action beside the sign-in, where a page has one. */
   children?: ReactNode;
 }) {
@@ -138,24 +154,64 @@ export function GuestBanner({
     dismissible ? bannerDismissed(dismissible) : false,
   );
   if (gone) return null;
+  // The pitch — headline, cards, ticks — only with a sign-in to offer: a list
+  // of what you would get is a tease beside no way to get it.
+  const pitch = Boolean(signIn);
   return (
-    <div className="ag-note ag-guest">
-      <p>{t(signIn || !short ? text : short)}</p>
-      <SignIn />
-      {children}
-      {dismissible ? (
-        <button
-          type="button"
-          className="ag-guest-dismiss"
-          onClick={() => {
-            dismissBanner(dismissible);
-            setGone(true);
-          }}
-        >
-          {t("home.dismiss")}
-        </button>
+    <section className="ag-note ag-guest">
+      <div className="ag-guest-head">
+        <span className="ag-guest-mark">
+          <Icon name={pitch && title ? "auto_awesome" : "account_circle"} size={20} />
+        </span>
+        <div className="ag-guest-copy">
+          {pitch && title ? <h2 className="ag-guest-title">{t(title)}</h2> : null}
+          <p>{t(signIn || !short ? text : short)}</p>
+        </div>
+        <div className="ag-guest-actions">
+          {/* The one filled button on the screen: the banner exists to get a
+              visitor an account, so the way to one outranks every other action. */}
+          <SignIn className="ag-btn ag-btn-cta" />
+          {children}
+          {dismissible ? (
+            <button
+              type="button"
+              className="ag-guest-dismiss"
+              onClick={() => {
+                dismissBanner(dismissible);
+                setGone(true);
+              }}
+            >
+              {t("home.dismiss")}
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {pitch && highlights?.length ? (
+        <ul className="ag-guest-highlights">
+          {highlights.map((h) => (
+            <li key={h.title}>
+              <span className="ag-guest-highlight-icon">
+                <Icon name={h.icon} size={18} />
+              </span>
+              <div>
+                <strong>{t(h.title)}</strong>
+                <p>{t(h.body)}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
       ) : null}
-    </div>
+      {pitch && perks?.length ? (
+        <ul className="ag-guest-perks">
+          {perks.map((key) => (
+            <li key={key}>
+              <Icon name="check" size={16} />
+              {t(key)}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }
 

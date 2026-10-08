@@ -95,8 +95,8 @@ export function keyError(status: number): string {
  * Three facts, and they are not interchangeable: a keyless provider costs
  * nothing and is rationed, a provider with a key of its own says how long that
  * key has left, and one that needs a key it has not been given says so. The
- * days are the server's — the sliding 90-day window and the absolute cap,
- * whichever runs out first — and never computed here.
+ * days are the server's — 90 from when the key was entered, one fewer each
+ * day — and never computed here.
  *
  * Null when a stored key has no lifetime to report. "Expires in 0 days" over a
  * key that works is a worse thing to say than nothing.

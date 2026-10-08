@@ -27,9 +27,10 @@ from typing import Any, cast
 from stocks import obs, secrets_env
 
 # Output ceiling per turn. It has to leave room for reasoning tokens as well as
-# the answer: on Opus 5 and Sonnet 5 adaptive thinking is on whenever `thinking`
-# is omitted, and what the model thinks is drawn from this same budget. At 4096
-# a long answer after a long think came back cut off mid-sentence; the models
+# the answer: on Opus 5.5 and Sonnet 5.5 adaptive thinking is on whenever
+# `thinking` is omitted, and what the model thinks is drawn from this same
+# budget. At 4096 a long answer after a long think came back cut off
+# mid-sentence; the models
 # only bill what they actually produce, so a roomier cap costs nothing on the
 # short turns that are most of them.
 MAX_TOKENS = 16000
@@ -68,6 +69,15 @@ class ToolRun:
     calls: list[ToolCall]
 
 
+# A model id as vendors spell them: "claude-opus-5", "gpt-5", "models/…"
+# stripped, "openai/gpt-5.6-sol:free", "~anthropic/claude-sonnet-latest".
+_MODEL_SLUG = re.compile(r"[A-Za-z0-9~][A-Za-z0-9._:/@+~-]{0,127}")
+
+# One vendor listing per key fingerprint, for an hour (`Provider.list_models`).
+MODELS_TTL_S = 60 * 60
+_model_lists: dict[str, tuple[float, list[str]]] = {}
+
+
 @dataclass(frozen=True)
 class Provider:
     id: str
@@ -99,10 +109,47 @@ class Provider:
     # so the server learns nothing new. "" = paste-a-key only.
     connect_url: str = ""
     connect_token_url: str = ""
+    # Every model this provider serves the given key, live from its own
+    # /models. None = only the curated `models` are offered (the free chain,
+    # which picks its own per backend).
+    _list_models: Callable[[str], list[str]] | None = None
+    # The listing answers without a key (OpenRouter's catalogue is public), so
+    # a reader can browse before pasting one.
+    public_models: bool = False
 
     @property
     def default_model(self) -> str:
         return self.models[0]
+
+    def accepts_model(self, model: str) -> bool:
+        """Whether `model` may be saved as this account's choice here.
+
+        A BYOK provider takes any well-formed slug: the curated `models` are
+        the ones offered first, not the only ones the reader's key can reach,
+        and a list kept here would always trail the vendor's. Whether the slug
+        exists is the provider's to say (`list_models`, checked when a key is
+        at hand to ask with). The keyless chain serves only what it lists.
+        """
+        if not self.needs_key:
+            return model in self.models
+        return bool(_MODEL_SLUG.fullmatch(model or ""))
+
+    def list_models(self, api_key: str) -> list[str]:
+        """The chat models `api_key` can use here, sorted; raises the SDK's own
+        exceptions. The curated list when this provider cannot be asked.
+
+        Kept MODELS_TTL_S per key: the settings screen asks on open and again
+        when a model is saved, and a vendor's catalogue does not move that fast.
+        """
+        if self._list_models is None:
+            return list(self.models)
+        fp = _fingerprint(self.id, api_key)
+        hit = _model_lists.get(fp)
+        if hit and time.monotonic() - hit[0] < MODELS_TTL_S:
+            return list(hit[1])
+        got = self._list_models(api_key)
+        _model_lists[fp] = (time.monotonic(), got)
+        return list(got)
 
     def available(self) -> bool:
         """True when this provider's SDK is installed (or its override says so)."""
@@ -828,6 +875,58 @@ def _free_error(exc):
     return "chat.api_error"
 
 
+# ------------------------------------------------------------- model lists
+# What the account's own key can reach, asked of the vendor rather than kept
+# here: the curated tuples in the registry are a starting point, and each
+# vendor ships models faster than a release could add them. Speech, image,
+# embedding and moderation models share these listings and cannot answer a
+# chat turn, so they are filtered out by name.
+
+_NOT_CHAT = ("whisper", "tts", "audio", "realtime", "transcribe", "image",
+             "dall-e", "embed", "moderat", "guard", "rerank", "search",
+             "computer-use", "veo", "imagen", "aqa")
+
+
+def _chat_only(ids) -> list[str]:
+    return sorted({i for i in ids if i and not any(h in i.lower() for h in _NOT_CHAT)})
+
+
+def _anthropic_models(api_key: str) -> list[str]:
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=api_key)
+    return _chat_only(m.id for m in client.models.list(limit=1000))
+
+
+def _openai_models(api_key: str) -> list[str]:
+    from openai import OpenAI
+
+    ids = (m.id for m in OpenAI(api_key=api_key).models.list())
+    # The listing also carries babbage/davinci completions and fine-tune bases.
+    return _chat_only(i for i in ids if re.match(r"(gpt-|chatgpt-|o\d)", i))
+
+
+def _gemini_models(api_key: str) -> list[str]:
+    from google import genai
+
+    out = []
+    for m in genai.Client(api_key=api_key).models.list():
+        actions = getattr(m, "supported_actions", None) or []
+        name = (getattr(m, "name", "") or "").removeprefix("models/")
+        if "gemini" in name and "generateContent" in actions:
+            out.append(name)
+    return _chat_only(out)
+
+
+def _openrouter_models(api_key: str) -> list[str]:
+    # OpenRouter's catalogue is public; the key is sent anyway so an account
+    # with provider restrictions sees its own list.
+    from openai import OpenAI
+
+    client = OpenAI(api_key=api_key or "-", base_url=OPENROUTER_BASE)
+    return _chat_only(m.id for m in client.models.list())
+
+
 # ------------------------------------------------------------- registry
 
 PROVIDERS: dict[str, Provider] = {
@@ -844,11 +943,12 @@ PROVIDERS: dict[str, Provider] = {
         ),
         Provider(
             "anthropic", "Claude",
-            ("claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"),
+            ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5"),
             "sk-ant-...", "https://console.anthropic.com/settings/keys",
             "anthropic", _anthropic_stream, _anthropic_error,
             _tools=_anthropic_tools,
             classifier_model="claude-haiku-4-5",
+            _list_models=_anthropic_models,
             domain="claude.ai",
         ),
         Provider(
@@ -858,6 +958,7 @@ PROVIDERS: dict[str, Provider] = {
             "openai", _openai_stream, _openai_error,
             _tools=_openai_tools,
             classifier_model="gpt-4o-mini",
+            _list_models=_openai_models,
             domain="chatgpt.com",
         ),
         Provider(
@@ -871,6 +972,7 @@ PROVIDERS: dict[str, Provider] = {
             # and tested against a live key. Everything else on this page works.
             "google.genai", _gemini_stream, _gemini_error,
             classifier_model="gemini-flash-lite-latest",
+            _list_models=_gemini_models,
             domain="gemini.google.com",
         ),
         Provider(
@@ -885,6 +987,8 @@ PROVIDERS: dict[str, Provider] = {
             "openai", _openai_compat_stream(OPENROUTER_BASE), _openrouter_error,
             _tools=_openai_compat_tools(OPENROUTER_BASE),
             classifier_model="google/gemini-3.5-flash-lite",
+            _list_models=_openrouter_models,
+            public_models=True,
             domain="openrouter.ai",
             connect_url="https://openrouter.ai/auth",
             connect_token_url=f"{OPENROUTER_BASE}/auth/keys",

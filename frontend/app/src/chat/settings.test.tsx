@@ -101,6 +101,34 @@ describe("the settings view", () => {
     expect(out).not.toContain("<progress");
   });
 
+  it("lets a provider of your own reach past its curated models", () => {
+    const out = draw(state({ preferred: "anthropic" }));
+    expect(out).toContain("chat.model_other");
+    // A model saved from the catalogue is still the select's value.
+    const custom = draw(
+      state({
+        preferred: "anthropic",
+        providers: [
+          provider({}),
+          provider({
+            id: "anthropic",
+            label: "Anthropic",
+            models: ["claude-opus-5", "claude-opus-4-1"],
+            model: "claude-opus-4-1",
+            needs_key: true,
+          }),
+        ],
+      }),
+    );
+    expect(custom).toMatch(/<option value="claude-opus-4-1" selected="">/);
+  });
+
+  it("gives the keyless chain no model to pick", () => {
+    const out = draw(state({}));
+    expect(out).not.toContain("chat.model_other");
+    expect(out).not.toContain("ag-chat-select");
+  });
+
   it("shows the keyless chain its allowance and no key form", () => {
     const out = draw(state({}));
     expect(out).toContain("<progress");
