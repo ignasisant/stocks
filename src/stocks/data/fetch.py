@@ -24,7 +24,42 @@ from stocks.data import profiles
 from stocks.data.crypto import COINGECKO_IDS, split_pair
 from stocks.data.fx import rates_range
 from stocks.data.http import get_json
-from stocks.data.symbols import code_symbol
+from stocks.data.symbols import (
+    cached_isin_symbol,
+    code_symbol,
+    is_isin,
+    symbol_for_code,
+    symbol_for_isin,
+)
+
+# ----------------------------------------------------- yfinance's page cache
+# `YfData.cache_get` is an `lru_cache(maxsize=64)` of whole HTTP responses,
+# process-wide and never expired, and the earnings-dates page (1.6MB of HTML),
+# a ticker's max-range chart (the dividend history) and the quote summaries all
+# go through it. Sixty-four of those pinned ~100MB of response bodies (plus the
+# parse trees the earnings page builds) after one calendar over a 40-name book:
+# the largest `mem.step` deltas in the request log. Every caller here keeps the
+# *parsed* answer in a memo of its own (`ttl_cache`, `_info_memo`, the
+# dividend histories), and one `Ticker` re-reading its own page within a call
+# is all the library's cache was ever worth — so it keeps the last few.
+YAHOO_PAGE_CACHE = 4
+
+
+def _bound_page_cache(maxsize: int = YAHOO_PAGE_CACHE) -> None:
+    from functools import lru_cache
+
+    from yfinance.data import YfData, lru_cache_freezeargs
+
+    @lru_cache_freezeargs
+    @lru_cache(maxsize=maxsize)
+    def cache_get(self, url, params=None, timeout=30):
+        return self.get(url, params, timeout)
+
+    YfData.cache_get = cache_get
+
+
+_bound_page_cache()
+
 
 # ---------------------------------------------------------------- the breaker
 # One verdict about Yahoo for the whole process, because there is only one
@@ -231,6 +266,9 @@ def _note_failures(
                 _unlisted.add(t)
             else:
                 _unlisted.discard(t)
+    # A verdict that flips back and forth (a throttled download in between)
+    # is still one fact about the symbol: say it once per window.
+    newly = [t for t in newly if obs.first_sighting("yahoo.unlisted", t)]
     if newly:
         obs.warn("yahoo.unlisted", tickers=sorted(newly))
 
@@ -240,10 +278,67 @@ def resolve(ticker: str) -> str:
 
     Broker codes map through watchlist.yaml `aliases` first — the hand-written
     answer wins — then through the codes an import resolved with Yahoo's
-    search (`symbols.code_symbol`: SIE -> SIE.DE). Both are local reads.
+    search (`symbols.code_symbol`: SIE -> SIE.DE), then an ISIN an earlier
+    lookup placed (`symbols.cached_isin_symbol`: US89677Q1076 -> TCOM). All
+    local reads; `_place_isins` is what fills the last one.
     """
     key = ticker.upper()
-    return ticker_aliases().get(key) or code_symbol(key) or ticker
+    return (
+        ticker_aliases().get(key)
+        or code_symbol(key)
+        or cached_isin_symbol(key)
+        or ticker
+    )
+
+
+# Most lookups one download may spend placing names the ledger holds under a
+# label Yahoo has no quote for. Each is one search per name per process (hits
+# are cached to disk, misses in memory), so a book converges over a few renders.
+_PLACE_MAX = 8
+
+
+def _place_isins(tickers: list[str]) -> None:
+    """Look up every ISIN-shaped label nothing maps yet, so `resolve` can.
+
+    A DEGIRO row is stored under its ISIN, and Yahoo does not reliably quote
+    one: it answers some with another venue's line in another currency (Trip.com
+    ADR's US89677Q1076 came back as a line the book's dollar fills rejected)
+    and the rest with nothing. The line the search names is the one to price.
+    """
+    todo = [t for t in tickers if is_isin(t) and resolve(t) == t][:_PLACE_MAX]
+    for t in todo:
+        if throttle_remaining():
+            return
+        with obs.swallow("symbols.place_isin", ticker=t):
+            symbol_for_isin(t)
+
+
+def _place_codes(missing: list[str], currencies: dict[str, str]) -> list[str]:
+    """Map the bare broker codes Yahoo just disowned to a venue line.
+
+    The import does this once per statement (`_Lookup`), so a ledger written
+    before the map had the code, or on another account's bucket, kept its
+    "SIE" held at cost for good. Only a name the download was told Yahoo has no
+    bare symbol for qualifies — a code that prices bare (ALV, Autoliv) is
+    someone else's business — and only one traded in a currency with venues
+    to search: a dollar code is its own listing. Returns the codes now mapped.
+    """
+    todo = [
+        t
+        for t in sorted(unlisted(missing))
+        if "." not in t
+        and not is_isin(t)
+        and resolve(t) == t
+        and currencies.get(t, "").upper() not in ("", "USD")
+    ][:_PLACE_MAX]
+    placed: list[str] = []
+    for t in todo:
+        if throttle_remaining():
+            break
+        with obs.swallow("symbols.place_code", ticker=t):
+            if symbol_for_code(t, currencies[t]):
+                placed.append(t)
+    return placed
 
 
 # `.info` is the heaviest call yfinance makes — a full quoteSummary — and it
@@ -436,6 +531,7 @@ def fetch_many(
     interval: str = "1d",
     auto_adjust: bool = True,
     budget: float = BULK_BUDGET_S,
+    currencies: dict[str, str] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """OHLCV history for many tickers in ONE bulk request (yf.download).
 
@@ -455,6 +551,10 @@ def fetch_many(
     A name Yahoo answers "No data found" for is remembered as `unlisted`, so a
     caller judging whether the download was gutted can tell a book holding
     codes Yahoo does not know from a Yahoo that refused.
+
+    A ledger label that is an ISIN is placed first (`_place_isins`). `currencies`
+    (ticker -> the currency the book traded it in) lets a bare code Yahoo
+    disowned be placed on a venue and asked once more (`_place_codes`).
     """
     if not tickers:
         return {}
@@ -464,6 +564,7 @@ def fetch_many(
     tickers = [t for t in tickers if t not in gecko]
     if not tickers:
         return _coingecko_fallback(gecko, period, interval)
+    _place_isins(tickers)
     symbol_of = {t: resolve(t) for t in tickers}
     symbols = list(dict.fromkeys(symbol_of.values()))
     failures: dict[str, str] = {}
@@ -516,6 +617,10 @@ def fetch_many(
     if missing:
         out.update(_crypto_usd_fallback(missing, period, interval, auto_adjust, budget))
     _note_failures(tickers, symbol_of, out, failures)
+    if currencies and (placed := _place_codes(missing, currencies)):
+        out.update(
+            fetch_many(placed, period, interval, auto_adjust, budget)
+        )
     if gecko:
         out.update(_coingecko_fallback(gecko, period, interval))
     return out
@@ -568,7 +673,8 @@ def _crypto_usd_fallback(
             if col in converted:
                 converted[col] = converted[col] * rate.to_numpy()
         out[t] = converted
-        obs.event("yahoo.crypto_usd_fallback", ticker=t, via=f"{coin}-USD")
+        obs.event("yahoo.crypto_usd_fallback", level=logging.DEBUG, ticker=t,
+                  via=f"{coin}-USD")
     return out
 
 
@@ -690,7 +796,8 @@ def _coingecko_fallback(
             with _gecko_lock:
                 _gecko_memo[url] = (time.monotonic(), df)
             out[t] = df.copy()
-            obs.event("coingecko.fallback", ticker=t, coin=coin)
+            obs.event("coingecko.fallback", level=logging.DEBUG, ticker=t,
+                      coin=coin)
     if waiting:
         obs.event(
             "coingecko.cooling_off",

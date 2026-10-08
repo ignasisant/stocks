@@ -228,7 +228,7 @@ def test_one_cold_home_is_one_bulk_download(book, monkeypatch):
     days = pd.bdate_range("2024-01-02", periods=400)
     price = {"AAPL": 100.0, "MSFT": 200.0}
 
-    def download(tickers, period="1y", interval="1d", auto_adjust=True, budget=60.0):
+    def download(tickers, period="1y", interval="1d", auto_adjust=True, budget=60.0, **_):
         downloads.append(tuple(tickers))
         gate.wait(timeout=10)
         return {
@@ -405,7 +405,7 @@ def test_a_throttled_source_answers_with_the_last_good_prices_and_says_so(
     price = {"AAPL": 100.0, "MSFT": 200.0}
     refuse = [False]
 
-    def download(tickers, period="1y", interval="1d", auto_adjust=True, budget=60.0):
+    def download(tickers, period="1y", interval="1d", auto_adjust=True, budget=60.0, **_):
         if refuse[0]:
             raise YFRateLimitError()
         return {

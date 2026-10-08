@@ -36,7 +36,9 @@ import contextvars
 import json
 import logging
 import os
+import re
 import sys
+import threading
 import time
 import uuid
 from collections.abc import Iterator
@@ -75,8 +77,12 @@ _STD_ATTRS = frozenset(
 
 # Libraries that log a line per HTTP call or per retry; at INFO they bury the
 # app's own events (and on Cloud Run, cost money to store).
-_NOISY = ("botocore", "boto3", "s3transfer", "urllib3", "httpx", "httpcore",
-          "matplotlib", "PIL", "asyncio", "watchdog", "peewee", "mcp")
+# `httpx2` is the fork the LLM SDKs ship (a line per chat completion), `primp`
+# the web search's client (a line per page), `google_genai` an "AFC is
+# enabled" line per Gemini call.
+_NOISY = ("botocore", "boto3", "s3transfer", "urllib3", "httpx", "httpx2",
+          "httpcore", "primp", "google_genai", "matplotlib", "PIL", "asyncio",
+          "watchdog", "peewee", "mcp")
 
 
 
@@ -97,6 +103,29 @@ class _YahooMissIsNotAnError(logging.Filter):
         if record.levelno >= logging.ERROR:
             record.levelno, record.levelname = logging.WARNING, "WARNING"
         return True
+
+
+_YAHOO_MISS = re.compile(
+    r"No data found|possibly delisted|Failed downloads?:|"
+    r"HTTP Error 404: .*\"Not Found\"",
+    re.S,
+)
+
+
+class _YahooMissIsNotNews(logging.Filter):
+    """Keep yfinance's per-symbol misses off the log.
+
+    "$ORGN: No data found", the "N Failed downloads:" header, a 404 from the
+    quote summary — one of each per download, for the same few names all day.
+    `fetch` already turns them into `yahoo.unlisted`, once per name per window.
+    On the handler, not the logger: the logger's filters run first, and
+    `fetch._DownloadFailures` reads these very lines to learn which names Yahoo
+    disowned.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not (record.name.startswith("yfinance")
+                    and _YAHOO_MISS.search(record.getMessage()))
 
 
 # None rather than {} — a mutable ContextVar default is shared across every
@@ -190,6 +219,7 @@ def setup(level: str | int | None = None, *, force: bool = False) -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(CloudLoggingFormatter() if IN_CLOUD_RUN else PlainFormatter())
     handler.set_name("stocks-obs")
+    handler.addFilter(_YahooMissIsNotNews())
 
     root = logging.getLogger()
     for h in list(root.handlers):
@@ -260,6 +290,43 @@ def event(name: str, *, level: int = logging.INFO, **fields) -> None:
 
 def warn(name: str, **fields) -> None:
     event(name, level=logging.WARNING, **fields)
+
+
+# (event, key) -> monotonic time it was last logged. A condition that holds for
+# every request (a ticker Yahoo will never quote) is one fact, not one per page
+# render: `warn_once` says it once per window per process.
+_ONCE_WINDOW_S = 6 * 3600.0
+_once: dict[tuple[str, object], float] = {}
+_once_lock = threading.Lock()
+
+
+def first_sighting(name: str, key: object = "") -> bool:
+    """Whether `(name, key)` has not been seen in this process this window.
+
+    Marks it seen. For a caller that logs one line for several keys at once.
+    """
+    now = time.monotonic()
+    with _once_lock:
+        last = _once.get((name, key))
+        if last is not None and now - last < _ONCE_WINDOW_S:
+            return False
+        if len(_once) > 1024:
+            for k in [k for k, at in _once.items() if now - at >= _ONCE_WINDOW_S]:
+                del _once[k]
+        _once[(name, key)] = now
+    return True
+
+
+def warn_once(name: str, key: object = "", **fields) -> bool:
+    """`warn`, but at most once per `key` per window (6h) in this process.
+
+    For persistent conditions re-derived on every request. Returns whether the
+    line was written.
+    """
+    if not first_sighting(name, key):
+        return False
+    warn(name, **fields)
+    return True
 
 
 def error(name: str, exc: BaseException | None = None, **fields) -> None:

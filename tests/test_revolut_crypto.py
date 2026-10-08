@@ -101,6 +101,79 @@ def test_rewards_transfers_and_exchanges_are_skipped_with_reasons():
     assert "exchange" in reasons["ETH"]
 
 
+class _Valuer:
+    """Offline stand-in for crypto_map.Valuer: fixed closes per coin."""
+
+    def __init__(self, closes: dict[str, float]) -> None:
+        self.closes, self.fetched = closes, []
+
+    def prefetch(self, coins, fiat, since):
+        self.fetched.append((sorted(coins), fiat, since))
+
+    def coin(self, coin, fiat, day):
+        return self.closes.get(coin)
+
+
+def test_a_reward_the_statement_prices_books_at_its_own_value():
+    csv = HEADER + "DOT,Staking Reward,0.5,€4.00,€2.00,€0.00,2025-01-10T00:00:00.000Z\n"
+    buy, income = parse_csv(csv, _Valuer({})).transactions
+    assert (buy.action, buy.ticker) == ("buy", "DOT-EUR")
+    assert (buy.quantity, buy.price) == (0.5, 4.0)
+    assert buy.note == "revolut crypto DOT reward"
+    assert (income.action, income.quantity, income.price) == ("dividend", 0.0, 2.0)
+    assert income.note == buy.note
+
+
+def test_a_reward_without_a_value_takes_that_days_close():
+    csv = ES_HEADER + (
+        "SOL,Recompensa de staking,0.001771,,,,6 feb 2025 13:38:21\n"
+        "SOL,Recompensa de staking,0.001000,,,,6 feb 2025 20:00:00\n"
+        "SOL,Compra,1,200.00€,200.00€,2.00€,7 feb 2025 10:00:00\n"
+    )
+    valuer = _Valuer({"SOL": 150.0})
+    result = parse_csv(csv, valuer)
+    rewards = [t for t in result.transactions if t.note.endswith("reward")]
+    buy, income = rewards  # one pair for the day, however many rows
+    assert buy.quantity == pytest.approx(0.002771) and buy.price == pytest.approx(150.0)
+    assert income.price == pytest.approx(0.002771 * 150.0)
+    assert valuer.fetched == [(["SOL"], "EUR", "2025-02-06")]
+    assert not result.skipped
+
+
+def test_a_reward_nothing_prices_stays_skipped():
+    csv = ES_HEADER + "SOL,Recompensa de staking,0.001771,,,,6 feb 2025 13:38:21\n"
+    for valuer in (None, _Valuer({})):
+        result = parse_csv(csv, valuer)
+        assert not result.transactions
+        assert "reward" in result.skipped[0]["reason"]
+
+
+def test_a_rewarded_coin_sells_out_and_is_not_a_statement_buy():
+    from stocks.portfolio.revolut_crypto import statement_buy
+
+    csv = ES_HEADER + (
+        "SOL,Recompensa de staking,2,,,,6 feb 2025 13:38:21\n"
+        "SOL,Venta,2,100.00€,200.00€,0.00€,8 feb 2025 10:00:00\n"
+    )
+    buy, _, sell = parse_csv(csv, _Valuer({"SOL": 100.0})).transactions
+    assert buy.quantity == sell.quantity
+    assert not statement_buy(buy)  # the rebooked-buy check must not match it
+
+
+def test_reimporting_a_reward_is_a_duplicate():
+    from stocks.portfolio import validate
+
+    csv = ES_HEADER + "SOL,Recompensa de staking,0.5,,,,6 feb 2025 13:38:21\n"
+    first = parse_csv(csv, _Valuer({"SOL": 150.0}))
+    again = parse_csv(csv, _Valuer({"SOL": 150.0}))
+    checked = validate.validate(
+        again, first.transactions, known={"SOL-EUR"}, lookup=lambda t: True
+    ).checked
+    assert len(checked) == 2 and all(
+        any(i.field == validate.DUPLICATE for i in c.issues) for c in checked
+    )
+
+
 def test_inconsistent_row_is_quarantined():
     # 0.05 × 60000 = 3000, but value says 5000 — corrupt, must not import.
     csv = HEADER + "BTC,Buy,0.05,€60000.00,€5000.00,€0.00,2025-03-04T09:12:00.000Z\n"

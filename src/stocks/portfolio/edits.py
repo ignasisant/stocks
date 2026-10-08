@@ -590,6 +590,8 @@ def select(
     rows: list[Transaction],
     sel: Selector,
     resolve: transfers.Resolver | None = None,
+    *,
+    pairs: bool = False,
 ) -> list[Transaction]:
     """The rows `sel` describes, oldest first.
 
@@ -609,7 +611,7 @@ def select(
     for tx, shown in zip(rows, labelled, strict=True):
         if sel.ids and tx.id not in sel.ids:
             continue
-        if want and not _names(want, tx, shown.ticker, resolve):
+        if want and not _names(want, tx, shown.ticker, resolve, pairs=pairs):
             continue
         if sel.broker and transfers._broker(tx) != sel.broker.strip().lower():
             continue
@@ -626,11 +628,17 @@ def select(
         ):
             continue
         out.append(tx)
+    if want and not out and not pairs:
+        # Only when the name finds nothing as written does "CAT" reach for the
+        # pair "CAT-EUR" (or the reverse): a book holding the stock and the
+        # coin must not have one selected for the other.
+        return select(rows, sel, resolve, pairs=True)
     return out
 
 
 def _names(
-    want: str, tx: Transaction, label: str, resolve: transfers.Resolver | None
+    want: str, tx: Transaction, label: str, resolve: transfers.Resolver | None,
+    *, pairs: bool = False,
 ) -> bool:
     sid = transfers.security_id(tx)
     known = {tx.ticker, label, sid}
@@ -641,5 +649,21 @@ def _names(
             pass
     if want in known:
         return True
-    root = want.split(".")[0]
-    return root in {k.split(".")[0] for k in known if k}
+    bare = _root if pairs else _venue_root
+    return bare(want) in {bare(k) for k in known if k}
+
+
+# A pair is a coin quoted in a currency ("CAT-EUR"); the person says either.
+_QUOTES = ("EUR", "USD", "GBP", "USDT", "USDC", "BTC")
+
+
+def _venue_root(label: str) -> str:
+    return label.split(".")[0]
+
+
+def _root(label: str) -> str:
+    """The bare symbol: no venue suffix (``GRF.MC``), no quote currency
+    (``BTC-EUR``)."""
+    root = label.split(".")[0]
+    base, _, quote = root.rpartition("-")
+    return base if base and quote in _QUOTES else root

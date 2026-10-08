@@ -281,8 +281,40 @@ def search(queries: list[str], read_limit: int = READ_PAGES) -> list[Result]:
         obs.warn("chat.web.search_failed", error_type=type(exc).__name__,
                  error=str(exc)[:300])
         # keep whatever was collected before the failure
-    out = out[:MAX_RESULTS]
+    out = relevant(out, queries)[:MAX_RESULTS]
     return read_pages(out, read_limit) if read_limit > 0 else out
+
+
+# --------------------------------------------------------- relevance
+
+# Words a query carries that say what is wanted, not what it is about.
+_FILLER = frozenset(
+    "stock stocks share shares price prices news today why what how the and "
+    "for with from this that stock's sube baja hoy porque por qué que como "
+    "cotización acciones accion acción noticias analysis análisis".split()
+)
+_WORD = re.compile(r"[^\W_]{3,}")
+
+
+def _terms(queries: list[str]) -> set[str]:
+    """What the queries are about: their words minus filler and years."""
+    return {w for q in queries for w in _WORD.findall(q.lower())
+            if w not in _FILLER and not w.isdigit()}
+
+
+def relevant(results: list[Result], queries: list[str]) -> list[Result]:
+    """The hits that mention something the queries asked about.
+
+    A search for a ticker returns whatever its letters resemble ("hsdo" ->
+    an article on Hoodstock), and a page that is read is a page the model
+    quotes. A hit whose title, snippet and address share no word with the
+    queries is dropped before anything is opened. Queries with no usable word
+    filter nothing."""
+    terms = _terms(queries)
+    if not terms:
+        return results
+    return [r for r in results
+            if any(t in f"{r.title} {r.snippet} {r.url}".lower() for t in terms)]
 
 
 # --------------------------------------------------------- reading pages

@@ -212,7 +212,7 @@ def test_the_book_downloads_once_for_its_adjusted_and_printed_closes(
     days = pd.bdate_range("2024-01-02", periods=300)
     calls: list[tuple[str, ...]] = []
 
-    def download(tickers, period="1y", interval="1d", auto_adjust=True, budget=60.0):
+    def download(tickers, period="1y", interval="1d", auto_adjust=True, budget=60.0, **_):
         calls.append(tuple(tickers))
         assert auto_adjust is False
         return {
