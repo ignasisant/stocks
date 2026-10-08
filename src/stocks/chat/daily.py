@@ -935,8 +935,8 @@ def _line(text: str, limit: int) -> str:
 # requires a group, so a bare "1234,5" still falls through to the plain form
 # whole instead of being cut after its third digit.
 _NUM = (
-    r"[-+]?\d{1,3}(?:[.,\u00a0\u202f ]\d{3})+(?:[.,]\d+)?"
-    r"|[-+]?\d+(?:[.,]\d+)?"
+    r"[-+\u2212]?\d{1,3}(?:[.,\u00a0\u202f ]\d{3})+(?:[.,]\d+)?"
+    r"|[-+\u2212]?\d+(?:[.,]\d+)?"
 )
 _PCT_RE = re.compile(rf"({_NUM})\s*%")
 _MONEY_RE = re.compile(
@@ -953,6 +953,26 @@ _ABS_TOL = 0.051
 _REL_TOL = 0.005
 
 
+def _readings(token: str) -> list[tuple[float, int]]:
+    """Every (number, decimals written) a token could mean.
+
+    The decimals say how coarsely the figure was rounded: "26" is anything
+    from 25.5 to 26.5, which a 1-dp fact (26.4) honestly prints as.
+    """
+    body = re.sub(r"[\s\u00a0\u202f]", "", token).rstrip(".,")
+    sign = -1.0 if body[:1] in ("-", "\u2212") else 1.0
+    body = body.lstrip("+-\u2212")
+    out = []
+    for dec, group in ((".", ","), (",", ".")):
+        if body.count(dec) <= 1:
+            try:
+                value = float(body.replace(group, "").replace(dec, "."))
+            except ValueError:
+                continue
+            out.append((sign * value, len(body.rpartition(dec)[2]) if dec in body else 0))
+    return out
+
+
 def _values(token: str) -> list[float]:
     """Every number a written token could mean, decimal separator unknown.
 
@@ -960,17 +980,7 @@ def _values(token: str) -> list[float]:
     card is written in either language: both readings are candidates, and a
     figure is accepted if *some* reading is in the facts.
     """
-    body = re.sub(r"[\s\u00a0]", "", token).rstrip(".,")
-    sign = -1.0 if body.startswith("-") else 1.0
-    body = body.lstrip("+-")
-    out = []
-    for dec, group in ((".", ","), (",", ".")):
-        if body.count(dec) <= 1:
-            try:
-                out.append(sign * float(body.replace(group, "").replace(dec, ".")))
-            except ValueError:
-                pass
-    return out
+    return [value for value, _ in _readings(token)]
 
 
 def figures(text: str) -> list[float]:
@@ -1011,10 +1021,18 @@ def _numbers(node, ticker: str | None = None) -> tuple[set[float], dict]:
     return loose, owned
 
 
-def _matches(value: float, pool) -> bool:
+def _matches(value: float, pool, decimals: int = 2) -> bool:
+    """`value` is in `pool`, allowing for the rounding it was written with:
+    a whole-number figure ("36 %", "€105") stands for anything within half a
+    unit, since that is what rounding 35.6 or 104.6 prints."""
+    slack = 0.5 + 1e-9 if decimals == 0 else _ABS_TOL
     return any(
-        abs(value - known) <= max(_ABS_TOL, abs(known) * _REL_TOL) for known in pool
+        abs(value - known) <= max(slack, abs(known) * _REL_TOL) for known in pool
     )
+
+
+def _written_in(token: str, pool) -> bool:
+    return any(_matches(v, pool, d) for v, d in _readings(token))
 
 
 def _dates(facts: dict) -> set[str]:
@@ -1052,11 +1070,11 @@ def audit(lines: list[str], facts: dict) -> str | None:
         # two names legitimately quotes both.
         pool = loose | set().union(*(owned[t] for t in named or symbols), set())
         for match in _PCT_RE.finditer(line):
-            if not any(_matches(v, pool) for v in _values(match.group(1))):
+            if not _written_in(match.group(1), pool):
                 return match.group(0).strip()
         for match in _MONEY_RE.finditer(line):
             token = match.group(1) or match.group(2) or ""
-            if token and not any(_matches(v, pool) for v in _values(token)):
+            if token and not _written_in(token, pool):
                 return match.group(0).strip()
         for day, month, year in _DMY_RE.findall(line):
             # Either reading of an ambiguous date: cards are written in

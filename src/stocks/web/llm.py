@@ -18,6 +18,7 @@ the whole page.
 from __future__ import annotations
 
 import importlib.util
+import re
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -279,6 +280,35 @@ def _openai_compat_stream(base_url: str | None = None, **client_opts):
 _openai_stream = _openai_compat_stream()
 
 
+def _count(text: str) -> int:
+    from stocks.chat import tokens
+
+    return tokens.count(text)
+
+
+def _squeeze_tool_results(convo: list[dict], budget: int) -> None:
+    """Shrink tool results in place until the conversation fits `budget` tokens.
+
+    The thread was fitted to a backend's per-minute cap before the loop began,
+    but every round appends what the tools returned — a few searched pages are
+    enough to push the next request past a cap the first one cleared (groq 413,
+    8705 asked against 8000). The biggest result is halved first, so the one
+    page that is most of the bulk goes before the short answers do.
+    """
+    from stocks.chat import tokens
+
+    for _ in range(40):
+        if tokens.count_messages(convo) <= budget:
+            return
+        tool = [m for m in convo if m.get("role") == "tool"
+                and len(str(m.get("content") or "")) > 400]
+        if not tool:
+            return  # nothing left to give; the backend decides
+        big = max(tool, key=lambda m: len(str(m["content"])))
+        text = str(big["content"])
+        big["content"] = text[: len(text) // 2].rstrip() + tokens.TRIM_MARK
+
+
 def _openai_compat_tools(base_url: str | None = None, **client_opts):
     """The same loop over any OpenAI-compatible host: OpenAI itself, and every
     backend in the free chain (groq and openrouter both speak it).
@@ -288,7 +318,8 @@ def _openai_compat_tools(base_url: str | None = None, **client_opts):
     single user message of tool_result blocks.
     """
 
-    def run(api_key, model, system, messages, tools, execute, rounds):
+    def run(api_key, model, system, messages, tools, execute, rounds,
+            cap: int = 0):
         import json
 
         from openai import OpenAI
@@ -298,9 +329,12 @@ def _openai_compat_tools(base_url: str | None = None, **client_opts):
                    "function": {"name": t.name, "description": t.description,
                                 "parameters": t.schema}} for t in tools]
         convo = [{"role": "system", "content": system}] + list(messages)
+        schema_tokens = _count(json.dumps(schema)) if cap else 0
         calls: list[ToolCall] = []
         text = ""
         for _ in range(max(1, rounds)):
+            if cap:
+                _squeeze_tool_results(convo, cap - schema_tokens)
             resp = client.chat.completions.create(
                 model=model, max_tokens=MAX_TOKENS, messages=convo,
                 tools=cast(Any, schema),
@@ -446,6 +480,16 @@ _FREE_BACKEND_DEFAULTS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+# Further models a backend falls to when its first one is overloaded. An
+# OpenRouter free slug is one upstream provider's capacity: nvidia/nemotron
+# answers 503 "Service temporarily overloaded" most days, and with a single
+# model that was the end of the backend. Ordered, after the "<id>_model" one;
+# "<id>_fallback_models" in [free_llm] (comma-separated) replaces the list.
+_FREE_FALLBACK_MODELS: dict[str, tuple[str, ...]] = {
+    "openrouter": ("openai/gpt-oss-120b:free",
+                   "meta-llama/llama-3.3-70b-instruct:free"),
+}
+
 # Tokens per minute a backend's free tier admits, prompt included. One request
 # over it is refused outright — groq answers 413 "Request too large … (TPM):
 # Limit 8000" — however idle the minute was, while a chat turn may carry up to
@@ -479,6 +523,7 @@ class _FreeBackend:
     stream: Callable[[str, str, str, list[dict]], Iterator[str]]
     base_url: str = ""  # for the /models lookup when `model` has been retired
     tpm: int = 0  # tokens per minute the free tier admits; 0 = no cap
+    primary: bool = True  # False for a fallback model of the same backend
 
 
 # Free tiers retire model slugs without notice, and the chain's only symptom is
@@ -532,6 +577,37 @@ def _live_model(b: _FreeBackend) -> str | None:
         return None
 
 
+# A backend that answered 402 has no free quota left (cerebras, 2026-08-31) and
+# will keep saying so until an operator tops it up: every hop to it is a wasted
+# call. Remembered for the life of the process, like `_rejected` is for a key —
+# a deploy is the retry.
+_free_dead: set[str] = set()
+
+# groq's 429 says how long to wait ("Please try again in 1.6125s"). Up to this
+# is worth sitting out once on the same backend; past it, the next one's turn.
+_MAX_RETRY_WAIT_S = 5.0
+_RETRY_IN = re.compile(r"try again in (\d+(?:\.\d+)?)\s*(ms|s)\b", re.I)
+
+_sleep = time.sleep  # a name of its own so tests need not wait
+
+
+def _short_wait(exc: Exception) -> float | None:
+    """Seconds a rate-limited backend asked us to wait, when that is short."""
+    if getattr(exc, "status_code", None) != 429:
+        return None
+    m = _RETRY_IN.search(str(exc))
+    if not m:
+        return None
+    secs = float(m.group(1)) / (1000 if m.group(2).lower() == "ms" else 1)
+    return secs + 0.25 if secs <= _MAX_RETRY_WAIT_S else None
+
+
+def _note_dead(b: _FreeBackend, exc: Exception) -> None:
+    if getattr(exc, "status_code", None) == 402 and b.id not in _free_dead:
+        _free_dead.add(b.id)
+        obs.error("llm.free.backend_dead", exc, backend=b.id)
+
+
 def _free_secrets() -> dict:
     cfg = secrets_env.section("free_llm")
     # Env overlay so headless jobs (GitHub Actions digest) can run the chain
@@ -539,7 +615,7 @@ def _free_secrets() -> dict:
     import os
 
     for bid, _model, _url in _FREE_BACKEND_DEFAULTS:
-        for k in (bid, f"{bid}_model", f"{bid}_tpm"):
+        for k in (bid, f"{bid}_model", f"{bid}_tpm", f"{bid}_fallback_models"):
             env = os.environ.get(f"FREE_LLM_{k.upper()}")
             if env:
                 cfg[k] = env
@@ -575,7 +651,7 @@ def _free_backends() -> list[_FreeBackend]:
     out = []
     for bid, default_model, base_url in _FREE_BACKEND_DEFAULTS:
         key = (cfg.get(bid) or "").strip()
-        if not key:
+        if not key or bid in _free_dead:
             continue
         model = (_free_live_model.get(bid)
                  or cfg.get(f"{bid}_model", default_model))
@@ -583,9 +659,17 @@ def _free_backends() -> list[_FreeBackend]:
             tpm = int(cfg.get(f"{bid}_tpm") or _FREE_TPM.get(bid, 0))
         except (TypeError, ValueError):
             tpm = _FREE_TPM.get(bid, 0)
-        out.append(_FreeBackend(bid, key, model,
-                                _openai_compat_stream(base_url, **_FREE_CLIENT),
-                                base_url, tpm))
+        stream = _openai_compat_stream(base_url, **_FREE_CLIENT)
+        out.append(_FreeBackend(bid, key, model, stream, base_url, tpm))
+        extra = cfg.get(f"{bid}_fallback_models")
+        more = (tuple(m.strip() for m in str(extra).split(","))
+                if extra is not None else _FREE_FALLBACK_MODELS.get(bid, ()))
+        tried = {model}
+        for alt in more:
+            if alt and alt not in tried:
+                tried.add(alt)
+                out.append(_FreeBackend(bid, key, alt, stream, base_url, tpm,
+                                        primary=False))
     return out
 
 
@@ -636,18 +720,26 @@ def _free_stream(api_key, model, system, messages):
         raise FreeTierExhausted("no free backend configured")
     started = False
     for attempt, (b, thread) in enumerate(_free_plan(backends, system, messages)):
+        if b.id in _free_dead:
+            continue
         # Grows by at most one entry: a retired slug appends the replacement
         # /models named, so the same backend gets a second shot before the
-        # chain moves on.
+        # chain moves on. A short rate-limit wait re-queues the same model once.
         candidates = [b.model]
+        waited = False
         while candidates:
             model = candidates.pop(0)
             t0 = time.perf_counter()
             try:
+                got = False
                 for chunk in b.stream(b.api_key, model, system, thread):
-                    started = True
+                    started = got = True
                     yield chunk
-                if model != b.model:
+                if not got:
+                    # OpenRouter's upstream failure can arrive as a 200 with no
+                    # choices, which streams to nothing: not an answer.
+                    raise RuntimeError("the backend streamed no text")
+                if model != b.model and b.primary:
                     _free_live_model[b.id] = model  # proven: skip the dead slug
                 obs.event("llm.free.answered", backend=b.id, model=model,
                           attempt=attempt,
@@ -667,6 +759,13 @@ def _free_stream(api_key, model, system, messages):
                          attempt=attempt, error_type=type(exc).__name__,
                          error=str(exc)[:300],
                          status=getattr(exc, "status_code", None))
+                _note_dead(b, exc)
+                wait = None if waited else _short_wait(exc)
+                if wait is not None:
+                    waited = True
+                    _sleep(wait)
+                    candidates.insert(0, model)
+                    continue
                 if not _retired_model(exc):
                     break
                 alt = _live_model(b)
@@ -701,14 +800,24 @@ def _free_tools(api_key, model, system, messages, tools, execute, rounds):
          for t in tools]))
     for attempt, (b, thread) in enumerate(
             _free_plan(backends, system, messages, extra=schema)):
-        try:
-            return _openai_compat_tools(b.base_url or None, **_FREE_CLIENT)(
-                b.api_key, b.model, system, thread, tools, execute, rounds)
-        except Exception as exc:
-            obs.warn("llm.free.tools_failed", backend=b.id, model=b.model,
-                     attempt=attempt, error_type=type(exc).__name__,
-                     error=str(exc)[:300],
-                     status=getattr(exc, "status_code", None))
+        if b.id in _free_dead:
+            continue
+        cap = int(b.tpm * _TPM_MARGIN) if b.tpm else 0
+        for retry in range(2):
+            try:
+                return _openai_compat_tools(b.base_url or None, **_FREE_CLIENT)(
+                    b.api_key, b.model, system, thread, tools, execute, rounds,
+                    cap)
+            except Exception as exc:
+                obs.warn("llm.free.tools_failed", backend=b.id, model=b.model,
+                         attempt=attempt, error_type=type(exc).__name__,
+                         error=str(exc)[:300],
+                         status=getattr(exc, "status_code", None))
+                _note_dead(b, exc)
+                wait = _short_wait(exc) if retry == 0 else None
+                if wait is None:
+                    break
+                _sleep(wait)
     raise FreeTierExhausted("no free backend ran the tool loop")
 
 

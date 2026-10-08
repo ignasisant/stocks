@@ -117,12 +117,15 @@ def _no_yahoo_cooldown():
     The same goes for its two neighbours: the names Yahoo last disowned, and
     CoinGecko's memo and cooldown — each one process-wide on purpose.
     """
+    from stocks import obs
     from stocks.data.fetch import clear_coingecko, clear_throttle, clear_unlisted
 
-    for clear in (clear_throttle, clear_unlisted, clear_coingecko):
+    # `obs.warn_once` remembers per process, so a test asserting a warning
+    # would otherwise depend on which test said it first.
+    for clear in (clear_throttle, clear_unlisted, clear_coingecko, obs._once.clear):
         clear()
     yield
-    for clear in (clear_throttle, clear_unlisted, clear_coingecko):
+    for clear in (clear_throttle, clear_unlisted, clear_coingecko, obs._once.clear):
         clear()
 
 
@@ -514,3 +517,14 @@ def _own_connector_state(_scratch):
     yield
     store.DIR = before
     reset()
+
+
+@pytest.fixture(autouse=True)
+def _forget_inconsistencies():
+    """`data.inconsistency` is said once per window per process, so a test
+    asserting the line would otherwise depend on which test said it first."""
+    from stocks.portfolio import consistency
+
+    consistency.clear()
+    yield
+    consistency.clear()

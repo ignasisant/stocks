@@ -58,7 +58,11 @@ _GATE_RE = re.compile(
     r"\bedit|corrig|correct|cambia|fusion|\bmerge\b|traspas|transfer|"
     r"deshaz|deshacer|\bundo\b|revert|renombr|rename|duplicad|duplicate|"
     r"\blibro\b|ledger|arregl|\bfix\b|apunta|registra|\brecord\b|"
-    r"\bbroker\b|historial",
+    r"\bbroker\b|historial|"
+    # Closing a position: "ya no tengo X, ciérrala", "I sold all my X".
+    r"cierr|ci[eé]rr|\bclose (?:it|out|my|the|that|this)\b|"
+    r"ya no (?:la |lo )?tengo|no longer (?:hold|own|have)|"
+    r"\bvend[ií]|\bsold\b",
     re.IGNORECASE,
 )
 

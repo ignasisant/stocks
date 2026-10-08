@@ -37,6 +37,7 @@ from stocks.chat import (
     agent,
     allocation,
     charts,
+    clock,
     debate,
     harvest,
     learnings,
@@ -1050,7 +1051,7 @@ def system_prompt(profile: dict, context: str,
         "something needs the user's own judgement. The context below is "
         "current as of this message; treat the figures as the user's real "
         "position, and let the current view guide what they are most likely "
-        f"asking about. Today is {date.today().isoformat()}. Some user "
+        f"asking about. {clock.line()}. Some user "
         "messages carry appended web page extracts and live market quotes "
         "fetched at send time; when present, ground your answer in them, "
         "prefer those figures over anything you remember, and cite the "
@@ -1165,7 +1166,7 @@ def web_context(history: list[dict], context: str = "") -> str:
     """What a search plan is written against: the date, where the reader is,
     the last user turns and the ticker the conversation is about."""
     prior = [m["content"][:200] for m in history[:-1] if m["role"] == "user"][-2:]
-    ctx = f"Today is {date.today().isoformat()}." + (
+    ctx = f"{clock.line()}." + (
         "\n" + context.strip() if context.strip() else "")
     if prior:
         ctx += "\nEarlier user messages (topic continuity): " + " | ".join(prior)
@@ -1394,7 +1395,7 @@ def action_context(watchlist: Path) -> str:
     from stocks.config import load_watchlist
     from stocks.web import auth
 
-    bits = [f"Today: {date.today().isoformat()}"]
+    bits = [f"Today: {clock.today().isoformat()}"]
     holds = load_watchlist(watchlist)
     if holds:
         bits.append("Watchlist: " + ", ".join(

@@ -642,3 +642,47 @@ def test_an_index_whose_name_ends_in_a_number_is_not_a_figure():
 )
 def test_a_written_percentage_is_read_whole(written, value):
     assert daily.audit([f"Line with {written} in it"], {"x": value}) is None
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "NVDA pesa un 29,9 % de la cartera",
+        "NVDA pesa un 29,9 % de la cartera",
+        "NVDA pesa un 29,9 % de la cartera",
+        "NVDA pesa un 26 % de la cartera",
+        "NVDA pesa un 27% de la cartera",
+        "NVDA pesa un 36 % de la cartera",
+        "NVDA pesa un 31% de la cartera",
+        "NVDA cae un -1.48% hoy",
+        "NVDA cae un −1,48 % hoy",
+        "NVDA is worth €105 in the book",
+    ],
+)
+def test_a_figure_rounded_to_the_digits_it_prints_passes_the_audit(line):
+    """The prod rejections: whole-number percentages and amounts are what a
+    1-dp or 2-dp fact honestly rounds to, whatever the locale spacing."""
+    facts = {"currency": "EUR", "movers": [{"ticker": "NVDA", "pct": -1.4849}],
+             "weights": [{"ticker": "NVDA", "weight_pct": 29.87, "pl_pct": 26.4,
+                          "x": 27.2, "y": 35.6, "z": 30.6, "value": 104.6}]}
+    assert daily.audit([line], facts) is None
+
+
+@pytest.mark.parametrize(
+    "line,figure",
+    [
+        ("NVDA pesa un 29,9 % de la cartera", "29,9 %"),
+        ("NVDA pesa un 26 % de la cartera", "26 %"),
+        ("NVDA pesa un 36% de la cartera", "36%"),
+        ("NVDA cae un -1.48% hoy", "-1.48%"),
+        ("NVDA is worth €105 in the book", "€105"),
+    ],
+)
+def test_a_figure_the_facts_do_not_round_to_is_still_rejected(line, figure):
+    facts = {"currency": "EUR", "weights": [{"ticker": "NVDA", "w": 28.4, "p": 24.9,
+                                              "q": 34.4, "r": -1.2, "v": 104.4}]}
+    assert daily.audit([line], facts) == figure
+
+
+def test_a_unicode_minus_keeps_its_sign():
+    assert daily.audit(["NVDA cae un −1,48 % hoy"], {"pct": 1.48}) == "−1,48 %"

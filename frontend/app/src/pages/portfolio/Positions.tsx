@@ -241,6 +241,23 @@ function Positions() {
       rows={positions}
       rowKey={(row) => row.ticker}
       initial={{ key: pending ? "cost" : "weight", desc: true }}
+      // Above the table on every width: "biggest move today" is the question
+      // this list gets most, and it is asked in percent as often as in money.
+      picker
+      sorts={[
+        {
+          key: "day_pct",
+          label: t("portfolio.sort_day_pct"),
+          sort: (row) => row.day_pct,
+          column: "day",
+        },
+        {
+          key: "pnl_pct",
+          label: t("portfolio.sort_pnl_pct"),
+          sort: (row) => row.pnl_pct,
+          column: "pnl",
+        },
+      ]}
       // The phone's row: value and today's move on the right, the total
       // result as a pill by the symbol, weight and custodians on the dim
       // line.

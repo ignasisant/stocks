@@ -22,12 +22,13 @@ Nothing here runs a model, and nothing here writes except `apply` and `undo`.
 
 from __future__ import annotations
 
+import difflib
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date as _date
 from pathlib import Path
 
+from stocks.chat import clock
 from stocks.chat.tools import Action
 from stocks.portfolio import demo, doctor, edits, ledger, transfers
 from stocks.portfolio.ledger import Transaction
@@ -89,7 +90,7 @@ def draft(
 ) -> Draft:
     """What `act` would do to the book at `db`, put as the reader will read it."""
     ctx = _Ctx(db=db, tr=translate, resolve=resolve,
-               today=today or _date.today().isoformat(), currency=currency)
+               today=today or clock.today().isoformat(), currency=currency)
     rows = demo.without(ledger.all_transactions(db))
     return _DRAFTS[act.kind](act, rows, ctx)
 
@@ -288,6 +289,10 @@ def _close(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
     bought = sum(t.quantity for t in found if t.action in ("buy", "transfer_in"))
     held = {k: s for k, s in edits._replay(found).items()
             if s.held > 1e-12 * max(bought, 1000.0)}
+    if not found:
+        # Not "the book has none": the name may be spelled another way there.
+        return Draft(ctx.tr("chat.book_close_unknown", ticker=act.ticker,
+                            near=_nearest(act.ticker, rows)))
     if not held:
         return Draft(ctx.tr("chat.book_nothing_left", ticker=act.ticker))
     a = act.args
@@ -311,6 +316,22 @@ def _close(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
     summary = ctx.tr("chat.book_summary_close", ticker=_names(found),
                      quantity=_n(sum(s.held for s in held.values())))
     return _planned(ops, summary, ctx)
+
+
+def _nearest(ticker: str, rows: list[Transaction], limit: int = 5) -> str:
+    """The held symbols closest to what the reader typed, as a list to read.
+
+    Falls back to the first few held ones when nothing resembles it."""
+    held = sorted({label for (label, _cur), s in edits._replay(rows).items()
+                   if s.held > 1e-9})
+    if not held:
+        return "—"
+    want = ticker.strip().upper()
+    root = edits._root(want)
+    near = [h for h in held if root in h or edits._root(h) in want]
+    near += [h for h in difflib.get_close_matches(want, held, n=limit, cutoff=0.5)
+             if h not in near]
+    return ", ".join((near or held)[:limit])
 
 
 def _check(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
