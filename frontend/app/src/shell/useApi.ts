@@ -11,6 +11,11 @@
  * This hook only decides when that memo may answer: a first fetch reads it, a
  * re-ask — retry, reload, or an input that changed under a mounted component —
  * drops it first, because those are a reader asking for the server's word.
+ *
+ * And it abandons what it asked for once nobody can see it: the component
+ * unmounting (the reader moved to another screen, or closed this one) or its
+ * inputs changing aborts the run's scope, and `shell/api` cancels any request
+ * that run was the last one waiting on.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -39,7 +44,8 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[]): Query<T> 
     }
     previous.current = run;
     setQuery({ state: "loading" });
-    withMemo(run).then(
+    const scope = new AbortController();
+    withMemo(run, scope.signal).then(
       (data) => live && setQuery({ state: "loaded", data, reload: again }),
       (error) =>
         live &&
@@ -51,6 +57,7 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[]): Query<T> 
     );
     return () => {
       live = false;
+      scope.abort();
     };
   }, [run, nonce, again]);
 

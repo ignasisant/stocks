@@ -25,17 +25,22 @@ class FakeClient:
 
     def __init__(self):
         self.objects: dict[str, bytes] = {}
+        self.metadata: dict[str, dict[str, str]] = {}
         self.calls: list[tuple[str, str]] = []
 
-    def put_object(self, Bucket, Key, Body):
+    def put_object(self, Bucket, Key, Body, Metadata=None):
         self.calls.append(("put", Key))
         self.objects[Key] = Body
+        self.metadata[Key] = dict(Metadata or {})
 
     def get_object(self, Bucket, Key):
         self.calls.append(("get", Key))
         if Key not in self.objects:
             raise NoSuchKey(Key)
-        return {"Body": io.BytesIO(self.objects[Key])}
+        return {
+            "Body": io.BytesIO(self.objects[Key]),
+            "Metadata": self.metadata.get(Key, {}),
+        }
 
     def delete_object(self, Bucket, Key):
         self.calls.append(("delete", Key))
@@ -74,6 +79,7 @@ def bucket(monkeypatch, tmp_path):
         },
     )
     monkeypatch.setattr(storage, "_restored", set())
+    monkeypatch.setattr(storage, "_listings", {})
     return client
 
 
@@ -121,6 +127,36 @@ def test_restore_overwrites_local(bucket, tmp_path):
     f.write_text("stale local")
     assert storage.restore(f) is True
     assert f.read_bytes() == b"watchlist: []\n"
+
+
+def test_restore_keeps_the_mtime_the_file_was_persisted_with(bucket, tmp_path):
+    """Caches key on a ledger's mtime. A restore stamping "now" made every
+    boot a fresh write, and the memos persisted under the old key never hit."""
+    import os
+
+    f = tmp_path / "portfolio.db"
+    f.write_bytes(b"book")
+    os.utime(f, (1_700_000_000.5, 1_700_000_000.5))
+    storage.persist(f)
+    f.unlink()  # the boot
+    assert storage.restore(f)
+    assert f.stat().st_mtime == 1_700_000_000.5
+
+
+def test_restore_falls_back_to_last_modified(bucket, tmp_path, monkeypatch):
+    """An object persisted before the metadata existed: LastModified, which
+    is at least the same on every boot."""
+    from datetime import UTC, datetime
+
+    stamp = datetime(2026, 10, 1, tzinfo=UTC)
+    bucket.objects["old.db"] = b"x"
+    real = bucket.get_object
+    monkeypatch.setattr(
+        bucket, "get_object", lambda **kw: {**real(**kw), "LastModified": stamp}
+    )
+    f = tmp_path / "old.db"
+    assert storage.restore(f)
+    assert f.stat().st_mtime == stamp.timestamp()
 
 
 def test_restore_missing_remote(bucket, tmp_path):
@@ -194,32 +230,69 @@ def test_restore_once_makes_a_concurrent_caller_wait(bucket, tmp_path, monkeypat
     assert bucket.calls.count(("get", "u/a.txt")) == 1
 
 
-def test_restore_dir_pulls_flat_pool_once(bucket, tmp_path):
+def test_restore_stem_pulls_only_the_file_asked_for(bucket, tmp_path):
     d = tmp_path / "src/stocks/web/static/logos"
     bucket.objects["src/stocks/web/static/logos/AAPL.png"] = b"a"
-    bucket.objects["src/stocks/web/static/logos/brand-groq.png"] = b"g"
-    bucket.objects["src/stocks/web/static/logos/nested/x.png"] = b"n"  # skipped
-    storage.restore_dir(d)
+    bucket.objects["src/stocks/web/static/logos/MSFT.svg"] = b"m"
+    bucket.objects["src/stocks/web/static/logos/nested/AAPL.png"] = b"n"
+    assert storage.restore_stem(d, "AAPL") == "AAPL.png"
     assert (d / "AAPL.png").read_bytes() == b"a"
-    assert (d / "brand-groq.png").read_bytes() == b"g"
+    assert not (d / "MSFT.svg").exists()
     assert not (d / "nested").exists()
-    calls_after_first = list(bucket.calls)
-    storage.restore_dir(d)  # second touch: no bucket round-trip
-    assert bucket.calls == calls_after_first
+    # One listing for the process, then one GET per file asked for.
+    assert storage.restore_stem(d, "MSFT") == "MSFT.svg"
+    assert storage.restore_stem(d, "AAPL") == "AAPL.png"
+    assert [c for c, _ in bucket.calls] == ["list", "get", "get"]
 
 
-def test_restore_dir_local_wins(bucket, tmp_path):
+def test_restore_stem_matches_the_exact_stem(bucket, tmp_path):
+    d = tmp_path / "logos"
+    bucket.objects["logos/BRK.B.png"] = b"b"
+    assert storage.restore_stem(d, "BRK") is None
+    assert storage.restore_stem(d, "BRK.B") == "BRK.B.png"
+
+
+def test_restore_stem_miss_costs_no_get(bucket, tmp_path):
+    d = tmp_path / "logos"
+    bucket.objects["logos/AAPL.png"] = b"a"
+    assert storage.restore_stem(d, "ZZZZ") is None
+    assert storage.restore_stem(d, "YYYY") is None
+    assert bucket.calls == [("list", "logos/")]
+
+
+def test_restore_stem_local_wins(bucket, tmp_path):
     d = tmp_path / "logos"
     d.mkdir()
     (d / "AAPL.png").write_bytes(b"fresh")
     bucket.objects["logos/AAPL.png"] = b"stale"
-    storage.restore_dir(d)
+    assert storage.restore_stem(d, "AAPL") == "AAPL.png"
     assert (d / "AAPL.png").read_bytes() == b"fresh"
 
 
-def test_restore_dir_disabled_is_noop(disabled, tmp_path):
-    storage.restore_dir(tmp_path / "logos")
+def test_restore_stem_retries_a_failed_listing(bucket, tmp_path, monkeypatch):
+    d = tmp_path / "logos"
+    bucket.objects["logos/AAPL.png"] = b"a"
+    real = bucket.get_paginator
+    monkeypatch.setattr(bucket, "get_paginator", lambda name: 1 / 0)
+    with pytest.raises(ZeroDivisionError):
+        storage.restore_stem(d, "AAPL")
+    monkeypatch.setattr(bucket, "get_paginator", real)
+    assert storage.restore_stem(d, "AAPL") == "AAPL.png"
+
+
+def test_restore_stem_disabled_is_noop(disabled, tmp_path):
+    assert storage.restore_stem(tmp_path / "logos", "AAPL") is None
     assert not (tmp_path / "logos").exists()
+
+
+def test_read_leaves_the_local_file_alone(bucket, tmp_path):
+    f = tmp_path / "data/logos.json"
+    f.parent.mkdir()
+    f.write_text("local")
+    bucket.objects["data/logos.json"] = b"remote"
+    assert storage.read(f) == b"remote"
+    assert f.read_text() == "local"
+    assert storage.read(tmp_path / "data/none.json") is None
 
 
 def test_mirror_logo_persists_and_restores(bucket, tmp_path, monkeypatch):
@@ -238,10 +311,50 @@ def test_mirror_logo_persists_and_restores(bucket, tmp_path, monkeypatch):
     # the bucket copy alone brings the logo back.
     for f in d.iterdir():
         f.unlink()
-    monkeypatch.setattr(storage, "_restored", set())
+    monkeypatch.setattr(storage, "_listings", {})
     monkeypatch.setattr(logo_mod, "logo_url", lambda t: None)
     assert logo_mod.mirror_logo("AAPL", d) == "AAPL.png"
     assert (d / "AAPL.png").read_bytes() == b"png"
+
+
+def _logo_cache(monkeypatch, tmp_path):
+    import stocks.data.logo as logo_mod
+
+    monkeypatch.setattr(logo_mod, "LOGO_CACHE", tmp_path / "data/logos.json")
+    monkeypatch.setattr(logo_mod, "_inconclusive", {})
+    monkeypatch.setattr(logo_mod, "_bucket", {"fold": False, "push": False})
+    logo_mod.LOGO_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    return logo_mod
+
+
+def test_logo_cache_folds_bucket_copy_into_shipped_one(bucket, tmp_path, monkeypatch):
+    """The image ships a cache, the host adds to it: both survive a deploy."""
+    import json
+
+    logo_mod = _logo_cache(monkeypatch, tmp_path)
+    v = logo_mod.CACHE_VERSION
+    logo_mod.LOGO_CACHE.write_text(json.dumps({"_v": v, "DEV": "https://d", "BOTH": "a"}))
+    bucket.objects["data/logos.json"] = json.dumps(
+        {"_v": v, "HOST": "", "BOTH": "b"}
+    ).encode()
+    monkeypatch.setattr(logo_mod, "_probe", lambda url: "ok")
+
+    assert logo_mod.logo_url("HOST") is None  # the host's answer, no probe
+    assert logo_mod.logo_url("BOTH") == "b"
+    assert logo_mod.logo_url("NEW") == logo_mod.FMP_LOGO_URL.format(ticker="NEW")
+    pushed = json.loads(bucket.objects["data/logos.json"])
+    assert {"DEV", "HOST", "BOTH", "NEW"} <= set(pushed)
+    assert bucket.calls.count(("get", "data/logos.json")) == 1
+
+
+def test_logo_cache_never_pushes_after_a_failed_fold(bucket, tmp_path, monkeypatch):
+    """A read that failed must not let this host's file replace the bucket's."""
+    logo_mod = _logo_cache(monkeypatch, tmp_path)
+    bucket.objects["data/logos.json"] = b"{}"
+    monkeypatch.setattr(storage, "read", lambda path: 1 / 0)
+    monkeypatch.setattr(logo_mod, "_probe", lambda url: "ok")
+    assert logo_mod.logo_url("AAPL")
+    assert bucket.objects["data/logos.json"] == b"{}"
 
 
 # -------------------------------------------------------------- write hooks

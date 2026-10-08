@@ -10,13 +10,19 @@ Preference order, best-looking first:
 (Clearbit used to sit between the two; HubSpot shut the API down, so it was
 dropped — the v3 cache bump re-resolves entries that still point there.)
 
-Each candidate is probed once *from this host*. Only definitive answers — a
-working image, or a hard 404 on every source — are cached to data/logos.json;
-an inconclusive probe (403/429/timeout: FMP/Yahoo block datacenter IPs, which
-is exactly what a cloud deploy runs on) is kept in memory for the process
-only, and the best-guess URL is still returned so the *browser* (a
-residential IP) gets a chance. The next boot re-probes. The cache is
-versioned: bump CACHE_VERSION to force every ticker to re-resolve.
+Each candidate is probed once *from this host*. Definitive answers — a
+working image, or a hard 404 on every source — are cached to data/logos.json
+for good. An inconclusive probe (403/429/timeout: FMP/Yahoo block datacenter
+IPs, which is exactly what a cloud deploy runs on) still hands the browser (a
+residential IP) the best-guess URL, and is kept apart in the same file for
+BLOCKED_TTL only, so the host tries again within the week but not on every
+boot. The cache is versioned: bump CACHE_VERSION to force every ticker to
+re-resolve.
+
+The file ships in the image (git-tracked) and the running host adds to it, so
+with a storage bucket configured each process folds the bucket's copy in on
+first use and pushes every save back: an ephemeral host's probes survive the
+next deploy instead of being run again, a few seconds each, on its first page.
 """
 
 from __future__ import annotations
@@ -24,6 +30,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -55,9 +62,22 @@ def domain_from_website(website: str | None) -> str | None:
 # The schema stamp shares the file with the URL entries but is an int, so it
 # is kept out of the in-memory dict rather than widening every value's type.
 _VERSION_KEY = "_v"
+# Inconclusive walks, {key: [best-guess url, epoch seconds]}, beside the
+# definitive string entries.
+_BLOCKED_KEY = "_blocked"
+BLOCKED_TTL = 7 * 86400
 
 
-def _load_cache() -> dict[str, str]:
+def _parse(text: str | bytes) -> dict:
+    """A cache file's contents, {} when written by an older schema."""
+    data = json.loads(text)
+    if isinstance(data, dict) and data.get(_VERSION_KEY) == CACHE_VERSION:
+        data.pop(_VERSION_KEY)
+        return data
+    return {}
+
+
+def _load_file() -> dict:
     """On-disk cache, discarded wholesale if written by an older schema.
 
     Or if it does not parse. Every entry can be probed again, so a broken file
@@ -66,19 +86,40 @@ def _load_cache() -> dict[str, str]:
     threads, and two interleaved writes once left it with "Extra data".
     """
     try:
-        data = json.loads(LOGO_CACHE.read_text()) if LOGO_CACHE.exists() else {}
+        return _parse(LOGO_CACHE.read_text()) if LOGO_CACHE.exists() else {}
     except (json.JSONDecodeError, OSError) as exc:
         obs.warn("logo.cache_unreadable", error_type=type(exc).__name__)
         return {}
-    if isinstance(data, dict) and data.get(_VERSION_KEY) == CACHE_VERSION:
-        return {k: v for k, v in data.items() if isinstance(v, str)}
-    return {}
 
 
-def _save_cache(cache: dict[str, str]) -> None:
-    """Whole-file replace, so a reader never sees half of a write."""
-    stamped = {_VERSION_KEY: CACHE_VERSION, **cache}
+def _load_cache() -> dict[str, str]:
+    """The definitive answers: URL, or "" for "nothing exists"."""
+    return {k: v for k, v in _load_file().items() if isinstance(v, str)}
+
+
+def _blocked(data: dict, now: float) -> dict[str, list]:
+    """The inconclusive entries still inside BLOCKED_TTL."""
+    raw = data.get(_BLOCKED_KEY)
+    return {
+        k: v
+        for k, v in (raw if isinstance(raw, dict) else {}).items()
+        if isinstance(v, list) and len(v) == 2 and now - v[1] < BLOCKED_TTL
+    }
+
+
+def _save_file(data: dict) -> None:
+    """Whole-file replace, so a reader never sees half of a write; then the
+    bucket, once this process has folded the bucket's own copy in."""
+    stamped = {_VERSION_KEY: CACHE_VERSION, **data}
     atomic.write_json(LOGO_CACHE, stamped, indent=2, sort_keys=True)
+    if _bucket["push"]:
+        _persist_quiet(LOGO_CACHE)
+
+
+# `fold`: this process already merged the bucket's copy (or tried to).
+# `push`: saves may go back to the bucket — only once the fold read it, so a
+# failed read never has this host's file overwrite what other boots learned.
+_bucket = {"fold": False, "push": False}
 
 
 # Held across read-merge-write, not across the probe: without it two threads
@@ -87,13 +128,53 @@ def _save_cache(cache: dict[str, str]) -> None:
 _cache_lock = threading.Lock()
 
 
+def _fold_bucket_copy() -> None:
+    """Once per process: merge the bucket's cache into the shipped one.
+
+    Merged rather than restored: the image carries entries resolved on a
+    developer's machine that the bucket may never have seen, and the bucket
+    carries everything earlier boots of the deployed host learned. On a key
+    both know, the host's answer wins — it is the one probed from where the
+    app runs.
+    """
+    if _bucket["fold"]:
+        return
+    with _cache_lock:
+        if _bucket["fold"]:
+            return
+        with obs.swallow("logo.cache_restore"):
+            from stocks import storage
+
+            if storage.enabled():
+                raw = storage.read(LOGO_CACHE)
+                theirs = _parse(raw) if raw else {}
+                ours = _load_file()
+                if theirs:
+                    blocked = {
+                        **_blocked(ours, time.time()),
+                        **_blocked(theirs, time.time()),
+                    }
+                    # Merged locally only: the bucket learns it on the next save.
+                    atomic.write_json(
+                        LOGO_CACHE,
+                        {
+                            _VERSION_KEY: CACHE_VERSION,
+                            **{k: v for k, v in ours.items() if isinstance(v, str)},
+                            **{k: v for k, v in theirs.items() if isinstance(v, str)},
+                            _BLOCKED_KEY: blocked,
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                _bucket["push"] = True
+        _bucket["fold"] = True
+
+
 # Skips 404 placeholders and dead FMP paths; "blocked" = can't tell from here.
 _probe = probe_image
 
-# Inconclusive resolutions (every remaining source blocked from this host)
-# live only for the process: the browser still gets the best-guess URL, and
-# the next boot re-probes instead of trusting a verdict this host couldn't
-# reach. Definitive answers go to the disk cache instead.
+# Inconclusive resolutions (every remaining source blocked from this host),
+# memoized for the process on top of the file's BLOCKED_TTL copy.
 _inconclusive: dict[str, str] = {}
 
 
@@ -144,18 +225,26 @@ def _candidates(ticker: str):
 
 def _resolve(key: str, candidates) -> str | None:
     """Cache-then-probe walk shared by logo_url / brand_logo_url."""
-    cache = _load_cache()
-    if key in cache:
-        return cache[key] or None
     if key in _inconclusive:
-        return _inconclusive[key]
+        return _inconclusive[key] or None
+    _fold_bucket_copy()
+    data = _load_file()
+    if isinstance(data.get(key), str):
+        return data[key] or None
+    if key in (blocked := _blocked(data, time.time())):
+        _inconclusive[key] = blocked[key][0]
+        return _inconclusive[key] or None
     url, definitive = _first_alive(candidates)
-    if definitive:
-        with _cache_lock:
-            cache = _load_cache()
-            cache[key] = url
-            _save_cache(cache)
-    else:
+    with _cache_lock:
+        data = _load_file()
+        blocked = _blocked(data, time.time())
+        if definitive:
+            data[key] = url
+            blocked.pop(key, None)
+        else:
+            blocked[key] = [url, time.time()]
+        _save_file({**data, _BLOCKED_KEY: blocked})
+    if not definitive:
         _inconclusive[key] = url
     return url or None
 
@@ -191,14 +280,15 @@ _EXT_BY_TYPE = {
 }
 
 
-def _restore_dir_quiet(static_dir: Path) -> None:
-    """First touch per process pulls previously mirrored logos back from the
-    storage bucket (ephemeral hosts boot with an empty static dir). Never
-    fatal: a failed pull only means logos re-resolve over the network."""
-    with obs.swallow("logo.restore_dir"):
+def _restore_quiet(static_dir: Path, stem: str) -> str | None:
+    """Pull one previously mirrored logo back from the storage bucket
+    (ephemeral hosts boot with an empty static dir); its file name. Never
+    fatal: a failed pull only means the logo re-resolves over the network."""
+    with obs.swallow("logo.restore", stem=stem):
         from stocks import storage
 
-        storage.restore_dir(static_dir)
+        return storage.restore_stem(static_dir, stem)
+    return None
 
 
 def _persist_quiet(path: Path) -> None:
@@ -215,10 +305,13 @@ def _mirror(stem: str, resolve_url, static_dir: Path) -> str | None:
     name. An already-mirrored file (local, or pulled back from the storage
     bucket on an ephemeral host's first touch) short-circuits before any
     network call; `resolve_url` is only invoked on a cache miss."""
-    _restore_dir_quiet(static_dir)
     if static_dir.is_dir():
         for existing in static_dir.glob(f"{stem}.*"):
-            return existing.name
+            # Exact stem: the glob for BRK also matches BRK.B's logo.
+            if existing.name.rpartition(".")[0] == stem:
+                return existing.name
+    if restored := _restore_quiet(static_dir, stem):
+        return restored
     url = resolve_url()
     if not url:
         return None

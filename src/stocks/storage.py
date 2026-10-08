@@ -22,6 +22,11 @@ Object keys are the file paths relative to the repo root (e.g.
 owner account), so one bucket mirrors both the per-user dirs and the
 owner's repo-root book.
 
+A restored file keeps the mtime it had when it was persisted (object
+metadata, else the object's LastModified): caches key on a file's mtime, and
+a restore that stamped "now" made every boot look like a fresh write — the
+persisted memos keyed on it never hit again.
+
 Consistency model: single app container. On the first touch of an account
 per process the bucket copy wins (the local checkout only has git-seeded or
 no files); from then on the local file is authoritative and every write
@@ -38,6 +43,8 @@ from stocks import atomic, secrets_env
 from stocks.config import PROJECT_ROOT
 
 _ENV_PREFIX = "STOCKS_STORAGE_"
+# Object metadata key carrying the file's mtime at persist time.
+_MTIME = "mtime"
 _lock = threading.Lock()
 _restored: set[str] = set()
 # One lock per restore group, held for the whole download. A group is marked
@@ -47,6 +54,8 @@ _restored: set[str] = set()
 # the bucket copy, provider keys and all.
 _group_locks: dict[str, threading.Lock] = {}
 _cached: dict[str, object] = {}
+# Per-process bucket listings of flat file pools (restore_stem).
+_listings: dict[str, frozenset[str]] = {}
 
 
 def _secrets_section() -> dict:
@@ -130,7 +139,12 @@ def persist(path: Path) -> None:
         return
     cfg = _config() or {}
     if path.exists():
-        _client().put_object(Bucket=cfg["bucket"], Key=key, Body=path.read_bytes())
+        _client().put_object(
+            Bucket=cfg["bucket"],
+            Key=key,
+            Body=path.read_bytes(),
+            Metadata={_MTIME: repr(path.stat().st_mtime)},
+        )
     else:
         _client().delete_object(Bucket=cfg["bucket"], Key=key)
 
@@ -150,49 +164,93 @@ def restore(path: Path) -> bool:
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic.write_bytes(path, obj["Body"].read())
+    _stamp(path, obj)
     return True
 
 
-def restore_dir(directory: Path) -> None:
-    """Pull every bucket object directly under `directory` the first time it
-    is touched this process.
+def _stamp(path: Path, obj: dict) -> None:
+    """Give a restored file the mtime it was persisted with.
 
-    For flat pools of generated files whose names aren't known up front
-    (mirrored logos: the extension depends on what the host served); fixed
-    -name user data uses restore_once. Existing local files win — a running
-    process has fresher mirrors than the bucket. Nested keys are skipped.
+    Falls back to the object's LastModified for objects written before the
+    metadata existed — not the original mtime, but stable from one boot to
+    the next, which is what a cache key needs. Neither: left as written.
+    """
+    when = None
+    try:
+        when = float((obj.get("Metadata") or {})[_MTIME])
+    except (KeyError, TypeError, ValueError):
+        modified = obj.get("LastModified")
+        if modified is not None:
+            when = modified.timestamp()
+    if when is not None:
+        os.utime(path, (when, when))
+
+
+def _listing(directory: Path, prefix: str) -> frozenset[str]:
+    """Names of the bucket objects directly under `directory`, listed once per
+    process (one LIST page per thousand names, no bodies). Nested keys are
+    skipped. A failure raises before anything is kept, so the next touch
+    lists again."""
+    tag = f"list:{directory.resolve()}"
+    with _group_lock(tag):
+        names = _listings.get(tag)
+        if names is None:
+            cfg = _config() or {}
+            pages = _client().get_paginator("list_objects_v2").paginate(
+                Bucket=cfg["bucket"], Prefix=prefix + "/"
+            )
+            names = frozenset(
+                name
+                for page in pages
+                for obj in page.get("Contents", [])
+                if (name := obj["Key"].removeprefix(prefix + "/"))
+                and "/" not in name
+                and name not in (".", "..")
+            )
+            _listings[tag] = names
+    return names
+
+
+def restore_stem(directory: Path, stem: str) -> str | None:
+    """Pull the bucket's `stem.<ext>` back into `directory`; its name, or None.
+
+    For flat pools of generated files whose extension isn't known up front
+    (mirrored logos: it depends on what the host served); fixed-name user data
+    uses restore_once. Only the one file asked for is downloaded: pulling the
+    whole pool on first touch held every caller behind a thousand sequential
+    GETs after each boot. A local file wins — a running process has fresher
+    mirrors than the bucket.
     """
     if not enabled():
-        return
+        return None
     prefix = _key(directory)
     if prefix is None:
-        return
-    tag = f"dir:{directory.resolve()}"
-    if tag in _restored:
-        return
-    # A failure raises before the tag is added, so the next touch retries
-    # instead of caching a half-restore.
-    with _group_lock(tag):
-        if tag in _restored:
-            return
-        cfg = _config() or {}
-        client = _client()
-        pages = client.get_paginator("list_objects_v2").paginate(
-            Bucket=cfg["bucket"], Prefix=prefix + "/"
-        )
-        for page in pages:
-            for obj in page.get("Contents", []):
-                name = obj["Key"].removeprefix(prefix + "/")
-                if not name or "/" in name or name in (".", ".."):
-                    continue
-                dest = directory / name
-                if dest.exists():
-                    continue
-                body = client.get_object(Bucket=cfg["bucket"], Key=obj["Key"])["Body"]
-                directory.mkdir(parents=True, exist_ok=True)
-                atomic.write_bytes(dest, body.read())
-        with _lock:
-            _restored.add(tag)
+        return None
+    # Exact stem: "BRK.png" is not BRK.B's logo, nor "BRK.B.png" BRK's.
+    name = next(
+        (n for n in sorted(_listing(directory, prefix)) if n.rpartition(".")[0] == stem),
+        None,
+    )
+    if name is None:
+        return None
+    dest = directory / name
+    with _group_lock(f"file:{dest.resolve()}"):
+        if not dest.exists():
+            cfg = _config() or {}
+            body = _client().get_object(Bucket=cfg["bucket"], Key=f"{prefix}/{name}")
+            directory.mkdir(parents=True, exist_ok=True)
+            atomic.write_bytes(dest, body["Body"].read())
+            _stamp(dest, body)
+    return name
+
+
+def read(path: Path) -> bytes | None:
+    """The bucket's copy of a local file, leaving the local one alone; None
+    when missing, outside the repo, or storage is off. For files the caller
+    merges rather than replaces (a cache shipped in the image that the
+    running host also adds to)."""
+    key = _key(path)
+    return read_key(key) if key is not None else None
 
 
 def read_key(key: str) -> bytes | None:

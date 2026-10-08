@@ -20,11 +20,13 @@ day move is only worth having live.
 from __future__ import annotations
 
 import threading
+import time
 from datetime import date
 from functools import wraps
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from stocks import identity, obs
@@ -40,7 +42,14 @@ from stocks.analysis.portfolio import (
     positions_frame,
     session_quotes,
 )
-from stocks.api.cache import Flight, coalesced, ttl_cache
+from stocks.api.cache import (
+    Flight,
+    coalesced,
+    disk_path,
+    read_entry,
+    ttl_cache,
+    write_entry,
+)
 from stocks.frames import midnights
 from stocks.portfolio import fees, transfers
 from stocks.portfolio.custody import Custody, by_position
@@ -116,29 +125,142 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
     measured on, and `Close`, the price that actually printed — what a
     52-week edge and the watchlist rows compare against. Home used to fetch
     the held names a second time for that distinction.
+
+    Only the first download of a book reaches back to its first trade. Every
+    refresh after it asks for the last month (`_extend`) and lays that over
+    the book's previous frames (`_frames_base`): years of bars for eighty
+    names were most of a minute on the one throttled vCPU, and all of it
+    re-downloaded every quarter hour to learn one new close.
     """
     from stocks.data.fetch import fetch_many
 
     txs, tickers = _held(db)
     if not tickers:
         return {}
-    span = (
-        pd.Timestamp.today()
-        - pd.Timestamp(min(t.date for t in txs if t.action in HELD_ACTIONS))
-    ).days
-    frames = fetch_many(
-        tickers,
-        period=f"{max(1, span // 30 + 1)}mo",
-        auto_adjust=False,
-        currencies=_currencies(txs),
-    )
+    since = min(t.date for t in txs if t.action in HELD_ACTIONS)
+    span = (pd.Timestamp.today() - pd.Timestamp(since)).days
+    period = f"{max(1, span // 30 + 1)}mo"
+    currencies = _currencies(txs)
+    base = _frames_base(db, since)
+    with obs.timed("prices.held_download", tickers=len(tickers)) as rec:
+        frames, stale = _extend(base, tickers, currencies) if base else ({}, tickers)
+        if stale:
+            frames.update(
+                fetch_many(
+                    stale, period=period, auto_adjust=False, currencies=currencies
+                )
+            )
+        rec["full"] = len(stale)
     # Judged here, at the download, and only here: a gutted download memoised
     # as the book's frames would land on disk and in the bucket besides. The
     # two readings below trust what this returns — after a restart it comes
     # back from disk without a download, and re-judging it then would be
     # asking `fetch.unlisted` about a download this process never made.
     complete_download(_close_series(frames, "Close"), tickers)
+    _keep_base(db, since, frames)
     return frames
+
+
+# How far back a refresh asks. A month overlaps the previous frames by weeks
+# even after a long weekend, which is what `_extend` checks them against.
+_TAIL = "1mo"
+# The columns two downloads of one day must agree on to be laid end to end:
+# a dividend rewrites every earlier `Adj Close`, a split every earlier price.
+_AGREE = ("Close", "Adj Close")
+
+
+def _extend(
+    base: dict[str, pd.DataFrame], tickers: list[str], currencies: dict[str, str]
+) -> tuple[dict[str, pd.DataFrame], list[str]]:
+    """The last month laid over `base`: (frames extended, names to download whole).
+
+    A name goes back for its whole history when the base never had it, when
+    the month came back without it, or when the two disagree on a day both
+    hold — Yahoo restated the past (a dividend, a split), so the base's bars
+    are no longer the series this month continues. The base's last day is
+    left out of that check: it may have been a session still trading. A name
+    Yahoo already said it does not list (`fetch.unlisted`) is not asked again:
+    it would come back empty every quarter hour.
+    """
+    from stocks.data.fetch import fetch_many, unlisted
+
+    known = [t for t in tickers if t in base]
+    tail = (
+        fetch_many(known, period=_TAIL, auto_adjust=False, currencies=currencies)
+        if known
+        else {}
+    )
+    # Gutted is gutted whichever request it was; the whole-history fallback
+    # below must not turn a refused month into eighty full downloads.
+    complete_download(_close_series(tail, "Close"), known)
+    frames: dict[str, pd.DataFrame] = {}
+    for t in known:
+        new, old = tail.get(t), base[t]
+        if new is None or new.empty:
+            continue
+        if old.empty or new.index[0] <= old.index[0]:
+            frames[t] = new  # a name bought this month: the month is all of it
+        elif _continues(old, new):
+            frames[t] = pd.concat([old[old.index < new.index[0]], new])
+    disowned = unlisted(tickers)
+    return frames, [t for t in tickers if t not in frames and t not in disowned]
+
+
+def _continues(old: pd.DataFrame, new: pd.DataFrame) -> bool:
+    """Whether `new` agrees with `old` on every settled day both hold."""
+    shared = old.index[:-1].intersection(new.index)
+    cols = [c for c in _AGREE if c in old.columns and c in new.columns]
+    if shared.empty or not cols or old.index[-1] < new.index[0]:
+        return False
+    a = old.loc[shared, cols].to_numpy(dtype=float)
+    b = new.loc[shared, cols].to_numpy(dtype=float)
+    return bool(np.allclose(a, b, rtol=1e-5, atol=0.0, equal_nan=True))
+
+
+# The last frames each book was priced from, and the first trade they reach
+# back to — what the next refresh extends. Keyed by the ledger's path alone,
+# not its mtime: an import changes which names are held, not the bars of the
+# ones that were, and the file a boot restores from the bucket carries a new
+# mtime every time. On disk (and in the bucket) beside the memo, so the first
+# Home after a deploy extends rather than downloads.
+_bases: dict[str, tuple[str, dict[str, pd.DataFrame]]] = {}
+_bases_lock = threading.Lock()
+# As many live as `_held_frames` keeps — they share its frames — and as many
+# on disk as it does.
+_BASES_LIVE = 4
+_BASES_ON_DISK = 8
+
+
+def _base_path(db: str) -> Path:
+    return disk_path("held_base", (db,))
+
+
+def _frames_base(db: str, since: str) -> dict[str, pd.DataFrame] | None:
+    """The book's previous frames, when they reach back to `since` (ISO)."""
+    with _bases_lock:
+        held = _bases.get(db)
+    if held is None:
+        with obs.swallow("prices.base_restore"):
+            entry = read_entry(_base_path(db), 0.0, _BASES_ON_DISK)
+            if entry is not None:
+                held = entry[1]
+    if held is None:
+        return None
+    reaches, frames = held
+    # A trade imported from before the base began: its history is missing.
+    return frames if reaches <= since else None
+
+
+def _keep_base(db: str, since: str, frames: dict[str, pd.DataFrame]) -> None:
+    with _bases_lock:
+        _bases.pop(db, None)
+        _bases[db] = (since, frames)
+        while len(_bases) > _BASES_LIVE:
+            _bases.pop(next(iter(_bases)))
+    with obs.swallow("prices.base_persist"):
+        write_entry(
+            _base_path(db), (0.0, (since, frames), time.time()), _BASES_ON_DISK
+        )
 
 
 def _close_series(frames: dict[str, pd.DataFrame], column: str) -> dict[str, pd.Series]:

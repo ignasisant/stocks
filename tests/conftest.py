@@ -390,13 +390,16 @@ def _own_memo_dir(_scratch):
     """The API cache's persisted memos (stocks.api.cache) land under a
     per-test directory, never in the checkout's data/memo — a test that
     priced a book would otherwise leave its frames for the next run to serve.
-    Saved and restored by hand, like the fixtures above, for the same reason."""
-    from stocks.api import cache
+    Saved and restored by hand, like the fixtures above, for the same reason.
+    The book frames a refresh extends (`loaders._bases`) go with them."""
+    from stocks.api import cache, loaders
 
     before = cache.MEMO_DIR
     cache.MEMO_DIR = _scratch / "memo"
+    loaders._bases.clear()
     yield
     cache.MEMO_DIR = before
+    loaders._bases.clear()
 
 
 @pytest.fixture(autouse=True)

@@ -7,10 +7,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  Cancelled,
   TIMEOUT_MS,
   get,
   invalidate,
   isTransient,
+  scoped,
   send,
   withMemo,
 } from "./api";
@@ -130,5 +132,94 @@ describe("timeout", () => {
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ reason: "timeout" });
     expect(isTransient(error)).toBe(true);
+  });
+});
+
+describe("abandoned requests", () => {
+  afterEach(() => {
+    invalidate();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  // A fetch that only ends by being aborted, recording that it was.
+  function hanging() {
+    const aborted: string[] = [];
+    const stub = vi.fn(
+      (url: string, init: RequestInit) =>
+        new Promise<Response>((_, reject) =>
+          init.signal?.addEventListener("abort", () => {
+            aborted.push(url);
+            reject(new DOMException("aborted", "AbortError"));
+          }),
+        ),
+    );
+    vi.stubGlobal("fetch", stub);
+    return { stub, aborted };
+  }
+
+  it("cancels a request once its only caller has left", async () => {
+    vi.useFakeTimers();
+    const { aborted } = hanging();
+    const scope = new AbortController();
+    const answer = scoped(scope.signal, () => get("/x")).catch((e: unknown) => e);
+    scope.abort();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(aborted).toEqual(["/api/v1/x"]);
+    expect(await answer).toBeInstanceOf(Cancelled);
+    expect(isTransient(await answer)).toBe(false);
+  });
+
+  it("keeps a shared request for the caller still waiting", async () => {
+    vi.useFakeTimers();
+    const { stub, aborted } = hanging();
+    const one = new AbortController();
+    const two = new AbortController();
+    void withMemo(() => get("/x"), one.signal).catch(() => undefined);
+    void withMemo(() => get("/x"), two.signal).catch(() => undefined);
+    expect(stub).toHaveBeenCalledTimes(1);
+    one.abort();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(aborted).toEqual([]);
+    two.abort();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(aborted).toHaveLength(1);
+  });
+
+  it("survives a remount that rejoins before the tick", async () => {
+    vi.useFakeTimers();
+    const { stub, aborted } = hanging();
+    const first = new AbortController();
+    void withMemo(() => get("/x"), first.signal).catch(() => undefined);
+    first.abort();
+    void withMemo(() => get("/x"), new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(stub).toHaveBeenCalledTimes(1);
+    expect(aborted).toEqual([]);
+  });
+
+  it("never cancels a request somebody asked for unscoped", async () => {
+    vi.useFakeTimers();
+    const { aborted } = hanging();
+    const scope = new AbortController();
+    void withMemo(() => get("/x"), scope.signal).catch(() => undefined);
+    void withMemo(() => get("/x")).catch(() => undefined);
+    scope.abort();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(aborted).toEqual([]);
+  });
+
+  it("a cancelled request is not kept in the memo", async () => {
+    vi.useFakeTimers();
+    hanging();
+    const scope = new AbortController();
+    const answer = withMemo(() => get("/x"), scope.signal).catch(() => undefined);
+    scope.abort();
+    await vi.advanceTimersByTimeAsync(1);
+    await answer;
+    const stub = vi.fn(async () => ok({ n: 1 }));
+    vi.stubGlobal("fetch", stub);
+    expect(await withMemo(() => get("/x"))).toEqual({ n: 1 });
+    expect(stub).toHaveBeenCalledTimes(1);
   });
 });

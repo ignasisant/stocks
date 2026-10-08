@@ -30,7 +30,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { canRecord, dictate, join, VoiceFailed, type Dictation } from "../chat/voice";
-import { ApiError, get, send } from "./api";
+import { ApiError, get, scoped, send } from "./api";
 import { GUEST_CHROME } from "./guest";
 import { useLang, useT } from "./i18n";
 import { useRoute } from "./router";
@@ -91,11 +91,13 @@ export function Feedback() {
   useEffect(() => {
     if (!open || (guest && !GUEST_CHROME.dictation) || !canRecord()) return;
     let alive = true;
-    get<{ voice: boolean }>("/chat/state")
+    const scope = new AbortController();
+    scoped(scope.signal, () => get<{ voice: boolean }>("/chat/state"))
       .then((state) => alive && setVoice(state.voice))
       .catch(() => undefined);
     return () => {
       alive = false;
+      scope.abort();
     };
   }, [open, guest]);
 

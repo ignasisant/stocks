@@ -272,12 +272,12 @@ def _land(
 
 
 # ------------------------------------------------------------------- the disk
-def _disk_path(name: str, key: tuple) -> Path:
+def disk_path(name: str, key: tuple) -> Path:
     digest = hashlib.sha256(repr(key).encode("utf-8")).hexdigest()[:24]
     return MEMO_DIR / name / f"{digest}.pkl"
 
 
-def _write(path: Path, entry: Entry, disk_max: int = DISK_MAX_FILES) -> None:
+def write_entry(path: Path, entry: Entry, disk_max: int = DISK_MAX_FILES) -> None:
     """Land one entry on disk (atomically) and mirror it to the bucket.
 
     The mirror runs on its own thread: an upload is network time the reader
@@ -311,7 +311,9 @@ def _trim(directory: Path, disk_max: int = DISK_MAX_FILES) -> None:
         old.unlink(missing_ok=True)
 
 
-def _read(path: Path, not_before: float, disk_max: int = DISK_MAX_FILES) -> Entry | None:
+def read_entry(
+    path: Path, not_before: float, disk_max: int = DISK_MAX_FILES
+) -> Entry | None:
     """The entry on disk (the bucket's copy first on a fresh host), as a store
     entry whose age is what it was when it landed, or None.
 
@@ -397,13 +399,17 @@ def ttl_cache(
                 usable=lambda entry: time.monotonic() - entry[0] < ttl_s + grace,
                 compute=lambda: (time.monotonic(), fn(*args, **kwargs), time.time()),
                 max_entries=max_entries,
-                load=(lambda: _read(_disk_path(persist, key), cleared_at[0], disk_max))
+                load=(
+                    lambda: read_entry(disk_path(persist, key), cleared_at[0], disk_max)
+                )
                 if persist
                 else None,
                 salvage=(lambda entry: time.time() - entry[2] < keep)
                 if keep > 0
                 else None,
-                landed=(lambda entry: _write(_disk_path(persist, key), entry, disk_max))
+                landed=(
+                    lambda entry: write_entry(disk_path(persist, key), entry, disk_max)
+                )
                 if persist
                 else None,
                 expired=lambda entry: time.monotonic() - entry[0] >= ttl_s + grace,

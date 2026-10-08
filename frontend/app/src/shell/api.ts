@@ -33,8 +33,40 @@ const BASE = "/api/v1";
  * is not an answer and is not kept.
  */
 const MEMO_MS = 60_000;
-const memo = new Map<string, { at: number; answer: Promise<unknown> }>();
+const memo = new Map<string, { at: number; flight: Flight<unknown> }>();
 let memoNext = false;
+
+/**
+ * A GET on the wire, and who is still waiting for it.
+ *
+ * A screen that closes, or a page the reader navigated away from, no longer
+ * wants what it asked for, and a request nobody wants should not keep a
+ * connection — and the reader's mobile data — busy for the tens of seconds a
+ * cold upstream can take. So every `get` made inside a `scoped` call joins its
+ * flight as one waiter under that scope's signal, and the flight is aborted
+ * once its last waiter has left. Shared flights are why it is a count: the
+ * memo hands one request to every screen that asks for it, and one of them
+ * closing must not cancel it under the others. A `get` made outside any scope
+ * — a click handler, the shell's own reads — pins its flight, which then runs
+ * to the end as every request used to.
+ *
+ * The last waiter leaving is acted on a tick later, not at once: React's
+ * StrictMode unmounts and remounts every effect straight away, and the
+ * remount joins the same flight from the memo before the tick is up.
+ */
+type Flight<T> = {
+  answer: Promise<T>;
+  abort: AbortController;
+  waiting: number;
+  pinned: boolean;
+  done: boolean;
+};
+
+let scope: AbortSignal | null = null;
+
+/** Why a flight was aborted: given up on, or no longer wanted by anyone. */
+const TIMED_OUT = "timeout";
+const UNWANTED = "unwanted";
 
 /** Forget every memoized answer. */
 export function invalidate(): void {
@@ -46,13 +78,39 @@ export function invalidate(): void {
  * synchronously — the ones at the top of a page's fetcher, before its first
  * `await`. Anything after an await is a second stage that already depends
  * on a live answer, and goes live too.
+ *
+ * With a `signal`, those same calls are also `scoped` to it.
  */
-export function withMemo<T>(fetch: () => Promise<T>): Promise<T> {
+export function withMemo<T>(fetch: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   memoNext = true;
+  try {
+    return signal ? scoped(signal, fetch) : fetch();
+  } finally {
+    memoNext = false;
+  }
+}
+
+/**
+ * Run `fetch` with its synchronous `get` calls bound to `signal`: once it
+ * aborts, a request only this caller was waiting for is cancelled (see
+ * `Flight`). The same before-the-first-await rule as `withMemo` — a get made
+ * after one runs unscoped, to the end.
+ */
+export function scoped<T>(signal: AbortSignal, fetch: () => Promise<T>): Promise<T> {
+  const outer = scope;
+  scope = signal;
   try {
     return fetch();
   } finally {
-    memoNext = false;
+    scope = outer;
+  }
+}
+
+/** A GET abandoned by everyone who asked for it. Nobody is left to show it to. */
+export class Cancelled extends Error {
+  constructor() {
+    super("cancelled");
+    this.name = "Cancelled";
   }
 }
 
@@ -129,31 +187,67 @@ export async function get<T>(
     ? `?${new URLSearchParams(entries.map(([k, v]) => [k, String(v)]))}`
     : "";
   const url = `${BASE}${path}${query}`;
-  if (!memoNext) return fetchJson<T>(url);
+  if (!memoNext) return join(start<T>(url), scope);
   const hit = memo.get(url);
-  if (hit && Date.now() - hit.at < MEMO_MS) return hit.answer as Promise<T>;
-  const answer = fetchJson<T>(url);
-  memo.set(url, { at: Date.now(), answer });
-  answer.catch(() => {
-    if (memo.get(url)?.answer === answer) memo.delete(url);
+  if (hit && Date.now() - hit.at < MEMO_MS) return join(hit.flight as Flight<T>, scope);
+  const flight = start<T>(url);
+  memo.set(url, { at: Date.now(), flight });
+  flight.answer.catch(() => {
+    if (memo.get(url)?.flight === flight) memo.delete(url);
   });
-  return answer;
+  return join(flight, scope);
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
+function start<T>(url: string): Flight<T> {
+  const abort = new AbortController();
+  const flight: Flight<T> = {
+    answer: fetchJson<T>(url, abort),
+    abort,
+    waiting: 0,
+    pinned: false,
+    done: false,
+  };
+  const land = () => {
+    flight.done = true;
+  };
+  flight.answer.then(land, land);
+  return flight;
+}
+
+/** One more caller waiting on `flight`, for as long as `signal` lets it. */
+function join<T>(flight: Flight<T>, signal: AbortSignal | null): Promise<T> {
+  if (flight.done) return flight.answer;
+  if (!signal) {
+    flight.pinned = true;
+    return flight.answer;
+  }
+  flight.waiting += 1;
+  const leave = () => {
+    flight.waiting -= 1;
+    setTimeout(() => {
+      if (!flight.done && !flight.pinned && flight.waiting === 0) {
+        flight.abort.abort(UNWANTED);
+      }
+    }, 0);
+  };
+  if (signal.aborted) leave();
+  else signal.addEventListener("abort", leave, { once: true });
+  return flight.answer;
+}
+
+async function fetchJson<T>(url: string, abort: AbortController): Promise<T> {
   // Out until the body has arrived, not just the headers: the corner banner
   // (`shell/activity`) counts what a reader is actually still waiting for.
   const landed = begin(url);
   try {
-    return await read<T>(url);
+    return await read<T>(url, abort);
   } finally {
     landed();
   }
 }
 
-async function read<T>(url: string): Promise<T> {
-  const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
+async function read<T>(url: string, abort: AbortController): Promise<T> {
+  const timer = setTimeout(() => abort.abort(TIMED_OUT), TIMEOUT_MS);
   try {
     const response = await fetch(url, {
       credentials: "same-origin",
@@ -165,8 +259,11 @@ async function read<T>(url: string): Promise<T> {
     noteFreshness(url, response.headers.get("x-data-stale-since"));
     return (await response.json()) as T;
   } catch (error) {
-    // Transient, so a page says "retry in a moment" rather than "failed".
-    if (abort.signal.aborted) throw new ApiError(504, "timed out", "timeout");
+    if (abort.signal.aborted) {
+      if (abort.signal.reason === UNWANTED) throw new Cancelled();
+      // Transient, so a page says "retry in a moment" rather than "failed".
+      throw new ApiError(504, "timed out", "timeout");
+    }
     throw error;
   } finally {
     clearTimeout(timer);
