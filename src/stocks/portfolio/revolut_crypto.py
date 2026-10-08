@@ -362,7 +362,7 @@ def _format(prices: Prices | None, fiat: str = "USD") -> CsvFormat:
         return _map_action(rtype)
 
     def build(row: Row, action: str) -> Transaction:
-        if action == "reward":
+        if action == "reward" and prices is not None:
             return _build_reward(row, prices, fiat)
         return _build_tx(row, action)
 
