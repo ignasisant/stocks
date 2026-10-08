@@ -52,7 +52,8 @@ def test_a_guest_page_asks_only_for_what_a_guest_may_read(page: Page, path: str)
 
 def test_the_guest_is_told_it_is_a_demo_and_offered_a_way_in(page: Page):
     page.goto("/home")
-    expect(page.get_by_text("Browsing as a guest")).to_be_visible()
+    expect(page.get_by_text("Your portfolio, with an AI analyst")).to_be_visible()
+    expect(page.get_by_text("a demo portfolio", exact=False).first).to_be_visible()
     expect(page.get_by_role("link", name="Sign in with Google").first).to_be_visible()
 
 
