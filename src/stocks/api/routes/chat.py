@@ -57,7 +57,7 @@ from fastapi import APIRouter, Header, HTTPException, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from stocks import accounts, navigation
+from stocks import accounts, navigation, obs
 from stocks.accounts import UserPaths
 from stocks.api import loaders
 from stocks.api.deps import Account, ChatTurn, SurfaceAction, Writer
@@ -741,6 +741,26 @@ def _tail(key: str) -> str | None:
     return key[-4:] if len(key) > 12 else None
 
 
+def _chosen(prefs: dict, provider: llm.Provider) -> str:
+    """This account's model on `provider`: its saved choice, or the default."""
+    saved = prefs.get(f"{provider.id}_model") or ""
+    return saved if provider.accepts_model(saved) else provider.default_model
+
+
+def _listed(prefs: dict, provider: llm.Provider) -> list[str]:
+    """The curated models, plus the account's own pick when it is not one of
+    them — a select that cannot show its value shows the first option instead."""
+    chosen = _chosen(prefs, provider)
+    curated = list(provider.models)
+    return curated if chosen in curated else [*curated, chosen]
+
+
+def _key_for(paths: UserPaths, pid: str, held: dict[str, str]) -> str:
+    """The key this request would answer `pid` with: the session's, else the
+    stored one. Never sent back — it only asks the vendor for its model list."""
+    return held.get(pid) or engine.decrypt_byok(accounts.stored_prefs(paths.prefs), pid)
+
+
 @router.get("/state", response_model=State, summary="What the assistant can do")
 def state(
     paths: Account,
@@ -770,7 +790,7 @@ def _state(paths: UserPaths, held: dict[str, str] | None = None) -> State:
             ProviderInfo(
                 id=provider.id,
                 label=provider.label,
-                models=list(provider.models),
+                models=_listed(prefs, provider),
                 needs_key=provider.needs_key,
                 has_key=provider.id in held
                 or engine.byok_alive(prefs, provider.id),
@@ -780,12 +800,7 @@ def _state(paths: UserPaths, held: dict[str, str] | None = None) -> State:
                     else None
                 ),
                 key_session=provider.id in held,
-                model=(
-                    saved
-                    if (saved := prefs.get(f"{provider.id}_model"))
-                    in provider.models
-                    else provider.default_model
-                ),
+                model=_chosen(prefs, provider),
                 console_url=provider.console_url,
                 key_placeholder=provider.key_placeholder,
                 key_days_left=engine.byok_days_left(prefs, provider.id),
@@ -1012,7 +1027,12 @@ def settings(
         prefs = _prefs(paths)
         pid = body.provider or prefs.get("llm_provider") or llm.default_provider_id()
         provider = llm.PROVIDERS.get(pid)
-        if provider is None or body.model not in provider.models:
+        if (
+            provider is None
+            or not provider.accepts_model(body.model)
+            or not _served(paths, provider, body.model,
+                           session_keys(x_chat_provider, x_chat_key))
+        ):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"{pid} does not serve a model called {body.model!r}",
@@ -1025,6 +1045,79 @@ def settings(
     if changes:
         accounts.update_prefs(paths.prefs, changes)
     return _state(paths, session_keys(x_chat_provider, x_chat_key))
+
+
+def _served(paths: UserPaths, provider: llm.Provider, model: str,
+            held: dict[str, str]) -> bool:
+    """False only when the vendor was asked and its list leaves `model` out.
+
+    A curated model is taken as served. Anything else is checked against the
+    key's own listing when there is a key (or a public catalogue) to ask
+    with; a listing that fails, or no key yet, takes the reader's word — the
+    turn is where a wrong slug finally shows, by falling to the next provider.
+    """
+    if model in provider.models:
+        return True
+    key = _key_for(paths, provider.id, held)
+    if not key and not provider.public_models:
+        return True
+    try:
+        return model in provider.list_models(key)
+    except Exception as exc:
+        obs.warn("chat.models.list_failed", provider=provider.id,
+                 error_type=type(exc).__name__, error=str(exc)[:200])
+        return True
+
+
+class Models(BaseModel):
+    """What a provider serves, for the model picker's "other model" field."""
+
+    provider: str
+    models: list[str]
+    live: bool = Field(
+        description=(
+            "True when the list came from the provider itself, for this key. "
+            "False is the curated list: no key yet, or the provider would not say."
+        )
+    )
+
+
+@router.get(
+    "/models/{provider}", response_model=Models, summary="Every model a provider serves"
+)
+def models(
+    provider: str,
+    paths: Account,
+    x_chat_provider: str | None = Header(default=None),
+    x_chat_key: str | None = Header(default=None),
+) -> Models:
+    """The provider's own catalogue, asked with the key this account would use.
+
+    The curated `models` in the state are where the picker starts; this is
+    the rest of what the reader's key can reach, so a model the vendor shipped
+    last week is a pick rather than a release away. Listed through the
+    session's key when it brought one, else the stored one; never the
+    operator's.
+    """
+    known = llm.PROVIDERS.get(provider)
+    if known is None or not known.available():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"no provider {provider}"
+        )
+    if not known.needs_key:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{provider} picks its own model",
+        )
+    key = _key_for(paths, provider, session_keys(x_chat_provider, x_chat_key))
+    if key or known.public_models:
+        try:
+            return Models(provider=provider, models=known.list_models(key), live=True)
+        except Exception as exc:
+            llm.note_failure(known, key, exc)
+            obs.warn("chat.models.list_failed", provider=provider,
+                     error_type=type(exc).__name__, error=str(exc)[:200])
+    return Models(provider=provider, models=list(known.models), live=False)
 
 
 # --------------------------------------------------------------- one turn

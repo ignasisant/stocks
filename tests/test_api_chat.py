@@ -324,13 +324,115 @@ def test_the_provider_and_its_model_are_set_together_and_read_back(
     assert stored[f"{picked['id']}_model"] == second
 
 
-def test_a_model_that_backend_does_not_serve_is_refused(client, account, signed_in):
-    offered = signed_in.get("/v1/chat/state").json()["providers"][0]
+def test_a_model_that_is_not_a_model_id_is_refused(client, account, signed_in):
     response = signed_in.patch(
-        "/v1/chat/settings", json={"provider": offered["id"], "model": "gpt-9"}
+        "/v1/chat/settings", json={"provider": "anthropic", "model": "gpt 9; rm -rf"}
     )
     assert response.status_code == 422
     assert "llm_provider" not in json.loads(account.prefs.read_text())
+
+
+@pytest.fixture
+def lists(monkeypatch):
+    """Give `pid` a vendor listing that answers `served` and records the key."""
+    import dataclasses
+
+    from stocks.web import llm
+
+    monkeypatch.setattr(llm, "_model_lists", {})
+    asked: list[str] = []
+
+    def install(pid, served):
+        def lister(key):
+            asked.append(key)
+            if isinstance(served, Exception):
+                raise served
+            return list(served)
+
+        monkeypatch.setitem(llm.PROVIDERS, pid, dataclasses.replace(
+            llm.PROVIDERS[pid], _list_models=lister))
+        return asked
+
+    return install
+
+
+def test_a_model_beyond_the_curated_list_is_kept_and_shown(
+    client, account, signed_in, lists
+):
+    """The point of the picker's "other model": whatever the reader's key can
+    reach, not only the handful the registry names."""
+    lists("anthropic", ["claude-opus-4-1", "claude-opus-5"])
+    body = signed_in.patch(
+        "/v1/chat/settings",
+        json={"provider": "anthropic", "model": "claude-opus-4-1"},
+        headers={"X-Chat-Provider": "anthropic", "X-Chat-Key": "sk-ant-session-key"},
+    ).json()
+    claude = next(p for p in body["providers"] if p["id"] == "anthropic")
+    assert claude["model"] == "claude-opus-4-1"
+    # Appended, so the select has an option to show as chosen.
+    assert claude["models"][-1] == "claude-opus-4-1"
+    assert json.loads(account.prefs.read_text())["anthropic_model"] == "claude-opus-4-1"
+
+
+def test_a_model_the_key_cannot_reach_is_refused(client, account, signed_in, lists):
+    lists("anthropic", ["claude-opus-5"])
+    response = signed_in.patch(
+        "/v1/chat/settings",
+        json={"provider": "anthropic", "model": "claude-imaginary-9"},
+        headers={"X-Chat-Provider": "anthropic", "X-Chat-Key": "sk-ant-session-key"},
+    )
+    assert response.status_code == 422
+    assert "anthropic_model" not in json.loads(account.prefs.read_text())
+
+
+def test_without_a_key_to_ask_with_the_reader_s_word_is_taken(
+    client, account, signed_in, lists
+):
+    """No key yet means nobody to ask; refusing would make the reader paste a
+    key before they may type a model name."""
+    asked = lists("anthropic", RuntimeError("never called"))
+    response = signed_in.patch(
+        "/v1/chat/settings", json={"provider": "anthropic", "model": "claude-opus-4-1"}
+    )
+    assert response.status_code == 200
+    assert asked == []
+
+
+def test_the_catalogue_is_asked_with_the_reader_s_own_key(
+    client, account, signed_in, lists
+):
+    asked = lists("anthropic", ["claude-opus-4-1", "claude-opus-5"])
+    body = signed_in.get(
+        "/v1/chat/models/anthropic",
+        headers={"X-Chat-Provider": "anthropic", "X-Chat-Key": "sk-ant-session-key"},
+    ).json()
+    assert body == {"provider": "anthropic", "live": True,
+                    "models": ["claude-opus-4-1", "claude-opus-5"]}
+    assert asked == ["sk-ant-session-key"]
+
+
+def test_the_catalogue_falls_back_to_the_curated_list(
+    client, account, signed_in, lists
+):
+    from stocks.web import llm
+
+    lists("anthropic", RuntimeError("vendor down"))
+    no_key = signed_in.get("/v1/chat/models/anthropic").json()
+    assert no_key["live"] is False
+    assert no_key["models"] == list(llm.PROVIDERS["anthropic"].models)
+    failed = signed_in.get(
+        "/v1/chat/models/anthropic",
+        headers={"X-Chat-Provider": "anthropic", "X-Chat-Key": "sk-ant-session-key"},
+    ).json()
+    assert failed["live"] is False
+
+
+def test_the_keyless_chain_has_no_catalogue(client, account, signed_in, monkeypatch):
+    from stocks.web import llm
+
+    monkeypatch.setattr(llm, "_free_backends", lambda: ["one"])
+    assert signed_in.get("/v1/chat/models/free").status_code == 409
+    assert signed_in.get("/v1/chat/models/skynet").status_code == 404
 
 
 def test_a_provider_this_deployment_does_not_offer_is_refused(

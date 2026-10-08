@@ -33,7 +33,14 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "../shell/i18n";
 import { ApiError } from "../shell/api";
 import { Status } from "../ui/Status";
-import { forgetKey, readState, revealKey, storeKey } from "./api";
+import {
+  forgetKey,
+  readModels,
+  readState,
+  revealKey,
+  saveSettings,
+  storeKey,
+} from "./api";
 import { ConnectFailed, connectUrl, finishConnect, type ConnectAsk } from "./connect";
 import { keyError, providerLabel, providerTag } from "./format";
 import { Glyph, ProviderMark } from "./icons";
@@ -308,6 +315,166 @@ function Key({
   );
 }
 
+/** The select's own value for "type another one", never a model id. */
+const OTHER = "\u0000other";
+
+/**
+ * The provider's model: the curated few in a select, and any other its key can
+ * reach behind "Other model…".
+ *
+ * The curated list is where most readers stop, so it stays one tap. The rest
+ * is the vendor's own catalogue (`GET /chat/models/{provider}`), read only
+ * once the reader asks for it — it is hundreds of ids on OpenRouter — and
+ * offered as suggestions on a free-text field rather than a second select,
+ * because typing "sonnet" is how anyone finds one model in that list. Saved
+ * directly rather than through `onSave`: the server checks the id against
+ * the same catalogue, and its refusal belongs under this field.
+ */
+function Model({
+  provider,
+  busy,
+  onSave,
+  onState,
+}: {
+  provider: ProviderInfo;
+  busy: boolean;
+  onSave: (patch: SettingsPatch) => void;
+  onState: (next: ChatState) => void;
+}) {
+  const t = useT();
+  const uid = useId();
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [listed, setListed] = useState<{ models: string[]; live: boolean } | null>(
+    null,
+  );
+  const [working, setWorking] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || listed) return;
+    let gone = false;
+    readModels(provider.id)
+      .then((body) => !gone && setListed(body))
+      .catch(() => !gone && setListed({ models: [], live: false }));
+    return () => {
+      gone = true;
+    };
+  }, [open, listed, provider.id]);
+
+  const save = async () => {
+    const model = typed.trim();
+    if (!model || working) return;
+    setWorking(true);
+    setFailed(null);
+    try {
+      onState(await saveSettings({ provider: provider.id, model }));
+      setOpen(false);
+      setTyped("");
+    } catch (failure) {
+      setFailed(
+        failure instanceof ApiError && failure.status === 422
+          ? "chat.model_unknown"
+          : "chat.api_error",
+      );
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  return (
+    <>
+      <select
+        className="ag-chat-select"
+        value={open ? OTHER : provider.model}
+        aria-label={t("chat.model")}
+        disabled={busy || working}
+        onChange={(event) => {
+          const value = event.target.value;
+          if (value === OTHER) {
+            setOpen(true);
+            setFailed(null);
+            return;
+          }
+          setOpen(false);
+          onSave({ provider: provider.id, model: value });
+        }}
+      >
+        {provider.models.map((model) => (
+          <option key={model} value={model}>
+            {model}
+          </option>
+        ))}
+        {provider.needs_key && <option value={OTHER}>{t("chat.model_other")}</option>}
+      </select>
+
+      {open && (
+        <form
+          className="ag-chat-key"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save();
+          }}
+        >
+          <p className="ag-chat-hint">
+            {listed === null
+              ? t("chat.model_listing", { provider: provider.label })
+              : listed.live
+                ? t("chat.model_listed", {
+                    count: listed.models.length,
+                    provider: provider.label,
+                  })
+                : t("chat.model_type", { provider: provider.label })}
+          </p>
+          <input
+            type="text"
+            value={typed}
+            list={`${uid}-models`}
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            maxLength={128}
+            placeholder={provider.models[0]}
+            aria-label={t("chat.model_other_label", { provider: provider.label })}
+            onChange={(event) => setTyped(event.target.value)}
+          />
+          <datalist id={`${uid}-models`}>
+            {(listed?.models ?? []).map((model) => (
+              <option key={model} value={model} />
+            ))}
+          </datalist>
+          <div className="ag-chat-import-acts">
+            <button
+              type="submit"
+              className="ag-chat-btn ag-chat-btn-on"
+              disabled={busy || working || !typed.trim()}
+            >
+              {t("chat.model_use")}
+            </button>
+            <button
+              type="button"
+              className="ag-chat-btn"
+              disabled={working}
+              onClick={() => {
+                setOpen(false);
+                setFailed(null);
+              }}
+            >
+              {t("chat.cancel")}
+            </button>
+          </div>
+          {working && <Status label={t("chat.model_checking")} />}
+          {failed && (
+            <p className="ag-chat-note">
+              {t(failed, { model: typed.trim(), provider: provider.label })}
+            </p>
+          )}
+        </form>
+      )}
+    </>
+  );
+}
+
 /** What a tile says about itself under its name, or "" when it has nothing. */
 function useTag() {
   const t = useT();
@@ -415,22 +582,14 @@ export function Settings({
       {picked && (
         <>
           <Group>{t("chat.sec_model")}</Group>
-          {picked.models.length > 1 ? (
-            <select
-              className="ag-chat-select"
-              value={picked.model}
-              aria-label={t("chat.model")}
-              disabled={busy}
-              onChange={(event) =>
-                onSave({ provider: picked.id, model: event.target.value })
-              }
-            >
-              {picked.models.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
+          {picked.needs_key || picked.models.length > 1 ? (
+            <Model
+              key={picked.id}
+              provider={picked}
+              busy={busy}
+              onSave={onSave}
+              onState={onState}
+            />
           ) : (
             <p className="ag-chat-hint">{picked.model}</p>
           )}
