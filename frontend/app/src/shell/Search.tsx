@@ -336,7 +336,10 @@ function Row({
       ) : (
         <span className="ag-search-logo" aria-hidden="true" />
       )}
-      <span className="ag-search-ticker">{ticker}</span>
+      {/* The resolved symbol, as every ticker cell prints it: a broker's code
+          (RCF) reads as the listing it stands for (TEP.PA). The pick still
+          hands on the stored label. */}
+      <span className="ag-search-ticker">{profile?.symbol || ticker}</span>
       {company ? <span className="ag-search-name">{company}</span> : null}
       {/* "XEON" alone does not say it is cash: the kind before the venue, so
           a share, a fund, a coin and an index are told apart in the list. */}

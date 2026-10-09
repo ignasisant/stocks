@@ -24,7 +24,21 @@ import { metric, money, percent, score, verdictTone } from "./format";
 import type { ReviewRow } from "./types";
 
 /** Under this many rows the whole list is on screen: no box. */
-const FIND_MIN = 6;
+export const FIND_MIN = 6;
+
+/**
+ * The words a search box matches a row by, beyond its symbol: the company's
+ * name, its sector in Yahoo's and the app's spelling, and its verdict.
+ */
+export function useRowWords(): (row: ReviewRow) => (string | null | undefined)[] {
+  const t = useT();
+  return (row) => [
+    cachedName(row.symbol) ?? cachedName(row.ticker),
+    row.sector,
+    maybe(t, `sentiment.sector_${bucket(row)}`),
+    t(`review.verdict_${row.verdict}`),
+  ];
+}
 
 /**
  * A table's search box and the rows it leaves. The box is the shell's search
@@ -33,12 +47,7 @@ const FIND_MIN = 6;
 function useFind(rows: ReviewRow[]): { rows: ReviewRow[]; box: ReactNode } {
   const t = useT();
   const [needle, setNeedle] = useState("");
-  const words = (row: ReviewRow) => [
-    cachedName(row.symbol) ?? cachedName(row.ticker),
-    row.sector,
-    maybe(t, `sentiment.sector_${bucket(row)}`),
-    t(`review.verdict_${row.verdict}`),
-  ];
+  const words = useRowWords();
   const found = findRows(rows, needle, words);
   if (rows.length < FIND_MIN) return { rows, box: null };
   const query = needle.trim();
