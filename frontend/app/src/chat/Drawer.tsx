@@ -19,7 +19,11 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { send } from "../shell/api";
 import { useT } from "../shell/i18n";
-import { useAssistantAsks, useAssistantThreads } from "../shell/assistant";
+import {
+  useAssistantAsks,
+  useAssistantDrafts,
+  useAssistantThreads,
+} from "../shell/assistant";
 import { useSession } from "../shell/session";
 import { Glyph } from "./icons";
 import { useRoute } from "../shell/router";
@@ -120,6 +124,18 @@ export function Drawer() {
     [show],
   );
   useAssistantThreads(onThread);
+
+  // A page wrote a question for the reader to send (Review's "Ask the AI"):
+  // the panel puts it in the composer once it is drawn, and sends nothing.
+  const [draft, setDraft] = useState<string | null>(null);
+  const onDraft = useCallback(
+    (prompt: string) => {
+      setDraft(prompt);
+      show(true);
+    },
+    [show],
+  );
+  useAssistantDrafts(onDraft);
 
   const { state, busy, send: ask } = chat;
   useEffect(() => {
@@ -309,6 +325,8 @@ export function Drawer() {
               onMemoryTaken={() => setMemory(false)}
               thread={thread}
               onThreadTaken={() => setThread(null)}
+              draft={draft}
+              onDraftTaken={() => setDraft(null)}
               onClose={() => show(false)}
               onPark={() => {
                 show(false);

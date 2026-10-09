@@ -33,10 +33,12 @@ import {
   readThread,
   pressSurface,
   readThreads,
+  rejoin,
   run,
   runInput,
   saveSettings,
   startThread,
+  stopRun,
   undoProposal,
 } from "./api";
 import {
@@ -50,14 +52,20 @@ import {
 import { nameOf, reportUnreadable } from "../pages/import/api";
 import type { A2uiAction } from "./a2ui";
 import type {
+  Arguing,
   ChatState,
   Conversation,
+  Done,
   Edits,
   ImportRow,
   Preview,
   Proposal,
+  LiveStep,
+  Meta,
   Rating,
+  Recalled,
   SettingsPatch,
+  Thread,
   ToolCall,
   Turn,
 } from "./types";
@@ -103,6 +111,28 @@ const settled = (
         }
       : call,
   );
+
+/** What a run says as it is written, as `track` paints it into the turn. */
+type Listeners = {
+  meta: (meta: Meta) => void;
+  text: (chunk: string) => void;
+  phase: (phase: string) => void;
+  tool: (line: LiveStep) => void;
+  side: (side: Arguing) => void;
+  recalled: (recalled: Recalled[]) => void;
+};
+
+/** The request that opens a run's stream: `run` for a question, or `rejoin`. */
+type Opener = (signal: AbortSignal, on: Listeners) => Promise<Done>;
+
+/** Times a dropped stream is followed again before the turn is given up. */
+const REJOINS = 3;
+
+/** Away this long, a stream still open is not trusted to be alive. */
+const AWAY_MS = 15_000;
+
+/** The ending a stopped run is logged with (`routes/chat.py` STOPPED). */
+const STOPPED = "chat.stopped";
 
 /** Whether this turn is one the server never stored — a refusal or a stop. */
 const unfiled = (turn: Turn | undefined): boolean =>
@@ -162,6 +192,18 @@ export function useChat(live: boolean) {
   const frame = useRef(0);
   // The turn in flight, so that Stop has something to pull on.
   const flight = useRef<AbortController | null>(null);
+  // The run it is, so Stop can name it to the server (`stopRun`).
+  const runId = useRef<string | null>(null);
+  // Set by Stop, so the abort reads as the reader's own rather than as a
+  // stream cut from under them, which is followed again (`track`).
+  const stopping = useRef(false);
+  // Bumped by `detach`: a run followed under an older one writes nothing.
+  const generation = useRef(0);
+  // The open thread, for callbacks that must not change with it.
+  const activeRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeRef.current = activeId;
+  }, [activeId]);
   // The statement on the card, held while the card is up: a corrected column
   // mapping reads it again, and the server keeps no copy to read.
   const staged = useRef<File | null>(null);
@@ -183,44 +225,6 @@ export function useChat(live: boolean) {
     guideRead.current = true;
     readGuide().then(setGuide, () => setGuide(null));
   }, [live]);
-
-  // Once per mount, and keyed on nothing the read itself changes: `refresh()`
-  // sets `state` halfway through, and an effect that depended on `state` was
-  // torn down by its own first write — `alive` went false before the thread
-  // was read, so the drawer opened on the empty state over a thread that had
-  // turns in it (the guide's welcome, most visibly).
-  const opened = useRef(false);
-  useEffect(() => {
-    if (!live || opened.current) return;
-    opened.current = true;
-    let alive = true;
-    let done = false;
-    (async () => {
-      try {
-        const list = await refresh();
-        const open = list.find((c) => c.active) ?? list[0];
-        if (alive && open) {
-          setActiveId(open.id);
-          const thread = await readThread(open.id);
-          if (alive) setTurns(thread.messages.map((m) => ({ ...m })));
-        }
-      } catch {
-        if (alive) setFailed(true);
-      } finally {
-        // Whatever the opening read found — a thread, none, or a failure —
-        // it is over, and nothing that switches threads may start before it
-        // or the late answer would paint the wrong conversation over it.
-        if (alive) setReady(true);
-        done = true;
-      }
-    })();
-    return () => {
-      alive = false;
-      // Closed (or unmounted) before the read landed: let the next open try
-      // again rather than leave a drawer that never loaded.
-      if (!done) opened.current = false;
-    };
-  }, [live, refresh]);
 
   const write = useCallback((edit: (turn: Turn) => Turn) => {
     setTurns((list) => {
@@ -246,74 +250,168 @@ export function useChat(live: boolean) {
     return tail;
   }, []);
 
-  const send = useCallback(
-    async (text: string, spoken = false, again = false) => {
-      const message = text.trim();
-      // A second send while one is in flight is refused, not queued: the
-      // engine writes one thread and the second turn would land inside the
-      // first one's history half-written.
-      if ((!message && !again) || busy) return;
-      setBusy(true);
-      setModel(null);
-      const started = Date.now();
-      const control = new AbortController();
-      flight.current = control;
-      // Who was supposed to answer, read before the question goes out. The
-      // `meta` frame names who actually did, and the pair is the whole of
-      // `chat.fallback_note` — read afterwards it would name whoever the next
-      // state refresh put at the head of the chain instead.
-      const chose = state?.answering ?? null;
-      // Regenerating rewinds the thread server-side, so the question stays
-      // where it is on screen and only the answer under it is replaced.
-      setTurns((list) => [
-        ...(again ? list.slice(0, -1) : list),
-        ...(again ? [] : [{ ...blank("user", message), ts: started, spoken } as Turn]),
-        { ...blank("assistant", ""), pending: true },
-      ]);
-      // Read when the question goes out, not when it is answered: a reader who
-      // navigates while the answer is written asked about the page they were on.
-      const where = { view, ...(focus ? { focus } : {}) };
-      try {
-        const done = await run(
-          runInput(again ? { regenerate: true } : { message }, {
-            conversation: activeId ?? undefined,
-            lang,
-            ...where,
-            // A card is waiting: "import these" is answered with its button.
-            staged_import: preview?.filename,
-          }),
-          (meta) => {
-            setModel(meta.model);
-            write((turn) => ({
-              ...turn,
-              skills: meta.skills,
-              by: meta.provider,
-              ...(chose ? { chose } : {}),
-            }));
-          },
-          (chunk) => {
-            pending.current += chunk;
-            if (!frame.current) frame.current = requestAnimationFrame(flush);
-          },
-          (phase) => write((turn) => ({ ...turn, phase })),
-          control.signal,
-          (line) =>
-            write((turn) => ({
-              ...turn,
-              live: turn.live?.some((known) => known.id === line.id)
-                ? turn.live.map((known) => (known.id === line.id ? line : known))
-                : [...(turn.live ?? []), line],
-            })),
-          (side) =>
-            write((turn) => ({
-              ...turn,
-              arguing: turn.arguing?.some((known) => known.id === side.id)
-                ? turn.arguing.map((known) => (known.id === side.id ? side : known))
-                : [...(turn.arguing ?? []), side],
-            })),
-          (recalled) => write((turn) => ({ ...turn, recalled })),
-        );
+  /**
+   * Leave the run this tab is following without stopping it: the reader
+   * opened another thread. The answer goes on being written on the server,
+   * onto the thread it was asked on (which shows it again on return, as
+   * `running`), and none of its words may land in the thread opened instead.
+   */
+  const detach = useCallback(() => {
+    if (!flight.current) return;
+    generation.current += 1;
+    flight.current.abort();
+    flight.current = null;
+    runId.current = null;
+    settle();
+    setBusy(false);
+  }, [settle]);
+
+  /**
+   * Follow run `rid` into the last turn until it ends, and write how it ended.
+   *
+   * `first` opens it: the POST for a question, or a `rejoin` for a thread
+   * found still being answered. The server answers whether anyone reads or not
+   * (`api/runs.py`), so a stream that drops with no ending — a phone that slept,
+   * a tab back from the background — is followed again from its first event
+   * rather than given up on, and a run the server has since forgotten leaves
+   * the thread on disk as the answer.
+   */
+  const track = useCallback(
+    async (
+      rid: string,
+      first: Opener,
+      started: number,
+      chose: string | null,
+      rejoined = false,
+    ) => {
+      const gen = generation.current;
+      const mine = () => gen === generation.current;
+      const on: Listeners = {
+        meta: (meta) => {
+          setModel(meta.model);
+          write((turn) => ({
+            ...turn,
+            skills: meta.skills,
+            by: meta.provider,
+            ...(chose ? { chose } : {}),
+          }));
+        },
+        text: (chunk) => {
+          pending.current += chunk;
+          if (!frame.current) frame.current = requestAnimationFrame(flush);
+        },
+        phase: (phase) => write((turn) => ({ ...turn, phase })),
+        tool: (line) =>
+          write((turn) => ({
+            ...turn,
+            live: turn.live?.some((known) => known.id === line.id)
+              ? turn.live.map((known) => (known.id === line.id ? line : known))
+              : [...(turn.live ?? []), line],
+          })),
+        side: (side) =>
+          write((turn) => ({
+            ...turn,
+            arguing: turn.arguing?.some((known) => known.id === side.id)
+              ? turn.arguing.map((known) => (known.id === side.id ? side : known))
+              : [...(turn.arguing ?? []), side],
+          })),
+        recalled: (recalled) => write((turn) => ({ ...turn, recalled })),
+      };
+      // Stopped, not failed. The words that arrived are kept and marked as cut
+      // short; the server recorded none of it, so the thread is unchanged and
+      // only the spent allowance is worth re-reading.
+      const cut = async () => {
+        const tail = settle();
+        write((turn) => ({
+          ...turn,
+          content: turn.content + tail,
+          pending: false,
+          phase: undefined,
+          live: undefined,
+          arguing: undefined,
+          stopped: true,
+          ts: Date.now(),
+          took: (Date.now() - started) / 1000,
+        }));
+        await refresh().catch(() => {});
+      };
+      const fail = (error: string, wait?: number) => {
         settle();
+        write((turn) => ({
+          ...turn,
+          pending: false,
+          phase: undefined,
+          live: undefined,
+          arguing: undefined,
+          error,
+          ...(wait !== undefined ? { wait } : {}),
+        }));
+      };
+      setBusy(true);
+      runId.current = rid;
+      stopping.current = false;
+      let open = first;
+      let control: AbortController | null = null;
+      try {
+        for (let tries = 0; ; tries++) {
+          control = new AbortController();
+          flight.current = control;
+          let done: Done | null = null;
+          try {
+            done = await open(control.signal, on);
+          } catch (failure) {
+            if (!mine()) return;
+            if (stopping.current) return await cut();
+            if (failure instanceof ApiError) {
+              // Forgotten: ended a while ago, or the server restarted. What
+              // the thread on disk holds is the answer, if there is one.
+              if (failure.status === 404 && (rejoined || open !== first))
+                return await recover();
+              // The burst wall (`web/ratelimit.allow`). Not a fault, and not
+              // unfiled forever either: Retry lands once the window moves.
+              if (failure.status === 429)
+                return fail("chat.rate_limited", failure.retryAfter);
+              return fail("chat.api_error");
+            }
+            // The network, or a tab back from sleep: follow it again.
+          }
+          if (!mine()) return;
+          if (done && !done.lost) return await finish(done);
+          if (tries >= REJOINS) return fail("chat.api_error");
+          // A rejoin replays the run from its first event: start the turn over.
+          settle();
+          write((turn) => ({
+            ...turn,
+            content: "",
+            phase: undefined,
+            live: undefined,
+            arguing: undefined,
+            recalled: undefined,
+          }));
+          await new Promise((wake) => setTimeout(wake, 1000 * tries));
+          if (!mine()) return;
+          if (stopping.current) return await cut();
+          open = (signal, listen) =>
+            rejoin(
+              rid,
+              listen.meta,
+              listen.text,
+              listen.phase,
+              signal,
+              listen.tool,
+              listen.side,
+              listen.recalled,
+            );
+        }
+      } finally {
+        if (flight.current === control) flight.current = null;
+        if (runId.current === rid) runId.current = null;
+        if (mine()) setBusy(false);
+      }
+
+      async function finish(done: Done) {
+        settle();
+        if (done.error === STOPPED) return cut(); // another window's Stop
         const took = (Date.now() - started) / 1000;
         write((turn) => ({
           ...turn,
@@ -362,44 +460,161 @@ export function useChat(live: boolean) {
         if (!done.error) {
           const list = await refresh();
           const open = list.find((c) => c.active);
-          if (open) setActiveId(open.id);
+          if (open && mine()) setActiveId(open.id);
         }
-      } catch (failure) {
-        const tail = settle();
-        if (control.signal.aborted) {
-          // Stopped, not failed. The words that arrived are kept and marked
-          // as cut short; the server recorded none of it, so the thread is
-          // unchanged and only the spent allowance is worth re-reading.
-          write((turn) => ({
-            ...turn,
-            content: turn.content + tail,
-            pending: false,
-            live: undefined,
-            arguing: undefined,
-            stopped: true,
-            ts: Date.now(),
-            took: (Date.now() - started) / 1000,
-          }));
-          await refresh().catch(() => {});
-        } else if (failure instanceof ApiError && failure.status === 429) {
-          // The burst wall (`web/ratelimit.allow`). Not a fault,
-          // and not unfiled forever either: Retry lands once the window moves.
-          write((turn) => ({
-            ...turn,
-            pending: false,
-            error: "chat.rate_limited",
-            wait: failure.retryAfter,
-          }));
-        } else {
-          write((turn) => ({ ...turn, pending: false, error: "chat.api_error" }));
-        }
-      } finally {
-        flight.current = null;
-        setBusy(false);
+      }
+
+      async function recover() {
+        const list = await refresh().catch(() => null);
+        const cid = activeRef.current ?? list?.find((c) => c.active)?.id;
+        const thread = cid ? await readThread(cid).catch(() => null) : null;
+        if (!mine()) return;
+        const stored = thread?.messages ?? [];
+        if (stored[stored.length - 1]?.role === "assistant") {
+          settle();
+          setTurns(stored.map((m) => ({ ...m })));
+        } else fail("chat.api_error");
       }
     },
-    [activeId, busy, flush, focus, lang, preview, refresh, settle, state, view, write],
+    [flush, refresh, settle, write],
   );
+
+  // A phone that slept, or a tab left in the background, can hold a stream
+  // that is dead without saying so. Back after a while, it is followed again
+  // from the server's log rather than trusted (`track`).
+  const hiddenAt = useRef(0);
+  useEffect(() => {
+    const seen = () => {
+      if (document.hidden) {
+        hiddenAt.current = Date.now();
+        return;
+      }
+      const away = hiddenAt.current ? Date.now() - hiddenAt.current : 0;
+      hiddenAt.current = 0;
+      if (away > AWAY_MS && !stopping.current) flight.current?.abort();
+    };
+    document.addEventListener("visibilitychange", seen);
+    return () => document.removeEventListener("visibilitychange", seen);
+  }, []);
+
+  const send = useCallback(
+    async (text: string, spoken = false, again = false) => {
+      const message = text.trim();
+      // A second send while one is in flight is refused, not queued: one
+      // thread takes one answer at a time, and the server says 409 anyway.
+      if ((!message && !again) || busy) return;
+      setModel(null);
+      const started = Date.now();
+      // Who was supposed to answer, read before the question goes out. The
+      // `meta` frame names who actually did, and the pair is the whole of
+      // `chat.fallback_note` — read afterwards it would name whoever the next
+      // state refresh put at the head of the chain instead.
+      const chose = state?.answering ?? null;
+      // Regenerating rewinds the thread server-side, so the question stays
+      // where it is on screen and only the answer under it is replaced.
+      setTurns((list) => [
+        ...(again ? list.slice(0, -1) : list),
+        ...(again ? [] : [{ ...blank("user", message), ts: started, spoken } as Turn]),
+        { ...blank("assistant", ""), pending: true },
+      ]);
+      // Read when the question goes out, not when it is answered: a reader who
+      // navigates while the answer is written asked about the page they were on.
+      const where = { view, ...(focus ? { focus } : {}) };
+      const input = runInput(again ? { regenerate: true } : { message }, {
+        conversation: activeId ?? undefined,
+        lang,
+        ...where,
+        // A card is waiting: "import these" is answered with its button.
+        staged_import: preview?.filename,
+      });
+      await track(
+        input.runId,
+        (signal, on) =>
+          run(input, on.meta, on.text, on.phase, signal, on.tool, on.side, on.recalled),
+        started,
+        chose,
+      );
+    },
+    [activeId, busy, focus, lang, preview, state, track, view],
+  );
+
+  /**
+   * Show `thread`, and follow the turn still being answered on it, if any —
+   * a question asked before the reader left, picked up where it stands.
+   */
+  const show = useCallback(
+    (thread: Thread) => {
+      const stored = thread.messages.map((m) => ({ ...m }));
+      const running = thread.running;
+      if (!running || flight.current) {
+        setTurns(stored);
+        return;
+      }
+      setTurns([
+        ...stored,
+        blank("user", running.question),
+        { ...blank("assistant", ""), pending: true },
+      ]);
+      setModel(null);
+      const rid = running.run_id;
+      void track(
+        rid,
+        (signal, on) =>
+          rejoin(
+            rid,
+            on.meta,
+            on.text,
+            on.phase,
+            signal,
+            on.tool,
+            on.side,
+            on.recalled,
+          ),
+        Date.now(),
+        null,
+        true,
+      );
+    },
+    [track],
+  );
+
+  // Once per mount, and keyed on nothing the read itself changes: `refresh()`
+  // sets `state` halfway through, and an effect that depended on `state` was
+  // torn down by its own first write — `alive` went false before the thread
+  // was read, so the drawer opened on the empty state over a thread that had
+  // turns in it (the guide's welcome, most visibly).
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!live || opened.current) return;
+    opened.current = true;
+    let alive = true;
+    let done = false;
+    (async () => {
+      try {
+        const list = await refresh();
+        const open = list.find((c) => c.active) ?? list[0];
+        if (alive && open) {
+          setActiveId(open.id);
+          const thread = await readThread(open.id);
+          if (alive) show(thread);
+        }
+      } catch {
+        if (alive) setFailed(true);
+      } finally {
+        // Whatever the opening read found — a thread, none, or a failure —
+        // it is over, and nothing that switches threads may start before it
+        // or the late answer would paint the wrong conversation over it.
+        if (alive) setReady(true);
+        done = true;
+      }
+    })();
+    return () => {
+      alive = false;
+      // Closed (or unmounted) before the read landed: let the next open try
+      // again rather than leave a drawer that never loaded.
+      if (!done) opened.current = false;
+    };
+  }, [live, refresh, show]);
 
   /**
    * Answer a proposal card: run the action (as edited) or drop it.
@@ -538,8 +753,14 @@ export function useChat(live: boolean) {
     [lang],
   );
 
-  /** Cut the answer being written. Nothing is queued: the press is the abort. */
+  /**
+   * Cut the answer being written. Closing the stream only stops the reading
+   * now, so the server is told too; the abort is what makes it immediate.
+   */
   const stop = useCallback(() => {
+    stopping.current = true;
+    const rid = runId.current;
+    if (rid) void stopRun(rid).catch(() => {});
     flight.current?.abort();
   }, []);
 
@@ -611,28 +832,34 @@ export function useChat(live: boolean) {
     );
   }, []);
 
-  const open = useCallback(async (cid: string) => {
-    setActiveId(cid);
-    setTurns([]);
-    setOpening(true);
-    try {
-      await editThread(cid, { active: true });
-      const thread = await readThread(cid);
-      setTurns(thread.messages.map((m) => ({ ...m })));
-      setThreads((list) => (list ?? []).map((c) => ({ ...c, active: c.id === cid })));
-    } finally {
-      setOpening(false);
-    }
-  }, []);
+  const open = useCallback(
+    async (cid: string) => {
+      // Already on it, and an answer is being written into it: stay.
+      if (cid === activeRef.current && flight.current) return;
+      detach();
+      setActiveId(cid);
+      setTurns([]);
+      setOpening(true);
+      try {
+        await editThread(cid, { active: true });
+        show(await readThread(cid));
+        setThreads((list) => (list ?? []).map((c) => ({ ...c, active: c.id === cid })));
+      } finally {
+        setOpening(false);
+      }
+    },
+    [detach, show],
+  );
 
   const create = useCallback(async () => {
+    detach();
     // Pressing New twice cannot stack blanks: the API hands back the empty
     // thread that already exists.
     const thread = await startThread();
     setActiveId(thread.id);
     setTurns([]);
     await refresh();
-  }, [refresh]);
+  }, [detach, refresh]);
 
   const rename = useCallback(
     async (cid: string, title: string) => {
@@ -647,11 +874,13 @@ export function useChat(live: boolean) {
       await dropThread(cid);
       const list = await refresh();
       if (cid !== activeId) return;
+      detach();
       const open = list.find((c) => c.active) ?? list[0];
       setActiveId(open?.id ?? null);
-      setTurns(open ? (await readThread(open.id)).messages.map((m) => ({ ...m })) : []);
+      if (open) show(await readThread(open.id));
+      else setTurns([]);
     },
-    [activeId, refresh],
+    [activeId, detach, refresh, show],
   );
 
   /**
@@ -788,13 +1017,14 @@ export function useChat(live: boolean) {
       const next = await startGuide({ ...opts, lang });
       setGuide(next);
       if (next.thread) {
+        if (next.thread !== activeRef.current) detach();
         setActiveId(next.thread);
         await reread(next.thread);
         await refresh().catch(() => {});
       }
       return next;
     },
-    [lang, refresh, reread],
+    [detach, lang, refresh, reread],
   );
 
   /**

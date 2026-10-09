@@ -103,6 +103,10 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         ("/v1/sectors", "GET"),
         ("/v1/sectors/{sector}", "GET"),
         ("/v1/sectors/{sector}/verdict", "GET"),
+        # --- Review: the demo book judged, plus what the guest asks about --
+        # Computed from the book and cached fundamentals; `?add=` rides the
+        # URL and nothing is written.
+        ("/v1/review", "GET"),
         # --- Sentiment: the regime and the indices half -------------------
         ("/v1/pulse", "GET"),
         ("/v1/pulse/book", "GET"),

@@ -24,6 +24,7 @@ import functools
 import json
 import threading
 import uuid
+from collections.abc import Container
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -421,9 +422,25 @@ def _active(book: dict) -> dict:
     return book["conversations"][0]
 
 
-def load_chat(path: Path) -> list[dict]:
-    """The active conversation's turns (the historical single-thread API)."""
-    return _active(load_book(path))["messages"]
+def _pinned(book: dict, cid: str | None) -> dict:
+    """Conversation `cid`, or the active one when none is named or it is gone.
+
+    A turn names the thread it was asked in because the active pointer can
+    move while it is being answered: a chat run outlives its request
+    (`api/runs.py`), and the reader may open another thread before it lands.
+    `cid` missing from the book is a first thread that had no durable id yet
+    (`load_book` synthesizes one per read) or one deleted mid-turn."""
+    if cid:
+        for c in book["conversations"]:
+            if c["id"] == cid:
+                return c
+    return _active(book)
+
+
+def load_chat(path: Path, cid: str | None = None) -> list[dict]:
+    """The turns of conversation `cid`, or of the active one (the historical
+    single-thread API)."""
+    return _pinned(load_book(path), cid)["messages"]
 
 
 def memory_path(path: Path) -> Path:
@@ -432,8 +449,15 @@ def memory_path(path: Path) -> Path:
 
 
 @_locked
-def save_chat(history: list[dict], path: Path) -> None:
-    """Replace the active conversation's turns and stamp it as just used.
+def save_chat(history: list[dict], path: Path, cid: str | None = None) -> None:
+    """Replace a conversation's turns and stamp it as just used: `cid`'s when
+    it is named, the active one's otherwise.
+
+    A named thread that is not in the book falls back to the active one only
+    while that one's turns are where `history` started from — a first thread
+    that only now gets its id, never a thread the reader moved to while this
+    turn was being answered. That one would lose its turns to this history,
+    so the save is dropped instead (the thread it was for is gone anyway).
 
     Indexing rides along here rather than at the two call sites: every turn
     that reaches disk is a turn the assistant may need to recall later, and
@@ -441,7 +465,10 @@ def save_chat(history: list[dict], path: Path) -> None:
     one function. It is idempotent and best-effort — a failed index costs a
     worse search, never a lost message."""
     book = load_book(path)
-    conv = _active(book)
+    conv = _pinned(book, cid)
+    if cid and conv["id"] != cid and conv["messages"] != history[: len(conv["messages"])]:
+        obs.warn("chat.thread_gone", thread=cid)
+        return
     conv["messages"] = list(history)
     conv["updated"] = _now()
     save_book(book, path)
@@ -466,21 +493,24 @@ def list_conversations(path: Path) -> list[dict]:
     return sorted(metas, key=lambda m: m["updated"], reverse=True)
 
 
-def active_conversation(path: Path) -> dict:
-    """Metadata of the conversation the next turn will land in."""
-    c = _active(load_book(path))
+def active_conversation(path: Path, cid: str | None = None) -> dict:
+    """Metadata of the conversation the next turn will land in — or of `cid`,
+    the one a turn already in flight was asked in (`_pinned`)."""
+    c = _pinned(load_book(path), cid)
     return {k: v for k, v in c.items() if k != "messages"}
 
 
 @_locked
-def new_conversation(path: Path, title: str = "") -> str:
+def new_conversation(path: Path, title: str = "", busy: Container[str] = ()) -> str:
     """Start (and activate) an empty conversation; returns its id.
 
     An active conversation that is still empty is reused, so pressing New
-    repeatedly can't stack blank threads."""
+    repeatedly can't stack blank threads — unless it is in `busy`: a first
+    question still being answered has not been written yet, and reusing its
+    thread would hand the reader the one they meant to leave."""
     book = load_book(path)
     conv = _active(book)
-    if conv["messages"]:
+    if conv["messages"] or conv["id"] in busy:
         conv = _blank_conversation(title)
         book["conversations"].append(conv)
     elif title:

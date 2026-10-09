@@ -103,6 +103,80 @@ no Tailwind.
   into an ellipsis); then notes (`--ag-fs-sm` secondary); one `ag-btn` CTA
   to where the reader acts. Esc, backdrop and Close all close; focus goes to
   Close and back to the chip.
+- **Table head help** (`Head` in `pages/review/Explain.tsx`): label + `Help`
+  "?" inside the `th`, for any column whose number needs a definition. Row
+  pills/tags carry their rule as `title` on hover; KPI defs come from the
+  catalog (`kpi.<k>.desc`, `*` stripped), never re-written per page.
+- **Row details dialog** (`DetailsButton` / `Details`, `Explain.tsx`): terse
+  row (pill, two reasons, figure) + a way into the full story — a right
+  chevron in the table's last column (`aria-haspopup="dialog"`, 44px
+  coarse), "Details ›" under a card or dense row. It opens a dialog, never an
+  inline fold (a fold took the width of a ~17rem card and pushed the list a
+  screen down): `.ag-rev-modal`, the calendar's modal shell (veil, z 65,
+  card 38rem, 90dvh scroll inside), portalled to `body` because `.ag-main` is
+  a size container. Head = `TickerCell` + Close; then the rule, every reason
+  spelled out (name beside rule, rule drops under at <16rem — flex, never a
+  page query), the numbers as `dl` tiles (`--ag-surface-page` in the card,
+  `auto-fill minmax(min(100%,7.25rem),1fr)` → 2 abreast on a phone). Esc,
+  backdrop, Close close; focus to Close and back. A missing number reads
+  n/a, never drops out.
+- **Ticker picker in a page** (`Search` with `onPick` + `placeholder`): reuse
+  the top-bar search dropdown (results + recents) instead of a bare input;
+  picked tickers become removable chips (`TickerCell name={false}` + ×).
+- **Table search** (`pages/review/Tables.tsx`): a long table (≥6 rows) gets
+  its own `ag-search-field` box over it (sunken, ≤22rem, 44px coarse),
+  matching symbol, cached name, sector and verdict words, case and accents
+  folded; narrows only that table, with a "3 of 44" / "nothing matches"
+  caption while typed in.
+- **Out-of-scope rows**: rows a screen cannot judge (coins on Review: no
+  filings) leave the read before it is drawn — no table of n/a — and get one
+  caption line under the table with their share and a wrap of `TickerCell`s
+  + weight.
+- **Filter bar** (`pages/review/Filters.tsx`): folded by default behind one
+  "Filters" button (`ag-toggle` + filter_list icon + accent count badge of
+  picks, `aria-expanded`/`aria-controls`, on while open). While folded each
+  pick shows as a removable pill (`ag-toggle-on` + ×, "Remove filter: X")
+  and the "16 of 51 · Clear" count stays on the same line — a filtered read
+  never looks unfiltered. Open = the chip rows in a bordered `--ag-radius-md`
+  card under the bar. First row "Include" picks what
+  is compared at all (book / favourites / whole watchlist / each watchlist
+  group, union, `?in=`; tickers typed into the page always in; drawn only
+  when there are ≥2 sources; with no `?in=` it opens on the book alone —
+  `?in=all` is everything — unless nothing is held). Then `ToggleChip` rows in one grid,
+  muted `--ag-fs-xs` label column (`max-content`) beside the chips; multi-pick
+  chips carry a faint tabular count; "All" clears; a single-pick band clears
+  on a second press. Filters ride the URL and cut every section at once
+  (plan figures re-added client-side). A count line ("21 of 51", `aria-live`)
+  + a text "Clear" button appear only while filtered; filtered to nothing =
+  empty card with that one action. Under 640px (`@container ag-main`) labels
+  stack and each chip row scrolls sideways on one line — never four rows of
+  chips above the content.
+- **Page → assistant:** a question built from the page goes into the
+  composer unsent (`draftAssistant`), never auto-sent; the button says it
+  drafts and sits in `SignedInOnly` (no drawer for a guest).
+- **Ticker links inside a page:** each page styles its own `a.ag-tick`
+  (primary text, no underline, symbol underlined on hover) — otherwise the
+  browser default blue underline leaks in.
+- **SVG scatter labels** (`pages/review/labels.ts` `placeLabels`): placed
+  one by one in priority order (moves sell/trim/add/buy, then held, then
+  weight), each in the first free spot right → left → above → below, clear of
+  other labels, other dots, quadrant captions and y-tick labels, inside the
+  plot. No free spot = no label (the dot still opens the tooltip) — never two
+  labels on top of each other. Keep `PAD.right` ≥ 44px. Quadrant captions go
+  in the corners dots crowd least. On a phone (<560px wide) the plot is
+  near-square (height ≈ 0.95 × width, 260–420px) so the dots spread; legend
+  is a wrapping `ul` of key + words, plus the "tap a dot" hint. On the Review
+  page the map is the first section after the filters.
+- **Point tooltip** (`pages/review/QualityMap.tsx` `Tip`): never the SVG's
+  native `<title>` (~1s browser delay, OS chrome). The DS box (`.tk-tip` look:
+  surface-page, 1px border, radius-sm, shadow-overlay, fs-xs, tabular) opens
+  300ms after the mouse settles, at once on keyboard focus or a tap; Esc or a
+  tap elsewhere closes it. Placed by measuring: centred above the dot, below
+  when it does not fit, clamped 8px inside the plot. Head = symbol + verdict
+  `Chip`, name muted, figures "label muted / value bold", reasons as a list
+  under a rule. Dots are focusable (`tabIndex=0`, `role="img"`, full
+  `aria-label`), with an invisible ≥22px hit ring; fade 100ms, none under
+  reduced motion.
 - **Layers:** page modal `z-index: 65` — above the chat launcher and guide
   strip (60), below the open chat drawer (70); tour scrim 90 above all. A
   modal under 60 lets the launcher float over its scrim on a phone.

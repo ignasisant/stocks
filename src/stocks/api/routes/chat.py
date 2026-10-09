@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from typing import Literal
 
 from ag_ui.core import (
@@ -53,13 +53,13 @@ from ag_ui.core import (
     UserMessage,
 )
 from ag_ui.encoder import EventEncoder
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from stocks import accounts, navigation, obs
 from stocks.accounts import UserPaths
-from stocks.api import loaders
+from stocks.api import loaders, runs
 from stocks.api.deps import Account, ChatTurn, SurfaceAction, Writer
 from stocks.api.routes import chat_attach
 from stocks.chat import (
@@ -88,6 +88,9 @@ MAX_RUN_TOOLS = 8
 
 # The tool call a proposal arrives as, and the reason its interrupt names.
 CONFIRM_TOOL = "confirm_action"
+# The code a run cut by Stop ends on (`api/runs.py`): not a refusal, so the
+# drawer draws it as the stopped turn it already shows the reader who pressed.
+STOPPED = "chat.stopped"
 # What `resume[0].payload` may say about a proposal (`Verdict`), as the
 # interrupt advertises it to a client that has never seen this server.
 RESUME_SCHEMA: dict = {
@@ -284,10 +287,21 @@ class Conversations(BaseModel):
     conversations: list[Conversation]
 
 
+class Running(BaseModel):
+    """A turn on this thread that is not in `messages`: still being answered
+    — the reader left and came back — or refused while nobody was watching.
+    `GET /chat/runs/{run_id}` replays it from the start."""
+
+    run_id: str
+    question: str
+    live: bool
+
+
 class Thread(BaseModel):
     id: str
     title: str
     messages: list[Message]
+    running: Running | None = None
 
 
 class SkillInfo(BaseModel):
@@ -875,10 +889,16 @@ def thread(cid: str, paths: Account) -> Thread:
     book = auth.load_book(paths.chat)
     for conv in book["conversations"]:
         if conv["id"] == cid:
+            run = runs.on_thread(str(paths.chat), cid)
             return Thread(
                 id=conv["id"],
                 title=conv["title"],
                 messages=[_turn(m, lang) for m in conv["messages"]],
+                running=(
+                    Running(run_id=run.id, question=run.question, live=run.live)
+                    if run is not None
+                    else None
+                ),
             )
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND, detail=f"no conversation {cid}"
@@ -900,7 +920,8 @@ def start(body: NewThread, paths: Writer) -> Conversation:
     """
     from stocks.web import auth
 
-    cid = auth.new_conversation(paths.chat, body.title)
+    cid = auth.new_conversation(paths.chat, body.title,
+                                busy=runs.live_threads(str(paths.chat)))
     return next(
         Conversation(**c)
         for c in auth.list_conversations(paths.chat)
@@ -1163,7 +1184,7 @@ def _events(
     lang: str, staged_import: str = "", view: str = "", focus: str = "",
     guided: bool = False, linked: bool = False,
     held: dict[str, str] | None = None,
-) -> Iterator[str]:
+) -> Generator[str]:
     """The turn, as AG-UI events. Never raises: a stream that dies mid-answer
     cannot be turned back into a status code, so every failure becomes a
     `RUN_ERROR` carrying the locale key the Reply would have carried.
@@ -1328,6 +1349,9 @@ def _events(
             confirm_actions=True,
             debating=True,
             draws=True,
+            # Pinned: the reader may switch threads while this one is being
+            # answered, and the answer still belongs where it was asked.
+            thread=thread,
         ):
             if kind == "phase":
                 yield from close_step()
@@ -1509,6 +1533,7 @@ _STREAM_HEADERS = {
 def ask(
     body: Run,
     paths: ChatTurn,
+    request: Request,
     x_chat_provider: str | None = Header(default=None),
     x_chat_key: str | None = Header(default=None),
 ) -> StreamingResponse:
@@ -1528,6 +1553,13 @@ def ask(
     The turn is a write — it appends to chat.json and spends the account's free
     allowance — so it is guarded by `Writer`: a bearer token may read this
     account but may never spend on it.
+
+    A question or a regenerate is answered by a run that outlives this
+    response (`api/runs.py`): closing the connection stops the reading, not
+    the answer, which is stored as if the reader had stayed. `runId` names it
+    for a reader who comes back (`GET /chat/runs/{runId}`) and for Stop
+    (`POST /chat/runs/{runId}/stop`). A thread already being answered is a
+    409.
     """
     from stocks.web import auth
 
@@ -1539,10 +1571,10 @@ def ask(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"no conversation {body.thread_id}",
             )
-        # The engine writes the *active* thread, which is what the panel and
-        # the bot have always meant by "the conversation". Two windows of the
-        # same account therefore share one cursor; last one to send wins, and
-        # the thread each answer landed in is what the client re-reads.
+        # Asking on a thread makes it the active one, which is what the panel
+        # and the bot have always meant by "the conversation". The answer is
+        # pinned to it all the same (`thread=` into the engine), so a reader
+        # who switches threads mid-answer does not move where it lands.
         auth.set_active_conversation(body.thread_id, paths.chat)
 
     props = body.props
@@ -1585,32 +1617,107 @@ def ask(
             headers=_STREAM_HEADERS,
         )
 
-    if props.regenerate:
-        message = _rewind(paths)
-
     where = body.where
     view, focus = _view(where.view, where.focus, lang)
     # The engine writes the active thread, so that is the one to test: a turn
     # lands on the walkthrough's thread exactly when it is the active one.
     guided = guide_ai.owns(auth.active_conversation(paths.chat)["id"], prefs)
-    return StreamingResponse(
-        _events(
+    answering = runs.on_thread(str(paths.chat), thread)
+    if props.regenerate and answering is not None and answering.live:
+        # Checked before the rewind, which would otherwise take the pair off
+        # the thread for a run that is then refused.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="this thread is still being answered")
+    if props.regenerate:
+        message = _rewind(paths)
+    held = session_keys(x_chat_provider, x_chat_key)
+    try:
+        run = runs.start(
+            owner=str(paths.chat),
+            rid=body.run_id,
             thread=thread,
-            run=body.run_id,
-            prefs=prefs,
-            paths=paths,
-            message=message,
-            lang=lang,
-            staged_import=props.staged_import.strip(),
-            view=view,
-            focus=focus,
-            guided=guided,
-            linked=not guided and body.declares(navigate.TOOL_NAME),
-            held=session_keys(x_chat_provider, x_chat_key),
-        ),
+            question=message,
+            events=lambda _run: _events(
+                thread=thread,
+                run=body.run_id,
+                prefs=prefs,
+                paths=paths,
+                message=message,
+                lang=lang,
+                staged_import=props.staged_import.strip(),
+                view=view,
+                focus=focus,
+                guided=guided,
+                linked=not guided and body.declares(navigate.TOOL_NAME),
+                held=held,
+            ),
+            stopped=_frame(RunErrorEvent(message=STOPPED, code=STOPPED)),
+            failed=lambda frame: '"type":"RUN_ERROR"' in frame,
+        )
+    except runs.Busy as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="this thread is still being answered") from exc
+    if runs.on_cloud_run():
+        runs.hold(run, str(request.url_for("hold", rid=run.id)))
+    return StreamingResponse(
+        runs.tail(run),
         media_type="text/event-stream",
         headers=_STREAM_HEADERS,
     )
+
+
+def _run(rid: str, paths: UserPaths) -> runs.Run:
+    found = runs.find(str(paths.chat), rid)
+    if found is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"no run {rid}")
+    return found
+
+
+@router.get("/runs/{rid}", summary="Follow a run again, from its first event")
+def rejoin(rid: str, paths: Account) -> StreamingResponse:
+    """The run's events from `RUN_STARTED` on, then the rest as it is written.
+
+    For a reader who left while it was answered and is back: the thread names
+    the run (`Thread.running`), and this replays it. 404 once the run is
+    forgotten — a few minutes after it ended, or a restart — when the thread
+    on disk is the whole answer. A read, so `Account`: following an answer
+    spends nothing.
+    """
+    return StreamingResponse(
+        runs.tail(_run(rid, paths)),
+        media_type="text/event-stream",
+        headers=_STREAM_HEADERS,
+    )
+
+
+@router.post("/runs/{rid}/stop", status_code=status.HTTP_204_NO_CONTENT,
+             summary="Stop the answer being written")
+def stop(rid: str, paths: Writer) -> Response:
+    """Cut a run: nothing of it is stored, as when Stop was the reader's own
+    abort. Closing the connection no longer does this — that only stops the
+    reading — so Stop has to say it. Stopping a run that already ended is a
+    no-op."""
+    run = _run(rid, paths)
+    if run.live:
+        runs.stop(run)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# Outside the gate: the caller is this service, holding no session — only the
+# run's own token, which never leaves the process (`runs.hold`).
+holds = APIRouter(prefix="/chat", tags=["chat"], include_in_schema=False)
+
+
+@holds.post("/runs/{rid}/hold", name="hold", status_code=status.HTTP_204_NO_CONTENT)
+def hold(rid: str, x_run_hold: str = Header(default="")) -> Response:
+    """Stay open until run `rid` is over — Cloud Run's CPU for a reader who
+    left (`api/runs.py`). 404 for anything but this process's own token."""
+    run = runs.holding(rid, x_run_hold)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    runs.wait(run)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------- surface actions

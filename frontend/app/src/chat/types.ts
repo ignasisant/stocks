@@ -223,7 +223,18 @@ export type Conversation = {
   daily?: string;
 };
 
-export type Thread = { id: string; title: string; messages: Message[] };
+/**
+ * A turn on a thread that is not in its `messages`: still being answered, or
+ * refused while nobody was reading. `rejoin(run_id)` replays it.
+ */
+type Running = { run_id: string; question: string; live: boolean };
+
+export type Thread = {
+  id: string;
+  title: string;
+  messages: Message[];
+  running?: Running | null;
+};
 
 export type SkillInfo = { id: string; name: string; description: string };
 
@@ -426,4 +437,6 @@ export type Done = {
   recalled?: Recalled[];
   /** The stored answer's id, for its thumbs. Absent when nothing was stored. */
   id?: string;
+  /** The stream ended with no ending: the connection dropped, not the run. */
+  lost?: boolean;
 };

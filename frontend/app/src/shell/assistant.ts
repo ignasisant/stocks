@@ -46,6 +46,32 @@ export function openAssistant(): void {
   for (const listener of listeners) listener(null);
 }
 
+const draftListeners = new Set<(prompt: string) => void>();
+
+/**
+ * Open the assistant with a question written but not sent.
+ *
+ * The Review page builds a long prompt out of its own rows — every verdict,
+ * weight and reason — and the reader should see what is being asked, cut it,
+ * add their own doubt, before it spends a turn. So the words land in the
+ * composer, caret at the end, and Send stays the reader's press.
+ */
+export function draftAssistant(prompt: string): void {
+  const text = prompt.trim();
+  if (!text) return;
+  for (const listener of draftListeners) listener(text);
+}
+
+/** Subscribe to those drafts. The drawer is the only caller. */
+export function useAssistantDrafts(handler: (prompt: string) => void): void {
+  useEffect(() => {
+    draftListeners.add(handler);
+    return () => {
+      draftListeners.delete(handler);
+    };
+  }, [handler]);
+}
+
 const threadListeners = new Set<(cid: string) => void>();
 
 /**

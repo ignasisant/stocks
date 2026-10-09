@@ -1324,8 +1324,10 @@ def title_for(provider: Provider, api_key: str, message: str,
 
 
 def autotitle(chat_path: Path, provider: Provider, api_key: str,
-              history: list[dict], lang: str | None = None) -> None:
-    """Name the active thread from its opening question, once.
+              history: list[dict], lang: str | None = None,
+              thread: str | None = None) -> None:
+    """Name the active thread — or `thread`, the one the turn was asked in —
+    from its opening question, once.
 
     Only fires on the first completed pair of a still-unnamed, never-renamed
     conversation, so the extra classifier call happens once per thread and
@@ -1336,7 +1338,7 @@ def autotitle(chat_path: Path, provider: Provider, api_key: str,
     from stocks.web import auth
 
     try:
-        conv = auth.active_conversation(chat_path)
+        conv = auth.active_conversation(chat_path, thread)
         if conv.get("title") or not conv.get("title_auto", True):
             return
         auth.autotitle_conversation(
@@ -1682,7 +1684,7 @@ def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
 def _typed_verdict(history: list[dict], index: int, approve: bool, *,
                    prefs: dict, chat_path: Path, watchlist: Path,
                    lang: str, db: Path | None = None,
-                   source: str = "chat") -> Reply:
+                   source: str = "chat", thread: str | None = None) -> Reply:
     """A "yes" or "no" typed under a proposal: the same as the button.
 
     Unlike the button, the reader's words are part of the thread — so the
@@ -1701,7 +1703,7 @@ def _typed_verdict(history: list[dict], index: int, approve: bool, *,
     if offer["state"] == "done":
         entry["action"] = offer["kind"]
     history.append(entry)
-    auth.save_chat(history, chat_path)
+    auth.save_chat(history, chat_path, thread)
     return Reply(text=note, proposal=dict(offer))
 
 
@@ -1740,7 +1742,8 @@ def undo_proposal(*, chat_path: Path, db: Path, proposal_id: str,
 
 def _book_turn(act: Action, *, history: list[dict], prefs: dict, db: Path,
                chat_path: Path, lang: str, typed: bool,
-               stored: Callable[[dict], dict] = lambda e: e) -> Reply:
+               stored: Callable[[dict], dict] = lambda e: e,
+               thread: str | None = None) -> Reply:
     """A ledger request (`chat/book.py`): drafted with the book in hand, and
     put to the reader whenever it would change anything — on every surface.
 
@@ -1767,7 +1770,7 @@ def _book_turn(act: Action, *, history: list[dict], prefs: dict, db: Path,
         entry["proposal"] = offer
         obs.event("chat.action_proposed", action=act.kind)
     history.append(stored(entry))
-    auth.save_chat(history, chat_path)
+    auth.save_chat(history, chat_path, thread)
     return Reply(text=entry["content"], proposal=dict(offer) if offer else None)
 
 
@@ -2250,6 +2253,10 @@ class Turn:
     #: Set once the question's background read for memories (`learn`) is
     #: done; None when none was started.
     learning: threading.Event | None = None
+    #: The conversation the question was asked in, which is where the answer
+    #: is stored even if the active one has moved since (`auth.save_chat`).
+    #: None is the active one, as the bot has always meant it.
+    thread: str | None = None
 
 
 
@@ -2368,6 +2375,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             on_tool: Callable[[dict], None] | None = None,
             on_subagent: Callable[[dict], None] | None = None,
             draws: bool = False,
+            thread: str | None = None,
             ) -> tuple[Turn | None, Reply | None]:
     """Everything before the model: history, provider chain, prompt, evidence.
 
@@ -2405,11 +2413,15 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     `draws` says the caller shows the turn's surfaces, so a message asking for
     a chart gets one drawn under the answer (`chat/charts.py`) and the model is
     told it is there. Off for the Telegram bot, which has nowhere to draw it.
+
+    `thread` pins the turn to the conversation it was asked in: its history is
+    read from there and everything it files is written there, wherever the
+    active pointer has moved in the meantime. None is the active one.
     """
     from stocks.chat import tools
     from stocks.web import auth, llm
 
-    history = auth.load_chat(chat_path)
+    history = auth.load_chat(chat_path, thread)
     history.append({"role": "user", "content": message})
 
     # A proposal waiting on the turn above, answered in words: "sí" is the
@@ -2423,6 +2435,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         said = tools.verdict(message)
         if said is not None:
             return None, _typed_verdict(history, held, said, prefs=prefs,
+                                        thread=thread,
                                         chat_path=chat_path,
                                         watchlist=watchlist, lang=lang, db=db,
                                         source="chat" if confirm_actions
@@ -2446,7 +2459,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         )
         history.append({"role": "assistant", "content": note,
                         "action": "import"})
-        auth.save_chat(history, chat_path)
+        auth.save_chat(history, chat_path, thread)
         return None, Reply(text=note)
 
     # "Recuerda que…" / "olvida lo de…": the user editing the memory in words.
@@ -2466,7 +2479,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             if learned:
                 done["learned"] = learned
             history.append(done)
-            auth.save_chat(history, chat_path)
+            auth.save_chat(history, chat_path, thread)
             return None, Reply(text=note, learned=tuple(learned))
 
     def settled(reply: Reply) -> tuple[None, Reply]:
@@ -2497,9 +2510,10 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         if act is not None and tools.is_book(act.kind):
             reply = _book_turn(act, history=history, prefs=prefs, db=db,
                                chat_path=chat_path, lang=lang,
-                               typed=not confirm_actions, stored=stored)
+                               typed=not confirm_actions, stored=stored,
+                               thread=thread)
             if not reply.error:
-                autotitle(chat_path, provider, key, history, lang)
+                autotitle(chat_path, provider, key, history, lang, thread)
                 _keep_byok(prefs, prefs_path)
                 return settled(replace(reply, provider_id=provider.id))
             act = None
@@ -2508,8 +2522,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             note = tools.proposal(act, lambda k, **kw: _tr(k, lang, **kw))
             history.append(stored({"role": "assistant", "content": note,
                                    "action": act.kind, "proposal": offer}))
-            auth.save_chat(history, chat_path)
-            autotitle(chat_path, provider, key, history, lang)
+            auth.save_chat(history, chat_path, thread)
+            autotitle(chat_path, provider, key, history, lang, thread)
             _keep_byok(prefs, prefs_path)
             obs.event("chat.action_proposed", action=act.kind)
             return settled(Reply(text=note, provider_id=provider.id,
@@ -2525,8 +2539,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             note = action_reply(act, lang)
             history.append(stored({"role": "assistant", "content": note,
                                    "action": act.kind}))
-            auth.save_chat(history, chat_path)
-            autotitle(chat_path, provider, key, history, lang)
+            auth.save_chat(history, chat_path, thread)
+            autotitle(chat_path, provider, key, history, lang, thread)
             _keep_byok(prefs, prefs_path)
             return settled(Reply(text=note, provider_id=provider.id))
 
@@ -2694,6 +2708,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         learned=learned,
         recalled=recalled,
         learning=learning,
+        thread=thread,
     ), None
 
 
@@ -2782,8 +2797,8 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
         polish(entry)
         text = str(entry.get("content") or "")
     turn.history.append(entry)
-    auth.save_chat(turn.history, chat_path)
-    autotitle(chat_path, provider, key, turn.history, turn.lang)
+    auth.save_chat(turn.history, chat_path, turn.thread)
+    autotitle(chat_path, provider, key, turn.history, turn.lang, turn.thread)
     _keep_byok(prefs, prefs_path)
     obs.event("chat.answered", provider=provider.id, model=model,
               chars=len(text), skills=list(turn.skills),
@@ -2878,6 +2893,7 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                   confirm_actions: bool = False,
                   debating: bool = False,
                   draws: bool = False,
+                  thread: str | None = None,
                   ) -> Iterator[tuple[str, object]]:
     """The same turn, handed over as the model writes it.
 
@@ -2899,6 +2915,8 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     reader has already seen those words, and swapping in another model's
     answer mid-paragraph reads as corruption. What arrived is kept and stored,
     so the thread does not lose it.
+
+    `thread` is `prepare`'s: the conversation the answer is stored in.
     """
     # `prepare` runs on a worker so its phases can be handed over *while* it
     # works: routing, the gather and the web search are most of the wait
@@ -2921,7 +2939,7 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                     (lambda said: phases.put(("subagent", said))) if debating else None
                 ),
                 view=view, focus=focus, fence=fence, session_keys=session_keys,
-                confirm_actions=confirm_actions, draws=draws,
+                confirm_actions=confirm_actions, draws=draws, thread=thread,
             )
         except BaseException as exc:  # noqa: BLE001 — re-raised just below
             box["exc"] = exc

@@ -150,3 +150,9 @@ backfilling.
    `gcloud run services describe topstocks --format='value(spec.template.metadata.annotations)'`
    for `minScale`. A redeploy with plain `./scripts/deploy.sh prod` puts it
    back to 0; lower `--max-instances` in the script for a traffic spike.
+4. Chat runs hold the instance open while they answer a reader who left
+   (`api/runs.py`, at most `HOLD_S` each). `chat.run_ended` events count them;
+   a flood of long ones is a client resending, not readers.
+
+The alert itself is `topstocks-budget` (`scripts/setup_budget.sh`): 10 EUR a
+month, emails at 0.50 / 1 / 5 / 10 EUR.

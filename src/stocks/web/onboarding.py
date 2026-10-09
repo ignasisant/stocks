@@ -135,6 +135,7 @@ STEPS: tuple[Step, ...] = (
         page="portfolio",
         query={"tab": "dividends"},
     ),
+    Step(id="review", icon="swap_vert", page="review"),
     Step(
         id="daily",
         icon="tips_and_updates",
@@ -434,6 +435,16 @@ RELEASES: tuple[Release, ...] = (
             # revising earnings. The blocks inside it are this card's body and
             # the market step's, not cards of their own.
             News(slug="analysts", icon="query_stats", step="market"),
+        ),
+    ),
+    Release(
+        version="2026.10.5",
+        date="2026-10",
+        items=(
+            # A page of its own: the book judged name by name, and outside
+            # names weighed beside it. The map, the tax and the typed tickers
+            # are this card's body, not cards of their own.
+            News(slug="review", icon="swap_vert", step="review"),
         ),
     ),
 )

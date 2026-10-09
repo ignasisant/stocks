@@ -227,3 +227,89 @@ def test_comp_medals_podium():
     assert comp_medals(rows) == {"G": "🥇", "S": "🥈", "B": "🥉"}
     # fewer than 3 qualifying tickers -> no podium at all
     assert comp_medals(rows[:2]) == {}
+
+
+def _filed_in(currency: str) -> RawFundamentals:
+    """`sample_raw` filed in another currency than it quotes in (an ADR)."""
+    raw = sample_raw()
+    raw.info["financialCurrency"] = currency
+    raw.balance.loc["Stockholders Equity"] = [500e9] * 5
+    return raw
+
+
+def test_an_adr_is_valued_in_one_currency(monkeypatch):
+    from stocks.analysis import fundamentals as fm
+
+    monkeypatch.setattr(fm.fx, "spot", lambda base, quote: (0.15, "2026-10-09"))
+    m = compute_metrics(_filed_in("DKK"))
+    # Statements in DKK, cap in USD: both sides in USD before dividing.
+    assert abs(m["fcf_yield"] - 95e9 * 0.15 / 3.8e12) < 1e-12
+    ev = 3.8e12 + 50e9 * 0.15
+    assert abs(m["ev_ebitda"] - ev / (130e9 * 0.15)) < 1e-9
+    assert abs(m["ev_sales"] - ev / (400e9 * 0.15)) < 1e-9
+    assert abs(m["pb"] - 3.8e12 / (500e9 * 0.15)) < 1e-9
+
+
+def test_a_currency_the_ecb_lacks_falls_back_to_the_quoted_pair(monkeypatch):
+    from stocks.analysis import fundamentals as fm
+
+    def no_ecb(base, quote):
+        raise ValueError("TWD")
+
+    monkeypatch.setattr(fm.fx, "spot", no_ecb)
+    monkeypatch.setattr(fm.fetch, "info", lambda symbol: {"regularMarketPrice": 0.031})
+    m = compute_metrics(_filed_in("TWD"))
+    assert abs(m["fcf_yield"] - 95e9 * 0.031 / 3.8e12) < 1e-12
+
+
+def test_no_rate_at_all_blanks_the_mixed_ratios(monkeypatch):
+    from stocks.analysis import fundamentals as fm
+
+    def nothing(*args):
+        raise ValueError("offline")
+
+    monkeypatch.setattr(fm.fx, "spot", nothing)
+    monkeypatch.setattr(fm.fetch, "info", nothing)
+    m = compute_metrics(_filed_in("TWD"))
+    # Yahoo's own figures mix currencies; blank beats wrong.
+    assert m["fcf_yield"] is None
+    assert m["ev_ebitda"] is None and m["pb"] is None
+
+
+def test_no_revenue_has_no_margins_and_a_runway():
+    raw = sample_raw()
+    raw.income.loc["Total Revenue"] = [0.0] * 5
+    raw.cashflow.loc["Free Cash Flow"] = [-2e9] * 5
+    raw.info["totalCash"] = 6e9
+    m = compute_metrics(raw)
+    # Yahoo reads a 0 margin for a company with no sales; that is not a margin.
+    assert m["op_margin"] is None and m["gross_margin"] is None
+    assert m["fcf_margin"] is None
+    assert abs(m["runway_years"] - 3.0) < 1e-9
+
+
+def test_float_is_measured_against_ebitda():
+    raw = sample_raw()
+    raw.cashflow.loc["Free Cash Flow"] = [390e9] * 5
+    m = compute_metrics(raw)
+    assert abs(m["fcf_ebitda"] - 3.0) < 1e-9
+    assert m["runway_years"] is None
+
+
+def test_share_based_pay_comes_off_the_owners_cash_flow():
+    raw = sample_raw()
+    raw.cashflow.loc["Stock Based Compensation"] = [45e9] * 5
+    m = compute_metrics(raw)
+    # The KPI stays the feed's; the owner's yield is net of the pay.
+    assert abs(m["fcf_yield"] - 95e9 / 3.8e12) < 1e-12
+    assert abs(m["owner_fcf_yield"] - 50e9 / 3.8e12) < 1e-12
+    assert abs(m["sbc_fcf"] - 45 / 95) < 1e-12
+    assert abs(m["fcf_margin"] - 50 / 400) < 1e-12
+    assert abs(m["fcf_ebitda"] - 50 / 130) < 1e-12
+
+
+def test_net_debt_over_a_loss_is_no_multiple():
+    raw = sample_raw()
+    raw.income.loc["EBITDA"] = [-1e9] * 5
+    raw.balance.loc["Net Debt"] = [-2.5e9] * 5
+    assert compute_metrics(raw)["net_debt_ebitda"] is None
