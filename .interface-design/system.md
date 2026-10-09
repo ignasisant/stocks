@@ -128,6 +128,13 @@ no Tailwind.
   matching symbol, cached name, sector and verdict words, case and accents
   folded; narrows only that table, with a "3 of 44" / "nothing matches"
   caption while typed in.
+- **Chart search** (`pages/review/MapFind.tsx`): a plot with ≥6 points gets a
+  combobox in the card's top-right corner (full width under the title when
+  `ag-main` < 40rem), the top bar's `.ag-search-panel` at chart scale: logo,
+  symbol, name, verdict chip; arrows + Enter pick, Escape shuts then clears.
+  Non-matches fade to 0.15, matches keep their labels; a pick lights one
+  point and opens its tooltip. A match with no point is listed, not
+  pickable, with why ("Not on the map · no revenue").
 - **Out-of-scope rows**: rows a screen cannot judge (coins on Review: no
   filings) leave the read before it is drawn — no table of n/a — and get one
   caption line under the table with their share and a wrap of `TickerCell`s

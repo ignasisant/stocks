@@ -72,6 +72,20 @@ def test_broken_source_data_is_named_not_ranked():
     assert v.reasons == (review.R_SUSPECT,)
 
 
+def test_a_high_yield_the_forward_pe_backs_is_a_price_not_a_fault():
+    """Teleperformance at five times earnings yields 30% in cash: real, and
+    scored. The same yield at fifteen times earnings is a feed fault."""
+    distressed = {
+        **CHEAP_WEAK, "pe_fwd": 5.08, "fcf_yield": 0.32, "owner_fcf_yield": 0.31,
+        "ev_ebitda": 5.1,
+    }
+    s = review.score(distressed)
+    assert not s.suspect
+    assert s.cheapness == 100.0
+    assert review.score({**distressed, "pe_fwd": 15.0}).suspect
+    assert review.score({**distressed, "owner_fcf_yield": 0.6, "pe_fwd": 3.0}).suspect
+
+
 def test_a_concentrated_name_is_cut_even_when_it_cannot_be_scored():
     broken = {**CHEAP_QUALITY, "fcf_yield": 0.95, "ev": -3.4e11}
     v = review.judge_held(broken, weight=0.22)

@@ -556,6 +556,72 @@
   fill-opacity: 1;
 }
 
+/* The map's title on the left, its search box in the top-right corner;
+   narrow, the box drops under the title at full width. */
+.ag-rev-map-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.ag-rev-map-head > div:first-child {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+
+/* `.ag-search` and its panel are the top bar's; only the room is the map's. */
+.ag-rev-map-find {
+  flex: 0 1 18rem;
+  margin: 0;
+}
+
+.ag-rev-map-find .ag-search-field {
+  background: var(--ag-surface-sunken);
+}
+
+@container ag-main (max-width: 40rem) {
+  .ag-rev-map-find {
+    flex-basis: 100%;
+  }
+
+  .ag-rev-map-find .ag-search-field {
+    max-width: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .ag-rev-map-find .ag-search-field {
+    min-height: 44px;
+  }
+}
+
+/* The panel opens under the field and right-aligned with the card. */
+.ag-rev-map-list {
+  right: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(26rem, 90vw);
+  margin: 0;
+  list-style: none;
+}
+
+.ag-rev-map-hit-on {
+  background: var(--ag-surface-hover);
+}
+
+.ag-rev-map-off {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* Left out by the map's search: there to keep the plane, not to be read. */
+.ag-rev-dot-dim {
+  opacity: 0.15;
+}
+
 .ag-rev-legend {
   display: flex;
   flex-wrap: wrap;

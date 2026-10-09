@@ -17,6 +17,11 @@
  * the browser waits about a second before drawing that one and draws it in its
  * own chrome. This one opens 300ms after the pointer settles, at once on
  * keyboard focus or a tap, and stays inside the map.
+ *
+ * Fifty dots and a dozen labels make one name slow to find by eye, so a map
+ * with as many names as a searchable table gets a search box in its corner
+ * (`MapFind`): what does not match fades, every match gets its label, and a
+ * picked suggestion is the only dot left lit, its tooltip open.
  */
 
 import { type PointerEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -28,6 +33,9 @@ import { Chip } from "../../ui/Kpi";
 import { percent, pnl, score, verdictTone } from "./format";
 import { type Box, type LabelSpot, labelRank, placeLabels } from "./labels";
 import { PnlChip } from "./Explain";
+import { findRows } from "./filter";
+import { MapFind } from "./MapFind";
+import { FIND_MIN, useRowWords } from "./Tables";
 import type { ReviewRow } from "./types";
 
 /** `stocks.analysis.review.GOOD` and `CHEAP`. */
@@ -74,6 +82,10 @@ export function QualityMap({
   const t = useT();
   const [ref, width] = useWidth(640);
   const [tip, setTip] = useState<Spot | null>(null);
+  const [needle, setNeedle] = useState("");
+  // The suggestion picked, until the field is typed in again.
+  const [picked, setPicked] = useState<string | null>(null);
+  const words = useRowWords();
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   // A tapped tooltip stays until a tap lands somewhere else.
@@ -118,6 +130,31 @@ export function QualityMap({
   // Heaviest last so a small dot is never buried under a big one.
   const ordered = [...placed].sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));
   const key = (row: ReviewRow) => `${row.held ? "h" : "c"}-${row.ticker}`;
+  const spotOf = (row: ReviewRow): Spot => ({
+    row,
+    cx: x(row.cheapness as number),
+    cy: y(row.quality as number),
+    r: radius(row),
+  });
+  const searchable = placed.length >= FIND_MIN;
+  const query = searchable ? needle.trim() : "";
+  const symbolOf = (row: ReviewRow) => (row.symbol || row.ticker).toUpperCase();
+  // A symbol that starts with what was typed beats a name that contains it.
+  const suggested = query
+    ? findRows(rows, query, words).sort(
+        (a, b) =>
+          +!symbolOf(a).startsWith(query.toUpperCase()) -
+          +!symbolOf(b).startsWith(query.toUpperCase()),
+      )
+    : [];
+  const matches = !query
+    ? placed
+    : picked
+      ? placed.filter((row) => key(row) === picked)
+      : suggested.filter((row) => placed.includes(row));
+  const found = new Set(matches.map(key));
+  // A match is drawn over the faded names, never under one.
+  if (query) ordered.sort((a, b) => +found.has(key(a)) - +found.has(key(b)));
   const quads: { text: string; x: number; y: number; end?: boolean }[] = [
     // Inner corner: the outer one is where the best names crowd.
     { text: t("review.quad_best"), x: x(CHEAP) + 6, y: y(100) + 14 },
@@ -139,7 +176,7 @@ export function QualityMap({
     y1: y(tick) + 6,
   }));
   const labels = placeLabels(
-    [...placed]
+    [...matches]
       .sort((a, b) => {
         const [ra, rb] = [labelRank(a), labelRank(b)];
         return ra[0] - rb[0] || ra[1] - rb[1] || ra[2] - rb[2];
@@ -157,8 +194,29 @@ export function QualityMap({
 
   return (
     <section className="ag-rev-card">
-      <h2 className="ag-rev-h2">{t("review.map_title")}</h2>
-      <p className="ag-rev-caption">{t("review.map_help")}</p>
+      <div className="ag-rev-map-head">
+        <div>
+          <h2 className="ag-rev-h2">{t("review.map_title")}</h2>
+          <p className="ag-rev-caption">{t("review.map_help")}</p>
+        </div>
+        {searchable ? (
+          <MapFind
+            needle={needle}
+            matches={suggested}
+            placed={(row) => placed.includes(row)}
+            onType={(value) => {
+              setNeedle(value);
+              setPicked(null);
+              close();
+            }}
+            onPick={(row) => {
+              setNeedle(row.symbol || row.ticker);
+              setPicked(key(row));
+              open(spotOf(row), false);
+            }}
+          />
+        ) : null}
+      </div>
       <div className="ag-rev-map" ref={ref}>
         <svg
           width={width}
@@ -243,6 +301,7 @@ export function QualityMap({
               cx={x(row.cheapness as number)}
               cy={y(row.quality as number)}
               label={labels.get(key(row))}
+              dim={!found.has(key(row))}
               on={tip?.row.ticker === row.ticker && tip.row.held === row.held}
               onOpen={open}
               onClose={close}
@@ -278,6 +337,7 @@ function Dot({
   cx,
   cy,
   label,
+  dim,
   on,
   onOpen,
   onClose,
@@ -287,6 +347,8 @@ function Dot({
   cy: number;
   /** Where its ticker goes; none when it would land on another's. */
   label: LabelSpot | undefined;
+  /** Left out by the map's search: faded, still there to place the rest. */
+  dim: boolean;
   on: boolean;
   onOpen: (spot: Spot, wait: boolean) => void;
   onClose: () => void;
@@ -320,7 +382,7 @@ function Dot({
   const mouse = (event: PointerEvent) => event.pointerType !== "touch";
   return (
     <g
-      className={`ag-rev-dot ag-rev-dot-${tone}${row.held ? "" : " ag-rev-dot-out"}${on ? " ag-rev-dot-on" : ""}`}
+      className={`ag-rev-dot ag-rev-dot-${tone}${row.held ? "" : " ag-rev-dot-out"}${on ? " ag-rev-dot-on" : ""}${dim ? " ag-rev-dot-dim" : ""}`}
       role="img"
       tabIndex={0}
       aria-label={spoken}

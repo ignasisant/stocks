@@ -61,6 +61,9 @@ into its quote currency; where no rate exists, or the feed is broken anyway,
 it shows up as a free-cash-flow yield above 25% or a negative enterprise
 value. Those inputs are dropped and the row carries `data_suspect`, because a
 screen that ranks a broken number first is worse than one that ranks nothing.
+A yield over 25% that the forward P/E backs (no more than twice the earnings
+yield, under 50%) is a real price, not a currency mix: a name the market has
+given up on can trade at five times earnings and yield 30% in cash.
 
 **Verdicts are keys.** The client translates them, the same way the sector
 page's regime travels as a band key. Held names: sell, trim, hold, add, plus
@@ -133,6 +136,11 @@ RUNWAY_LONG = 3.0
 # the business earns: a lender's book, a payments float or subscriptions
 # paid ahead passing through.
 FCF_FLOAT = 2.0
+# An FCF yield over `FCF_SANE` is a broken feed unless the forward P/E backs
+# it: at most `FCF_BACKED` times the earnings yield, and never over `FCF_MAX`.
+FCF_SANE = 0.25
+FCF_BACKED = 2.0
+FCF_MAX = 0.50
 # Share-based pay this share of FCF is named: the yield is scored without it.
 SHARE_PAY = 0.5
 
@@ -328,7 +336,7 @@ def score(metrics: Mapping) -> Scores:
         # Real money, but not the business's: it says nothing about quality
         # or price, and left in it reads a lender as the cheapest name here.
         fcf = None
-    suspect = (fcf is not None and fcf > 0.25) or (ev is not None and ev <= 0)
+    suspect = _fcf_broken(fcf, pe) or (ev is not None and ev <= 0)
     if suspect:
         # Which of the two is broken is not knowable from here; both lean on
         # the enterprise value or the cash flow the mixed currency corrupts.
@@ -365,6 +373,16 @@ def score(metrics: Mapping) -> Scores:
     return Scores(
         quality=_mean(quality), cheapness=_mean(cheap), suspect=suspect, fcf_float=floated
     )
+
+
+def _fcf_broken(fcf: float | None, pe: float | None) -> bool:
+    """An FCF yield too high to be a price, unless the forward P/E — analysts'
+    earnings in the quote's own currency, not the converted statements — says
+    the market really is paying that little."""
+    if fcf is None or fcf <= FCF_SANE:
+        return False
+    backed = pe is not None and pe > 0 and fcf <= FCF_BACKED / pe
+    return fcf > FCF_MAX or not backed
 
 
 def _rule_40(metrics: Mapping, floated: bool) -> float | None:
