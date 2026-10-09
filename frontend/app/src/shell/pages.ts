@@ -60,6 +60,13 @@ export const PAGES: Page[] = [
     component: lazy(() => import("../pages/portfolio/Portfolio")),
   },
   {
+    slug: "review",
+    label: "nav.review",
+    section: "nav.section_portfolio",
+    icon: "swap_vert",
+    component: lazy(() => import("../pages/review/Review")),
+  },
+  {
     slug: "import",
     label: "nav.import",
     section: "nav.section_portfolio",

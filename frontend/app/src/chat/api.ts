@@ -420,9 +420,9 @@ export function runInput(
  * Resolves with how the run ended, which is authoritative: `RUN_FINISHED`'s
  * `result.text` is the finished answer and the deltas are only what made the
  * wait bearable. A stream that ends without an ending is a dropped
- * connection, and it resolves as the same refusal the server would have sent
- * rather than as a thrown error the composer would have to translate a second
- * way.
+ * connection, and it resolves as the same refusal the server would have sent,
+ * marked `lost` — the run itself goes on, on the server, and `rejoin` follows
+ * it again.
  *
  * `signal` is the exception to that: an abort *throws*, because a stopped turn
  * is not a failed one and the caller keeps the words that had already arrived.
@@ -454,6 +454,51 @@ export async function run(
     // effect between two chunks rather than at the end of the answer.
     signal,
   });
+  return follow(response, onMeta, onText, onPhase, onTool, onSide, onRecalled);
+}
+
+/**
+ * Follow run `runId` again, from its first event — `run`'s reading, for a
+ * reader whose stream dropped or who comes back to a thread still being
+ * answered. The server writes the answer whether anyone reads it or not, so
+ * this only watches; every event is replayed, and the caller starts the turn
+ * from blank. A run the server no longer holds is a 404 `ApiError`: the
+ * thread on disk is then the whole answer.
+ */
+export async function rejoin(
+  runId: string,
+  onMeta: (meta: Meta) => void,
+  onText: (chunk: string) => void,
+  onPhase: (phase: string) => void,
+  signal?: AbortSignal,
+  onTool?: (line: LiveStep) => void,
+  onSide?: (side: Arguing) => void,
+  onRecalled?: (recalled: Recalled[]) => void,
+): Promise<Done> {
+  const response = await fetch(`/api/v1/chat/runs/${id(runId)}`, {
+    credentials: "same-origin",
+    headers: { Accept: "text/event-stream" },
+    signal,
+  });
+  return follow(response, onMeta, onText, onPhase, onTool, onSide, onRecalled);
+}
+
+/**
+ * Cut run `runId`. Closing the stream no longer does — the answer is written
+ * on the server whether anyone reads it — so Stop has to say so.
+ */
+export const stopRun = (runId: string) =>
+  send<void>("POST", `/chat/runs/${id(runId)}/stop`, {});
+
+async function follow(
+  response: Response,
+  onMeta: (meta: Meta) => void,
+  onText: (chunk: string) => void,
+  onPhase: (phase: string) => void,
+  onTool?: (line: LiveStep) => void,
+  onSide?: (side: Arguing) => void,
+  onRecalled?: (recalled: Recalled[]) => void,
+): Promise<Done> {
   if (!response.ok) await refusal(response);
 
   const reader = response.body?.getReader();
@@ -583,7 +628,9 @@ export async function run(
       }
     }
   }
-  return done ?? FAILED;
+  // No ending: the connection dropped, not the run, which the server goes on
+  // answering — `lost` is what tells the caller to `rejoin` it.
+  return done ?? { ...FAILED, lost: true };
 }
 
 const FAILED: Done = {

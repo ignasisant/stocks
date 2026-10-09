@@ -10,7 +10,8 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { run, runInput } from "./api";
+import { ApiError } from "../shell/api";
+import { rejoin, run, runInput, stopRun } from "./api";
 
 function stream(events: object[], cut = 7): Response {
   const body =
@@ -195,6 +196,9 @@ describe("the events it reads", () => {
       () => {},
     );
     expect(cut.error).toBe("chat.api_error");
+    // The connection dropped, not the run: the caller follows it again.
+    expect(cut.lost).toBe(true);
+    expect(refused.lost).toBeUndefined();
   });
 
   it("hands over the recalled conversations early, and a memory change even on a refusal", async () => {
@@ -326,5 +330,58 @@ describe("the events it reads", () => {
       text: "- cash flow",
     });
     expect(done.debate).toEqual([{ side: "bull", text: "- cash flow" }]);
+  });
+});
+
+describe("a run followed again", () => {
+  it("replays it from the server's log, by its id", async () => {
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) =>
+      stream([
+        { type: "RUN_STARTED", threadId: "c_1", runId: "r 1" },
+        { type: "TEXT_MESSAGE_CONTENT", messageId: "m1", delta: "Hola" },
+        { type: "RUN_FINISHED", result: { text: "Hola" } },
+      ]),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const chunks: string[] = [];
+    const done = await rejoin(
+      "r 1",
+      () => {},
+      (chunk) => chunks.push(chunk),
+      () => {},
+    );
+    expect(fetch.mock.calls[0]?.[0]).toBe("/api/v1/chat/runs/r%201");
+    expect(fetch.mock.calls[0]?.[1]?.method).toBeUndefined();
+    expect(chunks).toEqual(["Hola"]);
+    expect(done.text).toBe("Hola");
+    expect(done.lost).toBeUndefined();
+  });
+
+  it("says when the server no longer holds it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ detail: "no run r" }), { status: 404 }),
+      ),
+    );
+    const gone = await rejoin(
+      "r",
+      () => {},
+      () => {},
+      () => {},
+    ).catch((e: unknown) => e);
+    expect(gone).toBeInstanceOf(ApiError);
+    expect((gone as ApiError).status).toBe(404);
+  });
+
+  it("is stopped by name, since closing the stream no longer stops it", async () => {
+    const fetch = vi.fn(
+      async (_url: string, _init?: RequestInit) => new Response(null, { status: 204 }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    await stopRun("r 1");
+    expect(fetch.mock.calls[0]?.[0]).toBe("/api/v1/chat/runs/r%201/stop");
+    expect(fetch.mock.calls[0]?.[1]?.method).toBe("POST");
   });
 });

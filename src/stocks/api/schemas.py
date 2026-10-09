@@ -3736,3 +3736,104 @@ class BankAuth(BaseModel):
             "never for proving one: the stored entry is the authority."
         )
     )
+
+
+# ------------------------------------------------------------------- review
+
+
+class ReviewRow(BaseModel):
+    """One name on the Review page, held or not, and what to do about it."""
+
+    ticker: str = Field(description="As stored in the book or as asked for.")
+    symbol: str = Field(description="The Yahoo symbol the fundamentals came from.")
+    kind: str | None = Field(
+        default=None,
+        description="Asset kind (`stocks.data.asset_kind`); null if unknown.",
+    )
+    sector: str | None = Field(
+        default=None,
+        description="Yahoo's sector name (English); null for a fund or unknown.",
+    )
+    held: bool
+    verdict: str = Field(
+        description=(
+            "Held: sell | trim | hold | add | bet | core | cash | unrated. "
+            "Outside the book: buy | watch | bet | pass | unrated. `bet` is a "
+            "business still proving its product, never scored. A key; the "
+            "client has the words."
+        )
+    )
+    reasons: list[str] = Field(
+        default_factory=list,
+        description="Reason codes, strongest first (`analysis.review`).",
+    )
+    quality: float | None = Field(default=None, description="0-100; null if unscored.")
+    cheapness: float | None = Field(default=None, description="0-100; null if unscored.")
+    metrics: dict[str, float | None] = Field(default_factory=dict)
+    value: float | None = Field(default=None, description="Held value, base currency.")
+    weight: float | None = Field(
+        default=None, description="Share of the priced book, 0-1."
+    )
+    risk_share: float | None = Field(
+        default=None, description="Share of the book's volatility, 0-1."
+    )
+    pnl: float | None = Field(
+        default=None, description="Unrealised gain or loss, base currency."
+    )
+    pnl_pct: float | None = None
+    target_weight: float | None = Field(
+        default=None,
+        description="Where the verdict takes the weight; null if it moves nothing.",
+    )
+    delta: float | None = Field(
+        default=None,
+        description="Base-currency amount to buy (+) or sell (-) to reach the target.",
+    )
+    tax: float | None = Field(
+        default=None,
+        description=(
+            "Extra tax the sale would add to this year's bill, in the "
+            "jurisdiction's currency; negative saves tax. Null when not a sale "
+            "or the replay could not price it."
+        ),
+    )
+    buy_after: str | None = Field(
+        default=None,
+        description=(
+            "ISO day a buy stops blocking an earlier loss sale (the "
+            "repurchase window); null when nothing blocks it."
+        ),
+    )
+    watched: bool = Field(
+        default=False, description="On the account's watchlist, held or not."
+    )
+    favorite: bool = Field(default=False, description="Starred on the watchlist.")
+    lists: list[str] = Field(
+        default_factory=list,
+        description="The watchlist groups (tags) the name is filed under.",
+    )
+
+
+class ReviewPlan(BaseModel):
+    """The moves added up: what the sales free, what the buys take, the tax."""
+
+    sells: float = 0.0
+    buys: float = 0.0
+    tax: float | None = None
+    tax_currency: str = ""
+
+
+class Review(BaseModel):
+    base: str
+    as_of: str
+    total: float | None = Field(
+        default=None, description="Priced book value, base currency."
+    )
+    held: list[ReviewRow] = Field(default_factory=list)
+    candidates: list[ReviewRow] = Field(default_factory=list)
+    plan: ReviewPlan = Field(default_factory=ReviewPlan)
+    unpriced: int = 0
+    jurisdiction: str = ""
+    added: list[str] = Field(
+        default_factory=list, description="The `add` tickers, as understood."
+    )

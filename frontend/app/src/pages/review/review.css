@@ -1,0 +1,1072 @@
+/*
+ * The review screen's own styles, every class prefixed `ag-rev-` and every
+ * colour an `--ag-*` token. Widths are the main column's (`@container
+ * ag-main`), never the viewport's: an open chat drawer narrows this page the
+ * way a phone does. The phone rendering of the tables is the shell's
+ * (`ui/Rows.tsx`); the KPI tiles and verdict pills are `ui/Kpi.tsx`'s.
+ */
+
+/* Title left, the ask right; the button drops under the title when the
+   column is too narrow for both. */
+.ag-rev-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.4rem;
+}
+
+.ag-rev-head .ag-rev-h1 {
+  margin: 0;
+}
+
+.ag-rev-ask {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ag-rev-h1 {
+  font-size: var(--ag-fs-3xl);
+  margin: 0 0 0.4rem;
+  text-wrap: balance;
+}
+
+/* Section titles read like the portfolio's (`.pf-card > h2`). */
+.ag-rev-h2 {
+  font-size: var(--ag-fs-lg);
+  font-weight: 600;
+  margin: 0 0 0.35rem;
+  text-wrap: balance;
+}
+
+.ag-rev-h3 {
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+  color: var(--ag-text-muted);
+  margin: 0 0 0.35rem;
+}
+
+.ag-rev-caption {
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+  line-height: 1.5;
+  margin: 0.35rem 0;
+  text-wrap: pretty;
+}
+
+/* A paragraph of copy reads badly at full width; the page itself does not. */
+.ag-rev-intro {
+  max-width: 62ch;
+  font-size: var(--ag-fs-sm);
+  margin-bottom: 0.9rem;
+}
+
+/* The intro and the ticker box share a row once there is room for both: the
+   copy is capped at a reading width, so stacked they left the right half of
+   a desktop page empty above the map. */
+@container ag-main (min-width: 52rem) {
+  .ag-rev-lead {
+    display: grid;
+    grid-template-columns: minmax(0, 62ch) minmax(18rem, 28rem);
+    justify-content: space-between;
+    align-items: end;
+    gap: 0 2.5rem;
+    margin-bottom: 0.9rem;
+  }
+  .ag-rev-lead .ag-rev-intro,
+  .ag-rev-lead .ag-rev-add {
+    margin-bottom: 0;
+  }
+}
+
+.ag-rev-card {
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-card);
+  padding: 1rem 1.1rem;
+  margin: 1rem 0;
+}
+
+@container ag-main (max-width: 40rem) {
+  .ag-rev-card {
+    padding: 0.85rem 0.8rem 0.9rem;
+    margin: 0.75rem 0;
+  }
+}
+
+.ag-rev-empty {
+  max-width: 40rem;
+}
+
+/* Ticker cells, as Import draws them: the symbol in the text colour, the
+   name muted, an underline only under a pointer. */
+.ag-rev-move a.ag-tick,
+.ag-rev-table a.ag-tick,
+.ag-rev-added a.ag-tick,
+.ag-rev-modal a.ag-tick {
+  color: var(--ag-text-primary);
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .ag-rev-move a.ag-tick:hover .ag-tick-sym,
+  .ag-rev-table a.ag-tick:hover .ag-tick-sym,
+  .ag-rev-added a.ag-tick:hover .ag-tick-sym,
+  .ag-rev-modal a.ag-tick:hover .ag-tick-sym {
+    text-decoration: underline;
+  }
+}
+
+/* --------------------------------------------------------- the ticker box */
+
+/* The field and its panel are the top bar's (`.ag-search*`); only the room
+   around them is this page's. */
+.ag-rev-add {
+  margin-bottom: 1rem;
+}
+
+.ag-rev-add-label {
+  font-size: var(--ag-fs-sm);
+  font-weight: 500;
+  color: var(--ag-text-secondary);
+  margin: 0 0 0.35rem;
+}
+
+.ag-rev-add .ag-search {
+  margin: 0;
+}
+
+.ag-rev-added {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.ag-rev-added li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.15rem 0.15rem 0.15rem 0.5rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-sunken);
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+}
+
+.ag-rev-added button {
+  font: inherit;
+  font-size: var(--ag-fs-md);
+  line-height: 1;
+  border: none;
+  background: transparent;
+  color: var(--ag-text-muted);
+  cursor: pointer;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--ag-radius-pill);
+  transition: color 100ms ease-out;
+}
+
+.ag-rev-added button:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  .ag-rev-added button:hover {
+    color: var(--ag-text-primary);
+    background: var(--ag-surface-hover);
+  }
+}
+
+/* A refetch keeps the last read on screen, dimmed (DS: no skeleton twice). */
+.ag-rev-body {
+  transition: opacity 100ms ease-out;
+}
+
+.ag-rev-body[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-rev-body {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------- filters */
+
+.ag-rev-filters {
+  margin: 0.75rem 0 1rem;
+}
+
+/* One line: the button, the picks while folded, the count; the read's date
+   at the far end. */
+.ag-rev-filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ag-rev-asof {
+  margin: 0 0 0 auto;
+}
+
+.ag-rev-filter-btn {
+  font-weight: 500;
+}
+
+.ag-rev-filter-badge {
+  min-width: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-brand-accent);
+  color: var(--ag-on-brand);
+  font-size: var(--ag-fs-2xs);
+  font-weight: 600;
+  line-height: 1.15rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-rev-pick span {
+  color: var(--ag-text-muted);
+}
+
+/* Label beside its chips while there is room, stacked above them when not;
+   one grid so both labels share a column as wide as the longer. */
+.ag-rev-filter-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+}
+
+.ag-rev-filter-grid[hidden] {
+  display: none;
+}
+
+.ag-rev-filter {
+  display: contents;
+}
+
+.ag-rev-filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+  color: var(--ag-text-muted);
+}
+
+.ag-rev-filter-n {
+  margin-left: 0.35rem;
+  color: var(--ag-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-rev-filter-count {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-rev-filter-clear {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--ag-brand-accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ag-rev-filter-clear:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 2px;
+  border-radius: var(--ag-radius-xs);
+}
+
+@media (hover: hover) {
+  .ag-rev-filter-clear:hover {
+    text-decoration: underline;
+  }
+}
+
+@container ag-main (max-width: 640px) {
+  .ag-rev-filter-grid {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0.35rem;
+    padding: 0.75rem;
+  }
+
+  .ag-rev-filter + .ag-rev-filter .ag-rev-filter-label {
+    margin-top: 0.5rem;
+  }
+
+  /* Eleven sectors wrap into four rows on a phone and push the plan off the
+     screen: one row that scrolls sideways instead, the page never does. */
+  .ag-rev-filters .ag-toggles {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+
+  .ag-rev-filters .ag-toggles::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ag-rev-filters .ag-toggle {
+    flex: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .ag-rev-filter-clear {
+    min-height: 44px;
+  }
+}
+
+/* ---------------------------------------------------------- table search */
+
+/* The shell's search field, sunk into the card like any input on one. */
+.ag-rev-find {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.ag-rev-find .ag-search-field {
+  flex: 1 1 14rem;
+  max-width: 22rem;
+  background: var(--ag-surface-sunken);
+}
+
+.ag-rev-find p {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (pointer: coarse) {
+  .ag-rev-find .ag-search-field {
+    min-height: 44px;
+  }
+}
+
+/* ----------------------------------------------------------------- moves */
+
+.ag-rev-moves {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.75rem;
+}
+
+/* A nested box in a card: the KPI tile's surface and radius (`.ag-kpi`).
+   The verdict pill and the figure carry the colour; the box stays grey. */
+.ag-rev-move {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-page);
+  padding: 0.75rem 0.85rem;
+  min-width: 0;
+}
+
+.ag-rev-move > .ag-rev-caption {
+  margin: 0;
+}
+
+.ag-rev-move-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ag-rev-move-who {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The money is the card's figure; the weights are its supporting fact. */
+.ag-rev-move-figs {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-rev-move-scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-rev-move-scores b {
+  font-weight: 600;
+  color: var(--ag-text-primary);
+}
+
+.ag-rev-move-figs i {
+  font-style: normal;
+  margin: 0 0.3rem;
+  color: var(--ag-text-muted);
+}
+
+.ag-rev-move-figs b {
+  font-size: var(--ag-fs-xl);
+  font-weight: 700;
+}
+
+.ag-rev-tone-down {
+  color: var(--ag-down);
+}
+
+.ag-rev-tone-warn {
+  color: var(--ag-warn);
+}
+
+.ag-rev-tone-up {
+  color: var(--ag-up);
+}
+
+.ag-rev-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.35rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ag-rev-reasons li {
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-secondary);
+  background: var(--ag-surface-sunken);
+  border-radius: var(--ag-radius-xs, 6px);
+  padding: 0.1rem 0.4rem;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* ------------------------------------------------------------------- map */
+
+.ag-rev-map {
+  width: 100%;
+  overflow: hidden;
+}
+
+.ag-rev-map svg {
+  display: block;
+}
+
+.ag-rev-map-best {
+  fill: var(--ag-profit-band);
+  opacity: 0.55;
+}
+
+.ag-rev-map-grid {
+  stroke: var(--ag-rule-soft);
+}
+
+.ag-rev-map-bar {
+  stroke: var(--ag-border);
+  stroke-dasharray: 4 4;
+}
+
+.ag-rev-map-tick,
+.ag-rev-map-axis,
+.ag-rev-map-quad {
+  font-size: var(--ag-fs-2xs);
+  fill: var(--ag-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-rev-map-quad {
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.ag-rev-dot circle {
+  stroke-width: 1.5;
+  fill-opacity: 0.75;
+}
+
+.ag-rev-dot text {
+  font-size: var(--ag-fs-2xs);
+  fill: var(--ag-text-secondary);
+  paint-order: stroke;
+  stroke: var(--ag-surface-card);
+  stroke-width: 3px;
+}
+
+.ag-rev-dot-up circle {
+  fill: var(--ag-up);
+  stroke: var(--ag-up);
+}
+
+.ag-rev-dot-down circle {
+  fill: var(--ag-down);
+  stroke: var(--ag-down);
+}
+
+.ag-rev-dot-warn circle {
+  fill: var(--ag-warn);
+  stroke: var(--ag-warn);
+}
+
+.ag-rev-dot-flat circle {
+  fill: var(--ag-text-muted);
+  stroke: var(--ag-text-muted);
+}
+
+.ag-rev-dot-out circle {
+  fill: var(--ag-surface-card);
+  fill-opacity: 1;
+}
+
+.ag-rev-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.9rem;
+  list-style: none;
+  padding: 0;
+}
+
+.ag-rev-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.ag-rev-key {
+  flex: none;
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--ag-text-muted);
+}
+
+.ag-rev-key-held {
+  background: var(--ag-text-muted);
+}
+
+/* ---------------------------------------------------------------- tables */
+
+.ag-rev-scroll {
+  overflow-x: auto;
+}
+
+.ag-rev-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--ag-fs-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-rev-table th,
+.ag-rev-table td {
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--ag-rule-soft);
+  padding: 7px 10px;
+  vertical-align: middle;
+}
+
+.ag-rev-table td {
+  color: var(--ag-text-secondary);
+}
+
+.ag-rev-table thead th {
+  border-bottom-color: var(--ag-border);
+  font-weight: 500;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-muted);
+  vertical-align: bottom;
+}
+
+.ag-rev-table tbody tr:last-child > * {
+  border-bottom: none;
+}
+
+.ag-rev-th {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.ag-rev-verdict {
+  display: inline-flex;
+  cursor: help;
+}
+
+.ag-rev-table .ag-rev-fold-cell {
+  width: 1px;
+  padding-left: 0;
+}
+
+.ag-rev-fold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: none;
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
+  color: var(--ag-text-muted);
+  cursor: pointer;
+}
+
+.ag-rev-fold:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  .ag-rev-fold:hover {
+    color: var(--ag-text-primary);
+    background: var(--ag-surface-hover);
+  }
+}
+
+/* A chevron drawn in CSS, pointing on: the details open over the page. */
+.ag-rev-chevron {
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateX(-1px) rotate(-45deg);
+}
+
+.ag-rev-table .ag-rev-left {
+  text-align: left;
+}
+
+.ag-rev-table .ag-rev-who-col {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  text-align: left;
+  background: var(--ag-surface-card);
+  font-weight: 600;
+}
+
+.ag-rev-table .ag-rev-why {
+  white-space: normal;
+  min-width: 12rem;
+}
+
+.ag-rev-table .ag-rev-why .ag-rev-reasons {
+  margin: 0;
+}
+
+@media (hover: hover) {
+  .ag-rev-table tbody tr:hover > * {
+    background: var(--ag-surface-sunken);
+  }
+}
+
+/* ---------------------------------------------------------- the details */
+
+/* The dialog a "Details" press opens: the verdict's rule, then the reasons,
+   then the numbers — each group divided like the projection panel's. Same
+   shell as the calendar's event dialog (`.earn-modal`), which lives in the
+   Earnings chunk and so is not loaded here. */
+.ag-rev-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: var(--ag-surface-page-veil);
+}
+
+.ag-rev-modal-card {
+  width: 100%;
+  max-width: 38rem;
+  max-height: 90dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-overlay);
+  animation: ag-rev-tip-in 100ms ease-out;
+}
+
+.ag-rev-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.ag-rev-modal-head .ag-tick {
+  min-width: 0;
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+}
+
+.ag-rev-modal-close {
+  flex: none;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  cursor: pointer;
+}
+
+.ag-rev-modal-close:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  .ag-rev-modal-close:hover {
+    color: var(--ag-text-primary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-rev-modal-card {
+    animation: none;
+  }
+}
+
+.ag-rev-details-rule {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+  text-wrap: pretty;
+}
+
+.ag-rev-details-rule > .ag-rev-verdict {
+  flex: none;
+}
+
+.ag-rev-details-group {
+  border-top: 1px solid var(--ag-rule-soft);
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+}
+
+.ag-rev-why-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+/* Name beside its rule while the panel is wide; the rule drops under the name
+   once it would get less than 16rem — the panel is as narrow as a move card
+   on a wide page, so the page's own width cannot decide this. */
+.ag-rev-why-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1rem 0.75rem;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+  text-wrap: pretty;
+}
+
+.ag-rev-why-list b {
+  flex: 0 0 12rem;
+  font-weight: 600;
+  color: var(--ag-text-primary);
+}
+
+.ag-rev-why-list span {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.ag-rev-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 7.25rem), 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.ag-rev-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-page);
+}
+
+.ag-rev-fact dt {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+  color: var(--ag-text-muted);
+}
+
+.ag-rev-fact dd {
+  margin: 0;
+  font-size: var(--ag-fs-base);
+  font-weight: 600;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Details ›" under a move card or a dense row. */
+.ag-rev-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.75rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+  color: var(--ag-text-muted);
+  cursor: pointer;
+}
+
+.ag-rev-more:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  .ag-rev-more:hover {
+    color: var(--ag-text-primary);
+  }
+}
+
+.ag-dense > .ag-dense-row:has(+ .ag-rev-more-row) {
+  border-bottom: none;
+}
+
+/* Under the row's text, past its logo (`.ag-dense-row`: 28px + 10px gap). */
+.ag-dense > .ag-rev-more-row {
+  padding: 0 0 0.35rem 40px;
+  border-bottom: 1px solid var(--ag-rule-soft);
+}
+
+.ag-dense > .ag-rev-more-row:last-child {
+  border-bottom: none;
+}
+
+@container ag-main (max-width: 40rem) {
+  .ag-dense > .ag-rev-more-row {
+    padding-left: 0;
+  }
+}
+
+/* -------------------------------------------------------------- the ask */
+
+.ag-rev-disclaimer {
+  max-width: 62ch;
+  margin-top: 1rem;
+}
+
+@media (pointer: coarse) {
+  .ag-rev-ask,
+  .ag-rev-more,
+  .ag-rev-modal-close {
+    min-height: 44px;
+  }
+
+  .ag-rev-added button,
+  .ag-rev-fold {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* ------------------------------------------------------------ map tooltip */
+
+/* The DS tooltip box, as `.tk-tip` / `.pf-tip` draw it on the charts. Placed by
+   `tipPlace` inside the map; never takes the pointer. */
+.ag-rev-map {
+  position: relative;
+}
+
+.ag-rev-tip {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  min-width: 9rem;
+  max-width: min(280px, calc(100% - 16px));
+  padding: 8px 10px;
+  background: var(--ag-surface-page);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  box-shadow: var(--ag-shadow-overlay);
+  font-size: var(--ag-fs-xs);
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  animation: ag-rev-tip-in 100ms ease-out;
+}
+
+@keyframes ag-rev-tip-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-rev-tip {
+    animation: none;
+  }
+}
+
+.ag-rev-tip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ag-rev-tip-sym {
+  font-weight: 600;
+  color: var(--ag-text-primary);
+}
+
+.ag-rev-tip-name {
+  margin-top: -2px;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Label muted, value bold — the DS tooltip row. */
+.ag-rev-tip-figs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  color: var(--ag-text-muted);
+}
+
+.ag-rev-tip-figs b {
+  font-weight: 600;
+  color: var(--ag-text-primary);
+}
+
+.ag-rev-tip-why {
+  margin: 2px 0 0;
+  padding: 6px 0 0 1rem;
+  border-top: 1px solid var(--ag-border);
+  color: var(--ag-text-secondary);
+}
+
+.ag-rev-tip-why li + li {
+  margin-top: 2px;
+}
+
+/* The dot's finger-sized hit ring is invisible; the dot itself answers. */
+.ag-rev-dot {
+  cursor: default;
+  outline: none;
+}
+
+.ag-rev-dot .ag-rev-dot-hit {
+  fill: transparent;
+  stroke: none;
+}
+
+.ag-rev-dot circle:not(.ag-rev-dot-hit) {
+  transition: stroke-width 100ms ease-out;
+}
+
+.ag-rev-dot-on circle:not(.ag-rev-dot-hit) {
+  stroke-width: 3;
+  fill-opacity: 1;
+}
+
+.ag-rev-dot-out.ag-rev-dot-on circle:not(.ag-rev-dot-hit) {
+  fill: var(--ag-surface-card);
+}
+
+.ag-rev-dot:focus-visible .ag-rev-dot-hit {
+  stroke: var(--ag-border-focus);
+  stroke-width: 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-rev-dot circle {
+    transition: none;
+  }
+}
+
+/* Held coins: out of the read, one line under the book. */
+.ag-rev-coins {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--ag-border);
+}
+.ag-rev-coin-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ag-rev-coin-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}

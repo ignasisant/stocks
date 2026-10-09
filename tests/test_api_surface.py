@@ -150,7 +150,9 @@ def test_the_guest_list_is_not_silently_growing():
     # `/position` already does.
     # 54: `GET /ticker/{symbol}/analysts` — a share's sell-side card: market
     # data like `/moat` and `/insiders`, no account goes into it.
-    assert len(guest.OPEN) == 54
+    # 55: `GET /review` — the demo book's sell / add verdicts; computed from
+    # the book and cached fundamentals, `?add=` is a query param, no write.
+    assert len(guest.OPEN) == 55
 
 
 def test_every_route_a_guest_may_read_is_a_read():

@@ -34,6 +34,8 @@ DESTINATIONS: tuple[Destination, ...] = (
     Destination("", "nav.home", "home"),
     Destination("portfolio", "nav.portfolio", "pie_chart",
                 "nav.section_portfolio"),
+    Destination("review", "nav.review", "swap_vert",
+                "nav.section_portfolio"),
     Destination("import_transactions", "nav.import",
                 "upload_file", "nav.section_portfolio"),
     Destination("ticker", "nav.ticker", "query_stats",

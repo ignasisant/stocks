@@ -32,6 +32,7 @@ PAGES: dict[str, tuple[str, ...]] = {
     "home": (),
     "portfolio": ("overview", "positions", "risk", "projection", "tax",
                   "dividends", "fees"),
+    "review": (),
     "import": (),
     "ticker": (),
     "sentiment": ("indices", "gauges", "rates", "inflation", "rotation",
@@ -56,6 +57,8 @@ _WHAT = {
     "portfolio": "the reader's holdings. Tabs: overview, positions, "
                  "risk (allocation and risk), projection, tax (realized "
                  "gains and tax), dividends, fees",
+    "review": "what to sell, trim or add to in the book, and which outside "
+              "tickers to buy (verdicts on quality and price, with tax)",
     "import": "upload a broker statement",
     "ticker": "one company: chart, fundamentals, news. Write the symbol "
               "after a slash: ticker/AAPL",

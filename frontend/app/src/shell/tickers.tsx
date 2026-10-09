@@ -98,6 +98,14 @@ function request(ticker: string) {
   setTimeout(flush, 0);
 }
 
+/**
+ * The company name the cache already holds, without asking for it — for a
+ * text search over rows whose cells have asked already. Null until it lands.
+ */
+export function cachedName(ticker: string): string | null {
+  return cache.get(ticker.trim().toUpperCase())?.name ?? null;
+}
+
 export function useTickerProfile(ticker: string): Profile | null {
   const key = ticker.trim().toUpperCase();
   const value = useSyncExternalStore(

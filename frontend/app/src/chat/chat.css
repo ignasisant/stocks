@@ -857,6 +857,8 @@
 .ag-chat-field {
   max-height: 140px;
   flex: 1;
+  /* Grows with a drafted question up to the cap, then scrolls. */
+  field-sizing: content;
   padding: 9px 12px;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-md);

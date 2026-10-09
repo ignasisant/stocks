@@ -55,7 +55,20 @@ const MARKS: Record<string, string> = { favorite: "★", held: "●" };
 /** Long enough that typing a five-letter symbol is one request, not five. */
 const DEBOUNCE_MS = 220;
 
-export function Search() {
+/**
+ * The same field and panel as a picker: with `onPick`, choosing a row hands
+ * the ticker to the caller instead of opening its page, and nothing is
+ * recorded as a visit — a page that collects tickers (Review's "weigh other
+ * tickers") gets the top bar's ranking without a second search to keep in
+ * step with it.
+ */
+export function Search({
+  onPick,
+  placeholder,
+}: {
+  onPick?: (ticker: string, name: string) => void;
+  placeholder?: string;
+} = {}) {
   const t = useT();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -137,6 +150,12 @@ export function Search() {
   }
 
   function open_(ticker: string, name = "") {
+    if (onPick) {
+      setOpen(false);
+      setQuery("");
+      onPick(ticker, name);
+      return;
+    }
     // Recorded, not awaited: the reader is already on their way to the page,
     // and a failed write must not hold the navigation or surface an error.
     // The name travels with it: the row knows what the ticker is called, and
@@ -168,8 +187,8 @@ export function Search() {
         type="search"
         className="ag-search-field"
         value={query}
-        placeholder={t("widgets.search_placeholder")}
-        aria-label={t("widgets.search_placeholder")}
+        placeholder={placeholder ?? t("widgets.search_placeholder")}
+        aria-label={placeholder ?? t("widgets.search_placeholder")}
         onFocus={focus}
         onChange={(event) => {
           setQuery(event.target.value);
@@ -177,7 +196,11 @@ export function Search() {
         }}
         onKeyDown={(event) => {
           if (event.key === "Escape") setOpen(false);
-          if (event.key === "Enter" && rows[0]) open_(rows[0].ticker, rows[0].name);
+          if (event.key !== "Enter") return;
+          if (rows[0]) open_(rows[0].ticker, rows[0].name);
+          // A picker takes a symbol nothing matched, as typed: the caller
+          // checks it, and an unlisted name is still worth asking about.
+          else if (onPick && analyze) open_(analyze.ticker);
         }}
       />
       {open && (term || recent.length > 0) ? (

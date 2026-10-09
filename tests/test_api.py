@@ -656,6 +656,9 @@ WRITES = {
     # operator's shared keys — which is the one a leaked token would be worth
     # stealing for.
     ("/v1/chat/runs", "post"),
+    # Stops that turn: closing the stream no longer does, so it is its own
+    # write, and a token may no more stop one than start one.
+    ("/v1/chat/runs/{rid}/stop", "post"),
     ("/v1/chat/actions", "post"),
     # Undoes a ledger edit the chat made: rewrites rows like the undo above.
     ("/v1/chat/proposals/{pid}/undo", "post"),

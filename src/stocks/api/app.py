@@ -51,6 +51,7 @@ from stocks.api.routes import (
     prefs,
     pulse,
     reference,
+    review,
     search,
     sector,
     ticker,
@@ -243,11 +244,14 @@ def _unreachable(request: Request, exc: URLError) -> JSONResponse:
 
 # Open: a liveness probe carries no credentials, and the design tokens and
 # translated strings are shipped files the landing already publishes in plain
-# HTML — a sign-in screen needs them before anyone is signed in.
+# HTML — a sign-in screen needs them before anyone is signed in. A chat run's
+# hold is this service calling itself, authenticated by the run's own token
+# rather than an account (`api/runs.py`).
 _public = APIRouter(prefix=f"/{API_VERSION}")
 _public.include_router(health.router)
 _public.include_router(design.router)
 _public.include_router(i18n.router)
+_public.include_router(chat.holds)
 
 
 def gate(request: Request, who: Who) -> Caller:
@@ -288,6 +292,7 @@ _private.include_router(crypto.router)
 _private.include_router(comparables.router)
 _private.include_router(search.router)
 _private.include_router(sector.router)
+_private.include_router(review.router)
 _private.include_router(earnings.router)
 _private.include_router(pulse.router)
 _private.include_router(prefs.router)

@@ -116,6 +116,8 @@ export default function Panel({
   onMemoryTaken,
   thread = null,
   onThreadTaken,
+  draft = null,
+  onDraftTaken,
   onClose,
   onPark,
 }: {
@@ -129,6 +131,9 @@ export default function Panel({
   /** Sent here to one conversation (the daily card's "Ask"). */
   thread?: string | null;
   onThreadTaken?: () => void;
+  /** A question a page wrote for the composer, not sent (Review's ask). */
+  draft?: string | null;
+  onDraftTaken?: () => void;
   onClose: () => void;
   /**
    * Step aside for a page the walkthrough sent the reader to, on a phone —
@@ -164,6 +169,15 @@ export default function Panel({
     openThread(thread);
     onThreadTaken?.();
   }, [thread, chat.ready]);
+  // A drafted question goes to the thread view's composer, which takes it from
+  // `seed` whenever it is drawn — after the opening read, like the thread.
+  const [seed, setSeed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!draft || !chat.ready) return;
+    setView("thread");
+    setSeed(draft);
+    onDraftTaken?.();
+  }, [draft, chat.ready]);
   // Opening the drawer on the guide's own thread is the moment a capability
   // may have been switched on somewhere the guide was not looking — an import
   // in another tab, a key saved in settings. Catch the thread up then, once
@@ -530,6 +544,8 @@ export default function Panel({
             onSave={(patch) => void chat.settings(patch)}
             onAttach={(file) => void chat.attach(file)}
             onSettings={() => setView("settings")}
+            seed={seed}
+            onSeedTaken={() => setSeed(null)}
           />
         </>
       )}

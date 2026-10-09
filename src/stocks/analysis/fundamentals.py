@@ -16,6 +16,7 @@ import pandas as pd
 
 from stocks.analysis import ranking
 from stocks.analysis.moat import moat_score
+from stocks.data import fetch, fx
 from stocks.data.fundamentals import RawFundamentals
 
 
@@ -371,6 +372,32 @@ def quarterly_eps(raw: RawFundamentals) -> pd.DataFrame:
     return df.iloc[::-1]  # yfinance is newest-first; charts read left-to-right
 
 
+def _statement_fx(info: dict) -> float | None:
+    """Units of the quote currency per unit of the filing currency.
+
+    Statements are filed in `financialCurrency`, the price is quoted in
+    `currency`, and an ADR mixes the two: Novo Nordisk files in DKK and trades
+    in USD, Alibaba files in CNY. 1.0 when they agree or either is unknown
+    (case folded, so a London line quoted in GBp against GBP filings is not a
+    mismatch); None when they differ and no rate could be had, so a ratio is
+    left blank rather than computed across two currencies.
+    """
+    filed, quoted = info.get("financialCurrency"), info.get("currency")
+    if not filed or not quoted or str(filed).upper() == str(quoted).upper():
+        return 1.0
+    try:
+        return fx.spot(str(filed), str(quoted))[0]
+    except Exception:  # noqa: BLE001 - the ECB does not quote every currency
+        pass
+    # TWD (TSMC) is not an ECB currency; Yahoo quotes the pair itself.
+    try:
+        quote = fetch.info(f"{filed}{quoted}=X")
+        rate = quote.get("regularMarketPrice") or quote.get("previousClose")
+        return float(rate) if rate else None
+    except Exception:  # noqa: BLE001 - an unquoted pair is a blank, not a crash
+        return None
+
+
 def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     """All KPIs for one ticker. Missing data -> None, never invented."""
     info = raw.info
@@ -394,6 +421,15 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     m["gross_margin"] = info.get("grossMargins")
     m["op_margin"] = info.get("operatingMargins")
     m["net_margin"] = info.get("profitMargins")
+    # Not KPIs (no catalog entry, no screen column): the facts the review
+    # engine needs to tell a business still building its product — a
+    # clinical-stage biotech — from one that has stopped earning.
+    m["industry"] = info.get("industry")
+    revenue = _latest(raw.income, "Total Revenue")
+    m["revenue"] = revenue
+    if not revenue:
+        # Yahoo answers a margin of 0 on no sales; there is no margin to read.
+        m["gross_margin"] = m["op_margin"] = m["net_margin"] = None
 
     # -- derived from statements --
     ebit = _latest(raw.income, "EBIT")
@@ -407,14 +443,55 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
 
     fcf = _latest(raw.cashflow, "Free Cash Flow")
     m["fcf"] = fcf
-    m["fcf_yield"] = fcf / m["market_cap"] if fcf and m["market_cap"] else None
+    rate = _statement_fx(info)
+    cap = m["market_cap"]
+    m["fcf_yield"] = fcf * rate / cap if fcf and cap and rate else None
+    # Yahoo's FCF adds share-based pay back as if it cost nothing; for a
+    # software house it can be most of the figure (HubSpot: 528M of 577M).
+    # Paid in shares is still paid: the owner's FCF takes it off again.
+    sbc = _latest(raw.cashflow, "Stock Based Compensation")
+    owner = fcf - sbc if fcf is not None and sbc and sbc > 0 else fcf
+    m["sbc_fcf"] = sbc / fcf if sbc and sbc > 0 and fcf and fcf > 0 else None
+    m["owner_fcf_yield"] = owner * rate / cap if owner and cap and rate else None
+    m["fcf_margin"] = owner / revenue if owner is not None and revenue else None
+    # Last quarter's sales against a year before: the growth a decelerating
+    # name has now, which a four-year CAGR still remembers as its best years.
+    m["revenue_growth"] = info.get("revenueGrowth")
 
     ebitda = _latest(raw.income, "EBITDA")
     net_debt = _latest(raw.balance, "Net Debt")
     if net_debt is None:
         debt, cash = info.get("totalDebt"), info.get("totalCash")
         net_debt = debt - cash if debt is not None and cash is not None else None
-    m["net_debt_ebitda"] = net_debt / ebitda if net_debt is not None and ebitda else None
+    # Over a loss the ratio flips sign: net cash over a negative EBITDA reads as
+    # leverage (Revolution Medicines showed 2.5x). No earnings, no multiple.
+    has_ebitda = ebitda is not None and ebitda > 0
+    m["net_debt_ebitda"] = (
+        net_debt / ebitda if net_debt is not None and has_ebitda else None
+    )
+    # Free cash flow far above EBITDA is not the business's cash: a lender's
+    # loan book or a payments float runs through operating cash flow.
+    m["fcf_ebitda"] = owner / ebitda if owner is not None and has_ebitda else None
+    if rate != 1.0:
+        # Yahoo adds a market cap in one currency to a net debt in the other,
+        # and its EV multiples divide by statements in the filing currency —
+        # Novo read at 1.5x EBITDA. Rebuilt in the quote currency, or blank.
+        ev = cap + net_debt * rate if rate and cap and net_debt is not None else None
+        m["ev"] = ev
+        m["ev_ebitda"] = ev / (ebitda * rate) if ev and ebitda and rate else None
+        m["ev_sales"] = ev / (revenue * rate) if ev and revenue and rate else None
+        # Its P/B is off the same way (TSMC read 94x): cap over filed equity.
+        equity = _latest(raw.balance, "Stockholders Equity")
+        book = equity * rate if equity and equity > 0 and rate else None
+        m["pb"] = cap / book if cap and book else None
+
+    # Years of cash at the last year's burn, for a business that burns it.
+    # Both sides are the filer's own currency, so no rate is involved.
+    cash_now = info.get("totalCash") or _latest(
+        raw.balance, "Cash Cash Equivalents And Short Term Investments"
+    )
+    burn = -fcf if fcf is not None and fcf < 0 else None
+    m["runway_years"] = cash_now / burn if burn and cash_now else None
 
     net_income = _latest(raw.income, "Net Income")
     m["cash_conversion"] = fcf / net_income if fcf and net_income else None
