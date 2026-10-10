@@ -30,6 +30,7 @@ import { useT } from "./i18n";
 import { canonical } from "./pages";
 import { useRoute } from "./router";
 import { useGuest } from "./session";
+import { Welcome } from "./Welcome";
 import {
   after,
   clamp,
@@ -118,7 +119,13 @@ export function firstLoad(
   guide: Guide,
   guest: boolean,
   parked: { mode: "tour" | "news"; at: number } | null,
-): { place: Place | null; interrupted: boolean; forget?: boolean } {
+): {
+  place: Place | null;
+  interrupted: boolean;
+  forget?: boolean;
+  /** Open the short first-login welcome instead of the tour. */
+  welcome?: boolean;
+} {
   // A tour parked in this tab outlives a reload, as the strip, exactly where
   // it was left — rather than re-opening at step one over the page the reader
   // went to look at. A strip is not an interruption.
@@ -142,6 +149,15 @@ export function firstLoad(
   if (guide.surface === "chat" && !guide.finished) {
     return { place: null, interrupted: true, forget };
   }
+  // The card surface: a newcomer gets three rows in a pop-up (`Welcome`),
+  // not the long tour, and Home's start card carries on from there. Opening
+  // it retires the tour, stamping the current release, so "what's new" opens
+  // for what ships *after* this account arrived rather than never (it waits
+  // on `tour_done`) or for the whole backlog. The tour stays one press away
+  // by URL and from Profile.
+  if (guide.surface === "card" && !state.tour_done) {
+    return { place: null, interrupted: true, forget, welcome: true };
+  }
   // The walkthrough for an account that never finished it, "what's new" for
   // one that did.
   if (!state.tour_done && state.steps.length) {
@@ -160,6 +176,8 @@ export function Tour() {
   const [state, setState] = useState<State | null>(null);
   // Null: nothing running. `open: false`: parked in the strip above the page.
   const [place, setPlace] = useState<Place | null>(null);
+  const [welcome, setWelcome] = useState(false);
+  const closeWelcome = useCallback(() => setWelcome(false), []);
 
   const asked = params.get("tour");
   // The automatic decisions — restore a parked strip, open for a newcomer,
@@ -178,11 +196,11 @@ export function Tour() {
       firstLoadInterrupted(false);
       return;
     }
-    // Which onboarding this deploy serves. With the conversational guide on
-    // (`GUIDE_SURFACE` = "chat", the default) the walkthrough lives in the
-    // drawer, and this modal only opens when asked for by URL — and for
-    // "what's new", once the guide is behind the account. Unreadable (a
-    // guest) reads as the modal, which is what a guest has always had.
+    // Which onboarding this deploy serves. "card" (the default) opens
+    // nothing for a newcomer; "chat" walks them through in the drawer; with
+    // either, this modal opens only when asked for by URL — and for "what's
+    // new", once the onboarding is behind the account. Unreadable (a guest)
+    // reads as the modal, which is what a guest has always had.
     const surface: Promise<Guide> = guest
       ? Promise.resolve({ surface: "modal", finished: true })
       : get<Guide>("/guide").catch(() => ({
@@ -207,6 +225,12 @@ export function Tour() {
         booted.current = true;
         const decided = firstLoad(next, guide, guest, readPark());
         if (decided.forget) writePark(null);
+        if (decided.welcome) {
+          // Stamped on open, not on close: a welcome seen twice is no longer
+          // one, and a reload before closing it must not bring it back.
+          setWelcome(true);
+          void send("POST", "/onboarding/seen", { done: true }).catch(() => undefined);
+        }
         firstLoadInterrupted(decided.interrupted);
         setPlace(decided.place);
       })
@@ -240,6 +264,7 @@ export function Tour() {
     [guest, asked, setParams],
   );
 
+  if (state && welcome) return <Welcome steps={state.steps} onClose={closeWelcome} />;
   if (!state || !place) return null;
   const list = place.mode === "tour" ? state.steps : state.news;
   if (!list.length) return null;

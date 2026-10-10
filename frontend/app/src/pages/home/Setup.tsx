@@ -1,119 +1,98 @@
 /**
- * The two first-run groups: what this account has switched on, and the three
- * things that need nothing switched on at all.
+ * The start card: the whole onboarding, drawn as a map rather than written
+ * as instructions.
  *
- * Both sit inside one bordered card, kept apart on purpose. The first is a
- * list of what is still missing — Google sign-in, a ledger import, a provider
- * key, Telegram — and a list of what is missing is a poor answer to "what can
- * I do here": an account that has
- * connected nothing can still look a company up, ask the assistant on the free
- * chain and make the watchlist its own, right now. The second group is what
- * says that, which is why it never gates the dismiss — it is an invitation,
- * not a chore.
+ * Four nodes on a line — account, import, AI key, Telegram — each an icon and
+ * a word, each a door straight into the section that switches it on. The
+ * first one still to do is lit, and gets the card's one big button. Under the
+ * line, three things that need nothing switched on (look a ticker up, ask the
+ * assistant, make the watchlist yours) as icon chips.
  *
- * Every state on screen is the server's. `/onboarding` derives both from the
- * registry the guided tour already reads (`stocks.web.onboarding`'s
+ * No paragraph anywhere, on purpose. A walkthrough read before the reader has
+ * done anything was the part they skipped — in the drawer, in the modal, in
+ * the markdown card this replaced. The sections teach themselves (Import has
+ * its own stepper), so the card's only job is getting the reader there.
+ *
+ * Every state on screen is the server's. `/onboarding` derives both groups
+ * from the registry the guided tour reads (`stocks.web.onboarding`'s
  * `setup_state` / `explore_state`), so the card and the tour cannot disagree
  * about whether this account has Telegram linked. Nothing here re-computes
- * any of it, and nothing here reads prefs.
+ * any of it, and nothing here reads prefs. Everything done, the card is gone.
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { get, send } from "../../shell/api";
 import { useT } from "../../shell/i18n";
+import { Icon } from "../../shell/Icon";
 import { Skeleton } from "../../shell/Layout";
 import { openAssistant } from "../../shell/assistant";
 import { signInHref } from "../../shell/guest";
-import { Link, useRoute } from "../../shell/router";
+import { useRoute } from "../../shell/router";
 import { useSession, useSignIn } from "../../shell/session";
 import { useApi } from "../../shell/useApi";
-import { plain } from "./format";
 import { EXPLORE, SETUP, target, type Row } from "./checks";
 import type { Onboarding, TourStep } from "./types";
 import { Card } from "./ui";
-import { Badge } from "../../ui/Badge";
 
 /*
  * The dismissal is an account setting (`setup_card_dismissed` in prefs.json),
- * not a browser one. A reader who put the checklist away has put it away, and
+ * not a browser one. A reader who put the card away has put it away, and
  * meeting it again on their phone is the app forgetting a decision they made.
  */
 
-/**
- * The state mark: a tick for a capability that is on, an empty ring for one
- * that is not.
- *
- * Decoration only — `Check` writes the same state in words beside it, because
- * a shape is not a label and a screen reader gets nothing from this.
- */
-function Mark({ on }: { on: boolean }) {
-  return (
-    <span className={on ? "hm-mark hm-mark-on" : "hm-mark"} aria-hidden="true">
-      {on ? "✓" : ""}
-    </span>
-  );
-}
+type Entry = { row: Row; on: boolean };
 
 /**
- * One capability row.
- *
- * Done recedes to a muted tick: the badge on the heading already counts them,
- * and four emphatic rows would bury the one row that still needs doing — which
- * keeps its border, and so is the only thing on the strip that looks like a
- * control. A row with nowhere to go is drawn as text rather than as a button
- * that would swallow the press.
+ * One row as a control: a link, a button, or plain text when there is
+ * nowhere to send the reader. Shared by the nodes, the big button and the
+ * chips, so all three go to the same place by the same rules.
  */
-function Check({
+function Door({
   row,
-  on,
   steps,
   guest,
+  className,
+  label,
+  children,
 }: {
   row: Row;
-  on: boolean;
   steps: TourStep[];
   guest: boolean;
+  className: string;
+  /** Accessible name: the visible word plus its state. */
+  label: string;
+  children: ReactNode;
 }) {
-  const t = useT();
   const { go } = useRoute();
   const signIn = signInHref(useSignIn());
-  const to = target(row, steps);
-  const className = on ? "hm-check hm-check-on" : "hm-check";
-  const body = (
-    <>
-      <Mark on={on} />
-      <span>{t(row.label)}</span>
-      {/* The tour's own two words for these two states, so the app has one
-          vocabulary for "switched on" rather than one per surface. */}
-      <span className="hm-sr">{on ? t("tour.active") : t("tour.pending")}</span>
-      {/* Only a row still to do points onward: it is the one worth pressing. */}
-      {on ? null : (
-        <span className="hm-check-go" aria-hidden="true">
-          ›
-        </span>
-      )}
-    </>
-  );
-  if (row.key === "login" && !on) {
+  if (row.key === "login" && guest) {
     // A guest's pending sign-in is the action itself: a link to the login
     // route. A deployment with no identity provider has nowhere to send
-    // anybody, so the row states the capability and stops.
+    // anybody, so the node states the capability and stops.
     return signIn ? (
-      <a className={className} href={signIn}>
-        {body}
+      <a className={className} href={signIn} aria-label={label}>
+        {children}
       </a>
     ) : (
-      <span className={`${className} hm-check-off`} aria-disabled="true">
-        {body}
+      <span className={className} aria-label={label} aria-disabled="true">
+        {children}
       </span>
     );
   }
-  if (!to) return <span className={className}>{body}</span>;
+  const to = target(row, steps);
+  if (!to) {
+    return (
+      <span className={className} aria-label={label}>
+        {children}
+      </span>
+    );
+  }
   return (
     <button
       type="button"
       className={className}
+      aria-label={label}
       // Every target but search sits behind a sign-in: shown, so a guest sees
       // what an account gets, and disabled, so pressing it does not walk into
       // a wall.
@@ -122,66 +101,8 @@ function Check({
         to.kind === "assistant" ? openAssistant() : go(to.page, to.params)
       }
     >
-      {body}
+      {children}
     </button>
-  );
-}
-
-/**
- * How far along a group is, as one segment per row. Decoration: the badge
- * beside the heading says the same in words.
- */
-function Meter({ done, total }: { done: number; total: number }) {
-  return (
-    <span className="hm-meter" aria-hidden="true">
-      {Array.from({ length: total }, (_, i) => (
-        <span key={i} className={i < done ? "hm-meter-on" : undefined} />
-      ))}
-    </span>
-  );
-}
-
-/** A heading line, its count, and the rows still worth showing under it. */
-function Group({
-  title,
-  badge,
-  rows,
-  steps,
-  guest,
-  collapsed,
-  check,
-  meter,
-}: {
-  title: string;
-  badge: string;
-  rows: { row: Row; on: boolean }[];
-  steps: TourStep[];
-  guest: boolean;
-  /** Nothing left to do: the heading is the whole group. */
-  collapsed: boolean;
-  /** The receipt tick beside the heading, for a group that is finished. */
-  check?: boolean;
-  /** Draw the progress strip under the heading. */
-  meter?: { done: number; total: number };
-}) {
-  return (
-    <div className="hm-check-group">
-      <div className="hm-check-head">
-        {check ? <Mark on /> : null}
-        <span className={check ? "hm-check-title hm-muted" : "hm-check-title"}>
-          {title}
-        </span>
-        <Badge>{badge}</Badge>
-      </div>
-      {meter && !collapsed ? <Meter {...meter} /> : null}
-      {collapsed ? null : (
-        <div className="hm-checks">
-          {rows.map(({ row, on }) => (
-            <Check key={row.key} row={row} on={on} steps={steps} guest={guest} />
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -193,10 +114,10 @@ export function SetupCard() {
   const [dismissed, setDismissed] = useState(prefs.setup_card_dismissed);
 
   // A registry that will not load has nothing to say about itself, so it says
-  // nothing: an error message where an invitation goes is worse than a blank
-  // nobody would have noticed. The shell's tour fails the same way, off the
-  // same call. The skeleton is only so the page below does not jump when it
-  // lands.
+  // nothing: an error where an invitation goes is worse than a blank nobody
+  // would have noticed. The skeleton is only so the page below does not jump
+  // when it lands.
+  if (dismissed) return null;
   if (query.state === "loading") return <Skeleton rows={2} />;
   if (query.state !== "loaded") return null;
 
@@ -205,59 +126,36 @@ export function SetupCard() {
   // sign-in from the real caller; the session is the fallback for a deploy
   // whose API predates the field.
   const guest = state.signed_in === undefined ? session.guest : !state.signed_in;
-  const setup = SETUP.map((row) => ({ row, on: state.setup[row.key] === true }));
-  const done = setup.filter((entry) => entry.on).length;
-  const complete = done === setup.length;
-  if (dismissed) return null;
-
-  const explore = EXPLORE.map((row) => ({ row, on: state.explore[row.key] === true }));
-  const tried = explore.filter((entry) => entry.on).length;
+  const setup: Entry[] = SETUP.map((row) => ({
+    row,
+    on: state.setup[row.key] === true,
+  }));
+  const explore: Entry[] = EXPLORE.map((row) => ({
+    row,
+    on: state.explore[row.key] === true,
+  }));
+  const done = setup.filter((e) => e.on).length;
+  const next = setup.find((e) => !e.on);
+  const untried = explore.filter((e) => !e.on);
+  // Nothing left to switch on or to try: the card has done its job.
+  if (!next && !untried.length) return null;
+  const word = (e: Entry) =>
+    `${t(e.row.label)} — ${t(e.on ? "tour.active" : "tour.pending")}`;
 
   return (
-    <Card className="hm-firstrun">
-      <Group
-        title={plain(t("home.setup_title"))}
-        badge={t("home.setup_progress", { done, total: setup.length })}
-        rows={setup}
-        steps={state.steps}
-        guest={guest}
-        collapsed={complete}
-        meter={{ done, total: setup.length }}
-      />
-      <Group
-        title={plain(t("home.explore_title"))}
-        badge={t("home.explore_progress", { done: tried, total: explore.length })}
-        rows={explore}
-        steps={state.steps}
-        guest={guest}
-        // Nothing left to invite: one line of receipt rather than three rows
-        // leading nowhere the reader has not already been.
-        collapsed={tried === explore.length}
-        check={tried === explore.length}
-      />
-      {/* The card's own controls sit under what it lists, not in the heading:
-          beside the badge they wrapped onto a line of their own on a phone and
-          read as a fifth row. */}
-      <div className="hm-firstrun-foot">
-        {/* The tour explains all four of these and everything else, so the
-            card that lists them is the obvious way into it — but it is an
-            action, not a fifth capability, which is why it sits in the foot
-            rather than inline with the states. A real link, so the step it
-            opens can be shared; the shell's modal answers `?tour=`. */}
-        <Link page="home" params={{ tour: "1" }} className="hm-quiet">
-          {t("tour.launch")}
-        </Link>
-        {/* Offered from the first visit: a reader who will never link
-            Telegram should not have to look at the one ring left open
-            every time they come home. The tour stays one press away in
-            Profile. */}
+    <Card className="hm-start">
+      <div className="hm-start-head">
+        <span className="hm-start-title">{t("home.start_title")}</span>
+        <span className="hm-start-count">
+          {t("home.start_progress", { done, total: setup.length })}
+        </span>
         <button
           type="button"
-          className="hm-quiet"
+          className="hm-quiet hm-start-hide"
           onClick={() => {
-            // Hidden first, saved after: the press is the decision and
-            // a failed write is worth one card coming back, not an
-            // error in front of somebody tidying their screen.
+            // Hidden first, saved after: the press is the decision and a
+            // failed write is worth one card coming back, not an error in
+            // front of somebody tidying their screen.
             setDismissed(true);
             void send("PATCH", "/prefs", { setup_card_dismissed: true })
               .then(reload)
@@ -267,6 +165,71 @@ export function SetupCard() {
           {t("home.setup_hide")}
         </button>
       </div>
+
+      {next ? (
+        <>
+          {/* The line: done nodes recede to a tick, the next one is lit, the
+              rest wait as outlines. The connector before a node fills once
+              the node is reached, so progress reads left to right. */}
+          <ol className="hm-steps">
+            {setup.map((e) => {
+              const state_ = e.on ? "done" : e === next ? "next" : "todo";
+              return (
+                <li key={e.row.key} className="hm-step-item" data-state={state_}>
+                  <Door
+                    row={e.row}
+                    steps={state.steps}
+                    guest={guest}
+                    className="hm-step"
+                    label={word(e)}
+                  >
+                    <span className="hm-step-dot" aria-hidden="true">
+                      <Icon name={e.on ? "check" : e.row.icon} size={20} />
+                    </span>
+                    <span className="hm-step-label" aria-hidden="true">
+                      {t(e.row.label)}
+                    </span>
+                  </Door>
+                </li>
+              );
+            })}
+          </ol>
+          {next.row.cta ? (
+            <Door
+              row={next.row}
+              steps={state.steps}
+              guest={guest}
+              className="hm-start-go"
+              label={t(next.row.cta)}
+            >
+              <Icon name={next.row.icon} size={18} />
+              <span>{t(next.row.cta)}</span>
+              <Icon name="arrow_forward" size={18} />
+            </Door>
+          ) : null}
+        </>
+      ) : null}
+
+      {untried.length ? (
+        <div className="hm-start-try">
+          <span className="hm-start-try-label">{t("home.start_try")}</span>
+          {/* Tried ones fall off: a chip is an invitation, and an invitation
+              already taken is clutter. */}
+          {untried.map((e) => (
+            <Door
+              key={e.row.key}
+              row={e.row}
+              steps={state.steps}
+              guest={guest}
+              className="hm-chip"
+              label={t(e.row.label)}
+            >
+              <Icon name={e.row.icon} size={16} />
+              <span>{t(e.row.label)}</span>
+            </Door>
+          ))}
+        </div>
+      ) : null}
     </Card>
   );
 }

@@ -43,6 +43,9 @@ def token(monkeypatch):
     monkeypatch.setenv("API_TOKEN", TOKEN)
 
 
+_REAL_SURFACE = guide.surface
+
+
 @pytest.fixture(autouse=True)
 def chat_surface(monkeypatch):
     monkeypatch.setattr(guide, "surface", lambda: "chat")
@@ -213,6 +216,17 @@ def test_the_modal_surface_is_owed_nothing_here(
 ):
     monkeypatch.setattr(guide, "surface", lambda: "modal")
     assert signed_in.get("/v1/guide").json()["auto_open"] is False
+
+
+def test_the_card_surface_is_the_default_and_opens_no_drawer(
+    client, account, signed_in, switched_on, monkeypatch
+):
+    # Home's start card is the onboarding: the drawer never pops open on its own.
+    monkeypatch.setattr(guide, "surface", _REAL_SURFACE)
+    monkeypatch.setattr(guide, "secret", lambda *_a, **_k: None)
+    assert guide.surface() == "card"
+    body = signed_in.get("/v1/guide").json()
+    assert body["surface"] == "card" and body["auto_open"] is False
 
 
 def test_moving_the_guide_is_a_write_so_a_token_may_not(client, account):

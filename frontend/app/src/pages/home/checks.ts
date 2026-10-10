@@ -1,5 +1,5 @@
 /**
- * Which capabilities the first-run card lists, and where each one is switched
+ * Which capabilities the start card lists, and where each one is switched
  * on. No React: this is the part worth testing on its own.
  *
  * Whether a capability is *on* is never decided here — `/onboarding` answers
@@ -15,8 +15,12 @@ import type { TourStep } from "./types";
 export type Row = {
   /** The key it reads in `setup` / `explore`. */
   key: string;
-  /** Catalog key for the label. Never a string: this app renders in two. */
+  /** Catalog key for the label — a word or two: the icon carries the rest. */
   label: string;
+  /** `Icon` name drawn in the row's node. */
+  icon: string;
+  /** Catalog key for the big button when this is the next thing to do. */
+  cta?: string;
   /** The tour step whose target is where this is switched on. */
   step?: string;
   /** The Profile tab that step lands on — see `target()`. */
@@ -37,15 +41,37 @@ export const SETUP: Row[] = [
   // Sign-in has no step of its own. Done, it goes to Profile, where the
   // account settings and the log-out live; pending — a guest — it is the
   // sign-in link itself, which `Setup.tsx` draws in place of this destination.
-  { key: "login", label: "home.setup_google", page: "profile" },
-  { key: "import", label: "home.setup_import", step: "import", signedIn: true },
+  {
+    key: "login",
+    label: "home.start_login",
+    icon: "account_circle",
+    cta: "home.start_go_login",
+    page: "profile",
+  },
+  {
+    key: "import",
+    label: "home.start_import",
+    icon: "upload_file",
+    cta: "home.start_go_import",
+    step: "import",
+    signedIn: true,
+  },
   // The key gate lives inside the assistant drawer, which is not a page: the
   // registry says so with a null path, and `target()` leaves the row inert
   // rather than sending the reader somewhere that is not it.
-  { key: "ai", label: "home.setup_ai", step: "assistant", signedIn: true },
+  {
+    key: "ai",
+    label: "home.start_ai",
+    icon: "auto_awesome",
+    cta: "home.start_go_ai",
+    step: "assistant",
+    signedIn: true,
+  },
   {
     key: "telegram",
-    label: "home.setup_tg",
+    label: "home.start_telegram",
+    icon: "send",
+    cta: "home.start_go_telegram",
     step: "notify",
     tab: "notify",
     signedIn: true,
@@ -55,13 +81,20 @@ export const SETUP: Row[] = [
 export const EXPLORE: Row[] = [
   // Search is in the top bar on every page, so this points at the page a
   // looked-up ticker lands on rather than at a field it cannot focus from here.
-  { key: "search", label: "home.explore_search", step: "market" },
+  { key: "search", label: "home.start_search", icon: "search", step: "market" },
   // Completable without the AI row above it ever going green: the assistant
   // answers on the keyless chain.
-  { key: "ask", label: "home.explore_ask", step: "assistant", signedIn: true },
+  {
+    key: "ask",
+    label: "home.start_ask",
+    icon: "forum",
+    step: "assistant",
+    signedIn: true,
+  },
   {
     key: "watchlist",
-    label: "home.explore_watchlist",
+    label: "home.start_watchlist",
+    icon: "star",
     step: "watchlist",
     tab: "watch",
     signedIn: true,

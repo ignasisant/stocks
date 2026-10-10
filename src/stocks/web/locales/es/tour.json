@@ -128,5 +128,16 @@
   "tour.news_2026_10_4_analysts_title": "Lo que dicen los analistas de una acción",
   "tour.news_2026_10_4_analysts_body": "La ficha de una acción tiene una sección de **Analistas**: la recomendación de consenso y cómo ha cambiado mes a mes, los **precios objetivo** a 12 meses — la mediana junto a la media, porque un objetivo extremo arrastra la media — con lo lejos que están unos de otros, y las **revisiones de BPA** de los últimos 7, 30 y 90 días. Es consenso, no un hecho, y con menos de tres analistas lo dice en vez de dibujar un reparto.",
   "tour.news_2026_10_5_review_title": "Qué vender y qué reforzar",
-  "tour.news_2026_10_5_review_body": "Una nueva página **Vender o reforzar** clasifica tus posiciones en vender, recortar, mantener o reforzar según calidad del negocio y precio, cada movimiento en dinero con el **impuesto** que cuesta, y las sitúa en un mapa de calidad frente a precio. Escribe cualquier ticker para valorarlo junto a tu lista de seguimiento como **comprar, vigilar o descartar** — no se sigue nada hasta que tú lo decidas."
+  "tour.news_2026_10_5_review_body": "Una nueva página **Vender o reforzar** clasifica tus posiciones en vender, recortar, mantener o reforzar según calidad del negocio y precio, cada movimiento en dinero con el **impuesto** que cuesta, y las sitúa en un mapa de calidad frente a precio. Escribe cualquier ticker para valorarlo junto a tu lista de seguimiento como **comprar, vigilar o descartar** — no se sigue nada hasta que tú lo decidas.",
+  "tour.hello_title": "Bienvenido",
+  "tour.hello_heading": "3 pasos para empezar",
+  "tour.hello_import": "Importa tu extracto",
+  "tour.hello_import_cap": "Revolut, Trading 212, DEGIRO, IBKR o CSV",
+  "tour.hello_portfolio": "Mira tu cartera",
+  "tour.hello_portfolio_cap": "P/L, riesgo e impuestos, solos",
+  "tour.hello_ai": "Pregunta a la IA",
+  "tour.hello_ai_cap": "Sobre tu cartera o cualquier valor",
+  "tour.hello_hint": "¿Sin extracto? Busca cualquier valor arriba.",
+  "tour.hello_cta": "Importar ahora",
+  "tour.hello_later": "Explorar primero"
 }

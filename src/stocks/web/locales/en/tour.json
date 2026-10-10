@@ -128,5 +128,16 @@
   "tour.news_2026_10_4_analysts_title": "What analysts say about a share",
   "tour.news_2026_10_4_analysts_body": "A share's page has an **Analysts** section: the consensus rating and how it has moved month by month, the 12-month **price targets** — median beside mean, since one outlier drags a mean — with how far apart they are, and the **EPS revisions** of the last 7, 30 and 90 days. It is consensus, not fact, and with fewer than three analysts it says so instead of drawing a split.",
   "tour.news_2026_10_5_review_title": "What to sell and what to add to",
-  "tour.news_2026_10_5_review_body": "A new **Sell or add** page ranks your holdings sell, trim, hold or add on business quality and price, each move sized in money with the **tax** it costs, and plots them on a quality-against-price map. Type any ticker to weigh it beside your watchlist as **buy, watch or pass** — nothing is followed until you choose to."
+  "tour.news_2026_10_5_review_body": "A new **Sell or add** page ranks your holdings sell, trim, hold or add on business quality and price, each move sized in money with the **tax** it costs, and plots them on a quality-against-price map. Type any ticker to weigh it beside your watchlist as **buy, watch or pass** — nothing is followed until you choose to.",
+  "tour.hello_title": "Welcome",
+  "tour.hello_heading": "3 steps to start",
+  "tour.hello_import": "Import your statement",
+  "tour.hello_import_cap": "Revolut, Trading 212, DEGIRO, IBKR or CSV",
+  "tour.hello_portfolio": "See your portfolio",
+  "tour.hello_portfolio_cap": "P/L, risk and taxes, on their own",
+  "tour.hello_ai": "Ask the AI",
+  "tour.hello_ai_cap": "About your portfolio or any ticker",
+  "tour.hello_hint": "No statement? Search any ticker up top.",
+  "tour.hello_cta": "Import now",
+  "tour.hello_later": "Explore first"
 }
