@@ -45,14 +45,20 @@ MAX_AUTO_OPENS = 3
 
 
 def surface() -> str:
-    """Which onboarding surface this deploy serves: "chat" or "modal".
+    """Which onboarding surface this deploy serves: "card", "chat" or "modal".
 
-    The modal tour is kept whole behind this flag — it is the rollback, and it
-    is also the reference rendering of the same registry when something looks
-    wrong in the conversation.
+    "card" (the default since 2026-10-10) interrupts nobody: no drawer popping
+    open, no modal. Home's start card is the whole onboarding — a few icons,
+    each one a door straight into the section that does the thing — and the
+    sections teach themselves (Import has its own stepper). Walkthrough copy
+    read before the reader has done anything was the part they skipped.
+
+    "chat" (this walkthrough in the drawer) and "modal" (the tour opening
+    itself) are kept whole behind this flag as the rollback; both still answer
+    when asked for by URL (`?guide=1`, `?tour=1`).
     """
     got = (secret("GUIDE_SURFACE", "guide", "surface") or "").strip().lower()
-    return got if got in ("chat", "modal") else "chat"
+    return got if got in ("card", "chat", "modal") else "card"
 
 
 def steps() -> tuple[onboarding.Step, ...]:

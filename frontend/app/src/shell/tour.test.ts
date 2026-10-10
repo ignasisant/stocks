@@ -114,6 +114,26 @@ describe("firstLoad", () => {
     expect(out).toEqual({ place: null, interrupted: false, forget: false });
   });
 
+  it("welcomes a newcomer on the card surface instead of opening the tour", () => {
+    const card_ = { surface: "card", finished: false };
+    const fresh = firstLoad(
+      { steps, news: card, tour_done: false },
+      card_,
+      false,
+      null,
+    );
+    expect(fresh).toEqual({
+      place: null,
+      interrupted: true,
+      forget: false,
+      welcome: true,
+    });
+    // Once retired, a later release is announced like for anybody else.
+    expect(
+      firstLoad({ steps, news: card, tour_done: true }, card_, false, null).place,
+    ).toEqual({ mode: "news", at: 0, open: true });
+  });
+
   it("counts the conversational guide as the first load's interruption", () => {
     const out = firstLoad(
       { steps, news: card, tour_done: false },

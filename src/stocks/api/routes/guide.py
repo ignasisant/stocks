@@ -2,8 +2,9 @@
 
 The guide walks a new account through the app one step per turn: a card under
 each with "take me there" and "next", and steps the account has already
-switched on walked past with a one-line receipt. It is the default onboarding
-(`GUIDE_SURFACE` = "chat"); the modal tour is the rollback. `web/guide.py`
+switched on walked past with a one-line receipt. No longer the default
+onboarding — that is Home's start card (`GUIDE_SURFACE` = "card"); this runs
+when the flag says "chat" or the reader asks (`?guide=1`). `web/guide.py`
 holds the registry walk and the prefs keys; this router is the walkthrough.
 
 **The state is the account's, and it is one state.** The prefs keys
@@ -65,7 +66,11 @@ class GuideStep(BaseModel):
 
 
 class GuideState(BaseModel):
-    surface: str = Field(description='"chat" (this walkthrough) or "modal".')
+    surface: str = Field(
+        description=(
+            '"card" (Home\'s start card only), "chat" (this walkthrough) or "modal".'
+        )
+    )
     active: bool
     finished: bool
     step: GuideStep | None = None

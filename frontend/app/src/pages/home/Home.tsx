@@ -21,10 +21,10 @@
  * The one exception is the glance and the movers, which read the same book
  * (`useBook`, called here) and fail together on purpose.
  *
- * The first-run card opens the page, above the briefing: what is worth
- * connecting, and what already works without connecting anything, is the
- * first thing a new account needs and the last thing a settled one reads —
- * which is why it collapses to two lines and then to nothing.
+ * The start card opens the page, above the briefing: a line of icons, each a
+ * door into the section that switches it on, is the first thing a new account
+ * needs and the last thing a settled one reads — which is why it is gone once
+ * everything on it is done.
  *
  * Deliberately not here, because another pass owns them: the chat drawer and
  * the guided tour, both mounted by the shell.
@@ -56,7 +56,6 @@ import { Skeleton } from "../../shell/Layout";
 import { Link } from "../../shell/router";
 import { Icon } from "../../shell/Icon";
 import { Daily } from "./Daily";
-import { FirstRun } from "./FirstRun";
 import { SetupCard } from "./Setup";
 import { Glance, MoversSlot, useBook } from "./Glance";
 import { MarketCard } from "./Market";
@@ -240,9 +239,7 @@ export default function Page() {
             {t("home.guest_try_demo")}
           </Link>
         </GuestBanner>
-      ) : (
-        <FirstRun ledger={ledger} />
-      )}
+      ) : null}
       <SetupCard />
       {editing ? (
         <Suspense fallback={<Skeleton rows={6} />}>

@@ -1092,97 +1092,37 @@
   flex: none;
 }
 
-/* ------------------------------------------------------ the first-run card */
+/* ------------------------------------------------------------ the start card */
 
-/* Two stacked groups in one card. The gap between them is wider than the gap
-   inside one, so the grouping carries itself without a rule. */
-.hm-firstrun {
-  gap: 1.1rem;
+/* The onboarding as a map: a line of icon nodes, one big button for the next
+   thing, and a row of chips for what works already. No prose to style. */
+.hm-start {
+  gap: 1rem;
 }
 
-/* The first-run guidance, rendered from one markdown blob: a heading line, a
-   numbered list of three, and a closing sentence. Sized down from body copy —
-   it is instructions beside the book, not the book. */
-.hm-prose {
-  color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-base, 14px);
-  line-height: 1.55;
-}
-
-.hm-prose p {
-  margin: 0 0 0.5rem;
-}
-
-.hm-prose ol,
-.hm-prose ul {
-  margin: 0;
-  padding-left: 1.2rem;
+.hm-start-head {
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  align-items: baseline;
+  gap: 0.6rem;
 }
 
-.hm-prose strong {
-  color: var(--ag-text-primary);
-}
-
-.hm-firstrun-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.hm-check-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.hm-check-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.hm-check-title {
+.hm-start-title {
   font-size: var(--ag-fs-base, 14px);
   font-weight: 600;
 }
 
-/* One segment per row: a glance at how far along the card is, without
-   reading the badge. Thin, so it reads as a gauge and not as a control. */
-.hm-meter {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 4px;
-  max-width: 16rem;
+.hm-start-count {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm, 12px);
+  font-variant-numeric: tabular-nums;
 }
 
-.hm-meter > span {
-  height: 4px;
-  border-radius: var(--ag-radius-pill, 9999px);
-  background: var(--ag-surface-sunken);
-}
-
-.hm-meter > .hm-meter-on {
-  background: var(--ag-up);
-}
-
-/* The card's own controls: the tour on the left, putting the card away on
-   the right, under a hairline so they never read as one more row. */
-.hm-firstrun-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--ag-border);
+.hm-start-hide {
+  margin-left: auto;
 }
 
 /* An action that is not the thing the card is asking for: readable, and never
-   competing with the row that still needs doing. */
+   competing with the node that still needs doing. */
 .hm-quiet {
   padding: 0;
   border: none;
@@ -1201,138 +1141,213 @@
   }
 }
 
-.hm-quiet:focus-visible,
-.hm-check:focus-visible {
-  outline: 2px solid var(--ag-brand-accent);
-  outline-offset: 2px;
+/* The line. Each item is one column; the connector is the item's ::before,
+   running from the previous node's centre to this one's, so it fills green
+   exactly when this node is reached. */
+.hm-steps {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-width: 36rem;
 }
 
-.hm-checks {
+.hm-step-item {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  justify-content: center;
 }
 
-.hm-check {
+.hm-step-item + .hm-step-item::before {
+  content: "";
+  position: absolute;
+  top: 22px;
+  right: 50%;
+  width: 100%;
+  height: 2px;
+  background: var(--ag-border);
+}
+
+.hm-step-item[data-state="done"]::before,
+.hm-step-item[data-state="next"]::before {
+  background: var(--ag-up);
+}
+
+.hm-step {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 44px;
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  text-decoration: none;
+}
+
+button.hm-step,
+a.hm-step {
+  cursor: pointer;
+}
+
+.hm-step-dot {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill, 9999px);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-muted);
+  transition: transform 150ms ease-out;
+}
+
+.hm-step-label {
+  font-size: var(--ag-fs-sm, 12px);
+  line-height: 1.2;
+  text-align: center;
+}
+
+/* Reached: a green tick, receded. */
+/* Opaque, so the connector behind it does not show through. */
+.hm-step-item[data-state="done"] .hm-step-dot {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--ag-up) 16%, var(--ag-surface-card));
+  color: var(--ag-up);
+}
+
+.hm-step-item[data-state="done"] .hm-step-label {
+  color: var(--ag-text-muted);
+}
+
+/* Next: the one lit node, ringed so it reads as "you are here". */
+.hm-step-item[data-state="next"] .hm-step-dot {
+  border-color: var(--ag-brand-cta);
+  background: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ag-brand-cta) 22%, transparent);
+}
+
+.hm-step-item[data-state="next"] .hm-step-label {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+}
+
+@media (hover: hover) {
+  button.hm-step:hover .hm-step-dot,
+  a.hm-step:hover .hm-step-dot {
+    transform: scale(1.08);
+  }
+}
+
+.hm-step:disabled,
+.hm-step[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* The next thing, as the card's one real button. */
+.hm-start-go {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 40px;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: var(--ag-radius-sm, 8px);
+  background: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .hm-start-go:hover {
+    background: var(--ag-purple-700);
+  }
+}
+
+.hm-start-go:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* What already works: small icon chips under a hairline. */
+.hm-start-try {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--ag-border);
+}
+
+.hm-start-try-label {
+  margin-right: 0.25rem;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm, 12px);
+}
+
+.hm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   min-height: 32px;
-  padding: 4px 12px;
+  padding: 4px 12px 4px 10px;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-pill, 9999px);
   background: var(--ag-surface-page);
   color: var(--ag-text-primary);
   font: inherit;
   font-size: var(--ag-fs-md, 13px);
-  text-align: left;
-}
-
-button.hm-check {
+  text-decoration: none;
   cursor: pointer;
 }
 
-@media (hover: hover) {
-  button.hm-check:hover {
-    background: var(--ag-surface-hover);
-  }
-}
-
-/* The onward chevron on a row still to do, nudged on hover so the pill
-   answers the pointer before the press. */
-.hm-check-go {
+.hm-chip .ag-icon {
   color: var(--ag-text-muted);
-  line-height: 1;
-  transition: transform 150ms ease-out;
 }
 
 @media (hover: hover) {
-  .hm-check:hover .hm-check-go {
-    transform: translateX(2px);
-    color: var(--ag-text-primary);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hm-check-go {
-    transition: none;
-  }
-}
-
-/* The guest's sign-in row is a link to the login route, drawn as the pill. */
-a.hm-check {
-  text-decoration: none;
-}
-
-@media (hover: hover) {
-  a.hm-check:hover {
+  .hm-chip:hover {
     background: var(--ag-surface-hover);
   }
 }
 
-/* Behind a sign-in: shown, so a guest sees what an account gets, and plainly
-   not pressable. */
-button.hm-check:disabled,
-.hm-check-off {
+.hm-chip:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-@media (hover: hover) {
-  button.hm-check:disabled:hover {
-    background: var(--ag-surface-page);
+@media (pointer: coarse) {
+  .hm-chip,
+  .hm-start-go {
+    min-height: 44px;
   }
 }
 
-/* Done recedes to a muted tick: the badge already counts them, and four
-   emphatic rows bury the one row that still needs doing — which is also the
-   only one left carrying a border, and so the only one that looks like a
-   control. */
-.hm-check-on {
-  border-color: transparent;
-  background: none;
-  color: var(--ag-text-muted);
+.hm-quiet:focus-visible,
+.hm-step:focus-visible,
+.hm-start-go:focus-visible,
+.hm-chip:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
 }
 
-@media (hover: hover) {
-  button.hm-check-on:hover {
-    background: var(--ag-surface-sunken);
+@media (prefers-reduced-motion: reduce) {
+  .hm-step-dot {
+    transition: none;
   }
-}
-
-.hm-mark {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill, 9999px);
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs, 11px);
-  line-height: 1;
-}
-
-/* Done is the one good-news colour on the card: the tick goes green, so the
-   muted row still reads as finished rather than as disabled. */
-.hm-mark-on {
-  border-color: transparent;
-  background: color-mix(in srgb, var(--ag-up) 16%, transparent);
-  color: var(--ag-up);
-}
-
-/* The tick is a picture of a state that has words; this is where the words go
-   for anyone not looking at the picture. */
-.hm-sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 
 /* The retry under a section that could not load. Smaller than the shell's
