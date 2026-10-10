@@ -67,7 +67,9 @@ class GuideStep(BaseModel):
 
 class GuideState(BaseModel):
     surface: str = Field(
-        description='"card" (Home\'s start card only), "chat" (this walkthrough) or "modal".'
+        description=(
+            '"card" (Home\'s start card only), "chat" (this walkthrough) or "modal".'
+        )
     )
     active: bool
     finished: bool
