@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { acceptOf, nameOf, reportUnreadable } from "./api";
+import { acceptOf, nameOf, reportUnreadable, written } from "./api";
+import type { Preview, Row } from "./api";
 
 const KINDS = ["csv", "pdf", "xlsx"];
 
@@ -63,5 +64,29 @@ describe("reportUnreadable", () => {
       error: "NotReadableError",
       message: "could not be read",
     });
+  });
+});
+
+describe("written", () => {
+  const row = (ticker: string, duplicate: boolean): Row => ({
+    date: "2024-01-02",
+    ticker,
+    action: "buy",
+    quantity: 1,
+    price: 100,
+    currency: "EUR",
+    fee: 0,
+    note: "revolut",
+    issues: [],
+    duplicate,
+  });
+  const preview = { importable: [row("AAPL", false), row("MSFT", true)] } as Preview;
+
+  it("leaves out what the book already holds", () => {
+    expect(written(preview, false).map((r) => r.ticker)).toEqual(["AAPL"]);
+  });
+
+  it("writes the duplicates too only when they are opted in", () => {
+    expect(written(preview, true).map((r) => r.ticker)).toEqual(["AAPL", "MSFT"]);
   });
 });

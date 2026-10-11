@@ -288,3 +288,19 @@ def test_an_unwritable_index_does_not_break_the_conversation(tmp_path):
     assert memory.remember(blocked, _T1, "t1") == 0
     assert memory.recall(blocked, "ASML") == []
     assert memory.about(blocked, ["ASML"]) == []
+
+
+def test_a_long_word_is_matched_by_its_stem_only_when_asked():
+    from stocks.chat import hybrid
+
+    assert hybrid.fts_query("recompré") == '"recompré"'
+    assert hybrid.fts_query("recompré", stem=True) == '"recom"*'
+    # Short words stay exact: clipped, they would match half the corpus.
+    assert hybrid.fts_query("IRPF 720", stem=True) == '"720" OR "irpf"'
+
+
+def test_fusion_weights_tilt_the_vote():
+    from stocks.chat import hybrid
+
+    assert hybrid.fuse([1, 2], [2, 1])[0] in (1, 2)
+    assert hybrid.fuse([1, 2], [2, 1], weights=(0.1, 1.0))[0] == 2

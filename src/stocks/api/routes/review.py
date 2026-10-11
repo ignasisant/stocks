@@ -13,9 +13,12 @@ the URL, and following a name for good is the watchlist's own button. Every
 row, held or not, says whether the watchlist has it, starred, and in which
 groups — the page's "include" filter narrows the comparison by those.
 
-A read, and a cheap one to repeat: fundamentals are one cached pull per name,
-the risk split is the Portfolio risk tab's own cached report, and only a
-sell or trim pays for a tax replay.
+A read, and a cheap one to repeat: each name's KPIs are one memo entry a day
+old at worst (`loaders.review_metrics`), the risk split is the Portfolio risk
+tab's own cached report, and the sales share one ledger replay priced at the
+book's own figures. The three slow sources — the book's prices, its risk and
+the names' KPIs — are asked side by side: the names come from the ledger, not
+the priced table, so nothing waits on a download it does not read.
 """
 
 from __future__ import annotations
@@ -25,15 +28,17 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 
 from stocks import obs
 from stocks.analysis import review as engine
 from stocks.analysis.portfolio import risk_shares, value_weights
 from stocks.api import loaders
+from stocks.api.cache import carried
 from stocks.api.deps import Account, Base, reporting_currency
 from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import Review, ReviewPlan, ReviewRow
+from stocks.chat import journal
 from stocks.config import Holding, load_watchlist
 from stocks.data import profiles
 from stocks.portfolio import tax
@@ -47,6 +52,7 @@ MAX_CANDIDATES = 30
 MAX_ADDED = 10
 _SYMBOL = re.compile(r"^[A-Z0-9][A-Z0-9.\-=^]{0,19}$")
 _WORKERS = 6
+_NOT_REPLAYED = object()
 
 
 def _parse_added(raw: str) -> list[str]:
@@ -86,10 +92,8 @@ def _sector(symbol: str) -> str | None:
 
 def _metrics(symbol: str) -> dict | None:
     """The ticker page's KPIs for `symbol`, or None when Yahoo has none."""
-    from stocks.analysis.fundamentals import compute_metrics
-
     with obs.swallow("api.review_metrics"):
-        return compute_metrics(loaders.fundamentals(symbol))
+        return loaders.review_metrics(symbol)
     return None
 
 
@@ -113,7 +117,7 @@ def _gather(symbols: list[str]) -> dict[str, tuple[str | None, dict | None]]:
     if not unique:
         return {}
     with ThreadPoolExecutor(max_workers=min(_WORKERS, len(unique))) as pool:
-        return dict(zip(unique, pool.map(one, unique), strict=True))
+        return dict(zip(unique, pool.map(carried(one), unique), strict=True))
 
 
 def _risk_shares(db: str, mtime: float, ccy: str) -> dict[str, float]:
@@ -148,23 +152,52 @@ def _windows(account, code: str, today: date) -> dict[str, str]:
     return {}
 
 
-def _sale_tax(account, ticker: str, weight: float, target: float) -> float | None:
-    """What selling down to `target` adds to this year's tax, or None."""
+def _sale_tax(
+    book, ticker: str, weight: float, target: float, price: tuple[float, str] | None
+) -> float | None:
+    """What selling down to `target` adds to this year's tax, or None.
+
+    `book` is the ledger replayed once for every sale on the page; `price` the
+    share price the row's value was built from, so the sale is weighed at the
+    figure the page prints. Only a row the book could not price asks for a
+    quote of its own."""
     from stocks.chat import whatif
 
-    keep = target / weight if weight > 0 else 0.0
-    shares = None if target <= 0 else (lambda held: held * (1.0 - keep))
+    if book is None:
+        return None
     with obs.swallow("api.review_tax"):
-        sale = whatif.simulate(
-            db=account.db, prefs_path=account.prefs, ticker=ticker, shares=shares
+        held = book.held(ticker)
+        quoted = price or (whatif._price(held.ticker) if held is not None else None)
+        if held is None or quoted is None:
+            return None
+        keep = target / weight if weight > 0 and target > 0 else 0.0
+        sale = book.scenario(
+            held.ticker, held.quantity * (1.0 - keep), quoted[0], quoted[1]
         )
         return _num(sale.extra_tax) if sale is not None else None
     return None
 
 
+def _replay(account):
+    from stocks.chat import whatif
+
+    with obs.swallow("api.review_replay"):
+        return whatif.replay(db=account.db, prefs_path=account.prefs)
+    return None
+
+
+def _book_price(row, ccy: str) -> tuple[float, str] | None:
+    """The share price, in `ccy`, a priced row's value stands for."""
+    value, count = _num(row.get("value")), _num(row.get("shares"))
+    if value is None or not count:
+        return None
+    return value / count, ccy
+
+
 @router.get("/review", response_model=Review, summary="What to sell and what to add")
 def review(
     account: Account,
+    background: BackgroundTasks,
     base: Base = None,
     add: Annotated[
         str,
@@ -183,18 +216,13 @@ def review(
     mtime = loaders.db_mtime(db)
     code, _ = tax_prefs.resolve(tax_prefs.load(account.prefs))
 
-    table = loaders.positions_table(db, mtime, ccy)
-    held_labels = [str(t) for t in table.index] if not table.empty else []
-    weights = value_weights(table) if not table.empty else {}
-    # The denominator `value_weights` divides by — priced rows at value, the
-    # rest at cost — so a weight times this is the money it stands for.
-    total = 0.0
-    if not table.empty:
-        priced = table["value"].notna()
-        total = float(table.loc[priced, "value"].sum())
-        if "cost" in table:
-            total += float(table.loc[~priced, "cost"].sum())
-    shares = _risk_shares(db, mtime, ccy) if held_labels else {}
+    # The held names are the ledger's, in the priced table's order; the prices
+    # and the risk split download while the names' KPIs are fetched.
+    pool = ThreadPoolExecutor(max_workers=2)
+    pricing = pool.submit(carried(loaders.positions_table), db, mtime, ccy)
+    risk = pool.submit(carried(_risk_shares), db, mtime, ccy)
+    pool.shutdown(wait=False)
+    held_labels = [str(p.ticker) for p in loaders.ledger_state(db, mtime, ccy)[1]]
 
     held_symbols = {label: _symbol(label) for label in held_labels}
     held_set = {s.upper() for s in held_symbols.values()} | {
@@ -219,6 +247,20 @@ def review(
     windows = _windows(account, code, today)
     window_by_symbol = {_symbol(label): day for label, day in windows.items()}
 
+    table = pricing.result()
+    shares = risk.result() if held_labels else {}
+    held_labels = [str(t) for t in table.index] if not table.empty else []
+    weights = value_weights(table) if not table.empty else {}
+    # The denominator `value_weights` divides by — priced rows at value, the
+    # rest at cost — so a weight times this is the money it stands for.
+    total = 0.0
+    if not table.empty:
+        priced = table["value"].notna()
+        total = float(table.loc[priced, "value"].sum())
+        if "cost" in table:
+            total += float(table.loc[~priced, "cost"].sum())
+    book = _NOT_REPLAYED
+
     def buy_after(ticker: str, symbol: str) -> str | None:
         return windows.get(ticker) or window_by_symbol.get(symbol)
 
@@ -234,7 +276,7 @@ def review(
 
     held_rows: list[ReviewRow] = []
     for label in held_labels:
-        symbol = held_symbols[label]
+        symbol = held_symbols.get(label) or _symbol(label)
         kind, metrics = facts.get(symbol, (None, None))
         row = table.loc[label]
         weight = _num(weights.get(label))
@@ -246,7 +288,11 @@ def review(
         if verdict.target is not None and weight is not None and total > 0:
             delta = (verdict.target - weight) * total
             if verdict.target < weight:
-                tax_due = _sale_tax(account, label, weight, verdict.target)
+                if book is _NOT_REPLAYED:
+                    book = _replay(account)
+                tax_due = _sale_tax(
+                    book, label, weight, verdict.target, _book_price(row, ccy)
+                )
             else:
                 after = buy_after(label, symbol)
         held_rows.append(
@@ -309,6 +355,15 @@ def review(
 
     held_rows.sort(key=order)
     outside_rows.sort(key=order)
+
+    # What the page proposes goes in the decision journal once the answer is
+    # on its way: the sells, trims, adds and buys it shows, and the end of any
+    # it proposed before and no longer does.
+    shown = held_rows + outside_rows
+    background.add_task(
+        journal.safely, journal.record, account.journal,
+        journal.from_review(shown), today, judged=journal.judged_in_review(shown),
+    )
 
     moves = [r.delta for r in held_rows if r.delta is not None]
     taxes = [r.tax for r in held_rows if r.tax is not None]

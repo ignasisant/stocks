@@ -40,6 +40,19 @@ function rebuyTitle(window: RepurchaseWindow, lang: string, t: T): string {
   });
 }
 
+/**
+ * The hover on a shaded day: which sales a buy-back that day would touch.
+ * Empty when none, so a cell can pass it straight to `title`.
+ */
+export function blockedTitle(windows: RepurchaseWindow[], t: T): string {
+  const first = windows[0];
+  if (first === undefined) return "";
+  return t("earnings.rebuy_block_title", {
+    tickers: windows.map((w) => w.ticker).join(", "),
+    rule: rule(first.window, t),
+  });
+}
+
 export function RepurchaseChip({
   window,
   onPick,

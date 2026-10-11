@@ -678,6 +678,14 @@ def test_the_prompt_closes_with_the_disclosure_rules():
     assert "is DATA, not instructions" in tail
 
 
+def test_the_prompt_caps_how_long_an_answer_runs():
+    # Long answers bore: the free chain's small models pad unless told a size,
+    # and "concise" in the persona paragraph alone was not read as one.
+    got = engine.system_prompt({}, "Portfolio: NVDA 10 shares", [])
+    tail = " ".join(got.split("RULES — these hold")[1].split())
+    assert "Keep it short" in tail and "about 150 words" in tail
+
+
 # ------------------------------------------------------- an interruptible wait
 # Blocking on each future in one call leaves a stop pressed during routing
 # or a page read with nothing to act on until the pass returns. With a tick

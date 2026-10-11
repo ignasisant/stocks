@@ -541,6 +541,27 @@ async def investor_context() -> CallToolResult:
     return await _run("investor_context", work)
 
 
+async def decision_journal(
+    ticker: Annotated[str | None, Field(
+        description="Only this ticker, e.g. NVDA.")] = None,
+    state: Literal["open", "followed", "declined", "lapsed"] | None = None,
+    since: Annotated[str | None, Field(
+        description="ISO date; entries shown on or after it.")] = None,
+    limit: Annotated[int, Field(ge=1, le=100)] = 30,
+) -> CallToolResult:
+    """What the app proposed to this person and they saw, from
+    `chat/journal.py`: the same record the Perfil "Diario" tab lists."""
+    def work(paths: UserPaths) -> dict:
+        from stocks.chat import journal
+
+        hits = journal.query(journal.load(paths.journal), ticker=ticker or "",
+                             state=state or "", since=(since or "")[:10])
+        return {"kind": "decisions", "total": len(hits),
+                "entries": [e.as_dict() for e in hits[:limit]]}
+
+    return await _run("decision_journal", work)
+
+
 # ----------------------------------------------------------- the book, read
 # What the edit tools work from: rows by id, what looks wrong, what was
 # changed and by whom, and what a sale would cost in tax.
@@ -1078,6 +1099,14 @@ TOOLS: tuple[Spec, ...] = (
          "preferences, decisions, constraints, and `routine` items they asked "
          "to see daily. Context to frame advice by, never a source of figures. "
          "Read it before advising."),
+    Spec(decision_journal, "Decision journal",
+         "Every move the TopStocks app proposed to this person and showed "
+         "them — daily-card lines (fired alerts, loss harvesting, trims, "
+         "rebalances), Review-page sells/trims/adds/buys, alert and watchlist "
+         "changes offered in its chat — with the figures it was made on, the "
+         "reasons, linked follow-ups, and what became of it (open, followed, "
+         "declined, lapsed). The app's proposals, not the person's own "
+         "reasons for past trades; never ask them for those."),
     Spec(list_positions, "All positions",
          "Every holding: shares, cost, value, profit, weight and day move, "
          "largest first."),

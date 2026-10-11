@@ -47,7 +47,15 @@ from stocks.analysis.portfolio import basket_change, us_market_open
 from stocks.api import home, loaders
 from stocks.api.cache import ttl_cache
 from stocks.api.deps import reporting_currency
-from stocks.chat import daily, daily_book, daily_routines, engine, routine_plan, signals
+from stocks.chat import (
+    daily,
+    daily_book,
+    daily_routines,
+    engine,
+    journal,
+    routine_plan,
+    signals,
+)
 from stocks.data.crypto import is_crypto
 
 # How long `POST /daily` holds the request for a briefing before answering
@@ -505,6 +513,12 @@ def _store(paths, job: Job, prefs: dict, facts: dict, stored, spent: bool) -> No
         auth.save_action(card, paths.action)
     except Exception as exc:  # noqa: BLE001 — the reader still gets the card
         obs.warn("daily_action.unsaved", error_type=type(exc).__name__)
+    # The lines that propose something go in the decision journal, with the
+    # figures behind each — for the same reason the card is stored at all:
+    # this is what the reader was told.
+    journal.safely(journal.record, journal.path_for(paths.chat),
+                   journal.from_card(action.entries, facts),
+                   date.fromisoformat(action.day))
 
 
 def start(
@@ -795,4 +809,8 @@ def analysis(paths, prefs: dict, key: str) -> tuple[daily.DailyAction, dict] | N
                     obs.warn(
                         "daily_action.analysis_unsaved", error_type=type(exc).__name__
                     )
+        # The reader opened the reasoning behind a proposal: its verdict is
+        # kept on the journal entry, so the proposal reads with its argument.
+        journal.safely(journal.attach, journal.path_for(paths.chat), "daily", key,
+                       str(body.get("verdict") or ""))
         return replace(card, analysis={**card.analysis, key: body}), body

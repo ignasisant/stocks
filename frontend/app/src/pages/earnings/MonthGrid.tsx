@@ -18,13 +18,17 @@
  * cell stretches its whole row. Saturday and Sunday run narrower — markets are
  * shut, and almost nothing lands there. The stacking and the fold live in
  * `DayChips`, which the Home screen's four-week grid draws its cells with too.
+ *
+ * A loss sale's buy-back window is more than its last day: every day from the
+ * sale up to the chip is shaded amber, because a buy on any of them would
+ * defer the loss.
  */
 
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useT } from "../../shell/i18n";
 import { useTickerProfile } from "../../shell/tickers";
-import { byDate, isSoon, monthWeeks } from "./data";
+import { blocking, byDate, isSoon, monthWeeks } from "./data";
 import type {
   CalendarDividend,
   CalendarEvent,
@@ -39,7 +43,7 @@ import { CentralBankChip } from "./CentralBanks";
 import { DividendChip } from "./Dividends";
 import { eps, signedPct } from "./format";
 import type { T } from "./format";
-import { RepurchaseChip } from "./Repurchase";
+import { blockedTitle, RepurchaseChip } from "./Repurchase";
 import { TaxChip } from "./Tax";
 
 /** More chips than this and the cell shows one fewer, plus "+N". */
@@ -208,14 +212,25 @@ export function DayChips({
 
 function Cell({
   day,
+  blocked,
   onPick,
   ...items
-}: DayItems & { day: Day; onPick: (pick: EventPick) => void }) {
+}: DayItems & {
+  day: Day;
+  blocked: RepurchaseWindow[];
+  onPick: (pick: EventPick) => void;
+}) {
+  const t = useT();
   const classes = ["earn-day"];
   if (!day.inMonth) classes.push("dim");
   if (day.today) classes.push("today");
+  const shaded = blocked.length > 0;
+  if (shaded) classes.push("rebuy-block");
   return (
-    <div className={classes.join(" ")}>
+    <div
+      className={classes.join(" ")}
+      title={shaded ? blockedTitle(blocked, t) : undefined}
+    >
       <div className="earn-daynum">{day.day}</div>
       <DayChips {...items} onPick={onPick} />
     </div>
@@ -269,6 +284,7 @@ export default function MonthGrid({
               results={reported.get(day.iso) ?? []}
               deadlines={due.get(day.iso) ?? []}
               windows={freed.get(day.iso) ?? []}
+              blocked={blocking(windows, day.iso)}
               banks={decided.get(day.iso) ?? []}
               dividends={exDates.get(day.iso) ?? []}
               onPick={onPick}

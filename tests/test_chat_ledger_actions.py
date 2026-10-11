@@ -97,6 +97,18 @@ def account(monkeypatch, tmp_path):
     return paths
 
 
+@pytest.fixture(autouse=True)
+def closes(monkeypatch) -> dict:
+    """(ticker, day) -> (close, split factor since) for `book.market_close`.
+
+    Empty, the market cannot say and any price goes through — as offline.
+    """
+    quotes: dict = {}
+    monkeypatch.setattr(book, "market_close",
+                        lambda ticker, day, currency: quotes.get((ticker, day)))
+    return quotes
+
+
 @pytest.fixture
 def signed_in(sign_in):
     return sign_in(TestClient(fastapi_app), EMAIL)
@@ -137,6 +149,164 @@ def answer(signed_in, pid, approved=True) -> list[dict]:
     entry = {"interruptId": pid, "status": "resolved",
              "payload": {"approved": approved}}
     return events(signed_in.post("/v1/chat/runs", json=run(resume=[entry])).text)
+
+
+def fill(signed_in, pid, form) -> list[dict]:
+    entry = {"interruptId": pid, "status": "resolved",
+             "payload": {"approved": True, "form": form}}
+    return events(signed_in.post("/v1/chat/runs", json=run(resume=[entry])).text)
+
+
+SALE_SAID = Action("add_transaction", "GRF.MC",
+                   {"trade": "sell", "price": 13.0, "date": "2026-10-09"})
+
+
+def test_a_trade_missing_a_figure_opens_a_form_then_the_trade_to_confirm(
+    account, signed_in, hears
+):
+    """Rated in prod: "he vendido sentinel one a 26.51 el viernes" was asked
+    "buy or sale?" in words. Now the side, price and day said come preset in a
+    form, Review plans the trade, and the same card asks Confirm on it."""
+    stream, end = ask(signed_in, hears, SALE_SAID)
+    offer = end["result"]["proposal"]
+    assert offer["state"] == "pending" and offer["book"]["fill"]["trade"] == "sell"
+    assert end["outcome"]["interrupts"][0]["id"] == offer["id"]
+    text = "".join(e["delta"] for e in stream if e["type"] == "TEXT_MESSAGE_CONTENT")
+    assert "sell" in text and "buy or a sale" not in text and "how many shares" in text
+    (shown,) = [e for e in stream if e["type"] == "ACTIVITY_SNAPSHOT"]
+    assert shown["messageId"] == f"form_{offer['id']}"
+    (data,) = [m["updateDataModel"]["value"] for m in shown["content"]["messages"]
+               if "updateDataModel" in m]
+    assert data["form"] == {"trade": "sell", "quantity": "", "price": "13",
+                            "date": "2026-10-09"}
+
+    half = fill(signed_in, offer["id"], {**data["form"]})
+    assert half[-1]["type"] == "RUN_ERROR"
+    assert half[-1]["code"] == "chat.book_fill_missing"
+
+    planned = fill(signed_in, offer["id"], {**data["form"], "quantity": "50"})
+    end = planned[-1]
+    assert end["type"] == "RUN_FINISHED"
+    asked = end["result"]["proposal"]
+    assert asked["id"] == offer["id"] and asked["state"] == "pending"
+    assert asked["book"]["ops"] and "fill" not in asked["book"]
+    assert end["outcome"]["interrupts"][0]["id"] == offer["id"]
+    (diff,) = [e for e in planned if e["type"] == "ACTIVITY_SNAPSHOT"]
+    assert diff["messageId"] == f"diff_{offer['id']}"
+    assert len(all_transactions(account.db)) == 3
+
+    done = answer(signed_in, offer["id"])
+    assert done[-1]["result"]["proposal"]["state"] == "done"
+    added = all_transactions(account.db)[-1]
+    assert (added.action, added.quantity, added.price, added.date) == (
+        "sell", 50, 13.0, "2026-10-09")
+
+
+def test_a_filled_form_the_book_refuses_says_why_and_stays_open(
+    account, signed_in, hears
+):
+    _, end = ask(signed_in, hears, SALE_SAID)
+    pid = end["result"]["proposal"]["id"]
+    form = {"trade": "sell", "quantity": "500", "price": "13", "date": "2026-10-09"}
+    refused = fill(signed_in, pid, form)
+    assert refused[-1]["type"] == "RUN_ERROR"
+    assert not refused[-1]["code"].startswith("chat.")  # the book's own words
+    ok = fill(signed_in, pid, {**form, "quantity": "100"})
+    assert ok[-1]["result"]["proposal"]["book"]["ops"]
+
+
+def test_a_price_far_from_the_close_is_refused_and_the_form_stays(
+    account, signed_in, hears, closes
+):
+    """Rated in prod: an Oracle sale "at 20000" was planned as typed."""
+    closes[("GRF.MC", "2026-10-09")] = (12.6, 1.0)
+    _, end = ask(signed_in, hears, SALE_SAID)
+    pid = end["result"]["proposal"]["id"]
+    form = {"trade": "sell", "quantity": "50", "price": "20000",
+            "date": "2026-10-09"}
+    refused = fill(signed_in, pid, form)
+    assert refused[-1]["type"] == "RUN_ERROR"
+    assert refused[-1]["code"] == ("20000 EUR doesn't fit: GRF.MC closed at "
+                                   "12.6 EUR on 2026-10-09. Check the price.")
+    ok = fill(signed_in, pid, {**form, "price": "13"})
+    assert ok[-1]["result"]["proposal"]["book"]["ops"]
+    assert len(all_transactions(account.db)) == 3
+
+
+def test_a_whole_trade_at_an_unreal_price_comes_back_as_the_form(
+    account, signed_in, hears, closes
+):
+    closes[("GRF.MC", "2026-10-09")] = (12.6, 1.0)
+    stream, end = ask(signed_in, hears, replace(SALE_SAID, args={
+        **SALE_SAID.args, "quantity": 50.0, "price": 1300.0}))
+    offer = end["result"]["proposal"]
+    assert offer["book"]["fill"]["price"] == 1300.0
+    text = "".join(e["delta"] for e in stream if e["type"] == "TEXT_MESSAGE_CONTENT")
+    assert "doesn't fit" in text
+    (shown,) = [e for e in stream if e["type"] == "ACTIVITY_SNAPSHOT"]
+    assert shown["messageId"] == f"form_{offer['id']}"
+
+
+@pytest.mark.parametrize("price, quote, fits", [
+    (13.0, (12.6, 1.0), True),
+    (6.5, (12.6, 1.0), True),      # half the close: a wild day, not a typo
+    (5.0, (12.6, 1.0), False),
+    (126.0, (12.6, 10.0), True),   # paid before a 10:1 split, at face value
+    (300.0, (12.6, 10.0), False),
+    (20000.0, None, True),         # a market that cannot say lets it through
+])
+def test_how_far_a_price_may_sit_from_the_close(account, price, quote, fits):
+    act = Action("add_transaction", "GRF.MC", {
+        "trade": "buy", "quantity": 1.0, "price": price, "date": "2026-10-09"})
+    drafted = book.draft(act, db=account.db, translate=lambda k, **kw: k,
+                         resolve=SYMBOLS.get,
+                         market=lambda ticker, day, currency: quote)
+    assert (drafted.book is not None) is fits
+    assert (drafted.text == "chat.book_price_off") is not fits
+
+
+def test_a_whole_sale_without_a_price_opens_the_form_with_every_share(
+    account, signed_in, hears
+):
+    """Rated locally: "he vendido oracle" was read as a sale of everything and
+    asked "¿a qué precio?" in words. Now it is the trade form, the shares the
+    book holds preset, and Review books it as the reported sale it is."""
+    stream, end = ask(signed_in, hears, Action("close_position", "GRF.MC", {}))
+    offer = end["result"]["proposal"]
+    assert offer["kind"] == "close_position" and offer["state"] == "pending"
+    (shown,) = [e for e in stream if e["type"] == "ACTIVITY_SNAPSHOT"]
+    (data,) = [m["updateDataModel"]["value"] for m in shown["content"]["messages"]
+               if "updateDataModel" in m]
+    assert data["form"]["trade"] == "sell" and data["form"]["quantity"] == "100"
+    assert data["form"]["price"] == ""
+
+    planned = fill(signed_in, offer["id"], {**data["form"], "price": "13",
+                                            "date": "2026-10-09"})
+    asked = planned[-1]["result"]["proposal"]
+    assert asked["kind"] == "add_transaction" and asked["book"]["ops"]
+    answer(signed_in, offer["id"])
+    added = all_transactions(account.db)[-1]
+    assert (added.ticker, added.action, added.quantity, added.price) == (
+        "GRF.MC", "sell", 100, 13.0)
+
+
+def test_the_form_answered_in_words_is_put_away(account, signed_in, hears):
+    _, end = ask(signed_in, hears, SALE_SAID)
+    pid = end["result"]["proposal"]["id"]
+    _, again = ask(signed_in, hears, replace(SALE_SAID, args={
+        **SALE_SAID.args, "quantity": 100.0}))
+    assert again["result"]["proposal"]["book"]["ops"]
+    stored = [e.get("proposal") for e in auth.load_chat(account.chat)]
+    (old,) = [o for o in stored if o and o["id"] == pid]
+    assert old["state"] == "cancelled"
+
+
+def test_on_telegram_a_missing_figure_is_asked_in_words(account, hears):
+    hears(SALE_SAID)
+    asked = bot(account, "he vendido grifols a 13 el viernes")
+    assert asked.proposal is None
+    assert asked.text == ("Para apuntar la venta de GRF.MC me falta saber "
+                          "cuántas acciones.")
 
 
 def test_a_move_is_proposed_with_its_impact_and_nothing_is_written(
@@ -252,6 +422,80 @@ def test_on_telegram_a_no_leaves_the_book_alone(account, hears):
     said = bot(account, "no")
     assert said.proposal and said.proposal["state"] == "cancelled"
     assert len(all_transactions(account.db)) == 3
+
+
+def test_a_sale_told_over_several_messages_becomes_one_proposal(
+        account, monkeypatch):
+    """Rated down in prod: "vendí SentinelOne", then the shares and the price
+    on their own, then "sí" — and the model kept asking for it "in one
+    sentence". The short follow-up reaches the classifier with the turns above
+    it, which is what lets it name the company the message never says."""
+    heard = iter([Action("add_transaction", "GRF.MC", {"trade": "sell"}),
+                  Action("add_transaction", "GRF.MC",
+                         {"trade": "sell", "quantity": 100.0, "price": 12.5})])
+    contexts: list[str] = []
+
+    def detect(provider, key, message, context="", **kw):
+        contexts.append(context)
+        return next(heard, None)
+
+    monkeypatch.setattr(tools, "detect", detect)
+    asked = bot(account, "Ayer vendí Grifols")
+    assert asked.proposal is None and "GRF.MC" in asked.text
+
+    offered = bot(account, "100 a 12,5")
+    assert offered.proposal and offered.proposal["state"] == "pending"
+    assert "Earlier in this conversation" in contexts[-1]
+    assert "User: Ayer vendí Grifols" in contexts[-1]
+
+
+def test_the_side_of_a_trade_is_read_from_the_words():
+    assert tools.trade_said("he vendido sentinel one a 26.51 el viernes") == "sell"
+    assert tools.trade_said("es venta 100 acciones") == "sell"
+    assert tools.trade_said("I bought 10 AAPL") == "buy"
+    assert tools.trade_said("compré 10") == "buy"
+    assert tools.trade_said("vendí X para comprar Y") is None
+    assert tools.trade_said("apunta 100 S a 26") is None
+
+
+def test_the_trade_form_reads_only_whole():
+    form = {"trade": "sell", "quantity": "100", "price": "26,51", "date": "2026-10-09"}
+    assert tools.trade_args(form) == {"trade": "sell", "quantity": 100.0,
+                                      "price": 26.51, "date": "2026-10-09"}
+    for gap in ({"trade": ""}, {"quantity": "0"}, {"price": "x"},
+                {"date": "viernes"}, {"trade": "dividend"}):
+        assert tools.trade_args({**form, **gap}) is None
+
+
+def test_a_reply_under_an_open_trade_form_continues_it():
+    form = {"role": "assistant", "content": "¿Cuántas?", "action": "add_transaction",
+            "proposal": {"state": "pending", "book": {"fill": {}}}}
+    assert tools.continues("100", [{"role": "user", "content": "vendí S"}, form])
+
+
+def test_a_short_reply_continues_only_an_action_request():
+    asked = [{"role": "user", "content": "apunta una venta de S"},
+             {"role": "assistant", "content": "¿Cuántas?",
+              "action": "add_transaction"}]
+    assert tools.continues("100 a 26,17", asked)
+    # The app's own question is enough, whatever the user said before it.
+    assert tools.continues("sí", [{"role": "user", "content": "S"}, asked[1]])
+    # A proposal on screen is answered by its own path, not re-parsed.
+    shown = {**asked[1], "proposal": {"state": "pending"}}
+    assert not tools.continues("vale", [{"role": "user", "content": "hola"}, shown])
+    assert not tools.continues("gracias", [{"role": "user", "content": "¿qué tal NVDA?"},
+                                           {"role": "assistant", "content": "Bien."}])
+    long = "y ya que estamos explícame bien qué es el ratio PEG y por qué falla"
+    assert not tools.continues(long, asked)
+
+
+def test_earlier_turns_are_cut_and_labelled():
+    turns = [{"role": "user", "content": "a" * 900},
+             {"role": "assistant", "content": "  two\n words "}]
+    text = tools.earlier_turns(turns)
+    assert text.splitlines() == ["Earlier in this conversation (oldest first):",
+                                 "User: " + "a" * 300, "Assistant: two words"]
+    assert tools.earlier_turns([]) == ""
 
 
 # ------------------------------------------------------------- the reading

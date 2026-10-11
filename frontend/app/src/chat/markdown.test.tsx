@@ -125,3 +125,12 @@ describe("tables", () => {
     expect(out).not.toContain("ag-chat-wrap");
   });
 });
+
+describe("ordered lists", () => {
+  it("carries on from the written number after a run of bullets", () => {
+    const out = html(["1. Sells", "- SNPS", "- HUBS", "2. Buys", "- PDD"].join("\n"));
+    // The first list keeps the default start; the second resumes at 2.
+    expect(out.match(/<ol class="ag-chat-list">/g)).toHaveLength(1);
+    expect(out).toContain('<ol class="ag-chat-list" start="2">');
+  });
+});

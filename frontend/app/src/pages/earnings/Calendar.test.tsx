@@ -77,6 +77,18 @@ describe("buy-back windows", () => {
     expect(chip).not.toContain("href");
   });
 
+  it("shade every day from the sale up to, not including, the free day", () => {
+    const shaded = (html: string) =>
+      (html.match(/earn-day[^"]*rebuy-block/g) ?? []).length;
+    // Weeks run Monday-first and spill into the next month: September's grid
+    // ends on Sunday 4 Oct, October's runs 28 Sep – 1 Nov, November's starts
+    // on Monday 26 Oct. The 23 Nov carries the chip, not the shade.
+    expect(shaded(grid(9))).toBe(9 + 4);
+    expect(shaded(grid(10))).toBe(3 + 31 + 1);
+    expect(shaded(grid(11))).toBe(6 + 22);
+    expect(grid(10)).toContain('title="earnings.rebuy_block_title"');
+  });
+
   it("list the ticker, the day it frees up and the loss at stake", () => {
     const html = agenda({ windows: [window] });
     expect(html).toContain("NVDA");

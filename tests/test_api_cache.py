@@ -159,6 +159,58 @@ def test_a_failed_refresh_keeps_the_stale_entry(monkeypatch):
 
 
 # --------------------------------------------------------------- _on_download
+def test_a_stale_answer_past_its_quiet_window_says_how_old_it_is(monkeypatch):
+    """A long grace answers last night's figure at once — and, past the quiet
+    window, marks the request so the page says how old it is."""
+    clock = [0.0]
+    monkeypatch.setattr(cache.time, "monotonic", lambda: clock[0])
+    landed = threading.Event()
+
+    @cache.ttl_cache(10.0, stale_s=1000.0, quiet_s=30.0)
+    def f(key: str):
+        if clock[0] > 0:
+            landed.wait(2)
+        return clock[0]
+
+    def asked() -> tuple[float, dict]:
+        holder: dict[str, float] = {}
+        token = cache.STALE.set(holder)
+        try:
+            return f("x"), holder
+        finally:
+            cache.STALE.reset(token)
+
+    assert asked() == (0.0, {})
+    clock[0] = 20.0  # stale, still quiet
+    assert asked() == (0.0, {})
+    landed.set()
+    time.sleep(0.05)
+    clock[0] = 500.0  # long past ttl + quiet: answered at once, and marked
+    landed.clear()
+    value, holder = asked()
+    assert value == 20.0 and "since" in holder
+    landed.set()
+
+
+def test_a_background_refresh_is_announced_with_its_landing(monkeypatch):
+    """`on_background` hears of every refresh that runs with no reader waiting
+    on it — what `api.holds` keeps the instance's CPU for on Cloud Run."""
+    clock = [0.0]
+    monkeypatch.setattr(cache.time, "monotonic", lambda: clock[0])
+    heard: list[threading.Event] = []
+    monkeypatch.setattr(cache, "on_background", heard.append)
+
+    @cache.ttl_cache(10.0)
+    def f(key: str):
+        return clock[0]
+
+    f("x")
+    assert heard == []  # a miss computed in the request needs no hold
+    clock[0] = 11.0
+    f("x")
+    assert len(heard) == 1 and heard[0].wait(2)
+
+
 def test_frames_built_from_one_download_are_built_once(monkeypatch):
     closes = {"AAPL": None}
     monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: closes)

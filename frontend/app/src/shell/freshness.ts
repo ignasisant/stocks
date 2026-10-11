@@ -31,6 +31,11 @@ export function noteFreshness(url: string, header: string | null): void {
   recompute();
 }
 
+/** When one URL's last answer said its figures were from, as epoch ms. */
+export function staleAt(url: string): number | null {
+  return since.get(url) ?? null;
+}
+
 /** The oldest stale-since across every URL, as epoch ms; `null` when none. */
 export function staleSince(): number | null {
   return oldest;

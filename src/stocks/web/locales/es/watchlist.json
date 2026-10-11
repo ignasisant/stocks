@@ -37,10 +37,10 @@
   "watchlist.col_name": "Nombre",
   "watchlist.col_favorite": "Favorito",
   "watchlist.col_tags": "Grupos",
-  "watchlist.col_tags_help": "Elige los grupos a los que pertenece este valor, o escribe un nombre nuevo para crear uno. Resumen muestra una sección por grupo y el buscador también los encuentra.",
+  "watchlist.col_tags_help": "Elige los grupos de este valor o escribe un nombre para crear uno. Resumen muestra una sección por grupo.",
   "watchlist.col_shares": "Acciones",
   "watchlist.col_cost": "Coste medio",
-  "watchlist.col_cost_help": "Precio medio de compra por acción, en la divisa del valor. Acciones + coste convierten la entrada en posición para la analítica de reserva; un extracto importado siempre manda.",
+  "watchlist.col_cost_help": "Precio medio de compra por acción, en la divisa del valor. Acciones + coste lo convierten en posición de reserva; un extracto importado manda.",
   "watchlist.col_actions": "",
   "watchlist.col_actions_help": "Abre la página del valor, o quítalo de la lista.",
   "watchlist.act_open": "Abrir",
@@ -58,5 +58,5 @@
   "watchlist.group_delete_help": "Quita el grupo de sus miembros. Los valores siguen en la lista de seguimiento.",
   "watchlist.group_deleted": "Grupo {group} deshecho — {n} entradas conservadas.",
   "watchlist.how_open": "Cómo funciona",
-  "watchlist.how": "- Todo lo que edites aquí se guarda al instante: el favorito, los grupos, las acciones, las eliminaciones.\n- `Acciones` + `Coste medio` convierten la entrada en posición para la analítica de reserva equiponderada; la cartera real sigue viniendo de las transacciones importadas.\n- Las alertas que pongas en la página del valor se conservan al editar o reagrupar una entrada.\n- Las criptos entran como par de Yahoo — `BTC-USD`, `ETH-EUR` — nunca como código suelto, que chocaría con un ticker de bolsa. El buscador ya lo hace por ti.\n- Un valor puede estar en varios grupos, y Resumen lo mostrará en todos."
+  "watchlist.how": "- Todo se guarda al instante.\n- `Acciones` + `Coste medio` crean una posición de reserva; la cartera real viene de las transacciones importadas.\n- Las criptos van como par de Yahoo (`BTC-USD`, `ETH-EUR`); el buscador lo hace por ti.\n- Un valor puede estar en varios grupos."
 }

@@ -16,6 +16,7 @@ Everything lives in three places:
 | Step registry + release data | [src/stocks/web/onboarding.py](../../../src/stocks/web/onboarding.py) |
 | Copy, English (source) | [src/stocks/web/locales/en/tour.json](../../../src/stocks/web/locales/en/tour.json) |
 | Copy, Spanish | [src/stocks/web/locales/es/tour.json](../../../src/stocks/web/locales/es/tour.json) |
+| Full feature description (chat knowledge) | [src/stocks/web/knowledge/app-features.md](../../../src/stocks/web/knowledge/app-features.md) |
 
 Read `onboarding.py`'s module docstring before editing it — the modal's
 lifecycle has three non-obvious constraints (one dialog per run, navigation
@@ -33,11 +34,13 @@ matches and stop:
   panel reorganised) → no new step, but it does need a release item: what
   they knew has changed shape.
 - **A capability they did not have at all**, reached from a screen that
-  already has a step → edit that step's `_body` copy, and add a release item
-  pointing at the existing step. Do **not** add a second step for it.
+  already has a step → a sentence in that step's section of
+  `knowledge/app-features.md` (and its `_body` only if it is now the main
+  thing), plus a release item pointing at the existing step. Do **not** add a second step for it.
 - **One more of a kind that already ships** — another broker in the importer,
   another jurisdiction in the tax engine, another chat skill, another column
-  or field → edit the step's `_body` copy and stop. **No release item.** This
+  or field → a sentence in the step's section of `knowledge/app-features.md`
+  and stop. **No release item.** This
   is the line that quietly turns the registry into a changelog.
 - **Smaller, faster, more accurate, or simply fixed** → nothing here, however
   much work it was. The user did not lose anything they had to be told about.
@@ -48,7 +51,8 @@ matches and stop:
 
 The test for a card: can its title name something the reader can now go and
 do, with a button that lands them where they do it? If the honest title is
-"X now also supports Y", it is `_body` copy on the step that already covers X.
+"X now also supports Y", it is a sentence in `app-features.md` under the step
+that already covers X.
 
 ## Step 2 — add or edit the step
 
@@ -132,9 +136,15 @@ reading.
 For each new step, in **both** `en/tour.json` and `es/tour.json`:
 
 - `tour.<id>_title` — a short noun phrase, sentence case.
-- `tour.<id>_body` — two to four sentences: what it does, then the one thing
-  that is actually non-obvious about it (the *why*, a real constraint, a
-  number). `**bold**` for the sub-features being named. No marketing.
+- `tour.<id>_body` — **two short sentences, 220 characters at most**: what
+  it is and the one thing to do there. Long copy bores the reader; it is a
+  popover on the way to the page, not the manual. At most two `**bold**`
+  (the labels they will click). No marketing. `test_tour_steps_are_short`
+  enforces the cap.
+- The full description — every sub-feature, the *why*, the constraints — goes
+  in that step's `##` section of `src/stocks/web/knowledge/app-features.md`
+  (English), which the chat searches. Keep both in step: a new capability is a
+  sentence there, and only reaches the step's `_body` if it is the main thing.
 - `tour.<id>_cta` — optional, overrides the generic "take me there"
   ("Open Import", "Set up Telegram"). Skip it and the generic label is used.
 
@@ -142,8 +152,10 @@ For each `News` item, in both catalogs:
 
 - `tour.news_<version>_<slug>_title` — the feature's name, sentence case, no
   trailing period. It is the card's heading, not a sentence.
-- `tour.news_<version>_<slug>_body` — one to three sentences on what it does
-  and the one thing worth knowing. `**bold**` for sub-features being named.
+- `tour.news_<version>_<slug>_body` — **one short sentence, 120 characters
+  at most**: what the reader can now go and do. The how, the caveats and the
+  sub-features belong in the step's `_body`, not the card. At most one
+  `**bold**`. `test_news_cards_are_short` enforces the caps (title ≤ 40).
 
 Keep the two catalogs in the same key order, and keep placeholders identical
 between languages — `tests/test_i18n_parity.py` fails on a mismatch. Write

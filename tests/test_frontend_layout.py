@@ -92,6 +92,8 @@ _TOUCH_TARGETS = [
     ("pages/profile/styles.ts", ".pr-more > summary", r"min-height\s*:\s*44px"),
     ("chat/chat.css", ".ag-chat-thumb", r"min-height\s*:\s*44px"),
     ("chat/chat.css", ".ag-chat-why-chips .ag-chat-chip", r"min-height\s*:\s*44px"),
+    ("ui/journal.css", ".ag-jr-chip", r"min-height\s*:\s*44px"),
+    ("ui/journal.css", ".ag-jr-fold", r"min-height\s*:\s*44px"),
 ]
 
 

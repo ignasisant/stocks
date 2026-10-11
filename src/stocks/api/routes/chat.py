@@ -721,6 +721,9 @@ def _activities(raw: dict, lang: str) -> list[dict]:
     if not (isinstance(offer, dict) and offer.get("state") == "pending"
             and offer.get("id")):
         return stored
+    if isinstance(offer.get("book"), dict) and "fill" in offer["book"]:
+        form = a2ui.trade_form(offer, lambda key, **kw: translate(key, lang, **kw))
+        return [*stored, a2ui.activity(f"form_{offer['id']}", form)]
     if isinstance(offer.get("book"), dict) and offer["book"].get("ops"):
         diff = a2ui.ledger_diff(offer, lambda key, **kw: translate(key, lang, **kw))
         return [*stored, a2ui.activity(f"diff_{offer['id']}", diff)]
@@ -1442,7 +1445,9 @@ def _call_args(offer: dict) -> dict:
     if isinstance(held, dict):
         # A ledger edit: no form to edit, and once done a change to undo.
         out["book"] = {"summary": str(held.get("summary") or ""),
-                       "change": held.get("change")}
+                       "change": held.get("change"),
+                       # A trade still missing figures: its form, then Review.
+                       **({"fill": True} if "fill" in held else {})}
     return out
 
 
@@ -1467,8 +1472,14 @@ def _result(reply: engine.Reply) -> dict:
     }
 
 
-def _settled(*, thread: str, run: str, reply: engine.Reply) -> Iterator[str]:
-    """The stream for a proposal the reader just answered: one line, done."""
+def _settled(*, thread: str, run: str, reply: engine.Reply,
+             lang: str) -> Iterator[str]:
+    """The stream for a proposal the reader just answered: one line, done.
+
+    Or one more question: a trade form sent back filled is the same card
+    asking again, now the planned trade with its figures (`engine._fill`), so
+    the run ends interrupted on it exactly as the run that first asked did.
+    """
     mid = f"msg_{uuid.uuid4().hex[:16]}"
     yield _frame(RunStartedEvent(thread_id=thread, run_id=run))
     if reply.error:
@@ -1477,8 +1488,21 @@ def _settled(*, thread: str, run: str, reply: engine.Reply) -> Iterator[str]:
     yield _frame(TextMessageStartEvent(message_id=mid, role="assistant"))
     yield _frame(TextMessageContentEvent(message_id=mid, delta=reply.text))
     yield _frame(TextMessageEndEvent(message_id=mid))
-    yield _frame(RunFinishedEvent(thread_id=thread, run_id=run,
-                                  result=_result(reply)))
+    offer = reply.proposal
+    asking = offer is not None and offer.get("state") == "pending"
+    if asking:
+        assert offer is not None
+        for shown_ui in _activities({"proposal": offer}, lang):
+            yield _frame(ActivitySnapshotEvent(
+                message_id=shown_ui["id"], activity_type=shown_ui["type"],
+                content=shown_ui["content"]))
+        yield from _call(offer["id"], CONFIRM_TOOL, _call_args(offer), mid)
+    yield _frame(RunFinishedEvent(
+        thread_id=thread, run_id=run, result=_result(reply),
+        outcome=(RunFinishedInterruptOutcome(
+            interrupts=[_interrupt(offer, reply.text)]) if asking and offer
+            else None),
+    ))
 
 
 def _rewind(paths: UserPaths) -> str:
@@ -1612,7 +1636,7 @@ def ask(
                 ) from exc
             reply = engine.Reply(error=exc.code)
         return StreamingResponse(
-            _settled(thread=thread, run=body.run_id, reply=reply),
+            _settled(thread=thread, run=body.run_id, reply=reply, lang=lang),
             media_type="text/event-stream",
             headers=_STREAM_HEADERS,
         )

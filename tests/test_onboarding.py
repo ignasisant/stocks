@@ -122,6 +122,45 @@ def test_every_announced_feature_has_copy(lang):
     assert not missing, f"{lang}: announced features with no copy: {missing}"
 
 
+# A card interrupts someone who came to look at their portfolio: a heading and
+# one sentence saying what to go and do. The how lives on the step it points at.
+NEWS_TITLE_MAX = 40
+NEWS_BODY_MAX = 120
+
+
+@pytest.mark.parametrize("lang", sorted(i18n.LANGUAGES))
+def test_news_cards_are_short(lang):
+    cat = _catalog(lang)
+    long = [
+        f"{key} ({len(cat[key])})"
+        for r in onboarding.RELEASES
+        for item in r.items
+        for key, cap in (
+            (onboarding.NewsCard(r.version, r.date, item).title_key, NEWS_TITLE_MAX),
+            (onboarding.NewsCard(r.version, r.date, item).body_key, NEWS_BODY_MAX),
+        )
+        if len(cat.get(key, "")) > cap
+    ]
+    assert not long, f"{lang}: news copy over its cap: {long}"
+
+
+# A step is read in a popover on the way to the page: what it is and the one
+# thing to do there. The full description is web/knowledge/app-features.md,
+# which the chat searches.
+STEP_BODY_MAX = 220
+
+
+@pytest.mark.parametrize("lang", sorted(i18n.LANGUAGES))
+def test_tour_steps_are_short(lang):
+    cat = _catalog(lang)
+    long = [
+        f"{s.id} ({len(cat[key])})"
+        for s in onboarding.STEPS
+        if len(cat.get(key := f"tour.{s.id}_body", "")) > STEP_BODY_MAX
+    ]
+    assert not long, f"{lang}: step copy over {STEP_BODY_MAX} chars: {long}"
+
+
 def test_catalog_has_no_copy_for_news_that_is_gone():
     """Same trap as an orphaned step: a release item that was renamed leaves
     its old copy translated in every locale and nothing pointing at it."""

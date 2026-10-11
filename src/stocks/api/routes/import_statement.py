@@ -32,7 +32,10 @@ moves, and a row that was importable ten seconds ago may be a duplicate of one
 another client just committed. A commit that sends the file instead is read
 again (the model's answer is remembered for a few minutes per account, so this
 is usually the preview's own read); `expect` lets it assert the bytes are the
-ones it previewed. Nothing lets either assert the ledger is.
+ones it previewed. Nothing lets either assert the ledger is. What the ledger
+already holds is left out unless the commit asks for it (`keep_duplicates`),
+the same default the chat's attachment card has: re-importing an overlapping
+statement adds what is new and nothing twice.
 
 **Replacing a ledger is a confirmation, not a flag.** The page offers a
 "wipe first" checkbox, and the two halves of it have to travel together: a
@@ -202,6 +205,16 @@ class Commit(Upload):
             "they are validated again and written; the file is not read a "
             "second time, so a model's reading cannot change between what "
             "was shown and what is written."
+        ),
+    )
+    keep_duplicates: bool = Field(
+        default=False,
+        description=(
+            "Write the rows the ledger already holds too. Off, a commit adds "
+            "only what is new — re-importing an overlapping statement leaves "
+            "the book as it was — and the result says how many it left out. "
+            "On only for movements the reader knows are separate (two "
+            "identical fills on one day)."
         ),
     )
     broker: str = Field(
@@ -1065,7 +1078,7 @@ def commit(
     x_chat_provider: str | None = Header(default=None),
     x_chat_key: str | None = Header(default=None),
 ) -> ImportResult:
-    """Validate and append the importable rows.
+    """Validate and append the importable rows the ledger does not hold yet.
 
     The rows a preview showed come back as `rows` and are validated again
     here, never taken on the preview's word. The ledger is shared mutable
@@ -1127,11 +1140,16 @@ def commit(
         diagnostics.report(
             read_by, body.filename, raw, parsed, checked, surface=body.surface
         )
-    importable = checked.importable
+    importable = checked.importable if body.keep_duplicates else checked.fresh
+    left_out = 0 if body.keep_duplicates else len(checked.duplicates)
     if not importable:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="nothing in this statement is importable",
+            detail=(
+                "every row in this statement is already in the book"
+                if left_out
+                else "nothing in this statement is importable"
+            ),
         )
     origin = platforms.detected_broker(importable) or body.broker.strip()
     if not origin:
@@ -1176,6 +1194,7 @@ def commit(
         platform=read_by,
         filename=body.filename,
         imported=len(ids),
+        duplicates=left_out,
         tx_ids=ids,
         broker=origin,
         imported_at=stamped,

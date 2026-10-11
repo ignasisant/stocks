@@ -11,12 +11,13 @@
  *
  * The catalog is `stocks/chat/a2ui.py`'s, which builds every surface the
  * server sends and is held to this one by `tests/test_chat_a2ui.py`: the
- * basic catalog's layout and inputs, plus Aguait's `Metric` (the KPI readout),
+ * basic catalog's layout and inputs (`DateTimeInput` as a day), plus Aguait's `Metric` (the KPI readout),
  * `Ticker` (a symbol with its logo and its link — every ticker on screen is
  * one), `Chart` (closes the server fetched, drawn as a line: `chart.tsx`) and
  * `Donut` (the book's weights the server summed: `donut.tsx`), and a `Slider`
  * and a `ChoicePicker` that send their `action` when the reader lets go of
- * the one or picks from the other.
+ * the one or picks from the other. A `number` field takes only digits and
+ * one decimal mark.
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -128,6 +129,13 @@ type Draw = {
 const str = (value: unknown) =>
   value === undefined || value === null ? "" : String(value);
 
+/**
+ * Whether `text` may stand in a number field while it is typed: digits and one
+ * decimal mark, comma or point ("26,51" as a Spanish reader writes it). The
+ * server reads either; a letter never gets as far as the data model.
+ */
+export const numeric = (text: string) => /^\d*(?:[.,]\d*)?$/.test(text);
+
 function Field({ part, data, set, disabled }: Draw) {
   const bound = isBinding(part.value) ? part.value.path : "";
   const number = part.variant === "number";
@@ -138,6 +146,26 @@ function Field({ part, data, set, disabled }: Draw) {
         className="ag-chat-input"
         value={str(resolve(part.value, data))}
         inputMode={number ? "decimal" : "text"}
+        disabled={disabled || !bound}
+        onChange={(event) => {
+          const typed = event.target.value;
+          if (bound && (!number || numeric(typed))) set(bound, typed);
+        }}
+      />
+    </label>
+  );
+}
+
+/** A2UI's `DateTimeInput`, as this catalog uses it: a day, `YYYY-MM-DD`. */
+function Day({ part, data, set, disabled }: Draw) {
+  const bound = isBinding(part.value) ? part.value.path : "";
+  return (
+    <label className="ag-a2ui-field">
+      {part.label !== undefined && <span>{str(resolve(part.label, data))}</span>}
+      <input
+        className="ag-chat-input"
+        type="date"
+        value={str(resolve(part.value, data))}
         disabled={disabled || !bound}
         onChange={(event) => bound && set(bound, event.target.value)}
       />
@@ -263,6 +291,7 @@ const CATALOG: Record<string, (draw: Draw) => ReactNode> = {
   ),
   Divider: () => <hr className="ag-a2ui-divider" />,
   TextField: (draw) => <Field {...draw} />,
+  DateTimeInput: (draw) => <Day {...draw} />,
   ChoicePicker: (draw) => <Picker {...draw} />,
   CheckBox: ({ part, data, set, disabled }) => {
     const bound = isBinding(part.value) ? part.value.path : "";

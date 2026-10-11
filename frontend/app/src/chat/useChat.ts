@@ -104,13 +104,25 @@ const settled = (
             ticker: offer.ticker,
             args: offer.args,
             ...(offer.book
-              ? { book: { summary: offer.book.summary, change: offer.book.change } }
+              ? {
+                  book: {
+                    summary: offer.book.summary,
+                    change: offer.book.change,
+                    ...(offer.book.fill ? { fill: true } : {}),
+                  },
+                }
               : {}),
           },
           state: offer.state,
         }
       : call,
   );
+
+/** A trade form (`book.fill`) still waiting, other than the card `except`. */
+const isOpenForm = (call: ToolCall, except: string): boolean =>
+  call.id !== except &&
+  call.state === "pending" &&
+  !!(call.args.book as { fill?: unknown } | undefined)?.fill;
 
 /** What a run says as it is written, as `track` paints it into the turn. */
 type Listeners = {
@@ -441,6 +453,25 @@ export function useChat(live: boolean) {
         // A "yes" typed under a card settles it: the card above moves to
         // where the proposal now stands, as a press would have moved it.
         const offer = done.proposal;
+        if (offer && offer.state === "pending") {
+          // A trade form above answered in words: the server put it away
+          // when it filed this card, so it goes here too.
+          setTurns((list) =>
+            list.map((turn) =>
+              turn.tool_calls?.some((call) => isOpenForm(call, offer.id))
+                ? {
+                    ...turn,
+                    tool_calls: turn.tool_calls?.map((call) =>
+                      isOpenForm(call, offer.id)
+                        ? { ...call, state: "cancelled" }
+                        : call,
+                    ),
+                    activities: [],
+                  }
+                : turn,
+            ),
+          );
+        }
         if (offer && offer.state !== "pending") {
           setTurns((list) =>
             list.map((turn) =>
@@ -658,8 +689,10 @@ export function useChat(live: boolean) {
                   content: done.text,
                   action: offer.state === "done" ? offer.kind : turn.action,
                   tool_calls: settled(turn.tool_calls, offer),
-                  // The form was the proposal's; answered, there is none.
-                  activities: [],
+                  // The form was the proposal's; answered, there is none. A
+                  // filled trade form is the card asking again, now with the
+                  // planned trade's figures under it.
+                  activities: offer.state === "pending" ? (done.activities ?? []) : [],
                 }
               : turn,
           ),

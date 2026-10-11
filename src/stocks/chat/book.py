@@ -34,10 +34,18 @@ from stocks.portfolio import demo, doctor, edits, ledger, transfers
 from stocks.portfolio.ledger import Transaction
 
 Translate = Callable[..., str]
+# (ticker, day, currency) -> that day's close in `currency`, split-adjusted,
+# and the product of the splits since; None when the market cannot say.
+Market = Callable[[str, str, str], tuple[float, float] | None]
 
 SHOWN = 12  # rows a reply lists before it says how many more there are
 MAX_ROWS = 50  # rows one chat edit may touch; more than that is an import's job
 _FINDINGS = 5  # problems a book check lists
+# How far a reported price may sit from that day's close: wide enough for an
+# intraday swing, a close up to ten days old and a fill in another currency,
+# narrow enough that 20000 for a 200 stock (a typo, a total typed as a price)
+# never reaches the book.
+_PRICE_BAND = 2.0
 
 
 class Refused(Exception):
@@ -57,10 +65,17 @@ class Draft:
     question back ("which of these three?"), a healthy book. Otherwise it is
     the proposal's ledger payload: `ops` and the plan's `token`, or `undo`
     with a change id, plus the `summary` the journal files it under.
+
+    `fill` is a trade the reader reported without every figure: the ones it
+    did give (side, quantity, price, day, currency, and the book's own label
+    when it differs from the one asked about), for a surface with a
+    form to put them in front of the reader with the gaps to fill. The text
+    asks for the gaps in words, for a surface without one.
     """
 
     text: str
     book: dict | None = None
+    fill: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -70,6 +85,7 @@ class _Ctx:
     resolve: transfers.Resolver | None
     today: str
     currency: str
+    market: Market | None = None
 
 
 def resolver() -> transfers.Resolver:
@@ -87,10 +103,16 @@ def draft(
     resolve: transfers.Resolver | None = None,
     today: str | None = None,
     currency: str = "EUR",
+    market: Market | None = None,
 ) -> Draft:
-    """What `act` would do to the book at `db`, put as the reader will read it."""
+    """What `act` would do to the book at `db`, put as the reader will read it.
+
+    `market` checks a reported trade's price against the day's close
+    (`market_close`); without it any positive price is taken at its word.
+    """
     ctx = _Ctx(db=db, tr=translate, resolve=resolve,
-               today=today or clock.today().isoformat(), currency=currency)
+               today=today or clock.today().isoformat(), currency=currency,
+               market=market)
     rows = demo.without(ledger.all_transactions(db))
     return _DRAFTS[act.kind](act, rows, ctx)
 
@@ -150,12 +172,34 @@ def _delete(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
 
 def _add(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
     a = act.args
-    if not {"trade", "quantity", "price"} <= set(a):
-        return Draft(ctx.tr("chat.book_add_what", ticker=act.ticker))
     same = [t.currency for t in rows if t.ticker == act.ticker]
     currency = a.get("currency") or (
         Counter(same).most_common(1)[0][0] if same else ctx.currency
     )
+    missing = [k for k in ("trade", "quantity", "price") if k not in a]
+    day = a.get("date") or ctx.today
+    off = None if missing else _price_off(act.ticker, a["price"], day, currency, ctx)
+    if off:
+        side = a["trade"]
+        return Draft(off, fill={
+            "trade": side if side in ("buy", "sell") else "",
+            "quantity": a["quantity"], "price": a["price"], "date": day,
+            "currency": currency})
+    if missing:
+        side = a.get("trade")
+        trade = (_trade(side, ctx) if side in ("buy", "sell")
+                 else ctx.tr("chat.book_add_any"))
+        wants = [ctx.tr(f"chat.book_add_need_{k}") for k in missing]
+        need = (wants[0] if len(wants) == 1 else
+                ctx.tr("chat.book_add_and", first=", ".join(wants[:-1]),
+                       last=wants[-1]))
+        return Draft(
+            ctx.tr("chat.book_add_what", trade=trade, ticker=act.ticker,
+                   need=need),
+            fill={"trade": side if side in ("buy", "sell") else "",
+                  "quantity": a.get("quantity"), "price": a.get("price"),
+                  "date": a.get("date") or ctx.today, "currency": currency},
+        )
     row = {
         "date": a.get("date") or ctx.today,
         "ticker": act.ticker,
@@ -170,6 +214,55 @@ def _add(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
                      quantity=_n(a["quantity"]), ticker=act.ticker,
                      price=_n(a["price"]), currency=currency, date=row["date"])
     return _planned([{"op": "add", "row": row}], summary, ctx)
+
+
+def _price_off(ticker: str, price: float, day: str, currency: str,
+               ctx: _Ctx) -> str | None:
+    """Why `price` cannot be what `ticker` traded at on `day`, or None.
+
+    The close is split-adjusted and a fill is what was paid, so a price from
+    before a split may sit up to the splits' product above it. A market that
+    cannot answer (offline, throttled, unlisted) lets any price through: the
+    check stops typos, it does not stand between the reader and the book.
+    """
+    if ctx.market is None:
+        return None
+    try:
+        quote = ctx.market(ticker, day, currency)
+    except Exception:
+        return None
+    if not quote:
+        return None
+    close, factor = quote
+    if close <= 0 or close / _PRICE_BAND <= price <= close * factor * _PRICE_BAND:
+        return None
+    return ctx.tr("chat.book_price_off", price=_n(price), ticker=ticker,
+                  date=day, close=_n(close * factor), currency=currency)
+
+
+def market_close(ticker: str, day: str, currency: str) -> tuple[float, float] | None:
+    """`ticker`'s close on `day` (or the last session before) in `currency`.
+
+    Priced off the listing the app values it with, scaled out of minor units
+    and converted at that day's rate, and the product of the splits since —
+    Yahoo's closes are restated for them, a reader's fill is not.
+    """
+    from stocks.analysis.listing import listing_currencies, quote_unit
+    from stocks.data import fetch, fx
+
+    close = fetch.close_on(ticker, day)
+    if not close or close <= 0:
+        return None
+    iso, scale = quote_unit(listing_currencies([ticker]).get(ticker))
+    try:
+        close = fx.to_base(close * scale, iso or currency, day, currency)
+    except Exception:
+        return None
+    factor = 1.0
+    for when, ratio in fetch.splits(ticker):
+        if when > day and ratio > 0:
+            factor *= ratio
+    return close, factor
 
 
 def _rename(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
@@ -306,7 +399,13 @@ def _close(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
                      if t.action == "sell" and t.date >= last_buy), None)
         price = a.get("price", sale.price if sale else None)
         if price is None:
-            return Draft(ctx.tr("chat.book_close_what", ticker=label))
+            # "He vendido oracle": the sale itself, with every share the book
+            # holds preset, so the form only asks the price ("¿a cuánto?").
+            fill = None if len(held) > 1 else {
+                "ticker": label, "trade": "sell", "quantity": state.held,
+                "price": None, "date": a.get("date") or ctx.today,
+                "currency": currency}
+            return Draft(ctx.tr("chat.book_close_what", ticker=label), fill=fill)
         ops.append({"op": "add", "row": {
             "date": a.get("date") or (sale.date if sale else ctx.today),
             "ticker": label, "action": "sell", "quantity": state.held,

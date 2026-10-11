@@ -1,7 +1,10 @@
 /**
- * The three tiers, which are the safety property and not a presentation choice.
+ * The tiers, which are the safety property and not a presentation choice.
  *
- * `importable` is exactly what a commit writes. `rejected` failed validation
+ * `importable` is what a commit writes, less the rows the book already holds:
+ * those sit in a tier of their own and stay out unless the reader ticks them
+ * in — two identical fills on one day are two movements, and only the reader
+ * can tell that from a statement read twice. `rejected` failed validation
  * and is never committed — quarantined, and the reader has to fix it in the
  * export or add it by hand. `skipped` is what the parser leaves out by design:
  * cash movements, fees, tax corrections.
@@ -24,6 +27,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useT } from "../../shell/i18n";
+import { written } from "./api";
 import type { Platform, Preview } from "./api";
 import { Eyebrow, jump } from "./Card";
 import { Glyph } from "./Glyph";
@@ -53,17 +57,21 @@ export function Tiers({
   picked?: Platform;
   /** A code was placed on a line: the preview is stale. */
   onVenue: () => void;
-  children?: ReactNode;
+  /** The commit, told whether the duplicates were opted in. */
+  children?: (keep: boolean) => ReactNode;
 }) {
   const t = useT();
   const vocab = useVocabulary();
+  const [keep, setKeep] = useState(false);
+  const dupes = preview.importable.filter((row) => row.duplicate);
+  const going = written(preview, keep);
   // Skipped rows a reader has to finish by hand (a return of capital, a split
   // whose ratio could not be derived) are not "left out by design".
   const manual = preview.skipped.filter((row) => row.manual === true).length;
   // The skipped rows sit folded unless one needs a hand, so the chip that
   // jumps to them opens them too.
   const [skippedOpen, setSkippedOpen] = useState(manual > 0);
-  const warned = preview.importable.filter((row) =>
+  const warned = going.filter((row) =>
     row.issues.some((issue) => issue.severity === "warning"),
   );
   const rejected = preview.rejected.length;
@@ -91,7 +99,13 @@ export function Tiers({
       id: "im-importable",
       tone: "ok",
       label: t("import.tier_importable"),
-      n: preview.importable.length,
+      n: going.length,
+    },
+    {
+      id: "im-duplicates",
+      tone: "skip",
+      label: t("import.tier_duplicates"),
+      n: dupes.length,
     },
     { id: "im-skipped", tone: "skip", label: t("import.tier_skipped"), n: skipped },
   ];
@@ -108,7 +122,7 @@ export function Tiers({
         <h2 className="im-review-title" id="im-review-title">
           <Eyebrow n={3}>{t("import.review")}</Eyebrow>
           <span className="im-review-sum">
-            {vocab.tn("import.sum_importable", preview.importable.length)}
+            {vocab.tn("import.sum_importable", going.length)}
             {warned.length > 0 && (
               <>
                 {" "}
@@ -121,6 +135,12 @@ export function Tiers({
             <span className={rejected > 0 ? "im-tone-bad" : undefined}>
               {vocab.tn("import.sum_rejected", rejected)}
             </span>
+            {dupes.length > 0 && (
+              <>
+                {", "}
+                {vocab.tn("import.sum_duplicates", dupes.length)}
+              </>
+            )}
             {", "}
             {vocab.tn("import.sum_skipped", skipped)}
           </span>
@@ -148,7 +168,7 @@ export function Tiers({
         )}
       </header>
 
-      {children}
+      {children?.(keep)}
 
       <div className="im-tiers">
         {rejected > 0 && (
@@ -186,17 +206,40 @@ export function Tiers({
           </Tier>
         )}
 
-        {preview.importable.length > 0 ? (
+        {going.length > 0 ? (
           <Tier
             id="im-importable"
             note={t("import.tier_importable_note")}
-            title={`${t("import.tier_importable")} · ${vocab.num(preview.importable.length, 0)}`}
+            title={`${t("import.tier_importable")} · ${vocab.num(going.length, 0)}`}
             tone="ok"
           >
-            <RowTable rows={preview.importable} tall />
+            <RowTable rows={going} tall />
           </Tier>
         ) : (
-          <p className="im-line-warn">{t("import.no_importable")}</p>
+          <p className="im-line-warn">
+            {t(dupes.length > 0 ? "import.all_duplicates" : "import.no_importable")}
+          </p>
+        )}
+
+        {dupes.length > 0 && (
+          <Tier
+            id="im-duplicates"
+            note={t(
+              keep ? "import.tier_duplicates_kept" : "import.tier_duplicates_note",
+            )}
+            title={`${t("import.tier_duplicates")} · ${vocab.num(dupes.length, 0)}`}
+            tone="skip"
+          >
+            <RowTable brief issues="warnings" rows={dupes} />
+            <label className="im-check">
+              <input
+                checked={keep}
+                onChange={(event) => setKeep(event.target.checked)}
+                type="checkbox"
+              />
+              {t("import.duplicates_keep")}
+            </label>
+          </Tier>
         )}
 
         {skipped > 0 && (

@@ -31,11 +31,15 @@ from datetime import date
 from stocks import obs
 from stocks.chat import daily, engine, memory, signals, structured
 
-VERDICT_CHARS = 320
+VERDICT_CHARS = 160
 TITLE_CHARS = 48
-POINT_CHARS = 620
+POINT_CHARS = 200
 POINTS_MIN = 2
-POINTS_MAX = 4
+POINTS_MAX = 3
+# What the text is cut at: only a runaway answer. The caps above are what the
+# prompt asks for; a sentence a little over them is shown whole, since an
+# ellipsis mid-sentence on the card reads as broken (`daily.LINE_MAX_CHARS`).
+TEXT_MAX_CHARS = daily.LINE_MAX_CHARS
 # The model's share of the wait; the evidence fetch has its own (`evidence.
 # WAIT_S`). The reader is watching a wait line for both.
 TIMEOUT_S = 30.0
@@ -93,14 +97,14 @@ _EVIDENCE = (
 # structured.render.
 _SHAPE = (
     "The reply:\n"
-    f"- verdict: 1 or 2 sentences, at most {VERDICT_CHARS} characters: what the "
+    f"- verdict: ONE short sentence, at most {VERDICT_CHARS} characters: what the "
     "evidence points to, and how clearly — e.g. 'The fall is the company's "
     "own: its peers and its sector are flat over the same three months.'\n"
-    f"- points: 3 to {POINTS_MAX}, in this order as far as the evidence goes: "
+    f"- points: 2 to {POINTS_MAX}, in this order as far as the evidence goes: "
     "what happened; how it compares (named tickers with their figures); what "
     "the business figures, the consensus or the tax arithmetic say; what "
     "would settle the question (a date, a level, a figure to watch).\n"
-    f"- title: at most 4 words. text: 2 to 4 sentences, at most {POINT_CHARS} "
+    f"- title: at most 4 words. text: 1 or 2 short sentences, at most {POINT_CHARS} "
     "characters, plain prose — no lists, no markdown."
 )
 
@@ -197,7 +201,7 @@ def parse(raw: str, card: daily.DailyAction, evidence: dict, lang: str) -> dict 
     except structured.OffContract:
         return None
     pool = _pool(card, evidence)
-    verdict = _text(data.get("verdict"), VERDICT_CHARS)
+    verdict = _text(data.get("verdict"), TEXT_MAX_CHARS)
     if not verdict:
         return None
     bogus = _audit([verdict], pool)
@@ -209,7 +213,7 @@ def parse(raw: str, card: daily.DailyAction, evidence: dict, lang: str) -> dict 
     points: list[dict] = []
     for entry in data.get("points") or []:
         title = _text(entry.get("title"), TITLE_CHARS)
-        text = _text(entry.get("text"), POINT_CHARS)
+        text = _text(entry.get("text"), TEXT_MAX_CHARS)
         if not title or not text:
             continue
         bogus = _audit([title, text], pool)

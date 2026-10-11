@@ -52,9 +52,10 @@ export type Proposal = {
   /**
    * A ledger edit (`chat/book.py`): planned on the server and committed
    * exactly as shown, so it has no form; once done, `change` is the journal
-   * entry Undo takes back.
+   * entry Undo takes back. `fill` is a reported trade still missing figures:
+   * its form comes first, and Review turns the card into the planned trade.
    */
-  book?: { summary?: string; change?: number | null };
+  book?: { summary?: string; change?: number | null; fill?: unknown };
 };
 
 /**

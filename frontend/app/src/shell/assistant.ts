@@ -15,8 +15,11 @@
 
 import { useEffect } from "react";
 
-/** `null` is "just open it" — the drawer opens and asks nothing. */
-type Listener = (prompt: string | null) => void;
+/**
+ * `null` is "just open it" — the drawer opens and asks nothing. `fresh` asks
+ * in a new conversation rather than the one on screen.
+ */
+type Listener = (prompt: string | null, fresh?: boolean) => void;
 
 const listeners = new Set<Listener>();
 
@@ -28,10 +31,10 @@ const listeners = new Set<Listener>();
  * that does nothing. Callers gate on the session themselves where the button
  * should not be drawn at all.
  */
-export function askAssistant(prompt: string): void {
+export function askAssistant(prompt: string, { fresh = false } = {}): void {
   const text = prompt.trim();
   if (!text) return;
-  for (const listener of listeners) listener(text);
+  for (const listener of listeners) listener(text, fresh);
 }
 
 /**
@@ -44,32 +47,6 @@ export function askAssistant(prompt: string): void {
  */
 export function openAssistant(): void {
   for (const listener of listeners) listener(null);
-}
-
-const draftListeners = new Set<(prompt: string) => void>();
-
-/**
- * Open the assistant with a question written but not sent.
- *
- * The Review page builds a long prompt out of its own rows — every verdict,
- * weight and reason — and the reader should see what is being asked, cut it,
- * add their own doubt, before it spends a turn. So the words land in the
- * composer, caret at the end, and Send stays the reader's press.
- */
-export function draftAssistant(prompt: string): void {
-  const text = prompt.trim();
-  if (!text) return;
-  for (const listener of draftListeners) listener(text);
-}
-
-/** Subscribe to those drafts. The drawer is the only caller. */
-export function useAssistantDrafts(handler: (prompt: string) => void): void {
-  useEffect(() => {
-    draftListeners.add(handler);
-    return () => {
-      draftListeners.delete(handler);
-    };
-  }, [handler]);
 }
 
 const threadListeners = new Set<(cid: string) => void>();

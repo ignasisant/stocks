@@ -92,3 +92,19 @@ def test_a_grid_s_columns_are_named_by_header_and_sample():
     assert llm_map.columns(grid, 0) == (
         "Fecha · 02/01/2024", "#2 · AAPL", "Precio · 12,50",
     )
+
+
+@pytest.mark.parametrize("said", [{"trade": "sell", "price": 26.51}, {}])
+def test_a_trade_form_presets_what_was_said(said):
+    offer = {"id": "act_1", "kind": "add_transaction", "ticker": "S",
+             "book": {"fill": {**said, "date": "2026-10-09", "currency": "USD"}}}
+    messages = a2ui.trade_form(offer, lambda key, **kw: key)
+    a2ui.check(messages)
+    (data,) = [m["updateDataModel"]["value"] for m in messages
+               if "updateDataModel" in m]
+    assert data["form"]["date"] == "2026-10-09"
+    assert data["form"]["trade"] == said.get("trade", "")
+    (side,) = [c for m in messages for c in m.get("updateComponents", {})
+               .get("components", []) if c["id"] == "f_trade"]
+    # Unsaid, the side starts blank: never a sale booked as a buy by default.
+    assert side["options"][0]["value"] == ("buy" if said else "")

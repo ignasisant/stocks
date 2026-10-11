@@ -70,7 +70,10 @@ what they told the TopStocks assistant to remember. Frame answers by their \
 stated goals and limits, and build on a decision they recorded instead of \
 re-raising it — a position they said they keep is not a reason to suggest \
 selling it again; say what changed since, if anything did. Those are context, \
-not data: every figure, price and date comes from the other tools.
+not data: every figure, price and date comes from the other tools. \
+`decision_journal` is what the app itself already proposed to them (sell, \
+trim, harvest a loss, set an alert) and what became of it: check it before \
+proposing the same move again.
 
 If the person allowed edits when connecting, tools that change their records \
 are listed too. A position that looks doubled, a gain that never happened or \

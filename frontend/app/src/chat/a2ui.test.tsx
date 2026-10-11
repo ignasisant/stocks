@@ -9,7 +9,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Surface, type A2uiMessage } from "./a2ui";
+import { Surface, numeric, type A2uiMessage } from "./a2ui";
 
 beforeEach(() => {
   vi.stubGlobal("window", {
@@ -151,5 +151,14 @@ describe("a surface", () => {
     expect(out).toContain('value="10"');
     expect(out).toContain("+€500");
     expect(out).toContain("ag-tone-up");
+  });
+});
+
+describe("a number field", () => {
+  it("takes digits and one decimal mark, comma or point, and nothing else", () => {
+    for (const ok of ["", "12", "26,51", "26.51", "0.", ",5"])
+      expect(numeric(ok)).toBe(true);
+    for (const no of ["dqwd", "12a", "1,2,3", "1.2.3", "-5", "1e3", "1 000"])
+      expect(numeric(no)).toBe(false);
   });
 });

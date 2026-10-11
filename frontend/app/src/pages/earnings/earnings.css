@@ -819,6 +819,21 @@
   }
 }
 
+/* Every day a buy-back would still defer the loss, from the sale up to the
+   chip: a faint amber wash under a bar along the top, so a run of days reads
+   as one band rather than as many dates. Tinted, not filled — the chips on
+   those days still have to read over it. The Home card's cells share it. */
+.earn-day.rebuy-block,
+.hm-cal td.rebuy-block {
+  background: color-mix(in srgb, var(--ag-warn) 7%, transparent);
+  box-shadow: inset 0 3px 0 var(--ag-warn-edge);
+}
+
+.earn-day.dim.rebuy-block,
+.hm-cal td.hm-dim.rebuy-block {
+  background: color-mix(in srgb, var(--ag-warn) 7%, var(--ag-surface-sunken));
+}
+
 /* ----------------------------------------------------------- rate decisions */
 
 /* Grey: context for every name on the grid, belonging to none of them. */

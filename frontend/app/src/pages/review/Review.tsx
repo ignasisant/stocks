@@ -26,7 +26,7 @@
 
 import { useState } from "react";
 import { get } from "../../shell/api";
-import { draftAssistant } from "../../shell/assistant";
+import { askAssistant } from "../../shell/assistant";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { SignedInOnly } from "../../shell/guest";
 import { Icon } from "../../shell/Icon";
@@ -269,11 +269,11 @@ function Coins({ rows }: { rows: ReviewRow[] }) {
 }
 
 /**
- * "Draft a question for the AI", top right of the page: it reads the filtered
+ * "Ask the AI", top right of the page: it reads the filtered
  * rows, so it is the same press at the top as it was at the bottom, and the
  * reader finds it before scrolling through every table. Dimmed while a new
- * read loads — the question would be about the old one. The drawer it writes
- * into is not mounted for a guest, so for a guest there is no button at all.
+ * read loads — the question would be about the old one. It is asked in a new
+ * conversation, sent at once. The drawer it asks through is not mounted for a guest, so for a guest there is no button at all.
  */
 function Ask({ data, filter, busy }: { data: Review; filter: Filter; busy: boolean }) {
   const t = useT();
@@ -287,7 +287,7 @@ function Ask({ data, filter, busy }: { data: Review; filter: Filter; busy: boole
         className="ag-btn ag-btn-cta ag-rev-ask"
         title={t("review.ask_help")}
         disabled={busy}
-        onClick={() => draftAssistant(buildPrompt(data, t, lang, words))}
+        onClick={() => askAssistant(buildPrompt(data, t, lang, words), { fresh: true })}
       >
         <Icon name="auto_awesome" size={18} />
         {t("review.ask")}

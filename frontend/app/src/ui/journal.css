@@ -1,0 +1,410 @@
+/* The decision journal (`Journal.tsx`): Perfil's "Diario" tab and the side
+   panel a ticker's header chip opens. The list sizes against its own box, not
+   the viewport — the same rows sit in a 28rem panel and a full-width tab. */
+
+/* ------------------------------------------------------------------- list */
+
+.ag-jr-list {
+  container: ag-jr / inline-size;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ag-jr-row {
+  display: grid;
+  grid-template-columns: 6.5rem auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--ag-rule-soft);
+  scroll-margin-top: 4rem;
+}
+
+.ag-jr-row:first-child {
+  border-top: 0;
+}
+
+.ag-jr-when,
+.ag-jr-line {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ag-jr-when {
+  font-size: var(--ag-fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-secondary);
+}
+
+.ag-jr-what {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.ag-jr-what a.ag-tick,
+.ag-jr-text {
+  color: var(--ag-text-primary);
+  text-decoration: none;
+}
+
+.ag-jr-text {
+  font-size: var(--ag-fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-jr-row:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 2px;
+}
+
+.ag-jr-row-open .ag-jr-text {
+  white-space: normal;
+  text-wrap: pretty;
+}
+
+.ag-jr-sub {
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+}
+
+.ag-jr-end {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* Narrow (the panel, a phone): date and move on one line, the words under. */
+@container ag-jr (max-width: 34rem) {
+  .ag-jr-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .ag-jr-when {
+    flex-direction: row;
+    gap: 0.4rem;
+    align-items: baseline;
+  }
+
+  .ag-jr-line {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .ag-jr-end {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
+
+/* ------------------------------------------------------------------ state */
+
+.ag-jr-state {
+  padding: 1px 7px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  font-size: var(--ag-fs-xs);
+  white-space: nowrap;
+  color: var(--ag-text-muted);
+}
+
+.ag-jr-state-open {
+  border-color: var(--ag-brand-accent);
+  color: var(--ag-text-primary);
+}
+
+.ag-jr-state-followed {
+  border-color: transparent;
+  background: var(--ag-profit-band);
+  color: var(--ag-up);
+}
+
+.ag-jr-state-declined {
+  border-color: transparent;
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-secondary);
+}
+
+.ag-jr-state-lapsed {
+  border-style: dashed;
+}
+
+/* ------------------------------------------------------------------- fold */
+
+.ag-jr-fold {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
+  color: var(--ag-text-muted);
+  cursor: pointer;
+}
+
+.ag-jr-chevron {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 120ms ease-out;
+}
+
+.ag-jr-fold[aria-expanded="true"] .ag-jr-chevron {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.ag-jr-detail {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.5rem 0 0.25rem;
+}
+
+.ag-jr-group {
+  min-width: 0;
+}
+
+.ag-jr-h {
+  margin: 0 0 0.3rem;
+  font-size: var(--ag-fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ag-text-muted);
+}
+
+.ag-jr-reasons {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+}
+
+.ag-jr-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.4rem 1rem;
+  margin: 0;
+}
+
+.ag-jr-fact {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ag-jr-fact dt {
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+}
+
+.ag-jr-fact dd {
+  margin: 0;
+  font-size: var(--ag-fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-primary);
+}
+
+.ag-jr-quote {
+  max-width: 65ch;
+  margin: 0;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--ag-rule-soft);
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+  white-space: pre-line;
+  text-wrap: pretty;
+}
+
+.ag-jr-detail > .ag-jr-sub {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-jr-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ag-jr-links li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.ag-jr-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ag-brand-accent);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  cursor: pointer;
+}
+
+/* A link dressed as Perfil's button (the empty tab's one way on). */
+.ag-jr-cta {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+/* --------------------------------------------------------- the header chip */
+
+.ag-jr-chip {
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------ side panel */
+
+/* Portalled to the body: `.ag-main` is a size container, the containing
+   block of anything fixed inside it. */
+.ag-jr-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: flex;
+  justify-content: flex-end;
+  background: var(--ag-surface-page-veil);
+}
+
+.ag-jr-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(28rem, 100vw);
+  height: 100dvh;
+  padding: 1rem 1.1rem calc(1rem + env(safe-area-inset-bottom));
+  border-left: 1px solid var(--ag-border);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-overlay);
+  animation: ag-jr-in 140ms ease-out;
+}
+
+@keyframes ag-jr-in {
+  from {
+    transform: translateX(1.5rem);
+    opacity: 0;
+  }
+}
+
+.ag-jr-panel > .ag-jr-list {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ag-jr-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: env(safe-area-inset-top);
+  margin-bottom: 0.5rem;
+}
+
+.ag-jr-panel-title {
+  margin: 0;
+  text-wrap: balance;
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+  color: var(--ag-text-primary);
+}
+
+.ag-jr-close {
+  flex: none;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  cursor: pointer;
+}
+
+.ag-jr-panel-foot {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--ag-rule-soft);
+}
+
+.ag-jr-all {
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-brand-accent);
+  text-decoration: none;
+}
+
+/* ------------------------------------------------------------ interaction */
+
+.ag-jr-chip:focus-visible,
+.ag-jr-fold:focus-visible,
+.ag-jr-close:focus-visible,
+.ag-jr-link:focus-visible,
+.ag-jr-all:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  .ag-jr-chip:hover,
+  .ag-jr-close:hover,
+  .ag-jr-fold:hover {
+    color: var(--ag-text-primary);
+  }
+
+  .ag-jr-fold:hover {
+    background: var(--ag-surface-hover);
+  }
+
+  .ag-jr-link:hover,
+  .ag-jr-all:hover,
+  .ag-jr-what a.ag-tick:hover .ag-tick-sym {
+    text-decoration: underline;
+  }
+}
+
+@media (pointer: coarse) {
+  .ag-jr-chip,
+  .ag-jr-close,
+  .ag-jr-link {
+    min-height: 44px;
+  }
+
+  .ag-jr-fold {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-jr-panel {
+    animation: none;
+  }
+
+  .ag-jr-chevron {
+    transition: none;
+  }
+}

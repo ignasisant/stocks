@@ -203,11 +203,14 @@ def quote(symbol: Symbol, base: Base = None) -> Quote:
     price = snapshot.get("price")
     ccy = _base_currency(base)
     currency = price_base = rate = as_of = None
-    # Costs a fundamentals pull, so only paid when `?base=` actually asks for
-    # the conversion — a caller that never passes it (a batch script, chat's
-    # inline quotes) keeps this route as cheap as it always was.
+    # Only when `?base=` asks for the conversion. The quote row names its own
+    # currency; the fundamentals pull — seconds on a name the page has not
+    # loaded yet, and this header is the first thing it draws — is asked only
+    # when that row did not.
     if ccy and not is_crypto(ticker):
-        currency = cast(str | None, loaders.fundamentals(ticker).info.get("currency"))
+        currency = cast(str | None, snapshot.get("currency")) or cast(
+            str | None, loaders.fundamentals(ticker).info.get("currency")
+        )
         if price is not None and currency:
             price_base, rate, as_of = _price_in(ticker, price, currency, ccy)
     return Quote(

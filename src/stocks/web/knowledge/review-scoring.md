@@ -1,0 +1,56 @@
+---
+id: review-scoring
+title: How the Sell or add page scores holdings
+as_of: 2026-10-11
+tags: Vender o reforzar, Sell or add, review, calidad, quality score, precio, valoración, price score, cheapness, vender, sell, recortar, trim, mantener, hold, reforzar, add, comprar, buy, vigilar, watch, descartar, pass, apuesta, bet, sin valorar, unrated, FCF yield, rentabilidad por flujo de caja libre, concentración, peso, riesgo, impuesto, ventana de recompra, mapa calidad precio, target weight
+---
+The Sell or add page (Vender o reforzar) gives every holding two 0-100 scores, one for the business and one for its price, and turns them plus the position's size into a verdict. It is a screen over your own records and public fundamentals, not advice.
+
+## Quality and price scores for a mature business
+On the Sell or add page, a mature company gets a Quality score and a Price score, both 0-100. Each is the plain average of its inputs, and a score needs at least two inputs, otherwise the name is Unrated rather than guessed.
+- Quality averages ROIC (0% scores 0, 40% scores 100), operating margin (0% to 40%), free-cash-flow yield (-2% to 4%, used only as "does it make cash") and the moat score as it is. If sales still grow 20% or more a year, the rule of 40 (growth plus FCF margin, 0% to 60%) joins as a fifth input.
+- Price averages forward P/E (8 scores 100, 40 scores 0, a forecast loss scores 0), FCF yield (0% to 10%) and EV/EBITDA (8 scores 100, 50 scores 0). Higher Price means cheaper.
+- 60 or more on Quality is good; under 45 is weak. 50 or more on Price is cheap; under 30 is expensive.
+- The moat score (0-100, wide at 70+, narrow 45-70, none under 45) weighs persistent ROIC 35%, steady operating margins 25%, cash conversion 20%, durable growth 15% and no dilution 5%; it is a screen, not a verdict.
+- Growth is the sustained pace: the lower of the last quarter against a year earlier and the multi-year rate.
+
+## Growth stage and early-stage bets
+The Sell or add page judges a company on a different yardstick when profits are not the right ruler.
+- Growth stage: sales growing 25% or more a year with operating margin under 10%. Quality is the rule of 40, gross margin (20% to 80%) and the moat score. Price is EV/sales per point of growth (0.1x a point is cheap, 0.6x dear), FCF yield (-5% to 5%) and forward P/E only once positive.
+- Early stage: no sales to speak of (none, or market cap over 40 times sales) with cash going out, or an operating loss bigger than all its sales. It gets no scores and the verdict Bet: a position sized to be lost, with the cash runway as the one hard number (under 1.5 years is short, 3 or more is long).
+- A held Bet above 3% of the book is marked Trim down to 3%.
+- Drug makers carry a patent-cliff or trial-risk warning, because filings do not price expiry dates or trial outcomes.
+
+## How free cash flow is treated and the FCF yield backed rule
+Sell or add uses free cash flow net of share-based pay (the "Owner FCF yield"), since the data feed adds that pay back as if it were free. When share-based pay is half or more of FCF the row says "paid in shares".
+- Cash not its own: if that FCF is more than twice EBITDA (a lender's book, a payments float, subscriptions paid ahead), it is left out of the scores and the row says so.
+- Broken-data rule: an FCF yield above 25% is normally treated as a currency mix-up at the source, as is an enterprise value at or below zero. Those inputs are dropped, the row says "source data looks broken", and the name cannot be Add or Buy.
+- Backed exception: a yield above 25% is accepted as a real price when the forward P/E backs it, meaning the yield is no more than twice the earnings yield (2 divided by the P/E) and never above 50%. A market-abandoned name at five times earnings can genuinely yield 30%.
+
+## Verdicts for holdings and how they are sized
+For a stock you hold, the Sell or add page applies these rules in order, using the position's weight (share of the priced book; unpriced positions count at cost).
+- Sell (target 0%): Quality and Price both under 40, or Quality under 60 on a position under 0.5% of the book.
+- Trim to 10%: 15% or more of the book in one company, whatever its quality.
+- Trim by half: Quality under 45 and the position weighs 6% or more, or carries 10% or more of the book's volatility (its share of risk).
+- Add to 5%: Quality 60+, Price 50+, data not broken and the position under 5%. A growth-stage name is added only to 3%.
+- Hold: none of the above. Funds show Core, money-market funds Cash, crypto and unscorable names Unrated. A company at 15%+ is still trimmed even when its numbers cannot be read.
+The Move column is the money from the weight change at today's prices. The plan strip totals To sell, To add, Net and Tax on the sales.
+
+## Tax on a sale and the repurchase-window date
+Each Sell or Trim row on the Sell or add page shows the extra tax this year's bill would carry if you sold down to the target, replayed on your own lots with your tax jurisdiction and the gains and losses already booked this year. If the sale books a loss or is offset, it says no extra tax.
+- "Buy after" date: where your jurisdiction has a repurchase rule and you sold something at a loss recently, an Add or Buy row shows the first day a purchase no longer undoes that loss. Windows are 2 months (Spain), 30 days (US and Canada) and 28 days (Ireland).
+- Other jurisdictions have no window in the app, so no date appears.
+
+## Outside names: buy, watch or pass
+The Outside the portfolio table judges watchlist names you do not hold, plus any tickers typed into "Weigh other tickers". Typed tickers are not saved to the watchlist; up to 10 can be added, and at most 30 outside names are judged.
+- Buy: Quality 60+, Price 50+ and data not broken. A good business at a good price.
+- Watch: Quality 60+ but still dear, or Quality 45+ with Price 50+. Wait for a better entry.
+- Pass: neither bar is cleared.
+- Bet and Unrated apply as for holdings; funds and coins are Unrated, indices are skipped.
+The Include filter narrows what is compared (portfolio, favourites, watchlist or a group), and Sector and Weight filters narrow the tables.
+
+## The quality map and its search
+The "Quality against price" map plots every scored name: up is a better business, right is a cheaper one. Dashed lines sit at Quality 60 and Price 50, the bars the verdicts use, and the shaded corner ("Quality on sale") is where Add and Buy live. Your holdings are sized by weight; outside names are marked differently. Hover or tap a dot to see why.
+- Bets, funds, cash and names with missing data have no dot; the map counts them below.
+- "Find on the map" searches only names on the map, never the whole market. Typing fades non-matching dots and lists up to 8 matches with logo, symbol, name and verdict; picking one narrows the map to that dot. Names without a score are still listed as "Not on the map".
+- A separate "Search this table" box filters the tables by symbol, name, sector or verdict.

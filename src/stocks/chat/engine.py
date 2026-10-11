@@ -40,6 +40,7 @@ from stocks.chat import (
     clock,
     debate,
     harvest,
+    journal,
     learnings,
     market,
     memory,
@@ -738,6 +739,11 @@ def _fmt_money(x, currency: str = "EUR") -> str:
     return f"{sym}{x:,.0f}" if x is not None and x == x else "n/a"
 
 
+def _known(x) -> bool:
+    """A figure that can be printed: neither None nor NaN."""
+    return x is not None and x == x
+
+
 def book_snapshot(
     tbl: pd.DataFrame | None, watchlist: Path, currency: str = "EUR"
 ) -> str:
@@ -756,14 +762,15 @@ def book_snapshot(
         lines = []
         for tk, r in tbl.iterrows():
             pnl_pct, day_pct, wt = r.get("pnl_pct"), r.get("day_pct"), r.get("weight")
+            # A book with no price at all comes back as None, not NaN.
             lines.append(
                 f"- {tk}: {r['shares']:g} sh"
                 f" | value {_fmt_money(r['value'], currency)}"
                 f" | cost {_fmt_money(r['cost'], currency)}"
                 + (f" | P/L {pnl_pct:+.1%} ({_fmt_money(r['pnl'], currency)})"
-                   if pnl_pct == pnl_pct else "")
-                + (f" | weight {wt:.0%}" if wt == wt else "")
-                + (f" | today {day_pct:+.1%}" if day_pct == day_pct else "")
+                   if _known(pnl_pct) else "")
+                + (f" | weight {wt:.0%}" if _known(wt) else "")
+                + (f" | today {day_pct:+.1%}" if _known(day_pct) else "")
             )
         _cost, total, unpriced = priced_totals(tbl)
         total_pnl = tbl["pnl"].dropna().sum()
@@ -955,6 +962,13 @@ RULES = """
 RULES — these hold whatever the conversation asks:
 - Your subject is the user's investments. Answer what the app DOES for them
   (imports, FIFO cost basis, TWR, tax reports) whenever they ask.
+- Keep it short. Open with the answer itself in one or two sentences, then at
+  most four bullets or one small table with the figures behind it — about 150
+  words in all. Go longer only when the user asks for detail or a full
+  analysis; when an analysis framework applies, give each of its parts a line
+  or two, not a paragraph. Never restate the question, never list caveats the
+  user did not ask about, and end when the answer is given — no summary, no
+  "let me know if…".
 - Never draw a chart, plot or diagram out of text characters (ASCII art, bars
   or lines of symbols in a code block): it renders as noise and its shape is
   made up. Give the figures — first, last, high, low, the change — or a small
@@ -1029,8 +1043,10 @@ def system_prompt(profile: dict, context: str,
         "\"apunta una venta de…\", \"ya no tengo X, ciérrala\", \"revisa mis "
         "operaciones\"), the app drafts the change with its effect and an "
         "undo. If you are answering such a request, the app did not "
-        "understand it: never say the book cannot be edited — ask the user to "
-        "say which trades and what should change, in one short sentence. An "
+        "understand it: never say the book cannot be edited, and never ask "
+        "the user to confirm or to repeat what they already said — ask only "
+        "for what is still missing (which trades, how many shares, at what "
+        "price). An "
         "import happens only when the user attaches a statement to the chat "
         "or uses the Import page: the app parses the file, shows the rows as "
         "a table, and saves them only after the user presses the import "
@@ -1185,15 +1201,16 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
         return agent.Evidence(ok=False)
     from stocks.web import auth
 
-    memory_db, thread = None, ""
+    memory_db, thread, decisions = None, "", None
     if chat_path is not None:
         # Off by the account's own switch: the earlier conversations stay on
         # disk (they are the threads list), but no answer reads them.
         memory_db = auth.memory_path(chat_path) if recall_on(prefs) else None
         thread = auth.active_conversation(chat_path)["id"]
+        decisions = journal.path_for(chat_path)
     # `focus` is what "this" and "it" mean: the ticker on the reader's screen.
     ctx = toolbox.Context(watchlist=watchlist, db=db, memory_db=memory_db,
-                          thread=thread, focus=focus,
+                          journal=decisions, thread=thread, focus=focus,
                           currency=reporting_currency(prefs))
     return agent.gather(provider, api_key, msgs, ctx,
                         timeout=timeout or agent.TIMEOUT, on_tool=on_tool)
@@ -1582,7 +1599,9 @@ def _open_proposal(history: list[dict]) -> int | None:
 
 
 class ProposalError(Exception):
-    """A proposal that cannot be settled. `code` is the locale key that says why."""
+    """A proposal that cannot be settled. `code` is the locale key that says why
+    — or, for a trade form the book turns down (`_fill`), the book's own
+    sentence, which the drawer shows as it shows a key it has no copy for."""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -1610,6 +1629,8 @@ def _apply(offer: dict, approve: bool, *, watchlist: Path, lang: str,
         offer["state"] = "cancelled"
         obs.event("chat.action_cancelled", action=offer.get("kind"))
         return _tr("chat.action_cancelled", lang)
+    if isinstance(offer.get("book"), dict) and "fill" in offer["book"]:
+        return _fill(offer, form, db=db, lang=lang)
     if isinstance(offer.get("book"), dict):
         if db is None:
             raise ProposalError("chat.action_failed")
@@ -1647,6 +1668,53 @@ def _apply(offer: dict, approve: bool, *, watchlist: Path, lang: str,
     return action_reply(act, lang)
 
 
+def _fill(offer: dict, form: dict | None, *, db: Path | None, lang: str) -> str:
+    """A trade form sent back filled: the trade planned, the card now asking it.
+
+    The offer stays pending and keeps its id — it turns from the form into the
+    ledger proposal (`book.ops`, `token`, the impact), exactly as a trade told
+    whole in one message would have been offered — so the reader goes form,
+    then the transaction with its figures, then Confirm, on one card.
+    """
+    from stocks.chat import book, tools
+
+    args = tools.trade_args(form or {})
+    if args is None or db is None:
+        raise ProposalError("chat.book_fill_missing")
+    held = offer["book"]["fill"]
+    # A sale of everything ("close_position") is booked like any reported
+    # trade once its figures are in, under the label the book holds it by.
+    ticker = str(held.get("ticker") or offer.get("ticker") or "")
+    act = tools.Action("add_transaction", ticker, {
+        **{k: v for k, v in (offer.get("args") or {}).items()
+           if k in ("currency", "fee", "broker")},
+        **args,
+    })
+    drafted = book.draft(act, db=db, resolve=book.resolver(),
+                         translate=lambda k, **kw: _tr(k, lang, **kw),
+                         currency=str(held.get("currency") or "EUR"),
+                         market=book.market_close)
+    if drafted.book is None:
+        raise ProposalError(drafted.text)
+    offer.update({"kind": act.kind, "ticker": ticker, "args": dict(act.args),
+                  "book": drafted.book})
+    obs.event("chat.action_filled", action=act.kind)
+    return drafted.text
+
+
+def _journal(offer: dict, chat_path: Path, asked: str) -> None:
+    """Keep an answered proposal about what to own or watch in the decision
+    journal (chat/journal.py), with the words it was offered in."""
+    from stocks.chat import journal
+
+    shown = journal.from_chat(offer, asked)
+    if shown is None or offer.get("state") not in ("done", "cancelled"):
+        return
+    state = "followed" if offer["state"] == "done" else "declined"
+    journal.safely(journal.settle, journal.path_for(chat_path), shown, state,
+                   date.today())
+
+
 def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
                     approve: bool, lang: str = "en", ticker: str | None = None,
                     args: dict | None = None, form: dict | None = None,
@@ -1672,8 +1740,10 @@ def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
         raise LookupError(proposal_id)
     if offer.get("state") != "pending":
         raise ProposalError("chat.action_gone")
+    asked = str(entry.get("content") or "")
     note = _apply(offer, approve, watchlist=watchlist, lang=lang,
                   ticker=ticker, args=args, form=form, db=db)
+    _journal(offer, chat_path, asked)
     entry["content"] = note
     if offer["state"] == "done":
         entry["action"] = offer["kind"]
@@ -1699,6 +1769,7 @@ def _typed_verdict(history: list[dict], index: int, approve: bool, *,
                       source=source)
     except ProposalError as exc:
         return Reply(error=exc.code)
+    _journal(offer, chat_path, str(history[index].get("content") or ""))
     entry: dict = {"role": "assistant", "content": note}
     if offer["state"] == "done":
         entry["action"] = offer["kind"]
@@ -1756,19 +1827,35 @@ def _book_turn(act: Action, *, history: list[dict], prefs: dict, db: Path,
     try:
         drafted = book.draft(act, db=db, resolve=book.resolver(),
                              translate=lambda k, **kw: _tr(k, lang, **kw),
-                             currency=str(prefs.get("currency") or "EUR"))
+                             currency=str(prefs.get("currency") or "EUR"),
+                             market=book.market_close)
     except Exception as exc:
         obs.warn("chat.engine.book_failed", action=act.kind,
                  error_type=type(exc).__name__, error=str(exc)[:300])
         return Reply(error="chat.action_failed")
     entry: dict = {"role": "assistant", "content": drafted.text, "action": act.kind}
     offer = None
-    if drafted.book is not None:
+    if drafted.fill is not None and not typed:
+        # A trade missing a figure: the drawer asks for it with a form (its
+        # Review turns the card into the trade itself); the bot, in words.
+        offer = {**_proposal(act), "book": {"fill": drafted.fill}}
+        entry["proposal"] = offer
+        obs.event("chat.action_asked", action=act.kind)
+    elif drafted.book is not None:
         offer = {**_proposal(act), "book": drafted.book}
         if typed:
             entry["content"] += "\n\n" + _tr("chat.book_reply_yes", lang)
         entry["proposal"] = offer
         obs.event("chat.action_proposed", action=act.kind)
+    if offer is not None:
+        # A trade form still open above, answered in words instead ("100 a
+        # 26,17"): this card is its answer, so the form is put away.
+        for earlier in history:
+            shown = earlier.get("proposal")
+            if (isinstance(shown, dict) and shown.get("state") == "pending"
+                    and isinstance(shown.get("book"), dict)
+                    and "fill" in shown["book"]):
+                shown["state"] = "cancelled"
     history.append(stored(entry))
     auth.save_chat(history, chat_path, thread)
     return Reply(text=entry["content"], proposal=dict(offer) if offer else None)
@@ -2322,7 +2409,10 @@ def trace(evidence, hits: list, live: list, lang: str = "en") -> list[dict]:
         for call in getattr(evidence, "calls", [])
     ]
     if hits:
-        steps.append({"tool": "search_web", "arg": "",
+        # The searches behind the hits, so a rated answer shows what was
+        # asked as well as what came back; pasted links carry none.
+        asked = list(dict.fromkeys(h.query for h in hits if h.query))
+        steps.append({"tool": "search_web", "arg": _step_arg({"query": asked}),
                       "out": translate("chat.step_results", lang, n=len(hits))})
     if live:
         steps.append({
@@ -2503,9 +2593,12 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
 
     # App actions first (favorite / alerts / groups): a deterministic
     # localized confirmation — no main-model call, no free-quota spend.
-    if tools.maybe_action(message):
+    above = history[:-1]
+    if tools.maybe_action(message) or tools.continues(message, above):
         act = tools.detect(provider, key, message,
-                           view + action_context(watchlist),
+                           "\n".join(filter(None, (
+                               view + action_context(watchlist),
+                               tools.earlier_turns(above)))),
                            fallbacks=[(p, k) for p, k, _m in live[1:]])
         if act is not None and tools.is_book(act.kind):
             reply = _book_turn(act, history=history, prefs=prefs, db=db,

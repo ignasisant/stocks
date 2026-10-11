@@ -37,10 +37,10 @@
   "watchlist.col_name": "Name",
   "watchlist.col_favorite": "Favorite",
   "watchlist.col_tags": "Groups",
-  "watchlist.col_tags_help": "Pick the groups this ticker belongs to, or type a new name to start one. Overview renders a section per group and the search box matches them.",
+  "watchlist.col_tags_help": "Pick this ticker's groups or type a name to start one. Overview shows a section per group.",
   "watchlist.col_shares": "Shares",
   "watchlist.col_cost": "Avg cost",
-  "watchlist.col_cost_help": "Average buy price per share, in the stock's native currency. Shares + cost make an entry a position for the fallback analytics; an imported ledger still wins.",
+  "watchlist.col_cost_help": "Average buy price per share, in the stock's currency. Shares + cost make it a fallback position; an imported ledger wins.",
   "watchlist.col_actions": "",
   "watchlist.col_actions_help": "Open the ticker page, or drop it from the watchlist.",
   "watchlist.act_open": "Open",
@@ -58,5 +58,5 @@
   "watchlist.group_delete_help": "Removes the group from its members. The tickers stay on the watchlist.",
   "watchlist.group_deleted": "Group {group} dissolved — {n} entries kept.",
   "watchlist.how_open": "How it works",
-  "watchlist.how": "- Every edit here writes immediately — the star, the groups, the shares, the removals.\n- `Shares` + `Avg cost` make an entry a position for the equal-weight fallback analytics; the real book still comes from imported transactions.\n- Alert rules you set on the ticker page are kept when you edit or regroup a holding.\n- Crypto goes in as a Yahoo pair symbol — `BTC-USD`, `ETH-EUR` — never a bare coin code, which would collide with a stock ticker. The search does this for you.\n- A ticker can sit in several groups, and Overview will show it in each."
+  "watchlist.how": "- Every edit saves immediately.\n- `Shares` + `Avg cost` make a fallback position; the real book comes from imported transactions.\n- Crypto goes in as a Yahoo pair (`BTC-USD`, `ETH-EUR`); the search does this for you.\n- A ticker can sit in several groups."
 }

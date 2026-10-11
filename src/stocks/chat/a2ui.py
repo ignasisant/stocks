@@ -14,11 +14,12 @@ need to: a model at most chooses *which* surface and with what arguments, the
 way the classifier chooses a tool, and this module lays it out.
 
 The catalog is Aguait's: the basic catalog's layout and input components the
-drawer needs, plus four of its own — `Metric` (a label over a figure, the KPI
-readout), `Ticker` (a symbol with its logo, linking to its page: every ticker
-on screen is one), `Chart` (closes drawn as a line, one per symbol, the
-figures a server fetched and never a model's) and `Donut` (weights as a ring,
-one split or several keyed by name with `by` picking one) — and a `Slider` and a
+drawer needs (a `DateTimeInput` among them, drawn as a day), plus four of its
+own — `Metric` (a label over a figure, the KPI readout), `Ticker` (a symbol
+with its logo, linking to its page: every ticker on screen is one), `Chart`
+(closes drawn as a line, one per symbol, the figures a server fetched and
+never a model's) and `Donut` (weights as a ring, one split or several keyed by
+name with `by` picking one) — and a `Slider` and a
 `ChoicePicker` that may carry an `action`, sent when the reader lets go of the
 one or picks from the other. `chat/a2ui.tsx` draws exactly this set, and
 `tests/test_chat_a2ui.py` holds the two to each other.
@@ -44,6 +45,7 @@ CATALOG: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "Text": (frozenset({"text"}), frozenset({"variant"})),
     "Divider": (frozenset(), frozenset({"axis"})),
     "TextField": (frozenset({"label", "value"}), frozenset({"variant"})),
+    "DateTimeInput": (frozenset({"value"}), frozenset({"label"})),
     "ChoicePicker": (frozenset({"options", "value"}),
                      frozenset({"label", "variant", "action"})),
     "CheckBox": (frozenset({"label", "value"}), frozenset()),
@@ -162,6 +164,56 @@ def proposal_form(offer: dict, translate) -> list[dict]:
     root = component("root", "Row", children=[f["id"] for f in fields],
                      align="end")
     return surface(sid, [root, *fields], {"form": tools.form_of(act)})
+
+
+def trade_form(offer: dict, translate) -> list[dict]:
+    """The figures a reported trade is missing, as a form under its card.
+
+    Preset with what the reader already said ("he vendido S a 26,51 el
+    viernes": a sale, the price, the day), so only the gap is typed. The
+    card's own Review sends `/trade` back (`tools.trade_args` reads it), and
+    the card turns into the planned trade to confirm (`engine._fill`).
+    """
+    from stocks.chat import tools
+
+    fill = (offer.get("book") or {}).get("fill") or {}
+    sid = f"form_{offer['id']}"
+    trade = str(fill.get("trade") or "")
+    # Unsaid, the side starts blank rather than on "buy": a guess the reader
+    # does not notice is a sale booked as a purchase.
+    blank = [] if trade else [{"label": "—", "value": ""}]
+    side = component(
+        "f_trade", "ChoicePicker",
+        label=translate("chat.action_field_trade"),
+        options=blank + [{"label": translate(f"import.action_{t}"), "value": t}
+                         for t in tools.TRADE_SIDES],
+        value=path("/form/trade"), variant="mutuallyExclusive")
+    currency = str(fill.get("currency") or "")
+    figures = [
+        component("f_quantity", "TextField",
+                  label=translate("chat.action_field_quantity"),
+                  value=path("/form/quantity"), variant="number"),
+        component("f_price", "TextField",
+                  label=translate("chat.action_field_price", currency=currency),
+                  value=path("/form/price"), variant="number"),
+        component("f_date", "DateTimeInput",
+                  label=translate("chat.action_field_date"),
+                  value=path("/form/date")),
+    ]
+    root = component("root", "Row",
+                     children=["f_trade", *[f["id"] for f in figures]],
+                     align="end")
+    data = {"form": {
+        "trade": trade,
+        "quantity": _figure(fill.get("quantity")),
+        "price": _figure(fill.get("price")),
+        "date": str(fill.get("date") or ""),
+    }}
+    return surface(sid, [root, side, *figures], data)
+
+
+def _figure(value) -> str:
+    return format(value, ".12g") if isinstance(value, (int, float)) else ""
 
 
 def column_mapping(mapping: dict, columns: list[str], translate) -> list[dict]:

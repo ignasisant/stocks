@@ -73,7 +73,11 @@ MIN_BULLETS = 1
 MAX_BULLETS = 4  # "To watch" lines; the day's alerts are listed on their own
 ALERTS_MAX = 3  # signals caps the alert family at three a day
 HEADLINE_CHARS = 90
-BULLET_CHARS = 170
+BULLET_CHARS = 120  # what the prompt asks a line to fit in
+# What a line is cut at: only a runaway one. A line the model wrote a little
+# over the ask is shown whole — an ellipsis mid-sentence on the card reads
+# as broken, and the figure it was building to is usually at the end.
+LINE_MAX_CHARS = 400
 FOCUS_MAX = 4
 # A brief's sections: one per line asked, a few words of title, a few lines.
 MAX_SECTIONS = 12
@@ -1210,7 +1214,7 @@ def _brief(data: dict, actions: dict, *, day: date, lang: str,
         asks = [n for n in raw.get("asks") or [] if isinstance(n, int) and n in asked]
         lines = []
         for entry in (raw.get("lines") or [])[:SECTION_LINES]:
-            line = _line((entry or {}).get("line") or "", BULLET_CHARS)
+            line = _line((entry or {}).get("line") or "", LINE_MAX_CHARS)
             if not line:
                 continue
             if audited and (bogus := audit([line], sourced) or _bare(line, sourced)):
@@ -1316,7 +1320,7 @@ def _parsed_items(data: dict, actions: dict, known: set[str] | None) -> list[dic
     room = {ALERTS: ALERTS_MAX, WATCH: MAX_BULLETS}
     for entry in data.get("items") or []:
         key = entry.get("key")
-        line = _line(entry.get("line") or "", BULLET_CHARS)
+        line = _line(entry.get("line") or "", LINE_MAX_CHARS)
         if not line:
             continue
         key = str(key or "").strip()

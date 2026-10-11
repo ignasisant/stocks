@@ -321,6 +321,37 @@
   border: 1px solid var(--ag-cta-tint-edge);
 }
 
+/* A long question of the reader's own folds to three lines (the bubble's
+   1.5 line-height); the fade says the text goes on before the button does. */
+.ag-chat-fold {
+  max-height: 4.5em;
+  overflow: hidden;
+}
+
+.ag-chat-fold[data-clipped] {
+  -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent);
+  mask-image: linear-gradient(to bottom, black 55%, transparent);
+}
+
+.ag-chat-more {
+  display: block;
+  margin: 4px 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ag-brand-accent);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+@media (pointer: coarse) {
+  .ag-chat-more {
+    min-height: 44px;
+  }
+}
+
 .ag-chat-assistant .ag-chat-bubble {
   background: var(--ag-surface-card);
   border: 1px solid var(--ag-border);

@@ -242,11 +242,14 @@ def test_parse_accepts_a_fenced_reply_and_drops_unknown_tickers():
 def test_parse_strips_bullet_glyphs_and_clips_long_lines():
     raw = json.dumps({
         "headline": "x" * 200,
-        "items": [{"line": "- one"}, {"line": "• " + "y" * 400}],
+        "items": [{"line": "- one"}, {"line": "• " + "y" * 600},
+                  {"line": "z" * (daily.BULLET_CHARS + 50)}],
     })
     card = daily.parse(raw, day=DAY, lang="en")
     assert card.bullets[0] == "one"
-    assert len(card.bullets[1]) == daily.BULLET_CHARS
+    assert len(card.bullets[1]) == daily.LINE_MAX_CHARS
+    # A line a little over the ask is shown whole, not cut mid-sentence.
+    assert card.bullets[2] == "z" * (daily.BULLET_CHARS + 50)
     assert len(card.headline) == daily.HEADLINE_CHARS
 
 

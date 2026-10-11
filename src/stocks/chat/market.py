@@ -24,6 +24,7 @@ network.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -62,6 +63,9 @@ _NOT_NAMES = {
     "How", "Should", "Would", "Could", "Is", "Are", "Do", "Does", "My", "Mi",
     "Me", "Puedo", "Tengo", "Dame", "Give", "Tell", "Explain", "Analiza",
     "Analyze", "Compare", "Compara", "Hola", "Hi", "Hello", "Buenos",
+    # Words Yahoo quotes as an alias it knows (see `spells`): "Estoy" is a
+    # EURO STOXX ETF to it, "Vale" the miner.
+    "Hay", "Estoy", "Vale",
 }
 
 
@@ -127,15 +131,48 @@ def watchlist_names(path: Path) -> dict[str, str]:
         return {}
 
 
+def _words(text: str) -> list[str]:
+    """Lowercase, accent-free words: "Telefónica, S.A." is telefonica s a."""
+    folded = unicodedata.normalize("NFKD", text.casefold())
+    plain = "".join(c for c in folded if not unicodedata.combining(c))
+    return re.findall(r"[a-z0-9]+", plain)
+
+
+def spells(typed: str, company: str) -> bool:
+    """Whether a Yahoo hit for `typed` is the company the user named.
+
+    Yahoo's matcher answers every query with something: it completes a prefix
+    and forgives a typo, so the Spanish words a capitalized sentence starts
+    with come back as tickers — "Hay edge en booking?" as HAYW (Hayward),
+    "Tengo" as TNON, "Quiero" as QDEL — and the answer quoted a stranger's
+    price as the one asked about. A hit stands when the typed words are whole
+    words of its name ("Booking" → Booking Holdings), or when they share
+    nothing with it at all, which is Yahoo knowing an alias ("Google" →
+    Alphabet). A name that merely begins like the typed word, or one letter
+    off it, is a guess, and a guess is dropped rather than quoted.
+    """
+    said, name = _words(typed), _words(company)
+    if not said or not name:
+        return False
+    n = len(said)
+    if any(name[i:i + n] == said for i in range(len(name) - n + 1)):
+        return True
+    return not any(a[:2] == b[:2] for a in said for b in name)
+
+
 def _lookup(name: str) -> str:
-    """Yahoo's best symbol for a company name, or '' (throttled/unknown)."""
+    """Yahoo's best symbol for a company name, or '' (throttled, unknown, or
+    a hit that is not the name typed — see `spells`)."""
     try:
         from stocks.data.symbols import search_symbols
 
         hits = search_symbols(name, limit=1)
     except Exception:
         return ""
-    return hits[0][0] if hits else ""
+    if not hits:
+        return ""
+    symbol, company, _venue = hits[0]
+    return symbol if spells(name, company) else ""
 
 
 def mentioned(

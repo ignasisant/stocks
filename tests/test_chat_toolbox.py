@@ -13,7 +13,7 @@ def _run(name, args, ctx=None):
 def test_every_tool_is_offered_with_a_schema():
     names = [s.name for s in toolbox.specs(Context())]
     assert names == ["search_web", "read_page", "get_quotes",
-                     "portfolio_snapshot"]
+                     "portfolio_snapshot", "lookup_knowledge"]
     for spec in toolbox.specs():
         assert spec.description.strip()
         assert spec.schema["type"] == "object"
