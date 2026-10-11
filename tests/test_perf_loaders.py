@@ -256,3 +256,89 @@ def test_home_reads_held_names_off_the_book_download(monkeypatch):
     asked.clear()
     home.year_closes(("AAPL",), None)
     assert asked == [("AAPL",)]
+
+
+def test_one_book_is_one_replay_however_its_defaults_are_spelled(monkeypatch):
+    from stocks.api import loaders
+
+    replays = []
+    monkeypatch.setattr(
+        loaders, "all_transactions", lambda db: replays.append(db) or []
+    )
+    loaders.ledger_state.cache_clear()
+    try:
+        loaders.ledger_state("/book.db", 1.0)
+        loaders.ledger_state("/book.db", 1.0, "EUR")
+        loaders.ledger_state("/book.db", 1.0, base="EUR", matching="fifo")
+        assert len(replays) == 1
+        loaders.ledger_state("/book.db", 1.0, matching="s104")
+        assert len(replays) == 2, "another matching is another replay"
+    finally:
+        loaders.ledger_state.cache_clear()
+
+
+def test_the_backtest_answers_from_the_last_process_while_it_downloads(monkeypatch):
+    """The risk tab after a restart: yesterday's backtest answers at once,
+    marked, instead of the whole book downloading again on the request."""
+    import threading
+
+    from stocks.analysis import portfolio
+    from stocks.api import cache, loaders
+
+    position = type("P", (), {"ticker": "AAPL"})()
+    monkeypatch.setattr(
+        loaders, "ledger_state", lambda db, mtime, base="EUR": ([], [position], [])
+    )
+    monkeypatch.setattr(portfolio, "holdings_from_positions", lambda p: p)
+    monkeypatch.setattr(portfolio, "first_owned", lambda txs: None)
+    monkeypatch.setattr(portfolio, "rebase_report", lambda r, *a, **k: r)
+    runs = []
+    gate = threading.Event()
+
+    def analyze(period, holdings):
+        runs.append(period)
+        if len(runs) > 1:
+            gate.wait(5)
+        return {"run": len(runs)}
+
+    monkeypatch.setattr(portfolio, "analyze", analyze)
+    loaders.basket_report.cache_clear()
+    try:
+        assert loaders.basket_report("/book.db", 1.0, "EUR", "2y") == {"run": 1}
+        loaders.basket_report.cache_clear(expire=False)
+        later = cache.time.time() + 10 * 3600
+        monkeypatch.setattr(cache.time, "time", lambda: later)
+        monkeypatch.setattr(cache.time, "monotonic", lambda: later)
+        holder: dict[str, float] = {}
+        token = cache.STALE.set(holder)
+        try:
+            again = loaders.basket_report("/book.db", 1.0, "EUR", "2y")
+        finally:
+            cache.STALE.reset(token)
+        assert again == {"run": 1}
+        assert "since" in holder
+    finally:
+        gate.set()
+        loaders.basket_report.cache_clear()
+
+
+def test_a_throttled_dividend_history_is_not_kept_as_pays_nothing(monkeypatch):
+    """Persisted for days, so a burst Yahoo cut short must not land: the
+    names it dropped may well pay."""
+    from yfinance.exceptions import YFRateLimitError
+
+    from stocks.api import loaders
+    from stocks.data import dividends
+    from stocks.data import fetch as data_fetch
+
+    paid = dividends.DividendHistory("MSFT", (("2026-08-14", 0.91),), "USD")
+    monkeypatch.setattr(dividends, "histories", lambda tickers: {"MSFT": paid})
+    monkeypatch.setattr(data_fetch, "throttle_remaining", lambda: 30.0)
+    loaders.dividend_histories.cache_clear()
+    try:
+        with pytest.raises(YFRateLimitError):
+            loaders.dividend_histories(("KO", "MSFT"))
+        monkeypatch.setattr(data_fetch, "throttle_remaining", lambda: 0.0)
+        assert loaders.dividend_histories(("KO", "MSFT")) == {"MSFT": paid}
+    finally:
+        loaders.dividend_histories.cache_clear()

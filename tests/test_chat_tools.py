@@ -366,3 +366,29 @@ def test_system_prompt_lists_every_tool():
 def test_kinds_tracks_the_registry():
     assert set(tools.KINDS) == set(tools.TOOLS) | set(tools.BOOK)
     assert not set(tools.TOOLS) & set(tools.BOOK)
+
+
+def test_search_step_names_the_queries_behind_the_hits():
+    from stocks.chat import engine
+    from stocks.web import chat_web
+
+    hits = [chat_web.Result("a", "https://a", "", query="HODO stock news"),
+            chat_web.Result("b", "https://b", "", query="HODO stock news"),
+            chat_web.Result("pasted", "https://c", "")]
+    (step,) = engine.trace(None, hits, [])
+    assert step["tool"] == "search_web" and step["arg"] == "HODO stock news"
+
+
+def test_book_snapshot_survives_a_book_with_no_price_at_all(tmp_path):
+    import pandas as pd
+
+    from stocks.chat import engine
+
+    tbl = pd.DataFrame(
+        {"shares": [3.0], "value": [None], "cost": [30.0], "pnl": [None],
+         "pnl_pct": [None], "day_pct": [None], "weight": [None]},
+        index=["CAT"], dtype=object)
+    watchlist = tmp_path / "watchlist.yaml"
+    watchlist.write_text("watchlist: []\n")
+    assert "- CAT: 3 sh" in engine.book_snapshot(tbl, watchlist)
+

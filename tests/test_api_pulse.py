@@ -503,6 +503,31 @@ def test_every_block_comes_back_by_default(client, account, sources):
     }
 
 
+def test_the_sources_download_side_by_side(client, account, sources, monkeypatch):
+    """FRED and Yahoo are separate waits: each source here blocks until the
+    other two have started, which only a request fetching them at once gets
+    past."""
+    import threading
+
+    together = threading.Barrier(3, timeout=5)
+
+    def waits(fn):
+        return lambda: (together.wait(), fn())[1]
+
+    monkeypatch.setattr(loaders, "pulse_closes", waits(loaders.pulse_closes))
+    monkeypatch.setattr(loaders, "pulse_rate_rows", waits(loaders.pulse_rate_rows))
+    monkeypatch.setattr(loaders, "inflation", waits(loaders.inflation))
+    by_block = blocks_of(
+        client.get(
+            "/v1/pulse/tables",
+            params={"account": EMAIL, "blocks": "gauges,rates,inflation"},
+            headers=AUTH,
+        ).json()
+    )
+    for block in ("gauges", "rates", "inflation"):
+        assert by_block[block]["unavailable"] is None, block
+
+
 def test_each_block_carries_its_configured_count_even_when_down(
     client, account, sources, monkeypatch
 ):

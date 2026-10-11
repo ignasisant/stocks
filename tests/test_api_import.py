@@ -1065,10 +1065,31 @@ def test_a_commit_revalidates_instead_of_trusting_the_preview(
     are duplicates once they have been committed once."""
     first = signed_in.post("/v1/import/commit", json=body()).json()
     assert first["imported"] == 2
-    second = signed_in.post("/v1/import/commit", json=body()).json()
-    # Committed again — duplicates are a warning, not an error, exactly as in
-    # the app — but the second batch is flagged as such by validation.
-    assert second["imported"] == 2
+    again = signed_in.post("/v1/import/commit", json=body())
+    # Re-importing the same statement adds nothing twice.
+    assert again.status_code == 422
+    assert "already in the book" in again.json()["detail"]
+    assert len(all_transactions(account.db)) == 2
+
+
+def test_a_commit_leaves_out_only_what_the_book_already_holds(
+    client, account, signed_in
+):
+    signed_in.post("/v1/import/commit", json=body())
+    longer = CLEAN + "2024-03-04,MSFT,buy,1,400.00,EUR,1.00,revolut Microsoft\n"
+    payload = signed_in.post("/v1/import/commit", json=body(longer)).json()
+    assert (payload["imported"], payload["duplicates"]) == (1, 2)
+    assert len(all_transactions(account.db)) == 3
+
+
+def test_duplicates_go_in_only_when_asked_for(client, account, signed_in):
+    """Two identical fills on one day are two movements, and only the reader
+    can say so."""
+    signed_in.post("/v1/import/commit", json=body())
+    payload = signed_in.post(
+        "/v1/import/commit", json={**body(), "keep_duplicates": True}
+    ).json()
+    assert (payload["imported"], payload["duplicates"]) == (2, 0)
     assert len(all_transactions(account.db)) == 4
 
 

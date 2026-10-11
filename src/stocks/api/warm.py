@@ -67,7 +67,7 @@ def seen_recently(last_seen: object, today: date, days: int = RECENT_DAYS) -> bo
 def warm_account(db: str, watchlist: str | Path, base: str) -> None:
     """Fill the memos one Home and one Portfolio read: the book's close
     download and the three frames built from it, then the watchlist's year."""
-    from stocks.api.home import closes_tuple
+    from stocks.api.home import closes_tuple, year_closes
 
     mtime = loaders.db_mtime(db)
     loaders.held_closes(db, mtime)
@@ -76,7 +76,10 @@ def warm_account(db: str, watchlist: str | Path, base: str) -> None:
     loaders.basket_values(db, mtime, base)
     entries = load_watchlist(Path(watchlist))
     owned = set(loaders.held(db, mtime))
-    loaders.watchlist_closes(closes_tuple(entries, owned))
+    # Through `year_closes`, as Home asks: it downloads only the names the
+    # book's own prices do not cover, and that smaller tuple is the key Home
+    # reads. Warming the whole tuple filled an entry nobody ever asked for.
+    year_closes(closes_tuple(entries, owned), db, mtime)
 
 
 def warm_recent(today: date | None = None) -> int:

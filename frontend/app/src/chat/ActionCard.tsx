@@ -22,6 +22,12 @@
  * against the book on the server and commits exactly as the figures above it
  * say. Once done it offers Undo, which takes the change back through the
  * book's journal.
+ *
+ * A reported trade missing a figure (`args.book.fill`: "he vendido S a 26,51")
+ * opens on its form instead, preset with what was said, and Review — live
+ * once every field reads (`tradeReady`) — sends it:
+ * the server plans the trade and this same card comes back as that ledger
+ * edit, its figures above and Confirm under them.
  */
 
 import { useRef, useState } from "react";
@@ -30,6 +36,22 @@ import { Badge } from "../ui/Badge";
 import { Status } from "../ui/Status";
 import { Surface, type A2uiMessage } from "./a2ui";
 import type { Edits, ToolCall } from "./types";
+
+/**
+ * Whether a trade form is whole: a side, shares and a price above zero, a day.
+ * Review waits for it — the server would refuse anything less
+ * (`tools.trade_args`), and a round trip to say "fill it in" is one too many.
+ */
+export function tradeReady(form: Record<string, string> | null): boolean {
+  if (!form) return false;
+  const figure = (raw: string | undefined) => Number((raw ?? "").replace(",", "."));
+  return (
+    (form.trade === "buy" || form.trade === "sell") &&
+    figure(form.quantity) > 0 &&
+    figure(form.price) > 0 &&
+    /^\d{4}-\d{2}-\d{2}$/.test(form.date ?? "")
+  );
+}
 
 export function ActionCard({
   call,
@@ -52,8 +74,10 @@ export function ActionCard({
   // What the form holds now, read on Confirm rather than kept in state: the
   // surface owns the typing, this card only needs the last value of it.
   const typed = useRef<Record<string, string> | null>(null);
+  const [ready, setReady] = useState(false);
 
-  const book = call.args.book as { change?: number | null } | undefined;
+  const book = call.args.book as { change?: number | null; fill?: unknown } | undefined;
+  const filling = !!book?.fill;
   if (call.state === "undone") return <Badge>{t("chat.action_undone")}</Badge>;
   if (call.state === "done") {
     if (!book?.change || !onUndo) return <Badge>{t("chat.action_done")}</Badge>;
@@ -91,7 +115,9 @@ export function ActionCard({
     setSaving(true);
     setError(null);
     const edits =
-      approved && editing && typed.current ? { form: typed.current } : undefined;
+      approved && (editing || filling) && typed.current
+        ? { form: typed.current }
+        : undefined;
     const refused = await onDecide(call.id, approved, edits);
     setSaving(false);
     setError(refused);
@@ -99,12 +125,13 @@ export function ActionCard({
 
   return (
     <div className="ag-chat-act">
-      {editing && form && (
+      {(editing || filling) && form && (
         <Surface
           messages={form}
           disabled={saving}
           onData={(data) => {
             typed.current = (data.form as Record<string, string>) ?? null;
+            setReady(tradeReady(typed.current));
           }}
         />
       )}
@@ -116,9 +143,10 @@ export function ActionCard({
           <button
             type="button"
             className="ag-chat-btn ag-chat-btn-on"
+            disabled={filling && !ready}
             onClick={() => void answer(true)}
           >
-            {t("chat.action_approve")}
+            {t(filling ? "chat.action_review" : "chat.action_approve")}
           </button>
           {!editing && form && !book && (
             <button

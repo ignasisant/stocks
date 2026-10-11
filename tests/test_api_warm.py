@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 
 from stocks.api import loaders, warm
@@ -105,8 +106,17 @@ def test_warm_account_fills_the_memos_a_page_reads(monkeypatch, tmp_path):
     monkeypatch.setattr(loaders, "history", lambda db, m, b: calls.append("history"))
     monkeypatch.setattr(loaders, "basket_values", lambda db, m, b: calls.append("basket"))
     monkeypatch.setattr(loaders, "held", lambda db, m: ("MSFT",))
+    # The held name comes out of the book's own prices, so the list download
+    # is warmed under the key Home reads: the names those prices do not cover.
     monkeypatch.setattr(
-        loaders, "watchlist_closes", lambda tickers: calls.append(f"year:{tickers}")
+        loaders,
+        "held_printed_closes",
+        lambda db, m: {
+            "MSFT": pd.Series([1.0, 2.0], index=pd.bdate_range("2026-10-01", periods=2))
+        },
+    )
+    monkeypatch.setattr(
+        loaders, "watchlist_closes", lambda tickers: calls.append(f"year:{tickers}") or {}
     )
     watchlist = tmp_path / "watchlist.yaml"
     watchlist.write_text("watchlist:\n  - ticker: AAPL\n")
@@ -116,5 +126,5 @@ def test_warm_account_fills_the_memos_a_page_reads(monkeypatch, tmp_path):
         "positions:EUR",
         "history",
         "basket",
-        "year:('AAPL', 'MSFT')",
+        "year:('AAPL',)",
     ]

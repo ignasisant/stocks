@@ -7,7 +7,7 @@
  * Nothing has a Save button — each control writes itself, which is what the
  * strip beside the tabs promises.
  *
- * Three scopes, one tab each, deep-linked as `?tab=` so a link into the
+ * Each scope a tab, deep-linked as `?tab=` so a link into the
  * watchlist editor stays a link into the watchlist editor.
  */
 
@@ -20,6 +20,7 @@ import { useApi } from "../../shell/useApi";
 import { SignInWall } from "../../shell/guest";
 import { Notifications } from "./Notifications";
 import { Investor } from "./Investor";
+import { Journal } from "./Journal";
 import { Preferences } from "./Preferences";
 import { useSettings } from "./prefs";
 import { CSS } from "./styles";
@@ -44,6 +45,7 @@ const TABS = [
   { id: "iv", label: "profile.iv_section" },
   { id: "watch", label: "profile.watchlist" },
   { id: "notify", label: "profile.notifications" },
+  { id: "journal", label: "journal.tab" },
 ] as const;
 
 /**
@@ -168,6 +170,7 @@ function Settings() {
       {tab === "iv" && <Investor />}
       {tab === "watch" && <Watchlist query={listing} />}
       {tab === "notify" && <Notifications {...settings} />}
+      {tab === "journal" && <Journal />}
     </>
   );
 }

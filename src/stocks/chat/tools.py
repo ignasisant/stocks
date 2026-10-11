@@ -72,6 +72,55 @@ def maybe_action(text: str) -> bool:
     return bool(_GATE_RE.search(text))
 
 
+# A reply that only carries a request on ("sí", "venta de 100 a 26,17") names
+# none of the gate's words. Short is the tell: a new request worth parsing on
+# its own says what it wants, and the gate reads that.
+_FOLLOW_UP_WORDS = 12
+# The turns the classifier reads above the message, each cut to this long.
+_EARLIER_TURNS = 4
+_EARLIER_CHARS = 300
+
+
+def continues(message: str, earlier: Sequence[dict]) -> bool:
+    """Whether a short message may finish a request made just before it.
+
+    Read alone, "Venta de 100 acciones a 26,17" has no ticker and "sí" has
+    nothing at all, so a sale reported over three messages never became a
+    proposal: the model answered instead, asking for the same sale "in one
+    sentence" again. After the app's own question about a recorded trade, or
+    after a message the gate let through, a short one is worth the classifier
+    call too, and the classifier reads the turns above it (`earlier_turns`)."""
+    if len(message.split()) > _FOLLOW_UP_WORDS:
+        return False
+    last: dict[str, dict] = {}
+    for turn in reversed(earlier):
+        last.setdefault(str(turn.get("role")), turn)
+    asked = last.get("assistant", {})
+    # The app's question about a trade — asked in words, or as the form a
+    # missing figure puts under it (`book.fill`), which "100 a 26,17" typed
+    # instead answers just as well.
+    offer = asked.get("proposal")
+    if is_book(str(asked.get("action") or "")) and (
+            not offer or (isinstance(offer.get("book"), dict)
+                          and "fill" in offer["book"]
+                          and offer.get("state") == "pending")):
+        return True
+    return maybe_action(str(last.get("user", {}).get("content", "")))
+
+
+def earlier_turns(earlier: Sequence[dict], limit: int = _EARLIER_TURNS) -> str:
+    """The last turns above the message, as the classifier's context ("" with none)."""
+    lines = []
+    for turn in earlier[-limit:]:
+        text = " ".join(str(turn.get("content", "")).split())[:_EARLIER_CHARS]
+        if text:
+            who = "User" if turn.get("role") == "user" else "Assistant"
+            lines.append(f"{who}: {text}")
+    if not lines:
+        return ""
+    return "Earlier in this conversation (oldest first):\n" + "\n".join(lines)
+
+
 # Importing is not one of the actions below, and never will be: it needs the
 # statement itself, not a sentence about it. This gate catches the ask
 # ("import my trades", "importa las compras del pdf") so each surface can
@@ -334,6 +383,20 @@ _ISO_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 _TRADES = frozenset({"buy", "sell", "dividend", "fee", "split", "capital",
                      "transfer_in", "transfer_out"})
+# The side a trade the reader reports was on, in their own words: "he
+# vendido", "venta", "I sold" / "compré", "bought". Read from the message when
+# the classifier left "trade" out, so a sale is never asked "buy or sell?".
+_SAID_SELL = re.compile(r"\b(?:vend\w*|venta|sold|sell\w*)\b", re.IGNORECASE)
+_SAID_BUY = re.compile(r"\b(?:compr\w*|bought|buy\w*)\b", re.IGNORECASE)
+
+
+def trade_said(message: str) -> str | None:
+    """"sell" or "buy" when the message names exactly one side, else None."""
+    sell = bool(_SAID_SELL.search(message))
+    buy = bool(_SAID_BUY.search(message))
+    if sell == buy:
+        return None
+    return "sell" if sell else "buy"
 
 
 def _number(raw) -> float | None:
@@ -495,6 +558,15 @@ Rules:
   "favoritos") is only what the user follows. Removing something from the
   portfolio is a recorded-trade action — "close_position" when the user says
   they no longer hold it — never "remove_ticker".
+- A trade the user says they made ("vendí X", "compré X", "I sold X") is
+  "add_transaction" with its "trade" — or "close_position" when they say it
+  was all of it — never a watchlist action.
+- The context may list earlier turns of the conversation. They only fill in
+  what the latest message leaves out: a reply such as "sí", "venta de 100 a
+  26,17" or "the one from yesterday" continues the request made just above
+  it, so take the action, ticker and fields from there. A latest message
+  that neither asks for a change nor answers the app's question about one
+  is null, whatever the earlier turns asked.
 """
 
 
@@ -587,7 +659,11 @@ def detect(
             obs.warn("chat.tools.detect_failed", provider=getattr(prov, "id", ""),
                      error_type=type(exc).__name__, error=str(exc)[:300])
             continue
-        return _action_from(call.model_dump())
+        act = _action_from(call.model_dump())
+        if (act is not None and act.kind == "add_transaction"
+                and "trade" not in act.args and (side := trade_said(message))):
+            act = Action(act.kind, act.ticker, {**act.args, "trade": side})
+        return act
     return None
 
 
@@ -712,6 +788,26 @@ def args_from_form(kind: str, form: dict) -> dict:
     if kind == "add_ticker":
         return {"name": text("name")}
     return {}
+
+
+# The form under a trade the reader reported without every figure
+# (`chat/book.py`'s `fill`): what it asks for, and its fields read back as the
+# book tool's arguments by the same parser a detection goes through.
+TRADE_FORM = ("trade", "quantity", "price", "date")
+TRADE_SIDES = ("buy", "sell")
+
+
+def trade_args(form: dict) -> dict | None:
+    """The filled trade form as `add_transaction` arguments, None if incomplete.
+
+    Every field must read: a side, a quantity and a price above zero, an ISO
+    day. Anything else is the form sent back half done, not a trade.
+    """
+    args = _book_args({k: str(form.get(k) or "").strip() for k in TRADE_FORM})
+    if (args.get("trade") not in TRADE_SIDES or "date" not in args
+            or not args.get("quantity") or not args.get("price")):
+        return None
+    return {k: args[k] for k in TRADE_FORM}
 
 
 # A whole message that answers a pending proposal. Short on purpose: "sí, pero

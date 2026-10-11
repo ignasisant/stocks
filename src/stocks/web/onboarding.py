@@ -161,6 +161,13 @@ STEPS: tuple[Step, ...] = (
         done=_has_ai_key,
     ),
     Step(
+        id="journal",
+        icon="history_edu",
+        page="profile",
+        session={"profile_tab": "journal"},
+        gated=True,
+    ),
+    Step(
         id="notify",
         icon="notifications",
         page="profile",
@@ -445,6 +452,16 @@ RELEASES: tuple[Release, ...] = (
             # names weighed beside it. The map, the tax and the typed tickers
             # are this card's body, not cards of their own.
             News(slug="review", icon="swap_vert", step="review"),
+        ),
+    ),
+    Release(
+        version="2026.10.6",
+        date="2026-10",
+        items=(
+            # A tab of its own: what the app proposed, kept with its figures
+            # and its fate. The ticker header's chip and the chat tool read
+            # the same record and are this card's step body, not cards.
+            News(slug="journal", icon="history_edu", step="journal"),
         ),
     ),
 )

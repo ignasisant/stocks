@@ -255,6 +255,22 @@ def test_memory_switched_off_is_no_memory_here_either(site, token, book):
     assert "dividendos" not in result_text(call(site, token, "investor_context"))
 
 
+def test_the_decision_journal_reads_what_the_app_proposed(site, token, book):
+    from datetime import date
+
+    from stocks.chat import journal
+
+    journal.record(book.journal, [journal.Shown(
+        source="review", subject="review:AMD", action="sell", ticker="AMD",
+        reasons=("weak_quality",), snapshot={"weight": 0.15})], date(2026, 10, 1))
+    data = ok(call(site, token, "decision_journal", ticker="AMD"))
+    assert data["kind"] == "decisions" and data["total"] == 1
+    [entry] = data["entries"]
+    assert (entry["action"], entry["state"], entry["snapshot"]) == (
+        "sell", "open", {"weight": 0.15})
+    assert ok(call(site, token, "decision_journal", state="lapsed"))["total"] == 0
+
+
 def test_the_server_tells_claude_to_read_the_memory_first():
     from stocks.connector import server
 

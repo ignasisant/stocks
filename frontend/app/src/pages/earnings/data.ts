@@ -296,6 +296,19 @@ export function byDate<T extends { date: string | null }>(
 }
 
 /**
+ * The windows still running on `iso`: sold that day or before, not yet free.
+ * Buying the name back on such a day would defer its loss, so the grids shade
+ * the whole stretch from the sale up to the chip that ends it.
+ */
+export function blocking(windows: RepurchaseWindow[], iso: string): RepurchaseWindow[] {
+  // Most books have no open window: every cell then shares one empty list.
+  if (windows.length === 0) return NONE;
+  return windows.filter((w) => w.sell_date <= iso && iso < w.date);
+}
+
+const NONE: RepurchaseWindow[] = [];
+
+/**
  * The tickers the picked filters allow — a UNION, not an intersection.
  *
  * Picking Portfolio and Favorites asks for the names in either: a reader

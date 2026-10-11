@@ -106,6 +106,7 @@ def book(monkeypatch, tmp_path):
     )
     table = pd.DataFrame(
         {
+            "shares": [10.0, 50.0, 5.0],
             "cost": [1_000.0, 8_200.0, 2_000.0],
             "value": [1_500.0, 8_200.0, 300.0],
             "pnl": [500.0, 0.0, -500.0],
@@ -207,6 +208,40 @@ def test_add_refuses_what_is_not_a_ticker(client, book):
 
 def test_an_empty_book_still_answers_its_watchlist(client, book, monkeypatch):
     monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: pd.DataFrame())
+    monkeypatch.setattr(loaders, "ledger_state", lambda *a, **k: ([], [], []))
     body = _get(client)
     assert body["held"] == [] and body["total"] is None
     assert {r["ticker"] for r in body["candidates"]} == {"AMD", "BKNG", "SNAP"}
+
+
+def test_sales_share_one_replay_priced_at_the_book(client, book, monkeypatch):
+    replays = []
+    real = whatif.replay
+    monkeypatch.setattr(
+        whatif, "replay", lambda **kw: replays.append(kw) or real(**kw)
+    )
+
+    def no_quote(ticker):
+        raise AssertionError(f"quoted {ticker}: the book already priced it")
+
+    monkeypatch.setattr(whatif, "_price", no_quote)
+    monkeypatch.setitem(METRICS, "ADBE", WEAK)  # a second sale
+    held = {r["ticker"]: r for r in _get(client)["held"]}
+    assert held["AMD"]["tax"] is not None and held["ADBE"]["tax"] is not None
+    assert len(replays) == 1
+
+
+def test_what_the_page_proposes_goes_in_the_journal_once(client, book, monkeypatch):
+    from stocks.chat import journal
+
+    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
+    _get(client, add="nvda")
+    _get(client, add="nvda")
+    entries = journal.load(book.journal)
+    # Sell, add and buy are proposals; cash, pass and unrated are not, and a
+    # second visit the same day is the same entries.
+    assert {(e.ticker, e.action) for e in entries} == {
+        ("AMD", "sell"), ("ADBE", "add"), ("BKNG", "buy")}
+    assert all(e.times == 1 and e.state == "open" for e in entries)
+    amd = next(e for e in entries if e.ticker == "AMD")
+    assert amd.snapshot["target_weight"] == 0.0 and amd.reasons

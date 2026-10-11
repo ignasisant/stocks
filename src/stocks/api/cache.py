@@ -39,6 +39,7 @@ Three things a plain TTL memo does not solve:
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import pickle
 import threading
@@ -79,11 +80,24 @@ KEEP_DEFAULT_S = 3 * 86400.0
 # reference is shared, a rebinding would not be.
 STALE: ContextVar[dict[str, float] | None] = ContextVar("stale", default=None)
 
+# Told about every background refresh as it starts, with the event its landing
+# sets. The API wires it to `api.holds.keep`: on Cloud Run a thread no request
+# is waiting for runs on a throttled CPU, and stalls there.
+on_background: Callable[[threading.Event], None] | None = None
+
 
 def mark_stale(wall: float) -> None:
     holder = STALE.get()
     if holder is not None:
         holder["since"] = min(holder.get("since", wall), wall)
+
+
+def carried[T](fn: Callable[..., T]) -> Callable[..., T]:
+    """`fn` run under a copy of the calling request's context, on whichever
+    thread: a memo that serves a salvaged figure marks the response through
+    it (`STALE`), and a worker thread starts with no context at all."""
+    ctx = contextvars.copy_context()
+    return lambda *args, **kwargs: ctx.copy().run(fn, *args, **kwargs)
 
 
 class Flight:
@@ -111,6 +125,7 @@ def coalesced(
     salvage: Callable[[Entry], bool] | None = None,
     landed: Callable[[Entry], None] | None = None,
     expired: Callable[[Entry], bool] | None = None,
+    marked: Callable[[Entry], bool] | None = None,
 ) -> Any:
     """The value for `key`: from `store` while `fresh(entry)`, else computed once.
 
@@ -127,6 +142,8 @@ def coalesced(
     computation fails; that is the one path that marks the request stale.
     `landed(entry)` is told about every entry that lands. `expired(entry)`
     says an entry can never answer again, and every landing sweeps those out.
+    `marked(entry)` says a `usable` entry is old enough that answering with it
+    marks the request stale, the way a salvage does.
     """
     if load is not None:
         with lock:
@@ -146,6 +163,8 @@ def coalesced(
         stale = entry is not None and usable is not None and usable(entry)
     if stale:
         _remark(entry)
+        if marked is not None and len(entry) > 2 and marked(entry):
+            mark_stale(entry[2])
         if leader:
             threading.Thread(
                 target=_land,
@@ -154,6 +173,9 @@ def coalesced(
                 name="cache-refresh",
                 daemon=True,
             ).start()
+            if on_background is not None:
+                with obs.swallow("cache.hold"):
+                    on_background(flight.done)
         return entry[1]
     if not leader:
         flight.done.wait()
@@ -357,6 +379,7 @@ def ttl_cache(
     persist: str | None = None,
     keep_s: float | None = None,
     disk_max: int = DISK_MAX_FILES,
+    quiet_s: float | None = None,
 ) -> Callable[[F], F]:
     """Memoize a function on its arguments for `ttl_s` seconds.
 
@@ -369,6 +392,11 @@ def ttl_cache(
     and stand in for a failed fetch for up to `keep_s` (three days unless
     said otherwise) — see the module docstring. `disk_max` caps the files
     kept there.
+
+    `quiet_s` is how far past `ttl_s` a stale answer goes unremarked; past it
+    the request is marked (`STALE`) like a salvaged one. Unset, never: a long
+    `stale_s` is what wants it, so a figure from last night that answers at
+    once while today's downloads still says how old it is.
 
     Eviction is oldest-inserted-first once `max_entries` is reached, and an
     entry past `ttl_s + stale_s` goes at the next landing whatever the count:
@@ -413,6 +441,9 @@ def ttl_cache(
                 if persist
                 else None,
                 expired=lambda entry: time.monotonic() - entry[0] >= ttl_s + grace,
+                marked=(lambda entry: time.monotonic() - entry[0] >= ttl_s + quiet_s)
+                if quiet_s is not None
+                else None,
             )
 
         def cache_clear(expire: bool = True) -> None:

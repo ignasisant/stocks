@@ -7,7 +7,7 @@
   "feedback.kind_other": "Other",
   "feedback.placeholder": "What happened, or what would make this better?",
   "feedback.shot": "Attach a screenshot",
-  "feedback.shot_help": "Sends a picture of the screen behind this window, exactly as it is now — this box is left out of it. Whatever the page shows, your figures included, goes with it.",
+  "feedback.shot_help": "Sends a picture of the screen behind, as it is now (this box is left out), with whatever figures it shows.",
   "feedback.shot_working": "Taking the picture…",
   "feedback.shot_ready": "Attached — {kb} KB",
   "feedback.shot_failed": "This screen could not be captured; your comment will be sent without a picture.",

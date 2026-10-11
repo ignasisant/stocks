@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from stocks import atomic, storage
-from stocks.chat import learnings, memory
+from stocks.chat import journal, learnings, memory
 from stocks.config import DATA_DIR, PROJECT_ROOT, WATCHLIST_FILE
 from stocks.secrets_env import secret
 
@@ -39,11 +39,12 @@ GUEST_DIR = USERS_DIR / "_guest"
 
 # The files that make up one account, used by the legacy-dir migration and by
 # the bucket restore. `memory.FILE` is the chat's conversation index and
-# `learnings.FILE` the memories it keeps about the user.
+# `learnings.FILE` the memories it keeps about the user, `journal.FILE` the
+# proposals it has made them.
 USER_FILES = (
     "watchlist.yaml", "portfolio.db", "last_import.json", "prefs.json", "chat.json",
     "bank.json", "daily_action.json", "sector_verdict.json", memory.FILE,
-    learnings.FILE,
+    learnings.FILE, journal.FILE,
 )
 
 
@@ -88,6 +89,12 @@ class UserPaths:
     def learnings(self) -> Path:
         """What the chat keeps about the user (chat/learnings.py)."""
         return learnings.path_for(self.chat)
+
+    @property
+    def journal(self) -> Path:
+        """What the assistant has proposed, and what became of it
+        (chat/journal.py)."""
+        return journal.path_for(self.chat)
 
 
 def slug(email: str) -> str:

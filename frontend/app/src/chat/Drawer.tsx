@@ -19,11 +19,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { send } from "../shell/api";
 import { useT } from "../shell/i18n";
-import {
-  useAssistantAsks,
-  useAssistantDrafts,
-  useAssistantThreads,
-} from "../shell/assistant";
+import { useAssistantAsks, useAssistantThreads } from "../shell/assistant";
 import { useSession } from "../shell/session";
 import { Glyph } from "./icons";
 import { useRoute } from "../shell/router";
@@ -100,12 +96,14 @@ export function Drawer() {
   // send — but not before the drawer knows which thread it is writing to, or
   // the question would open a second one. Queued rather than sent on the spot
   // for the same reason: the press happens while `useChat` is still loading.
-  const [queued, setQueued] = useState<string | null>(null);
+  // `fresh` (Review's "Ask the AI") starts a new conversation first: a prompt
+  // that long is its own subject, not a follow-up to whatever was on screen.
+  const [queued, setQueued] = useState<{ text: string; fresh: boolean } | null>(null);
   const onAsk = useCallback(
-    (prompt: string | null) => {
+    (prompt: string | null, fresh = false) => {
       // A null prompt is "show me the assistant" — the tour's stop and the
       // Home checklist's row both mean that, and neither should spend a turn.
-      if (prompt) setQueued(prompt);
+      if (prompt) setQueued({ text: prompt, fresh });
       show(true);
     },
     [show],
@@ -125,24 +123,23 @@ export function Drawer() {
   );
   useAssistantThreads(onThread);
 
-  // A page wrote a question for the reader to send (Review's "Ask the AI"):
-  // the panel puts it in the composer once it is drawn, and sends nothing.
-  const [draft, setDraft] = useState<string | null>(null);
-  const onDraft = useCallback(
-    (prompt: string) => {
-      setDraft(prompt);
-      show(true);
-    },
-    [show],
-  );
-  useAssistantDrafts(onDraft);
-
-  const { state, busy, send: ask } = chat;
+  const { state, busy, send: ask, create } = chat;
   useEffect(() => {
-    if (!queued || !open || !state || busy) return;
+    if (!queued || !open || !state) return;
+    if (queued.fresh) {
+      // A new thread leaves any answer still being written to finish on the
+      // server, so it need not wait for one. Sent once the new thread is the
+      // active one; if it could not be made, asked where the reader already is.
+      setQueued(null);
+      void create()
+        .catch(() => {})
+        .finally(() => setQueued({ text: queued.text, fresh: false }));
+      return;
+    }
+    if (busy) return;
     setQueued(null);
-    void ask(queued);
-  }, [queued, open, state, busy, ask]);
+    void ask(queued.text);
+  }, [queued, open, state, busy, ask, create]);
 
   // The walkthrough opens itself, in the drawer — once per tab, and only for
   // an account the server says is still owed an automatic open (the guide is
@@ -325,8 +322,6 @@ export function Drawer() {
               onMemoryTaken={() => setMemory(false)}
               thread={thread}
               onThreadTaken={() => setThread(null)}
-              draft={draft}
-              onDraftTaken={() => setDraft(null)}
               onClose={() => show(false)}
               onPark={() => {
                 show(false);

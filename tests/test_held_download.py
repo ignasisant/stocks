@@ -12,6 +12,8 @@ outlives the process, since a boot is exactly when the slow download hurt.
 
 from __future__ import annotations
 
+import threading
+
 import pandas as pd
 import pytest
 
@@ -209,3 +211,103 @@ def test_a_month_that_covers_the_whole_base_is_taken_as_it_is(book, yahoo):
     again = _refresh(db)
     assert y.asked[1:] == [(("AAPL",), loaders._TAIL)]
     assert (again["AAPL"]["Close"] == 101.0).all()
+
+
+def _sell(db: str, day: str, ticker: str) -> None:
+    ledger.add_many([Transaction(day, ticker, "sell", 1, 10.0, "EUR", 1.0)], path=db)
+
+
+def test_a_name_closed_a_month_before_the_base_ends_is_not_asked_again(book, yahoo):
+    """A third of the names a book ever held are long sold: their history ends
+    at the sale, and the base already holds it."""
+    db = book(("2024-01-02", "AAPL"), ("2024-01-02", "OLD"), ("2024-01-02", "NEW"))
+    _sell(db, str(DAYS[100].date()), "OLD")  # sold long before the base ends
+    _sell(db, str(DAYS[-5].date()), "NEW")  # sold last week: still settling
+    y = yahoo({t: _bars(10.0) for t in ("AAPL", "OLD", "NEW")})
+    first = loaders._held_frames(db, 1.0)
+    again = _refresh(db)
+    assert y.asked[1:] == [(("AAPL", "NEW"), loaders._TAIL)]
+    assert again["OLD"] is first["OLD"]
+
+
+def test_a_name_bought_back_is_refreshed_again(book, yahoo):
+    db = book(("2024-01-02", "AAPL"))
+    _sell(db, str(DAYS[100].date()), "AAPL")
+    y = yahoo({"AAPL": _bars(10.0)})
+    loaders._held_frames(db, 1.0)
+    book((str(DAYS[-2].date()), "AAPL"))
+    _refresh(db)
+    assert y.asked[1:] == [(("AAPL",), loaders._TAIL)]
+
+
+def test_a_month_that_came_back_without_a_name_keeps_its_bars(book, yahoo):
+    """A coin while CoinGecko cools off: its whole history would come from the
+    same source that just said nothing. It stands at its last close instead
+    of dropping out of the book's prices."""
+    tickers = ["AAPL", "MSFT", "NVDA", "MOODENG-EUR"]
+    db = book(*(("2024-01-02", t) for t in tickers))
+    y = yahoo({t: _bars(10.0) for t in tickers})
+    first = loaders._held_frames(db, 1.0)
+    del y.market["MOODENG-EUR"]
+    again = _refresh(db)
+    assert y.asked[1:] == [(tuple(sorted(tickers)), loaders._TAIL)]
+    assert again["MOODENG-EUR"] is first["MOODENG-EUR"]
+
+
+def test_the_book_answers_from_the_last_process_while_it_downloads(
+    book, yahoo, monkeypatch
+):
+    """The first visit of a morning, on a new process: last night's prices
+    answer at once, marked, and the download lands behind them."""
+    from stocks.api import cache
+
+    db = book(("2024-01-02", "AAPL"))
+    y = yahoo({"AAPL": _bars(100.0)})
+    for memo in (loaders.held_closes, loaders.held_printed_closes):
+        memo.cache_clear()
+    loaders.held_closes(db, 1.0)
+    # The restart, ten hours later: memory gone, the disk copy aged.
+    loaders.held_closes.cache_clear(expire=False)
+    loaders._bases.clear()
+    later = cache.time.time() + 10 * 3600
+    monkeypatch.setattr(cache.time, "time", lambda: later)
+    monkeypatch.setattr(cache.time, "monotonic", lambda: later)
+    gate = threading.Event()
+
+    def slow(*args, **kwargs):
+        gate.wait(5)
+        return Yahoo.__call__(y, *args, **kwargs)
+
+    monkeypatch.setattr(fetch, "fetch_many", slow)
+    holder: dict[str, float] = {}
+    token = cache.STALE.set(holder)
+    try:
+        closes = loaders.held_closes(db, 1.0)
+    finally:
+        cache.STALE.reset(token)
+    assert float(closes["AAPL"].iloc[-1]) == 100.0
+    assert "since" in holder
+    gate.set()
+    loaders.held_closes.cache_clear()
+
+
+def test_the_fees_bars_are_the_books_download_not_a_second_one(
+    book, yahoo, monkeypatch
+):
+    """The spread reads the same unadjusted bars the closes do: once the book
+    has downloaded, the Fees tab asks Yahoo for nothing."""
+    from stocks.portfolio import fees
+
+    db = book(("2024-01-02", "AAPL"))
+    y = yahoo({"AAPL": _bars(100.0)})
+    monkeypatch.setattr(fees, "listing_currencies", lambda names: {"AAPL": "USD"})
+    loaders.trade_bars.cache_clear()
+    try:
+        loaders.held_closes(db, 1.0)
+        bars = loaders.trade_bars(db, 1.0)
+    finally:
+        loaders.trade_bars.cache_clear()
+        loaders.held_closes.cache_clear()
+    assert len(y.asked) == 1
+    assert bars["AAPL"].attrs["currency"] == "USD"
+    assert "currency" not in loaders._held_frames(db, 1.0)["AAPL"].attrs

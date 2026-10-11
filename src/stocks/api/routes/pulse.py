@@ -15,7 +15,9 @@ a basket the market cannot move.
 
 from __future__ import annotations
 
-from typing import Annotated
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
+from typing import Annotated, Any
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query, status
@@ -23,6 +25,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from stocks.analysis import sentiment as sm
 from stocks.analysis.portfolio import beta, portfolio_returns
 from stocks.api import loaders
+from stocks.api.cache import carried
 from stocks.api.deps import Account, Base, reporting_currency
 from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
@@ -196,6 +199,11 @@ def book(account: Account, base: Base = None) -> PulseBook:
     db = str(account.db)
     mtime = loaders.db_mtime(db)
     answer = PulseBook(base=ccy)
+    # The benchmarks download while the book replays: neither waits on the
+    # other, and the market's closes are shared with every other reader.
+    pool = ThreadPoolExecutor(max_workers=1)
+    benchmarks = pool.submit(carried(loaders.pulse_closes))
+    pool.shutdown(wait=False)
     # The replay prices the ledger, so it can hit the same throttle as the
     # benchmarks. Nothing below survives without it — not even the weights —
     # so this is the one failure that empties the card, and it still says why.
@@ -225,7 +233,7 @@ def book(account: Account, base: Base = None) -> PulseBook:
     # the betas and correlations — each already null when its series is
     # absent — and names why, instead of erroring the whole response.
     try:
-        closes = loaders.pulse_closes()
+        closes = benchmarks.result()
     except Exception as exc:
         closes = {}
         answer.unavailable = _reason(exc)
@@ -321,6 +329,17 @@ HORIZONS = {"week": 5, "month": 21, "quarter": 63, "year": 252}
 BLOCKS = (
     "indices", "gauges", "rates", "inflation", "rotation", "cross", "factors",
 )
+# What each block reads, so a request fetches only the sources its blocks need
+# — and fetches them side by side (`tables`).
+SOURCES = {
+    "indices": ("closes", "book"),
+    "gauges": ("closes",),
+    "rates": ("rates",),
+    "inflation": ("inflation",),
+    "rotation": ("closes", "book", "bench"),
+    "cross": ("closes",),
+    "factors": ("closes",),
+}
 # Rows each block is configured to carry — the tab badges. Read off the same
 # registries the blocks iterate, so a series added to one of them moves its
 # badge too. Fixed rather than counted from what drew: the tab strip shows
@@ -655,6 +674,22 @@ def tables(
     db = str(account.db)
     mtime = loaders.db_mtime(db)
 
+    # FRED, Yahoo's closes and the book's replay are independent downloads,
+    # seconds each when cold; one after another they were the page's wait.
+    fetchers: dict[str, Callable[[], Any]] = {
+        "closes": loaders.pulse_closes,
+        "rates": loaders.pulse_rate_rows,
+        "inflation": loaders.inflation,
+        "book": lambda: loaders.basket_report(db, mtime, ccy, "2y"),
+        "bench": loaders.benchmark_sectors,
+    }
+    needed = list(dict.fromkeys(src for name in wanted for src in SOURCES[name]))
+    pool = ThreadPoolExecutor(max_workers=max(len(needed), 1))
+    fetched: dict[str, Future] = {
+        src: pool.submit(carried(fetchers[src])) for src in needed
+    }
+    pool.shutdown(wait=False)
+
     def book_weights(key: str) -> dict[str, float]:
         """The account's own allocation, or nothing when it cannot be priced.
 
@@ -662,7 +697,7 @@ def tables(
         the market read stands on its own for a reader with no book at all.
         """
         try:
-            report = loaders.basket_report(db, mtime, ccy, "2y")
+            report = fetched["book"].result()
         except Exception:
             return {}
         if report is None or not report.weights:
@@ -673,31 +708,31 @@ def tables(
     for name in wanted:
         try:
             if name == "inflation":
-                out.append(_inflation(loaders.inflation()))
+                out.append(_inflation(fetched["inflation"].result()))
             elif name == "rates":
-                out.append(_rates(loaders.pulse_rate_rows()))
+                out.append(_rates(fetched["rates"].result()))
             elif name == "indices":
-                out.append(_indices(loaders.pulse_closes(), book_weights("country")))
+                out.append(_indices(fetched["closes"].result(), book_weights("country")))
             elif name == "gauges":
-                out.append(_gauges(loaders.pulse_closes()))
+                out.append(_gauges(fetched["closes"].result()))
             elif name == "rotation":
                 # The benchmark's own split, so a reader's weight is an over-
                 # or underweight against something rather than a bare number.
                 # It never takes the block down: a failed look-through costs a
                 # column, not the table.
                 try:
-                    bench = loaders.benchmark_sectors()
+                    bench = fetched["bench"].result()
                 except Exception:
                     bench = {}
                 out.append(
                     _rotation(
-                        loaders.pulse_closes(), book_weights("sector"), bench
+                        fetched["closes"].result(), book_weights("sector"), bench
                     )
                 )
             elif name == "factors":
-                out.append(_factors(loaders.pulse_closes()))
+                out.append(_factors(fetched["closes"].result()))
             else:
-                out.append(_cross(loaders.pulse_closes()))
+                out.append(_cross(fetched["closes"].result()))
         except Exception as exc:
             out.append(TrendBlock(block=name, unit="percent", unavailable=_reason(exc)))
         out[-1].expected = EXPECTED.get(name)

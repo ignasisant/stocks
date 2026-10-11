@@ -2879,7 +2879,11 @@ class ImportPreview(BaseModel):
         )
     )
     importable: list[ImportRow] = Field(
-        default_factory=list, description="Clean and warned rows — what a commit writes."
+        default_factory=list,
+        description=(
+            "Clean and warned rows. A commit writes those not flagged "
+            "`duplicate`, and the duplicates too only with `keep_duplicates`."
+        ),
     )
     rejected: list[ImportRow] = Field(
         default_factory=list,
@@ -2925,6 +2929,13 @@ class ImportResult(BaseModel):
     platform: str
     filename: str
     imported: int = Field(description="Rows written to the ledger.")
+    duplicates: int = Field(
+        default=0,
+        description=(
+            "Rows left out because the ledger already held them. Zero when "
+            "the commit asked for `keep_duplicates`."
+        ),
+    )
     tx_ids: list[int] = Field(
         default_factory=list, description="Ledger ids, which is what an undo needs."
     )

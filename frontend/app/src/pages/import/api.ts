@@ -97,7 +97,8 @@ export type Preview = {
   unavailable: boolean;
   filename: string;
   digest: string;
-  /** Clean and warned rows — exactly what a commit writes. */
+  /** Clean and warned rows. A commit writes those not flagged `duplicate`,
+   *  and the duplicates too only when the reader opts them in (`written`). */
   importable: Row[];
   /** Failed validation: quarantined, never committed. */
   rejected: Row[];
@@ -117,6 +118,8 @@ export type Result = {
   platform: string;
   filename: string;
   imported: number;
+  /** Left out because the book already held them. Absent from an older server. */
+  duplicates?: number;
   tx_ids: number[];
   broker: string;
   imported_at: string;
@@ -290,6 +293,13 @@ export const preview = (platform: string, file: Staged, wipe: boolean) =>
   );
 
 /**
+ * The rows a commit writes: what the book does not hold yet, plus the rows it
+ * does when the reader says they really are separate movements.
+ */
+export const written = (preview: Preview, keep: boolean): Row[] =>
+  keep ? preview.importable : preview.importable.filter((row) => !row.duplicate);
+
+/**
  * Write the rows the preview showed.
  *
  * The rows go back, not the file: a model's reading of the same bytes can
@@ -303,12 +313,13 @@ export const commit = (
   file: Staged,
   broker: string,
   wipe: { on: boolean; confirm: string },
+  keep = false,
 ) =>
   attempt(() =>
     send<Result>("POST", "/import/commit", {
       platform: preview.platform,
       filename: file.filename,
-      rows: preview.importable.map((row) => ({
+      rows: written(preview, keep).map((row) => ({
         date: row.date,
         ticker: row.ticker,
         action: row.action,
@@ -319,6 +330,9 @@ export const commit = (
         note: row.note,
       })),
       surface: file.surface ?? "import",
+      // Said as well as left out of `rows`: the server validates again against
+      // the book as it is now, and drops what it holds unless told not to.
+      keep_duplicates: keep,
       broker,
       wipe: wipe.on,
       // The two halves travel together on purpose: a client that emptied the

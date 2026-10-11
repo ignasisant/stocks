@@ -74,6 +74,7 @@ import { Empty, useMobile } from "./ui";
 import type { Custodian, Profile, TickerPosition, WatchlistEntry } from "./types";
 import "./ticker.css";
 import { Badge } from "../../ui/Badge";
+import { JournalChip } from "../../ui/Journal";
 import { ASSETS, assetKind } from "../../shell/assets";
 import { layout, resolveKind } from "./layout";
 
@@ -340,6 +341,13 @@ export default function Page() {
         ) : null}
         {held?.held ? <Badge>{t("ticker.in_portfolio")}</Badge> : null}
         <Custody marks={held?.custody ?? []} />
+        {/* What the app has proposed on this name, behind a chip: the record
+            reads in a side panel, so the page's own figures keep the column. */}
+        {ticker ? (
+          <SignedInOnly>
+            <JournalChip ticker={ticker} />
+          </SignedInOnly>
+        ) : null}
         {/* The assistant spends the operator's API keys and writes into a
             `chat.json` every anonymous visitor would share, and the drawer it
             opens is not mounted for a guest anyway — so the button that would

@@ -40,6 +40,33 @@ def test_unknown_company_name_falls_back_to_one_lookup():
     assert seen == ["Nvidia"]
 
 
+def test_a_hit_that_only_starts_like_the_word_is_not_quoted(monkeypatch):
+    # "Hay edge en booking?" was quoted as HAYW: Yahoo completes any prefix.
+    hits = {
+        "Hay": ("HAYW", "Hayward Holdings, Inc."),
+        "Tengo": ("TNON", "Tenon Medical, Inc."),
+        "Cuantas": ("CUEN", "Cuentas Inc."),
+        "Booking": ("BKNG", "Booking Holdings Inc."),
+    }
+    monkeypatch.setattr(
+        "stocks.data.symbols.search_symbols",
+        lambda q, limit=6: [(*hits[q], "NASDAQ")] if q in hits else [],
+    )
+    assert market._lookup("Tengo") == ""
+    assert market._lookup("Cuantas") == ""
+    assert mentioned("Hay edge en Booking?") == ["BKNG"]
+
+
+def test_a_name_typed_whole_or_an_alias_yahoo_knows_resolves():
+    assert market.spells("Booking", "Booking Holdings Inc.")
+    assert market.spells("telefonica", "Telefónica, S.A.")
+    assert market.spells("Coca Cola", "The Coca-Cola Company")
+    assert market.spells("Google", "Alphabet Inc.")
+    assert not market.spells("Hay", "Hayward Holdings, Inc.")
+    assert not market.spells("Quiero", "QuidelOrtho Corporation")
+    assert not market.spells("Analiza Tat", "Taiwan Semiconductor Manufacturing")
+
+
 def test_lookup_is_skipped_when_something_cheaper_matched():
     assert mentioned("NVDA vs Nvidia", lookup=_no_lookup) == ["NVDA"]
 

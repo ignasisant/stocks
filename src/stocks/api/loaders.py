@@ -44,6 +44,7 @@ from stocks.analysis.portfolio import (
 )
 from stocks.api.cache import (
     Flight,
+    carried,
     coalesced,
     disk_path,
     read_entry,
@@ -73,17 +74,29 @@ def db_mtime(db: str) -> float:
     return path.stat().st_mtime if path.exists() else 0.0
 
 
-@ttl_cache(_LEDGER_TTL, max_entries=32)
 def ledger_state(db: str, mtime: float, base: str = "EUR", matching: str = "fifo"):
     """Ledger + share-matching replay -> (transactions, positions, realized).
 
     `matching` is in the key as well as the arguments: FIFO and s.104 produce
     different realized parcels — and different basis left behind — from the
     very same trades.
+
+    Spelled out before the memo: `ttl_cache` keys on the arguments as passed,
+    so `ledger_state(db, mtime)`, `(db, mtime, "EUR")` and `base="EUR"` were
+    three entries and three replays of one book — seconds each on a long
+    ledger, from routes that run side by side on the same page.
     """
+    return _ledger_state(db, mtime, base, matching)
+
+
+@ttl_cache(_LEDGER_TTL, max_entries=32)
+def _ledger_state(db: str, mtime: float, base: str, matching: str):
     txs = all_transactions(Path(db))
     positions, realized = build(txs, base=base, matching=matching) if txs else ([], [])
     return txs, positions, realized
+
+
+ledger_state.cache_clear = _ledger_state.cache_clear  # ty: ignore[unresolved-attribute]
 
 
 def _currencies(txs) -> dict[str, str]:
@@ -109,8 +122,9 @@ def _held(db: str) -> tuple[list, list[str]]:
 
 
 # Strict expiry, not stale-while-revalidate: the two memos derived from it
-# below are the ones that serve stale, and their background refresh has to
-# reach a real download here rather than be handed the same old frames back.
+# below are the ones that serve stale (for up to `_HELD_STALE`, from disk too),
+# and their background refresh has to reach a real download here rather than
+# be handed the same old frames back.
 #
 # Four books in memory and eight on disk: one entry is a whole book's OHLCV
 # (~6MB live, 3-5MB pickled, for 80 names) and each of the readings below
@@ -142,13 +156,15 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
     period = f"{max(1, span // 30 + 1)}mo"
     currencies = _currencies(txs)
     base = _frames_base(db, since)
+    settled = _settled(base, txs) if base else {}
     with obs.timed("prices.held_download", tickers=len(tickers)) as rec:
-        frames, stale = _extend(base, tickers, currencies) if base else ({}, tickers)
+        asked = [t for t in tickers if t not in settled]
+        frames, stale = _extend(base, asked, currencies) if base else ({}, tickers)
+        frames.update(settled)
+        rec["settled"] = len(settled)
         if stale:
             frames.update(
-                fetch_many(
-                    stale, period=period, auto_adjust=False, currencies=currencies
-                )
+                fetch_many(stale, period=period, auto_adjust=False, currencies=currencies)
             )
         rec["full"] = len(stale)
     # Judged here, at the download, and only here: a gutted download memoised
@@ -164,6 +180,11 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
 # How far back a refresh asks. A month overlaps the previous frames by weeks
 # even after a long weekend, which is what `_extend` checks them against.
 _TAIL = "1mo"
+# How long past its last trade a closed name keeps being refreshed: one whole
+# tail laid over the sale, so its last bars are settled ones. After that
+# nothing a refresh learns about it reaches any figure — a closed position is
+# valued at nothing — and it is a third of the names a book has ever held.
+_SETTLE = pd.Timedelta(days=31)
 # The columns two downloads of one day must agree on to be laid end to end:
 # a dividend rewrites every earlier `Adj Close`, a split every earlier price.
 _AGREE = ("Close", "Adj Close")
@@ -174,13 +195,19 @@ def _extend(
 ) -> tuple[dict[str, pd.DataFrame], list[str]]:
     """The last month laid over `base`: (frames extended, names to download whole).
 
-    A name goes back for its whole history when the base never had it, when
-    the month came back without it, or when the two disagree on a day both
-    hold — Yahoo restated the past (a dividend, a split), so the base's bars
-    are no longer the series this month continues. The base's last day is
-    left out of that check: it may have been a session still trading. A name
-    Yahoo already said it does not list (`fetch.unlisted`) is not asked again:
-    it would come back empty every quarter hour.
+    A name goes back for its whole history when the base never had it, or
+    when the two disagree on a day both hold — Yahoo restated the past (a
+    dividend, a split), so the base's bars are no longer the series this
+    month continues. The base's last day is left out of that check: it may
+    have been a session still trading. A name Yahoo already said it does not
+    list (`fetch.unlisted`) is not asked again: it would come back empty every
+    quarter hour.
+
+    A name the month came back without keeps the base's bars as they are.
+    Asking for its whole history instead asks the same source that just
+    said nothing — a coin while CoinGecko cools off, every quarter hour — and
+    when that comes back empty too the name drops out of the book's prices
+    altogether rather than standing at its last close.
     """
     from stocks.data.fetch import fetch_many, unlisted
 
@@ -197,6 +224,9 @@ def _extend(
     for t in known:
         new, old = tail.get(t), base[t]
         if new is None or new.empty:
+            if not old.empty:
+                frames[t] = old
+                obs.warn_once("prices.tail_missing", t, ticker=t)
             continue
         if old.empty or new.index[0] <= old.index[0]:
             frames[t] = new  # a name bought this month: the month is all of it
@@ -204,6 +234,32 @@ def _extend(
             frames[t] = pd.concat([old[old.index < new.index[0]], new])
     disowned = unlisted(tickers)
     return frames, [t for t in tickers if t not in frames and t not in disowned]
+
+
+def _settled(base: dict[str, pd.DataFrame], txs: list) -> dict[str, pd.DataFrame]:
+    """The base's frames for names closed `_SETTLE` before their last bar.
+
+    Taken as they are, not asked for again: the history a closed position
+    needs ends at its sale, and the base already holds a month past it. A
+    name bought back is open again and leaves this set by itself; its gap
+    since the sale fails `_continues` and it is downloaded whole.
+    """
+    try:
+        positions, _ = build(txs, to_base=lambda amount, ccy, day: amount)
+    except Exception:  # noqa: BLE001 — an inconsistent ledger refreshes everything
+        return {}
+    open_ = {p.ticker for p in positions}
+    last: dict[str, str] = {}
+    for t in txs:
+        if t.action in HELD_ACTIONS and t.ticker not in open_:
+            last[t.ticker] = max(last.get(t.ticker, t.date), t.date)
+    out: dict[str, pd.DataFrame] = {}
+    for ticker, day in last.items():
+        frame = base.get(ticker)
+        if frame is not None and not frame.empty:
+            if naive_dates(frame.index)[-1] >= pd.Timestamp(day) + _SETTLE:
+                out[ticker] = frame
+    return out
 
 
 def _continues(old: pd.DataFrame, new: pd.DataFrame) -> bool:
@@ -277,7 +333,26 @@ def _close_series(frames: dict[str, pd.DataFrame], column: str) -> dict[str, pd.
     return out
 
 
-@ttl_cache(_PRICES_TTL, max_entries=4)
+# How long the book's last prices answer at once while the next download runs
+# behind them. The download is twenty seconds to a minute on the production
+# vCPU, and every Home, Posiciones and Pulso read waits on it: with a 45-minute
+# window, the first visit of every morning (and the first after any hour away)
+# paid all of it. Past the quiet window the answer is marked stale, so the
+# page says how old its figures are until the refresh has landed. Persisted,
+# so a new process answers from the last one's prices the same way — they are
+# a fraction of the frames' size, one Series per name.
+_HELD_STALE = 2 * 86400.0
+_HELD_QUIET = 3 * _PRICES_TTL
+
+
+@ttl_cache(
+    _PRICES_TTL,
+    max_entries=4,
+    stale_s=_HELD_STALE,
+    quiet_s=_HELD_QUIET,
+    persist="held_closes",
+    disk_max=8,
+)
 def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     """Adjusted close per name the book has ever held, from `_held_frames`.
 
@@ -293,7 +368,14 @@ def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     return plausible_closes(closes, txs)
 
 
-@ttl_cache(_PRICES_TTL, max_entries=4)
+@ttl_cache(
+    _PRICES_TTL,
+    max_entries=4,
+    stale_s=_HELD_STALE,
+    quiet_s=_HELD_QUIET,
+    persist="held_printed_closes",
+    disk_max=8,
+)
 def held_printed_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     """Close as printed per held name, from the same download as `held_closes`.
 
@@ -314,8 +396,8 @@ def _clear_held(expire: bool = True) -> None:
     """Drop the download and both readings of it together — a refresh that
     cleared one would have the other re-derived from the frames it kept."""
     _held_frames.cache_clear(expire)  # ty: ignore[unresolved-attribute]
-    _clear_adjusted()
-    held_printed_closes.cache_clear()  # ty: ignore[unresolved-attribute]
+    _clear_adjusted(expire)
+    held_printed_closes.cache_clear(expire)  # ty: ignore[unresolved-attribute]
 
 
 held_closes.cache_clear = _clear_held  # ty: ignore[unresolved-attribute]
@@ -534,16 +616,25 @@ def spot_rates(ccys: tuple[str, ...], base: str = "EUR") -> dict[str, float]:
     currency its market quotes it in. Pairs whose lookup fails are absent —
     the caller prints nothing rather than a dollar figure under a euro sign.
     """
+    from concurrent.futures import ThreadPoolExecutor
+
     from stocks.data.fx import spot
 
-    out: dict[str, float] = {}
-    for ccy in ccys:
+    def rate(ccy: str) -> float | None:
         if str(ccy).upper() == base.upper():
-            out[ccy] = 1.0
-            continue
+            return 1.0
         with obs.swallow("fx.spot", ccy=ccy, base=base):
-            out[ccy] = float(spot(ccy, base)[0])
-    return out
+            return float(spot(ccy, base)[0])
+        return None
+
+    # One request per pair, side by side: a book in six currencies waited for
+    # six round trips in a row on every cold Posiciones load.
+    unique = list(dict.fromkeys(ccys))
+    if not unique:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(len(unique), 8)) as pool:
+        rates = list(pool.map(carried(rate), unique))
+    return {ccy: r for ccy, r in zip(unique, rates, strict=True) if r is not None}
 
 
 @ttl_cache(_LEDGER_TTL, max_entries=32)
@@ -581,6 +672,28 @@ def fundamentals(ticker: str):
     from stocks.data.fundamentals import fetch_fundamentals
 
     return fetch_fundamentals(ticker)
+
+
+# The review page scores a whole book plus its watchlist — fifty names is a
+# normal account — off the ticker page's KPIs. Holding each name's frames for
+# that would blow `fundamentals`' cap (and memory) every visit, so the review
+# keeps only the derived KPI dict: a few hundred bytes a name, a day old at
+# worst. Statements move quarterly and the price-led ratios by a few percent
+# a day, which no verdict threshold notices. A stale entry answers at once
+# while it refreshes; the gate keeps those refreshes from leaving as one burst.
+_METRICS_TTL = 4 * 3600.0
+_metrics_gate = threading.BoundedSemaphore(6)
+
+
+@ttl_cache(
+    _METRICS_TTL, max_entries=256, stale_s=20 * 3600.0, persist="review_metrics"
+)
+def review_metrics(ticker: str) -> dict:
+    """`compute_metrics` over `fundamentals(ticker)`, memoized as the dict."""
+    from stocks.analysis.fundamentals import compute_metrics
+
+    with _metrics_gate:
+        return compute_metrics(fundamentals(ticker))
 
 
 @ttl_cache(_EVENTS_TTL, max_entries=32, persist="estimates")
@@ -1105,28 +1218,24 @@ def crypto_replay(db: str, mtime: float, prefs: str, prefs_mtime: float):
 # here, the arithmetic lives in the domain.
 
 
-@ttl_cache(86400.0, max_entries=8)
+@ttl_cache(_LEDGER_TTL, max_entries=4, stale_s=_HELD_STALE)
 def trade_bars(db: str, mtime: float) -> dict[str, pd.DataFrame]:
     """Daily UNADJUSTED OHLC per traded ticker, spanning the whole ledger.
 
     Feeds the spread estimate: execution prices are as-traded, so the reference
     bars must not be dividend-adjusted (`auto_adjust=False` — splits are
-    replayed from the ledger in `portfolio.fees`). Historical bars never change,
-    hence the day-long ttl; `mtime` refetches after an import, which can widen
-    the span or add a name.
-    """
-    from stocks.data.fetch import fetch_many
+    replayed from the ledger in `portfolio.fees`). They are the book's own
+    download (`_held_frames`) — same names, same span, same unadjusted bars —
+    which this used to ask Yahoo for a second time, whole, on its own.
 
-    txs = ledger_state(db, mtime)[0]  # bars are native-currency: base is moot
-    trades = [t for t in transfers.relabel(txs) if t.action in HELD_ACTIONS]
-    if not trades:
-        return {}
-    tickers = sorted({t.ticker for t in trades})
-    span = (pd.Timestamp.today() - pd.Timestamp(min(t.date for t in trades))).days
-    bars = fetch_many(tickers, period=f"{max(1, span // 30 + 1)}mo", auto_adjust=False)
+    Served stale like the closes read off it, so the Fees tab never waits on
+    a refresh; copies, because the listing currency is stamped on each frame
+    and the frames are shared with every other reading of the book.
+    """
+    frames = {t: df.copy(deep=False) for t, df in _held_frames(db, mtime).items()}
     # An alias can price a ticker on another venue (Revolut's dollar ASML ->
     # ASML.AS in euros); the spread converts when the frames say so.
-    return fees.stamp_listing_currency(bars, fees.listing_currencies(list(bars)))
+    return fees.stamp_listing_currency(frames, fees.listing_currencies(list(frames)))
 
 
 @ttl_cache(21600.0, max_entries=8)
@@ -1222,16 +1331,26 @@ def ex_dividends(tickers: tuple[str, ...]) -> list:
     return events
 
 
-@ttl_cache(21600.0, max_entries=16)
+@ttl_cache(
+    21600.0,
+    max_entries=16,
+    stale_s=_HELD_STALE,
+    persist="dividend_histories",
+    disk_max=16,
+)
 def dividend_histories(tickers: tuple[str, ...]) -> dict:
-    """Per-share payment history per name — what the projected ex-dates repeat.
+    """Per-share payment history per name — what the projected ex-dates repeat
+    and what the Dividendos tab's estimates start from (`_entitled`).
 
     `DividendHistory`s keyed by the caller's label, names that pay nothing
-    left out. The series are memoized per process as well, so a book whose
-    past chips just fetched them pays no request here.
+    left out. One request per name — eighty for a book that has held eighty —
+    and the process memo under it (`stocks.data.dividends`) died with every
+    restart, so it is persisted, and served stale for a while: a series only
+    changes when a payment goes ex.
 
-    Raises `YFRateLimitError` when Yahoo is in cooldown and nothing came back,
-    so a throttled minute is never cached as "pays nothing".
+    Raises `YFRateLimitError` when Yahoo throttled any of them: a name that
+    came back empty then may well pay, and a persisted "pays nothing" would
+    outlive the cooldown by days.
     """
     from yfinance.exceptions import YFRateLimitError
 
@@ -1241,7 +1360,7 @@ def dividend_histories(tickers: tuple[str, ...]) -> dict:
     if not tickers:
         return {}
     found = histories(list(tickers))
-    if not found and throttle_remaining():
+    if throttle_remaining():
         raise YFRateLimitError
     return found
 
@@ -1249,9 +1368,8 @@ def dividend_histories(tickers: tuple[str, ...]) -> dict:
 def _entitled(db: str, mtime: float, base: str) -> tuple:
     """(ledger, per-share histories, every payment the shares were owed).
 
-    The half both dividend estimates start from. The histories are memoized per
-    process (`stocks.data.dividends`), so the second loader to ask pays no
-    request for them.
+    The half both dividend estimates start from. The histories are memoized
+    (`dividend_histories`), so the second loader to ask pays no request.
     """
     from yfinance.exceptions import YFRateLimitError
 
@@ -1263,13 +1381,27 @@ def _entitled(db: str, mtime: float, base: str) -> tuple:
     tickers = sorted(
         {t.ticker for t in transfers.relabel(txs) if t.action in HELD_ACTIONS}
     )
-    history = histories(tickers)
+    try:
+        history = dividend_histories(tuple(tickers))
+    except YFRateLimitError:
+        # What the process memo has: the names that did come back.
+        history = histories(tickers)
     if not history and (tickers and throttle_remaining()):
         raise YFRateLimitError
     return txs, history, div.estimate_payments(txs, history)
 
 
-@ttl_cache(_LEDGER_TTL, max_entries=16)
+# Persisted and served stale like the book's own download (`_HELD_STALE`): the
+# backtest downloads every held name again over its own window, seconds cold,
+# and the risk tab and both Pulso cards wait on it. ~2 MB a book.
+@ttl_cache(
+    _LEDGER_TTL,
+    max_entries=16,
+    stale_s=_HELD_STALE,
+    quiet_s=_HELD_QUIET,
+    persist="basket_report",
+    disk_max=8,
+)
 def basket_report(db: str, mtime: float, base: str, period: str):
     """Today's holdings backtested at fixed `base` weights over `period`.
 
@@ -1320,7 +1452,6 @@ def inception_period(first_trade: str) -> str:
     return "max"
 
 
-@ttl_cache(_LEDGER_TTL, max_entries=16)
 def basket_report_since(db: str, mtime: float, base: str):
     """`basket_report` clipped to the book's first trade — the page's default.
 
@@ -1335,6 +1466,10 @@ def basket_report_since(db: str, mtime: float, base: str):
     slicing it here would quietly shorten theirs too. After the rebase, not
     before — `rebase_report` rebuilds `returns` from the full download and
     would undo the slice.
+
+    Not memoized: the slice is a few filters, and a memo of its own would keep
+    the report it was cut from — and that report's stale mark — for an hour
+    after `basket_report` had refreshed.
     """
     from dataclasses import replace
 

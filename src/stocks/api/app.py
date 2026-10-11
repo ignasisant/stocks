@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse
 from yfinance.exceptions import YFRateLimitError
 
 from stocks import accounts, memstat, obs
-from stocks.api import cache, guest, guestbook, security, warm
+from stocks.api import cache, guest, guestbook, holds, security, warm
 from stocks.api.routes import (
     account,
     bank,
@@ -43,6 +43,7 @@ from stocks.api.routes import (
     home,
     i18n,
     import_statement,
+    journal,
     market,
     me,
     notify,
@@ -122,6 +123,9 @@ STALE_HEADER = "X-Data-Stale-Since"
 @app.middleware("http")
 async def _stale_since(request: Request, call_next):
     token = cache.STALE.set({})
+    # Where a refresh this request leaves behind can reach this service to keep
+    # its CPU while it runs (`api/holds.py`).
+    hold = holds.BASE.set(str(request.base_url))
     try:
         response = await call_next(request)
         since = (cache.STALE.get() or {}).get("since")
@@ -131,7 +135,11 @@ async def _stale_since(request: Request, call_next):
             ).isoformat(timespec="seconds")
         return response
     finally:
+        holds.BASE.reset(hold)
         cache.STALE.reset(token)
+
+
+cache.on_background = holds.keep
 
 
 # ------------------------------------------------------ whose request this is
@@ -246,12 +254,14 @@ def _unreachable(request: Request, exc: URLError) -> JSONResponse:
 # translated strings are shipped files the landing already publishes in plain
 # HTML — a sign-in screen needs them before anyone is signed in. A chat run's
 # hold is this service calling itself, authenticated by the run's own token
-# rather than an account (`api/runs.py`).
+# rather than an account (`api/runs.py`), and so is a background refresh's
+# (`api/holds.py`).
 _public = APIRouter(prefix=f"/{API_VERSION}")
 _public.include_router(health.router)
 _public.include_router(design.router)
 _public.include_router(i18n.router)
 _public.include_router(chat.holds)
+_public.include_router(holds.router)
 
 
 def gate(request: Request, who: Who) -> Caller:
@@ -306,6 +316,7 @@ _private.include_router(chat.router)
 _private.include_router(chat_attach.router)
 _private.include_router(chat_voice.router)
 _private.include_router(chat_memory.router)
+_private.include_router(journal.router)
 _private.include_router(brief.router)
 _private.include_router(onboarding.router)
 _private.include_router(notify.router)

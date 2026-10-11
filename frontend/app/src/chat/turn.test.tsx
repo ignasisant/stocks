@@ -75,6 +75,17 @@ describe("a refused turn", () => {
   });
 });
 
+describe("the reader's own question", () => {
+  it("is drawn folded, with no Show more until something was clipped", () => {
+    const out = drawTurn(
+      refused({ role: "user", error: undefined, content: "Revisa esta lectura" }),
+    );
+    expect(out).toContain("ag-chat-fold");
+    expect(out).toContain("Revisa esta lectura");
+    expect(out).not.toContain("chat.show_more");
+  });
+});
+
 const state: ChatState = {
   providers: [],
   answering: null,

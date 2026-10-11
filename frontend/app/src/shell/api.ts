@@ -14,6 +14,7 @@
 
 import { begin } from "./activity";
 import { noteFreshness } from "./freshness";
+import { keepable, landed, recall } from "./keep";
 
 const BASE = "/api/v1";
 
@@ -64,6 +65,10 @@ type Flight<T> = {
 
 let scope: AbortSignal | null = null;
 
+/** Set while `fromKept` runs a fetcher: what its gets took from the shelf. */
+type Keeping = { at: number | null };
+let keeping: Keeping | null = null;
+
 /** Why a flight was aborted: given up on, or no longer wanted by anyone. */
 const TIMED_OUT = "timeout";
 const UNWANTED = "unwanted";
@@ -71,6 +76,30 @@ const UNWANTED = "unwanted";
 /** Forget every memoized answer. */
 export function invalidate(): void {
   memo.clear();
+}
+
+/** Forget the memoized answers for these URLs only. */
+export function forget(urls: Iterable<string>): void {
+  for (const url of urls) memo.delete(url);
+}
+
+/** Set while `watched` runs a fetcher: every URL its gets asked for. */
+let asked: Set<string> | null = null;
+
+/**
+ * Run `fetch` and note the URLs its synchronous `get` calls ask for — the
+ * same before-the-first-await rule as `withMemo` — so a caller can tell
+ * afterwards which of them came back stale (`freshness.staleAt`).
+ */
+export function watched<T>(fetch: () => T): { result: T; urls: Set<string> } {
+  const outer = asked;
+  const urls = new Set<string>();
+  asked = urls;
+  try {
+    return { result: fetch(), urls };
+  } finally {
+    asked = outer;
+  }
 }
 
 /**
@@ -87,6 +116,27 @@ export function withMemo<T>(fetch: () => Promise<T>, signal?: AbortSignal): Prom
     return signal ? scoped(signal, fetch) : fetch();
   } finally {
     memoNext = false;
+  }
+}
+
+/**
+ * `withMemo`, with the answers kept from the last visit (`shell/keep`) allowed
+ * to stand in for what has not landed yet — a screen's first paint.
+ *
+ * `keptAt()`, once `answer` has settled, is when the oldest kept answer it
+ * used was fetched, or null when every one of them came off the network and
+ * the result is already live.
+ */
+export function fromKept<T>(
+  fetch: () => Promise<T>,
+  signal?: AbortSignal,
+): { answer: Promise<T>; keptAt: () => number | null } {
+  const record: Keeping = { at: null };
+  keeping = record;
+  try {
+    return { answer: withMemo(fetch, signal), keptAt: () => record.at };
+  } finally {
+    keeping = null;
   }
 }
 
@@ -187,15 +237,33 @@ export async function get<T>(
     ? `?${new URLSearchParams(entries.map(([k, v]) => [k, String(v)]))}`
     : "";
   const url = `${BASE}${path}${query}`;
+  asked?.add(url);
   if (!memoNext) return join(start<T>(url), scope);
   const hit = memo.get(url);
-  if (hit && Date.now() - hit.at < MEMO_MS) return join(hit.flight as Flight<T>, scope);
-  const flight = start<T>(url);
-  memo.set(url, { at: Date.now(), flight });
-  flight.answer.catch(() => {
-    if (memo.get(url)?.flight === flight) memo.delete(url);
+  let flight: Flight<T>;
+  if (hit && Date.now() - hit.at < MEMO_MS) {
+    flight = hit.flight as Flight<T>;
+  } else {
+    flight = start<T>(url);
+    memo.set(url, { at: Date.now(), flight });
+    flight.answer.then(
+      (body) => landed(url, body),
+      () => {
+        if (memo.get(url)?.flight === flight) memo.delete(url);
+      },
+    );
+  }
+  const waiting = join(flight, scope);
+  const record = keeping;
+  if (!record || flight.done || !keepable(url)) return waiting;
+  // A screen opening for the first time this visit: the copy kept from the
+  // last one, if there is one and the network has not answered first. The
+  // request stays out either way — `useApi` asks again for the live answer.
+  return recall(url).then((kept) => {
+    if (!kept || flight.done) return waiting;
+    record.at = Math.min(record.at ?? kept.at, kept.at);
+    return kept.body as T;
   });
-  return join(flight, scope);
 }
 
 function start<T>(url: string): Flight<T> {

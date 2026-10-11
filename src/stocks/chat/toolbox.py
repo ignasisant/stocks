@@ -49,6 +49,7 @@ class Context:
     watchlist: Path | None = None
     db: Path | None = None
     memory_db: Path | None = None  # chat/memory.py index, when this deploy has one
+    journal: Path | None = None  # chat/journal.py, the proposals made to this account
     thread: str = ""  # the conversation in progress, excluded from recall
     focus: str = ""  # the ticker the user is looking at, for "this"/"it"
     currency: str = "EUR"  # the account's reporting currency
@@ -118,6 +119,39 @@ def _recall(args: dict, ctx: Context) -> str:
     # Reading it as a record of what was said, rather than as something said
     # now, is what keeps "the assistant always recommends X" a quote.
     return memory.QUOTE_HEADER + _cap("\n".join(h.line() for h in hits))
+
+
+def _decisions(args: dict, ctx: Context) -> str:
+    from stocks.chat import journal
+
+    if ctx.journal is None:
+        return "No decision journal for this account."
+    ticker = str(args.get("ticker") or "").strip()
+    state = str(args.get("state") or "").strip()
+    since = str(args.get("since") or "").strip()[:10]
+    hits = journal.query(journal.load(ctx.journal), ticker=ticker,
+                         state=state if state in journal.STATES else "",
+                         since=since)
+    if not hits:
+        return "Nothing in the decision journal matches that."
+    limit = max(1, min(int(args.get("limit") or 12), 30))
+    head = (f"{len(hits)} entries, newest first"
+            + (f" (showing {limit})" if len(hits) > limit else "") + ":\n")
+    # Quoted like recall: a line on the card was the assistant's own words,
+    # and reading it back is reading a record, not taking an instruction.
+    return head + _cap("\n".join(journal.line_for(e) for e in hits[:limit]))
+
+
+def _lookup_knowledge(args: dict, ctx: Context) -> str:
+    from stocks.chat import knowledge
+
+    query = str(args.get("query") or "").strip()
+    if not query:
+        return "No query given."
+    hits = knowledge.lookup(query)
+    if not hits:
+        return "Nothing in the TopStocks documentation matches that."
+    return _cap(knowledge.block(hits))
 
 
 def _portfolio(args: dict, ctx: Context) -> str:
@@ -192,6 +226,42 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
                  "description": "What to look for, in the user's own words."}},
              "required": ["query"]},
         ), _recall),
+        (ToolSpec(
+            "decisions",
+            "The decision journal: every move the app proposed to this user "
+            "and they saw — daily-card lines (fired alerts, loss harvesting, "
+            "trims, rebalances), Review-page sells/trims/adds/buys, and alert or "
+            "watchlist changes offered in chat — with the figures it was made "
+            "on, the reasons, and what became of it (open, followed, declined, "
+            "lapsed). Use for 'what did you propose about X', 'why did you say "
+            "to sell Y', 'what is still open'. It records the app's proposals, "
+            "not the user's own reasons for past trades.",
+            {"type": "object",
+             "properties": {
+                 "ticker": {"type": "string",
+                            "description": "Only this ticker, e.g. NVDA."},
+                 "state": {"type": "string",
+                           "enum": ["open", "followed", "declined", "lapsed"]},
+                 "since": {"type": "string",
+                           "description": "ISO date; entries shown since."},
+                 "limit": {"type": "integer",
+                           "description": "How many, newest first (max 30)."}},
+             "required": []},
+        ), _decisions),
+        (ToolSpec(
+            "lookup_knowledge",
+            "Search TopStocks' own documentation: what each page and feature "
+            "does and where it lives, what each broker's import expects, and "
+            "how the app computes returns, cost basis, currency conversion, "
+            "tax (per country) and its scores. Use for any question about the "
+            "app itself or about why it shows a figure — the web does not know "
+            "this app.",
+            {"type": "object",
+             "properties": {"query": {
+                 "type": "string",
+                 "description": "The question, in the user's own words."}},
+             "required": ["query"]},
+        ), _lookup_knowledge),
     )
 }
 
@@ -201,16 +271,21 @@ def specs(ctx: Context | None = None) -> list[ToolSpec]:
 
     Fixed because the tool block is part of the cached prompt prefix: a set
     that reshuffles per turn invalidates the cache for everything after it.
-    The only thing that varies is whether `recall` is there at all — a deploy
-    without the memory dependencies must not be offered a tool that can only
-    answer "no memory available", which reads to the model as a failure worth
-    retrying."""
-    from stocks.chat import memory
+    The only thing that varies is whether `recall`, `lookup_knowledge` and
+    `decisions` are there at all — a deploy without the memory dependencies,
+    without the knowledge files, or a turn with no account, must not be
+    offered a tool that can only answer "nothing available", which reads to
+    the model as a failure worth retrying."""
+    from stocks.chat import knowledge, memory
 
     out = []
     for spec, _ in TOOLS.values():
         if spec.name == "recall" and not (
                 ctx and ctx.memory_db is not None and memory.available()):
+            continue
+        if spec.name == "lookup_knowledge" and not knowledge.available():
+            continue
+        if spec.name == "decisions" and not (ctx and ctx.journal is not None):
             continue
         out.append(spec)
     return out

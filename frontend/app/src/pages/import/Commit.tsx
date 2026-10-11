@@ -24,7 +24,7 @@ import { useMemo, useState } from "react";
 import { useT } from "../../shell/i18n";
 import { useAccount } from "../../shell/session";
 import { Status } from "../../ui/Status";
-import { MAX_BYTES, commit } from "./api";
+import { MAX_BYTES, commit, written } from "./api";
 import type { Platform, Preview, Refusal, Result, Staged } from "./api";
 import { Eyebrow } from "./Card";
 import { names } from "./repairs";
@@ -59,6 +59,7 @@ export function CommitPanel({
   staged,
   preview,
   wipe,
+  keep,
   onCommitted,
 }: {
   platforms: Platform[];
@@ -66,6 +67,8 @@ export function CommitPanel({
   preview: Preview;
   /** Replace the book rather than add to it, and the address that confirms it. */
   wipe: WipeChoice;
+  /** Write the rows the book already holds too. */
+  keep: boolean;
   onCommitted: (result: Result) => void;
 }) {
   const t = useT();
@@ -77,7 +80,8 @@ export function CommitPanel({
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
 
-  const rows = preview.importable.length;
+  const rows = written(preview, keep).length;
+  const dupes = keep ? 0 : preview.importable.length - rows;
   const rejected = preview.rejected.length;
   const skipped = preview.skipped.length;
 
@@ -91,7 +95,7 @@ export function CommitPanel({
   // emptied the book.
   const missing =
     rows === 0
-      ? t("import.no_importable")
+      ? t(dupes > 0 ? "import.all_duplicates" : "import.no_importable")
       : preview.needs_broker && origin === ""
         ? t("import.broker_missing")
         : wipe.on && !names(wipe.confirm, me.email ?? "")
@@ -102,7 +106,7 @@ export function CommitPanel({
     setBusy(true);
     setRefusal(null);
     try {
-      const outcome = await commit(preview, staged, origin, wipe);
+      const outcome = await commit(preview, staged, origin, wipe, keep);
       if (outcome.ok) onCommitted(outcome.value);
       else setRefusal(outcome.refusal);
     } catch {
@@ -126,6 +130,7 @@ export function CommitPanel({
         : skipped > 0
           ? t("import.confirm_left_skipped", { n: vocab.num(skipped, 0) })
           : "";
+  const twice = dupes > 0 ? vocab.tn("import.confirm_left_duplicates", dupes) : "";
 
   return (
     <>
@@ -177,7 +182,7 @@ export function CommitPanel({
             ) : (
               <>
                 <span className="im-confirm-long">
-                  <Rich text={vocab.tn("import.confirm_rows", rows)} /> {left}
+                  <Rich text={vocab.tn("import.confirm_rows", rows)} /> {left} {twice}
                 </span>
                 <span className="im-confirm-short">
                   <strong>{vocab.tn("import.rows_count", rows)}</strong>

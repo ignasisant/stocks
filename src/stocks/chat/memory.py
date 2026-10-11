@@ -13,28 +13,9 @@ surfaced as one more tool the gather step may call (chat/toolbox.py), so the
 model reaches for it when a question sounds like it has history, and ignores it
 otherwise.
 
-Two small dependencies do the work, both chosen so this survives a Cloud Run
-cold start with no network and no GPU:
-
-- **model2vec** (`potion-base-32M`, 512 dims) — static embeddings: a lookup
-  table, not a transformer forward pass. CPU, milliseconds per turn, no torch.
-  Baked into the image like the tiktoken table, quantized to int8 (~74MB
-  resident against ~169MB as float32, same ranking — see the Dockerfile). The
-  smaller potion-base-8M would cost less still, but 8M ranked an unrelated
-  answer above the right one on the first question tried, and a memory that
-  returns the wrong memory is worse than no memory.
-- **sqlite-vec** — vector search as a SQLite extension. No server, no daemon,
-  one file per account that syncs to the bucket with everything else.
-
-Search is **hybrid**: the vectors above, fused with SQLite's own FTS5 keyword
-index. Neither half is enough on its own. The static model is trained on
-English and misranks Spanish — "¿qué decidí sobre ASML?" put an unrelated
-Nvidia answer first in testing — while a keyword index cannot find "the
-conclusion about concentration" from "how much of one thing is too much". But
-tickers, company names and numbers are exactly what a user asks about later,
-and those the keyword half nails in any language. Ranks are combined with
-reciprocal rank fusion, which needs no score calibration between two searches
-whose numbers mean different things.
+Search is hybrid — meaning and words, fused by rank — on the machinery in
+chat/hybrid.py, which also runs the app's knowledge base (chat/knowledge.py).
+One SQLite file per account, synced to the bucket with everything else.
 
 Both dependencies are optional. Without them `available()` is False, the tool
 is never offered, and the chat behaves exactly as it did before.
@@ -43,27 +24,17 @@ is never offered, and the chat behaves exactly as it did before.
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import lru_cache
 from pathlib import Path
 
 from stocks import obs
+from stocks.chat.hybrid import DIM, available, embed, fts_query, load_vec
+from stocks.chat.hybrid import fuse as _fuse
 
 FILE = "chat_memory.db"
-
-# The hub id, unless a deploy points at a directory holding the same weights.
-# The image bakes them with `save_pretrained` and sets STOCKS_EMBED_MODEL to
-# where they landed: what the hub serves for this repo is the safetensors file
-# *and* an ONNX copy of it, and `from_pretrained` fetches both while reading
-# only the first — 123MB of image for a file nothing opens. Deleting it from
-# the HF cache afterwards is not an option: the next offline load fails the
-# snapshot completeness check. A plain directory sidesteps the cache entirely.
-MODEL = os.environ.get("STOCKS_EMBED_MODEL") or "minishlab/potion-base-32M"
-DIM = 512
 
 # Turns shorter than this are not memories — "ok", "gracias", "y eso?" carry no
 # meaning to find later, and every one of them dilutes a search.
@@ -73,22 +44,6 @@ MIN_CHARS = 60
 MAX_CHARS = 1500
 
 RECALL_LIMIT = 4  # memories returned per search
-
-# Reciprocal rank fusion's damping constant. The literature's 60 was tuned on
-# TREC runs of hundreds of documents; against the handful of candidates each
-# half returns here it flattens rank 1 and rank 4 to within 5% of each other,
-# which is the same as having no ranking. 10 keeps rank meaningful at this
-# scale.
-_RRF_K = 10
-
-# A term matching more than this share of the index is not a search term, it is
-# grammar ("qué", "sobre", "the", "position"). Derived from the corpus rather
-# than a stopword list, so it works in whatever language the user writes —
-# below _DF_MIN_NOTES there is not enough corpus to tell, and every term stays.
-_DF_MAX_SHARE = 0.5
-_DF_MIN_NOTES = 20
-
-_WORD_RE = re.compile(r"[^\W\d_]{2,}|\d[\w.\-]*", re.UNICODE)
 
 
 def path_for(root: Path) -> Path:
@@ -113,69 +68,14 @@ class Memory:
         return f"[{self.when}] {who}: {self.text}"
 
 
-# ------------------------------------------------------------- dependencies
-
-
-@lru_cache(maxsize=1)
-def _model():
-    """The static embedding model, or None when it cannot be loaded.
-
-    Cached for the process: loading reads (and on a cold machine downloads)
-    ~124MB. A miss is not an error anywhere — it just means no memory."""
-    try:
-        from model2vec import StaticModel
-
-        return StaticModel.from_pretrained(MODEL)
-    except Exception as exc:
-        obs.warn("chat.memory.model_unavailable", error_type=type(exc).__name__,
-                 error=str(exc)[:200])
-        return None
-
-
-def available() -> bool:
-    """Whether this deploy can remember anything at all."""
-    try:
-        import sqlite_vec  # noqa: F401
-    except ImportError:
-        return False
-    return _model() is not None
-
-
-def embed(texts: list[str]) -> list[bytes] | None:
-    """`texts` as sqlite-vec float32 blobs, or None when embedding is off."""
-    model = _model()
-    if model is None or not texts:
-        return None
-    try:
-        import numpy as np
-        import sqlite_vec
-
-        vectors = np.asarray(model.encode(texts), dtype="float32")
-        # Normalized, so the cosine distance the index is built on is a pure
-        # angle: model2vec's raw vectors are not unit length, and their
-        # magnitudes track text length, which would rank long turns as "close"
-        # to everything.
-        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-        vectors = vectors / np.clip(norms, 1e-9, None)
-        return [sqlite_vec.serialize_float32(v.tolist()) for v in vectors]
-    except Exception as exc:
-        obs.warn("chat.memory.embed_failed", error_type=type(exc).__name__,
-                 error=str(exc)[:200])
-        return None
-
-
 # ------------------------------------------------------------------- store
 
 
 def _connect(path: Path) -> sqlite3.Connection:
     """An open, migrated memory database with the vector extension loaded."""
-    import sqlite_vec
-
     path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path)
-    db.enable_load_extension(True)
-    sqlite_vec.load(db)
-    db.enable_load_extension(False)
+    load_vec(db)
     db.execute(
         "CREATE TABLE IF NOT EXISTS notes ("
         " id INTEGER PRIMARY KEY, thread TEXT NOT NULL, role TEXT NOT NULL,"
@@ -267,61 +167,6 @@ def remember(path: Path, history: list[dict], thread: str) -> int:
         return 0
     finally:
         db.close()
-
-
-def _content_terms(db: sqlite3.Connection | None, terms: set[str]) -> set[str]:
-    """`terms` without the ones this corpus treats as grammar.
-
-    A word in half the account's memories tells the search nothing — it only
-    drags in every note that happens to contain it, which is how "¿qué decidí
-    sobre ASML?" comes back with a conversation about Nvidia. Dropped only
-    once there is enough corpus for document frequency to mean anything, and
-    never all of them: a question made entirely of common words still has to
-    search for something."""
-    if db is None or len(terms) < 2:
-        return terms
-    try:
-        total = db.execute("SELECT count(*) FROM notes").fetchone()[0]
-        if total < _DF_MIN_NOTES:
-            return terms
-        keep = set()
-        for term in terms:
-            hits = db.execute(
-                "SELECT count(*) FROM notes_fts WHERE notes_fts MATCH ?",
-                (f'"{term}"',)).fetchone()[0]
-            if hits <= total * _DF_MAX_SHARE:
-                keep.add(term)
-        return keep or terms
-    except Exception as exc:
-        obs.warn("chat.memory.content_terms_failed",
-                 error_type=type(exc).__name__, error=str(exc)[:300])
-        return terms
-
-
-def fts_query(text: str, db: sqlite3.Connection | None = None) -> str:
-    """`text` as an FTS5 MATCH expression, or "" when there is nothing to match.
-
-    Built from extracted words rather than passed through: a raw question is a
-    syntax error to FTS5 the moment it contains a quote, a hyphen or the word
-    "OR". Each term is quoted and OR-ed, so the match is "any of these words"
-    and BM25 decides which memory had the most telling ones."""
-    terms = {w.lower() for w in _WORD_RE.findall(text or "")}
-    terms = _content_terms(db, terms)
-    return " OR ".join(f'"{t}"' for t in sorted(terms)) if terms else ""
-
-
-def _fuse(*rankings: list[int]) -> list[int]:
-    """Note ids ordered by reciprocal rank fusion across several rankings.
-
-    RRF because the two halves' scores are not comparable — a cosine distance
-    and a BM25 score have neither the same scale nor the same direction — but
-    their *ranks* are. A note both searches like beats one that either loves.
-    """
-    scores: dict[int, float] = {}
-    for ranking in rankings:
-        for rank, note_id in enumerate(ranking):
-            scores[note_id] = scores.get(note_id, 0.0) + 1.0 / (_RRF_K + rank + 1)
-    return sorted(scores, key=lambda i: -scores[i])
 
 
 def _semantic(db: sqlite3.Connection, query: str, depth: int) -> list[int]:

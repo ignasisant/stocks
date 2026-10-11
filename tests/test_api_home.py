@@ -21,6 +21,7 @@ replaced.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import threading
 import time
@@ -178,6 +179,26 @@ def test_the_stored_card_is_filed_in_the_chat_and_says_where(
     assert thread["messages"][0]["content"].startswith("**Fresh**")
     again = signed_in.get("/v1/daily", params={"lang": "en"}).json()
     assert again["thread"] == body["thread"]
+
+
+def test_the_card_lines_that_propose_a_move_go_in_the_journal(
+    client, account, signed_in, monkeypatch
+):
+    from stocks.chat import journal
+
+    facts = {**FACTS, "actions": [{"key": "harvest:NVDA", "kind": "harvest",
+                                   "ticker": "NVDA", "loss": 900.0}]}
+    monkeypatch.setattr(briefing, "build_facts", lambda *a: facts)
+    card = dataclasses.replace(written(today(), "Fresh"), items=[
+        {"key": "harvest:NVDA", "kind": "harvest", "line": "Sell NVDA at a loss",
+         "tickers": ["NVDA"]},
+        {"key": "market:", "kind": "market", "line": "The tape", "tickers": []},
+    ])
+    monkeypatch.setattr(daily, "generate", lambda *a, **k: card)
+    signed_in.post("/v1/daily", params={"lang": "en"})
+    [entry] = journal.load(account.journal)
+    assert (entry.source, entry.action, entry.ticker) == ("daily", "harvest", "NVDA")
+    assert entry.line == "Sell NVDA at a loss" and entry.snapshot["loss"] == 900.0
 
 
 def test_a_slow_model_answers_pending_with_the_stand_in_then_the_poll_sees_it(

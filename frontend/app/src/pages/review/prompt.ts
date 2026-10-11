@@ -5,8 +5,9 @@
  * name with its verdict, weight and target, the money and tax of the move,
  * both scores, the reasons in words and the few figures the scores leaned on.
  * It is built from the filtered rows, so a reader looking at one sector asks
- * about that sector. It goes into the composer unsent (`draftAssistant`): the
- * reader sees what is asked and can cut or add to it.
+ * about that sector. It is sent at once, in a new conversation
+ * (`askAssistant` with `fresh`), and the reader's bubble folds it to its first
+ * lines.
  *
  * The chat refuses a message over 4,000 characters (`routes/chat.py`
  * `MAX_MESSAGE`), so rows are added in the page's own order — actions first —

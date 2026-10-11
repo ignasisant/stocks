@@ -145,8 +145,6 @@ export function Composer({
   onSave,
   onAttach,
   onSettings,
-  seed = null,
-  onSeedTaken,
 }: {
   state: ChatState;
   busy: boolean;
@@ -158,9 +156,6 @@ export function Composer({
   onSave: (patch: SettingsPatch) => void;
   onAttach: (file: File) => void;
   onSettings: () => void;
-  /** Words a page wrote for the field: they replace it, unsent. */
-  seed?: string | null;
-  onSeedTaken?: () => void;
 }) {
   const t = useT();
   const lang = useLang();
@@ -245,14 +240,6 @@ export function Composer({
   // A recording must not outlive the drawer: the microphone light would stay
   // on, and the recogniser would keep writing into a field nobody sees.
   useEffect(() => () => clip.current?.cancel(), []);
-
-  useEffect(() => {
-    if (!seed) return;
-    setText(seed);
-    spoken.current = false;
-    setCaret(true);
-    onSeedTaken?.();
-  }, [seed]);
 
   useEffect(() => {
     if (!caret) return;

@@ -33,7 +33,7 @@ import socket
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -79,6 +79,7 @@ class Result:
     url: str
     snippet: str
     text: str = ""  # article body when the page was read (see `read_pages`)
+    query: str = ""  # the search that found it; "" for a link the user pasted
 
     @property
     def body(self) -> str:
@@ -276,7 +277,8 @@ def search(queries: list[str], read_limit: int = READ_PAGES) -> list[Result]:
                     if not url or url in seen:
                         continue
                     seen.add(url)
-                    out.append(Result(title or url, url, body[:_SNIPPET_CHARS]))
+                    out.append(Result(title or url, url, body[:_SNIPPET_CHARS],
+                                      query=q))
     except Exception as exc:
         obs.warn("chat.web.search_failed", error_type=type(exc).__name__,
                  error=str(exc)[:300])
@@ -491,7 +493,7 @@ def read_pages(results: list[Result], limit: int = READ_PAGES) -> list[Result]:
                 text = f.result(timeout=_PAGE_TIMEOUT + 2)
             except Exception:
                 text = ""
-            out.append(Result(r.title, r.url, r.snippet, text) if text else r)
+            out.append(replace(r, text=text) if text else r)
         return out + tail
     finally:
         # No wait: shutdown would block on exactly the hung fetch the timeout

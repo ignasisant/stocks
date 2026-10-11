@@ -7,7 +7,7 @@
   "feedback.kind_other": "Otro",
   "feedback.placeholder": "¿Qué ha pasado, o qué lo mejoraría?",
   "feedback.shot": "Adjuntar una captura",
-  "feedback.shot_help": "Envía una imagen de la pantalla que hay detrás de esta ventana, tal como está ahora — esta ventana no sale. Va con todo lo que muestre la página, tus cifras incluidas.",
+  "feedback.shot_help": "Envía una imagen de la pantalla de detrás, como está ahora (esta ventana no sale), con las cifras que muestre.",
   "feedback.shot_working": "Haciendo la captura…",
   "feedback.shot_ready": "Adjuntada — {kb} KB",
   "feedback.shot_failed": "No se pudo capturar esta pantalla; tu comentario se enviará sin imagen.",

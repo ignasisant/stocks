@@ -9,7 +9,8 @@
  *
  * It draws what the Earnings page's grid draws, with the same chips and the
  * same fold (`DayChips`, three to a cell here): tax deadlines, buy-back days,
- * Fed and ECB decisions, prints and ex-dividend dates. Names are scoped to the
+ * Fed and ECB decisions, prints and ex-dividend dates, with the days a buy-back
+ * would still defer a loss shaded amber. Names are scoped to the
  * union of the calendar's own filter sets (`portfolio`, `favorites` and one per
  * watchlist tag): the held + starred + tagged set. The reader's own dates (tax,
  * buy-backs) and the banks belong to no name, so the scope leaves them alone;
@@ -27,10 +28,11 @@ import { useApi } from "../../shell/useApi";
 import { Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
 import { Link } from "../../shell/router";
-import { byDate } from "../earnings/data";
-import type { EarningsCalendar, EventPick } from "../earnings/data";
+import { blocking, byDate } from "../earnings/data";
+import type { EarningsCalendar, EventPick, RepurchaseWindow } from "../earnings/data";
 import EventDetail from "../earnings/EventDetail";
 import { DayChips } from "../earnings/MonthGrid";
+import { blockedTitle } from "../earnings/Repurchase";
 import type { DayItems } from "../earnings/MonthGrid";
 import { CardQuery, Card, CardTitle, Note } from "./ui";
 import { addDays, dayKey, mondayOf, plain } from "./format";
@@ -73,8 +75,19 @@ export function EarningsCard() {
         const due = byDate(calendar.tax_deadlines.filter(shown));
         const freed = byDate(calendar.repurchase_windows.filter(shown));
         const decided = byDate(calendar.central_banks.filter(shown));
+        // A buy-back window shades every weekday it covers, so one that only
+        // passes through these four weeks still makes the card worth drawing.
+        // Worked out once per day here, then read by the cells below.
+        const blocked = new Map<string, RepurchaseWindow[]>();
+        for (let i = 0; i < WEEKS * 7; i += 1) {
+          const key = dayKey(addDays(start, i));
+          const open = blocking(calendar.repurchase_windows, key);
+          if (open.length > 0 && isWeekday(key)) blocked.set(key, open);
+        }
+        const shaded = blocked.size > 0;
         const empty =
-          upcoming.size + reported.size + exDates.size + due.size + freed.size === 0;
+          upcoming.size + reported.size + exDates.size + due.size + freed.size === 0 &&
+          !shaded;
         const itemsOn = (key: string): DayItems => ({
           events: upcoming.get(key) ?? [],
           results: reported.get(key) ?? [],
@@ -112,8 +125,14 @@ export function EarningsCard() {
                               : key < reference
                                 ? "hm-dim"
                                 : "";
+                          const open = blocked.get(key);
+                          const classes = open ? `${tone} rebuy-block`.trim() : tone;
                           return (
-                            <td key={day} className={tone}>
+                            <td
+                              key={day}
+                              className={classes || undefined}
+                              title={open ? blockedTitle(open, t) : undefined}
+                            >
                               <div className="hm-cal-day">{date.getDate()}</div>
                               <DayChips
                                 {...itemsOn(key)}

@@ -257,6 +257,32 @@ def test_a_native_price_is_restated_only_when_a_base_is_asked_for(client, monkey
     assert same["price_base"] is None
 
 
+def test_a_quote_that_names_its_currency_needs_no_fundamentals(client, monkeypatch):
+    """The quote row already says what money it is in; the fundamentals pull
+    (seconds, cold) is only for a row that does not."""
+    monkeypatch.setattr(
+        "stocks.api.routes.ticker.session_quote",
+        lambda t: {
+            "price": 285_500.0, "pct": 0.0325, "session": None, "as_of": None,
+            "currency": "KRW",
+        },
+    )
+    monkeypatch.setattr("stocks.api.routes.ticker.market_live", lambda t: True)
+    fetched = []
+    monkeypatch.setattr(
+        loaders, "fundamentals",
+        lambda t: fetched.append(t) or type("F", (), {"info": {"currency": "USD"}})(),
+    )
+    monkeypatch.setattr("stocks.data.fx.spot", lambda a, b: (0.00068, "2026-09-18"))
+
+    body = client.get(
+        "/v1/ticker/005930.KS/quote", params={"base": "eur"}, headers=AUTH
+    ).json()
+    assert body["currency"] == "KRW"
+    assert body["price_base"] == pytest.approx(285_500.0 * 0.00068)
+    assert fetched == []
+
+
 def test_a_coin_pair_is_never_sent_to_fundamentals_for_its_currency(
     client, monkeypatch
 ):

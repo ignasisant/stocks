@@ -114,7 +114,7 @@ type Align = "" | "right" | "center";
 type Block =
   | { kind: "p"; lines: string[] }
   | { kind: "h"; text: string }
-  | { kind: "list"; ordered: boolean; items: string[] }
+  | { kind: "list"; ordered: boolean; start: number; items: string[] }
   | { kind: "code"; text: string }
   | { kind: "table"; head: string[]; align: Align[]; rows: string[][] }
   | { kind: "hr" };
@@ -123,6 +123,8 @@ const FENCE = /^\s*```/;
 const HEAD = /^ {0,3}#{1,6}\s+(.*)$/;
 const BULLET = /^\s*[-*+]\s+(.*)$/;
 const NUMBER = /^\s*\d+[.)]\s+(.*)$/;
+/** The number an ordered item was written with. */
+const DIGITS = /^\s*(\d+)/;
 const RULE = /^ {0,3}([-*_])\s*(\1\s*){2,}$/;
 /** A quote marker is stripped rather than styled: the words are the point. */
 const QUOTE = /^\s*>\s?/;
@@ -226,7 +228,10 @@ function blocks(source: string): Block[] {
         items.push(item[1] ?? "");
         i += 1;
       }
-      out.push({ kind: "list", ordered, items });
+      // A list the writer broke with bullets carries on from its own number,
+      // so "2." after a nested run renders 2, not a fresh 1.
+      const start = ordered ? Number(DIGITS.exec(line)?.[1] ?? 1) : 1;
+      out.push({ kind: "list", ordered, start, items });
       continue;
     }
     // A paragraph runs to the next blank line or to whatever starts a block of
@@ -393,7 +398,11 @@ export function Markdown({ text }: { text: string }): ReactNode {
             </li>
           ));
           return block.ordered ? (
-            <ol className="ag-chat-list" key={i}>
+            <ol
+              className="ag-chat-list"
+              start={block.start === 1 ? undefined : block.start}
+              key={i}
+            >
               {items}
             </ol>
           ) : (

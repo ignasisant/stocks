@@ -426,21 +426,30 @@ function Importer({
           >
             {(outcome) =>
               outcome !== null && outcome.ok ? (
-                <Tiers onVenue={wrote} picked={platform} preview={outcome.value}>
-                  <CommitPanel
-                    onCommitted={(committed) => {
-                      setResult(committed);
-                      setStaged(null);
-                      setWipe(NO_WIPE);
-                      pasted.current = "";
-                      if (file.current) file.current.value = "";
-                      wrote();
-                    }}
-                    platforms={platforms}
-                    preview={outcome.value}
-                    staged={staged}
-                    wipe={wipe}
-                  />
+                <Tiers
+                  // A new reading starts with its duplicates left out again.
+                  key={outcome.value.digest}
+                  onVenue={wrote}
+                  picked={platform}
+                  preview={outcome.value}
+                >
+                  {(keep) => (
+                    <CommitPanel
+                      keep={keep}
+                      onCommitted={(committed) => {
+                        setResult(committed);
+                        setStaged(null);
+                        setWipe(NO_WIPE);
+                        pasted.current = "";
+                        if (file.current) file.current.value = "";
+                        wrote();
+                      }}
+                      platforms={platforms}
+                      preview={outcome.value}
+                      staged={staged}
+                      wipe={wipe}
+                    />
+                  )}
                 </Tiers>
               ) : null
             }
@@ -539,6 +548,11 @@ function Committed({
           <p className="im-fine">
             {t("import.done_rejected", { n: vocab.num(result.rejected.length, 0) })}
           </p>
+          {(result.duplicates ?? 0) > 0 && (
+            <p className="im-fine">
+              {vocab.tn("import.done_duplicates", result.duplicates ?? 0)}
+            </p>
+          )}
         </div>
         <div className="im-done-actions">
           <Link className="im-btn im-btn-primary" page="portfolio">

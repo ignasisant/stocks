@@ -24,7 +24,7 @@
  * loses nothing.
  */
 
-import { useId, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import { ApiError } from "../shell/api";
 import { useLang, useT } from "../shell/i18n";
 import { Glyph } from "./icons";
@@ -582,6 +582,54 @@ function Jump({ step, onLeave }: { step: GuideStep; onLeave: () => void }) {
   );
 }
 
+/**
+ * The reader's own question, folded to its first lines when it runs long.
+ *
+ * A question the app wrote for them (a review handed to the chat, a pasted
+ * statement) can fill the drawer before the answer even starts, and the
+ * reader already knows what it says. Measured rather than counted: three
+ * lines depend on the drawer's width and the markdown inside, so the fold
+ * only offers itself when the box actually clipped something.
+ */
+function Folded({ text }: { text: string }) {
+  const t = useT();
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  const [clipped, setClipped] = useState(false);
+  const box = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const check = () => setClipped(el.scrollHeight > el.clientHeight + 1);
+    check();
+    if (typeof ResizeObserver === "undefined") return;
+    const seen = new ResizeObserver(check);
+    seen.observe(el);
+    return () => seen.disconnect();
+  }, []);
+  return (
+    <>
+      <div
+        id={id}
+        ref={open ? undefined : box}
+        className={open ? undefined : "ag-chat-fold"}
+        data-clipped={!open && clipped ? "" : undefined}
+      >
+        <Markdown text={text} />
+      </div>
+      {(open || clipped) && (
+        <button
+          type="button"
+          className="ag-chat-more"
+          aria-expanded={open}
+          aria-controls={id}
+          onClick={() => setOpen((was) => !was)}
+        >
+          {t(open ? "chat.show_less" : "chat.show_more")}
+        </button>
+      )}
+    </>
+  );
+}
+
 export function Turn({
   turn,
   skills,
@@ -715,7 +763,7 @@ export function Turn({
       <div className="ag-chat-bubble">
         {mine ? (
           turn.content ? (
-            <Markdown text={turn.content} />
+            <Folded text={turn.content} />
           ) : null
         ) : (
           // An answer announced once, when it is finished. `aria-busy` holds

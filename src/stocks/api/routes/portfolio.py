@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import Annotated, Any
 from urllib.error import URLError
@@ -36,7 +37,7 @@ from stocks.analysis.portfolio import (
     value_weights,
 )
 from stocks.api import loaders
-from stocks.api.cache import ttl_cache
+from stocks.api.cache import carried, ttl_cache
 from stocks.api.deps import Account, Base, Writer, reporting_currency
 from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
@@ -1506,6 +1507,13 @@ def risk(
     ccy = reporting_currency(account, base)
     db = str(account.db)
     mtime = loaders.db_mtime(db)
+    # The priced table and the book's value path read the book's download; the
+    # backtest has its own. Side by side, the page waits for the slower one
+    # instead of the sum.
+    pool = ThreadPoolExecutor(max_workers=2)
+    priced = pool.submit(carried(loaders.positions_table), db, mtime, ccy)
+    path = pool.submit(carried(loaders.history), db, mtime, ccy)
+    pool.shutdown(wait=False)
     report = (
         loaders.basket_report_since(db, mtime, ccy)
         if period == "inception"
@@ -1517,7 +1525,7 @@ def risk(
     # What each slice is worth and what it cost, off the same priced rows the
     # positions table and the summary tiles read, so a slice's euros agree
     # with the tiles beside it. Only rows that priced count, on both sides.
-    table = loaders.positions_table(db, mtime, ccy)
+    table = priced.result()
     values: dict[str, float] = {}
     costs: dict[str, float] = {}
     if not table.empty:
@@ -1576,7 +1584,7 @@ def risk(
     # backtests today's holdings, and what the account actually earned is the
     # ledger's value path. Both belong on one axis or neither says much — the
     # gap between them is exactly how much the book has changed shape.
-    hist, twr, missing = loaders.history(db, mtime, ccy)
+    hist, twr, missing = path.result()
     flows = flow_series(loaders.ledger_state(db, mtime, ccy)[0], base=ccy)
     return Risk(
         base=ccy,
