@@ -70,6 +70,13 @@
   right: calc(min(var(--chat-w, 420px), 100vw) + 20px);
 }
 
+/* The page's own dialogs sit under the open drawer (65 < 70) so the chat
+   beside them stays usable — so they end where it starts, or their card
+   centres behind it. */
+:root[data-chat="open"] :is(.ag-rev-modal, .earn-modal, .ag-jr-veil, .pr-modal) {
+  right: min(var(--chat-w, 420px), 100vw);
+}
+
 /* The drag handle: a grab strip straddling the panel's left border, sitting
    over the page behind it so there is something to aim at. Invisible until it
    is hovered or focused — the border is the affordance, the strip is the
@@ -212,10 +219,32 @@
   flex-direction: column;
 }
 
-.ag-chat-down {
+/* Scrolled up, the answer fades out under the floating buttons instead of
+   running into them: a line that dissolves reads as "more below", a word cut
+   by an opaque circle reads as a broken layout. */
+.ag-chat-scroll-fade {
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 56px), transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - 56px), transparent);
+}
+
+/* Scroll-down and Regenerate share one row in the corner, so together they
+   cover one button's height of the answer rather than two stacked. */
+.ag-chat-float {
   position: absolute;
-  right: 14px;
-  bottom: 12px;
+  z-index: 2;
+  right: 12px;
+  bottom: 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.ag-chat-float > * {
+  pointer-events: auto;
+}
+
+.ag-chat-down {
   display: grid;
   width: 32px;
   height: 32px;
@@ -227,12 +256,6 @@
   cursor: pointer;
   place-items: center;
   touch-action: manipulation;
-}
-
-/* Over Regenerate when both are drawn: same corner, stacked, never on top
-   of each other. */
-.ag-chat-down-over {
-  bottom: 44px;
 }
 
 @media (hover: hover) {
@@ -727,8 +750,34 @@
   padding-left: 20px;
 }
 
+/* Inside an item: a nested list or a second paragraph hangs under its line,
+   tighter than the gap between blocks of the answer itself. */
+.ag-chat-list .ag-chat-list,
+.ag-chat-list .ag-chat-p {
+  margin: 4px 0 0;
+}
+
+.ag-chat-list > li + li {
+  margin-top: 4px;
+}
+
 .ag-chat-a {
   color: var(--ag-brand-accent);
+}
+
+/* A ticker the answer names: its mark and the symbol in the text's own
+   colour — a sentence of accent-coloured symbols would shout — underlined
+   only under a pointer. No wrap between the mark and its symbol. */
+.ag-chat-tick {
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .ag-chat-tick:hover .ag-tick-sym {
+    text-decoration: underline;
+  }
 }
 
 .ag-chat-code {
@@ -939,10 +988,6 @@
 /* Regenerate sits at the foot of the scroll region, over the conversation
    rather than in the composer: it is about the answer above it. */
 .ag-chat-regen {
-  position: absolute;
-  z-index: 2;
-  right: 12px;
-  bottom: 8px;
   display: flex;
   gap: 4px;
   align-items: center;
@@ -1868,6 +1913,10 @@ a.ag-chat-btn {
     /* The panel is the whole viewport here, so there is no page left to make
        room on — padding would only squeeze what is already hidden. */
     padding-right: 0;
+  }
+  :root[data-chat="open"] :is(.ag-rev-modal, .earn-modal, .ag-jr-veil, .pr-modal) {
+    /* The panel covers them anyway; a dialog with no width is worse. */
+    right: 0;
   }
   :root[data-chat="open"] .ag-fb-sent {
     /* Same reason, and here the offset would push the toast off the screen

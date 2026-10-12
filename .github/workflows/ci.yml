@@ -12,6 +12,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# The token only reads the repo; nothing here pushes, comments or releases.
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest

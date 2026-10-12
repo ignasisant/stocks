@@ -32,7 +32,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from stocks import atomic, obs
 from stocks.config import DATA_DIR
@@ -216,9 +216,10 @@ def _candidates(ticker: str):
     if pair := split_pair(ticker):
         coin = pair[0]
         yield COINCAP_URL.format(coin=coin.lower())
-        yield FMP_LOGO_URL.format(ticker=f"{coin}USD")  # FMP keys crypto as BTCUSD
+        # FMP keys crypto as BTCUSD.
+        yield FMP_LOGO_URL.format(ticker=quote(f"{coin}USD", safe=""))
         return
-    yield FMP_LOGO_URL.format(ticker=ticker)
+    yield FMP_LOGO_URL.format(ticker=quote(ticker, safe=""))
     if domain := _company_domain(ticker):
         yield FAVICON_URL.format(domain=domain)
 
@@ -300,16 +301,23 @@ def _persist_quiet(path: Path) -> None:
         storage.persist(path)
 
 
-def _mirror(stem: str, resolve_url, static_dir: Path) -> str | None:
-    """Mirror one image into `static_dir` as `stem.<ext>`; returns the file
-    name. An already-mirrored file (local, or pulled back from the storage
-    bucket on an ephemeral host's first touch) short-circuits before any
-    network call; `resolve_url` is only invoked on a cache miss."""
+def _local(stem: str, static_dir: Path) -> str | None:
+    """The file already mirrored for `stem` on this host, if any."""
     if static_dir.is_dir():
         for existing in static_dir.glob(f"{stem}.*"):
             # Exact stem: the glob for BRK also matches BRK.B's logo.
             if existing.name.rpartition(".")[0] == stem:
                 return existing.name
+    return None
+
+
+def _mirror(stem: str, resolve_url, static_dir: Path) -> str | None:
+    """Mirror one image into `static_dir` as `stem.<ext>`; returns the file
+    name. An already-mirrored file (local, or pulled back from the storage
+    bucket on an ephemeral host's first touch) short-circuits before any
+    network call; `resolve_url` is only invoked on a cache miss."""
+    if local := _local(stem, static_dir):
+        return local
     if restored := _restore_quiet(static_dir, stem):
         return restored
     url = resolve_url()
@@ -330,6 +338,16 @@ def _mirror(stem: str, resolve_url, static_dir: Path) -> str | None:
     return out.name
 
 
+def _ticker_stem(ticker: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]", "_", ticker.upper())
+
+
+def mirrored_logo(ticker: str, static_dir: Path) -> str | None:
+    """A logo this host already mirrored, by file name — no bucket, no network.
+    For callers that must not spend upstream requests (an anonymous batch)."""
+    return _local(_ticker_stem(ticker), static_dir)
+
+
 def mirror_logo(ticker: str, static_dir: Path) -> str | None:
     """Mirror a ticker's logo into `static_dir`; returns the file name.
 
@@ -338,8 +356,7 @@ def mirror_logo(ticker: str, static_dir: Path) -> str | None:
     looks at — only the server fetches each image, once per ticker. Returns
     e.g. "AAPL.png", or None when no source resolved or the download failed.
     """
-    safe = re.sub(r"[^A-Za-z0-9._-]", "_", ticker.upper())
-    return _mirror(safe, lambda: logo_url(ticker), static_dir)
+    return _mirror(_ticker_stem(ticker), lambda: logo_url(ticker), static_dir)
 
 
 def mirror_brand(key: str, domain: str, static_dir: Path) -> str | None:

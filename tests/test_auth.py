@@ -223,6 +223,24 @@ def test_a_late_save_does_not_undo_a_key_stored_meanwhile(tmp_path):
     assert stored["currency"] == "USD"
 
 
+def test_two_overlapping_turns_each_count_their_unit(tmp_path):
+    """Both turns read 5 and spent one: the file must say 7, not 6, or every
+    overlap hands out a free message the daily cap never sees."""
+    path = tmp_path / "prefs.json"
+    key = "free_msgs::2026-10-05"
+    save_prefs({key: 5}, path)
+    first, second = load_prefs(path), load_prefs(path)
+    first[key] += 1
+    second[key] += 1
+    save_prefs(first, path)
+    save_prefs(second, path)
+    assert accounts.stored_prefs(path)[key] == 7
+    assert second[key] == 7  # the holder reads back the merged count
+    second[key] -= 1  # a refund is a change of -1 too
+    save_prefs(second, path)
+    assert accounts.stored_prefs(path)[key] == 6
+
+
 def test_a_loaded_save_removes_what_it_removed_and_nothing_else(tmp_path):
     path = tmp_path / "prefs.json"
     save_prefs({"tg_link_code": "x", "currency": "USD"}, path)

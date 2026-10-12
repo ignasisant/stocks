@@ -129,6 +129,32 @@ def test_a_cookie_we_signed_is_one_we_can_read():
     assert session.signed_in_email(jar) == MINE
 
 
+def test_signing_out_ends_that_session_and_only_that_one():
+    here, there = cookie_for(MINE), cookie_for(MINE)
+    session.end({session.COOKIE: here})
+    assert session.signed_in_email({session.COOKIE: here}) is None
+    assert session.signed_in_email({session.COOKIE: there}) == MINE
+
+
+def test_erasing_an_account_ends_every_cookie_minted_before_it(monkeypatch):
+    old, other = cookie_for(MINE), cookie_for(YOURS)
+    session.end_all(MINE)
+    assert session.signed_in_email({session.COOKIE: old}) is None
+    assert session.signed_in_email({session.COOKIE: other}) == YOURS
+    later = session.time.time() + 5
+    monkeypatch.setattr(session.time, "time", lambda: later)
+    assert session.signed_in_email({session.COOKIE: cookie_for(MINE)}) == MINE
+
+
+def test_a_revocation_survives_a_restart():
+    from stocks import revocation
+
+    jar = {session.COOKIE: cookie_for(MINE)}
+    session.end(jar)
+    revocation.reset_for_tests()
+    assert session.signed_in_email(jar) is None
+
+
 def test_the_cookie_st_login_wrote_names_nobody_any_more():
     """`_streamlit_user` was honoured while the app moved to its own sign-in.
     That grace read is gone: a valid one, under our own secret, is nobody."""

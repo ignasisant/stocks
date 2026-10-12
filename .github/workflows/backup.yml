@@ -24,6 +24,10 @@ env:
   STOCKS_STORAGE_ACCESS_KEY_ID: ${{ secrets.STOCKS_STORAGE_ACCESS_KEY_ID }}
   STOCKS_STORAGE_SECRET_ACCESS_KEY: ${{ secrets.STOCKS_STORAGE_SECRET_ACCESS_KEY }}
 
+# The token only reads the repo; nothing here pushes, comments or releases.
+permissions:
+  contents: read
+
 jobs:
   snapshot:
     runs-on: ubuntu-latest

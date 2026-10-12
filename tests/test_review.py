@@ -291,3 +291,127 @@ def test_losing_more_than_it_sells_is_a_bet_even_with_sales():
     assert review.R_SHORT_RUNWAY in v.reasons
     # A loss smaller than the sales is still scored, on whichever lens fits.
     assert review.stage({**burner, "op_margin": -0.5}) != review.EARLY
+
+
+# A mature compounder at thirty times earnings: dear on the plain multiple,
+# fair or cheap once its growth is counted.
+COMPOUNDER = {
+    "pe_fwd": 30.0, "fcf_yield": 0.03, "ev_ebitda": 25.0, "ev": 1e12,
+    "roic": 0.30, "op_margin": 0.40, "moat": 75.0,
+}
+
+
+def test_a_fast_mature_grower_is_cheaper_for_its_growth():
+    grower = {**COMPOUNDER, "revenue_growth": 0.35, "revenue_cagr": 0.35}
+    slow = review.score({**COMPOUNDER, "revenue_growth": 0.04, "revenue_cagr": 0.04})
+    fast = review.score(grower)
+    assert fast.stage == slow.stage == review.MATURE
+    assert fast.cheapness > slow.cheapness
+    v = review.judge_held(grower, weight=0.02)
+    assert review.R_CHEAP_FOR_GROWTH in v.reasons
+
+
+def test_a_slow_grower_is_not_marked_down_for_being_slow():
+    plain = review.score(COMPOUNDER)
+    slow = review.score({**COMPOUNDER, "revenue_growth": 0.02, "revenue_cagr": 0.02})
+    assert slow.cheapness == plain.cheapness
+    assert review.R_CHEAP_FOR_GROWTH not in review.judge_held(
+        {**COMPOUNDER, "revenue_growth": 0.02, "revenue_cagr": 0.02}, weight=0.02
+    ).reasons
+
+
+def test_growth_credit_reads_the_sustained_pace_and_caps_it():
+    # One spiky quarter is not the pace the P/E is divided by.
+    spike = {**COMPOUNDER, "revenue_growth": 0.60, "revenue_cagr": 0.06}
+    assert review.growth_pe(spike) == 30.0 / 6.0
+    boom = {**COMPOUNDER, "revenue_growth": 0.90, "revenue_cagr": 0.90}
+    assert review.growth_pe(boom) == 30.0 / (review.PEG_GROWTH_CAP * 100)
+    assert review.growth_pe({**COMPOUNDER, "pe_fwd": -5.0, "revenue_growth": 0.3}) is None
+
+
+def test_growth_credit_is_per_share_so_dilution_eats_it():
+    grower = {**COMPOUNDER, "revenue_growth": 0.21, "revenue_cagr": 0.21}
+    diluting = {**grower, "share_dilution": 0.10}
+    buying_back = {**grower, "share_dilution": -0.05}
+    assert review.growth_pe(diluting) > review.growth_pe(grower) > review.growth_pe(
+        buying_back
+    )
+    assert abs(review.per_share_growth(diluting) - 0.10) < 1e-9
+
+
+def test_the_row_carries_the_growth_adjusted_pe():
+    grower = {**COMPOUNDER, "revenue_growth": 0.30, "revenue_cagr": 0.30}
+    v = review.judge_held(grower, weight=0.02)
+    assert v.metrics["growth_pe"] == review.growth_pe(grower)
+    assert review.judge_held(COMPOUNDER, weight=0.02).metrics["growth_pe"] is None
+
+
+# The cautions: good scores the numbers behind them may not hold. They stop
+# an add or a buy, never make one.
+def _blocked(metrics: dict, reason: str) -> None:
+    held = review.judge_held(metrics, weight=0.02, risk_share=0.02)
+    assert held.verdict == review.HOLD
+    assert reason in held.reasons
+    outside = review.judge_candidate(metrics)
+    assert outside.verdict == review.WATCH
+    assert reason in outside.reasons
+
+
+def test_a_cyclical_at_its_peak_margin_is_not_added_to():
+    peak = {**CHEAP_QUALITY, "op_margin_median": 0.20, "revenue_down_years": 1}
+    _blocked(peak, review.R_PEAK_MARGIN)
+
+
+def test_a_compounder_widening_its_margin_is_no_peak():
+    no_down_year = {**CHEAP_QUALITY, "op_margin_median": 0.20, "revenue_down_years": 0}
+    fast = {
+        **CHEAP_QUALITY, "op_margin_median": 0.20, "revenue_down_years": 1,
+        "revenue_growth": 0.25, "revenue_cagr": 0.25,
+    }
+    for metrics in (no_down_year, fast):
+        reasons = review.judge_held(metrics, weight=0.02).reasons
+        assert review.R_PEAK_MARGIN not in reasons
+    v = review.judge_held(no_down_year, weight=0.02, risk_share=0.02)
+    assert v.verdict == review.ADD
+
+
+def test_cheap_and_shrinking_is_a_value_trap():
+    _blocked(
+        {**CHEAP_QUALITY, "revenue_growth": -0.05, "revenue_cagr": -0.02},
+        review.R_SALES_FALLING,
+    )
+    one_bad_year = {**CHEAP_QUALITY, "revenue_growth": -0.05, "revenue_cagr": 0.06}
+    reasons = review.judge_held(one_bad_year, weight=0.02).reasons
+    assert review.R_SALES_FALLING not in reasons
+
+
+def test_a_sliding_margin_is_fading_pricing_power():
+    _blocked(
+        {**CHEAP_QUALITY, "op_margin_median": 0.40, "op_margin_change": -0.12},
+        review.R_MARGIN_FALLING,
+    )
+    small_slip = {**CHEAP_QUALITY, "op_margin_median": 0.40, "op_margin_change": -0.03}
+    reasons = review.judge_held(small_slip, weight=0.02).reasons
+    assert review.R_MARGIN_FALLING not in reasons
+
+
+def test_heavy_debt_stops_an_add_or_a_buy():
+    _blocked({**CHEAP_QUALITY, "net_debt_ebitda": 3.5}, review.R_DEBT)
+    light = {**CHEAP_QUALITY, "net_debt_ebitda": 2.0}
+    assert review.judge_held(light, weight=0.02, risk_share=0.02).verdict == review.ADD
+
+
+def test_cheap_on_its_kindest_reading_alone_is_no_margin_of_safety():
+    one_reading = {**CHEAP_QUALITY, "pe_fwd": 8.0, "fcf_yield": 0.02, "ev_ebitda": 30.0}
+    s = review.score(one_reading)
+    assert s.cheapness >= review.CHEAP > s.price_floor
+    _blocked(one_reading, review.R_ONE_READING)
+
+
+def test_cautions_never_make_an_add():
+    weak = {
+        **DEAR_WEAK, "op_margin_median": 0.05, "revenue_down_years": 2,
+        "net_debt_ebitda": 4.0, "revenue_growth": -0.1, "revenue_cagr": -0.1,
+    }
+    assert review.judge_held(weak, weight=0.02).verdict not in (review.ADD, review.BUY)
+    assert review.judge_candidate(weak).verdict == review.PASS

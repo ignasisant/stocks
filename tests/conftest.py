@@ -543,6 +543,21 @@ def _own_connector_state(_scratch):
 
 
 @pytest.fixture(autouse=True)
+def _own_revocations(_scratch):
+    """Revoked sessions in a per-test directory, like the connector's state:
+    `revocation.DIR` is the checkout's real `data/sessions`, and the index
+    over it is process-wide."""
+    from stocks import revocation
+
+    before = revocation.DIR
+    revocation.DIR = _own(_scratch, "sessions")
+    revocation.reset_for_tests()
+    yield
+    revocation.DIR = before
+    revocation.reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _forget_inconsistencies():
     """`data.inconsistency` is said once per window per process, so a test
     asserting the line would otherwise depend on which test said it first."""

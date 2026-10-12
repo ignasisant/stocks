@@ -30,7 +30,7 @@ from pathlib import Path
 
 from stocks.chat import clock
 from stocks.chat.tools import Action
-from stocks.portfolio import demo, doctor, edits, ledger, transfers
+from stocks.portfolio import demo, doctor, edits, ledger, positions, transfers
 from stocks.portfolio.ledger import Transaction
 
 Translate = Callable[..., str]
@@ -184,7 +184,8 @@ def _add(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
         return Draft(off, fill={
             "trade": side if side in ("buy", "sell") else "",
             "quantity": a["quantity"], "price": a["price"], "date": day,
-            "currency": currency})
+            "currency": currency,
+            "lots": _lots(act.ticker, currency, rows, ctx)})
     if missing:
         side = a.get("trade")
         trade = (_trade(side, ctx) if side in ("buy", "sell")
@@ -198,7 +199,8 @@ def _add(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
                    need=need),
             fill={"trade": side if side in ("buy", "sell") else "",
                   "quantity": a.get("quantity"), "price": a.get("price"),
-                  "date": a.get("date") or ctx.today, "currency": currency},
+                  "date": a.get("date") or ctx.today, "currency": currency,
+                  "lots": _lots(act.ticker, currency, rows, ctx)},
         )
     row = {
         "date": a.get("date") or ctx.today,
@@ -214,6 +216,24 @@ def _add(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
                      quantity=_n(a["quantity"]), ticker=act.ticker,
                      price=_n(a["price"]), currency=currency, date=row["date"])
     return _planned([{"op": "add", "row": row}], summary, ctx)
+
+
+def _lots(ticker: str, currency: str, rows: list[Transaction],
+          ctx: _Ctx) -> list[list[float]]:
+    """The parcels of `ticker` held in `currency`, as `[shares, cost per
+    share]` in the order a sale takes them: FIFO in the trade's own currency,
+    the replay `edits.plan` prices a sale with, so the form's live estimate
+    (`a2ui.trade_form`) agrees with the card Review turns it into. Empty for a
+    name the book does not hold, or cannot replay."""
+    mine = [t for t in transfers.relabel(
+                edits.select(rows, edits.Selector(ticker=ticker), ctx.resolve))
+            if t.currency == currency and t.action not in ("dividend", "fee")]
+    try:
+        lots = positions.open_lots(mine, to_base=edits._native)
+    except ValueError:
+        return []
+    return [[round(lot.quantity, 8), round(lot.cost_native / lot.quantity, 6)]
+            for lot in lots]
 
 
 def _price_off(ticker: str, price: float, day: str, currency: str,
@@ -404,7 +424,7 @@ def _close(act: Action, rows: list[Transaction], ctx: _Ctx) -> Draft:
             fill = None if len(held) > 1 else {
                 "ticker": label, "trade": "sell", "quantity": state.held,
                 "price": None, "date": a.get("date") or ctx.today,
-                "currency": currency}
+                "currency": currency, "lots": _lots(label, currency, rows, ctx)}
             return Draft(ctx.tr("chat.book_close_what", ticker=label), fill=fill)
         ops.append({"op": "add", "row": {
             "date": a.get("date") or (sale.date if sale else ctx.today),

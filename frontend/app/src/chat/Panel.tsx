@@ -224,6 +224,8 @@ export default function Panel({
     last?.role === "assistant" &&
     !last.error &&
     !last.stopped;
+  // Scrolled up from the end: the way back down, and the fade under it.
+  const below = !isAtBottom && chat.turns.length > 0;
   const named = (open?.title || "").trim();
   const state = chat.state;
   const provider = state?.providers.find((p) => p.id === state.answering);
@@ -412,7 +414,13 @@ export default function Panel({
               </p>
             )}
             <div
-              className={`ag-chat-scroll${regen ? " ag-chat-scroll-regen" : ""}`}
+              className={[
+                "ag-chat-scroll",
+                regen && "ag-chat-scroll-regen",
+                below && "ag-chat-scroll-fade",
+              ]
+                .filter(Boolean)
+                .join(" ")}
               ref={scrollRef}
             >
               <div className="ag-chat-stream" ref={contentRef}>
@@ -503,22 +511,30 @@ export default function Panel({
             {/* Regenerate, and only that: clearing the thread is destructive
                 and lives in the settings view, behind a confirmation. Drawn
                 for a finished answer — a refusal carries its own Retry. */}
-            {regen && (
-              <button type="button" className="ag-chat-regen" onClick={chat.regenerate}>
-                <Glyph name="refresh" size={13} />
-                {t("chat.regenerate")}
-              </button>
-            )}
-            {!isAtBottom && chat.turns.length > 0 && (
-              <button
-                type="button"
-                className={`ag-chat-down${regen ? " ag-chat-down-over" : ""}`}
-                title={t("chat.scroll_down")}
-                aria-label={t("chat.scroll_down")}
-                onClick={() => void scrollToBottom(calm ? "instant" : undefined)}
-              >
-                <Glyph name="down" size={18} />
-              </button>
+            {(regen || below) && (
+              <div className="ag-chat-float">
+                {below && (
+                  <button
+                    type="button"
+                    className="ag-chat-down"
+                    title={t("chat.scroll_down")}
+                    aria-label={t("chat.scroll_down")}
+                    onClick={() => void scrollToBottom(calm ? "instant" : undefined)}
+                  >
+                    <Glyph name="down" size={18} />
+                  </button>
+                )}
+                {regen && (
+                  <button
+                    type="button"
+                    className="ag-chat-regen"
+                    onClick={chat.regenerate}
+                  >
+                    <Glyph name="refresh" size={13} />
+                    {t("chat.regenerate")}
+                  </button>
+                )}
+              </div>
             )}
           </div>
           <Composer

@@ -42,7 +42,7 @@ import io
 import unicodedata
 from datetime import date, datetime
 
-from stocks.portfolio import statement
+from stocks.portfolio import statement, upload_guard
 from stocks.portfolio.degiro import _num
 from stocks.portfolio.ledger import Transaction
 from stocks.portfolio.statement import ParseResult
@@ -115,6 +115,7 @@ def parse(filename: str, data: bytes) -> ParseResult:
 def _xlsx_rows(data: bytes) -> list[list[str]]:
     import openpyxl  # deferred: only xlsx uploads pay the import
 
+    upload_guard.check(data)
     wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     try:
         return [[_cell_text(c) for c in row] for row in wb.worksheets[0].iter_rows()]

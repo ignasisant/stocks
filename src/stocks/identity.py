@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from stocks.config import load_watchlist
-from stocks.data.logo import logo_url, mirror_logo
+from stocks.data.logo import logo_url, mirror_logo, mirrored_logo
 
 # Where the server serves the mirrored logos (`server.STATIC_PATH`), without
 # the leading slash; the API hands it out absolute (`api.loaders.logo`).
@@ -105,6 +105,8 @@ def logo_src(
     ticker: str,
     static_dir: Path | None = None,
     prefix: str = STATIC_PREFIX,
+    *,
+    fetch: bool = True,
 ) -> str | None:
     """URL for a ticker's logo: this host's mirror first, the source second.
 
@@ -116,8 +118,14 @@ def logo_src(
 
     Resolved first: every logo source keys on the symbol, so a row the ledger
     stores as an ISIN would otherwise probe with a string no source knows.
+
+    `fetch=False` answers from the local mirror only, None on a miss: no
+    bucket, no probe, no domain lookup.
     """
     symbol = yahoo_symbol(ticker)
+    if not fetch:
+        name = mirrored_logo(symbol, static_dir or STATIC_LOGO_DIR)
+        return f"{prefix}{name}" if name else None
     if name := mirror_logo(symbol, static_dir or STATIC_LOGO_DIR):
         return f"{prefix}{name}"
     return logo_url(symbol)

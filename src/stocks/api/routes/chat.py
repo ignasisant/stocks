@@ -59,6 +59,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from stocks import accounts, navigation, obs
 from stocks.accounts import UserPaths
+from stocks.api import holds as cpu_hold
 from stocks.api import loaders, runs
 from stocks.api.deps import Account, ChatTurn, SurfaceAction, Writer
 from stocks.api.routes import chat_attach
@@ -1682,7 +1683,8 @@ def ask(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail="this thread is still being answered") from exc
     if runs.on_cloud_run():
-        runs.hold(run, str(request.url_for("hold", rid=run.id)))
+        url = str(request.url_for("hold", rid=run.id))
+        runs.hold(run, cpu_hold.pinned(url))
     return StreamingResponse(
         runs.tail(run),
         media_type="text/event-stream",

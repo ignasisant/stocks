@@ -100,13 +100,20 @@ async def _lifespan(app: FastAPI):
     yield
 
 
+#: The interactive docs and the schema list every route, guest-visible or
+#: not, so a deployment does not publish them unless it opts in. Cloud Run sets
+#: K_SERVICE on every instance; a local run keeps them.
+_PUBLISH_DOCS = not os.environ.get("K_SERVICE") or os.environ.get(
+    "STOCKS_API_DOCS", ""
+).lower() in ("1", "true", "yes")
+
 app = FastAPI(
     title="TopStocks API",
     version=API_VERSION,
     description=DESCRIPTION,
-    docs_url="/docs",
+    docs_url="/docs" if _PUBLISH_DOCS else None,
     redoc_url=None,
-    openapi_url="/openapi.json",
+    openapi_url="/openapi.json" if _PUBLISH_DOCS else None,
     lifespan=_lifespan,
 )
 
@@ -125,7 +132,9 @@ async def _stale_since(request: Request, call_next):
     token = cache.STALE.set({})
     # Where a refresh this request leaves behind can reach this service to keep
     # its CPU while it runs (`api/holds.py`).
-    hold = holds.BASE.set(str(request.base_url))
+    hold = holds.BASE.set(
+        holds.pinned(holds.base_of(request.scope, str(request.base_url)))
+    )
     try:
         response = await call_next(request)
         since = (cache.STALE.get() or {}).get("since")

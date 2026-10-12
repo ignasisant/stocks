@@ -18,7 +18,10 @@ from __future__ import annotations
 import secrets
 import threading
 import time
+from collections.abc import Mapping
 from contextvars import ContextVar
+from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Header, HTTPException, Response, status
 
@@ -35,6 +38,36 @@ HOLD_S = 280.0
 # at boot — has no front end to call.
 BASE: ContextVar[str | None] = ContextVar("hold_base", default=None)
 PATH = "v1/hold"
+
+
+def base_of(scope: Mapping[str, Any], base_url: str) -> str:
+    """The API's own base URL for a request: `base_url` with the mount kept.
+
+    Starlette builds `request.base_url` from the outermost app's root, so under
+    the shell's `/api` mount it names the site root, and a hold aimed there is
+    a 404. The mount is in the scope's `root_path`.
+    """
+    at = urlsplit(base_url)
+    root = scope.get("root_path", "").rstrip("/") + "/"
+    return urlunsplit((at.scheme, at.netloc, root, "", ""))
+
+
+def pinned(url: str) -> str:
+    """`url` on the deploy's declared origin (`APP_PUBLIC_URL`), when it has one.
+
+    A hold carries a token to whatever host it is aimed at, and a URL built
+    from the request takes its host from the caller's own Host header. The
+    front end refuses hosts it does not serve today; this keeps that from
+    being the only thing standing between a token and somebody else's server.
+    """
+    from stocks.notify.links import app_base
+
+    origin = app_base()
+    if not origin:
+        return url
+    to, at = urlsplit(origin), urlsplit(url)
+    return urlunsplit((to.scheme, to.netloc, at.path, at.query, at.fragment))
+
 
 _TOKEN = secrets.token_urlsafe(32)
 _lock = threading.Lock()

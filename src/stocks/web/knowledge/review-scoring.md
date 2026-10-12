@@ -2,7 +2,7 @@
 id: review-scoring
 title: How the Sell or add page scores holdings
 as_of: 2026-10-11
-tags: Vender o reforzar, Sell or add, review, calidad, quality score, precio, valoración, price score, cheapness, vender, sell, recortar, trim, mantener, hold, reforzar, add, comprar, buy, vigilar, watch, descartar, pass, apuesta, bet, sin valorar, unrated, FCF yield, rentabilidad por flujo de caja libre, concentración, peso, riesgo, impuesto, ventana de recompra, mapa calidad precio, target weight
+tags: Vender o reforzar, trampa de valor, value trap, margen en máximos, ciclo, margen de seguridad, deuda, PEG, P/E por crecimiento, barato para su crecimiento, Sell or add, review, calidad, quality score, precio, valoración, price score, cheapness, vender, sell, recortar, trim, mantener, hold, reforzar, add, comprar, buy, vigilar, watch, descartar, pass, apuesta, bet, sin valorar, unrated, FCF yield, rentabilidad por flujo de caja libre, concentración, peso, riesgo, impuesto, ventana de recompra, mapa calidad precio, target weight
 ---
 The Sell or add page (Vender o reforzar) gives every holding two 0-100 scores, one for the business and one for its price, and turns them plus the position's size into a verdict. It is a screen over your own records and public fundamentals, not advice.
 
@@ -10,9 +10,18 @@ The Sell or add page (Vender o reforzar) gives every holding two 0-100 scores, o
 On the Sell or add page, a mature company gets a Quality score and a Price score, both 0-100. Each is the plain average of its inputs, and a score needs at least two inputs, otherwise the name is Unrated rather than guessed.
 - Quality averages ROIC (0% scores 0, 40% scores 100), operating margin (0% to 40%), free-cash-flow yield (-2% to 4%, used only as "does it make cash") and the moat score as it is. If sales still grow 20% or more a year, the rule of 40 (growth plus FCF margin, 0% to 60%) joins as a fifth input.
 - Price averages forward P/E (8 scores 100, 40 scores 0, a forecast loss scores 0), FCF yield (0% to 10%) and EV/EBITDA (8 scores 100, 50 scores 0). Higher Price means cheaper.
+- The forward P/E counts as the better of itself and its growth-adjusted reading: P/E per point of sustained sales growth per share (a PEG on the app's own growth, net of share dilution so a company issuing shares gets less credit and one buying back gets more, capped at 40%, never the feed's PEG; shown as "P/E per growth"), where 0.5x scores 100 and 2.5x scores 0 (1x scores 75). A slow grower is not marked down; a fast one gets credit. At 1x or under the row says "cheap for its growth".
 - 60 or more on Quality is good; under 45 is weak. 50 or more on Price is cheap; under 30 is expensive.
 - The moat score (0-100, wide at 70+, narrow 45-70, none under 45) weighs persistent ROIC 35%, steady operating margins 25%, cash conversion 20%, durable growth 15% and no dilution 5%; it is a screen, not a verdict.
 - Growth is the sustained pace: the lower of the last quarter against a year earlier and the multi-year rate.
+
+## Warning flags that block Add and Buy
+On the Sell or add page, good scores are not enough when the numbers behind them may not hold. Any of these flags keeps a name at Hold or Watch, and the row names it. They only ever stop an Add or Buy, never cause one.
+- Margin at a peak: operating margin at least 1.5 times (and 5 points above) its median over the filed years, at a company whose sales fell in one of those years and that now grows under 20%. Likely the top of a cycle, not a new normal.
+- Sales falling: sales below a year ago and over the years. Cheap may just mean shrinking: the value trap.
+- Margin sliding: operating margin down 5 points or more since the first filed year, and by a quarter of its median. Pricing power fading.
+- Heavy debt: net debt 3 times EBITDA or more (lenders judged on their book are exempt).
+- Cheap on one reading: the Price score clears 50 only thanks to its kindest input; the mean of the other inputs is under 50. No margin of safety.
 
 ## Growth stage and early-stage bets
 The Sell or add page judges a company on a different yardstick when profits are not the right ruler.
@@ -32,7 +41,7 @@ For a stock you hold, the Sell or add page applies these rules in order, using t
 - Sell (target 0%): Quality and Price both under 40, or Quality under 60 on a position under 0.5% of the book.
 - Trim to 10%: 15% or more of the book in one company, whatever its quality.
 - Trim by half: Quality under 45 and the position weighs 6% or more, or carries 10% or more of the book's volatility (its share of risk).
-- Add to 5%: Quality 60+, Price 50+, data not broken and the position under 5%. A growth-stage name is added only to 3%.
+- Add to 5%: Quality 60+, Price 50+, data not broken, no warning flag and the position under 5%. A growth-stage name is added only to 3%.
 - Hold: none of the above. Funds show Core, money-market funds Cash, crypto and unscorable names Unrated. A company at 15%+ is still trimmed even when its numbers cannot be read.
 The Move column is the money from the weight change at today's prices. The plan strip totals To sell, To add, Net and Tax on the sales.
 
@@ -43,7 +52,7 @@ Each Sell or Trim row on the Sell or add page shows the extra tax this year's bi
 
 ## Outside names: buy, watch or pass
 The Outside the portfolio table judges watchlist names you do not hold, plus any tickers typed into "Weigh other tickers". Typed tickers are not saved to the watchlist; up to 10 can be added, and at most 30 outside names are judged.
-- Buy: Quality 60+, Price 50+ and data not broken. A good business at a good price.
+- Buy: Quality 60+, Price 50+, data not broken and no warning flag. A good business at a good price.
 - Watch: Quality 60+ but still dear, or Quality 45+ with Price 50+. Wait for a better entry.
 - Pass: neither bar is cleared.
 - Bet and Unrated apply as for holdings; funds and coins are Unrated, indices are skipped.

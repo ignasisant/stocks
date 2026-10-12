@@ -194,6 +194,7 @@ def main() -> None:
     # One client, 127.0.0.1, loading page after page: the per-IP burst limit
     # would start answering 429 halfway through the suite.
     server.CLIENT_MAX_DOCS = server.API_MAX_REQUESTS = 10**6
+    server.GUEST_API_MAX_REQUESTS = 10**6
     app = server.app
 
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")

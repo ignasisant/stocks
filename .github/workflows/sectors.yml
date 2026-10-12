@@ -34,6 +34,10 @@ concurrency:
   group: sectors
   cancel-in-progress: false
 
+# The token only reads the repo; nothing here pushes, comments or releases.
+permissions:
+  contents: read
+
 jobs:
   scan:
     runs-on: ubuntu-latest

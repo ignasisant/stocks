@@ -275,6 +275,10 @@ async def logout(request: Request) -> Response:
     cookie — and sending somebody to Google's global sign-out would sign them
     out of Gmail, which is a hostile surprise from a portfolio app.
     """
+    try:
+        session.end(request.cookies)
+    except Exception as exc:  # noqa: BLE001 — still clear this browser
+        obs.warn("session.end_failed", error_type=type(exc).__name__)
     response = _home(request)
     _clear(response, session.COOKIE, request)
     _clear(response, session.FLOW_COOKIE, request)

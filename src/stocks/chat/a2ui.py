@@ -18,8 +18,10 @@ drawer needs (a `DateTimeInput` among them, drawn as a day), plus four of its
 own — `Metric` (a label over a figure, the KPI readout), `Ticker` (a symbol
 with its logo, linking to its page: every ticker on screen is one), `Chart`
 (closes drawn as a line, one per symbol, the figures a server fetched and
-never a model's) and `Donut` (weights as a ring, one split or several keyed by
-name with `by` picking one) — and a `Slider` and a
+never a model's), `Donut` (weights as a ring, one split or several keyed by
+name with `by` picking one) and `TradeImpact` (what a trade being typed does
+to the position: the shares left and the sale's gain, or the new average
+cost, worked out live from the held parcels the server sent) — and a `Slider` and a
 `ChoicePicker` that may carry an `action`, sent when the reader lets go of the
 one or picks from the other. `chat/a2ui.tsx` draws exactly this set, and
 `tests/test_chat_a2ui.py` holds the two to each other.
@@ -56,6 +58,8 @@ CATALOG: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "Ticker": (frozenset({"symbol"}), frozenset()),
     "Chart": (frozenset({"series"}), frozenset({"mode", "label"})),
     "Donut": (frozenset({"slices"}), frozenset({"by", "label", "other"})),
+    "TradeImpact": (frozenset({"trade", "quantity", "price", "lots"}),
+                    frozenset({"currency", "labels"})),
 }
 
 
@@ -200,16 +204,33 @@ def trade_form(offer: dict, translate) -> list[dict]:
                   label=translate("chat.action_field_date"),
                   value=path("/form/date")),
     ]
-    root = component("root", "Row",
-                     children=["f_trade", *[f["id"] for f in figures]],
-                     align="end")
-    data = {"form": {
-        "trade": trade,
-        "quantity": _figure(fill.get("quantity")),
-        "price": _figure(fill.get("price")),
-        "date": str(fill.get("date") or ""),
-    }}
-    return surface(sid, [root, side, *figures], data)
+    row = component("f_row", "Row",
+                    children=["f_trade", *[f["id"] for f in figures]],
+                    align="end")
+    # How the position stands after the trade, as it is typed: the parcels
+    # come from the book (`book._lots`), the arithmetic runs in the drawer.
+    impact = component(
+        "f_impact", "TradeImpact",
+        trade=path("/form/trade"), quantity=path("/form/quantity"),
+        price=path("/form/price"), lots=path("/position/lots"),
+        currency=currency,
+        labels={
+            "held": translate("chat.book_metric_held"),
+            "gain": translate("chat.book_metric_gain"),
+            "avg": translate("chat.book_metric_avg"),
+            "over": translate("chat.book_metric_over", held="{held}"),
+        })
+    root = component("root", "Column", children=["f_row", "f_impact"])
+    data = {
+        "form": {
+            "trade": trade,
+            "quantity": _figure(fill.get("quantity")),
+            "price": _figure(fill.get("price")),
+            "date": str(fill.get("date") or ""),
+        },
+        "position": {"lots": list(fill.get("lots") or [])},
+    }
+    return surface(sid, [root, row, side, *figures, impact], data)
 
 
 def _figure(value) -> str:

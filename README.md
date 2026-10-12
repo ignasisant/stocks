@@ -835,7 +835,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$BASE/portfolio/positions?account=you
 curl -s -H "Authorization: Bearer $TOKEN" "$BASE/market/quotes?tickers=AAPL,MSFT,BTC-EUR"
 ```
 
-Interactive docs at `/api/docs`, the schema at `/api/openapi.json`.
+Interactive docs at `/api/docs`, the schema at `/api/openapi.json` — local runs only; on Cloud Run set `STOCKS_API_DOCS=1` to publish them.
 
 | Route | What it returns |
 |-------|-----------------|

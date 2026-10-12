@@ -115,6 +115,25 @@ export async function recall(url: string): Promise<Kept | undefined> {
   }
 }
 
+/**
+ * Empty the shelf before this device stops being signed in, then go to `to`.
+ *
+ * The next `/me` would empty it anyway, but only on the next visit: until
+ * then a shared computer keeps the last account's book on disk. Bounded, so a
+ * slow or broken IndexedDB never holds a sign-out hostage.
+ */
+export async function leave(to: string): Promise<void> {
+  const s = shelf;
+  ready = null;
+  if (s) {
+    await Promise.race([
+      s.reset({ owner: "", build: "" }).catch(() => undefined),
+      new Promise((resolve) => setTimeout(resolve, 600)),
+    ]);
+  }
+  window.location.assign(to);
+}
+
 function identity(body: unknown): string {
   const me = (body ?? {}) as { kind?: unknown; email?: unknown };
   return `${String(me.kind)}:${String(me.email ?? "")}`;

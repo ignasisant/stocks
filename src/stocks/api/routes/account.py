@@ -7,10 +7,10 @@ irreversible action has to be *named* by the caller who wants it, not merely
 requested, which is the same bar `DELETE /portfolio/transactions` sets for
 emptying a ledger.
 
-Deleting the data does not sign the browser out: the session cookie is cleared
-by `/auth/logout`. A client sends the reader there next, and
-the order matters — signing out first would take away the session this route
-authenticates with.
+Deleting the data also ends every session of the address (`session.end_all`),
+so a copy of the cookie cannot re-provision an empty account. The browser's
+own cookie is still cleared by `/auth/logout`, where a client sends the reader
+next.
 """
 
 from __future__ import annotations
@@ -84,5 +84,11 @@ def erase(caller: Authed, account: Writer, body: Erase) -> Erased:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="deletion failed and nothing was removed",
         ) from exc
+    try:
+        # The next request with this cookie would re-provision an empty
+        # account; every copy of it, on any device, has to stop here.
+        session.end_all(caller.email or "")
+    except Exception as exc:  # noqa: BLE001 — the data is already gone
+        obs.warn("account.revoke_failed", error_type=type(exc).__name__)
     obs.event("account.deleted", via="api")
     return Erased()

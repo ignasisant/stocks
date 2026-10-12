@@ -488,10 +488,25 @@ def writable(path: Path) -> Path:
 _prefs_locks: dict[str, threading.RLock] = {}
 _prefs_locks_guard = threading.Lock()
 
+# Keys that count rather than hold a setting. A `LoadedPrefs` saves them as the
+# difference from what it read, so two turns that each spent one unit leave
+# the file two higher — saved as plain values, both would write N+1 and the
+# daily allowance would lose a unit per overlap.
+COUNTER_PREFIXES = ("free_msgs::",)
 
-def _prefs_lock(prefs: Path) -> threading.RLock:
+
+def prefs_lock(prefs: Path) -> threading.RLock:
+    """The lock `save_prefs` takes; hold it to check-and-spend in one step."""
     with _prefs_locks_guard:
         return _prefs_locks.setdefault(str(prefs.resolve()), threading.RLock())
+
+
+_prefs_lock = prefs_lock
+
+
+def _counter(key: str, value: object) -> bool:
+    return (key.startswith(COUNTER_PREFIXES) and isinstance(value, int)
+            and not isinstance(value, bool))
 
 
 def save_prefs(
@@ -501,7 +516,9 @@ def save_prefs(
 
     A `LoadedPrefs` writes only the keys it changed since it was read (set,
     changed or removed), merged onto the file as it is now; nothing changed,
-    nothing written. Anything else replaces the file whole.
+    nothing written. A counter key (`COUNTER_PREFIXES`) merges as the change
+    this holder made, and the holder reads back the merged count. Anything
+    else replaces the file whole.
     """
     with _prefs_lock(prefs):
         if isinstance(values, LoadedPrefs):
@@ -512,7 +529,15 @@ def save_prefs(
             if not changed and not removed:
                 return
             stored = stored_prefs(prefs)
-            stored.update(changed)
+            for k, v in changed.items():
+                if _counter(k, v):
+                    held = stored.get(k, 0)
+                    held = held if _counter(k, held) else 0
+                    was = base.get(k, 0)
+                    was = was if _counter(k, was) else 0
+                    stored[k] = values[k] = max(0, held + v - was)
+                else:
+                    stored[k] = v
             for k in removed:
                 stored.pop(k, None)
             atomic.write_json(writable(prefs), stored, indent=2)
