@@ -81,6 +81,16 @@ def test_compute_metrics_derived():
     assert m["revenue_cagr"] > 0
 
 
+def test_compute_metrics_carries_the_history_the_review_cautions_read():
+    m = compute_metrics(sample_raw())
+    assert abs(m["op_margin_median"] - 0.30) < 1e-9
+    assert abs(m["op_margin_change"]) < 1e-9
+    assert m["revenue_down_years"] == 0
+    raw = sample_raw()
+    raw.income.loc["Total Revenue"] = [400e9, 380e9, 390e9, 350e9, 300e9]
+    assert compute_metrics(raw)["revenue_down_years"] == 1
+
+
 def test_compute_metrics_missing_data():
     raw = RawFundamentals("EMPTY")
     m = compute_metrics(raw)

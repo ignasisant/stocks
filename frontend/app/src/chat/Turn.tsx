@@ -28,7 +28,7 @@ import { useCallback, useId, useState } from "react";
 import { ApiError } from "../shell/api";
 import { useLang, useT } from "../shell/i18n";
 import { Glyph } from "./icons";
-import { Markdown } from "./markdown";
+import { href, Markdown } from "./markdown";
 import { Status } from "../ui/Status";
 import { addMemory, dropMemory, editMemory, rateTurn } from "./api";
 import {
@@ -166,7 +166,7 @@ function Sources({ web }: { web: { title: string; url: string }[] }) {
           <li key={i}>
             <a
               className="ag-chat-a"
-              href={source.url}
+              href={href(source.url) ?? undefined}
               target="_blank"
               rel="noopener noreferrer nofollow"
               title={source.title}

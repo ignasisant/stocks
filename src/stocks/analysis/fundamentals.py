@@ -500,7 +500,19 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     m["net_income_cagr"] = _series_cagr(raw.income, "Net Income")
     m["fcf_cagr"] = _series_cagr(raw.cashflow, "Free Cash Flow")
     m["share_dilution"] = _series_cagr(raw.income, "Diluted Average Shares")
-    m["moat"] = moat_score(raw).score
+    moat = moat_score(raw)
+    m["moat"] = moat.score
+    # Not KPIs: the operating margin over the filed years, so the review can
+    # tell a margin at a cyclical peak, or one sliding for years, from today's.
+    history = next(
+        (p.facts for p in moat.pillars if p.kind in ("op_margin", "op_margin_loss")), {}
+    )
+    m["op_margin_median"] = history.get("margin")
+    m["op_margin_change"] = history.get("change")
+    # Years sales fell: the cycle's signature, which steady compounders lack.
+    sales = next((p.facts for p in moat.pillars if p.key == "growth"), {})
+    years, up = sales.get("years"), sales.get("up")
+    m["revenue_down_years"] = years - up if years is not None and up is not None else None
     return m
 
 

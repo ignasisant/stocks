@@ -163,9 +163,8 @@ def mint(claims: Mapping[str, object]) -> str | None:
         "name": str(claims.get("name") or "")[:128],
         "picture": str(claims.get("picture") or "")[:512],
         "iat": int(time.time()),
-        # Not used to look anything up. It gives a log correlation key that is
-        # not the address, and a handle to revoke against if this ever grows a
-        # server-side session list — free now, awkward to retrofit.
+        # A log correlation key that is not the address, and the handle
+        # sign-out revokes (`end`, `stocks.revocation`).
         "sid": token_hex(16),
     }
     value = _seal(COOKIE, payload)
@@ -178,9 +177,34 @@ def mint(claims: Mapping[str, object]) -> str | None:
 def claims(cookies: Mapping[str, str]) -> dict | None:
     """The identity claims this request carries, or None."""
     payload = _open(COOKIE, cookies.get(COOKIE, ""), MAX_AGE)
-    if payload is None:
+    if payload is None or payload.get("v") != VERSION:
         return None
-    return payload if payload.get("v") == VERSION else None
+    from stocks import revocation
+
+    return None if revocation.revoked(payload) else payload
+
+
+def end(cookies: Mapping[str, str]) -> None:
+    """Sign-out: the session this cookie carries stops working everywhere.
+
+    Clearing the cookie only reaches the browser that asked; a copy of it
+    elsewhere would otherwise keep answering until `MAX_AGE`.
+    """
+    payload = _open(COOKIE, cookies.get(COOKIE, ""), MAX_AGE)
+    if not payload:
+        return
+    from stocks import revocation
+
+    iat = payload.get("iat")
+    expires = (iat if isinstance(iat, int) else int(time.time())) + MAX_AGE
+    revocation.revoke_session(str(payload.get("sid") or ""), expires, MAX_AGE)
+
+
+def end_all(email: str) -> None:
+    """Account erasure: no cookie minted for `email` until now opens anything."""
+    from stocks import revocation
+
+    revocation.revoke_email(email, MAX_AGE)
 
 
 def signed_in_email(cookies: Mapping[str, str]) -> str | None:

@@ -16,6 +16,11 @@ network, so every threshold below is testable with a dict.
   pace that is most of its case counts for nothing.
 * *Cheapness* — is the price asking little for it? Forward P/E, free-cash-flow
   yield and EV/EBITDA, each mapped linearly between a dear and a cheap end.
+  The forward P/E reads as the better of itself and itself per point of
+  sustained sales growth per share (a PEG on the app's own growth, net of
+  dilution, never the feed's PEG): thirty times earnings is dear for a
+  company growing 5% and cheap for one growing 40%, and a slow grower is not
+  marked down for being slow.
 
 A score needs two of its inputs or it is None: one KPI is an anecdote. A name
 that cannot be scored is `unrated`, never "hold by default" dressed up as an
@@ -64,6 +69,17 @@ screen that ranks a broken number first is worse than one that ranks nothing.
 A yield over 25% that the forward P/E backs (no more than twice the earnings
 yield, under 50%) is a real price, not a currency mix: a name the market has
 given up on can trade at five times earnings and yield 30% in cash.
+
+**What stops an add or a buy.** Two good scores are not enough when the
+numbers behind them are the kind that lie: a margin at a cyclical peak (well
+above its own median over the filed years, at a company whose sales have
+fallen in one of them, and without the fast growth that would make it
+operating leverage), sales falling now and over the years or a
+margin sliding for years (the value trap: cheap because it is shrinking),
+net debt at three times EBITDA or more, or a price that is cheap only on
+its kindest reading (the mean clears the bar, the other inputs without the
+best one do not: a range, not a point, has to be cheap). Each holds the name
+at hold or watch and says why; none of them ever pushes a name into an add.
 
 **Verdicts are keys.** The client translates them, the same way the sector
 page's regime travels as a band key. Held names: sell, trim, hold, add, plus
@@ -128,6 +144,27 @@ PRE_REVENUE_PS = 40.0
 DEEP_BURN_MARGIN = -1.0
 # Sustained growth from which a mature name's quality counts the rule of 40.
 RULE_40_MIN = 0.20
+# Forward P/E per point of sustained sales growth per share: 0.5x scores 100,
+# 2.5x scores 0, so 1x (the ticker page's "cheap" band) reads 75 and 1.5x sits
+# on the cheap bar. Growth past `PEG_GROWTH_CAP` is a cycle or a base effect,
+# not a pace to pay for; at or under `PEG_CHEAP` the row says it is cheap for
+# its growth.
+PEG_LO = 0.5
+PEG_HI = 2.5
+PEG_GROWTH_CAP = 0.40
+PEG_CHEAP = 1.0
+# An operating margin this many times its own median over the filed years,
+# and at least `PEAK_GAP` above it, is a peak at a company whose sales fell in
+# one of those years, unless they now grow `RULE_40_MIN`. Without a down year
+# a widening margin is a compounder's operating leverage, not a cycle.
+PEAK_RATIO = 1.5
+PEAK_GAP = 0.05
+# A margin down this much since the first filed year, and by this share of
+# its median, has been sliding: the business is losing its pricing.
+MARGIN_SLIDE = 0.05
+MARGIN_SLIDE_SHARE = 0.25
+# Net debt over EBITDA from which a cheap price may be the lenders' claim.
+HIGH_DEBT = 3.0
 # Years of cash at the current burn: under the first, a raise (and the
 # dilution with it) is close; over the second, the company can wait.
 RUNWAY_SHORT = 1.5
@@ -153,6 +190,7 @@ CHEAP = 50.0
 #: The metric keys a row carries back to the client, in display order.
 SHOWN = (
     "pe_fwd",
+    "growth_pe",
     "fcf_yield",
     "owner_fcf_yield",
     "ev_ebitda",
@@ -214,6 +252,11 @@ R_LONG_RUNWAY = "long_runway"
 R_BET_HEAVY = "bet_heavy"
 R_FCF_FLOAT = "fcf_float"
 R_SHARE_PAY = "share_pay"
+R_CHEAP_FOR_GROWTH = "cheap_for_growth"
+R_PEAK_MARGIN = "peak_margin"
+R_SALES_FALLING = "sales_falling"
+R_MARGIN_FALLING = "margin_falling"
+R_ONE_READING = "cheap_on_one_reading"
 
 # Reasons that read a loss as a fault; in the growth and early stages it is
 # the stage itself, and the row says so once instead.
@@ -249,6 +292,14 @@ def _mean(parts: list[float]) -> float | None:
     return sum(parts) / len(parts) if len(parts) >= 2 else None
 
 
+def _without_best(parts: list[float]) -> float | None:
+    """The mean once the kindest input is left out: the price a sceptic reads."""
+    if len(parts) < 2:
+        return None
+    rest = sorted(parts)[:-1]
+    return sum(rest) / len(rest)
+
+
 @dataclass(frozen=True)
 class Scores:
     quality: float | None
@@ -257,6 +308,8 @@ class Scores:
     stage: str = MATURE
     #: Free cash flow left out because it is a float, not earnings.
     fcf_float: bool = False
+    #: Cheapness without its kindest input (see `_without_best`).
+    price_floor: float | None = None
 
     @property
     def total(self) -> float | None:
@@ -279,6 +332,28 @@ def sustained_growth(metrics: Mapping) -> float | None:
     if recent is not None and long_run is not None:
         return min(recent, long_run)
     return recent if recent is not None else long_run
+
+
+def per_share_growth(metrics: Mapping) -> float | None:
+    """Sustained sales growth per share: what a holder's slice grows by once
+    new shares (or buybacks) have diluted (or concentrated) it."""
+    growth = sustained_growth(metrics)
+    if growth is None:
+        return None
+    dilution = _num(metrics, "share_dilution")
+    if dilution is None or dilution <= -1:
+        return growth
+    return (1 + growth) / (1 + dilution) - 1
+
+
+def growth_pe(metrics: Mapping) -> float | None:
+    """Forward P/E per point of sustained per-share sales growth; None
+    without a positive P/E or positive growth."""
+    pe = _num(metrics, "pe_fwd")
+    growth = per_share_growth(metrics)
+    if pe is None or pe <= 0 or growth is None or growth <= 0:
+        return None
+    return pe / (min(growth, PEG_GROWTH_CAP) * 100)
 
 
 def _unsold(metrics: Mapping) -> bool:
@@ -360,7 +435,11 @@ def score(metrics: Mapping) -> Scores:
     cheap: list[float] = []
     if pe is not None:
         # A forward loss has no multiple; it is the dear end, not a missing one.
-        cheap.append(_lin(-pe, -40.0, -8.0) if pe > 0 else 0.0)
+        pe_score = _lin(-pe, -40.0, -8.0) if pe > 0 else 0.0
+        peg = growth_pe(metrics)
+        if peg is not None:
+            pe_score = max(pe_score, _lin(-peg, -PEG_HI, -PEG_LO))
+        cheap.append(pe_score)
     if fcf is not None:
         cheap.append(_lin(fcf, 0.0, 0.10))
     if ev_ebitda is not None and ev_ebitda > 0:
@@ -371,7 +450,11 @@ def score(metrics: Mapping) -> Scores:
         cheap.append(_lin(-pb, -4.0, -1.0))
 
     return Scores(
-        quality=_mean(quality), cheapness=_mean(cheap), suspect=suspect, fcf_float=floated
+        quality=_mean(quality),
+        cheapness=_mean(cheap),
+        suspect=suspect,
+        fcf_float=floated,
+        price_floor=_without_best(cheap),
     )
 
 
@@ -430,7 +513,54 @@ def _growth_scores(
         suspect=suspect,
         stage=GROWTH,
         fcf_float=floated,
+        price_floor=_without_best(cheap),
     )
+
+
+def _cautions(metrics: Mapping, s: Scores) -> list[str]:
+    """Why two good scores still do not make an add or a buy (see the module
+    docstring): the reasons the numbers behind them may not hold."""
+    out: list[str] = []
+    margin = _num(metrics, "op_margin")
+    median = _num(metrics, "op_margin_median")
+    change = _num(metrics, "op_margin_change")
+    growth = sustained_growth(metrics)
+    if s.stage == MATURE:
+        if (
+            margin is not None
+            and median is not None
+            and margin - median >= PEAK_GAP
+            and (median <= 0 or margin >= PEAK_RATIO * median)
+            and (_num(metrics, "revenue_down_years") or 0) >= 1
+            and (growth is None or growth < RULE_40_MIN)
+        ):
+            out.append(R_PEAK_MARGIN)
+        paces = [
+            g
+            for g in (_num(metrics, "revenue_growth"), _num(metrics, "revenue_cagr"))
+            if g is not None
+        ]
+        if paces and max(paces) < 0:
+            out.append(R_SALES_FALLING)
+        if (
+            change is not None
+            and median is not None
+            and median > 0
+            and change <= -MARGIN_SLIDE
+            and -change >= MARGIN_SLIDE_SHARE * median
+        ):
+            out.append(R_MARGIN_FALLING)
+    debt = _num(metrics, "net_debt_ebitda")
+    if debt is not None and debt >= HIGH_DEBT and not s.fcf_float:
+        out.append(R_DEBT)
+    if (
+        s.cheapness is not None
+        and s.cheapness >= CHEAP
+        and s.price_floor is not None
+        and s.price_floor < CHEAP
+    ):
+        out.append(R_ONE_READING)
+    return out
 
 
 def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
@@ -479,8 +609,9 @@ def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
     share_pay = _num(metrics, "sbc_fcf")
     if share_pay is not None and share_pay >= SHARE_PAY:
         out.append(R_SHARE_PAY)
-    if debt is not None and debt >= 3:
+    if debt is not None and debt >= HIGH_DEBT:
         out.append(R_DEBT)
+    out.extend(r for r in _cautions(metrics, s) if r not in out)
     if earnings is not None and earnings <= -0.05:
         out.append(R_SHRINKING)
     elif growth is not None and growth >= 0.20:
@@ -502,6 +633,9 @@ def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
         rule_40 = _rule_40(metrics, s.fcf_float)
         if rule_40 is not None and rule_40 >= 0.40:
             out.append(R_RULE_40)
+        peg = growth_pe(metrics)
+        if peg is not None and peg <= PEG_CHEAP:
+            out.append(R_CHEAP_FOR_GROWTH)
     # A long runway only matters to a company that needs one; a short one
     # matters to any company burning cash.
     out.extend(
@@ -548,7 +682,9 @@ class Verdict:
 
 
 def _shown(metrics: Mapping | None) -> dict[str, float | None]:
-    return {key: _num(metrics or {}, key) for key in SHOWN}
+    metrics = metrics or {}
+    derived = {"growth_pe": growth_pe(metrics)}
+    return {key: derived[key] if key in derived else _num(metrics, key) for key in SHOWN}
 
 
 def _kind_verdict(kind: str | None, held: bool) -> Verdict | None:
@@ -629,7 +765,14 @@ def judge_held(
         (w is not None and w >= HEAVY) or (risk_share is not None and risk_share >= RISKY)
     ):
         verdict, target = TRIM, (w * TRIM_KEEPS if w is not None else None)
-    elif q >= GOOD and c >= CHEAP and not s.suspect and w is not None and w < add_to:
+    elif (
+        q >= GOOD
+        and c >= CHEAP
+        and not s.suspect
+        and not _cautions(metrics or {}, s)
+        and w is not None
+        and w < add_to
+    ):
         verdict, target = ADD, add_to
         position.append(R_UNDERWEIGHT)
 
@@ -650,7 +793,7 @@ def judge_candidate(metrics: Mapping | None, *, kind: str | None = "stock") -> V
     if s.quality is None or s.cheapness is None:
         return _unscored(s, shown)
     q, c = s.quality, s.cheapness
-    if q >= GOOD and c >= CHEAP and not s.suspect:
+    if q >= GOOD and c >= CHEAP and not s.suspect and not _cautions(metrics or {}, s):
         verdict = BUY
     elif q >= GOOD or (q >= WEAK and c >= CHEAP):
         verdict = WATCH

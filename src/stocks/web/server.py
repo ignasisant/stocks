@@ -63,6 +63,7 @@ from starlette.responses import (
 from starlette.routing import Mount, Route
 
 from stocks import api, navigation, obs, session
+from stocks.api import security as api_security
 from stocks.connector import oauth as connector_oauth
 from stocks.connector.server import door as connector_door
 from stocks.secrets_env import secret
@@ -403,6 +404,13 @@ _UNMETERED = (ASSET_BASE, "/livez", "/healthz", STATIC_PATH, APP_ASSETS)
 # must not take the data with it.
 API_MAX_REQUESTS = 300
 
+# The share of that an anonymous caller gets, on a key of its own. Guests reach
+# the open data routes (ticker pages, search, sectors, bulk profiles), each a
+# possible upstream fetch from the one IP Yahoo throttles for everybody; a
+# signed-in reader is also metered per account (`deps._burst`), a guest only
+# here. Six ticker pages a minute is a person reading, not a script.
+GUEST_API_MAX_REQUESTS = 120
+
 # The MCP connector, on two more keys. `/mcp` is one request per tool call and
 # arrives from Claude's servers, which many people share, so this is only a
 # floor against a flood — each account has its own budget (connector/tools.py).
@@ -431,6 +439,16 @@ TRUSTED_PROXY_HOPS = ratelimit.TRUSTED_PROXY_HOPS
 client_ip = ratelimit.client_ip
 
 
+def _anonymous(request: Request) -> bool:
+    """Whether an API request names nobody: no session, no valid token. A
+    bogus Authorization header does not count as one, or it would be the way
+    around the guest budget."""
+    if session.signed_in_email(request.cookies):
+        return False
+    authorization = request.headers.get("authorization", "")
+    return not (authorization and api_security._token_matches(authorization))
+
+
 class ClientThrottle(BaseHTTPMiddleware):
     """Per-client burst limit on document requests, outermost in the stack.
 
@@ -455,6 +473,12 @@ class ClientThrottle(BaseHTTPMiddleware):
             allowed = ratelimit.allow(
                 key, max_events=budget, window_s=CLIENT_WINDOW_S
             )
+            if allowed and kind == "api" and _anonymous(request):
+                key = f"guest_api::{client_ip(request)}"
+                allowed = ratelimit.allow(
+                    key, max_events=GUEST_API_MAX_REQUESTS,
+                    window_s=CLIENT_WINDOW_S,
+                )
         except Exception:
             return await call_next(request)
         if not allowed:
@@ -507,7 +531,7 @@ class SecurityHeaders(BaseHTTPMiddleware):
         h.setdefault("Content-Security-Policy", "frame-ancestors 'self'")
         h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         h.setdefault("Permissions-Policy",
-                     "camera=(), microphone=(), geolocation=()")
+                     "camera=(), microphone=(self), geolocation=()")
         proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
         if (proto or request.url.scheme) == "https":
             h.setdefault("Strict-Transport-Security",
@@ -873,7 +897,17 @@ async def static_file(request: Request) -> Response:
     target = (_STATIC / name).resolve()
     if _STATIC.resolve() not in target.parents or not target.is_file():
         return Response("Not found", status_code=404, media_type="text/plain")
-    return FileResponse(target, headers={"Cache-Control": "public, max-age=86400"})
+    return FileResponse(target, headers={
+        "Cache-Control": "public, max-age=86400",
+        # Mirrored from third-party hosts; an SVG opened directly on our origin
+        # must not run script against a signed-in session.
+        "Content-Security-Policy": _STATIC_CSP,
+    })
+
+
+_STATIC_CSP = (
+    "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"
+)
 
 
 # A Vite content hash in a built file's name: `app-Ck2h9Xw1.js`,

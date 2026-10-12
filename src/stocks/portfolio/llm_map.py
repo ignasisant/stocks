@@ -47,7 +47,7 @@ from typing import TYPE_CHECKING
 from stocks import obs
 from stocks.chat import structured
 from stocks.data import crypto
-from stocks.portfolio import instruments, lexicon
+from stocks.portfolio import instruments, lexicon, upload_guard
 from stocks.portfolio.ledger import ACTIONS, RETURN_OF_CAPITAL, Transaction
 from stocks.portfolio.statement import ParseResult
 
@@ -184,6 +184,7 @@ def _read_csv(data: bytes) -> list[list[str]]:
 def _read_excel(data: bytes) -> list[list[str]]:
     import pandas as pd
 
+    upload_guard.check(data)
     frame = pd.read_excel(io.BytesIO(data), header=None, dtype=str)
     return [_cells(r) for r in frame.itertuples(index=False, name=None)]
 
@@ -235,7 +236,7 @@ def _read_pdf(data: bytes) -> list[list[str]]:
     tables: list[list[list[str]]] = []
     positioned: list[list[str]] = []
     with pdfplumber.open(io.BytesIO(data)) as pdf:
-        for page in pdf.pages:
+        for page in upload_guard.pages(pdf):
             found = page.extract_tables() or []
             # pdfplumber leaves an empty cell as None; downstream reads strings.
             tables.extend([[c or "" for c in row] for row in t] for t in found)
@@ -876,7 +877,7 @@ def _pdf_batches(data: bytes) -> list[str]:
 
     pages: list[str] = []
     with pdfplumber.open(io.BytesIO(data)) as pdf:
-        for page in pdf.pages:
+        for page in upload_guard.pages(pdf):
             rows = page.extract_tables() or []
             text = (_page_text([_cells(r) for t in rows for r in t]) if rows
                     else _page_text(_words_grid(page)))

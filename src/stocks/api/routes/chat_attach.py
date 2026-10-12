@@ -58,6 +58,7 @@ from stocks.portfolio import (
     last_import,
     llm_map,
     platforms,
+    upload_guard,
 )
 from stocks.portfolio.ledger import Transaction, add_many, all_transactions
 from stocks.portfolio.statement import ParseResult
@@ -249,6 +250,12 @@ def _decode(content: str) -> bytes:
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"attachments are capped at {MAX_UPLOAD_MB} MB",
         )
+    try:
+        upload_guard.check(raw)
+    except upload_guard.TooCostly as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)
+        ) from exc
     return raw
 
 

@@ -1108,6 +1108,14 @@ def logo(ticker: str) -> str | None:
     return identity.logo_src(ticker, prefix="/" + identity.STATIC_PREFIX)
 
 
+def mirrored_logo(ticker: str) -> str | None:
+    """`logo`, from this host's mirror only — never a network call. Not
+    memoized: a stat per row, and a miss must see the file once it lands."""
+    return identity.logo_src(
+        ticker, prefix="/" + identity.STATIC_PREFIX, fetch=False
+    )
+
+
 @ttl_cache(_IDENTITY_TTL, max_entries=64)
 def brand_logo(broker: str) -> str | None:
     """Same-origin logo for a broker brand — the custody marks in the header.

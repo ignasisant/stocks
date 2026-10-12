@@ -18,6 +18,7 @@ from stocks.analysis.portfolio import (
 from stocks.api import loaders
 from stocks.api.deps import Account
 from stocks.api.schemas import Profile, Profiles, Quote, Quotes
+from stocks.api.security import Who
 
 router = APIRouter(prefix="/market", tags=["market"])
 
@@ -68,7 +69,7 @@ def quotes(
 
 
 @router.get("/profiles", response_model=Profiles, summary="Names and logos in bulk")
-def profiles(account: Account, tickers: Annotated[str, Query(
+def profiles(account: Account, who: Who, tickers: Annotated[str, Query(
     description="Comma-separated tickers, e.g. AAPL,MSFT,BTC-EUR.",
 )]) -> Profiles:
     """What a list of tickers is called, and the logo to draw beside each.
@@ -84,7 +85,10 @@ def profiles(account: Account, tickers: Annotated[str, Query(
 
     No fetch. Names and logos come from caches the account has already warmed,
     so a name nobody knows is an empty string and a logo nobody has is null —
-    never a guess, and never a request per row.
+    never a guess, and never a request per row. A signed-in reader's cold logo
+    is still mirrored once; a guest's is answered from the mirror alone, so an
+    anonymous caller cannot turn fifty made-up symbols into fifty upstream
+    probes.
     """
     wanted = [t.strip().upper() for t in tickers.split(",") if t.strip()]
     if not wanted:
@@ -102,6 +106,7 @@ def profiles(account: Account, tickers: Annotated[str, Query(
     from stocks.data.funds import is_fund
 
     watchlist = str(account.watchlist)
+    logo = loaders.mirrored_logo if who.kind == "guest" else loaders.logo
 
     def one(ticker: str) -> Profile:
         resolved = loaders.display_symbol(ticker)
@@ -110,7 +115,7 @@ def profiles(account: Account, tickers: Annotated[str, Query(
             ticker=ticker,
             symbol=resolved,
             name=name,
-            logo=loaders.logo(ticker),
+            logo=logo(ticker),
             is_crypto=is_crypto(resolved),
             # Cache-only, like the name: a quoteType lookup per row is the
             # request-per-row this route exists to avoid.

@@ -45,6 +45,7 @@ export function percent(
 /** The KPIs a row carries, in display order (`stocks.analysis.review.SHOWN`). */
 export const SHOWN = [
   "pe_fwd",
+  "growth_pe",
   "fcf_yield",
   "owner_fcf_yield",
   "ev_ebitda",
@@ -62,6 +63,7 @@ export const SHOWN = [
 
 /** The ones the KPI catalog lacks; their words are `review.metric_<key>`. */
 export const OWN_LABEL = new Set<string>([
+  "growth_pe",
   "owner_fcf_yield",
   "revenue_growth",
   "fcf_margin",
@@ -71,6 +73,7 @@ export const OWN_LABEL = new Set<string>([
 /** The KPIs a row carries, each in its own unit. */
 const UNITS: Record<string, "pct" | "x" | "score" | "years"> = {
   pe_fwd: "x",
+  growth_pe: "x",
   ev_ebitda: "x",
   ev_sales: "x",
   net_debt_ebitda: "x",

@@ -108,3 +108,4 @@ def test_a_trade_form_presets_what_was_said(said):
                .get("components", []) if c["id"] == "f_trade"]
     # Unsaid, the side starts blank: never a sale booked as a buy by default.
     assert side["options"][0]["value"] == ("buy" if said else "")
+    assert data["position"] == {"lots": []}

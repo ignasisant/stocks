@@ -19,7 +19,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from stocks import accounts
+from stocks import accounts, revocation
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import notify as notify_routes
 from stocks.notify import telegram
@@ -275,7 +275,8 @@ def test_the_polling_read_looks_in_the_bucket_first(
         notify_routes.storage, "restore", lambda path: seen.append(path)
     )
     signed_in.get("/v1/notify/telegram")
-    assert seen == [account.prefs]
+    # The session check restores its own revocation list on first touch.
+    assert [p for p in seen if p.parent != revocation.DIR] == [account.prefs]
 
 
 # ----------------------------------------------------------------- feedback
@@ -316,6 +317,20 @@ def test_an_unreadable_screenshot_is_refused_not_stored(
         ).status_code
         == 422
     )
+
+
+def test_a_screenshot_that_is_not_a_jpeg_is_refused(
+    client, account, signed_in, monkeypatch
+):
+    import base64
+
+    monkeypatch.setattr(
+        "stocks.web.feedback.submit",
+        lambda *a, **k: pytest.fail("nothing should be stored"),
+    )
+    html = base64.b64encode(b"<html><script>alert(1)</script>").decode()
+    response = signed_in.post("/v1/feedback", json={"text": "hi", "shot": html})
+    assert response.status_code == 422
 
 
 def test_empty_feedback_is_not_a_submission(client, account, signed_in):

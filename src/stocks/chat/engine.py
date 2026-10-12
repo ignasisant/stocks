@@ -410,6 +410,7 @@ def free_daily_cap(prefs: dict | None = None) -> int:
 FREE_GLOBAL_DAILY_CAP = 400
 _global_free: dict = {"day": "", "used": 0}
 _global_free_loaded = False
+_global_free_lock = threading.Lock()
 
 # Where the counter survives a restart. Cloud Run recycles the container on
 # every deploy and on idle scale-to-zero, and an in-memory counter hands out a
@@ -462,12 +463,18 @@ def _save_global_free() -> None:
 def _spend_global_free() -> bool:
     _load_global_free()
     day = time.strftime("%Y-%m-%d")
-    if _global_free["day"] != day:
-        _global_free["day"], _global_free["used"] = day, 0
-    if _global_free["used"] >= free_global_daily_cap():
+    cap = free_global_daily_cap()
+    # Check and take under one lock: parallel turns each reading `used` below
+    # the cap would all pass it. The save stays outside, it reaches the bucket.
+    with _global_free_lock:
+        if _global_free["day"] != day:
+            _global_free["day"], _global_free["used"] = day, 0
+        spent = _global_free["used"] < cap
+        if spent:
+            _global_free["used"] += 1
+    if not spent:
         obs.event("llm.free.global_cap")
         return False
-    _global_free["used"] += 1
     _save_global_free()
     return True
 
@@ -2814,12 +2821,32 @@ def _charge(prefs: dict, prefs_path: Path, provider: Provider) -> bool:
     """
     if provider.id != "free":
         return True
+    from stocks import accounts
     from stocks.web import auth
 
-    if not spend_free_quota(prefs):
-        return False
-    auth.save_prefs(prefs, prefs_path)
+    # Checked against the file, not the dict this turn read minutes ago, and
+    # under the file's lock: two turns of one account racing for the last unit
+    # would otherwise both see it free.
+    with accounts.prefs_lock(prefs_path):
+        _fresh_free_count(prefs, prefs_path)
+        if not spend_free_quota(prefs):
+            return False
+        auth.save_prefs(prefs, prefs_path)
     return True
+
+
+def _fresh_free_count(prefs: dict, prefs_path: Path) -> None:
+    """Bring today's counter in `prefs` up to what the file holds now."""
+    from stocks import accounts
+
+    key = f"free_msgs::{time.strftime('%Y-%m-%d')}"
+    try:
+        held = int(accounts.stored_prefs(prefs_path).get(key, 0) or 0)
+    except (TypeError, ValueError):
+        return
+    prefs[key] = held
+    if isinstance(prefs, accounts.LoadedPrefs):
+        prefs.base[key] = held
 
 
 def _refund(prefs: dict, prefs_path: Path, provider: Provider) -> None:

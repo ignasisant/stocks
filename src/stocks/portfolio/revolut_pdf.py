@@ -32,7 +32,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from stocks.portfolio import revolut
+from stocks.portfolio import revolut, upload_guard
 from stocks.portfolio.statement import ParseResult
 
 # The Type strings Revolut uses, longest-first so "DIVIDEND TAX (CORRECTION)"
@@ -136,7 +136,7 @@ def parse_pdf(source: str | Path | bytes) -> ParseResult:
     with pdfplumber.open(opened) as pdf:
         lines = [
             line
-            for page in pdf.pages
+            for page in upload_guard.pages(pdf)
             for line in (page.extract_text() or "").splitlines()
         ]
     return parse_lines(lines)

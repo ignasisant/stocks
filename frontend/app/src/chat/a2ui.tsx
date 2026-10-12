@@ -14,15 +14,18 @@
  * basic catalog's layout and inputs (`DateTimeInput` as a day), plus Aguait's `Metric` (the KPI readout),
  * `Ticker` (a symbol with its logo and its link — every ticker on screen is
  * one), `Chart` (closes the server fetched, drawn as a line: `chart.tsx`) and
- * `Donut` (the book's weights the server summed: `donut.tsx`), and a `Slider`
+ * `Donut` (the book's weights the server summed: `donut.tsx`), `TradeImpact`
+ * (a trade being typed, against the parcels held: `tradeImpact`), and a `Slider`
  * and a `ChoicePicker` that send their `action` when the reader lets go of
  * the one or picks from the other. A `number` field takes only digits and
  * one decimal mark.
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { moneyIn, percent, shares } from "../pages/portfolio/format";
+import { useLang } from "../shell/i18n";
 import { TickerCell } from "../shell/tickers";
-import { Kpi, type Tone } from "../ui/Kpi";
+import { Kpi, type Tone, toneOf } from "../ui/Kpi";
 import { ToggleChip, ToggleRow } from "../ui/Toggle";
 import { type Line, LineChart } from "./chart";
 import { AllocationDonut } from "./donut";
@@ -263,6 +266,118 @@ function Range({ part, data, set, fire, disabled }: Draw) {
   );
 }
 
+/** A typed figure ("26,51" or "26.51") as a number, or NaN. */
+const typedNumber = (value: unknown) =>
+  str(value).trim() ? Number(str(value).replace(",", ".")) : NaN;
+
+export type Impact = {
+  held: number;
+  after: number | null;
+  /** A sale: proceeds less the cost of the parcels it takes, oldest first. */
+  gain?: { amount: number; ratio: number | null };
+  /** A purchase: the average cost per share before and after. */
+  avg?: { before: number | null; after: number };
+};
+
+/**
+ * What a trade does to a position held as `lots` (`[shares, cost per share]`,
+ * in the order a sale takes them — FIFO, as the ledger plan prices it): the
+ * shares left, and a sale's gain or a purchase's new average cost. Null until
+ * the side and a share count are in; `after` null is a sale of more than is
+ * held. The price may still be missing: the shares are known without it.
+ */
+export function tradeImpact(
+  trade: string,
+  quantity: number,
+  price: number,
+  lots: [number, number][],
+): Impact | null {
+  if ((trade !== "buy" && trade !== "sell") || !(quantity > 0)) return null;
+  const held = lots.reduce((sum, [q]) => sum + q, 0);
+  const cost = lots.reduce((sum, [q, c]) => sum + q * c, 0);
+  const priced = price > 0;
+  if (trade === "buy") {
+    const after = held + quantity;
+    return {
+      held,
+      after,
+      ...(priced && {
+        avg: {
+          before: held > 0 ? cost / held : null,
+          after: (cost + quantity * price) / after,
+        },
+      }),
+    };
+  }
+  if (quantity - held > 1e-9) return { held, after: null };
+  let left = quantity;
+  let basis = 0;
+  for (const [q, c] of lots) {
+    const take = Math.min(q, left);
+    basis += take * c;
+    left -= take;
+    if (left <= 1e-9) break;
+  }
+  const amount = quantity * price - basis;
+  return {
+    held,
+    after: Math.max(held - quantity, 0),
+    ...(priced && { gain: { amount, ratio: basis > 0 ? amount / basis : null } }),
+  };
+}
+
+function TradeFigures({ part, data }: Draw) {
+  const lang = useLang();
+  const labels = (part.labels ?? {}) as Record<string, string>;
+  const lots = resolve(part.lots, data);
+  const impact = tradeImpact(
+    str(resolve(part.trade, data)),
+    typedNumber(resolve(part.quantity, data)),
+    typedNumber(resolve(part.price, data)),
+    Array.isArray(lots) ? (lots as [number, number][]) : [],
+  );
+  if (!impact) return null;
+  const money = moneyIn(lang, str(part.currency) || "EUR");
+  const count = (value: number) => shares(lang, value) ?? "";
+  const { held, after, gain, avg } = impact;
+  return (
+    <div className="ag-a2ui-row">
+      <div>
+        <Kpi
+          label={labels.held ?? ""}
+          value={`${count(held)} → ${after === null ? "—" : count(after)}`}
+          valueTone={after === null ? "warn" : null}
+          note={
+            after === null ? (labels.over ?? "").replace("{held}", count(held)) : null
+          }
+        />
+      </div>
+      {gain && (
+        <div>
+          <Kpi
+            label={labels.gain ?? ""}
+            value={money(gain.amount, { digits: 2, signed: true })}
+            valueTone={toneOf(gain.amount)}
+            note={percent(lang, gain.ratio, { signed: true })}
+          />
+        </div>
+      )}
+      {avg && (
+        <div>
+          <Kpi
+            label={labels.avg ?? ""}
+            value={
+              avg.before === null
+                ? money(avg.after, { digits: 2 })
+                : `${money(avg.before, { digits: 2 })} → ${money(avg.after, { digits: 2 })}`
+            }
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 const TONES: Tone[] = ["up", "down", "warn", "flat"];
 
 /**
@@ -363,6 +478,7 @@ const CATALOG: Record<string, (draw: Draw) => ReactNode> = {
       />
     ) : null;
   },
+  TradeImpact: (draw) => <TradeFigures {...draw} />,
 };
 
 export function Surface({

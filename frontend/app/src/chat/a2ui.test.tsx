@@ -9,7 +9,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Surface, numeric, type A2uiMessage } from "./a2ui";
+import { Surface, numeric, tradeImpact, type A2uiMessage } from "./a2ui";
 
 beforeEach(() => {
   vi.stubGlobal("window", {
@@ -160,5 +160,68 @@ describe("a number field", () => {
       expect(numeric(ok)).toBe(true);
     for (const no of ["dqwd", "12a", "1,2,3", "1.2.3", "-5", "1e3", "1 000"])
       expect(numeric(no)).toBe(false);
+  });
+});
+
+describe("a trade being typed", () => {
+  const lots: [number, number][] = [
+    [60, 20],
+    [40, 30],
+  ];
+
+  it("sells the oldest parcels first, as the ledger plan does", () => {
+    const sale = tradeImpact("sell", 80, 26.51, lots);
+    expect(sale?.after).toBe(20);
+    // 80 × 26.51 − (60 × 20 + 20 × 30)
+    expect(sale?.gain?.amount).toBeCloseTo(320.8);
+    expect(sale?.gain?.ratio).toBeCloseTo(320.8 / 1800);
+  });
+
+  it("knows the shares left before the price is in", () => {
+    const sale = tradeImpact("sell", 100, NaN, lots);
+    expect(sale).toEqual({ held: 100, after: 0 });
+  });
+
+  it("flags a sale of more than is held, and waits for a side and a count", () => {
+    expect(tradeImpact("sell", 101, 26, lots)?.after).toBeNull();
+    expect(tradeImpact("", 10, 26, lots)).toBeNull();
+    expect(tradeImpact("sell", NaN, 26, lots)).toBeNull();
+  });
+
+  it("averages a purchase into what is held", () => {
+    const buy = tradeImpact("buy", 100, 35, lots);
+    expect(buy?.after).toBe(200);
+    expect(buy?.avg).toEqual({ before: 24, after: 29.5 });
+    expect(tradeImpact("buy", 10, 35, [])?.avg).toEqual({ before: null, after: 35 });
+  });
+
+  it("draws the shares left and the gain under the form", () => {
+    const out = draw(
+      surface(
+        [
+          {
+            id: "root",
+            component: "TradeImpact",
+            trade: { path: "/form/trade" },
+            quantity: { path: "/form/quantity" },
+            price: { path: "/form/price" },
+            lots: { path: "/position/lots" },
+            currency: "USD",
+            labels: {
+              held: "Acciones",
+              gain: "Ganancia/pérdida",
+              over: "Solo tienes {held}",
+            },
+          },
+        ],
+        {
+          form: { trade: "sell", quantity: "100", price: "26,51" },
+          position: { lots },
+        },
+      ),
+    );
+    expect(out).toContain("Acciones");
+    expect(out).toContain("100 → 0");
+    expect(out).toContain("Ganancia/pérdida");
   });
 });

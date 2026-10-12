@@ -14,6 +14,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import { seed } from "../shell/tickers";
 import { Markdown } from "./markdown";
 
 const html = (text: string) => renderToStaticMarkup(<Markdown text={text} />);
@@ -126,11 +127,147 @@ describe("tables", () => {
   });
 });
 
-describe("ordered lists", () => {
+describe("lists", () => {
   it("carries on from the written number after a run of bullets", () => {
-    const out = html(["1. Sells", "- SNPS", "- HUBS", "2. Buys", "- PDD"].join("\n"));
-    // The first list keeps the default start; the second resumes at 2.
-    expect(out.match(/<ol class="ag-chat-list">/g)).toHaveLength(1);
+    // Blank lines around the bullets: CommonMark ends the list there, and the
+    // second half still has to say 2.
+    const out = html(["1. Sells", "", "- SNPS", "", "2. Buys"].join("\n"));
     expect(out).toContain('<ol class="ag-chat-list" start="2">');
+  });
+
+  it("nests an indented list inside its item", () => {
+    const out = html(
+      ["1. **Sells:**", "   - SNPS", "   - HUBS", "2. **Buys:**", "   - PDD"].join(
+        "\n",
+      ),
+    );
+    expect(out).toBe(
+      '<ol class="ag-chat-list"><li><strong>Sells:</strong><ul class="ag-chat-list">' +
+        "<li>SNPS</li><li>HUBS</li></ul></li><li><strong>Buys:</strong>" +
+        '<ul class="ag-chat-list"><li>PDD</li></ul></li></ol>',
+    );
+  });
+
+  it("hangs flush bullets under a numbered item", () => {
+    const out = html(["1. Sells:", "* SNPS", "* HUBS", "2. Buys:", "* PDD"].join("\n"));
+    expect(out.match(/<ol/g)).toHaveLength(1);
+    expect(out).toContain("<li>Sells:<ul");
+    expect(out).toContain("<li>Buys:<ul");
+  });
+
+  it("keeps a wrapped line in its item", () => {
+    const out = html(["- First item that", "  wraps on", "- Second"].join("\n"));
+    expect(out).toBe(
+      '<ul class="ag-chat-list"><li>First item that<br/>wraps on</li><li>Second</li></ul>',
+    );
+  });
+
+  it("keeps a paragraph after a blank line in its item", () => {
+    const out = html(["1. Step one", "", "   The detail", "2. Step two"].join("\n"));
+    expect(out.match(/<ol/g)).toHaveLength(1);
+    expect(out).toContain('<li>Step one<p class="ag-chat-p">The detail</p></li>');
+  });
+
+  it("keeps items split by blank lines in one list", () => {
+    expect(html("- a\n\n- b\n\n- c").match(/<ul/g)).toHaveLength(1);
+  });
+
+  it("ends the list at a flush line that is not an item", () => {
+    const out = html("- a\n- b\nAfter the list.");
+    expect(out).toContain('</ul><p class="ag-chat-p">After the list.</p>');
+  });
+});
+
+describe("headings", () => {
+  it("reads a bold line ending in a colon as a heading", () => {
+    expect(html("**What it misses:**\n\n1. x")).toContain(
+      '<div class="ag-chat-h">What it misses</div>',
+    );
+  });
+
+  it("leaves a bold sentence and a bold line inside a list alone", () => {
+    expect(html("**Do not sell yet.**")).toContain('<p class="ag-chat-p"><strong>');
+    expect(html("1. **Sells:**")).toContain("<li><strong>Sells:</strong></li>");
+  });
+
+  it("drops a closing run of hashes", () => {
+    expect(html("## Plan ##")).toContain('<div class="ag-chat-h">Plan</div>');
+  });
+});
+
+describe("inline marks", () => {
+  it("renders bold emphasis, strikes and underscore marks", () => {
+    expect(html("***both***")).toContain("<strong><em>both</em></strong>");
+    expect(html("~~old~~ new")).toContain("<s>old</s> new");
+    expect(html("__bold__ and _em_")).toContain(
+      "<strong>bold</strong> and <em>em</em>",
+    );
+  });
+
+  it("leaves an underscore inside a word as text", () => {
+    expect(html("snake_case_name")).toContain(">snake_case_name<");
+  });
+
+  it("keeps a lone asterisk inside bold", () => {
+    expect(html("**P/E 7x * 2**")).toContain("<strong>P/E 7x * 2</strong>");
+  });
+
+  it("does not read arithmetic as emphasis", () => {
+    expect(html("3 * 4 * 5")).not.toContain("<em>");
+  });
+
+  it("drops the backslash of an escape", () => {
+    expect(html("costs \\$5 and 3\\*4")).toContain("costs $5 and 3*4");
+  });
+});
+
+describe("tickers", () => {
+  seed([
+    { ticker: "SNPS", name: "Synopsys", logo: "/logos/snps.png" },
+    { ticker: "MNDY", name: "monday.com", logo: null },
+    { ticker: "HUBS", name: "HubSpot", logo: null },
+    { ticker: "FCF", name: "First Commonwealth", logo: null },
+  ]);
+
+  it("links a bold ticker the account knows, behind its mark", () => {
+    const out = html("**SNPS:** duopoly");
+    expect(out).toContain('href="/ticker?ticker=SNPS"');
+    expect(out).toContain('<img class="ag-tick-logo" src="/logos/snps.png"');
+    expect(out).toContain("</a>:</strong> duopoly");
+  });
+
+  it("links each name of a bold list and keeps the words between", () => {
+    const out = html("**SNPS, MNDY y HUBS** lead the sells");
+    expect(out.match(/<a /g)).toHaveLength(3);
+    expect(out).toContain("</a>, <a ");
+    expect(out).toContain("</a> y <a ");
+  });
+
+  it("leaves a ticker-shaped word the account has no name for as bold text", () => {
+    expect(html("**ZZZQ** rose")).toBe(
+      '<p class="ag-chat-p"><strong>ZZZQ</strong> rose</p>',
+    );
+  });
+
+  it("never reads a financial acronym as its ticker", () => {
+    expect(html("**FCF**")).not.toContain("<a ");
+  });
+
+  it("leaves a bold phrase and a plain mention alone", () => {
+    expect(html("**Paso 1 (SNPS)**")).not.toContain("<a ");
+    expect(html("Sell SNPS now")).not.toContain("<a ");
+  });
+
+  it("keeps a company heading a linked ticker", () => {
+    expect(html("**SNPS:**\n\nThe duopoly.")).toMatch(
+      /<div class="ag-chat-h"><strong><a [^>]*ticker=SNPS/,
+    );
+  });
+
+  it("links a table cell that is only a ticker", () => {
+    const out = html(
+      ["| Ticker | Weight |", "| --- | ---: |", "| SNPS | 4% |"].join("\n"),
+    );
+    expect(out).toContain('href="/ticker?ticker=SNPS"');
   });
 });

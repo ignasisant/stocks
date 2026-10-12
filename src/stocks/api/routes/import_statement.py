@@ -106,6 +106,7 @@ from stocks.portfolio import (
     platforms,
     positions,
     transfers,
+    upload_guard,
     venue,
 )
 from stocks.portfolio.ledger import add_many, all_transactions, clear, delete_many
@@ -260,6 +261,12 @@ def _decode(body: Upload) -> bytes:
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"statements are capped at {MAX_BYTES // (1024 * 1024)} MB",
         )
+    try:
+        upload_guard.check(raw)
+    except upload_guard.TooCostly as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)
+        ) from exc
     return raw
 
 

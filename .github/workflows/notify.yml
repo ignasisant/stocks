@@ -54,6 +54,10 @@ env:
   # link-free rather than pointing at a hostname nobody can reach.
   APP_PUBLIC_URL: ${{ secrets.APP_PUBLIC_URL }}
 
+# The token only reads the repo; nothing here pushes, comments or releases.
+permissions:
+  contents: read
+
 jobs:
   digest:
     if: github.event.schedule == '30 21 * * 1-5' || inputs.job == 'digest'

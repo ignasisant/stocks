@@ -179,6 +179,9 @@ def test_a_trade_missing_a_figure_opens_a_form_then_the_trade_to_confirm(
                if "updateDataModel" in m]
     assert data["form"] == {"trade": "sell", "quantity": "", "price": "13",
                             "date": "2026-10-09"}
+    # The parcels still held, FIFO, for the live "how it leaves you" figures:
+    # the degiro lot was sold, the ibkr one stays.
+    assert data["position"] == {"lots": [[100, 8.02]]}
 
     half = fill(signed_in, offer["id"], {**data["form"]})
     assert half[-1]["type"] == "RUN_ERROR"

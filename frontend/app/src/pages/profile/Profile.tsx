@@ -14,6 +14,7 @@
 import { useState } from "react";
 import { get } from "../../shell/api";
 import { useT } from "../../shell/i18n";
+import { leave } from "../../shell/keep";
 import { useRoute } from "../../shell/router";
 import { useAccount, useGuest } from "../../shell/session";
 import { useApi } from "../../shell/useApi";
@@ -136,7 +137,15 @@ function Settings() {
               rendered without it. `web/oidc.py` serves the route; this app
               never runs a second sign-in flow, and it must not run a second
               sign-out either. */}
-          <a className="pr-signout" href="/auth/logout">
+          <a
+            className="pr-signout"
+            href="/auth/logout"
+            onClick={(event) => {
+              // Same link, after the answers kept on this device are gone.
+              event.preventDefault();
+              void leave("/auth/logout");
+            }}
+          >
             {t("common.log_out")}
           </a>
         </div>

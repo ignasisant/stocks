@@ -35,6 +35,10 @@ env:
   # Optional override of the per-account free-message daily cap (default 30).
   FREE_LLM_DAILY_CAP: ${{ vars.FREE_LLM_DAILY_CAP }}
 
+# The token only reads the repo; nothing here pushes, comments or releases.
+permissions:
+  contents: read
+
 jobs:
   chat:
     runs-on: ubuntu-latest

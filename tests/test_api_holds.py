@@ -91,3 +91,18 @@ def test_the_route_answers_only_this_process():
     assert client.post("/v1/hold", headers={"X-Hold": "guess"}).status_code == 404
     response = client.post("/v1/hold", headers={"X-Hold": holds._TOKEN})
     assert response.status_code == 204  # nothing pending: lets go at once
+
+
+def test_the_hold_is_aimed_under_the_mount(monkeypatch):
+    # Prod serves the API under `/api`; Starlette's `base_url` leaves a mount
+    # out, and the hold went to `/v1/hold` — a 404 on every refresh.
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
+
+    from stocks.api.app import MOUNT_PATH
+
+    seen: list[str] = []
+    monkeypatch.setattr(holds, "pinned", lambda url: seen.append(url) or url)
+    shell = Starlette(routes=[Mount(MOUNT_PATH, app=app)])
+    TestClient(shell).get(f"{MOUNT_PATH}/v1/health")
+    assert seen == ["http://testserver/api/"]

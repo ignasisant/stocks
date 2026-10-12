@@ -340,6 +340,40 @@ def test_an_oversized_statement_is_refused_before_it_is_parsed(
     assert response.status_code == 413
 
 
+def test_an_xlsx_that_inflates_past_the_ceiling_is_refused_unopened(
+    client, account, signed_in, monkeypatch
+):
+    """A few KB on the wire, gigabytes once the sheet XML is expanded: the
+    zip's own directory says so before openpyxl or pandas touch it."""
+    import io
+    import zipfile
+
+    from stocks.portfolio import upload_guard
+
+    monkeypatch.setattr(upload_guard, "MAX_UNZIPPED", 64 * 1024)
+    packed = io.BytesIO()
+    with zipfile.ZipFile(packed, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("xl/worksheets/sheet1.xml", b"0" * (65 * 1024))
+    content = base64.b64encode(packed.getvalue()).decode()
+    response = signed_in.post(
+        "/v1/import/preview",
+        json=body() | {"filename": "bomb.xlsx", "content": content},
+    )
+    assert response.status_code == 413
+
+
+def test_a_pdf_past_the_page_ceiling_is_refused():
+    from types import SimpleNamespace
+
+    from stocks.portfolio import upload_guard
+
+    pdf = SimpleNamespace(pages=[object()] * (upload_guard.MAX_PDF_PAGES + 1))
+    with pytest.raises(upload_guard.TooCostly):
+        upload_guard.pages(pdf)
+    pdf.pages = pdf.pages[:-1]
+    assert len(upload_guard.pages(pdf)) == upload_guard.MAX_PDF_PAGES
+
+
 def test_the_cap_is_well_past_a_real_statement():
     """Not 8 MB any more: a decade of activity as a PDF runs to tens."""
     from stocks.api.routes import import_statement

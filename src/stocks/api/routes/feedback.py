@@ -149,6 +149,13 @@ def submit(body: Feedback, from_: Sender) -> Sent:
                 status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 detail=f"a screenshot may be at most {MAX_SHOT // 1024}kB",
             )
+        # The composer only ever sends a JPEG (`shell/screenshot.ts`); anything
+        # else is a file somebody wants stored and later opened by the operator.
+        if not shot.startswith(b"\xff\xd8\xff"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="shot must be a JPEG",
+            )
     store.submit(
         body.text,
         body.kind,

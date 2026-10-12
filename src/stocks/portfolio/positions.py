@@ -161,7 +161,33 @@ def build(
         return _build_s104(transactions, to_base)
     if matching == "average":
         return _build_average(transactions, to_base, base)
-    newest_first = matching == "lifo"
+    lots, realized = _matched(transactions, to_base, newest_first=matching == "lifo")
+    positions = [_aggregate(t, q) for t, q in lots.items() if _total_qty(q) > 1e-9]
+    positions.sort(key=lambda p: p.ticker)
+    return positions, realized
+
+
+def open_lots(
+    transactions: list[Transaction], to_base: ToBase, matching: str = "fifo"
+) -> list[Lot]:
+    """The parcels still held, in the order the next sale would take them.
+
+    Only for the share-identifying modes ("fifo", "lifo"): an averaged holding
+    has no parcels, its one cost is `build`'s Position.
+    """
+    if matching not in (MATCH_FIFO, MATCH_LIFO):
+        raise ValueError(f"{matching} holdings have no parcels")
+    lots, _ = _matched(transfers.normalize(transactions), to_base,
+                       newest_first=matching == MATCH_LIFO)
+    held = [lot for queue in lots.values() for lot in queue if lot.quantity > 1e-9]
+    held.sort(key=lambda lot: lot.date, reverse=matching == MATCH_LIFO)
+    return held
+
+
+def _matched(
+    transactions: list[Transaction], to_base: ToBase, *, newest_first: bool
+) -> tuple[dict[str, deque[Lot]], list[RealizedSale]]:
+    """The FIFO/LIFO replay: each ticker's open lots, and the sales matched."""
     lots: dict[str, deque[Lot]] = defaultdict(deque)
     realized: list[RealizedSale] = []
 
@@ -189,10 +215,7 @@ def build(
             first = min((lot.date for lot in held), default=tx.date)
             realized += _capital_excess(tx, over, first)
         # dividend / fee: not position-affecting (handled in dividends/cash)
-
-    positions = [_aggregate(t, q) for t, q in lots.items() if _total_qty(q) > 1e-9]
-    positions.sort(key=lambda p: p.ticker)
-    return positions, realized
+    return lots, realized
 
 
 def _sell(

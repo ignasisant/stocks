@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
 import pytest
 
@@ -239,6 +240,26 @@ def test_spend_free_quota_counts_and_sweeps(monkeypatch):
     assert not engine.spend_free_quota(prefs)  # cap reached
     day_key = f"free_msgs::{time.strftime('%Y-%m-%d')}"
     assert prefs[day_key] == 2
+
+
+def test_a_charge_checks_the_cap_against_the_file_not_a_stale_read(
+    monkeypatch, tmp_path
+):
+    """A turn that read 1 of 2 before a parallel turn spent the second unit
+    must find the allowance gone, not take a third."""
+    from stocks import accounts
+
+    monkeypatch.setenv("FREE_LLM_DAILY_CAP", "2")
+    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
+    monkeypatch.setattr(auth, "_persist", lambda path: None)
+    path = tmp_path / "prefs.json"
+    key = f"free_msgs::{time.strftime('%Y-%m-%d')}"
+    accounts.save_prefs(path, {key: 1}, persist=lambda p: None)
+    free = SimpleNamespace(id="free")
+    slow, fast = accounts.load_prefs(path), accounts.load_prefs(path)
+    assert engine._charge(fast, path, free)
+    assert not engine._charge(slow, path, free)
+    assert accounts.stored_prefs(path)[key] == 2
 
 
 def test_global_free_cap_backstops_across_accounts(monkeypatch):

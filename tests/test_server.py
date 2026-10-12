@@ -532,6 +532,7 @@ def metered(monkeypatch):
     ratelimit._events.clear()
     monkeypatch.setattr(server, "CLIENT_MAX_DOCS", 3)
     monkeypatch.setattr(server, "API_MAX_REQUESTS", 8)
+    monkeypatch.setattr(server, "GUEST_API_MAX_REQUESTS", 8)
     app = served(server.ClientThrottle, server.SecurityHeaders, server.LandingGate)
     yield TestClient(app, base_url="https://topstocks.example")
     ratelimit._events.clear()
@@ -556,6 +557,27 @@ def test_one_screen_of_api_calls_is_not_a_flood(metered):
 def test_the_api_has_a_ceiling_of_its_own(metered):
     """Its own budget, not no budget."""
     assert codes(metered, "/api/v1/health", 10)[-1] == 429
+
+
+def test_a_guest_gets_a_smaller_share_of_the_api(metered, monkeypatch):
+    monkeypatch.setattr(server, "GUEST_API_MAX_REQUESTS", 4)
+    assert codes(metered, "/api/v1/health", 5)[-1] == 429
+
+
+def test_a_made_up_bearer_does_not_lift_the_guest_share(metered, monkeypatch):
+    monkeypatch.setattr(server, "GUEST_API_MAX_REQUESTS", 4)
+    forged = {"Authorization": "Bearer not-the-token"}
+    got = [metered.get("/api/v1/health", headers=forged).status_code
+           for _ in range(5)]
+    assert got[-1] == 429
+
+
+def test_a_signed_in_reader_is_not_on_the_guest_share(metered, monkeypatch):
+    from stocks import session
+
+    monkeypatch.setattr(server, "GUEST_API_MAX_REQUESTS", 4)
+    monkeypatch.setattr(session, "signed_in_email", lambda cookies: "a@b.c")
+    assert 429 not in codes(metered, "/api/v1/health", 6)
 
 
 def test_the_two_budgets_cannot_lock_each_other_out(metered):
