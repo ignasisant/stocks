@@ -80,6 +80,17 @@ function Door({
       </span>
     );
   }
+  if (guest && row.signedIn === true) {
+    // Every target but search sits behind a sign-in. Shown, so a guest sees
+    // what an account gets; not a button, because a control that does nothing
+    // when pressed reads as broken. The reason is in the accessible name and
+    // in the line under the steps.
+    return (
+      <span className={className} aria-label={label} aria-disabled="true">
+        {children}
+      </span>
+    );
+  }
   const to = target(row, steps);
   if (!to) {
     return (
@@ -93,10 +104,6 @@ function Door({
       type="button"
       className={className}
       aria-label={label}
-      // Every target but search sits behind a sign-in: shown, so a guest sees
-      // what an account gets, and disabled, so pressing it does not walk into
-      // a wall.
-      disabled={guest && row.signedIn === true}
       onClick={() =>
         to.kind === "assistant" ? openAssistant() : go(to.page, to.params)
       }
@@ -136,34 +143,46 @@ export function SetupCard() {
   }));
   const done = setup.filter((e) => e.on).length;
   const next = setup.find((e) => !e.on);
-  const untried = explore.filter((e) => !e.on);
+  const locked = (e: Entry) => guest && e.row.signedIn === true;
+  // A guest is offered only what a guest can try: a chip for the assistant
+  // or a list they cannot have is an invitation that goes nowhere.
+  const untried = explore.filter((e) => !e.on && !locked(e));
   // Nothing left to switch on or to try: the card has done its job.
   if (!next && !untried.length) return null;
   const word = (e: Entry) =>
-    `${t(e.row.label)} — ${t(e.on ? "tour.active" : "tour.pending")}`;
+    `${t(e.row.label)} — ${t(
+      e.on ? "tour.active" : locked(e) ? "home.start_locked" : "tour.pending",
+    )}`;
 
   return (
     <Card className="hm-start">
       <div className="hm-start-head">
         <span className="hm-start-title">{t("home.start_title")}</span>
-        <span className="hm-start-count">
-          {t("home.start_progress", { done, total: setup.length })}
-        </span>
-        <button
-          type="button"
-          className="hm-quiet hm-start-hide"
-          onClick={() => {
-            // Hidden first, saved after: the press is the decision and a
-            // failed write is worth one card coming back, not an error in
-            // front of somebody tidying their screen.
-            setDismissed(true);
-            void send("PATCH", "/prefs", { setup_card_dismissed: true })
-              .then(reload)
-              .catch(() => undefined);
-          }}
-        >
-          {t("home.setup_hide")}
-        </button>
+        {/* A guest can take one step of four, so a count that cannot move
+            and a "don't show again" a guest has no prefs to keep are both
+            left out: the banner above has the one close. */}
+        {guest ? null : (
+          <span className="hm-start-count">
+            {t("home.start_progress", { done, total: setup.length })}
+          </span>
+        )}
+        {guest ? null : (
+          <button
+            type="button"
+            className="hm-quiet hm-start-hide"
+            onClick={() => {
+              // Hidden first, saved after: the press is the decision and a
+              // failed write is worth one card coming back, not an error in
+              // front of somebody tidying their screen.
+              setDismissed(true);
+              void send("PATCH", "/prefs", { setup_card_dismissed: true })
+                .then(reload)
+                .catch(() => undefined);
+            }}
+          >
+            {t("home.setup_hide")}
+          </button>
+        )}
       </div>
 
       {next ? (
@@ -184,7 +203,10 @@ export function SetupCard() {
                     label={word(e)}
                   >
                     <span className="hm-step-dot" aria-hidden="true">
-                      <Icon name={e.on ? "check" : e.row.icon} size={20} />
+                      <Icon
+                        name={e.on ? "check" : locked(e) ? "lock" : e.row.icon}
+                        size={20}
+                      />
                     </span>
                     <span className="hm-step-label" aria-hidden="true">
                       {t(e.row.label)}
@@ -194,7 +216,12 @@ export function SetupCard() {
               );
             })}
           </ol>
-          {next.row.cta ? (
+          {guest ? (
+            <p className="hm-start-locked">{t("home.start_locked_note")}</p>
+          ) : null}
+          {/* A guest's next step is the sign-in, and the banner above already
+              offers it as the screen's one filled button. */}
+          {next.row.cta && !(guest && next.row.key === "login") ? (
             <Door
               row={next.row}
               steps={state.steps}

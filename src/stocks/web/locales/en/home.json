@@ -18,6 +18,8 @@
   "home.setup_progress": "{done}/{total} active",
   "home.start_title": "Start here",
   "home.start_progress": "{done}/{total}",
+  "home.start_locked": "Available after sign in",
+  "home.start_locked_note": "Import, AI and Telegram unlock when you sign in.",
   "home.start_login": "Account",
   "home.start_import": "Import",
   "home.start_ai": "AI key",

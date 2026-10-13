@@ -18,6 +18,8 @@
   "home.setup_progress": "{done}/{total} activas",
   "home.start_title": "Empieza aquí",
   "home.start_progress": "{done}/{total}",
+  "home.start_locked": "Disponible al iniciar sesión",
+  "home.start_locked_note": "Importar, IA y Telegram se activan al iniciar sesión.",
   "home.start_login": "Cuenta",
   "home.start_import": "Importar",
   "home.start_ai": "Clave IA",
