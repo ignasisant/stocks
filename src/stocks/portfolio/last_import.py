@@ -26,6 +26,16 @@ class ImportRecord:
     platform: str = "revolut"  # platforms.py key; default covers pre-field records
 
 
+def imported_on(record: ImportRecord | None) -> str | None:
+    """The calendar day (UTC, YYYY-MM-DD) of the last import, or None.
+
+    The one reading of "last import" every page shows: the Import rail and the
+    Profile summary both take this date rather than each slicing the stamp.
+    """
+    stamp = record.imported_at if record else ""
+    return stamp[:10] if len(stamp) >= 10 and stamp[4] == "-" else None
+
+
 def save(record: ImportRecord, path: Path = RECORD_PATH) -> None:
     atomic.write_json(path, asdict(record), indent=2)
     storage.persist(path)

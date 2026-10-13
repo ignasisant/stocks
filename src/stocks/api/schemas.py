@@ -2975,6 +2975,10 @@ class LastImport(BaseModel):
 
     filename: str | None = None
     imported_at: str | None = None
+    imported_on: str | None = Field(
+        default=None,
+        description="The UTC day of `imported_at` (YYYY-MM-DD): the shared 'last import' date.",
+    )
     platform: str | None = None
     rows: int = 0
     still_here: int = Field(
