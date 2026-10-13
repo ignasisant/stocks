@@ -306,7 +306,7 @@ function level(tile: MarketTile, lang: string): string | null {
   return decimal(value, lang, value >= 1000 ? 0 : 2);
 }
 
-/** Where the fear gauge sits in its own year, as a word and a percentile. */
+/** Where the fear gauge sits in its own year: a word, then the share of the year's days it is above. */
 function vixWord(
   pct: number,
   t: (key: string, slots?: Record<string, string | number>) => string,

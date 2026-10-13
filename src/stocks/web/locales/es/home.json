@@ -508,7 +508,7 @@
   "home.market_vix_low": "calma",
   "home.market_vix_normal": "normal",
   "home.market_vix_high": "alto",
-  "home.market_vix_pct": "{label} · p{n} de su año",
+  "home.market_vix_pct": "{label} · sobre el {n}% de su año",
   "home.market_tile_sp500": "S&P 500",
   "home.market_tile_nasdaq": "Nasdaq",
   "home.market_tile_stoxx50": "Euro Stoxx 50",
