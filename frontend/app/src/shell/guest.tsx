@@ -72,7 +72,7 @@ export function legalHref(doc: "privacy" | "terms", lang: string): string {
  * one with an account sees the two legal pages before handing anything over.
  * Nothing without a sign-in to offer, like the button it sits under.
  */
-export function SignInNote() {
+function SignInNote() {
   const t = useT();
   const lang = useLang();
   if (!useSignIn()) return null;
