@@ -65,6 +65,8 @@
   "home.total_gain": "Ganancia total",
   "home.total_gain_help": "Valor hoy menos lo aportado: {value} − {injected} = {gain}. Es la suma de lo ganado al vender y la ganancia sin vender. El % es sobre lo aportado.",
   "home.irr_annualised": "Rentabilidad de tu dinero",
+  "home.irr_note": "TIR · cuenta cuándo aportaste",
+  "home.twr_note": "TWR · sin el efecto de tus aportes",
   "home.twr_annualised": "Rentabilidad de tu selección",
   "home.movers_title": "**Movimientos**",
   "home.movers_range": "Rango",

@@ -65,6 +65,8 @@
   "home.total_gain": "Total gain",
   "home.total_gain_help": "Value today less what you contributed: {value} − {injected} = {gain}. It is what you gained on sales plus the unsold gain. The % is over what you contributed.",
   "home.irr_annualised": "Return on your money",
+  "home.irr_note": "IRR · counts when you added money",
+  "home.twr_note": "TWR · ignores when you added money",
   "home.twr_annualised": "Return on your picks",
   "home.movers_title": "**Movers**",
   "home.movers_range": "Range",
