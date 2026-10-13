@@ -529,7 +529,11 @@ function MoverTable({
                   money(position?.price, position?.currency || currency, lang, {
                     digits: 2,
                   }),
-                  percent(position?.weight, lang, { digits: 1 }),
+                  position?.weight != null
+                    ? t("home.weight_short", {
+                        pct: percent(position.weight, lang, { digits: 1 }) ?? "",
+                      })
+                    : null,
                 ];
               },
             }}

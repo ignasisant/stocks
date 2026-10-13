@@ -38,6 +38,7 @@
   "home.col_price": "Precio",
   "home.col_value": "Valor",
   "home.col_weight": "Peso",
+  "home.weight_short": "peso {pct}",
   "home.col_date": "Fecha",
   "home.col_type": "Tipo",
   "home.col_last_close": "Último cierre",
