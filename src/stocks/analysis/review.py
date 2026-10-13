@@ -980,15 +980,15 @@ def redeploy(
         return (out[i].quality or 0.0) + (out[i].cheapness or 0.0)
 
     for i in sorted(adds, key=worth):
-        w, v = book[i][0], out[i]
+        w, v, sector = book[i][0], out[i], sector_of[i]
         over = -room(i)
-        if over <= 0 or v.target is None:
+        if over <= 0 or v.target is None or w is None or sector is None:
             continue
         cut = min(over, v.target - w)
-        after[sector_of[i]] -= cut
+        after[sector] -= cut
         to = v.target - cut
         if to - w < SMALL:
-            after[sector_of[i]] -= to - w
+            after[sector] -= to - w
             kept = tuple(r for r in v.reasons if r != R_UNDERWEIGHT)
             out[i] = replace(v, verdict=HOLD, target=None, reasons=(R_SECTOR_FULL, *kept))
         else:
@@ -1012,8 +1012,8 @@ def redeploy(
         if to - start < SMALL:
             continue
         budget -= to - start
-        if sector_of[i]:
-            after[sector_of[i]] += to - start
+        if sector := sector_of[i]:
+            after[sector] += to - start
         reasons = v.reasons if v.verdict == ADD else (R_REDEPLOY, *v.reasons)
         out[i] = replace(v, verdict=ADD, target=to, reasons=reasons)
         if budget < SMALL:

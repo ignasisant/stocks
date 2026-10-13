@@ -488,8 +488,12 @@ def review(
     # it proposed before and no longer does.
     shown = held_rows + outside_rows
     background.add_task(
-        journal.safely, journal.record, account.journal,
-        journal.from_review(shown), today, judged=journal.judged_in_review(shown),
+        journal.safely,
+        journal.record,
+        account.journal,
+        journal.from_review(shown),
+        today,
+        judged=journal.judged_in_review(shown),
     )
 
     moves = [r.delta for r in held_rows if r.delta is not None]
@@ -510,7 +514,9 @@ def review(
         jurisdiction=code,
         added=added,
         notes=[
-            ReviewNote(**{**vars(note), "tickers": [symbol_of(t) for t in note.tickers]})
+            ReviewNote.model_validate(
+                {**vars(note), "tickers": [symbol_of(t) for t in note.tickers]}
+            )
             for note in notes
         ],
     )
