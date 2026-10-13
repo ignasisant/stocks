@@ -15,7 +15,7 @@
  */
 
 import { maybe, sectorKey } from "../sentiment/format";
-import { OWN_LABEL, metric, money, percent, score } from "./format";
+import { OWN_LABEL, longDay, metric, money, percent, score } from "./format";
 import type { Review, ReviewRow } from "./types";
 
 type T = (key: string, slots?: Record<string, string | number>) => string;
@@ -68,7 +68,9 @@ function line(row: ReviewRow, data: Review, t: T, lang: string): string {
   }
   if (figures.length) parts.push(figures.join(", "));
   if (!row.held && row.buy_after)
-    parts.push(t("review.buy_after", { date: row.buy_after }));
+    parts.push(
+      t("review.buy_after", { ticker: row.symbol, date: longDay(row.buy_after, lang) }),
+    );
   return `- ${head}: ${parts.join(" · ")}`;
 }
 
@@ -77,7 +79,9 @@ function line(row: ReviewRow, data: Review, t: T, lang: string): string {
  * empty when nothing is filtered.
  */
 export function buildPrompt(data: Review, t: T, lang: string, filter = ""): string {
-  const head = [t("review.prompt_intro", { date: data.as_of, base: data.base })];
+  const head = [
+    t("review.prompt_intro", { date: longDay(data.as_of, lang), base: data.base }),
+  ];
   if (filter) head.push(t("review.prompt_filter", { filter }));
   if (data.held.length) {
     head.push(

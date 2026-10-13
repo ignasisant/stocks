@@ -4,6 +4,7 @@
  */
 
 import { type ChipSpec, type Tone, toneOf } from "../../ui/Kpi";
+import { parseDay } from "../home/format";
 import type { Verdict } from "./types";
 
 function finite(value: number | null | undefined): value is number {
@@ -104,6 +105,17 @@ export function metric(key: string, value: number | null | undefined, lang: stri
     default:
       return `${value.toFixed(1)}x`;
   }
+}
+
+/** "9 Oct 2026" — an API calendar day in the reader's locale; junk comes back as is. */
+export function longDay(iso: string, lang: string): string {
+  const date = parseDay(iso);
+  if (!date) return iso;
+  return new Intl.DateTimeFormat(lang, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
 
 export function score(value: number | null | undefined): string | null {

@@ -93,7 +93,7 @@ export function decimal(
  * bare date as UTC and slides it a day west of Greenwich — the API's dates are
  * calendar days, not instants.
  */
-function parseDay(iso: string | null | undefined): Date | null {
+export function parseDay(iso: string | null | undefined): Date | null {
   if (!iso) return null;
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
   if (!match) return null;

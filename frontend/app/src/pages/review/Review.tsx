@@ -50,7 +50,7 @@ import {
   parseFilter,
   splitCoins,
 } from "./filter";
-import { money, parseAdded, percent } from "./format";
+import { longDay, money, parseAdded, percent } from "./format";
 import { buildPrompt } from "./prompt";
 import type { Review, ReviewRow } from "./types";
 import "./review.css";
@@ -167,7 +167,7 @@ function Screen({
         onChange={onFilter}
         aside={
           <p className="ag-rev-caption ag-rev-asof">
-            {t("review.as_of", { date: data.as_of })}
+            {t("review.as_of", { date: longDay(data.as_of, lang) })}
             {data.unpriced > 0
               ? ` · ${t("review.unpriced", { count: data.unpriced })}`
               : null}

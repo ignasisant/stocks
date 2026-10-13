@@ -18,7 +18,7 @@
   "review.moves_none": "No move stands out: every holding is either a hold, a fund or cash.",
   "review.move_tax": "Adds {amount} to this year's tax",
   "review.move_no_tax": "No extra tax: the sale books a loss or is offset",
-  "review.buy_after": "Buy after {date}: a loss sold inside the repurchase window would be undone",
+  "review.buy_after": "If you buy {ticker} back before {date}, you can't use the loss: it is deferred",
   "review.map_title": "Quality against price",
   "review.map_help": "Up is a better business, right is cheaper. The shaded corner is where 'add' and 'buy' live; the dashed lines are the verdict bars.",
   "review.axis_cheap": "Cheaper →",
