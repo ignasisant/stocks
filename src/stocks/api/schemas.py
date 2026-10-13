@@ -3788,6 +3788,14 @@ class ReviewRow(BaseModel):
         default=None,
         description="Yahoo's sector name (English); null for a fund or unknown.",
     )
+    country: str | None = Field(
+        default=None,
+        description="Yahoo's country name (English); null for a fund or unknown.",
+    )
+    currency: str | None = Field(
+        default=None,
+        description="ISO currency the name is quoted in (GBp folded to GBP).",
+    )
     held: bool
     verdict: str = Field(
         description=(
@@ -3862,10 +3870,11 @@ class ReviewNote(BaseModel):
 
     key: str = Field(
         description=(
-            "`review.note_<key>`: few_names, sector_heavy, crypto_heavy, tax_offset."
+            "`review.note_<key>`: few_names, sector_heavy, crypto_heavy, "
+            "tax_offset, country_heavy, currency_heavy, fund_core, cash_heavy."
         )
     )
-    count: int | None = Field(default=None, description="Companies it counts.")
+    count: int | None = Field(default=None, description="Names it counts.")
     sector: str | None = Field(default=None, description="Yahoo's sector name, English.")
     weight: float | None = Field(default=None, description="Its share of the book.")
     amount: float | None = Field(
@@ -3875,6 +3884,21 @@ class ReviewNote(BaseModel):
     day: str | None = Field(
         default=None, description="ISO day a repurchase stops undoing the loss."
     )
+    country: str | None = Field(default=None, description="Yahoo's country, English.")
+    currency: str | None = Field(default=None, description="ISO quote currency.")
+
+
+class ReviewLines(BaseModel):
+    """The weights this book's verdicts were drawn at: some scale with how
+    many companies it holds, so the copy quotes them rather than constants."""
+
+    concentrated: float | None = Field(
+        default=None,
+        description="One company from here is a concentration; None with too few.",
+    )
+    small: float = Field(description="A held company under this is a crumb.")
+    add_to: float = Field(description="Where an add takes a mature company.")
+    sector: float = Field(description="One sector from here is named and not added to.")
 
 
 class Review(BaseModel):
@@ -3888,14 +3912,30 @@ class Review(BaseModel):
     plan: ReviewPlan = Field(default_factory=ReviewPlan)
     unpriced: int = 0
     jurisdiction: str = ""
+    tax_status: str = Field(
+        default="chosen",
+        description=(
+            "How the jurisdiction was settled: chosen on the Profile page, or "
+            "assumed (unknown | unmodelled | region) and the page says so."
+        ),
+    )
     added: list[str] = Field(
         default_factory=list, description="The `add` tickers, as understood."
+    )
+    lines: ReviewLines | None = None
+    pending: int = Field(
+        default=0,
+        description=(
+            "Names whose figures missed the answer's time budget: read "
+            "unrated here, still being fetched; ask again in a few seconds."
+        ),
     )
     notes: list[ReviewNote] = Field(
         default_factory=list,
         description=(
             "Book-level notes: one or two companies carrying the book, one "
-            "sector carrying 40% of it, coins past a quarter of it, losses "
-            "that would cut the plan's tax."
+            "sector carrying 40% of it, one country or quote currency carrying "
+            "most of it, funds or idle cash past their lines, coins past a "
+            "quarter of it, losses that would cut the plan's tax."
         ),
     )

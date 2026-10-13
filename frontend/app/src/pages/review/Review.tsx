@@ -28,7 +28,7 @@
  * ride the URL with the rest. They filter what came back; they never refetch.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { get } from "../../shell/api";
 import { askAssistant } from "../../shell/assistant";
 import { Loaded, Skeleton } from "../../shell/Layout";
@@ -37,6 +37,8 @@ import { Icon } from "../../shell/Icon";
 import { useLang, useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
 import { useCurrency } from "../../shell/session";
+import { Help } from "../../ui/Kpi";
+import { maybe } from "../sentiment/format";
 import { TickerCell } from "../../shell/tickers";
 import { useApi } from "../../shell/useApi";
 import { Plan } from "./Actions";
@@ -44,6 +46,7 @@ import { AddTickers } from "./AddTickers";
 import { Filters, useFilterWords } from "./Filters";
 import { QualityMap } from "./QualityMap";
 import { FocusProvider } from "./focus";
+import { LinesProvider } from "./lines";
 import { CandidateTable, HeldTable } from "./Tables";
 import {
   CLEAR,
@@ -54,10 +57,12 @@ import {
   parseFilter,
   splitCoins,
 } from "./filter";
-import { longDay, parseAdded, percent } from "./format";
+import { askAgain, longDay, parseAdded, percent } from "./format";
 import { buildPrompt, noteText } from "./prompt";
 import type { Review, ReviewNote, ReviewRow } from "./types";
 import "./review.css";
+
+const RETRY_MS = 3000;
 
 export default function Page() {
   const t = useT();
@@ -74,6 +79,19 @@ export default function Page() {
   const [last, setLast] = useState<Review | null>(null);
   if (review.state === "loaded" && review.data !== last) setLast(review.data);
   const stale = review.state === "loading" ? last : null;
+
+  // A wide book read cold answers with the names that arrived in time; the
+  // rest keep loading on the server, so ask once more a moment later.
+  const asked = `${base}|${add}`;
+  const [retried, setRetried] = useState<string | null>(null);
+  useEffect(() => {
+    if (review.state !== "loaded" || !askAgain(review.data, retried, asked)) return;
+    const timer = setTimeout(() => {
+      setRetried(asked);
+      review.reload();
+    }, RETRY_MS);
+    return () => clearTimeout(timer);
+  }, [review, retried, asked]);
 
   // The ask sits in the header, written from whatever read is on screen.
   const shown = review.state === "loaded" ? review.data : last;
@@ -161,75 +179,81 @@ function Screen({
   }
 
   return (
-    <FocusProvider>
-      <Filters
-        data={all}
-        shown={data}
-        filter={filter}
-        onChange={onFilter}
-        aside={
-          <p className="ag-rev-caption ag-rev-asof">
-            {t("review.as_of", { date: longDay(data.as_of, lang) })}
-            {data.unpriced > 0
-              ? ` · ${t("review.unpriced", { count: data.unpriced })}`
-              : null}
-          </p>
-        }
-      />
+    <LinesProvider lines={read.lines}>
+      <FocusProvider>
+        <Filters
+          data={all}
+          shown={data}
+          filter={filter}
+          onChange={onFilter}
+          aside={
+            <p className="ag-rev-caption ag-rev-asof">
+              {t("review.as_of", { date: longDay(data.as_of, lang) })}
+              {data.unpriced > 0
+                ? ` · ${t("review.unpriced", { count: data.unpriced })}`
+                : null}
+              {data.pending
+                ? ` · ${t("review.pending", { count: data.pending })}`
+                : null}
+            </p>
+          }
+        />
 
-      {none && isFiltered(filter) ? (
-        <div className="ag-rev-card ag-rev-empty">
-          <p className="ag-rev-caption">{t("review.filter_none")}</p>
-          <button type="button" className="ag-btn" onClick={() => onFilter(CLEAR)}>
-            {t("review.filter_clear")}
-          </button>
-        </div>
-      ) : null}
+        {none && isFiltered(filter) ? (
+          <div className="ag-rev-card ag-rev-empty">
+            <p className="ag-rev-caption">{t("review.filter_none")}</p>
+            <button type="button" className="ag-btn" onClick={() => onFilter(CLEAR)}>
+              {t("review.filter_clear")}
+            </button>
+          </div>
+        ) : null}
 
-      <Notes notes={read.notes ?? []} taxCurrency={plan.tax_currency} />
+        <Notes notes={read.notes ?? []} taxCurrency={plan.tax_currency} />
 
-      {data.held.length > 0 && <Plan data={data} />}
+        {data.held.length > 0 && <Plan data={data} />}
 
-      <QualityMap
-        held={data.held}
-        candidates={data.candidates}
-        taxCurrency={plan.tax_currency}
-      />
+        <QualityMap
+          held={data.held}
+          candidates={data.candidates}
+          taxCurrency={plan.tax_currency}
+        />
 
-      {data.held.length > 0 && (
-        <section className="ag-rev-card">
-          <h2 className="ag-rev-h2">{t("review.held_title")}</h2>
-          <p className="ag-rev-caption">{t("review.held_help")}</p>
-          <HeldTable
-            rows={data.held}
-            base={data.base}
-            taxCurrency={plan.tax_currency}
-          />
-          <Coins rows={coins} />
-        </section>
-      )}
+        {data.held.length > 0 && (
+          <section className="ag-rev-card">
+            <h2 className="ag-rev-h2">{t("review.held_title")}</h2>
+            <p className="ag-rev-caption">{t("review.held_help")}</p>
+            <HeldTable
+              rows={data.held}
+              base={data.base}
+              taxCurrency={plan.tax_currency}
+            />
+            <Coins rows={coins} />
+          </section>
+        )}
 
-      {/* Filtered to nothing outside, the section goes rather than claiming
+        {/* Filtered to nothing outside, the section goes rather than claiming
           the watchlist is empty. */}
-      {data.candidates.length > 0 || !isFiltered(filter) ? (
-        <section className="ag-rev-card">
-          <h2 className="ag-rev-h2">{t("review.outside_title")}</h2>
-          <p className="ag-rev-caption">{t("review.outside_help")}</p>
-          {data.candidates.length > 0 ? (
-            <CandidateTable rows={data.candidates} />
-          ) : (
-            <p className="ag-rev-caption">{t("review.outside_empty")}</p>
-          )}
-        </section>
-      ) : null}
+        {data.candidates.length > 0 || !isFiltered(filter) ? (
+          <section className="ag-rev-card">
+            <h2 className="ag-rev-h2">{t("review.outside_title")}</h2>
+            <p className="ag-rev-caption">{t("review.outside_help")}</p>
+            {data.candidates.length > 0 ? (
+              <CandidateTable rows={data.candidates} />
+            ) : (
+              <p className="ag-rev-caption">{t("review.outside_empty")}</p>
+            )}
+          </section>
+        ) : null}
 
-      <p className="ag-rev-caption ag-rev-disclaimer">{t("review.disclaimer")}</p>
-    </FocusProvider>
+        <p className="ag-rev-caption ag-rev-disclaimer">{t("review.disclaimer")}</p>
+      </FocusProvider>
+    </LinesProvider>
   );
 }
 
-/** What the read says about the whole book: too few companies, one sector
- *  carrying it, coins past a quarter, losses that would cut the plan's tax.
+/** What the read says about the whole book: too few names, one sector,
+ *  country or currency carrying it, funds at its core, cash idle beside
+ *  buys, coins past a quarter, losses that would cut the plan's tax.
  *  Unfiltered — a note is about the book, not about what the filters leave
  *  on screen. */
 function Notes({ notes, taxCurrency }: { notes: ReviewNote[]; taxCurrency: string }) {
@@ -238,11 +262,18 @@ function Notes({ notes, taxCurrency }: { notes: ReviewNote[]; taxCurrency: strin
   if (notes.length === 0) return null;
   return (
     <div className="ag-rev-card">
-      {notes.map((note) => (
-        <p key={`${note.key}-${note.sector ?? ""}`} className="ag-rev-caption">
-          {noteText(note, taxCurrency, t, lang)}
-        </p>
-      ))}
+      {notes.map((note) => {
+        const help = maybe(t, `review.note_${note.key}_help`);
+        return (
+          <p
+            key={`${note.key}-${note.sector ?? note.country ?? note.currency ?? ""}`}
+            className="ag-rev-caption"
+          >
+            {noteText(note, taxCurrency, t, lang)}
+            {help ? <Help text={help} /> : null}
+          </p>
+        );
+      })}
     </div>
   );
 }

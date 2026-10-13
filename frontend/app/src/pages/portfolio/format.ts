@@ -138,6 +138,11 @@ export function flagOf(code: string): string {
     .join("");
 }
 
+/** "🇪🇸 Spain — IRPF": the flag built from the code, the name from the catalog. */
+export function jurisdictionLabel(code: string, t: (key: string) => string): string {
+  return `${flagOf(code)} ${t(`profile.tax_residence_${code.toLowerCase()}`)}`.trim();
+}
+
 /** Display names for a ledger broker prefix — `portfolio/platforms.py`. */
 const BROKER_NAMES: Record<string, string> = {
   revolut: "Revolut",

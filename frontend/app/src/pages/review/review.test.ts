@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CLEAR,
   applyFilter,
+  planMoves,
   bucket,
   findRows,
   includeParam,
@@ -10,8 +11,10 @@ import {
   sourcesOf,
   splitCoins,
 } from "./filter";
-import { longDay, tipFigures } from "./format";
-import { BUDGET, buildPrompt } from "./prompt";
+import { askAgain, foreign, longDay, tipFigures } from "./format";
+import { BUDGET, buildPrompt, noteText } from "./prompt";
+import { countryName } from "./countries";
+import { NARROW, lineSlots } from "./lines";
 import { labelRank, placeLabels } from "./labels";
 import { tipPlace } from "./QualityMap";
 import type { Review, ReviewRow } from "./types";
@@ -24,6 +27,8 @@ function row(over: Partial<ReviewRow>): ReviewRow {
     ticker: "X",
     kind: "stock",
     sector: null,
+    country: null,
+    currency: null,
     held: true,
     verdict: "hold",
     reasons: [],
@@ -56,6 +61,7 @@ const review = (held: ReviewRow[], candidates: ReviewRow[] = []): Review => ({
   plan: { sells: 0, buys: 0, tax: null, tax_currency: "EUR" },
   unpriced: 0,
   jurisdiction: "es",
+  tax_status: "chosen",
   added: [],
   notes: [],
 });
@@ -198,6 +204,8 @@ describe("review prompt", () => {
             key: "tax_offset",
             count: 1,
             sector: null,
+            country: null,
+            currency: null,
             weight: null,
             amount: 152,
             tickers: ["INTC"],
@@ -212,6 +220,43 @@ describe("review prompt", () => {
     expect(text).toContain("review.note_tax_offset_window(2026-12-12)");
   });
 
+  it("tags a row quoted in another currency, and only that one", () => {
+    const text = buildPrompt(
+      review([
+        row({ ticker: "AMD", sector: "Technology", currency: "USD", weight: 0.2 }),
+        row({ ticker: "SAN.MC", currency: "EUR", weight: 0.1 }),
+      ]),
+      t,
+      "en",
+    );
+    expect(text).toContain("- AMD (Technology, USD): ");
+    expect(text).toContain("- SAN.MC: ");
+  });
+
+  it("words the country, currency, fund and cash notes", () => {
+    const note = {
+      count: 4,
+      sector: null,
+      country: null as string | null,
+      currency: null as string | null,
+      weight: 0.8,
+      amount: null,
+      tickers: [],
+      day: null,
+    };
+    const say = (over: Partial<typeof note> & { key: string }) =>
+      noteText({ ...note, ...over }, "EUR", t, "es");
+    expect(say({ key: "country_heavy", country: "United States" })).toContain(
+      "Estados Unidos",
+    );
+    expect(say({ key: "country_heavy", country: "Atlantis" })).toContain("Atlantis");
+    expect(say({ key: "currency_heavy", currency: "USD" })).toMatch(
+      /^review\.note_currency_heavy\(.*USD.*80,0/,
+    );
+    expect(say({ key: "fund_core" })).toMatch(/^review\.note_fund_core\(4,/);
+    expect(say({ key: "cash_heavy" })).toMatch(/^review\.note_cash_heavy\(4,/);
+  });
+
   it("stays under the chat's cap and counts what it left out", () => {
     const many = Array.from({ length: 200 }, (_, i) =>
       row({
@@ -224,6 +269,20 @@ describe("review prompt", () => {
     const text = buildPrompt(review(many), t, "en");
     expect(text.length).toBeLessThanOrEqual(BUDGET);
     expect(text).toMatch(/review\.prompt_more\(\d+\)/);
+  });
+});
+
+describe("review currencies and countries", () => {
+  it("calls a row foreign only when its currency is known and not the page's", () => {
+    expect(foreign(row({ currency: "USD" }), "EUR")).toBe("USD");
+    expect(foreign(row({ currency: "EUR" }), "EUR")).toBeNull();
+    expect(foreign(row({ currency: null }), "EUR")).toBeNull();
+  });
+
+  it("prints a country in the reader's language, an unknown one as given", () => {
+    expect(countryName("Spain", "en")).toBe("Spain");
+    expect(countryName("United Kingdom", "es")).toBe("Reino Unido");
+    expect(countryName("Narnia", "es")).toBe("Narnia");
   });
 });
 
@@ -326,5 +385,64 @@ describe("map labels", () => {
       return ra[0] - rb[0] || ra[1] - rb[1] || ra[2] - rb[2];
     });
     expect(order).toEqual([sell, big, small, outside]);
+  });
+});
+
+describe("review lines", () => {
+  it("fills the help copy with the book's own lines", () => {
+    expect(lineSlots(NARROW, "es")).toMatchObject({
+      small: "0,5\u00a0%",
+      add_to: "5\u00a0%",
+    });
+    const wide = lineSlots(
+      { concentrated: 0.15, small: 0.0025, add_to: 0.02, sector: 0.4 },
+      "en",
+    );
+    expect(wide).toMatchObject({ small: "0.25%", add_to: "2%", concentrated: "15%" });
+  });
+
+  it("quotes the narrow line when the book is too small for a concentration", () => {
+    expect(lineSlots({ ...NARROW, concentrated: null }, "en").concentrated).toBe("15%");
+  });
+});
+
+describe("review outside buys", () => {
+  const sell = row({ ticker: "AMD", verdict: "sell", delta: -900 });
+  const add = row({ ticker: "JNJ", verdict: "add", delta: 200, sector: "Healthcare" });
+  const buy = row({
+    ticker: "BKNG",
+    held: false,
+    verdict: "buy",
+    delta: 500,
+    target_weight: 0.05,
+    sector: "Consumer Cyclical",
+  });
+  const plain = row({ ticker: "MSFT", held: false, verdict: "buy" });
+  const data = review([sell, add], [plain, buy]);
+
+  it("counts an outside buy's money after a filter", () => {
+    const cyc = applyFilter(data, { ...CLEAR, sectors: ["consumer_cyclical"] });
+    expect(cyc.plan).toMatchObject({ sells: 0, buys: 500 });
+    const both = applyFilter(data, {
+      ...CLEAR,
+      sectors: ["healthcare", "consumer_cyclical"],
+    });
+    expect(both.plan.buys).toBe(700);
+  });
+
+  it("lists outside buys after the held adds", () => {
+    const { out, into } = planMoves(data);
+    expect(out).toEqual([sell]);
+    expect(into).toEqual([add, buy]);
+  });
+});
+
+describe("review pending names", () => {
+  it("refetches once when the read is partial", () => {
+    const partial = { ...review([]), pending: 3 };
+    expect(askAgain(partial, null, "EUR|")).toBe(true);
+    expect(askAgain(partial, "EUR|", "EUR|")).toBe(false);
+    expect(askAgain(partial, "EUR|", "USD|")).toBe(true);
+    expect(askAgain(review([]), null, "EUR|")).toBe(false);
   });
 });

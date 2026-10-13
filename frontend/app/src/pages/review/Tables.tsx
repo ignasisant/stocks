@@ -18,6 +18,7 @@
 
 import { Fragment, type ReactNode, useState } from "react";
 import { useLang, useT } from "../../shell/i18n";
+import { useCurrency } from "../../shell/session";
 import { TickerCell, cachedName } from "../../shell/tickers";
 import { DenseRow, Responsive } from "../../ui/Rows";
 import { Reasons } from "./Actions";
@@ -25,8 +26,21 @@ import { maybe } from "../sentiment/format";
 import { DetailsButton, Head, VerdictChip, PnlChip } from "./Explain";
 import { bucket, findRows } from "./filter";
 import { useListFocus } from "./focus";
-import { longDay, metric, money, percent, score, verdictTone } from "./format";
+import { useHelp } from "./lines";
+import { foreign, longDay, metric, money, percent, score, verdictTone } from "./format";
 import type { ReviewRow } from "./types";
+
+/** The quote currency beside the name, only when it is not the page's. */
+function Ccy({ row, base }: { row: ReviewRow; base: string }) {
+  const t = useT();
+  const code = foreign(row, base);
+  if (!code) return null;
+  return (
+    <span className="ag-rev-ccy" title={t("review.ccy_tag_help", { currency: code })}>
+      {code}
+    </span>
+  );
+}
 
 /** Under this many rows the whole list is on screen: no box. */
 export const FIND_MIN = 6;
@@ -91,6 +105,7 @@ export function HeldTable({
 }) {
   const t = useT();
   const lang = useLang();
+  const help = useHelp();
   const na = t("review.na");
   const reason = (row: ReviewRow) =>
     row.reasons[0] ? t(`review.reason_${row.reasons[0]}`) : null;
@@ -127,7 +142,7 @@ export function HeldTable({
                     />
                     <Head
                       label={t("review.col_target")}
-                      help={t("review.col_target_help")}
+                      help={help("review.col_target_help")}
                     />
                     <Head
                       label={t("review.col_move")}
@@ -147,6 +162,7 @@ export function HeldTable({
                     >
                       <td className="ag-rev-who-col">
                         <TickerCell ticker={row.ticker} name={false} />
+                        <Ccy row={row} base={base} />
                       </td>
                       <td className="ag-rev-left">
                         <VerdictChip row={row} />
@@ -187,7 +203,11 @@ export function HeldTable({
                     spec={{
                       ticker: (r) => r.ticker,
                       badge: (r) => <VerdictChip row={r} />,
-                      sub: (r) => [percent(r.weight, lang), reason(r)],
+                      sub: (r) => [
+                        percent(r.weight, lang),
+                        foreign(r, base),
+                        reason(r),
+                      ],
                       value: (r) => money(r.delta, base, lang, true),
                       delta: (r) =>
                         r.target_weight !== null
@@ -215,6 +235,7 @@ const OUTSIDE = ["pe_fwd", "fcf_yield", "roic", "op_margin"] as const;
 export function CandidateTable({ rows: all }: { rows: ReviewRow[] }) {
   const t = useT();
   const lang = useLang();
+  const base = useCurrency();
   const na = t("review.na");
   const find = useFind(all);
   const rows = find.rows;
@@ -262,6 +283,7 @@ export function CandidateTable({ rows: all }: { rows: ReviewRow[] }) {
                     >
                       <td className="ag-rev-who-col">
                         <TickerCell ticker={row.ticker} name={false} />
+                        <Ccy row={row} base={base} />
                       </td>
                       <td className="ag-rev-left">
                         <VerdictChip row={row} />
@@ -301,8 +323,12 @@ export function CandidateTable({ rows: all }: { rows: ReviewRow[] }) {
                       ticker: (r) => r.ticker,
                       badge: (r) => <VerdictChip row={r} />,
                       names: true,
-                      sub: (r) =>
-                        r.reasons.slice(0, 2).map((code) => t(`review.reason_${code}`)),
+                      sub: (r) => [
+                        foreign(r, base),
+                        ...r.reasons
+                          .slice(0, 2)
+                          .map((code) => t(`review.reason_${code}`)),
+                      ],
                       value: (r) =>
                         r.quality !== null
                           ? `${t("review.col_quality")} ${score(r.quality)}`

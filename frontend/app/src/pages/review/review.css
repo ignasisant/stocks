@@ -1411,3 +1411,16 @@
   align-items: center;
   gap: 0.4rem;
 }
+
+/* The quote currency beside a name, only when it is not the page's. */
+.ag-rev-ccy {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-page);
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+  vertical-align: middle;
+}

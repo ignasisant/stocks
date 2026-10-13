@@ -5,7 +5,7 @@
 
 import { type ChipSpec, type Tone, toneOf } from "../../ui/Kpi";
 import { parseDay } from "../home/format";
-import type { Verdict } from "./types";
+import type { Review, Verdict } from "./types";
 import { formatter } from "../../shell/numbers";
 
 function finite(value: number | null | undefined): value is number {
@@ -44,6 +44,16 @@ export function percent(
   }).format(value);
 }
 
+/** A line the copy quotes: as few decimals as it needs (5 %, 0,25 %). */
+export function line(value: number, lang: string): string {
+  return formatter(lang, { style: "percent", maximumFractionDigits: 2 }).format(value);
+}
+
+/** The row's quote currency when it is not the page's; null when it is or is unknown. */
+export function foreign(row: { currency: string | null }, base: string): string | null {
+  return row.currency && row.currency !== base ? row.currency : null;
+}
+
 /** The KPIs a row carries, in display order (`stocks.analysis.review.SHOWN`). */
 export const SHOWN = [
   "pe_fwd",
@@ -61,6 +71,11 @@ export const SHOWN = [
   "revenue_growth",
   "fcf_margin",
   "runway_years",
+  "pe_ttm",
+  "pb",
+  "roe",
+  "dividend_yield",
+  "payout_ratio",
 ] as const;
 
 /** The few a map dot's tooltip carries: price, price for growth, cash, returns. */
@@ -91,11 +106,15 @@ export const OWN_LABEL = new Set<string>([
   "revenue_growth",
   "fcf_margin",
   "runway_years",
+  "dividend_yield",
+  "payout_ratio",
 ]);
 
 /** The KPIs a row carries, each in its own unit. */
 const UNITS: Record<string, "pct" | "x" | "score" | "years"> = {
   pe_fwd: "x",
+  pe_ttm: "x",
+  pb: "x",
   growth_pe: "x",
   ev_ebitda: "x",
   ev_sales: "x",
@@ -108,6 +127,9 @@ const UNITS: Record<string, "pct" | "x" | "score" | "years"> = {
   share_dilution: "pct",
   revenue_growth: "pct",
   fcf_margin: "pct",
+  roe: "pct",
+  dividend_yield: "pct",
+  payout_ratio: "pct",
   moat: "score",
   runway_years: "years",
 };
@@ -200,4 +222,12 @@ export function pnlChip(
 ): ChipSpec | null {
   const text = pnl(row, base, lang);
   return text ? { text, tone: toneOf(row.pnl ?? row.pnl_pct) } : null;
+}
+
+/**
+ * Whether a read that left names loading on the server is worth asking for
+ * again: once per question (`asked` = base and added tickers), never in a loop.
+ */
+export function askAgain(read: Review, retried: string | null, asked: string): boolean {
+  return (read.pending ?? 0) > 0 && retried !== asked;
 }

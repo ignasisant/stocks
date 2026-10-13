@@ -27,6 +27,10 @@ DEAR_QUALITY = {
 }
 
 
+def _rows(*rows) -> list[review.BookRow]:
+    return [review.BookRow(*row) for row in rows]
+
+
 def test_a_dear_weak_business_is_sold():
     v = review.judge_held(DEAR_WEAK, weight=0.03, risk_share=0.06)
     assert v.verdict == review.SELL
@@ -490,7 +494,7 @@ def test_a_one_company_book_is_told_it_is_narrow_not_to_sell_most_of_itself():
     [v] = _plan((DEAR_QUALITY, 1.0))
     assert v.verdict == review.HOLD and v.target is None
     assert review.R_FEW_NAMES in v.reasons
-    assert review.book_notes([("stock", "Technology", 1.0)]) == [
+    assert review.book_notes(_rows(("stock", "Technology", 1.0))) == [
         review.Note(review.N_FEW_NAMES, count=1)
     ]
 
@@ -498,9 +502,10 @@ def test_a_one_company_book_is_told_it_is_narrow_not_to_sell_most_of_itself():
 def test_two_good_companies_half_and_half_are_both_kept():
     plan = _plan((CHEAP_QUALITY, 0.5), (DEAR_QUALITY, 0.5))
     assert [v.verdict for v in plan] == [review.HOLD, review.HOLD]
-    assert [n.key for n in review.book_notes([("stock", None, 0.5)] * 2)] == [
-        review.N_FEW_NAMES
-    ]
+    assert [
+        n.key
+        for n in review.book_notes(_rows(("stock", None, 0.5), ("stock", None, 0.5)))
+    ] == [review.N_FEW_NAMES]
 
 
 def test_a_narrow_book_still_sells_what_is_weak_on_both_scores():
@@ -511,10 +516,11 @@ def test_a_narrow_book_still_sells_what_is_weak_on_both_scores():
     assert plan[1].verdict == review.HOLD
 
 
-def test_a_fund_based_book_with_one_stock_on_the_side_says_nothing():
+def test_a_fund_based_book_with_one_stock_on_the_side_says_the_stock_is_a_satellite():
     plan = _plan((None, 0.85, "equity_fund"), (DEAR_QUALITY, 0.15))
     assert [v.verdict for v in plan] == [review.CORE, review.HOLD]
-    assert review.book_notes([("equity_fund", None, 0.85), ("stock", None, 0.15)]) == []
+    notes = review.book_notes(_rows(("equity_fund", None, 0.85), ("stock", None, 0.15)))
+    assert notes == [review.Note(review.N_FUND_CORE, count=1, weight=0.85)]
 
 
 @pytest.mark.parametrize("metrics", [CHEAP_QUALITY, DEAR_QUALITY, {}])
@@ -622,7 +628,7 @@ def test_one_sector_carrying_the_book_is_named_and_gets_none_of_the_sales():
     plan = review.redeploy(judged, tech)
     assert not any(review.R_REDEPLOY in v.reasons for v in plan)
     assert _moves(SEVEN, plan)[1] == 0
-    [note] = review.book_notes([("stock", "Technology", w) for _, w in SEVEN])
+    [note] = review.book_notes(_rows(*[("stock", "Technology", w) for _, w in SEVEN]))
     assert note.key == review.N_SECTOR_HEAVY and note.count == 7
     assert note.weight == pytest.approx(sum(w for _, w in SEVEN))
 
@@ -656,11 +662,328 @@ def test_an_underweight_add_into_a_full_sector_is_held():
 
 
 def test_one_company_alone_is_a_concentration_not_a_sector():
-    rows = [("stock", "Technology", 0.45)] + [("stock", s, 0.11) for s in "ABCDE"]
+    rows = _rows(("stock", "Technology", 0.45), *[("stock", s, 0.11) for s in "ABCDE"])
     assert review.book_notes(rows) == []
 
 
 def test_heavy_crypto_is_named_never_cut():
-    rows = [("crypto", None, 0.40)] + [("stock", None, 0.15)] * 4
+    rows = _rows(("crypto", None, 0.40), *[("stock", None, 0.15)] * 4)
     assert review.book_notes(rows) == [review.Note(review.N_CRYPTO_HEAVY, weight=0.40)]
     assert review.judge_held(None, weight=0.40, kind="crypto").verdict == review.UNRATED
+
+
+def test_one_country_carrying_the_book_is_named_whichever_it_is():
+    rows = _rows(
+        *[("stock", s, 0.24, "Spain", "EUR") for s in "ABC"],
+        ("stock", "D", 0.28, "United States", "USD"),
+    )
+    [note] = review.book_notes(rows, "EUR")
+    assert note.key == review.N_COUNTRY_HEAVY and note.country == "Spain"
+    assert note.count == 3 and note.weight == pytest.approx(0.72)
+
+
+def test_two_companies_from_one_country_are_not_a_home_bias():
+    rows = _rows(("stock", "A", 0.40, "Spain"), ("stock", "B", 0.40, "Spain"))
+    assert review.N_COUNTRY_HEAVY not in [n.key for n in review.book_notes(rows)]
+
+
+def test_a_book_quoted_in_another_currency_is_named_against_the_readers():
+    rows = _rows(
+        *[("stock", s, 0.2, "United States", "USD") for s in "ABCD"],
+        ("equity_fund", None, 0.1, None, "USD"),
+        ("money_market", None, 0.1, None, "EUR"),
+    )
+    notes = review.book_notes(rows, "EUR")
+    [note] = [n for n in notes if n.key == review.N_CURRENCY_HEAVY]
+    assert note.currency == "USD" and note.weight == pytest.approx(0.9)
+    # Read in dollars, the same book is at home.
+    assert review.N_CURRENCY_HEAVY not in [n.key for n in review.book_notes(rows, "USD")]
+
+
+def test_idle_cash_is_named_only_beside_something_to_buy():
+    rows = _rows(("money_market", None, 0.30), *[("stock", s, 0.14) for s in "ABCDE"])
+    assert review.cash_note(rows, [review.HOLD, review.SELL]) is None
+    note = review.cash_note(rows, [review.ADD, review.HOLD, review.BUY])
+    assert note == review.Note(review.N_CASH_HEAVY, count=2, weight=0.30)
+    assert review.cash_note(_rows(("money_market", None, 0.10)), [review.BUY]) is None
+
+
+# -- Data the feed lacks, and businesses judged on their own ruler ----------
+
+MATURE_NO_ESTIMATES = {
+    "pe_ttm": 9.0,
+    "ev_ebitda": 9.0,
+    "fcf_yield": 0.06,
+    "ev": 1e9,
+    "roic": 0.30,
+    "op_margin": 0.30,
+    "moat": 70.0,
+}
+
+
+def test_a_trailing_pe_stands_in_when_analysts_do_not_cover_the_name():
+    s = review.score(MATURE_NO_ESTIMATES)
+    assert s.trailing_pe
+    with_forward = review.score({**MATURE_NO_ESTIMATES, "pe_fwd": 9.0})
+    assert s.cheapness == with_forward.cheapness
+    held = review.judge_held(MATURE_NO_ESTIMATES, weight=0.02)
+    assert review.R_TRAILING_PE in held.reasons
+    losing = review.judge_held({**MATURE_NO_ESTIMATES, "pe_ttm": -5.0}, weight=0.02)
+    assert review.R_LOSS in losing.reasons
+
+
+def test_book_value_prices_a_name_the_feed_gives_one_multiple_for():
+    thin = {"pe_fwd": 10.0, "pb": 1.0, "roic": 0.30, "op_margin": 0.30, "moat": 70.0}
+    s = review.score(thin)
+    assert s.cheapness is not None and s.book_priced
+    assert review.R_BOOK_PRICED in review.judge_held(thin, weight=0.02).reasons
+    # With two prices of its own, book stays out.
+    assert not review.score({**thin, "ev_ebitda": 9.0}).book_priced
+
+
+BANK = {
+    "industry": "Banks - Diversified",
+    "roe": 0.13,
+    "net_income_cagr": 0.10,
+    "share_dilution": -0.03,
+    "pe_fwd": 7.0,
+    "pb": 0.9,
+    "fcf_yield": -0.5,
+    "fcf": -5e10,
+    "net_debt_ebitda": 10.0,
+    "ev": -1e10,
+    "roic": 0.02,
+    "op_margin": 0.35,
+    "moat": 30.0,
+}
+
+
+def test_a_bank_is_priced_on_its_book_not_its_cash_flow():
+    v = review.judge_held(BANK, weight=0.02)
+    assert v.verdict == review.ADD
+    assert v.reasons[0] == review.R_FINANCIAL_LENS
+    for wrong in (
+        review.R_NEGATIVE_FCF,
+        review.R_DEBT,
+        review.R_SUSPECT,
+        review.R_LOW_ROIC,
+        review.R_NO_MOAT,
+    ):
+        assert wrong not in v.reasons
+    assert v.metrics["pb"] == 0.9 and v.metrics["roe"] == 0.13
+
+
+def test_an_insurer_with_a_negative_enterprise_value_is_still_rated():
+    insurer = {
+        "industry": "Insurance - Diversified",
+        "ev": -2e10,
+        "roe": 0.12,
+        "net_income_cagr": 0.08,
+        "pb": 1.5,
+        "pe_fwd": 20.0,
+    }
+    s = review.score(insurer)
+    assert not s.suspect and s.quality is not None and s.cheapness is not None
+    assert review.judge_candidate(insurer).verdict != review.UNRATED
+
+
+def test_a_bank_paying_more_for_its_book_than_its_return_earns_reads_dear():
+    dear = {**BANK, "roe": 0.05, "net_income_cagr": 0.0, "pb": 2.0, "pe_fwd": 18.0}
+    v = review.judge_candidate(dear)
+    assert v.verdict == review.PASS
+    assert review.R_EXPENSIVE in v.reasons and review.R_LOW_ROE in v.reasons
+
+
+def test_a_bank_never_reads_as_a_growth_or_early_stage():
+    racing = {
+        **BANK,
+        "industry": "Banks - Regional",
+        "revenue_growth": 0.40,
+        "revenue_cagr": 0.40,
+        "op_margin": 0.05,
+        "revenue": 1.0,
+        "market_cap": 100.0,
+    }
+    assert review.stage(racing) == review.MATURE
+    assert review.judge_held(racing, weight=0.02).verdict != review.BET
+
+
+REIT = {
+    "industry": "REIT - Industrial",
+    "roe": 0.06,
+    "revenue_cagr": 0.07,
+    "share_dilution": 0.02,
+    "op_margin": 0.45,
+    "pb": 1.0,
+    "pe_fwd": 20.0,
+    "ev_ebitda": 15.0,
+    "dividend_yield": 0.05,
+    "payout_ratio": 1.4,
+    "fcf_yield": -0.03,
+    "roic": 0.03,
+    "moat": 30.0,
+}
+
+
+def test_a_reit_is_not_a_heavy_debtor_at_six_times_ebitda():
+    v = review.judge_held({**REIT, "net_debt_ebitda": 6.0}, weight=0.02)
+    assert review.R_DEBT not in v.reasons
+    assert v.reasons[0] == review.R_REIT_LENS
+    heavy = review.judge_held({**REIT, "net_debt_ebitda": 9.0}, weight=0.02)
+    assert review.R_DEBT in heavy.reasons
+
+
+def test_a_reit_is_priced_on_book_ffo_and_yield():
+    s = review.score(REIT)
+    assert s.lens == review.REAL_ESTATE
+    assert s.quality is not None and s.cheapness is not None
+    pricier = review.score({**REIT, "pb": 1.8, "dividend_yield": 0.02})
+    assert pricier.cheapness < s.cheapness
+
+
+def test_a_reit_paying_out_its_earnings_is_not_stretched():
+    v = review.judge_held(REIT, weight=0.02)
+    assert review.R_PAYOUT_STRETCHED not in v.reasons
+    for wrong in (review.R_NEGATIVE_FCF, review.R_LOW_ROIC, review.R_NO_MOAT):
+        assert wrong not in v.reasons
+
+
+def test_a_utility_carries_four_times_ebitda_without_blocking_an_add():
+    utility = {**CHEAP_QUALITY, "industry": "Utilities - Regulated Electric"}
+    assert (
+        review.judge_held({**utility, "net_debt_ebitda": 4.0}, weight=0.02).verdict
+        == review.ADD
+    )
+    _blocked({**utility, "net_debt_ebitda": 5.5}, review.R_DEBT)
+
+
+def test_a_lender_outside_the_financial_industries_still_falls_back_on_the_float():
+    card = {
+        **CHEAP_QUALITY,
+        "industry": "Credit Services",
+        "fcf_yield": 0.39,
+        "fcf_ebitda": 6.0,
+        "pb": 1.2,
+    }
+    s = review.score(card)
+    assert s.lens == review.STANDARD and s.fcf_float
+
+
+# -- Dividends --------------------------------------------------------------
+
+PAYER = {"pe_fwd": 25.0, "ev_ebitda": 20.0, "roic": 0.30, "op_margin": 0.30, "moat": 70.0}
+
+
+def test_a_high_yield_counts_toward_a_mature_names_price():
+    plain = review.score(PAYER).cheapness
+    assert review.score({**PAYER, "dividend_yield": 0.05}).cheapness > plain
+    # A token payout is not held against a name that reinvests.
+    assert review.score({**PAYER, "dividend_yield": 0.015}).cheapness == plain
+
+
+def test_a_stretched_payout_stops_an_add():
+    _blocked({**CHEAP_QUALITY, "payout_ratio": 1.2}, review.R_PAYOUT_STRETCHED)
+    _blocked({**CHEAP_QUALITY, "dividend_fcf": 1.5}, review.R_PAYOUT_STRETCHED)
+
+
+def test_a_four_percent_yield_is_named_never_a_verdict():
+    v = review.judge_held({**DEAR_WEAK, "dividend_yield": 0.06}, weight=0.03)
+    assert v.verdict == review.SELL
+    assert review.R_DIVIDEND in v.reasons
+
+
+# --- Sizes that follow the book's shape --------------------------------------
+
+
+def test_the_small_line_shrinks_with_a_wide_book():
+    assert review.small_line(None) == review.SMALL
+    assert review.small_line(50) == review.SMALL
+    assert review.small_line(200) == pytest.approx(0.0025)
+
+
+def test_a_two_hundred_name_book_does_not_sell_every_crumb():
+    # 0.4% is an even share of 200 names, not a crumb.
+    assert review.judge_held(CHEAP_WEAK, weight=0.004).verdict == review.SELL
+    assert review.judge_held(CHEAP_WEAK, weight=0.004, names=200).verdict == review.HOLD
+
+
+def test_only_the_weakest_crumbs_are_sold_in_one_pass():
+    crumbs = [
+        review.Verdict(review.SELL, (review.R_SMALL,), 45.0 + i, 50.0, 0.0)
+        for i in range(8)
+    ]
+    poor = review.Verdict(review.SELL, (review.R_SMALL,), 20.0, 20.0, 0.0)
+    out = review.cap_small_sells([*crumbs, poor])
+    sold = [v for v in out if v.verdict == review.SELL]
+    assert len(sold) == review.SMALL_SELLS_MAX + 1
+    assert out[-1].verdict == review.SELL
+    # The best three wait, still named small and moving nothing.
+    for v in out[5:8]:
+        assert v.verdict == review.HOLD and v.target is None
+        assert review.R_SMALL in v.reasons
+    assert review.cap_small_sells(crumbs[:5]) == crumbs[:5]
+
+
+def test_an_add_in_a_wide_book_is_an_even_share_not_five_percent():
+    assert review.add_line(10) == review.ADD_TO
+    assert review.add_line(50) == pytest.approx(0.02)
+    assert review.add_line(500) == review.ADD_MIN
+    v = review.judge_held(CHEAP_QUALITY, weight=0.005, names=50)
+    assert v.verdict == review.ADD
+    assert v.target == pytest.approx(0.02)
+
+
+def test_a_satellite_is_not_filled_past_its_slice():
+    # Five companies beside an index fund at 80%: an even share of their
+    # fifth of the book is 4%, so a freed sale fills one to the add line.
+    alone = review.judge_held(CHEAP_QUALITY, weight=0.03, names=5)
+    beside = review.judge_held(CHEAP_QUALITY, weight=0.03, names=5, company_share=0.2)
+    assert alone.fill == pytest.approx(0.2)
+    assert beside.fill == review.ADD_TO
+
+
+# --- Outside buys sized with what the sales leave -----------------------------
+
+
+def _buy(q: float = 80.0, fill: float = review.ADD_TO) -> review.Verdict:
+    return review.Verdict(review.BUY, (), q, 70.0, None, {}, fill)
+
+
+def test_what_the_sales_leave_goes_to_the_best_outside_buys_first():
+    sold = review.Verdict(review.SELL, (), 20.0, 20.0, 0.0)
+    targets, left = review.place_outside(
+        [(0.08, sold)], [None], [(_buy(70.0), None), (_buy(90.0), None)]
+    )
+    # 8% freed: the better buy opens at 5%, the other takes the 3% left.
+    assert targets == [pytest.approx(0.03), pytest.approx(0.05)]
+    assert left == pytest.approx(0.0)
+
+
+def test_an_outside_buy_never_fills_a_sector_past_its_line():
+    sold = review.Verdict(review.SELL, (), 20.0, 20.0, 0.0)
+    kept = review.Verdict(review.HOLD, (), 70.0, 60.0)
+    targets, left = review.place_outside(
+        [(0.10, sold), (0.38, kept)],
+        ["Energy", "Technology"],
+        [(_buy(), "Technology"), (_buy(), "Energy")],
+    )
+    # Technology sits at 38%: the buy there takes only the two points to
+    # its line; Energy, emptied by the sale, takes its 5%.
+    assert targets[0] == pytest.approx(0.02)
+    assert targets[1] == pytest.approx(0.05)
+    assert left == pytest.approx(0.03)
+
+
+def test_no_buy_is_opened_under_a_crumb_and_a_watch_is_never_sized():
+    sold = review.Verdict(review.SELL, (), 20.0, 20.0, 0.0)
+    watch = review.Verdict(review.WATCH, (), 80.0, 40.0)
+    targets, left = review.place_outside([(0.004, sold)], [None], [(_buy(), None)])
+    assert targets == [None] and left == pytest.approx(0.004)
+    targets, _ = review.place_outside([(0.05, sold)], [None], [(watch, None)])
+    assert targets == [None]
+
+
+def test_a_buy_is_sized_to_the_add_line_of_the_book_it_joins():
+    assert review.judge_candidate(CHEAP_QUALITY).fill == review.ADD_TO
+    assert review.judge_candidate(CHEAP_QUALITY, names=50).fill == pytest.approx(0.02)
+    assert review.judge_candidate(DEAR_WEAK).fill is None

@@ -17,8 +17,11 @@ import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { TickerCell } from "../../shell/tickers";
 import { Chip, Help } from "../../ui/Kpi";
+import { countryName } from "./countries";
+import { useHelp } from "./lines";
 import {
   OWN_LABEL,
+  foreign,
   SHOWN,
   inYears,
   metric,
@@ -41,8 +44,9 @@ export function metricLabel(t: ReturnType<typeof useT>, key: string): string {
 /** The verdict pill, with the rule that produced it as its hover text. */
 export function VerdictChip({ row }: { row: ReviewRow }) {
   const t = useT();
+  const help = useHelp();
   return (
-    <span className="ag-rev-verdict" title={t(`review.verdict_${row.verdict}_help`)}>
+    <span className="ag-rev-verdict" title={help(`review.verdict_${row.verdict}_help`)}>
       <Chip
         chip={{
           text: t(`review.verdict_${row.verdict}`),
@@ -91,12 +95,13 @@ function Details({ row, taxCurrency }: { row: ReviewRow; taxCurrency?: string })
   const t = useT();
   const lang = useLang();
   const base = useCurrency();
+  const help = useHelp();
   const na = t("review.na");
   return (
     <div className="ag-rev-details">
       <p className="ag-rev-details-rule">
         <VerdictChip row={row} />
-        <span>{t(`review.verdict_${row.verdict}_help`)}</span>
+        <span>{help(`review.verdict_${row.verdict}_help`)}</span>
       </p>
       {row.reasons.length > 0 ? (
         <div className="ag-rev-details-group">
@@ -105,33 +110,37 @@ function Details({ row, taxCurrency }: { row: ReviewRow; taxCurrency?: string })
             {row.reasons.map((code) => (
               <li key={code}>
                 <b>{t(`review.reason_${code}`)}</b>
-                <span>{t(`review.reason_${code}_help`)}</span>
+                <span>{help(`review.reason_${code}_help`)}</span>
               </li>
             ))}
           </ul>
         </div>
       ) : null}
-      {row.held ? (
+      {row.held || row.delta !== null ? (
         <div className="ag-rev-details-group">
           <h3 className="ag-rev-h3">{t("review.details_position")}</h3>
           <dl className="ag-rev-facts">
-            <Fact
-              label={t("review.col_value")}
-              value={money(row.value, base, lang) ?? na}
-            />
-            <Fact
-              label={t("review.col_weight")}
-              help={t("review.col_weight_help")}
-              value={percent(row.weight, lang) ?? na}
-            />
-            <Fact
-              label={t("review.col_pnl")}
-              help={t("review.col_pnl_help")}
-              value={<PnlChip row={row} />}
-            />
+            {row.held ? (
+              <>
+                <Fact
+                  label={t("review.col_value")}
+                  value={money(row.value, base, lang) ?? na}
+                />
+                <Fact
+                  label={t("review.col_weight")}
+                  help={t("review.col_weight_help")}
+                  value={percent(row.weight, lang) ?? na}
+                />
+                <Fact
+                  label={t("review.col_pnl")}
+                  help={t("review.col_pnl_help")}
+                  value={<PnlChip row={row} />}
+                />
+              </>
+            ) : null}
             <Fact
               label={t("review.col_target")}
-              help={t("review.col_target_help")}
+              help={help("review.col_target_help")}
               value={percent(row.target_weight, lang) ?? "—"}
             />
             <Fact
@@ -139,7 +148,7 @@ function Details({ row, taxCurrency }: { row: ReviewRow; taxCurrency?: string })
               help={t("review.col_move_help")}
               value={money(row.delta, base, lang, true) ?? "—"}
             />
-            {taxCurrency ? (
+            {taxCurrency && row.held ? (
               <Fact
                 label={t("review.col_tax")}
                 help={t("review.col_tax_help")}
@@ -152,6 +161,19 @@ function Details({ row, taxCurrency }: { row: ReviewRow; taxCurrency?: string })
       <div className="ag-rev-details-group">
         <h3 className="ag-rev-h3">{t("review.details_metrics")}</h3>
         <dl className="ag-rev-facts">
+          {row.country ? (
+            <Fact
+              label={t("review.col_country")}
+              value={countryName(row.country, lang)}
+            />
+          ) : null}
+          {foreign(row, base) ? (
+            <Fact
+              label={t("review.col_currency")}
+              help={t("review.ccy_tag_help", { currency: row.currency ?? "" })}
+              value={row.currency}
+            />
+          ) : null}
           <Fact
             label={t("review.col_quality")}
             help={t("review.col_quality_help")}
