@@ -2859,6 +2859,31 @@ def _refund(prefs: dict, prefs_path: Path, provider: Provider) -> None:
     auth.save_prefs(prefs, prefs_path)
 
 
+def close_markdown(text: str) -> str:
+    """A half-written answer made whole enough to render.
+
+    The tail a model stopped in the middle of is the only thing that can be
+    open: a code fence, a link, an emphasis mark, a table row. The fence is
+    closed, a dangling `[label](partial` or last unfinished table row is
+    dropped, and an odd `**` is paired, so the reader never sees raw markdown.
+    """
+    out = text.rstrip()
+    if out.count("```") % 2:
+        return out + "\n```"
+    out = re.sub(r"\[[^\]\n]*\]\([^)\n]*$", "", out).rstrip()
+    out = re.sub(r"\[[^\]\n]*$", "", out).rstrip()
+    lines = out.split("\n")
+    last = lines[-1].strip()
+    if last.startswith("|") and not last.endswith("|"):
+        lines.pop()
+        out = "\n".join(lines).rstrip()
+    if out.count("**") % 2:
+        out += "**"
+    elif out.count("`") % 2:
+        out += "`"
+    return out
+
+
 def _provider_failed(exc: Exception, provider: Provider, model: str,
                      key: str = "") -> None:
     """Logged because the user only ever sees chat.api_error; without this the
@@ -3083,6 +3108,9 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     if turn.recalled:
         yield ("recalled", list(turn.recalled))
 
+    from stocks.web.i18n import translate
+    from stocks.web.llm import Cut
+
     capped = False
     for provider, key, model in turn.attempts:
         model = model or provider.default_model
@@ -3090,9 +3118,13 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
             capped = True
             continue
         parts: list[str] = []
+        cut = False
         try:
             for chunk in provider.stream(key, model, turn.system,
                                          turn.messages):
+                if isinstance(chunk, Cut):
+                    cut = True
+                    continue
                 if not chunk:
                     continue
                 if not parts:
@@ -3109,7 +3141,13 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
             if not parts:
                 _refund(prefs, prefs_path, provider)
                 continue
+            cut = True  # the stream died mid-answer: what arrived is a stub
         text = "".join(parts).strip()
+        if text and cut:
+            closed = close_markdown(text) + "\n\n" + translate(
+                "chat.cut_off", turn.lang or "en")
+            yield ("text", closed[len(text):])
+            text = closed
         if text:
             yield ("done", _record(turn, text, provider, model, key,
                                    prefs=prefs, prefs_path=prefs_path,

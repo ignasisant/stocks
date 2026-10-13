@@ -33,6 +33,7 @@
   "chat.stop": "Detener",
   "chat.byok_help_session": "Usa tu propia clave de API de {provider} para chatear. Este servidor no puede guardar claves, así que se queda en esta pestaña del navegador hasta que la cierres.",
   "chat.key_session_blocked": "Este navegador no deja que la página guarde la clave, ni siquiera para esta pestaña. Permite el almacenamiento del sitio o usa una ventana normal.",
+  "chat.cut_off": "La respuesta se cortó. Escribe «continúa» para seguir.",
   "chat.invalid_key": "Clave de API de {provider} no válida.",
   "chat.api_error": "El asistente no está disponible ahora mismo — inténtalo de nuevo en un momento.",
   "chat.unreadable": "Este dispositivo no pudo abrir ese archivo, así que no se ha enviado nada. Si está en Drive o te llegó por una app de chat, guárdalo antes en Descargas del móvil y adjúntalo desde ahí.",
