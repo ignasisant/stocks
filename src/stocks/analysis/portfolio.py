@@ -189,8 +189,13 @@ def cumulative_returns(returns: pd.Series) -> pd.Series:
     return (1 + returns).cumprod() - 1
 
 
+# A pair needs this many shared days to be compared: a coin listed last week
+# otherwise "diversifies" the book on three data points.
+MIN_CORR_DAYS = 30
+
+
 def correlation_matrix(returns: pd.DataFrame) -> pd.DataFrame:
-    return returns.corr()
+    return returns.corr(min_periods=MIN_CORR_DAYS)
 
 
 def risk_shares(
