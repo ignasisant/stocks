@@ -21,6 +21,7 @@
   "bank.add_title": "Connect a bank",
   "bank.country": "Country",
   "bank.bank": "Bank",
+  "bank.filter": "Filter banks",
   "bank.aspsps_failed": "Could not load the bank list: {detail}",
   "bank.no_redirect": "This app is not reachable over https here, and banks only redirect back to an https address. Connect from the deployed app.",
   "bank.connect": "Connect",

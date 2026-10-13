@@ -56,6 +56,30 @@ const COUNTRIES = [
   "PL",
 ];
 
+/** "ES" as "🇪🇸 España": the flag is the two letters moved into the regional
+    indicator block, so no table is needed. */
+function countryName(code: string, lang: string): string {
+  const flag = [...code]
+    .map((c) => String.fromCodePoint(0x1f1a5 + c.charCodeAt(0)))
+    .join("");
+  let name = code;
+  try {
+    name = new Intl.DisplayNames([lang], { type: "region" }).of(code) ?? code;
+  } catch {
+    // An engine without DisplayNames keeps the bare code.
+  }
+  return `${flag} ${name}`;
+}
+
+/** Enable Banking sometimes lists a bank in all lower case ("ceca bank"). */
+function bankName(name: string): string {
+  if (name !== name.toLowerCase()) return name;
+  return name.replace(
+    /(^|[\s-])(\p{L})/gu,
+    (_, gap: string, c: string) => gap + c.toUpperCase(),
+  );
+}
+
 /** A message the page shows above everything: what just happened. */
 type Notice = { tone: "ok" | "warn" | "bad"; text: string };
 
@@ -233,15 +257,20 @@ function AddBank({
   onNotice: (notice: Notice | null) => void;
 }) {
   const t = useT();
+  const lang = useLang();
   const [country, setCountry] = useState(COUNTRIES[0]!);
   const [chosen, setChosen] = useState("");
+  const [needle, setNeedle] = useState("");
   const [auth, setAuth] = useState<BankAuth | null>(null);
   const [busy, setBusy] = useState(false);
   const banks = useApi(() => get<BankChoice[]>("/bank/aspsps", { country }), [country]);
 
   // The list is per country, so the bank picked in one is not a bank in the
   // next: cleared here rather than left pointing at something that is gone.
-  useEffect(() => setChosen(""), [country]);
+  useEffect(() => {
+    setChosen("");
+    setNeedle("");
+  }, [country]);
 
   const start = () => {
     setBusy(true);
@@ -265,7 +294,7 @@ function AddBank({
         >
           {COUNTRIES.map((code) => (
             <option key={code} value={code}>
-              {code}
+              {countryName(code, lang)}
             </option>
           ))}
         </select>
@@ -284,6 +313,16 @@ function AddBank({
       ) : (
         <label className="bk-field">
           <span className="bk-note">{t("bank.bank")}</span>
+          {banks.state === "loaded" && banks.data.length > 12 && (
+            <input
+              type="search"
+              className="bk-select"
+              aria-label={t("bank.filter")}
+              placeholder={t("bank.filter")}
+              value={needle}
+              onChange={(event) => setNeedle(event.target.value)}
+            />
+          )}
           <select
             className="bk-select"
             value={chosen}
@@ -292,10 +331,17 @@ function AddBank({
           >
             <option value="">—</option>
             {(banks.state === "loaded" ? [...banks.data] : [])
+              .filter(
+                (bank) =>
+                  bank.name === chosen ||
+                  bankName(bank.name)
+                    .toLowerCase()
+                    .includes(needle.trim().toLowerCase()),
+              )
               .sort((a, b) => a.name.localeCompare(b.name))
               .map((bank) => (
                 <option key={bank.name} value={bank.name}>
-                  {bank.name}
+                  {bankName(bank.name)}
                 </option>
               ))}
           </select>
