@@ -1571,7 +1571,9 @@ def risk(
 
     allocations = {
         key: slices(
-            report.allocation(key).to_dict(),
+            loaders.allocation_weights(
+                db, mtime, ccy, report.meta, key, report.allocation(key).to_dict()
+            ),
             allocation_parts(values, report.meta, key),
             allocation_parts(costs, report.meta, key),
         )

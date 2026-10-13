@@ -534,7 +534,9 @@ def test_a_backend_that_dies_mid_sentence_keeps_what_it_said(
     )
     monkeypatch.setattr(engine.market, "lookup_for", lambda *a, **k: [])
     end = finished(events(signed_in.post("/v1/chat/runs", json=run("hola")).text))
-    assert end["result"]["text"] == "Los dividendos se declaran"
+    # What it said is kept, then marked as cut so the reader can ask to go on.
+    assert end["result"]["text"].startswith("Los dividendos se declaran")
+    assert "continúa" in end["result"]["text"] or "continue" in end["result"]["text"]
     assert end["result"]["provider"] != "other"
 
 

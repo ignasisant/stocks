@@ -219,12 +219,19 @@ def book(account: Account, base: Base = None) -> PulseBook:
     # currencies the value is priced in and which sectors it sits in are read
     # off the positions, and a Yahoo throttle on the index closes is no reason
     # to blank them.
-    currency = report.allocation("currency")
+    # From the priced table, like the Allocation tab, so the two never print
+    # two splits of one book (`loaders.allocation_weights`).
+    def split(key: str) -> dict[str, float]:
+        return loaders.allocation_weights(
+            db, mtime, ccy, report.meta, key, report.allocation(key).to_dict()
+        )
+
+    currency = split("currency")
     answer.currency_weights = {
         str(name): float(weight) for name, weight in currency.items()
     }
     answer.usd_share = float(answer.currency_weights.get("USD", 0.0))
-    sectors = report.allocation("sector")
+    sectors = pd.Series(split("sector"), dtype=float)
     answer.sector_weights = {
         str(name): float(weight) for name, weight in sectors.items() if weight == weight
     }
