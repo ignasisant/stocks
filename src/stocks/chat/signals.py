@@ -648,7 +648,7 @@ def _tax_signals(
     # The next savings bracket, where the scale is progressive and in this
     # book's own currency (a USD-reported book against euro brackets would be
     # arithmetic on the wrong number).
-    brackets = _brackets(code)
+    brackets = _brackets(code, today.year)
     if brackets and net_gain > 0 and currency == getattr(jurisdiction, "currency", ""):
         floor = 0.0
         for i, (upper, rate) in enumerate(brackets):
@@ -715,7 +715,7 @@ class _Loss:
     loss: float
 
 
-def _brackets(code: str | None) -> list[tuple[float, float]]:
+def _brackets(code: str | None, year: int) -> list[tuple[float, float]]:
     """The progressive savings scale the card can reason about, or none.
 
     Spain's base del ahorro only, today: a single scale with no filing status
@@ -727,7 +727,7 @@ def _brackets(code: str | None) -> list[tuple[float, float]]:
         return []
     from stocks.portfolio.tax import es
 
-    return list(es.SAVINGS_BRACKETS)
+    return list(es.brackets_for(year))
 
 
 # --------------------------------------------------------- the central banks

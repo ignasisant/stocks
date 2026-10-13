@@ -172,7 +172,7 @@
   "portfolio.all_years_header": "Realized result — all years",
   "portfolio.all_years_caption": "Each tax year is netted and taxed on its own, so this is the sum of every year's closed figures, not one taxable base. Pick a year for its rules.",
   "portfolio.es_tax_header": "IRPF savings base — FY {year}",
-  "portfolio.es_tax_caption": "IRPF: gains and dividends go in the *savings base*, taxed at 19–28%. FIFO: sales match your oldest shares first (art. 37 LIRPF).",
+  "portfolio.es_tax_caption": "IRPF: gains and dividends go in the *savings base*, taxed at 19–30%. FIFO: sales match your oldest shares first (art. 37 LIRPF).",
   "portfolio.net_taxable": "Net taxable",
   "portfolio.es_net_taxable_help": "Realized gains minus deductible losses for the year (incl. 2-month-rule deferrals once recovered), in EUR at each trade date's ECB rate.",
   "portfolio.estimated_tax": "Estimated tax",

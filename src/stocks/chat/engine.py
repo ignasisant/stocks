@@ -930,7 +930,7 @@ def tax_rules(prefs: dict, today: date | None = None) -> str:
         scale = "; ".join(
             f"{rate:.0%} above" if upper == float("inf")
             else f"{rate:.0%} up to {upper:,.0f}"
-            for upper, rate in es.SAVINGS_BRACKETS
+            for upper, rate in es.brackets_for(day.year)
         )
         lines.append(f"Savings-base scale ({jur.currency}, marginal): {scale}.")
     window = jur.repurchase_window

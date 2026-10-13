@@ -9,6 +9,7 @@ from stocks.portfolio.tax.base import month_range
 from stocks.portfolio.tax.es import (
     WINDOW,
     EsTaxPeriod,
+    brackets_for,
     fiscal_period,
     reporting_flags,
     tax_on_savings_base,
@@ -32,27 +33,40 @@ def sale(ticker, buy_date, sell_date, cost, proceeds) -> RealizedSale:
 # --- brackets ---
 
 def test_tax_zero_or_negative_base():
-    assert tax_on_savings_base(0) == 0.0
-    assert tax_on_savings_base(-1000) == 0.0
+    assert tax_on_savings_base(0, 2025) == 0.0
+    assert tax_on_savings_base(-1000, 2025) == 0.0
 
 
 def test_tax_first_bracket():
-    assert tax_on_savings_base(6_000) == pytest.approx(6_000 * 0.19)
+    assert tax_on_savings_base(6_000, 2025) == pytest.approx(6_000 * 0.19)
 
 
 def test_tax_progressive_spans_brackets():
     # 60k: 6000@19% + 44000@21% + 10000@23%
     expected = 6_000 * 0.19 + 44_000 * 0.21 + 10_000 * 0.23
-    assert tax_on_savings_base(60_000) == pytest.approx(expected)
+    assert tax_on_savings_base(60_000, 2025) == pytest.approx(expected)
 
 
-def test_tax_top_bracket():
-    # 400k reaches the 28% top band
-    expected = (
-        6_000 * 0.19 + 44_000 * 0.21 + 150_000 * 0.23
-        + 100_000 * 0.27 + 100_000 * 0.28
+def test_tax_top_bracket_follows_the_year():
+    # 400k reaches the top band: 30% from 2025 (Ley 7/2024), 28% in 2023-2024
+    below = 6_000 * 0.19 + 44_000 * 0.21 + 150_000 * 0.23 + 100_000 * 0.27
+    assert tax_on_savings_base(400_000, 2025) == pytest.approx(below + 100_000 * 0.30)
+    assert tax_on_savings_base(400_000, 2024) == pytest.approx(below + 100_000 * 0.28)
+
+
+def test_tax_scale_before_2023_tops_out_lower():
+    # 2021-2022: 26% over 200k; before 2021: 23% over 50k
+    assert tax_on_savings_base(300_000, 2022) == pytest.approx(
+        6_000 * 0.19 + 44_000 * 0.21 + 150_000 * 0.23 + 100_000 * 0.26
     )
-    assert tax_on_savings_base(400_000) == pytest.approx(expected)
+    assert tax_on_savings_base(300_000, 2019) == pytest.approx(
+        6_000 * 0.19 + 44_000 * 0.21 + 250_000 * 0.23
+    )
+
+
+def test_brackets_for_a_later_year_keep_the_latest_scale():
+    assert brackets_for(2030) == brackets_for(2025)
+    assert brackets_for(2030)[-1] == (float("inf"), 0.30)
 
 
 # --- 2-month rule ---
