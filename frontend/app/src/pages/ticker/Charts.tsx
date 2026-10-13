@@ -11,6 +11,7 @@
 
 import { useMemo, useState } from "react";
 import { useT } from "../../shell/i18n";
+import { maybe, sectorKey } from "../sentiment/format";
 import { chart as palette } from "../../shell/theme";
 import { useWidth } from "../../shell/useWidth";
 import {
@@ -842,7 +843,9 @@ export function FundExposure({ fund }: { fund: Fund }) {
       <div className="tk-hbars">
         {fund.sectors.map(([label, weight]) => (
           <div className="tk-hbar" key={label}>
-            <span className="tk-hbar-l">{label}</span>
+            <span className="tk-hbar-l">
+              {maybe(t, `sentiment.sector_${sectorKey(label)}`) ?? label}
+            </span>
             <span className="tk-hbar-track">
               <span
                 className="tk-hbar-fill"

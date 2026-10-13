@@ -20,24 +20,17 @@
 import { useState } from "react";
 import { get } from "../../shell/api";
 import { Loaded, Skeleton } from "../../shell/Layout";
-import { useLang, useT } from "../../shell/i18n";
+import { useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
 import { Cohort } from "./Cohort";
 import { FUNDAMENTAL_WHY, Podium, TECHNICAL_WHY } from "./Podium";
 import { RescanButton, useRescan } from "./Rescan";
 import { Verdict } from "./Verdict";
+import { calendarDay } from "../../shell/dates";
 import { useLabels } from "./labels";
 import type { SectorCohort, Sectors, SectorSummary } from "./types";
 import "./sector.css";
-
-/** "12 Oct" in the reader's language; the raw string when it is not a date. */
-function dayLabel(iso: string, lang: string): string {
-  const day = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
-  return Number.isNaN(day.getTime())
-    ? iso
-    : day.toLocaleDateString(lang, { day: "numeric", month: "short", timeZone: "UTC" });
-}
 
 export default function Page() {
   const t = useT();
@@ -66,7 +59,6 @@ export default function Page() {
  */
 function Screen({ sectors }: { sectors: SectorSummary[] }) {
   const t = useT();
-  const lang = useLang();
   const labels = useLabels();
   const { params, setParams } = useRoute();
 
@@ -129,7 +121,7 @@ function Screen({ sectors }: { sectors: SectorSummary[] }) {
           ) : (
             <>
               <p className="ag-sec-caption">
-                {t("sector.as_of", { date: dayLabel(data.as_of, lang) })}
+                {t("sector.as_of", { date: calendarDay(data.as_of) })}
               </p>
               <Podium
                 title={t("sector.podium_title")}

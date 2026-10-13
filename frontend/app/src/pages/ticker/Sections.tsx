@@ -120,7 +120,7 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
             conv: kpiText(metrics.market_cap_base, "money"),
             ccy: metrics.base,
             rate: metrics.fx_rate === null ? DASH : num(metrics.fx_rate, 4),
-            as_of: metrics.fx_as_of ?? DASH,
+            as_of: metrics.fx_as_of ? calendarDay(metrics.fx_as_of) : DASH,
           })}
         </Note>
       ) : null}
@@ -604,7 +604,7 @@ function provenance(
       ? t("ticker.cef_tried", { sources: named(figure.tried) })
       : t("ticker.na");
   }
-  return [lead, sourceLabel(t, figure.source, navSymbol), figure.as_of]
+  return [lead, sourceLabel(t, figure.source, navSymbol), calendarDay(figure.as_of)]
     .filter(Boolean)
     .join(" · ");
 }
@@ -706,7 +706,7 @@ function CefChecks({ fund, cef }: { fund: Fund; cef: ClosedEnd }) {
       {cef.checks.map((check) => {
         const slots = {
           metric: metricLabel(t, check.metric),
-          date: check.as_of,
+          date: calendarDay(check.as_of),
           official: shown(check, check.official),
           official_source: sourceLabel(t, check.official_source, cef.nav_symbol),
           market: shown(check, check.market),
@@ -776,7 +776,9 @@ function FundHoldings({ fund }: { fund: Fund }) {
           ? t("ticker.cef_holdings_caption", {
               n: fund.holdings.length,
               count: fund.closed_end.holdings_count ?? DASH,
-              date: fund.closed_end.holdings_as_of ?? DASH,
+              date: fund.closed_end.holdings_as_of
+                ? calendarDay(fund.closed_end.holdings_as_of)
+                : DASH,
               pct: percent(fund.disclosed_weight, 1),
             })
           : t("ticker.fund_holdings_caption", {

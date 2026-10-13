@@ -14,11 +14,11 @@
 import { useState } from "react";
 import type { ChangeEvent, DragEvent, FocusEvent, ReactNode, RefObject } from "react";
 import { useT } from "../../shell/i18n";
-import { platformHint } from "./text";
 import { MAX_BYTES, acceptOf } from "./api";
 import type { Platform, Staged } from "./api";
 import { Eyebrow } from "./Card";
 import { Glyph } from "./Glyph";
+import { platformHint } from "./text";
 
 export function Source({
   platforms,

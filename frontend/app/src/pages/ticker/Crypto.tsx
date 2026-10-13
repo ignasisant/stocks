@@ -19,6 +19,7 @@
  * card notes say so.
  */
 
+import { calendarDay } from "../../shell/dates";
 import { useT } from "../../shell/i18n";
 import { Kpi, bandTone } from "../../ui/Kpi";
 import { DASH, compactMoney, percent, signedPercent, type Translate } from "./format";
@@ -220,7 +221,9 @@ export function CycleSection({ cycle, coin }: { cycle: CryptoCycle; coin: string
     <Card
       title={t("ticker.cycle_title")}
       note={
-        cycle.scan_date ? t("ticker.cycle_as_of", { date: cycle.scan_date }) : undefined
+        cycle.scan_date
+          ? t("ticker.cycle_as_of", { date: calendarDay(cycle.scan_date) })
+          : undefined
       }
     >
       <Metrics>

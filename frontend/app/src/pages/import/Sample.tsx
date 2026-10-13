@@ -14,10 +14,10 @@
 
 import { useState } from "react";
 import { useT } from "../../shell/i18n";
-import { platformHint } from "./text";
 import { Status } from "../../ui/Status";
 import { sampleStatement } from "./api";
 import type { Platform } from "./api";
+import { platformHint } from "./text";
 
 export function Sample({
   platform,

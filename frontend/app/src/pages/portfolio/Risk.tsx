@@ -32,6 +32,7 @@ import { brokerName, decimal, moneyIn, percent } from "./format";
 import { Donut, ReturnLines, type LineMoney, type SliceDetail } from "./charts";
 import { CorrelationCard } from "./Correlation";
 import { Caption, Card, Empty, Kpis, MissingPrices, Segmented } from "./ui";
+import { maybe, sectorKey } from "../sentiment/format";
 
 /** Allocation splits, in the order they are laid out. */
 const SPLITS: [string, string][] = [
@@ -294,7 +295,16 @@ export default function Risk() {
                                     ? { ...slice, label: t("portfolio.alloc_crypto") }
                                     : slice,
                                 )
-                              : slices
+                              : key === "sector"
+                                ? slices.map((slice) => ({
+                                    ...slice,
+                                    label:
+                                      maybe(
+                                        t,
+                                        `sentiment.sector_${sectorKey(slice.label)}`,
+                                      ) ?? slice.label,
+                                  }))
+                                : slices
                         }
                       />
                     );
