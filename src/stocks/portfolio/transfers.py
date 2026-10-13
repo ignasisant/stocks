@@ -98,6 +98,28 @@ def unmatched_arrivals(transactions: list[Transaction]) -> dict[str, float]:
     }
 
 
+def _yahoo(ticker: str) -> str:
+    """The Yahoo symbol a broker's code stands for, upper-cased (itself when
+    nothing maps it). Local reads only (`fetch.resolve`); never raises."""
+    try:
+        from stocks.data.fetch import resolve
+
+        return resolve(ticker).upper()
+    except Exception:
+        return ticker.upper()
+
+
+def _better_label(candidate: str, current: str) -> bool:
+    """Whether `candidate` should replace `current` as a security's label:
+    a symbol beats an ISIN, and a symbol Yahoo prices as written ("RMS.PA")
+    beats a broker's own code for it ("HMI")."""
+    if _ISIN.fullmatch(candidate):
+        return False
+    if _ISIN.fullmatch(current):
+        return True
+    return _yahoo(current) != current.upper() and _yahoo(candidate) == candidate.upper()
+
+
 def relabel(transactions: list[Transaction]) -> list[Transaction]:
     """One label per security, so the same shares cannot be two positions.
 
@@ -119,9 +141,7 @@ def relabel(transactions: list[Transaction]) -> list[Transaction]:
     for tx in transactions:
         sid = security_id(tx)
         current = labels.get(sid)
-        if current is None or (
-            _ISIN.fullmatch(current) and not _ISIN.fullmatch(tx.ticker)
-        ):
+        if current is None or _better_label(tx.ticker, current):
             labels[sid] = tx.ticker
     if all(labels[security_id(t)] == t.ticker for t in transactions):
         return transactions  # nothing to rename; hand back the same rows
@@ -222,15 +242,16 @@ def security_id(tx: Transaction) -> str:
 
     The ISIN when one is knowable — the ticker itself in a DEGIRO-style book
     keyed by ISIN, or the one an importer stamped into the note — and the
-    ticker otherwise. Two rows sharing this are the same security even when
-    one says ``ASML`` and the other ``NL0010273215``.
+    Yahoo symbol the ticker resolves to otherwise. Two rows sharing this are
+    the same security even when one says ``ASML`` and the other
+    ``NL0010273215``, or Revolut's ``HMI`` and ClickTrade's ``RMS.PA``.
     """
     if _ISIN.fullmatch(tx.ticker):
         return tx.ticker
     for word in tx.note.upper().split():
         if _ISIN.fullmatch(word):
             return word
-    return tx.ticker
+    return _yahoo(tx.ticker)
 
 
 def propose(
