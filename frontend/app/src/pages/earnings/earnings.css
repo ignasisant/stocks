@@ -722,8 +722,10 @@
 
 /* Phones default to the list, but the grid stays one tap away — and seven
    columns at 390px squeeze a day to ~55px, so it scrolls sideways instead of
-   ellipsizing every chip to nothing. */
-@media (max-width: 640px) {
+   ellipsizing every chip to nothing. By the page's width, not the window's,
+   so a desktop page squeezed by the chat drawer scrolls too instead of
+   losing its weekend off the edge. */
+@container ag-main (max-width: 40rem) {
   .earn-cal {
     min-width: 34rem;
   }

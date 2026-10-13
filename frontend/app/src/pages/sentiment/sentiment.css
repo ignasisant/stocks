@@ -275,7 +275,9 @@
 
 .sn-meter-scale {
   display: flex;
+  gap: 0.5rem;
   justify-content: space-between;
+  white-space: nowrap;
   font-family: "Martian Mono", ui-monospace, monospace;
   font-size: var(--ag-fs-2xs, 0.7rem);
   font-weight: 500;
@@ -877,6 +879,11 @@
    squeezed by the chat drawer. By the page's own width, not the viewport's —
    see `.ag-main` in styles.css. */
 @container ag-main (max-width: 620px) {
+  /* Five labels overlap at this width; the 20 and 80 ticks go first. */
+  .sn-meter-scale > :nth-child(2),
+  .sn-meter-scale > :nth-child(4) {
+    display: none;
+  }
   .sn-hero {
     grid-template-columns: minmax(0, 1fr);
   }
