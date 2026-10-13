@@ -316,6 +316,8 @@ function Rotation({ block }: { block: TrendBlock | null }) {
   const sorted = [...rows].sort(
     (a, b) => (b.changes.month ?? 0) - (a.changes.month ?? 0),
   );
+  // Only a book that holds some sector can say it holds none of the others.
+  const hasBook = rows.some((row) => row.weight);
   const leaders = sorted
     .filter((row) => (row.changes.month ?? 0) > 0)
     .slice(0, ROTATION_SHOWN);
@@ -343,6 +345,8 @@ function Rotation({ block }: { block: TrendBlock | null }) {
                       weight: percent(row.weight, lang, { digits: 0 }) ?? "",
                     })}
                   </span>
+                ) : hasBook ? (
+                  <span className="hm-muted">{t("home.card_rotation_none")}</span>
                 ) : null}
                 <Chip
                   chip={chipFor(move, percent(move, lang, { signed: true, digits: 1 }))}

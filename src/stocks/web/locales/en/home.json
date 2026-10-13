@@ -490,6 +490,7 @@
   "home.card_tax_due_approx": "{title} is due around {date}, in about {days} days.",
   "home.card_rotation_leading": "Beating the S&P 500 this month",
   "home.card_rotation_lagging": "Trailing the S&P 500",
+  "home.card_rotation_none": "you hold none",
   "home.card_rotation_weight": "{weight} of your portfolio",
   "home.card_rotation_no_leaders": "No sector is beating the S&P 500 this month.",
   "home.card_rotation_no_laggards": "No sector is trailing the S&P 500 this month.",

@@ -490,6 +490,7 @@
   "home.card_tax_due_approx": "{title} vence hacia el {date}, dentro de unos {days} días.",
   "home.card_rotation_leading": "Baten al S&P 500 este mes",
   "home.card_rotation_lagging": "Se quedan por detrás del S&P 500",
+  "home.card_rotation_none": "no tienes",
   "home.card_rotation_weight": "{weight} de tu cartera",
   "home.card_rotation_no_leaders": "Ningún sector bate al S&P 500 este mes.",
   "home.card_rotation_no_laggards": "Ningún sector se queda por detrás del S&P 500 este mes.",
