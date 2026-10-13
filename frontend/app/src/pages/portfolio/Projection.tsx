@@ -244,9 +244,14 @@ export default function Projection() {
                     <Chip value={onIn(median)} text={signed(onIn(median)!)} />
                   ) : null}
                   <span>
-                    {t("portfolio.projection_on_contributed", {
-                      amount: money(contributed) ?? "",
-                    })}
+                    {/* The base starts at today's value, not at what was paid
+                        in, so with nothing added each month it is today. */}
+                    {t(
+                      data.monthly
+                        ? "portfolio.projection_on_contributed"
+                        : "portfolio.projection_on_today",
+                      { amount: money(contributed) ?? "" },
+                    )}
                   </span>
                 </span>
               </div>
