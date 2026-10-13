@@ -124,7 +124,11 @@ export default function Projection() {
             figure beside the chart reads. Either box sets the monthly
             amount the server draws with; the other is recomputed. */}
         <AmountField
-          label={t("portfolio.projection_total_input", { n: data.years })}
+          label={
+            data.years === 1
+              ? t("portfolio.projection_total_input_one")
+              : t("portfolio.projection_total_input", { n: data.years })
+          }
           value={data.real ? null : (contributed ?? 0)}
           suffix="€"
           disabled={data.real}
@@ -214,7 +218,11 @@ export default function Projection() {
         options={PROJECTION_YEARS}
         value={years}
         onChange={setYears}
-        format={(option) => t("portfolio.projection_years_n", { n: option })}
+        format={(option) =>
+          option === "1"
+            ? t("portfolio.projection_years_n_one")
+            : t("portfolio.projection_years_n", { n: option })
+        }
       />
       {!data.dates.length ? (
         <Empty
