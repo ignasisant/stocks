@@ -557,14 +557,20 @@ function Table({
           <span className="sn-trend-c">{t("sentiment.col_shape")}</span>
           <span className="sn-trend-st">{t("sentiment.col_trend")}</span>
         </div>
-        {rows.map((row) => (
+        {rows.map((row, at) => (
           <Row
             key={row.key}
             t={t}
             block={block}
             sub={
               !held
-                ? undefined
+                ? // S&P, Nasdaq, Dow and Russell are all "United States": the
+                  // share of the book is one figure, said once on the first.
+                  block.block === "indices" &&
+                  row.weight !== null &&
+                  rows.slice(0, at).some((prior) => prior.weight === row.weight)
+                  ? ""
+                  : undefined
                 : row === top
                   ? t("sentiment.sector_top")
                   : (row.weight ?? 0) <= 0
