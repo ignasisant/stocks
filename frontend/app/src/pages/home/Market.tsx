@@ -187,6 +187,7 @@ function Regime({ data }: { data: MarketGlance }) {
       className={`hm-regime ${REGIME_TONES[band] ?? "hm-regime-flat"}`}
       title={[t("home.market_regime_help"), run].filter(Boolean).join(" · ")}
     >
+      <span className="hm-regime-label">{t("home.market_regime_label")}</span>
       <strong>{Math.round(data.score)}</strong>
       <span>{t(`sentiment.regime_${band}`)}</span>
       {week !== null ? (

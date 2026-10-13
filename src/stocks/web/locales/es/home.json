@@ -503,6 +503,7 @@
   "home.market_breadth": "{hits}/{total} índices sobre su media de {window} sesiones",
   "home.market_arrow_key": "Flechas ↑↗↘↓ = tendencia a 100 sesiones, no el cambio de hoy",
   "home.market_as_of": "cierres a {date}",
+  "home.market_regime_label": "Pulso de mercado (0–100)",
   "home.market_regime_help": "El indicador compuesto del Pulso, 0–100: de estrés a euforia.",
   "home.market_regime_delta": "{delta} en una semana",
   "home.market_bp": "{n} pb",

@@ -503,6 +503,7 @@
   "home.market_breadth": "{hits}/{total} indices above their {window}-session average",
   "home.market_arrow_key": "Arrows ↑↗↘↓ = 100-session trend, not today's change",
   "home.market_as_of": "closes as of {date}",
+  "home.market_regime_label": "Market pulse (0–100)",
   "home.market_regime_help": "The Pulse's composite, 0–100: from stress to euphoria.",
   "home.market_regime_delta": "{delta} in a week",
   "home.market_bp": "{n} bp",
