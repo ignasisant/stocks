@@ -10,7 +10,7 @@
  */
 
 import { Link } from "../../shell/router";
-import { useT } from "../../shell/i18n";
+import { useLang, useT } from "../../shell/i18n";
 import { Kpi, chipFor, type ChipSpec } from "../../ui/Kpi";
 import { DownBody } from "./Down";
 import { HeroSpark } from "./Spark";
@@ -63,6 +63,16 @@ export function driftChip(
   };
 }
 
+/** "13 oct 2026" for the stamp's ISO day; the raw string if it is not one. */
+function longDay(iso: string | null | undefined, lang: string): string {
+  if (!iso) return NA;
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return new Intl.DateTimeFormat(lang, { dateStyle: "medium" }).format(
+    new Date(y, m - 1, d),
+  );
+}
+
 /**
  * The composite: score, band, run, its own 90 sessions, and what it is missing.
  *
@@ -72,6 +82,7 @@ export function driftChip(
  */
 export function Composite({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => void }) {
   const t = useT();
+  const lang = useLang();
   if (pulse.unavailable) {
     return (
       <div className="sn-pulse">
@@ -177,7 +188,7 @@ export function Composite({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => vo
 
       <span className="sn-mono">
         {t("sentiment.pulse_stamp", {
-          date: pulse.as_of ?? NA,
+          date: longDay(pulse.as_of, lang),
           live: pulse.components.length,
           total: pulse.components.length + pulse.missing.length,
         })}
