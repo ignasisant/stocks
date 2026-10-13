@@ -245,3 +245,102 @@ def test_what_the_page_proposes_goes_in_the_journal_once(client, book, monkeypat
     assert all(e.times == 1 and e.state == "open" for e in entries)
     amd = next(e for e in entries if e.ticker == "AMD")
     assert amd.snapshot["target_weight"] == 0.0 and amd.reasons
+
+
+def test_a_book_of_one_or_two_companies_is_told_so(client, book, monkeypatch):
+    # Fund-based (82% in a money-market fund): nothing to say about it.
+    assert _get(client)["notes"] == []
+    table = pd.DataFrame(
+        {
+            "shares": [10.0, 5.0],
+            "cost": [1_000.0, 2_000.0],
+            "value": [5_000.0, 5_000.0],
+            "pnl": [4_000.0, 3_000.0],
+            "pnl_pct": [4.0, 1.5],
+        },
+        index=pd.Index(["ADBE", "BKNG"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    body = _get(client)
+    [note] = body["notes"]
+    assert (note["key"], note["count"]) == ("few_names", 2)
+    # Half the book each, and neither is cut for it.
+    assert {r["verdict"] for r in body["held"]} == {"hold"}
+    assert body["plan"]["sells"] == 0
+
+
+def test_a_concentration_cut_dear_in_tax_is_staged(client, book, monkeypatch):
+    # BKNG bought at 50 and worth 600: a sale is almost all gain.
+    ledger.add_many(
+        [Transaction("2026-01-02", "BKNG", "buy", 10, 50.0, "EUR", 0.0)], path=book.db
+    )
+    table = pd.DataFrame(
+        {
+            "shares": [10.0, 50.0, 5.0, 10.0],
+            "cost": [1_000.0, 8_200.0, 2_000.0, 500.0],
+            "value": [1_500.0, 8_200.0, 300.0, 6_000.0],
+            "pnl": [500.0, 0.0, -500.0, 5_500.0],
+            "pnl_pct": [0.5, 0.0, -0.25, 11.0],
+        },
+        index=pd.Index(["AMD", "XEON.DE", "ADBE", "BKNG"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    held = {r["ticker"]: r for r in _get(client)["held"]}
+    bkng = held["BKNG"]
+    assert bkng["verdict"] == "trim"
+    assert bkng["reasons"][:2] == ["concentrated", "tax_staged"]
+    # Three companies: the line is 35%, the even share a third; a good name
+    # is cut halfway to that, and staging takes half of the cut.
+    line, even, weight = 0.35, 1 / 3, 6_000 / 16_000
+    halfway = (line + even) / 2
+    assert bkng["target_weight"] == pytest.approx(weight - (weight - halfway) / 2)
+    assert bkng["tax"] > 0
+    # A sale for quality is not staged.
+    assert held["AMD"]["verdict"] == "sell" and "tax_staged" not in held["AMD"]["reasons"]
+
+
+def test_open_losses_that_would_cut_the_plans_tax_are_named(client, book, monkeypatch):
+    # BKNG's trim and AMD's sale realise gains; INTC, unrated and kept,
+    # sits 800 under its cost.
+    ledger.add_many(
+        [
+            Transaction("2026-01-02", "BKNG", "buy", 10, 50.0, "EUR", 0.0),
+            Transaction("2026-01-02", "INTC", "buy", 10, 100.0, "EUR", 0.0),
+        ],
+        path=book.db,
+    )
+    table = pd.DataFrame(
+        {
+            "shares": [10.0, 50.0, 5.0, 10.0, 10.0],
+            "cost": [1_000.0, 8_200.0, 2_000.0, 500.0, 1_000.0],
+            "value": [1_500.0, 8_200.0, 300.0, 6_000.0, 200.0],
+            "pnl": [500.0, 0.0, -500.0, 5_500.0, -800.0],
+            "pnl_pct": [0.5, 0.0, -0.25, 11.0, -0.8],
+        },
+        index=pd.Index(["AMD", "XEON.DE", "ADBE", "BKNG", "INTC"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    body = _get(client)
+    held = {r["ticker"]: r for r in body["held"]}
+    assert held["INTC"]["verdict"] == "unrated"
+    [note] = [n for n in body["notes"] if n["key"] == "tax_offset"]
+    # ADBE, the add, is not offered for sale even though it is under cost.
+    assert note["tickers"] == ["INTC"] and note["count"] == 1
+    # 800 of loss against gains taxed at 19%: about 152 back.
+    assert note["amount"] == pytest.approx(800 * 0.19, rel=0.05)
+    assert note["day"] > _days_ago(0)
+
+
+def test_no_sale_in_the_plan_means_no_offset_note(client, book, monkeypatch):
+    table = pd.DataFrame(
+        {
+            "shares": [50.0, 10.0],
+            "cost": [8_200.0, 1_000.0],
+            "value": [8_200.0, 200.0],
+            "pnl": [0.0, -800.0],
+            "pnl_pct": [0.0, -0.8],
+        },
+        index=pd.Index(["XEON.DE", "INTC"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    assert [n["key"] for n in _get(client)["notes"]] == []

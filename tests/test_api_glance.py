@@ -267,6 +267,31 @@ def test_the_best_and_worst_names_are_split(client, account, monkeypatch):
     assert payload["losers"][0]["pct"] == pytest.approx(-0.10)
 
 
+def test_each_side_keeps_its_strongest_names_strongest_first(
+    client, account, monkeypatch
+):
+    """More losers than the card shows: the cut keeps the worst ones, worst
+    first — the card flips them to read best to worst, and it can only do that
+    if the worst loss is in what it was sent. A flat name is on neither side."""
+    index = pd.to_datetime([date(2024, 3, 1) + timedelta(days=i) for i in range(40)])
+    drops = {f"L{n}": -n / 100 for n in range(1, glance.SHOWN + 3)}
+    frame = pd.DataFrame(
+        {
+            name: pd.Series([100.0] * 39 + [100.0 * (1 + pct)], index=index)
+            for name, pct in (drops | {"UP": 0.05, "FLAT": 0.0}).items()
+        }
+    )
+    monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": frame)
+    payload = client.get(
+        "/v1/movers", params=WHO | {"window": "week"}, headers=AUTH
+    ).json()
+    assert [m["ticker"] for m in payload["gainers"]] == ["UP"]
+    losers = [m["ticker"] for m in payload["losers"]]
+    worst = sorted(drops, key=drops.get)[: glance.SHOWN]
+    assert losers == worst  # L9 … L3: the two mildest are the ones cut
+    assert "FLAT" not in losers
+
+
 def test_a_window_nobody_defined_is_refused(client, account, monkeypatch):
     monkeypatch.setattr(loaders, "basket_values", lambda db, mtime, base="EUR": basket())
     response = client.get(

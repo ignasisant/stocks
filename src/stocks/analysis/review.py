@@ -76,10 +76,23 @@ above its own median over the filed years, at a company whose sales have
 fallen in one of them, and without the fast growth that would make it
 operating leverage), sales falling now and over the years or a
 margin sliding for years (the value trap: cheap because it is shrinking),
+earnings the analysts expect to fall 10% or more next year (a forward P/E
+above the trailing one: the low multiple is on a profit about to shrink),
 net debt at three times EBITDA or more, or a price that is cheap only on
 its kindest reading (the mean clears the bar, the other inputs without the
 best one do not: a range, not a point, has to be cheap). Each holds the name
 at hold or watch and says why; none of them ever pushes a name into an add.
+
+**Sizing reads the whole book.** Where a concentration starts depends on
+how many companies there are (`concentration_line`): 15% in a wide book,
+more in a narrow one, and nothing at all under three — a book of two is
+told it is narrow, not to sell 80% of itself. A cut aims at an even share,
+and only halfway there for a good business at a good price. What the sales
+free is then spread over the names worth adding to (`redeploy`) before any
+of it is left as cash — never into a sector already carrying
+`SECTOR_LINE` of the book, which the page names instead. A concentration
+cut that would cost a tenth of the sale in tax is taken in two steps
+(`stage_for_tax`): half now, half in another tax year.
 
 **Verdicts are keys.** The client translates them, the same way the sector
 page's regime travels as a band key. Held names: sell, trim, hold, add, plus
@@ -90,7 +103,7 @@ Outside names: buy, watch, pass. Either side: bet, unrated.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 # Held
 SELL = "sell"
@@ -125,6 +138,27 @@ TRIM_KEEPS = 0.5
 # Above this weight a single company is a concentration, whatever its quality.
 CONCENTRATED = 0.15
 CONCENTRATED_TO = 0.10
+# The line scales with how many companies the book holds: four cannot all sit
+# under 15%, and cutting all four to cash protects nothing. `SPREAD` over the
+# count, never under `CONCENTRATED` nor over `CONCENTRATED_MAX`; a cut aims at
+# an even share (`1 / names`, never under `CONCENTRATED_TO`).
+SPREAD = 1.5
+CONCENTRATED_MAX = 0.35
+# Under this many companies concentration is the book's shape, not one
+# position's fault: nothing is trimmed for it, and where the companies are
+# most of the book (`FEW_NAMES_SHARE`) the page says so instead.
+FEW_NAMES = 3
+FEW_NAMES_SHARE = 0.5
+# One sector this much of the book is named on the page, and nothing the
+# sales free is spread into it. Two companies at least: one alone is a
+# concentration, which has its own line.
+SECTOR_LINE = 0.40
+# Coins this much of the book are named too: there is nothing to score, so
+# it is a note, never a cut.
+CRYPTO_LINE = 0.25
+# A concentration cut whose tax is this much of what the sale raises is
+# taken in two steps: half now, the rest in another tax year.
+TAX_STAGE = 0.10
 # A weak name this heavy, or this much of the book's risk, is cut back.
 HEAVY = 0.06
 RISKY = 0.10
@@ -165,6 +199,10 @@ MARGIN_SLIDE = 0.05
 MARGIN_SLIDE_SHARE = 0.25
 # Net debt over EBITDA from which a cheap price may be the lenders' claim.
 HIGH_DEBT = 3.0
+# The analysts' next-year earnings this far under the last twelve months'
+# (a forward P/E that much above the trailing one): the low P/E is on a
+# profit already expected to shrink.
+EARNINGS_DROP = 0.10
 # Years of cash at the current burn: under the first, a raise (and the
 # dilution with it) is close; over the second, the company can wait.
 RUNWAY_SHORT = 1.5
@@ -256,7 +294,18 @@ R_CHEAP_FOR_GROWTH = "cheap_for_growth"
 R_PEAK_MARGIN = "peak_margin"
 R_SALES_FALLING = "sales_falling"
 R_MARGIN_FALLING = "margin_falling"
+R_EARNINGS_FALLING = "earnings_falling"
 R_ONE_READING = "cheap_on_one_reading"
+R_FEW_NAMES = "few_names"
+R_REDEPLOY = "redeploy"
+R_TAX_STAGED = "tax_staged"
+R_SECTOR_FULL = "sector_full"
+
+# Book-level notes (`review.note_<code>`).
+N_FEW_NAMES = "few_names"
+N_SECTOR_HEAVY = "sector_heavy"
+N_CRYPTO_HEAVY = "crypto_heavy"
+N_TAX_OFFSET = "tax_offset"
 
 # Reasons that read a loss as a fault; in the growth and early stages it is
 # the stage itself, and the row says so once instead.
@@ -550,6 +599,14 @@ def _cautions(metrics: Mapping, s: Scores) -> list[str]:
             and -change >= MARGIN_SLIDE_SHARE * median
         ):
             out.append(R_MARGIN_FALLING)
+    trailing = _num(metrics, "pe_ttm")
+    forward = _num(metrics, "pe_fwd")
+    if (
+        trailing is not None
+        and forward is not None
+        and 0 < trailing <= forward * (1 - EARNINGS_DROP)
+    ):
+        out.append(R_EARNINGS_FALLING)
     debt = _num(metrics, "net_debt_ebitda")
     if debt is not None and debt >= HIGH_DEBT and not s.fcf_float:
         out.append(R_DEBT)
@@ -679,6 +736,24 @@ class Verdict:
     #: and for verdicts that move nothing.
     target: float | None = None
     metrics: dict[str, float | None] = field(default_factory=dict)
+    #: For a held name good and cheap enough to add to: the weight money a
+    #: sale frees elsewhere may take it to (`redeploy`); None otherwise.
+    fill: float | None = None
+
+
+@dataclass(frozen=True)
+class Note:
+    """One thing the page says about the book as a whole (`review.note_<key>`)."""
+
+    key: str
+    count: int | None = None
+    sector: str | None = None
+    weight: float | None = None
+    #: Money, in the tax jurisdiction's currency (`tax_offset`'s saving).
+    amount: float | None = None
+    tickers: tuple[str, ...] = ()
+    #: ISO day a repurchase no longer undoes the loss, where a window applies.
+    day: str | None = None
 
 
 def _shown(metrics: Mapping | None) -> dict[str, float | None]:
@@ -704,22 +779,77 @@ def _unscored(s: Scores, shown: dict[str, float | None]) -> Verdict:
     return Verdict(UNRATED, (why,), s.quality, s.cheapness, None, shown)
 
 
+def company(kind: str | None) -> bool:
+    """A name judged as a business: not a fund, cash or a coin."""
+    return _kind_verdict(kind, held=True) is None
+
+
+def concentration_line(names: int | None) -> float | None:
+    """The weight from which one company is a concentration in a book of
+    `names` companies; None when there are too few for it to be one
+    position's fault. An unknown count reads as a wide book."""
+    if names is None:
+        return CONCENTRATED
+    if names < FEW_NAMES:
+        return None
+    return min(CONCENTRATED_MAX, max(CONCENTRATED, SPREAD / names))
+
+
+def _even_share(names: int | None, line: float) -> float:
+    """Where a cut concentration is taken: an even share of the companies."""
+    share = CONCENTRATED_TO if names is None else max(CONCENTRATED_TO, 1 / names)
+    return min(share, line)
+
+
+def book_notes(rows: list[tuple[str | None, str | None, float | None]]) -> list[Note]:
+    """What the page says about the book as a whole, before any one row.
+
+    `rows` is each held name's kind, sector and weight. One or two companies
+    carrying the book, one sector carrying `SECTOR_LINE` of it across two
+    companies or more, and coins past `CRYPTO_LINE` are each named once.
+    """
+    companies = [(sector, w or 0.0) for kind, sector, w in rows if company(kind)]
+    names = len(companies)
+    notes: list[Note] = []
+    if 0 < names < FEW_NAMES and sum(w for _, w in companies) >= FEW_NAMES_SHARE:
+        notes.append(Note(N_FEW_NAMES, count=names))
+    if names >= FEW_NAMES:
+        sectors: dict[str, list[float]] = {}
+        for sector, w in companies:
+            if sector:
+                sectors.setdefault(sector, []).append(w)
+        heavy = [
+            Note(N_SECTOR_HEAVY, count=len(ws), sector=sector, weight=sum(ws))
+            for sector, ws in sectors.items()
+            if len(ws) >= 2 and sum(ws) >= SECTOR_LINE
+        ]
+        notes += sorted(heavy, key=lambda n: -(n.weight or 0.0))
+    coins = sum(w or 0.0 for kind, _, w in rows if kind == "crypto")
+    if coins >= CRYPTO_LINE:
+        notes.append(Note(N_CRYPTO_HEAVY, weight=coins))
+    return notes
+
+
 def judge_held(
     metrics: Mapping | None,
     *,
     weight: float | None,
     risk_share: float | None = None,
     kind: str | None = "stock",
+    names: int | None = None,
 ) -> Verdict:
     """The verdict on one name the book holds.
 
     `weight` is its share of the priced book (None when it could not be
-    priced) and `risk_share` its share of the book's volatility.
+    priced), `risk_share` its share of the book's volatility and `names` how
+    many companies the book holds (`company`), which sets where a
+    concentration starts (`concentration_line`).
     """
     if by_kind := _kind_verdict(kind, held=True):
         return by_kind
     s = score(metrics or {})
     shown = _shown(metrics)
+    line = concentration_line(names)
     if s.stage == EARLY:
         reasons = _early_reasons(metrics or {})
         if weight is not None and weight > SPEC_MAX:
@@ -728,14 +858,15 @@ def judge_held(
     if s.quality is None or s.cheapness is None:
         unscored = _unscored(s, shown)
         # Size is a fact the ledger knows without the filings: one company
-        # this big is cut whether or not its numbers can be read.
-        if weight is not None and weight >= CONCENTRATED:
+        # this big is cut whether or not its numbers can be read — but only
+        # halfway back, since unread is not weak.
+        if weight is not None and line is not None and weight >= line:
             return Verdict(
                 TRIM,
                 (R_CONCENTRATED, *unscored.reasons),
                 s.quality,
                 s.cheapness,
-                CONCENTRATED_TO,
+                (line + _even_share(names, line)) / 2,
                 shown,
             )
         return unscored
@@ -744,11 +875,15 @@ def judge_held(
     w = weight
     add_to = SPEC_MAX if s.stage == GROWTH else ADD_TO
     reasons = _business_reasons(metrics or {}, s)
+    clean = q >= GOOD and c >= CHEAP and not s.suspect and not _cautions(metrics or {}, s)
+    over = w is not None and line is not None and w >= line
     position: list[str] = []
-    if w is not None and w >= CONCENTRATED:
+    if over:
         position.append(R_CONCENTRATED)
     elif w is not None and w >= HEAVY:
         position.append(R_HEAVY)
+    if line is None and w is not None and w >= CONCENTRATED:
+        position.append(R_FEW_NAMES)
     if risk_share is not None and risk_share >= RISKY:
         position.append(R_RISKY)
 
@@ -759,27 +894,131 @@ def judge_held(
         verdict, target = SELL, 0.0
         if w is not None and w < SMALL:
             position.append(R_SMALL)
-    elif w is not None and w >= CONCENTRATED:
-        verdict, target = TRIM, CONCENTRATED_TO
+    elif over:
+        even = _even_share(names, line)
+        # A good business at a good price is cut only halfway back: the
+        # excess goes, the conviction stays, and the next rally does not
+        # trip the line again the week after.
+        verdict, target = TRIM, (line + even) / 2 if clean else even
     elif q < WEAK and (
         (w is not None and w >= HEAVY) or (risk_share is not None and risk_share >= RISKY)
     ):
         verdict, target = TRIM, (w * TRIM_KEEPS if w is not None else None)
-    elif (
-        q >= GOOD
-        and c >= CHEAP
-        and not s.suspect
-        and not _cautions(metrics or {}, s)
-        and w is not None
-        and w < add_to
-    ):
+    # An add has to be a trade: a name a hair under its mark is not told
+    # to buy one day and hold the next.
+    elif clean and w is not None and add_to - w >= SMALL:
         verdict, target = ADD, add_to
         position.append(R_UNDERWEIGHT)
+
+    fill = None
+    if verdict in (HOLD, ADD) and clean and w is not None:
+        # With too few companies, money freed goes to new names, not to
+        # the one or two already carrying the book.
+        wide = line is not None and s.stage == MATURE
+        fill = max(add_to, _even_share(names, line)) if wide else add_to
 
     # The position's own reasons lead when they are why it moves; the
     # business ones lead otherwise.
     ordered = position + reasons if verdict == TRIM else reasons + position
-    return Verdict(verdict, tuple(dict.fromkeys(ordered)), q, c, target, shown)
+    return Verdict(verdict, tuple(dict.fromkeys(ordered)), q, c, target, shown, fill)
+
+
+def stage_for_tax(
+    weight: float | None, verdict: Verdict, tax_share: float | None
+) -> Verdict:
+    """A concentration cut whose tax is `TAX_STAGE` of what the sale raises
+    (`tax_share`, tax over proceeds), taken halfway: the rest is next year's,
+    under another year's allowance and brackets. A sale for quality — a weak
+    or poor business — is not deferred: the tax is the price of leaving."""
+    if (
+        verdict.verdict != TRIM
+        or R_CONCENTRATED not in verdict.reasons
+        or weight is None
+        or verdict.target is None
+        or tax_share is None
+        or tax_share < TAX_STAGE
+    ):
+        return verdict
+    to = weight - (weight - verdict.target) / 2
+    if weight - to < SMALL:
+        return verdict
+    rest = tuple(r for r in verdict.reasons if r != R_CONCENTRATED)
+    return replace(verdict, target=to, reasons=(R_CONCENTRATED, R_TAX_STAGED, *rest))
+
+
+def redeploy(
+    book: list[tuple[float | None, Verdict]],
+    sectors: list[str | None] | None = None,
+) -> list[Verdict]:
+    """Where the money the sales free goes before it is left as cash.
+
+    `book` is each held name's weight and verdict, `sectors` each one's
+    sector (None where unknown). What the sales and trims free beyond the
+    adds already planned is spread over the names good and cheap enough to
+    add to, best first, each up to its `fill`; a top-up under `SMALL` of the
+    book is not worth a trade. No add, planned or spread, takes a sector past
+    `SECTOR_LINE`. Adds are never funded with money the plan does not raise:
+    what has no home stays unplaced.
+    """
+    out = [v for _, v in book]
+    sector_of = list(sectors) if sectors is not None else [None] * len(book)
+    after: dict[str, float] = {}
+    for (w, v), sector in zip(book, sector_of, strict=True):
+        if sector and w is not None:
+            kept = v.target if v.target is not None else w
+            after[sector] = after.get(sector, 0.0) + kept
+
+    def room(i: int) -> float:
+        sector = sector_of[i]
+        return SECTOR_LINE - after[sector] if sector else float("inf")
+
+    # A planned add into a sector already past the line shrinks to fit it,
+    # weakest first, or is held.
+    adds = [i for i, v in enumerate(out) if v.verdict == ADD and book[i][0] is not None]
+
+    def worth(i: int) -> float:
+        return (out[i].quality or 0.0) + (out[i].cheapness or 0.0)
+
+    for i in sorted(adds, key=worth):
+        w, v, sector = book[i][0], out[i], sector_of[i]
+        over = -room(i)
+        if over <= 0 or v.target is None or w is None or sector is None:
+            continue
+        cut = min(over, v.target - w)
+        after[sector] -= cut
+        to = v.target - cut
+        if to - w < SMALL:
+            after[sector] -= to - w
+            kept = tuple(r for r in v.reasons if r != R_UNDERWEIGHT)
+            out[i] = replace(v, verdict=HOLD, target=None, reasons=(R_SECTOR_FULL, *kept))
+        else:
+            out[i] = replace(v, target=to)
+
+    moves = [
+        v.target - w
+        for (w, _), v in zip(book, out, strict=True)
+        if w is not None and v.target is not None
+    ]
+    budget = -sum(moves)
+    if budget < SMALL:
+        return out
+
+    for i in sorted(range(len(book)), key=lambda i: -worth(i)):
+        w, v = book[i][0], out[i]
+        if w is None or v.fill is None or v.verdict not in (HOLD, ADD):
+            continue
+        start = v.target if v.target is not None else w
+        to = min(v.fill, start + budget, start + room(i))
+        if to - start < SMALL:
+            continue
+        budget -= to - start
+        if sector := sector_of[i]:
+            after[sector] += to - start
+        reasons = v.reasons if v.verdict == ADD else (R_REDEPLOY, *v.reasons)
+        out[i] = replace(v, verdict=ADD, target=to, reasons=reasons)
+        if budget < SMALL:
+            break
+    return out
 
 
 def judge_candidate(metrics: Mapping | None, *, kind: str | None = "stock") -> Verdict:

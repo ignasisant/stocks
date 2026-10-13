@@ -22,6 +22,8 @@ import {
   SHOWN,
   inYears,
   metric,
+  money,
+  percent,
   pnlChip,
   score,
   verdictTone,
@@ -30,6 +32,11 @@ import type { ReviewRow } from "./types";
 
 /** Catalog copy is markdown-lite; a tooltip is plain text. */
 const plain = (text: string) => text.replaceAll("**", "").replaceAll("*", "");
+
+/** A KPI's name: the catalog's, or this page's own for the ones it lacks. */
+export function metricLabel(t: ReturnType<typeof useT>, key: string): string {
+  return t(OWN_LABEL.has(key) ? `review.metric_${key}` : `kpi.${key}.label`);
+}
 
 /** The verdict pill, with the rule that produced it as its hover text. */
 export function VerdictChip({ row }: { row: ReviewRow }) {
@@ -75,10 +82,15 @@ export function PnlChip({ row }: { row: ReviewRow }) {
   return chip ? <Chip chip={chip} /> : <>{t("review.na")}</>;
 }
 
-/** What the dialog says: the verdict's rule, every reason's, every number. */
-function Details({ row }: { row: ReviewRow }) {
+/**
+ * What the dialog says: the verdict's rule, every reason's, the position as it
+ * stands and where the verdict takes it, then every number. `taxCurrency` is
+ * the plan's; without it the sale's tax is left out rather than mislabelled.
+ */
+function Details({ row, taxCurrency }: { row: ReviewRow; taxCurrency?: string }) {
   const t = useT();
   const lang = useLang();
+  const base = useCurrency();
   const na = t("review.na");
   return (
     <div className="ag-rev-details">
@@ -99,6 +111,44 @@ function Details({ row }: { row: ReviewRow }) {
           </ul>
         </div>
       ) : null}
+      {row.held ? (
+        <div className="ag-rev-details-group">
+          <h3 className="ag-rev-h3">{t("review.details_position")}</h3>
+          <dl className="ag-rev-facts">
+            <Fact
+              label={t("review.col_value")}
+              value={money(row.value, base, lang) ?? na}
+            />
+            <Fact
+              label={t("review.col_weight")}
+              help={t("review.col_weight_help")}
+              value={percent(row.weight, lang) ?? na}
+            />
+            <Fact
+              label={t("review.col_pnl")}
+              help={t("review.col_pnl_help")}
+              value={<PnlChip row={row} />}
+            />
+            <Fact
+              label={t("review.col_target")}
+              help={t("review.col_target_help")}
+              value={percent(row.target_weight, lang) ?? "—"}
+            />
+            <Fact
+              label={t("review.col_move")}
+              help={t("review.col_move_help")}
+              value={money(row.delta, base, lang, true) ?? "—"}
+            />
+            {taxCurrency ? (
+              <Fact
+                label={t("review.col_tax")}
+                help={t("review.col_tax_help")}
+                value={money(row.tax, taxCurrency, lang) ?? "—"}
+              />
+            ) : null}
+          </dl>
+        </div>
+      ) : null}
       <div className="ag-rev-details-group">
         <h3 className="ag-rev-h3">{t("review.details_metrics")}</h3>
         <dl className="ag-rev-facts">
@@ -112,22 +162,16 @@ function Details({ row }: { row: ReviewRow }) {
             help={t("review.col_cheapness_help")}
             value={score(row.cheapness) ?? na}
           />
-          {row.held ? (
-            <Fact
-              label={t("review.col_pnl")}
-              help={t("review.col_pnl_help")}
-              value={<PnlChip row={row} />}
-            />
-          ) : null}
           {SHOWN.map((key) => {
             const shown = metric(key, row.metrics[key], lang);
-            const own = OWN_LABEL.has(key);
             return (
               <Fact
                 key={key}
-                label={t(own ? `review.metric_${key}` : `kpi.${key}.label`)}
+                label={metricLabel(t, key)}
                 help={
-                  own ? t(`review.metric_${key}_help`) : plain(t(`kpi.${key}.desc`))
+                  OWN_LABEL.has(key)
+                    ? t(`review.metric_${key}_help`)
+                    : plain(t(`kpi.${key}.desc`))
                 }
                 value={
                   shown === null
@@ -151,14 +195,14 @@ function Fact({
   value,
 }: {
   label: string;
-  help: string;
+  help?: string;
   value: ReactNode;
 }) {
   return (
     <div className="ag-rev-fact">
       <dt>
         {label}
-        <Help text={help} />
+        {help ? <Help text={help} /> : null}
       </dt>
       <dd>{value}</dd>
     </div>
@@ -177,9 +221,11 @@ function Fact({
 export function DetailsButton({
   row,
   variant = "text",
+  taxCurrency,
 }: {
   row: ReviewRow;
   variant?: "text" | "icon";
+  taxCurrency?: string;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -198,7 +244,14 @@ export function DetailsButton({
         {variant === "text" ? t("review.details") : null}
         <span className="ag-rev-chevron" aria-hidden="true" />
       </button>
-      {open ? <DetailsDialog row={row} label={label} onClose={close} /> : null}
+      {open ? (
+        <DetailsDialog
+          row={row}
+          label={label}
+          taxCurrency={taxCurrency}
+          onClose={close}
+        />
+      ) : null}
     </>
   );
 }
@@ -207,15 +260,17 @@ export function DetailsButton({
  * The dialog itself, portalled to the body: `.ag-main` is a size container,
  * and a container is the containing block of a `position: fixed` inside it.
  * Esc, the backdrop and Close all close; focus goes to Close and back to the
- * button that opened it.
+ * button (or map dot) that opened it.
  */
-function DetailsDialog({
+export function DetailsDialog({
   row,
   label,
+  taxCurrency,
   onClose,
 }: {
   row: ReviewRow;
   label: string;
+  taxCurrency?: string;
   onClose: () => void;
 }) {
   const t = useT();
@@ -259,7 +314,7 @@ function DetailsDialog({
             {t("review.close")}
           </button>
         </div>
-        <Details row={row} />
+        <Details row={row} taxCurrency={taxCurrency} />
       </div>
     </div>,
     document.body,

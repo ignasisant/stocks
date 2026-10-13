@@ -134,7 +134,7 @@ type DailyRow = {
   highlight: boolean;
 };
 
-type Mover = {
+export type Mover = {
   ticker: string;
   pct: number;
   /**

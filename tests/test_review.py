@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from stocks.analysis import review
 
 # Shapes lifted from real books (2026-10): a quality compounder on sale, a
@@ -17,6 +19,11 @@ DEAR_WEAK = {
 CHEAP_WEAK = {
     "pe_fwd": 11.0, "fcf_yield": -0.01, "ev_ebitda": 10.0, "ev": 3e11,
     "roic": 0.08, "op_margin": 0.12, "moat": 31.0,
+}
+# A great business the market already prices as one.
+DEAR_QUALITY = {
+    "pe_fwd": 32.0, "fcf_yield": 0.03, "ev_ebitda": 26.0, "ev": 3e12,
+    "roic": 0.45, "op_margin": 0.31, "moat": 85.0,
 }
 
 
@@ -47,10 +54,18 @@ def test_a_heavy_weak_name_is_halved_and_says_why_first():
 
 
 def test_one_company_this_big_is_cut_whatever_its_quality():
-    v = review.judge_held(CHEAP_QUALITY, weight=0.20)
+    v = review.judge_held(DEAR_QUALITY, weight=0.20)
     assert v.verdict == review.TRIM
     assert v.target == review.CONCENTRATED_TO
     assert v.reasons[0] == review.R_CONCENTRATED
+
+
+def test_a_good_business_at_a_good_price_is_cut_only_halfway_back():
+    # The excess goes, the conviction stays, and the target sits under the
+    # line so the next rally does not trip it again.
+    v = review.judge_held(CHEAP_QUALITY, weight=0.20)
+    assert v.verdict == review.TRIM
+    assert review.CONCENTRATED_TO < v.target < review.CONCENTRATED
 
 
 def test_a_crumb_that_is_not_good_enough_to_grow_is_sold():
@@ -86,11 +101,12 @@ def test_a_high_yield_the_forward_pe_backs_is_a_price_not_a_fault():
     assert review.score({**distressed, "owner_fcf_yield": 0.6, "pe_fwd": 3.0}).suspect
 
 
-def test_a_concentrated_name_is_cut_even_when_it_cannot_be_scored():
+def test_a_concentrated_name_is_cut_halfway_even_when_it_cannot_be_scored():
     broken = {**CHEAP_QUALITY, "fcf_yield": 0.95, "ev": -3.4e11}
     v = review.judge_held(broken, weight=0.22)
     assert v.verdict == review.TRIM
-    assert v.target == review.CONCENTRATED_TO
+    # Unread is not weak: the size goes, halfway, as for a good name.
+    assert v.target == pytest.approx((review.CONCENTRATED + review.CONCENTRATED_TO) / 2)
     assert v.reasons == (review.R_CONCENTRATED, review.R_SUSPECT)
 
 
@@ -395,6 +411,15 @@ def test_a_sliding_margin_is_fading_pricing_power():
     assert review.R_MARGIN_FALLING not in reasons
 
 
+def test_earnings_expected_to_shrink_make_a_low_pe_no_bargain():
+    # Novo Nordisk, October 2026: 9.4x trailing, 11.6x forward.
+    _blocked({**CHEAP_QUALITY, "pe_ttm": 9.4, "pe_fwd": 11.6}, review.R_EARNINGS_FALLING)
+    for trailing in (12.0, 9.0, -5.0):
+        steady = {**CHEAP_QUALITY, "pe_ttm": trailing}
+        reasons = review.judge_held(steady, weight=0.02).reasons
+        assert review.R_EARNINGS_FALLING not in reasons
+
+
 def test_heavy_debt_stops_an_add_or_a_buy():
     _blocked({**CHEAP_QUALITY, "net_debt_ebitda": 3.5}, review.R_DEBT)
     light = {**CHEAP_QUALITY, "net_debt_ebitda": 2.0}
@@ -415,3 +440,227 @@ def test_cautions_never_make_an_add():
     }
     assert review.judge_held(weak, weight=0.02).verdict not in (review.ADD, review.BUY)
     assert review.judge_candidate(weak).verdict == review.PASS
+
+
+# --- Sizing over the whole book ---------------------------------------------
+# The route counts the companies, judges each name against that count and
+# spreads what the sales free (`_plan` does the same over plain rows).
+
+FAIR_QUALITY = {
+    "pe_fwd": 20.0, "fcf_yield": 0.05, "ev_ebitda": 16.0, "ev": 2e12,
+    "roic": 0.30, "op_margin": 0.40, "moat": 80.0,
+}
+MIDDLING = {
+    "pe_fwd": 20.0, "fcf_yield": 0.03, "ev_ebitda": 15.0, "ev": 1e11,
+    "roic": 0.15, "op_margin": 0.18, "moat": 55.0,
+}
+
+
+def _plan(*book):
+    rows = [(row + ("stock",))[:3] for row in book]
+    names = sum(review.company(kind) for _, _, kind in rows)
+    judged = [
+        (w, review.judge_held(m, weight=w, kind=kind, names=names))
+        for m, w, kind in rows
+    ]
+    return review.redeploy(judged)
+
+
+def _moves(book, plan):
+    pairs = [
+        (w, v.target)
+        for (_, w, *_), v in zip(book, plan, strict=True)
+        if v.target is not None
+    ]
+    sells = sum(w - to for w, to in pairs if to < w)
+    buys = sum(to - w for w, to in pairs if to > w)
+    return sells, buys
+
+
+def test_the_concentration_line_widens_as_the_book_narrows():
+    assert review.concentration_line(None) == review.CONCENTRATED
+    assert review.concentration_line(2) is None
+    assert review.concentration_line(4) == review.CONCENTRATED_MAX
+    assert review.concentration_line(7) == pytest.approx(1.5 / 7)
+    assert review.concentration_line(10) == review.CONCENTRATED
+    assert review.concentration_line(40) == review.CONCENTRATED
+
+
+def test_a_one_company_book_is_told_it_is_narrow_not_to_sell_most_of_itself():
+    [v] = _plan((DEAR_QUALITY, 1.0))
+    assert v.verdict == review.HOLD and v.target is None
+    assert review.R_FEW_NAMES in v.reasons
+    assert review.book_notes([("stock", "Technology", 1.0)]) == [
+        review.Note(review.N_FEW_NAMES, count=1)
+    ]
+
+
+def test_two_good_companies_half_and_half_are_both_kept():
+    plan = _plan((CHEAP_QUALITY, 0.5), (DEAR_QUALITY, 0.5))
+    assert [v.verdict for v in plan] == [review.HOLD, review.HOLD]
+    assert [n.key for n in review.book_notes([("stock", None, 0.5)] * 2)] == [
+        review.N_FEW_NAMES
+    ]
+
+
+def test_a_narrow_book_still_sells_what_is_weak_on_both_scores():
+    plan = _plan((DEAR_WEAK, 0.5), (CHEAP_QUALITY, 0.5))
+    assert plan[0].verdict == review.SELL
+    # With too few companies the money goes to new names, not to the one
+    # already carrying the book.
+    assert plan[1].verdict == review.HOLD
+
+
+def test_a_fund_based_book_with_one_stock_on_the_side_says_nothing():
+    plan = _plan((None, 0.85, "equity_fund"), (DEAR_QUALITY, 0.15))
+    assert [v.verdict for v in plan] == [review.CORE, review.HOLD]
+    assert review.book_notes([("equity_fund", None, 0.85), ("stock", None, 0.15)]) == []
+
+
+@pytest.mark.parametrize("metrics", [CHEAP_QUALITY, DEAR_QUALITY, {}])
+def test_four_even_positions_are_not_cut_to_cash(metrics):
+    book = [(metrics, 0.25)] * 4
+    plan = _plan(*book)
+    assert all(v.verdict != review.TRIM for v in plan)
+    assert _moves(book, plan) == (0, 0)
+
+
+def test_twenty_even_positions_move_nothing():
+    book = [(CHEAP_QUALITY, 0.05)] * 20
+    assert {v.verdict for v in _plan(*book)} == {review.HOLD}
+
+
+# Shaped on a real seven-name book (2026-10): a cheap chip maker at a third
+# of it, a dear compounder at a fifth, a weak car maker, four fair names.
+SEVEN = (
+    (CHEAP_QUALITY, 0.33),
+    (DEAR_QUALITY, 0.229),
+    (DEAR_WEAK, 0.068),
+    (FAIR_QUALITY, 0.12),
+    (FAIR_QUALITY, 0.10),
+    (FAIR_QUALITY, 0.09),
+    (MIDDLING, 0.063),
+)
+
+
+def test_a_seven_name_book_cuts_to_an_even_share_and_spends_what_it_frees():
+    plan = _plan(*SEVEN)
+    line, even = 1.5 / 7, 1 / 7
+    cheap, dear, weak, *fair, middling = plan
+    # The good business on sale keeps more than the dear one.
+    assert cheap.verdict == review.TRIM and even < cheap.target < line
+    assert dear.verdict == review.TRIM and dear.target == pytest.approx(even)
+    assert weak.verdict == review.SELL
+    # The freed money tops the fair names up to an even share, no further.
+    for v in fair:
+        assert v.verdict == review.ADD and v.target == pytest.approx(even)
+        assert v.reasons[0] == review.R_REDEPLOY
+    assert middling.verdict == review.HOLD
+    sells, buys = _moves(SEVEN, plan)
+    assert buys == pytest.approx(sum(even - w for _, w in SEVEN[3:6]))
+    assert 0 < buys < sells
+
+
+def test_adds_are_never_funded_with_money_the_plan_does_not_raise():
+    # Nothing sold: the underweight adds stand, nothing else is topped up.
+    book = [(CHEAP_QUALITY, 0.02)] * 5 + [(FAIR_QUALITY, 0.10)] * 9
+    plan = _plan(*book)
+    assert [v.verdict for v in plan[:5]] == [review.ADD] * 5
+    assert all(v.target == review.ADD_TO for v in plan[:5])
+    assert {v.verdict for v in plan[5:]} == {review.HOLD}
+
+
+def test_a_top_up_too_small_to_trade_is_left_alone():
+    book = [(DEAR_WEAK, 0.003)] + [(FAIR_QUALITY, 0.20)] * 4 + [(FAIR_QUALITY, 0.16)]
+    plan = _plan(*book)
+    assert plan[0].verdict == review.SELL
+    assert {v.verdict for v in plan[1:]} == {review.HOLD}
+
+
+def test_a_grower_is_only_topped_up_to_a_bet_size():
+    plan = _plan(*SEVEN[:3], (FAST_GROWER, 0.02), *SEVEN[3:])
+    grower = plan[3]
+    assert grower.verdict == review.ADD and grower.target == review.SPEC_MAX
+
+
+def test_a_name_a_hair_under_its_mark_is_not_told_to_buy():
+    assert review.judge_held(CHEAP_QUALITY, weight=0.048).verdict == review.HOLD
+    v = review.judge_held(CHEAP_QUALITY, weight=0.04)
+    assert v.verdict == review.ADD and v.target == review.ADD_TO
+
+
+def _trim(weight=0.30, metrics=DEAR_QUALITY, names=7):
+    return review.judge_held(metrics, weight=weight, names=names)
+
+
+def test_a_concentration_cut_dear_in_tax_is_taken_in_two_steps():
+    v = _trim()
+    assert v.verdict == review.TRIM
+    staged = review.stage_for_tax(0.30, v, 0.12)
+    assert staged.target == pytest.approx(0.30 - (0.30 - v.target) / 2)
+    assert staged.reasons[:2] == (review.R_CONCENTRATED, review.R_TAX_STAGED)
+    # Cheap in tax, or no replay to say: the whole cut stands.
+    assert review.stage_for_tax(0.30, v, 0.05) is v
+    assert review.stage_for_tax(0.30, v, None) is v
+
+
+def test_a_sale_for_quality_is_not_deferred_for_tax():
+    sell = review.judge_held(DEAR_WEAK, weight=0.10, names=12)
+    poor = MIDDLING | {"roic": 0.02, "moat": 20.0}
+    weak = review.judge_held(poor, weight=0.08, names=12)
+    for v in (sell, weak):
+        assert v.verdict in (review.SELL, review.TRIM)
+        assert review.R_CONCENTRATED not in v.reasons
+        assert review.stage_for_tax(0.10, v, 0.5) is v
+
+
+def test_one_sector_carrying_the_book_is_named_and_gets_none_of_the_sales():
+    tech = ["Technology"] * len(SEVEN)
+    judged = [
+        (w, review.judge_held(m, weight=w, names=len(SEVEN))) for m, w in SEVEN
+    ]
+    plan = review.redeploy(judged, tech)
+    assert not any(review.R_REDEPLOY in v.reasons for v in plan)
+    assert _moves(SEVEN, plan)[1] == 0
+    [note] = review.book_notes([("stock", "Technology", w) for _, w in SEVEN])
+    assert note.key == review.N_SECTOR_HEAVY and note.count == 7
+    assert note.weight == pytest.approx(sum(w for _, w in SEVEN))
+
+
+def test_the_sales_spread_only_up_to_a_sectors_line():
+    # The cut names are tech; the fair names fill a sector of their own up
+    # to the line and no further.
+    sectors = ["Technology"] * 3 + ["Health"] * 3 + ["Energy"]
+    judged = [
+        (w, review.judge_held(m, weight=w, names=len(SEVEN))) for m, w in SEVEN
+    ]
+    plan = review.redeploy(judged, sectors)
+    health = sum(
+        v.target if v.target is not None else w
+        for (_, w), v in zip(SEVEN[3:6], plan[3:6], strict=True)
+    )
+    assert health <= review.SECTOR_LINE + 1e-9
+    assert any(review.R_REDEPLOY in v.reasons for v in plan[3:6])
+
+
+def test_an_underweight_add_into_a_full_sector_is_held():
+    judged = [
+        (0.04, review.judge_held(CHEAP_QUALITY, weight=0.04, names=12)),
+        (0.40, review.Verdict(review.HOLD)),
+    ]
+    assert judged[0][1].verdict == review.ADD
+    add, _ = review.redeploy(judged, ["Technology", "Technology"])
+    assert add.verdict == review.HOLD and add.target is None
+    assert add.reasons[0] == review.R_SECTOR_FULL
+    assert review.R_UNDERWEIGHT not in add.reasons
+
+
+def test_one_company_alone_is_a_concentration_not_a_sector():
+    rows = [("stock", "Technology", 0.45)] + [("stock", s, 0.11) for s in "ABCDE"]
+    assert review.book_notes(rows) == []
+
+
+def test_heavy_crypto_is_named_never_cut():
+    rows = [("crypto", None, 0.40)] + [("stock", None, 0.15)] * 4
+    assert review.book_notes(rows) == [review.Note(review.N_CRYPTO_HEAVY, weight=0.40)]
+    assert review.judge_held(None, weight=0.40, kind="crypto").verdict == review.UNRATED

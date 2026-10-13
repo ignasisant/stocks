@@ -57,6 +57,8 @@ wheels/
 # The API's persisted memos (stocks.api.cache) — runtime state, restored from R2.
 /data/memo/
 /data/last_import.json
+# Revoked session ids (stocks.web auth), written at runtime.
+/data/sessions/
 # Daily counter for the keyless assistant's global allowance (runtime state).
 /data/free_llm_global.json
 # Tonight's sector cohorts (`stocks sector-scan`) — market-wide runtime

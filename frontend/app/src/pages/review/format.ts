@@ -63,6 +63,27 @@ export const SHOWN = [
   "runway_years",
 ] as const;
 
+/** The few a map dot's tooltip carries: price, price for growth, cash, returns. */
+const TIP = [
+  "pe_fwd",
+  "growth_pe",
+  "fcf_yield",
+  "roic",
+  "op_margin",
+  "revenue_growth",
+] as const;
+
+/** The tooltip's figures, printed, the ones the feed lacked left out. */
+export function tipFigures(
+  metrics: Record<string, number | null>,
+  lang: string,
+): { key: string; value: string }[] {
+  return TIP.flatMap((key) => {
+    const value = metric(key, metrics[key], lang);
+    return value === null ? [] : [{ key, value }];
+  });
+}
+
 /** The ones the KPI catalog lacks; their words are `review.metric_<key>`. */
 export const OWN_LABEL = new Set<string>([
   "growth_pe",

@@ -10,6 +10,10 @@
  * A list long enough to scroll gets a search box over it: symbol, company
  * name, sector or verdict, in the reader's words. It narrows this table only —
  * the page's filters are what cut the map and the plan.
+ *
+ * A wide table's rows share the page's focus (`focus.tsx`): the row under the
+ * pointer lights its dot on the map and its move in the plan, and a name
+ * pointed at there lights its row here while the rest fade.
  */
 
 import { Fragment, type ReactNode, useState } from "react";
@@ -20,6 +24,7 @@ import { Reasons } from "./Actions";
 import { maybe } from "../sentiment/format";
 import { DetailsButton, Head, VerdictChip, PnlChip } from "./Explain";
 import { bucket, findRows } from "./filter";
+import { useListFocus } from "./focus";
 import { longDay, metric, money, percent, score, verdictTone } from "./format";
 import type { ReviewRow } from "./types";
 
@@ -91,6 +96,10 @@ export function HeldTable({
     row.reasons[0] ? t(`review.reason_${row.reasons[0]}`) : null;
   const find = useFind(all);
   const rows = find.rows;
+  const focus = useListFocus(
+    "held",
+    rows.map((row) => row.ticker),
+  );
   return (
     <>
       {find.box}
@@ -98,7 +107,7 @@ export function HeldTable({
         <Responsive
           wide={
             <div className="ag-rev-scroll">
-              <table className="ag-rev-table">
+              <table className={`ag-rev-table${focus.fading ? " ag-rev-fading" : ""}`}>
                 <thead>
                   <tr>
                     <th className="ag-rev-who-col">{t("review.col_name")}</th>
@@ -131,7 +140,11 @@ export function HeldTable({
                 </thead>
                 <tbody>
                   {rows.map((row) => (
-                    <tr key={row.ticker}>
+                    <tr
+                      key={row.ticker}
+                      className={focus.on(row.ticker) ? "ag-rev-on" : undefined}
+                      {...focus.bind(row.ticker)}
+                    >
                       <td className="ag-rev-who-col">
                         <TickerCell ticker={row.ticker} name={false} />
                       </td>
@@ -153,7 +166,11 @@ export function HeldTable({
                         <PnlChip row={row} />
                       </td>
                       <td className="ag-rev-fold-cell">
-                        <DetailsButton row={row} variant="icon" />
+                        <DetailsButton
+                          row={row}
+                          variant="icon"
+                          taxCurrency={taxCurrency}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -180,7 +197,7 @@ export function HeldTable({
                     }}
                   />
                   <div className="ag-rev-more-row">
-                    <DetailsButton row={row} />
+                    <DetailsButton row={row} taxCurrency={taxCurrency} />
                   </div>
                 </Fragment>
               ))}
@@ -201,6 +218,10 @@ export function CandidateTable({ rows: all }: { rows: ReviewRow[] }) {
   const na = t("review.na");
   const find = useFind(all);
   const rows = find.rows;
+  const focus = useListFocus(
+    "outside",
+    rows.map((row) => row.ticker),
+  );
   return (
     <>
       {find.box}
@@ -208,7 +229,7 @@ export function CandidateTable({ rows: all }: { rows: ReviewRow[] }) {
         <Responsive
           wide={
             <div className="ag-rev-scroll">
-              <table className="ag-rev-table">
+              <table className={`ag-rev-table${focus.fading ? " ag-rev-fading" : ""}`}>
                 <thead>
                   <tr>
                     <th className="ag-rev-who-col">{t("review.col_name")}</th>
@@ -234,7 +255,11 @@ export function CandidateTable({ rows: all }: { rows: ReviewRow[] }) {
                 </thead>
                 <tbody>
                   {rows.map((row) => (
-                    <tr key={row.ticker}>
+                    <tr
+                      key={row.ticker}
+                      className={focus.on(row.ticker) ? "ag-rev-on" : undefined}
+                      {...focus.bind(row.ticker)}
+                    >
                       <td className="ag-rev-who-col">
                         <TickerCell ticker={row.ticker} name={false} />
                       </td>

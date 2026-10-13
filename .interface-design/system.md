@@ -173,7 +173,32 @@ no Tailwind.
   in the corners dots crowd least. On a phone (<560px wide) the plot is
   near-square (height ≈ 0.95 × width, 260–420px) so the dots spread; legend
   is a wrapping `ul` of key + words, plus the "tap a dot" hint. On the Review
-  page the map is the first section after the filters.
+  page the map comes right after the plan.
+- **Plan card** (`pages/review/Actions.tsx` `Plan`): the first section after
+  the filters, the page's answer before its evidence. One focal figure
+  (fs-3xl/700/1.1, tabular) labelled by its sign (new money the adds need /
+  cash the sales free / even), the sale's tax as its supporting fact, and two
+  flow bars on one shared scale (label | 10px pill track on surface-sunken |
+  amount; down for sells, up for adds; the shorter side's missing length is a
+  dashed text-faint segment, no gradient). Under it the moves as compact rows,
+  not cards: two lists by direction ("Sell or trim", most negative first;
+  "Add to", largest first), head = title + muted count + toned subtotal over
+  a border rule, rows split by rule-soft. Row grid = who (logo + symbol +
+  ellipsed name, trim chip only) | weight → target | bold toned money |
+  details chevron, reasons (≤3) and a short tax / buy-after note under it.
+  Lists sit side by side via `auto-fit minmax(min(100%, 22rem), 1fr)`; each
+  list is its own `ag-rev-mvs` container and drops the weights under the
+  name below 26rem.
+- **Linked focus across sections** (`pages/review/focus.tsx`): one name
+  pointed at (hover or keyboard focus, settled 70ms; touch never points) in
+  the plan, the map or a wide table lights in every other section: its row
+  washed surface-sunken with a 3px brand-accent inset bar on the left, the
+  rest of that list faded to 0.35 (opacity 100ms, none under reduced
+  motion); on the map its dot rings, gets a label even where `placeLabels`
+  had none, every other dot fades and its `Tip` opens. The section the
+  pointer is in never fades around it. Nothing moves or reflows — fading
+  reads as a filter without shoving rows from under the pointer. Phone dense
+  rows do not take part.
 - **Point tooltip** (`pages/review/QualityMap.tsx` `Tip`): never the SVG's
   native `<title>` (~1s browser delay, OS chrome). The DS box (`.tk-tip` look:
   surface-page, 1px border, radius-sm, shadow-overlay, fs-xs, tabular) opens

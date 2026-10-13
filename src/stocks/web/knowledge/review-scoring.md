@@ -20,6 +20,7 @@ On the Sell or add page, good scores are not enough when the numbers behind them
 - Margin at a peak: operating margin at least 1.5 times (and 5 points above) its median over the filed years, at a company whose sales fell in one of those years and that now grows under 20%. Likely the top of a cycle, not a new normal.
 - Sales falling: sales below a year ago and over the years. Cheap may just mean shrinking: the value trap.
 - Margin sliding: operating margin down 5 points or more since the first filed year, and by a quarter of its median. Pricing power fading.
+- Earnings expected to fall: the analysts' next-year earnings 10% or more under the last twelve months' (forward P/E above the trailing one). The low P/E is on a profit already shrinking, so it is cheaper than it will be.
 - Heavy debt: net debt 3 times EBITDA or more (lenders judged on their book are exempt).
 - Cheap on one reading: the Price score clears 50 only thanks to its kindest input; the mean of the other inputs is under 50. No margin of safety.
 
@@ -39,16 +40,22 @@ Sell or add uses free cash flow net of share-based pay (the "Owner FCF yield"), 
 ## Verdicts for holdings and how they are sized
 For a stock you hold, the Sell or add page applies these rules in order, using the position's weight (share of the priced book; unpriced positions count at cost).
 - Sell (target 0%): Quality and Price both under 40, or Quality under 60 on a position under 0.5% of the book.
-- Trim to 10%: 15% or more of the book in one company, whatever its quality.
+- Trim for concentration: one company above the book's line, whatever its quality. The line is 1.5 divided by the number of companies held, never under 15% nor over 35% (15% from ten names up, 37.5% would be 35% with four). The trim goes to an even share (1 divided by the number of companies, at least 10%); a good business at a good price is cut only halfway between that and the line.
+- Fewer than three companies: no concentration trim at all, since one or two names cannot be spread; the page says so and points to the Buy candidates.
+- Tax-staged trim: when a concentration trim would cost 10% or more of what the sale raises in tax, only half the cut is proposed now ("cut in two years for tax"); the rest waits for another tax year. Sales for quality (Sell, or Trim of a weak business) are never staged.
 - Trim by half: Quality under 45 and the position weighs 6% or more, or carries 10% or more of the book's volatility (its share of risk).
-- Add to 5%: Quality 60+, Price 50+, data not broken, no warning flag and the position under 5%. A growth-stage name is added only to 3%.
-- Hold: none of the above. Funds show Core, money-market funds Cash, crypto and unscorable names Unrated. A company at 15%+ is still trimmed even when its numbers cannot be read.
-The Move column is the money from the weight change at today's prices. The plan strip totals To sell, To add, Net and Tax on the sales.
+- Add to 5%: Quality 60+, Price 50+, data not broken, no warning flag and the position at least half a point under 5% (closer than that is Hold, so a name hovering at 5% does not flip daily). A growth-stage name is added only to 3%.
+- Hold: none of the above. Funds show Core, money-market funds Cash, crypto and unscorable names Unrated. A company above the line is still trimmed even when its numbers cannot be read, but only halfway, since unread is not weak.
+- Redeploy: money freed by sales and trims goes back first into Add or Hold names of Quality 60+ and Price 50+ with no warning, best first, up to an even share (growth-stage names only to 3%). A Hold topped up this way shows as Add with "takes what the sales free". Top-ups under 0.5% are skipped, so buys never exceed sales; what is left is cash with no home, for the outside Buy candidates or an index fund.
+- Sector line: when one sector is 40% or more of the book across two companies or more, the page names it, no add (planned or from the sales) takes that sector past 40%, and an add blocked this way shows Hold with "its sector is already 40%+".
+- Crypto: coins are never scored or cut; when they are 25% or more of the book the page says so.
+The Move column is the money from the weight change at today's prices. "The plan", at the top of the page, leads with one figure: the new money the adds need, or the cash the sales free, with the tax on the sales beside it and two bars (To sell, To add) on one scale. Under it every move is one row, split into "Sell or trim" and "Add to", biggest first. Hovering a name in the plan, the map or the table highlights it in the other two.
 
 ## Tax on a sale and the repurchase-window date
 Each Sell or Trim row on the Sell or add page shows the extra tax this year's bill would carry if you sold down to the target, replayed on your own lots with your tax jurisdiction and the gains and losses already booked this year. If the sale books a loss or is offset, it says no extra tax.
 - "Buy after" date: where your jurisdiction has a repurchase rule and you sold something at a loss recently, an Add or Buy row shows the first day a purchase no longer undoes that loss. Windows are 2 months (Spain), 30 days (US and Canada) and 28 days (Ireland).
 - Other jurisdictions have no window in the app, so no date appears.
+- Losses that would cut the plan's tax: when the plan's sales add tax, the page checks the positions it keeps that sit at least 150 under their cost (never one it says to add to). Each is replayed sold together with the plan, and those that lower the bill are named with the combined saving, plus the date before which buying them back would undo the loss. It is arithmetic, not advice to sell.
 
 ## Outside names: buy, watch or pass
 The Outside the portfolio table judges watchlist names you do not hold, plus any tickers typed into "Weigh other tickers". Typed tickers are not saved to the watchlist; up to 10 can be added, and at most 30 outside names are judged.

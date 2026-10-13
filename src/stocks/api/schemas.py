@@ -3857,6 +3857,26 @@ class ReviewPlan(BaseModel):
     tax_currency: str = ""
 
 
+class ReviewNote(BaseModel):
+    """One thing the page says about the book as a whole."""
+
+    key: str = Field(
+        description=(
+            "`review.note_<key>`: few_names, sector_heavy, crypto_heavy, tax_offset."
+        )
+    )
+    count: int | None = Field(default=None, description="Companies it counts.")
+    sector: str | None = Field(default=None, description="Yahoo's sector name, English.")
+    weight: float | None = Field(default=None, description="Its share of the book.")
+    amount: float | None = Field(
+        default=None, description="Money, in the tax jurisdiction's currency."
+    )
+    tickers: list[str] = Field(default_factory=list, description="The names it is about.")
+    day: str | None = Field(
+        default=None, description="ISO day a repurchase stops undoing the loss."
+    )
+
+
 class Review(BaseModel):
     base: str
     as_of: str
@@ -3870,4 +3890,12 @@ class Review(BaseModel):
     jurisdiction: str = ""
     added: list[str] = Field(
         default_factory=list, description="The `add` tickers, as understood."
+    )
+    notes: list[ReviewNote] = Field(
+        default_factory=list,
+        description=(
+            "Book-level notes: one or two companies carrying the book, one "
+            "sector carrying 40% of it, coins past a quarter of it, losses "
+            "that would cut the plan's tax."
+        ),
     )

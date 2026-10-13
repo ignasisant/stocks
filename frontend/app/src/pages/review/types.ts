@@ -61,4 +61,19 @@ export type Review = {
   unpriced: number;
   jurisdiction: string;
   added: string[];
+  /** What the page says about the book as a whole (`review.note_<key>`). */
+  notes: ReviewNote[];
+};
+
+export type ReviewNote = {
+  key: "few_names" | "sector_heavy" | "crypto_heavy" | "tax_offset" | string;
+  count: number | null;
+  /** Yahoo's sector name, English. */
+  sector: string | null;
+  weight: number | null;
+  /** Money in `plan.tax_currency` (the saving, for `tax_offset`). */
+  amount: number | null;
+  tickers: string[];
+  /** ISO day a repurchase stops undoing the loss. */
+  day: string | null;
 };
