@@ -65,6 +65,46 @@ def _yahoo_offline():
     requests.Session.request = before
 
 
+# Units of each currency per euro: made up, fixed, never fetched.
+_FX_PER_EUR = {"EUR": 1.0, "USD": 1.10, "GBP": 0.85, "CHF": 0.95, "JPY": 160.0}
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _fx_offline():
+    """Answer the three frankfurter shapes `stocks.data.fx` asks for — latest,
+    one day, a range — from a fixed table, without a socket.
+
+    fx went to frankfurter for real through urllib, which `_yahoo_offline`
+    does not cover: on 2026-10-13 it timed out from the CI runners and failed
+    every test that priced a book in another currency. A test that cares about
+    a rate stubs `fx.get_json` (or `fx._fetch`) itself, which wins over this.
+    """
+    from datetime import date
+    from urllib.parse import parse_qs, urlparse
+
+    import pandas as pd
+
+    from stocks.data import fx
+
+    def get_json(url: str, timeout: float = 15) -> dict:
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+        base, quote = query["base"][0], query["symbols"][0]
+        rate = _FX_PER_EUR.get(quote, 1.0) / _FX_PER_EUR.get(base, 1.0)
+        when = parsed.path.rsplit("/", 1)[1]
+        if ".." in when:
+            start, end = when.split("..")
+            days = pd.bdate_range(start, end or date.today())
+            return {"rates": {d.date().isoformat(): {quote: rate} for d in days}}
+        day = date.today().isoformat() if when == "latest" else when
+        return {"rates": {quote: rate}, "date": day}
+
+    before = fx.get_json
+    fx.get_json = get_json  # type: ignore[assignment]
+    yield
+    fx.get_json = before
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _no_telegram_pause():
     """Send the fan-outs' messages back to back.
