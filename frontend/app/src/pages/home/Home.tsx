@@ -170,7 +170,7 @@ export default function Page() {
           />
         );
       case "extremes":
-        return <ExtremesCard query={extremes} />;
+        return <ExtremesCard query={extremes} book={book} />;
       case "earnings":
         return <EarningsCard />;
       case "transactions":
