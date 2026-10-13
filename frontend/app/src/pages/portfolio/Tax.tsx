@@ -372,6 +372,9 @@ function Report({ report }: { report: TaxReport }) {
           {total
             ? null
             : selected.notes.map((note) => words.say(note.key, note.kwargs)).join("")}
+          {total || report.jurisdiction !== "es"
+            ? null
+            : ` = ${money(selected.net_taxable) ?? ""}`}
         </Caption>
         {month ? (
           <div className="pf-filter" role="status">
