@@ -48,6 +48,10 @@ export function Verdict({ sector }: { sector: string }) {
           setRead(stored);
           return;
         }
+        // The stored stand-in is on screen at once; the assistant's own read
+        // replaces it when (and if) it lands, instead of a skeleton for the
+        // whole wait.
+        setRead(stored);
         setWriting(true);
         const written = await send<Read>(
           "POST",
@@ -69,7 +73,7 @@ export function Verdict({ sector }: { sector: string }) {
   return (
     <section className="ag-sec-card ag-sec-verdict">
       <h2 className="ag-sec-h2">{t("sector.verdict_title")}</h2>
-      {writing || !read ? (
+      {!read ? (
         <>
           <Skeleton rows={3} />
           <p className="ag-sec-caption">{t("sector.verdict_waiting")}</p>
@@ -84,7 +88,10 @@ export function Verdict({ sector }: { sector: string }) {
           ))}
           {/* Said plainly when nothing was written: a stand-in that looked like
               the assistant's read would be the wrong claim twice over. */}
-          {!read.written && (
+          {writing && (
+            <p className="ag-sec-verdict-note">{t("sector.verdict_waiting")}</p>
+          )}
+          {!read.written && !writing && (
             <p className="ag-sec-verdict-note">
               {t(guest ? "sector.verdict_signin" : "sector.verdict_computed")}
             </p>
