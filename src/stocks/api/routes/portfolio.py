@@ -1248,10 +1248,16 @@ def _reporting_flags(account, jurisdiction, settings) -> list[TaxFlag]:
     the book. Every flag the jurisdiction returns is served, crossed or not —
     "under the line" is information too, and it is what the page prints.
     """
+    from stocks.data.crypto import is_crypto
+
     ccy = reporting_currency(account, None)
     db = str(account.db)
     with obs.swallow("api.tax_flags", jurisdiction=jurisdiction.code):
         table = loaders.positions_table(db, loaders.db_mtime(db), ccy)
+        if not table.empty:
+            # Modelo 720 covers securities and accounts abroad; crypto is the
+            # separate Modelo 721, so coins never count toward the 720 total.
+            table = table[[not is_crypto(str(t)) for t in table.index]]
         held = (
             float(table["value"].fillna(table["cost"]).sum()) if not table.empty else 0.0
         )
