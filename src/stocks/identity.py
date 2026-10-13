@@ -71,7 +71,7 @@ def company_name(ticker: str, watchlist: Path | str) -> str | None:
     resolved symbol, so a custom name set on a broker code is not lost by
     resolving past it. Then the coin map, then the local fund catalog (which
     covers the UCITS lines a EUR investor holds and the SEC map does not), then
-    the SEC ticker map.
+    the SEC ticker map, then the name Yahoo gave the listing (non-US).
 
     `watchlist` is a parameter rather than a lookup because a custom name one
     account set must never render for another. A caller that caches this must
@@ -96,7 +96,13 @@ def company_name(ticker: str, watchlist: Path | str) -> str | None:
             return name
         from stocks.data.edgar import title_for
 
-        return title_for(resolved)
+        if name := title_for(resolved):
+            return name
+        # Non-US listings: the SEC map has none. Yahoo's name was kept with
+        # the profile the allocation donuts already pulled, so no request.
+        from stocks.data import profiles
+
+        return (profiles.known(resolved) or {}).get("name")
     except Exception:
         return None
 
