@@ -305,5 +305,6 @@
   "import.hint_clicktrade": "Exporta desde ClickTrade/SaxoTraderGO: Informes históricos, Operaciones ejecutadas, Excel. Se reconocen cabeceras en español e inglés; los símbolos salen del código de bolsa de Saxo (TEF:xmce pasa a TEF.MC) y los desconocidos entran con el ISIN. Los dividendos van en el extracto de cuenta, no en este informe; añádelos aparte.",
   "import.hint_generic": "Cualquier bróker: un CSV con cabecera date,ticker,action,quantity,price,currency,fee,note (action: buy, sell, dividend, fee o split; currency, fee y note opcionales).",
   "import.book_count": "{n} transacciones",
-  "import.book_count_one": "{n} transacción"
+  "import.book_count_one": "{n} transacción",
+  "import.danger_zone": "Zona de peligro"
 }

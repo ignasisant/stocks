@@ -305,5 +305,6 @@
   "import.hint_clicktrade": "Export from ClickTrade/SaxoTraderGO: Historical reports, Trades executed, Excel. Spanish and English headers are recognised; symbols map from the Saxo exchange code (TEF:xmce becomes TEF.MC) and unknown ones import under the ISIN. Dividends are in the account statement, not this report; add them separately.",
   "import.hint_generic": "Any broker: a CSV with header date,ticker,action,quantity,price,currency,fee,note (action: buy, sell, dividend, fee or split; currency, fee and note optional).",
   "import.book_count": "{n} transactions",
-  "import.book_count_one": "{n} transaction"
+  "import.book_count_one": "{n} transaction",
+  "import.danger_zone": "Danger zone"
 }
