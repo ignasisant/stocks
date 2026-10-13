@@ -1,7 +1,7 @@
 {
   "sector.title": "Sector screen",
   "sector.pick": "Sector",
-  "sector.as_of": "Cohort scanned {date}",
+  "sector.as_of": "Cohort and prices as of {date}",
   "sector.cohort_caption": "{n} companies — the {etf} basket, widened with listed names outside the US.",
   "sector.empty_title": "No sector scan yet",
   "sector.empty_body": "Every night the app builds a comparable cohort for each of the eleven sectors and ranks it on valuation and quality. Nothing has been scanned yet — refresh a sector to build one now.",

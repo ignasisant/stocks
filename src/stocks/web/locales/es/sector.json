@@ -1,7 +1,7 @@
 {
   "sector.title": "Cribado por sectores",
   "sector.pick": "Sector",
-  "sector.as_of": "Grupo escaneado el {date}",
+  "sector.as_of": "Grupo y precios a {date}",
   "sector.cohort_caption": "{n} empresas — la cesta de {etf}, ampliada con cotizadas de fuera de EE. UU.",
   "sector.empty_title": "Todavía no hay escaneo sectorial",
   "sector.empty_body": "Cada noche la app arma un grupo comparable para cada uno de los once sectores y lo ordena por valoración y calidad. Aún no se ha escaneado nada — actualiza un sector para armarlo ahora.",
