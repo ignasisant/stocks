@@ -16,25 +16,24 @@
  */
 
 import { useLang, useT } from "../../shell/i18n";
+import { Link } from "../../shell/router";
 import { TickerCell } from "../../shell/tickers";
 import { Help } from "../../ui/Kpi";
 import { DetailsButton, VerdictChip } from "./Explain";
 import { useListFocus } from "./focus";
-import { ACTIONS, longDay, money, percent, verdictTone } from "./format";
+import { useHelp } from "./lines";
+import { planMoves } from "./filter";
+import { longDay, money, percent, verdictTone } from "./format";
 import type { Review, ReviewRow } from "./types";
+import { jurisdictionLabel } from "../portfolio/format";
 
 export function Plan({ data }: { data: Review }) {
   const t = useT();
   const lang = useLang();
   const na = t("review.na");
   const plan = data.plan;
-  const moves = data.held.filter((row) => ACTIONS.includes(row.verdict));
-  const out = moves
-    .filter((row) => row.verdict !== "add")
-    .sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0));
-  const into = moves
-    .filter((row) => row.verdict === "add")
-    .sort((a, b) => (b.delta ?? 0) - (a.delta ?? 0));
+  const { out, into } = planMoves(data);
+  const moves = [...out, ...into];
   const net = plan.buys - plan.sells;
   const scale = Math.max(plan.sells, plan.buys, 1);
   const focus = useListFocus(
@@ -67,7 +66,10 @@ export function Plan({ data }: { data: Review }) {
                 {money(Math.abs(net), data.base, lang) ?? na}
               </b>
               <span className="ag-rev-plan-tax">
-                {t("review.plan_tax")}{" "}
+                {t("review.plan_tax")}
+                {plan.tax_currency && plan.tax_currency !== data.base
+                  ? ` (${t("review.tax_in", { currency: plan.tax_currency })})`
+                  : null}{" "}
                 <b>{money(plan.tax, plan.tax_currency, lang) ?? na}</b>
                 <Help text={t("review.plan_tax_help", { code: data.jurisdiction })} />
               </span>
@@ -98,6 +100,14 @@ export function Plan({ data }: { data: Review }) {
               {t("review.plan_unplaced", {
                 amount: money(-net, data.base, lang) ?? na,
               })}
+            </p>
+          ) : null}
+          {data.tax_status && data.tax_status !== "chosen" ? (
+            <p className="ag-rev-caption ag-rev-plan-note">
+              {t("review.tax_assumed", {
+                label: jurisdictionLabel(data.jurisdiction, t),
+              })}{" "}
+              <Link page="profile">{t("review.tax_assumed_link")}</Link>
             </p>
           ) : null}
           <div className={`ag-rev-plan-cols${focus.fading ? " ag-rev-fading" : ""}`}>
@@ -259,7 +269,7 @@ function Move({
         {row.verdict === "trim" ? <VerdictChip row={row} /> : null}
       </div>
       <span className="ag-rev-mv-weights">
-        {percent(row.weight, lang) ?? na}
+        {row.held ? (percent(row.weight, lang) ?? na) : t("review.move_new")}
         <i aria-hidden="true">→</i>
         {percent(row.target_weight, lang) ?? na}
       </span>
@@ -279,11 +289,12 @@ function Move({
 
 export function Reasons({ reasons, limit = 4 }: { reasons: string[]; limit?: number }) {
   const t = useT();
+  const help = useHelp();
   if (reasons.length === 0) return null;
   return (
     <ul className="ag-rev-reasons">
       {reasons.slice(0, limit).map((code) => (
-        <li key={code} title={t(`review.reason_${code}_help`)}>
+        <li key={code} title={help(`review.reason_${code}_help`)}>
           {t(`review.reason_${code}`)}
         </li>
       ))}

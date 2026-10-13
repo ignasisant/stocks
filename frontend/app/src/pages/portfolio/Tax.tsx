@@ -24,7 +24,7 @@ import { TickerCell as Cell } from "../../shell/tickers";
 import type { TaxFlag, TaxPeriod, TaxReport, TaxSale } from "./api";
 import {
   compactMoneyIn,
-  flagOf,
+  jurisdictionLabel,
   moneyIn,
   percent,
   shares as formatShares,
@@ -582,9 +582,4 @@ function flagCaption(
 function browserRegion(): string {
   const parts = navigator.language.split("-");
   return (parts.length > 1 ? parts[parts.length - 1] : "")?.toUpperCase() ?? "";
-}
-
-/** "🇪🇸 Spain — IRPF": the flag built from the code, the name from the catalog. */
-function jurisdictionLabel(code: string, t: (key: string) => string): string {
-  return `${flagOf(code)} ${t(`profile.tax_residence_${code.toLowerCase()}`)}`.trim();
 }

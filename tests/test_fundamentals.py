@@ -91,6 +91,48 @@ def test_compute_metrics_carries_the_history_the_review_cautions_read():
     assert compute_metrics(raw)["revenue_down_years"] == 1
 
 
+def test_compute_metrics_rebuilds_the_ev_multiples_the_feed_left_out():
+    raw = sample_raw()
+    for key in ("enterpriseValue", "enterpriseToEbitda", "enterpriseToRevenue"):
+        del raw.info[key]
+    m = compute_metrics(raw)
+    assert abs(m["ev"] - (3.8e12 + 50e9)) < 1
+    assert abs(m["ev_ebitda"] - 3.85e12 / 130e9) < 1e-9
+    assert abs(m["ev_sales"] - 3.85e12 / 400e9) < 1e-9
+    # The feed's own figures win when it gave them.
+    assert compute_metrics(sample_raw())["ev_ebitda"] == 29.6
+    assert abs(m["ps"] - 3.8e12 / 400e9) < 1e-9
+
+
+def test_compute_metrics_reads_the_dividend_in_the_quotes_own_unit():
+    raw = sample_raw()
+    raw.info.update(dividendRate=5.0, payoutRatio=0.4, dividendYield=2.0)
+    raw.cashflow.loc["Cash Dividends Paid"] = [-19e9] * 5
+    m = compute_metrics(raw)
+    assert abs(m["dividend_yield"] - 0.02) < 1e-9
+    assert m["payout_ratio"] == 0.4
+    assert abs(m["dividend_fcf"] - 19e9 / 95e9) < 1e-9
+    # No rate: Yahoo's trailing yield; a yield no payer has is the feed's.
+    del raw.info["dividendRate"]
+    raw.info["trailingAnnualDividendYield"] = 0.031
+    assert compute_metrics(raw)["dividend_yield"] == 0.031
+    raw.info["trailingAnnualDividendYield"] = 0.9
+    assert compute_metrics(raw)["dividend_yield"] is None
+
+
+def test_a_line_quoted_in_pence_reads_its_yield_from_the_percent():
+    # HSBA.L as Yahoo gives it: a dollar rate over a price in pence.
+    raw = sample_raw()
+    raw.info.update(
+        currency="GBp",
+        currentPrice=1441.2,
+        dividendRate=0.56,
+        trailingAnnualDividendYield=0.000525,
+        dividendYield=3.99,
+    )
+    assert abs(compute_metrics(raw)["dividend_yield"] - 0.0399) < 1e-9
+
+
 def test_compute_metrics_missing_data():
     raw = RawFundamentals("EMPTY")
     m = compute_metrics(raw)

@@ -27,6 +27,10 @@ export type ReviewRow = {
   kind: string | null;
   /** Yahoo's sector name, English; null for a fund or a name never profiled. */
   sector: string | null;
+  /** Yahoo's country name, English; null when never profiled. */
+  country: string | null;
+  /** Quote currency (pence folded to pounds); null when never profiled. */
+  currency: string | null;
   held: boolean;
   verdict: Verdict;
   reasons: string[];
@@ -59,17 +63,43 @@ export type Review = {
   candidates: ReviewRow[];
   plan: { sells: number; buys: number; tax: number | null; tax_currency: string };
   unpriced: number;
+  /** Names whose figures missed the server's time budget; read unrated. */
+  pending?: number;
   jurisdiction: string;
+  /** "chosen" when the reader picked a residence; else how it was assumed. */
+  tax_status: string;
   added: string[];
+  /** The weights the verdicts were drawn at; some scale with the book. */
+  lines?: ReviewLines | null;
   /** What the page says about the book as a whole (`review.note_<key>`). */
   notes: ReviewNote[];
 };
 
+export type ReviewLines = {
+  /** From here one company is a concentration; null with too few. */
+  concentrated: number | null;
+  small: number;
+  add_to: number;
+  sector: number;
+};
+
 export type ReviewNote = {
-  key: "few_names" | "sector_heavy" | "crypto_heavy" | "tax_offset" | string;
+  key:
+    | "few_names"
+    | "sector_heavy"
+    | "country_heavy"
+    | "currency_heavy"
+    | "fund_core"
+    | "cash_heavy"
+    | "crypto_heavy"
+    | "tax_offset"
+    | string;
   count: number | null;
   /** Yahoo's sector name, English. */
   sector: string | null;
+  /** Yahoo's country name, English. */
+  country: string | null;
+  currency: string | null;
   weight: number | null;
   /** Money in `plan.tax_currency` (the saving, for `tax_offset`). */
   amount: number | null;

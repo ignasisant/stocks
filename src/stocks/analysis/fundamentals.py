@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from stocks.analysis import ranking
+from stocks.analysis.listing import quote_unit
 from stocks.analysis.moat import moat_score
 from stocks.data import fetch, fx
 from stocks.data.fundamentals import RawFundamentals
@@ -398,6 +399,38 @@ def _statement_fx(info: dict) -> float | None:
         return None
 
 
+def _dividend(info: dict, owner_fcf: float | None, paid: float | None = None) -> dict:
+    """Yield, payout and the dividend against the owner's free cash flow.
+
+    The yield is the rate over the price, else Yahoo's trailing yield. A line
+    quoted in a minor unit (London's pence) is the exception: Yahoo gives its
+    rate in the dividend's own major currency — HSBC's in dollars over a
+    price in pence — and its trailing yield off the same mismatch, so there
+    only `dividendYield`, which yfinance answers in percent, reads true.
+    Out-of-range figures are the feed's, not a payer's, and read as missing.
+    """
+    price = info.get("currentPrice") or info.get("regularMarketPrice")
+    rate = info.get("dividendRate")
+    if quote_unit(info.get("currency"))[1] != 1.0:
+        pct = info.get("dividendYield")
+        y = pct / 100 if isinstance(pct, (int, float)) else None
+    elif rate and price:
+        y = rate / price
+    else:
+        y = info.get("trailingAnnualDividendYield")
+    payout = info.get("payoutRatio")
+    out = {
+        "dividend_yield": y if isinstance(y, (int, float)) and 0 < y < 0.25 else None,
+        "payout_ratio": (
+            payout if isinstance(payout, (int, float)) and 0 < payout < 5 else None
+        ),
+        "dividend_fcf": None,
+    }
+    if paid is not None and paid < 0 and owner_fcf and owner_fcf > 0:
+        out["dividend_fcf"] = -paid / owner_fcf
+    return out
+
+
 def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     """All KPIs for one ticker. Missing data -> None, never invented."""
     info = raw.info
@@ -472,6 +505,19 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     # Free cash flow far above EBITDA is not the business's cash: a lender's
     # loan book or a payments float runs through operating cash flow.
     m["fcf_ebitda"] = owner / ebitda if owner is not None and has_ebitda else None
+    # Price to sales in one currency: an ADR's filed sales converted, like
+    # the yields above. The review's "no sales to speak of" test reads it.
+    m["ps"] = cap / (revenue * rate) if cap and revenue and revenue > 0 and rate else None
+    if rate == 1.0:
+        # Yahoo leaves the EV multiples out for many European small caps;
+        # quote and filings share a currency here, so they are rebuilt.
+        ev = m["ev"]
+        if ev is None and cap and net_debt is not None:
+            ev = m["ev"] = cap + net_debt
+        if m["ev_ebitda"] is None and ev and has_ebitda:
+            m["ev_ebitda"] = ev / ebitda
+        if m["ev_sales"] is None and ev and revenue and revenue > 0:
+            m["ev_sales"] = ev / revenue
     if rate != 1.0:
         # Yahoo adds a market cap in one currency to a net debt in the other,
         # and its EV multiples divide by statements in the filing currency —
@@ -492,6 +538,12 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     )
     burn = -fcf if fcf is not None and fcf < 0 else None
     m["runway_years"] = cash_now / burn if burn and cash_now else None
+
+    # Both sides in the filing currency: no rate involved.
+    paid = _latest(raw.cashflow, "Cash Dividends Paid")
+    if paid is None:
+        paid = _latest(raw.cashflow, "Common Stock Dividend Paid")
+    m.update(_dividend(info, owner, paid))
 
     net_income = _latest(raw.income, "Net Income")
     m["cash_conversion"] = fcf / net_income if fcf and net_income else None

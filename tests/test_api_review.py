@@ -16,6 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from stocks import accounts
+from stocks.analysis import review as engine
 from stocks.api import loaders
 from stocks.api.app import app as fastapi_app
 from stocks.api.routes import review as route
@@ -62,9 +63,19 @@ def _cold_caches():
 
 
 PROFILES = {
-    "AMD": {"sector": "Technology", "quoteType": "EQUITY"},
-    "BKNG": {"sector": "Consumer Cyclical", "quoteType": "EQUITY"},
-    "XEON.DE": {"quoteType": "ETF"},
+    "AMD": {
+        "sector": "Technology",
+        "country": "United States",
+        "currency": "USD",
+        "quoteType": "EQUITY",
+    },
+    "BKNG": {
+        "sector": "Consumer Cyclical",
+        "country": "United States",
+        "currency": "USD",
+        "quoteType": "EQUITY",
+    },
+    "XEON.DE": {"currency": "EUR", "quoteType": "ETF"},
 }
 
 
@@ -195,7 +206,8 @@ def test_every_row_says_where_the_watchlist_files_it(client, book):
 def test_the_plan_adds_up_the_moves(client, book):
     plan = _get(client)["plan"]
     assert plan["sells"] == pytest.approx(1_500.0)
-    assert plan["buys"] == pytest.approx(200.0)
+    # ADBE's add to 5% and BKNG, bought outside with what the sale leaves.
+    assert plan["buys"] == pytest.approx(200.0 + 500.0)
     assert plan["tax_currency"] == "EUR"
 
 
@@ -248,8 +260,11 @@ def test_what_the_page_proposes_goes_in_the_journal_once(client, book, monkeypat
 
 
 def test_a_book_of_one_or_two_companies_is_told_so(client, book, monkeypatch):
-    # Fund-based (82% in a money-market fund): nothing to say about it.
-    assert _get(client)["notes"] == []
+    # 82% in a money-market fund, with ADBE to add and BKNG to buy: the only
+    # thing to say is that the cash sits idle beside them.
+    [idle] = _get(client)["notes"]
+    assert (idle["key"], idle["count"]) == ("cash_heavy", 2)
+    assert idle["weight"] == pytest.approx(0.82)
     table = pd.DataFrame(
         {
             "shares": [10.0, 5.0],
@@ -262,8 +277,8 @@ def test_a_book_of_one_or_two_companies_is_told_so(client, book, monkeypatch):
     )
     monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
     body = _get(client)
-    [note] = body["notes"]
-    assert (note["key"], note["count"]) == ("few_names", 2)
+    [note] = [n for n in body["notes"] if n["key"] == "few_names"]
+    assert note["count"] == 2
     # Half the book each, and neither is cut for it.
     assert {r["verdict"] for r in body["held"]} == {"hold"}
     assert body["plan"]["sells"] == 0
@@ -343,4 +358,214 @@ def test_no_sale_in_the_plan_means_no_offset_note(client, book, monkeypatch):
         index=pd.Index(["XEON.DE", "INTC"], name="ticker"),
     )
     monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
-    assert [n["key"] for n in _get(client)["notes"]] == []
+    assert "tax_offset" not in [n["key"] for n in _get(client)["notes"]]
+
+
+def test_without_a_chosen_residence_the_tax_is_said_to_be_assumed(client, book):
+    book.prefs.write_text(json.dumps({"currency": "EUR"}))
+    body = _get(client)
+    # Taxed as the rest of the app taxes it, and the page says so.
+    assert body["jurisdiction"] == "ES" and body["tax_status"] != "chosen"
+
+
+def test_a_chosen_residence_is_not_flagged(client, book):
+    body = _get(client)
+    assert (body["jurisdiction"], body["tax_status"]) == ("ES", "chosen")
+
+
+def test_a_non_eur_base_prices_moves_in_it_and_tax_in_the_jurisdictions(
+    client, book, monkeypatch
+):
+    from stocks.data import fx
+
+    monkeypatch.setattr(
+        fx, "rate_on", lambda day, base, quote: 1.0 if base == quote else 0.9
+    )
+    monkeypatch.setattr(fx, "prefetch", lambda *a, **k: None)
+    body = _get(client, base="USD")
+    assert body["base"] == "USD"
+    assert body["plan"]["tax_currency"] == "EUR"
+    amd = next(r for r in body["held"] if r["ticker"] == "AMD")
+    assert amd["delta"] == pytest.approx(-1_500.0)
+    assert amd["tax"] is not None
+
+
+def test_a_name_without_a_kind_is_judged_as_a_company(client, book, monkeypatch):
+    monkeypatch.setattr(route, "_kind", lambda symbol: KINDS.get(symbol))
+    verdicts = {r["ticker"]: r["verdict"] for r in _get(client)["held"]}
+    assert verdicts["AMD"] == "sell" and verdicts["ADBE"] == "add"
+
+
+def test_every_row_carries_its_currency_and_country(client, book):
+    body = _get(client)
+    rows = {r["ticker"]: r for r in body["held"] + body["candidates"]}
+    assert (rows["AMD"]["country"], rows["AMD"]["currency"]) == ("United States", "USD")
+    assert (rows["XEON.DE"]["country"], rows["XEON.DE"]["currency"]) == (None, "EUR")
+    assert rows["BKNG"]["currency"] == "USD"
+    # A name the profile memo has never seen says nothing, not a guess.
+    assert (rows["SNAP"]["country"], rows["SNAP"]["currency"]) == (None, None)
+
+
+def test_a_pence_quote_reads_as_pounds(client, book, monkeypatch):
+    monkeypatch.setitem(
+        PROFILES,
+        "SNAP",
+        {"country": "United Kingdom", "currency": "GBp", "quoteType": "EQUITY"},
+    )
+    snap = next(r for r in _get(client)["candidates"] if r["ticker"] == "SNAP")
+    assert snap["currency"] == "GBP"
+
+
+def _us_book(monkeypatch):
+    monkeypatch.setitem(PROFILES, "ADBE", PROFILES["AMD"])
+    table = pd.DataFrame(
+        {
+            "shares": [10.0, 10.0, 10.0],
+            "cost": [3_000.0, 3_000.0, 3_000.0],
+            "value": [3_000.0, 3_000.0, 4_000.0],
+            "pnl": [0.0, 0.0, 1_000.0],
+            "pnl_pct": [0.0, 0.0, 0.33],
+        },
+        index=pd.Index(["AMD", "ADBE", "BKNG"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+
+
+def test_a_book_quoted_in_dollars_for_a_euro_reader_is_named(client, book, monkeypatch):
+    _us_book(monkeypatch)
+    notes = {n["key"]: n for n in _get(client)["notes"]}
+    assert notes["currency_heavy"]["currency"] == "USD"
+    assert notes["currency_heavy"]["weight"] == pytest.approx(1.0)
+    # Three US companies, all of it: a one-country book too.
+    assert notes["country_heavy"]["country"] == "United States"
+    assert notes["country_heavy"]["count"] == 3
+
+
+def test_an_indexed_book_says_the_companies_are_satellites(client, book, monkeypatch):
+    monkeypatch.setitem(KINDS, "XEON.DE", "equity_fund")
+    notes = {n["key"]: n for n in _get(client)["notes"]}
+    assert notes["fund_core"]["weight"] == pytest.approx(0.82)
+    assert notes["fund_core"]["count"] == 2
+    assert "cash_heavy" not in notes
+
+
+def test_one_event_names_the_read_without_a_ticker(client, book, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        route.obs, "event", lambda name, **fields: seen.append((name, fields))
+    )
+    _get(client)
+    [(name, fields)] = [e for e in seen if e[0] == "api.review"]
+    assert fields["jurisdiction"] == "ES" and fields["base"] == "EUR"
+    assert fields["held"] == 3 and fields["verdicts"]["sell"] == 1
+    assert fields["kinds"] == {"stock": 2, "money_market": 1}
+    assert fields["notes"] == ["cash_heavy"]
+    assert not any(t in repr(fields) for t in ("AMD", "ADBE", "XEON", "BKNG"))
+
+
+def test_the_lines_the_copy_quotes_travel_with_the_answer(client, book):
+    lines = _get(client)["lines"]
+    # Two companies: too few for a concentration line; the rest at their
+    # narrow-book values.
+    assert lines == {
+        "concentrated": None,
+        "small": engine.SMALL,
+        "add_to": engine.ADD_TO,
+        "sector": engine.SECTOR_LINE,
+    }
+
+
+def test_what_the_sales_free_and_the_book_cannot_take_goes_to_the_outside_buys(
+    client, book
+):
+    body = _get(client)
+    bkng = next(r for r in body["candidates"] if r["ticker"] == "BKNG")
+    # AMD's 1,500 pays ADBE's 200; BKNG opens at the add line, 5%.
+    assert bkng["target_weight"] == pytest.approx(engine.ADD_TO)
+    assert bkng["delta"] == pytest.approx(500.0)
+    assert bkng["reasons"][0] == engine.R_REDEPLOY
+    # A pass is never sized; what no buy takes is the plan's unplaced cash.
+    snap = next(r for r in body["candidates"] if r["ticker"] == "SNAP")
+    assert snap["delta"] is None and snap["target_weight"] is None
+    assert body["plan"]["sells"] - body["plan"]["buys"] == pytest.approx(800.0)
+
+
+def test_an_outside_buy_inside_the_repurchase_window_is_sized_and_dated(client, book):
+    # BKNG sold at a loss a month ago: buying it back reopens that loss.
+    ledger.add_many(
+        [
+            Transaction("2026-01-02", "BKNG", "buy", 1, 500.0, "EUR", 0.0),
+            Transaction(f"{_days_ago(30)}", "BKNG", "sell", 1, 400.0, "EUR", 0.0),
+        ],
+        path=book.db,
+    )
+    bkng = next(r for r in _get(client)["candidates"] if r["ticker"] == "BKNG")
+    assert bkng["delta"] == pytest.approx(500.0)
+    assert bkng["buy_after"] is not None and bkng["buy_after"] > _days_ago(0)
+
+
+def test_no_sale_means_no_outside_buy_is_sized(client, book, monkeypatch):
+    monkeypatch.setitem(METRICS, "AMD", QUALITY)
+    body = _get(client)
+    assert all(r["delta"] is None for r in body["candidates"])
+
+
+def test_the_offset_lines_follow_the_jurisdictions_currency(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(route.fx, "spot", lambda a, b: (11.0, "spot"))
+    assert route._lines(SimpleNamespace(currency="SEK")) == (150.0 * 11, 25.0 * 11)
+    assert route._lines(SimpleNamespace(currency="EUR")) == (150.0, 25.0)
+
+    def down(a, b):
+        raise OSError("offline")
+
+    seen = []
+    monkeypatch.setattr(route.fx, "spot", down)
+    monkeypatch.setattr(route.obs, "event", lambda name, **f: seen.append(name))
+    assert route._lines(SimpleNamespace(currency="SEK")) == (150.0, 25.0)
+    assert seen == ["review.fx_missing"]
+
+
+def test_an_open_loss_is_read_in_the_tax_currency_not_the_pages(monkeypatch):
+    from types import SimpleNamespace
+
+    # Bought for 1,000 dollars; 10 shares at 90 euros read as a loss on a
+    # euro page, but at 1.2 dollars a euro the tax sees an 80-dollar gain.
+    monkeypatch.setattr(route.fx, "spot", lambda a, b: (1.2, "spot"))
+    held = SimpleNamespace(cost=1_000.0, quantity=10.0)
+    book = SimpleNamespace(currency="USD", held=lambda ticker: held)
+    assert route._unrealised(book, ("X", 10.0, 90.0, "EUR")) == pytest.approx(80.0)
+
+
+def test_a_slow_book_answers_within_its_budget_and_says_what_is_pending(
+    client, book, monkeypatch
+):
+    import threading
+    import time
+
+    release = threading.Event()
+
+    def slow(symbol):
+        if symbol == "BKNG":
+            release.wait(5)
+        return METRICS.get(symbol)
+
+    monkeypatch.setattr(route, "_metrics", slow)
+    monkeypatch.setattr(route, "GATHER_BUDGET_S", 0.3)
+    started = time.perf_counter()
+    try:
+        data = _get(client)
+    finally:
+        release.set()
+    assert time.perf_counter() - started < 3
+    assert data["pending"] == 1
+    bkng = next(r for r in data["candidates"] if r["ticker"] == "BKNG")
+    assert bkng["verdict"] == "unrated"
+    # The others were read whole.
+    amd = next(r for r in data["held"] if r["ticker"] == "AMD")
+    assert amd["quality"] is not None
+
+
+def test_a_book_read_in_time_has_nothing_pending(client, book):
+    assert _get(client)["pending"] == 0

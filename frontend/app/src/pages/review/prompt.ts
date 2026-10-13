@@ -15,7 +15,8 @@
  */
 
 import { maybe, sectorKey } from "../sentiment/format";
-import { OWN_LABEL, longDay, metric, money, percent, score } from "./format";
+import { countryName } from "./countries";
+import { OWN_LABEL, foreign, longDay, metric, money, percent, score } from "./format";
 import type { Review, ReviewNote, ReviewRow } from "./types";
 
 type T = (key: string, slots?: Record<string, string | number>) => string;
@@ -31,7 +32,8 @@ function line(row: ReviewRow, data: Review, t: T, lang: string): string {
   const sector = row.sector
     ? (maybe(t, `sentiment.sector_${sectorKey(row.sector)}`) ?? row.sector)
     : null;
-  const head = sector ? `${name} (${sector})` : name;
+  const tags = [sector, foreign(row, data.base)].filter(Boolean);
+  const head = tags.length ? `${name} (${tags.join(", ")})` : name;
   const parts: string[] = [t(`review.verdict_${row.verdict}`)];
   if (row.held) {
     const weight = percent(row.weight, lang);
@@ -45,6 +47,10 @@ function line(row: ReviewRow, data: Review, t: T, lang: string): string {
       parts[0] += tax ? ` (${move}, ${t("review.col_tax")} ${tax})` : ` (${move})`;
     const pnl = percent(row.pnl_pct, lang);
     if (pnl) parts.push(`${t("review.col_pnl")} ${pnl}`);
+  } else {
+    const target = percent(row.target_weight, lang);
+    const move = money(row.delta, data.base, lang, true);
+    if (target && move) parts[0] += `, → ${target} (${move})`;
   }
   if (row.quality !== null && row.cheapness !== null) {
     parts.push(
@@ -87,6 +93,8 @@ export function noteText(
     sector: note.sector
       ? (maybe(t, `sentiment.sector_${sectorKey(note.sector)}`) ?? note.sector)
       : "",
+    country: note.country ? countryName(note.country, lang) : "",
+    currency: note.currency ?? "",
     weight: percent(note.weight, lang) ?? na,
     amount: money(note.amount, taxCurrency, lang) ?? na,
     tickers: (note.tickers ?? []).join(", "),

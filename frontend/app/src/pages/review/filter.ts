@@ -23,6 +23,7 @@
  */
 
 import { sectorKey } from "../sentiment/format";
+import { ACTIONS } from "./format";
 import type { Review, ReviewRow } from "./types";
 
 /** Band key → [low, high) as a share of the book. */
@@ -132,7 +133,10 @@ export function applyFilter(data: Review, filter: Filter): Review {
     (filter.sectors.length === 0 || filter.sectors.includes(bucket(row)));
   const held = data.held.filter((row) => sector(row) && inBand(row, filter.band));
   const candidates = data.candidates.filter(sector);
-  const moves = held.map((row) => row.delta).filter((d): d is number => d !== null);
+  // Outside buys carry money too: what the sales leave, sized on the server.
+  const moves = [...held, ...candidates]
+    .map((row) => row.delta)
+    .filter((d): d is number => d !== null);
   const taxes = held.map((row) => row.tax).filter((x): x is number => x !== null);
   return {
     ...data,
@@ -226,4 +230,21 @@ export function findRows<R extends Pick<ReviewRow, "ticker" | "symbol">>(
       (text) => !!text && fold(text).includes(want),
     ),
   );
+}
+
+/**
+ * The plan's two lists: the sales and trims biggest first, then the adds —
+ * the book's own before the outside buys the sales leave money for.
+ */
+export function planMoves(data: Review): { out: ReviewRow[]; into: ReviewRow[] } {
+  const held = data.held.filter((row) => ACTIONS.includes(row.verdict));
+  const byDelta = (a: ReviewRow, b: ReviewRow) => (b.delta ?? 0) - (a.delta ?? 0);
+  const out = held
+    .filter((row) => row.verdict !== "add")
+    .sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0));
+  const opened = data.candidates
+    .filter((row) => row.delta !== null && row.delta > 0)
+    .sort(byDelta);
+  const adds = held.filter((row) => row.verdict === "add").sort(byDelta);
+  return { out, into: [...adds, ...opened] };
 }

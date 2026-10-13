@@ -129,6 +129,11 @@ MATURE = "mature"
 GROWTH = "growth"
 EARLY = "early"
 
+# Lenses: which ratios judge the business at all (`lens`).
+STANDARD = "standard"
+FINANCIAL = "financial"
+REAL_ESTATE = "real_estate"
+
 # Where a reinforced name is taken to, and where a trimmed one is cut back to
 # (a share of its current weight). One position at 5% is a conviction that
 # still cannot sink the book; halving a weak, heavy name halves the damage
@@ -156,14 +161,39 @@ SECTOR_LINE = 0.40
 # Coins this much of the book are named too: there is nothing to score, so
 # it is a note, never a cut.
 CRYPTO_LINE = 0.25
+# One country this much of the book, across `COUNTRY_NAMES` companies or
+# more, is named: a home bias, or a bet on one economy, the reader may not
+# have meant. The reader's own country is not excused.
+COUNTRY_LINE = 0.70
+COUNTRY_NAMES = 3
+# One quote currency other than the reporting one this much of the book:
+# the result in the reader's money turns on the exchange rate.
+CURRENCY_LINE = 0.80
+# Funds this much of the book make the companies satellites: said once,
+# so the reader knows a verdict on one company is not one on the book.
+FUND_CORE_LINE = 0.60
+# Money-market lines this much of the book while the plan has names to add
+# to or buy: cash idle beside the page's own proposals.
+CASH_LINE = 0.20
 # A concentration cut whose tax is this much of what the sale raises is
 # taken in two steps: half now, the rest in another tax year.
 TAX_STAGE = 0.10
 # A weak name this heavy, or this much of the book's risk, is cut back.
 HEAVY = 0.06
 RISKY = 0.10
-# Below this a position cannot move the book even if it doubles.
+# Below this a position cannot move the book even if it doubles; nor is a
+# trade this size worth making. In a wide book the line a held crumb is sold
+# under shrinks with the count (`small_line`): `SMALL_SPREAD` over the
+# companies, so 200 names at 0.4% each are a book, not 200 crumbs.
 SMALL = 0.005
+SMALL_SPREAD = 0.5
+# The most crumbs one pass sells: past it, the weakest go and the rest wait.
+SMALL_SELLS_MAX = 5
+# An add's mark shrinks with the count too (`add_line`): `ADD_SPREAD` over the
+# companies, never over `ADD_TO` nor under `ADD_MIN` — 5% up to 20 names,
+# 2% at 50, 1% from 100.
+ADD_SPREAD = 1.0
+ADD_MIN = 0.01
 # The most of the book a bet on an unsold product should be: a total loss
 # costs three points, which a year of the rest of the book can make back.
 SPEC_MAX = 0.03
@@ -199,6 +229,24 @@ MARGIN_SLIDE = 0.05
 MARGIN_SLIDE_SHARE = 0.25
 # Net debt over EBITDA from which a cheap price may be the lenders' claim.
 HIGH_DEBT = 3.0
+#: Where debt is heavy for a landlord and for a regulated network: rents and
+#: tariffs carry more of it than a cyclical's profits can.
+REIT_DEBT = 8.0
+REGULATED_DEBT = 5.0
+#: A dividend counts toward the price from `DIVIDEND_LEG_MIN` (a landlord's
+#: always), scored from `DIVIDEND_LO` to `DIVIDEND_HI`; the row names it from
+#: `DIVIDEND_HIGH`. A payout over `PAYOUT_STRETCHED` of earnings, or over the
+#: owner's free cash flow, is one the business may not keep paying.
+DIVIDEND_LEG_MIN = 0.02
+DIVIDEND_LO = 0.01
+DIVIDEND_HI = 0.06
+DIVIDEND_HIGH = 0.04
+PAYOUT_STRETCHED = 0.90
+DIVIDEND_FCF_MAX = 1.0
+#: The return a bank's equity has to earn to be worth its book.
+COST_OF_EQUITY = 0.10
+HIGH_ROE = 0.15
+LOW_ROE = 0.08
 # The analysts' next-year earnings this far under the last twelve months'
 # (a forward P/E that much above the trailing one): the low P/E is on a
 # profit already expected to shrink.
@@ -242,6 +290,47 @@ SHOWN = (
     "revenue_growth",
     "fcf_margin",
     "runway_years",
+    "pe_ttm",
+    "pb",
+    "roe",
+    "dividend_yield",
+    "payout_ratio",
+)
+
+#: Industries (Yahoo's names) judged on their book: a lender's or an
+#: insurer's cash flow is its customers' money moving, and its debt is its
+#: raw material. Card networks, brokers of insurance and exchanges are left
+#: out on purpose: they score fine as businesses; a card lender that does
+#: not still falls back on `fcf_float`.
+FINANCIALS = frozenset(
+    {
+        "Banks - Diversified",
+        "Banks - Regional",
+        "Mortgage Finance",
+        "REIT - Mortgage",
+        "Insurance - Diversified",
+        "Insurance - Life",
+        "Insurance - Property & Casualty",
+        "Insurance - Reinsurance",
+        "Insurance - Specialty",
+        "Asset Management",
+        "Capital Markets",
+        "Financial Conglomerates",
+    }
+)
+
+#: Landlords: priced on book, earnings (a stand-in for FFO) and yield.
+REITS = frozenset(
+    {
+        "REIT - Diversified",
+        "REIT - Healthcare Facilities",
+        "REIT - Hotel & Motel",
+        "REIT - Industrial",
+        "REIT - Office",
+        "REIT - Residential",
+        "REIT - Retail",
+        "REIT - Specialty",
+    }
 )
 
 #: Industries (Yahoo's names) whose earnings stand on patents and trials.
@@ -300,16 +389,55 @@ R_FEW_NAMES = "few_names"
 R_REDEPLOY = "redeploy"
 R_TAX_STAGED = "tax_staged"
 R_SECTOR_FULL = "sector_full"
+R_TRAILING_PE = "trailing_pe"
+R_BOOK_PRICED = "priced_on_book"
+R_FINANCIAL_LENS = "financial_lens"
+R_REIT_LENS = "reit_lens"
+R_HIGH_ROE = "high_roe"
+R_LOW_ROE = "low_roe"
+R_DIVIDEND = "dividend"
+R_PAYOUT_STRETCHED = "payout_stretched"
 
 # Book-level notes (`review.note_<code>`).
 N_FEW_NAMES = "few_names"
 N_SECTOR_HEAVY = "sector_heavy"
 N_CRYPTO_HEAVY = "crypto_heavy"
 N_TAX_OFFSET = "tax_offset"
+N_COUNTRY_HEAVY = "country_heavy"
+N_CURRENCY_HEAVY = "currency_heavy"
+N_FUND_CORE = "fund_core"
+N_CASH_HEAVY = "cash_heavy"
+
+#: Kinds that are a fund held as the book's base (not money-market).
+FUND_KINDS = frozenset({"equity_fund", "bond_fund", "closed_end", "fund"})
 
 # Reasons that read a loss as a fault; in the growth and early stages it is
 # the stage itself, and the row says so once instead.
 _PROFIT_REASONS = frozenset({R_LOSS, R_LOW_ROIC, R_HIGH_ROIC})
+
+# Reasons that read a bank or a landlord with a company's ruler: ROIC, cash
+# flow, margins and the moat (whose pillars are those three) say nothing
+# about a balance sheet that is the business. A landlord's debt still counts.
+_FINANCIAL_SUPPRESSED = frozenset(
+    {
+        R_HIGH_ROIC,
+        R_LOW_ROIC,
+        R_NEGATIVE_FCF,
+        R_FCF_FLOAT,
+        R_SHARE_PAY,
+        R_DEBT,
+        R_PEAK_MARGIN,
+        R_MARGIN_FALLING,
+        R_RULE_40,
+        R_CHEAP_FOR_GROWTH,
+        R_WIDE_MOAT,
+        R_NO_MOAT,
+    }
+)
+_LENS_SUPPRESSED = {
+    FINANCIAL: _FINANCIAL_SUPPRESSED,
+    REAL_ESTATE: _FINANCIAL_SUPPRESSED - {R_DEBT},
+}
 
 
 def _clamp(x: float) -> float:
@@ -359,6 +487,12 @@ class Scores:
     fcf_float: bool = False
     #: Cheapness without its kindest input (see `_without_best`).
     price_floor: float | None = None
+    #: Which ratios judged it (`lens`).
+    lens: str = STANDARD
+    #: The P/E read was the trailing one: no analyst covers the name.
+    trailing_pe: bool = False
+    #: Book value joined the price because the feed gave too little else.
+    book_priced: bool = False
 
     @property
     def total(self) -> float | None:
@@ -395,10 +529,52 @@ def per_share_growth(metrics: Mapping) -> float | None:
     return (1 + growth) / (1 + dilution) - 1
 
 
+def lens(metrics: Mapping) -> str:
+    """Which ratios judge this business, by Yahoo's industry."""
+    industry = metrics.get("industry")
+    if industry in FINANCIALS:
+        return FINANCIAL
+    if industry in REITS:
+        return REAL_ESTATE
+    return STANDARD
+
+
+def debt_line(metrics: Mapping) -> float:
+    """Net debt over EBITDA from which the debt is heavy for this industry."""
+    industry = metrics.get("industry") or ""
+    if industry in REITS:
+        return REIT_DEBT
+    if industry.startswith("Utilities - ") or industry == "Telecom Services":
+        return REGULATED_DEBT
+    return HIGH_DEBT
+
+
+def _dividend_leg(metrics: Mapping, always: bool = False) -> float | None:
+    """The yield as a price input: only from `DIVIDEND_LEG_MIN`, so a token
+    payout does not count against a name that reinvests instead (a bias
+    toward payers, accepted); a landlord's (`always`) counts whatever it is."""
+    y = _num(metrics, "dividend_yield")
+    if y is None or (not always and y < DIVIDEND_LEG_MIN):
+        return None
+    return _lin(y, DIVIDEND_LO, DIVIDEND_HI)
+
+
+def _pe(metrics: Mapping) -> tuple[float | None, bool]:
+    """The P/E to read and whether it is the trailing one: the forward one
+    where analysts cover the name, else the last twelve months'. Many
+    European small caps have no estimates at all, and without a P/E they had
+    one price input and no loss test."""
+    forward = _num(metrics, "pe_fwd")
+    if forward is not None:
+        return forward, False
+    trailing = _num(metrics, "pe_ttm")
+    return trailing, trailing is not None
+
+
 def growth_pe(metrics: Mapping) -> float | None:
-    """Forward P/E per point of sustained per-share sales growth; None
+    """P/E (`_pe`) per point of sustained per-share sales growth; None
     without a positive P/E or positive growth."""
-    pe = _num(metrics, "pe_fwd")
+    pe, _ = _pe(metrics)
     growth = per_share_growth(metrics)
     if pe is None or pe <= 0 or growth is None or growth <= 0:
         return None
@@ -408,10 +584,17 @@ def growth_pe(metrics: Mapping) -> float | None:
 def _unsold(metrics: Mapping) -> bool:
     """No sales to speak of: none, or a price over `PRE_REVENUE_PS` times them."""
     revenue = _num(metrics, "revenue")
+    if revenue is None:
+        return False
+    if revenue <= 0:
+        return True
+    # `ps` is in one currency (`compute_metrics` converts an ADR's sales);
+    # cap over raw revenue is the fallback for a memo written before it.
+    ps = _num(metrics, "ps")
     cap = _num(metrics, "market_cap")
-    return revenue is not None and (
-        revenue <= 0 or (cap is not None and cap / revenue >= PRE_REVENUE_PS)
-    )
+    if ps is None and cap is not None:
+        ps = cap / revenue
+    return ps is not None and ps >= PRE_REVENUE_PS
 
 
 def _deep_burn(metrics: Mapping) -> bool:
@@ -424,7 +607,11 @@ def _deep_burn(metrics: Mapping) -> bool:
 
 
 def stage(metrics: Mapping) -> str:
-    """Mature, growth or early: which lens judges this business."""
+    """Mature, growth or early: which lens judges this business. A bank or
+    a landlord is always mature: its cash flow going out is lending or
+    building, not a business burning to reach a product."""
+    if lens(metrics) != STANDARD:
+        return MATURE
     fcf = _num(metrics, "fcf")
     burning = fcf is not None and fcf < 0
     if (burning and _unsold(metrics)) or _deep_burn(metrics):
@@ -443,6 +630,11 @@ def stage(metrics: Mapping) -> str:
 
 def score(metrics: Mapping) -> Scores:
     """Quality and cheapness, 0-100, off `compute_metrics` output."""
+    view = lens(metrics)
+    if view == FINANCIAL:
+        return _financial_scores(metrics)
+    if view == REAL_ESTATE:
+        return _real_estate_scores(metrics)
     phase = stage(metrics)
     if phase == EARLY:
         return Scores(None, None, stage=EARLY)
@@ -450,7 +642,7 @@ def score(metrics: Mapping) -> Scores:
     moat = _num(metrics, "moat")
     margin = _num(metrics, "op_margin")
     fcf = _fcf_yield(metrics)
-    pe = _num(metrics, "pe_fwd")
+    pe, trailing = _pe(metrics)
     ev = _num(metrics, "ev")
     ev_ebitda = _num(metrics, "ev_ebitda")
 
@@ -468,7 +660,9 @@ def score(metrics: Mapping) -> Scores:
         ev_ebitda = None
 
     if phase == GROWTH:
-        return _growth_scores(metrics, fcf, pe, suspect, floated)
+        return replace(
+            _growth_scores(metrics, fcf, pe, suspect, floated), trailing_pe=trailing
+        )
 
     quality = [
         _lin(v, lo, hi)
@@ -493,9 +687,13 @@ def score(metrics: Mapping) -> Scores:
         cheap.append(_lin(fcf, 0.0, 0.10))
     if ev_ebitda is not None and ev_ebitda > 0:
         cheap.append(_lin(-ev_ebitda, -50.0, -8.0))
+    if (paid := _dividend_leg(metrics)) is not None:
+        cheap.append(paid)
     pb = _num(metrics, "pb")
-    if floated and pb is not None and pb > 0:
-        # A lender is priced on its book once its cash flow says nothing.
+    # A lender is priced on its book once its cash flow says nothing; any
+    # name is, when the feed gave fewer than two other prices for it.
+    book = pb is not None and pb > 0 and (floated or len(cheap) < 2)
+    if book:
         cheap.append(_lin(-pb, -4.0, -1.0))
 
     return Scores(
@@ -504,6 +702,95 @@ def score(metrics: Mapping) -> Scores:
         suspect=suspect,
         fcf_float=floated,
         price_floor=_without_best(cheap),
+        trailing_pe=trailing and pe is not None,
+        book_priced=book and not floated,
+    )
+
+
+def _pb_for_roe(metrics: Mapping) -> float | None:
+    """Price to book over the book's worth at `COST_OF_EQUITY`: a bank
+    earning 20% on equity is worth twice its book, one earning 5% half."""
+    pb = _num(metrics, "pb")
+    roe = _num(metrics, "roe")
+    if pb is None or pb <= 0 or roe is None or roe <= 0:
+        return None
+    return pb / (roe / COST_OF_EQUITY)
+
+
+def _financial_scores(metrics: Mapping) -> Scores:
+    """The financial lens: what the book earns, and what is paid for it."""
+    roe = _num(metrics, "roe")
+    earnings = _num(metrics, "net_income_cagr")
+    dilution = _num(metrics, "share_dilution")
+    pe, trailing = _pe(metrics)
+    pb = _num(metrics, "pb")
+    fair = _pb_for_roe(metrics)
+
+    quality = [
+        _lin(v, lo, hi)
+        for v, lo, hi in (
+            (roe, 0.04, 0.18),
+            (earnings, -0.05, 0.15),
+            (None if dilution is None else -dilution, -0.04, 0.04),
+        )
+        if v is not None
+    ]
+    cheap: list[float] = []
+    if pe is not None:
+        cheap.append(_lin(-pe, -16.0, -6.0) if pe > 0 else 0.0)
+    if pb is not None and pb > 0:
+        cheap.append(_lin(-pb, -2.5, -0.7))
+    if fair is not None:
+        cheap.append(_lin(-fair, -1.6, -0.6))
+    if (paid := _dividend_leg(metrics)) is not None:
+        cheap.append(paid)
+    return Scores(
+        quality=_mean(quality),
+        cheapness=_mean(cheap),
+        lens=FINANCIAL,
+        price_floor=_without_best(cheap),
+        trailing_pe=trailing,
+    )
+
+
+def _real_estate_scores(metrics: Mapping) -> Scores:
+    """The landlord's lens: rents that grow without new shares, at a margin,
+    bought near book and on what they pay."""
+    roe = _num(metrics, "roe")
+    growth = _num(metrics, "revenue_cagr")
+    dilution = _num(metrics, "share_dilution")
+    margin = _num(metrics, "op_margin")
+    pe, trailing = _pe(metrics)
+    pb = _num(metrics, "pb")
+    ev_ebitda = _num(metrics, "ev_ebitda")
+
+    quality = [
+        _lin(v, lo, hi)
+        for v, lo, hi in (
+            (roe, 0.0, 0.10),
+            (growth, -0.05, 0.10),
+            (None if dilution is None else -dilution, -0.10, 0.0),
+            (margin, 0.20, 0.60),
+        )
+        if v is not None
+    ]
+    cheap: list[float] = []
+    if pb is not None and pb > 0:
+        cheap.append(_lin(-pb, -2.0, -0.7))
+    if pe is not None:
+        # Earnings stand in for FFO, which the feed does not give: they carry
+        # the depreciation FFO adds back, so the scale is a wide one.
+        cheap.append(_lin(-pe, -45.0, -12.0) if pe > 0 else 0.0)
+    if ev_ebitda is not None and ev_ebitda > 0:
+        cheap.append(_lin(-ev_ebitda, -28.0, -12.0))
+    if (paid := _dividend_leg(metrics, always=True)) is not None:
+        cheap.append(paid)
+    return Scores(
+        quality=_mean(quality),
+        cheapness=_mean(cheap),
+        lens=REAL_ESTATE,
+        price_floor=_without_best(cheap),
+        trailing_pe=trailing,
     )
 
 
@@ -574,7 +861,7 @@ def _cautions(metrics: Mapping, s: Scores) -> list[str]:
     median = _num(metrics, "op_margin_median")
     change = _num(metrics, "op_margin_change")
     growth = sustained_growth(metrics)
-    if s.stage == MATURE:
+    if s.stage == MATURE and s.lens == STANDARD:
         if (
             margin is not None
             and median is not None
@@ -584,13 +871,6 @@ def _cautions(metrics: Mapping, s: Scores) -> list[str]:
             and (growth is None or growth < RULE_40_MIN)
         ):
             out.append(R_PEAK_MARGIN)
-        paces = [
-            g
-            for g in (_num(metrics, "revenue_growth"), _num(metrics, "revenue_cagr"))
-            if g is not None
-        ]
-        if paces and max(paces) < 0:
-            out.append(R_SALES_FALLING)
         if (
             change is not None
             and median is not None
@@ -599,6 +879,15 @@ def _cautions(metrics: Mapping, s: Scores) -> list[str]:
             and -change >= MARGIN_SLIDE_SHARE * median
         ):
             out.append(R_MARGIN_FALLING)
+    if s.stage == MATURE and s.lens != FINANCIAL:
+        # A bank's "sales" are its interest and fees, which follow rates.
+        paces = [
+            g
+            for g in (_num(metrics, "revenue_growth"), _num(metrics, "revenue_cagr"))
+            if g is not None
+        ]
+        if paces and max(paces) < 0:
+            out.append(R_SALES_FALLING)
     trailing = _num(metrics, "pe_ttm")
     forward = _num(metrics, "pe_fwd")
     if (
@@ -608,8 +897,21 @@ def _cautions(metrics: Mapping, s: Scores) -> list[str]:
     ):
         out.append(R_EARNINGS_FALLING)
     debt = _num(metrics, "net_debt_ebitda")
-    if debt is not None and debt >= HIGH_DEBT and not s.fcf_float:
+    if (
+        debt is not None
+        and debt >= debt_line(metrics)
+        and not s.fcf_float
+        and s.lens != FINANCIAL
+    ):
         out.append(R_DEBT)
+    # A landlord paying out its earnings is the law; a lender's free cash
+    # flow is not what pays it.
+    payout = _num(metrics, "payout_ratio")
+    covered = _num(metrics, "dividend_fcf")
+    if (payout is not None and payout > PAYOUT_STRETCHED and s.lens != REAL_ESTATE) or (
+        covered is not None and covered > DIVIDEND_FCF_MAX and s.lens != FINANCIAL
+    ):
+        out.append(R_PAYOUT_STRETCHED)
     if (
         s.cheapness is not None
         and s.cheapness >= CHEAP
@@ -628,7 +930,7 @@ def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
     # The cash actually leaving, not the owner's view: pay in shares is
     # `share_pay`, not a business that consumes cash.
     fcf = None if s.suspect else _num(metrics, "fcf_yield")
-    pe = _num(metrics, "pe_fwd")
+    pe, _ = _pe(metrics)
     dilution = _num(metrics, "share_dilution")
     debt = _num(metrics, "net_debt_ebitda")
     growth = sustained_growth(metrics)
@@ -666,8 +968,14 @@ def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
     share_pay = _num(metrics, "sbc_fcf")
     if share_pay is not None and share_pay >= SHARE_PAY:
         out.append(R_SHARE_PAY)
-    if debt is not None and debt >= HIGH_DEBT:
+    if debt is not None and debt >= debt_line(metrics):
         out.append(R_DEBT)
+    roe = _num(metrics, "roe")
+    if s.lens == FINANCIAL and roe is not None:
+        if roe >= HIGH_ROE:
+            out.append(R_HIGH_ROE)
+        elif roe < LOW_ROE:
+            out.append(R_LOW_ROE)
     out.extend(r for r in _cautions(metrics, s) if r not in out)
     if earnings is not None and earnings <= -0.05:
         out.append(R_SHRINKING)
@@ -700,6 +1008,16 @@ def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
     )
     if metrics.get("industry") in PHARMA and s.stage != EARLY:
         out.append(R_PATENT_RISK)
+    y = _num(metrics, "dividend_yield")
+    if y is not None and y >= DIVIDEND_HIGH:
+        out.append(R_DIVIDEND)
+    if s.trailing_pe:
+        out.append(R_TRAILING_PE)
+    if s.book_priced:
+        out.append(R_BOOK_PRICED)
+    if hidden := _LENS_SUPPRESSED.get(s.lens):
+        out = [r for r in out if r not in hidden]
+        out.insert(0, R_FINANCIAL_LENS if s.lens == FINANCIAL else R_REIT_LENS)
     return out
 
 
@@ -754,6 +1072,23 @@ class Note:
     tickers: tuple[str, ...] = ()
     #: ISO day a repurchase no longer undoes the loss, where a window applies.
     day: str | None = None
+    #: Yahoo's country name (English), for `country_heavy`.
+    country: str | None = None
+    #: ISO quote currency, for `currency_heavy`.
+    currency: str | None = None
+
+
+@dataclass(frozen=True)
+class BookRow:
+    """One held name as the book-level notes read it."""
+
+    kind: str | None
+    sector: str | None = None
+    weight: float | None = None
+    #: Yahoo's country name (English); None for a fund or unknown.
+    country: str | None = None
+    #: ISO quote currency, minor units folded (GBp is GBP); None if unknown.
+    currency: str | None = None
 
 
 def _shown(metrics: Mapping | None) -> dict[str, float | None]:
@@ -766,7 +1101,7 @@ def _kind_verdict(kind: str | None, held: bool) -> Verdict | None:
     """Funds, cash and coins have no fundamentals to judge: a verdict by kind."""
     if kind == "money_market":
         return Verdict(CASH if held else UNRATED, (R_CASH,))
-    if kind in ("equity_fund", "bond_fund", "closed_end", "fund"):
+    if kind in FUND_KINDS:
         return Verdict(CORE if held else UNRATED, (R_FUND,))
     if kind == "crypto":
         return Verdict(UNRATED, (R_CRYPTO,))
@@ -795,39 +1130,86 @@ def concentration_line(names: int | None) -> float | None:
     return min(CONCENTRATED_MAX, max(CONCENTRATED, SPREAD / names))
 
 
+def small_line(names: int | None) -> float:
+    """The weight under which a held company is a crumb, in a book of
+    `names` companies: `SMALL`, less in a book wide enough that an even
+    share sits near it."""
+    return SMALL if not names else min(SMALL, SMALL_SPREAD / names)
+
+
+def add_line(names: int | None) -> float:
+    """Where an add takes a mature company in a book of `names` companies:
+    `ADD_TO` in a narrow book, an even share in a wide one."""
+    return ADD_TO if not names else max(ADD_MIN, min(ADD_TO, ADD_SPREAD / names))
+
+
 def _even_share(names: int | None, line: float) -> float:
     """Where a cut concentration is taken: an even share of the companies."""
     share = CONCENTRATED_TO if names is None else max(CONCENTRATED_TO, 1 / names)
     return min(share, line)
 
 
-def book_notes(rows: list[tuple[str | None, str | None, float | None]]) -> list[Note]:
+def book_notes(rows: list[BookRow], reporting: str | None = None) -> list[Note]:
     """What the page says about the book as a whole, before any one row.
 
-    `rows` is each held name's kind, sector and weight. One or two companies
-    carrying the book, one sector carrying `SECTOR_LINE` of it across two
-    companies or more, and coins past `CRYPTO_LINE` are each named once.
+    One or two companies carrying the book, one sector carrying `SECTOR_LINE`
+    of it across two companies or more, one country carrying `COUNTRY_LINE`
+    across `COUNTRY_NAMES`, one quote currency other than `reporting`
+    carrying `CURRENCY_LINE`, funds past `FUND_CORE_LINE` and coins past
+    `CRYPTO_LINE` are each named once.
     """
-    companies = [(sector, w or 0.0) for kind, sector, w in rows if company(kind)]
+    companies = [r for r in rows if company(r.kind)]
     names = len(companies)
     notes: list[Note] = []
-    if 0 < names < FEW_NAMES and sum(w for _, w in companies) >= FEW_NAMES_SHARE:
+    if (
+        0 < names < FEW_NAMES
+        and sum(r.weight or 0.0 for r in companies) >= FEW_NAMES_SHARE
+    ):
         notes.append(Note(N_FEW_NAMES, count=names))
     if names >= FEW_NAMES:
-        sectors: dict[str, list[float]] = {}
-        for sector, w in companies:
-            if sector:
-                sectors.setdefault(sector, []).append(w)
+        sectors = _grouped(companies, lambda r: r.sector)
         heavy = [
             Note(N_SECTOR_HEAVY, count=len(ws), sector=sector, weight=sum(ws))
             for sector, ws in sectors.items()
             if len(ws) >= 2 and sum(ws) >= SECTOR_LINE
         ]
         notes += sorted(heavy, key=lambda n: -(n.weight or 0.0))
-    coins = sum(w or 0.0 for kind, _, w in rows if kind == "crypto")
+    for country, ws in _grouped(companies, lambda r: r.country).items():
+        if len(ws) >= COUNTRY_NAMES and sum(ws) >= COUNTRY_LINE:
+            notes.append(
+                Note(N_COUNTRY_HEAVY, count=len(ws), country=country, weight=sum(ws))
+            )
+    home = (reporting or "").upper()
+    for currency, ws in _grouped(rows, lambda r: r.currency).items():
+        if home and currency.upper() != home and sum(ws) >= CURRENCY_LINE:
+            notes.append(
+                Note(N_CURRENCY_HEAVY, count=len(ws), currency=currency, weight=sum(ws))
+            )
+    funds = sum(r.weight or 0.0 for r in rows if r.kind in FUND_KINDS)
+    if funds >= FUND_CORE_LINE:
+        notes.append(Note(N_FUND_CORE, count=names, weight=funds))
+    coins = sum(r.weight or 0.0 for r in rows if r.kind == "crypto")
     if coins >= CRYPTO_LINE:
         notes.append(Note(N_CRYPTO_HEAVY, weight=coins))
     return notes
+
+
+def _grouped(rows: list[BookRow], key) -> dict[str, list[float]]:
+    out: dict[str, list[float]] = {}
+    for r in rows:
+        if group := key(r):
+            out.setdefault(group, []).append(r.weight or 0.0)
+    return out
+
+
+def cash_note(rows: list[BookRow], verdicts: list[str]) -> Note | None:
+    """Money-market lines past `CASH_LINE` while the plan has names to add to
+    or buy (`verdicts`, held and outside): the cash the proposals could use."""
+    cash = sum(r.weight or 0.0 for r in rows if r.kind == "money_market")
+    wanted = sum(v in (ADD, BUY) for v in verdicts)
+    if cash < CASH_LINE or not wanted:
+        return None
+    return Note(N_CASH_HEAVY, count=wanted, weight=cash)
 
 
 def judge_held(
@@ -837,13 +1219,17 @@ def judge_held(
     risk_share: float | None = None,
     kind: str | None = "stock",
     names: int | None = None,
+    company_share: float = 1.0,
 ) -> Verdict:
     """The verdict on one name the book holds.
 
     `weight` is its share of the priced book (None when it could not be
     priced), `risk_share` its share of the book's volatility and `names` how
     many companies the book holds (`company`), which sets where a
-    concentration starts (`concentration_line`).
+    concentration starts (`concentration_line`), what a crumb is
+    (`small_line`) and where an add goes (`add_line`). `company_share` is the
+    companies' share of the book: beside an index fund they are satellites,
+    and money freed fills one only to its even share of that slice.
     """
     if by_kind := _kind_verdict(kind, held=True):
         return by_kind
@@ -873,7 +1259,8 @@ def judge_held(
 
     q, c = s.quality, s.cheapness
     w = weight
-    add_to = SPEC_MAX if s.stage == GROWTH else ADD_TO
+    small = small_line(names)
+    add_to = min(SPEC_MAX, add_line(names)) if s.stage == GROWTH else add_line(names)
     reasons = _business_reasons(metrics or {}, s)
     clean = q >= GOOD and c >= CHEAP and not s.suspect and not _cautions(metrics or {}, s)
     over = w is not None and line is not None and w >= line
@@ -890,9 +1277,9 @@ def judge_held(
     verdict, target = HOLD, None
     # A position too small to move the book is worth its line in the ledger
     # only if it is good enough to grow into a real one.
-    if (q < POOR and c < POOR) or (q < GOOD and w is not None and w < SMALL):
+    if (q < POOR and c < POOR) or (q < GOOD and w is not None and w < small):
         verdict, target = SELL, 0.0
-        if w is not None and w < SMALL:
+        if w is not None and w < small:
             position.append(R_SMALL)
     elif over:
         even = _even_share(names, line)
@@ -906,7 +1293,7 @@ def judge_held(
         verdict, target = TRIM, (w * TRIM_KEEPS if w is not None else None)
     # An add has to be a trade: a name a hair under its mark is not told
     # to buy one day and hold the next.
-    elif clean and w is not None and add_to - w >= SMALL:
+    elif clean and w is not None and add_to - w >= small:
         verdict, target = ADD, add_to
         position.append(R_UNDERWEIGHT)
 
@@ -915,12 +1302,37 @@ def judge_held(
         # With too few companies, money freed goes to new names, not to
         # the one or two already carrying the book.
         wide = line is not None and s.stage == MATURE
-        fill = max(add_to, _even_share(names, line)) if wide else add_to
+        even = company_share / names if names else 0.0
+        fill = max(add_to, min(line, even)) if wide else add_to
 
     # The position's own reasons lead when they are why it moves; the
     # business ones lead otherwise.
     ordered = position + reasons if verdict == TRIM else reasons + position
     return Verdict(verdict, tuple(dict.fromkeys(ordered)), q, c, target, shown, fill)
+
+
+def cap_small_sells(verdicts: list[Verdict]) -> list[Verdict]:
+    """At most `SMALL_SELLS_MAX` crumbs sold in one pass, the weakest first:
+    a wide book's tail is not cleared in a day of thirty orders. A crumb
+    sold for being poor on both scores is sold whatever the count; the rest
+    past the cap wait as Hold, still named small."""
+    crumbs = [
+        i
+        for i, v in enumerate(verdicts)
+        if v.verdict == SELL
+        and R_SMALL in v.reasons
+        and not ((v.quality or 0.0) < POOR and (v.cheapness or 0.0) < POOR)
+    ]
+    if len(crumbs) <= SMALL_SELLS_MAX:
+        return list(verdicts)
+
+    def worth(i: int) -> float:
+        return (verdicts[i].quality or 0.0) + (verdicts[i].cheapness or 0.0)
+
+    out = list(verdicts)
+    for i in sorted(crumbs, key=worth)[SMALL_SELLS_MAX:]:
+        out[i] = replace(verdicts[i], verdict=HOLD, target=None)
+    return out
 
 
 def stage_for_tax(
@@ -1021,8 +1433,59 @@ def redeploy(
     return out
 
 
-def judge_candidate(metrics: Mapping | None, *, kind: str | None = "stock") -> Verdict:
-    """The verdict on one name the book does not hold yet."""
+def place_outside(
+    book: list[tuple[float | None, Verdict]],
+    sectors: list[str | None],
+    buys: list[tuple[Verdict, str | None]],
+) -> tuple[list[float | None], float]:
+    """What the plan's sales free and the book's own adds leave, spread over
+    the outside Buys, best first, each up to its `fill`; a sector already at
+    `SECTOR_LINE` takes none, and a position under `SMALL` is not opened.
+
+    `book` and `sectors` are the held names after `redeploy`, `buys` each
+    outside name's verdict and sector. Returns each outside name's target
+    weight (None where it takes nothing) and the share of the book still
+    without a home.
+    """
+    after: dict[str, float] = {}
+    moved = 0.0
+    for (w, v), sector in zip(book, sectors, strict=True):
+        if w is None:
+            continue
+        kept = v.target if v.target is not None else w
+        moved += kept - w
+        if sector:
+            after[sector] = after.get(sector, 0.0) + kept
+    spare = max(0.0, -moved)
+    targets: list[float | None] = [None] * len(buys)
+
+    def worth(i: int) -> float:
+        v = buys[i][0]
+        return (v.quality or 0.0) + (v.cheapness or 0.0)
+
+    for i in sorted(range(len(buys)), key=lambda i: -worth(i)):
+        if spare < SMALL:
+            break
+        v, sector = buys[i]
+        if v.verdict != BUY or v.fill is None:
+            continue
+        room = SECTOR_LINE - after.get(sector, 0.0) if sector else float("inf")
+        take = min(v.fill, spare, room)
+        if take < SMALL:
+            continue
+        targets[i] = take
+        spare -= take
+        if sector:
+            after[sector] = after.get(sector, 0.0) + take
+    return targets, spare
+
+
+def judge_candidate(
+    metrics: Mapping | None, *, kind: str | None = "stock", names: int | None = None
+) -> Verdict:
+    """The verdict on one name the book does not hold yet. A Buy's `fill` is
+    the weight an add would take it to in a book of `names` companies, for
+    `place_outside` to size it with what the sales leave."""
     if by_kind := _kind_verdict(kind, held=False):
         return by_kind
     s = score(metrics or {})
@@ -1039,7 +1502,10 @@ def judge_candidate(metrics: Mapping | None, *, kind: str | None = "stock") -> V
     else:
         verdict = PASS
     reasons = tuple(_business_reasons(metrics or {}, s))
-    return Verdict(verdict, reasons, q, c, None, shown)
+    fill = None
+    if verdict == BUY:
+        fill = min(SPEC_MAX, add_line(names)) if s.stage == GROWTH else add_line(names)
+    return Verdict(verdict, reasons, q, c, None, shown, fill)
 
 
 def sort_key(verdict: str, score_total: float | None, weight: float | None, held: bool):
