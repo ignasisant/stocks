@@ -52,10 +52,10 @@ const LABELS: Record<string, string> = {
 };
 
 const ARROWS: Record<string, { glyph: string; label: string; tone: Tone }> = {
-  up: { glyph: "▲", label: "sentiment.state_up", tone: "up" },
+  up: { glyph: "↑", label: "sentiment.state_up", tone: "up" },
   turning_up: { glyph: "↗", label: "sentiment.state_turning_up", tone: "flat" },
   turning_down: { glyph: "↘", label: "sentiment.state_turning_down", tone: "flat" },
-  down: { glyph: "▼", label: "sentiment.state_down", tone: "down" },
+  down: { glyph: "↓", label: "sentiment.state_down", tone: "down" },
 };
 
 const REGIME_TONES: Record<string, string> = {
@@ -159,6 +159,7 @@ export function Market({ data }: { data: MarketGlance }) {
                   window: data.breadth.window,
                 })
               : null,
+            tiles.some((tile) => tile.state) ? t("home.market_arrow_key") : null,
             data.as_of
               ? t("home.market_as_of", { date: shortDate(data.as_of, lang) })
               : null,
