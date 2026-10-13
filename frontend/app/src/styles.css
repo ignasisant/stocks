@@ -425,6 +425,15 @@ body {
   color: var(--ag-text-secondary);
 }
 
+/* The fine print under a sign-in: what Google shares, where to read more. */
+.ag-signin-note {
+  margin: 0;
+  max-width: 44rem;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+  text-wrap: pretty;
+}
+
 .ag-guest-actions {
   display: flex;
   flex-wrap: wrap;

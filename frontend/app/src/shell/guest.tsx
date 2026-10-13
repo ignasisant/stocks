@@ -16,7 +16,7 @@
  */
 
 import { useState, type ReactNode } from "react";
-import { useT } from "./i18n";
+import { useLang, useT } from "./i18n";
 import { useGuest, useSignIn } from "./session";
 import { BASE, pagePath } from "./router";
 import { Icon } from "./Icon";
@@ -58,6 +58,31 @@ export function SignIn({
     <a className={className} href={href}>
       {t(label ?? "common.sign_in_google")}
     </a>
+  );
+}
+
+/** A legal page in the reader's language; the server knows only en and es. */
+export function legalHref(doc: "privacy" | "terms", lang: string): string {
+  return `/legal/${doc}?lang=${lang.startsWith("es") ? "es" : "en"}`;
+}
+
+/**
+ * What the Google round trip asks for and where the data goes, said before the
+ * redirect: a visitor without a Google account learns the demo needs none, and
+ * one with an account sees the two legal pages before handing anything over.
+ * Nothing without a sign-in to offer, like the button it sits under.
+ */
+export function SignInNote() {
+  const t = useT();
+  const lang = useLang();
+  if (!useSignIn()) return null;
+  return (
+    <p className="ag-signin-note">
+      {t("common.sign_in_note")}{" "}
+      <a href={legalHref("privacy", lang)}>{t("common.privacy")}</a>
+      {" · "}
+      <a href={legalHref("terms", lang)}>{t("common.terms")}</a>
+    </p>
   );
 }
 
@@ -211,6 +236,7 @@ export function GuestBanner({
           ))}
         </ul>
       ) : null}
+      {pitch ? <SignInNote /> : null}
     </section>
   );
 }
@@ -238,6 +264,7 @@ export function SignInWall({
       <p>{t(text)}</p>
       {note ? <p className="ag-help">{t(note)}</p> : null}
       <SignIn label={cta} />
+      <SignInNote />
     </div>
   );
 }
