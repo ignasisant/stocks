@@ -14,6 +14,8 @@
 
 const PATHS: Record<string, string> = {
   home: "M4 21V10l8-6 8 6v11h-6v-6h-4v6H4z",
+  account_balance:
+    "M4 10v7h3v-7H4zm6 0v7h3v-7h-3zM2 22h19v-3H2v3zm14-12v7h3v-7h-3zm-4.5-9L2 6v2h19V6l-9.5-5z",
   pie_chart:
     "M11 3.06V11H3.06A9 9 0 0 1 11 3.06zM13 3.06A9 9 0 0 1 20.94 11H13V3.06zM3.06 13H12l6.31 6.31A9 9 0 0 1 3.06 13z",
   speed:
