@@ -303,5 +303,7 @@
   "import.hint_degiro": "Exporta desde DEGIRO: Actividad, Transacciones, Exportar (CSV). Solo se importa con las columnas exactas de DEGIRO (inglés o español). Las filas entran con el ISIN como ticker y la app lo resuelve al símbolo que cotiza. Los dividendos van en el Estado de cuenta, no en este archivo; añádelos aparte.",
   "import.hint_ibkr": "Exporta desde IBKR: Rendimiento e informes, Extractos, Actividad (CSV), en inglés o español. Entran órdenes de acciones y dividendos; retenciones y dividendos devengados se listan para revisar. Si el periodo no tiene operaciones, entra el bloque de posiciones abiertas: una compra por valor al coste medio del bróker, con la fecha del extracto.",
   "import.hint_clicktrade": "Exporta desde ClickTrade/SaxoTraderGO: Informes históricos, Operaciones ejecutadas, Excel. Se reconocen cabeceras en español e inglés; los símbolos salen del código de bolsa de Saxo (TEF:xmce pasa a TEF.MC) y los desconocidos entran con el ISIN. Los dividendos van en el extracto de cuenta, no en este informe; añádelos aparte.",
-  "import.hint_generic": "Cualquier bróker: un CSV con cabecera date,ticker,action,quantity,price,currency,fee,note (action: buy, sell, dividend, fee o split; currency, fee y note opcionales)."
+  "import.hint_generic": "Cualquier bróker: un CSV con cabecera date,ticker,action,quantity,price,currency,fee,note (action: buy, sell, dividend, fee o split; currency, fee y note opcionales).",
+  "import.book_count": "{n} transacciones",
+  "import.book_count_one": "{n} transacción"
 }

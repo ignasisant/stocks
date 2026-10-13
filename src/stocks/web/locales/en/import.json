@@ -303,5 +303,7 @@
   "import.hint_degiro": "Export from DEGIRO: Activity, Transactions, Export (CSV). Imports only with the exact DEGIRO columns (English or Spanish). Rows come in with the ISIN as ticker and the app resolves it to the symbol it prices. Dividends are in the Account statement, not this file; add them separately.",
   "import.hint_ibkr": "Export from IBKR: Performance & Reports, Statements, Activity (CSV), in English or Spanish. Stock orders and dividends import; withholding-tax and accrued-dividend rows are listed for review. If the period has no trades, the open-positions block imports instead: one buy per holding at the broker's average cost, dated the statement day.",
   "import.hint_clicktrade": "Export from ClickTrade/SaxoTraderGO: Historical reports, Trades executed, Excel. Spanish and English headers are recognised; symbols map from the Saxo exchange code (TEF:xmce becomes TEF.MC) and unknown ones import under the ISIN. Dividends are in the account statement, not this report; add them separately.",
-  "import.hint_generic": "Any broker: a CSV with header date,ticker,action,quantity,price,currency,fee,note (action: buy, sell, dividend, fee or split; currency, fee and note optional)."
+  "import.hint_generic": "Any broker: a CSV with header date,ticker,action,quantity,price,currency,fee,note (action: buy, sell, dividend, fee or split; currency, fee and note optional).",
+  "import.book_count": "{n} transactions",
+  "import.book_count_one": "{n} transaction"
 }
