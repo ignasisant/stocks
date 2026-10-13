@@ -56,6 +56,24 @@ export function Caption({ children }: { children: ReactNode }) {
   return <p className="pf-caption">{said(children)}</p>;
 }
 
+/** Names without a price history, folded: said once, opened on demand. */
+export function MissingPrices({ tickers }: { tickers: string[] }) {
+  const t = useT();
+  if (!tickers.length) return null;
+  return (
+    <details className="pf-missing">
+      <summary>
+        {tickers.length === 1
+          ? t("portfolio.missing_prices_one")
+          : t("portfolio.missing_prices", { n: tickers.length })}
+      </summary>
+      <p className="pf-caption">
+        {t("portfolio.missing_prices_list", { tickers: tickers.join(", ") })}
+      </p>
+    </details>
+  );
+}
+
 export function Warn({ children }: { children: ReactNode }) {
   return <p className="pf-warn">{said(children)}</p>;
 }
