@@ -140,3 +140,11 @@ def test_stamp_broker_leaves_the_input_rows_untouched():
     rows = [_tx("Apple Inc")]
     platforms.stamp_broker(rows, "ibkr")
     assert rows[0].note == "Apple Inc"
+
+
+def test_clean_note_drops_open_close_marker():
+    from stocks.portfolio import platforms
+
+    assert platforms.clean_note("Para abrir ACME") == "ACME"
+    assert platforms.clean_note("Para cerrar") == ""
+    assert platforms.clean_note("degiro X") == "degiro X"
