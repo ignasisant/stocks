@@ -14,6 +14,7 @@
 import { useState } from "react";
 import type { ChangeEvent, DragEvent, FocusEvent, ReactNode, RefObject } from "react";
 import { useT } from "../../shell/i18n";
+import { platformHint } from "./text";
 import { MAX_BYTES, acceptOf } from "./api";
 import type { Platform, Staged } from "./api";
 import { Eyebrow } from "./Card";
@@ -177,7 +178,7 @@ export function Source({
           </ul>
         )}
 
-        {hint && <p className="im-fine">{platform.hint}</p>}
+        {hint && <p className="im-fine">{platformHint(t, platform)}</p>}
 
         <div className="im-source-foot">
           {/* The second door into the same pipeline, for a reader whose browser

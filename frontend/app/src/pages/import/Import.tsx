@@ -28,6 +28,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FocusEvent } from "react";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
+import { platformHint } from "./text";
 import { Link, useRoute } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
 import { Status } from "../../ui/Status";
@@ -362,7 +363,7 @@ function Importer({
   if (unreadable) errors.push(t("import.unreadable"));
   if (staged && preview.state === "loaded" && preview.data && !preview.data.ok)
     errors.push(
-      t("import.nothing_read", { platform: platform.label, hint: platform.hint }),
+      t("import.nothing_read", { platform: platform.label, hint: platformHint(t, platform) }),
     );
 
   return (

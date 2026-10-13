@@ -106,3 +106,14 @@ export function useVocabulary() {
 
   return { action, column, issue, issues, money, num, pct, tn, when };
 }
+
+/** The platform's "where to find the export" line, in the reader's language.
+ *  The server's own hint is English; a platform with no catalog entry keeps it. */
+export function platformHint(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  platform: { key: string; hint: string },
+): string {
+  const key = `import.hint_${platform.key}`;
+  const text = t(key);
+  return text === key ? platform.hint : text;
+}
