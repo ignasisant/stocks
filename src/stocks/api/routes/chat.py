@@ -1812,10 +1812,10 @@ def press(body: ActionBody, paths: SurfaceAction) -> SurfaceUpdate:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no action {press_.name} on {press_.surfaceId}",
         )
-    return SurfaceUpdate(messages=handler(press_.context, paths, tr))
+    return SurfaceUpdate(messages=handler(press_.context, paths, tr, lang))
 
 
-def _resell(context: dict, paths: UserPaths, tr) -> list[dict]:
+def _resell(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:
     """The what-if sale again, for the shares the slider now names."""
     symbol = engine.clean_focus(str(context.get("ticker") or ""))
     try:
@@ -1832,10 +1832,10 @@ def _resell(context: dict, paths: UserPaths, tr) -> list[dict]:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"nothing of {symbol or 'that'} to sell, or no price for it",
         )
-    return whatif.moved(sale, tr)
+    return whatif.moved(sale, tr, lang)
 
 
-def _reweigh(context: dict, paths: UserPaths, tr) -> list[dict]:
+def _reweigh(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:
     """The rebalance again, for the weight the slider now names."""
     symbol = engine.clean_focus(str(context.get("ticker") or ""))
     try:
@@ -1858,10 +1858,10 @@ def _reweigh(context: dict, paths: UserPaths, tr) -> list[dict]:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no priced holding of {symbol or 'that'} to reweigh",
         )
-    return rebalance.moved(moved, tr)
+    return rebalance.moved(moved, tr, lang)
 
 
-def _rechart(context: dict, paths: UserPaths, tr) -> list[dict]:
+def _rechart(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:
     """The chart's symbols again, over the window the chip picked.
 
     The symbols come back from the surface, so they are screened here as any

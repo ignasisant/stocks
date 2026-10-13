@@ -30,6 +30,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from stocks.formatting import bound
+
 MAX_TICKERS = 3  # quotes fetched per message
 LOOKUP_TIMEOUT = 8.0  # seconds for the whole quote batch
 _MAX_LOOKUPS = 1  # company-name searches against Yahoo per message
@@ -93,18 +95,19 @@ class Quote:
             return None
         return self.price / self.prev_close - 1
 
-    def line(self) -> str:
+    def line(self, lang: str = "en") -> str:
         """The prompt line for this quote — figures only, no interpretation."""
+        n, p = bound(lang)
         head = f"{self.ticker}" + (f" ({self.name})" if self.name else "")
         bits = []
         if self.price is not None:
-            bits.append(f"last {self.price:,.2f} {self.currency}".strip())
+            bits.append(f"last {n(self.price, 2)} {self.currency}".strip())
         if self.day_pct is not None:
-            bits.append(f"today {self.day_pct:+.2%}")
+            bits.append(f"today {p(self.day_pct, 2, signed=True)}")
         if self.year_low is not None and self.year_high is not None:
-            bits.append(f"52w range {self.year_low:,.2f}–{self.year_high:,.2f}")
+            bits.append(f"52w range {n(self.year_low, 2)}–{n(self.year_high, 2)}")
         if self.market_cap:
-            bits.append(f"market cap {self.market_cap / 1e9:,.1f}B")
+            bits.append(f"market cap {n(self.market_cap / 1e9, 1)}B")
         if self.context:
             bits.append(self.context)
         return f"- {head}: " + " | ".join(bits) if bits else f"- {head}: no data"
@@ -337,7 +340,9 @@ def quotes(
 # ------------------------------------------------------------------ crypto
 
 
-def crypto_context(quote: Quote, scan: dict, market: bool = True) -> str:
+def crypto_context(
+    quote: Quote, scan: dict, market: bool = True, lang: str = "en"
+) -> str:
     """A coin quote's figures from the nightly scan, worded for the prompt.
 
     The model's own idea of a coin's all-time high is a training-data figure,
@@ -346,6 +351,7 @@ def crypto_context(quote: Quote, scan: dict, market: bool = True) -> str:
     names, not a reading. `market` adds the market-wide half (Fear & Greed,
     bitcoin dominance), which one coin per message is enough to carry.
     """
+    n, p = bound(lang)
     from stocks.analysis import crypto_market as cm
     from stocks.data.crypto import COIN_CATEGORY, split_pair
 
@@ -360,7 +366,12 @@ def crypto_context(quote: Quote, scan: dict, market: bool = True) -> str:
     drop = cm.from_peak(quote.price, ath)
     if ath and drop is not None:
         day = (entry.get("ath_date") or {}).get(q) or "?"
-        bits.append(f"all-time high {ath:,.6g} {ccy} on {day} ({drop:+.0%} from it)")
+        high = f"{ath:,.6g}"
+        if lang == "es":
+            high = high.translate({ord(","): ".", ord("."): ","})
+        bits.append(
+            f"all-time high {high} {ccy} on {day} ({p(drop, 0, signed=True)} from it)"
+        )
     if entry.get("rank"):
         bits.append(f"market-cap rank #{entry['rank']}")
     if coin in COIN_CATEGORY:
@@ -368,7 +379,7 @@ def crypto_context(quote: Quote, scan: dict, market: bool = True) -> str:
     ratio = cm.fdv_ratio(
         (entry.get("fdv") or {}).get(q), (entry.get("market_cap") or {}).get(q))
     if ratio is not None and ratio > 1.1:
-        bits.append(f"fully diluted value {ratio:.1f}x market cap")
+        bits.append(f"fully diluted value {n(ratio, 1)}x market cap")
     if market:
         fg = scan.get("fear_greed") or []
         if fg:
@@ -378,13 +389,15 @@ def crypto_context(quote: Quote, scan: dict, market: bool = True) -> str:
                         + (f" ({band.key.replace('_', ' ')})" if band else ""))
         dom = (scan.get("global") or {}).get("btc_dominance")
         if dom is not None:
-            bits.append(f"bitcoin dominance {dom:.1f}%")
+            bits.append(f"bitcoin dominance {n(dom, 1)}%")
         if scan.get("saved"):
             bits.append(f"scan of {scan['saved']}")
     return " | ".join(bits)
 
 
-def _with_crypto(quotes_: list[Quote], scan: Callable[[], dict]) -> list[Quote]:
+def _with_crypto(
+    quotes_: list[Quote], scan: Callable[[], dict], lang: str = "en"
+) -> list[Quote]:
     """`quotes_` with each coin's scan figures attached; the scan is only
     read when a coin is among them, and a failed read changes nothing."""
     from stocks.data.crypto import is_crypto
@@ -398,7 +411,7 @@ def _with_crypto(quotes_: list[Quote], scan: Callable[[], dict]) -> list[Quote]:
     out, first = [], True
     for q in quotes_:
         if is_crypto(q.ticker):
-            context = crypto_context(q, data, market=first)
+            context = crypto_context(q, data, market=first, lang=lang)
             first = first and not context
             q = replace(q, context=context) if context else q
         out.append(q)
@@ -414,7 +427,7 @@ def _scan() -> dict:
 # ----------------------------------------------------------------- prompt
 
 
-def augment(message: str, quotes_: list[Quote]) -> str:
+def augment(message: str, quotes_: list[Quote], lang: str = "en") -> str:
     """The user message with the live quotes appended (unchanged when none)."""
     if not quotes_:
         return message
@@ -423,12 +436,12 @@ def augment(message: str, quotes_: list[Quote]) -> str:
         + "\n\n---\nLive market data fetched for this message (these are "
         "current prices — trust them over any figure you remember, and over "
         "prices quoted in web results):\n"
-        + "\n".join(q.line() for q in quotes_)
+        + "\n".join(q.line(lang) for q in quotes_)
     )
 
 
 def lookup_for(
-    message: str, watchlist: Path | None = None, focus: str = ""
+    message: str, watchlist: Path | None = None, focus: str = "", lang: str = "en"
 ) -> list[Quote]:
     """The whole path in one call: mentions → live quotes.
 
@@ -436,6 +449,6 @@ def lookup_for(
     degrades to []."""
     try:
         known = watchlist_names(watchlist) if watchlist else {}
-        return _with_crypto(quotes(mentioned(message, known, focus)), _scan)
+        return _with_crypto(quotes(mentioned(message, known, focus)), _scan, lang)
     except Exception:
         return []

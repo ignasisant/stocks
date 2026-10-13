@@ -18,12 +18,14 @@ import { Skeleton } from "../../shell/Layout";
 import { useT, useLang } from "../../shell/i18n";
 import { DenseRows, Responsive } from "../../ui/Rows";
 import { CardQuery, Card, CardTitle, Note, TickerCell } from "./ui";
-import { decimal, percent, plain, type Translate } from "./format";
+import { decimal, money, percent, plain, priceDigits, type Translate } from "./format";
 import type { Extreme, Extremes } from "./types";
+import type { Book } from "./Glance";
 
 function where(extreme: Extreme, t: Translate, lang: string): string {
   const high = extreme.edge === "high";
-  if (extreme.distance === null)
+  // Within a hundredth of a percent prints as "-0,0%": that is the edge.
+  if (extreme.distance === null || Math.abs(extreme.distance) < 0.0005)
     return t(high ? "home.at_52w_high" : "home.at_52w_low");
   const gap = percent(extreme.distance, lang, { signed: true, digits: 1 }) ?? "";
   return t(high ? "home.from_52w_high" : "home.from_52w_low", { pct: gap });
@@ -54,10 +56,32 @@ export function moverRows(query: Query<Extremes | null>): number {
   return Math.min(MOVER_ROWS.max, Math.max(MOVER_ROWS.min, count));
 }
 
-export function ExtremesCard({ query }: { query: Query<Extremes | null> }) {
+export function ExtremesCard({
+  query,
+  book,
+}: {
+  query: Query<Extremes | null>;
+  /** The book's positions, for the currency a held name's quote is in. */
+  book?: Query<Book | null>;
+}) {
   const t = useT();
   const lang = useLang();
   const na = t("home.na");
+  const currencies = new Map(
+    (book?.state === "loaded" ? (book.data?.positions.positions ?? []) : []).map(
+      (position) => [position.ticker, position.currency],
+    ),
+  );
+  // The quote's own currency when the book knows it; a name it does not hold
+  // keeps the bare figure rather than a guessed symbol.
+  const price = (extreme: Extreme) => {
+    const currency = currencies.get(extreme.ticker);
+    return (
+      (currency
+        ? money(extreme.price, currency, lang, { digits: priceDigits(extreme.price) })
+        : decimal(extreme.price, lang, priceDigits(extreme.price))) ?? na
+    );
+  };
 
   return (
     <CardQuery
@@ -91,9 +115,7 @@ export function ExtremesCard({ query }: { query: Query<Extremes | null> }) {
                           <td className="hm-tick-cell">
                             <TickerCell ticker={extreme.ticker} />
                           </td>
-                          <td className="hm-num">
-                            {decimal(extreme.price, lang) ?? na}
-                          </td>
+                          <td className="hm-num">{price(extreme)}</td>
                           <td className="hm-muted">{where(extreme, t, lang)}</td>
                         </tr>
                       ))}
@@ -106,7 +128,7 @@ export function ExtremesCard({ query }: { query: Query<Extremes | null> }) {
                     rowKey={(extreme) => `${extreme.ticker}-${extreme.edge}`}
                     spec={{
                       ticker: (extreme) => extreme.ticker,
-                      value: (extreme) => decimal(extreme.price, lang) ?? na,
+                      value: price,
                       sub: (extreme) => [where(extreme, t, lang)],
                     }}
                   />

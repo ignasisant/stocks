@@ -48,7 +48,8 @@ export function Wipe({
   if (total === 0 || !email) return null;
 
   return (
-    <>
+    <div className="im-zone" role="group" aria-label={t("import.danger_zone")}>
+      <p className="im-zone-title">{t("import.danger_zone")}</p>
       <label className="im-check">
         <input
           checked={value.on}
@@ -72,6 +73,6 @@ export function Wipe({
           value={value.confirm}
         />
       )}
-    </>
+    </div>
   );
 }

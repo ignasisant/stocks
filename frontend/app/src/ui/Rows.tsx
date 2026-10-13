@@ -21,7 +21,7 @@
 
 import type { ReactNode } from "react";
 import { Link } from "../shell/router";
-import { useTickerProfile } from "../shell/tickers";
+import { initials, useTickerProfile } from "../shell/tickers";
 import "./ui.css";
 
 /** Both renderings of one table; the width of `ag-main` decides which shows. */
@@ -79,7 +79,9 @@ export function DenseRow<T>({ row, spec }: { row: T; spec: DenseSpec<T> }) {
       {profile?.logo ? (
         <img className="ag-dense-logo" src={profile.logo} alt="" loading="lazy" />
       ) : (
-        <span className="ag-dense-logo ag-dense-logo-none" />
+        <span className="ag-dense-logo ag-dense-logo-none" aria-hidden="true">
+          {profile ? initials(symbol) : null}
+        </span>
       )}
       <div className="ag-dense-main">
         <div className="ag-dense-l1">

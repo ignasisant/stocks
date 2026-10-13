@@ -108,7 +108,12 @@ function Row({
 
   return (
     <div className={`ag-chat-card${conv.active ? " ag-chat-card-on" : ""}`}>
-      <button type="button" className="ag-chat-card-open" onClick={onOpen}>
+      <button
+        type="button"
+        className="ag-chat-card-open"
+        title={(conv.title || "").trim() || undefined}
+        onClick={onOpen}
+      >
         <span className="ag-chat-card-title">{label(conv, t, 26)}</span>
         <span className="ag-chat-card-meta">
           {t("chat.thread_meta", {

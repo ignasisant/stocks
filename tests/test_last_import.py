@@ -28,3 +28,12 @@ def test_load_tolerates_corrupt_file(tmp_path):
     assert load(path) is None
     path.write_text('{"unexpected": "keys"}')
     assert load(path) is None
+
+
+def test_imported_on_is_the_shared_last_import_day():
+    from stocks.portfolio import last_import
+
+    rec = last_import.ImportRecord("a.csv", "2026-09-18T14:03:00+00:00", [1])
+    assert last_import.imported_on(rec) == "2026-09-18"
+    assert last_import.imported_on(None) is None
+    assert last_import.imported_on(last_import.ImportRecord("a", "", [])) is None

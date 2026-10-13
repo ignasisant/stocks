@@ -1643,3 +1643,18 @@
 .pf-years-figures .pf-muted {
   font-size: var(--ag-fs-xs, 0.78rem);
 }
+
+.pf-missing > summary {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 0.78rem);
+  cursor: pointer;
+  margin-top: 0.7rem;
+}
+
+@media (pointer: coarse) {
+  .pf-missing > summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}

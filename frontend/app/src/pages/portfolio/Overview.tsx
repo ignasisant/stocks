@@ -35,7 +35,7 @@ import {
 } from "./api";
 import { BookAndRates } from "./charts";
 import { compactMoneyIn, moneyIn, percent } from "./format";
-import { Caption, Card, Kpis, Segmented } from "./ui";
+import { Caption, Card, Kpis, MissingPrices, Segmented } from "./ui";
 
 /** A tile's text while its call is out, and n/a once it has failed. */
 function read<T>(query: Query<T>, pick: (data: T) => string | null): string | null {
@@ -77,7 +77,13 @@ export default function Overview() {
             {
               label: t("portfolio.overview_value"),
               value: read(performance, (data) => money(data.value)),
-              chip: gain === null ? null : { text: pct(gain) ?? "", value: gain },
+              chip:
+                gain === null
+                  ? null
+                  : {
+                      text: t("portfolio.chip_vs_injected", { pct: pct(gain) ?? "" }),
+                      value: gain,
+                    },
             },
             {
               label: t("portfolio.series_injected"),
@@ -329,12 +335,8 @@ function MonthlyCard() {
               {yearOne ? <Caption>{yearOne}</Caption> : null}
               <Caption>
                 {t("portfolio.overview_monthly_note")} {t("portfolio.span_hint")}
-                {data.missing.length
-                  ? ` ${t("portfolio.hist_note_missing", {
-                      tickers: data.missing.join(", "),
-                    })}`
-                  : ""}
               </Caption>
+              <MissingPrices tickers={data.missing} />
             </>
           );
         }}

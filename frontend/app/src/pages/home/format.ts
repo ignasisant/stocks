@@ -9,6 +9,9 @@
  * separators.
  */
 
+import { formatter } from "../../shell/numbers";
+import { calendarDay } from "../../shell/dates";
+
 export type Translate = (
   key: string,
   slots?: Record<string, string | number>,
@@ -33,6 +36,16 @@ function finite(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+/**
+ * Decimals a per-unit price needs: cents for most, more for a sub-euro coin,
+ * where "0,04 €" would hide a price that moves in the third decimal.
+ */
+export function priceDigits(value: number | null | undefined): number {
+  const abs = Math.abs(value ?? 0);
+  if (abs === 0 || abs >= 1) return 2;
+  return abs >= 0.1 ? 3 : 4;
+}
+
 export function money(
   value: number | null | undefined,
   currency: string,
@@ -49,7 +62,7 @@ export function money(
     signDisplay: opts?.signed ? "always" : "auto",
   };
   try {
-    return new Intl.NumberFormat(lang, options).format(value);
+    return formatter(lang, options).format(value);
   } catch {
     // A ledger row can carry a currency Intl does not know (a broker's own
     // code). The figure is still worth printing — the code just trails it.
@@ -64,7 +77,7 @@ export function percent(
 ): string | null {
   if (!finite(value)) return null;
   const digits = opts?.digits ?? 2;
-  return new Intl.NumberFormat(lang, {
+  return formatter(lang, {
     style: "percent",
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
@@ -79,7 +92,7 @@ export function decimal(
   opts?: { signed?: boolean },
 ): string | null {
   if (!finite(value)) return null;
-  return new Intl.NumberFormat(lang, {
+  return formatter(lang, {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
     signDisplay: opts?.signed ? "always" : "auto",
@@ -125,7 +138,7 @@ export function monthDay(iso: string | null | undefined, t: Translate): string |
 export function shortDate(iso: string, lang: string): string {
   const date = parseDay(iso);
   if (!date) return iso;
-  return new Intl.DateTimeFormat(lang, { day: "2-digit", month: "short" }).format(date);
+  return calendarDay(iso, lang);
 }
 
 /** Monday of the week `date` falls in, as a new date. */

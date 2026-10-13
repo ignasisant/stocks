@@ -10,13 +10,14 @@
  */
 
 import { Link } from "../../shell/router";
-import { useT } from "../../shell/i18n";
+import { useLang, useT } from "../../shell/i18n";
 import { Kpi, chipFor, type ChipSpec } from "../../ui/Kpi";
 import { DownBody } from "./Down";
 import { HeroSpark } from "./Spark";
 import { NA, fixed, percent, share, signed } from "./format";
 import type { Pulse, PulseBook } from "./types";
 import { Badge } from "../../ui/Badge";
+import { num } from "../../shell/numbers";
 
 /** The bands the catalogs have a pill for. Anything else reads as "no reading". */
 const REGIMES = new Set([
@@ -58,9 +59,19 @@ export function driftChip(
   return {
     // Both ends of the drift: the headline beside the pill is a longer window,
     // so "3m 0.94" alone reads as a move from 0.94 to the headline.
-    text: t("sentiment.drift_pill", { now: now.toFixed(2), value: then.toFixed(2) }),
+    text: t("sentiment.drift_pill", { now: num(now, 2), value: num(then, 2) }),
     tone: moved ? "warn" : "flat",
   };
+}
+
+/** "13 oct 2026" for the stamp's ISO day; the raw string if it is not one. */
+function longDay(iso: string | null | undefined, lang: string): string {
+  if (!iso) return NA;
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return new Intl.DateTimeFormat(lang, { dateStyle: "medium" }).format(
+    new Date(y, m - 1, d),
+  );
 }
 
 /**
@@ -72,6 +83,7 @@ export function driftChip(
  */
 export function Composite({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => void }) {
   const t = useT();
+  const lang = useLang();
   if (pulse.unavailable) {
     return (
       <div className="sn-pulse">
@@ -177,7 +189,7 @@ export function Composite({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => vo
 
       <span className="sn-mono">
         {t("sentiment.pulse_stamp", {
-          date: pulse.as_of ?? NA,
+          date: longDay(pulse.as_of, lang),
           live: pulse.components.length,
           total: pulse.components.length + pulse.missing.length,
         })}

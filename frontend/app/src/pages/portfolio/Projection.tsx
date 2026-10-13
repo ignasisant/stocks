@@ -30,6 +30,7 @@ import { compactMoneyIn, moneyIn, percent } from "./format";
 import { ReturnLines, type ReturnSeries } from "./charts";
 import { Caption, Chip, Empty, Segmented } from "./ui";
 import { Help } from "../../ui/Kpi";
+import { num } from "../../shell/numbers";
 
 type StockPreset = keyof typeof STOCK_PRESETS | typeof OWN_GROWTH;
 type CryptoGrowth = (typeof CRYPTO_GROWTH)[number] | typeof OWN_GROWTH;
@@ -124,7 +125,11 @@ export default function Projection() {
             figure beside the chart reads. Either box sets the monthly
             amount the server draws with; the other is recomputed. */}
         <AmountField
-          label={t("portfolio.projection_total_input", { n: data.years })}
+          label={
+            data.years === 1
+              ? t("portfolio.projection_total_input_one")
+              : t("portfolio.projection_total_input", { n: data.years })
+          }
           value={data.real ? null : (contributed ?? 0)}
           suffix="€"
           disabled={data.real}
@@ -214,7 +219,11 @@ export default function Projection() {
         options={PROJECTION_YEARS}
         value={years}
         onChange={setYears}
-        format={(option) => t("portfolio.projection_years_n", { n: option })}
+        format={(option) =>
+          option === "1"
+            ? t("portfolio.projection_years_n_one")
+            : t("portfolio.projection_years_n", { n: option })
+        }
       />
       {!data.dates.length ? (
         <Empty
@@ -333,7 +342,7 @@ export default function Projection() {
                     weight: pct(coin.weight),
                     rate: pct(coin.growth),
                     vol: pct(coin.volatility),
-                    corr: data.correlation === null ? "—" : data.correlation.toFixed(2),
+                    corr: data.correlation === null ? "—" : num(data.correlation, 2),
                   })}`
                 : ""}
               {stock?.growth_own || coin?.growth_own

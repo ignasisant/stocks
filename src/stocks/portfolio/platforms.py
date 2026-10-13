@@ -259,6 +259,23 @@ def broker_key(name: str) -> str:
     return "_".join(re.findall(r"[a-z0-9]+", name.lower()))[:24] or OTHER
 
 
+# Saxo's Spanish export has an Open/Close column ("Para abrir" / "Para cerrar").
+# When a mapping reads it as the note, its first word becomes the "broker" the
+# Fees and Custody views group by. These are never an origin.
+OPEN_CLOSE_NOTES = ("para abrir", "para cerrar", "para_abrir", "para_cerrar",
+                    "paraabrir", "paracerrar")
+
+
+def clean_note(note: str) -> str:
+    """A mapped note without a leading open/close marker, capped for the ledger."""
+    note = note.strip()
+    low = note.lower()
+    for marker in OPEN_CLOSE_NOTES:
+        if low.startswith(marker):
+            return note[len(marker):].strip()[:120]
+    return note[:120]
+
+
 def detected_broker(transactions: list[Transaction]) -> str:
     """The origin the rows already name, when their parser stamped one and
     every row agrees; "" when nothing in the batch names a known broker, which
@@ -280,7 +297,7 @@ def stamp_broker(transactions: list[Transaction], broker: str) -> list[Transacti
     known = {p.key for p in PLATFORMS} | set(BROKER_NAMES) | {OTHER, "manual", key}
     out = []
     for tx in transactions:
-        words = tx.note.split()
+        words = clean_note(tx.note).split()
         if words and words[0].lower() in known:
             words = words[1:]
         out.append(replace(tx, note=" ".join([key, *words])[:120]))

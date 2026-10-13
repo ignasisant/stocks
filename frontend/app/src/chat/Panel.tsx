@@ -244,7 +244,8 @@ export default function Panel({
         <button
           type="button"
           className="ag-chat-thread-btn"
-          title={t("chat.threads_title")}
+          title={named || t("chat.threads_title")}
+          aria-label={t("chat.threads_title")}
           onClick={() => setView("threads")}
         >
           <Glyph name="forum" size={16} />

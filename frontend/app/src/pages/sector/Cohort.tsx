@@ -14,7 +14,9 @@
  */
 
 import { useState } from "react";
+import { get } from "../../shell/api";
 import { useT } from "../../shell/i18n";
+import { useApi } from "../../shell/useApi";
 import { TickerCell, useTickerProfile } from "../../shell/tickers";
 import { useLabels } from "./labels";
 import { formatMetric, ordered, passes, type Screen } from "./metrics";
@@ -85,6 +87,17 @@ export function Cohort({ data }: { data: SectorCohort }) {
   const t = useT();
   const labels = useLabels();
   const na = t("sector.na");
+  // The cohort is the same for every reader; what the reader already owns is
+  // joined here (see routes/sector.py), from the one positions request.
+  const book = useApi(
+    () => get<{ positions: { ticker: string }[] }>("/portfolio/positions"),
+    [],
+  );
+  const held = new Set(
+    book.state === "loaded"
+      ? book.data.positions.map((p) => p.ticker.toUpperCase())
+      : [],
+  );
 
   const [narrow] = useState(narrowAtOpen);
   const [sort, setSort] = useState(data.sort);
@@ -267,6 +280,7 @@ export function Cohort({ data }: { data: SectorCohort }) {
             ascending={ascending}
             onSort={sortBy}
             na={na}
+            held={held}
           />
         }
         narrow={
@@ -277,12 +291,16 @@ export function Cohort({ data }: { data: SectorCohort }) {
               ticker: (row) => row.ticker,
               names: true,
               wrap: true,
+              badge: (row) =>
+                held.has(row.ticker.toUpperCase()) ? (
+                  <span className="ag-sec-held">{t("sector.held_badge")}</span>
+                ) : null,
               sub: (row) =>
                 sub.map(
                   (column) =>
-                    `${labels.metric(column)} ${formatMetric(column, row.metrics[column], na)}`,
+                    `${labels.metric(column)} ${formatMetric(column, row.metrics[column], na, row.currency)}`,
                 ),
-              value: (row) => formatMetric(sort, row.metrics[sort], na),
+              value: (row) => formatMetric(sort, row.metrics[sort], na, row.currency),
               // What the headline figure is, under it: a bare "72.6%" on the
               // right of seventeen rows says nothing about which metric it is.
               delta: () => labels.metric(sort),
@@ -325,6 +343,7 @@ function Table({
   ascending,
   onSort,
   na,
+  held,
 }: {
   rows: CohortRow[];
   columns: string[];
@@ -332,6 +351,7 @@ function Table({
   ascending: boolean;
   onSort: (metric: string) => void;
   na: string;
+  held: Set<string>;
 }) {
   const t = useT();
   const labels = useLabels();
@@ -379,6 +399,9 @@ function Table({
                     <b>{row.ticker}</b>
                   </TickerCell>
                   <CompanyName ticker={row.ticker} />
+                  {held.has(row.ticker.toUpperCase()) ? (
+                    <span className="ag-sec-held">{t("sector.held_badge")}</span>
+                  ) : null}
                 </span>
               </th>
               {columns.map((column) => (
@@ -386,7 +409,7 @@ function Table({
                   key={column}
                   className={column === sort ? "ag-sec-ranked" : undefined}
                 >
-                  {formatMetric(column, row.metrics[column], na)}
+                  {formatMetric(column, row.metrics[column], na, row.currency)}
                 </td>
               ))}
             </tr>

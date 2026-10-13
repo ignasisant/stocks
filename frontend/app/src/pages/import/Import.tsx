@@ -59,7 +59,7 @@ import { NO_WIPE, Wipe } from "./Wipe";
 import type { WipeChoice } from "./Wipe";
 import { forget, keep, land, mark, preview as remembered, restored } from "./kept";
 import { pastedFile } from "./paste";
-import { useVocabulary } from "./text";
+import { platformHint, useVocabulary } from "./text";
 import { SignInWall } from "../../shell/guest";
 import { useGuest } from "../../shell/session";
 import "./import.css";
@@ -362,7 +362,10 @@ function Importer({
   if (unreadable) errors.push(t("import.unreadable"));
   if (staged && preview.state === "loaded" && preview.data && !preview.data.ok)
     errors.push(
-      t("import.nothing_read", { platform: platform.label, hint: platform.hint }),
+      t("import.nothing_read", {
+        platform: platform.label,
+        hint: platformHint(t, platform),
+      }),
     );
 
   return (

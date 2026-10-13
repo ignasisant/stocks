@@ -100,7 +100,7 @@ export function Podium({
                   {why.map((key, place) => (
                     <span key={key}>
                       {place > 0 ? <i>·</i> : null}
-                      {`${labels.metric(key)} ${formatMetric(key, row?.metrics[key], na)}`}
+                      {`${labels.metric(key)} ${formatMetric(key, row?.metrics[key], na, row?.currency)}`}
                     </span>
                   ))}
                 </div>

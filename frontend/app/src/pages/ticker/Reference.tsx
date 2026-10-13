@@ -12,6 +12,7 @@ import { useT } from "../../shell/i18n";
 import { DASH, compactMoney, money, orElse, percent, type Translate } from "./format";
 import { Card, Metric, Metrics, Note, Scroll, Tag } from "./ui";
 import type { AssetStats, KpiSourceRow } from "./types";
+import { num } from "../../shell/numbers";
 
 /**
  * The coin stand-in for fundamentals, insiders and comps — a currency pair has
@@ -81,7 +82,7 @@ export function AssetStatsSection({ stats }: { stats: AssetStats }) {
           <Metric
             label={t("ticker.fdv_ratio")}
             help={t("ticker.fdv_ratio_help")}
-            value={`${ratio.toFixed(2)}×`}
+            value={`${num(ratio, 2)}×`}
             note={dilutionBand(t, stats.dilution)}
             // The server's band, coloured as `analysis.crypto_market` does.
             noteTone={stats.dilution === "heavy" ? "orange" : null}

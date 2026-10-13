@@ -56,6 +56,24 @@ export function Caption({ children }: { children: ReactNode }) {
   return <p className="pf-caption">{said(children)}</p>;
 }
 
+/** Names without a price history, folded: said once, opened on demand. */
+export function MissingPrices({ tickers }: { tickers: string[] }) {
+  const t = useT();
+  if (!tickers.length) return null;
+  return (
+    <details className="pf-missing">
+      <summary>
+        {tickers.length === 1
+          ? t("portfolio.missing_prices_one")
+          : t("portfolio.missing_prices", { n: tickers.length })}
+      </summary>
+      <p className="pf-caption">
+        {t("portfolio.missing_prices_list", { tickers: tickers.join(", ") })}
+      </p>
+    </details>
+  );
+}
+
 export function Warn({ children }: { children: ReactNode }) {
   return <p className="pf-warn">{said(children)}</p>;
 }
@@ -251,6 +269,8 @@ export type SortOption<T> = {
   column?: string;
 };
 
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}/;
+
 /**
  * The order as a control above the table: the phone's rows have no header to
  * tap, so without it a list of twenty names reads in one fixed order.
@@ -260,20 +280,25 @@ function SortBar({
   value,
   onChange,
   text,
+  dates = false,
 }: {
   options: { key: string; label: string }[];
   value: { key: string; desc?: boolean } | null;
   onChange: (next: { key: string; desc: boolean }) => void;
   /** The active order reads words, so its direction is A–Z rather than a size. */
   text: boolean;
+  /** A date column sorts as ISO text but reads as newest/oldest, not A–Z. */
+  dates?: boolean;
 }) {
   const t = useT();
   const id = useId();
   const key = value?.key ?? "";
   const desc = value?.desc ?? true;
-  const direction = text
-    ? t(desc ? "portfolio.sort_za" : "portfolio.sort_az")
-    : t(desc ? "portfolio.sort_desc" : "portfolio.sort_asc");
+  const direction = dates
+    ? t(desc ? "portfolio.sort_newest" : "portfolio.sort_oldest")
+    : text
+      ? t(desc ? "portfolio.sort_za" : "portfolio.sort_az")
+      : t(desc ? "portfolio.sort_desc" : "portfolio.sort_asc");
   return (
     <div className="pf-sortbar">
       <label className="pf-control-label" htmlFor={id}>
@@ -386,6 +411,10 @@ export function Table<T>({
         value={sort}
         onChange={setSort}
         text={rows.some((row) => typeof active?.(row) === "string")}
+        dates={rows.every((row) => {
+          const value = active?.(row);
+          return value == null || (typeof value === "string" && ISO_DAY.test(value));
+        })}
       />
     ) : null;
 

@@ -296,5 +296,15 @@
   "import.work_venue": "Valorándolo como {symbol}",
   "import.venue_refused": "No se puede guardar {symbol} para este código: no cerró cerca de tus precios, o el código ya tiene precio. Busca de nuevo.",
   "import.venue_retry": "Yahoo no respondió. Prueba en un minuto.",
-  "import.venue_throttled": "Yahoo está rechazando peticiones ahora mismo: «sin precio» puede ser solo que no respondió."
+  "import.venue_throttled": "Yahoo está rechazando peticiones ahora mismo: «sin precio» puede ser solo que no respondió.",
+  "import.hint_revolut": "Exporta desde Revolut: Acciones, luego extracto. El CSV se lee exacto; el PDF se extrae de la tabla de operaciones y se valida igual.",
+  "import.hint_revolut_crypto": "Exporta desde Revolut: Cripto, luego extracto (CSV). Las monedas entran como pares de Yahoo en la divisa del extracto (BTC pasa a BTC-EUR); staking y recompensas de aprendizaje entran como compra al precio del día; transferencias y cambios entre monedas se listan como omitidos.",
+  "import.hint_trading212": "Exporta desde Trading 212: Historial, luego Exportar (CSV). Solo se importa si tiene las columnas exactas de Trading 212; las operaciones se guardan en la divisa del valor y los dividendos llevan la retención como comisión si se informa en esa divisa.",
+  "import.hint_degiro": "Exporta desde DEGIRO: Actividad, Transacciones, Exportar (CSV). Solo se importa con las columnas exactas de DEGIRO (inglés o español). Las filas entran con el ISIN como ticker y la app lo resuelve al símbolo que cotiza. Los dividendos van en el Estado de cuenta, no en este archivo; añádelos aparte.",
+  "import.hint_ibkr": "Exporta desde IBKR: Rendimiento e informes, Extractos, Actividad (CSV), en inglés o español. Entran órdenes de acciones y dividendos; retenciones y dividendos devengados se listan para revisar. Si el periodo no tiene operaciones, entra el bloque de posiciones abiertas: una compra por valor al coste medio del bróker, con la fecha del extracto.",
+  "import.hint_clicktrade": "Exporta desde ClickTrade/SaxoTraderGO: Informes históricos, Operaciones ejecutadas, Excel. Se reconocen cabeceras en español e inglés; los símbolos salen del código de bolsa de Saxo (TEF:xmce pasa a TEF.MC) y los desconocidos entran con el ISIN. Los dividendos van en el extracto de cuenta, no en este informe; añádelos aparte.",
+  "import.hint_generic": "Cualquier bróker: un CSV con cabecera date,ticker,action,quantity,price,currency,fee,note (action: buy, sell, dividend, fee o split; currency, fee y note opcionales).",
+  "import.book_count": "{n} transacciones",
+  "import.book_count_one": "{n} transacción",
+  "import.danger_zone": "Zona de peligro"
 }

@@ -485,6 +485,60 @@ def positions_table(db: str, mtime: float, base: str = "EUR") -> pd.DataFrame:
         return _self_priced_positions(db, mtime, base)
 
 
+def book_value_today(
+    db: str, mtime: float, base: str, hist: pd.DataFrame
+) -> float | None:
+    """What the book is worth today, one figure for every tile that prints it.
+
+    The Positions tile sums the priced table; the Overview, the Risk tab and
+    the projection read the last point of the replayed value path. The two are
+    built off the same download, but by different arithmetic, and they landed
+    a euro apart on a six-figure book ("Valor hoy" 146.196 against 146.197).
+    The table is what the rest of the app quotes, so when every position
+    priced it is the figure; otherwise the path (which carries the unpriced at
+    cost) stands.
+    """
+    from stocks.analysis.portfolio import priced_totals
+
+    table = positions_table(db, mtime, base)
+    if not table.empty and "value" in table:
+        _cost, value, unpriced = priced_totals(table)
+        if not unpriced and value > 0:
+            return float(value)
+    series = hist["value"].dropna() if "value" in hist else pd.Series(dtype=float)
+    return float(series.iloc[-1]) if not series.empty else None
+
+
+def allocation_weights(
+    db: str, mtime: float, base: str, meta: dict[str, dict], key: str, fallback
+) -> dict[str, float]:
+    """`key`'s buckets as shares of the book, off the priced positions table.
+
+    The Allocation tab and the Pulse card each read their own backtest report,
+    whose weights come from that download's last close and drop whatever has no
+    series in its window — so one book printed Technology at 36% on one and
+    41.6% on the other, and USD at 81% against 80.6%. Both read this instead:
+    the rows the tiles print, priced ones only, as the slices' own value and
+    cost sums already do. `fallback` is the report's own split, for a table
+    with nothing priced.
+    """
+    from stocks.analysis.portfolio import allocation_parts
+
+    table = positions_table(db, mtime, base)
+    if table.empty or "value" not in table:
+        return dict(fallback)
+    amounts = {
+        str(ticker): float(value)
+        for ticker, value in table["value"].dropna().items()
+    }
+    parts = allocation_parts(amounts, meta, key)
+    sums = {label: sum(held.values()) for label, held in parts.items()}
+    total = sum(sums.values())
+    if not total:
+        return dict(fallback)
+    return dict(sorted(((k, v / total) for k, v in sums.items()), key=lambda kv: -kv[1]))
+
+
 def _clear_positions() -> None:
     _priced_positions.cache_clear()
     _self_priced_positions.cache_clear()  # ty: ignore[unresolved-attribute]

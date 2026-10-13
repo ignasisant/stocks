@@ -28,6 +28,7 @@ from typing import Any
 from stocks import obs
 from stocks.chat import a2ui, market
 from stocks.config import currency_symbol
+from stocks.formatting import bound
 
 # A sale being contemplated, in the two languages the app speaks. The gate is
 # cheap and loose on purpose: a false hit costs one replay and no model call,
@@ -70,20 +71,21 @@ class Scenario:
     def extra_tax(self) -> float:
         return self.tax_after - self.tax_before
 
-    def line(self) -> str:
+    def line(self, lang: str = "en") -> str:
         """The prompt's paragraph: figures only, and where they came from."""
+        n, p = bound(lang)
         c = self.currency
         return (
             "\n\n---\nSale simulated by the app's own tax engine for this "
             f"message ({self.jurisdiction.upper()} rules, tax year {self.year}, "
-            f"today's price {self.price:,.2f} {self.price_currency}). Quote these "
+            f"today's price {n(self.price, 2)} {self.price_currency}). Quote these "
             "figures rather than estimating your own, and say they are an "
             "estimate:\n"
             f"- selling {self.shares:g} of {self.held:g} {self.ticker} shares\n"
-            f"- proceeds {self.proceeds:,.2f} {c}\n"
-            f"- realised gain on this sale {self.gain:+,.2f} {c}\n"
-            f"- estimated tax this year {self.tax_before:,.2f} -> "
-            f"{self.tax_after:,.2f} {c} (change {self.extra_tax:+,.2f} {c})"
+            f"- proceeds {n(self.proceeds, 2)} {c}\n"
+            f"- realised gain on this sale {n(self.gain, 2, signed=True)} {c}\n"
+            f"- estimated tax this year {n(self.tax_before, 2)} -> "
+            f"{n(self.tax_after, 2)} {c} (change {n(self.extra_tax, 2, signed=True)} {c})"
         )
 
 
@@ -255,28 +257,31 @@ def target(message: str, watchlist: Path | None, focus: str) -> str:
 # -------------------------------------------------------------------- surface
 
 
-def _money(value: float, currency: str, signed: bool = False) -> str:
+def _money(
+    value: float, currency: str, signed: bool = False, lang: str = "en"
+) -> str:
+    n, p = bound(lang)
     sign = "+" if signed and value > 0 else "-" if value < 0 else ""
-    return f"{sign}{currency_symbol(currency)}{abs(value):,.0f}"
+    return f"{sign}{currency_symbol(currency)}{n(abs(value), 0)}"
 
 
-def view(s: Scenario, translate) -> dict:
+def view(s: Scenario, translate, lang: str = "en") -> dict:
     """The figures the surface shows, formatted: its `/view` data."""
     return {
-        "proceeds": _money(s.proceeds, s.currency),
-        "gain": _money(s.gain, s.currency, signed=True),
+        "proceeds": _money(s.proceeds, s.currency, lang=lang),
+        "gain": _money(s.gain, s.currency, signed=True, lang=lang),
         "gain_tone": "up" if s.gain > 0 else "down" if s.gain < 0 else "flat",
-        "tax": _money(s.extra_tax, s.currency, signed=True),
+        "tax": _money(s.extra_tax, s.currency, signed=True, lang=lang),
         "tax_tone": "down" if s.extra_tax > 0 else "up" if s.extra_tax < 0 else "flat",
         "tax_hint": translate(
             "chat.whatif_tax_hint", year=s.year,
-            before=_money(s.tax_before, s.currency),
-            after=_money(s.tax_after, s.currency),
+            before=_money(s.tax_before, s.currency, lang=lang),
+            after=_money(s.tax_after, s.currency, lang=lang),
         ),
     }
 
 
-def surface(s: Scenario, translate) -> list[dict]:
+def surface(s: Scenario, translate, lang: str = "en") -> list[dict]:
     """A slider over the holding and the three figures that move with it."""
     # Whole shares for a whole holding; a hundredth of it for a fractional
     # one (crypto, a fund), which a one-share step would make unmovable.
@@ -306,11 +311,11 @@ def surface(s: Scenario, translate) -> list[dict]:
         a2ui.component("note", "Text", text=translate("chat.whatif_note"),
                        variant="caption"),
     ]
-    data = {"shares": s.shares, "view": view(s, translate)}
+    data = {"shares": s.shares, "view": view(s, translate, lang)}
     return a2ui.surface(SURFACE_ID, parts, data)
 
 
-def moved(s: Scenario, translate) -> list[dict]:
+def moved(s: Scenario, translate, lang: str = "en") -> list[dict]:
     """The same surface after the slider moved: its data, nothing else."""
-    return [a2ui.data_update(SURFACE_ID, "/view", view(s, translate)),
+    return [a2ui.data_update(SURFACE_ID, "/view", view(s, translate, lang)),
             a2ui.data_update(SURFACE_ID, "/shares", s.shares)]

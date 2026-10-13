@@ -46,6 +46,25 @@
   margin: 0.75rem 0 0;
 }
 
+/* The colours, always on show: one sample chip per kind the page draws. */
+.earn-chipkey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.earn-chip.earn-chip-key {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 1px 8px;
+  cursor: default;
+  pointer-events: none;
+}
+
 .earn-key summary {
   display: inline-flex;
   align-items: center;
@@ -257,6 +276,7 @@
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-sm);
   min-width: 0;
+  container: earn-day / inline-size;
 }
 
 .earn-day.dim {
@@ -718,6 +738,18 @@
   height: 12px;
   border-radius: 2px;
   object-fit: contain;
+}
+
+/* A narrow cell (the weekend's half columns, a page the chat drawer squeezed)
+   drops the logo so the ticker reads whole instead of "ORC…". */
+@container earn-day (max-width: 5.5rem) {
+  .earn-chip img {
+    display: none;
+  }
+
+  .earn-chip {
+    padding-inline: 3px;
+  }
 }
 
 /* Phones default to the list, but the grid stays one tap away — and seven

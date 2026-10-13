@@ -13,6 +13,13 @@
 /** What an uncomputable figure reads as. Never `0`. */
 export const DASH = "—";
 
+import {
+  formatter,
+  num,
+  numberLang,
+  pctNum,
+  signedPct as signedPctNum,
+} from "../../shell/numbers";
 import type { Bars } from "./types";
 
 type Maybe = number | null | undefined;
@@ -22,17 +29,14 @@ export function known(value: Maybe): value is number {
 }
 
 /**
- * A price or an amount, in the C locale.
+ * A price or an amount, in the account's language ("1.234,56" / "1,234.56").
  *
- * Deliberately not `Intl` keyed on the reader's language: two spellings of one
- * share price across two screens is worse than one that ignores the locale.
+ * Every screen spells it through `shell/numbers`, so one share price reads the
+ * same on the ticker, in a table and in the chat.
  */
 export function money(value: Maybe, digits = 2): string {
   if (!known(value)) return DASH;
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
+  return num(value, digits);
 }
 
 /** Always signed. A change printed without its sign is a level. */
@@ -49,21 +53,29 @@ export function signed(value: Maybe, digits = 2): string {
  */
 export function shares(value: Maybe): string {
   if (!known(value)) return DASH;
-  return value.toLocaleString("en-US", {
+  return formatter(numberLang(), {
     minimumFractionDigits: 0,
     maximumFractionDigits: 4,
-  });
+  }).format(value);
 }
 
 /** A premium keeps its sign: "−2.6%" is a discount, and unsigned it is a level. */
 export function signedPercent(value: Maybe, digits = 2): string {
   if (!known(value)) return DASH;
-  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(digits)}%`;
+  return signedPctNum(value, digits);
 }
 
 /** A fraction as a percentage: 0.1234 -> "12.3%". */
 export function percent(value: Maybe, digits = 1): string {
-  return known(value) ? `${(value * 100).toFixed(digits)}%` : DASH;
+  return known(value) ? pctNum(value, digits) : DASH;
+}
+
+/** Three significant digits, in the account's decimal mark: 4,98 / 41,0 / 391. */
+function shortNum(value: number): string {
+  return formatter(numberLang(), {
+    minimumSignificantDigits: 3,
+    maximumSignificantDigits: 3,
+  }).format(value);
 }
 
 /** 391_000_000_000 as "391B", with an optional currency after it. */
@@ -78,9 +90,9 @@ export function compact(value: Maybe, suffix = ""): string {
     [1e6, "M"],
     [1e3, "K"],
   ] as const) {
-    if (size >= limit) return `${sign}${(size / limit).toPrecision(3)}${unit}${tail}`;
+    if (size >= limit) return `${sign}${shortNum(size / limit)}${unit}${tail}`;
   }
-  return `${sign}${size.toPrecision(3)}${tail}`;
+  return `${sign}${shortNum(size)}${tail}`;
 }
 
 /**
@@ -133,9 +145,9 @@ export function compactMoney(
     [1e6, "M"],
     [1e3, "K"],
   ] as const) {
-    if (size >= limit) return `${sign}${sym}${(size / limit).toFixed(1)}${unit}`;
+    if (size >= limit) return `${sign}${sym}${num(size / limit, 1)}${unit}`;
   }
-  return `${sign}${sym}${Math.round(size).toLocaleString("en-US")}`;
+  return `${sign}${sym}${num(Math.round(size), 0)}`;
 }
 
 /**
@@ -298,4 +310,34 @@ export function barsDayPct(bars: Bars | null): number | null {
     return prev ? last / prev - 1 : null;
   }
   return null;
+}
+
+/**
+ * A KPI as the grid prints it, from its raw value and unit — never the
+ * server's `formatted` string, which is English ("1,234.5", "391.00B").
+ */
+export function kpiText(value: number | string | null, unit: string): string {
+  if (value === null || value === undefined) return "n/a";
+  if (typeof value !== "number") return String(value);
+  if (!Number.isFinite(value)) return "n/a";
+  switch (unit) {
+    case "pct":
+      return pctNum(value, 1);
+    case "x":
+      return `${num(value, 1)}x`;
+    case "score":
+      return `${num(value, 0)}/100`;
+    case "money": {
+      for (const [limit, unit] of [
+        [1e12, "T"],
+        [1e9, "B"],
+        [1e6, "M"],
+      ] as const) {
+        if (Math.abs(value) >= limit) return `${num(value / limit, 2)}${unit}`;
+      }
+      return num(value, 2);
+    }
+    default:
+      return String(value);
+  }
 }

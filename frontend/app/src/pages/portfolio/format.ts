@@ -7,6 +7,8 @@
  * Spanish reader gets "1.234 €" and an English one "€1,234".
  */
 
+import { formatter } from "../../shell/numbers";
+
 type Maybe = number | null | undefined;
 
 const usable = (value: Maybe): value is number =>
@@ -38,13 +40,13 @@ export function moneyIn(lang: string, currency: string): Money {
       signDisplay: (options?.signed ? "exceptZero" : "auto") as "exceptZero" | "auto",
     };
     try {
-      return new Intl.NumberFormat(lang, {
+      return formatter(lang, {
         style: "currency",
         currency,
         ...shape,
       }).format(value);
     } catch {
-      return `${new Intl.NumberFormat(lang, shape).format(value)} ${currency}`;
+      return `${formatter(lang, shape).format(value)} ${currency}`;
     }
   };
 }
@@ -86,7 +88,7 @@ export function percent(
 ): string | null {
   if (!usable(value)) return null;
   const digits = options?.digits ?? 1;
-  return new Intl.NumberFormat(lang, {
+  return formatter(lang, {
     style: "percent",
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
@@ -96,7 +98,7 @@ export function percent(
 
 export function decimal(lang: string, value: Maybe, digits = 2): string | null {
   if (!usable(value)) return null;
-  return new Intl.NumberFormat(lang, {
+  return formatter(lang, {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }).format(value);
@@ -112,7 +114,7 @@ export function decimal(lang: string, value: Maybe, digits = 2): string | null {
  */
 export function shares(lang: string, value: Maybe, fixed = false): string | null {
   if (!usable(value)) return null;
-  return new Intl.NumberFormat(lang, {
+  return formatter(lang, {
     minimumFractionDigits: fixed ? 4 : 0,
     maximumFractionDigits: fixed || !Number.isInteger(value) ? 4 : 0,
   }).format(value);

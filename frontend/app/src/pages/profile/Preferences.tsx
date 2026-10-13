@@ -28,9 +28,10 @@ import type { Settings } from "./prefs";
 import { MemoryCard } from "./MemoryCard";
 import { TourCard } from "./TourCard";
 import { Card, Chips, Failure, Row, Select, Toggle } from "./ui";
+import { calendarDay } from "../../shell/dates";
 
 /** `GET /import/last` — only the stamp, which is all the rail shows. */
-type LastImport = { imported_at: string | null };
+type LastImport = { imported_on?: string | null };
 
 /** Enough of `GET /portfolio/transactions` to know whether there is a book. */
 type Ledger = { total: number };
@@ -435,8 +436,8 @@ export function Preferences({
               <span>{t("profile.summary_last_import")}</span>
               <b>
                 {lastImport.state === "loaded"
-                  ? (lastImport.data.imported_at?.slice(0, 10) ??
-                    t("profile.summary_never"))
+                  ? calendarDay(lastImport.data.imported_on) ||
+                    t("profile.summary_never")
                   : t("common.loading")}
               </b>
             </div>

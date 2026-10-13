@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { Link } from "../../shell/router";
 import { useTickerProfile } from "../../shell/tickers";
 import { Kpi, KpiGrid, bandTone, chipFor } from "../../ui/Kpi";
+import { num } from "../../shell/numbers";
 
 /**
  * Is this a phone?
@@ -197,7 +198,7 @@ export function Metric({
   const move =
     delta === null || delta === undefined
       ? null
-      : `${delta >= 0 ? "+" : ""}${(delta * 100).toFixed(2)}%`;
+      : `${delta >= 0 ? "+" : ""}${num(delta * 100, 2)}%`;
   return (
     <Kpi
       label={label}

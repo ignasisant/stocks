@@ -47,7 +47,7 @@ from typing import TYPE_CHECKING
 from stocks import obs
 from stocks.chat import structured
 from stocks.data import crypto
-from stocks.portfolio import instruments, lexicon, upload_guard
+from stocks.portfolio import instruments, lexicon, platforms, upload_guard
 from stocks.portfolio.ledger import ACTIONS, RETURN_OF_CAPITAL, Transaction
 from stocks.portfolio.statement import ParseResult
 
@@ -816,7 +816,7 @@ def apply_mapping(grid: list[list[str]], mapping: dict) -> ParseResult:
                 # The action carries the direction; a sell exported as a
                 # negative quantity must not import as a negative position.
                 quantity=abs(quantity), price=abs(price), currency=currency,
-                fee=abs(fee), note=cell(row, "note").strip()[:120],
+                fee=abs(fee), note=platforms.clean_note(cell(row, "note")),
             ))
         except ValueError as exc:
             result.skipped.append({
@@ -935,7 +935,7 @@ def _transaction_from(raw: dict) -> tuple[Transaction | None, str]:
             date=day, ticker=ticker, action=action,
             quantity=number("quantity"), price=number("price"),
             currency=currency,
-            fee=number("fee"), note=str(raw.get("note") or "").strip()[:120],
+            fee=number("fee"), note=platforms.clean_note(str(raw.get("note") or "")),
         ), ""
     except ValueError as exc:
         return None, str(exc)

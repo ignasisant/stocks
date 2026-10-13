@@ -25,6 +25,7 @@ from stocks import obs
 from stocks.analysis import naive_dates
 from stocks.analysis.listing import price_units, quote_unit
 from stocks.config import Holding, load_watchlist
+from stocks.data.crypto import is_crypto
 from stocks.data.fx import ToBase, converter
 from stocks.portfolio import consistency, transfers
 
@@ -189,8 +190,13 @@ def cumulative_returns(returns: pd.Series) -> pd.Series:
     return (1 + returns).cumprod() - 1
 
 
+# A pair needs this many shared days to be compared: a coin listed last week
+# otherwise "diversifies" the book on three data points.
+MIN_CORR_DAYS = 30
+
+
 def correlation_matrix(returns: pd.DataFrame) -> pd.DataFrame:
-    return returns.corr()
+    return returns.corr(min_periods=MIN_CORR_DAYS)
 
 
 def risk_shares(
@@ -277,7 +283,9 @@ def allocation_parts(
             if (rest := 1.0 - sum(split.values())) > 0.001:
                 add("Unknown", ticker, amount * rest)
             continue
-        add(row.get(key) or "Unknown", ticker, amount)
+        # A coin has no country: its own bucket, not "Unknown" (a data gap).
+        none = "Crypto" if key == "country" and is_crypto(ticker) else "Unknown"
+        add(row.get(key) or none, ticker, amount)
     return parts
 
 

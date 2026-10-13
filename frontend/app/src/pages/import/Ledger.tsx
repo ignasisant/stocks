@@ -72,7 +72,7 @@ export function Ledger({
       ? vocab.money(standing.data.value, standing.data.base)
       : null;
   const summary = now
-    ? [vocab.num(now.total, 0), worth].filter(Boolean).join(" · ")
+    ? [vocab.tn("import.book_count", now.total), worth].filter(Boolean).join(" · ")
     : undefined;
 
   return (

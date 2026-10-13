@@ -9,6 +9,8 @@
  * meant to reorder.
  */
 
+import { num } from "../../shell/numbers";
+import { currencySymbol } from "../ticker/format";
 import type { CohortRow } from "./types";
 
 type Unit = "money" | "x" | "pct" | "score" | "ratio";
@@ -54,21 +56,8 @@ const UNITS: Record<string, Unit> = {
   pct_from_high: "pct",
 };
 
-/**
- * Grouped to a fixed number of decimals, always in the en-US shape.
- *
- * Not the reader's locale, deliberately: every other figure in this app is
- * printed by Python's `format_value`, which groups `1,234.56` whichever
- * language the page is in. A table where the ROIC column follows the browser
- * and the column beside it follows the server is worse than one that is
- * consistently the app's own convention.
- */
-function grouped(value: number, decimals: number): string {
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-}
+/** Grouped to a fixed number of decimals, in the account's language. */
+const grouped = num;
 
 const SCALES: [number, string][] = [
   [1e12, "T"],
@@ -87,21 +76,23 @@ export function formatMetric(
   key: string,
   value: number | null | undefined,
   na: string,
+  currency?: string | null,
 ): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return na;
   switch (UNITS[key] ?? "ratio") {
     case "pct":
-      return `${(value * 100).toFixed(1)}%`;
+      return `${num(value * 100, 1)}%`;
     case "x":
-      return `${value.toFixed(1)}x`;
+      return `${num(value, 1)}x`;
     case "score":
-      return `${value.toFixed(0)}/100`;
+      return `${num(value, 0)}/100`;
     case "money": {
+      const sym = currencySymbol(currency);
       for (const [divisor, suffix] of SCALES) {
         if (Math.abs(value) >= divisor)
-          return `${grouped(value / divisor, 2)}${suffix}`;
+          return `${sym}${grouped(value / divisor, 2)}${suffix}`;
       }
-      return grouped(value, 2);
+      return `${sym}${grouped(value, 2)}`;
     }
     default:
       return String(value);

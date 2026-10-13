@@ -71,8 +71,18 @@ CREATE TABLE IF NOT EXISTS changes (
 # step, so every reader/writer — web, CLI, cron — upgrades any db it touches
 # and none of them ever sees a half-migrated file. Backup snapshots keep the
 # pre-migration copies (see stocks.backup).
-SCHEMA_VERSION = 1
-MIGRATIONS: dict[int, list[str]] = {}
+SCHEMA_VERSION = 2
+# v2: a Spanish Saxo Open/Close column ("Para abrir"/"Para cerrar") was read as
+# the note, so its first word became the broker. Those rows go to "other".
+_OPEN_CLOSE = ("para abrir", "para cerrar", "para_abrir", "para_cerrar",
+               "paraabrir", "paracerrar")
+MIGRATIONS: dict[int, list[str]] = {
+    2: [
+        f"UPDATE transactions SET note = 'other' || substr(note, {len(m) + 1}) "
+        f"WHERE lower(note) LIKE '{m}%'"
+        for m in _OPEN_CLOSE
+    ],
+}
 
 
 def _migrate(conn: sqlite3.Connection) -> None:

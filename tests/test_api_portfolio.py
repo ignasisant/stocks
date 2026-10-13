@@ -590,6 +590,7 @@ def test_a_window_with_no_returns_has_no_curves(client, book, monkeypatch):
 
 def test_risk_reports_the_shape_of_the_basket(client, book, monkeypatch):
     book(trades())
+    monkeypatch.setattr("stocks.analysis.portfolio.MIN_CORR_DAYS", 1)  # 3-day fixture
     monkeypatch.setattr(
         loaders, "basket_report", lambda db, mtime, base, period: report()
     )

@@ -371,7 +371,13 @@
 }
 
 .ag-dense-logo-none {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: var(--ag-surface-sunken);
+  color: var(--ag-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .ag-dense-main {

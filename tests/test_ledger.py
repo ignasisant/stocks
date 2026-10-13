@@ -264,3 +264,21 @@ def test_retag_leaves_the_split_while_another_position_holds_the_label(tmp_path)
     assert sorted((t.ticker, t.action) for t in all_transactions(db)) == [
         ("ALV", "buy"), ("ALV", "split"), ("ALV.DE", "buy")
     ]
+
+
+def test_open_close_notes_migrate_to_other(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    conn = ledger.connect(path)
+    conn.execute("INSERT INTO transactions (date,ticker,action,note) VALUES "
+                 "('2026-01-01','AAA','buy','Para abrir AAA'),"
+                 "('2026-01-02','BBB','sell','paraabrir'),"
+                 "('2026-01-03','CCC','buy','revolut')")
+    conn.execute("PRAGMA user_version = 1")
+    conn.commit()
+    conn.close()
+    conn = ledger.connect(path)
+    notes = [r[0] for r in conn.execute("SELECT note FROM transactions ORDER BY id")]
+    assert notes == ["other AAA", "other", "revolut"]
+    assert isinstance(conn, sqlite3.Connection)

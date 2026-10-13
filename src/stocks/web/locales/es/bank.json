@@ -21,6 +21,7 @@
   "bank.add_title": "Conectar un banco",
   "bank.country": "País",
   "bank.bank": "Banco",
+  "bank.filter": "Filtrar bancos",
   "bank.aspsps_failed": "No se pudo cargar la lista de bancos: {detail}",
   "bank.no_redirect": "Esta app no es accesible por https aquí, y los bancos solo redirigen a una dirección https. Conecta desde la app desplegada.",
   "bank.connect": "Conectar",

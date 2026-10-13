@@ -106,6 +106,14 @@ export function cachedName(ticker: string): string | null {
   return cache.get(ticker.trim().toUpperCase())?.name ?? null;
 }
 
+/** Two letters to stand in for a mark nobody has: "MOODENG-EUR" reads "MO". */
+export function initials(symbol: string): string {
+  return symbol
+    .replace(/[^A-Za-z0-9]/g, "")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
 export function useTickerProfile(ticker: string): Profile | null {
   const key = ticker.trim().toUpperCase();
   const value = useSyncExternalStore(
@@ -166,6 +174,10 @@ export function TickerCell({
     >
       {profile?.logo ? (
         <img className="ag-tick-logo" src={profile.logo} alt="" loading="lazy" />
+      ) : profile ? (
+        <span className="ag-tick-logo ag-tick-initials" aria-hidden="true">
+          <span>{initials(symbol)}</span>
+        </span>
       ) : null}
       {children ?? (
         <>

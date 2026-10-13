@@ -23,6 +23,8 @@ export type Sectors = { sectors: SectorSummary[] };
 
 export type CohortRow = {
   ticker: string;
+  /** Listing currency of the money metrics; null when the scan has none. */
+  currency?: string | null;
   /** Percentile rank inside this cohort, 0-1; null when unranked. */
   score: number | null;
   rank: number | null;

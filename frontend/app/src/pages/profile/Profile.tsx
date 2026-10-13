@@ -164,7 +164,10 @@ function Settings() {
           >
             {t(entry.label)}
             {entry.id === "watch" && count > 0 && (
-              <span className="pr-tab-n">{count}</span>
+              <>
+                {" "}
+                <span className="pr-tab-n">{count}</span>
+              </>
             )}
           </button>
         ))}
