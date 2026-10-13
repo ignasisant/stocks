@@ -104,6 +104,7 @@ def profiles(account: Account, who: Who, tickers: Annotated[str, Query(
     from stocks.data import asset_kind
     from stocks.data.crypto import is_crypto
     from stocks.data.funds import is_fund
+    from stocks.data.profiles import known
 
     watchlist = str(account.watchlist)
     logo = loaders.mirrored_logo if who.kind == "guest" else loaders.logo
@@ -121,6 +122,8 @@ def profiles(account: Account, who: Who, tickers: Annotated[str, Query(
             # request-per-row this route exists to avoid.
             is_fund=is_fund(resolved, fetch=False),
             asset=asset_kind.cached(resolved, name),
+            # Memo only, so the comps picker can keep a company's own sector.
+            sector=(known(resolved) or {}).get("sector"),
         )
 
     # Ordered as asked, deduplicated: a caller drawing a table wants its own

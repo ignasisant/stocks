@@ -1352,6 +1352,14 @@ class Profile(BaseModel):
             "symbol nothing is known about."
         ),
     )
+    sector: str | None = Field(
+        default=None,
+        description=(
+            "Yahoo's sector as the profile memo holds it. Only the bulk "
+            "`/market/profiles` fills it, from cache — null when never seen, "
+            "which is not the same as having none."
+        ),
+    )
 
 
 class Peer(BaseModel):
