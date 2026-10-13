@@ -16,23 +16,37 @@
  * A dot's details open in the DS tooltip (`Tip`), not the SVG's own `<title>`:
  * the browser waits about a second before drawing that one and draws it in its
  * own chrome. This one opens 300ms after the pointer settles, at once on
- * keyboard focus or a tap, and stays inside the map.
+ * keyboard focus or a tap, and stays inside the map. Besides the scores it
+ * carries a handful of the KPIs behind them (`TIP`); the rest is one press
+ * away: a click, Enter, or a second tap on the same dot opens the name's full
+ * details (`DetailsDialog`), the dialog the tables' rows open.
  *
  * Fifty dots and a dozen labels make one name slow to find by eye, so a map
  * with as many names as a searchable table gets a search box in its corner
  * (`MapFind`): what does not match fades, every match gets its label, and a
  * picked suggestion is the only dot left lit, its tooltip open.
+ *
+ * The map shares its focus with the plan and the tables (`focus.tsx`): the
+ * dot under the pointer lights its rows below, and a row pointed at below
+ * rings its dot here, labels it, fades the rest and opens its tooltip.
  */
 
-import { type PointerEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { useTickerProfile } from "../../shell/tickers";
 import { useWidth } from "../../shell/useWidth";
 import { Chip } from "../../ui/Kpi";
-import { percent, pnl, score, verdictTone } from "./format";
+import { percent, pnl, score, tipFigures, verdictTone } from "./format";
 import { type Box, type LabelSpot, labelRank, placeLabels } from "./labels";
-import { PnlChip } from "./Explain";
+import { DetailsDialog, PnlChip, metricLabel } from "./Explain";
+import { useFocus } from "./focus";
 import { findRows } from "./filter";
 import { MapFind } from "./MapFind";
 import { FIND_MIN, useRowWords } from "./Tables";
@@ -75,28 +89,38 @@ type Spot = { row: ReviewRow; cx: number; cy: number; r: number };
 export function QualityMap({
   held,
   candidates,
+  taxCurrency,
 }: {
   held: ReviewRow[];
   candidates: ReviewRow[];
+  /** The plan's, for the sale's tax in a held name's details. */
+  taxCurrency: string;
 }) {
   const t = useT();
   const [ref, width] = useWidth(640);
   const [tip, setTip] = useState<Spot | null>(null);
+  // The name whose details dialog is open.
+  const [detail, setDetail] = useState<ReviewRow | null>(null);
   const [needle, setNeedle] = useState("");
   // The suggestion picked, until the field is typed in again.
   const [picked, setPicked] = useState<string | null>(null);
   const words = useRowWords();
+  const { focus, point } = useFocus();
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   // A tapped tooltip stays until a tap lands somewhere else.
   useEffect(() => {
     if (!tip) return;
     const away = (event: globalThis.PointerEvent) => {
-      if (!(event.target instanceof Element && event.target.closest(".ag-rev-dot")))
+      if (!(event.target instanceof Element && event.target.closest(".ag-rev-dot"))) {
         setTip(null);
+        point(null);
+      }
     };
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setTip(null);
+      if (event.key !== "Escape") return;
+      setTip(null);
+      point(null);
     };
     document.addEventListener("pointerdown", away);
     document.addEventListener("keydown", escape);
@@ -104,15 +128,23 @@ export function QualityMap({
       document.removeEventListener("pointerdown", away);
       document.removeEventListener("keydown", escape);
     };
-  }, [tip]);
+  }, [tip, point]);
+  // The pointer lands on the plan and the tables at once; only the tooltip
+  // waits for it to settle.
   const open = (spot: Spot, wait: boolean) => {
+    point({ ticker: spot.row.ticker, from: "map" });
     window.clearTimeout(timer.current);
     if (wait) timer.current = window.setTimeout(() => setTip(spot), TIP_DELAY);
     else setTip(spot);
   };
   const close = () => {
+    point(null);
     window.clearTimeout(timer.current);
     setTip(null);
+  };
+  const expand = (row: ReviewRow) => {
+    close();
+    setDetail(row);
   };
   const rows = [...held, ...candidates];
   const placed = rows.filter((row) => row.quality !== null && row.cheapness !== null);
@@ -153,8 +185,15 @@ export function QualityMap({
       ? placed.filter((row) => key(row) === picked)
       : suggested.filter((row) => placed.includes(row));
   const found = new Set(matches.map(key));
+  // A name pointed at in the plan or a table: ringed, labelled, its tooltip
+  // open and every other dot faded, until the pointer leaves it there.
+  const pointed =
+    focus && focus.from !== "map"
+      ? (placed.find((row) => row.ticker === focus.ticker) ?? null)
+      : null;
+  const lit = (row: ReviewRow) => (pointed ? row === pointed : found.has(key(row)));
   // A match is drawn over the faded names, never under one.
-  if (query) ordered.sort((a, b) => +found.has(key(a)) - +found.has(key(b)));
+  if (query || pointed) ordered.sort((a, b) => +lit(a) - +lit(b));
   const quads: { text: string; x: number; y: number; end?: boolean }[] = [
     // Inner corner: the outer one is where the best names crowd.
     { text: t("review.quad_best"), x: x(CHEAP) + 6, y: y(100) + 14 },
@@ -300,16 +339,35 @@ export function QualityMap({
               row={row}
               cx={x(row.cheapness as number)}
               cy={y(row.quality as number)}
-              label={labels.get(key(row))}
-              dim={!found.has(key(row))}
-              on={tip?.row.ticker === row.ticker && tip.row.held === row.held}
+              label={
+                labels.get(key(row)) ??
+                (row === pointed ? besideLabel(spotOf(row), width) : undefined)
+              }
+              dim={!lit(row)}
+              on={
+                row === pointed ||
+                (tip?.row.ticker === row.ticker && tip.row.held === row.held)
+              }
               onOpen={open}
               onClose={close}
+              onExpand={expand}
             />
           ))}
         </svg>
-        {tip ? <Tip spot={tip} width={width} height={height} /> : null}
+        {tip ? (
+          <Tip spot={tip} width={width} height={height} />
+        ) : pointed ? (
+          <Tip spot={spotOf(pointed)} width={width} height={height} />
+        ) : null}
       </div>
+      {detail ? (
+        <DetailsDialog
+          row={detail}
+          label={t("review.details_label", { ticker: detail.symbol || detail.ticker })}
+          taxCurrency={taxCurrency}
+          onClose={() => setDetail(null)}
+        />
+      ) : null}
       {/* Each key keeps its swatch: wrapped loose, a ring ended one line and
           its words began the next. */}
       <ul className="ag-rev-caption ag-rev-legend">
@@ -328,6 +386,19 @@ export function QualityMap({
   );
 }
 
+/**
+ * A label for a dot `placeLabels` left bare, forced because it is the name
+ * pointed at: beside the dot, on the side with room, over whatever is there.
+ */
+function besideLabel(spot: Spot, width: number): LabelSpot {
+  const right = spot.cx < width - PAD.right - 8;
+  return {
+    x: right ? spot.cx + spot.r + 4 : spot.cx - spot.r - 4,
+    y: spot.cy + 4,
+    anchor: right ? "start" : "end",
+  };
+}
+
 /** Area, not radius, follows the weight: 1% is a 4px dot, 10% a 12px one. */
 const radius = (row: ReviewRow) =>
   row.held ? Math.max(4, Math.min(16, 4 * Math.sqrt((row.weight ?? 0) * 100))) : 5;
@@ -341,6 +412,7 @@ function Dot({
   on,
   onOpen,
   onClose,
+  onExpand,
 }: {
   row: ReviewRow;
   cx: number;
@@ -352,6 +424,8 @@ function Dot({
   on: boolean;
   onOpen: (spot: Spot, wait: boolean) => void;
   onClose: () => void;
+  /** Opens the name's full details. */
+  onExpand: (row: ReviewRow) => void;
 }) {
   const t = useT();
   const lang = useLang();
@@ -374,21 +448,36 @@ function Dot({
       ? `${t("review.col_pnl")} ${pnl(row, base, lang) ?? t("review.na")}`
       : null,
     ...row.reasons.map((code) => t(`review.reason_${code}`)),
+    ...tipFigures(row.metrics, lang).map(
+      ({ key, value }) => `${metricLabel(t, key)} ${value}`,
+    ),
   ]
     .filter(Boolean)
     .join(". ");
   const spot = { row, cx, cy, r };
-  // A mouse waits for the pointer to settle; a finger or a key opens it now.
-  const mouse = (event: PointerEvent) => event.pointerType !== "touch";
+  // The click that follows a press carries no pointer type everywhere, so the
+  // press records it: a finger's first tap is the mouse's hover.
+  const finger = useRef(false);
+  const press = (event: ReactKeyboardEvent) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    onExpand(row);
+  };
   return (
     <g
       className={`ag-rev-dot ag-rev-dot-${tone}${row.held ? "" : " ag-rev-dot-out"}${on ? " ag-rev-dot-on" : ""}${dim ? " ag-rev-dot-dim" : ""}`}
-      role="img"
+      role="button"
+      aria-haspopup="dialog"
       tabIndex={0}
       aria-label={spoken}
-      onPointerEnter={(event) => mouse(event) && onOpen(spot, true)}
-      onPointerLeave={(event) => mouse(event) && onClose()}
-      onPointerUp={(event) => !mouse(event) && (on ? onClose() : onOpen(spot, false))}
+      // A mouse waits for the pointer to settle; a finger or a key opens it now.
+      onPointerEnter={(event) => event.pointerType !== "touch" && onOpen(spot, true)}
+      onPointerLeave={(event) => event.pointerType !== "touch" && onClose()}
+      onPointerDown={(event) => {
+        finger.current = event.pointerType === "touch";
+      }}
+      onClick={() => (finger.current && !on ? onOpen(spot, false) : onExpand(row))}
+      onKeyDown={press}
       // A tap focuses the dot too; only a keyboard's focus opens it here.
       onFocus={(event) =>
         event.currentTarget.matches(":focus-visible") && onOpen(spot, false)
@@ -409,7 +498,8 @@ function Dot({
 
 /**
  * The DS tooltip box (`.tk-tip` / `.pf-tip` in the charts): name, verdict,
- * the two scores, the weight and the gain, then the reasons. Measured once drawn and
+ * the two scores, the weight and the gain, the KPIs in `TIP` the feed had,
+ * then the reasons and how to open the rest. Measured once drawn and
  * placed by `tipPlace`, hidden until then so it never flashes at the corner.
  */
 function Tip({ spot, width, height }: { spot: Spot; width: number; height: number }) {
@@ -421,14 +511,21 @@ function Tip({ spot, width, height }: { spot: Spot; width: number; height: numbe
   const company = profile?.name || "";
   const box = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
+  // By value: the spot of a name pointed at elsewhere is rebuilt each render.
+  const { cx, cy, r } = spot;
   useLayoutEffect(() => {
     const node = box.current;
     if (!node) return;
     setPlace(
-      tipPlace(spot, { w: node.offsetWidth, h: node.offsetHeight }, { width, height }),
+      tipPlace(
+        { cx, cy, r },
+        { w: node.offsetWidth, h: node.offsetHeight },
+        { width, height },
+      ),
     );
-  }, [spot, width, height, company]);
+  }, [cx, cy, r, row.ticker, width, height, company]);
   const na = t("review.na");
+  const figures = tipFigures(row.metrics, lang);
   return (
     <div
       ref={box}
@@ -466,6 +563,16 @@ function Tip({ spot, width, height }: { spot: Spot; width: number; height: numbe
           </span>
         ) : null}
       </div>
+      {figures.length > 0 ? (
+        <dl className="ag-rev-tip-kpis">
+          {figures.map(({ key, value }) => (
+            <div key={key}>
+              <dt>{metricLabel(t, key)}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
       {row.reasons.length > 0 ? (
         <ul className="ag-rev-tip-why">
           {row.reasons.map((code) => (
@@ -473,6 +580,7 @@ function Tip({ spot, width, height }: { spot: Spot; width: number; height: numbe
           ))}
         </ul>
       ) : null}
+      <div className="ag-rev-tip-more">{t("review.tip_more")}</div>
     </div>
   );
 }

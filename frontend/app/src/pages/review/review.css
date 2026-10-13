@@ -103,18 +103,20 @@
 
 /* Ticker cells, as Import draws them: the symbol in the text colour, the
    name muted, an underline only under a pointer. */
-.ag-rev-move a.ag-tick,
+.ag-rev-mv a.ag-tick,
 .ag-rev-table a.ag-tick,
 .ag-rev-added a.ag-tick,
+.ag-rev-coins a.ag-tick,
 .ag-rev-modal a.ag-tick {
   color: var(--ag-text-primary);
   text-decoration: none;
 }
 
 @media (hover: hover) {
-  .ag-rev-move a.ag-tick:hover .ag-tick-sym,
+  .ag-rev-mv a.ag-tick:hover .ag-tick-sym,
   .ag-rev-table a.ag-tick:hover .ag-tick-sym,
   .ag-rev-added a.ag-tick:hover .ag-tick-sym,
+  .ag-rev-coins a.ag-tick:hover .ag-tick-sym,
   .ag-rev-modal a.ag-tick:hover .ag-tick-sym {
     text-decoration: underline;
   }
@@ -373,80 +375,315 @@
 
 /* ----------------------------------------------------------------- moves */
 
-.ag-rev-moves {
+/* --------------------------------------------------------------- the plan */
+
+/* The page's one figure, then the two bars that make it: what the sales free
+   and what the adds spend, on one scale. Side by side once there is room. */
+.ag-rev-plan-sum {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-  gap: 0.75rem;
+  gap: 1rem 2.5rem;
+  margin-top: 0.75rem;
 }
 
-/* A nested box in a card: the KPI tile's surface and radius (`.ag-kpi`).
-   The verdict pill and the figure carry the colour; the box stays grey. */
-.ag-rev-move {
+@container ag-main (min-width: 52rem) {
+  .ag-rev-plan-sum {
+    grid-template-columns: minmax(15rem, auto) minmax(0, 1fr);
+    align-items: center;
+  }
+}
+
+.ag-rev-plan-fig {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md);
-  background: var(--ag-surface-page);
-  padding: 0.75rem 0.85rem;
-  min-width: 0;
+  gap: 0.2rem;
 }
 
-.ag-rev-move > .ag-rev-caption {
+.ag-rev-plan-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+  color: var(--ag-text-muted);
+}
+
+.ag-rev-plan-value {
+  font-size: var(--ag-fs-3xl);
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-rev-plan-tax {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+}
+
+.ag-rev-plan-tax b {
+  font-weight: 600;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-rev-plan-note {
+  max-width: 62ch;
+  margin-top: 0.6rem;
+}
+
+/* Label | bar | amount, the columns shared by both rows so the bars start
+   and end on the same lines. */
+.ag-rev-flow {
+  display: grid;
+  grid-template-columns: max-content minmax(4rem, 1fr) max-content;
+  align-items: center;
+  gap: 0.6rem 0.75rem;
   margin: 0;
 }
 
-.ag-rev-move-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+.ag-rev-flow-row {
+  display: contents;
 }
 
-.ag-rev-move-who {
-  font-weight: 600;
-  min-width: 0;
+.ag-rev-flow dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+}
+
+.ag-rev-flow dd {
+  margin: 0;
+}
+
+.ag-rev-flow-track {
+  display: flex;
+  height: 10px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-sunken);
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.ag-rev-flow-fill {
+  height: 100%;
+  border-radius: var(--ag-radius-pill);
+}
+
+.ag-rev-flow-down {
+  background: var(--ag-down);
+}
+
+.ag-rev-flow-up {
+  background: var(--ag-up);
+}
+
+/* What the other side leaves: the new cash to find, or the cash left over. */
+.ag-rev-flow-gap {
+  box-sizing: border-box;
+  height: 100%;
+  border: 1px dashed var(--ag-text-faint);
+  border-left: none;
+  border-radius: 0 var(--ag-radius-pill) var(--ag-radius-pill) 0;
+}
+
+.ag-rev-flow-amount {
+  text-align: right;
+  font-size: var(--ag-fs-md);
+  font-weight: 600;
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-/* The money is the card's figure; the weights are its supporting fact. */
-.ag-rev-move-figs {
+/* The moves, by direction: one list beside the other while each still fits
+   two lines a row, one under the other after that. */
+.ag-rev-plan-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 1.25rem 2rem;
+  margin-top: 1.25rem;
+}
+
+.ag-rev-mvs {
+  container: ag-rev-mvs / inline-size;
+  min-width: 0;
+}
+
+.ag-rev-mvs-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.5rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-sm);
-}
-
-.ag-rev-move-scores {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.75rem;
+  gap: 0.5rem;
   margin: 0;
-  font-size: var(--ag-fs-xs);
-  color: var(--ag-text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.ag-rev-move-scores b {
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--ag-border);
+  font-size: var(--ag-fs-sm);
   font-weight: 600;
   color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
-.ag-rev-move-figs i {
+.ag-rev-mvs-n {
+  font-weight: 500;
+  color: var(--ag-text-muted);
+}
+
+.ag-rev-mv-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* One move on one line of sight: who and how far, the money, then why and
+   its cost under it; details at the end. */
+.ag-rev-mv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(6.5rem, auto) auto;
+  grid-template-areas:
+    "who weights money more"
+    "why why note more";
+  align-items: center;
+  gap: 0.3rem 0.75rem;
+  padding: 0.6rem 0.5rem;
+  margin: 0 -0.5rem;
+  border-bottom: 1px solid var(--ag-rule-soft);
+  transition: opacity 100ms ease-out;
+}
+
+.ag-rev-mv:last-child {
+  border-bottom: none;
+}
+
+.ag-rev-mv-who {
+  grid-area: who;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  font-weight: 600;
+}
+
+/* One line, as Home's table draws a ticker: the company name is the part
+   that gives, cut with an ellipsis, never wrapped under the symbol. */
+.ag-rev-mv-who a.ag-tick {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.ag-rev-mv-who .ag-tick-logo,
+.ag-rev-mv-who .ag-tick-sym {
+  flex: none;
+}
+
+.ag-rev-mv-who .ag-tick-name {
+  min-width: 0;
+  padding-left: 0.3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ag-rev-mv-weights {
+  grid-area: weights;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ag-rev-mv-weights i {
   font-style: normal;
   margin: 0 0.3rem;
   color: var(--ag-text-muted);
 }
 
-.ag-rev-move-figs b {
-  font-size: var(--ag-fs-xl);
+.ag-rev-mv-money {
+  grid-area: money;
+  text-align: right;
+  font-size: var(--ag-fs-md);
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ag-rev-mv-why {
+  grid-area: why;
+  min-width: 0;
+}
+
+.ag-rev-mv-note {
+  grid-area: note;
+  justify-self: end;
+  font-size: var(--ag-fs-xs);
+  color: var(--ag-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ag-rev-mv-more {
+  grid-area: more;
+}
+
+/* A narrow list: the money stays beside the name, the weights drop under. */
+@container ag-rev-mvs (max-width: 26rem) {
+  .ag-rev-mv {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "who money more"
+      "weights note more"
+      "why why more";
+  }
+
+  .ag-rev-mv-money {
+    min-width: 0;
+  }
+}
+
+/* ------------------------------------------------------------ the focus */
+
+/* A name pointed at anywhere on the page: its row in every list washed and
+   marked on the left, the rest of a list it is in faded — never moved. */
+.ag-rev-mv.ag-rev-on,
+.ag-rev-table tbody tr.ag-rev-on > * {
+  background: var(--ag-surface-sunken);
+}
+
+.ag-rev-mv.ag-rev-on,
+.ag-rev-table tbody tr.ag-rev-on > :first-child {
+  box-shadow: inset 3px 0 0 var(--ag-brand-accent);
+}
+
+.ag-rev-mv.ag-rev-on {
+  border-radius: var(--ag-radius-sm);
+}
+
+.ag-rev-fading .ag-rev-mv:not(.ag-rev-on),
+.ag-rev-table.ag-rev-fading tbody tr:not(.ag-rev-on) {
+  opacity: 0.35;
+}
+
+.ag-rev-table tbody tr {
+  transition: opacity 100ms ease-out;
+}
+
+@media (hover: hover) {
+  .ag-rev-mv:hover {
+    background: var(--ag-surface-sunken);
+    border-radius: var(--ag-radius-sm);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-rev-mv,
+  .ag-rev-table tbody tr {
+    transition: none;
+  }
 }
 
 .ag-rev-tone-down {
@@ -1013,7 +1250,7 @@
   gap: 4px;
   width: max-content;
   min-width: 9rem;
-  max-width: min(280px, calc(100% - 16px));
+  max-width: min(300px, calc(100% - 16px));
   padding: 8px 10px;
   background: var(--ag-surface-page);
   border: 1px solid var(--ag-border);
@@ -1071,6 +1308,43 @@
   color: var(--ag-text-primary);
 }
 
+/* The KPIs behind the scores, two to a row: label muted, value bold. */
+.ag-rev-tip-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 12px;
+  margin: 2px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--ag-border);
+}
+
+.ag-rev-tip-kpis > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ag-rev-tip-kpis dt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ag-text-muted);
+}
+
+.ag-rev-tip-kpis dd {
+  flex: none;
+  margin: 0;
+  font-weight: 600;
+  color: var(--ag-text-primary);
+}
+
+.ag-rev-tip-more {
+  margin-top: 2px;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs);
+}
+
 .ag-rev-tip-why {
   margin: 2px 0 0;
   padding: 6px 0 0 1rem;
@@ -1082,9 +1356,10 @@
   margin-top: 2px;
 }
 
-/* The dot's finger-sized hit ring is invisible; the dot itself answers. */
+/* The dot's finger-sized hit ring is invisible; the dot itself answers, and a
+   press opens its details. */
 .ag-rev-dot {
-  cursor: default;
+  cursor: pointer;
   outline: none;
 }
 

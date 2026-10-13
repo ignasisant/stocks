@@ -28,6 +28,7 @@ import { AverageTile, SPARK_WINDOW, Spark } from "./Spark";
 import type {
   History,
   MarketStatus,
+  Mover,
   Movers,
   Performance,
   Position,
@@ -398,7 +399,7 @@ function MoversCard({
   if (!moved) return null;
 
   const held = new Map(positions.map((position) => [position.ticker, position]));
-  const shown = movers[range];
+  const shown = moverSides(movers[range], rows);
   return (
     <Card>
       <div className="hm-card-head">
@@ -418,19 +419,30 @@ function MoversCard({
         </div>
       </div>
       <div className="hm-split">
-        <MoverTable
-          label={t("home.gainers")}
-          rows={shown.gainers.slice(0, rows)}
-          held={held}
-        />
-        <MoverTable
-          label={t("home.losers")}
-          rows={shown.losers.slice(0, rows)}
-          held={held}
-        />
+        <MoverTable label={t("home.gainers")} rows={shown.gainers} held={held} />
+        <MoverTable label={t("home.losers")} rows={shown.losers} held={held} />
       </div>
     </Card>
   );
+}
+
+/**
+ * The rows each side of the movers card draws, in reading order.
+ *
+ * The server sends both sides strongest first — biggest gain, biggest loss —
+ * and the cut keeps the `rows` strongest of each. The losers are then flipped,
+ * mildest first, so the card reads as one list from best to worst: down the
+ * gainers, then down the losers, with the worst loss last (or, stacked on a
+ * phone, at the very bottom).
+ */
+export function moverSides(
+  movers: Pick<Movers, "gainers" | "losers">,
+  rows: number,
+): { gainers: Mover[]; losers: Mover[] } {
+  return {
+    gainers: movers.gainers.slice(0, rows),
+    losers: movers.losers.slice(0, rows).reverse(),
+  };
 }
 
 function MoverTable({

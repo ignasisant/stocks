@@ -16,7 +16,7 @@
 
 import { maybe, sectorKey } from "../sentiment/format";
 import { OWN_LABEL, metric, money, percent, score } from "./format";
-import type { Review, ReviewRow } from "./types";
+import type { Review, ReviewNote, ReviewRow } from "./types";
 
 type T = (key: string, slots?: Record<string, string | number>) => string;
 
@@ -72,6 +72,28 @@ function line(row: ReviewRow, data: Review, t: T, lang: string): string {
   return `- ${head}: ${parts.join(" · ")}`;
 }
 
+/** A book-level note in words, the same on the page and in the prompt. */
+export function noteText(
+  note: ReviewNote,
+  taxCurrency: string,
+  t: T,
+  lang: string,
+): string {
+  const na = t("review.na");
+  const text = t(`review.note_${note.key}`, {
+    count: note.count ?? 0,
+    sector: note.sector
+      ? (maybe(t, `sentiment.sector_${sectorKey(note.sector)}`) ?? note.sector)
+      : "",
+    weight: percent(note.weight, lang) ?? na,
+    amount: money(note.amount, taxCurrency, lang) ?? na,
+    tickers: (note.tickers ?? []).join(", "),
+  });
+  return note.day
+    ? `${text} ${t(`review.note_${note.key}_window`, { date: note.day })}`
+    : text;
+}
+
 /**
  * The prompt. `filter` is the filter already in words ("Technology · 5–10%"),
  * empty when nothing is filtered.
@@ -87,6 +109,9 @@ export function buildPrompt(data: Review, t: T, lang: string, filter = ""): stri
         tax: money(data.plan.tax, data.plan.tax_currency, lang) ?? t("review.na"),
       }),
     );
+    // The book-level notes are the whole book's, filtered or not.
+    for (const note of data.notes ?? [])
+      head.push(noteText(note, data.plan.tax_currency, t, lang));
   }
   const tail = t("review.prompt_ask");
 

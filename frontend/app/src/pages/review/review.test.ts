@@ -10,6 +10,7 @@ import {
   sourcesOf,
   splitCoins,
 } from "./filter";
+import { tipFigures } from "./format";
 import { BUDGET, buildPrompt } from "./prompt";
 import { labelRank, placeLabels } from "./labels";
 import { tipPlace } from "./QualityMap";
@@ -56,6 +57,7 @@ const review = (held: ReviewRow[], candidates: ReviewRow[] = []): Review => ({
   unpriced: 0,
   jurisdiction: "es",
   added: [],
+  notes: [],
 });
 
 describe("review filter", () => {
@@ -187,6 +189,29 @@ describe("review prompt", () => {
     expect(text.trim().endsWith("review.prompt_ask")).toBe(true);
   });
 
+  it("carries the book's notes, a repurchase window included", () => {
+    const text = buildPrompt(
+      {
+        ...review([row({ ticker: "AMD", weight: 0.2 })]),
+        notes: [
+          {
+            key: "tax_offset",
+            count: 1,
+            sector: null,
+            weight: null,
+            amount: 152,
+            tickers: ["INTC"],
+            day: "2026-12-12",
+          },
+        ],
+      },
+      t,
+      "en",
+    );
+    expect(text).toMatch(/review\.note_tax_offset\(1,,.*,INTC\)/);
+    expect(text).toContain("review.note_tax_offset_window(2026-12-12)");
+  });
+
   it("stays under the chat's cap and counts what it left out", () => {
     const many = Array.from({ length: 200 }, (_, i) =>
       row({
@@ -225,6 +250,24 @@ describe("map tooltip placement", () => {
     expect(tipPlace({ cx: 595, cy: 200, r: 4 }, box, map).left).toBe(392);
     const tall = tipPlace({ cx: 300, cy: 90, r: 4 }, { w: 200, h: 250 }, map);
     expect(tall.top).toBe(42); // bottom edge at 300 - 8
+  });
+});
+
+describe("map tooltip figures", () => {
+  it("prints the tooltip's KPIs in order, each in its unit, and drops the missing", () => {
+    const figures = tipFigures(
+      { roic: 0.31, pe_fwd: 22.4, growth_pe: null, fcf_yield: 0.045, moat: 80 },
+      "en",
+    );
+    expect(figures).toEqual([
+      { key: "pe_fwd", value: "22.4x" },
+      { key: "fcf_yield", value: "4.5%" },
+      { key: "roic", value: "31.0%" },
+    ]);
+  });
+
+  it("is empty for a name with no fundamentals", () => {
+    expect(tipFigures({}, "en")).toEqual([]);
   });
 });
 

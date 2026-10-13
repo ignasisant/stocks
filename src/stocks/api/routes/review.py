@@ -37,7 +37,7 @@ from stocks.api import loaders
 from stocks.api.cache import carried
 from stocks.api.deps import Account, Base, reporting_currency
 from stocks.api.jsonsafe import num as _num
-from stocks.api.schemas import Review, ReviewPlan, ReviewRow
+from stocks.api.schemas import Review, ReviewNote, ReviewPlan, ReviewRow
 from stocks.chat import journal
 from stocks.config import Holding, load_watchlist
 from stocks.data import profiles
@@ -53,6 +53,11 @@ MAX_ADDED = 10
 _SYMBOL = re.compile(r"^[A-Z0-9][A-Z0-9.\-=^]{0,19}$")
 _WORKERS = 6
 _NOT_REPLAYED = object()
+# Open losses weighed against the plan's gains, largest first: a replay each.
+MAX_OFFSETS = 6
+# A loss this small, or a saving this small, is not worth a line on the page.
+OFFSET_LOSS = 150.0
+OFFSET_MIN = 25.0
 
 
 def _parse_added(raw: str) -> list[str]:
@@ -152,29 +157,69 @@ def _windows(account, code: str, today: date) -> dict[str, str]:
     return {}
 
 
-def _sale_tax(
+def _order(
     book, ticker: str, weight: float, target: float, price: tuple[float, str] | None
-) -> float | None:
-    """What selling down to `target` adds to this year's tax, or None.
+) -> tuple[str, float, float, str] | None:
+    """Selling down to `target` as the replay takes it: (ticker, shares,
+    price, currency), or None when the book holds none or nothing prices it.
 
-    `book` is the ledger replayed once for every sale on the page; `price` the
-    share price the row's value was built from, so the sale is weighed at the
-    figure the page prints. Only a row the book could not price asks for a
-    quote of its own."""
+    `price` is the share price the row's value was built from, so the sale is
+    weighed at the figure the page prints. Only a row the book could not price
+    asks for a quote of its own."""
     from stocks.chat import whatif
 
+    held = book.held(ticker)
+    quoted = price or (whatif._price(held.ticker) if held is not None else None)
+    if held is None or quoted is None:
+        return None
+    keep = target / weight if weight > 0 and target > 0 else 0.0
+    return held.ticker, held.quantity * (1.0 - keep), quoted[0], quoted[1]
+
+
+def _sale(
+    book, ticker: str, weight: float, target: float, price: tuple[float, str] | None
+):
+    """Selling down to `target`, replayed: the `whatif.Scenario`, or None.
+    `book` is the ledger replayed once for every sale on the page."""
     if book is None:
         return None
     with obs.swallow("api.review_tax"):
-        held = book.held(ticker)
-        quoted = price or (whatif._price(held.ticker) if held is not None else None)
-        if held is None or quoted is None:
+        order = _order(book, ticker, weight, target, price)
+        return book.scenario(*order) if order is not None else None
+    return None
+
+
+def _offset(book, plan: list, losers: list) -> engine.Note | None:
+    """The open losses that would cut the tax the plan's sales add, sold
+    with them: `plan` and `losers` are `_order` tuples, losers largest loss
+    first. Each is replayed on top of the plan and kept only if it saves
+    tax there — on its own lots it may not be a loss at all — then all the
+    kept ones together, since the savings do not add up once the gains are
+    cancelled. None when nothing saves `OFFSET_MIN`."""
+    from stocks.chat.signals import _window_end
+
+    if book is None or not plan or not losers:
+        return None
+    with obs.swallow("api.review_offset"):
+        tax_of = lambda sales: book.after(sales)[1].estimated_tax  # noqa: E731
+        planned = tax_of(plan)
+        if planned <= book.before.estimated_tax:
             return None
-        keep = target / weight if weight > 0 and target > 0 else 0.0
-        sale = book.scenario(
-            held.ticker, held.quantity * (1.0 - keep), quoted[0], quoted[1]
+        kept = [o for o in losers[:MAX_OFFSETS] if tax_of([*plan, o]) < planned]
+        if not kept:
+            return None
+        saving = planned - tax_of([*plan, *kept])
+        if saving < OFFSET_MIN:
+            return None
+        window = book.jurisdiction.repurchase_window or ""
+        clear = _window_end(date.fromisoformat(book.day), window) if window else None
+        return engine.Note(
+            engine.N_TAX_OFFSET,
+            count=len(kept),
+            amount=saving,
+            tickers=tuple(o[0] for o in kept),
+            day=clear.isoformat() if clear else None,
         )
-        return _num(sale.extra_tax) if sale is not None else None
     return None
 
 
@@ -274,25 +319,107 @@ def review(
             "lists": list(dict.fromkeys(entry.tags)),
         }
 
-    held_rows: list[ReviewRow] = []
+    def symbol_of(label: str) -> str:
+        return held_symbols.get(label) or _symbol(label)
+
+    def kind_of(label: str) -> str:
+        return facts.get(symbol_of(label), (None, None))[0] or "stock"
+
+    sales: dict[tuple[str, float], object] = {}
+
+    def sale(label: str, weight: float, target: float):
+        """The replayed sale down to `target`, once per row and target."""
+        nonlocal book
+        key = (label, target)
+        if key not in sales:
+            if book is _NOT_REPLAYED:
+                book = _replay(account)
+            sales[key] = _sale(
+                book, label, weight, target, _book_price(table.loc[label], ccy)
+            )
+        return sales[key]
+
+    def tax_share(label: str, weight: float | None, verdict: engine.Verdict):
+        """A concentration cut's tax over what it raises, both in the
+        jurisdiction's currency; None for any other row."""
+        if verdict.verdict != engine.TRIM or engine.R_CONCENTRATED not in verdict.reasons:
+            return None
+        if weight is None or verdict.target is None or total <= 0:
+            return None
+        scenario = sale(label, weight, verdict.target)
+        if scenario is None:
+            return None
+        extra, raised = _num(scenario.extra_tax), _num(scenario.proceeds)
+        return extra / raised if extra is not None and raised else None
+
+    # Sizing reads the whole book: how many companies set where a
+    # concentration starts, a cut too dear in tax is staged, and what the
+    # sales free is spread — outside any sector already full — before a row
+    # is drawn.
+    sectors = {label: _sector(symbol_of(label)) for label in held_labels}
+    names = sum(engine.company(kind_of(label)) for label in held_labels)
+    notes = engine.book_notes(
+        [
+            (kind_of(label), sectors[label], _num(weights.get(label)))
+            for label in held_labels
+        ]
+    )
+    staged = []
     for label in held_labels:
-        symbol = held_symbols.get(label) or _symbol(label)
-        kind, metrics = facts.get(symbol, (None, None))
+        weight = _num(weights.get(label))
+        verdict = engine.judge_held(
+            facts.get(symbol_of(label), (None, None))[1],
+            weight=weight,
+            risk_share=shares.get(label, shares.get(symbol_of(label))),
+            kind=kind_of(label),
+            names=names,
+        )
+        share = tax_share(label, weight, verdict)
+        staged.append((weight, engine.stage_for_tax(weight, verdict, share)))
+    judged = engine.redeploy(staged, [sectors[label] for label in held_labels])
+
+    # Losses the plan leaves open, against the gains its sales realise: the
+    # names it sells or adds to are not the ones to sell for tax.
+    if any(
+        v.target is not None and w is not None and v.target < w
+        for (w, _), v in zip(staged, judged, strict=True)
+    ):
+        if book is _NOT_REPLAYED:
+            book = _replay(account)
+        plan_orders, losers = [], []
+        for label, (weight, _), verdict in zip(held_labels, staged, judged, strict=True):
+            if book is None or weight is None:
+                continue
+            price = _book_price(table.loc[label], ccy)
+            if verdict.target is not None and verdict.target < weight:
+                order = _order(book, label, weight, verdict.target, price)
+                if order is not None:
+                    plan_orders.append(order)
+            elif (
+                verdict.verdict != engine.ADD
+                and (pnl := _num(table.loc[label].get("pnl"))) is not None
+                and pnl < -OFFSET_LOSS
+            ):
+                order = _order(book, label, weight, 0.0, price)
+                if order is not None:
+                    losers.append((pnl, order))
+        losers.sort(key=lambda pair: pair[0])
+        if offset := _offset(book, plan_orders, [order for _, order in losers]):
+            notes.append(offset)
+
+    held_rows: list[ReviewRow] = []
+    for label, verdict in zip(held_labels, judged, strict=True):
+        symbol = symbol_of(label)
+        kind = facts.get(symbol, (None, None))[0]
         row = table.loc[label]
         weight = _num(weights.get(label))
         risk = shares.get(label, shares.get(symbol))
-        verdict = engine.judge_held(
-            metrics, weight=weight, risk_share=risk, kind=kind or "stock"
-        )
         delta = tax_due = after = None
         if verdict.target is not None and weight is not None and total > 0:
             delta = (verdict.target - weight) * total
             if verdict.target < weight:
-                if book is _NOT_REPLAYED:
-                    book = _replay(account)
-                tax_due = _sale_tax(
-                    book, label, weight, verdict.target, _book_price(row, ccy)
-                )
+                scenario = sale(label, weight, verdict.target)
+                tax_due = _num(scenario.extra_tax) if scenario is not None else None
             else:
                 after = buy_after(label, symbol)
         held_rows.append(
@@ -300,7 +427,7 @@ def review(
                 ticker=label,
                 symbol=symbol,
                 kind=kind,
-                sector=_sector(symbol),
+                sector=sectors[label],
                 held=True,
                 verdict=verdict.verdict,
                 reasons=list(verdict.reasons),
@@ -382,4 +509,8 @@ def review(
         unpriced=int(table["value"].isna().sum()) if not table.empty else 0,
         jurisdiction=code,
         added=added,
+        notes=[
+            ReviewNote(**{**vars(note), "tickers": [symbol_of(t) for t in note.tickers]})
+            for note in notes
+        ],
     )

@@ -16,6 +16,9 @@ still get the order or the invariant wrong, write a skill.
   ([src/stocks/web/onboarding.py](../../src/stocks/web/onboarding.py)) only
   stays true to the app if it is updated when a feature ships: a step in the
   registry, copy in every locale, an entry in `RELEASES`.
+- `fix-review/` — Claude in Chrome writes each browser review as a Claude Doc
+  ("TopStocks · Review · AAAA-MM-DD"); every unchecked item is verified, fixed,
+  committed with its ID and ticked with the hash, or commented and left open.
 
 What does **not** belong here: how the code works (that is what the modules'
 docstrings are for — they are unusually thorough in this repo and are the

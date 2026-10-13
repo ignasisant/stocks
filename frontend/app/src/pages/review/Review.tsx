@@ -5,11 +5,15 @@
  * (`stocks.analysis.review`), each move sized in money, a sale's tax and a
  * buy's repurchase-window date already worked out by the server.
  *
- * Reading order is the point. The map comes first: the whole book and the
- * outside names on one picture, the verdicts readable from where the dots
- * sit before a word is read. Then the plan's four figures say how big the
- * whole thing is, the action cards say what to do, and the full tables come
- * last for whoever wants every row.
+ * Reading order is the point. The plan comes first: the cash the moves need
+ * or free, its tax, and the moves themselves, one row each — the answer to
+ * the page's question before the evidence for it. Then the map: the whole
+ * book and the outside names on one picture, the verdicts readable from
+ * where the dots sit. The full tables come last for whoever wants every row.
+ *
+ * The three sections draw the same names, and one name pointed at in any of
+ * them lights in the others (`focus.tsx`), so a dot is found in the table
+ * and a row on the map without reading for it.
  *
  * Outside names are the watchlist's unheld tickers plus the ones typed into
  * the box at the top, which ride `?add=` and are written nowhere — following a
@@ -35,11 +39,11 @@ import { useRoute } from "../../shell/router";
 import { useCurrency } from "../../shell/session";
 import { TickerCell } from "../../shell/tickers";
 import { useApi } from "../../shell/useApi";
-import { Kpi, KpiGrid } from "../../ui/Kpi";
-import { Actions } from "./Actions";
+import { Plan } from "./Actions";
 import { AddTickers } from "./AddTickers";
 import { Filters, useFilterWords } from "./Filters";
 import { QualityMap } from "./QualityMap";
+import { FocusProvider } from "./focus";
 import { CandidateTable, HeldTable } from "./Tables";
 import {
   CLEAR,
@@ -50,9 +54,9 @@ import {
   parseFilter,
   splitCoins,
 } from "./filter";
-import { money, parseAdded, percent } from "./format";
-import { buildPrompt } from "./prompt";
-import type { Review, ReviewRow } from "./types";
+import { parseAdded, percent } from "./format";
+import { buildPrompt, noteText } from "./prompt";
+import type { Review, ReviewNote, ReviewRow } from "./types";
 import "./review.css";
 
 export default function Page() {
@@ -139,12 +143,9 @@ function Screen({
   onFilter: (next: Filter) => void;
 }) {
   const t = useT();
-  const lang = useLang();
-  const na = t("review.na");
   const [all, coins] = splitCoins(read);
   const data = applyFilter(all, filter);
   const plan = data.plan;
-  const net = plan.buys - plan.sells;
   const empty = all.held.length === 0 && all.candidates.length === 0;
   const none = data.held.length === 0 && data.candidates.length === 0;
 
@@ -159,7 +160,7 @@ function Screen({
   }
 
   return (
-    <>
+    <FocusProvider>
       <Filters
         data={all}
         shown={data}
@@ -184,34 +185,15 @@ function Screen({
         </div>
       ) : null}
 
-      <QualityMap held={data.held} candidates={data.candidates} />
+      <Notes notes={read.notes ?? []} taxCurrency={plan.tax_currency} />
 
-      {data.held.length > 0 && (
-        <KpiGrid>
-          <Kpi
-            label={t("review.plan_sells")}
-            value={money(plan.sells, data.base, lang) ?? na}
-            help={t("review.plan_sells_help")}
-          />
-          <Kpi
-            label={t("review.plan_buys")}
-            value={money(plan.buys, data.base, lang) ?? na}
-            help={t("review.plan_buys_help")}
-          />
-          <Kpi
-            label={t("review.plan_net")}
-            value={money(net, data.base, lang, true) ?? na}
-            help={t("review.plan_net_help")}
-          />
-          <Kpi
-            label={t("review.plan_tax")}
-            value={money(plan.tax, plan.tax_currency, lang) ?? na}
-            help={t("review.plan_tax_help", { code: data.jurisdiction })}
-          />
-        </KpiGrid>
-      )}
+      {data.held.length > 0 && <Plan data={data} />}
 
-      {data.held.length > 0 && <Actions data={data} />}
+      <QualityMap
+        held={data.held}
+        candidates={data.candidates}
+        taxCurrency={plan.tax_currency}
+      />
 
       {data.held.length > 0 && (
         <section className="ag-rev-card">
@@ -241,7 +223,26 @@ function Screen({
       ) : null}
 
       <p className="ag-rev-caption ag-rev-disclaimer">{t("review.disclaimer")}</p>
-    </>
+    </FocusProvider>
+  );
+}
+
+/** What the read says about the whole book: too few companies, one sector
+ *  carrying it, coins past a quarter, losses that would cut the plan's tax.
+ *  Unfiltered — a note is about the book, not about what the filters leave
+ *  on screen. */
+function Notes({ notes, taxCurrency }: { notes: ReviewNote[]; taxCurrency: string }) {
+  const t = useT();
+  const lang = useLang();
+  if (notes.length === 0) return null;
+  return (
+    <div className="ag-rev-card">
+      {notes.map((note) => (
+        <p key={`${note.key}-${note.sector ?? ""}`} className="ag-rev-caption">
+          {noteText(note, taxCurrency, t, lang)}
+        </p>
+      ))}
+    </div>
   );
 }
 
