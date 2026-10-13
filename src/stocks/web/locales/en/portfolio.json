@@ -37,6 +37,8 @@
   "portfolio.sort_desc": "Highest first",
   "portfolio.sort_asc": "Lowest first",
   "portfolio.sort_az": "A–Z",
+  "portfolio.sort_newest": "Newest first",
+  "portfolio.sort_oldest": "Oldest first",
   "portfolio.sort_za": "Z–A",
   "portfolio.sort_day_pct": "Today (%)",
   "portfolio.sort_pnl_pct": "Total P/L (%)",
