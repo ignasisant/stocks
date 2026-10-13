@@ -130,7 +130,7 @@ export function tone(value: Maybe): "up" | "down" | "flat" {
  * The flag for a jurisdiction code, built from the code rather than a table,
  * including the one code that is not ISO 3166-1 alpha-2.
  */
-export function flagOf(code: string): string {
+function flagOf(code: string): string {
   const alpha2 = code.toUpperCase() === "UK" ? "GB" : code.toUpperCase();
   if (alpha2.length !== 2 || !/^[A-Z]{2}$/.test(alpha2)) return "";
   return [...alpha2]
