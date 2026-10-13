@@ -41,10 +41,14 @@ function parts(iso: string): [number, number, number] {
   return [Number(year), Number(month), Number(day)];
 }
 
-/** "Sep 18, 2026", off the catalog's month keys. */
+/** "Sep 18, 2026" / "18 Sep 2026": the month keys and the order are the locale's. */
 export function longDate(iso: string, t: T): string {
   const [year, month, day] = parts(iso);
-  return `${t(`earnings.mon_${month}`)} ${String(day).padStart(2, "0")}, ${year}`;
+  return t("earnings.date_long", {
+    month: t(`earnings.mon_${month}`),
+    day,
+    year,
+  });
 }
 
 /**
