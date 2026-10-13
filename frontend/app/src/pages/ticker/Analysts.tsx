@@ -85,7 +85,9 @@ export function AnalystsSection({ data }: { data: Analysts }) {
                 }
               : null
           }
-        />
+        >
+          {known(data.rating_mean) ? <RatingScale mean={data.rating_mean} /> : null}
+        </Kpi>
         <Kpi label={t("ticker.analysts_count")} value={String(data.analysts)} />
         {targets ? (
           <>
@@ -121,6 +123,25 @@ export function AnalystsSection({ data }: { data: Analysts }) {
         <Revisions rows={data.revisions} currency={data.currency} />
       ) : null}
     </Card>
+  );
+}
+
+// ------------------------------------------------------------- rating scale
+
+/** The 1–5 mean on its own track, buy to sell, so "2.5 / 5" says which way. */
+function RatingScale({ mean }: { mean: number }) {
+  const t = useT();
+  const at = `${((Math.min(5, Math.max(1, mean)) - 1) / 4) * 100}%`;
+  return (
+    <div className="tk-scale">
+      <div className="tk-scale-track" aria-hidden="true">
+        <span className="tk-scale-dot" style={{ left: at }} />
+      </div>
+      <div className="tk-scale-ends">
+        <span>{t("ticker.analysts_strong_buy")}</span>
+        <span>{t("ticker.analysts_strong_sell")}</span>
+      </div>
+    </div>
   );
 }
 

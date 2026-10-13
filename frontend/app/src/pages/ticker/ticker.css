@@ -1352,3 +1352,39 @@
   height: 100%;
   background: var(--ag-brand-accent);
 }
+
+/* Analyst rating: the 1-5 mean on a buy-to-sell track. */
+.tk-scale {
+  margin-top: 6px;
+}
+
+.tk-scale-track {
+  position: relative;
+  height: 6px;
+  margin: 4px 5px;
+  border-radius: var(--ag-radius-pill);
+  background: linear-gradient(
+    90deg,
+    var(--ag-up),
+    var(--ag-surface-page) 50%,
+    var(--ag-down)
+  );
+}
+
+.tk-scale-dot {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ag-text-primary);
+  border: 2px solid var(--ag-surface-page);
+  transform: translate(-50%, -50%);
+}
+
+.tk-scale-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--ag-text-muted);
+}
