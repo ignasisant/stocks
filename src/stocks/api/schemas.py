@@ -2045,6 +2045,10 @@ class Sectors(BaseModel):
 
 class CohortRow(BaseModel):
     ticker: str
+    currency: str | None = Field(
+        default=None,
+        description="Listing currency of the money metrics (price, market cap, EV, FCF).",
+    )
     score: float | None = Field(
         default=None, description="Percentile rank in this cohort, 0-1; null if unranked."
     )

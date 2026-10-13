@@ -14,6 +14,7 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 import { get } from "./api";
+import { setNumberLang } from "./numbers";
 import { useApi } from "./useApi";
 
 type Catalog = { lang: string; strings: Record<string, string> };
@@ -99,5 +100,8 @@ export function Translations({
   // to itself, which is ugly and still navigable. Blocking here would turn a
   // CDN hiccup into a white screen.
   const value = catalog.state === "loaded" ? catalog.data : { lang, strings: {} };
+  // Published before any child renders, so number helpers without a `lang`
+  // argument spell figures in the same language as the words around them.
+  setNumberLang(value.lang);
   return <Strings.Provider value={value}>{children}</Strings.Provider>;
 }

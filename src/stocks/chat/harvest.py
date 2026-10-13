@@ -35,6 +35,7 @@ from stocks import obs
 from stocks.chat import a2ui
 from stocks.chat.signals import HARVEST_MIN, _window_end
 from stocks.chat.whatif import Replay, _money
+from stocks.formatting import bound
 
 SURFACE_ID = "harvest"
 # Candidates replayed, largest loss first: each is a replay of the ledger.
@@ -99,33 +100,34 @@ class Harvest:
     def saving(self) -> float:
         return self.tax - self.tax_all
 
-    def line(self) -> str:
+    def line(self, lang: str = "en") -> str:
         """The prompt's paragraph: figures only, and where they came from."""
+        n, p = bound(lang)
         c = self.currency
         rows = [
-            f"- realised so far this tax year: gains {self.gains:,.2f} {c}, "
-            f"deductible losses {self.losses:,.2f} {c}; estimated tax "
-            f"{self.tax:,.2f} {c}",
+            f"- realised so far this tax year: gains {n(self.gains, 2)} {c}, "
+            f"deductible losses {n(self.losses, 2)} {c}; estimated tax "
+            f"{n(self.tax, 2)} {c}",
         ]
         if not self.candidates:
-            rows.append(f"- no open position is more than {HARVEST_MIN:,.0f} {c} "
+            rows.append(f"- no open position is more than {n(HARVEST_MIN, 0)} {c} "
                         "under its cost: there is no loss worth realising")
         else:
             rows.append("- open losses selling the whole holding today would "
                         "realise, each on its own:")
             for x in self.candidates:
-                row = (f"  - {x.ticker}: loss {x.loss:,.2f} {c}, this year's tax "
-                       f"{-x.saving:+,.2f} {c}")
+                row = (f"  - {x.ticker}: loss {n(x.loss, 2)} {c}, this year's tax "
+                       f"{n(-x.saving, 2, signed=True)} {c}")
                 if x.blocked > 0:
-                    row += (f" ({x.blocked:,.2f} {c} of the loss is deferred: "
+                    row += (f" ({n(x.blocked, 2)} {c} of the loss is deferred: "
                             "shares of it were bought inside the repurchase window)")
                 rows.append(row)
             years = ("indefinitely" if self.carry_years is None
                      else f"for {self.carry_years} years")
             rows.append(
-                f"- all of them sold together: tax {self.tax:,.2f} -> "
-                f"{self.tax_all:,.2f} {c} (saving {self.saving:,.2f} {c}); "
-                + (f"{self.carry:,.2f} {c} of net loss left to carry forward {years}"
+                f"- all of them sold together: tax {n(self.tax, 2)} -> "
+                f"{n(self.tax_all, 2)} {c} (saving {n(self.saving, 2)} {c}); "
+                + (f"{n(self.carry, 2)} {c} of net loss left to carry forward {years}"
                    if self.carry > 0 and self.carry_years != 0
                    else "no net loss left over")
             )

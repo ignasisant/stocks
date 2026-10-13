@@ -41,6 +41,7 @@ import "../pages/ticker/ticker.css";
 import { useLang } from "../shell/i18n";
 import { chart as palette } from "../shell/theme";
 import { useWidth } from "../shell/useWidth";
+import { num } from "../shell/numbers";
 
 export type Line = {
   symbol: string;
@@ -61,18 +62,15 @@ const FALLBACK = 360;
 const time = (stamp: string) =>
   Date.parse(stamp.length > 10 ? stamp : `${stamp}T00:00`);
 
-/** A close as the server's figures print it: 1.1249, 182.50, 95,120. */
+/** A close in the account's language: 1,1249, 182,50, 95.120. */
 export function price(value: number): string {
   const size = Math.abs(value);
   const digits = size < 10 ? 4 : size < 10_000 ? 2 : 0;
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
+  return num(value, digits);
 }
 
 const change = (value: number, digits = 1) =>
-  `${value >= 0 ? "+" : ""}${(value * 100).toFixed(digits)}%`;
+  `${value >= 0 ? "+" : ""}${num(value * 100, digits)}%`;
 
 /** An axis label: as few decimals as the step between gridlines needs. */
 function axis(lo: number, hi: number, rebased: boolean) {
@@ -81,11 +79,7 @@ function axis(lo: number, hi: number, rebased: boolean) {
   const digits = Math.max(0, Math.ceil(-Math.log10(rebased ? step * 100 : step)));
   return rebased
     ? (value: number) => change(value, digits)
-    : (value: number) =>
-        value.toLocaleString("en-US", {
-          minimumFractionDigits: digits,
-          maximumFractionDigits: digits,
-        });
+    : (value: number) => num(value, digits);
 }
 
 function dater(lang: string, first: string, last: string) {

@@ -62,7 +62,7 @@ from typing import Final, Literal
 
 from stocks import obs
 from stocks.chat import daily_book, engine, memory, signals, structured
-from stocks.formatting import finite
+from stocks.formatting import finite, fmt_num
 
 # Where the day turns over, in the reader's local time. 09:00 CET is after the
 # US premarket has been quoting for hours and just before the European open —
@@ -1373,10 +1373,10 @@ def _short_date(iso: str | None) -> str:
         return text
 
 
-def _money(amount: float, currency: str) -> str:
+def _money(amount: float, currency: str, lang: str = "en") -> str:
     from stocks.config import currency_symbol
 
-    return f"{currency_symbol(currency)}{amount:+,.0f}"
+    return f"{currency_symbol(currency)}{fmt_num(amount, 0, lang, signed=True)}"
 
 
 def _when(days, lang: str) -> str:
@@ -1397,13 +1397,13 @@ def _bank(action: dict, lang: str) -> str:
     return translate(f"home.daily_bank_{action.get('bank') or 'fed'}", lang)
 
 
-def _rate(action: dict) -> str:
+def _rate(action: dict, lang: str = "en") -> str:
     """The policy rate as printed: the Fed's range, the ECB's single rate."""
     rate = float(action.get("rate") or 0.0)
     low = action.get("rate_low")
     if low is not None and float(low) != rate:
-        return f"{float(low):.2f}–{rate:.2f}%"
-    return f"{rate:.2f}%"
+        return f"{fmt_num(float(low), 2, lang)}–{fmt_num(rate, 2, lang)}%"
+    return f"{fmt_num(rate, 2, lang)}%"
 
 
 def _deadline(action: dict, lang: str) -> str:
@@ -1467,15 +1467,15 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
     def money(value) -> str:
         """An amount with no sign: these lines say "a 2,400 loss", and a "+"
         in front of a loss reads as the opposite of what it is."""
-        return _money(abs(float(value or 0.0)), ccy).replace("+", "")
+        return _money(abs(float(value or 0.0)), ccy, lang).replace("+", "")
 
     if kind in (signals.ALERT_HIT, signals.ALERT_NEAR):
         rule = translate(f"home.daily_rule_{action.get('rule') or 'below'}", lang)
         return translate(
             key, lang, ticker=ticker, rule=rule,
-            level=f"{float(action.get('level') or 0):,.2f}",
-            price=f"{float(action.get('price') or 0):,.2f}",
-            gap=f"{float(action.get('gap_pct') or 0):.1f}%",
+            level=fmt_num(float(action.get('level') or 0), 2, lang),
+            price=fmt_num(float(action.get('price') or 0), 2, lang),
+            gap=f"{fmt_num(float(action.get('gap_pct') or 0), 1, lang)}%",
         )
     if kind == signals.EARNINGS:
         return translate(
@@ -1488,13 +1488,14 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
             return translate(
                 f"{key}_plain", lang, ticker=ticker,
                 date=_short_date(action.get("date")),
-                eps=f"{float(action.get('reported_eps') or 0):,.2f}",
+                eps=fmt_num(float(action.get('reported_eps') or 0), 2, lang),
             )
         return translate(
             key, lang, ticker=ticker, date=_short_date(action.get("date")),
-            eps=f"{float(action.get('reported_eps') or 0):,.2f}",
-            est=f"{float(action.get('eps_estimate') or 0):,.2f}",
-            surprise=f"{float(action.get('surprise_pct') or 0):+.1f}%",
+            eps=fmt_num(float(action.get('reported_eps') or 0), 2, lang),
+            est=fmt_num(float(action.get('eps_estimate') or 0), 2, lang),
+            surprise=f"{fmt_num(float(action.get('surprise_pct') or 0), 1, lang,
+                signed=True)}%",
             verdict=translate(
                 "home.daily_beat" if action.get("beat") else "home.daily_missed", lang
             ),
@@ -1503,14 +1504,14 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
         return translate(
             key, lang, bank=_bank(action, lang),
             when=_when(action.get("in_days"), lang),
-            date=_short_date(action.get("date")), rate=_rate(action),
+            date=_short_date(action.get("date")), rate=_rate(action, lang),
         )
     if kind == signals.MACRO_RESULT:
         decision = str(action.get("decision") or "hold")
         return translate(
             f"{key}_{decision}", lang, bank=_bank(action, lang),
             bp=abs(int(action.get("change_bp") or 0)),
-            rate=_rate(action), date=_short_date(action.get("date")),
+            rate=_rate(action, lang), date=_short_date(action.get("date")),
         )
     if kind == signals.TAX_DEADLINE:
         return translate(
@@ -1522,7 +1523,7 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
         line = translate(
             key, lang, when=_when(action.get("days_left"), lang),
             end=_short_date(action.get("end")),
-            gain=_money(float(action.get("gain_ytd") or 0.0), ccy),
+            gain=_money(float(action.get("gain_ytd") or 0.0), ccy, lang),
         )
         if float(action.get("open_losses") or 0) >= signals.HARVEST_MIN:
             line += " " + translate(
@@ -1534,8 +1535,8 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
         return translate(
             key, lang, gain=money(action.get("gain_ytd")),
             room=money(action.get("room")),
-            rate=f"{float(action.get('rate_pct') or 0):.0f}%",
-            next=f"{float(action.get('next_rate_pct') or 0):.0f}%",
+            rate=f"{fmt_num(float(action.get('rate_pct') or 0), 0, lang)}%",
+            next=f"{fmt_num(float(action.get('next_rate_pct') or 0), 0, lang)}%",
         )
     if kind == signals.REPURCHASE_CLEAR:
         return translate(
@@ -1561,19 +1562,19 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
         # Unsigned: the sentence already says "under your cost".
         return translate(
             key, lang, ticker=ticker,
-            pct=f"{abs(float(action.get('pnl_pct') or 0)):.1f}%",
+            pct=f"{fmt_num(abs(float(action.get('pnl_pct') or 0)), 1, lang)}%",
             amount=money(action.get("pnl")),
         )
     if kind == signals.CONCENTRATION:
         return translate(
             key, lang, ticker=ticker,
-            weight=f"{float(action.get('weight_pct') or 0):.0f}%",
+            weight=f"{fmt_num(float(action.get('weight_pct') or 0), 0, lang)}%",
         )
     if kind == signals.LOW_52W:
         return translate(
             key, lang, ticker=ticker,
-            price=f"{float(action.get('price') or 0):,.2f}",
-            gap=f"{float(action.get('gap_pct') or 0):.1f}%",
+            price=fmt_num(float(action.get('price') or 0), 2, lang),
+            gap=f"{fmt_num(float(action.get('gap_pct') or 0), 1, lang)}%",
         )
     if kind == signals.MARKET:
         # Breadth rides the same line when it could be read: the index level
@@ -1582,7 +1583,7 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
         line = translate(
             key, lang, index=action.get("index") or "",
             trend=translate(f"home.daily_trend_{action.get('trend')}", lang),
-            dip=f"{abs(float(action.get('from_high_pct') or 0)):.1f}%",
+            dip=f"{fmt_num(abs(float(action.get('from_high_pct') or 0)), 1, lang)}%",
         )
         if action.get("sectors_read"):
             line += " " + translate(
@@ -1602,30 +1603,34 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
         line = translate(
             key, lang,
             sector=translate(slug, lang) if has(slug) else sector,
-            own=f"{float(action.get('own_pct') or 0):.0f}%",
-            index=f"{float(action.get('index_pct') or 0):.0f}%",
-            tilt=f"{float(action.get('tilt_pp') or 0):+.0f}",
+            own=f"{fmt_num(float(action.get('own_pct') or 0), 0, lang)}%",
+            index=f"{fmt_num(float(action.get('index_pct') or 0), 0, lang)}%",
+            tilt=fmt_num(float(action.get('tilt_pp') or 0), 0, lang, signed=True),
         )
         excess = action.get("excess_month_pct")
         if excess is not None:
             line += " " + translate(
                 "home.daily_act_sector_tilt_excess", lang,
-                excess=f"{float(excess):+.1f}%",
+                excess=f"{fmt_num(float(excess), 1, lang, signed=True)}%",
             )
         return line
     if kind == signals.VS_BENCH:
         return translate(
             key, lang, index=action.get("index") or "",
-            book=f"{float(action.get('book_month_pct') or 0):+.1f}%",
-            bench=f"{float(action.get('index_month_pct') or 0):+.1f}%",
-            gap=f"{abs(float(action.get('gap_pp') or 0)):.1f}",
+            book=f"{fmt_num(float(action.get('book_month_pct') or 0), 1, lang,
+                signed=True)}%",
+            bench=f"{fmt_num(float(action.get('index_month_pct') or 0), 1, lang,
+                signed=True)}%",
+            gap=fmt_num(abs(float(action.get('gap_pp') or 0)), 1, lang),
         )
     if kind == signals.FX:
         return translate(
             key, lang, currency=action.get("currency") or "",
-            share=f"{float(action.get('share_pct') or 0):.0f}%",
-            move=f"{float(action.get('move_month_pct') or 0):+.1f}%",
-            drag=f"{float(action.get('drag_month_pct') or 0):+.1f}%",
+            share=f"{fmt_num(float(action.get('share_pct') or 0), 0, lang)}%",
+            move=f"{fmt_num(float(action.get('move_month_pct') or 0), 1, lang,
+                signed=True)}%",
+            drag=f"{fmt_num(float(action.get('drag_month_pct') or 0), 1, lang,
+                signed=True)}%",
         )
     return ""
 
@@ -1693,8 +1698,8 @@ def computed(facts: dict, lang: str, day: date) -> DailyAction:
             # last completed session's. Same rule the model is held to.
             bullets.append(tr(
                 "day" if session.get("is_today", True) else "day_session",
-                pct=f"{change['pct']:+.2f}%",
-                amount=_money(change.get("amount") or 0.0, ccy),
+                pct=f"{fmt_num(change['pct'], 2, lang, signed=True)}%",
+                amount=_money(change.get("amount") or 0.0, ccy, lang),
                 date=_short_date(session.get("date")),
             ))
         soon = facts.get("earnings_soon") or []
@@ -1744,11 +1749,14 @@ def _book_label(facts: dict, lang: str) -> str:
     if own is None:
         return ""
     if index.get("day_pct") is None:
-        return translate("home.daily_short_book_alone", lang, pct=f"{own:+.2f}%")
+        return translate(
+            "home.daily_short_book_alone", lang,
+            pct=f"{fmt_num(own, 2, lang, signed=True)}%",
+        )
     return translate(
-        "home.daily_short_book", lang, pct=f"{own:+.2f}%",
+        "home.daily_short_book", lang, pct=f"{fmt_num(own, 2, lang, signed=True)}%",
         index=index.get("name") or daily_book.INDEX_NAME,
-        bench=f"{float(index['day_pct']):+.2f}%",
+        bench=f"{fmt_num(float(index['day_pct']), 2, lang, signed=True)}%",
     )
 
 
@@ -2094,7 +2102,7 @@ def _detail_line(action: dict, source: dict, lang: str, ccy: str) -> str:
     key = f"home.daily_more_{kind}"
 
     def money(value) -> str:
-        return _money(abs(float(value or 0.0)), ccy).replace("+", "")
+        return _money(abs(float(value or 0.0)), ccy, lang).replace("+", "")
 
     def num(name: str, spec: str = ",.2f") -> str:
         return format(float(action.get(name) or 0.0), spec)
@@ -2104,12 +2112,12 @@ def _detail_line(action: dict, source: dict, lang: str, ccy: str) -> str:
             key, lang, ticker=ticker,
             rule=translate(f"home.daily_rule_{action.get('rule') or 'below'}", lang),
             level=num("level"), price=num("price"),
-            gap=f"{float(action.get('gap_pct') or 0):.1f}%",
+            gap=f"{fmt_num(float(action.get('gap_pct') or 0), 1, lang)}%",
         )
     if kind == signals.HARVEST:
         text = translate(
             key, lang, ticker=ticker, loss=money(action.get("loss")),
-            pct=f"{float(action.get('pnl_pct') or 0):+.1f}%",
+            pct=f"{fmt_num(float(action.get('pnl_pct') or 0), 1, lang, signed=True)}%",
             gain=money(action.get("gain_ytd")), offset=money(action.get("offset")),
         )
         window = str(action.get("repurchase_window") or "")
@@ -2130,21 +2138,21 @@ def _detail_line(action: dict, source: dict, lang: str, ccy: str) -> str:
                 "home.daily_more_earnings_result_revenue", lang,
                 revenue=compact_money(float(source["revenue"]), symbol),
                 yoy=(
-                    f"{float(source['revenue_yoy_pct']):+.1f}%"
+                    f"{fmt_num(float(source['revenue_yoy_pct']), 1, lang, signed=True)}%"
                     if source.get("revenue_yoy_pct") is not None else "—"
                 ),
             )
         if source.get("operating_margin_pct") is not None:
             text += " " + translate(
                 "home.daily_more_earnings_result_margin", lang,
-                margin=f"{float(source['operating_margin_pct']):.1f}%",
+                margin=f"{fmt_num(float(source['operating_margin_pct']), 1, lang)}%",
             )
         return text + " " + translate(key, lang)
     if kind == signals.MACRO_EVENT:
         text = translate(
             key, lang, bank=_bank(action, lang),
             when=_when(action.get("in_days"), lang),
-            date=_short_date(action.get("date")), rate=_rate(action),
+            date=_short_date(action.get("date")), rate=_rate(action, lang),
         )
         return _with_history(text, source, lang)
     if kind == signals.MACRO_RESULT:
@@ -2166,14 +2174,14 @@ def _detail_line(action: dict, source: dict, lang: str, ccy: str) -> str:
         return translate(
             key, lang, end=_short_date(action.get("end")),
             when=_when(action.get("days_left"), lang),
-            gain=_money(float(action.get("gain_ytd") or 0.0), ccy),
+            gain=_money(float(action.get("gain_ytd") or 0.0), ccy, lang),
             losses=money(action.get("open_losses")),
             gains=money(action.get("open_gains")),
         )
     if kind == signals.TAX_BRACKET:
         return translate(
-            key, lang, rate=f"{float(action.get('rate_pct') or 0):.0f}%",
-            next=f"{float(action.get('next_rate_pct') or 0):.0f}%",
+            key, lang, rate=f"{fmt_num(float(action.get('rate_pct') or 0), 0, lang)}%",
+            next=f"{fmt_num(float(action.get('next_rate_pct') or 0), 0, lang)}%",
             threshold=money(action.get("threshold")),
             gain=money(action.get("gain_ytd")), room=money(action.get("room")),
         )
@@ -2186,18 +2194,18 @@ def _detail_line(action: dict, source: dict, lang: str, ccy: str) -> str:
     if kind == signals.DRAWDOWN:
         return translate(
             key, lang, ticker=ticker,
-            pct=f"{float(action.get('pnl_pct') or 0):+.1f}%",
+            pct=f"{fmt_num(float(action.get('pnl_pct') or 0), 1, lang, signed=True)}%",
             amount=money(action.get("pnl")),
         )
     if kind == signals.CONCENTRATION:
         return translate(
             key, lang, ticker=ticker,
-            weight=f"{float(action.get('weight_pct') or 0):.0f}%",
+            weight=f"{fmt_num(float(action.get('weight_pct') or 0), 0, lang)}%",
         )
     if kind == signals.LOW_52W:
         return translate(
             key, lang, ticker=ticker, price=num("price"),
-            gap=f"{float(action.get('gap_pct') or 0):.1f}%",
+            gap=f"{fmt_num(float(action.get('gap_pct') or 0), 1, lang)}%",
         )
     if kind in (signals.MARKET, signals.SECTOR_TILT, signals.VS_BENCH, signals.FX):
         return _action_line(action, lang, ccy) + " " + translate(key, lang)
@@ -2215,8 +2223,8 @@ def _with_history(text: str, source: dict, lang: str) -> str:
     return text + " " + translate(
         "home.daily_more_rate_history", lang,
         date=_short_date(last.get("date")),
-        before=f"{float(before.get('rate') or 0):.2f}%",
-        rate=f"{float(last.get('rate') or 0):.2f}%",
+        before=f"{fmt_num(float(before.get('rate') or 0), 2, lang)}%",
+        rate=f"{fmt_num(float(last.get('rate') or 0), 2, lang)}%",
     )
 
 

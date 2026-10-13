@@ -33,6 +33,7 @@ import {
   toneClass,
 } from "./format";
 import type { TrendBlock, TrendRow, TrendTables } from "./types";
+import { num } from "../../shell/numbers";
 
 /** Who to name when a block cannot be drawn. Not translated: they are names. */
 const FRED = "FRED";
@@ -338,8 +339,7 @@ function cells(t: T, block: TrendBlock, row: TrendRow): Cell[] {
         // Percentage POINTS, and signed: a tilt is the distance between two
         // shares, and writing it as a percentage invites reading 8pp of the
         // book as 8% of it.
-        text:
-          tilt === null ? NA : `${tilt >= 0 ? "+" : ""}${(tilt * 100).toFixed(1)}pp`,
+        text: tilt === null ? NA : `${tilt >= 0 ? "+" : ""}${num(tilt * 100, 1)}pp`,
         tone: 0,
       },
     ];
@@ -377,8 +377,8 @@ function cells(t: T, block: TrendBlock, row: TrendRow): Cell[] {
       now === null
         ? NA
         : then === null
-          ? `p${now.toFixed(0)}`
-          : `p${now.toFixed(0)} (${then.toFixed(0)})`;
+          ? `p${num(now, 0)}`
+          : `p${num(now, 0)} (${num(then, 0)})`;
     out.push({ label: t("sentiment.col_pctl"), text, tone: 0 });
   }
   return out;
@@ -523,11 +523,11 @@ function Table({
       : "",
     conditions && conditions.value !== null
       ? t("sentiment.nfci_note", {
-          value: conditions.value.toFixed(2),
+          value: num(conditions.value, 2),
           change:
             conditions.changes.quarter === undefined
               ? NA
-              : conditions.changes.quarter.toFixed(2),
+              : num(conditions.changes.quarter, 2),
         })
       : "",
   ].filter(Boolean);

@@ -24,6 +24,7 @@ import { Kpi, bandTone } from "../../ui/Kpi";
 import { DASH, compactMoney, percent, signedPercent, type Translate } from "./format";
 import { Banner, Card, Metric, Metrics, Note } from "./ui";
 import type { Banded, CryptoCycle, CryptoHolding, CryptoPositioning } from "./types";
+import { num } from "../../shell/numbers";
 
 // ------------------------------------------------------------------ the bands
 // Switches of literal keys, so the catalog scan sees every one; a band this
@@ -104,11 +105,11 @@ function sizingLine(t: Translate, sizing: CryptoHolding["sizing"]): string {
 
 /** A ratio like the Mayer multiple: "1.42×". */
 const times = (value: number | null | undefined) =>
-  value === null || value === undefined ? DASH : `${value.toFixed(2)}×`;
+  value === null || value === undefined ? DASH : `${num(value, 2)}×`;
 
 /** A funding rate per eight hours: four places, it lives around 0.0100%. */
 const rate = (value: number | null | undefined) =>
-  value === null || value === undefined ? DASH : `${(value * 100).toFixed(4)}%`;
+  value === null || value === undefined ? DASH : `${num(value * 100, 4)}%`;
 
 /** A relative return's tone: beat is green, lagged red — a fact, not a band. */
 const signTone = (value: number | null | undefined) =>

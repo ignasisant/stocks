@@ -11,6 +11,7 @@
 
 import { useLang, useT } from "../../shell/i18n";
 import type { Issue } from "./api";
+import { formatter } from "../../shell/numbers";
 
 export function useVocabulary() {
   const t = useT();
@@ -48,14 +49,14 @@ export function useVocabulary() {
   const issues = (list: Issue[]) => list.map(issue).join("; ");
 
   const num = (value: number, places: number) =>
-    new Intl.NumberFormat(lang, {
+    formatter(lang, {
       minimumFractionDigits: places,
       maximumFractionDigits: places,
     }).format(value);
 
   /** A fraction as a signed percentage, one place: 0.1234 -> "+12,3 %". */
   const pct = (value: number) =>
-    new Intl.NumberFormat(lang, {
+    formatter(lang, {
       style: "percent",
       minimumFractionDigits: 1,
       maximumFractionDigits: 1,
@@ -83,13 +84,13 @@ export function useVocabulary() {
   const money = (value: number, currency: string) => {
     const shape = { minimumFractionDigits: 0, maximumFractionDigits: 0 };
     try {
-      return new Intl.NumberFormat(lang, {
+      return formatter(lang, {
         style: "currency",
         currency,
         ...shape,
       }).format(value);
     } catch {
-      return `${new Intl.NumberFormat(lang, shape).format(value)} ${currency}`;
+      return `${formatter(lang, shape).format(value)} ${currency}`;
     }
   };
 

@@ -24,6 +24,7 @@ import pandas as pd
 
 from stocks import obs
 from stocks.chat import a2ui
+from stocks.formatting import bound
 
 SURFACE_ID = "allocation"
 DIMENSIONS = ("position", "sector", "country", "currency")
@@ -104,16 +105,17 @@ class Mix:
     def dimensions(self) -> list[str]:
         return [d for d in DIMENSIONS if self.groups.get(d)]
 
-    def line(self) -> str:
+    def line(self, lang: str = "en") -> str:
         """The prompt's paragraph: the splits and the concentration, quoted."""
+        n, p = bound(lang)
         rows = []
         for d in self.dimensions:
             slices = self.groups[d]
-            shown = ", ".join(f"{label} {weight:.1%}"
+            shown = ", ".join(f"{label} {p(weight, 1)}"
                               for label, weight in slices[:PROMPT_SLICES])
             rest = sum(weight for _, weight in slices[PROMPT_SLICES:])
             if rest > 0:
-                shown += f", {len(slices) - PROMPT_SLICES} more together {rest:.1%}"
+                shown += f", {len(slices) - PROMPT_SLICES} more together {p(rest, 1)}"
             rows.append(f"- by {d}: {shown}")
         return (
             "\n\n---\nThe app draws the reader's allocation as a donut under your "
@@ -124,8 +126,8 @@ class Mix:
             "bars of symbols; refer to the donut shown, and quote these figures "
             "rather than any of your own:\n" + "\n".join(rows) + "\n"
             f"- concentration: {self.positions} positions; the largest, "
-            f"{self.largest}, is {self.largest_weight:.1%}; the top five are "
-            f"{self.top5:.1%}; the book behaves like {self.effective:.1f} "
+            f"{self.largest}, is {p(self.largest_weight, 1)}; the top five are "
+            f"{p(self.top5, 1)}; the book behaves like {n(self.effective, 1)} "
             "equal-sized positions (1 / sum of squared weights)"
         )
 
@@ -177,12 +179,14 @@ def build(tbl: pd.DataFrame | None, by: str = "position", currency: str = "EUR",
 # -------------------------------------------------------------------- surface
 
 
-def _pct(value: float) -> str:
-    return f"{value:.0%}" if value >= 0.1 else f"{value:.1%}"
+def _pct(value: float, lang: str = "en") -> str:
+    n, p = bound(lang)
+    return f"{p(value, 0)}" if value >= 0.1 else f"{p(value, 1)}"
 
 
-def surface(m: Mix, translate) -> list[dict]:
+def surface(m: Mix, translate, lang: str = "en") -> list[dict]:
     """Three concentration figures, the ring, and the chips that switch it."""
+    n, p = bound(lang)
     parts = [
         a2ui.component("root", "Column",
                        children=["title", "figures", "ring", "splits", "note"]),
@@ -190,12 +194,12 @@ def surface(m: Mix, translate) -> list[dict]:
                        variant="h3"),
         a2ui.component("figures", "Row", children=["largest", "top5", "effective"]),
         a2ui.component("largest", "Metric", label=translate("chat.mix_largest"),
-                       value=_pct(m.largest_weight), hint=m.largest),
+                       value=_pct(m.largest_weight, lang), hint=m.largest),
         a2ui.component("top5", "Metric", label=translate("chat.mix_top5"),
-                       value=_pct(m.top5),
+                       value=_pct(m.top5, lang),
                        hint=translate("chat.mix_positions", count=m.positions)),
         a2ui.component("effective", "Metric", label=translate("chat.mix_effective"),
-                       value=f"{m.effective:.1f}",
+                       value=f"{n(m.effective, 1)}",
                        hint=translate("chat.mix_effective_hint")),
         a2ui.component("ring", "Donut", slices=a2ui.path("/groups"),
                        by=a2ui.path("/by"), label=translate("chat.mix_title"),

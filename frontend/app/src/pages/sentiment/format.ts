@@ -9,39 +9,42 @@
  *   widening credit spread and a falling index are both bad news, and a page
  *   that paints on sign paints half of itself backwards.
  *
- * Everything is formatted in the C locale — dot decimals, comma groups —
- * because two spellings of the same yield on two screens is worse than one
- * that ignores the locale.
+ * Everything is formatted in the account's language, through `shell/numbers`.
  */
 
 /** What a figure that could not be computed reads as. Never `0`, never a dash. */
 export const NA = "n/a";
 
-const GROUPS = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+import { formatter, num, numberLang } from "../../shell/numbers";
+
+const GROUPS = {
+  format: (value: number) =>
+    formatter(numberLang(), { maximumFractionDigits: 0 }).format(value),
+};
 
 function known(value: number | null | undefined): value is number {
   return value !== null && value !== undefined && Number.isFinite(value);
 }
 
 export function fixed(value: number | null, digits: number, suffix = ""): string {
-  return known(value) ? `${value.toFixed(digits)}${suffix}` : NA;
+  return known(value) ? `${num(value, digits)}${suffix}` : NA;
 }
 
 /** A signed level — `+0.42`, `-33bp`. The sign is the number's own, not a verdict. */
 export function signed(value: number | null, digits: number, suffix = ""): string {
   if (!known(value)) return NA;
-  return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}${suffix}`;
+  return `${value >= 0 ? "+" : ""}${num(value, digits)}${suffix}`;
 }
 
 /** A fraction as a signed percentage: `0.0123` to `+1.2%`. */
 export function percent(value: number | null, digits = 1): string {
   if (!known(value)) return NA;
-  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(digits)}%`;
+  return `${value >= 0 ? "+" : ""}${num(value * 100, digits)}%`;
 }
 
 /** A fraction as an unsigned share: `0.71` to `71%`. */
 export function share(value: number | null, digits = 0): string {
-  return known(value) ? `${(value * 100).toFixed(digits)}%` : NA;
+  return known(value) ? `${num(value * 100, digits)}%` : NA;
 }
 
 /** An index level: grouped, no decimals. */
@@ -60,7 +63,7 @@ export function adaptive(value: number | null): string {
   if (!known(value)) return NA;
   const size = Math.abs(value);
   if (size >= 1000) return GROUPS.format(value);
-  return value.toFixed(size >= 2 ? 2 : 4);
+  return num(value, size >= 2 ? 2 : 4);
 }
 
 /**

@@ -298,9 +298,9 @@ export function Cohort({ data }: { data: SectorCohort }) {
               sub: (row) =>
                 sub.map(
                   (column) =>
-                    `${labels.metric(column)} ${formatMetric(column, row.metrics[column], na)}`,
+                    `${labels.metric(column)} ${formatMetric(column, row.metrics[column], na, row.currency)}`,
                 ),
-              value: (row) => formatMetric(sort, row.metrics[sort], na),
+              value: (row) => formatMetric(sort, row.metrics[sort], na, row.currency),
               // What the headline figure is, under it: a bare "72.6%" on the
               // right of seventeen rows says nothing about which metric it is.
               delta: () => labels.metric(sort),
@@ -409,7 +409,7 @@ function Table({
                   key={column}
                   className={column === sort ? "ag-sec-ranked" : undefined}
                 >
-                  {formatMetric(column, row.metrics[column], na)}
+                  {formatMetric(column, row.metrics[column], na, row.currency)}
                 </td>
               ))}
             </tr>

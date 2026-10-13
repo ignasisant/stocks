@@ -963,7 +963,7 @@ def test_the_tool_trace_rides_on_the_answer_and_on_the_stored_turn(
 
     served()
     monkeypatch.setattr(market, "lookup_for", lambda *a, **k: [Quote()])
-    monkeypatch.setattr(market, "augment", lambda text, live: text)
+    monkeypatch.setattr(market, "augment", lambda text, live, lang="en": text)
     body = signed_in.post("/v1/chat/runs", json=run("hola AAPL")).text
     done = finished(events(body))["result"]
     assert done["steps"] == [
@@ -1049,7 +1049,7 @@ def test_the_page_and_the_ticker_on_screen_reach_the_prompt_and_the_lookup(
     focused: list[str] = []
     monkeypatch.setattr(
         engine.market, "lookup_for",
-        lambda message, watchlist=None, focus="": focused.append(focus) or [],
+        lambda message, watchlist=None, focus="", lang="en": focused.append(focus) or [],
     )
     signed_in.post(
         "/v1/chat/runs",

@@ -44,6 +44,7 @@ import type {
   TickerPosition,
   Trade,
 } from "./types";
+import { num } from "../../shell/numbers";
 
 /** Range labels, in the order the app shows them (`analysis.history.PERIODS`). */
 const RANGES = ["1d", "1w", "1m", "3m", "6m", "1y", "2y", "5y", "max"] as const;
@@ -518,7 +519,7 @@ function cell(
       return {
         id,
         label: t("ticker.rsi_label"),
-        value: rsi === null ? DASH : rsi.toFixed(1),
+        value: rsi === null ? DASH : num(rsi, 1),
         help: t("ticker.rsi_help"),
         // The band is the server's, not a threshold picked here.
         note: rsiBand(t, bars?.rsi_verdict),
@@ -555,7 +556,7 @@ function cell(
       return {
         id,
         label: t("ticker.fund_duration"),
-        value: years === null ? DASH : t("ticker.years", { n: years.toFixed(1) }),
+        value: years === null ? DASH : t("ticker.years", { n: num(years, 1) }),
         help: t("ticker.fund_duration_help"),
         note: "",
         tone: null,
@@ -713,9 +714,7 @@ function PositionMetrics({
       <Metric
         label={t("ticker.pct_portfolio")}
         help={t("ticker.pct_portfolio_help")}
-        value={
-          position.weight === null ? DASH : `${(position.weight * 100).toFixed(1)}%`
-        }
+        value={position.weight === null ? DASH : `${num(position.weight * 100, 1)}%`}
       />
       <Metric
         label={t("ticker.unrealised_pl")}
@@ -773,9 +772,7 @@ function PositionTiles({
       <Kpi
         label={t("ticker.pct_portfolio")}
         help={t("ticker.pct_portfolio_help")}
-        value={
-          position.weight === null ? DASH : `${(position.weight * 100).toFixed(1)}%`
-        }
+        value={position.weight === null ? DASH : `${num(position.weight * 100, 1)}%`}
         note={note ?? ""}
       />
       <Kpi

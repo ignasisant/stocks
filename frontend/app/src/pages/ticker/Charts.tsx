@@ -39,6 +39,7 @@ import {
 import { Banner, Card, Empty, Note, Segmented, Subhead, useMobile } from "./ui";
 import { Kpi, KpiGrid, bandTone } from "../../ui/Kpi";
 import type { Financials, Fund, Insiders, Valuation } from "./types";
+import { num } from "../../shell/numbers";
 
 /** Where the layout reads as a phone: the page's own flag, or a card too
  *  narrow for a gutter of axis labels whichever the viewport says. */
@@ -189,7 +190,7 @@ function Annual({ data }: { data: Financials }) {
       });
     });
     const point = eps[hover];
-    if (known(point)) lines.push({ text: `EPS ${point.toFixed(2)}` });
+    if (known(point)) lines.push({ text: `EPS ${num(point, 2)}` });
     lines.push({ text: kindOf(hover) });
   }
 
@@ -333,7 +334,7 @@ function Annual({ data }: { data: Financials }) {
                 y={yEps(value) + 4}
                 textAnchor="start"
               >
-                {value.toFixed(value >= 10 || value <= -10 ? 0 : 1)}
+                {num(value, value >= 10 || value <= -10 ? 0 : 1)}
               </text>
             ))}
             <text x={box.width - box.right + 8} y={box.top - 2} textAnchor="start">
@@ -483,7 +484,7 @@ function Quarterly({ data }: { data: Financials }) {
           frame={box}
           lo={range.lo}
           hi={range.hi}
-          format={(v) => v.toFixed(2)}
+          format={(v) => num(v, 2)}
           count={narrow ? 3 : 4}
           inside={narrow}
         />
@@ -515,7 +516,7 @@ function Quarterly({ data }: { data: Financials }) {
           frame={box}
           lo={range.lo}
           hi={range.hi}
-          format={(v) => v.toFixed(2)}
+          format={(v) => num(v, 2)}
           count={narrow ? 3 : 4}
           inside={narrow}
         />
@@ -525,7 +526,7 @@ function Quarterly({ data }: { data: Financials }) {
           frame={box}
           x={xOf(hover)}
           title={rows[hover]?.period ?? ""}
-          lines={[{ text: `EPS ${known(point) ? point.toFixed(2) : DASH}` }]}
+          lines={[{ text: `EPS ${known(point) ? num(point, 2) : DASH}` }]}
         />
       ) : null}
     </div>
@@ -666,7 +667,7 @@ export function ValuationChart({
         <Kpi
           label={t("ticker.kpi_pe_current")}
           help={t("ticker.kpi_pe_current_help")}
-          value={data.current === null ? DASH : data.current.toFixed(1)}
+          value={data.current === null ? DASH : num(data.current, 1)}
           chip={
             data.current_verdict
               ? { text: data.current_verdict, tone: bandTone(data.current_tone) }
@@ -676,7 +677,7 @@ export function ValuationChart({
         <Kpi
           label={t("ticker.kpi_pe_avg", { rng: window.window })}
           help={t("ticker.kpi_pe_avg_help")}
-          value={window.mean === null ? DASH : window.mean.toFixed(1)}
+          value={window.mean === null ? DASH : num(window.mean, 1)}
         />
         <Kpi
           label={t("ticker.kpi_pe_premium")}
@@ -684,12 +685,12 @@ export function ValuationChart({
           value={
             window.premium === null
               ? DASH
-              : `${window.premium >= 0 ? "+" : ""}${(window.premium * 100).toFixed(1)}%`
+              : `${window.premium >= 0 ? "+" : ""}${num(window.premium * 100, 1)}%`
           }
           chip={
             band && percentile !== null
               ? {
-                  text: t("ticker.pe_percentile", { p: percentile.toFixed(0) }),
+                  text: t("ticker.pe_percentile", { p: num(percentile, 0) }),
                   tone: bandTone(band.tone),
                 }
               : null
@@ -700,9 +701,9 @@ export function ValuationChart({
       {divergence > 0.2 ? (
         <Banner tone="warn">
           {t("ticker.pe_divergence", {
-            cur: (data.current ?? 0).toFixed(1),
-            fund: (fundamentalPe ?? 0).toFixed(1),
-            diff: (divergence * 100).toFixed(0),
+            cur: num(data.current ?? 0, 1),
+            fund: num(fundamentalPe ?? 0, 1),
+            diff: num(divergence * 100, 0),
           })}
         </Banner>
       ) : null}
@@ -728,7 +729,7 @@ export function ValuationChart({
                 frame={box}
                 lo={span.lo}
                 hi={span.hi}
-                format={(v) => v.toFixed(0)}
+                format={(v) => num(v, 0)}
                 count={narrow ? 3 : 4}
                 inside={narrow}
               />
@@ -785,7 +786,7 @@ export function ValuationChart({
                 frame={box}
                 lo={span.lo}
                 hi={span.hi}
-                format={(v) => v.toFixed(0)}
+                format={(v) => num(v, 0)}
                 count={narrow ? 3 : 4}
                 inside={narrow}
               />
@@ -797,14 +798,14 @@ export function ValuationChart({
                 title={kept[hover]?.day.slice(0, 10) ?? ""}
                 lines={[
                   {
-                    text: `P/E ${known(values[hover]) ? (values[hover] as number).toFixed(1) : DASH}`,
+                    text: `P/E ${known(values[hover]) ? num(values[hover] as number, 1) : DASH}`,
                   },
                   ...(window.mean === null
                     ? []
                     : [
                         {
                           text: t("ticker.pe_avg_line", {
-                            avg: window.mean.toFixed(1),
+                            avg: num(window.mean, 1),
                           }),
                         },
                       ]),

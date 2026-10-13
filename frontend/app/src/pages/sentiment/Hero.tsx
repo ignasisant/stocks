@@ -17,6 +17,7 @@ import { HeroSpark } from "./Spark";
 import { NA, fixed, percent, share, signed } from "./format";
 import type { Pulse, PulseBook } from "./types";
 import { Badge } from "../../ui/Badge";
+import { num } from "../../shell/numbers";
 
 /** The bands the catalogs have a pill for. Anything else reads as "no reading". */
 const REGIMES = new Set([
@@ -58,7 +59,7 @@ export function driftChip(
   return {
     // Both ends of the drift: the headline beside the pill is a longer window,
     // so "3m 0.94" alone reads as a move from 0.94 to the headline.
-    text: t("sentiment.drift_pill", { now: now.toFixed(2), value: then.toFixed(2) }),
+    text: t("sentiment.drift_pill", { now: num(now, 2), value: num(then, 2) }),
     tone: moved ? "warn" : "flat",
   };
 }

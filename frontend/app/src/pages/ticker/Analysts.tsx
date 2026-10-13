@@ -27,6 +27,7 @@ import {
 } from "./format";
 import { Banner, Card, Note, Scroll, Subhead, useMobile } from "./ui";
 import type { AnalystMonth, Analysts, EpsRevisionRow } from "./types";
+import { num } from "../../shell/numbers";
 
 /** The five buckets, strongest buy first — the order every bar is drawn in. */
 const BUCKETS = ["strong_buy", "buy", "hold", "sell", "strong_sell"] as const;
@@ -80,7 +81,7 @@ export function AnalystsSection({ data }: { data: Analysts }) {
           chip={
             known(data.rating_mean)
               ? {
-                  text: `${data.rating_mean.toFixed(1)} / 5`,
+                  text: `${num(data.rating_mean, 1)} / 5`,
                   tone: ratingTone(data.rating_mean),
                 }
               : null
@@ -247,7 +248,7 @@ function RatingSplit({ months }: { months: AnalystMonth[] }) {
               )}
             </span>
             <span className="tk-ratings-mean">
-              {known(month.mean) ? month.mean.toFixed(1) : DASH}
+              {known(month.mean) ? num(month.mean, 1) : DASH}
             </span>
           </li>
         ))}

@@ -2694,7 +2694,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             (provider, key))
         hits, quotes = in_parallel(
             lambda: ground_web(prefs, scout, scout_key, history, view),
-            lambda: market.lookup_for(message, watchlist, focus=focus),
+            lambda: market.lookup_for(message, watchlist, focus=focus, lang=lang),
             timeout=timeout_s,
         )
         hits, quotes = hits or [], quotes or []
@@ -2735,14 +2735,14 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     if hits:
         msgs[-1]["content"] = chat_web.augment(msgs[-1]["content"], hits)
     if quotes:
-        msgs[-1]["content"] = market.augment(msgs[-1]["content"], quotes)
+        msgs[-1]["content"] = market.augment(msgs[-1]["content"], quotes, lang)
     if isinstance(sale, whatif.Scenario):
-        msgs[-1]["content"] += sale.line()
+        msgs[-1]["content"] += sale.line(lang)
     if isinstance(chart, charts.Chart):
         msgs[-1]["content"] += chart.line()
     for found in (mix, losses, moved):
         if isinstance(found, (allocation.Mix, harvest.Harvest, rebalance.Reweigh)):
-            msgs[-1]["content"] += found.line()
+            msgs[-1]["content"] += found.line(lang)
     # Last, after augmentation: the page extracts and quotes just stapled onto
     # the newest turn are the biggest thing in the request (chat/tokens.py).
     msgs = tokens.fit(msgs, system=system)
@@ -2766,7 +2766,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         steps.append(_sale_step(sale, lang))
         activities.append(a2ui.activity(
             whatif.SURFACE_ID,
-            whatif.surface(sale, lambda k, **kw: _tr(k, lang, **kw)),
+            whatif.surface(sale, lambda k, **kw: _tr(k, lang, **kw), lang),
         ))
     if isinstance(chart, charts.Chart):
         steps.append(_chart_step(chart, lang))
@@ -2778,7 +2778,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         steps.append(_mix_step(mix, lang))
         activities.append(a2ui.activity(
             allocation.SURFACE_ID,
-            allocation.surface(mix, lambda k, **kw: _tr(k, lang, **kw)),
+            allocation.surface(mix, lambda k, **kw: _tr(k, lang, **kw), lang),
         ))
     if isinstance(losses, harvest.Harvest):
         steps.append(_harvest_step(losses, lang))
@@ -2792,7 +2792,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         steps.append(_rebalance_step(moved, lang))
         activities.append(a2ui.activity(
             rebalance.SURFACE_ID,
-            rebalance.surface(moved, lambda k, **kw: _tr(k, lang, **kw)),
+            rebalance.surface(moved, lambda k, **kw: _tr(k, lang, **kw), lang),
         ))
     return Turn(
         history=history,

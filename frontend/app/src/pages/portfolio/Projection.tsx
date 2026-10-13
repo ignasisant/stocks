@@ -30,6 +30,7 @@ import { compactMoneyIn, moneyIn, percent } from "./format";
 import { ReturnLines, type ReturnSeries } from "./charts";
 import { Caption, Chip, Empty, Segmented } from "./ui";
 import { Help } from "../../ui/Kpi";
+import { num } from "../../shell/numbers";
 
 type StockPreset = keyof typeof STOCK_PRESETS | typeof OWN_GROWTH;
 type CryptoGrowth = (typeof CRYPTO_GROWTH)[number] | typeof OWN_GROWTH;
@@ -341,7 +342,7 @@ export default function Projection() {
                     weight: pct(coin.weight),
                     rate: pct(coin.growth),
                     vol: pct(coin.volatility),
-                    corr: data.correlation === null ? "—" : data.correlation.toFixed(2),
+                    corr: data.correlation === null ? "—" : num(data.correlation, 2),
                   })}`
                 : ""}
               {stock?.growth_own || coin?.growth_own

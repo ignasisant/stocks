@@ -9,6 +9,8 @@
  * separators.
  */
 
+import { formatter } from "../../shell/numbers";
+
 export type Translate = (
   key: string,
   slots?: Record<string, string | number>,
@@ -59,7 +61,7 @@ export function money(
     signDisplay: opts?.signed ? "always" : "auto",
   };
   try {
-    return new Intl.NumberFormat(lang, options).format(value);
+    return formatter(lang, options).format(value);
   } catch {
     // A ledger row can carry a currency Intl does not know (a broker's own
     // code). The figure is still worth printing — the code just trails it.
@@ -74,7 +76,7 @@ export function percent(
 ): string | null {
   if (!finite(value)) return null;
   const digits = opts?.digits ?? 2;
-  return new Intl.NumberFormat(lang, {
+  return formatter(lang, {
     style: "percent",
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
@@ -89,7 +91,7 @@ export function decimal(
   opts?: { signed?: boolean },
 ): string | null {
   if (!finite(value)) return null;
-  return new Intl.NumberFormat(lang, {
+  return formatter(lang, {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
     signDisplay: opts?.signed ? "always" : "auto",

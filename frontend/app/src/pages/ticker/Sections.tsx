@@ -18,6 +18,7 @@ import {
   currencySymbol,
   insiderPrice,
   insiderValue,
+  kpiText,
   money,
   orElse,
   percent,
@@ -39,6 +40,7 @@ import type {
   SourceCheck,
   SourcedFigure,
 } from "./types";
+import { num } from "../../shell/numbers";
 
 // ------------------------------------------------------------------ KPI grid
 
@@ -87,13 +89,20 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
               key={tile.key}
               label={label}
               help={help || undefined}
-              value={kpi.formatted}
+              value={kpiText(kpi.value, kpi.unit)}
               // Coloured by the tone the domain's band carries, never by the
               // label: the labels grow ("net cash", "heavy dilution") and a
               // client matching on them shows each new one as neutral.
               chip={
                 kpi.verdict
-                  ? { text: kpi.verdict, tone: bandTone(kpi.verdict_tone) }
+                  ? {
+                      text: orElse(
+                        t,
+                        `ticker.verdict_${kpi.verdict.replace(/ /g, "_")}`,
+                        kpi.verdict,
+                      ),
+                      tone: bandTone(kpi.verdict_tone),
+                    }
                   : null
               }
             />
@@ -106,10 +115,10 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
       {metrics.market_cap_base_formatted && metrics.base ? (
         <Note>
           {t("ticker.market_cap_fx", {
-            usd: byKey.get("market_cap")?.formatted ?? "",
-            conv: metrics.market_cap_base_formatted,
+            usd: kpiText(byKey.get("market_cap")?.value ?? null, "money"),
+            conv: kpiText(metrics.market_cap_base, "money"),
             ccy: metrics.base,
-            rate: metrics.fx_rate === null ? DASH : metrics.fx_rate.toFixed(4),
+            rate: metrics.fx_rate === null ? DASH : num(metrics.fx_rate, 4),
             as_of: metrics.fx_as_of ?? DASH,
           })}
         </Note>
@@ -147,7 +156,7 @@ export function MoatSection({ moat }: { moat: Moat }) {
           <Kpi
             label={t("ticker.moat_score")}
             help={orElse(t, "kpi.moat.desc", "") || undefined}
-            value={moat.score.toFixed(0)}
+            value={num(moat.score, 0)}
             chip={
               moat.rating
                 ? {
@@ -163,7 +172,7 @@ export function MoatSection({ moat }: { moat: Moat }) {
             <Kpi
               key={pillar.key}
               label={orElse(t, pillar.label_key, pillar.label)}
-              value={pillar.score === null ? DASH : pillar.score.toFixed(0)}
+              value={pillar.score === null ? DASH : num(pillar.score, 0)}
               // How much of the score this pillar decides. Without it the five
               // read as equal, and they are not.
               chip={
@@ -202,11 +211,11 @@ const MOAT_FACTS: Record<string, (value: number) => string> = {
   cagr: (value) => percent(value, 0),
   // Percentage points; the unit is the sentence's, since it is worded per
   // language ("pp", "p. p.").
-  sd: (value) => (value * 100).toFixed(1),
+  sd: (value) => num(value * 100, 1),
   change: (value) => {
     // Rounded first, so a drift too small to print reads +0.0, not -0.0.
     const points = Math.round(value * 1000) / 10 || 0;
-    return `${points >= 0 ? "+" : ""}${points.toFixed(1)}`;
+    return `${points >= 0 ? "+" : ""}${num(points, 1)}`;
   },
   shares: (value) => signedPercent(value, 1),
 };
@@ -530,7 +539,7 @@ function FundTiles({ fund }: { fund: Fund }) {
     bonds
       ? [
           "ticker.fund_duration",
-          fund.bond_duration === null ? na : fund.bond_duration.toFixed(2),
+          fund.bond_duration === null ? na : num(fund.bond_duration, 2),
           "ticker.fund_duration_help",
         ]
       : [

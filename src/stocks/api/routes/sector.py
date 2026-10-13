@@ -176,6 +176,7 @@ def cohort(
     rows = [
         CohortRow(
             ticker=str(metrics.get("ticker") or "").upper(),
+            currency=str(metrics.get("currency") or "").upper() or None,
             score=_num(scan.scores.get(str(metrics.get("ticker") or "").upper())),
             metrics={key: _num(metrics.get(key)) for key in METRIC_ORDER},
         )

@@ -20,6 +20,7 @@ import { useLang, useT } from "./i18n";
 import { BASE } from "./router";
 import { useTickerProfile } from "./tickers";
 import { Badge } from "../ui/Badge";
+import { formatter } from "./numbers";
 
 type Match = {
   ticker: string;
@@ -374,5 +375,5 @@ function format(
   options: Intl.NumberFormatOptions,
 ): string | null {
   if (typeof value !== "number" || !Number.isFinite(value)) return null;
-  return new Intl.NumberFormat(lang, options).format(value);
+  return formatter(lang, options).format(value);
 }

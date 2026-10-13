@@ -36,6 +36,7 @@ import { useApi } from "../../shell/useApi";
 import type { BankAuth, BankChoice, BankConnection, BankState } from "./types";
 import "./bank.css";
 import { Badge } from "../../ui/Badge";
+import { formatter } from "../../shell/numbers";
 
 /** Countries Enable Banking covers that this app is likely to be used from;
     the bank list itself comes from the API per country. */
@@ -114,7 +115,7 @@ function Balance({
   if (amount === null) return <span className="bk-balance">—</span>;
   const text = (() => {
     try {
-      return new Intl.NumberFormat(lang, {
+      return formatter(lang, {
         style: "currency",
         currency: currency || "EUR",
         minimumFractionDigits: 2,

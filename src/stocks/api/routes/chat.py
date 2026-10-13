@@ -1802,6 +1802,7 @@ def press(body: ActionBody, paths: SurfaceAction) -> SurfaceUpdate:
     def tr(key: str, **kw) -> str:
         return translate(key, lang, **kw)
 
+    tr.lang = lang  # the figures a handler prints follow it too
     handler = {
         (whatif.SURFACE_ID, whatif.ACTION): _resell,
         (charts.SURFACE_ID, charts.ACTION): _rechart,
@@ -1832,7 +1833,7 @@ def _resell(context: dict, paths: UserPaths, tr) -> list[dict]:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"nothing of {symbol or 'that'} to sell, or no price for it",
         )
-    return whatif.moved(sale, tr)
+    return whatif.moved(sale, tr, getattr(tr, "lang", "en"))
 
 
 def _reweigh(context: dict, paths: UserPaths, tr) -> list[dict]:
@@ -1858,7 +1859,7 @@ def _reweigh(context: dict, paths: UserPaths, tr) -> list[dict]:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no priced holding of {symbol or 'that'} to reweigh",
         )
-    return rebalance.moved(moved, tr)
+    return rebalance.moved(moved, tr, getattr(tr, "lang", "en"))
 
 
 def _rechart(context: dict, paths: UserPaths, tr) -> list[dict]:

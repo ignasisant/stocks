@@ -7,18 +7,20 @@
  * formatter here funnels null to a dash.
  */
 
+import { num, numberLang } from "../../shell/numbers";
+
 export type T = (key: string, slots?: Record<string, string | number>) => string;
 
 /** Not a figure: what a missing number prints as. */
 const DASH = "—";
 
 export function eps(value: number | null): string {
-  return value === null ? DASH : value.toFixed(2);
+  return value === null ? DASH : num(value, 2);
 }
 
 /** A signed number with no unit — what `earnings.surprise_vs_est` slots in. */
 export function signedNum(value: number, digits = 2): string {
-  return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
+  return `${value >= 0 ? "+" : ""}${num(value, digits)}`;
 }
 
 /** Always signed: a surprise printed without its sign reads as a level. */
@@ -41,14 +43,14 @@ function parts(iso: string): [number, number, number] {
   return [Number(year), Number(month), Number(day)];
 }
 
-/** "Sep 18, 2026" / "18 Sep 2026": the month keys and the order are the locale's. */
-export function longDate(iso: string, t: T): string {
+/** "18 sep 2026" — a calendar day in the account's language (the `t` is kept for callers). */
+export function longDate(iso: string, _t?: T): string {
   const [year, month, day] = parts(iso);
-  return t("earnings.date_long", {
-    month: t(`earnings.mon_${month}`),
-    day,
-    year,
-  });
+  return new Intl.DateTimeFormat(numberLang(), {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(year ?? 0, (month ?? 1) - 1, day ?? 1));
 }
 
 /**
@@ -88,17 +90,14 @@ export function money(value: number | null | undefined, prefix = ""): string {
 }
 
 function grouped(value: number, digits: number): string {
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
+  return num(value, digits);
 }
 
 /** A fraction as a level: 0.183 → "18.3%". */
 export function pct(fraction: number | null | undefined, digits = 1): string {
   return fraction === null || fraction === undefined
     ? DASH
-    : `${(fraction * 100).toFixed(digits)}%`;
+    : `${num(fraction * 100, digits)}%`;
 }
 
 /** A fraction as a change, always signed: 0.052 → "+5.2%". */

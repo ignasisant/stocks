@@ -24,6 +24,7 @@ import { moneyIn, shares as formatShares } from "../portfolio/format";
 import type { CalendarDividend, EventPick } from "./data";
 import { days, longDate, plain } from "./format";
 import type { T } from "./format";
+import { num } from "../../shell/numbers";
 
 const DASH = "—";
 
@@ -36,7 +37,7 @@ export function cash(
   if (value === null) return DASH;
   return currency
     ? (moneyIn(lang, currency)(value, { digits: 2 }) ?? DASH)
-    : value.toFixed(2);
+    : num(value, 2);
 }
 
 function breakdown(dividend: CalendarDividend, lang: string, t: T): string {

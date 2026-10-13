@@ -22,6 +22,7 @@ import type { EventLine } from "./events";
 import { sellLine } from "./events";
 import { DASH, money, signed, type Translate } from "./format";
 import type { Trade } from "./types";
+import { num } from "../../shell/numbers";
 
 /** A run of text inside a row, and how it is set. */
 export type TipPart = { text: string; bold?: boolean; tone?: "up" | "down" | "dim" };
@@ -198,7 +199,7 @@ export function fillRows(
   t: Translate,
 ): HoverRow[] {
   const { last, avgCost, swatch } = args;
-  const qty = fill.quantity.toFixed(4);
+  const qty = num(fill.quantity, 4);
   if (fill.action === "sell") {
     return rows(sellLine(qty, money(fill.price), fill.date, t), swatch);
   }

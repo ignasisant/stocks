@@ -28,6 +28,7 @@ import { DownBody, YAHOO } from "./Down";
 import { signed } from "./format";
 import { quadrant } from "./logic";
 import type { Pulse, TrendTables } from "./types";
+import { num } from "../../shell/numbers";
 
 export function Snapshot({
   pulse,
@@ -92,7 +93,7 @@ export function Snapshot({
         note={
           (then === null
             ? ""
-            : `${t("sentiment.drift_note", { value: then.toFixed(2) })} · `) +
+            : `${t("sentiment.drift_note", { value: num(then, 2) })} · `) +
           t("sentiment.stock_bond_corr_note")
         }
       />,
