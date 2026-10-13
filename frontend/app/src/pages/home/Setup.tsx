@@ -118,6 +118,7 @@ export function SetupCard() {
   const query = useApi(() => get<Onboarding>("/onboarding"), []);
   const session = useSession();
   const { prefs, reload } = session;
+  const { setParams } = useRoute();
   const [dismissed, setDismissed] = useState(prefs.setup_card_dismissed);
 
   // A registry that will not load has nothing to say about itself, so it says
@@ -166,6 +167,16 @@ export function SetupCard() {
             {t("home.start_progress", { done, total: setup.length })}
           </span>
         )}
+        {/* The tour opens itself once; after that this is the way back to
+            it from where the steps are, not only from Perfil. A modal over
+            the page, so no navigation for the back button to walk. */}
+        <button
+          type="button"
+          className="hm-quiet hm-start-tour"
+          onClick={() => setParams({ tour: "1" })}
+        >
+          {t("tour.launch")}
+        </button>
         {guest ? null : (
           <button
             type="button"
