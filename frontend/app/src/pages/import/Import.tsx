@@ -363,7 +363,10 @@ function Importer({
   if (unreadable) errors.push(t("import.unreadable"));
   if (staged && preview.state === "loaded" && preview.data && !preview.data.ok)
     errors.push(
-      t("import.nothing_read", { platform: platform.label, hint: platformHint(t, platform) }),
+      t("import.nothing_read", {
+        platform: platform.label,
+        hint: platformHint(t, platform),
+      }),
     );
 
   return (

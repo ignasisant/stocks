@@ -2977,7 +2977,7 @@ class LastImport(BaseModel):
     imported_at: str | None = None
     imported_on: str | None = Field(
         default=None,
-        description="The UTC day of `imported_at` (YYYY-MM-DD): the shared 'last import' date.",
+        description="The UTC day of `imported_at` (YYYY-MM-DD), shared by every page.",
     )
     platform: str | None = None
     rows: int = 0
