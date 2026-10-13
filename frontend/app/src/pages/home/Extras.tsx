@@ -242,7 +242,8 @@ function TaxBody({
       {crossed.map((flag) => (
         <p key={flag.name} className="hm-callout hm-callout-warn">
           {t("home.card_tax_flag", {
-            val: cash(flag.total_value),
+            // "About": a threshold check, not a statement of account.
+            val: cash(Math.round(flag.total_value / 1000) * 1000),
             threshold: cash(flag.threshold),
           })}
         </p>
