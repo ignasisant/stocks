@@ -75,6 +75,20 @@ def test_another_unit_is_refused(live):
     assert loaders._overlay_live(closes, ("db", "Close")) is closes
 
 
+def test_a_big_real_move_is_kept(live):
+    snaps, _ = live
+    snaps["AB9.DE"] = (5.99, "2026-10-12")  # a small cap more than doubling
+    out = loaders._overlay_live(_closes(**{"AB9.DE": 2.6}), ("db", "Close"))
+    assert out["AB9.DE"].iloc[-1] == 5.99
+
+
+def test_pounds_against_pence_are_refused(live):
+    snaps, _ = live
+    snaps["VOD.L"] = (0.72, "2026-10-12")  # pounds, against bars in pence
+    closes = _closes(**{"VOD.L": 72.0})
+    assert loaders._overlay_live(closes, ("db", "Close")) is closes
+
+
 def test_quotes_failing_is_the_bars_as_they_were(monkeypatch):
     def boom(tickers):
         raise RuntimeError("yahoo down")

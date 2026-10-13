@@ -503,9 +503,17 @@ def _frame_closes(db: str, mtime: float, column: str, txs) -> dict[str, pd.Serie
     return _remember(key, frames, None, closes)
 
 
-# A live price further than this from the name's last close is another unit
-# (pence against pounds) or another listing, not a move.
-_LIVE_JUMP = 0.5
+# A live price about a hundred times the name's last close, or a hundredth of
+# it, is another unit (pence against pounds), not a move. Anything nearer is
+# left alone: a small cap doubling in a session is a real day (AB9.DE,
+# 2026-10-13, 2.60 to 5.99), and hiding it shows yesterday's price.
+_UNIT_SLIP = (50.0, 200.0)
+
+
+def _unit_slip(price: float, last: float) -> bool:
+    low, high = _UNIT_SLIP
+    ratio = price / last
+    return low <= ratio <= high or low <= 1 / ratio <= high
 
 
 def _overlay_live(
@@ -540,7 +548,7 @@ def _overlay_live(
             last_day, last = series.index[-1], float(series.iloc[-1])
             if when < last_day or (when == last_day and price == last):
                 continue
-            if last > 0 and abs(price / last - 1) > _LIVE_JUMP:
+            if last > 0 and _unit_slip(float(price), last):
                 rejected += 1
                 obs.warn_once(
                     "prices.live_rejected", ticker, ticker=ticker, last=last, live=price
