@@ -77,7 +77,13 @@ export default function Overview() {
             {
               label: t("portfolio.overview_value"),
               value: read(performance, (data) => money(data.value)),
-              chip: gain === null ? null : { text: pct(gain) ?? "", value: gain },
+              chip:
+                gain === null
+                  ? null
+                  : {
+                      text: t("portfolio.chip_vs_injected", { pct: pct(gain) ?? "" }),
+                      value: gain,
+                    },
             },
             {
               label: t("portfolio.series_injected"),
