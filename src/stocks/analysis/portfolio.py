@@ -25,6 +25,7 @@ from stocks import obs
 from stocks.analysis import naive_dates
 from stocks.analysis.listing import price_units, quote_unit
 from stocks.config import Holding, load_watchlist
+from stocks.data.crypto import is_crypto
 from stocks.data.fx import ToBase, converter
 from stocks.portfolio import consistency, transfers
 
@@ -282,7 +283,9 @@ def allocation_parts(
             if (rest := 1.0 - sum(split.values())) > 0.001:
                 add("Unknown", ticker, amount * rest)
             continue
-        add(row.get(key) or "Unknown", ticker, amount)
+        # A coin has no country: its own bucket, not "Unknown" (a data gap).
+        none = "Crypto" if key == "country" and is_crypto(ticker) else "Unknown"
+        add(row.get(key) or none, ticker, amount)
     return parts
 
 

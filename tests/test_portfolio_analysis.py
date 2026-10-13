@@ -13,3 +13,12 @@ def test_correlation_ignores_names_with_thin_history():
     corr = correlation_matrix(frame)
     assert pd.isna(corr.loc["NEW", "A"])
     assert not pd.isna(corr.loc["A", "B"])
+
+
+def test_crypto_has_its_own_country_bucket():
+    from stocks.analysis.portfolio import allocation_parts
+
+    parts = allocation_parts(
+        {"BTC-EUR": 10.0, "XYZ": 5.0}, {"XYZ": {}}, "country"
+    )
+    assert set(parts) == {"Crypto", "Unknown"}

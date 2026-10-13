@@ -288,7 +288,13 @@ export default function Risk() {
                                 ...slice,
                                 label: brokerName(slice.label, t),
                               }))
-                            : slices
+                            : key === "country"
+                              ? slices.map((slice) =>
+                                  slice.label === "Crypto"
+                                    ? { ...slice, label: t("portfolio.alloc_crypto") }
+                                    : slice,
+                                )
+                              : slices
                         }
                       />
                     );

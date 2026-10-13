@@ -92,6 +92,7 @@
   "portfolio.allocation": "Allocation",
   "portfolio.alloc_sector": "Sector",
   "portfolio.alloc_geography": "Geography",
+  "portfolio.alloc_crypto": "Crypto (no country)",
   "portfolio.alloc_other": "Others",
   "portfolio.alloc_currency": "Currency",
   "portfolio.alloc_broker": "Broker",
