@@ -16,9 +16,10 @@
  * currency pair, gold, oil) stays grey.
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { get } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
+import { useTabStrip } from "../../shell/useTabStrip";
 import { Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { Link } from "../../shell/router";
@@ -140,13 +141,13 @@ export function Market({ data }: { data: MarketGlance }) {
       {tiles.length === 0 ? (
         <Note>{t("home.market_unavailable")}</Note>
       ) : (
-        <ul className="hm-market-strip">
+        <Strip>
           {tiles.map((tile) => (
             <li key={tile.key}>
               <Tile tile={tile} range={range} />
             </li>
           ))}
-        </ul>
+        </Strip>
       )}
       {data.breadth || data.as_of ? (
         <p className="hm-caption">
@@ -228,6 +229,19 @@ function MiniSpark({ values }: { values: number[] }) {
 function moveTone(change: number | undefined, welcome: number): Tone {
   if (change === undefined || change === 0 || welcome === 0) return "flat";
   return change * welcome > 0 ? "up" : "down";
+}
+
+/**
+ * The tiles' row. On a phone it scrolls sideways, and the edge with more past
+ * it fades, so "Emerging" cut at the border reads as "there is more" rather
+ * than as a clipped tile. Its own component so the hook mounts with the row.
+ */
+function Strip({ children }: { children: ReactNode }) {
+  return (
+    <ul className="hm-market-strip ag-fade-x" ref={useTabStrip<HTMLUListElement>("")}>
+      {children}
+    </ul>
+  );
 }
 
 function Tile({ tile, range }: { tile: MarketTile; range: MarketWindow }) {
