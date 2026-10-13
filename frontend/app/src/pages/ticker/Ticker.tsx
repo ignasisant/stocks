@@ -31,7 +31,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useApi } from "../../shell/useApi";
 import { Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
-import { useCurrency } from "../../shell/session";
+import { useCurrency, useGuest } from "../../shell/session";
 import { useRoute } from "../../shell/router";
 import { Actions } from "./Actions";
 import { SignIn, SignedInOnly } from "../../shell/guest";
@@ -165,10 +165,16 @@ export default function Page() {
 
   // The page is the last company the reader looked at; the watchlist's first
   // favourite is only for an account that has looked at none. undefined while
-  // that is still being asked, so the fallback does not win the race.
+  // that is still being asked, so the fallback does not win the race. A guest
+  // has no searches of its own to ask for.
+  const guest = useGuest();
   const [lastViewed, setLastViewed] = useState<string | null | undefined>(undefined);
   useEffect(() => {
     if (asked) return;
+    if (guest) {
+      setLastViewed(null);
+      return;
+    }
     let live = true;
     getLastViewed()
       .then((last) => live && setLastViewed(last))
@@ -176,7 +182,7 @@ export default function Page() {
     return () => {
       live = false;
     };
-  }, [asked]);
+  }, [asked, guest]);
 
   useEffect(() => {
     if (asked || lastViewed === undefined) return;
