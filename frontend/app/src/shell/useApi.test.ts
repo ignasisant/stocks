@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { noteFreshness, resetFreshness } from "./freshness";
+import { noteFreshness, noteRefreshing, resetFreshness } from "./freshness";
 import { FOLLOW_MS, followStale } from "./useApi";
 
 const OLD = "2026-10-11T08:00:00+00:00";
@@ -60,6 +60,22 @@ describe("followStale", () => {
     followStale(new Set(["/v1/book"]), api.ask, () => undefined);
     await vi.runAllTimersAsync();
     expect(api.asks()).toBe(FOLLOW_MS.length);
+  });
+
+  it("asks again behind an answer the server is refreshing, not after", async () => {
+    noteRefreshing("/v1/book", "1");
+    let asks = 0;
+    const ask = () => {
+      asks += 1;
+      noteRefreshing("/v1/book", null);
+      return { result: Promise.resolve(asks), urls: new Set(["/v1/book"]) };
+    };
+    const shown: number[] = [];
+    followStale(new Set(["/v1/book"]), ask, (n) => shown.push(n));
+    await vi.advanceTimersByTimeAsync(FOLLOW_MS[0]);
+    expect(shown).toEqual([1]);
+    await vi.runAllTimersAsync();
+    expect(asks).toBe(1);
   });
 
   it("stops when the screen goes away", async () => {

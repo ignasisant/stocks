@@ -72,7 +72,7 @@ locals {
 # Mirrors scripts/setup_notify_secrets.sh: required storage/Telegram secrets
 # plus optional LLM keys. Empty optional values are skipped (not created),
 # matching the script's "skipped (empty)" behavior — notify.yml treats them
-# as optional.
+# as optional. APP_PUBLIC_URL + API_TOKEN also feed warm.yml's price warm-up.
 
 locals {
   required_secrets = {
@@ -85,6 +85,7 @@ locals {
 
   optional_secrets = {
     APP_PUBLIC_URL      = var.app_public_url
+    API_TOKEN           = var.api_token
     CHAT_ENC_KEY        = var.chat_enc_key
     FREE_LLM_GROQ       = var.free_llm_groq
     FREE_LLM_CEREBRAS   = var.free_llm_cerebras

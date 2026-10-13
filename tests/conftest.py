@@ -105,7 +105,7 @@ def _own(scratch: pathlib.Path, name: str) -> pathlib.Path:
 
 
 @pytest.fixture(autouse=True)
-def _no_yahoo_cooldown():
+def _no_yahoo_cooldown(_scratch):
     """Start every test with `data.fetch`'s circuit breaker closed.
 
     The breaker is deliberately process-wide — one host, one verdict about
@@ -118,7 +118,13 @@ def _no_yahoo_cooldown():
     CoinGecko's memo and cooldown — each one process-wide on purpose.
     """
     from stocks import obs
+    from stocks.data import fetch
     from stocks.data.fetch import clear_coingecko, clear_throttle, clear_unlisted
+
+    # The verdicts live on disk too: each test its own file, never the
+    # checkout's data/unlisted.json (which `clear_unlisted` deletes).
+    before_cache = fetch.UNLISTED_CACHE
+    fetch.UNLISTED_CACHE = _scratch / "unlisted.json"
 
     # `obs.warn_once` remembers per process, so a test asserting a warning
     # would otherwise depend on which test said it first.
@@ -127,6 +133,7 @@ def _no_yahoo_cooldown():
     yield
     for clear in (clear_throttle, clear_unlisted, clear_coingecko, obs._once.clear):
         clear()
+    fetch.UNLISTED_CACHE = before_cache
 
 
 @pytest.fixture(autouse=True)

@@ -1,0 +1,48 @@
+# Price warm-up — refreshes the books read lately before anyone opens them.
+#
+# One POST to the app's own /api/v1/warm (api/warm.py): the app refreshes, on
+# the request's thread, the memos a page reads for every account seen in the
+# last days, most recent first, within a 240 s budget. The 07:00 tick is the
+# one that pays the day's chart rebase (dividend-adjusted closes), with Yahoo
+# quiet and nobody waiting; the others extend the books by one spark request
+# per twenty names.
+#
+# Timing (UTC, weekdays): 07:00 before the EU open, 13:35 after the US open,
+# 16:05 after the EU close, 20:15 after the US close.
+#
+# Why a runner and not the app: Cloud Run throttles CPU between requests and
+# scales to zero, so the app cannot schedule its own work. Nothing is checked
+# out — the step is one curl.
+name: warm
+
+on:
+  schedule:
+    - cron: "0 7 * * 1-5"
+    - cron: "35 13 * * 1-5"
+    - cron: "5 16 * * 1-5"
+    - cron: "15 20 * * 1-5"
+  workflow_dispatch:
+
+concurrency:
+  group: warm
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      APP_PUBLIC_URL: ${{ secrets.APP_PUBLIC_URL }}
+      API_TOKEN: ${{ secrets.API_TOKEN }}
+    steps:
+      - name: Warm the books read lately
+        run: |
+          if [ -z "$APP_PUBLIC_URL" ] || [ -z "$API_TOKEN" ]; then
+            echo "APP_PUBLIC_URL or API_TOKEN secret missing; nothing to warm."
+            exit 0
+          fi
+          curl --fail-with-body -sS -m 290 -X POST \
+            -H "Authorization: Bearer $API_TOKEN" \
+            "${APP_PUBLIC_URL%/}/api/v1/warm"

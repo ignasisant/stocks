@@ -956,7 +956,7 @@ def test_complete_download_does_not_count_names_yahoo_disowned():
     priced = {t: s for t in listed}
     with pytest.raises(YFRateLimitError):
         complete_download(priced, listed + codes)
-    fetch._unlisted.update(codes)
+    fetch.mark_unlisted(*codes)
     assert complete_download(priced, listed + codes) is priced
     # The rest are still judged: a Yahoo refusing the listed ones is weather.
     with pytest.raises(YFRateLimitError):

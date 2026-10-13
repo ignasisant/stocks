@@ -488,7 +488,7 @@ def test_a_code_the_book_already_holds_is_flagged_once_yahoo_disowns_it(
     assert before["importable"][0]["issues"] == []
     assert before["unlisted"] == []
 
-    fetch._unlisted.add("SAN")
+    fetch.mark_unlisted("SAN")
     after = signed_in.post("/v1/import/preview", json=body(again)).json()
     warning = after["importable"][0]["issues"]
     assert [i["key"] for i in warning] == ["validate.unknown_ticker"]
@@ -629,7 +629,7 @@ def test_the_chart_reads_yahoos_404_as_unlisted(monkeypatch):
     def download(tickers, period, budget):
         assert period == "5d" and budget == 2.0
         if tickers == ["GONE"]:
-            fetch._unlisted.add("GONE")
+            fetch.mark_unlisted("GONE")
         return {"LIVE": object()} if tickers == ["LIVE"] else {}
 
     monkeypatch.setattr(fetch, "fetch_many", download)
@@ -792,7 +792,7 @@ def test_a_line_that_closed_near_the_fills_becomes_the_codes_answer(
 ):
     from stocks.data import fetch, symbols
 
-    fetch._unlisted.add("MEQA")
+    fetch.mark_unlisted("MEQA")
     response = signed_in.post("/v1/import/venue", json=merlin(symbol="mrl.mc"))
     assert response.status_code == 200
     assert response.json() == {"code": "MEQA", "symbol": "MRL.MC"}

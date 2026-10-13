@@ -23,7 +23,14 @@ import time
 
 from stocks import obs
 from stocks.data import finnhub
-from stocks.data.fetch import resolve, throttle_remaining, trip_throttle, unlisted
+from stocks.data.fetch import (
+    failure_kind,
+    reset_crumb,
+    resolve,
+    throttle_remaining,
+    trip_throttle,
+    unlisted,
+)
 
 QUOTE_URL = "https://query1.finance.yahoo.com/v7/finance/quote?"
 
@@ -60,6 +67,36 @@ def _fetch(symbols: list[str], timeout: float) -> list[dict]:
     return [r for r in rows if isinstance(r, dict)]
 
 
+def _ask(chunk: list[str], deadline: float) -> list[dict] | None:
+    """One chunk's rows, or None when Yahoo would not answer it.
+
+    A stale crumb gets one fresh one and one more try; a refusal opens the
+    cooldown; anything else (a timeout, a 5xx) is just this chunk lost.
+    """
+    for again in (True, False):
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return None
+        try:
+            return _fetch(chunk, timeout=left)
+        except Exception as exc:  # noqa: BLE001 — a quote is never fatal
+            kind = failure_kind(exc)
+            obs.warn(
+                "yahoo.quotes.failed",
+                symbols=len(chunk),
+                kind=kind,
+                error=repr(exc)[:300],
+            )
+            if kind == "throttle":
+                trip_throttle()
+                return None
+            if kind == "crumb" and again:
+                reset_crumb()
+                continue
+            return None
+    return None
+
+
 def quotes(
     tickers: list[str], *, timeout: float = TIMEOUT
 ) -> dict[str, dict]:
@@ -71,9 +108,11 @@ def quotes(
     a missing row, not an error.
 
     Never raises: a throttle, a timeout or a mangled response all return what
-    arrived (possibly nothing, or what Finnhub filled in for the US names) and
-    open the cooldown. The callers here render a day-change cell; none of them
-    has anything better to do with an exception than drop the column.
+    arrived (possibly nothing, or what Finnhub filled in for the US names).
+    Only a refusal opens the cooldown. A 401 "Invalid crumb" is yfinance's
+    session gone stale: the crumb is reset and the chunk asked once more. The
+    callers here render a day-change cell; none of them has anything better to
+    do with an exception than drop the column.
     """
     if not tickers:
         return {}
@@ -98,11 +137,8 @@ def quotes(
                     obs.warn("yahoo.quotes.budget_spent", got=len(out), want=len(symbols))
                     break
                 chunk = symbols[i : i + CHUNK]
-                try:
-                    rows = _fetch(chunk, timeout=left)
-                except Exception as exc:  # noqa: BLE001 — a quote is never fatal
-                    trip_throttle()
-                    obs.warn("yahoo.quotes.failed", symbols=len(chunk), error=repr(exc))
+                rows = _ask(chunk, deadline)
+                if rows is None:
                     break
                 answered.update(chunk)
                 for row in rows:

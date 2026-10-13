@@ -128,3 +128,126 @@ def test_warm_account_fills_the_memos_a_page_reads(monkeypatch, tmp_path):
         "basket",
         "year:('AAPL',)",
     ]
+
+
+def _user(label: str, last_seen: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        label=label, prefs={"last_seen": last_seen}, db=f"{label}.db", watchlist="w.yaml"
+    )
+
+
+def test_the_most_recently_seen_are_warmed_first_until_the_budget_runs_out(
+    monkeypatch,
+):
+    import time
+
+    users = [
+        _user("monday", "2026-09-25"),
+        _user("today", "2026-09-27"),
+        _user("yesterday", "2026-09-26"),
+    ]
+    monkeypatch.setattr("stocks.notify.fanout.iter_all_users", lambda: users)
+    warmed: list[str] = []
+
+    def account(db, watchlist, base):
+        warmed.append(db)
+        time.sleep(0.05)
+
+    monkeypatch.setattr(warm, "warm_account", account)
+    assert warm.warm_recent(today=TODAY) == 3
+    assert warmed == ["today.db", "yesterday.db", "monday.db"]
+    warmed.clear()
+    assert warm.warm_recent(today=TODAY, budget_s=0.06) == 2
+    assert warmed == ["today.db", "yesterday.db"]
+
+
+# ------------------------------------------------------------------ the route
+TOKEN = "s3cret-token"
+
+
+@pytest.fixture
+def client(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from stocks.api.app import app
+
+    monkeypatch.setenv("API_TOKEN", TOKEN)
+    return TestClient(app)
+
+
+@pytest.fixture
+def ran(monkeypatch):
+    """What `warm_recent` was called with, and whether refreshes ran in place."""
+    from stocks.api import cache
+
+    calls: list[dict] = []
+
+    def fake(today=None, *, budget_s=None):
+        calls.append({"budget_s": budget_s, "sync": cache.SYNC.get()})
+        return 2
+
+    monkeypatch.setattr(warm, "warm_recent", fake)
+    return calls
+
+
+def test_the_route_wants_the_api_token(client, ran):
+    assert client.post("/v1/warm").status_code == 401
+    wrong = client.post("/v1/warm", headers={"Authorization": "Bearer nope"})
+    assert wrong.status_code == 401
+    assert ran == []
+
+
+def test_a_signed_in_account_cannot_warm_everybodys_book(client, ran, monkeypatch):
+    from stocks import session
+
+    monkeypatch.setattr(session, "signed_in_email", lambda cookies: "a@example.com")
+    assert client.post("/v1/warm").status_code == 401
+    assert ran == []
+
+
+def test_the_route_warms_in_place_within_its_budget(client, ran):
+    from stocks.api import cache
+
+    res = client.post("/v1/warm", headers={"Authorization": f"Bearer {TOKEN}"})
+    assert res.status_code == 200
+    assert res.json()["warmed"] == 2
+    assert ran == [{"budget_s": warm.WARM_BUDGET_S, "sync": True}]
+    assert cache.SYNC.get() is False
+
+
+def test_a_second_warm_while_one_runs_is_busy(client, ran):
+    assert warm._running.acquire(blocking=False)
+    try:
+        res = client.post("/v1/warm", headers={"Authorization": f"Bearer {TOKEN}"})
+    finally:
+        warm._running.release()
+    assert res.json() == {"warmed": 0, "busy": True}
+    assert ran == []
+
+
+def test_in_place_a_stale_entry_is_refreshed_not_served():
+    """`cache.SYNC`: the warm's thread has the CPU, so it waits for the new
+    value where a reader would be answered with the old one at once."""
+    import threading
+
+    from stocks.api import cache
+
+    def ask():
+        store = {("k",): (0.0, "old", 0.0)}
+        return cache.coalesced(
+            store,
+            {},
+            threading.Lock(),
+            ("k",),
+            fresh=lambda e: False,
+            usable=lambda e: True,
+            compute=lambda: (1.0, "new", 1.0),
+            max_entries=4,
+        )
+
+    assert ask() == "old"
+    token = cache.SYNC.set(True)
+    try:
+        assert ask() == "new"
+    finally:
+        cache.SYNC.reset(token)

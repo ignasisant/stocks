@@ -181,15 +181,58 @@ def test_a_stale_answer_past_its_quiet_window_says_how_old_it_is(monkeypatch):
             cache.STALE.reset(token)
 
     assert asked() == (0.0, {})
-    clock[0] = 20.0  # stale, still quiet
-    assert asked() == (0.0, {})
+    clock[0] = 20.0  # stale, still quiet: not old, but a refresh is on its way
+    assert asked() == (0.0, {"refreshing": 1.0})
     landed.set()
     time.sleep(0.05)
+    assert asked() == (20.0, {})  # landed: fresh, nothing to say
     clock[0] = 500.0  # long past ttl + quiet: answered at once, and marked
     landed.clear()
     value, holder = asked()
-    assert value == 20.0 and "since" in holder
+    assert value == 20.0 and "since" in holder and holder["refreshing"]
     landed.set()
+
+
+def test_an_answer_from_the_grace_window_tells_the_shell_to_ask_again(monkeypatch):
+    """`X-Data-Refreshing`: the response a refresh runs behind says so, the
+    one after it lands does not."""
+    from stocks.api.app import REFRESHING_HEADER, app
+
+    clock = [0.0]
+    monkeypatch.setattr(cache.time, "monotonic", lambda: clock[0])
+    landed = threading.Event()
+
+    @cache.ttl_cache(10.0, stale_s=1000.0, quiet_s=30.0)
+    def f(key: str):
+        if clock[0] > 0:
+            landed.wait(2)
+        return clock[0]
+
+    @app.get("/v1/_test_refreshing", include_in_schema=False)
+    def route() -> dict[str, float]:
+        return {"value": f("x")}
+
+    try:
+        client = TestClient(app)
+        first = client.get("/v1/_test_refreshing")
+        assert REFRESHING_HEADER.lower() not in first.headers
+        clock[0] = 20.0
+        served = client.get("/v1/_test_refreshing")
+        assert served.json() == {"value": 0.0}
+        assert served.headers[REFRESHING_HEADER] == "1"
+        assert "x-data-stale-since" not in served.headers
+        landed.set()
+        time.sleep(0.05)
+        after = client.get("/v1/_test_refreshing")
+        assert after.json() == {"value": 20.0}
+        assert REFRESHING_HEADER.lower() not in after.headers
+    finally:
+        landed.set()
+        app.router.routes[:] = [
+            r
+            for r in app.router.routes
+            if getattr(r, "path", "") != "/v1/_test_refreshing"
+        ]
 
 
 def test_a_background_refresh_is_announced_with_its_landing(monkeypatch):
@@ -553,3 +596,48 @@ def test_a_restore_from_the_bucket_does_not_grow_the_directory_back(monkeypatch)
     monkeypatch.setattr(storage, "restore", restore)
     assert f("c") == "from-bucket"
     assert len(list((cache.MEMO_DIR / "t_restore").glob("*.pkl"))) == 2
+
+
+# ------------------------------------------------------------- the mirror
+def test_mirrors_go_through_one_uploader(monkeypatch, tmp_path):
+    """A refresh lands a dozen entries at once; a thread per upload overran
+    the bucket client's connection pool. One worker, every path uploaded."""
+    active, peak, seen = [0], [0], []
+    lock = threading.Lock()
+
+    def upload(path):
+        with lock:
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+        time.sleep(0.005)
+        with lock:
+            active[0] -= 1
+            # Only this test's: a refresh another test left running may land.
+            if path.parent == tmp_path / "m":
+                seen.append(path.name)
+
+    monkeypatch.setattr(cache, "_mirror", upload)
+    for i in range(20):
+        cache.write_entry(tmp_path / "m" / f"{i}.pkl", (0.0, i, time.time()))
+    assert cache._mirror_flush()
+    assert peak[0] == 1
+    assert sorted(seen) == sorted(f"{i}.pkl" for i in range(20))
+
+
+def test_a_path_written_twice_while_queued_is_uploaded_once(monkeypatch, tmp_path):
+    gate, seen = threading.Event(), []
+
+    def upload(path):
+        if path.parent != tmp_path / "m":
+            return
+        gate.wait(timeout=5)
+        seen.append(path.name)
+
+    monkeypatch.setattr(cache, "_mirror", upload)
+    cache.write_entry(tmp_path / "m" / "busy.pkl", (0.0, 0, time.time()))
+    time.sleep(0.05)  # the worker is now holding busy.pkl
+    for _ in range(3):
+        cache.write_entry(tmp_path / "m" / "a.pkl", (0.0, 1, time.time()))
+    gate.set()
+    assert cache._mirror_flush()
+    assert seen == ["busy.pkl", "a.pkl"]

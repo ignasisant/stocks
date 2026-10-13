@@ -125,6 +125,9 @@ app = FastAPI(
 # and tells the reader how old the figures are, instead of passing them off
 # as today's.
 STALE_HEADER = "X-Data-Stale-Since"
+# Answered from the grace window while a refresh runs behind it: the figures
+# are not old enough to call stale, but newer ones are on the way.
+REFRESHING_HEADER = "X-Data-Refreshing"
 
 
 @app.middleware("http")
@@ -137,11 +140,14 @@ async def _stale_since(request: Request, call_next):
     )
     try:
         response = await call_next(request)
-        since = (cache.STALE.get() or {}).get("since")
+        holder = cache.STALE.get() or {}
+        since = holder.get("since")
         if since is not None:
             response.headers[STALE_HEADER] = datetime.fromtimestamp(
                 since, tz=UTC
             ).isoformat(timespec="seconds")
+        if holder.get("refreshing"):
+            response.headers[REFRESHING_HEADER] = "1"
         return response
     finally:
         holds.BASE.reset(hold)
@@ -264,13 +270,15 @@ def _unreachable(request: Request, exc: URLError) -> JSONResponse:
 # HTML — a sign-in screen needs them before anyone is signed in. A chat run's
 # hold is this service calling itself, authenticated by the run's own token
 # rather than an account (`api/runs.py`), and so is a background refresh's
-# (`api/holds.py`).
+# (`api/holds.py`). The warm-up answers to the API token alone, which it
+# checks itself (`api/warm.py`).
 _public = APIRouter(prefix=f"/{API_VERSION}")
 _public.include_router(health.router)
 _public.include_router(design.router)
 _public.include_router(i18n.router)
 _public.include_router(chat.holds)
 _public.include_router(holds.router)
+_public.include_router(warm.router)
 
 
 def gate(request: Request, who: Who) -> Caller:

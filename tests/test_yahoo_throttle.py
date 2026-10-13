@@ -345,3 +345,38 @@ def test_a_refused_statement_retries_only_that_frame(yahoo):
     assert yahoo["built"] == ["NVDA", "NVDA"]
     assert not raw.cashflow.empty
     assert fetch.throttle_remaining() == 0  # one transient limit is not a burn
+
+
+# --------------------------------------------- side errands keep their cool
+def test_a_refused_crypto_fallback_does_not_open_the_cooldown(monkeypatch):
+    """A meme coin missing from the main download goes to its USD pair. That
+    errand being refused must not blank the whole book for five minutes."""
+    monkeypatch.setattr(fetch, "ticker_aliases", dict)
+    idx = pd.date_range("2026-01-05", periods=2, name="Date")
+    asked: list[list[str]] = []
+
+    def download(symbols, **kwargs):
+        asked.append(list(symbols))
+        if symbols == ["METIS-USD"]:
+            raise YFRateLimitError()
+        return pd.concat(
+            {"AAPL": pd.DataFrame({"Close": [1.0, 2.0]}, index=idx)}, axis=1
+        )
+
+    monkeypatch.setattr(fetch.yf, "download", download)
+    out = fetch.fetch_many(["AAPL", "METIS-EUR"])
+    assert list(out) == ["AAPL"]
+    assert asked.count(["METIS-USD"]) == 1  # one attempt, no backoff ladder
+    assert fetch.throttle_remaining() == 0
+
+
+def test_retry_without_trip_raises_but_leaves_the_breaker_shut():
+    def refused():
+        raise YFRateLimitError()
+
+    with pytest.raises(YFRateLimitError):
+        fetch.retry(refused, attempts=1, trip=False)
+    assert fetch.throttle_remaining() == 0
+    with pytest.raises(YFRateLimitError):
+        fetch.retry(refused, attempts=1)
+    assert fetch.throttle_remaining() > 0

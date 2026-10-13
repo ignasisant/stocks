@@ -10,7 +10,7 @@ Nothing is reimplemented here: every function is a cache around a call into
 `stocks.portfolio` / `stocks.analysis`. When a number needs changing, it
 changes in the domain and every caller gets it.
 
-The memos a page dies without when Yahoo says no — the book's frames, the
+The memos a page dies without when Yahoo says no — the book's closes, the
 watchlist's year, a chart's bars, a company's statements and calendar, the
 pulse's series — are declared `persist=`: they land on disk and in the
 bucket, and stand in for a refused fetch (`api.cache`). Quotes are not: a
@@ -130,7 +130,12 @@ def _held(db: str) -> tuple[list, list[str]]:
 # (~6MB live, 3-5MB pickled, for 80 names) and each of the readings below
 # keeps its own copy, on an instance whose filesystem is memory too. A fifth
 # active book costs a pickle read, not a download — the disk copy is fresh.
-@ttl_cache(_PRICES_TTL, max_entries=4, stale_s=0, persist="held_frames", disk_max=8)
+# Not persisted: the same frames are already on disk as the book's base
+# (`_keep_base`), and a cold call is that base plus one spark request. The
+# pickle beside it was every book twice in a filesystem that is memory. The
+# last frames in memory still stand in for a refused refresh (`keep_s`); after
+# a restart, the readings' own persisted copies do (`held_closes`).
+@ttl_cache(_PRICES_TTL, max_entries=4, stale_s=0, keep_s=3 * 86400.0)
 def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
     """One bulk download covering every name the book has ever held.
 
@@ -145,7 +150,16 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
     the book's previous frames (`_frames_base`): years of bars for eighty
     names were most of a minute on the one throttled vCPU, and all of it
     re-downloaded every quarter hour to learn one new close.
+
+    And only one refresh a day (`_REBASE_S`) asks that month of chart, a
+    request per name with every column. The rest ask spark for the closes
+    alone, twenty names a request (`fetch.fetch_tail`): fifty chart requests
+    every quarter hour were the burst Yahoo throttles. What spark cannot say
+    — a dividend restating `Adj Close`, a day's high and low — waits for the
+    next rebase, a day at most.
     """
+    from yfinance.exceptions import YFRateLimitError
+
     from stocks.data.fetch import fetch_many
 
     txs, tickers = _held(db)
@@ -155,13 +169,27 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
     span = (pd.Timestamp.today() - pd.Timestamp(since)).days
     period = f"{max(1, span // 30 + 1)}mo"
     currencies = _currencies(txs)
-    base = _frames_base(db, since)
+    base, rebased_at = _frames_base(db, since) or (None, 0.0)
     settled = _settled(base, txs) if base else {}
+    rebase = time.time() - rebased_at > _REBASE_S
     with obs.timed("prices.held_download", tickers=len(tickers)) as rec:
         asked = [t for t in tickers if t not in settled]
-        frames, stale = _extend(base, asked, currencies) if base else ({}, tickers)
+        if not base:
+            frames, stale = {}, tickers
+        elif rebase:
+            try:
+                frames, stale = _extend(base, asked, currencies, rebase=True)
+            except YFRateLimitError:
+                # Spark is one request where the month of chart was fifty:
+                # it may well answer what that refused. The rebase waits.
+                obs.warn("prices.rebase_refused", tickers=len(asked))
+                rebase = False
+                frames, stale = _extend(base, asked, currencies)
+        else:
+            frames, stale = _extend(base, asked, currencies)
         frames.update(settled)
         rec["settled"] = len(settled)
+        rec["rebase"] = rebase or not base
         if stale:
             frames.update(
                 fetch_many(stale, period=period, auto_adjust=False, currencies=currencies)
@@ -169,11 +197,11 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
         rec["full"] = len(stale)
     # Judged here, at the download, and only here: a gutted download memoised
     # as the book's frames would land on disk and in the bucket besides. The
-    # two readings below trust what this returns — after a restart it comes
-    # back from disk without a download, and re-judging it then would be
-    # asking `fetch.unlisted` about a download this process never made.
+    # two readings below trust what this returns, and their own copies come
+    # back from disk after a restart without a download — re-judging those
+    # would be asking `fetch.unlisted` about a download this process never made.
     complete_download(_close_series(frames, "Close"), tickers)
-    _keep_base(db, since, frames)
+    _keep_base(db, since, frames, time.time() if rebase or not base else rebased_at)
     return frames
 
 
@@ -188,10 +216,18 @@ _SETTLE = pd.Timedelta(days=31)
 # The columns two downloads of one day must agree on to be laid end to end:
 # a dividend rewrites every earlier `Adj Close`, a split every earlier price.
 _AGREE = ("Close", "Adj Close")
+# How old a book's last chart month may grow before a refresh asks for one
+# again instead of spark's closes. Under a day, so the warm-up cron's
+# pre-market run (`.github/workflows/warm.yml`) is the one that pays it.
+_REBASE_S = 20 * 3600.0
 
 
 def _extend(
-    base: dict[str, pd.DataFrame], tickers: list[str], currencies: dict[str, str]
+    base: dict[str, pd.DataFrame],
+    tickers: list[str],
+    currencies: dict[str, str],
+    *,
+    rebase: bool = False,
 ) -> tuple[dict[str, pd.DataFrame], list[str]]:
     """The last month laid over `base`: (frames extended, names to download whole).
 
@@ -203,20 +239,27 @@ def _extend(
     list (`fetch.unlisted`) is not asked again: it would come back empty every
     quarter hour.
 
+    The month is chart's when `rebase` (every column, checked on both closes
+    and laid from its first day), spark's otherwise: printed closes only, so
+    only those are checked — a split still sends the name back whole, a
+    dividend waits for the rebase — and only the days from the base's last
+    one on are taken (`_lay`).
+
     A name the month came back without keeps the base's bars as they are.
     Asking for its whole history instead asks the same source that just
     said nothing — a coin while CoinGecko cools off, every quarter hour — and
     when that comes back empty too the name drops out of the book's prices
     altogether rather than standing at its last close.
     """
-    from stocks.data.fetch import fetch_many, unlisted
+    from stocks.data.fetch import fetch_many, fetch_tail, unlisted
 
     known = [t for t in tickers if t in base]
-    tail = (
-        fetch_many(known, period=_TAIL, auto_adjust=False, currencies=currencies)
-        if known
-        else {}
-    )
+    if not known:
+        tail = {}
+    elif rebase:
+        tail = fetch_many(known, period=_TAIL, auto_adjust=False, currencies=currencies)
+    else:
+        tail = fetch_tail(known)
     # Gutted is gutted whichever request it was; the whole-history fallback
     # below must not turn a refused month into eighty full downloads.
     complete_download(_close_series(tail, "Close"), known)
@@ -230,8 +273,10 @@ def _extend(
             continue
         if old.empty or new.index[0] <= old.index[0]:
             frames[t] = new  # a name bought this month: the month is all of it
-        elif _continues(old, new):
+        elif rebase and _continues(old, new):
             frames[t] = pd.concat([old[old.index < new.index[0]], new])
+        elif not rebase and _continues(old, new, ("Close",)):
+            frames[t] = _lay(old, new)
     disowned = unlisted(tickers)
     return frames, [t for t in tickers if t not in frames and t not in disowned]
 
@@ -262,15 +307,34 @@ def _settled(base: dict[str, pd.DataFrame], txs: list) -> dict[str, pd.DataFrame
     return out
 
 
-def _continues(old: pd.DataFrame, new: pd.DataFrame) -> bool:
+def _continues(
+    old: pd.DataFrame, new: pd.DataFrame, agree: tuple[str, ...] = _AGREE
+) -> bool:
     """Whether `new` agrees with `old` on every settled day both hold."""
     shared = old.index[:-1].intersection(new.index)
-    cols = [c for c in _AGREE if c in old.columns and c in new.columns]
+    cols = [c for c in agree if c in old.columns and c in new.columns]
     if shared.empty or not cols or old.index[-1] < new.index[0]:
         return False
     a = old.loc[shared, cols].to_numpy(dtype=float)
     b = new.loc[shared, cols].to_numpy(dtype=float)
     return bool(np.allclose(a, b, rtol=1e-5, atol=0.0, equal_nan=True))
+
+
+def _lay(old: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
+    """`new`'s days from `old`'s last one on, over `old`.
+
+    Not the whole month: the base's earlier bars carry what a close-only
+    month does not (the day's high and low, `Adj Close` as the last rebase
+    adjusted it), and the base's last day — a session that may still have
+    been trading — keeps those columns while its closes are brought up to
+    date.
+    """
+    cut = old.index[-1]
+    fresh = new[new.index >= cut]
+    if fresh.empty:
+        return old
+    fresh = fresh.combine_first(old[old.index >= cut])
+    return pd.concat([old[old.index < cut], fresh.reindex(columns=old.columns)])
 
 
 # The last frames each book was priced from, and the first trade they reach
@@ -279,20 +343,25 @@ def _continues(old: pd.DataFrame, new: pd.DataFrame) -> bool:
 # ones that were, and the file a boot restores from the bucket carries a new
 # mtime every time. On disk (and in the bucket) beside the memo, so the first
 # Home after a deploy extends rather than downloads.
-_bases: dict[str, tuple[str, dict[str, pd.DataFrame]]] = {}
+# Beside them, when the book's last chart month was asked (`_REBASE_S`).
+_bases: dict[str, tuple[str, dict[str, pd.DataFrame], float]] = {}
 _bases_lock = threading.Lock()
-# As many live as `_held_frames` keeps — they share its frames — and as many
-# on disk as it does.
+# As many live as `_held_frames` keeps — they share its frames — and on disk
+# as many books as the readings of them (`held_closes`).
 _BASES_LIVE = 4
-_BASES_ON_DISK = 8
+_BASES_ON_DISK = 4
 
 
 def _base_path(db: str) -> Path:
     return disk_path("held_base", (db,))
 
 
-def _frames_base(db: str, since: str) -> dict[str, pd.DataFrame] | None:
-    """The book's previous frames, when they reach back to `since` (ISO)."""
+def _frames_base(
+    db: str, since: str
+) -> tuple[dict[str, pd.DataFrame], float] | None:
+    """(the book's previous frames, when they were rebased), when they reach
+    back to `since` (ISO). A base written before rebases were stamped reads
+    as never rebased."""
     with _bases_lock:
         held = _bases.get(db)
     if held is None:
@@ -302,20 +371,26 @@ def _frames_base(db: str, since: str) -> dict[str, pd.DataFrame] | None:
                 held = entry[1]
     if held is None:
         return None
-    reaches, frames = held
+    reaches: str = held[0]
+    frames: dict[str, pd.DataFrame] = held[1]
+    rebased_at = float(held[2]) if len(held) > 2 else 0.0
     # A trade imported from before the base began: its history is missing.
-    return frames if reaches <= since else None
+    return (frames, rebased_at) if reaches <= since else None
 
 
-def _keep_base(db: str, since: str, frames: dict[str, pd.DataFrame]) -> None:
+def _keep_base(
+    db: str, since: str, frames: dict[str, pd.DataFrame], rebased_at: float
+) -> None:
     with _bases_lock:
         _bases.pop(db, None)
-        _bases[db] = (since, frames)
+        _bases[db] = (since, frames, rebased_at)
         while len(_bases) > _BASES_LIVE:
             _bases.pop(next(iter(_bases)))
     with obs.swallow("prices.base_persist"):
         write_entry(
-            _base_path(db), (0.0, (since, frames), time.time()), _BASES_ON_DISK
+            _base_path(db),
+            (0.0, (since, frames, rebased_at), time.time()),
+            _BASES_ON_DISK,
         )
 
 
@@ -346,15 +421,16 @@ _HELD_QUIET = 3 * _PRICES_TTL
 
 
 @ttl_cache(
-    _PRICES_TTL,
+    _QUOTES_TTL,
     max_entries=4,
     stale_s=_HELD_STALE,
     quiet_s=_HELD_QUIET,
     persist="held_closes",
-    disk_max=8,
+    disk_max=4,
 )
 def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
-    """Adjusted close per name the book has ever held, from `_held_frames`.
+    """Adjusted close per name the book has ever held, from `_held_frames`,
+    its last bar at the live price (`_overlay_live`).
 
     The series every return, value and history is measured on. Refused whole
     (`YFRateLimitError`) when the download came back gutted — `_held_frames`
@@ -364,17 +440,16 @@ def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     txs, tickers = _held(db)
     if not tickers:
         return {}
-    closes = _close_series(_held_frames(db, mtime), "Adj Close")
-    return plausible_closes(closes, txs)
+    return _overlay_live(_frame_closes(db, mtime, "Adj Close", txs), (db, "Adj Close"))
 
 
 @ttl_cache(
-    _PRICES_TTL,
+    _QUOTES_TTL,
     max_entries=4,
     stale_s=_HELD_STALE,
     quiet_s=_HELD_QUIET,
     persist="held_printed_closes",
-    disk_max=8,
+    disk_max=4,
 )
 def held_printed_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     """Close as printed per held name, from the same download as `held_closes`.
@@ -385,8 +460,115 @@ def held_printed_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     txs, tickers = _held(db)
     if not tickers:
         return {}
-    closes = _close_series(_held_frames(db, mtime), "Close")
-    return plausible_closes(closes, txs)
+    return _overlay_live(_frame_closes(db, mtime, "Close", txs), (db, "Close"))
+
+
+# One reading per book and column of the frames it was read from, and of the
+# overlay laid over it. `held_closes` now recomputes every five minutes for
+# the live layer while the frames move every fifteen; re-reading them each
+# time would hand `_on_download` a new object and rebuild every frame of the
+# book for nothing. Same frames in, same object out; same quotes over it,
+# same object out. Capped like `_held_frames` itself: each entry keeps its
+# frames alive.
+_READINGS: dict[tuple, tuple[object, object, dict]] = {}
+_READINGS_MAX = 8
+_readings_lock = threading.Lock()
+
+
+def _remember(key: tuple, source: object, sign: object, value: dict) -> dict:
+    with _readings_lock:
+        _READINGS.pop(key, None)
+        _READINGS[key] = (source, sign, value)
+        while len(_READINGS) > _READINGS_MAX:
+            _READINGS.pop(next(iter(_READINGS)))
+    return value
+
+
+def _recall(key: tuple, source: object, sign: object = None) -> dict | None:
+    with _readings_lock:
+        hit = _READINGS.get(key)
+    if hit is not None and hit[0] is source and hit[1] == sign:
+        return hit[2]
+    return None
+
+
+def _frame_closes(db: str, mtime: float, column: str, txs) -> dict[str, pd.Series]:
+    """`column` of the book's frames as `load_closes` would shape it, less the
+    names its own fills say are another instrument (`plausible_closes`)."""
+    frames = _held_frames(db, mtime)
+    key = ("frames", db, column)
+    if (hit := _recall(key, frames)) is not None:
+        return hit
+    closes = plausible_closes(_close_series(frames, column), txs)
+    return _remember(key, frames, None, closes)
+
+
+# A live price further than this from the name's last close is another unit
+# (pence against pounds) or another listing, not a move.
+_LIVE_JUMP = 0.5
+
+
+def _overlay_live(
+    closes: dict[str, pd.Series], key: tuple | None
+) -> dict[str, pd.Series]:
+    """`closes` with each name's last bar brought to its live regular price.
+
+    The bars come from a refresh at most fifteen minutes old (`_held_frames`);
+    the batch quote (`quotes`, one request, five-minute memo) is fresher. A
+    quote for a later session than the last bar adds that bar; one for the
+    same session replaces its close; an older one, or pre/after-hours, leaves
+    the series alone — those are a move, not a close (`_snapshot`). Never
+    fails the memo it runs in: no quotes is the bars as they were.
+
+    `key` names the reading for the identity short-circuit (`_READINGS`);
+    None for a memo nothing downstream keys on.
+    """
+    if not closes:
+        return closes
+    with obs.swallow("prices.live"):
+        snaps = quotes(tuple(sorted(closes)))
+        moves: dict[str, tuple[Any, float]] = {}
+        rejected = 0
+        for ticker, series in closes.items():
+            snap = snaps.get(ticker) or {}
+            price, day = snap.get("regular"), snap.get("regular_as_of")
+            if not price or not day or series.empty:
+                continue
+            when = pd.Timestamp(day)
+            if (zone := getattr(series.index, "tz", None)) is not None:
+                when = when.tz_localize(zone)
+            last_day, last = series.index[-1], float(series.iloc[-1])
+            if when < last_day or (when == last_day and price == last):
+                continue
+            if last > 0 and abs(price / last - 1) > _LIVE_JUMP:
+                rejected += 1
+                obs.warn_once(
+                    "prices.live_rejected", ticker, ticker=ticker, last=last, live=price
+                )
+                continue
+            moves[ticker] = (when, float(price))
+        if not moves:
+            return closes
+        sign = tuple(sorted((t, w.isoformat(), p) for t, (w, p) in moves.items()))
+        live_key = ("live", *key) if key is not None else None
+        if live_key and (hit := _recall(live_key, closes, sign)) is not None:
+            return hit
+        out = dict(closes)
+        appended = 0
+        for ticker, (when, price) in moves.items():
+            series = closes[ticker].copy()
+            appended += when not in series.index
+            series.loc[when] = price
+            out[ticker] = series
+        obs.event(
+            "prices.live",
+            tickers=len(closes),
+            replaced=len(moves) - appended,
+            appended=appended,
+            rejected=rejected,
+        )
+        return _remember(live_key, closes, sign, out) if live_key else out
+    return closes
 
 
 _clear_adjusted = held_closes.cache_clear  # ty: ignore[unresolved-attribute]
@@ -396,6 +578,8 @@ def _clear_held(expire: bool = True) -> None:
     """Drop the download and both readings of it together — a refresh that
     cleared one would have the other re-derived from the frames it kept."""
     _held_frames.cache_clear(expire)  # ty: ignore[unresolved-attribute]
+    with _readings_lock:
+        _READINGS.clear()
     _clear_adjusted(expire)
     held_printed_closes.cache_clear(expire)  # ty: ignore[unresolved-attribute]
 
@@ -1666,7 +1850,8 @@ def watchlist_closes(tickers: tuple[str, ...]) -> dict[str, pd.Series]:
     """
     if not tickers:
         return {}
-    return load_closes(list(tickers), period="1y", adjusted=False)
+    closes = load_closes(list(tickers), period="1y", adjusted=False)
+    return _overlay_live(closes, None)
 
 
 def file_mtime(path: Path) -> float:

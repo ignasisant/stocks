@@ -22,7 +22,9 @@
  * for again, quietly, a few times: the server refreshes behind a stale answer,
  * so the same request a little later usually comes back live — and replaces
  * what is on screen without a spinner. Without it the stale line promised the
- * figures would update and only the next navigation delivered.
+ * figures would update and only the next navigation delivered. The same for
+ * an answer the server says it is refreshing behind (`X-Data-Refreshing`):
+ * recent figures, newer ones on the way.
  *
  * And it abandons what it asked for once nobody can see it: the component
  * unmounting (the reader moved to another screen, or closed this one) or its
@@ -40,7 +42,7 @@ import {
   watched,
   withMemo,
 } from "./api";
-import { noteFreshness, staleAt } from "./freshness";
+import { isRefreshing, noteFreshness, staleAt } from "./freshness";
 
 /** When a stale answer is asked for again: past a refresh on the server's one
  * throttled vCPU, which runs twenty seconds to a minute. Then it stops — a
@@ -50,9 +52,9 @@ export const FOLLOW_MS = [15_000, 30_000, 60_000] as const;
 type Asked<T> = { result: Promise<T>; urls: Set<string> };
 
 /**
- * Ask again, on `FOLLOW_MS`, while any of `urls` last came back stale, and
- * hand each answer to `landed`. A failed re-ask is dropped: what is on screen
- * stays, and so does the stale line. Returns the stop.
+ * Ask again, on `FOLLOW_MS`, while any of `urls` last came back stale or
+ * refreshing, and hand each answer to `landed`. A failed re-ask is dropped:
+ * what is on screen stays, and so does the stale line. Returns the stop.
  */
 export function followStale<T>(
   urls: Set<string>,
@@ -62,7 +64,7 @@ export function followStale<T>(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
   const step = (seen: Set<string>, attempt: number) => {
-    const stale = [...seen].filter((url) => staleAt(url) !== null);
+    const stale = [...seen].filter((url) => staleAt(url) !== null || isRefreshing(url));
     if (stopped || !stale.length || attempt >= FOLLOW_MS.length) return;
     timer = setTimeout(() => {
       if (stopped) return;

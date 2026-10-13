@@ -5,6 +5,8 @@ them at cost for good, and says so once, not on every request. No network:
 `yf.download` and Yahoo's search are replaced.
 """
 
+import time
+
 import pandas as pd
 
 from stocks import obs
@@ -161,3 +163,27 @@ def test_unlisted_verdict_is_logged_once_across_flips(monkeypatch):
     fetch.fetch_many(["ORGN"])
 
     assert seen == [["ORGN"]]
+
+
+# ------------------------------------------------- the verdict outlives a restart
+def test_an_unlisted_verdict_survives_a_restart(monkeypatch):
+    monkeypatch.setattr(fetch.yf, "download", _fake_download([], {"ORGN"}))
+    fetch.fetch_many(["ORGN"])
+    fetch._forget_unlisted_in_memory()  # a new process
+    assert fetch.unlisted(["ORGN"]) == {"ORGN"}
+
+
+def test_an_unlisted_verdict_expires_after_a_week(monkeypatch):
+    monkeypatch.setattr(fetch.yf, "download", _fake_download([], {"ORGN"}))
+    fetch.fetch_many(["ORGN"])
+    now = time.time()
+    monkeypatch.setattr(fetch.time, "time", lambda: now + fetch.UNLISTED_TTL_S + 1)
+    assert fetch.unlisted(["ORGN"]) == set()
+
+
+def test_relisted_forgets_the_verdict_on_disk_too(monkeypatch):
+    monkeypatch.setattr(fetch.yf, "download", _fake_download([], {"ORGN"}))
+    fetch.fetch_many(["ORGN"])
+    fetch.relisted("ORGN")
+    fetch._forget_unlisted_in_memory()
+    assert fetch.unlisted(["ORGN"]) == set()

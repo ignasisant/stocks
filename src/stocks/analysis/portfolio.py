@@ -1948,12 +1948,22 @@ def _snapshot(quote: dict) -> dict | None:
     which price a day change is measured from, whoever fetched it. `currency`
     is the listing's quote currency as Yahoo spells it (GBp for pence), for a
     caller setting the price beside a figure of its own.
+
+    `regular` / `regular_as_of` are the regular session's own price and date
+    whatever window is open — the close a daily bar would print, which is what
+    `loaders._overlay_live` lays over a book's last bar. Extended hours are a
+    move, not a close.
     """
     with obs.swallow("quote.session"):
         state = str(quote.get("marketState") or "")
         regular = quote.get("regularMarketPrice")
         prev = quote.get("regularMarketPreviousClose")
         pre, post = quote.get("preMarketPrice"), quote.get("postMarketPrice")
+        session = {
+            "currency": quote.get("currency"),
+            "regular": float(regular) if regular else None,
+            "regular_as_of": _quote_date(quote) if regular else None,
+        }
         if state.startswith("PRE") and pre and regular:
             price = float(pre)
             return {
@@ -1961,7 +1971,7 @@ def _snapshot(quote: dict) -> dict | None:
                 "pct": price / float(regular) - 1,
                 "session": "pre",
                 "as_of": _quote_date(quote, today=True),
-                "currency": quote.get("currency"),
+                **session,
             }
         if post and prev and not state.startswith("PRE"):
             price = float(post)
@@ -1970,7 +1980,7 @@ def _snapshot(quote: dict) -> dict | None:
                 "pct": price / float(prev) - 1,
                 "session": "post" if state.startswith("POST") else None,
                 "as_of": _quote_date(quote),
-                "currency": quote.get("currency"),
+                **session,
             }
         if regular and prev:
             price = float(regular)
@@ -1979,7 +1989,7 @@ def _snapshot(quote: dict) -> dict | None:
                 "pct": price / float(prev) - 1,
                 "session": None,
                 "as_of": _quote_date(quote),
-                "currency": quote.get("currency"),
+                **session,
             }
     return None
 
