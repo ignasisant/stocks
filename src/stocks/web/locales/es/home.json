@@ -147,6 +147,7 @@
   "home.mon_12": "dic",
   "home.daily_title": "Acción diaria",
   "home.daily_badge": "IA · Acción diaria",
+  "home.daily_badge_computed": "Acción diaria · sin IA",
   "home.daily_today": "Hoy · {time}",
   "home.daily_today_no_time": "Hoy",
   "home.daily_ask": "Preguntar al asistente",

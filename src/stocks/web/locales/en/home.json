@@ -147,6 +147,7 @@
   "home.mon_12": "Dec",
   "home.daily_title": "Daily action",
   "home.daily_badge": "AI · Daily action",
+  "home.daily_badge_computed": "Daily action · no AI",
   "home.daily_today": "Today · {time}",
   "home.daily_today_no_time": "Today",
   "home.daily_ask": "Ask the assistant",

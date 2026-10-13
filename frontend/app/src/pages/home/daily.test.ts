@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   linesOf,
   opens,
+  badgeKey,
   noteKey,
   sectioned,
   sectionsOf,
@@ -162,6 +163,16 @@ describe("noteKey", () => {
       "home.daily_brief_missed",
     );
     expect(noteKey({ ...base, source: "computed" })).toBe("home.daily_computed_note");
+  });
+});
+
+describe("badgeKey", () => {
+  it("drops the AI label from the default card once it is final", () => {
+    expect(badgeKey({ pending: false, source: "llm" })).toBe("home.daily_badge");
+    expect(badgeKey({ pending: true, source: "computed" })).toBe("home.daily_badge");
+    expect(badgeKey({ pending: false, source: "computed" })).toBe(
+      "home.daily_badge_computed",
+    );
   });
 });
 
