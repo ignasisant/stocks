@@ -131,6 +131,10 @@ export async function getSectors(tickers: string[]): Promise<Record<string, stri
   return out;
 }
 
+/** The last company the account opened, or null — newest first on the wire. */
+export const getLastViewed = () =>
+  get<{ tickers: string[] }>("/search/recent").then((body) => body.tickers[0] ?? null);
+
 export const getWatchlist = () => get<{ entries: WatchlistEntry[] }>("/watchlist");
 
 export const getTags = () => get<{ tags: string[] }>("/watchlist/tags");

@@ -55,6 +55,7 @@ import {
   getProfile,
   getQuote,
   getValuation,
+  getLastViewed,
   getWatchlist,
 } from "./data";
 import { PeerPicker } from "./Peers";
@@ -162,10 +163,26 @@ export default function Page() {
     return ordered[0]?.ticker ?? null;
   }, [entries]);
 
+  // The page is the last company the reader looked at; the watchlist's first
+  // favourite is only for an account that has looked at none. undefined while
+  // that is still being asked, so the fallback does not win the race.
+  const [lastViewed, setLastViewed] = useState<string | null | undefined>(undefined);
   useEffect(() => {
-    if (asked || !fallback) return;
-    setParams({ ticker: fallback });
-  }, [asked, fallback, setParams]);
+    if (asked) return;
+    let live = true;
+    getLastViewed()
+      .then((last) => live && setLastViewed(last))
+      .catch(() => live && setLastViewed(null));
+    return () => {
+      live = false;
+    };
+  }, [asked]);
+
+  useEffect(() => {
+    if (asked || lastViewed === undefined) return;
+    const next = lastViewed ?? fallback;
+    if (next) setParams({ ticker: next });
+  }, [asked, lastViewed, fallback, setParams]);
 
   const ticker = asked || null;
 
