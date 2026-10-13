@@ -54,6 +54,8 @@ wheels/
 /data/code_symbols.json
 /data/profiles.json
 /data/form4.json
+# Names Yahoo has no data for (stocks.data.fetch) — runtime, restored from R2
+/data/unlisted.json
 # The API's persisted memos (stocks.api.cache) — runtime state, restored from R2.
 /data/memo/
 /data/last_import.json

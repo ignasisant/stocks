@@ -155,7 +155,7 @@ def test_a_name_yahoo_answered_for_is_not_asked_again(monkeypatch, keyed):
 
 
 def test_a_disowned_broker_code_is_not_taken_for_a_us_listing(monkeypatch, keyed):
-    fetch._unlisted.add("SAN")
+    fetch.mark_unlisted("SAN")
     fetch.trip_throttle()
     assert q.quotes(["SAN"]) == {}
     assert keyed == []

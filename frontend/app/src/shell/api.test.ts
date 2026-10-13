@@ -16,7 +16,7 @@ import {
   send,
   withMemo,
 } from "./api";
-import { resetFreshness, staleSince } from "./freshness";
+import { isRefreshing, resetFreshness, staleSince } from "./freshness";
 
 function ok(body: unknown): Response {
   return {
@@ -87,6 +87,25 @@ describe("get memo", () => {
     expect(staleSince()).toBe(Date.parse("2026-09-27T10:00:00+00:00"));
     await get("/x");
     expect(staleSince()).toBeNull();
+    resetFreshness();
+  });
+
+  it("records that the server is refreshing behind its answer", async () => {
+    const stub = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "X-Data-Refreshing": "1" }),
+        json: async () => ({}),
+      } as unknown as Response)
+      .mockResolvedValue(ok({}));
+    vi.stubGlobal("fetch", stub);
+    await get("/x");
+    expect(isRefreshing("/api/v1/x")).toBe(true);
+    expect(staleSince()).toBeNull();
+    await get("/x");
+    expect(isRefreshing("/api/v1/x")).toBe(false);
     resetFreshness();
   });
 

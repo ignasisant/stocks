@@ -13,7 +13,7 @@
  */
 
 import { begin } from "./activity";
-import { noteFreshness } from "./freshness";
+import { noteFreshness, noteRefreshing } from "./freshness";
 import { keepable, landed, recall } from "./keep";
 
 const BASE = "/api/v1";
@@ -325,6 +325,7 @@ async function read<T>(url: string, abort: AbortController): Promise<T> {
     if (!response.ok) await fail(response);
     // What the server had to say about the age of these figures, if anything.
     noteFreshness(url, response.headers.get("x-data-stale-since"));
+    noteRefreshing(url, response.headers.get("x-data-refreshing"));
     return (await response.json()) as T;
   } catch (error) {
     if (abort.signal.aborted) {

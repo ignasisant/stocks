@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import logging
 import re
 import threading
@@ -17,7 +18,7 @@ import pandas as pd
 import yfinance as yf
 from yfinance.exceptions import YFRateLimitError
 
-from stocks import obs
+from stocks import atomic, obs
 from stocks.analysis import naive_dates
 from stocks.config import DATA_DIR, ticker_aliases
 from stocks.data import profiles
@@ -99,7 +100,54 @@ def clear_throttle() -> None:
         _blocked_until = 0.0
 
 
-def retry[T](fn: Callable[[], T], attempts: int = 3, base_delay: float = 1.5) -> T:
+# What a failed Yahoo call says about the host. Only a refusal is a throttle;
+# a 401 "Invalid crumb" is yfinance's session going stale (it already flipped
+# cookie strategy once and lost), and a timeout or a 5xx is weather. Opening
+# the process-wide cooldown on either used to blank the whole book's prices
+# for five minutes over one bad crumb.
+_THROTTLED_RE = re.compile(r"\b429\b|Too Many Requests|Rate limited", re.I)
+_CRUMB_RE = re.compile(r"\b401\b|Invalid Crumb|Unauthorized", re.I)
+
+
+def failure_kind(exc: BaseException) -> str:
+    """'throttle', 'crumb' or 'other' for an exception from a Yahoo call."""
+    if isinstance(exc, YFRateLimitError):
+        return "throttle"
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    text = f"{type(exc).__name__} {exc}"
+    if status == 429 or _THROTTLED_RE.search(text):
+        return "throttle"
+    if status == 401 or _CRUMB_RE.search(text):
+        return "crumb"
+    return "other"
+
+
+def reset_crumb() -> None:
+    """Make yfinance mint a new cookie and crumb on its next request.
+
+    `YfData` keeps both for the life of the process. Toggling the cookie
+    strategy away and back is the library's own way to drop them (a single
+    toggle to the current strategy is a no-op). Private API: guarded, since a
+    failed reset is just one more 401 later.
+    """
+    with obs.swallow("yahoo.crumb_reset"):
+        from yfinance.data import YfData
+
+        data = YfData()
+        current = getattr(data, "_cookie_strategy", "basic")
+        other = "csrf" if current == "basic" else "basic"
+        data._set_cookie_strategy(other)
+        data._set_cookie_strategy(current)
+        obs.event("yahoo.crumb_reset", level=logging.DEBUG)
+
+
+def retry[T](
+    fn: Callable[[], T],
+    attempts: int = 3,
+    base_delay: float = 1.5,
+    *,
+    trip: bool = True,
+) -> T:
     """Run fn, retrying on Yahoo's 429 with exponential backoff (1.5s, 3s).
 
     Public because it is the whole discipline: any module that talks to Yahoo
@@ -116,6 +164,11 @@ def retry[T](fn: Callable[[], T], attempts: int = 3, base_delay: float = 1.5) ->
     already handle that exception — it is what the "prices unavailable" cards
     are made of — so a throttled window now costs a page one instant
     degradation instead of one slow one per block.
+
+    `trip=False` is for a side errand (the USD pair a coin falls back to, a
+    code placed on a venue): it gives up as fast as asked but leaves the
+    verdict about the host to the main download, so one refused meme coin
+    does not blank the whole book for five minutes.
     """
     if throttle_remaining() > 0:
         obs.event("yahoo.cooling_off", remaining_s=round(throttle_remaining(), 1))
@@ -132,6 +185,11 @@ def retry[T](fn: Callable[[], T], attempts: int = 3, base_delay: float = 1.5) ->
     try:
         return fn()
     except YFRateLimitError:
+        if not trip:
+            obs.warn(
+                "yahoo.rate_limited", attempt=attempts, attempts=attempts, trip=False
+            )
+            raise
         trip_throttle()
         obs.warn(
             "yahoo.rate_limit_exhausted", attempts=attempts, cooldown_s=COOLDOWN_S
@@ -143,6 +201,12 @@ def retry[T](fn: Callable[[], T], attempts: int = 3, base_delay: float = 1.5) ->
 # warm, so this is ten times the honest cost: it is here to catch a hang, not
 # to hurry a slow day.
 BULK_BUDGET_S = 60.0
+
+# Wall clock for a download's side errand — a coin's USD pair, a code just
+# placed on a venue. One attempt, no cooldown: the main download already said
+# what it had to say about the host, and a few unpriced names keep their last
+# bars (`loaders._extend`) rather than costing the rest of the book.
+FALLBACK_BUDGET_S = 15.0
 
 # Concurrent requests inside one bulk download. yfinance's default is
 # `cpu_count() * 2`, which on the 1-vCPU Cloud Run service is two: a 34-name
@@ -214,30 +278,93 @@ class _DownloadFailures(logging.Filter):
 logging.getLogger("yfinance").addFilter(_DownloadFailures())
 
 # Tickers (as requested) that the last bulk download asking for them was told
-# Yahoo has no such symbol. One verdict per process, like the breaker: the
-# answer is about the symbol, not about who asked. Rewritten by every download
-# that includes the name, so one that starts pricing leaves on its own.
-_unlisted: set[str] = set()
+# Yahoo has no such symbol, with the wall time it said so. One verdict for the
+# host, like the breaker: the answer is about the symbol, not about who asked.
+# Rewritten by every download that includes the name, so one that starts
+# pricing leaves on its own.
+#
+# Kept on disk (and in the bucket) for `UNLISTED_TTL_S`: held in memory only,
+# every restart forgot them — fourteen a week on Cloud Run — and the next
+# download counted three dead coins as refused, asked for them whole, and
+# logged them as news again. A week is how long a dead symbol goes unasked.
+UNLISTED_CACHE = DATA_DIR / "unlisted.json"
+UNLISTED_TTL_S = 7 * 86400.0
+_unlisted: dict[str, float] = {}
+_unlisted_loaded = False
 _unlisted_lock = threading.Lock()
 
 
+def _load_unlisted() -> None:
+    """Read the verdicts back once per process (under `_unlisted_lock`)."""
+    global _unlisted_loaded
+    if _unlisted_loaded:
+        return
+    _unlisted_loaded = True
+    with obs.swallow("yahoo.unlisted_restore"):
+        from stocks import storage
+
+        if not UNLISTED_CACHE.exists():
+            storage.restore(UNLISTED_CACHE)
+    try:
+        data = json.loads(UNLISTED_CACHE.read_text())
+    except (OSError, ValueError):
+        return
+    if isinstance(data, dict):
+        for t, at in data.items():
+            if isinstance(at, int | float):
+                _unlisted.setdefault(str(t), float(at))
+
+
+def _save_unlisted() -> None:
+    """Write the verdicts out (under `_unlisted_lock`); best effort."""
+    with obs.swallow("yahoo.unlisted_save"):
+        from stocks import storage
+
+        atomic.write_json(UNLISTED_CACHE, dict(sorted(_unlisted.items())), indent=0)
+        storage.persist(UNLISTED_CACHE)
+
+
 def unlisted(tickers) -> set[str]:
-    """Those of `tickers` Yahoo last said it has no symbol for."""
+    """Those of `tickers` Yahoo said, within the last week, it has no symbol for."""
+    cutoff = time.time() - UNLISTED_TTL_S
     with _unlisted_lock:
-        return _unlisted & set(tickers)
+        _load_unlisted()
+        return {t for t in set(tickers) if _unlisted.get(t, -1.0) > cutoff}
 
 
 def relisted(ticker: str) -> None:
     """Drop the verdict on `ticker`: it has just been mapped to a line Yahoo
     does list, and the next download asks that one."""
     with _unlisted_lock:
-        _unlisted.discard(ticker)
+        _load_unlisted()
+        if _unlisted.pop(ticker, None) is not None:
+            _save_unlisted()
 
 
 def clear_unlisted() -> None:
-    """Forget every verdict — for tests."""
+    """Forget every verdict, here and on disk — for tests."""
+    global _unlisted_loaded
     with _unlisted_lock:
         _unlisted.clear()
+        _unlisted_loaded = True
+        UNLISTED_CACHE.unlink(missing_ok=True)
+
+
+def mark_unlisted(*tickers: str) -> None:
+    """Record a "no such symbol" verdict for `tickers` now — tests, mostly."""
+    now = time.time()
+    with _unlisted_lock:
+        _load_unlisted()
+        _unlisted.update(dict.fromkeys(tickers, now))
+        _save_unlisted()
+
+
+def _forget_unlisted_in_memory() -> None:
+    """What a restart does: the next read goes back to the disk. Tests only."""
+    global _unlisted_loaded
+    with _unlisted_lock:
+        _unlisted.clear()
+        _unlisted_loaded = False
 
 
 def _note_failures(
@@ -257,15 +384,25 @@ def _note_failures(
             symbols=len(set(symbol_of.values())),
         )
     newly: list[str] = []
+    now = time.time()
     with _unlisted_lock:
+        _load_unlisted()
+        changed = False
         for t in tickers:
             why = failures.get(symbol_of[t].upper(), "")
             if t not in priced and why.lower().startswith(UNLISTED_REASON):
-                if t not in _unlisted:
+                said = _unlisted.get(t, -1.0)
+                if said <= now - UNLISTED_TTL_S:
                     newly.append(t)
-                _unlisted.add(t)
-            else:
-                _unlisted.discard(t)
+                # Re-stamped at most daily: the file is rewritten and uploaded
+                # when the verdict changes, not on every download repeating it.
+                if said <= now - 86400.0:
+                    _unlisted[t] = now
+                    changed = True
+            elif _unlisted.pop(t, None) is not None:
+                changed = True
+        if changed:
+            _save_unlisted()
     # A verdict that flips back and forth (a throttled download in between)
     # is still one fact about the symbol: say it once per window.
     newly = [t for t in newly if obs.first_sighting("yahoo.unlisted", t)]
@@ -532,6 +669,9 @@ def fetch_many(
     auto_adjust: bool = True,
     budget: float = BULK_BUDGET_S,
     currencies: dict[str, str] | None = None,
+    *,
+    attempts: int = 3,
+    trip: bool = True,
 ) -> dict[str, pd.DataFrame]:
     """OHLCV history for many tickers in ONE bulk request (yf.download).
 
@@ -555,6 +695,9 @@ def fetch_many(
     A ledger label that is an ISIN is placed first (`_place_isins`). `currencies`
     (ticker -> the currency the book traded it in) lets a bare code Yahoo
     disowned be placed on a venue and asked once more (`_place_codes`).
+
+    `attempts` and `trip` go to `retry`: a side errand asks once and leaves
+    the cooldown alone.
     """
     if not tickers:
         return {}
@@ -591,7 +734,11 @@ def fetch_many(
     # way each of the three attempts would get its own 60s and a hung Yahoo
     # would cost three minutes plus the backoff — the budget has to bound the
     # whole thing, sleeps included.
-    data = _budgeted(lambda: retry(download), budget=budget, symbols=len(symbols))
+    data = _budgeted(
+        lambda: retry(download, attempts, trip=trip),
+        budget=budget,
+        symbols=len(symbols),
+    )
     out: dict[str, pd.DataFrame] = {}
     for t in tickers:
         try:
@@ -615,14 +762,74 @@ def fetch_many(
             out[t] = df
     missing = [t for t in tickers if t not in out]
     if missing:
-        out.update(_crypto_usd_fallback(missing, period, interval, auto_adjust, budget))
+        out.update(_crypto_usd_fallback(missing, period, interval, auto_adjust))
     _note_failures(tickers, symbol_of, out, failures)
     if currencies and (placed := _place_codes(missing, currencies)):
-        out.update(
-            fetch_many(placed, period, interval, auto_adjust, budget)
-        )
+        out.update(_errand(placed, period, interval, auto_adjust, "placed_codes"))
     if gecko:
         out.update(_coingecko_fallback(gecko, period, interval))
+    return out
+
+
+def _errand(
+    tickers: list[str], period: str, interval: str, auto_adjust: bool, why: str
+) -> dict[str, pd.DataFrame]:
+    """`fetch_many` for a side errand: one attempt, its own short budget, no
+    cooldown, and a refusal is just nothing priced."""
+    try:
+        return fetch_many(
+            tickers,
+            period=period,
+            interval=interval,
+            auto_adjust=auto_adjust,
+            budget=FALLBACK_BUDGET_S,
+            attempts=1,
+            trip=False,
+        )
+    except YFRateLimitError:
+        obs.warn("yahoo.fallback_refused", why=why, tickers=len(tickers))
+        return {}
+
+
+# Fewest closes a month of spark must carry to be laid over a book. Under a
+# cent Yahoo thins the series out (BONK-USD: ten closes of thirty-one,
+# measured 2026-10-13), and the day it drops may be the one a refresh is for.
+_SPARK_DENSE = 15
+
+
+def fetch_tail(tickers: list[str]) -> dict[str, pd.DataFrame]:
+    """The last month of daily closes for `tickers`, keyed as asked: one spark
+    request per twenty names (`data.spark`) instead of one chart request each.
+
+    A spark frame has `Close` and `Adj Close`, both the printed close (spark
+    has no other), and nothing else — it extends frames the daily chart
+    download keeps whole (`loaders._held_frames`). Names Yahoo said it does
+    not list are not asked. A name spark leaves out or thins out (a pair Yahoo
+    only has in dollars, a coin under a cent, a hand-mapped coin) goes through
+    `fetch_many` as a side errand, which keeps the USD and CoinGecko fallbacks.
+
+    Raises `YFRateLimitError` when spark would not answer.
+    """
+    from stocks.data import spark
+
+    if not tickers:
+        return {}
+    disowned = unlisted(tickers)
+    asked = [t for t in tickers if t not in disowned]
+    direct = [t for t in asked if not ((p := split_pair(t)) and p[0] in COINGECKO_IDS)]
+    _place_isins(direct)
+    symbol_of = {t: resolve(t) for t in direct}
+    series = spark.closes(list(symbol_of.values()))
+    out: dict[str, pd.DataFrame] = {}
+    for t, symbol in symbol_of.items():
+        s = series.get(symbol)
+        if s is not None and len(s) >= _SPARK_DENSE:
+            frame = pd.DataFrame({"Close": s, "Adj Close": s})
+            frame.index.name = "Date"
+            out[t] = frame
+    rest = [t for t in asked if t not in out]
+    if rest:
+        out.update(_errand(rest, "1mo", "1d", False, "tail"))
     return out
 
 
@@ -631,7 +838,6 @@ def _crypto_usd_fallback(
     period: str,
     interval: str,
     auto_adjust: bool,
-    budget: float,
 ) -> dict[str, pd.DataFrame]:
     """Retry an unpriced EUR/GBP crypto pair on its USD one, FX-converted back.
 
@@ -646,13 +852,7 @@ def _crypto_usd_fallback(
     if not pairs:
         return {}
     usd_symbols = sorted({f"{coin}-USD" for coin, _ in pairs.values()})
-    usd_frames = fetch_many(
-        usd_symbols,
-        period=period,
-        interval=interval,
-        auto_adjust=auto_adjust,
-        budget=budget,
-    )
+    usd_frames = _errand(usd_symbols, period, interval, auto_adjust, "crypto_usd")
     out: dict[str, pd.DataFrame] = {}
     for t, (coin, quote) in pairs.items():
         usd_df = usd_frames.get(f"{coin}-USD")

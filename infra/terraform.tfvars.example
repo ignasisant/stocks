@@ -21,6 +21,9 @@ telegram_bot_token = ""
 # Optional — the app's public origin, so notifications can link back into it
 app_public_url = "" # e.g. https://topstocks.example
 
+# Optional — price warm-up cron (warm.yml); must equal the app's [api] token
+api_token = ""
+
 # Optional — digest highlight LLM chain
 chat_enc_key        = "" # must equal the app's [chat] enc_key
 free_llm_groq       = ""

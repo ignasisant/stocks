@@ -75,10 +75,13 @@ def _seed(sym: str) -> int:
 
 
 def _closes(sym: str, n: int) -> pd.Series:
+    """The last `n` sessions of one long walk per symbol, so every period —
+    and the fake quote — ends on the same price."""
+    longest = max(n, _PERIOD_DAYS["max"])
     rng = np.random.default_rng(_seed(sym))
+    walk = 100.0 * np.cumprod(1 + rng.normal(0, 0.01, longest))
     idx = pd.bdate_range(end=pd.Timestamp.today().normalize(), periods=n)
-    px = 100.0 * np.cumprod(1 + rng.normal(0, 0.01, n))
-    return pd.Series(px, index=idx, name="Close")
+    return pd.Series(walk[-n:], index=idx, name="Close")
 
 
 def _ohlcv(sym: str, period: str = "1y", start=None, end=None) -> pd.DataFrame:
@@ -245,9 +248,28 @@ class FakeTicker:
         return pd.DataFrame()
 
 
+def fake_spark(syms: list[str], range_: str) -> dict:
+    """The v7 spark payload: each symbol's daily closes at the session open."""
+    COUNTS["spark.calls"] += 1
+    COUNTS["spark.symbols"] += len(syms)
+    DETAIL.append(f"spark({len(syms)} syms, {range_})")
+    rows = []
+    for s in syms:
+        c = _closes(s, _PERIOD_DAYS.get(range_, 22))
+        stamps = [int((d + pd.Timedelta(hours=14)).timestamp()) for d in c.index]
+        rows.append({"symbol": s, "response": [{
+            "meta": {"symbol": s, "exchangeTimezoneName": "America/New_York"},
+            "timestamp": stamps,
+            "indicators": {"quote": [{"close": [float(x) for x in c]}]},
+        }]})
+    return {"spark": {"result": rows}}
+
+
 def fake_get_raw_json(self, url, params=None, timeout=None, **kw):
     syms = str((params or {}).get("symbols", "")).split(",")
     syms = [s for s in syms if s]
+    if "/spark" in str(url):
+        return fake_spark(syms, str((params or {}).get("range", "1mo")))
     COUNTS["quote.calls"] += 1
     COUNTS["quote.symbols"] += len(syms)
     DETAIL.append(f"quote({len(syms)} syms)")
@@ -344,6 +366,10 @@ def install_stubs():
     profiles.clear()
     funds.TYPE_CACHE = scratch / "quote_types.json"
     funds._types = None
+    # Memos on disk too: the dev memo dir would serve a run from the last one
+    # and keep this bench's made-up prices for the dev server to read.
+    from stocks.api import cache
+    cache.MEMO_DIR = scratch / "memo"
 
     # Any other socket = a fetch site this bench does not know about. Fail
     # fast and count it instead of hanging on DNS.
@@ -460,6 +486,8 @@ class _Capture(logging.Handler):
             "duration_ms": getattr(record, "duration_ms", None),
             "page": getattr(record, "page", None),
             "error": getattr(record, "error", None),
+            "ticker": getattr(record, "ticker", None),
+            "last": getattr(record, "last", None), "live": getattr(record, "live", None),
         })
 
 

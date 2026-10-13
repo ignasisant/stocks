@@ -400,7 +400,7 @@ def test_the_summary_names_the_unpriced_yahoo_does_not_list(
     )
     monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
     # AAPL priced after all, so a stale verdict on it must not be repeated.
-    fetch._unlisted.update({"SAN", "AAPL"})
+    fetch.mark_unlisted("SAN", "AAPL")
 
     body = client.get(
         "/v1/portfolio/summary", params={"account": EMAIL}, headers=AUTH

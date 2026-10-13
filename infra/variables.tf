@@ -57,6 +57,13 @@ variable "app_public_url" {
   default     = ""
 }
 
+variable "api_token" {
+  description = "Optional. Must equal the app's [api] token — lets warm.yml POST /api/v1/warm (needs app_public_url too). Empty = secret not created, no warm-up."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "chat_enc_key" {
   description = "Optional. Fernet key, must equal the app's [chat] enc_key — lets the digest use BYOK LLM keys. Empty = secret not created."
   type        = string

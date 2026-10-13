@@ -42,6 +42,7 @@ from __future__ import annotations
 import contextvars
 import hashlib
 import pickle
+import queue
 import threading
 import time
 from collections.abc import Callable
@@ -80,6 +81,13 @@ KEEP_DEFAULT_S = 3 * 86400.0
 # reference is shared, a rebinding would not be.
 STALE: ContextVar[dict[str, float] | None] = ContextVar("stale", default=None)
 
+# Set by a caller nobody is waiting on — the warm-up route (`api.warm`) — that
+# would rather run a refresh on its own thread than be answered with the entry
+# it replaces: that thread has the CPU a background refresh would not, and a
+# warm that started one refresh per account would be the burst against Yahoo
+# it exists to avoid.
+SYNC: ContextVar[bool] = ContextVar("sync_refresh", default=False)
+
 # Told about every background refresh as it starts, with the event its landing
 # sets. The API wires it to `api.holds.keep`: on Cloud Run a thread no request
 # is waiting for runs on a throttled CPU, and stalls there.
@@ -90,6 +98,15 @@ def mark_stale(wall: float) -> None:
     holder = STALE.get()
     if holder is not None:
         holder["since"] = min(holder.get("since", wall), wall)
+
+
+def mark_refreshing() -> None:
+    """The request was answered from the grace window while a refresh runs:
+    the response says so (`X-Data-Refreshing`), and the shell asks again a
+    little later for the figures that refresh lands."""
+    holder = STALE.get()
+    if holder is not None:
+        holder["refreshing"] = 1.0
 
 
 def carried[T](fn: Callable[..., T]) -> Callable[..., T]:
@@ -160,9 +177,15 @@ def coalesced(
         leader = flight is None
         if flight is None:
             flight = flights[key] = Flight()
-        stale = entry is not None and usable is not None and usable(entry)
+        stale = (
+            entry is not None
+            and usable is not None
+            and usable(entry)
+            and not SYNC.get()
+        )
     if stale:
         _remark(entry)
+        mark_refreshing()
         if marked is not None and len(entry) > 2 and marked(entry):
             mark_stale(entry[2])
         if leader:
@@ -314,9 +337,60 @@ def write_entry(path: Path, entry: Entry, disk_max: int = DISK_MAX_FILES) -> Non
     }
     atomic.write_bytes(path, pickle.dumps(blob, protocol=pickle.HIGHEST_PROTOCOL))
     _trim(path.parent, disk_max)
-    threading.Thread(
-        target=_mirror, args=(path,), name="cache-mirror", daemon=True
-    ).start()
+    _enqueue_mirror(path)
+
+
+# One uploader for every memo, not a thread per write. A page refresh lands a
+# dozen entries at once, and a thread each overran boto's connection pool of
+# ten ("Connection pool is full, discarding connection" in the prod log) and
+# held every pickle's upload buffer in memory at the same moment. A path
+# written again while it waits is uploaded once, with its latest bytes.
+MIRROR_QUEUE_MAX = 64
+_mirror_queue: queue.Queue[Path] = queue.Queue(maxsize=MIRROR_QUEUE_MAX)
+_mirror_waiting: set[Path] = set()
+_mirror_lock = threading.Lock()
+_mirror_worker: threading.Thread | None = None
+
+
+def _enqueue_mirror(path: Path) -> None:
+    global _mirror_worker
+    with _mirror_lock:
+        if path in _mirror_waiting:
+            return
+        try:
+            _mirror_queue.put_nowait(path)
+        except queue.Full:
+            # The bucket is behind by a whole queue: this copy is skipped, and
+            # the next write of the same entry tries again.
+            obs.warn("cache.mirror_dropped", path=path.name)
+            return
+        _mirror_waiting.add(path)
+        if _mirror_worker is None or not _mirror_worker.is_alive():
+            _mirror_worker = threading.Thread(
+                target=_mirror_loop, name="cache-mirror", daemon=True
+            )
+            _mirror_worker.start()
+
+
+def _mirror_loop() -> None:
+    while True:
+        path = _mirror_queue.get()
+        with _mirror_lock:
+            _mirror_waiting.discard(path)
+        try:
+            _mirror(path)
+        finally:
+            _mirror_queue.task_done()
+
+
+def _mirror_flush(timeout: float = 5.0) -> bool:
+    """Wait until every queued mirror has run — tests only. True when drained."""
+    deadline = time.monotonic() + timeout
+    while _mirror_queue.unfinished_tasks:
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.01)
+    return True
 
 
 def _mirror(path: Path) -> None:

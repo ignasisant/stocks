@@ -221,6 +221,9 @@ def test_the_book_downloads_once_for_its_adjusted_and_printed_closes(
         }
 
     monkeypatch.setattr(data_fetch, "fetch_many", download)
+    monkeypatch.setattr(
+        data_fetch, "fetch_tail", lambda tickers: download(tickers, auto_adjust=False)
+    )
     loaders.held_closes.cache_clear()
     adjusted = loaders.held_closes(str(db), 1.0)
     printed = loaders.held_printed_closes(str(db), 1.0)

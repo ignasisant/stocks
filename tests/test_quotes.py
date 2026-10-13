@@ -152,3 +152,65 @@ def test_quote_reads_one_and_returns_a_blob(monkeypatch):
 def test_quote_is_empty_when_yahoo_has_none(monkeypatch):
     monkeypatch.setattr(q, "_fetch", lambda symbols, timeout: [])
     assert q.quote("ORGN") == {}
+
+
+# ------------------------------------------------ what a failure says
+def test_a_stale_crumb_is_reset_and_asked_again_without_a_cooldown(monkeypatch):
+    calls, resets = [], []
+
+    def flaky(symbols, timeout):
+        calls.append(list(symbols))
+        if len(calls) == 1:
+            raise RuntimeError("HTTP Error 401: Unauthorized — Invalid Crumb")
+        return _rows(*symbols)
+
+    monkeypatch.setattr(q, "_fetch", flaky)
+    monkeypatch.setattr(q, "reset_crumb", lambda: resets.append(1))
+    out = q.quotes(["AAPL"])
+    assert list(out) == ["AAPL"]
+    assert len(calls) == 2 and resets == [1]
+    assert fetch.throttle_remaining() == 0
+
+
+def test_a_crumb_that_stays_stale_gives_up_without_a_cooldown(monkeypatch):
+    calls = []
+
+    def never(symbols, timeout):
+        calls.append(1)
+        raise RuntimeError("401 Invalid Crumb")
+
+    monkeypatch.setattr(q, "_fetch", never)
+    monkeypatch.setattr(q, "reset_crumb", lambda: None)
+    assert q.quotes(["AAPL"]) == {}
+    assert len(calls) == 2  # one reset, one more try, then nothing
+    assert fetch.throttle_remaining() == 0
+
+
+def test_a_timeout_is_weather_not_a_throttle(monkeypatch):
+    def slow(symbols, timeout):
+        raise TimeoutError("read timed out")
+
+    monkeypatch.setattr(q, "_fetch", slow)
+    assert q.quotes(["AAPL"]) == {}
+    assert fetch.throttle_remaining() == 0
+
+
+def test_failure_kind_reads_status_and_text():
+    from yfinance.exceptions import YFRateLimitError
+
+    class Resp:
+        def __init__(self, code):
+            self.status_code = code
+
+    class HTTPErr(Exception):
+        def __init__(self, code):
+            super().__init__("boom")
+            self.response = Resp(code)
+
+    assert fetch.failure_kind(YFRateLimitError()) == "throttle"
+    assert fetch.failure_kind(HTTPErr(429)) == "throttle"
+    assert fetch.failure_kind(RuntimeError("Too Many Requests")) == "throttle"
+    assert fetch.failure_kind(HTTPErr(401)) == "crumb"
+    assert fetch.failure_kind(RuntimeError("Invalid Crumb")) == "crumb"
+    assert fetch.failure_kind(HTTPErr(503)) == "other"
+    assert fetch.failure_kind(TimeoutError("x")) == "other"

@@ -22,23 +22,39 @@ the server is ready. Hence `WAIT_S`: the lifespan holds readiness for up to
 that long while the warm runs with the startup CPU, then serves — the rest
 finishes on the first request's CPU, joined by its loaders rather than
 duplicated.
+
+The service that does scale to zero — production — is warmed from outside
+instead: a GitHub Actions cron (`.github/workflows/warm.yml`) calls
+`POST /v1/warm` with the API token before the European open, after the US
+open and after each close. The request is the CPU: the warm runs on its
+thread, one account at a time, every stale memo refreshed in place
+(`cache.SYNC`) rather than handed to a background thread. The first of the
+day is also the one that pays each book's daily chart month
+(`loaders._REBASE_S`), so no reader does.
 """
 
 from __future__ import annotations
 
 import os
 import threading
+import time
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
 
 from stocks import obs
-from stocks.api import loaders
+from stocks.api import cache, loaders, security
 from stocks.config import CURRENCIES, load_watchlist
 
 ENV_FLAG = "STOCKS_BOOT_WARM"
 WAIT_FLAG = "STOCKS_BOOT_WARM_WAIT_S"
 WAIT_S = 30.0
 RECENT_DAYS = 3
+# The route's wall clock: under Cloud Run's 300s request timeout, with room
+# for the account already started when it runs out.
+WARM_BUDGET_S = 240.0
 
 
 def enabled() -> bool:
@@ -82,15 +98,18 @@ def warm_account(db: str, watchlist: str | Path, base: str) -> None:
     year_closes(closes_tuple(entries, owned), db, mtime)
 
 
-def warm_recent(today: date | None = None) -> int:
+def warm_recent(today: date | None = None, *, budget_s: float | None = None) -> int:
     """Warm every account seen in the last `RECENT_DAYS`; returns how many.
 
-    Never raises — a throttled Yahoo or an unreadable ledger is logged and
-    skipped, and the next reader simply pays what they would have paid anyway.
+    Most recently seen first, so a `budget_s` that runs out leaves the
+    accounts least likely to be read. Never raises — a throttled Yahoo or an
+    unreadable ledger is logged and skipped, and the next reader simply pays
+    what they would have paid anyway.
     """
     from stocks.notify.fanout import iter_all_users
 
     today = today or date.today()
+    started = time.monotonic()
     warmed = 0
     try:
         users = iter_all_users()
@@ -101,9 +120,12 @@ def warm_recent(today: date | None = None) -> int:
             error=str(exc)[:200],
         )
         return 0
-    for user in users:
-        if not seen_recently(user.prefs.get("last_seen"), today):
-            continue
+    recent = [u for u in users if seen_recently(u.prefs.get("last_seen"), today)]
+    recent.sort(key=lambda u: str(u.prefs.get("last_seen") or ""), reverse=True)
+    for i, user in enumerate(recent):
+        if budget_s is not None and time.monotonic() - started > budget_s:
+            obs.warn("api.warm_budget_spent", warmed=warmed, left=len(recent) - i)
+            break
         base = str(user.prefs.get("currency") or "EUR").upper()
         with obs.timed("api.warm", account=user.label) as rec:
             try:
@@ -121,7 +143,38 @@ def warm_recent(today: date | None = None) -> int:
                     error_type=type(exc).__name__,
                     error=str(exc)[:200],
                 )
+    obs.event(
+        "api.warm_run",
+        warmed=warmed,
+        accounts=len(recent),
+        seconds=round(time.monotonic() - started, 1),
+    )
     return warmed
+
+
+router = APIRouter(include_in_schema=False)
+_running = threading.Lock()
+
+
+@router.post("/warm", name="warm")
+def warm_now(
+    who: Annotated[security.Caller, Depends(security.caller)],
+) -> dict[str, object]:
+    """Warm the recent accounts now, on this request's CPU. The API token
+    only — a signed-in account has no business pricing everybody's book — and
+    one at a time: a second call while one runs answers `busy` at once."""
+    if who.kind != "token":
+        security.refuse()
+    if not _running.acquire(blocking=False):
+        return {"warmed": 0, "busy": True}
+    started = time.monotonic()
+    token = cache.SYNC.set(True)
+    try:
+        warmed = warm_recent(budget_s=WARM_BUDGET_S)
+    finally:
+        cache.SYNC.reset(token)
+        _running.release()
+    return {"warmed": warmed, "seconds": round(time.monotonic() - started, 1)}
 
 
 def start(wait_s: float | None = None) -> threading.Thread | None:

@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { noteFreshness, resetFreshness, staleSince, subscribe } from "./freshness";
+import {
+  isRefreshing,
+  noteFreshness,
+  noteRefreshing,
+  resetFreshness,
+  staleSince,
+  subscribe,
+} from "./freshness";
 
 describe("freshness", () => {
   afterEach(resetFreshness);
@@ -29,5 +36,13 @@ describe("freshness", () => {
     noteFreshness("/c", "2026-09-28T10:00:00+00:00"); // newer: the oldest stands
     expect(told).toBe(1);
     off();
+  });
+
+  it("marks a URL refreshing without a stale line, until an answer says otherwise", () => {
+    noteRefreshing("/a", "1");
+    expect(isRefreshing("/a")).toBe(true);
+    expect(staleSince()).toBeNull();
+    noteRefreshing("/a", null);
+    expect(isRefreshing("/a")).toBe(false);
   });
 });
