@@ -257,6 +257,7 @@
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-sm);
   min-width: 0;
+  container: earn-day / inline-size;
 }
 
 .earn-day.dim {
@@ -718,6 +719,18 @@
   height: 12px;
   border-radius: 2px;
   object-fit: contain;
+}
+
+/* A narrow cell (the weekend's half columns, a page the chat drawer squeezed)
+   drops the logo so the ticker reads whole instead of "ORC…". */
+@container earn-day (max-width: 5.5rem) {
+  .earn-chip img {
+    display: none;
+  }
+
+  .earn-chip {
+    padding-inline: 3px;
+  }
 }
 
 /* Phones default to the list, but the grid stays one tap away — and seven
