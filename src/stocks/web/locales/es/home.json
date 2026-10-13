@@ -465,6 +465,7 @@
   "home.card_watchlist": "Seguimiento",
   "home.card_watchlist_blurb": "Favoritos y tus grupos de seguimiento, con el último cierre.",
   "home.card_risk": "Riesgo de la cartera",
+  "home.card_risk_basis": "Cesta actual · desde el inicio",
   "home.card_risk_blurb": "Beta frente al S&P 500, volatilidad, caída máxima y diversificación.",
   "home.card_dividends": "Dividendos",
   "home.card_dividends_blurb": "Cobrado este año, previsto el próximo y las siguientes fechas ex-dividendo.",

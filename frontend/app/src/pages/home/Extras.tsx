@@ -42,7 +42,9 @@ export function RiskCard() {
   const query = useApi(
     () =>
       Promise.all([
-        get<Risk>("/portfolio/risk", { base, period: "1y" }),
+        // The Portfolio risk tab opens on "inception": the same window here,
+        // so the two screens never show two volatilities for one book.
+        get<Risk>("/portfolio/risk", { base, period: "inception" }),
         // The beta is the Pulse's; a feed it could not reach costs the
         // headline tile, not the card.
         get<PulseBook>("/pulse/book", { base }).catch(() => null),
@@ -83,6 +85,7 @@ export function RiskCard() {
               help={t("portfolio.effective_names_help")}
             />
           </KpiGrid>
+          <Note>{t("home.card_risk_basis")}</Note>
           <More tab="risk" label={t("home.card_more_risk")} />
         </Card>
       )}

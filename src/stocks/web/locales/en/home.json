@@ -465,6 +465,7 @@
   "home.card_watchlist": "Watchlist",
   "home.card_watchlist_blurb": "Favourites and your watchlist groups, with the last close.",
   "home.card_risk": "Portfolio risk",
+  "home.card_risk_basis": "Current basket · since inception",
   "home.card_risk_blurb": "Beta against the S&P 500, volatility, drawdown and diversification.",
   "home.card_dividends": "Dividends",
   "home.card_dividends_blurb": "Paid this year, expected next year, and the next ex-dividend dates.",
