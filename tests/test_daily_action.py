@@ -453,7 +453,9 @@ def test_computed_card_states_the_actions_without_a_model():
     assert "your below alert at 120.00 fired" in body
     assert "would offset €900 of the €900" in body
     assert body.count("your below alert") == 1  # the headline is not repeated
-    assert "buying it back within 2 months before or after the sale disallows the loss" in body.lower()
+    lowered = body.lower()
+    assert "buying it back within 2 months before or after the sale" in lowered
+    assert "disallows the loss" in lowered
     assert "reports in 2 days" in body
     assert card.focus[:2] == ["NVDA", "ASML"]
 

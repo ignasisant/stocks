@@ -18,7 +18,7 @@ import { Skeleton } from "../../shell/Layout";
 import { useT, useLang } from "../../shell/i18n";
 import { DenseRows, Responsive } from "../../ui/Rows";
 import { CardQuery, Card, CardTitle, Note, TickerCell } from "./ui";
-import { decimal, money, percent, plain, type Translate } from "./format";
+import { decimal, money, percent, plain, priceDigits, type Translate } from "./format";
 import type { Extreme, Extremes } from "./types";
 import type { Book } from "./Glance";
 
@@ -78,8 +78,8 @@ export function ExtremesCard({
     const currency = currencies.get(extreme.ticker);
     return (
       (currency
-        ? money(extreme.price, currency, lang, { digits: 2 })
-        : decimal(extreme.price, lang)) ?? na
+        ? money(extreme.price, currency, lang, { digits: priceDigits(extreme.price) })
+        : decimal(extreme.price, lang, priceDigits(extreme.price))) ?? na
     );
   };
 

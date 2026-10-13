@@ -33,6 +33,16 @@ function finite(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+/**
+ * Decimals a per-unit price needs: cents for most, more for a sub-euro coin,
+ * where "0,04 €" would hide a price that moves in the third decimal.
+ */
+export function priceDigits(value: number | null | undefined): number {
+  const abs = Math.abs(value ?? 0);
+  if (abs === 0 || abs >= 1) return 2;
+  return abs >= 0.1 ? 3 : 4;
+}
+
 export function money(
   value: number | null | undefined,
   currency: string,

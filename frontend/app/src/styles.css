@@ -872,6 +872,31 @@ img.ag-search-logo {
   vertical-align: -0.25em;
 }
 
+/* No mark for the name: its first two letters on a plain plate, so the row
+   keeps its logo column and the name still has a face. */
+.ag-tick-initials {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-secondary);
+  font-weight: 700;
+  vertical-align: -0.25em;
+}
+
+/* 11px is the phone floor, so the letters do not scale down with the plate:
+   it grows to hold them instead. */
+.ag-tick-initials {
+  width: auto;
+  min-width: 1.2em;
+  padding-inline: 3px;
+}
+
+.ag-tick-initials > span {
+  font-size: 11px;
+  line-height: 1;
+}
+
 /* The guided tour and the what's-new modal — one dialog in two modes. It
    interrupts, so it is the topmost thing on screen and it is dismissible from
    anywhere: scrim, Escape, or its own button. */

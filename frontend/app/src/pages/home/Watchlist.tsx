@@ -23,7 +23,7 @@ import { Link } from "../../shell/router";
 import { Chip, chipFor } from "../../ui/Kpi";
 import { DenseRows, Responsive } from "../../ui/Rows";
 import { Card, Note, TickerCell } from "./ui";
-import { decimal, percent } from "./format";
+import { decimal, percent, priceDigits } from "./format";
 import type { CloseRow, Closes, Watchlist, WatchlistEntry } from "./types";
 
 export function WatchlistGroups({
@@ -194,7 +194,9 @@ function Group({
                     <td className="hm-tick-cell">
                       <TickerCell ticker={ticker} />
                     </td>
-                    <td className="hm-num">{decimal(row?.close, lang) ?? na}</td>
+                    <td className="hm-num">
+                      {decimal(row?.close, lang, priceDigits(row?.close)) ?? na}
+                    </td>
                     <td className="hm-num">
                       {move === null ? (
                         na
@@ -216,7 +218,11 @@ function Group({
               ticker: (ticker) => ticker,
               names: true,
               value: (ticker) =>
-                decimal(prices?.get(ticker.toUpperCase())?.close, lang) ?? na,
+                decimal(
+                  prices?.get(ticker.toUpperCase())?.close,
+                  lang,
+                  priceDigits(prices?.get(ticker.toUpperCase())?.close),
+                ) ?? na,
               delta: (ticker) => {
                 const row = prices?.get(ticker.toUpperCase()) ?? null;
                 const move = percent(row?.pct, lang, { signed: true });

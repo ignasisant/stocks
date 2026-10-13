@@ -23,7 +23,7 @@ import { Link } from "../../shell/router";
 import { Chip, Kpi, KpiGrid, chipFor } from "../../ui/Kpi";
 import { DenseRows, Responsive } from "../../ui/Rows";
 import { Card, CardQuery, CardTitle, Note, TickerCell } from "./ui";
-import { money, percent, plain } from "./format";
+import { money, percent, plain, priceDigits } from "./format";
 import { AverageTile, SPARK_WINDOW, Spark } from "./Spark";
 import type {
   History,
@@ -491,7 +491,7 @@ function MoverTable({
                     quoted by its own market, unlike the value beside it. */}
                     <td className="hm-num">
                       {money(position?.price, position?.currency || currency, lang, {
-                        digits: 2,
+                        digits: priceDigits(position?.price),
                       }) ?? na}
                     </td>
                     <td className="hm-num">
@@ -529,7 +529,7 @@ function MoverTable({
                 const position = held.get(row.ticker);
                 return [
                   money(position?.price, position?.currency || currency, lang, {
-                    digits: 2,
+                    digits: priceDigits(position?.price),
                   }),
                   position?.weight != null
                     ? t("home.weight_short", {
