@@ -56,7 +56,9 @@ export function driftChip(
   // until the move is big enough to be worth a reader's attention.
   const moved = Math.abs(now - then) >= 0.05;
   return {
-    text: t("sentiment.drift_pill", { value: then.toFixed(2) }),
+    // Both ends of the drift: the headline beside the pill is a longer window,
+    // so "3m 0.94" alone reads as a move from 0.94 to the headline.
+    text: t("sentiment.drift_pill", { now: now.toFixed(2), value: then.toFixed(2) }),
     tone: moved ? "warn" : "flat",
   };
 }
@@ -290,7 +292,14 @@ export function Side({
           — while the beta and the correlation need the index series. Say so
           under the rows rather than letting two "n/a"s explain themselves. */}
       {book.unavailable && <DownBody reason={book.unavailable} onRetry={onRetry} />}
-      <p className="sn-help">{t("sentiment.side_help")}</p>
+      <p className="sn-help">
+        {book.beta_rolling === null || book.beta_rolling_then === null
+          ? t("sentiment.side_help_plain")
+          : t("sentiment.side_help", {
+              then: fixed(book.beta_rolling_then, 2),
+              now: fixed(book.beta_rolling, 2),
+            })}
+      </p>
       <a className="sn-more" href="#ag-book">
         {t("sentiment.side_more")}
       </a>
