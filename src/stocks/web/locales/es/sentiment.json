@@ -91,7 +91,7 @@
   "sentiment.book_empty": "Todavía no hay posiciones abiertas. Importa tus movimientos y esta tarjeta lee el régimen contra tu propia cartera.",
   "sentiment.book_help": "Las betas se miden con tus pesos actuales sobre los últimos 12 meses: una lectura de lo que tienes ahora, no de cómo se ha comportado.",
   "sentiment.beta_equity": "Beta vs S&P 500",
-  "sentiment.beta_equity_help": "Cuánto se mueve tu cesta por cada 1% del índice. Por encima de 1 amplifica en los dos sentidos.",
+  "sentiment.beta_equity_help": "Cuánto se mueve tu cesta por cada 1% del índice. Por encima de 1 amplifica en los dos sentidos. Medida en 2 años; la pestaña de riesgo de Cartera sigue su propia ventana.",
   "sentiment.beta_duration": "Beta vs bono largo",
   "sentiment.beta_duration_help": "Sensibilidad al bono largo de EE. UU. (TLT). Positiva = tu cartera gana cuando bajan los tipos (growth de duración larga).",
   "sentiment.beta_credit": "Beta vs crédito",

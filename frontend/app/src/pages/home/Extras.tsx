@@ -43,10 +43,11 @@ export function RiskCard() {
     () =>
       Promise.all([
         // The Portfolio risk tab opens on "inception": the same window here,
-        // so the two screens never show two volatilities for one book.
+        // so the two screens never show two volatilities, or two betas, for
+        // one book: the beta tile reads the same S&P figure the tab does.
         get<Risk>("/portfolio/risk", { base, period: "inception" }),
-        // The beta is the Pulse's; a feed it could not reach costs the
-        // headline tile, not the card.
+        // The stance is the Pulse's; a feed it could not reach costs the
+        // note, not the card.
         get<PulseBook>("/pulse/book", { base }).catch(() => null),
       ]),
     [base],
@@ -66,7 +67,7 @@ export function RiskCard() {
           <KpiGrid>
             <Kpi
               label={t("sentiment.beta_equity")}
-              value={decimal(book?.beta, lang, 2) ?? na}
+              value={decimal(risk.betas.SPY ?? book?.beta, lang, 2) ?? na}
               note={book?.stance ? t(`sentiment.stance_${book.stance}`) : undefined}
             />
             <Kpi

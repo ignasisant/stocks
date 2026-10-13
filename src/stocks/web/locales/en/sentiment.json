@@ -91,7 +91,7 @@
   "sentiment.book_empty": "No open positions yet — import your transactions and this card reads the regime against your own book.",
   "sentiment.book_help": "Betas are measured on your current weights over the last 12 months: a reading of what you hold now, not of how it has performed.",
   "sentiment.beta_equity": "Beta vs S&P 500",
-  "sentiment.beta_equity_help": "How much your basket moves for each 1% of the index. Above 1 amplifies both directions.",
+  "sentiment.beta_equity_help": "How much your basket moves for each 1% of the index. Above 1 amplifies both directions. Measured over 2 years; the Portfolio risk tab follows its own window.",
   "sentiment.beta_duration": "Beta vs long bonds",
   "sentiment.beta_duration_help": "Sensitivity to long Treasuries (TLT). Positive = your book gains when yields fall (long-duration growth).",
   "sentiment.beta_credit": "Beta vs credit",
