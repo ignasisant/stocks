@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { firstLoad } from "./Tour";
 import { after, clamp, readPark, writePark, type Place } from "./tourPark";
-import { pinnedLang } from "./i18n";
+import { browserLang, pinnedLang } from "./i18n";
 import { bannerDismissed, dismissBanner } from "./guest";
 
 function memory(): Storage {
@@ -165,5 +165,15 @@ describe("the guest banner's dismiss", () => {
     dismissBanner("home", store);
     expect(bannerDismissed("home", store)).toBe(true);
     expect(bannerDismissed("portfolio", store)).toBe(false);
+  });
+});
+
+describe("browserLang", () => {
+  it("reads down the browser's list, Spain's other languages landing on Spanish", () => {
+    expect(browserLang(["ca-ES", "es-ES", "en"])).toBe("es");
+    expect(browserLang(["ca"])).toBe("es");
+    expect(browserLang(["en-GB", "es"])).toBe("en");
+    expect(browserLang(["fr-FR", "de"])).toBe("en");
+    expect(browserLang([])).toBe("en");
   });
 });
