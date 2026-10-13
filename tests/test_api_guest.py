@@ -229,6 +229,24 @@ def test_a_second_boot_does_not_stack_a_second_demo_book(monkeypatch, book):
         assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == rows
 
 
+def test_a_boot_brings_an_older_demo_book_up_to_date(monkeypatch, book):
+    """The guest book persists in the bucket, and `seed` leaves a ledger with
+    rows alone, so a row added to the demo would otherwise never reach a guest."""
+    monkeypatch.setattr(accounts, "restore_account", lambda *a, **k: False)
+    guestbook.provision()
+    import sqlite3
+
+    with sqlite3.connect(book.db) as conn:
+        conn.execute("DELETE FROM transactions WHERE action = 'sell'")
+    assert demo.stale(book.db)
+    guestbook.provision()
+    assert not demo.stale(book.db)
+    with sqlite3.connect(book.db) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == len(
+            demo.transactions()
+        )
+
+
 def test_a_bucket_outage_costs_the_demo_book_and_not_the_boot(monkeypatch):
     """Provisioning never raises. A guest with no demo book sees the empty state
     the pages already draw; a deployment that will not start serves nobody."""
