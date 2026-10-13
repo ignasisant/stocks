@@ -10,7 +10,7 @@
 
 import { useState } from "react";
 import { get } from "../../shell/api";
-import { useT } from "../../shell/i18n";
+import { useLang, useT } from "../../shell/i18n";
 import { useApi } from "../../shell/useApi";
 import {
   CHURCH_RATES,
@@ -30,7 +30,20 @@ import { TourCard } from "./TourCard";
 import { Card, Chips, Failure, Row, Select, Toggle } from "./ui";
 
 /** `GET /import/last` — only the stamp, which is all the rail shows. */
-type LastImport = { imported_at: string | null };
+type LastImport = { imported_on?: string | null };
+
+/** The UTC day `YYYY-MM-DD` in the reader's locale: "18 sept 2026". */
+function day(iso: string | null | undefined, lang: string): string | null {
+  if (!iso) return null;
+  const at = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(at.getTime())) return iso;
+  return at.toLocaleDateString(lang, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
 
 /** Enough of `GET /portfolio/transactions` to know whether there is a book. */
 type Ledger = { total: number };
@@ -116,6 +129,7 @@ export function Preferences({
   owner: boolean | null;
 }) {
   const t = useT();
+  const lang = useLang();
   const lastImport = useApi(() => get<LastImport>("/import/last"), []);
   // One row is enough: the question is whether the export has anything to
   // write, and the route 404s on an empty book rather than handing back a
@@ -435,7 +449,7 @@ export function Preferences({
               <span>{t("profile.summary_last_import")}</span>
               <b>
                 {lastImport.state === "loaded"
-                  ? (lastImport.data.imported_at?.slice(0, 10) ??
+                  ? (day(lastImport.data.imported_on, lang) ??
                     t("profile.summary_never"))
                   : t("common.loading")}
               </b>
