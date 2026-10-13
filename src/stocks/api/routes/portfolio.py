@@ -473,7 +473,7 @@ def performance(
         start=str(pd.Timestamp(shown.index[0]).date()),
         end=str(pd.Timestamp(hist.index[-1]).date()),
         injected=_num(hist["injected"].iloc[-1]),
-        value=_num(hist["value"].iloc[-1]),
+        value=_num(loaders.book_value_today(db, mtime, ccy, hist)),
         twr_cumulative=_num(cumulative),
         twr_annualised=_num(annualised),
         # Volatility and drawdown of the flow-adjusted path, which is the only
@@ -1369,8 +1369,7 @@ def projection(
     db = str(account.db)
     mtime = loaders.db_mtime(db)
     hist, _twr, _missing = loaders.history(db, mtime, ccy)
-    value = hist["value"].dropna() if "value" in hist else pd.Series(dtype=float)
-    start_value = float(value.iloc[-1]) if not value.empty else 0.0
+    start_value = loaders.book_value_today(db, mtime, ccy, hist) or 0.0
 
     txs = loaders.ledger_state(db, mtime, ccy)[0]
     flows = flow_series(txs, base=ccy)

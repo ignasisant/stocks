@@ -485,6 +485,30 @@ def positions_table(db: str, mtime: float, base: str = "EUR") -> pd.DataFrame:
         return _self_priced_positions(db, mtime, base)
 
 
+def book_value_today(
+    db: str, mtime: float, base: str, hist: pd.DataFrame
+) -> float | None:
+    """What the book is worth today, one figure for every tile that prints it.
+
+    The Positions tile sums the priced table; the Overview, the Risk tab and
+    the projection read the last point of the replayed value path. The two are
+    built off the same download, but by different arithmetic, and they landed
+    a euro apart on a six-figure book ("Valor hoy" 146.196 against 146.197).
+    The table is what the rest of the app quotes, so when every position
+    priced it is the figure; otherwise the path (which carries the unpriced at
+    cost) stands.
+    """
+    from stocks.analysis.portfolio import priced_totals
+
+    table = positions_table(db, mtime, base)
+    if not table.empty and "value" in table:
+        _cost, value, unpriced = priced_totals(table)
+        if not unpriced and value > 0:
+            return float(value)
+    series = hist["value"].dropna() if "value" in hist else pd.Series(dtype=float)
+    return float(series.iloc[-1]) if not series.empty else None
+
+
 def allocation_weights(
     db: str, mtime: float, base: str, meta: dict[str, dict], key: str, fallback
 ) -> dict[str, float]:
