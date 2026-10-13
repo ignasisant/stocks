@@ -185,8 +185,8 @@ function Nav() {
               // Folded, the glyph is all there is: without this the rail
               // becomes nine unnamed icons for a pointer as well as a reader.
               title={folded && peek === "off" ? t(entry.label) : undefined}
-              // The label is hidden on a phone's bar, and a hidden label names
-              // nothing: this is what a reader hears there.
+              // The name a reader hears wherever the label is hidden: the
+              // folded rail, and a peek before the labels arrive.
               aria-label={t(entry.label)}
             >
               <Icon name={entry.icon} />

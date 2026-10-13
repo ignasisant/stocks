@@ -77,6 +77,12 @@ describe("book card", () => {
     // correlation tile; EM has no rolling series, so it has none.
     expect(html.match(/sentiment\.drift_pill/g)?.length).toBe(4);
   });
+
+  it("quotes the rolling beta's own move in the help, not a fixed example", () => {
+    const side = renderToStaticMarkup(<Side book={book} regime="unknown" />);
+    expect(side).toContain("sentiment.side_help<");
+    expect(side).not.toContain("sentiment.side_help_plain");
+  });
 });
 
 // Observed during a Yahoo throttle: these blocks blanked to a generic "data
@@ -130,6 +136,8 @@ describe("a throttled book", () => {
     const side = renderToStaticMarkup(<Side book={partial} regime="unknown" />);
     expect(side).toContain("70%");
     expect(side).toContain("sentiment.down_stamp");
+    // No rolling beta, so the help cannot quote a move it does not have.
+    expect(side).toContain("sentiment.side_help_plain");
   });
 
   // A replay nobody could price is not an empty ledger: inviting an import

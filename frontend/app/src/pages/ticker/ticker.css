@@ -208,8 +208,12 @@
   justify-content: space-between;
 }
 
+/* Never wraps a label or cuts a pill: when the row is narrower than the
+   seven ranges (a phone, or a page beside the chat drawer) it scrolls. */
 .tk-seg {
   display: inline-flex;
+  max-width: 100%;
+  overflow-x: auto;
   background: var(--ag-surface-page);
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-pill);
@@ -228,6 +232,8 @@
   border-radius: var(--ag-radius-pill);
   cursor: pointer;
   min-height: 32px;
+  flex: none;
+  white-space: nowrap;
 }
 
 @media (hover: hover) {
@@ -1258,11 +1264,6 @@
 
   .tk-controls {
     justify-content: flex-start;
-  }
-
-  .tk-seg {
-    overflow-x: auto;
-    max-width: 100%;
   }
 
   /* Seven range pills, "Todo" the widest, fit a 360px phone only at 10px. */

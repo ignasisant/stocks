@@ -7,12 +7,13 @@ tags: IRPF, base del ahorro, tramos, savings base, brackets, regla de los dos me
 For a Spanish tax resident, the Realized & tax tab in Portfolio computes the IRPF savings base (base del ahorro) on your securities sales, in euros. It is a planning aid, not tax advice.
 
 ## Savings base brackets
-The app taxes the net result of the year's sales with these marginal brackets, which the engine labels as the 2023-2025 scale:
+The app taxes the net result of each year's sales with that year's marginal brackets. From 2025:
 - first 6,000 EUR: 19%
 - 6,000 to 50,000 EUR: 21%
 - 50,000 to 200,000 EUR: 23%
 - 200,000 to 300,000 EUR: 27%
-- above 300,000 EUR: 28%
+- above 300,000 EUR: 30%
+Earlier years use their own scale: 28% above 300,000 EUR in 2023 and 2024; 26% above 200,000 EUR in 2021 and 2022; 23% above 50,000 EUR before that.
 The estimate ignores your other income and regional specifics. The tax year is the calendar year. Spain's savings base has no filing status or other inputs, so Profile asks for none.
 
 ## How gains are calculated

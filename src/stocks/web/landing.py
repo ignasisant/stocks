@@ -1860,7 +1860,7 @@ def _depth_a() -> str:
 
 # Statute pills on the tax feature card, per jurisdiction.
 _TAX_PILLS = {
-    "ES": ("art. 37 LIRPF", "art. 33.5.f", "Modelo 720", "19–28%"),
+    "ES": ("art. 37 LIRPF", "art. 33.5.f", "Modelo 720", "19–30%"),
     "US": ("FIFO", "IRC 1091", "Form 8938", "0/15/20%"),
 }
 

@@ -93,6 +93,9 @@ const GUEST_HIGHLIGHTS: GuestHighlight[] = [
   },
 ];
 const GUEST_PERKS = [
+  // First, because "do I need a paid key?" is the question that stops a
+  // visitor before the button: no, the assistant has a free daily allowance.
+  "home.guest_perk_free",
   "home.guest_perk_import",
   "home.guest_perk_telegram",
   "home.guest_perk_watchlist",
@@ -217,10 +220,8 @@ export default function Page() {
 
           For a guest the checklist has nothing to check off, so the banner
           takes its place and says what this screen is instead. The setup card
-          below stays: its first pending row *is* signing in, which makes it the
-          most useful thing on a guest's Home rather than a tease — and its
-          dismiss only appears once every row is done, so a guest never sees a
-          control that would need a write. */}
+          below stays, its account-only steps locked, and its "don't show again"
+          is not offered to a guest, who has no prefs to keep it in. */}
       {guest ? (
         <GuestBanner
           text="home.guest_banner"

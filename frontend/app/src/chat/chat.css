@@ -63,6 +63,10 @@
   padding-right: calc(min(var(--chat-w, 420px), 60vw) + 20px);
 }
 
+/* Unless that would leave the page too narrow to read (`PAGE_MIN` in
+   `Drawer.tsx`): then the root is marked "overlay" instead, no rule here
+   matches it, and the drawer covers the page as it does on a phone. */
+
 /* The one fixed thing the page has left: the "thanks, sent" toast. It would
    otherwise appear under the panel, which is where a confirmation is worth
    nothing. */

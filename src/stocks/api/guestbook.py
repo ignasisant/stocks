@@ -27,7 +27,9 @@ def provision() -> None:
     ephemeral redeploy starts from the persisted copies rather than a blank
     dir, and only writes the starter watchlist when there is none. `demo.seed`
     is a no-op on a ledger that already holds anything, so a restart cannot
-    stack a second copy of an invented cost basis.
+    stack a second copy of an invented cost basis. A persisted book from an
+    older edition of `demo` is cleared first, or a row added to the demo would
+    never reach the visitors it was added for.
 
     Never raises. A bucket outage costs a visitor the demo book — the empty
     state the pages already draw — and must not cost the deployment its boot.
@@ -35,6 +37,8 @@ def provision() -> None:
     paths = accounts.guest_paths()
     try:
         accounts.restore_account(paths, seed=True)
+        if demo.stale(paths.db):
+            demo.clear(paths.db)
         seeded = demo.seed(paths.db)
     except Exception as exc:  # noqa: BLE001 — a guest book is not worth a boot
         obs.warn(

@@ -1483,6 +1483,13 @@ class Fees(BaseModel):
         default=None,
         description="Estimated spread across every broker; null when unmeasured.",
     )
+    cost: float | None = Field(
+        default=None,
+        description=(
+            "Commission plus each broker's spread paid; a broker that beat the "
+            "mid adds nothing, never less. Null when unmeasured."
+        ),
+    )
     volume: float = Field(default=0.0)
     cost_pct: float | None = Field(
         default=None, description="Total cost over traded volume; null with no volume."

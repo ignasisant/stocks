@@ -12,8 +12,8 @@
 
 import { useEffect, useLayoutEffect, useRef } from "react";
 
-export function useTabStrip(active: string) {
-  const strip = useRef<HTMLDivElement>(null);
+export function useTabStrip<T extends HTMLElement = HTMLDivElement>(active: string) {
+  const strip = useRef<T>(null);
   // The first centring is instant — the page opened on that tab, nothing moved.
   const moved = useRef(false);
 

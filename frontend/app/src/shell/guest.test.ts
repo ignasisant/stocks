@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import { screenFor, sessionFrom, type Me, type Prefs } from "./session";
-import { signInHref } from "./guest";
+import { legalHref, signInHref } from "./guest";
 
 const PREFS = { currency: "EUR", language: null } as unknown as Prefs;
 
@@ -110,5 +110,13 @@ describe("sessionFrom", () => {
   it("never offers it to a guest", () => {
     const me: Me = { kind: "guest", bank: true };
     expect(sessionFrom(me, prefs, () => {}).bank).toBe(false);
+  });
+});
+
+describe("legalHref", () => {
+  it("opens the legal page in the reader's language, English otherwise", () => {
+    expect(legalHref("privacy", "es")).toBe("/legal/privacy?lang=es");
+    expect(legalHref("terms", "es-ES")).toBe("/legal/terms?lang=es");
+    expect(legalHref("terms", "ca")).toBe("/legal/terms?lang=en");
   });
 });

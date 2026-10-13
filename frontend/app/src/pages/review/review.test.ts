@@ -10,6 +10,7 @@ import {
   sourcesOf,
   splitCoins,
 } from "./filter";
+import { longDay } from "./format";
 import { BUDGET, buildPrompt } from "./prompt";
 import { labelRank, placeLabels } from "./labels";
 import { tipPlace } from "./QualityMap";
@@ -199,6 +200,17 @@ describe("review prompt", () => {
     const text = buildPrompt(review(many), t, "en");
     expect(text.length).toBeLessThanOrEqual(BUDGET);
     expect(text).toMatch(/review\.prompt_more\(\d+\)/);
+  });
+});
+
+describe("review dates", () => {
+  it("reads an API day in the reader's locale, not as ISO", () => {
+    expect(longDay("2026-10-09", "en")).toBe("Oct 9, 2026");
+    expect(longDay("2026-10-09", "es")).toBe("9 oct 2026");
+  });
+
+  it("hands back what it cannot read", () => {
+    expect(longDay("soon", "en")).toBe("soon");
   });
 });
 

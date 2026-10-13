@@ -18,7 +18,7 @@
   "review.moves_none": "Ningún movimiento destaca: cada posición es mantener, un fondo o liquidez.",
   "review.move_tax": "Añade {amount} al impuesto de este año",
   "review.move_no_tax": "Sin impuesto extra: la venta da pérdida o queda compensada",
-  "review.buy_after": "Compra después del {date}: se anularía una pérdida vendida dentro de la ventana de recompra",
+  "review.buy_after": "Si recompras {ticker} antes del {date}, no podrás usar la pérdida: se aplaza",
   "review.map_title": "Calidad frente a precio",
   "review.map_help": "Arriba, mejor negocio; a la derecha, más barato. La esquina sombreada es donde viven 'reforzar' y 'comprar'; las líneas son los umbrales.",
   "review.axis_cheap": "Más barato →",

@@ -10,7 +10,7 @@
 import { useLang, useT } from "../../shell/i18n";
 import { TickerCell } from "../../shell/tickers";
 import { DetailsButton, VerdictChip, PnlChip } from "./Explain";
-import { ACTIONS, money, percent, score, verdictTone } from "./format";
+import { ACTIONS, longDay, money, percent, score, verdictTone } from "./format";
 import type { Review, ReviewRow } from "./types";
 
 export function Actions({ data }: { data: Review }) {
@@ -87,7 +87,10 @@ function Move({
       ) : null}
       {row.buy_after ? (
         <p className="ag-rev-caption">
-          {t("review.buy_after", { date: row.buy_after })}
+          {t("review.buy_after", {
+            ticker: row.symbol,
+            date: longDay(row.buy_after, lang),
+          })}
         </p>
       ) : null}
       <DetailsButton row={row} />
