@@ -49,6 +49,7 @@
   "portfolio.col_bought": "Compra",
   "portfolio.col_sold": "Venta",
   "portfolio.col_proceeds": "Importe venta",
+  "portfolio.sale_written_off": "baja",
   "portfolio.col_gain": "Ganancia",
   "portfolio.col_year": "Año",
   "portfolio.col_gross": "Bruto",
