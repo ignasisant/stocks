@@ -309,7 +309,8 @@ def book(account: Account, base: Base = None) -> PulseBook:
         move = sm.pct_over(eurusd, MONTH)
         if move == move:
             moves["USD"] = 1.0 / (1.0 + move) - 1.0
-    drag, _contributions = sm.fx_exposure(currency, moves, base=ccy)
+    weights = pd.Series(currency, dtype=float)
+    drag, _contributions = sm.fx_exposure(weights, moves, base=ccy)
     answer.fx_drag = _num(drag)
 
     # Sectors: how much of the month's rotation the book caught, and where it

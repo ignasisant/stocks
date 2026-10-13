@@ -1802,7 +1802,6 @@ def press(body: ActionBody, paths: SurfaceAction) -> SurfaceUpdate:
     def tr(key: str, **kw) -> str:
         return translate(key, lang, **kw)
 
-    tr.lang = lang  # the figures a handler prints follow it too
     handler = {
         (whatif.SURFACE_ID, whatif.ACTION): _resell,
         (charts.SURFACE_ID, charts.ACTION): _rechart,
@@ -1813,10 +1812,10 @@ def press(body: ActionBody, paths: SurfaceAction) -> SurfaceUpdate:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no action {press_.name} on {press_.surfaceId}",
         )
-    return SurfaceUpdate(messages=handler(press_.context, paths, tr))
+    return SurfaceUpdate(messages=handler(press_.context, paths, tr, lang))
 
 
-def _resell(context: dict, paths: UserPaths, tr) -> list[dict]:
+def _resell(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:
     """The what-if sale again, for the shares the slider now names."""
     symbol = engine.clean_focus(str(context.get("ticker") or ""))
     try:
@@ -1833,10 +1832,10 @@ def _resell(context: dict, paths: UserPaths, tr) -> list[dict]:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"nothing of {symbol or 'that'} to sell, or no price for it",
         )
-    return whatif.moved(sale, tr, getattr(tr, "lang", "en"))
+    return whatif.moved(sale, tr, lang)
 
 
-def _reweigh(context: dict, paths: UserPaths, tr) -> list[dict]:
+def _reweigh(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:
     """The rebalance again, for the weight the slider now names."""
     symbol = engine.clean_focus(str(context.get("ticker") or ""))
     try:
@@ -1859,10 +1858,10 @@ def _reweigh(context: dict, paths: UserPaths, tr) -> list[dict]:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no priced holding of {symbol or 'that'} to reweigh",
         )
-    return rebalance.moved(moved, tr, getattr(tr, "lang", "en"))
+    return rebalance.moved(moved, tr, lang)
 
 
-def _rechart(context: dict, paths: UserPaths, tr) -> list[dict]:
+def _rechart(context: dict, paths: UserPaths, tr, lang: str) -> list[dict]:
     """The chart's symbols again, over the window the chip picked.
 
     The symbols come back from the surface, so they are screened here as any
