@@ -155,12 +155,9 @@ export default function Fees() {
                 eyebrow={
                   measured ? t("portfolio.fees_hero") : t("portfolio.fees_explicit")
                 }
-                value={money(
-                  measured ? fees.explicit + (fees.spread ?? 0) : fees.explicit,
-                  {
-                    digits: 2,
-                  },
-                )}
+                value={money(measured ? (fees.cost ?? fees.explicit) : fees.explicit, {
+                  digits: 2,
+                })}
                 sub={
                   measured
                     ? t("portfolio.fees_hero_sub", {

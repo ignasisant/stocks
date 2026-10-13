@@ -926,7 +926,9 @@ def fees_(
     for name in sorted(brokers, key=lambda n: -brokers[n].volume):
         broker, stats = brokers[name], spreads.get(name)
         spread = stats.spread if stats else (0.0 if measured else None)
-        total = broker.explicit + (spread or 0.0) if measured else None
+        # A fill that beat the day's mid is reported, but never as a refund:
+        # what the broker charged stays the floor of what trading cost.
+        total = broker.explicit + max(spread or 0.0, 0.0) if measured else None
         rows.append(
             BrokerCost(
                 broker=name,
@@ -949,12 +951,13 @@ def fees_(
     volume = sum(b.volume for b in brokers.values())
     explicit = sum(b.explicit for b in brokers.values())
     spread_total = sum(s.spread for s in spreads.values()) if measured else None
-    cost = explicit + (spread_total or 0.0)
+    cost = explicit + sum(max(s.spread, 0.0) for s in spreads.values())
     return Fees(
         base=ccy,
         brokers=rows,
         explicit=explicit,
         spread=_num(spread_total) if measured else None,
+        cost=_num(cost) if measured else None,
         volume=volume,
         cost_pct=_num(cost / volume) if volume else None,
         spread_measured=measured,

@@ -148,6 +148,30 @@ def test_fees_report_commission_and_spread_apart(client, book, monkeypatch):
     assert broker["measured"] == 3 and broker["skipped"] == 0
 
 
+def test_a_spread_that_beat_the_mid_never_lowers_the_cost(client, book, monkeypatch):
+    """Fills better than the day's mid are reported, not netted off commission."""
+    from stocks.portfolio import fees
+
+    book(trades())
+    monkeypatch.setattr(loaders, "trade_bars", lambda db, mtime: bars())
+    beat = fees.SpreadStats(
+        "revolut", measured=3, measured_volume=1000.0, spread=-99.66
+    )
+    monkeypatch.setattr(
+        fees, "spread_by_broker", lambda txs, bars, base: {"revolut": beat}
+    )
+
+    payload = client.get(
+        "/v1/portfolio/fees", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert payload["spread"] == pytest.approx(-99.66)  # still reported, signed
+    assert payload["cost"] == pytest.approx(4.5)  # commission is the floor
+    broker = payload["brokers"][0]
+    assert broker["spread"] == pytest.approx(-99.66)
+    assert broker["total"] == pytest.approx(4.5)
+    assert payload["cost_pct"] >= payload["explicit"] / payload["volume"]
+
+
 def test_an_unreachable_yahoo_leaves_the_spread_null_not_zero(
     client, book, monkeypatch
 ):

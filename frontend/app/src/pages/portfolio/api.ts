@@ -328,6 +328,8 @@ export type Fees = {
   brokers: BrokerCost[];
   explicit: number;
   spread: number | null;
+  /** Commission plus the spread each broker paid; one that beat the mid adds 0. */
+  cost: number | null;
   volume: number;
   cost_pct: number | null;
   /**
