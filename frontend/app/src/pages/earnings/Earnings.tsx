@@ -67,7 +67,11 @@ function Body({ data }: { data: EarningsCalendar }) {
     <>
       <TaxReminders deadlines={data.tax_deadlines} />
       {imminent > 0 && (
-        <p className="earn-warn">{t("earnings.imminent_warning", { n: imminent })}</p>
+        <p className="earn-warn">
+          {imminent === 1
+            ? t("earnings.imminent_warning_one")
+            : t("earnings.imminent_warning", { n: imminent })}
+        </p>
       )}
       {untracked && <NothingTracked />}
       {bare && !untracked && <p className="ag-note">{t("earnings.no_dates")}</p>}

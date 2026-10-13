@@ -22,6 +22,8 @@ import type { EventLine } from "./events";
 import { sellLine } from "./events";
 import { DASH, money, signed, type Translate } from "./format";
 import type { Trade } from "./types";
+import { num } from "../../shell/numbers";
+import { calendarDay } from "../../shell/dates";
 
 /** A run of text inside a row, and how it is set. */
 export type TipPart = { text: string; bold?: boolean; tone?: "up" | "down" | "dim" };
@@ -106,13 +108,14 @@ function rows(html: string, swatch?: string): HoverRow[] {
 }
 
 /**
- * The box's title: the bar's own stamp — `%Y-%m-%d`, with the clock on an
+ * The box's title: the bar's own day ("12 Oct 2026"), with the clock on an
  * intraday range. Not the axis label: on a multi-year window that collapses
  * to a month, over a bar that is one day.
  */
 export function hoverTitle(stamp: string, intraday: boolean): string {
   const clean = stamp.replace("T", " ");
-  return intraday ? clean.slice(0, 16) : clean.slice(0, 10);
+  const day = calendarDay(clean.slice(0, 10));
+  return intraday ? `${day} ${clean.slice(11, 16)}` : day;
 }
 
 /**
@@ -198,15 +201,15 @@ export function fillRows(
   t: Translate,
 ): HoverRow[] {
   const { last, avgCost, swatch } = args;
-  const qty = fill.quantity.toFixed(4);
+  const qty = num(fill.quantity, 4);
   if (fill.action === "sell") {
-    return rows(sellLine(qty, money(fill.price), fill.date, t), swatch);
+    return rows(sellLine(qty, money(fill.price), calendarDay(fill.date), t), swatch);
   }
   const pct = last !== null && fill.price ? (last / fill.price - 1) * 100 : 0;
   let html = t("ticker.hover_buy", {
     qty,
     price: money(fill.price),
-    date: fill.date,
+    date: calendarDay(fill.date),
     color: colorSlot(pct),
     pct: signed(pct),
     last: money(last),

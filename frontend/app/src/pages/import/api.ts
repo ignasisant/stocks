@@ -143,6 +143,8 @@ export type LedgerRow = {
 export type LastImport = {
   filename: string | null;
   imported_at: string | null;
+  /** The UTC day of `imported_at`: the date Profile's summary shows too. */
+  imported_on?: string | null;
   platform: string | null;
   /** Rows the commit wrote. */
   rows: number;

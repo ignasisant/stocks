@@ -473,7 +473,7 @@ def performance(
         start=str(pd.Timestamp(shown.index[0]).date()),
         end=str(pd.Timestamp(hist.index[-1]).date()),
         injected=_num(hist["injected"].iloc[-1]),
-        value=_num(hist["value"].iloc[-1]),
+        value=_num(loaders.book_value_today(db, mtime, ccy, hist)),
         twr_cumulative=_num(cumulative),
         twr_annualised=_num(annualised),
         # Volatility and drawdown of the flow-adjusted path, which is the only
@@ -926,7 +926,9 @@ def fees_(
     for name in sorted(brokers, key=lambda n: -brokers[n].volume):
         broker, stats = brokers[name], spreads.get(name)
         spread = stats.spread if stats else (0.0 if measured else None)
-        total = broker.explicit + (spread or 0.0) if measured else None
+        # A fill that beat the day's mid is reported, but never as a refund:
+        # what the broker charged stays the floor of what trading cost.
+        total = broker.explicit + max(spread or 0.0, 0.0) if measured else None
         rows.append(
             BrokerCost(
                 broker=name,
@@ -949,12 +951,13 @@ def fees_(
     volume = sum(b.volume for b in brokers.values())
     explicit = sum(b.explicit for b in brokers.values())
     spread_total = sum(s.spread for s in spreads.values()) if measured else None
-    cost = explicit + (spread_total or 0.0)
+    cost = explicit + sum(max(s.spread, 0.0) for s in spreads.values())
     return Fees(
         base=ccy,
         brokers=rows,
         explicit=explicit,
         spread=_num(spread_total) if measured else None,
+        cost=_num(cost) if measured else None,
         volume=volume,
         cost_pct=_num(cost / volume) if volume else None,
         spread_measured=measured,
@@ -1245,10 +1248,16 @@ def _reporting_flags(account, jurisdiction, settings) -> list[TaxFlag]:
     the book. Every flag the jurisdiction returns is served, crossed or not —
     "under the line" is information too, and it is what the page prints.
     """
+    from stocks.data.crypto import is_crypto
+
     ccy = reporting_currency(account, None)
     db = str(account.db)
     with obs.swallow("api.tax_flags", jurisdiction=jurisdiction.code):
         table = loaders.positions_table(db, loaders.db_mtime(db), ccy)
+        if not table.empty:
+            # Modelo 720 covers securities and accounts abroad; crypto is the
+            # separate Modelo 721, so coins never count toward the 720 total.
+            table = table[[not is_crypto(str(t)) for t in table.index]]
         held = (
             float(table["value"].fillna(table["cost"]).sum()) if not table.empty else 0.0
         )
@@ -1360,8 +1369,7 @@ def projection(
     db = str(account.db)
     mtime = loaders.db_mtime(db)
     hist, _twr, _missing = loaders.history(db, mtime, ccy)
-    value = hist["value"].dropna() if "value" in hist else pd.Series(dtype=float)
-    start_value = float(value.iloc[-1]) if not value.empty else 0.0
+    start_value = loaders.book_value_today(db, mtime, ccy, hist) or 0.0
 
     txs = loaders.ledger_state(db, mtime, ccy)[0]
     flows = flow_series(txs, base=ccy)
@@ -1562,7 +1570,9 @@ def risk(
 
     allocations = {
         key: slices(
-            report.allocation(key).to_dict(),
+            loaders.allocation_weights(
+                db, mtime, ccy, report.meta, key, report.allocation(key).to_dict()
+            ),
             allocation_parts(values, report.meta, key),
             allocation_parts(costs, report.meta, key),
         )

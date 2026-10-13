@@ -258,7 +258,7 @@ def tax(action: dict, today: date) -> dict:
     loss, gain, offset = (finite(action.get(k)) for k in ("loss", "gain_ytd", "offset"))
     named = (("loss", loss), ("gain_ytd", gain), ("offset", offset))
     out: dict[str, Any] = {k: v for k, v in named if v is not None}
-    brackets = signals._brackets(action.get("jurisdiction"))
+    brackets = signals._brackets(action.get("jurisdiction"), today.year)
     if brackets and gain is not None and offset:
         before = progressive_tax(gain, brackets)
         saving = before - progressive_tax(gain - offset, brackets)

@@ -1,7 +1,7 @@
 {
   "sector.title": "Sector screen",
   "sector.pick": "Sector",
-  "sector.as_of": "Cohort scanned {date}",
+  "sector.as_of": "Cohort and prices as of {date}",
   "sector.cohort_caption": "{n} companies — the {etf} basket, widened with listed names outside the US.",
   "sector.empty_title": "No sector scan yet",
   "sector.empty_body": "Every night the app builds a comparable cohort for each of the eleven sectors and ranks it on valuation and quality. Nothing has been scanned yet — refresh a sector to build one now.",
@@ -32,6 +32,7 @@
   "sector.source_down": "Yahoo would not answer for {sector}. Showing the last scan.",
   "sector.rescan_limited": "You have refreshed sectors several times this hour. Try again in {minutes} min — the nightly scan keeps the cohort current meanwhile.",
   "sector.fb_headline": "{top} leads the {sector} screen of {cohort} companies.",
+  "sector.held_badge": "In your book",
   "sector.fb_held": "Already in your book: {tickers}.",
   "sector.fb_empty": "Not enough comparable data in {sector} to rank a podium."
 }

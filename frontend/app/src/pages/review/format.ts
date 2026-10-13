@@ -4,7 +4,9 @@
  */
 
 import { type ChipSpec, type Tone, toneOf } from "../../ui/Kpi";
+import { parseDay } from "../home/format";
 import type { Verdict } from "./types";
+import { formatter } from "../../shell/numbers";
 
 function finite(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -18,7 +20,7 @@ export function money(
 ): string | null {
   if (!finite(value)) return null;
   try {
-    return new Intl.NumberFormat(lang, {
+    return formatter(lang, {
       style: "currency",
       currency,
       maximumFractionDigits: 0,
@@ -35,7 +37,7 @@ export function percent(
   digits = 1,
 ): string | null {
   if (!finite(value)) return null;
-  return new Intl.NumberFormat(lang, {
+  return formatter(lang, {
     style: "percent",
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
@@ -121,10 +123,21 @@ export function metric(key: string, value: number | null | undefined, lang: stri
     case "score":
       return Math.round(value).toString();
     case "years":
-      return new Intl.NumberFormat(lang, { maximumFractionDigits: 1 }).format(value);
+      return formatter(lang, { maximumFractionDigits: 1 }).format(value);
     default:
       return `${value.toFixed(1)}x`;
   }
+}
+
+/** "9 Oct 2026" — an API calendar day in the reader's locale; junk comes back as is. */
+export function longDay(iso: string, lang: string): string {
+  const date = parseDay(iso);
+  if (!date) return iso;
+  return new Intl.DateTimeFormat(lang, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
 
 export function score(value: number | null | undefined): string | null {

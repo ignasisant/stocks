@@ -24,6 +24,7 @@ import { TickerCell } from "../shell/tickers";
 import { useApi } from "../shell/useApi";
 import { Chip, type Tone } from "./Kpi";
 import "./journal.css";
+import { formatter } from "../shell/numbers";
 
 export type JournalState = "open" | "followed" | "declined" | "lapsed";
 export type JournalSource = "daily" | "review" | "chat";
@@ -127,7 +128,7 @@ function figure(
   if (typeof value === "string") return value || null;
   if (!Number.isFinite(value)) return null;
   const num = (n: number, digits: number) =>
-    new Intl.NumberFormat(lang, { maximumFractionDigits: digits }).format(n);
+    formatter(lang, { maximumFractionDigits: digits }).format(n);
   switch (format) {
     case "score":
       return String(Math.round(value));
@@ -139,7 +140,7 @@ function figure(
       return `${value > 0 ? "+" : ""}${num(value, 1)} pp`;
     case "money":
       try {
-        return new Intl.NumberFormat(lang, {
+        return formatter(lang, {
           style: "currency",
           currency,
           maximumFractionDigits: 0,

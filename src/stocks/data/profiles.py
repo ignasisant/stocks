@@ -24,7 +24,7 @@ PROFILE_CACHE = DATA_DIR / "profiles.json"
 
 # What is kept. Anything that moves (prices, market cap, margins) is
 # deliberately not on the list — this memo has no TTL.
-FIELDS = ("sector", "country", "currency", "quoteType")
+FIELDS = ("sector", "country", "currency", "quoteType", "name")
 
 _lock = threading.Lock()
 _memo: dict[str, dict[str, str]] | None = None
@@ -68,7 +68,10 @@ def remember(symbol: str, info: dict | None) -> None:
     """Record the fixed fields of `info` for `symbol`; a no-op on a stub."""
     if not symbol or not isinstance(info, dict) or not info.get("quoteType"):
         return
-    entry = {f: str(info[f]) for f in FIELDS if info.get(f)}
+    # Yahoo's own name for the listing: the one source that covers a non-US
+    # symbol the SEC map and the fund catalog do not.
+    named = {**info, "name": info.get("longName") or info.get("shortName")}
+    entry = {f: str(named[f]) for f in FIELDS if named.get(f)}
     key = symbol.upper()
     with _lock:
         cache = _all()

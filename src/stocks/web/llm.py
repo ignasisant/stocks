@@ -60,6 +60,16 @@ class ToolCall:
     result: str
 
 
+class Cut(str):
+    """The empty chunk a stream ends with when the model ran out of room
+    (`max_tokens`, `finish_reason: length`) rather than finishing. It joins to
+    nothing, so `complete` is unaffected; the chat engine looks for it to close
+    the half-written markdown and offer to continue."""
+
+    def __new__(cls):
+        return super().__new__(cls, "")
+
+
 @dataclass(frozen=True)
 class ToolRun:
     """What one tool-using exchange produced: the model's closing text and
@@ -243,6 +253,8 @@ def _anthropic_stream(api_key, model, system, messages):
         messages=cast(Any, _with_cache_breakpoint(messages)),
     ) as stream:
         yield from stream.text_stream
+        if stream.get_final_message().stop_reason == "max_tokens":
+            yield Cut()
 
 
 def _anthropic_tools(api_key, model, system, messages, tools, execute, rounds):
@@ -315,11 +327,16 @@ def _openai_compat_stream(base_url: str | None = None, **client_opts):
             messages=[{"role": "system", "content": system}, *messages],
             stream=True,
         )
+        cut = False
         for chunk in stream:
             # OpenRouter interleaves comment frames with no choices; skip them.
+            if chunk.choices and chunk.choices[0].finish_reason == "length":
+                cut = True
             delta = chunk.choices[0].delta.content if chunk.choices else None
             if delta:
                 yield delta
+        if cut:
+            yield Cut()
 
     return _stream
 

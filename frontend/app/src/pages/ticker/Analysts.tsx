@@ -27,6 +27,7 @@ import {
 } from "./format";
 import { Banner, Card, Note, Scroll, Subhead, useMobile } from "./ui";
 import type { AnalystMonth, Analysts, EpsRevisionRow } from "./types";
+import { num } from "../../shell/numbers";
 
 /** The five buckets, strongest buy first — the order every bar is drawn in. */
 const BUCKETS = ["strong_buy", "buy", "hold", "sell", "strong_sell"] as const;
@@ -80,12 +81,14 @@ export function AnalystsSection({ data }: { data: Analysts }) {
           chip={
             known(data.rating_mean)
               ? {
-                  text: `${data.rating_mean.toFixed(1)} / 5`,
+                  text: `${num(data.rating_mean, 1)} / 5`,
                   tone: ratingTone(data.rating_mean),
                 }
               : null
           }
-        />
+        >
+          {known(data.rating_mean) ? <RatingScale mean={data.rating_mean} /> : null}
+        </Kpi>
         <Kpi label={t("ticker.analysts_count")} value={String(data.analysts)} />
         {targets ? (
           <>
@@ -121,6 +124,25 @@ export function AnalystsSection({ data }: { data: Analysts }) {
         <Revisions rows={data.revisions} currency={data.currency} />
       ) : null}
     </Card>
+  );
+}
+
+// ------------------------------------------------------------- rating scale
+
+/** The 1–5 mean on its own track, buy to sell, so "2.5 / 5" says which way. */
+function RatingScale({ mean }: { mean: number }) {
+  const t = useT();
+  const at = `${((Math.min(5, Math.max(1, mean)) - 1) / 4) * 100}%`;
+  return (
+    <div className="tk-scale">
+      <div className="tk-scale-track" aria-hidden="true">
+        <span className="tk-scale-dot" style={{ left: at }} />
+      </div>
+      <div className="tk-scale-ends">
+        <span>{t("ticker.analysts_strong_buy")}</span>
+        <span>{t("ticker.analysts_strong_sell")}</span>
+      </div>
+    </div>
   );
 }
 
@@ -226,7 +248,7 @@ function RatingSplit({ months }: { months: AnalystMonth[] }) {
               )}
             </span>
             <span className="tk-ratings-mean">
-              {known(month.mean) ? month.mean.toFixed(1) : DASH}
+              {known(month.mean) ? num(month.mean, 1) : DASH}
             </span>
           </li>
         ))}

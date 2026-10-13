@@ -25,7 +25,7 @@ import { maybe } from "../sentiment/format";
 import { DetailsButton, Head, VerdictChip, PnlChip } from "./Explain";
 import { bucket, findRows } from "./filter";
 import { useListFocus } from "./focus";
-import { metric, money, percent, score, verdictTone } from "./format";
+import { longDay, metric, money, percent, score, verdictTone } from "./format";
 import type { ReviewRow } from "./types";
 
 /** Under this many rows the whole list is on screen: no box. */
@@ -267,7 +267,10 @@ export function CandidateTable({ rows: all }: { rows: ReviewRow[] }) {
                         <VerdictChip row={row} />
                         {row.buy_after ? (
                           <div className="ag-rev-caption">
-                            {t("review.buy_after", { date: row.buy_after })}
+                            {t("review.buy_after", {
+                              ticker: row.symbol,
+                              date: longDay(row.buy_after, lang),
+                            })}
                           </div>
                         ) : null}
                       </td>

@@ -20,7 +20,7 @@ import { TickerCell } from "../../shell/tickers";
 import { Help } from "../../ui/Kpi";
 import { DetailsButton, VerdictChip } from "./Explain";
 import { useListFocus } from "./focus";
-import { ACTIONS, money, percent, verdictTone } from "./format";
+import { ACTIONS, longDay, money, percent, verdictTone } from "./format";
 import type { Review, ReviewRow } from "./types";
 
 export function Plan({ data }: { data: Review }) {
@@ -230,8 +230,13 @@ function Move({
   const tone = verdictTone(row.verdict);
   const note =
     row.buy_after !== null ? (
-      <span title={t("review.buy_after", { date: row.buy_after })}>
-        {t("review.buy_after_short", { date: row.buy_after })}
+      <span
+        title={t("review.buy_after", {
+          ticker: row.symbol,
+          date: longDay(row.buy_after, lang),
+        })}
+      >
+        {t("review.buy_after_short", { date: longDay(row.buy_after, lang) })}
       </span>
     ) : row.verdict === "add" || row.tax === null ? null : row.tax > 0 ? (
       <span

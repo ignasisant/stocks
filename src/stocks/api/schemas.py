@@ -1352,6 +1352,14 @@ class Profile(BaseModel):
             "symbol nothing is known about."
         ),
     )
+    sector: str | None = Field(
+        default=None,
+        description=(
+            "Yahoo's sector as the profile memo holds it. Only the bulk "
+            "`/market/profiles` fills it, from cache — null when never seen, "
+            "which is not the same as having none."
+        ),
+    )
 
 
 class Peer(BaseModel):
@@ -1482,6 +1490,13 @@ class Fees(BaseModel):
     spread: float | None = Field(
         default=None,
         description="Estimated spread across every broker; null when unmeasured.",
+    )
+    cost: float | None = Field(
+        default=None,
+        description=(
+            "Commission plus each broker's spread paid; a broker that beat the "
+            "mid adds nothing, never less. Null when unmeasured."
+        ),
     )
     volume: float = Field(default=0.0)
     cost_pct: float | None = Field(
@@ -2030,6 +2045,10 @@ class Sectors(BaseModel):
 
 class CohortRow(BaseModel):
     ticker: str
+    currency: str | None = Field(
+        default=None,
+        description="Listing currency of the money metrics (price, market cap, EV, FCF).",
+    )
     score: float | None = Field(
         default=None, description="Percentile rank in this cohort, 0-1; null if unranked."
     )
@@ -2960,6 +2979,10 @@ class LastImport(BaseModel):
 
     filename: str | None = None
     imported_at: str | None = None
+    imported_on: str | None = Field(
+        default=None,
+        description="The UTC day of `imported_at` (YYYY-MM-DD), shared by every page.",
+    )
     platform: str | None = None
     rows: int = 0
     still_here: int = Field(

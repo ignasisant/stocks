@@ -16,9 +16,10 @@
  * currency pair, gold, oil) stays grey.
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { get } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
+import { useTabStrip } from "../../shell/useTabStrip";
 import { Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { Link } from "../../shell/router";
@@ -51,10 +52,10 @@ const LABELS: Record<string, string> = {
 };
 
 const ARROWS: Record<string, { glyph: string; label: string; tone: Tone }> = {
-  up: { glyph: "▲", label: "sentiment.state_up", tone: "up" },
+  up: { glyph: "↑", label: "sentiment.state_up", tone: "up" },
   turning_up: { glyph: "↗", label: "sentiment.state_turning_up", tone: "flat" },
   turning_down: { glyph: "↘", label: "sentiment.state_turning_down", tone: "flat" },
-  down: { glyph: "▼", label: "sentiment.state_down", tone: "down" },
+  down: { glyph: "↓", label: "sentiment.state_down", tone: "down" },
 };
 
 const REGIME_TONES: Record<string, string> = {
@@ -140,13 +141,13 @@ export function Market({ data }: { data: MarketGlance }) {
       {tiles.length === 0 ? (
         <Note>{t("home.market_unavailable")}</Note>
       ) : (
-        <ul className="hm-market-strip">
+        <Strip>
           {tiles.map((tile) => (
             <li key={tile.key}>
               <Tile tile={tile} range={range} />
             </li>
           ))}
-        </ul>
+        </Strip>
       )}
       {data.breadth || data.as_of ? (
         <p className="hm-caption">
@@ -158,6 +159,7 @@ export function Market({ data }: { data: MarketGlance }) {
                   window: data.breadth.window,
                 })
               : null,
+            tiles.some((tile) => tile.state) ? t("home.market_arrow_key") : null,
             data.as_of
               ? t("home.market_as_of", { date: shortDate(data.as_of, lang) })
               : null,
@@ -185,6 +187,7 @@ function Regime({ data }: { data: MarketGlance }) {
       className={`hm-regime ${REGIME_TONES[band] ?? "hm-regime-flat"}`}
       title={[t("home.market_regime_help"), run].filter(Boolean).join(" · ")}
     >
+      <span className="hm-regime-label">{t("home.market_regime_label")}</span>
       <strong>{Math.round(data.score)}</strong>
       <span>{t(`sentiment.regime_${band}`)}</span>
       {week !== null ? (
@@ -228,6 +231,19 @@ function MiniSpark({ values }: { values: number[] }) {
 function moveTone(change: number | undefined, welcome: number): Tone {
   if (change === undefined || change === 0 || welcome === 0) return "flat";
   return change * welcome > 0 ? "up" : "down";
+}
+
+/**
+ * The tiles' row. On a phone it scrolls sideways, and the edge with more past
+ * it fades, so "Emerging" cut at the border reads as "there is more" rather
+ * than as a clipped tile. Its own component so the hook mounts with the row.
+ */
+function Strip({ children }: { children: ReactNode }) {
+  return (
+    <ul className="hm-market-strip ag-fade-x" ref={useTabStrip<HTMLUListElement>("")}>
+      {children}
+    </ul>
+  );
 }
 
 function Tile({ tile, range }: { tile: MarketTile; range: MarketWindow }) {
@@ -292,7 +308,7 @@ function level(tile: MarketTile, lang: string): string | null {
   return decimal(value, lang, value >= 1000 ? 0 : 2);
 }
 
-/** Where the fear gauge sits in its own year, as a word and a percentile. */
+/** Where the fear gauge sits in its own year: a word, then the share of the year's days it is above. */
 function vixWord(
   pct: number,
   t: (key: string, slots?: Record<string, string | number>) => string,

@@ -14,6 +14,7 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 import { get } from "./api";
+import { setNumberLang } from "./numbers";
 import { useApi } from "./useApi";
 
 type Catalog = { lang: string; strings: Record<string, string> };
@@ -42,6 +43,21 @@ export function useT() {
 const LANGUAGES = ["en", "es"];
 
 const PINNED = "guestLang";
+
+/**
+ * The browser's language among the ones we ship, read down the whole
+ * preference list rather than its first entry: a Catalan browser lists
+ * `ca, es, en`, and its reader wants the Spanish catalog, not the English
+ * fallback the first entry alone would give. Spain's other co-official
+ * languages land on Spanish too when nothing on the list is shipped.
+ */
+export function browserLang(languages: readonly string[]): string {
+  const codes = languages.map((tag) => (tag.split(/[-_]/)[0] ?? "").toLowerCase());
+  return (
+    codes.find((code) => LANGUAGES.includes(code)) ??
+    (codes.some((code) => ["ca", "gl", "eu"].includes(code)) ? "es" : "en")
+  );
+}
 
 /**
  * The language a landing CTA pinned for this tab, or null.
@@ -84,5 +100,8 @@ export function Translations({
   // to itself, which is ugly and still navigable. Blocking here would turn a
   // CDN hiccup into a white screen.
   const value = catalog.state === "loaded" ? catalog.data : { lang, strings: {} };
+  // Published before any child renders, so number helpers without a `lang`
+  // argument spell figures in the same language as the words around them.
+  setNumberLang(value.lang);
   return <Strings.Provider value={value}>{children}</Strings.Provider>;
 }

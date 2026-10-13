@@ -23,7 +23,7 @@ import { Link } from "../../shell/router";
 import { Chip, Kpi, KpiGrid, chipFor } from "../../ui/Kpi";
 import { DenseRows, Responsive } from "../../ui/Rows";
 import { Card, CardQuery, CardTitle, Note, TickerCell } from "./ui";
-import { money, percent, plain } from "./format";
+import { money, percent, plain, priceDigits } from "./format";
 import { AverageTile, SPARK_WINDOW, Spark } from "./Spark";
 import type {
   History,
@@ -319,6 +319,7 @@ function GlanceCard({ book }: { book: Book }) {
             label={t("home.irr_annualised")}
             value={percent(performance.irr, lang, { signed: true, digits: 1 }) ?? na}
             help={t("portfolio.mwr_help")}
+            note={t("home.irr_note")}
           />
           <Kpi
             label={t("home.twr_annualised")}
@@ -327,6 +328,7 @@ function GlanceCard({ book }: { book: Book }) {
               na
             }
             help={t("portfolio.twr_return_help")}
+            note={t("home.twr_note")}
           />
         </KpiGrid>
         {/* Every figure above is invented while the example book is loaded, and
@@ -501,7 +503,7 @@ function MoverTable({
                     quoted by its own market, unlike the value beside it. */}
                     <td className="hm-num">
                       {money(position?.price, position?.currency || currency, lang, {
-                        digits: 2,
+                        digits: priceDigits(position?.price),
                       }) ?? na}
                     </td>
                     <td className="hm-num">
@@ -539,9 +541,13 @@ function MoverTable({
                 const position = held.get(row.ticker);
                 return [
                   money(position?.price, position?.currency || currency, lang, {
-                    digits: 2,
+                    digits: priceDigits(position?.price),
                   }),
-                  percent(position?.weight, lang, { digits: 1 }),
+                  position?.weight != null
+                    ? t("home.weight_short", {
+                        pct: percent(position.weight, lang, { digits: 1 }) ?? "",
+                      })
+                    : null,
                 ];
               },
             }}

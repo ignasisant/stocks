@@ -27,6 +27,7 @@ import pandas as pd
 from stocks import obs
 from stocks.chat import a2ui
 from stocks.chat.whatif import Replay, _money
+from stocks.formatting import bound
 
 SURFACE_ID = "rebalance"
 ACTION = "reweigh"
@@ -107,22 +108,23 @@ class Reweigh:
         """The slider's top: room above today's weight, within `CEILING`."""
         return min(CEILING, max(50.0, math.ceil(self.weight / 10) * 10 + 20))
 
-    def line(self) -> str:
+    def line(self, lang: str = "en") -> str:
         """The prompt's paragraph: figures only, and where they came from."""
+        n, p = bound(lang)
         c = self.currency
         verb = "sell" if self.shares < 0 else "buy"
-        trade = (f"{verb} {_count(self.shares)} shares, {abs(self.amount):,.2f} {c}"
+        trade = (f"{verb} {_count(self.shares)} shares, {n(abs(self.amount), 2)} {c}"
                  if self.shares else "no trade: it is already there")
         rows = [
-            f"- {self.ticker} today: {self.held:g} shares, {self.value:,.2f} {c}, "
-            f"{self.weight:.1f}% of a book of {self.total:,.2f} {c}",
+            f"- {self.ticker} today: {self.held:g} shares, {n(self.value, 2)} {c}, "
+            f"{n(self.weight, 1)}% of a book of {n(self.total, 2)} {c}",
             f"- to weigh {self.target:g}%: {trade}",
         ]
         if self.shares < 0:
             rows.append(
-                f"- that sale realises {self.gain:+,.2f} {c}; estimated tax "
-                f"{self.year} {self.tax_before:,.2f} -> {self.tax_after:,.2f} {c} "
-                f"(change {self.extra_tax:+,.2f} {c}, "
+                f"- that sale realises {n(self.gain, 2, signed=True)} {c}; estimated tax "
+                f"{self.year} {n(self.tax_before, 2)} -> {n(self.tax_after, 2)} {c} "
+                f"(change {n(self.extra_tax, 2, signed=True)} {c}, "
                 f"{self.jurisdiction.upper()} rules)"
             )
         return (
@@ -182,8 +184,9 @@ def build(book: Replay | None, tbl: pd.DataFrame | None, ticker: str,
 # -------------------------------------------------------------------- surface
 
 
-def _pct(value: float) -> str:
-    return f"{value:.1f}%"
+def _pct(value: float, lang: str = "en") -> str:
+    n, p = bound(lang)
+    return f"{n(value, 1)}%"
 
 
 def _count(shares: float) -> str:
@@ -192,7 +195,7 @@ def _count(shares: float) -> str:
     return text.rstrip("0").rstrip(".") if "." in text else text
 
 
-def view(r: Reweigh, translate) -> dict:
+def view(r: Reweigh, translate, lang: str = "en") -> dict:
     """The figures the surface shows, formatted: its `/view` data."""
     c = r.currency
     if r.shares < 0:
@@ -202,19 +205,19 @@ def view(r: Reweigh, translate) -> dict:
     else:
         trade = translate("chat.rebalance_none")
     return {
-        "weight": f"{_pct(r.weight)} → {_pct(r.target)}",
+        "weight": f"{_pct(r.weight, lang)} → {_pct(r.target, lang)}",
         "trade": trade,
-        "amount": _money(abs(r.amount), c),
-        "tax": _money(r.extra_tax, c, signed=True),
+        "amount": _money(abs(r.amount), c, lang=lang),
+        "tax": _money(r.extra_tax, c, signed=True, lang=lang),
         "tax_tone": "down" if r.extra_tax > 0 else "up" if r.extra_tax < 0 else "flat",
         "tax_hint": (translate("chat.whatif_tax_hint", year=r.year,
-                               before=_money(r.tax_before, c),
-                               after=_money(r.tax_after, c))
+                               before=_money(r.tax_before, c, lang=lang),
+                               after=_money(r.tax_after, c, lang=lang))
                      if r.shares < 0 else translate("chat.rebalance_tax_buy")),
     }
 
 
-def surface(r: Reweigh, translate) -> list[dict]:
+def surface(r: Reweigh, translate, lang: str = "en") -> list[dict]:
     """A slider over the target weight and the three figures that move with it."""
     parts = [
         a2ui.component("root", "Column",
@@ -239,11 +242,11 @@ def surface(r: Reweigh, translate) -> list[dict]:
         a2ui.component("note", "Text", text=translate("chat.rebalance_note"),
                        variant="caption"),
     ]
-    data = {"target": r.target, "view": view(r, translate)}
+    data = {"target": r.target, "view": view(r, translate, lang)}
     return a2ui.surface(SURFACE_ID, parts, data)
 
 
-def moved(r: Reweigh, translate) -> list[dict]:
+def moved(r: Reweigh, translate, lang: str = "en") -> list[dict]:
     """The same surface after the slider moved: its data, nothing else."""
-    return [a2ui.data_update(SURFACE_ID, "/view", view(r, translate)),
+    return [a2ui.data_update(SURFACE_ID, "/view", view(r, translate, lang)),
             a2ui.data_update(SURFACE_ID, "/target", r.target)]

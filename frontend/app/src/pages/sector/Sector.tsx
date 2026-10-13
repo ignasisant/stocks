@@ -27,6 +27,7 @@ import { Cohort } from "./Cohort";
 import { FUNDAMENTAL_WHY, Podium, TECHNICAL_WHY } from "./Podium";
 import { RescanButton, useRescan } from "./Rescan";
 import { Verdict } from "./Verdict";
+import { calendarDay } from "../../shell/dates";
 import { useLabels } from "./labels";
 import type { SectorCohort, Sectors, SectorSummary } from "./types";
 import "./sector.css";
@@ -120,7 +121,7 @@ function Screen({ sectors }: { sectors: SectorSummary[] }) {
           ) : (
             <>
               <p className="ag-sec-caption">
-                {t("sector.as_of", { date: data.as_of })}
+                {t("sector.as_of", { date: calendarDay(data.as_of) })}
               </p>
               <Podium
                 title={t("sector.podium_title")}

@@ -17,6 +17,7 @@ import { useT } from "../../shell/i18n";
 import { Status } from "../../ui/Status";
 import { sampleStatement } from "./api";
 import type { Platform } from "./api";
+import { platformHint } from "./text";
 
 export function Sample({
   platform,
@@ -55,7 +56,7 @@ export function Sample({
         {t("import.empty_title")}
       </h2>
       <p className="im-fine">
-        {platform.hint}
+        {platformHint(t, platform)}
         {offer ? ` ${t("import.sample_short")}` : null}
       </p>
       {offer && (

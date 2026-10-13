@@ -118,6 +118,23 @@ export const getPeers = (ticker: string) =>
 export const getComparables = (tickers: string[]) =>
   get<Comparables>("/comparables", { tickers: tickers.join(",") });
 
+/** Sector per ticker (memo only, "" when unknown), in the route's 50-name chunks. */
+export async function getSectors(tickers: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (let at = 0; at < tickers.length; at += 50) {
+    const body = await get<{ profiles: { ticker: string; sector?: string | null }[] }>(
+      "/market/profiles",
+      { tickers: tickers.slice(at, at + 50).join(",") },
+    );
+    for (const row of body.profiles) out[row.ticker.toUpperCase()] = row.sector ?? "";
+  }
+  return out;
+}
+
+/** The last company the account opened, or null — newest first on the wire. */
+export const getLastViewed = () =>
+  get<{ tickers: string[] }>("/search/recent").then((body) => body.tickers[0] ?? null);
+
 export const getWatchlist = () => get<{ entries: WatchlistEntry[] }>("/watchlist");
 
 export const getTags = () => get<{ tags: string[] }>("/watchlist/tags");

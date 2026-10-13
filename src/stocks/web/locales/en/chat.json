@@ -33,6 +33,7 @@
   "chat.stop": "Stop",
   "chat.byok_help_session": "Bring your own {provider} API key to chat. This server cannot store keys, so it stays in this browser tab until you close it.",
   "chat.key_session_blocked": "This browser is not letting the page keep the key, even for this tab. Allow site storage, or use a normal window.",
+  "chat.cut_off": "The answer was cut off. Say “continue” to pick it up.",
   "chat.invalid_key": "Invalid {provider} API key.",
   "chat.api_error": "The assistant is unavailable right now — try again in a moment.",
   "chat.unreadable": "This device could not open that file, so nothing was sent. If it lives in Drive or came from a chat app, save it to the phone's Downloads first and attach it from there.",

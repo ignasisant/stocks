@@ -224,6 +224,30 @@ export default function Views({ data }: { data: EarningsCalendar }) {
             dividends={dividends}
             onPick={setDetail}
           />
+          <ul className="earn-chipkey" aria-label={t("earnings.key_summary")}>
+            {(
+              [
+                ...(events.length > 0 || results.length > 0
+                  ? [
+                      ["", "earnings.key_print"],
+                      ["soon", "earnings.key_soon"],
+                      ["beat", "earnings.key_beat"],
+                      ["miss", "earnings.key_miss"],
+                    ]
+                  : []),
+                ...(deadlines.length > 0 ? [["tax", "earnings.key_tax"]] : []),
+                ...(windows.length > 0 ? [["rebuy", "earnings.key_rebuy"]] : []),
+                ...(banks.length > 0 ? [["cb", "earnings.key_cb"]] : []),
+                ...(dividends.length > 0 ? [["div", "earnings.key_div"]] : []),
+              ] as [string, string][]
+            ).map(([tone, label]) => (
+              <li key={label}>
+                <span className={`earn-chip earn-chip-key ${tone}`}>
+                  <span>{t(label)}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
           {/* The caveats behind each colour — statutory dates, estimated
               amounts — stay one click away rather than trailing the month as a
               wall of copy; every chip's dialog says its own. */}

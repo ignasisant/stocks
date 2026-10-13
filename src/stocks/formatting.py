@@ -39,3 +39,32 @@ def compact_money(v: float, symbol: str = "$") -> str:
         if a >= div:
             return f"{symbol}{v / div:.1f}{suffix}"
     return f"{symbol}{v:,.0f}"
+
+
+def fmt_num(value: float, digits: int = 2, lang: str = "en", signed: bool = False) -> str:
+    """`value` grouped and rounded in the reader's language.
+
+    "1,234.50" in English, "1.234,50" in Spanish. Grouping is always on, even
+    for four digits, so one app never mixes "9411" with "27.246". Text the LLM
+    will quote goes through this, so the answer repeats numbers the way the
+    screens print them.
+    """
+    text = f"{value:{'+' if signed else ''},.{digits}f}"
+    if (lang or "en").split("-")[0].lower() == "es":
+        text = text.translate({ord(","): ".", ord("."): ","})
+    return text
+
+
+def fmt_pct(
+    fraction: float, digits: int = 1, lang: str = "en", signed: bool = False
+) -> str:
+    """A fraction as a percentage in the reader's language: 0.0129 -> "1,3%"."""
+    return f"{fmt_num(fraction * 100, digits, lang, signed)}%"
+
+
+def bound(lang: str):
+    """`(num, pct)` formatters with `lang` already applied, for long f-strings."""
+    return (
+        lambda v, d=2, signed=False: fmt_num(v, d, lang, signed),
+        lambda v, d=1, signed=False: fmt_pct(v, d, lang, signed),
+    )

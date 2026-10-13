@@ -142,6 +142,9 @@ export default function Fees() {
 
         const measuredTrades = fees.brokers.reduce((sum, row) => sum + row.measured, 0);
         const skipped = fees.brokers.reduce((sum, row) => sum + row.skipped, 0);
+        // The same count the table's "operations" column adds up: a fill the
+        // spread pass cannot test (no price or quantity) is still an operation.
+        const allTrades = fees.brokers.reduce((sum, row) => sum + row.trades, 0);
         const outside = fees.brokers.reduce((sum, row) => sum + row.outside_range, 0);
 
         return (
@@ -155,12 +158,9 @@ export default function Fees() {
                 eyebrow={
                   measured ? t("portfolio.fees_hero") : t("portfolio.fees_explicit")
                 }
-                value={money(
-                  measured ? fees.explicit + (fees.spread ?? 0) : fees.explicit,
-                  {
-                    digits: 2,
-                  },
-                )}
+                value={money(measured ? (fees.cost ?? fees.explicit) : fees.explicit, {
+                  digits: 2,
+                })}
                 sub={
                   measured
                     ? t("portfolio.fees_hero_sub", {
@@ -207,7 +207,7 @@ export default function Fees() {
                 <Caption>
                   {t("portfolio.fees_spread_coverage", {
                     measured: measuredTrades,
-                    total: measuredTrades + skipped,
+                    total: Math.max(allTrades, measuredTrades + skipped),
                   })}
                 </Caption>
               ) : null}

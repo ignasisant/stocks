@@ -30,6 +30,9 @@ import "./chat.css";
 
 const Panel = lazy(() => import("./Panel"));
 
+/** Narrowest page the open drawer leaves before it covers it instead (px). */
+const PAGE_MIN = 560;
+
 /**
  * The parked walkthrough: one line above the tab bar, on a phone.
  *
@@ -225,12 +228,34 @@ export function Drawer() {
   // The page makes room for the drawer rather than disappearing under it, and
   // it is marked on the document because the rule that does it lives in CSS
   // (`chat.css`), next to the width the drawer is sized by: the panel is fixed,
-  // so nothing in the layout could otherwise know it is there.
+  // so nothing in the layout could otherwise know it is there. Making room
+  // stops where the page would be left narrower than `PAGE_MIN`: past that a
+  // KPI breaks mid-figure and a calendar loses its weekend, so the drawer
+  // covers the page instead ("overlay"), as it always does on a phone.
   useEffect(() => {
     const root = document.documentElement;
-    if (open) root.dataset.chat = "open";
-    else delete root.dataset.chat;
+    if (!open) {
+      delete root.dataset.chat;
+      return;
+    }
+    const nav = document.querySelector<HTMLElement>(".ag-nav");
+    const side = document.querySelector<HTMLElement>(".ag-chat-panel");
+    const place = () => {
+      // The same sum as the padding rule in `chat.css`: the panel past 60%
+      // of the window overlaps rather than taking more off the page.
+      const drawer = Math.min(side?.offsetWidth ?? 0, window.innerWidth * 0.6);
+      const taken = (nav?.offsetWidth ?? 0) + drawer + 20;
+      root.dataset.chat = window.innerWidth - taken >= PAGE_MIN ? "open" : "overlay";
+    };
+    place();
+    const watch =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+    if (nav) watch?.observe(nav);
+    if (side) watch?.observe(side);
+    window.addEventListener("resize", place);
     return () => {
+      watch?.disconnect();
+      window.removeEventListener("resize", place);
       delete root.dataset.chat;
     };
   }, [open]);

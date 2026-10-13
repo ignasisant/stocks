@@ -443,7 +443,8 @@ def realized_this_year(realized, jurisdiction=None, today: date | None = None) -
 
 
 def _harvest_signals(
-    tbl, realized, jurisdiction, currency: str, today: date | None
+    tbl, realized, jurisdiction, currency: str, today: date | None,
+    year_net: float | None = None,
 ) -> list[Signal]:
     """Open losses worth realising *because* there is a booked gain to offset.
 
@@ -455,7 +456,11 @@ def _harvest_signals(
     """
     if tbl is None or tbl.empty:
         return []
-    net_gain = realized_this_year(realized, jurisdiction, today)
+    net_gain = (
+        year_net
+        if year_net is not None
+        else realized_this_year(realized, jurisdiction, today)
+    )
     if net_gain <= 0:
         return []
     out: list[Signal] = []
@@ -588,7 +593,8 @@ def _year_end(jurisdiction, today: date) -> date:
 
 
 def _tax_signals(
-    tbl, realized, jurisdiction, currency: str, today: date
+    tbl, realized, jurisdiction, currency: str, today: date,
+    year_net: float | None = None,
 ) -> list[Signal]:
     """The tax calendar against this book: what is due, what closes, what the
     next euro of gain costs, and when a blocked loss lets go.
@@ -621,7 +627,11 @@ def _tax_signals(
             },
         ))
 
-    net_gain = realized_this_year(realized, jurisdiction, today)
+    net_gain = (
+        year_net
+        if year_net is not None
+        else realized_this_year(realized, jurisdiction, today)
+    )
     losses = gains = 0.0
     if tbl is not None and not tbl.empty and "pnl" in tbl:
         pnl = tbl["pnl"].dropna()
@@ -648,7 +658,7 @@ def _tax_signals(
     # The next savings bracket, where the scale is progressive and in this
     # book's own currency (a USD-reported book against euro brackets would be
     # arithmetic on the wrong number).
-    brackets = _brackets(code)
+    brackets = _brackets(code, today.year)
     if brackets and net_gain > 0 and currency == getattr(jurisdiction, "currency", ""):
         floor = 0.0
         for i, (upper, rate) in enumerate(brackets):
@@ -715,7 +725,7 @@ class _Loss:
     loss: float
 
 
-def _brackets(code: str | None) -> list[tuple[float, float]]:
+def _brackets(code: str | None, year: int) -> list[tuple[float, float]]:
     """The progressive savings scale the card can reason about, or none.
 
     Spain's base del ahorro only, today: a single scale with no filing status
@@ -727,7 +737,7 @@ def _brackets(code: str | None) -> list[tuple[float, float]]:
         return []
     from stocks.portfolio.tax import es
 
-    return list(es.SAVINGS_BRACKETS)
+    return list(es.brackets_for(year))
 
 
 # --------------------------------------------------------- the central banks
@@ -1199,6 +1209,7 @@ def candidates(
     currency: str = "EUR",
     today: date | None = None,
     limit: int = 8,
+    year_net: float | None = None,
 ) -> list[Signal]:
     """Every action the book currently justifies and the card has not already
     said, most urgent first.
@@ -1220,12 +1231,12 @@ def candidates(
     held = set(tbl.index.astype(str)) if tbl is not None and not tbl.empty else set()
     out = [
         *_alert_signals(holdings, closes or {}, held),
-        *_harvest_signals(tbl, realized, jurisdiction, currency, today),
+        *_harvest_signals(tbl, realized, jurisdiction, currency, today, year_net),
         *_earnings_signals(earnings, held),
         *_result_signals(results, held, day),
         *_position_signals(tbl, currency),
         *_low_signals(extremes, held),
-        *_tax_signals(tbl, realized, jurisdiction, currency, day),
+        *_tax_signals(tbl, realized, jurisdiction, currency, day, year_net),
         *market,
         *macro,
     ]

@@ -208,6 +208,7 @@ class _Report:
     def __init__(self, returns: pd.DataFrame, allocations: dict[str, pd.Series]):
         self.returns = returns
         self.weights = {"AAPL": 0.6, "MSFT": 0.4}
+        self.meta: dict[str, dict] = {}
         self._allocations = allocations
 
     def allocation(self, key: str) -> pd.Series:
@@ -235,6 +236,8 @@ def basket(monkeypatch):
     monkeypatch.setattr(
         loaders, "basket_report", lambda db, mtime, base, period: report
     )
+    # No priced table: the split falls back to the report's own.
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: pd.DataFrame())
     # A price path for the index, the long bond and the euro-dollar pair.
     index_prices = pd.Series(
         np.cumprod(1 + rng.normal(0.0008, 0.011, len(index))) * 4000, index=index

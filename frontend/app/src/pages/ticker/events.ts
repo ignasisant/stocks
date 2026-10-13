@@ -14,6 +14,7 @@
 
 import type { Translate } from "./format";
 import type { EarningsEvent } from "./types";
+import { num } from "../../shell/numbers";
 
 /**
  * A tooltip line, and whether it reads as good or bad news. `emphasis` is the
@@ -76,7 +77,7 @@ export function dividendLine(
   // The yield is against THAT day's close, not today's: a 2019 dividend told
   // as a percentage of the 2026 price is a different number entirely.
   if (close) {
-    text += t("ticker.hover_div_yield", { pct: ((value / close) * 100).toFixed(2) });
+    text += t("ticker.hover_div_yield", { pct: num((value / close) * 100, 2) });
   }
   return { text };
 }
@@ -99,13 +100,13 @@ export function resultsLines(
     { text: t("ticker.hover_results", { date: event.date.slice(0, 10) }) },
   ];
   if (event.reported_eps !== null) {
-    let text = `EPS ${event.reported_eps.toFixed(2)}`;
+    let text = `EPS ${num(event.reported_eps, 2)}`;
     if (event.eps_estimate !== null) {
-      text += t("ticker.hover_vs_est", { est: event.eps_estimate.toFixed(2) });
+      text += t("ticker.hover_vs_est", { est: num(event.eps_estimate, 2) });
     }
     if (event.surprise_pct !== null) {
       const sign = event.surprise_pct >= 0 ? "+" : "";
-      const emphasis = `${sign}${event.surprise_pct.toFixed(1)}%`;
+      const emphasis = `${sign}${num(event.surprise_pct, 1)}%`;
       text += ` · ${emphasis} ${t("ticker.hover_surprise")}`;
       lines.push({ text, tone: event.surprise_pct >= 0 ? "up" : "down", emphasis });
     } else {
@@ -120,7 +121,7 @@ export function resultsLines(
     const move = after / before - 1;
     lines.push({
       text: t("ticker.hover_move", {
-        pct: `${move >= 0 ? "+" : ""}${(move * 100).toFixed(1)}`,
+        pct: `${move >= 0 ? "+" : ""}${num(move * 100, 1)}`,
       }),
     });
   }

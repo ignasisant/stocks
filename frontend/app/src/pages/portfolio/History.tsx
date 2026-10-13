@@ -19,7 +19,7 @@ import { useCurrency } from "../../shell/session";
 import type { History as HistoryData } from "./api";
 import { BookHistory } from "./charts";
 import { compactMoneyIn, moneyIn, percent } from "./format";
-import { Caption, Card, Segmented } from "./ui";
+import { Caption, Card, MissingPrices, Segmented } from "./ui";
 
 // The codes the API accepts. Only "all" is translated: the rest are read as
 // durations in every language this ships in.
@@ -81,12 +81,8 @@ export default function History() {
               <Caption>
                 {t("portfolio.hist_note_injected")} {t("portfolio.zoom_hint")}{" "}
                 {t("portfolio.span_hint")}
-                {history.missing.length
-                  ? ` ${t("portfolio.hist_note_missing", {
-                      tickers: history.missing.join(", "),
-                    })}`
-                  : ""}
               </Caption>
+              <MissingPrices tickers={history.missing} />
             </>
           )
         }

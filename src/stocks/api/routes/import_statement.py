@@ -1227,6 +1227,7 @@ def last(account: Account) -> LastImport:
     return LastImport(
         filename=record.filename,
         imported_at=record.imported_at,
+        imported_on=last_import.imported_on(record),
         platform=record.platform,
         rows=len(record.tx_ids),
         still_here=len(surviving),

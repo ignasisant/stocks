@@ -930,7 +930,7 @@ def tax_rules(prefs: dict, today: date | None = None) -> str:
         scale = "; ".join(
             f"{rate:.0%} above" if upper == float("inf")
             else f"{rate:.0%} up to {upper:,.0f}"
-            for upper, rate in es.SAVINGS_BRACKETS
+            for upper, rate in es.brackets_for(day.year)
         )
         lines.append(f"Savings-base scale ({jur.currency}, marginal): {scale}.")
     window = jur.repurchase_window
@@ -2694,7 +2694,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             (provider, key))
         hits, quotes = in_parallel(
             lambda: ground_web(prefs, scout, scout_key, history, view),
-            lambda: market.lookup_for(message, watchlist, focus=focus),
+            lambda: market.lookup_for(message, watchlist, focus=focus, lang=lang),
             timeout=timeout_s,
         )
         hits, quotes = hits or [], quotes or []
@@ -2735,14 +2735,14 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     if hits:
         msgs[-1]["content"] = chat_web.augment(msgs[-1]["content"], hits)
     if quotes:
-        msgs[-1]["content"] = market.augment(msgs[-1]["content"], quotes)
+        msgs[-1]["content"] = market.augment(msgs[-1]["content"], quotes, lang)
     if isinstance(sale, whatif.Scenario):
-        msgs[-1]["content"] += sale.line()
+        msgs[-1]["content"] += sale.line(lang)
     if isinstance(chart, charts.Chart):
         msgs[-1]["content"] += chart.line()
     for found in (mix, losses, moved):
         if isinstance(found, (allocation.Mix, harvest.Harvest, rebalance.Reweigh)):
-            msgs[-1]["content"] += found.line()
+            msgs[-1]["content"] += found.line(lang)
     # Last, after augmentation: the page extracts and quotes just stapled onto
     # the newest turn are the biggest thing in the request (chat/tokens.py).
     msgs = tokens.fit(msgs, system=system)
@@ -2766,7 +2766,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         steps.append(_sale_step(sale, lang))
         activities.append(a2ui.activity(
             whatif.SURFACE_ID,
-            whatif.surface(sale, lambda k, **kw: _tr(k, lang, **kw)),
+            whatif.surface(sale, lambda k, **kw: _tr(k, lang, **kw), lang),
         ))
     if isinstance(chart, charts.Chart):
         steps.append(_chart_step(chart, lang))
@@ -2778,7 +2778,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         steps.append(_mix_step(mix, lang))
         activities.append(a2ui.activity(
             allocation.SURFACE_ID,
-            allocation.surface(mix, lambda k, **kw: _tr(k, lang, **kw)),
+            allocation.surface(mix, lambda k, **kw: _tr(k, lang, **kw), lang),
         ))
     if isinstance(losses, harvest.Harvest):
         steps.append(_harvest_step(losses, lang))
@@ -2792,7 +2792,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         steps.append(_rebalance_step(moved, lang))
         activities.append(a2ui.activity(
             rebalance.SURFACE_ID,
-            rebalance.surface(moved, lambda k, **kw: _tr(k, lang, **kw)),
+            rebalance.surface(moved, lambda k, **kw: _tr(k, lang, **kw), lang),
         ))
     return Turn(
         history=history,
@@ -2857,6 +2857,31 @@ def _refund(prefs: dict, prefs_path: Path, provider: Provider) -> None:
 
     refund_free_quota(prefs)
     auth.save_prefs(prefs, prefs_path)
+
+
+def close_markdown(text: str) -> str:
+    """A half-written answer made whole enough to render.
+
+    The tail a model stopped in the middle of is the only thing that can be
+    open: a code fence, a link, an emphasis mark, a table row. The fence is
+    closed, a dangling `[label](partial` or last unfinished table row is
+    dropped, and an odd `**` is paired, so the reader never sees raw markdown.
+    """
+    out = text.rstrip()
+    if out.count("```") % 2:
+        return out + "\n```"
+    out = re.sub(r"\[[^\]\n]*\]\([^)\n]*$", "", out).rstrip()
+    out = re.sub(r"\[[^\]\n]*$", "", out).rstrip()
+    lines = out.split("\n")
+    last = lines[-1].strip()
+    if last.startswith("|") and not last.endswith("|"):
+        lines.pop()
+        out = "\n".join(lines).rstrip()
+    if out.count("**") % 2:
+        out += "**"
+    elif out.count("`") % 2:
+        out += "`"
+    return out
 
 
 def _provider_failed(exc: Exception, provider: Provider, model: str,
@@ -3083,6 +3108,9 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     if turn.recalled:
         yield ("recalled", list(turn.recalled))
 
+    from stocks.web.i18n import translate
+    from stocks.web.llm import Cut
+
     capped = False
     for provider, key, model in turn.attempts:
         model = model or provider.default_model
@@ -3090,9 +3118,13 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
             capped = True
             continue
         parts: list[str] = []
+        cut = False
         try:
             for chunk in provider.stream(key, model, turn.system,
                                          turn.messages):
+                if isinstance(chunk, Cut):
+                    cut = True
+                    continue
                 if not chunk:
                     continue
                 if not parts:
@@ -3109,7 +3141,13 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
             if not parts:
                 _refund(prefs, prefs_path, provider)
                 continue
+            cut = True  # the stream died mid-answer: what arrived is a stub
         text = "".join(parts).strip()
+        if text and cut:
+            closed = close_markdown(text) + "\n\n" + translate(
+                "chat.cut_off", turn.lang or "en")
+            yield ("text", closed[len(text):])
+            text = closed
         if text:
             yield ("done", _record(turn, text, provider, model, key,
                                    prefs=prefs, prefs_path=prefs_path,

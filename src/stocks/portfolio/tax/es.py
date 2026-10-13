@@ -40,14 +40,27 @@ CURRENCY = "EUR"
 # The tax year is the calendar year here.
 YEAR_START = (1, 1)
 
-# Base del ahorro — marginal brackets (upper bound EUR, rate). 2023-2025 scale.
-SAVINGS_BRACKETS: list[tuple[float, float]] = [
-    (6_000, 0.19),
-    (50_000, 0.21),
-    (200_000, 0.23),
-    (300_000, 0.27),
-    (float("inf"), 0.28),
-]
+# Base del ahorro — marginal brackets (upper bound EUR, rate), by the first
+# year each scale applied: 26% over 200k from 2021 (Ley 11/2020), 27/28% over
+# 200k/300k from 2023 (Ley 31/2022), 30% over 300k from 2025 (Ley 7/2024).
+SAVINGS_BRACKETS_BY_YEAR: dict[int, list[tuple[float, float]]] = {
+    2016: [(6_000, 0.19), (50_000, 0.21), (float("inf"), 0.23)],
+    2021: [(6_000, 0.19), (50_000, 0.21), (200_000, 0.23), (float("inf"), 0.26)],
+    2023: [
+        (6_000, 0.19),
+        (50_000, 0.21),
+        (200_000, 0.23),
+        (300_000, 0.27),
+        (float("inf"), 0.28),
+    ],
+    2025: [
+        (6_000, 0.19),
+        (50_000, 0.21),
+        (200_000, 0.23),
+        (300_000, 0.27),
+        (float("inf"), 0.30),
+    ],
+}
 
 MODELO_720_THRESHOLD_EUR = 50_000.0
 CARRYFORWARD_YEARS = 4
@@ -56,16 +69,24 @@ CARRYFORWARD_YEARS = 4
 WINDOW = months_window(2)
 
 
-def tax_on_savings_base(base: float) -> float:
-    """Progressive IRPF tax on a positive savings-base amount (EUR)."""
-    return progressive_tax(base, SAVINGS_BRACKETS)
+def brackets_for(year: int) -> list[tuple[float, float]]:
+    """The savings scale in force in `year`: the latest one at or before it."""
+    earlier = [y for y in SAVINGS_BRACKETS_BY_YEAR if y <= year]
+    return SAVINGS_BRACKETS_BY_YEAR[
+        max(earlier) if earlier else min(SAVINGS_BRACKETS_BY_YEAR)
+    ]
+
+
+def tax_on_savings_base(base: float, year: int) -> float:
+    """Progressive IRPF tax on a positive savings-base amount (EUR) in `year`."""
+    return progressive_tax(base, brackets_for(year))
 
 
 @dataclass
 class EsTaxPeriod(TaxPeriod):
     @property
     def estimated_tax(self) -> float:
-        return tax_on_savings_base(self.net_taxable)
+        return tax_on_savings_base(self.net_taxable, self.year)
 
     def notes(self) -> list[Note]:
         out: list[Note] = []

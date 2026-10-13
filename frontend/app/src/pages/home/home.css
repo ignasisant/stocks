@@ -1112,12 +1112,12 @@
 }
 
 .hm-start-count {
-  color: var(--ag-text-muted);
+  color: var(--ag-text-secondary);
   font-size: var(--ag-fs-sm, 12px);
   font-variant-numeric: tabular-nums;
 }
 
-.hm-start-hide {
+.hm-start-tour {
   margin-left: auto;
 }
 
@@ -1247,10 +1247,21 @@ a.hm-step {
   }
 }
 
-.hm-step:disabled,
+/* Locked, not faded: a step that needs an account is still read, so it
+   keeps AA contrast and says so with a padlock instead of half opacity. */
 .hm-step[aria-disabled="true"] {
-  opacity: 0.5;
+  color: var(--ag-text-secondary);
   cursor: not-allowed;
+}
+
+.hm-step[aria-disabled="true"] .hm-step-dot {
+  color: var(--ag-text-secondary);
+}
+
+.hm-start-locked {
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm, 12px);
 }
 
 /* The next thing, as the card's one real button. */
@@ -1895,4 +1906,9 @@ a.hm-mtile:focus-visible {
   .hm-card .ag-kpi-note {
     line-height: 1.3;
   }
+}
+
+.hm-regime-label {
+  font-size: var(--ag-fs-xs, 11px);
+  opacity: 0.85;
 }

@@ -1677,11 +1677,15 @@ export function ReturnLines({
                 stroke={token("border")}
                 strokeWidth="1"
               />
+              {/* Said on the date axis, where the reader looks for "when":
+                  at its real x, between the year ticks rather than as one. */}
               <text
-                x={x(marker.index) + 4}
-                y={RETURN.top + 11}
-                fill={token("text-muted")}
+                x={x(marker.index)}
+                y={height - 6}
+                fill={token("text-primary")}
                 fontSize="11"
+                fontWeight="600"
+                textAnchor={anchor(x(marker.index))}
               >
                 {marker.label}
               </text>
@@ -1751,18 +1755,27 @@ export function ReturnLines({
               })}
             </g>
           )}
-          {xTicks.indices.map((index) => (
-            <text
-              key={index}
-              x={x(index)}
-              y={height - 6}
-              fill={token("text-muted")}
-              fontSize="11"
-              textAnchor={anchor(x(index))}
-            >
-              {xTicks.yearly ? dates[index]!.slice(0, 4) : formatDate(dates[index]!)}
-            </text>
-          ))}
+          {xTicks.indices
+            // A year label under the marker's own word would print over it.
+            .filter(
+              (index) =>
+                !marker ||
+                marker.index <= 0 ||
+                marker.index >= dates.length ||
+                Math.abs(x(index) - x(marker.index)) >= TICK_ROOM.year * 0.75,
+            )
+            .map((index) => (
+              <text
+                key={index}
+                x={x(index)}
+                y={height - 6}
+                fill={token("text-muted")}
+                fontSize="11"
+                textAnchor={anchor(x(index))}
+              >
+                {xTicks.yearly ? dates[index]!.slice(0, 4) : formatDate(dates[index]!)}
+              </text>
+            ))}
         </svg>
         {hover === null ? null : money && money.invested[hover] != null ? (
           <ChartTip

@@ -452,3 +452,19 @@ def test_no_market_data_is_no_market_lines():
     book's own triggers rather than to an error."""
     assert signals.market_candidates({}) == []
     assert signals.market_candidates(None, book_sectors=None) == []
+
+
+def test_the_engine_net_replaces_the_raw_sum_when_given():
+    """The card quotes the tax tab's net (repurchase-rule losses added back),
+    not the sum of the sales it was handed."""
+    sales = [sale(900.0), sale(-1500.0)]
+    plain = signals.candidates(
+        tbl=positions(), realized=sales, jurisdiction=tax.get("ES"), today=TODAY
+    )
+    assert not [s for s in plain if s.kind == signals.HARVEST]
+    net = signals.candidates(
+        tbl=positions(), realized=sales, jurisdiction=tax.get("ES"), today=TODAY,
+        year_net=2324.0,
+    )
+    gains = {s.data["gain_ytd"] for s in net if s.kind == signals.HARVEST}
+    assert gains == {2324.0}

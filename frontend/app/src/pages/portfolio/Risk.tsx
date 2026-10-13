@@ -31,7 +31,8 @@ import {
 import { brokerName, decimal, moneyIn, percent } from "./format";
 import { Donut, ReturnLines, type LineMoney, type SliceDetail } from "./charts";
 import { CorrelationCard } from "./Correlation";
-import { Caption, Card, Empty, Kpis, Segmented } from "./ui";
+import { Caption, Card, Empty, Kpis, MissingPrices, Segmented } from "./ui";
+import { maybe, sectorKey } from "../sentiment/format";
 
 /** Allocation splits, in the order they are laid out. */
 const SPLITS: [string, string][] = [
@@ -207,13 +208,7 @@ export default function Risk() {
                   })}
                 </Caption>
               ) : null}
-              {data.missing.length ? (
-                <Caption>
-                  {t("portfolio.twr_note_missing", {
-                    tickers: data.missing.join(", "),
-                  })}
-                </Caption>
-              ) : null}
+              <MissingPrices tickers={data.missing} />
             </>
           )}
         </Loaded>
@@ -294,7 +289,22 @@ export default function Risk() {
                                 ...slice,
                                 label: brokerName(slice.label, t),
                               }))
-                            : slices
+                            : key === "country"
+                              ? slices.map((slice) =>
+                                  slice.label === "Crypto"
+                                    ? { ...slice, label: t("portfolio.alloc_crypto") }
+                                    : slice,
+                                )
+                              : key === "sector"
+                                ? slices.map((slice) => ({
+                                    ...slice,
+                                    label:
+                                      maybe(
+                                        t,
+                                        `sentiment.sector_${sectorKey(slice.label)}`,
+                                      ) ?? slice.label,
+                                  }))
+                                : slices
                         }
                       />
                     );
@@ -352,13 +362,7 @@ export default function Risk() {
                     ]}
                   />
                   <Caption>{t("portfolio.flow_matched_note")}</Caption>
-                  {data.missing.length ? (
-                    <Caption>
-                      {t("portfolio.flow_matched_missing", {
-                        tickers: data.missing.join(", "),
-                      })}
-                    </Caption>
-                  ) : null}
+                  <MissingPrices tickers={data.missing} />
                 </Card>
               ) : null}
 

@@ -267,7 +267,9 @@ function Positions() {
           pending ? null : (
             <Chip
               value={row.pnl_pct}
-              text={percent(lang, row.pnl_pct, { signed: true })}
+              text={t("portfolio.chip_pl", {
+                pct: percent(lang, row.pnl_pct, { signed: true }) ?? "",
+              })}
             />
           ),
         value: (row) => priced(<Figure value={money(row.value)} />),
@@ -276,7 +278,13 @@ function Positions() {
             <span className={row.market_active ? undefined : "pf-dim"}>
               <Signed
                 value={row.day_pct}
-                text={percent(lang, row.day_pct, { signed: true })}
+                text={
+                  row.day_pct === null
+                    ? null
+                    : t("portfolio.chip_day", {
+                        pct: percent(lang, row.day_pct, { signed: true }) ?? "",
+                      })
+                }
               />
             </span>,
           ),
@@ -336,8 +344,10 @@ function Positions() {
                       summary.pnl_pct === null
                         ? null
                         : {
-                            text:
-                              percent(lang, summary.pnl_pct, { signed: true }) ?? "",
+                            text: t("portfolio.chip_vs_cost", {
+                              pct:
+                                percent(lang, summary.pnl_pct, { signed: true }) ?? "",
+                            }),
                             value: summary.pnl_pct,
                           },
                   },
@@ -349,8 +359,10 @@ function Positions() {
                       summary.pnl_pct === null
                         ? null
                         : {
-                            text:
-                              percent(lang, summary.pnl_pct, { signed: true }) ?? "",
+                            text: t("portfolio.chip_vs_cost", {
+                              pct:
+                                percent(lang, summary.pnl_pct, { signed: true }) ?? "",
+                            }),
                             value: summary.pnl_pct,
                           },
                   },

@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useT } from "../../shell/i18n";
 import { useTickerProfile } from "../../shell/tickers";
-import { getPeers, searchTickers } from "./data";
+import { getPeers, getSectors, searchTickers } from "./data";
 import { Note } from "./ui";
 import type { Peer, SearchMatch, WatchlistEntry } from "./types";
 import { ToggleChip } from "../../ui/Toggle";
@@ -43,6 +43,26 @@ export function PeerPicker({
     () => watchlist.filter((entry) => entry.ticker !== ticker && !entry.is_crypto),
     [watchlist, ticker],
   );
+
+  // Only the company's own sector is offered from the list, so a book of
+  // thirty names does not put a crypto miner next to Apple. Names the memo has
+  // no sector for are left out, and "all" brings the whole list back.
+  const [sectors, setSectors] = useState<Record<string, string> | null>(null);
+  const [all, setAll] = useState(false);
+  const poolKey = pool.map((entry) => entry.ticker).join(",");
+  useEffect(() => {
+    let live = true;
+    setSectors(null);
+    setAll(false);
+    getSectors([ticker, ...poolKey.split(",").filter(Boolean)])
+      .then((found) => live && setSectors(found))
+      .catch(() => live && setSectors({}));
+    return () => {
+      live = false;
+    };
+  }, [ticker, poolKey]);
+  const own = sectors?.[ticker.toUpperCase()] ?? "";
+  const narrowed = !all && own !== "";
 
   useEffect(() => {
     let live = true;
@@ -83,6 +103,7 @@ export function PeerPicker({
 
   const listed = pool.filter((entry) => {
     if (peers.includes(entry.ticker)) return false;
+    if (narrowed && sectors?.[entry.ticker.toUpperCase()] !== own) return false;
     const needle = filter.trim().toUpperCase();
     if (!needle) return true;
     return entry.ticker.includes(needle) || entry.name.toUpperCase().includes(needle);
@@ -125,8 +146,15 @@ export function PeerPicker({
       {pool.length > 0 ? (
         <div className="tk-peers-group">
           <label className="tk-peers-label" htmlFor="tk-peer-filter">
-            {t("ticker.peers_watchlist")}
+            {narrowed
+              ? t("ticker.peers_sector", { sector: own })
+              : t("ticker.peers_watchlist")}
           </label>
+          {own !== "" ? (
+            <ToggleChip on={all} onClick={() => setAll(!all)}>
+              {t("ticker.peers_all")}
+            </ToggleChip>
+          ) : null}
           {/* Every name on the list, with the filter to narrow it; a long list
               scrolls inside its own box rather than pushing the comparison
               table off the screen. */}
@@ -140,6 +168,9 @@ export function PeerPicker({
             onChange={(event) => setFilter(event.target.value)}
           />
           <div className="tk-chips tk-chips-scroll">
+            {listed.length === 0 ? (
+              <span className="tk-chip-name">{t("ticker.peers_none")}</span>
+            ) : null}
             {listed.map((entry) => (
               <ToggleChip
                 key={entry.ticker}

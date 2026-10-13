@@ -145,3 +145,19 @@ def test_the_tour_no_longer_locks_the_portfolio_steps_for_guests():
     assert not any(steps[i].gated for i in ("positions", "risk", "tax", "income"))
     # Import and Profile still write personal data: those stay gated.
     assert steps["import"].gated and steps["notify"].gated
+
+
+def test_this_year_has_a_sell_and_a_fee_for_the_overview_tiles():
+    """The Overview's estimated tax and fees read the current year; a demo with
+    no sell or fee in it shows two zeros and sells neither feature."""
+    year = max(t.date[:4] for t in demo.transactions())
+    rows = [t for t in demo.transactions() if t.date.startswith(year)]
+    assert any(t.action == "sell" for t in rows)
+    assert any(t.fee > 0 for t in rows)
+
+
+def test_a_ledger_with_no_demo_rows_is_never_stale(tmp_path):
+    db = tmp_path / "p.db"
+    assert not demo.stale(db)
+    demo.seed(db)
+    assert not demo.stale(db)

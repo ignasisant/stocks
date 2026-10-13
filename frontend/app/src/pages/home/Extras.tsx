@@ -42,9 +42,12 @@ export function RiskCard() {
   const query = useApi(
     () =>
       Promise.all([
-        get<Risk>("/portfolio/risk", { base, period: "1y" }),
-        // The beta is the Pulse's; a feed it could not reach costs the
-        // headline tile, not the card.
+        // The Portfolio risk tab opens on "inception": the same window here,
+        // so the two screens never show two volatilities, or two betas, for
+        // one book: the beta tile reads the same S&P figure the tab does.
+        get<Risk>("/portfolio/risk", { base, period: "inception" }),
+        // The stance is the Pulse's; a feed it could not reach costs the
+        // note, not the card.
         get<PulseBook>("/pulse/book", { base }).catch(() => null),
       ]),
     [base],
@@ -64,7 +67,7 @@ export function RiskCard() {
           <KpiGrid>
             <Kpi
               label={t("sentiment.beta_equity")}
-              value={decimal(book?.beta, lang, 2) ?? na}
+              value={decimal(risk.betas.SPY ?? book?.beta, lang, 2) ?? na}
               note={book?.stance ? t(`sentiment.stance_${book.stance}`) : undefined}
             />
             <Kpi
@@ -83,6 +86,7 @@ export function RiskCard() {
               help={t("portfolio.effective_names_help")}
             />
           </KpiGrid>
+          <Note>{t("home.card_risk_basis")}</Note>
           <More tab="risk" label={t("home.card_more_risk")} />
         </Card>
       )}
@@ -239,7 +243,8 @@ function TaxBody({
       {crossed.map((flag) => (
         <p key={flag.name} className="hm-callout hm-callout-warn">
           {t("home.card_tax_flag", {
-            val: cash(flag.total_value),
+            // "About": a threshold check, not a statement of account.
+            val: cash(Math.round(flag.total_value / 1000) * 1000),
             threshold: cash(flag.threshold),
           })}
         </p>
@@ -313,6 +318,8 @@ function Rotation({ block }: { block: TrendBlock | null }) {
   const sorted = [...rows].sort(
     (a, b) => (b.changes.month ?? 0) - (a.changes.month ?? 0),
   );
+  // Only a book that holds some sector can say it holds none of the others.
+  const hasBook = rows.some((row) => row.weight);
   const leaders = sorted
     .filter((row) => (row.changes.month ?? 0) > 0)
     .slice(0, ROTATION_SHOWN);
@@ -340,6 +347,8 @@ function Rotation({ block }: { block: TrendBlock | null }) {
                       weight: percent(row.weight, lang, { digits: 0 }) ?? "",
                     })}
                   </span>
+                ) : hasBook ? (
+                  <span className="hm-muted">{t("home.card_rotation_none")}</span>
                 ) : null}
                 <Chip
                   chip={chipFor(move, percent(move, lang, { signed: true, digits: 1 }))}

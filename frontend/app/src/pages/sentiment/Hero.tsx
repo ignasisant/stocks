@@ -10,13 +10,14 @@
  */
 
 import { Link } from "../../shell/router";
-import { useT } from "../../shell/i18n";
+import { useLang, useT } from "../../shell/i18n";
 import { Kpi, chipFor, type ChipSpec } from "../../ui/Kpi";
 import { DownBody } from "./Down";
 import { HeroSpark } from "./Spark";
 import { NA, fixed, percent, share, signed } from "./format";
 import type { Pulse, PulseBook } from "./types";
 import { Badge } from "../../ui/Badge";
+import { num } from "../../shell/numbers";
 
 /** The bands the catalogs have a pill for. Anything else reads as "no reading". */
 const REGIMES = new Set([
@@ -56,9 +57,21 @@ export function driftChip(
   // until the move is big enough to be worth a reader's attention.
   const moved = Math.abs(now - then) >= 0.05;
   return {
-    text: t("sentiment.drift_pill", { value: then.toFixed(2) }),
+    // Both ends of the drift: the headline beside the pill is a longer window,
+    // so "3m 0.94" alone reads as a move from 0.94 to the headline.
+    text: t("sentiment.drift_pill", { now: num(now, 2), value: num(then, 2) }),
     tone: moved ? "warn" : "flat",
   };
+}
+
+/** "13 oct 2026" for the stamp's ISO day; the raw string if it is not one. */
+function longDay(iso: string | null | undefined, lang: string): string {
+  if (!iso) return NA;
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return new Intl.DateTimeFormat(lang, { dateStyle: "medium" }).format(
+    new Date(y, m - 1, d),
+  );
 }
 
 /**
@@ -70,6 +83,7 @@ export function driftChip(
  */
 export function Composite({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => void }) {
   const t = useT();
+  const lang = useLang();
   if (pulse.unavailable) {
     return (
       <div className="sn-pulse">
@@ -175,7 +189,7 @@ export function Composite({ pulse, onRetry }: { pulse: Pulse; onRetry?: () => vo
 
       <span className="sn-mono">
         {t("sentiment.pulse_stamp", {
-          date: pulse.as_of ?? NA,
+          date: longDay(pulse.as_of, lang),
           live: pulse.components.length,
           total: pulse.components.length + pulse.missing.length,
         })}
@@ -290,7 +304,14 @@ export function Side({
           — while the beta and the correlation need the index series. Say so
           under the rows rather than letting two "n/a"s explain themselves. */}
       {book.unavailable && <DownBody reason={book.unavailable} onRetry={onRetry} />}
-      <p className="sn-help">{t("sentiment.side_help")}</p>
+      <p className="sn-help">
+        {book.beta_rolling === null || book.beta_rolling_then === null
+          ? t("sentiment.side_help_plain")
+          : t("sentiment.side_help", {
+              then: fixed(book.beta_rolling_then, 2),
+              now: fixed(book.beta_rolling, 2),
+            })}
+      </p>
       <a className="sn-more" href="#ag-book">
         {t("sentiment.side_more")}
       </a>

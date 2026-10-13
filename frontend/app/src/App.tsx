@@ -1,6 +1,6 @@
 import { Suspense, useEffect } from "react";
 import { ApiError } from "./shell/api";
-import { pinnedLang, Translations, useT } from "./shell/i18n";
+import { browserLang, pinnedLang, Translations, useT } from "./shell/i18n";
 import { Layout, Skeleton } from "./shell/Layout";
 import { pageFor } from "./shell/pages";
 import { useRoute } from "./shell/router";
@@ -76,10 +76,12 @@ function Current() {
 }
 
 export default function App() {
-  const browserLang = navigator.language.slice(0, 2);
+  const browser = browserLang(
+    navigator.languages?.length ? navigator.languages : [navigator.language],
+  );
   // A landing CTA's `?lang=` wins over the browser for anyone without a stored
   // preference — which is every guest, and the wall and offline screens.
-  const fallbackLang = pinnedLang(window.location.search) ?? browserLang;
+  const fallbackLang = pinnedLang(window.location.search) ?? browser;
   return (
     // The language is the account's preference, and the catalog cannot be
     // fetched until we know it — so the session resolves first and the
@@ -108,7 +110,7 @@ export default function App() {
           lang={
             // A signed-in account's stored language is its own; the pinned
             // landing language is only for somebody who has none to store.
-            session.guest ? fallbackLang : (session.prefs.language ?? browserLang)
+            session.guest ? fallbackLang : (session.prefs.language ?? browser)
           }
         >
           <Layout>

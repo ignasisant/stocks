@@ -18,6 +18,7 @@ import { MAX_BYTES, acceptOf } from "./api";
 import type { Platform, Staged } from "./api";
 import { Eyebrow } from "./Card";
 import { Glyph } from "./Glyph";
+import { platformHint } from "./text";
 
 export function Source({
   platforms,
@@ -70,8 +71,6 @@ export function Source({
           <Eyebrow id="im-platform" n={1}>
             {t("import.step_platform")}
           </Eyebrow>
-          {/* The address the choice lives at, so a link can land on it. */}
-          <span className="im-param">?platform={platform.key}</span>
         </div>
         {/* One control at every width. Seven brand names do not fit a phone row
             side by side; letting them wrap solves that without a second control
@@ -179,7 +178,7 @@ export function Source({
           </ul>
         )}
 
-        {hint && <p className="im-fine">{platform.hint}</p>}
+        {hint && <p className="im-fine">{platformHint(t, platform)}</p>}
 
         <div className="im-source-foot">
           {/* The second door into the same pipeline, for a reader whose browser

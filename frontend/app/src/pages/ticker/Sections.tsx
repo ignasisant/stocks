@@ -18,6 +18,7 @@ import {
   currencySymbol,
   insiderPrice,
   insiderValue,
+  kpiText,
   money,
   orElse,
   percent,
@@ -39,6 +40,8 @@ import type {
   SourceCheck,
   SourcedFigure,
 } from "./types";
+import { num } from "../../shell/numbers";
+import { calendarDay } from "../../shell/dates";
 
 // ------------------------------------------------------------------ KPI grid
 
@@ -87,13 +90,20 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
               key={tile.key}
               label={label}
               help={help || undefined}
-              value={kpi.formatted}
+              value={kpiText(kpi.value, kpi.unit)}
               // Coloured by the tone the domain's band carries, never by the
               // label: the labels grow ("net cash", "heavy dilution") and a
               // client matching on them shows each new one as neutral.
               chip={
                 kpi.verdict
-                  ? { text: kpi.verdict, tone: bandTone(kpi.verdict_tone) }
+                  ? {
+                      text: orElse(
+                        t,
+                        `ticker.verdict_${kpi.verdict.replace(/ /g, "_")}`,
+                        kpi.verdict,
+                      ),
+                      tone: bandTone(kpi.verdict_tone),
+                    }
                   : null
               }
             />
@@ -106,11 +116,11 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
       {metrics.market_cap_base_formatted && metrics.base ? (
         <Note>
           {t("ticker.market_cap_fx", {
-            usd: byKey.get("market_cap")?.formatted ?? "",
-            conv: metrics.market_cap_base_formatted,
+            usd: kpiText(byKey.get("market_cap")?.value ?? null, "money"),
+            conv: kpiText(metrics.market_cap_base, "money"),
             ccy: metrics.base,
-            rate: metrics.fx_rate === null ? DASH : metrics.fx_rate.toFixed(4),
-            as_of: metrics.fx_as_of ?? DASH,
+            rate: metrics.fx_rate === null ? DASH : num(metrics.fx_rate, 4),
+            as_of: metrics.fx_as_of ? calendarDay(metrics.fx_as_of) : DASH,
           })}
         </Note>
       ) : null}
@@ -147,7 +157,7 @@ export function MoatSection({ moat }: { moat: Moat }) {
           <Kpi
             label={t("ticker.moat_score")}
             help={orElse(t, "kpi.moat.desc", "") || undefined}
-            value={moat.score.toFixed(0)}
+            value={num(moat.score, 0)}
             chip={
               moat.rating
                 ? {
@@ -163,7 +173,7 @@ export function MoatSection({ moat }: { moat: Moat }) {
             <Kpi
               key={pillar.key}
               label={orElse(t, pillar.label_key, pillar.label)}
-              value={pillar.score === null ? DASH : pillar.score.toFixed(0)}
+              value={pillar.score === null ? DASH : num(pillar.score, 0)}
               // How much of the score this pillar decides. Without it the five
               // read as equal, and they are not.
               chip={
@@ -202,11 +212,11 @@ const MOAT_FACTS: Record<string, (value: number) => string> = {
   cagr: (value) => percent(value, 0),
   // Percentage points; the unit is the sentence's, since it is worded per
   // language ("pp", "p. p.").
-  sd: (value) => (value * 100).toFixed(1),
+  sd: (value) => num(value * 100, 1),
   change: (value) => {
     // Rounded first, so a drift too small to print reads +0.0, not -0.0.
     const points = Math.round(value * 1000) / 10 || 0;
-    return `${points >= 0 ? "+" : ""}${points.toFixed(1)}`;
+    return `${points >= 0 ? "+" : ""}${num(points, 1)}`;
   },
   shares: (value) => signedPercent(value, 1),
 };
@@ -333,7 +343,10 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
               key={`${trade.date}-${trade.insider}-${index}`}
             >
               <p className="tk-stack-title">{trade.insider}</p>
-              <Line label={t("ticker.col_date")} value={trade.date ?? DASH} />
+              <Line
+                label={t("ticker.col_date")}
+                value={trade.date ? calendarDay(trade.date) : DASH}
+              />
               {/* Untranslated: the catalog labels only Date/Shares/Price/Value,
                   and Role is the filer's own words. */}
               <Line label="Role" value={trade.role} />
@@ -376,7 +389,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
             <tbody>
               {rows.map((trade, index) => (
                 <tr key={`${trade.date}-${trade.insider}-${index}`}>
-                  <td>{trade.date ?? DASH}</td>
+                  <td>{trade.date ? calendarDay(trade.date) : DASH}</td>
                   <td>{trade.insider}</td>
                   <td className="tk-muted">{trade.role}</td>
                   <td>{codeLabel(t, trade)}</td>
@@ -530,7 +543,7 @@ function FundTiles({ fund }: { fund: Fund }) {
     bonds
       ? [
           "ticker.fund_duration",
-          fund.bond_duration === null ? na : fund.bond_duration.toFixed(2),
+          fund.bond_duration === null ? na : num(fund.bond_duration, 2),
           "ticker.fund_duration_help",
         ]
       : [
@@ -591,7 +604,7 @@ function provenance(
       ? t("ticker.cef_tried", { sources: named(figure.tried) })
       : t("ticker.na");
   }
-  return [lead, sourceLabel(t, figure.source, navSymbol), figure.as_of]
+  return [lead, sourceLabel(t, figure.source, navSymbol), calendarDay(figure.as_of)]
     .filter(Boolean)
     .join(" · ");
 }
@@ -693,7 +706,7 @@ function CefChecks({ fund, cef }: { fund: Fund; cef: ClosedEnd }) {
       {cef.checks.map((check) => {
         const slots = {
           metric: metricLabel(t, check.metric),
-          date: check.as_of,
+          date: calendarDay(check.as_of),
           official: shown(check, check.official),
           official_source: sourceLabel(t, check.official_source, cef.nav_symbol),
           market: shown(check, check.market),
@@ -763,7 +776,9 @@ function FundHoldings({ fund }: { fund: Fund }) {
           ? t("ticker.cef_holdings_caption", {
               n: fund.holdings.length,
               count: fund.closed_end.holdings_count ?? DASH,
-              date: fund.closed_end.holdings_as_of ?? DASH,
+              date: fund.closed_end.holdings_as_of
+                ? calendarDay(fund.closed_end.holdings_as_of)
+                : DASH,
               pct: percent(fund.disclosed_weight, 1),
             })
           : t("ticker.fund_holdings_caption", {

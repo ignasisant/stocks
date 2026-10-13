@@ -14,6 +14,8 @@
 
 const PATHS: Record<string, string> = {
   home: "M4 21V10l8-6 8 6v11h-6v-6h-4v6H4z",
+  account_balance:
+    "M4 10v7h3v-7H4zm6 0v7h3v-7h-3zM2 22h19v-3H2v3zm14-12v7h3v-7h-3zm-4.5-9L2 6v2h19V6l-9.5-5z",
   pie_chart:
     "M11 3.06V11H3.06A9 9 0 0 1 11 3.06zM13 3.06A9 9 0 0 1 20.94 11H13V3.06zM3.06 13H12l6.31 6.31A9 9 0 0 1 3.06 13z",
   speed:
@@ -36,6 +38,7 @@ const PATHS: Record<string, string> = {
   arrow_downward: "M11 4v12.2l-5.6-5.6L4 12l8 8 8-8-1.4-1.4-5.6 5.6V4h-2z",
   add: "M11 19v-6H5v-2h6V5h2v6h6v2h-6v6h-2z",
   check: "M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z",
+  lock: "M6 22a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h1V6a5 5 0 0 1 10 0v2h1a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6zm6-5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM9 8h6V6a3 3 0 0 0-6 0v2z",
   auto_awesome:
     "M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L18 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z",
   forum:

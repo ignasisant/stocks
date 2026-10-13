@@ -172,6 +172,16 @@ export function noteKey(
 }
 
 /**
+ * The badge over the card: the default card, once it is final, does not wear
+ * the AI label — a reader takes the badge before any note under it.
+ */
+export function badgeKey(card: Pick<DailyCard, "pending" | "source">): string {
+  return card.source === "computed" && !card.pending
+    ? "home.daily_badge_computed"
+    : "home.daily_badge";
+}
+
+/**
  * The colour a table cell earns: a signed figure is a move, and reads green or
  * red; an unsigned one (a weight, a volatility, a multiple) is a level, and
  * stays ink.
@@ -480,7 +490,9 @@ export function Daily() {
   return (
     <Card className="hm-daily">
       <div className="hm-daily-head">
-        <Badge tone="brand">{t("home.daily_badge")}</Badge>
+        <Badge tone={badgeKey(card) === "home.daily_badge" ? "brand" : "neutral"}>
+          {t(badgeKey(card))}
+        </Badge>
         <span className="hm-daily-when">{stampOf(card, t)}</span>
         {tools}
       </div>
@@ -495,6 +507,13 @@ export function Daily() {
         />
       ) : (
         <>
+          {/* Said before the headline: a fallback read as the AI's answer
+              first is already misread by the time the note comes. */}
+          {note ? (
+            <p className="hm-note" role="status">
+              {t(note)}
+            </p>
+          ) : null}
           <p className="hm-daily-headline">{card.headline}</p>
           {!split ? (
             lines.length > 0 ? (
@@ -534,9 +553,7 @@ export function Daily() {
               {t("home.daily_stale", { date: written ?? card.day ?? "" })}
             </p>
           ) : null}
-          {note ? (
-            <p className="hm-note">{t(note)}</p>
-          ) : !card.pending ? (
+          {!note && !card.pending ? (
             <p className="hm-note">{t("home.daily_disclaimer")}</p>
           ) : null}
         </>

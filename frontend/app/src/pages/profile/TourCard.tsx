@@ -73,7 +73,7 @@ export function TourCard() {
               />
             </div>
             <span className="pr-prog-n">
-              {counted[0]}/{counted[1]}
+              {t("home.setup_progress", { done: counted[0], total: counted[1] })}
             </span>
           </div>
         )}

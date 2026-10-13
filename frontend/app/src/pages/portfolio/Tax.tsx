@@ -372,6 +372,9 @@ function Report({ report }: { report: TaxReport }) {
           {total
             ? null
             : selected.notes.map((note) => words.say(note.key, note.kwargs)).join("")}
+          {total || report.jurisdiction !== "es"
+            ? null
+            : ` = ${money(selected.net_taxable) ?? ""}`}
         </Caption>
         {month ? (
           <div className="pf-filter" role="status">
@@ -487,7 +490,16 @@ function SalesTable({ report, sales }: { report: TaxReport; sales: TaxSale[] }) 
       key: "proceeds",
       label: t("portfolio.col_proceeds"),
       sort: (row) => row.proceeds,
-      cell: (row) => <Figure value={money(row.proceeds, { digits: 2 })} />,
+      // A sale at nothing is a write-off (delisting, bankruptcy), not a
+      // trade: say so beside the zero.
+      cell: (row) => (
+        <>
+          <Figure value={money(row.proceeds, { digits: 2 })} />
+          {row.proceeds <= 0 && row.cost > 0 ? (
+            <span className="pf-muted"> {t("portfolio.sale_written_off")}</span>
+          ) : null}
+        </>
+      ),
     },
     {
       key: "gain",

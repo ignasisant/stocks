@@ -631,3 +631,14 @@
   display: block;
   margin-top: 0.15rem;
 }
+
+/* "In your book" beside a cohort name. */
+.ag-sec-held {
+  align-self: flex-start;
+  padding: 1px 6px;
+  border-radius: var(--ag-radius-pill);
+  background: color-mix(in srgb, var(--ag-brand-accent) 18%, transparent);
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+  color: var(--ag-text-primary);
+}

@@ -24,8 +24,13 @@ also files tax reports:
   everything about the fabrication.
 
 The book is deliberately static: seven well-known US names, bought over two
-years, with adds, two sells, dividends and a custody fee, so every tab has
+years, with adds, three sells, dividends and custody fees, so every tab has
 something in it. It is not meant to be anyone's portfolio.
+
+The Overview's tax and fee tiles read the current year, so the book carries a
+sell and a fee in it; a new year needs a row of each, or those tiles fall back
+to zero. `guestbook.provision` re-seeds a shared demo book whose rows no longer
+match these.
 """
 
 from __future__ import annotations
@@ -75,6 +80,8 @@ _ROWS: tuple[tuple[str, str, str, float, float, float, str], ...] = (
     ("2025-12-11", "MSFT",  "dividend",  0,    9.96, 0.00, "Microsoft dividend"),
     ("2026-02-12", "AAPL",  "dividend",  0,    8.10, 0.00, "Apple dividend"),
     ("2026-03-12", "MSFT",  "dividend",  0,   10.16, 0.00, "Microsoft dividend"),
+    ("2026-05-14", "NVDA",  "sell",     15,  235.70, 0.99, "NVIDIA"),
+    ("2026-06-30", "NOW",   "fee",       0,    0.00, 2.50, "ServiceNow custody fee"),
 )
 
 
@@ -137,6 +144,33 @@ def seed(path: Path = DB_PATH) -> list[int]:
         if conn.execute("SELECT 1 FROM transactions LIMIT 1").fetchone():
             return []
     return add_many(transactions(), path)
+
+
+def _shape(rows) -> list[tuple]:
+    return sorted(
+        (str(r[0]), str(r[1]), str(r[2]), round(float(r[3]), 6),
+         round(float(r[4]), 6), round(float(r[5]), 6))
+        for r in rows
+    )
+
+
+def stale(path: Path = DB_PATH) -> bool:
+    """Whether this ledger's demo rows are an older edition of the book.
+
+    False on a ledger with no demo rows: there is nothing to bring up to date,
+    and whether to seed one is `seed`'s question.
+    """
+    with closing(connect(path)) as conn:
+        held = conn.execute(
+            "SELECT date, ticker, action, quantity, price, fee FROM transactions "
+            "WHERE lower(note) = ? OR lower(note) LIKE ?",
+            (BROKER, f"{BROKER} %"),
+        ).fetchall()
+    if not held:
+        return False
+    book = [(t.date, t.ticker, t.action, t.quantity, t.price, t.fee)
+            for t in transactions()]
+    return _shape(held) != _shape(book)
 
 
 def clear(path: Path = DB_PATH) -> int:
