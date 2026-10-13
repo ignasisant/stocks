@@ -28,6 +28,7 @@ import { TickerCell } from "../shell/tickers";
 import { Glyph } from "./icons";
 import { Status } from "../ui/Status";
 import type { ImportRow, Preview } from "./types";
+import { calendarDay } from "../shell/dates";
 
 /** Money and share counts, in the reader's own locale. */
 function figure(value: number | string, digits: number): string {
@@ -80,7 +81,7 @@ function Rows({
       <tbody>
         {rows.map((row, i) => (
           <tr key={`${row.date}-${row.ticker}-${i}`}>
-            <td>{row.date}</td>
+            <td>{calendarDay(row.date)}</td>
             <td>
               {/* Every ticker on screen is a logo and a link to its page — in
                   a chat bubble as anywhere else in the app. */}

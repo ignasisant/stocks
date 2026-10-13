@@ -10,6 +10,7 @@
  */
 
 import { formatter } from "../../shell/numbers";
+import { calendarDay } from "../../shell/dates";
 
 export type Translate = (
   key: string,
@@ -137,7 +138,7 @@ export function monthDay(iso: string | null | undefined, t: Translate): string |
 export function shortDate(iso: string, lang: string): string {
   const date = parseDay(iso);
   if (!date) return iso;
-  return new Intl.DateTimeFormat(lang, { day: "2-digit", month: "short" }).format(date);
+  return calendarDay(iso, lang);
 }
 
 /** Monday of the week `date` falls in, as a new date. */

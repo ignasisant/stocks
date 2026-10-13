@@ -37,6 +37,7 @@ import type { BankAuth, BankChoice, BankConnection, BankState } from "./types";
 import "./bank.css";
 import { Badge } from "../../ui/Badge";
 import { formatter } from "../../shell/numbers";
+import { calendarDay } from "../../shell/dates";
 
 /** Countries Enable Banking covers that this app is likely to be used from;
     the bank list itself comes from the API per country. */
@@ -179,7 +180,7 @@ function Connection({
           <Badge>{t("bank.consent_expired")}</Badge>
         ) : (
           <span className="bk-note">
-            {t("bank.valid_until", { date: connection.valid_until.slice(0, 10) })}
+            {t("bank.valid_until", { date: calendarDay(connection.valid_until) })}
           </span>
         )}
       </div>

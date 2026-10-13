@@ -102,8 +102,8 @@ describe("which fills the chart draws", () => {
 
 describe("the hover box", () => {
   it("is titled with the bar's own stamp, with the clock only intraday", () => {
-    expect(hoverTitle("2025-01-03", false)).toBe("2025-01-03");
-    expect(hoverTitle("2025-01-03T15:35:00", true)).toBe("2025-01-03 15:35");
+    expect(hoverTitle("2025-01-03", false)).toBe("3 Jan 2025");
+    expect(hoverTitle("2025-01-03T15:35:00", true)).toBe("3 Jan 2025 15:35");
   });
 
   it("prints the price row with its change on the previous close, coloured alone", () => {
@@ -135,7 +135,7 @@ describe("the hover box", () => {
       t,
     );
     expect(rows.map((row) => row.text)).toEqual([
-      "Buy 2.0000 sh @ 100.00 · 2025-01-03",
+      "Buy 2.0000 sh @ 100.00 · 3 Jan 2025",
       "-10.00% to current 90.00",
       "avg buy 95.00",
     ]);
@@ -152,7 +152,7 @@ describe("the hover box", () => {
       t,
     );
     expect(rows.map((row) => row.text)).toEqual([
-      "Sell 4.0000 sh @ 130.00 · 2025-01-07",
+      "Sell 4.0000 sh @ 130.00 · 7 Jan 2025",
     ]);
     expect(rows[0]?.parts.some((part) => part.tone)).toBe(false);
   });

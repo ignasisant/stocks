@@ -41,6 +41,7 @@ import type {
   SourcedFigure,
 } from "./types";
 import { num } from "../../shell/numbers";
+import { calendarDay } from "../../shell/dates";
 
 // ------------------------------------------------------------------ KPI grid
 
@@ -342,7 +343,10 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
               key={`${trade.date}-${trade.insider}-${index}`}
             >
               <p className="tk-stack-title">{trade.insider}</p>
-              <Line label={t("ticker.col_date")} value={trade.date ?? DASH} />
+              <Line
+                label={t("ticker.col_date")}
+                value={trade.date ? calendarDay(trade.date) : DASH}
+              />
               {/* Untranslated: the catalog labels only Date/Shares/Price/Value,
                   and Role is the filer's own words. */}
               <Line label="Role" value={trade.role} />
@@ -385,7 +389,7 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
             <tbody>
               {rows.map((trade, index) => (
                 <tr key={`${trade.date}-${trade.insider}-${index}`}>
-                  <td>{trade.date ?? DASH}</td>
+                  <td>{trade.date ? calendarDay(trade.date) : DASH}</td>
                   <td>{trade.insider}</td>
                   <td className="tk-muted">{trade.role}</td>
                   <td>{codeLabel(t, trade)}</td>
