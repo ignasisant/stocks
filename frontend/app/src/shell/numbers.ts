@@ -48,7 +48,7 @@ export function num(value: number, digits = 2, lang = current): string {
 }
 
 /** As `num`, with the sign always printed ("+1,29", "-0,40", "+0,00"). */
-export function signedNum(value: number, digits = 2, lang = current): string {
+function signedNum(value: number, digits = 2, lang = current): string {
   return `${value >= 0 ? "+" : ""}${num(value, digits, lang)}`;
 }
 
