@@ -609,6 +609,13 @@ export function PriceChart({
             const cy = y(diamondY(index));
             return (
               <g key={`ev-${index}`}>
+                <title>
+                  {kind === "dividend"
+                    ? t("ticker.ev_dividend_one")
+                    : kind === "results"
+                      ? t("ticker.ev_result_one")
+                      : (marks.tags.get(index) ?? "")}
+                </title>
                 {/* A coin has a handful of cycle events in its whole life, so
                     they keep their vertical on weekly bars too — the long
                     ranges are where a halving is worth seeing. */}
@@ -622,19 +629,37 @@ export function PriceChart({
                       y2={box.height - box.bottom}
                       stroke={colors.eventLine}
                     />
-                    <text
-                      className="tk-event-tag"
-                      x={cx}
-                      y={box.top - 2}
-                      textAnchor="middle"
-                      fill={color}
-                    >
-                      {kind === "cycle"
-                        ? (marks.tags.get(index) ?? "")
-                        : kind === "dividend"
-                          ? "d"
-                          : "r"}
-                    </text>
+                    {kind === "cycle" ? (
+                      <text
+                        className="tk-event-tag"
+                        x={cx}
+                        y={box.top - 2}
+                        textAnchor="middle"
+                        fill={color}
+                      >
+                        {marks.tags.get(index) ?? ""}
+                      </text>
+                    ) : kind === "dividend" ? (
+                      // A coin: the payout.
+                      <g className="tk-event-icon" aria-hidden="true">
+                        <circle
+                          cx={cx}
+                          cy={box.top - 6}
+                          r={4}
+                          fill="none"
+                          stroke={color}
+                          strokeWidth={1.5}
+                        />
+                        <circle cx={cx} cy={box.top - 6} r={1.4} fill={color} />
+                      </g>
+                    ) : (
+                      // Three bars: the earnings report.
+                      <g className="tk-event-icon" aria-hidden="true" fill={color}>
+                        <rect x={cx - 4.5} y={box.top - 6} width={2.5} height={5} />
+                        <rect x={cx - 1.25} y={box.top - 10} width={2.5} height={9} />
+                        <rect x={cx + 2} y={box.top - 8} width={2.5} height={7} />
+                      </g>
+                    )}
                   </>
                 ) : null}
                 <path

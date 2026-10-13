@@ -1,7 +1,9 @@
 {
   "ticker.pick_prompt": "Search or pick a ticker from the sidebar list.",
-  "ticker.ev_dividends": "Dividends (d)",
-  "ticker.ev_results": "Results (r)",
+  "ticker.ev_dividends": "Dividends",
+  "ticker.ev_dividend_one": "Dividend",
+  "ticker.ev_result_one": "Results",
+  "ticker.ev_results": "Results",
   "ticker.hover_dividend": "<b>Dividend</b>  {amt}/sh · ex-date {date}",
   "ticker.hover_dividend_bar": "<b>Dividend</b>  {amt}/sh",
   "ticker.hover_div_yield": " · ≈{pct}% of price",

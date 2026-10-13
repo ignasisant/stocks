@@ -1,7 +1,9 @@
 {
   "ticker.pick_prompt": "Busca o elige un valor en la lista lateral.",
-  "ticker.ev_dividends": "Dividendos (d)",
-  "ticker.ev_results": "Resultados (r)",
+  "ticker.ev_dividends": "Dividendos",
+  "ticker.ev_dividend_one": "Dividendo",
+  "ticker.ev_result_one": "Resultados",
+  "ticker.ev_results": "Resultados",
   "ticker.hover_dividend": "<b>Dividendo</b>  {amt}/acc · fecha ex {date}",
   "ticker.hover_dividend_bar": "<b>Dividendo</b>  {amt}/acc",
   "ticker.hover_div_yield": " · ≈{pct}% del precio",
