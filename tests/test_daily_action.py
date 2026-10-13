@@ -453,7 +453,7 @@ def test_computed_card_states_the_actions_without_a_model():
     assert "your below alert at 120.00 fired" in body
     assert "would offset €900 of the €900" in body
     assert body.count("your below alert") == 1  # the headline is not repeated
-    assert "repurchasing within two months blocks the loss" in body.lower()
+    assert "buying it back within 2 months before or after the sale disallows the loss" in body.lower()
     assert "reports in 2 days" in body
     assert card.focus[:2] == ["NVDA", "ASML"]
 
@@ -479,7 +479,7 @@ def test_computed_card_is_localized():
     es = daily.computed(facts(), "es", DAY)
     en = daily.computed(facts(), "en", DAY)
     assert es.bullets != en.bullets
-    assert "recomprar en dos meses" in " ".join(es.bullets)
+    assert "recompras en los 2 meses antes o después de la venta" in " ".join(es.bullets)
 
 
 def test_computed_card_is_never_empty():
