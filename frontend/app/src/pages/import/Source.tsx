@@ -70,8 +70,6 @@ export function Source({
           <Eyebrow id="im-platform" n={1}>
             {t("import.step_platform")}
           </Eyebrow>
-          {/* The address the choice lives at, so a link can land on it. */}
-          <span className="im-param">?platform={platform.key}</span>
         </div>
         {/* One control at every width. Seven brand names do not fit a phone row
             side by side; letting them wrap solves that without a second control
