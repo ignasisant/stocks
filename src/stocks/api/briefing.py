@@ -269,6 +269,36 @@ def _jurisdiction(prefs: dict):
         return None
 
 
+def _tax_year_net(paths, prefs: dict, ccy: str, day: date):
+    """(net taxable result of this tax year, the jurisdiction), from the tax tab's engine.
+
+    Replayed under the jurisdiction's own matching rule and the same
+    repurchase-rule netting the Tax tab shows, so "gains this year" on the card
+    is the figure the user finds there. None when the book is in another
+    currency than the jurisdiction's (the card's amounts are in the book's) or
+    the engine cannot say.
+    """
+    try:
+        from stocks.portfolio import tax
+        from stocks.portfolio.tax import prefs as tax_prefs
+
+        jurisdiction = tax.get(tax_prefs.resolve(prefs)[0])
+        if jurisdiction.currency != ccy:
+            return None
+        db = str(paths.db)
+        txs, _, sales = loaders.ledger_state(
+            db, loaders.db_mtime(db), jurisdiction.currency, jurisdiction.matching
+        )
+        if not sales:
+            return 0.0
+        settings = tax_prefs.with_funds(tax_prefs.settings(prefs), tax.labels(txs))
+        year = jurisdiction.tax_year_of(day.isoformat())
+        period = jurisdiction.fiscal_year(sales, year, tax.buy_dates(txs), settings)
+        return float(period.net_taxable)
+    except Exception:  # noqa: BLE001 — the plain realised sum still stands
+        return None
+
+
 def _day_move(tbl, hist) -> tuple[float, float] | None:
     """The "Today" figure the KPI row shows, so the card cannot contradict it.
 
@@ -367,6 +397,7 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
             jurisdiction=_jurisdiction(prefs),
             currency=ccy,
             today=day,
+            year_net=_tax_year_net(paths, prefs, ccy, day),
         ),
     )
 
