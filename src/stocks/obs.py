@@ -345,6 +345,7 @@ def timed(
     name: str,
     *,
     passthrough: tuple[type[BaseException], ...] = (),
+    expected: tuple[type[BaseException], ...] = (),
     **fields,
 ) -> Iterator[dict]:
     """Time a block and log it with `duration_ms` and `ok`.
@@ -357,6 +358,10 @@ def timed(
     `passthrough` names exception types that are control flow rather than
     failure (a block that stops early is a normal run): they are timed as
     successes and re-raised untouched.
+
+    `expected` names failures that are the weather rather than a bug (Yahoo
+    throttling Cloud Run's IP): logged as a failed WARNING, without the stack
+    that would page the owner, and re-raised.
     """
     extra: dict = dict(fields)
     started = time.perf_counter()
@@ -370,6 +375,10 @@ def timed(
         if passthrough and isinstance(exc, passthrough):
             log.info(name, extra={"event": name, "duration_ms": ms(), "ok": True,
                                   "stopped": True, **extra})
+            raise
+        if expected and isinstance(exc, expected):
+            log.warning(name, extra={"event": name, "duration_ms": ms(), "ok": False,
+                                     **_exc_fields(exc), **extra})
             raise
         log.error(
             name,
