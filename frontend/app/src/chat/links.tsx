@@ -16,6 +16,16 @@ import { phone } from "./GuideCard";
 
 /** Each linkable tab's label key, by page slug and `?tab=` value. */
 const TAB_LABELS: Record<string, Record<string, string>> = {
+  today: {
+    alerts: "today.tab_alerts",
+    routines: "today.tab_routines",
+    book: "today.tab_book",
+    news: "today.tab_news",
+    insiders: "today.tab_insiders",
+    compare: "today.tab_compare",
+    macro: "today.tab_macro",
+    trends: "today.tab_trends",
+  },
   portfolio: {
     overview: "portfolio.tab_overview",
     positions: "portfolio.tab_positions",

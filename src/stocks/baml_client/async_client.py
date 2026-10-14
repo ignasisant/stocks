@@ -262,6 +262,21 @@ class BamlAsyncClient:
                 "instructions": instructions,"input": input,
             })
             return typing.cast(types.CardReply, __result__.cast_to(types, types, stream_types, False, __runtime__))
+    async def WriteMarketDay(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> types.MarketReply:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            # Use streaming internally when on_tick is provided
+            __stream__ = self.stream.WriteMarketDay(instructions=instructions,input=input,
+                baml_options=baml_options)
+            return await __stream__.get_final_response()
+        else:
+            # Original non-streaming code
+            __result__ = await self.__options.merge_options(baml_options).call_function_async(function_name="WriteMarketDay", args={
+                "instructions": instructions,"input": input,
+            })
+            return typing.cast(types.MarketReply, __result__.cast_to(types, types, stream_types, False, __runtime__))
     
 
 
@@ -415,6 +430,18 @@ class BamlStreamClient:
           lambda x: typing.cast(types.CardReply, x.cast_to(types, types, stream_types, False, __runtime__)),
           __ctx__,
         )
+    def WriteMarketDay(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlStream[stream_types.MarketReply, types.MarketReply]:
+        __ctx__, __result__ = self.__options.merge_options(baml_options).create_async_stream(function_name="WriteMarketDay", args={
+            "instructions": instructions,"input": input,
+        })
+        return baml_py.BamlStream[stream_types.MarketReply, types.MarketReply](
+          __result__,
+          lambda x: typing.cast(stream_types.MarketReply, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.MarketReply, x.cast_to(types, types, stream_types, False, __runtime__)),
+          __ctx__,
+        )
     
 
 class BamlHttpRequestClient:
@@ -507,6 +534,13 @@ class BamlHttpRequestClient:
             "instructions": instructions,"input": input,
         }, mode="request")
         return __result__
+    async def WriteMarketDay(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="WriteMarketDay", args={
+            "instructions": instructions,"input": input,
+        }, mode="request")
+        return __result__
     
 
 class BamlHttpStreamRequestClient:
@@ -596,6 +630,13 @@ class BamlHttpStreamRequestClient:
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="WriteDailyCard", args={
+            "instructions": instructions,"input": input,
+        }, mode="stream")
+        return __result__
+    async def WriteMarketDay(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="WriteMarketDay", args={
             "instructions": instructions,"input": input,
         }, mode="stream")
         return __result__

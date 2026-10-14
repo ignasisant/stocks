@@ -3276,6 +3276,47 @@ class DailySection(BaseModel):
     chart: DailySectionChart | None = None
 
 
+class TodayRow(BaseModel):
+    """One computed line of a Today section: a headline, an insider trade, or
+    a holding measured against its sector and the index."""
+
+    key: str = Field(description="What it is about, e.g. `news:NVDA:1a2b3c4d`.")
+    kind: str = Field(
+        default="", description="news | filing | results | insider | compare."
+    )
+    line: str
+    tickers: list[str] = Field(default_factory=list)
+    source: str = Field(
+        default="",
+        description="Where it was read: yahoo | 8k | earnings | sec | bafin | computed.",
+    )
+    url: str = Field(default="", description="The article or filing; empty when none.")
+    date: str = Field(default="", description="ISO day it is from; empty when undated.")
+    data: dict[str, float | int | str | bool | None] = Field(
+        default_factory=dict,
+        description=(
+            "The figures behind the line — for a comparison: weight, m1, m6, "
+            "y1, sector, sector_etf, vs_sector_<span> and vs_index_<span> per "
+            "span, vs_sector / vs_index (six months), verdict."
+        ),
+    )
+
+
+class TodaySection(BaseModel):
+    """A computed section of the Today page, with at most one written note."""
+
+    id: Literal["news", "insiders", "compare"]
+    title: str = ""
+    rows: list[TodayRow] = Field(default_factory=list)
+    note: str = Field(
+        default="", description="The model's one remark on the section; empty when none."
+    )
+    missing: list[str] = Field(
+        default_factory=list,
+        description="Sources that did not answer, e.g. `yahoo`, `edgar`.",
+    )
+
+
 class DailyCard(BaseModel):
     """Today's briefing, whether it still stands, and whether one is coming.
 
@@ -3391,6 +3432,142 @@ class DailyCard(BaseModel):
             "`written` when `sections` hold it; `missed` when no model wrote "
             "it today and the default card stands in."
         ),
+    )
+    today: list[TodaySection] = Field(
+        default_factory=list,
+        description=(
+            "The Today page's computed sections — news, insiders, comparisons "
+            "— in the order they are read. Empty on a card written before the "
+            "page existed."
+        ),
+    )
+    shape: str = Field(
+        default="",
+        description=(
+            "The kind of book the sections were chosen for: empty | fund_only "
+            "| crypto_only | concentrated | dividend | mixed."
+        ),
+    )
+
+
+class MarketLine(BaseModel):
+    topic: Literal["trend", "sector", "rates", "macro", "crypto"]
+    line: str
+
+
+class MarketRegime(BaseModel):
+    score: float
+    key: str = Field(description="stress | caution | neutral | appetite | euphoria.")
+    run: int = Field(default=0, description="Sessions the score has held its band.")
+    score_month: float | None = Field(
+        default=None, description="The score 21 sessions ago."
+    )
+
+
+class MarketBreadth(BaseModel):
+    indices_hits: int = 0
+    indices_total: int = 0
+    sectors_hits: int = 0
+    sectors_total: int = 0
+
+
+class MarketRate(BaseModel):
+    key: str = Field(
+        description="us10y | curve_2s10s | hy_spread | policy_fed | policy_ecb."
+    )
+    value: float
+    change_bp: float | None = Field(
+        default=None, description="Change over a month of sessions, basis points."
+    )
+
+
+class MarketBank(BaseModel):
+    bank: Literal["fed", "ecb"]
+    rate: float | None = None
+    last_move_bp: float | None = Field(
+        default=None, description="The rate's last change, bp, whenever it was."
+    )
+    last_date: str | None = Field(default=None, description="Its last meeting.")
+    moved_on: str | None = Field(default=None, description="When the rate last changed.")
+    next_date: str | None = None
+    days: int | None = Field(default=None, description="Days to the next decision.")
+
+
+class MarketSector(BaseModel):
+    ticker: str
+    name: str
+    week: float | None = Field(
+        default=None, description="5-session excess over SPY, %."
+    )
+    month: float | None = Field(
+        default=None, description="21-session excess over SPY, %."
+    )
+
+
+class MarketInflation(BaseModel):
+    area: str
+    period: str
+    headline: float
+    core: float | None = None
+    momentum: float | None = Field(
+        default=None, description="Annual rate now minus six months ago, pp."
+    )
+
+
+class MarketCrypto(BaseModel):
+    fear_greed: float | None = None
+    fear_greed_week: float | None = None
+    btc_dominance: float | None = None
+
+
+class MarketIndex(BaseModel):
+    name: str
+    day: float | None = Field(default=None, description="Last session, %.")
+    week: float | None = Field(default=None, description="Five sessions, %.")
+    month: float | None = Field(default=None, description="21 sessions, %.")
+
+
+class MarketCard(BaseModel):
+    """The day's market read, shared by every account: written once each
+    morning by the cron (`stocks today-market`), figures and all."""
+
+    session: str = Field(description="The last US session the figures close on.")
+    built_at: float = Field(description="Epoch seconds it was written.")
+    lang: str
+    source: Literal["llm", "computed"]
+    headline: str
+    lines: list[MarketLine] = Field(default_factory=list)
+    regime: MarketRegime | None = None
+    breadth: MarketBreadth | None = None
+    rates: list[MarketRate] = Field(default_factory=list)
+    banks: list[MarketBank] = Field(default_factory=list)
+    sectors: list[MarketSector] = Field(
+        default_factory=list, description="Sector ETFs, best month first."
+    )
+    inflation: list[MarketInflation] = Field(default_factory=list)
+    crypto: MarketCrypto | None = None
+    index: MarketIndex | None = None
+    missing: list[str] = Field(default_factory=list)
+
+
+class TodayCard(BaseModel):
+    """The Today page: the shared market read plus the reader's own card.
+
+    `GET /today` never writes anything; `POST /today` asks for the personal
+    part the way `POST /daily` does (one job per account, shared with Home).
+    """
+
+    action_day: str
+    cutoff_hour: int
+    market: MarketCard | None = Field(
+        default=None, description="Null until the first morning's read exists."
+    )
+    market_stale: bool = Field(
+        default=False,
+        description="The read is older than the last session; a newer one is on its way.",
+    )
+    personal: DailyCard | None = Field(
+        default=None, description="Null for a guest; the reader's daily card otherwise."
     )
 
 

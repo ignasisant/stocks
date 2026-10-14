@@ -340,3 +340,30 @@ def lookup(query: str, limit: int = LOOKUP_LIMIT) -> list[Passage]:
 def block(hits: list[Passage]) -> str:
     """`hits` as one tool result, under HEADER."""
     return HEADER + "\n\n".join(p.line() for p in hits)
+
+
+EXCERPT_CHARS = 1800
+
+
+def excerpt(refs: tuple[tuple[str, str], ...], limit: int = EXCERPT_CHARS) -> str:
+    """Fixed passages, by (doc, heading), as one block under HEADER — or "".
+
+    For prompts that always need the same background (the Today page's market
+    read explains the pulse score the same way every morning): no search, no
+    index, no embedding model, so a cron runner pays nothing to build one. A
+    reference that matches nothing is skipped; the block stops at `limit`
+    characters rather than cutting a passage mid-way.
+    """
+    out: list[str] = []
+    used = 0
+    for doc, heading in refs:
+        hit = next((p for p in passages()
+                    if p.doc == doc and p.section.startswith(heading)), None)
+        if hit is None:
+            continue
+        line = hit.line()
+        if used + len(line) > limit:
+            break
+        out.append(line)
+        used += len(line)
+    return HEADER + "\n\n".join(out) if out else ""

@@ -152,7 +152,9 @@ def test_the_guest_list_is_not_silently_growing():
     # data like `/moat` and `/insiders`, no account goes into it.
     # 55: `GET /review` — the demo book's sell / add verdicts; computed from
     # the book and cached fundamentals, `?add=` is a query param, no write.
-    assert len(guest.OPEN) == 55
+    # 56: `GET /today` — the Today page's shared market read; a guest gets no
+    # personal card (the route drops it), and the read never writes or spends.
+    assert len(guest.OPEN) == 56
 
 
 def test_every_route_a_guest_may_read_is_a_read():

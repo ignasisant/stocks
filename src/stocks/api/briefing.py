@@ -55,8 +55,10 @@ from stocks.chat import (
     journal,
     routine_plan,
     signals,
+    today_sections,
 )
 from stocks.data.crypto import is_crypto
+from stocks.formatting import finite
 
 # How long `POST /daily` holds the request for a briefing before answering
 # `pending`. The free chain usually answers well inside it, and everything past
@@ -93,6 +95,17 @@ def job_for(paths, key: tuple) -> Job | None:
     with _lock:
         job = _jobs.get(str(paths.root))
     return job if job is not None and job.key == key else None
+
+
+def running(paths) -> Job | None:
+    """The account's job still out, whatever it was keyed on, or None.
+
+    What makes `POST /today` idempotent: a page and its Home teaser asking in
+    two languages a second apart must not abandon each other's generation.
+    """
+    with _lock:
+        job = _jobs.get(str(paths.root))
+    return job if job is not None and not job.done else None
 
 
 def key_for(day: date, lang: str, session: str | None, brief: str = "") -> tuple:
@@ -493,6 +506,85 @@ def _fund(ticker: str) -> bool:
         return False
 
 
+# ------------------------------------------------------------------- today
+
+
+def _review_rows(paths) -> list:
+    """The Review page's held rows for this account, off the route itself so
+    the verdicts match the page to the figure. Its journal write is left
+    unrun: what Today shows is journalled by `_store`."""
+    from fastapi import BackgroundTasks
+
+    from stocks.api.routes import review as review_route
+
+    return list(review_route.review(paths, BackgroundTasks()).held)
+
+
+def _alerted(facts: dict) -> list[str]:
+    """Names whose alert fired or nearly fired today — their news comes first."""
+    return [str(a["ticker"]) for a in facts.get("actions") or []
+            if isinstance(a, dict) and a.get("ticker")
+            and a.get("kind") in (signals.ALERT_HIT, signals.ALERT_NEAR)]
+
+
+def gather_today(paths, prefs: dict, facts: dict, lang: str, day: date, stored,
+                 reviewed: list | None = None) -> dict:
+    """`today_sections.gather` for one account, off the API's cached loaders.
+
+    `reviewed` is filled with the Review rows the comparisons used, for the
+    journal. The 8-K source needs `EDGAR_USER_AGENT` (SEC's fair-access
+    rule); without it the news section names EDGAR missing.
+    """
+    import os
+
+    from stocks.web import auth
+
+    db = str(paths.db)
+    mtime = loaders.db_mtime(db)
+    ccy = reporting_currency(paths)
+    weights: dict[str, float] = {}
+    try:
+        tbl = home.enriched(db, mtime, ccy)
+        if tbl is not None and not tbl.empty and "weight" in tbl:
+            weights = {str(t): float(w) for t, w in tbl["weight"].items()
+                       if finite(w) is not None}
+    except Exception as exc:  # noqa: BLE001 — no positions, no sections
+        obs.warn("today.positions_unavailable", error_type=type(exc).__name__)
+
+    def verdicts() -> dict[str, dict]:
+        rows = _review_rows(paths)
+        if reviewed is not None:
+            reviewed[:] = rows
+        return {r.ticker: {"verdict": r.verdict, "sector": r.sector,
+                           "quality": r.quality, "cheapness": r.cheapness}
+                for r in rows}
+
+    def closes() -> dict:
+        return {**_card_closes(), **loaders.held_closes(db, mtime)}
+
+    filings = None
+    if os.environ.get("EDGAR_USER_AGENT"):
+        filings = loaders.current_reports
+    else:
+        obs.warn_once("today.edgar_no_ua")
+    return today_sections.gather(
+        weights,
+        profile=auth.load_profile(prefs),
+        alerts=_alerted(facts),
+        day=day,
+        lang=lang,
+        shown=stored.shown if stored else None,
+        sources=today_sections.Sources(
+            news=loaders.headlines,
+            filings=filings,
+            insiders=loaders.insiders,
+            eu_insiders=loaders.eu_insiders,
+            verdicts=verdicts,
+            closes=closes,
+        ),
+    )
+
+
 # --------------------------------------------------------------------- job
 
 
@@ -513,7 +605,8 @@ def _save_counters(paths, prefs: dict) -> None:
         obs.warn("daily_action.prefs_unsaved", error_type=type(exc).__name__)
 
 
-def _store(paths, job: Job, prefs: dict, facts: dict, stored, spent: bool) -> None:
+def _store(paths, job: Job, prefs: dict, facts: dict, stored, spent: bool,
+           reviewed: list | None = None) -> None:
     """Apply a finished generation's side effects.
 
     The card the reader is shown is stored whoever wrote it: the model's, or
@@ -547,9 +640,15 @@ def _store(paths, job: Job, prefs: dict, facts: dict, stored, spent: bool) -> No
     # The lines that propose something go in the decision journal, with the
     # figures behind each — for the same reason the card is stored at all:
     # this is what the reader was told.
+    compared = {t for sec in action.today if sec["id"] == "compare"
+                for r in sec["rows"] for t in r["tickers"]}
+    shown_rows = [r for r in reviewed or [] if r.ticker in compared]
     journal.safely(journal.record, journal.path_for(paths.chat),
-                   journal.from_card(action.entries, facts),
-                   date.fromisoformat(action.day))
+                   journal.from_card(action.entries, facts)
+                   + journal.from_today(action.today)
+                   + journal.from_review(shown_rows),
+                   date.fromisoformat(action.day),
+                   judged=journal.judged_in_review(shown_rows))
 
 
 def start(
@@ -576,7 +675,8 @@ def start(
     drawn: dict[int, dict] = {}
 
     def stand_in() -> daily.DailyAction | None:
-        return daily.dressed(daily.computed(facts, lang, day), chart, drawn)
+        return daily.with_today(
+            daily.dressed(daily.computed(facts, lang, day), chart, drawn), facts)
 
     job = Job(key=key, forced=forced, computed=None if forced else stand_in())
     with _lock:
@@ -587,6 +687,9 @@ def start(
 
     profile = auth.load_profile(prefs)
     spent = False
+    # The Review rows the comparisons were read from: what they show goes in
+    # the journal as the Review page's own showing would.
+    reviewed: list = []
 
     def spend(p: dict) -> bool:
         nonlocal spent
@@ -620,10 +723,22 @@ def start(
         facts["brief"] = found
         drawn.update(charts)
 
+    def _gather_today() -> None:
+        """The Today page's news, insiders and comparisons, fetched on the
+        job's thread like the brief's data."""
+        try:
+            facts["today"] = gather_today(paths, prefs, facts, lang, day,
+                                          stored, reviewed)
+        except Exception as exc:  # noqa: BLE001 — the card stands without them
+            obs.warn("today.gather_failed", error_type=type(exc).__name__)
+            # Stamped all the same, so the card is not rewritten for them.
+            facts["today"] = {"shape": today_sections.UNREAD, "sections": []}
+
     def work() -> None:
         try:
             _gather_brief()
-            job.action = daily.dressed(
+            _gather_today()
+            job.action = daily.with_today(daily.dressed(
                 daily.generate(
                     prefs,
                     profile,
@@ -637,7 +752,7 @@ def start(
                 ),
                 chart,
                 drawn,
-            )
+            ), facts)
         except Exception as exc:  # noqa: BLE001 — generate swallows its own; a
             # thread that died silently would leave the client polling forever.
             obs.warn(
@@ -647,14 +762,15 @@ def start(
             )
         finally:
             try:
-                if job.action is None and (job.computed is None or facts.get("brief")):
+                if job.action is None and (job.computed is None or facts.get("brief")
+                                           or facts.get("today")):
                     # A forced job that got nothing still owes the reader a
                     # card: the computed one, built now rather than up front
                     # so a Regenerate shows its wait line and not a stand-in.
                     # A brief no model wrote is rebuilt too, so the card
                     # says it was missed rather than still on its way.
                     job.computed = stand_in()
-                _store(paths, job, prefs, facts, stored, spent)
+                _store(paths, job, prefs, facts, stored, spent, reviewed)
             finally:
                 # Last, so a poll that sees `done` also sees the stored file.
                 job.done = True
@@ -845,3 +961,64 @@ def analysis(paths, prefs: dict, key: str) -> tuple[daily.DailyAction, dict] | N
         journal.safely(journal.attach, journal.path_for(paths.chat), "daily", key,
                        str(body.get("verdict") or ""))
         return replace(card, analysis={**card.analysis, key: body}), body
+
+
+# ------------------------------------------------------------- market read
+# The Today page's shared market read is written by the morning cron
+# (`stocks today-market`). When a reader finds it missing, a session behind,
+# or without their language, the API writes it once on a background thread:
+# the request answers with whatever is stored (or none) and `market_stale`,
+# and the page re-asks. One build per process at a time, and a failed one is
+# not retried for `today_market.MIN_REBUILD_S` — a holiday or a throttled
+# download must not cost a free-chain unit per page view.
+
+_market_lock = threading.Lock()
+_market_tried: dict[str, float] = {}
+
+
+def _market_build(kind: str, lang: str) -> None:
+    from stocks.chat import today_market
+
+    try:
+        with obs.timed("today.market_lazy", kind=kind, lang=lang):
+            today_market.run(None, (lang,), refetch=kind == "refetch")
+    except Exception as exc:  # noqa: BLE001 — the stored read keeps serving
+        obs.warn("today.market_lazy_failed", kind=kind,
+                 error_type=type(exc).__name__, error=str(exc)[:200])
+    finally:
+        loaders.today_market.cache_clear()  # ty: ignore[unresolved-attribute]
+        _market_lock.release()
+
+
+def market_day(lang: str, *, now: float | None = None) -> tuple[dict | None, bool]:
+    """(the market read for `lang` as `today_market.card` shapes it, whether a
+    newer one is on its way). Never fetches or calls a model on the request."""
+    from stocks.chat import today_market
+
+    stored = loaders.today_market()
+    now = time.time() if now is None else now
+    behind = today_market.stale(stored, today_market.expected_session(), now)
+    card = today_market.card(stored, lang) if stored else None
+    kind = "refetch" if behind else ("lang" if card is None else "")
+    if behind and stored and now - float(stored.get("built_at") or 0) \
+            > today_market.STALE_AFTER_S:
+        obs.warn_once("today.cron_absent", key=stored.get("session") or "")
+    if not kind:
+        return card, False
+    # A language another reader's build added counts as the same attempt.
+    tried = _market_tried.get(kind if kind == "refetch" else f"lang:{lang}", 0.0)
+    if now - tried < today_market.MIN_REBUILD_S:
+        return card, _market_lock.locked()
+    if not _market_lock.acquire(blocking=False):
+        return card, True
+    _market_tried[kind if kind == "refetch" else f"lang:{lang}"] = now
+    _market_start(kind, lang)
+    return card, True
+
+
+def _market_start(kind: str, lang: str) -> None:
+    """Start the build; it releases `_market_lock` when it ends. A seam: the
+    test suite swaps it for one that fetches nothing."""
+    threading.Thread(
+        target=_market_build, args=(kind, lang), name="today-market", daemon=True
+    ).start()

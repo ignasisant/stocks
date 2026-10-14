@@ -87,6 +87,18 @@ def cmd_crypto_scan(args: argparse.Namespace) -> None:
         print(f"{part}: {result}")
 
 
+def cmd_today_market(args: argparse.Namespace) -> None:
+    """This morning's shared market read for the Today page. Market-wide."""
+    from datetime import date
+
+    from stocks.chat.today_market import run
+
+    day = date.fromisoformat(args.day) if args.day else None
+    langs = tuple(args.lang) if args.lang else ("es", "en")
+    for part, result in run(day, langs, dry_run=args.dry_run).items():
+        print(f"{part}: {result}")
+
+
 def cmd_digest(args: argparse.Namespace) -> None:
     if args.all_users:
         from stocks.notify.digest import run_digest_fanout
@@ -1325,6 +1337,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="fetch and print the result without writing the stored file",
     )
     p_crypto.set_defaults(func=cmd_crypto_scan)
+
+    p_today = sub.add_parser(
+        "today-market",
+        help="write the Today page's shared market read (morning cron)",
+    )
+    p_today.add_argument(
+        "--lang", action="append", choices=("es", "en"),
+        help="only this language (repeatable; default: es and en)",
+    )
+    p_today.add_argument(
+        "--day", help="decision calendar day, YYYY-MM-DD (default: today UTC)",
+    )
+    p_today.add_argument(
+        "--dry-run", action="store_true",
+        help="build and print the read without writing the stored file",
+    )
+    p_today.set_defaults(func=cmd_today_market)
 
     p_ntest = sub.add_parser(
         "notify-test",

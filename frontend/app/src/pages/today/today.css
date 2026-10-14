@@ -1,0 +1,760 @@
+/* Today — the day's front page. Laid out by the room the page has
+   (`@container ag-main`), never by the viewport, so an open chat drawer
+   narrows it the same way a smaller window does. */
+
+.td-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.td-page[aria-busy="true"] .td-body {
+  opacity: 0.85;
+}
+
+/* The book's (or the index's) three windows stay one row on a phone: they
+   are read side by side, and stacked they push the page below the fold. */
+@container ag-main (max-width: 38rem) {
+  .td-page > .ag-kpis:has(> :nth-child(3):last-child) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.4rem;
+  }
+}
+
+/* ------------------------------------------------------------- the masthead */
+
+.td-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.td-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+/* The dateline: the page's name and the day, set in mono like a wire stamp.
+   The headline under it is the focal point, not this. */
+.td-dateline {
+  margin: 0;
+  min-width: 0;
+  color: var(--ag-text-muted);
+  font-family: var(--ag-font-mono, ui-monospace, monospace);
+  font-size: var(--ag-fs-xs, 11px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.td-session {
+  color: var(--ag-text-faint);
+}
+
+.td-byline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.td-stamp {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 11px);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One headline, large, the eye's first stop; a reading width so it never
+   runs the full page. */
+.td-headline {
+  max-width: 34ch;
+  margin: 0;
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-2xl, 1.5rem);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+@container ag-main (min-width: 56rem) {
+  .td-headline {
+    font-size: var(--ag-fs-3xl, 2rem);
+  }
+}
+
+/* Edit the brief, regenerate, ask: icons at the masthead's far end. */
+.td-tools {
+  display: flex;
+  gap: 0.15rem;
+  margin-left: auto;
+}
+
+.td-icon-btn {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ag-radius-xs, 6px);
+  background: transparent;
+  color: var(--ag-text-secondary);
+  cursor: pointer;
+}
+
+.td-icon-btn[aria-pressed="true"] {
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-primary);
+}
+
+@media (hover: hover) {
+  .td-icon-btn:hover:not(:disabled) {
+    background: var(--ag-surface-sunken);
+    color: var(--ag-text-primary);
+  }
+}
+
+.td-icon-btn:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.td-icon-btn:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 2px;
+}
+
+/* ----------------------------------------------------------------- the tabs */
+
+.td-tabs {
+  /* The offset parent of its tabs, so `useTabStrip` can centre the open one. */
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--ag-border);
+}
+
+.td-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.55rem 0.8rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-sm, 0.875rem);
+  white-space: nowrap;
+  cursor: pointer;
+  appearance: none;
+}
+
+@media (hover: hover) {
+  .td-tab:hover {
+    color: var(--ag-text-primary);
+  }
+}
+
+.td-tab:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: -2px;
+}
+
+.td-tab-on {
+  border-bottom-color: var(--ag-brand-accent);
+  color: var(--ag-text-primary);
+}
+
+/* A narrow page scrolls the strip sideways rather than stacking it. */
+@container ag-main (max-width: 48rem) {
+  .td-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .td-tabs::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.td-count {
+  display: inline-block;
+  min-width: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: var(--ag-radius-pill, 999px);
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs, 11px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* ----------------------------------------------------------------- the body */
+
+/* One column; two where the page is wide and every section is shown — the
+   reader's own on the left, the market in a narrower column on the right.
+   From 64rem, so a laptop with the sidebar open gets both. */
+.td-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.td-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.td-col:empty {
+  display: none;
+}
+
+@container ag-main (min-width: 64rem) {
+  .td-body-two {
+    grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  /* The side column's tiles take the room the column has, not the page's:
+     the grid's own count rules read `ag-main`, which is twice as wide. */
+  .td-page .td-body-two > .td-side .ag-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(min(9.5rem, 100%), 1fr));
+  }
+}
+
+.td-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md, 12px);
+  background: var(--ag-surface-card);
+}
+
+@container ag-main (max-width: 38rem) {
+  .td-sec {
+    padding: 0.85rem 0.9rem;
+  }
+}
+
+.td-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.td-sec-title {
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs, 11px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.td-sub {
+  margin: 0 0 0.3rem;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm, 12px);
+  font-weight: 600;
+}
+
+/* The model's one remark on a section: read as a voice, not a figure. */
+.td-remark {
+  max-width: 72ch;
+  margin: 0;
+  padding-left: 0.7rem;
+  border-left: 2px solid var(--ag-brand-accent);
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm, 12px);
+  line-height: 1.55;
+}
+
+.td-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  max-width: 40rem;
+}
+
+.td-more {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+  color: var(--ag-brand-accent);
+  font-size: var(--ag-fs-sm, 12px);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .td-more:hover {
+    text-decoration: underline;
+  }
+}
+
+.td-chart .ag-a2ui-chart {
+  min-width: 0;
+  touch-action: pan-y;
+}
+
+.td-up {
+  color: var(--ag-up);
+}
+
+.td-down {
+  color: var(--ag-down);
+}
+
+/* ------------------------------------------------------------ lines and rows */
+
+.td-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 80ch;
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: var(--ag-fs-base, 14px);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* The model's read of the market's tiles: its voice, marked like a remark. */
+.td-voice {
+  padding-left: 0.7rem;
+  border-left: 2px solid var(--ag-brand-accent);
+  color: var(--ag-text-secondary);
+  list-style: none;
+}
+
+/* A line's tickers, at its end: logo and link, no chip row of their own. */
+.td-tks {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.5rem;
+  margin-left: 0.4rem;
+  vertical-align: baseline;
+  font-size: var(--ag-fs-sm, 12px);
+}
+
+/* A text control after its line: it opens the line, it does not act. */
+.td-toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ag-brand-accent);
+  font: inherit;
+  font-size: var(--ag-fs-sm, 12px);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .td-toggle:hover {
+    text-decoration: underline;
+  }
+}
+
+.td-toggle:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.td-toggle::after {
+  content: " ▾";
+}
+
+.td-toggle[aria-expanded="true"]::after {
+  content: " ▴";
+}
+
+/* Wire items, set as an index: the name first, the headline, then where and
+   when it was read. On a narrow page the name and the stamp share a line over
+   the headline; with room, three columns, the stamps aligned at the end. */
+.td-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.td-row {
+  display: grid;
+  grid-template-areas:
+    "who wire"
+    "line line";
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  row-gap: 0.2rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--ag-rule-soft, var(--ag-border));
+}
+
+.td-row:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.td-row-who {
+  display: flex;
+  flex-wrap: wrap;
+  grid-area: who;
+  gap: 0.15rem 0.5rem;
+  font-size: var(--ag-fs-sm, 12px);
+}
+
+.td-row-who:not(:empty) {
+  margin-right: 0.6rem;
+}
+
+.td-wire {
+  display: flex;
+  grid-area: wire;
+  gap: 0.5rem;
+  color: var(--ag-text-muted);
+  font-family: var(--ag-font-mono, ui-monospace, monospace);
+  font-size: var(--ag-fs-xs, 11px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+@container ag-main (min-width: 48rem) {
+  .td-row {
+    grid-template-areas: "who line wire";
+    grid-template-columns: 6.5rem minmax(0, 1fr) auto;
+    column-gap: 1rem;
+  }
+
+  .td-row-who:not(:empty) {
+    margin-right: 0;
+  }
+
+  .td-row-who {
+    flex-direction: column;
+  }
+}
+
+.td-src {
+  color: var(--ag-text-secondary);
+  font-weight: 600;
+}
+
+.td-line {
+  grid-area: line;
+  max-width: 80ch;
+  font-size: var(--ag-fs-base, 14px);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* The headline is the link to its article or filing. */
+.td-headlink {
+  color: var(--ag-text-primary);
+  text-decoration: none;
+}
+
+.td-headlink::after {
+  content: " ↗";
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm, 12px);
+}
+
+@media (hover: hover) {
+  .td-headlink:hover {
+    color: var(--ag-brand-accent);
+    text-decoration: underline;
+  }
+}
+
+.td-headlink:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ------------------------------------------------------------ comparisons */
+
+.td-scroll {
+  overflow-x: auto;
+}
+
+.td-compare {
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+.td-compare td,
+.td-compare th {
+  white-space: nowrap;
+}
+
+/* `.hm-table th` aligns every header left; a figure's header sits over it. */
+.td-compare th.hm-num {
+  text-align: right;
+}
+
+/* A row with something to say: a gap of five points, or a verdict that asks
+   for a move. Marked on its edge, not filled, so the figures stay legible. */
+.td-hot td:first-child {
+  box-shadow: inset 3px 0 0 var(--ag-brand-accent);
+}
+
+.td-etf {
+  margin-right: 0.4em;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 11px);
+}
+
+/* ----------------------------------------------------------------- market */
+
+.td-rotation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.85rem 1.5rem;
+}
+
+@container ag-main (min-width: 38rem) {
+  .td-rotation {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.td-sectors ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.td-sectors li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--ag-fs-sm, 12px);
+}
+
+.td-sector-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--ag-text-secondary);
+}
+
+/* ------------------------------------------------------- a line's analysis */
+
+/* Under its line, sunk into the section so it reads as belonging to the line
+   and not as the section's next item. */
+.td-an {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
+  margin: 0.35rem 0 0.6rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  background: var(--ag-surface-page);
+}
+
+.td-an-failed {
+  margin: 0.25rem 0 0.45rem;
+}
+
+.td-wait {
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm, 12px);
+  line-height: 1.5;
+}
+
+/* Prose is capped at a reading width; the tables below it are not. */
+.td-an-verdict {
+  max-width: 72ch;
+  margin: 0;
+  font-size: var(--ag-fs-base, 14px);
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.td-an-verdict b {
+  margin-right: 0.3em;
+  color: var(--ag-brand-accent);
+  font-weight: 600;
+}
+
+.td-an-points,
+.td-an-tables {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.85rem 1.5rem;
+}
+
+@container ag-main (min-width: 56rem) {
+  .td-an-points {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Two tables a row only on the one-column page: in a column of the two-column
+   layout they would be squeezed below their figures. */
+@container ag-main (min-width: 80rem) {
+  .td-body:not(.td-body-two) .td-an-tables {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.td-an-title {
+  margin: 0 0 0.2rem;
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-sm, 12px);
+  font-weight: 600;
+}
+
+.td-an-point p {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm, 12px);
+  line-height: 1.6;
+}
+
+.td-an-table {
+  min-width: 0;
+  margin: 0;
+}
+
+.td-an-caption {
+  margin-bottom: 0.25rem;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 11px);
+  font-weight: 600;
+}
+
+.td-an-scroll {
+  overflow-x: auto;
+}
+
+.td-an-scroll .hm-table td,
+.td-an-scroll .hm-table th {
+  white-space: nowrap;
+}
+
+.td-an-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  max-width: 24ch;
+  min-width: 0;
+  vertical-align: middle;
+}
+
+.td-an-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs, 11px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.td-an-hl td {
+  background: var(--ag-surface-hover);
+  font-weight: 600;
+}
+
+/* The comparisons' span picker: one month, six months, a year. */
+.td-seg {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm, 8px);
+  overflow: hidden;
+}
+
+.td-seg button {
+  appearance: none;
+  border: none;
+  background: none;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-xs, 0.78rem);
+  padding: 0.3rem 0.75rem;
+  cursor: pointer;
+}
+
+.td-seg button + button {
+  border-left: 1px solid var(--ag-border);
+}
+
+@media (hover: hover) {
+  .td-seg button:hover {
+    color: var(--ag-text-primary);
+  }
+}
+
+.td-seg button:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: -2px;
+}
+
+.td-seg .td-seg-on {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+}
+
+/* --------------------------------------------------------------- touch */
+
+/* The DS 44px touch target, without growing the text. */
+@media (pointer: coarse) {
+  .td-tab {
+    min-height: 44px;
+  }
+
+  .td-icon-btn {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .td-toggle {
+    display: block;
+    min-height: 44px;
+  }
+
+  .td-seg button {
+    min-height: 44px;
+    padding-inline: 1rem;
+  }
+
+  .td-more-btn {
+    min-height: 44px;
+  }
+}

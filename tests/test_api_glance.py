@@ -108,6 +108,7 @@ def today_card(**over) -> dict:
         "as_of": (day - timedelta(days=1)).isoformat(),
         "lang": "en",
         "source": "llm",
+        "shape": "mixed",
     } | over
 
 
@@ -133,6 +134,18 @@ def test_a_current_card_reads_fresh(client, account, monkeypatch):
     assert payload["fresh"] is True
     assert payload["focus"] == ["NVDA"]
     assert payload["source"] == "llm"
+
+
+def test_a_card_from_before_the_today_sections_is_rewritten_once(
+        client, account, monkeypatch):
+    """No shape: written before Today had sections, which would leave the
+    page without them until tomorrow."""
+    monkeypatch.setattr(loaders, "stored_action",
+                        lambda path, mtime: today_card(shape=""))
+    monkeypatch.setattr(loaders, "held_closes", lambda db, mtime: {})
+    monkeypatch.setattr(loaders, "held_printed_closes", lambda db, mtime: {})
+    payload = client.get("/v1/daily", params=WHO, headers=AUTH).json()
+    assert payload["fresh"] is False
 
 
 def _brief(account, text: str) -> str:

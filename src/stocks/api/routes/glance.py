@@ -19,7 +19,6 @@ from typing import Annotated
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import ValidationError
 
 from stocks.analysis.portfolio import (
     basket_change,
@@ -30,21 +29,17 @@ from stocks.analysis.portfolio import (
     ticker_day_changes,
     us_market_open,
 )
-from stocks.api import briefing, home, loaders
+from stocks.api import briefing, daily_card, home, loaders
 from stocks.api.deps import Account, Base, Writer, reporting_currency
 from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
     DailyAnalysis,
-    DailyBook,
     DailyCard,
-    DailyItem,
-    DailySection,
     Extreme,
     Extremes,
     Mover,
     Movers,
 )
-from stocks.chat import daily, daily_routines
 
 router = APIRouter(tags=["glance"])
 
@@ -85,7 +80,7 @@ def card(account: Account, lang: Lang = "en") -> DailyCard:
     has a generation out, and it reports that generation — `pending` while it
     runs, and the computed card when the model gave nothing back.
     """
-    return _status(account, lang)
+    return daily_card.status(account, lang)
 
 
 @router.post("/daily", response_model=DailyCard, summary="Have today's written")
@@ -115,30 +110,7 @@ def write_card(
     only — the generation spends this account's free allowance and writes
     daily_action.json, neither of which a bearer token may do.
     """
-    from stocks.web import auth
-
-    _, day = briefing.now_day()
-    key = _key(account, day, lang)
-    job = briefing.job_for(account, key)
-    stored = _stored(account)
-    if not force:
-        if job is not None:
-            # In flight: report it. Done: this key was tried today — the card
-            # it left (stored, or the computed stand-in) is the answer.
-            return _status(account, lang)
-        if _stands(stored, day, lang, key) and not daily.wants_upgrade(stored):
-            # A computed stand-in that stands still gets a few more tries at
-            # a written briefing a day (`daily.wants_upgrade`); anything else
-            # that stands costs nothing.
-            return _status(account, lang)
-
-    prefs = auth.load_prefs(account.prefs)
-    facts = briefing.build_facts(account, prefs, day, stored)
-    if facts is None:
-        # Neither a position nor a watchlist entry: nothing to brief on.
-        return _empty(day)
-    briefing.start(account, prefs, facts, lang, day, stored, key=key, forced=force)
-    return _status(account, lang)
+    return daily_card.request(account, lang, force=force)
 
 
 @router.post(
@@ -177,133 +149,6 @@ def card_analysis(
         tables=list(body.get("tables") or []),
         as_of=body.get("as_of") or None,
     )
-
-
-def _stored(account) -> daily.DailyAction | None:
-    return daily.DailyAction.from_dict(
-        loaders.stored_action(str(account.action), loaders.file_mtime(account.action))
-    )
-
-
-def _empty(day) -> DailyCard:
-    return DailyCard(
-        action_day=day.isoformat(), cutoff_hour=daily.CUTOFF_HOUR, fresh=False
-    )
-
-
-def _answer(action: daily.DailyAction, day, *, fresh: bool, pending=False) -> DailyCard:
-    return DailyCard(
-        day=action.day,
-        headline=action.headline,
-        bullets=list(action.bullets),
-        focus=list(action.focus),
-        as_of=action.as_of or None,
-        lang=action.lang,
-        source=action.source,
-        action_day=day.isoformat(),
-        cutoff_hour=daily.CUTOFF_HOUR,
-        fresh=fresh,
-        generated=action.generated or None,
-        pending=pending,
-        items=[
-            DailyItem(**item, section=daily.section_of(item)) for item in action.items
-        ],
-        upgradable=fresh and not pending and daily.wants_upgrade(action),
-        analysed=[k for k, v in action.analysis.items() if v],
-        thread=action.thread or None,
-        book=_book(action.book),
-        sections=[sec for sec in map(_section, action.sections) if sec],
-        brief=action.brief if action.brief in daily.BRIEF_STATES else "",
-    )
-
-
-# The two sections read off the stored card, so whatever JSON is on disk: one
-# that does not fit drops its section (or its chart), never the whole card.
-
-
-def _book(raw: dict) -> DailyBook | None:
-    try:
-        return DailyBook(**raw) if raw else None
-    except ValidationError:
-        return None
-
-
-def _section(raw: dict) -> DailySection | None:
-    lines = [DailyItem(**ln, section=daily.WATCH) for ln in raw.get("lines") or []]
-    try:
-        return DailySection.model_validate({**raw, "lines": lines})
-    except ValidationError:
-        try:
-            return DailySection.model_validate({**raw, "lines": lines, "chart": None})
-        except ValidationError:
-            return None
-
-
-def _status(account, lang: str) -> DailyCard:
-    """What the card slot shows now, from the stored card and the job.
-
-    A generation out wins: a forced one has taken the old card away (the
-    reader just dismissed it) and answers with no headline; an automatic one
-    answers with the computed stand-in. Then a stored card that stands. Then a
-    finished job for this key that stored nothing — the model gave no answer —
-    whose computed card is today's, and so fresh. Last, whatever is stored,
-    marked as the older card it is.
-    """
-    _, day = briefing.now_day()
-    key = _key(account, day, lang)
-    job = briefing.job_for(account, key)
-    stored = _stored(account)
-    if job is not None and not job.done:
-        if job.computed is None:
-            answer = _empty(day)
-            answer.pending = True
-            return answer
-        return _answer(job.computed, day, fresh=True, pending=True)
-    if stored is not None and _stands(stored, day, lang, key):
-        return _answer(stored, day, fresh=True)
-    if job is not None:
-        # Done, and nothing fresh on disk: the model gave nothing back (or the
-        # save failed) — its own card if it has one, else the stand-in.
-        fallback = job.action or job.computed
-        if fallback is not None:
-            return _answer(fallback, day, fresh=True)
-    if stored is None:
-        return _empty(day)
-    return _answer(stored, day, fresh=False)
-
-
-def _key(account, day, lang: str) -> tuple:
-    """`briefing.key_for` this account now: its last session and the wording
-    of its brief."""
-    from stocks.web import auth
-
-    try:
-        prefs = auth.load_prefs(account.prefs)
-        sig = daily_routines.signature(daily_routines.load(prefs, account.chat))
-    except Exception:  # noqa: BLE001 — read as no brief
-        sig = ""
-    return briefing.key_for(day, lang, _last_session(account), sig)
-
-
-def _stands(stored, day, lang: str, key: tuple) -> bool:
-    """`daily.is_fresh`, and written for the brief the reader has now: one
-    saved, reworded or dropped since — here, in the chat or by switching
-    memory off — rewrites the card."""
-    return daily.is_fresh(stored, day, lang, key[2] or None) and (
-        stored.brief_sig == key[3])
-
-
-def _last_session(account) -> str | None:
-    """The newest close date across this account's holdings, ISO, or None.
-
-    A card is stale the moment a session it does not quote has closed, and the
-    calendar cannot see that. Read off the book's own shared price download, so
-    it costs nothing a portfolio read has not already paid for.
-    """
-    db = str(account.db)
-    closes = loaders.held_closes(db, loaders.db_mtime(db))
-    latest = [s.index[-1] for s in closes.values() if not s.empty]
-    return str(pd.Timestamp(max(latest)).date()) if latest else None
 
 
 @router.get("/movers", response_model=Movers, summary="What moved")

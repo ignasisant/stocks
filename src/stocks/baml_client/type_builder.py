@@ -20,7 +20,7 @@ from .globals import DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIM
 class TypeBuilder(type_builder.TypeBuilder):
     def __init__(self):
         super().__init__(classes=set(
-          ["ActionCall","AlertRule","AnalysisPoint","AnalysisReply","BriefSection","CardLine","CardReply","ColumnMap","Columns","CryptoColumns","CryptoMap","LessonOp","LessonOps","PeerPicks","QueryPlan","RoutineAnswer","RoutinePlan","RoutinePlans","SkillPick","StatementPage","StatementRow",]
+          ["ActionCall","AlertRule","AnalysisPoint","AnalysisReply","BriefSection","CardLine","CardReply","ColumnMap","Columns","CryptoColumns","CryptoMap","LessonOp","LessonOps","MarketNote","MarketReply","PeerPicks","QueryPlan","RoutineAnswer","RoutinePlan","RoutinePlans","SectionNote","SkillPick","StatementPage","StatementRow",]
         ), enums=set(
           ["AssetClass","CryptoLayout","DocumentKind",]
         ), runtime=DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIME)
@@ -43,7 +43,7 @@ class TypeBuilder(type_builder.TypeBuilder):
 
 
     # #########################################################################
-    # Generated classes 21
+    # Generated classes 24
     # #########################################################################
 
     @property
@@ -99,6 +99,14 @@ class TypeBuilder(type_builder.TypeBuilder):
         return LessonOpsViewer(self)
 
     @property
+    def MarketNote(self) -> "MarketNoteViewer":
+        return MarketNoteViewer(self)
+
+    @property
+    def MarketReply(self) -> "MarketReplyViewer":
+        return MarketReplyViewer(self)
+
+    @property
     def PeerPicks(self) -> "PeerPicksViewer":
         return PeerPicksViewer(self)
 
@@ -117,6 +125,10 @@ class TypeBuilder(type_builder.TypeBuilder):
     @property
     def RoutinePlans(self) -> "RoutinePlansViewer":
         return RoutinePlansViewer(self)
+
+    @property
+    def SectionNote(self) -> "SectionNoteViewer":
+        return SectionNoteViewer(self)
 
     @property
     def SkillPick(self) -> "SkillPickViewer":
@@ -272,7 +284,7 @@ class DocumentKindValues:
 
 
 # #########################################################################
-# Generated classes 21
+# Generated classes 24
 # #########################################################################
 
 class ActionCallAst:
@@ -625,7 +637,7 @@ class CardReplyAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
         self._bldr = _tb.class_("CardReply")
-        self._properties: typing.Set[str] = set([  "headline",  "items",  "focus",  "routines",  "sections",  ])
+        self._properties: typing.Set[str] = set([  "headline",  "items",  "focus",  "routines",  "sections",  "today",  ])
         self._props = CardReplyProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
@@ -672,6 +684,10 @@ class CardReplyProperties:
     @property
     def sections(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("sections"))
+    
+    @property
+    def today(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("today"))
     
     
 
@@ -1086,6 +1102,92 @@ class LessonOpsProperties:
     
 
 
+class MarketNoteAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("MarketNote")
+        self._properties: typing.Set[str] = set([  "topic",  "line",  ])
+        self._props = MarketNoteProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "MarketNoteProperties":
+        return self._props
+
+
+class MarketNoteViewer(MarketNoteAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class MarketNoteProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def topic(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("topic"))
+    
+    @property
+    def line(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("line"))
+    
+    
+
+
+class MarketReplyAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("MarketReply")
+        self._properties: typing.Set[str] = set([  "headline",  "lines",  ])
+        self._props = MarketReplyProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "MarketReplyProperties":
+        return self._props
+
+
+class MarketReplyViewer(MarketReplyAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class MarketReplyProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def headline(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("headline"))
+    
+    @property
+    def lines(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("lines"))
+    
+    
+
+
 class PeerPicksAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
@@ -1297,6 +1399,49 @@ class RoutinePlansProperties:
     @property
     def plans(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("plans"))
+    
+    
+
+
+class SectionNoteAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("SectionNote")
+        self._properties: typing.Set[str] = set([  "id",  "note",  ])
+        self._props = SectionNoteProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "SectionNoteProperties":
+        return self._props
+
+
+class SectionNoteViewer(SectionNoteAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class SectionNoteProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def id(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("id"))
+    
+    @property
+    def note(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("note"))
     
     
 

@@ -68,6 +68,9 @@ DAILY_ACTIONS = {
     "repurchase_clear": "rebuy",
     "low_52w": "consider",
 }
+# The Today page's insider rows: a cluster of insiders buying is a name worth
+# a look — the rest of the page (news, comparisons) is read, not decided.
+TODAY_ACTIONS = {"insider_cluster": "consider"}
 # Review verdicts that propose a move (held: sell, trim, add; outside: buy).
 REVIEW_ACTIONS = ("sell", "trim", "add", "buy")
 # Chat proposals about what to own or watch. The ledger edits are bookkeeping
@@ -385,6 +388,28 @@ def from_card(items: Iterable[dict], facts: dict) -> list[Shown]:
                          ticker=ticker, line=str(item.get("line") or ""),
                          reasons=(kind,), snapshot=snapshot))
     return out
+
+
+def from_today(sections: Iterable[dict]) -> list[Shown]:
+    """The Today rows that propose something: an insider cluster buy. The
+    comparisons' verdicts are the Review page's (`from_review`), and a
+    headline proposes nothing."""
+    out = []
+    for sec in sections or []:
+        for row in sec.get("rows") or []:
+            data = row.get("data") or {}
+            if row.get("kind") != "insider" or not data.get("cluster_buy"):
+                continue
+            tickers = row.get("tickers") or []
+            out.append(Shown(
+                source="daily", subject=str(row.get("key") or ""),
+                action=TODAY_ACTIONS["insider_cluster"],
+                ticker=str(tickers[0]) if tickers else "",
+                line=str(row.get("line") or ""), reasons=("insider_cluster",),
+                snapshot={k: v for k, v in data.items()
+                          if k in ("buyers", "buy_value", "net_value", "currency",
+                                   "latest")}))
+    return [s for s in out if s.subject]
 
 
 def from_review(rows: Iterable) -> list[Shown]:

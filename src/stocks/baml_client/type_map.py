@@ -55,6 +55,12 @@ type_map = {
     "types.LessonOps": types.LessonOps,
     "stream_types.LessonOps": stream_types.LessonOps,
 
+    "types.MarketNote": types.MarketNote,
+    "stream_types.MarketNote": stream_types.MarketNote,
+
+    "types.MarketReply": types.MarketReply,
+    "stream_types.MarketReply": stream_types.MarketReply,
+
     "types.PeerPicks": types.PeerPicks,
     "stream_types.PeerPicks": stream_types.PeerPicks,
 
@@ -69,6 +75,9 @@ type_map = {
 
     "types.RoutinePlans": types.RoutinePlans,
     "stream_types.RoutinePlans": stream_types.RoutinePlans,
+
+    "types.SectionNote": types.SectionNote,
+    "stream_types.SectionNote": stream_types.SectionNote,
 
     "types.SkillPick": types.SkillPick,
     "stream_types.SkillPick": stream_types.SkillPick,

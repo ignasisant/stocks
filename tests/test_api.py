@@ -585,6 +585,9 @@ WRITES = {
     # the card beside the prefs — the sector read's twin, and refused to a
     # token for the same reason.
     ("/v1/daily", "post"),
+    # The Today page asking for the same card: one job shared with `/daily`,
+    # so the same allowance and the same store.
+    ("/v1/today", "post"),
     # Its "see more": the same allowance spent the first time, and the
     # paragraphs stored onto the same card.
     ("/v1/daily/analysis", "post"),

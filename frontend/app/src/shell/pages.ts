@@ -53,6 +53,14 @@ export const PAGES: Page[] = [
     aliases: [""],
   },
   {
+    // Top group, beside Home: the day's read is the other place a reader
+    // starts from, not a portfolio or market tool.
+    slug: "today",
+    label: "nav.today",
+    icon: "wb_sunny",
+    component: lazy(() => import("../pages/today/Today")),
+  },
+  {
     slug: "portfolio",
     label: "nav.portfolio",
     section: "nav.section_portfolio",
@@ -133,7 +141,7 @@ export const PAGES: Page[] = [
  * rail entry is behind the bar's "More". `tests/test_frontend_nav_parity.py`
  * holds the two lists together.
  */
-export const BOTTOM = ["home", "portfolio", "sector", "profile"];
+export const BOTTOM = ["home", "today", "portfolio", "profile"];
 
 /**
  * The rail's entries under their headers, in registry order — the shape of

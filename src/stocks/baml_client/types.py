@@ -55,7 +55,7 @@ class DocumentKind(str, Enum):
     Neither = "Neither"
 
 # #########################################################################
-# Generated classes (21)
+# Generated classes (24)
 # #########################################################################
 
 class ActionCall(BaseModel):
@@ -110,6 +110,7 @@ class CardReply(BaseModel):
     focus: typing.Optional[typing.List[str]] = None
     routines: typing.Optional[typing.List["RoutineAnswer"]] = None
     sections: typing.Optional[typing.List["BriefSection"]] = None
+    today: typing.Optional[typing.List["SectionNote"]] = None
 
 class ColumnMap(BaseModel):
     header_row: typing.Optional[int] = Field(default=None, description='index of the row holding the column headers')
@@ -173,6 +174,14 @@ class LessonOp(BaseModel):
 class LessonOps(BaseModel):
     ops: typing.Optional[typing.List["LessonOp"]] = None
 
+class MarketNote(BaseModel):
+    topic: typing.Optional[str] = Field(default=None, description='trend, sector, rates, macro or crypto')
+    line: typing.Optional[str] = None
+
+class MarketReply(BaseModel):
+    headline: typing.Optional[str] = None
+    lines: typing.Optional[typing.List["MarketNote"]] = None
+
 class PeerPicks(BaseModel):
     symbols: typing.Optional[typing.List[str]] = Field(default=None, description='Yahoo Finance symbols, exchange suffix included')
 
@@ -192,6 +201,10 @@ class RoutinePlan(BaseModel):
 
 class RoutinePlans(BaseModel):
     plans: typing.Optional[typing.List["RoutinePlan"]] = None
+
+class SectionNote(BaseModel):
+    id: typing.Optional[str] = Field(default=None, description='news, insiders or compare, copied exactly')
+    note: typing.Optional[str] = None
 
 class SkillPick(BaseModel):
     skills: typing.Optional[typing.List[str]] = Field(default=None, description='skill ids from the catalog')
@@ -216,7 +229,7 @@ class StatementRow(BaseModel):
 
 
 # #########################################################################
-# Model rebuilds (21)
+# Model rebuilds (24)
 # #########################################################################
 # Resolve string forward references now that every model above is defined so
 # class declaration order never breaks Pydantic construction (issue #793).
@@ -235,11 +248,14 @@ CryptoColumns.model_rebuild()
 CryptoMap.model_rebuild()
 LessonOp.model_rebuild()
 LessonOps.model_rebuild()
+MarketNote.model_rebuild()
+MarketReply.model_rebuild()
 PeerPicks.model_rebuild()
 QueryPlan.model_rebuild()
 RoutineAnswer.model_rebuild()
 RoutinePlan.model_rebuild()
 RoutinePlans.model_rebuild()
+SectionNote.model_rebuild()
 SkillPick.model_rebuild()
 StatementPage.model_rebuild()
 StatementRow.model_rebuild()
