@@ -19,6 +19,7 @@ from stocks.analysis.listing import quote_unit
 from stocks.analysis.moat import moat_score
 from stocks.data import fetch, fx
 from stocks.data.fundamentals import RawFundamentals
+from stocks.portfolio import consistency
 
 
 @dataclass(frozen=True)
@@ -399,21 +400,35 @@ def _statement_fx(info: dict) -> float | None:
         return None
 
 
-def _dividend(info: dict, owner_fcf: float | None, paid: float | None = None) -> dict:
-    """Yield, payout and the dividend against the owner's free cash flow.
+def _dividend(
+    info: dict,
+    owner_fcf: float | None,
+    paid: float | None = None,
+    *,
+    symbol: str = "",
+) -> dict:
+    """Yield, payout and the dividend against the owner's free cash flow
+    (`paid` and `owner_fcf` over the same years, see `_dividend_cover`).
 
-    The yield is the rate over the price, else Yahoo's trailing yield. A line
-    quoted in a minor unit (London's pence) is the exception: Yahoo gives its
-    rate in the dividend's own major currency — HSBC's in dollars over a
-    price in pence — and its trailing yield off the same mismatch, so there
-    only `dividendYield`, which yfinance answers in percent, reads true.
-    Out-of-range figures are the feed's, not a payer's, and read as missing.
+    The yield is Yahoo's `dividendYield`, which yfinance answers in percent
+    and which reads true across listings. Without it, the rate over the
+    price, else Yahoo's trailing yield, but only where the dividend and the
+    price share a unit: London's pence carry a rate in the dividend's major
+    currency (HSBC's dollars over a price in pence), and an ADR's rate and
+    trailing yield come in the filing currency (TSMC's TWD over a dollar
+    price read 5.9% for a 1% payer). Out-of-range figures are the feed's,
+    not a payer's, and read as missing.
     """
     price = info.get("currentPrice") or info.get("regularMarketPrice")
     rate = info.get("dividendRate")
-    if quote_unit(info.get("currency"))[1] != 1.0:
-        pct = info.get("dividendYield")
-        y = pct / 100 if isinstance(pct, (int, float)) else None
+    pct = info.get("dividendYield")
+    quoted = info.get("currency")
+    filed = info.get("financialCurrency")
+    one_unit = quote_unit(quoted)[1] == 1.0 and filed in (None, quoted)
+    if isinstance(pct, (int, float)):
+        y = pct / 100
+    elif not one_unit:
+        y = None
     elif rate and price:
         y = rate / price
     else:
@@ -426,9 +441,43 @@ def _dividend(info: dict, owner_fcf: float | None, paid: float | None = None) ->
         ),
         "dividend_fcf": None,
     }
+    for field, raw, kept in (
+        ("yield", y, out["dividend_yield"]),
+        ("payout", payout, out["payout_ratio"]),
+    ):
+        if isinstance(raw, (int, float)) and raw > 0 and kept is None:
+            consistency.report(
+                "feed_dividend",
+                source="feed",
+                ticker=symbol,
+                key=field,
+                field=field,
+                value=round(float(raw), 3),
+            )
     if paid is not None and paid < 0 and owner_fcf and owner_fcf > 0:
         out["dividend_fcf"] = -paid / owner_fcf
     return out
+
+
+def _dividend_cover(cashflow: pd.DataFrame) -> tuple[float | None, float | None]:
+    """Owner's free cash flow and dividends paid, each summed over the filed
+    years that carry both: one year's dip (Coca-Cola's 2024 tax deposit) is
+    not a payout the business cannot keep. Both in the filing currency."""
+    paid = _row(cashflow, "Cash Dividends Paid")
+    if paid is None:
+        paid = _row(cashflow, "Common Stock Dividend Paid")
+    fcf = _row(cashflow, "Free Cash Flow")
+    if paid is None or fcf is None:
+        return None, None
+    sbc = _row(cashflow, "Stock Based Compensation")
+    years = [y for y in paid.index if y in fcf.index]
+    if not years:
+        return None, None
+    owner = 0.0
+    for y in years:
+        pay = float(sbc[y]) if sbc is not None and y in sbc.index else 0.0
+        owner += float(fcf[y]) - max(pay, 0.0)
+    return owner, float(sum(float(paid[y]) for y in years))
 
 
 def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
@@ -473,10 +522,30 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
         if ebit is not None and tax_rate is not None and invested
         else None
     )
+    # Not a KPI: the return on the capital the business runs on, for the
+    # review engine. An acquirer's invested capital carries the premium it
+    # paid (goodwill) and its operating profit the write-down of what it
+    # bought (amortisation of intangibles); neither is the business's own.
+    goodwill = _latest(raw.balance, "Goodwill")
+    amortised = _latest(raw.income, "Amortization Of Intangibles Income Statement")
+    own = invested - goodwill if invested and goodwill and goodwill > 0 else None
+    m["roic_ex_goodwill"] = (
+        (ebit + (amortised or 0.0)) * (1 - tax_rate) / own
+        if own is not None and own > 0 and ebit is not None and tax_rate is not None
+        else None
+    )
 
     fcf = _latest(raw.cashflow, "Free Cash Flow")
     m["fcf"] = fcf
     rate = _statement_fx(info)
+    if rate is None:
+        consistency.report(
+            "feed_currency",
+            source="feed",
+            ticker=raw.ticker,
+            filed=str(info.get("financialCurrency")),
+            quoted=str(info.get("currency")),
+        )
     cap = m["market_cap"]
     m["fcf_yield"] = fcf * rate / cap if fcf and cap and rate else None
     # Yahoo's FCF adds share-based pay back as if it cost nothing; for a
@@ -539,11 +608,7 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     burn = -fcf if fcf is not None and fcf < 0 else None
     m["runway_years"] = cash_now / burn if burn and cash_now else None
 
-    # Both sides in the filing currency: no rate involved.
-    paid = _latest(raw.cashflow, "Cash Dividends Paid")
-    if paid is None:
-        paid = _latest(raw.cashflow, "Common Stock Dividend Paid")
-    m.update(_dividend(info, owner, paid))
+    m.update(_dividend(info, *_dividend_cover(raw.cashflow), symbol=raw.ticker))
 
     net_income = _latest(raw.income, "Net Income")
     m["cash_conversion"] = fcf / net_income if fcf and net_income else None

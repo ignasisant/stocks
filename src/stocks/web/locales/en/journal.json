@@ -41,6 +41,7 @@
   "journal.action_sell": "Sell",
   "journal.action_add": "Add",
   "journal.action_buy": "Buy",
+  "journal.action_stay": "Stay put",
   "journal.action_watch": "Follow",
   "journal.action_unwatch": "Unfollow",
   "journal.kind_alert_hit": "price alert reached",

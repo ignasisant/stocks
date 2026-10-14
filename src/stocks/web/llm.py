@@ -549,9 +549,16 @@ _FREE_BACKEND_DEFAULTS: tuple[tuple[str, str, str], ...] = (
 # answers 503 "Service temporarily overloaded" most days, and with a single
 # model that was the end of the backend. Ordered, after the "<id>_model" one;
 # "<id>_fallback_models" in [free_llm] (comma-separated) replaces the list.
+#
+# Checked live 2026-10-14: openai/gpt-oss-120b:free and
+# meta-llama/llama-3.3-70b-instruct:free went paid-only (404 "unavailable for
+# free"); the google/* and poolside free slugs 429 on the shared upstream pool.
+# Best answers first: the 120B nemotron in ~3 s, dots in ~7 s, the lightning
+# one last (~20 s).
 _FREE_FALLBACK_MODELS: dict[str, tuple[str, ...]] = {
-    "openrouter": ("openai/gpt-oss-120b:free",
-                   "meta-llama/llama-3.3-70b-instruct:free"),
+    "openrouter": ("nvidia/nemotron-3-super-120b-a12b:free",
+                   "dots-studio/dots-3-note-preview:free",
+                   "nvidia/nemotron-3.5-lightning:free"),
 }
 
 # Tokens per minute a backend's free tier admits, prompt included. One request
@@ -564,6 +571,35 @@ _FREE_TPM: dict[str, int] = {"groq": 8000}
 # Our count is tiktoken's o200k_base, not the backend's own tokenizer and chat
 # template, so plan to this share of the limit.
 _TPM_MARGIN = 0.9
+
+# How far a backend's count ran over ours, learned from its 413 ("Limit 8000,
+# Requested 8095" for a thread we had put under 7200, prod 2026-10-14). The
+# margin above covers prose; a turn heavy with tables and numbers tokenizes
+# worse on their side. Kept for the life of the process, only ever raised.
+_tpm_skew: dict[str, float] = {}
+_REQUESTED = re.compile(r"Limit (\d+), Requested (\d+)")
+
+
+def _tpm_cap(b: _FreeBackend) -> int:
+    """Tokens, by our count, a request to `b` may carry; 0 = uncapped."""
+    if not b.tpm:
+        return 0
+    return int(b.tpm * _TPM_MARGIN / _tpm_skew.get(b.id, 1.0))
+
+
+def _learn_skew(b: _FreeBackend, exc: Exception, sent: int) -> bool:
+    """Record how far over its cap `b` counted a request we sized at `sent`
+    tokens. True when the failure was that 413, so a shorter retry can fit."""
+    if getattr(exc, "status_code", None) != 413 or not sent:
+        return False
+    m = _REQUESTED.search(str(exc))
+    if not m:
+        return False
+    skew = int(m.group(2)) / sent
+    if skew > _tpm_skew.get(b.id, 1.0):
+        _tpm_skew[b.id] = skew
+        obs.warn("llm.free.tpm_skew", backend=b.id, skew=round(skew, 3))
+    return True
 
 # The SDK's defaults (two retries honouring retry-after, a 600 s timeout) are
 # for a caller with one backend. The chain has a next one: groq's 429s ask for
@@ -611,11 +647,19 @@ _CHAT_MODEL_PREFS = (
 
 def _retired_model(exc: Exception) -> bool:
     """True when a failure says the *model* is gone rather than the tier being
-    rate-limited, out of credit or the key being wrong."""
+    rate-limited, out of credit or the key being wrong. OpenRouter's way of
+    saying it is a 404 "This model is unavailable for free" once a :free slug
+    goes paid-only."""
     if getattr(exc, "status_code", None) not in (None, 404):
         return False
     text = str(exc).lower()
-    return "model_not_found" in text or "does not exist" in text
+    return ("model_not_found" in text or "does not exist" in text
+            or "unavailable for free" in text)
+
+
+# Slugs that answered "retired", per backend, for the life of the process: a
+# fallback model that went paid costs one call per boot, not one per chat.
+_free_gone: set[tuple[str, str]] = set()
 
 
 def _pick_chat_model(ids: list[str]) -> str | None:
@@ -629,12 +673,19 @@ def _pick_chat_model(ids: list[str]) -> str | None:
 
 
 def _live_model(b: _FreeBackend) -> str | None:
-    """A model this backend actually serves right now, or None if it won't say."""
+    """A model this backend actually serves right now, or None if it won't say.
+
+    OpenRouter lists every paid model beside the free ones; a :free slug is
+    only ever replaced by another :free slug not already known to be gone."""
     from openai import OpenAI
 
     try:
         client = OpenAI(api_key=b.api_key, base_url=b.base_url or None)
-        return _pick_chat_model([m.id for m in client.models.list()])
+        ids = [m.id for m in client.models.list()]
+        if b.model.endswith(":free"):
+            ids = [i for i in ids
+                   if i.endswith(":free") and (b.id, i) not in _free_gone]
+        return _pick_chat_model(ids)
     except Exception as exc:  # a backend that hides /models keeps its retired slug
         obs.warn("llm.free.model_list_failed", backend=b.id,
                  error_type=type(exc).__name__, error=str(exc)[:200])
@@ -719,18 +770,20 @@ def _free_backends() -> list[_FreeBackend]:
             continue
         model = (_free_live_model.get(bid)
                  or cfg.get(f"{bid}_model", default_model))
+        tried = {model}
         try:
             tpm = int(cfg.get(f"{bid}_tpm") or _FREE_TPM.get(bid, 0))
         except (TypeError, ValueError):
             tpm = _FREE_TPM.get(bid, 0)
         stream = _openai_compat_stream(base_url, **_FREE_CLIENT)
+        # A gone primary stays in: its failure is what asks /models for a
+        # replacement. Gone fallbacks are only dead hops.
         out.append(_FreeBackend(bid, key, model, stream, base_url, tpm))
         extra = cfg.get(f"{bid}_fallback_models")
         more = (tuple(m.strip() for m in str(extra).split(","))
                 if extra is not None else _FREE_FALLBACK_MODELS.get(bid, ()))
-        tried = {model}
         for alt in more:
-            if alt and alt not in tried:
+            if alt and alt not in tried and (bid, alt) not in _free_gone:
                 tried.add(alt)
                 out.append(_FreeBackend(bid, key, alt, stream, base_url, tpm,
                                         primary=False))
@@ -763,7 +816,7 @@ def _free_plan(backends: list[_FreeBackend], system: str, messages: list[dict],
             continue
         if need is None:
             need = tokens.count(system) + tokens.count_messages(messages) + extra
-        cap = int(b.tpm * _TPM_MARGIN)
+        cap = _tpm_cap(b)
         budget = cap - extra  # what system and thread may take between them
         if need <= cap:
             fits.append((b, messages))
@@ -777,18 +830,45 @@ def _free_plan(backends: list[_FreeBackend], system: str, messages: list[dict],
     return fits + over
 
 
+class _NoText(RuntimeError):
+    """A backend that answered 200 and streamed nothing."""
+
+
+def _sent(system: str, thread: list[dict]) -> int:
+    from stocks.chat import tokens
+
+    return tokens.count(system) + tokens.count_messages(thread)
+
+
+def _refit(b: _FreeBackend, system: str, messages: list[dict],
+           extra: int = 0) -> list[dict] | None:
+    """`messages` cut to `b`'s cap as now known, or None when the system prompt
+    alone leaves no room."""
+    from stocks.chat import tokens
+
+    budget = _tpm_cap(b) - extra
+    if tokens.count(system) >= budget:
+        return None
+    return tokens.fit(messages, system=system, budget=budget)
+
+
 def _free_stream(api_key, model, system, messages):
     del api_key, model  # the chain supplies its own key and model per backend
     backends = _free_backends()
     if not backends:
         raise FreeTierExhausted("no free backend configured")
     started = False
-    for attempt, (b, thread) in enumerate(_free_plan(backends, system, messages)):
+    plan = _free_plan(backends, system, messages)
+    refitted: set[str] = set()
+    attempt = -1
+    while (attempt := attempt + 1) < len(plan):
+        b, thread = plan[attempt]
         if b.id in _free_dead:
             continue
         # Grows by at most one entry: a retired slug appends the replacement
         # /models named, so the same backend gets a second shot before the
-        # chain moves on. A short rate-limit wait re-queues the same model once.
+        # chain moves on. A short rate-limit wait, or an empty answer, re-queues
+        # the same model once.
         candidates = [b.model]
         waited = False
         while candidates:
@@ -802,7 +882,7 @@ def _free_stream(api_key, model, system, messages):
                 if not got:
                     # OpenRouter's upstream failure can arrive as a 200 with no
                     # choices, which streams to nothing: not an answer.
-                    raise RuntimeError("the backend streamed no text")
+                    raise _NoText("the backend streamed no text")
                 if model != b.model and b.primary:
                     _free_live_model[b.id] = model  # proven: skip the dead slug
                 obs.event("llm.free.answered", backend=b.id, model=model,
@@ -824,6 +904,21 @@ def _free_stream(api_key, model, system, messages):
                          error=str(exc)[:300],
                          status=getattr(exc, "status_code", None))
                 _note_dead(b, exc)
+                if (b.id not in refitted
+                        and _learn_skew(b, exc, _sent(system, thread))):
+                    # Their count ran over ours: the same backend, the thread
+                    # cut to the corrected cap, after every other one has had
+                    # its turn with the whole of it.
+                    refitted.add(b.id)
+                    if (cut := _refit(b, system, messages)) is not None:
+                        plan.append((b, cut))
+                    break
+                if not waited and isinstance(exc, _NoText):
+                    # Usually a one-off on the shared free pool (3 tries of
+                    # nemotron-3-ultra on 2026-10-14: 1 answer, 2 empties).
+                    waited = True
+                    candidates.insert(0, model)
+                    continue
                 wait = None if waited else _short_wait(exc)
                 if wait is not None:
                     waited = True
@@ -832,6 +927,9 @@ def _free_stream(api_key, model, system, messages):
                     continue
                 if not _retired_model(exc):
                     break
+                _free_gone.add((b.id, model))
+                if not b.primary:
+                    break  # the primary's /models lookup already covers it
                 alt = _live_model(b)
                 if not alt or alt == model:
                     break
@@ -862,11 +960,14 @@ def _free_tools(api_key, model, system, messages, tools, execute, rounds):
     schema = tokens.count(json.dumps(
         [{"name": t.name, "description": t.description, "parameters": t.schema}
          for t in tools]))
-    for attempt, (b, thread) in enumerate(
-            _free_plan(backends, system, messages, extra=schema)):
+    plan = _free_plan(backends, system, messages, extra=schema)
+    refitted: set[str] = set()
+    attempt = -1
+    while (attempt := attempt + 1) < len(plan):
+        b, thread = plan[attempt]
         if b.id in _free_dead:
             continue
-        cap = int(b.tpm * _TPM_MARGIN) if b.tpm else 0
+        cap = _tpm_cap(b)
         for retry in range(2):
             try:
                 return _openai_compat_tools(b.base_url or None, **_FREE_CLIENT)(
@@ -878,6 +979,17 @@ def _free_tools(api_key, model, system, messages, tools, execute, rounds):
                          error=str(exc)[:300],
                          status=getattr(exc, "status_code", None))
                 _note_dead(b, exc)
+                # Each round is squeezed under `cap`, and the one that failed
+                # may be a later, fuller one than the thread: `cap` is the
+                # nearest thing to what was sent, and errs to a smaller skew.
+                if b.id not in refitted and _learn_skew(b, exc, cap):
+                    refitted.add(b.id)
+                    if (cut := _refit(b, system, messages, schema)) is not None:
+                        plan.append((b, cut))
+                    break
+                if _retired_model(exc):
+                    _free_gone.add((b.id, b.model))
+                    break
                 wait = _short_wait(exc) if retry == 0 else None
                 if wait is None:
                     break

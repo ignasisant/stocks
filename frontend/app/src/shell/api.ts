@@ -16,7 +16,7 @@ import { begin } from "./activity";
 import { noteFreshness, noteRefreshing } from "./freshness";
 import { keepable, landed, recall } from "./keep";
 
-const BASE = "/api/v1";
+export const BASE = "/api/v1";
 
 /**
  * A short memo of GET answers, keyed by path and query.

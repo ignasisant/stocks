@@ -1,6 +1,7 @@
 """Fundamentals tests — synthetic data, no network."""
 
 import pandas as pd
+import pytest
 
 from stocks.analysis.fundamentals import (
     KPI_SOURCES,
@@ -59,6 +60,17 @@ def sample_raw() -> RawFundamentals:
     return RawFundamentals("TEST", info, income, balance, cashflow)
 
 
+def test_an_acquirers_return_is_read_on_its_own_capital_too():
+    raw = sample_raw()
+    assert compute_metrics(raw)["roic_ex_goodwill"] is None  # no goodwill
+    raw.balance.loc["Goodwill"] = [120e9] * 5
+    raw.income.loc["Amortization Of Intangibles Income Statement"] = [10e9] * 5
+    m = compute_metrics(raw)
+    # (120e9 EBIT + 10e9 amortisation) * (1 - 0.15) / (200e9 - 120e9)
+    assert m["roic_ex_goodwill"] == pytest.approx(130e9 * 0.85 / 80e9)
+    assert m["roic"] == pytest.approx(0.51)
+
+
 def test_cagr_basic():
     assert abs(cagr(100, 200, 4) - (2**0.25 - 1)) < 1e-9
     assert cagr(0, 100, 4) is None
@@ -104,6 +116,20 @@ def test_compute_metrics_rebuilds_the_ev_multiples_the_feed_left_out():
     assert abs(m["ps"] - 3.8e12 / 400e9) < 1e-9
 
 
+def test_a_dividend_is_covered_over_the_filed_years_not_one_dip():
+    # Coca-Cola's 2024: a one-off tax deposit cut free cash flow under the
+    # dividend for one year; four years of it covered the payout.
+    raw = sample_raw()
+    raw.cashflow.loc["Free Cash Flow"] = [20e9, 90e9, 88e9, 82e9, 70e9]
+    raw.cashflow.loc["Stock Based Compensation"] = [5e9] * 5
+    raw.cashflow.loc["Cash Dividends Paid"] = [-19e9, -19e9, -18e9, None, None]
+    m = compute_metrics(raw)
+    # Only the years with both rows: 56bn paid over (20+90+88 - 3*5)bn.
+    assert abs(m["dividend_fcf"] - 56e9 / 183e9) < 1e-9
+    raw.cashflow = raw.cashflow.drop("Cash Dividends Paid")
+    assert compute_metrics(raw)["dividend_fcf"] is None
+
+
 def test_compute_metrics_reads_the_dividend_in_the_quotes_own_unit():
     raw = sample_raw()
     raw.info.update(dividendRate=5.0, payoutRatio=0.4, dividendYield=2.0)
@@ -111,12 +137,31 @@ def test_compute_metrics_reads_the_dividend_in_the_quotes_own_unit():
     m = compute_metrics(raw)
     assert abs(m["dividend_yield"] - 0.02) < 1e-9
     assert m["payout_ratio"] == 0.4
-    assert abs(m["dividend_fcf"] - 19e9 / 95e9) < 1e-9
-    # No rate: Yahoo's trailing yield; a yield no payer has is the feed's.
+    # Five filed years of 19bn paid over 95+90+88+82+70bn of free cash flow.
+    assert abs(m["dividend_fcf"] - 95e9 / 425e9) < 1e-9
+    # No percent: the rate over the price, then Yahoo's trailing yield; a
+    # yield no payer has is the feed's.
+    del raw.info["dividendYield"]
+    assert abs(compute_metrics(raw)["dividend_yield"] - 5.0 / 250.0) < 1e-9
     del raw.info["dividendRate"]
     raw.info["trailingAnnualDividendYield"] = 0.031
     assert compute_metrics(raw)["dividend_yield"] == 0.031
     raw.info["trailingAnnualDividendYield"] = 0.9
+    assert compute_metrics(raw)["dividend_yield"] is None
+
+
+def test_an_adrs_yield_is_not_read_off_its_filing_currency():
+    # TSM as Yahoo gives it: a trailing yield of TWD over a dollar price.
+    raw = sample_raw()
+    raw.info.update(
+        currency="USD",
+        financialCurrency="TWD",
+        trailingAnnualDividendRate=26.0,
+        trailingAnnualDividendYield=0.0585,
+        dividendYield=0.85,
+    )
+    assert abs(compute_metrics(raw)["dividend_yield"] - 0.0085) < 1e-9
+    del raw.info["dividendYield"]
     assert compute_metrics(raw)["dividend_yield"] is None
 
 
@@ -365,3 +410,33 @@ def test_net_debt_over_a_loss_is_no_multiple():
     raw.income.loc["EBITDA"] = [-1e9] * 5
     raw.balance.loc["Net Debt"] = [-2.5e9] * 5
     assert compute_metrics(raw)["net_debt_ebitda"] is None
+
+
+def test_a_dividend_the_feed_got_wrong_is_logged_not_kept(monkeypatch):
+    from stocks.analysis import fundamentals
+
+    seen = []
+    monkeypatch.setattr(
+        fundamentals.consistency, "report", lambda kind, **f: seen.append((kind, f))
+    )
+    raw = sample_raw()
+    raw.info.update(dividendYield=51.4, payoutRatio=0.4)
+    assert compute_metrics(raw)["dividend_yield"] is None
+    [(kind, fields)] = seen
+    assert kind == "feed_dividend" and fields["field"] == "yield"
+    assert fields["value"] == 0.514 and fields["ticker"] == raw.ticker
+
+
+def test_statements_in_a_currency_nothing_converts_are_logged(monkeypatch):
+    from stocks.analysis import fundamentals
+
+    seen = []
+    monkeypatch.setattr(
+        fundamentals.consistency, "report", lambda kind, **f: seen.append((kind, f))
+    )
+    monkeypatch.setattr(fundamentals, "_statement_fx", lambda info: None)
+    raw = sample_raw()
+    raw.info.update(currency="USD", financialCurrency="XYZ")
+    assert compute_metrics(raw)["fcf_yield"] is None
+    assert ("feed_currency", {"source": "feed", "ticker": raw.ticker,
+            "filed": "XYZ", "quoted": "USD"}) in seen

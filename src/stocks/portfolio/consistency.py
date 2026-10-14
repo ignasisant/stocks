@@ -55,10 +55,19 @@ Kind = Literal[
     "fee_in_coins",
     # A name the book holds that no price source quotes: carried at cost.
     "unpriced_held",
+    # A dividend yield or payout no payer has, dropped from the KPIs: the
+    # feed's unit or currency slipped (fundamentals).
+    "feed_dividend",
+    # Statements filed in one currency, the price quoted in another, and no
+    # rate between them: the cash-flow ratios read blank (fundamentals).
+    "feed_currency",
+    # A name the review page could not price on its cash flow: an FCF yield
+    # too high to be a price, or an enterprise value at or under zero.
+    "metric_suspect",
 ]
 KINDS: tuple[Kind, ...] = get_args(Kind)
 
-Source = Literal["import", "page", "doctor", "replay"]
+Source = Literal["import", "page", "doctor", "replay", "feed", "review"]
 SOURCES: tuple[Source, ...] = get_args(Source)
 
 # (kind, account, ticker, key) -> monotonic time it was last said. A book is

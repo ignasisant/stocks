@@ -154,7 +154,9 @@ def test_the_guest_list_is_not_silently_growing():
     # the book and cached fundamentals, `?add=` is a query param, no write.
     # 56: `GET /today` — the Today page's shared market read; a guest gets no
     # personal card (the route drops it), and the read never writes or spends.
-    assert len(guest.OPEN) == 56
+    # 57: `POST /client-error` — a guest's page breaks like anyone's; one log
+    # line, nothing on disk, metered per address (`guest.OPEN_WRITES`).
+    assert len(guest.OPEN) == 57
 
 
 def test_every_route_a_guest_may_read_is_a_read():

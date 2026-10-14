@@ -45,6 +45,8 @@ export type ReviewRow = {
   target_weight: number | null;
   /** Base-currency money to buy (+) or sell (-) to reach the target. */
   delta: number | null;
+  /** What an add would take beyond `delta` that the sales do not pay for. */
+  new_money?: number | null;
   /** Extra tax this year if the sale is made, in `plan.tax_currency`. */
   tax: number | null;
   /** First day a buy no longer undoes a loss sold inside the window. */
@@ -61,7 +63,14 @@ export type Review = {
   total: number | null;
   held: ReviewRow[];
   candidates: ReviewRow[];
-  plan: { sells: number; buys: number; tax: number | null; tax_currency: string };
+  plan: {
+    sells: number;
+    buys: number;
+    tax: number | null;
+    tax_currency: string;
+    /** The rows' `new_money` added up: adds that wait for new cash. */
+    new_money?: number;
+  };
   unpriced: number;
   /** Names whose figures missed the server's time budget; read unrated. */
   pending?: number;

@@ -47,5 +47,7 @@
   "activity.insiders": "Operaciones de directivos (SEC)",
   "activity.earnings": "Calendario de resultados",
   "activity.pulse": "Indicadores de mercado",
-  "activity.other": "Datos"
+  "activity.other": "Datos",
+  "common.crash": "Esta pantalla ha fallado. Recarga o abre otra.",
+  "common.reload": "Recargar"
 }

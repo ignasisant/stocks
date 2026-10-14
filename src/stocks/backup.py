@@ -21,6 +21,7 @@ configured; without it the commands refuse rather than silently do nothing.
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from stocks import obs, storage
 
@@ -118,7 +119,7 @@ def restore(stamp: str, only: str = "") -> int:
         )
     src_prefix = f"{PREFIX}{stamp}/{only}"
     count = 0
-    fields = {"only": only} if only else {}
+    fields: dict[str, Any] = {"only": only} if only else {}
     with obs.timed("backup.restore", stamp=stamp, **fields):
         for key in storage.list_keys(src_prefix):
             storage.copy_key(key, key.removeprefix(f"{PREFIX}{stamp}/"))

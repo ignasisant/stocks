@@ -3,6 +3,7 @@ import {
   CLEAR,
   applyFilter,
   planMoves,
+  waitingMoves,
   bucket,
   findRows,
   includeParam,
@@ -434,6 +435,35 @@ describe("review outside buys", () => {
     const { out, into } = planMoves(data);
     expect(out).toEqual([sell]);
     expect(into).toEqual([add, buy]);
+  });
+});
+
+describe("review stay and new money", () => {
+  const strong = row({ ticker: "ADBE", quality: 80, cheapness: 70, new_money: 300 });
+  const fair = row({
+    ticker: "PDD",
+    quality: 60,
+    cheapness: 55,
+    new_money: 200,
+    sector: "Technology",
+  });
+  const still = row({ ticker: "JNJ", reasons: ["close_call"] });
+  const data = review([fair, still, strong]);
+
+  it("lists the adds waiting for new money, best first", () => {
+    expect(waitingMoves(data)).toEqual([strong, fair]);
+  });
+
+  it("re-adds the new money from what a filter leaves", () => {
+    const tech = applyFilter(data, { ...CLEAR, sectors: ["technology"] });
+    expect(tech.plan.new_money).toBe(200);
+  });
+
+  it("tells the chat the plan is to stay, and what waits for money", () => {
+    const text = buildPrompt(data, t, "en");
+    expect(text).toContain("review.prompt_stay");
+    expect(text).not.toContain("review.prompt_plan");
+    expect(text).toContain("review.prompt_wait(ADBE, PDD)");
   });
 });
 

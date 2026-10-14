@@ -4008,6 +4008,13 @@ class ReviewRow(BaseModel):
         default=None,
         description="Base-currency amount to buy (+) or sell (-) to reach the target.",
     )
+    new_money: float | None = Field(
+        default=None,
+        description=(
+            "Base-currency amount an add would take that the plan's sales do "
+            "not pay for: what new money would buy, beyond `delta`."
+        ),
+    )
     tax: float | None = Field(
         default=None,
         description=(
@@ -4040,6 +4047,10 @@ class ReviewPlan(BaseModel):
     buys: float = 0.0
     tax: float | None = None
     tax_currency: str = ""
+    new_money: float = Field(
+        default=0.0,
+        description="The rows' `new_money` added up: adds that wait for new cash.",
+    )
 
 
 class ReviewNote(BaseModel):

@@ -47,5 +47,7 @@
   "activity.insiders": "Insider filings (SEC)",
   "activity.earnings": "Earnings calendar",
   "activity.pulse": "Market indicators",
-  "activity.other": "Data"
+  "activity.other": "Data",
+  "common.crash": "This screen broke. Reload, or open another one.",
+  "common.reload": "Reload"
 }

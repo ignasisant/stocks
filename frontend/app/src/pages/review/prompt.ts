@@ -16,6 +16,7 @@
 
 import { maybe, sectorKey } from "../sentiment/format";
 import { countryName } from "./countries";
+import { planMoves, waitingMoves } from "./filter";
 import { OWN_LABEL, foreign, longDay, metric, money, percent, score } from "./format";
 import type { Review, ReviewNote, ReviewRow } from "./types";
 
@@ -114,13 +115,23 @@ export function buildPrompt(data: Review, t: T, lang: string, filter = ""): stri
   ];
   if (filter) head.push(t("review.prompt_filter", { filter }));
   if (data.held.length) {
+    const { out, into } = planMoves(data);
     head.push(
-      t("review.prompt_plan", {
-        sells: money(data.plan.sells, data.base, lang) ?? "—",
-        buys: money(data.plan.buys, data.base, lang) ?? "—",
-        tax: money(data.plan.tax, data.plan.tax_currency, lang) ?? t("review.na"),
-      }),
+      out.length + into.length === 0
+        ? t("review.prompt_stay")
+        : t("review.prompt_plan", {
+            sells: money(data.plan.sells, data.base, lang) ?? "—",
+            buys: money(data.plan.buys, data.base, lang) ?? "—",
+            tax: money(data.plan.tax, data.plan.tax_currency, lang) ?? t("review.na"),
+          }),
     );
+    const waiting = waitingMoves(data);
+    if (waiting.length)
+      head.push(
+        t("review.prompt_wait", {
+          tickers: waiting.map((row) => row.symbol || row.ticker).join(", "),
+        }),
+      );
     // The book-level notes are the whole book's, filtered or not.
     for (const note of data.notes ?? [])
       head.push(noteText(note, data.plan.tax_currency, t, lang));

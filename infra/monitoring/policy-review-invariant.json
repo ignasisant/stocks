@@ -1,0 +1,20 @@
+{
+  "displayName": "stocks: sell/add plan broke an invariant",
+  "documentation": {
+    "content": "The /review read built a plan that cannot be right (`review.invariant`): held weights not summing to 1, a target outside 0–1, a move against its own verdict (trim with money in, add with money out), or a sale with no tax while the book replays. The line carries the kind, the bound user and counts only — no tickers. Once per kind and user every 6 hours per instance. Triage: `uv run stocks logs tail --since 24h --event review.invariant --json`, then `uv run stocks logs tail --since 24h --event api.review --json` for the same user to see the book's shape (jurisdiction, base, lenses, unrated causes, phases).",
+    "mimeType": "text/markdown"
+  },
+  "combiner": "OR",
+  "conditions": [
+    {
+      "displayName": "review.invariant in the app log",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"__SERVICE__\" AND jsonPayload.event=\"review.invariant\""
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": { "period": "86400s" },
+    "autoClose": "604800s"
+  }
+}

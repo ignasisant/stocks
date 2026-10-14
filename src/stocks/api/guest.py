@@ -23,15 +23,18 @@ rather than a page that will not paint.
 
 from __future__ import annotations
 
-#: The one non-read, kept apart so "a guest may only read" stays a sentence a
+#: The non-reads, kept apart so "a guest may only read" stays a sentence a
 #: test can check. Feedback is offered to guests because the app has always
 #: offered it to them — a visitor who bounced off the pitch knowing why is worth
-#: more than a login — and it writes `data/feedback/`, never the guest dir. It
-#: is the only unauthenticated write in the API, so it carries an IP rate limit
-#: of its own; see `routes/feedback.py`.
+#: more than a login — and it writes `data/feedback/`, never the guest dir. A
+#: browser error is reported from a guest's page too, because a guest's screen
+#: breaks the same way; it writes one log line and nothing on disk. Both are
+#: unauthenticated writes, so each carries an IP rate limit of its own; see
+#: `routes/feedback.py` and `routes/client_error.py`.
 OPEN_WRITES: frozenset[tuple[str, str]] = frozenset(
     {
         ("/v1/feedback", "POST"),
+        ("/v1/client-error", "POST"),
     }
 )
 

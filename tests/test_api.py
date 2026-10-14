@@ -691,6 +691,9 @@ WRITES = {
     # Feedback. A write because it stores a file. The one a guest may make too —
     # see `guest.OPEN_WRITES`.
     ("/v1/feedback", "post"),
+    # A browser error, logged. A guest may report one too, and a token has no
+    # browser to report from.
+    ("/v1/client-error", "post"),
     # Erasing the account. The most destructive route here, and the clearest
     # case for the session-only rule: a token names any account it likes.
     ("/v1/account", "delete"),
