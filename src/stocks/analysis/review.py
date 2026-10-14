@@ -190,9 +190,10 @@ SMALL_SPREAD = 0.5
 # The most crumbs one pass sells: past it, the weakest go and the rest wait.
 SMALL_SELLS_MAX = 5
 # An add's mark shrinks with the count too (`add_line`): `ADD_SPREAD` over the
-# companies, never over `ADD_TO` nor under `ADD_MIN` — 5% up to 20 names,
-# 2% at 50, 1% from 100.
-ADD_SPREAD = 1.0
+# companies — twice an even share, a conviction weight and not an equal one —
+# never over `ADD_TO` nor under `ADD_MIN`: 5% up to 40 names, 4% at 50, 1%
+# from 200.
+ADD_SPREAD = 2.0
 ADD_MIN = 0.01
 # The most of the book a bet on an unsold product should be: a total loss
 # costs three points, which a year of the rest of the book can make back.
@@ -301,7 +302,9 @@ SHOWN = (
 #: insurer's cash flow is its customers' money moving, and its debt is its
 #: raw material. Card networks, brokers of insurance and exchanges are left
 #: out on purpose: they score fine as businesses; a card lender that does
-#: not still falls back on `fcf_float`.
+#: not still falls back on `fcf_float`. So is "Capital Markets": Yahoo files
+#: bitcoin miners (CLSK, MARA) there beside the brokers, and a miner read on
+#: its book is a bank it is not.
 FINANCIALS = frozenset(
     {
         "Banks - Diversified",
@@ -314,7 +317,6 @@ FINANCIALS = frozenset(
         "Insurance - Reinsurance",
         "Insurance - Specialty",
         "Asset Management",
-        "Capital Markets",
         "Financial Conglomerates",
     }
 )
@@ -1139,7 +1141,7 @@ def small_line(names: int | None) -> float:
 
 def add_line(names: int | None) -> float:
     """Where an add takes a mature company in a book of `names` companies:
-    `ADD_TO` in a narrow book, an even share in a wide one."""
+    `ADD_TO` in a narrow book, twice an even share in a wide one."""
     return ADD_TO if not names else max(ADD_MIN, min(ADD_TO, ADD_SPREAD / names))
 
 
