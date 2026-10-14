@@ -468,6 +468,12 @@ def _fresh(row: dict, shown: dict | None, day: date) -> bool:
 # ------------------------------------------------------------------ gather
 
 
+def _listed(found: dict[str, object], key: str) -> list:
+    """A source's answer when it came back as a list, else nothing."""
+    value = found.get(key)
+    return value if isinstance(value, list) else []
+
+
 def gather(
     weights: dict[str, float],
     *,
@@ -515,25 +521,25 @@ def gather(
     tasks: dict[str, Callable[[], object]] = {}
     missing: dict[str, list[str]] = {s: [] for s in wanted}
     if NEWS in wanted:
-        if sources.news is None:
+        if (news := sources.news) is None:
             missing[NEWS].append("yahoo")
         else:
             for t in news_names:
-                tasks[f"news:{t}"] = lambda t=t: sources.news(t)
-        if sources.filings is not None:
+                tasks[f"news:{t}"] = lambda t=t, get=news: get(t)
+        if (filings := sources.filings) is not None:
             for t in [n for n in news_names if "." not in n]:
-                tasks[f"filing:{t}"] = lambda t=t: sources.filings(t)
+                tasks[f"filing:{t}"] = lambda t=t, get=filings: get(t)
         else:
             missing[NEWS].append("edgar")
     if INSIDERS in wanted:
-        if sources.insiders is None:
+        if (insiders := sources.insiders) is None:
             missing[INSIDERS].append("sec")
         else:
             for t in us:
-                tasks[f"insider:{t}"] = lambda t=t: sources.insiders(t)
-        if sources.eu_insiders is not None:
+                tasks[f"insider:{t}"] = lambda t=t, get=insiders: get(t)
+        if (eu_insiders := sources.eu_insiders) is not None:
             for t in german:
-                tasks[f"eu_insider:{t}"] = lambda t=t: sources.eu_insiders(t)
+                tasks[f"eu_insider:{t}"] = lambda t=t, get=eu_insiders: get(t)
     if COMPARE in wanted:
         if sources.closes is None:
             missing[COMPARE].append("prices")
@@ -567,17 +573,17 @@ def gather(
         rows: list[dict] = []
         if sid == NEWS:
             for t in news_names:
-                rows += news_rows(t, found.get(f"news:{t}") or [],
-                                  found.get(f"filing:{t}") or [], day, tr)
+                rows += news_rows(t, _listed(found, f"news:{t}"),
+                                  _listed(found, f"filing:{t}"), day, tr)
             rows = [r for r in rows if _fresh(r, shown, day)][:NEWS_ROWS]
             missing[sid] += [s for src, s in (("news", "yahoo"), ("filing", "edgar"))
                              if src in failed]
         elif sid == INSIDERS:
             for t in us:
-                if row := insider_row(t, found.get(f"insider:{t}") or [], day, tr, lang):
+                if row := insider_row(t, _listed(found, f"insider:{t}"), day, tr, lang):
                     rows.append(row)
             for t in german:
-                if row := insider_row(t, found.get(f"eu_insider:{t}") or [], day, tr,
+                if row := insider_row(t, _listed(found, f"eu_insider:{t}"), day, tr,
                                       lang, source="bafin"):
                     rows.append(row)
             # Clusters first, then by the money that changed hands.
@@ -604,7 +610,7 @@ def gather(
             "note": "",
             "missing": sorted(set(missing[sid])),
         })
-    every = sorted({m for sec in out_sections for m in sec["missing"]})
+    every = sorted({m for sid in wanted for m in missing[sid]})
     obs.event("today.gather", shape=book, missing=every,
               rows={s["id"]: len(s["rows"]) for s in out_sections},
               ms=round((time.monotonic() - started) * 1000))

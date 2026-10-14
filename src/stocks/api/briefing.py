@@ -986,7 +986,7 @@ def _market_build(kind: str, lang: str) -> None:
         obs.warn("today.market_lazy_failed", kind=kind,
                  error_type=type(exc).__name__, error=str(exc)[:200])
     finally:
-        loaders.today_market.cache_clear()
+        loaders.today_market.cache_clear()  # ty: ignore[unresolved-attribute]
         _market_lock.release()
 
 
