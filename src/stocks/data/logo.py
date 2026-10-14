@@ -333,7 +333,9 @@ def _mirror(stem: str, resolve_url, static_dir: Path) -> str | None:
     ext = _EXT_BY_TYPE.get(ctype, "png")
     static_dir.mkdir(parents=True, exist_ok=True)
     out = static_dir / f"{stem}.{ext}"
-    out.write_bytes(data)
+    # In one step: the page asks for the file the moment its name is known,
+    # and StaticFiles reading it half-written answered a 500 (ADBE, 10-13).
+    atomic.write_bytes(out, data)
     _persist_quiet(out)
     return out.name
 

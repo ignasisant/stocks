@@ -54,6 +54,8 @@ _restored: set[str] = set()
 # the bucket copy, provider keys and all.
 _group_locks: dict[str, threading.Lock] = {}
 _cached: dict[str, object] = {}
+# Connections the one client keeps open to the bucket (see `_client`).
+MAX_POOL = 32
 # Per-process bucket listings of flat file pools (restore_stem).
 _listings: dict[str, frozenset[str]] = {}
 
@@ -103,6 +105,8 @@ def _client():
                 "[storage] is configured but boto3 is not installed — "
                 "run `uv sync` (boto3 is a main dependency)."
             ) from e
+        from botocore.config import Config
+
         cfg = _config() or {}
         _cached["client"] = boto3.client(
             "s3",
@@ -110,6 +114,10 @@ def _client():
             region_name=cfg.get("region") or "auto",
             aws_access_key_id=cfg["access_key_id"],
             aws_secret_access_key=cfg["secret_access_key"],
+            # Shared by every thread of the process: a logo or price restore
+            # fans out wider than botocore's default 10, and each connection
+            # past it was opened, used once and thrown away (with a warning).
+            config=Config(max_pool_connections=MAX_POOL),
         )
     return _cached["client"]
 

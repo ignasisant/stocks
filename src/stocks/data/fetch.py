@@ -903,10 +903,11 @@ _gecko_blocked_until = 0.0
 _gecko_lock = threading.Lock()
 
 
-def _gecko_hit(url: str) -> pd.DataFrame | None:
+def _gecko_hit(url: str, *, stale: bool = False) -> pd.DataFrame | None:
+    """The memoised answer for `url`; past its TTL only when `stale`."""
     with _gecko_lock:
         hit = _gecko_memo.get(url)
-    if hit is None or time.monotonic() - hit[0] > GECKO_TTL_S:
+    if hit is None or (not stale and time.monotonic() - hit[0] > GECKO_TTL_S):
         return None
     return hit[1].copy()
 
@@ -962,15 +963,28 @@ def _coingecko_fallback(
     pairs = {t: p for t in tickers if (p := split_pair(t)) and p[0] in COINGECKO_IDS}
     if not pairs:
         return {}
-    days = _period_days(period)
+    # Every period asks for the whole free lookback and is cut here, so a
+    # coin is one request (and one memo entry) whatever screen wants it: the
+    # keyless tier 429s Cloud Run's egress IP after a handful of calls.
+    since = pd.Timestamp.now().normalize() - pd.Timedelta(days=_period_days(period))
     out: dict[str, pd.DataFrame] = {}
     waiting: list[str] = []
+
+    def keep(t: str, df: pd.DataFrame) -> None:
+        out[t] = df[df.index >= since]
+
     for t, (coin, quote) in pairs.items():
-        url = COINGECKO_URL.format(id=COINGECKO_IDS[coin], quote=quote.lower(), days=days)
+        url = COINGECKO_URL.format(
+            id=COINGECKO_IDS[coin], quote=quote.lower(), days=COINGECKO_MAX_DAYS
+        )
         if (hit := _gecko_hit(url)) is not None:
-            out[t] = hit
+            keep(t, hit)
             continue
         if _gecko_wait() > 0:
+            # Cooling off: a coin priced before keeps its last answer rather
+            # than going unpriced until the next quiet minute.
+            if (hit := _gecko_hit(url, stale=True)) is not None:
+                keep(t, hit)
             waiting.append(t)
             continue
         with obs.swallow("coingecko.market_chart", ticker=t):
@@ -982,6 +996,8 @@ def _coingecko_fallback(
                 headers = exc.headers
                 wait = _gecko_trip(headers.get("Retry-After") if headers else None)
                 obs.warn("coingecko.rate_limited", ticker=t, cooldown_s=wait)
+                if (hit := _gecko_hit(url, stale=True)) is not None:
+                    keep(t, hit)
                 waiting.append(t)
                 continue
             if not prices:
@@ -995,9 +1011,8 @@ def _coingecko_fallback(
             df.index.name = "Date"
             with _gecko_lock:
                 _gecko_memo[url] = (time.monotonic(), df)
-            out[t] = df.copy()
-            obs.event("coingecko.fallback", level=logging.DEBUG, ticker=t,
-                      coin=coin)
+            keep(t, df.copy())
+            obs.event("coingecko.fallback", level=logging.DEBUG, ticker=t, coin=coin)
     if waiting:
         obs.event(
             "coingecko.cooling_off",

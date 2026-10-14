@@ -172,7 +172,12 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
     base, rebased_at = _frames_base(db, since) or (None, 0.0)
     settled = _settled(base, txs) if base else {}
     rebase = time.time() - rebased_at > _REBASE_S
-    with obs.timed("prices.held_download", tickers=len(tickers)) as rec:
+    # Yahoo throttling the egress IP is reported by `retry` as
+    # `yahoo.rate_limit_exhausted`, and callers price the book without these
+    # frames (`_self_priced_positions`): weather, not a crash to page on.
+    with obs.timed(
+        "prices.held_download", expected=(YFRateLimitError,), tickers=len(tickers)
+    ) as rec:
         asked = [t for t in tickers if t not in settled]
         if not base:
             frames, stale = {}, tickers

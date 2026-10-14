@@ -175,6 +175,40 @@ def test_a_coingecko_429_cools_the_coins_off_and_a_hit_is_memoised(monkeypatch):
     assert asked == []  # memo for one, cooldown for the other: no request
 
 
+def test_a_coin_keeps_its_last_price_through_a_coingecko_cooldown(monkeypatch):
+    """Prod: MOODENG's call 429'd every few hours and the coins after it went
+    unpriced for the whole cooldown, though each had been priced minutes
+    before. An expired memo stands in while CoinGecko is cooling off, and
+    every period shares one request per coin."""
+    from urllib.error import HTTPError
+
+    _patch_aliases(monkeypatch, {})
+    monkeypatch.setattr(fetch.yf, "download", lambda symbols, **kwargs: pd.DataFrame())
+    asked: list[str] = []
+    limited = False
+
+    def fake_get_json(url, **kwargs):
+        asked.append(url)
+        if limited:
+            raise HTTPError(url, 429, "Too Many Requests", {}, None)
+        return {"prices": [[1767571200000, 0.03], [1767657600000, 0.032]]}
+
+    monkeypatch.setattr(fetch, "get_json", fake_get_json)
+    assert list(fetch.fetch_many(["MOODENG-EUR", "CAT-EUR"])) == [
+        "MOODENG-EUR",
+        "CAT-EUR",
+    ]
+    assert list(fetch.fetch_many(["MOODENG-EUR"], period="2y")) == ["MOODENG-EUR"]
+    assert len(asked) == 2  # the 2y view reused the 1y answer
+
+    monkeypatch.setattr(fetch, "GECKO_TTL_S", -1.0)  # both memos expired
+    limited = True
+    out = fetch.fetch_many(["MOODENG-EUR", "CAT-EUR"])
+    assert sorted(out) == ["CAT-EUR", "MOODENG-EUR"]
+    assert out["CAT-EUR"]["Close"].iloc[-1] == pytest.approx(0.032)
+    assert len(asked) == 3  # one 429, then the cooldown asks nobody
+
+
 def test_fetch_many_never_asks_yahoo_for_a_coin_it_quotes_as_another(monkeypatch):
     """Yahoo's CAT-EUR is a different coin ~10,000x Simon's Cat, the CAT
     Revolut sells. It answers, so a miss-only fallback never fired and a ~500
