@@ -111,9 +111,11 @@ def _retired(bid, live_model=None):
 
 @pytest.fixture(autouse=True)
 def _clear_live_model_cache():
-    llm._free_live_model.clear()
+    for memo in (llm._free_live_model, llm._free_gone, llm._tpm_skew):
+        memo.clear()
     yield
-    llm._free_live_model.clear()
+    for memo in (llm._free_live_model, llm._free_gone, llm._tpm_skew):
+        memo.clear()
 
 
 def test_retired_slug_is_replaced_from_the_backends_model_list(monkeypatch):
@@ -260,6 +262,93 @@ def test_retired_model_detection():
     rate_limited = RuntimeError("model_not_found")
     rate_limited.status_code = 429  # status wins over the message
     assert not llm._retired_model(rate_limited)
+
+
+def test_a_free_slug_gone_paid_reads_as_retired():
+    went_paid = RuntimeError("Error code: 404 - This model is unavailable for "
+                             "free. The paid version is available now")
+    went_paid.status_code = 404
+    assert llm._retired_model(went_paid)
+
+
+def test_a_free_slug_is_only_replaced_by_another_free_one(monkeypatch):
+    llm._free_gone.add(("openrouter", "z-ai/glm-9:free"))
+    monkeypatch.setattr("openai.OpenAI", _fake_openai(
+        ["openai/gpt-9-120b", "z-ai/glm-9:free", "acme/big-120b:free"]))
+    b = _FreeBackend("openrouter", "k", "gone/model:free", None)
+    assert llm._live_model(b) == "acme/big-120b:free"
+
+
+def test_a_fallback_gone_paid_is_dropped_for_the_process(monkeypatch):
+    cfg = {"openrouter": "sk-or-x",
+           "openrouter_fallback_models": "paid/now:free, still/free:free"}
+    monkeypatch.setattr(llm, "_free_secrets", lambda: cfg)
+    went_paid = RuntimeError("This model is unavailable for free")
+    went_paid.status_code = 404
+    calls = []
+
+    def stream(api_key, model, system, messages):
+        calls.append(model)
+        if model != "still/free:free":
+            raise went_paid
+        yield "ok"
+
+    real = llm._free_backends
+    monkeypatch.setattr(llm, "_live_model", lambda b: None)
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        llm._FreeBackend(b.id, b.api_key, b.model, stream, primary=b.primary)
+        for b in real()])
+    assert list(llm._free_stream("", "auto", "sys", [])) == ["ok"]
+    assert "paid/now:free" in calls
+    calls.clear()
+    assert list(llm._free_stream("", "auto", "sys", [])) == ["ok"]
+    assert "paid/now:free" not in calls
+
+
+def test_an_empty_answer_gets_one_more_try(monkeypatch):
+    calls = []
+
+    def stream(api_key, model, system, messages):
+        calls.append(model)
+        if len(calls) > 1:
+            yield "second time"
+
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _FreeBackend("openrouter", "k", "m", stream), _ok("other", ["never"])])
+    assert list(llm._free_stream("", "auto", "sys", [])) == ["second time"]
+    assert calls == ["m", "m"]
+
+
+def test_a_413_learns_the_skew_and_retries_groq_cut_last(monkeypatch):
+    # Prod 2026-10-14: groq counted 8095 for a thread we had sized under 7200.
+    from stocks.chat import tokens
+
+    seen = []
+    thread = _thread(17, words=410)  # ~7100 by our count: fits, until 1.15x
+
+    def groq(api_key, model, system, messages):
+        sent = tokens.count(system) + tokens.count_messages(messages)
+        seen.append(("groq", sent))
+        if sent * 1.15 > 8000:
+            exc = RuntimeError(f"Error code: 413 - Request too large (TPM): "
+                               f"Limit 8000, Requested {int(sent * 1.15)}")
+            exc.status_code = 413
+            raise exc
+        yield "g"
+
+    def openrouter(api_key, model, system, messages):
+        seen.append(("openrouter", len(messages)))
+        raise RuntimeError("429 rate limited")
+        yield
+
+    assert 8000 / 1.15 < tokens.count("sys") + tokens.count_messages(thread) <= 7200
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _FreeBackend("groq", "k", "m", groq, tpm=8000),
+        _FreeBackend("openrouter", "k", "m", openrouter)])
+    assert list(llm._free_stream("", "auto", "sys", thread)) == ["g"]
+    assert [who for who, _ in seen] == ["groq", "openrouter", "groq"]
+    assert seen[-1][1] < seen[0][1]
+    assert llm._tpm_skew["groq"] == pytest.approx(1.15, abs=0.01)
 
 
 def test_error_mapping():

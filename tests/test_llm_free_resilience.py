@@ -107,7 +107,7 @@ def test_openrouter_falls_to_its_next_model_when_the_first_is_overloaded(monkeyp
 
     def stream(api_key, model, system, messages):
         seen.append(model)
-        if model.startswith("nvidia"):
+        if model == got[0].model:
             raise _HttpError(503, "Upstream error from Nvidia: overloaded")
         yield "ok"
 
@@ -115,7 +115,7 @@ def test_openrouter_falls_to_its_next_model_when_the_first_is_overloaded(monkeyp
              for b in got]
     monkeypatch.setattr(llm, "_free_backends", lambda: chain)
     assert list(llm._free_stream("", "auto", "sys", [])) == ["ok"]
-    assert seen[0].startswith("nvidia") and len(seen) == 2
+    assert seen == [got[0].model, got[1].model]
     assert "openrouter" not in llm._free_live_model
 
 
