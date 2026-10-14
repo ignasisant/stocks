@@ -33,7 +33,12 @@ function said(result: ToolResult): string {
 
 export function View({ result, words }: { result: ToolResult | null; words: Words }) {
   const { t, locale } = words;
-  if (result === null) return <p className="v-wait">{t("connector.view_waiting")}</p>;
+  if (result === null)
+    return (
+      <p className="v-wait" role="status">
+        {t("connector.view_waiting")}
+      </p>
+    );
   if (result.isError) return <p className="v-note">{said(result)}</p>;
 
   const data = result.structuredContent ?? {};

@@ -82,7 +82,9 @@ def test_search_opens_the_ticker_page(page: Page):
     """Resolved offline: the search matches against the reference lists the
     app ships, not against Yahoo."""
     page.goto("/home")
-    box = page.get_by_role("searchbox")
+    # A combobox, not a bare searchbox: the field owns the listbox under it
+    # and the arrow keys walk it (shell/Search.tsx).
+    box = page.get_by_role("combobox")
     box.fill("AAPL")
     expect(page.get_by_role("listbox")).to_contain_text("Apple")
     box.press("Enter")

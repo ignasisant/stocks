@@ -18,11 +18,12 @@
 import {
   type ReactNode,
   useCallback,
-  useId,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
 } from "react";
+import { usePresence } from "../shell/useSheet";
 import { useTouchHold } from "../shell/useTouchHold";
 import "./ui.css";
 
@@ -96,6 +97,14 @@ export function helpShift(left: number, right: number, viewport: number): number
   return 0;
 }
 
+/** How long a mouse rests on a mark before its popover opens (ms). */
+const HOVER_WAIT = 400;
+/** How long after one popover closes the next opens at once (ms). */
+const WARM_FOR = 300;
+/** Until when a popover opens without the wait: a reader who has just read
+    one and moves to the next tile is reading, not passing through. */
+let warmUntil = 0;
+
 /**
  * The definition marker beside a label.
  *
@@ -103,22 +112,40 @@ export function helpShift(left: number, right: number, viewport: number): number
  * the definition behind every tile was simply unreachable. It is a button now
  * — a tap opens the text under the mark, a tap anywhere else or Escape puts it
  * away (`useTouchHold` is the same "touch elsewhere" dismissal the charts
- * use), and a mouse still gets it on hover or keyboard focus. The panel is
+ * use), and a mouse still gets it on hover or keyboard focus. Hover waits
+ * `HOVER_WAIT` first, so a pointer crossing a row of tiles does not pop every
+ * definition on its way; once one has been read the next opens at once. The
+ * panel is
  * measured once it is up and slid back inside the viewport, since a tile's
  * mark can sit at either edge of a 390px screen. The 14px mark keeps its
  * footprint; the finger-sized hit area is a pseudo-element in `ui.css`.
  */
 export function Help({ text }: { text: string | null | undefined }) {
   const [pinned, setPinned] = useState(false);
-  const [hover, setHover] = useState(false);
+  const [hover, setHoverNow] = useState(false);
   const [shift, setShift] = useState(0);
+  const wait = useRef<number | undefined>(undefined);
   const wrap = useRef<HTMLSpanElement>(null);
   const panel = useRef<HTMLSpanElement>(null);
-  const id = useId();
   const unpin = useCallback(() => setPinned(false), []);
   useTouchHold(wrap, pinned, unpin);
 
+  const setHover = useCallback((on: boolean) => {
+    window.clearTimeout(wait.current);
+    setHoverNow((was) => {
+      if (was && !on) warmUntil = Date.now() + WARM_FOR;
+      return on;
+    });
+  }, []);
+  const hoverSoon = () => {
+    window.clearTimeout(wait.current);
+    if (Date.now() < warmUntil) return setHover(true);
+    wait.current = window.setTimeout(() => setHoverNow(true), HOVER_WAIT);
+  };
+  useEffect(() => () => window.clearTimeout(wait.current), []);
+
   const shown = pinned || hover;
+  const { mounted, leaving } = usePresence(shown);
   useLayoutEffect(() => {
     if (!shown || !panel.current) return;
     // Measure from the unshifted position, so a re-open never compounds.
@@ -133,7 +160,7 @@ export function Help({ text }: { text: string | null | undefined }) {
     <span
       className="ag-kpi-help-wrap"
       ref={wrap}
-      onPointerEnter={(event) => event.pointerType === "mouse" && setHover(true)}
+      onPointerEnter={(event) => event.pointerType === "mouse" && hoverSoon()}
       onPointerLeave={() => setHover(false)}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
@@ -146,7 +173,8 @@ export function Help({ text }: { text: string | null | undefined }) {
         type="button"
         className="ag-kpi-help"
         aria-expanded={pinned}
-        aria-describedby={shown ? id : undefined}
+        // The text is the name; the popover only draws it, so it is not also
+        // a description — a screen reader would read the definition twice.
         aria-label={text}
         onClick={() => setPinned((open) => !open)}
         onFocus={(event) =>
@@ -156,11 +184,11 @@ export function Help({ text }: { text: string | null | undefined }) {
       >
         ?
       </button>
-      {shown && (
+      {mounted && (
         <span
           className="ag-kpi-help-pop"
-          id={id}
-          role="tooltip"
+          aria-hidden="true"
+          data-leaving={leaving ? "" : undefined}
           ref={panel}
           style={{ transform: `translateX(${shift}px)` }}
         >

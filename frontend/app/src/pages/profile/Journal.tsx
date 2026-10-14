@@ -129,6 +129,9 @@ function Filtered({ entries }: { entries: JournalEntry[] }) {
           placeholder={t("journal.filter_ticker_hint")}
           aria-label={t("journal.filter_ticker")}
           autoCapitalize="characters"
+          autoComplete="off"
+          autoCorrect="off"
+          enterKeyHint="search"
           spellCheck={false}
           onChange={(event) => setTicker(event.target.value)}
         />

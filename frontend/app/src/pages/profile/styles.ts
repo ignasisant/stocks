@@ -15,7 +15,7 @@ export const CSS = `
   display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px;
   margin-bottom: 16px;
 }
-.pr-title { font-size: var(--ag-fs-2xl); font-weight: 600; margin: 0; }
+.pr-title { font-size: var(--ag-fs-2xl); letter-spacing: var(--ag-track-2xl); font-weight: 600; margin: 0; }
 .pr-savehint { font-size: var(--ag-fs-sm); color: var(--ag-text-muted); }
 
 /* ------------------------------------------------------------- identity */
@@ -63,28 +63,12 @@ export const CSS = `
 }
 .pr-prog-fill { height: 100%; background: var(--ag-purple-400); }
 .pr-prog-n {
-  font-family: var(--ag-font-mono, ui-monospace, monospace); font-size: var(--ag-fs-2xs);
+  font-family: var(--ag-font-mono, 'Martian Mono', ui-monospace, monospace); font-size: var(--ag-fs-2xs);
   font-weight: 500; color: var(--ag-purple-400);
 }
 
 /* ----------------------------------------------------------------- tabs */
-.pr-tabs {
-  display: flex; gap: 4px; flex-wrap: wrap; margin: 20px 0 16px;
-  border-bottom: 1px solid var(--ag-border);
-}
-.pr-tab {
-  appearance: none; background: none; border: none; cursor: pointer;
-  font: inherit; font-size: var(--ag-fs-md); color: var(--ag-text-muted);
-  padding: 9px 14px; border-bottom: 2px solid transparent; margin-bottom: -1px;
-}
-@media (hover: hover) {
-  .pr-tab:hover { color: var(--ag-text-primary); }
-}
-.pr-tab-on { color: var(--ag-text-primary); border-bottom-color: var(--ag-purple-400); }
-.pr-tab-n {
-  margin-left: 7px; border-radius: var(--ag-radius-pill); padding: 1px 7px;
-  background: var(--ag-surface-sunken); font-size: var(--ag-fs-2xs);
-}
+.pr-tabs { margin: 20px 0 16px; }
 
 /* ------------------------------------------------- the body and its rail */
 .pr-body { display: flex; align-items: flex-start; gap: 20px; }
@@ -189,6 +173,9 @@ export const CSS = `
 @media (pointer: coarse) {
   .pr-signout, .pr-more > summary { display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box; }
   .pr-btn { min-height: 44px; }
+  .pr-input, .pr-select { min-height: 44px; }
+  .pr-star, .pr-switch { min-height: 44px; min-width: 44px; }
+  .pr-switch input { width: 22px; height: 22px; }
   .pr-download, .pr-linkbtn { display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box; }
 }
 .pr-btn {
@@ -278,7 +265,7 @@ export const CSS = `
 .pr-persona-text {
   display: block; padding: 10px 12px; border-radius: var(--ag-radius-sm);
   background: var(--ag-surface-sunken); color: var(--ag-text-secondary);
-  font-family: var(--ag-font-mono, ui-monospace, monospace);
+  font-family: var(--ag-font-mono, 'Martian Mono', ui-monospace, monospace);
   font-size: var(--ag-fs-sm); line-height: 1.6; white-space: pre-wrap;
 }
 
@@ -287,7 +274,7 @@ export const CSS = `
 .pr-prose ul { margin: 0; padding-left: 18px; }
 .pr-prose li { margin-bottom: 6px; }
 .pr-prose code {
-  font-family: "Martian Mono", ui-monospace, monospace; font-size: var(--ag-fs-xs);
+  font-family: var(--ag-font-mono); font-size: var(--ag-fs-xs);
 }
 
 /* ------------------------------------------------- the Claude connector */
@@ -297,7 +284,7 @@ export const CSS = `
 .pr-copyline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .pr-code {
   flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere;
-  font-family: "Martian Mono", ui-monospace, monospace; font-size: var(--ag-fs-xs);
+  font-family: var(--ag-font-mono); font-size: var(--ag-fs-xs);
   padding: 7px 10px; border-radius: var(--ag-radius-xs);
   border: 1px solid var(--ag-border); background: var(--ag-surface-sunken);
   color: var(--ag-text-primary);
@@ -322,7 +309,7 @@ export const CSS = `
 .pr-tick {
   border: 1px solid var(--ag-border); border-radius: var(--ag-radius-pill);
   background: var(--ag-surface-page); padding: 3px 11px;
-  font-family: "Martian Mono", ui-monospace, monospace; font-size: var(--ag-fs-xs);
+  font-family: var(--ag-font-mono); font-size: var(--ag-fs-xs);
   color: var(--ag-text-primary); text-decoration: none;
 }
 @media (hover: hover) {
@@ -334,7 +321,7 @@ export const CSS = `
   padding: 8px 12px;
 }
 .pr-resrow-t {
-  font-family: "Martian Mono", ui-monospace, monospace; font-weight: 600;
+  font-family: var(--ag-font-mono); font-weight: 600;
   font-size: var(--ag-fs-sm);
 }
 .pr-resrow-n {
@@ -356,7 +343,7 @@ export const CSS = `
   padding: 10px 0; border-top: 1px solid var(--ag-border);
 }
 .pr-wsym {
-  flex: 0 0 8.5rem; font-family: "Martian Mono", ui-monospace, monospace;
+  flex: 0 0 8.5rem; font-family: var(--ag-font-mono);
   font-size: var(--ag-fs-sm); font-weight: 600; color: var(--ag-text-primary);
   text-decoration: none; overflow: hidden; text-overflow: ellipsis;
 }
@@ -388,17 +375,20 @@ export const CSS = `
 /* A destructive control opens something before it can do anything, and what
    it opens is over the page rather than on it. */
 .pr-modal {
-  position: fixed; inset: 0; z-index: 40; padding: 1rem;
+  position: fixed; inset: 0; z-index: 40;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+    max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
   display: flex; align-items: center; justify-content: center;
   background: var(--ag-surface-page-veil);
 }
 .pr-modal-card {
   width: 100%; max-width: 30rem; padding: 20px 22px;
   display: flex; flex-direction: column; gap: 14px;
+  max-height: 100%; overflow-y: auto; overscroll-behavior: contain;
   border: 1px solid var(--ag-border); border-radius: var(--ag-radius-md);
   background: var(--ag-surface-card); box-shadow: var(--ag-shadow-overlay);
 }
-.pr-modal-t { margin: 0; font-size: var(--ag-fs-xl); font-weight: 600; }
+.pr-modal-t { margin: 0; font-size: var(--ag-fs-xl); letter-spacing: var(--ag-track-xl); font-weight: 600; }
 .pr-modal-confirm { display: flex; flex-direction: column; gap: 7px; }
 .pr-modal-foot { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 

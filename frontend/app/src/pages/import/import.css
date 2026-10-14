@@ -81,11 +81,11 @@
 
 .im-h1 {
   margin: 0;
-  font-family: "Epilogue", var(--ag-font-body);
+  font-family: var(--ag-font-display);
   font-size: var(--ag-fs-display);
   font-weight: 800;
   line-height: 1.1;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--ag-track-3xl);
 }
 
 .im-h3 {
@@ -238,8 +238,9 @@
   white-space: nowrap;
   cursor: pointer;
   transition:
-    background-color 50ms ease-in-out,
-    border-color 50ms ease-in-out;
+    background-color var(--ag-dur-hover) ease-in-out,
+    border-color var(--ag-dur-hover) ease-in-out,
+    scale var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .im-btn:focus-visible {
@@ -449,8 +450,9 @@
   font-weight: 600;
   cursor: pointer;
   transition:
-    background-color 50ms ease-in-out,
-    border-color 50ms ease-in-out;
+    background-color var(--ag-dur-hover) ease-in-out,
+    border-color var(--ag-dur-hover) ease-in-out,
+    scale var(--ag-dur-press) var(--ag-ease-out);
 }
 
 @media (hover: hover) {
@@ -668,7 +670,7 @@
   width: 14px;
   height: 14px;
   color: var(--ag-text-muted);
-  transition: transform 100ms ease-in-out;
+  transition: transform var(--ag-dur-press) ease-in-out;
 }
 
 .im-disclose[aria-expanded="true"] .im-glyph {
@@ -895,6 +897,33 @@
   padding: 14px 24px;
   border-bottom: 1px solid var(--ag-border);
   background: var(--ag-surface-raised);
+}
+
+/* The rule under it appears only once something has scrolled under it: at
+   rest it sits on the page like any heading, stuck it needs an edge. Where
+   `scroll-state` queries are missing the rule simply stays. */
+@supports (container-type: scroll-state) {
+  .im-confirm {
+    container-type: scroll-state;
+    border-bottom-color: transparent;
+  }
+
+  .im-confirm::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 -1px;
+    height: 1px;
+    background: var(--ag-border);
+    opacity: 0;
+    transition: opacity var(--ag-dur-move) var(--ag-ease-out);
+    pointer-events: none;
+  }
+
+  @container scroll-state(stuck: top) {
+    .im-confirm::after {
+      opacity: 1;
+    }
+  }
 }
 
 .im-confirm-main {
@@ -1124,7 +1153,7 @@
 .im-skipped > summary .im-glyph {
   color: var(--ag-text-secondary);
   transform: rotate(-90deg);
-  transition: transform 100ms ease-in-out;
+  transition: transform var(--ag-dur-press) ease-in-out;
 }
 
 .im-skipped[open] > summary {
@@ -1320,7 +1349,7 @@
   border-bottom-color: var(--ag-border);
   background: var(--ag-rule-panel);
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1819,7 +1848,7 @@
   width: 14px;
   height: 14px;
   color: var(--ag-text-muted);
-  transition: transform 100ms ease-in-out;
+  transition: transform var(--ag-dur-press) ease-in-out;
 }
 
 .im-disclosure[open] > summary .im-glyph {
@@ -1980,7 +2009,7 @@
 
   .im-fold-head .im-glyph {
     color: var(--ag-text-muted);
-    transition: transform 100ms ease-in-out;
+    transition: transform var(--ag-dur-press) ease-in-out;
   }
 
   .im-fold-head[aria-expanded="true"] .im-glyph {
@@ -2199,5 +2228,20 @@
   .im-disclosure > summary .im-glyph,
   .im-fold-head .im-glyph {
     transition: none;
+  }
+}
+
+/* A finger needs 44px: the buttons, the checkbox rows and the text fields all
+   sit at 32-36px for a pointer. The picks are already taller than that. */
+@media (pointer: coarse) {
+  .im-btn,
+  .im-check,
+  .im-input {
+    min-height: 44px;
+  }
+  .im-check input,
+  .im-pick-box {
+    width: 22px;
+    height: 22px;
   }
 }

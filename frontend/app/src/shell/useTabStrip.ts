@@ -8,6 +8,13 @@
  * move the page under the reader. The strip must be the tabs' offset parent
  * (`position: relative`). Where every tab fits there is nothing to scroll and
  * this does nothing.
+ *
+ * It also lays the strip's underline (`.ag-tabs-ink`, `ui/Tabs.tsx`) under the
+ * open tab, as `--ink-x` / `--ink-w` on the strip: one mark that travels from
+ * the tab left to the tab picked, so the eye follows the move instead of
+ * seeing one line vanish and another appear. `data-ink` is set only after the
+ * first placement, so the page opens with the line already in place rather
+ * than sliding in from the left edge.
  */
 
 import { useEffect, useLayoutEffect, useRef } from "react";
@@ -21,6 +28,9 @@ export function useTabStrip<T extends HTMLElement = HTMLDivElement>(active: stri
     const row = strip.current;
     const on = row?.querySelector<HTMLElement>('[aria-selected="true"]');
     if (!row || !on) return;
+    row.style.setProperty("--ink-x", `${on.offsetLeft}px`);
+    row.style.setProperty("--ink-w", `${on.offsetWidth}`);
+    if (!row.dataset.ink) requestAnimationFrame(() => (row.dataset.ink = ""));
     const left = on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2;
     row.scrollTo({ left, behavior: smooth ? "smooth" : "auto" });
   };
@@ -50,6 +60,8 @@ export function useTabStrip<T extends HTMLElement = HTMLDivElement>(active: stri
       mark();
     });
     watch.observe(row);
+    // A tab's count arriving widens it under a line placed before it came.
+    row.querySelectorAll('[role="tab"]').forEach((tab) => watch.observe(tab));
     void document.fonts?.ready.then(() => {
       centre(false);
       mark();

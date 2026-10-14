@@ -36,6 +36,7 @@
   "nav.section_market": "Mercado",
   "nav.section_portfolio": "Cartera",
   "nav.sections": "Secciones",
+  "nav.skip": "Saltar al contenido",
   "nav.sector": "Sectores",
   "nav.sentiment": "Pulso",
   "nav.ticker": "Ticker",
@@ -49,6 +50,6 @@
   "activity.earnings": "Calendario de resultados",
   "activity.pulse": "Indicadores de mercado",
   "activity.other": "Datos",
-  "common.crash": "Esta pantalla ha fallado. Recarga o abre otra.",
+  "common.crash": "Esta pantalla ha fallado y nos ha llegado el aviso. Recarga o abre otra.",
   "common.reload": "Recargar"
 }

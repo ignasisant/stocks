@@ -16,6 +16,8 @@
   "home.guest_try_demo": "Ver la app con datos de prueba",
   "home.dismiss": "Descartar",
   "home.setup_hide": "No mostrar más",
+  "home.setup_hidden": "Tarjeta oculta.",
+  "home.setup_undo": "Deshacer",
   "home.setup_progress": "{done}/{total} activas",
   "home.start_title": "Empieza aquí",
   "home.start_progress": "{done}/{total}",
@@ -28,7 +30,7 @@
   "home.start_go_login": "Entra con Google",
   "home.start_go_import": "Importa tu extracto",
   "home.start_go_ai": "Añade tu clave IA (opcional)",
-  "home.start_go_telegram": "Conecta Telegram",
+  "home.start_go_telegram": "Conecta Telegram (opcional)",
   "home.start_try": "Pruébalo",
   "home.start_search": "Buscar",
   "home.start_ask": "Preguntar",
@@ -538,5 +540,9 @@
   "home.edit_reset_done": "Orden por defecto restablecido. No se guarda nada hasta pulsar Hecho.",
   "home.edit_instructions": "Para mover una tarjeta, pulsa espacio o intro, muévela con las flechas y pulsa espacio o intro para soltarla, o escape para cancelar.",
   "home.daily_open": "Leer Hoy",
-  "home.daily_more": "{n} más en Hoy"
+  "home.daily_more": "{n} más en Hoy",
+  "home.chart_band_gain": "Ganancia",
+  "home.chart_band_loss": "Pérdida",
+  "home.chart_summary": "Valor {value}, {gap} frente a {injected} aportados, {range}",
+  "home.chart_spoken": "{date}: valor {value}, aportado {injected}, {gap}"
 }

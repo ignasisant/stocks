@@ -107,6 +107,45 @@ def test_react_fallbacks_match_the_design_system():
     )
 
 
+# `var(--ag-name, fallback)` in a stylesheet, with a fallback that holds no
+# nested call (a `var()` or `calc()` fallback is a different token's business).
+_VAR_FALLBACK = re.compile(r"var\(\s*--ag-([a-z0-9-]+)\s*,\s*([^()]+?)\s*\)")
+
+
+def _same(a: str, b: str) -> bool:
+    """Equal once whitespace (prettier wraps a long font stack), quote style
+    and case stop mattering."""
+
+    def bare(value: str) -> str:
+        return re.sub(r"\s+", "", value).replace("'", '"').lower()
+
+    return bare(a) == bare(b)
+
+
+@pytest.mark.skipif(
+    not any(root.exists() for root in FRONTENDS),
+    reason="frontend sources not checked out",
+)
+def test_stylesheet_fallbacks_match_the_design_system():
+    """The CSS side of the same trap: `var(--ag-fs-sm, 0.875rem)` beside a
+    token that is 0.75rem. Never painted while the tokens are inlined, so the
+    drift is invisible — until a reader takes the fallback for the value."""
+    published = tokens()
+    stale: dict[str, set[str]] = {}
+    for root in FRONTENDS:
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*")):
+            if path.suffix not in {".css", ".ts", ".tsx"}:
+                continue
+            for name, fallback in _VAR_FALLBACK.findall(path.read_text()):
+                if name in published and not _same(published[name], fallback):
+                    stale.setdefault(f"{name} = {published[name]}", set()).add(
+                        f"{path.name}: {fallback}"
+                    )
+    assert not stale, f"stylesheet fallbacks off their token: {stale}"
+
+
 @pytest.mark.skipif(
     not any(root.exists() for root in FRONTENDS),
     reason="frontend sources not checked out",

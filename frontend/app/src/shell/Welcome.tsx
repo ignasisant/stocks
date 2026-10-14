@@ -14,7 +14,7 @@
  * is no longer one. Home's start card carries on from here.
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { openAssistant } from "./assistant";
 import { Icon } from "./Icon";
@@ -22,6 +22,8 @@ import { useT } from "./i18n";
 import { canonical } from "./pages";
 import { useRoute } from "./router";
 import { landing } from "./Tour";
+import { useDialog } from "./useDialog";
+import { useExitGhost } from "./useSheet";
 
 type Target = {
   id: string;
@@ -40,6 +42,10 @@ const ROWS = [
 
 export function Welcome({ steps, onClose }: { steps: Target[]; onClose: () => void }) {
   const t = useT();
+  const scrim = useRef<HTMLDivElement>(null);
+  const card = useRef<HTMLDivElement>(null);
+  useExitGhost(scrim);
+  useDialog(card);
   const { go } = useRoute();
 
   useEffect(() => {
@@ -72,8 +78,10 @@ export function Welcome({ steps, onClose }: { steps: Target[]; onClose: () => vo
   const importNow = visit("import");
 
   return (
-    <div className="ag-tour-scrim" role="presentation" onClick={onClose}>
+    <div ref={scrim} className="ag-tour-scrim" role="presentation" onClick={onClose}>
       <div
+        ref={card}
+        tabIndex={-1}
         className="ag-tour ag-welcome"
         role="dialog"
         aria-modal="true"
@@ -121,14 +129,14 @@ export function Welcome({ steps, onClose }: { steps: Target[]; onClose: () => vo
         </ol>
         <p className="ag-welcome-hint">{t("tour.hello_hint")}</p>
         <footer className="ag-tour-foot">
+          <button type="button" className="ag-tour-quiet" onClick={onClose}>
+            {t("tour.hello_later")}
+          </button>
           {importNow ? (
             <button type="button" className="ag-tour-cta" onClick={importNow}>
               {t("tour.hello_cta")}
             </button>
           ) : null}
-          <button type="button" className="ag-tour-quiet" onClick={onClose}>
-            {t("tour.hello_later")}
-          </button>
         </footer>
       </div>
     </div>

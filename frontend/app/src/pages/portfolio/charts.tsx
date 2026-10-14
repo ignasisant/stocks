@@ -25,7 +25,10 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { useT } from "../../shell/i18n";
 import { token } from "../../shell/theme";
+import { Spoken, useKeyWalk } from "../../shell/useKeyWalk";
+import { spreadLabels } from "../ticker/plot";
 import { TickerCell } from "../../shell/tickers";
 import { useTabStrip } from "../../shell/useTabStrip";
 import { useSpan } from "../../shell/useSpan";
@@ -198,6 +201,11 @@ export type TipRow = {
   mark?: "line" | "dashed";
 };
 
+/** A hover box as one plain sentence, for the live region a key step speaks. */
+function tipSaid(title: string, rows: TipRow[]): string {
+  return `${title}: ${rows.map((row) => `${row.label} ${row.value}`).join(", ")}`;
+}
+
 /**
  * The hover box, Plotly's unified `hovermode="x"` label.
  *
@@ -269,7 +277,6 @@ function ChartTip({
       ref={box}
       className={classes.join(" ")}
       style={{ left: `${left}%`, ...(top === undefined ? {} : { top }) }}
-      role="status"
     >
       <span className="pf-tip-title">{title}</span>
       {rows.map((row) => (
@@ -529,7 +536,14 @@ export function Donut({
           setPointer(null);
         }}
       >
-        <svg viewBox="0 0 100 100" role="img" aria-label={title}>
+        <svg
+          viewBox="0 0 100 100"
+          role="img"
+          aria-label={`${title}: ${shown
+            .slice(0, 4)
+            .map((slice) => `${slice.label} ${format(slice.weight / total)}`)
+            .join(", ")}`}
+        >
           {shown.map((slice, index) => {
             const fraction = slice.weight / total;
             const length = fraction * circumference;
@@ -793,6 +807,7 @@ export function Heatmap({
   /** Words under the colour ramp's two ends and its middle. */
   scale?: { low: string; mid: string; high: string };
 }) {
+  const t = useT();
   const [focus, setFocus] = useState<HeatFocus | null>(null);
   // A tapped cell stays read until the page scrolls under it.
   useEffect(() => {
@@ -803,6 +818,25 @@ export function Heatmap({
   }, [focus]);
   const names = Object.keys(matrix);
   if (!names.length) return null;
+  // The grid is one picture to a screen reader, read by its two extremes —
+  // the pair that moves most together and the one that moves most apart;
+  // the rest is on the page's own lists.
+  const pairs = names.flatMap((row, i) =>
+    names.slice(i + 1).flatMap((column) => {
+      const value = matrix[row]?.[column];
+      return value === undefined ? [] : [{ row, column, value }];
+    }),
+  );
+  const said = (one: { row: string; column: string; value: number }) =>
+    `${one.row} × ${one.column} ${format(one.value)}`;
+  const top = pairs.reduce<(typeof pairs)[number] | null>(
+    (best, one) => (best === null || one.value > best.value ? one : best),
+    null,
+  );
+  const bottom = pairs.reduce<(typeof pairs)[number] | null>(
+    (best, one) => (best === null || one.value < best.value ? one : best),
+    null,
+  );
   const open = (row: string, column: string, target: Element) =>
     setFocus({ row, column, rect: target.getBoundingClientRect() });
   const lit = (name: string) => focus?.row === name || focus?.column === name;
@@ -810,6 +844,12 @@ export function Heatmap({
     <div className="pf-scroll">
       <div
         className={focus ? "pf-heat pf-heat-focus" : "pf-heat"}
+        role="img"
+        aria-label={
+          top && bottom
+            ? t("portfolio.heat_summary", { high: said(top), low: said(bottom) })
+            : t("portfolio.heat_label")
+        }
         style={{
           gridTemplateColumns: `auto repeat(${names.length}, minmax(1.5rem, 1fr))`,
         }}
@@ -842,11 +882,7 @@ export function Heatmap({
                     background:
                       value === undefined ? "transparent" : correlationColor(value),
                   }}
-                  aria-label={
-                    value === undefined
-                      ? `${row} × ${column}`
-                      : `${row} × ${column} — ${format(value)}`
-                  }
+                  aria-hidden="true"
                   onPointerEnter={(event) => {
                     if (event.pointerType !== "touch")
                       open(row, column, event.currentTarget);
@@ -900,7 +936,7 @@ function HeatTip({ rect, children }: { rect: DOMRect; children: ReactNode }) {
     tip.style.visibility = "visible";
   });
   return createPortal(
-    <div ref={box} className="pf-tip pf-heat-tip" role="status">
+    <div ref={box} className="pf-tip pf-heat-tip">
       {children}
     </div>,
     document.body,
@@ -993,6 +1029,10 @@ function PeriodBarsPlot({
   const [frame, width] = useWidth(BARS.fallback);
   const svg = useRef<SVGSVGElement>(null);
   useTouchHold(svg, hover !== null, setHover);
+  const walk = useKeyWalk({ at: hover, last: periods.length - 1, set: setHover });
+  // On touch the first tap on a bar reads it and only a second, on the same
+  // bar, picks it: one tap would otherwise open the box and navigate at once.
+  const armed = useRef(false);
 
   const up = token("candle-up");
   const down = token("candle-down");
@@ -1051,8 +1091,18 @@ function PeriodBarsPlot({
   };
   const point = (event: PointerEvent<SVGSVGElement>) => {
     const index = slotAt(event);
-    if (index !== null) setHover(index);
+    if (index === null) return;
+    walk.quiet();
+    setHover(index);
   };
+  const first = periods[0]!;
+  const final = periods[periods.length - 1]!;
+  const summary = `${labels.net}, ${first.period} ${money(first.net_taxable)} → ${final.period} ${money(final.net_taxable)}`;
+  const spoken = at
+    ? `${at.period}: ${labels.gains} ${money(at.realized_gain)}, ${labels.losses} ${money(at.deductible_loss)}${
+        anyRecovered ? `, ${labels.recovered} ${money(at.recovered_loss)}` : ""
+      }, ${labels.net} ${money(at.net_taxable)}`
+    : "";
 
   return (
     <div className="pf-chart">
@@ -1070,9 +1120,14 @@ function PeriodBarsPlot({
           viewBox={`0 0 ${width} ${height}`}
           width="100%"
           role="img"
-          className={onPick ? "pf-bars-pick" : undefined}
+          aria-label={summary}
+          className={onPick ? "pf-return-plot pf-bars-pick" : "pf-return-plot"}
+          {...walk.props}
           onPointerMove={point}
-          onPointerDown={point}
+          onPointerDown={(event) => {
+            armed.current = event.pointerType !== "touch" || slotAt(event) === hover;
+            point(event);
+          }}
           onPointerLeave={(event) => {
             // A tap ends in a leave: the box it opened stays until the next.
             if (event.pointerType !== "touch") setHover(null);
@@ -1080,7 +1135,7 @@ function PeriodBarsPlot({
           onClick={(event) => {
             const index = slotAt(event);
             const period = index === null ? undefined : periods[index];
-            if (period && onPick) onPick(period);
+            if (period && onPick && armed.current) onPick(period);
           }}
         >
           <ValueAxis
@@ -1133,53 +1188,59 @@ function PeriodBarsPlot({
             stroke={axis}
             strokeWidth="1"
           />
-          {periods.map((period, index) => {
-            const centre = left + index * slot + slot / 2;
-            const x = centre - bar / 2;
-            const gain = period.realized_gain * scale;
-            const loss = period.deductible_loss * scale;
-            const recovered = period.recovered_loss * scale;
-            const net = y(period.net_taxable);
-            return (
-              <g key={period.period} pointerEvents="none">
-                {gain > 0 ? (
-                  <rect x={x} y={zero - gain} width={bar} height={gain} fill={up} />
-                ) : null}
-                {loss > 0 ? (
-                  <rect x={x} y={zero} width={bar} height={loss} fill={down} />
-                ) : null}
-                {recovered > 0 ? (
-                  <rect
-                    x={x}
-                    y={zero + loss}
-                    width={bar}
-                    height={recovered}
-                    fill={recoveredColor}
+          <g
+            className="ag-redraw"
+            key={`${first.period}|${final.period}|${periods.length}`}
+          >
+            {periods.map((period, index) => {
+              const centre = left + index * slot + slot / 2;
+              const x = centre - bar / 2;
+              const gain = period.realized_gain * scale;
+              const loss = period.deductible_loss * scale;
+              const recovered = period.recovered_loss * scale;
+              const net = y(period.net_taxable);
+              return (
+                <g key={period.period} pointerEvents="none">
+                  {gain > 0 ? (
+                    <rect x={x} y={zero - gain} width={bar} height={gain} fill={up} />
+                  ) : null}
+                  {loss > 0 ? (
+                    <rect x={x} y={zero} width={bar} height={loss} fill={down} />
+                  ) : null}
+                  {recovered > 0 ? (
+                    <rect
+                      x={x}
+                      y={zero + loss}
+                      width={bar}
+                      height={recovered}
+                      fill={recoveredColor}
+                    />
+                  ) : null}
+                  <path
+                    d={`M ${centre} ${net - 5} L ${centre + 5} ${net} L ${centre} ${net + 5} L ${centre - 5} ${net} Z`}
+                    fill={netColor}
                   />
-                ) : null}
-                <path
-                  d={`M ${centre} ${net - 5} L ${centre + 5} ${net} L ${centre} ${net + 5} L ${centre - 5} ${net} Z`}
-                  fill={netColor}
-                />
-                {index % step === 0 ? (
-                  <text
-                    x={centre < 24 ? 0 : width - centre < 24 ? width : centre}
-                    y={height - 6}
-                    fill={period.period === picked ? token("text-primary") : text}
-                    fontSize="11"
-                    fontWeight={period.period === picked ? 700 : undefined}
-                    // A label past the frame's edge hangs inward instead.
-                    textAnchor={
-                      centre < 24 ? "start" : width - centre < 24 ? "end" : "middle"
-                    }
-                  >
-                    {period.period}
-                  </text>
-                ) : null}
-              </g>
-            );
-          })}
+                  {index % step === 0 ? (
+                    <text
+                      x={centre < 24 ? 0 : width - centre < 24 ? width : centre}
+                      y={height - 6}
+                      fill={period.period === picked ? token("text-primary") : text}
+                      fontSize="11"
+                      fontWeight={period.period === picked ? 700 : undefined}
+                      // A label past the frame's edge hangs inward instead.
+                      textAnchor={
+                        centre < 24 ? "start" : width - centre < 24 ? "end" : "middle"
+                      }
+                    >
+                      {period.period}
+                    </text>
+                  ) : null}
+                </g>
+              );
+            })}
+          </g>
         </svg>
+        <Spoken text={walk.keyed ? spoken : null} />
         {at && hover !== null ? (
           <ChartTip
             x={left + hover * slot + slot / 2}
@@ -1402,6 +1463,14 @@ export function ReturnLines({
   const [frame, width] = useWidth(RETURN.fallback);
   const svg = useRef<SVGSVGElement>(null);
   useTouchHold(svg, pointer !== null, setHover);
+  const walk = useKeyWalk({
+    at: pointer,
+    last: dates.length - 1,
+    set: (index) => {
+      setHover(index);
+      if (index === null) setNear(null);
+    },
+  });
   const drawn = series.filter((one) => one.points.some((v) => v !== null));
   if (dates.length < 2 || !drawn.length) return null;
   // A shorter window can arrive under a pointer still resting on the old one.
@@ -1515,10 +1584,57 @@ export function ReturnLines({
   const point = (event: PointerEvent<SVGSVGElement>) => {
     const at = viewX(event, svg.current, width);
     if (at === null) return;
+    walk.quiet();
     const index = nearest(at, left, plotW, dates.length);
     setHover(index);
     if (money) setNear(closest(viewY(event, svg.current, width), index));
   };
+  // The headline for a screen reader: what the plot shows, then where each
+  // line ends — the figures the legend prints beside its names.
+  const ends = listed
+    .map((one) => {
+      const end = lastValue(one.points);
+      return end === null ? null : `${one.label} ${format(end)}`;
+    })
+    .filter((one) => one !== null)
+    .join(", ");
+  const summary = [label, ends].filter(Boolean).join(": ");
+  // What a key step reads out: the day and every line's figure on it.
+  const spoken =
+    hover === null
+      ? ""
+      : `${formatDate(dates[hover]!)}: ${colored
+          .map((one) => {
+            const value = one.points[hover];
+            return `${one.label} ${value == null ? "—" : format(value)}`;
+          })
+          .join(", ")}`;
+  // Names on the lines' right ends, so telling them apart never rests on
+  // matching a colour to the legend — while few enough to fit without a pile.
+  const named = !narrow && listed.length + bands.length <= 4;
+  const endNames = named
+    ? [
+        ...listed.flatMap((one) => {
+          const end = lastValue(one.points);
+          return end === null ? [] : [{ text: one.label, y: y(end), color: one.color }];
+        }),
+        ...bands.flatMap((band) => {
+          for (let i = last; i >= 0; i--) {
+            const hi = band.high[i];
+            const lo = band.low[i];
+            if (hi != null && lo != null)
+              return [{ text: band.label, y: y((hi + lo) / 2), color: band.color }];
+          }
+          return [];
+        }),
+      ]
+    : [];
+  const endAt = spreadLabels(
+    endNames.map((one) => one.y - 6),
+    13,
+    RETURN.top + 10,
+    RETURN.top + plotH - 4,
+  );
   // The day the legend's figures are read on: the pointer's, else the last
   // day with money in.
   let shown = hover;
@@ -1590,8 +1706,8 @@ export function ReturnLines({
           viewBox={`0 0 ${width} ${height}`}
           width="100%"
           role="img"
-          aria-label={label}
-          tabIndex={0}
+          aria-label={summary || undefined}
+          {...walk.props}
           onPointerMove={point}
           // A tap is a pointer that never moves: it answers too, on a phone.
           onPointerDown={point}
@@ -1602,35 +1718,6 @@ export function ReturnLines({
             setHover(null);
             setNear(null);
           }}
-          // The crosshair by keyboard: arrows step a day (with shift, ten),
-          // Home and End jump to the edges, Escape puts it away.
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              setHover(null);
-              setNear(null);
-              return;
-            }
-            const at = hover ?? last;
-            const step = event.shiftKey ? 10 : 1;
-            const next =
-              event.key === "ArrowLeft"
-                ? at - step
-                : event.key === "ArrowRight"
-                  ? at + step
-                  : event.key === "Home"
-                    ? 0
-                    : event.key === "End"
-                      ? last
-                      : null;
-            if (next === null) return;
-            event.preventDefault();
-            setHover(Math.max(0, Math.min(last, next)));
-          }}
-          onFocus={(event) => {
-            if (event.currentTarget.matches(":focus-visible"))
-              setHover((at) => at ?? last);
-          }}
-          onBlur={() => setHover(null)}
         >
           <ValueAxis
             ticks={yTicks.filter((tick) => tick !== 0)}
@@ -1657,75 +1744,90 @@ export function ReturnLines({
             inside={narrow}
             top={RETURN.top}
           />
-          {bands.map((band) =>
-            areas(band).map((d, index) => (
-              <path
-                key={`${band.label}-${index}`}
-                d={d}
-                fill={band.color}
-                stroke="none"
-              />
-            )),
-          )}
-          {marker && marker.index > 0 && marker.index < dates.length ? (
-            <g pointerEvents="none">
-              <line
-                x1={x(marker.index)}
-                x2={x(marker.index)}
-                y1={RETURN.top}
-                y2={RETURN.top + plotH}
-                stroke={token("border")}
-                strokeWidth="1"
-              />
-              {/* Said on the date axis, where the reader looks for "when":
+          <g className="ag-redraw" key={`${dates[0]}|${dates[last]}|${dates.length}`}>
+            {bands.map((band) =>
+              areas(band).map((d, index) => (
+                <path
+                  key={`${band.label}-${index}`}
+                  d={d}
+                  fill={band.color}
+                  stroke="none"
+                />
+              )),
+            )}
+            {marker && marker.index > 0 && marker.index < dates.length ? (
+              <g pointerEvents="none">
+                <line
+                  x1={x(marker.index)}
+                  x2={x(marker.index)}
+                  y1={RETURN.top}
+                  y2={RETURN.top + plotH}
+                  stroke={token("border")}
+                  strokeWidth="1"
+                />
+                {/* Said on the date axis, where the reader looks for "when":
                   at its real x, between the year ticks rather than as one. */}
-              <text
-                x={x(marker.index)}
-                y={height - 6}
-                fill={token("text-primary")}
-                fontSize="11"
-                fontWeight="600"
-                textAnchor={anchor(x(marker.index))}
-              >
-                {marker.label}
-              </text>
-            </g>
-          ) : null}
-          {stacked.map((one) =>
-            paths(one.points).map((d, index) => (
-              <path
-                key={`${one.label}-${index}`}
-                className="pf-line"
-                data-series={one.label}
-                d={d}
-                fill="none"
-                stroke={one.color}
-                strokeWidth={one.label === active ? 2.5 : one.focal ? 2 : 1.5}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-                strokeDasharray={one.dashed ? "4 3" : undefined}
-                style={{ strokeOpacity: opacity(one) }}
-              />
-            )),
-          )}
-          {/* Where the reader's own line ends, ringed in the card's surface so
+                <text
+                  x={x(marker.index)}
+                  y={height - 6}
+                  fill={token("text-primary")}
+                  fontSize="11"
+                  fontWeight="600"
+                  textAnchor={anchor(x(marker.index))}
+                >
+                  {marker.label}
+                </text>
+              </g>
+            ) : null}
+            {stacked.map((one) =>
+              paths(one.points).map((d, index) => (
+                <path
+                  key={`${one.label}-${index}`}
+                  className="pf-line"
+                  data-series={one.label}
+                  d={d}
+                  fill="none"
+                  stroke={one.color}
+                  strokeWidth={one.label === active ? 2.5 : one.focal ? 2 : 1.5}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  strokeDasharray={one.dashed ? "4 3" : undefined}
+                  style={{ strokeOpacity: opacity(one) }}
+                />
+              )),
+            )}
+            {/* Where the reader's own line ends, ringed in the card's surface so
             it stays one dot where the others run into it. */}
-          {stacked.map((one) => {
-            const end = one.points[last];
-            return !one.focal || end === null || end === undefined ? null : (
-              <circle
-                key={`${one.label}-end`}
-                className="pf-line"
-                cx={x(last)}
-                cy={y(end)}
-                r="4"
+            {stacked.map((one) => {
+              const end = one.points[last];
+              return !one.focal || end === null || end === undefined ? null : (
+                <circle
+                  key={`${one.label}-end`}
+                  className="pf-line"
+                  cx={x(last)}
+                  cy={y(end)}
+                  r="4"
+                  fill={one.color}
+                  stroke={ring}
+                  strokeWidth="2"
+                  style={{ opacity: opacity(one) }}
+                />
+              );
+            })}
+            {endNames.map((one, at) => (
+              <text
+                key={one.text}
+                className="pf-halo pf-end"
+                x={right}
+                y={endAt[at]}
+                textAnchor="end"
                 fill={one.color}
-                stroke={ring}
-                strokeWidth="2"
-                style={{ opacity: opacity(one) }}
-              />
-            );
-          })}
+                pointerEvents="none"
+              >
+                {one.text}
+              </text>
+            ))}
+          </g>
           {/* Plotly's `hovermode="x"`: the whole plot answers, nearest day by
             the pointer's x, with a crosshair and a dot on every line there. */}
           {hover === null ? null : (
@@ -1735,7 +1837,7 @@ export function ReturnLines({
                 x2={x(hover)}
                 y1={RETURN.top}
                 y2={RETURN.top + plotH}
-                stroke={token("text-faint")}
+                stroke={token("text-muted")}
                 strokeDasharray="2 2"
               />
               {colored.map((one) => {
@@ -1777,6 +1879,7 @@ export function ReturnLines({
               </text>
             ))}
         </svg>
+        <Spoken text={walk.keyed ? spoken : null} />
         {hover === null ? null : money && money.invested[hover] != null ? (
           <ChartTip
             x={x(hover)}
@@ -2074,6 +2177,7 @@ function BookHistoryPlot({
   }, [first, last, all.length]);
 
   const days = zoom ? all.slice(zoom.from, zoom.to + 1) : all;
+  const walk = useKeyWalk({ at: hover, last: days.length - 1, set: setHover });
   const narrow = width < NARROW;
   const height = plotHeightFor(width, PLOT.height);
   const left = narrow ? NARROW_PAD : PLOT.left;
@@ -2129,6 +2233,10 @@ function BookHistoryPlot({
   const downColor = token("down");
   const tipRows = (day: (typeof days)[number]) => bookTip(day, labels, money, percent);
   const hovered = hover === null ? null : days[hover];
+  const firstDay = days[0]!;
+  const lastDay = days[days.length - 1]!;
+  const summary = `${labels.value}, ${formatDate(firstDay.date)} → ${formatDate(lastDay.date)}: ${money(firstDay.value)} → ${money(lastDay.value)}; ${labels.injected} ${money(lastDay.injected)}`;
+  const spoken = hovered ? tipSaid(formatDate(hovered.date), tipRows(hovered)) : "";
   const anyGain = days.some((day) => day.value >= day.injected);
   const anyLoss = days.some((day) => day.value < day.injected);
 
@@ -2171,8 +2279,11 @@ function BookHistoryPlot({
           viewBox={`0 0 ${width} ${height}`}
           width="100%"
           role="img"
-          className="pf-zoomable"
+          aria-label={summary}
+          className="pf-zoomable pf-return-plot"
+          {...walk.props}
           onPointerDown={(event) => {
+            walk.quiet();
             if (spanned.down(event, xAt(event))) return;
             const at = dayOf(xAt(event));
             // A finger scrubs, it does not zoom: on a phone the drag that
@@ -2183,10 +2294,15 @@ function BookHistoryPlot({
               return;
             }
             if (event.button !== 0) return;
+            // Captured, so a drag that wanders off the plot keeps tracking
+            // (to the edge day, since `dayOf` clamps) and ends where the
+            // button is let go, not where the pointer happened to leave.
+            event.currentTarget.setPointerCapture?.(event.pointerId);
             setDrag({ from: at, to: at });
           }}
           onPointerMove={(event) => {
             if (spanned.move(event, xAt(event))) return;
+            walk.quiet();
             const at = dayOf(xAt(event));
             setHover(at);
             if (drag) setDrag({ ...drag, to: at });
@@ -2198,6 +2314,9 @@ function BookHistoryPlot({
           // A finger lifting is a leave too: the day it read stays up until
           // the reader touches elsewhere (useTouchHold).
           onPointerLeave={(event) => {
+            // A drag in progress is held by the capture; leaving is not its end.
+            if (drag && event.currentTarget.hasPointerCapture?.(event.pointerId))
+              return;
             spanned.leave(event);
             if (event.pointerType !== "touch") setHover(null);
             finish();
@@ -2215,29 +2334,34 @@ function BookHistoryPlot({
             inside={narrow}
             top={PLOT.top}
           />
-          {bands.map((band, index) => (
-            <path
-              key={index}
-              d={band.path}
-              fill={band.gain ? token("profit-band") : token("loss-band")}
-            />
-          ))}
-          <polyline
-            points={line((day) => day.injected)}
-            fill="none"
-            stroke={token("text-muted")}
-            strokeWidth="1.5"
-            strokeDasharray="4 3"
-          />
-          {bands.map((band, index) => (
+          <g
+            className="ag-redraw"
+            key={`${first}|${last}|${all.length}|${zoom?.from}|${zoom?.to}`}
+          >
+            {bands.map((band, index) => (
+              <path
+                key={index}
+                d={band.path}
+                fill={band.gain ? token("profit-band") : token("loss-band")}
+              />
+            ))}
             <polyline
-              key={`value-${index}`}
-              points={band.value}
+              points={line((day) => day.injected)}
               fill="none"
-              stroke={band.gain ? upColor : downColor}
-              strokeWidth="2"
+              stroke={token("text-muted")}
+              strokeWidth="1.5"
+              strokeDasharray="4 3"
             />
-          ))}
+            {bands.map((band, index) => (
+              <polyline
+                key={`value-${index}`}
+                points={band.value}
+                fill="none"
+                stroke={band.gain ? upColor : downColor}
+                strokeWidth="2"
+              />
+            ))}
+          </g>
           {measure ? (
             <g className="pf-span" pointerEvents="none">
               {measure.to > measure.from ? (
@@ -2266,7 +2390,7 @@ function BookHistoryPlot({
                 x2={x(hover)}
                 y1={PLOT.top}
                 y2={PLOT.top + plotH}
-                stroke={token("text-faint")}
+                stroke={token("text-muted")}
                 strokeDasharray="2 2"
               />
               <circle
@@ -2301,6 +2425,7 @@ function BookHistoryPlot({
             </text>
           ))}
         </svg>
+        <Spoken text={walk.keyed ? spoken : null} />
         {measure && measure.to > measure.from ? (
           <ChartTip
             x={(x(measure.from) + x(measure.to)) / 2}
@@ -2487,6 +2612,7 @@ function BookAndRatesPlot({
   // A shorter window can arrive under a pointer still resting on the old one,
   // or under a comparison drawn on it.
   const hover = pointer !== null && pointer < book.length && !measure ? pointer : null;
+  const walk = useKeyWalk({ at: hover, last: book.length - 1, set: setHover });
   const compared = measure && measure.to < book.length ? measure : null;
 
   const narrow = width < NARROW;
@@ -2569,7 +2695,9 @@ function BookAndRatesPlot({
   const hovered = hover === null ? null : book[hover]!;
   const track = (event: PointerEvent<SVGSVGElement>) => {
     const at = viewX(event, svg.current, width);
-    if (at !== null) setHover(nearest(at, left, plotW, book.length));
+    if (at === null) return;
+    walk.quiet();
+    setHover(nearest(at, left, plotW, book.length));
   };
   /** Where a pointer is on the SVG, in viewBox x. */
   const xAt = (event: MouseEvent<SVGSVGElement>) =>
@@ -2601,6 +2729,36 @@ function BookAndRatesPlot({
   const barUp = token("candle-up");
   const barDown = token("candle-down");
   const barW = Math.max(1, Math.min(10, (plotW / (book.length - 1)) * 0.6));
+  const firstPoint = book[0]!;
+  const lastPoint = book[book.length - 1]!;
+  const summary = `${labels.value}, ${formatDate(firstPoint.date)} → ${formatDate(lastPoint.date)}: ${money(firstPoint.value)} → ${money(lastPoint.value)}; ${labels.invested} ${money(lastPoint.invested)}${colored
+    .map((one) => {
+      const end = lastValue(one.points);
+      return end === null ? "" : `; ${one.label} ${format(end)}`;
+    })
+    .join("")}`;
+  const spoken = hovered
+    ? tipSaid(formatDate(hovered.date), tipRows(hover!, hovered))
+    : "";
+  // Names on the rate lines' ends, so they are told apart by more than
+  // colour — inside the plot, since the right gutter holds the axis.
+  const endNames =
+    narrow || colored.length > 4
+      ? []
+      : colored.flatMap((one) => {
+          const end = lastValue(one.points);
+          let at = one.points.length - 1;
+          while (at > 0 && one.points[at] === null) at--;
+          return end === null
+            ? []
+            : [{ text: one.label, y: yRate(end), at, color: one.color }];
+        });
+  const endAt = spreadLabels(
+    endNames.map((one) => one.y - 6),
+    13,
+    ratesTop + 10,
+    bottom - 4,
+  );
 
   return (
     <div className="pf-chart">
@@ -2651,6 +2809,9 @@ function BookAndRatesPlot({
           viewBox={`0 0 ${width} ${height}`}
           width="100%"
           role="img"
+          aria-label={summary}
+          className="pf-return-plot"
+          {...walk.props}
           onPointerMove={(event) => {
             if (!spanned.move(event, xAt(event))) track(event);
           }}
@@ -2686,97 +2847,115 @@ function BookAndRatesPlot({
             inside={narrow}
             top={moneyTop}
           />
-          {bands.map((band, index) => (
-            <path
-              key={index}
-              d={band.path}
-              fill={band.gain ? token("profit-band") : token("loss-band")}
-            />
-          ))}
-          <polyline
-            points={book
-              .map((point, i) => `${x(i)},${yMoney(point.invested)}`)
-              .join(" ")}
-            fill="none"
-            stroke={token("text-muted")}
-            strokeWidth="1.5"
-            strokeDasharray="4 3"
-          />
-          {bands.map((band, index) => (
-            <polyline
-              key={`value-${index}`}
-              points={band.value}
-              fill="none"
-              stroke={band.gain ? upColor : downColor}
-              strokeWidth="2"
-            />
-          ))}
-
-          {/* The seam: where money's floor ends and the rates' begins. */}
-          <line
-            x1={left}
-            x2={width - right}
-            y1={ratesTop}
-            y2={ratesTop}
-            stroke={token("border")}
-            strokeWidth="1"
-          />
-          <ValueAxis
-            ticks={niceTicks(rateLow, rateLow + rateSpan, narrow ? 2 : 3).filter(
-              (tick) => tick !== 0,
-            )}
-            y={yRate}
-            left={left}
-            right={width - right}
-            format={format}
-            side="right"
-            inside={narrow}
-            top={ratesTop}
-          />
-          {barred?.points.map((value, index) =>
-            value === null ? null : (
-              <rect
-                key={`bar-${index}`}
-                className="pf-rate-bar"
-                x={x(index) - barW / 2}
-                y={Math.min(yRate(0), yRate(value))}
-                width={barW}
-                height={Math.max(1, Math.abs(yRate(value) - yRate(0)))}
-                fill={value >= 0 ? barUp : barDown}
-                fillOpacity={hover === null || hover === index ? 0.7 : 0.4}
-              />
-            ),
-          )}
-          <line
-            x1={left}
-            x2={width - right}
-            y1={yRate(0)}
-            y2={yRate(0)}
-            stroke={token("border")}
-            strokeWidth="1"
-            strokeDasharray="2 3"
-          />
-          <AxisLabel
-            text={format(0)}
-            at={yRate(0)}
-            left={left}
-            right={width - right}
-            side="right"
-            inside={narrow}
-            top={ratesTop}
-          />
-          {colored.map((one) =>
-            runs(one.points).map((d, index) => (
+          <g
+            className="ag-redraw"
+            key={`${firstPoint.date}|${lastPoint.date}|${book.length}`}
+          >
+            {bands.map((band, index) => (
               <path
-                key={`${one.label}-${index}`}
-                d={d}
-                fill="none"
-                stroke={one.color}
-                strokeWidth="1.5"
-                strokeDasharray={one.dashed ? "4 3" : undefined}
+                key={index}
+                d={band.path}
+                fill={band.gain ? token("profit-band") : token("loss-band")}
               />
-            )),
-          )}
+            ))}
+            <polyline
+              points={book
+                .map((point, i) => `${x(i)},${yMoney(point.invested)}`)
+                .join(" ")}
+              fill="none"
+              stroke={token("text-muted")}
+              strokeWidth="1.5"
+              strokeDasharray="4 3"
+            />
+            {bands.map((band, index) => (
+              <polyline
+                key={`value-${index}`}
+                points={band.value}
+                fill="none"
+                stroke={band.gain ? upColor : downColor}
+                strokeWidth="2"
+              />
+            ))}
+
+            {/* The seam: where money's floor ends and the rates' begins. */}
+            <line
+              x1={left}
+              x2={width - right}
+              y1={ratesTop}
+              y2={ratesTop}
+              stroke={token("border")}
+              strokeWidth="1"
+            />
+            <ValueAxis
+              ticks={niceTicks(rateLow, rateLow + rateSpan, narrow ? 2 : 3).filter(
+                (tick) => tick !== 0,
+              )}
+              y={yRate}
+              left={left}
+              right={width - right}
+              format={format}
+              side="right"
+              inside={narrow}
+              top={ratesTop}
+            />
+            {barred?.points.map((value, index) =>
+              value === null ? null : (
+                <rect
+                  key={`bar-${index}`}
+                  className="pf-rate-bar"
+                  x={x(index) - barW / 2}
+                  y={Math.min(yRate(0), yRate(value))}
+                  width={barW}
+                  height={Math.max(1, Math.abs(yRate(value) - yRate(0)))}
+                  fill={value >= 0 ? barUp : barDown}
+                  fillOpacity={hover === null || hover === index ? 0.7 : 0.4}
+                />
+              ),
+            )}
+            <line
+              x1={left}
+              x2={width - right}
+              y1={yRate(0)}
+              y2={yRate(0)}
+              stroke={token("border")}
+              strokeWidth="1"
+              strokeDasharray="2 3"
+            />
+            <AxisLabel
+              text={format(0)}
+              at={yRate(0)}
+              left={left}
+              right={width - right}
+              side="right"
+              inside={narrow}
+              top={ratesTop}
+            />
+            {colored.map((one) =>
+              runs(one.points).map((d, index) => (
+                <path
+                  key={`${one.label}-${index}`}
+                  d={d}
+                  fill="none"
+                  stroke={one.color}
+                  strokeWidth="1.5"
+                  strokeDasharray={one.dashed ? "4 3" : undefined}
+                />
+              )),
+            )}
+            {endNames.map((one, at) => (
+              <text
+                key={one.text}
+                className="pf-halo pf-end"
+                x={x(one.at)}
+                y={endAt[at]}
+                textAnchor="end"
+                fill={one.color}
+                pointerEvents="none"
+              >
+                {one.text}
+              </text>
+            ))}
+          </g>
 
           {compared ? (
             <g className="pf-span" pointerEvents="none">
@@ -2800,7 +2979,7 @@ function BookAndRatesPlot({
                 x2={x(hover)}
                 y1={moneyTop}
                 y2={bottom}
-                stroke={token("text-faint")}
+                stroke={token("text-muted")}
                 strokeDasharray="2 2"
               />
               <circle
@@ -2838,6 +3017,7 @@ function BookAndRatesPlot({
             </text>
           ))}
         </svg>
+        <Spoken text={walk.keyed ? spoken : null} />
         {compared && compared.to > compared.from ? (
           <ChartTip
             x={(x(compared.from) + x(compared.to)) / 2}

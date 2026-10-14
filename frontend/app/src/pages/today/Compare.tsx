@@ -32,6 +32,7 @@ import {
   type Span,
 } from "./card";
 import type { TodayRow } from "./types";
+import { Segmented } from "../../ui/Segmented";
 
 type Shown = { row: TodayRow; data: CompareData; hot: boolean };
 
@@ -69,19 +70,13 @@ function SpanPicker({
 }) {
   const t = useT();
   return (
-    <div className="td-seg" role="group" aria-label={t("today.col_span")}>
-      {SPANS.map((span) => (
-        <button
-          key={span}
-          type="button"
-          className={span === value ? "td-seg-on" : undefined}
-          aria-pressed={span === value}
-          onClick={() => onChange(span)}
-        >
-          {t(`today.col_${span}`)}
-        </button>
-      ))}
-    </div>
+    <Segmented
+      className="td-seg"
+      label={t("today.col_span")}
+      items={SPANS.map((span) => ({ id: span, label: t(`today.col_${span}`) }))}
+      value={value}
+      onPick={onChange}
+    />
   );
 }
 

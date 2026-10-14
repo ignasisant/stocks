@@ -24,7 +24,7 @@
  * loses nothing.
  */
 
-import { useCallback, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { ApiError } from "../shell/api";
 import { useLang, useT } from "../shell/i18n";
 import { Glyph } from "./icons";
@@ -470,11 +470,48 @@ function useRate(turn: Stored, onRated?: (vote: Rating | null) => void): Rate {
   };
 }
 
+/**
+ * Copy an answer's text, on every finished answer. A button in the foot rather
+ * than a hover affordance: a phone has no hover, and the long-press selection
+ * it would fall back to cannot take a whole answer with its tables.
+ */
+function CopyAnswer({ text }: { text: string }) {
+  const t = useT();
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const timer = window.setTimeout(() => setDone(false), 1600);
+    return () => window.clearTimeout(timer);
+  }, [done]);
+  return (
+    <>
+      <button
+        type="button"
+        className="ag-chat-meta-btn ag-chat-thumb"
+        aria-label={t("chat.copy")}
+        title={t("chat.copy")}
+        onClick={() => {
+          navigator.clipboard?.writeText(text).then(
+            () => setDone(true),
+            () => {},
+          );
+        }}
+      >
+        <Glyph name={done ? "check" : "copy"} size={14} />
+      </button>
+      {/* Said aloud once; the glyph swap alone is silent. */}
+      <span className="ag-sr" role="status">
+        {done ? t("chat.copied") : ""}
+      </span>
+    </>
+  );
+}
+
 /** The two thumbs, at the end of the foot. */
 function Thumbs({ rate }: { rate: Rate }) {
   const t = useT();
   return (
-    <span className="ag-chat-thumbs">
+    <>
       {(["up", "down"] as const).map((vote) => {
         const on = rate.vote === vote;
         return (
@@ -491,7 +528,7 @@ function Thumbs({ rate }: { rate: Rate }) {
           </button>
         );
       })}
-    </span>
+    </>
   );
 }
 
@@ -649,6 +686,9 @@ export function Turn({
   cap,
   onRetry,
   onDrop,
+  switchTo = [],
+  onSwitch,
+  onPickAi,
   onDecide,
   onUndo,
   onLeave,
@@ -672,6 +712,15 @@ export function Turn({
    * Absent: nothing to offer.
    */
   onDrop?: () => void;
+  /**
+   * The other providers that could answer right now, offered on a refusal as
+   * "Try with …" — the one that failed may stay down for a while, and the
+   * reader should not have to find the settings screen to get past it.
+   */
+  switchTo?: { id: string; label: string }[];
+  onSwitch?: (provider: string) => void;
+  /** Open the settings screen, for a model or a key not offered here. */
+  onPickAi?: () => void;
   /** Answer a proposal card. Absent: its buttons are not drawn. */
   onDecide?: (id: string, approved: boolean, edits?: Edits) => Promise<string | null>;
   /** Take back a ledger edit a card made. Absent: no Undo is drawn. */
@@ -714,6 +763,7 @@ export function Turn({
   // The thread decides which turn asks (`rateAt`); this only refuses one that
   // could not be named.
   const rateable = !!askRating && !mine && !turn.pending && !!turn.id && !turn.guide;
+  const copyable = !mine && !turn.pending && !turn.guide && !!turn.content;
   // One provider answered for another. Session-only: a stored turn records
   // neither, so a reloaded thread names nobody rather than naming today's
   // head of the chain.
@@ -754,6 +804,26 @@ export function Turn({
               </button>
             )}
           </div>
+          {turn.action !== "import" && onDrop && (onSwitch || onPickAi) && (
+            <div className="ag-chat-fail-acts">
+              {onSwitch &&
+                switchTo.slice(0, 2).map((provider) => (
+                  <button
+                    key={provider.id}
+                    type="button"
+                    className="ag-chat-retry"
+                    onClick={() => onSwitch(provider.id)}
+                  >
+                    {t("chat.try_with", { provider: provider.label })}
+                  </button>
+                ))}
+              {onPickAi && (
+                <button type="button" className="ag-chat-retry" onClick={onPickAi}>
+                  {t("chat.pick_ai")}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -861,7 +931,8 @@ export function Turn({
         when ||
         spent ||
         (turn.steps?.length ?? 0) > 0 ||
-        rateable) && (
+        rateable ||
+        copyable) && (
         <div className="ag-chat-foot">
           {turn.web.length > 0 && (
             <Sources web={turn.web} onLeave={onLeave ?? (() => {})} />
@@ -870,7 +941,12 @@ export function Turn({
               beside it only says when. */}
           {!mine && !turn.pending && <Trace steps={turn.steps ?? []} spent={spent} />}
           {when && <span className="ag-chat-clock">{when}</span>}
-          {rateable && <Thumbs rate={rate} />}
+          {(copyable || rateable) && (
+            <span className="ag-chat-thumbs">
+              {copyable && <CopyAnswer text={turn.content} />}
+              {rateable && <Thumbs rate={rate} />}
+            </span>
+          )}
         </div>
       )}
       {rateable && <Why rate={rate} />}

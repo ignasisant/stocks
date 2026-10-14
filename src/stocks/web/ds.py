@@ -147,6 +147,7 @@ BAR_RADIUS = 6
 # arrives over the network and the first paint must not be a different metric.
 FONT_BODY = "'Instrument Sans', system-ui, -apple-system, sans-serif"
 FONT_MONO = "'Martian Mono', ui-monospace, monospace"
+FONT_DISPLAY = f"'Epilogue', {FONT_BODY}"  # KPI figures and the big numbers
 
 # Type scale — the DS heading sizes (28/22/18/16/14/12) extended down with
 # the three chrome steps the app needs. rem, so text follows the reader's own
@@ -164,6 +165,21 @@ FS_XL = "1.125rem"      # 18px — h3 / KPI figures
 FS_2XL = "1.375rem"     # 22px — h2
 FS_3XL = "1.75rem"      # 28px — h1
 FS_DISPLAY = "2rem"     # 32px — hero price figure (Epilogue), one step above h1
+# Tracking tightens as type grows: a heading set at body spacing reads loose.
+TRACK_XL = "-0.01em"    # FS_XL — card titles, KPI figures
+TRACK_2XL = "-0.015em"  # FS_2XL — h2, section scores
+TRACK_3XL = "-0.02em"   # FS_3XL and up — h1, hero figures
+
+# Motion. The DS's three speeds, and the two curves everything moves on:
+# a hover answers at once, a press or a row tint in a beat, and a sheet,
+# panel or tab underline travels in `DUR_MOVE` (`useSheet.LEAVE_MS` waits the
+# same). EASE_OUT decelerates into place — the way a thrown object settles —
+# and EASE_SETTLE is the softer curve a dragged panel springs back to rest on.
+DUR_HOVER = "50ms"      # buttons, tabs, links on hover
+DUR_PRESS = "100ms"     # press feedback, nav and table-row tints
+DUR_MOVE = "200ms"      # sheets, panels, the tab underline — enter and leave
+EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)"
+EASE_SETTLE = "cubic-bezier(0.32, 0.72, 0, 1)"
 
 # Icon sizing is its own dimension, not a type step: a Material glyph takes
 # its size from font-size, and the wrapper spans' width/height must match it
@@ -284,11 +300,16 @@ def tokens() -> dict[str, str]:
         "radius-pill": RADIUS_PILL,
         # type
         "font-body": FONT_BODY, "font-mono": FONT_MONO,
+        "font-display": FONT_DISPLAY,
         "fs-2xs": FS_2XS, "fs-xs": FS_XS, "fs-sm": FS_SM,
         "fs-md": FS_MD, "fs-base": FS_BASE, "fs-lg": FS_LG, "fs-xl": FS_XL,
         "fs-2xl": FS_2XL, "fs-3xl": FS_3XL, "fs-display": FS_DISPLAY,
+        "track-xl": TRACK_XL, "track-2xl": TRACK_2XL, "track-3xl": TRACK_3XL,
         # icon
         "icon-nav": ICON_NAV,
+        # motion
+        "dur-hover": DUR_HOVER, "dur-press": DUR_PRESS, "dur-move": DUR_MOVE,
+        "ease-out": EASE_OUT, "ease-settle": EASE_SETTLE,
     }
 
 

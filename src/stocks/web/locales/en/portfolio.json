@@ -604,5 +604,7 @@
   "portfolio.projection_on_today": "on {amount}, today's value",
   "portfolio.projection_now": "today",
   "portfolio.projection_band_outer": "8 in 10 scenarios",
-  "portfolio.projection_band_inner": "Middle half"
+  "portfolio.projection_band_inner": "Middle half",
+  "portfolio.heat_label": "Correlation between holdings",
+  "portfolio.heat_summary": "Correlation between holdings. Moves most together: {high}. Most apart: {low}."
 }

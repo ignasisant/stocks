@@ -35,7 +35,7 @@ import { useLang, useT } from "../../shell/i18n";
 import { Skeleton } from "../../shell/Layout";
 import { useRoute } from "../../shell/router";
 import { useGuest } from "../../shell/session";
-import { useTabStrip } from "../../shell/useTabStrip";
+import { Tabs } from "../../ui/Tabs";
 import { Glyph } from "../../chat/icons";
 import { Badge } from "../../ui/Badge";
 import { Status } from "../../ui/Status";
@@ -54,7 +54,6 @@ import {
   shows,
   stampOf,
   tabsOf,
-  type Tab,
   type TabId,
 } from "./card";
 import { Compare } from "./Compare";
@@ -102,36 +101,6 @@ function IconButton({
     >
       <Glyph name={icon} size={17} />
     </button>
-  );
-}
-
-function Tabs({
-  tabs,
-  active,
-  onPick,
-}: {
-  tabs: Tab[];
-  active: TabId;
-  onPick: (tab: TabId) => void;
-}) {
-  const t = useT();
-  const strip = useTabStrip(active);
-  return (
-    <div className="td-tabs ag-fade-x" role="tablist" ref={strip}>
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          role="tab"
-          aria-selected={tab.id === active}
-          className={tab.id === active ? "td-tab td-tab-on" : "td-tab"}
-          onClick={() => onPick(tab.id)}
-        >
-          {t(TAB_LABELS[tab.id])}
-          {tab.count ? <span className="td-count">{tab.count}</span> : null}
-        </button>
-      ))}
-    </div>
   );
 }
 
@@ -415,7 +384,17 @@ export default function Today() {
             <IndexKpis index={market.index} />
           ) : null}
 
-          {tabs.length > 1 ? <Tabs tabs={tabs} active={active} onPick={pick} /> : null}
+          {tabs.length > 1 ? (
+            <Tabs
+              items={tabs.map((tab) => ({
+                id: tab.id,
+                label: t(TAB_LABELS[tab.id]),
+                count: tab.count,
+              }))}
+              active={active}
+              onPick={pick}
+            />
+          ) : null}
 
           {writing || regenerating ? <Skeleton rows={3} /> : null}
 

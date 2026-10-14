@@ -25,6 +25,7 @@ import { DenseRows, Responsive } from "../../ui/Rows";
 import { Card, CardQuery, CardTitle, Note, TickerCell } from "./ui";
 import { money, percent, plain, priceDigits } from "./format";
 import { AverageTile, SPARK_WINDOW, Spark } from "./Spark";
+import { Segmented } from "../../ui/Segmented";
 import type {
   History,
   MarketStatus,
@@ -406,19 +407,12 @@ function MoversCard({
     <Card>
       <div className="hm-card-head">
         <CardTitle>{plain(t("home.movers_title"))}</CardTitle>
-        <div className="hm-segmented" role="group" aria-label={t("home.movers_range")}>
-          {WINDOWS.map(({ key, label }) => (
-            <button
-              key={key}
-              type="button"
-              className={key === range ? "hm-seg hm-seg-on" : "hm-seg"}
-              aria-pressed={key === range}
-              onClick={() => setRange(key)}
-            >
-              {t(label)}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label={t("home.movers_range")}
+          items={WINDOWS.map(({ key, label }) => ({ id: key, label: t(label) }))}
+          value={range}
+          onPick={setRange}
+        />
       </div>
       <div className="hm-split">
         <MoverTable label={t("home.gainers")} rows={shown.gainers} held={held} />

@@ -151,7 +151,12 @@ function Venue({
           <form className="im-venue-search" onSubmit={search} role="search">
             <input
               aria-label={t("import.venue_query", { code })}
+              autoCapitalize="off"
+              autoComplete="off"
+              autoCorrect="off"
               className="im-input"
+              enterKeyHint="search"
+              spellCheck={false}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={t("import.venue_query_hint")}
               type="search"

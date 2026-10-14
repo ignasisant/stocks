@@ -20,7 +20,7 @@
  * any of it, and nothing here reads prefs. Everything done, the card is gone.
  */
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { get, send } from "../../shell/api";
 import { useT } from "../../shell/i18n";
@@ -42,6 +42,9 @@ import { Card } from "./ui";
  */
 
 type Entry = { row: Row; on: boolean };
+
+/** How long "Undo" stays offered after the card is put away. */
+const UNDO_FOR = 8000;
 
 /**
  * One row as a control: a link, a button, or plain text when there is
@@ -120,12 +123,39 @@ export function SetupCard() {
   const { prefs, reload } = session;
   const { setParams } = useRoute();
   const [dismissed, setDismissed] = useState(prefs.setup_card_dismissed);
+  // Put away by a press in this visit: the one moment an undo is owed. A card
+  // dismissed on another day stays gone without a word.
+  const [justHidden, setJustHidden] = useState(false);
+  useEffect(() => {
+    if (!justHidden) return;
+    const timer = window.setTimeout(() => setJustHidden(false), UNDO_FOR);
+    return () => window.clearTimeout(timer);
+  }, [justHidden]);
+  // Shown or hidden first, saved after: the press is the decision, and a
+  // failed write is worth one card coming back, not an error in front of
+  // somebody tidying their screen.
+  const keep = (hidden: boolean) => {
+    setDismissed(hidden);
+    setJustHidden(hidden);
+    void send("PATCH", "/prefs", { setup_card_dismissed: hidden })
+      .then(reload)
+      .catch(() => undefined);
+  };
 
   // A registry that will not load has nothing to say about itself, so it says
   // nothing: an error where an invitation goes is worse than a blank nobody
   // would have noticed. The skeleton is only so the page below does not jump
   // when it lands.
-  if (dismissed) return null;
+  if (dismissed) {
+    return justHidden ? (
+      <p className="hm-start-undo" role="status">
+        {t("home.setup_hidden")}
+        <button type="button" className="hm-quiet" onClick={() => keep(false)}>
+          {t("home.setup_undo")}
+        </button>
+      </p>
+    ) : null;
+  }
   if (query.state === "loading") return <Skeleton rows={2} />;
   if (query.state !== "loaded") return null;
 
@@ -142,7 +172,9 @@ export function SetupCard() {
     row,
     on: state.explore[row.key] === true,
   }));
-  const done = setup.filter((e) => e.on).length;
+  // Counted over what the account needs, not what it could add.
+  const required = setup.filter((e) => !e.row.optional);
+  const done = required.filter((e) => e.on).length;
   const next = setup.find((e) => !e.on);
   const locked = (e: Entry) => guest && e.row.signedIn === true;
   // A guest is offered only what a guest can try: a chip for the assistant
@@ -162,9 +194,9 @@ export function SetupCard() {
         {/* A guest can take one step of four, so a count that cannot move
             and a "don't show again" a guest has no prefs to keep are both
             left out: the banner above has the one close. */}
-        {guest ? null : (
+        {guest || done === required.length ? null : (
           <span className="hm-start-count">
-            {t("home.start_progress", { done, total: setup.length })}
+            {t("home.start_progress", { done, total: required.length })}
           </span>
         )}
         {/* The tour opens itself once; after that this is the way back to
@@ -181,15 +213,7 @@ export function SetupCard() {
           <button
             type="button"
             className="hm-quiet hm-start-hide"
-            onClick={() => {
-              // Hidden first, saved after: the press is the decision and a
-              // failed write is worth one card coming back, not an error in
-              // front of somebody tidying their screen.
-              setDismissed(true);
-              void send("PATCH", "/prefs", { setup_card_dismissed: true })
-                .then(reload)
-                .catch(() => undefined);
-            }}
+            onClick={() => keep(true)}
           >
             {t("home.setup_hide")}
           </button>

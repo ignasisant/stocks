@@ -36,8 +36,10 @@ import {
   priceRows,
   type Fill,
 } from "./hover";
+import { Skeleton } from "../../shell/Layout";
 import {
   Chart,
+  EndLabels,
   Legend,
   Tooltip,
   YGrid,
@@ -48,6 +50,8 @@ import {
   plotHeight,
   plotWidth,
   scale,
+  spoken,
+  tickDigits,
   type TipLine,
 } from "./plot";
 import type { Marker, Overlay } from "./layout";
@@ -106,6 +110,24 @@ function labeller(
     const at = Date.parse(stamp.replace(" ", "T"));
     return Number.isNaN(at) ? stamp.slice(0, 10) : format.format(new Date(at));
   };
+}
+
+/**
+ * The price chart's slot while its bars load: a skeleton as tall as the plot
+ * will be at this width, so the card does not grow under the reader when the
+ * chart lands.
+ */
+export function PriceChartWait({ mobile }: { mobile: boolean }) {
+  const [wrap, width] = useWidth(FALLBACK_WIDTH);
+  return (
+    <div
+      className="tk-plot tk-plot-wait"
+      ref={wrap}
+      style={{ minHeight: fitHeight(width, mobile ? PHONE_HEIGHT : 340) }}
+    >
+      <Skeleton rows={8} />
+    </div>
+  );
 }
 
 /** What a series did between two of its bars. */
@@ -340,7 +362,7 @@ export function PriceChart({
   if (!range || n === 0) return null;
 
   const y = scale(range.lo, range.hi, box.height - box.bottom, box.top);
-  const label = labeller(lang, intraday);
+  const dateLabel = labeller(lang, intraday);
   // Three labels over a phone's plot have no room for a day each: the month is
   // what tells them apart, so long as the window is wider than a month.
   const axisLabel = labeller(lang, intraday, mobile && n > 40);
@@ -384,8 +406,8 @@ export function PriceChart({
     onWindow(
       move && {
         pct: move.pct,
-        from: label(bars.dates[move.a] ?? ""),
-        to: label(bars.dates[move.z] ?? ""),
+        from: dateLabel(bars.dates[move.a] ?? ""),
+        to: dateLabel(bars.dates[move.z] ?? ""),
       },
     );
   };
@@ -453,6 +475,21 @@ export function PriceChart({
   // off it there is nothing to compare, and the bar reads as usual.
   const measure = span && span.b > span.a ? moveBetween(close, span.a, span.b) : null;
   const tip = measure ? spanTip(measure) : hover === null ? null : tooltip(hover);
+
+  // What the chart says to a screen reader before anything is pointed at:
+  // the window's move and its extremes, as the headline above it does.
+  const whole = moveBetween(close, from, to);
+  const ends = close.slice(from, to + 1).filter((v): v is number => v != null);
+  const label = whole
+    ? t("ticker.price_summary", {
+        start: `${hoverTitle(bars.dates[whole.a] ?? "", intraday)} ${money(whole.start, 2)}`,
+        end: `${hoverTitle(bars.dates[whole.z] ?? "", intraday)} ${money(whole.end, 2)}`,
+        pct: signedPercent(whole.pct / 100),
+        lo: money(Math.min(...ends), 2),
+        hi: money(Math.max(...ends), 2),
+      })
+    : t("ticker.price");
+  const digits = tickDigits(range.lo, range.hi);
 
   /**
    * The hover box for one bar, row for row and in trace order: the price (and
@@ -564,8 +601,14 @@ export function PriceChart({
     <div className="tk-plot" ref={wrap}>
       <Chart
         frame={box}
-        label={t("ticker.price")}
+        label={label}
         className="tk-price"
+        walk={{
+          at: hover === null ? null : hover - from,
+          last: to - from,
+          set: (index) => setHover(index === null ? null : from + index),
+        }}
+        readout={tip ? spoken(tip.title, tip.lines) : null}
         onPointer={(x) => setHover(markerAt(x))}
         onLeave={() => {
           setHover(null);
@@ -591,183 +634,205 @@ export function PriceChart({
           frame={box}
           lo={range.lo}
           hi={range.hi}
-          format={(v) => money(v, range.hi >= 100 ? 0 : 2)}
+          format={(v) => money(v, digits)}
           inside={mobile}
         />
 
-        {/* Corporate events: a quiet dotted vertical, the kind's letter on top
+        {/* The marks fade back in when the window changes — a new range or
+            a zoom — instead of the whole shape swapping in one frame. */}
+        <g className="ag-redraw" key={`${bars.dates[0]}-${n}-${from}-${to}`}>
+          {/* Corporate events: a quiet dotted vertical, the kind's letter on top
             in its colour ("d" dividend, "r" results), and a small diamond over
             the bar's high whose row in the tooltip says what it was. On weekly
             or monthly bars only the diamond: forty years of quarterly dividends
             is a vertical every third candle, a curtain over the chart rather
             than a marker. */}
-        {visibleMarks
-          .filter(([index]) => index >= from && index <= to)
-          .map(([index, kind]) => {
-            const color = markColor(kind);
-            const cx = xOf(index);
-            const cy = y(diamondY(index));
-            return (
-              <g key={`ev-${index}`}>
-                <title>
-                  {kind === "dividend"
-                    ? t("ticker.ev_dividend_one")
-                    : kind === "results"
-                      ? t("ticker.ev_result_one")
-                      : (marks.tags.get(index) ?? "")}
-                </title>
-                {/* A coin has a handful of cycle events in its whole life, so
+          {visibleMarks
+            .filter(([index]) => index >= from && index <= to)
+            .map(([index, kind]) => {
+              const color = markColor(kind);
+              const cx = xOf(index);
+              const cy = y(diamondY(index));
+              return (
+                <g key={`ev-${index}`}>
+                  <title>
+                    {kind === "dividend"
+                      ? t("ticker.ev_dividend_one")
+                      : kind === "results"
+                        ? t("ticker.ev_result_one")
+                        : (marks.tags.get(index) ?? "")}
+                  </title>
+                  {/* A coin has a handful of cycle events in its whole life, so
                     they keep their vertical on weekly bars too — the long
                     ranges are where a halving is worth seeing. */}
-                {daily || intraday || kind === "cycle" ? (
-                  <>
-                    <line
-                      className="tk-event"
-                      x1={cx}
-                      x2={cx}
-                      y1={box.top}
-                      y2={box.height - box.bottom}
-                      stroke={colors.eventLine}
-                    />
-                    {kind === "cycle" ? (
-                      <text
-                        className="tk-event-tag"
-                        x={cx}
-                        y={box.top - 2}
-                        textAnchor="middle"
-                        fill={color}
-                      >
-                        {marks.tags.get(index) ?? ""}
-                      </text>
-                    ) : kind === "dividend" ? (
-                      // A coin: the payout.
-                      <g className="tk-event-icon" aria-hidden="true">
-                        <circle
-                          cx={cx}
-                          cy={box.top - 6}
-                          r={4}
-                          fill="none"
-                          stroke={color}
-                          strokeWidth={1.5}
-                        />
-                        <circle cx={cx} cy={box.top - 6} r={1.4} fill={color} />
-                      </g>
-                    ) : (
-                      // Three bars: the earnings report.
-                      <g className="tk-event-icon" aria-hidden="true" fill={color}>
-                        <rect x={cx - 4.5} y={box.top - 6} width={2.5} height={5} />
-                        <rect x={cx - 1.25} y={box.top - 10} width={2.5} height={9} />
-                        <rect x={cx + 2} y={box.top - 8} width={2.5} height={7} />
-                      </g>
-                    )}
-                  </>
-                ) : null}
-                <path
-                  d={`M ${cx} ${cy - 4} L ${cx + 4} ${cy} L ${cx} ${cy + 4} L ${cx - 4} ${cy} Z`}
-                  fill={color}
-                  stroke={colors.surfacePage}
-                  strokeWidth={1}
-                />
-              </g>
-            );
-          })}
-
-        {candles ? (
-          <g>
-            {Array.from({ length: to - from + 1 }, (_, offset) => {
-              const index = from + offset;
-              const o = open[index];
-              const c = close[index];
-              const h = high[index];
-              const l = low[index];
-              if (o == null || c == null || h == null || l == null) return null;
-              const up = c >= o;
-              const color = up ? colors.candleUp : colors.candleDown;
-              const width = Math.max(1, band * 0.62);
-              const top = y(Math.max(o, c));
-              const height = Math.max(1, Math.abs(y(o) - y(c)));
-              return (
-                <g key={`c-${index}`}>
-                  <line
-                    x1={xOf(index)}
-                    x2={xOf(index)}
-                    y1={y(h)}
-                    y2={y(l)}
-                    stroke={color}
-                    strokeWidth={1}
-                  />
-                  <rect
-                    x={xOf(index) - width / 2}
-                    y={top}
-                    width={width}
-                    height={height}
+                  {daily || intraday || kind === "cycle" ? (
+                    <>
+                      <line
+                        className="tk-event"
+                        x1={cx}
+                        x2={cx}
+                        y1={box.top}
+                        y2={box.height - box.bottom}
+                        stroke={colors.eventLine}
+                      />
+                      {kind === "cycle" ? (
+                        <text
+                          className="tk-event-tag"
+                          x={cx}
+                          y={box.top - 2}
+                          textAnchor="middle"
+                          fill={color}
+                        >
+                          {marks.tags.get(index) ?? ""}
+                        </text>
+                      ) : kind === "dividend" ? (
+                        // A coin: the payout.
+                        <g className="tk-event-icon" aria-hidden="true">
+                          <circle
+                            cx={cx}
+                            cy={box.top - 6}
+                            r={4}
+                            fill="none"
+                            stroke={color}
+                            strokeWidth={1.5}
+                          />
+                          <circle cx={cx} cy={box.top - 6} r={1.4} fill={color} />
+                        </g>
+                      ) : (
+                        // Three bars: the earnings report.
+                        <g className="tk-event-icon" aria-hidden="true" fill={color}>
+                          <rect x={cx - 4.5} y={box.top - 6} width={2.5} height={5} />
+                          <rect x={cx - 1.25} y={box.top - 10} width={2.5} height={9} />
+                          <rect x={cx + 2} y={box.top - 8} width={2.5} height={7} />
+                        </g>
+                      )}
+                    </>
+                  ) : null}
+                  <path
+                    d={`M ${cx} ${cy - 4} L ${cx + 4} ${cy} L ${cx} ${cy + 4} L ${cx - 4} ${cy} Z`}
                     fill={color}
+                    stroke={colors.surfacePage}
+                    strokeWidth={1}
                   />
                 </g>
               );
             })}
-          </g>
-        ) : (
-          <g>
-            <path d={area} fill={colors.accentArea} stroke="none" />
-            {line.map((run) => {
-              const head = run[0];
+
+          {candles ? (
+            <g>
+              {Array.from({ length: to - from + 1 }, (_, offset) => {
+                const index = from + offset;
+                const o = open[index];
+                const c = close[index];
+                const h = high[index];
+                const l = low[index];
+                if (o == null || c == null || h == null || l == null) return null;
+                const up = c >= o;
+                const color = up ? colors.candleUp : colors.candleDown;
+                const width = Math.max(1, band * 0.62);
+                const top = y(Math.max(o, c));
+                const height = Math.max(1, Math.abs(y(o) - y(c)));
+                return (
+                  <g key={`c-${index}`}>
+                    <line
+                      x1={xOf(index)}
+                      x2={xOf(index)}
+                      y1={y(h)}
+                      y2={y(l)}
+                      stroke={color}
+                      strokeWidth={1}
+                    />
+                    {/* A rising candle is hollow, a falling one solid — the
+                      convention that tells them apart without the hue. Too
+                      thin to show a hollow, both stay solid. */}
+                    <rect
+                      x={xOf(index) - width / 2}
+                      y={top}
+                      width={width}
+                      height={height}
+                      fill={up && width >= 4 ? colors.surfaceCard : color}
+                      stroke={color}
+                      strokeWidth={up && width >= 4 ? 1 : 0}
+                    />
+                  </g>
+                );
+              })}
+            </g>
+          ) : (
+            <g>
+              <path d={area} fill={colors.accentArea} stroke="none" />
+              {line.map((run) => {
+                const head = run[0];
+                return (
+                  <polyline
+                    key={`p-${head}`}
+                    className="tk-line"
+                    points={run
+                      .map(
+                        (i) =>
+                          `${xOf(i).toFixed(1)},${y(close[i] as number).toFixed(1)}`,
+                      )
+                      .join(" ")}
+                    stroke={colors.brandAccent}
+                    strokeWidth={2}
+                  />
+                );
+              })}
+            </g>
+          )}
+
+          {drawn.map(([key, color]) => {
+            const series = bars.series[key];
+            if (!series) return null;
+            return segments(series, from, to).map((run) => (
+              <polyline
+                key={`${key}-${run[0]}`}
+                className="tk-line"
+                points={run
+                  .map(
+                    (i) => `${xOf(i).toFixed(1)},${y(series[i] as number).toFixed(1)}`,
+                  )
+                  .join(" ")}
+                stroke={color}
+                strokeWidth={1.4}
+              />
+            ));
+          })}
+
+          {/* The reader's own fills: 12px triangles, buys up in the primary
+            text colour and sells down in the loss colour, outlined in the
+            canvas colour so they read against candles of either sign. */}
+          {fills
+            .filter((fill) => fill.index >= from && fill.index <= to)
+            .map((fill, at) => {
+              const cx = xOf(fill.index);
+              const cy = y(fill.trade.price);
+              const buy = fill.trade.action === "buy";
+              const size = 6;
+              const path = buy
+                ? `M ${cx} ${cy - size} L ${cx + size} ${cy + size} L ${cx - size} ${cy + size} Z`
+                : `M ${cx} ${cy + size} L ${cx + size} ${cy - size} L ${cx - size} ${cy - size} Z`;
               return (
-                <polyline
-                  key={`p-${head}`}
-                  className="tk-line"
-                  points={run
-                    .map(
-                      (i) => `${xOf(i).toFixed(1)},${y(close[i] as number).toFixed(1)}`,
-                    )
-                    .join(" ")}
-                  stroke={colors.brandAccent}
-                  strokeWidth={2}
+                <path
+                  key={`f-${fill.index}-${at}`}
+                  d={path}
+                  fill={buy ? colors.textPrimary : colors.down}
+                  stroke={colors.surfacePage}
+                  strokeWidth={1.5}
                 />
               );
             })}
-          </g>
-        )}
+        </g>
 
-        {drawn.map(([key, color]) => {
-          const series = bars.series[key];
-          if (!series) return null;
-          return segments(series, from, to).map((run) => (
-            <polyline
-              key={`${key}-${run[0]}`}
-              className="tk-line"
-              points={run
-                .map((i) => `${xOf(i).toFixed(1)},${y(series[i] as number).toFixed(1)}`)
-                .join(" ")}
-              stroke={color}
-              strokeWidth={1.4}
-            />
-          ));
-        })}
-
-        {/* The reader's own fills: 12px triangles, buys up in the primary
-            text colour and sells down in the loss colour, outlined in the
-            canvas colour so they read against candles of either sign. */}
-        {fills
-          .filter((fill) => fill.index >= from && fill.index <= to)
-          .map((fill, at) => {
-            const cx = xOf(fill.index);
-            const cy = y(fill.trade.price);
-            const buy = fill.trade.action === "buy";
-            const size = 6;
-            const path = buy
-              ? `M ${cx} ${cy - size} L ${cx + size} ${cy + size} L ${cx - size} ${cy + size} Z`
-              : `M ${cx} ${cy + size} L ${cx + size} ${cy - size} L ${cx - size} ${cy - size} Z`;
-            return (
-              <path
-                key={`f-${fill.index}-${at}`}
-                d={path}
-                fill={buy ? colors.textPrimary : colors.down}
-                stroke={colors.surfacePage}
-                strokeWidth={1.5}
-              />
-            );
+        {/* The lines' names at their right ends: three averages in three hues
+            are otherwise told apart by matching colours to the legend. */}
+        <EndLabels
+          frame={box}
+          items={drawn.flatMap(([key, color]) => {
+            const end = latest(bars.series[key]?.slice(from, to + 1));
+            return end === null ? [] : [{ y: y(end), text: key.slice(3), color }];
           })}
+        />
 
         {/* The drag, while it is happening. */}
         {drag && hover !== null ? (
@@ -849,7 +914,7 @@ export function PriceChart({
           frame={box}
           lo={range.lo}
           hi={range.hi}
-          format={(v) => money(v, range.hi >= 100 ? 0 : 2)}
+          format={(v) => money(v, digits)}
           inside={mobile}
         />
       </Chart>

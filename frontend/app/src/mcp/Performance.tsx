@@ -52,13 +52,23 @@ export function bounds(points: Point[]): [number, number] | null {
 }
 
 function Chart({ data, words }: { data: Data; words: Words }) {
+  const { t } = words;
   const points = data.history.points;
   const range = bounds(points);
   if (!range || points.length < 2) return null;
   const [lo, hi] = range;
   const base = data.performance.base;
+  const last = points[points.length - 1]!;
+  // The picture is hidden from assistive tech, so its one reading goes in words.
+  const summary = t("connector.view_chart_summary", {
+    value: money(last.value, base, words.locale),
+    injected: money(last.injected, base, words.locale),
+    from: shortDay(data.history.start, words.locale),
+    to: shortDay(data.history.end, words.locale),
+  });
   return (
     <figure className="v-chart">
+      <span className="v-sr">{summary}</span>
       <div className="v-axis-y">
         <span>{money(hi, base, words.locale)}</span>
         <span>{money(lo, base, words.locale)}</span>

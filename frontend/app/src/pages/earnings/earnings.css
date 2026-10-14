@@ -9,6 +9,7 @@
 
 .earn-title {
   font-size: var(--ag-fs-2xl);
+  letter-spacing: var(--ag-track-2xl);
   margin: 0 0 1rem;
 }
 
@@ -82,7 +83,7 @@
 .earn-key summary::before {
   content: "›";
   display: inline-block;
-  transition: transform 100ms ease-out;
+  transition: transform var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .earn-key[open] summary::before {
@@ -128,34 +129,6 @@
   align-items: center;
   gap: 0.75rem;
   margin: 0 0 1rem;
-}
-
-.earn-seg {
-  display: inline-flex;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  overflow: hidden;
-}
-
-.earn-seg button {
-  padding: 0.35rem 0.95rem;
-  border: none;
-  background: transparent;
-  color: var(--ag-text-muted);
-  font: inherit;
-  font-size: var(--ag-fs-sm);
-  cursor: pointer;
-}
-
-.earn-seg button[aria-pressed="true"] {
-  background: var(--ag-surface-sunken);
-  color: var(--ag-text-primary);
-}
-
-@media (pointer: coarse) {
-  .earn-seg button {
-    min-height: 44px;
-  }
 }
 
 /* The kind pills' dot: the colour each kind's chips are drawn in. */
@@ -435,7 +408,7 @@
 .earn-table th {
   padding: 0.4rem 0.5rem;
   border-bottom: 1px solid var(--ag-border);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -500,7 +473,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+    max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
   background: var(--ag-surface-page-veil);
 }
 
@@ -911,6 +885,7 @@
 .earn-ev-value {
   margin-top: 2px;
   font-size: var(--ag-fs-2xl);
+  letter-spacing: var(--ag-track-2xl);
   font-weight: 600;
   line-height: 1.2;
   color: var(--ag-text-primary);
@@ -1004,6 +979,33 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ag-text-muted);
+}
+
+/* The rule under it appears only once something has scrolled under it: at
+   rest it sits on the page like any heading, stuck it needs an edge. Where
+   `scroll-state` queries are missing the rule simply stays. */
+@supports (container-type: scroll-state) {
+  .earn-week-h {
+    container-type: scroll-state;
+    border-bottom-color: transparent;
+  }
+
+  .earn-week-h::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 -1px;
+    height: 1px;
+    background: var(--ag-border);
+    opacity: 0;
+    transition: opacity var(--ag-dur-move) var(--ag-ease-out);
+    pointer-events: none;
+  }
+
+  @container scroll-state(stuck: top) {
+    .earn-week-h::after {
+      opacity: 1;
+    }
+  }
 }
 
 .earn-week {

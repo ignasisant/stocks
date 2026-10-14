@@ -71,7 +71,6 @@ def test_charts_scrub_under_a_finger():
 
 # Every control measured under 44px at 390px, and where its touch sizing lives.
 _TOUCH_TARGETS = [
-    ("pages/portfolio/portfolio.css", ".pf-seg button", r"min-height\s*:\s*44px"),
     ("pages/portfolio/portfolio.css", ".pf-legend-btn", r"min-height\s*:\s*44px"),
     ("pages/portfolio/portfolio.css", ".pf-sort-dir", r"min-height\s*:\s*44px"),
     (
@@ -81,12 +80,12 @@ _TOUCH_TARGETS = [
     ),
     ("pages/ticker/ticker.css", ".tk-legend-btn", r"min-height\s*:\s*44px"),
     ("ui/ui.css", ".ag-toggle", r"min-height\s*:\s*44px"),
-    ("pages/earnings/earnings.css", ".earn-seg button", r"min-height\s*:\s*44px"),
     ("pages/earnings/earnings.css", ".earn-chip::before", r"inset\s*:\s*-4px"),
-    ("pages/home/home.css", ".hm-seg", r"min-height\s*:\s*44px"),
     ("pages/home/home.css", ".hm-link::before", r"inset\s*:\s*-14px"),
     ("pages/home/home.css", ".hm-customize::before", r"inset\s*:\s*-8px"),
-    ("pages/sentiment/sentiment.css", ".sn-tab", r"min-height\s*:\s*44px"),
+    ("ui/ui.css", ".ag-tab", r"min-height\s*:\s*44px"),
+    ("ui/ui.css", ".ag-seg-opt", r"min-height\s*:\s*44px"),
+    ("ui/ui.css", ".ag-kpi-help::before", r"inset\s*:\s*-15px"),
     ("pages/sector/sector.css", ".ag-sec-controls > summary", r"min-height\s*:\s*44px"),
     ("pages/profile/styles.ts", ".pr-signout", r"min-height\s*:\s*44px"),
     ("pages/profile/styles.ts", ".pr-more > summary", r"min-height\s*:\s*44px"),
@@ -94,10 +93,8 @@ _TOUCH_TARGETS = [
     ("chat/chat.css", ".ag-chat-why-chips .ag-chat-chip", r"min-height\s*:\s*44px"),
     ("ui/journal.css", ".ag-jr-chip", r"min-height\s*:\s*44px"),
     ("ui/journal.css", ".ag-jr-fold", r"min-height\s*:\s*44px"),
-    ("pages/today/today.css", ".td-tab", r"min-height\s*:\s*44px"),
     ("pages/today/today.css", ".td-icon-btn", r"min-height\s*:\s*44px"),
     ("pages/today/today.css", ".td-toggle", r"min-height\s*:\s*44px"),
-    ("pages/today/today.css", ".td-seg button", r"min-height\s*:\s*44px"),
     ("pages/today/today.css", ".td-more-btn", r"min-height\s*:\s*44px"),
     ("pages/home/home.css", ".hm-daily-open .ag-btn", r"min-height\s*:\s*44px"),
     ("chat/chat.css", ".ag-chat-icon", r"min-height\s*:\s*44px"),
@@ -159,19 +156,35 @@ def _stylesheets():
 _TINY_TEXT_ALLOWED: set[str] = set()
 
 
+# An `em` size is a share of its parent's, and the parent may be as small as
+# the 13px table cell (`--ag-fs-md`): measured against that, not against 16.
+_EM_PARENT_PX = 13
+
+
 def test_no_text_below_the_phone_floor():
     """At 390px 9-10px text is unreadable. `--ag-fs-2xs` (the design token, 11px
-    in ds.py) is the floor; a literal size under 11px / 0.6875rem, or a token
-    fallback under it, fails here."""
+    in ds.py) is the floor; a literal size under 11px / 0.6875rem, an `em` share
+    that takes a 13px parent under it, or a token fallback under it, fails here.
+    So does SVG or inline-style text in a component (`fontSize`), which no
+    stylesheet sees."""
     bad = []
     for path, css in _stylesheets():
         if str(path) in _TINY_TEXT_ALLOWED:
             continue
         for decl in re.findall(r"font(?:-size)?\s*:\s*([^;}]*)", css):
             for num, unit in re.findall(r"(?<![\w.-])(\d*\.?\d+)(px|rem|em)\b", decl):
-                px = float(num) * (1 if unit == "px" else 16)
+                scale = {"px": 1, "rem": 16, "em": _EM_PARENT_PX}[unit]
+                px = float(num) * scale
                 if px < 11 and not re.search(r"line-height|/\s*" + num, decl):
                     bad.append((str(path), decl.strip()))
+    for path in sorted(APP.rglob("*.tsx")):
+        rel = path.relative_to(APP).as_posix()
+        if rel.endswith(".test.tsx") or rel in _TINY_TEXT_ALLOWED:
+            continue
+        source = path.read_text()
+        for num in re.findall(r"fontSize\s*[=:]\s*[{\"']?\s*(\d*\.?\d+)", source):
+            if float(num) < 11:
+                bad.append((rel, f"fontSize {num}"))
     assert not bad, bad
 
 

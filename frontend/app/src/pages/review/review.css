@@ -29,6 +29,7 @@
 
 .ag-rev-h1 {
   font-size: var(--ag-fs-3xl);
+  letter-spacing: var(--ag-track-3xl);
   margin: 0 0 0.4rem;
   text-wrap: balance;
 }
@@ -173,7 +174,7 @@
   width: 1.5rem;
   height: 1.5rem;
   border-radius: var(--ag-radius-pill);
-  transition: color 100ms ease-out;
+  transition: color var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .ag-rev-added button:focus-visible {
@@ -190,7 +191,7 @@
 
 /* A refetch keeps the last read on screen, dimmed (DS: no skeleton twice). */
 .ag-rev-body {
-  transition: opacity 100ms ease-out;
+  transition: opacity var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .ag-rev-body[aria-busy="true"] {
@@ -409,6 +410,7 @@
 
 .ag-rev-plan-value {
   font-size: var(--ag-fs-3xl);
+  letter-spacing: var(--ag-track-3xl);
   font-weight: 700;
   line-height: 1.1;
   color: var(--ag-text-primary);
@@ -552,7 +554,7 @@
   padding: 0.6rem 0.5rem;
   margin: 0 -0.5rem;
   border-bottom: 1px solid var(--ag-rule-soft);
-  transition: opacity 100ms ease-out;
+  transition: opacity var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .ag-rev-mv:last-child {
@@ -669,7 +671,7 @@
 }
 
 .ag-rev-table tbody tr {
-  transition: opacity 100ms ease-out;
+  transition: opacity var(--ag-dur-press) var(--ag-ease-out);
 }
 
 @media (hover: hover) {
@@ -711,7 +713,7 @@
   font-size: var(--ag-fs-xs);
   color: var(--ag-text-secondary);
   background: var(--ag-surface-sunken);
-  border-radius: var(--ag-radius-xs, 6px);
+  border-radius: var(--ag-radius-xs, 4px);
   padding: 0.1rem 0.4rem;
   white-space: nowrap;
   cursor: help;
@@ -760,7 +762,6 @@
 
 .ag-rev-map-quad {
   font-weight: 600;
-  opacity: 0.8;
 }
 
 .ag-rev-dot circle {
@@ -1026,7 +1027,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+    max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
   background: var(--ag-surface-page-veil);
 }
 
@@ -1041,7 +1043,6 @@
   border-radius: var(--ag-radius-md);
   background: var(--ag-surface-card);
   box-shadow: var(--ag-shadow-overlay);
-  animation: ag-rev-tip-in 100ms ease-out;
 }
 
 .ag-rev-modal-head {
@@ -1078,12 +1079,6 @@
 @media (hover: hover) {
   .ag-rev-modal-close:hover {
     color: var(--ag-text-primary);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ag-rev-modal-card {
-    animation: none;
   }
 }
 
@@ -1270,7 +1265,7 @@
   font-size: var(--ag-fs-xs);
   line-height: 1.45;
   font-variant-numeric: tabular-nums;
-  animation: ag-rev-tip-in 100ms ease-out;
+  animation: ag-rev-tip-in var(--ag-dur-press) var(--ag-ease-out);
 }
 
 @keyframes ag-rev-tip-in {
@@ -1380,7 +1375,7 @@
 }
 
 .ag-rev-dot circle:not(.ag-rev-dot-hit) {
-  transition: stroke-width 100ms ease-out;
+  transition: stroke-width var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .ag-rev-dot-on circle:not(.ag-rev-dot-hit) {

@@ -15,6 +15,9 @@ import type { Overview as Data, Position, Words } from "./types";
 /** Slices the ring draws before the rest becomes one "Other". */
 const SLICES = 6;
 
+/** Ring units (of 100) left empty at the end of each slice. */
+const GAP = 0.8;
+
 // `view.css` sets these per theme: the dark tokens, or their deep cousins
 // on a light ground, where the pale ones would not show.
 const PALETTE = ["--v-c1", "--v-c2", "--v-c3", "--v-c4", "--v-c5", "--v-c6"].map(
@@ -54,6 +57,9 @@ function Ring({ parts }: { parts: Slice[] }) {
       />
       {parts.map((part) => {
         const length = Math.max(0, part.weight * 100);
+        // Each arc stops short of its own end, so a sliver of the track shows
+        // between neighbours instead of two hues sitting flush.
+        const drawn = length > GAP * 2 ? length - GAP : length;
         const arc = (
           <circle
             key={part.label}
@@ -62,7 +68,7 @@ function Ring({ parts }: { parts: Slice[] }) {
             r={radius}
             fill="none"
             strokeWidth="6"
-            strokeDasharray={`${length} ${100 - length}`}
+            strokeDasharray={`${drawn} ${100 - drawn}`}
             strokeDashoffset={offset}
             style={{ stroke: part.color }}
           />

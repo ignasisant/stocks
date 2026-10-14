@@ -20,11 +20,11 @@ import { get, send } from "../../shell/api";
 import { useApi } from "../../shell/useApi";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
-import { useTabStrip } from "../../shell/useTabStrip";
 import { useRoute } from "../../shell/router";
 import { GuestBanner } from "../../shell/guest";
 import { useCurrency, useGuest } from "../../shell/session";
 import type { Summary, Transactions } from "./api";
+import { Tabs } from "../../ui/Tabs";
 import { Empty, Warn } from "./ui";
 import Overview from "./Overview";
 import Positions from "./Positions";
@@ -106,33 +106,6 @@ function DemoBook({ book, onChange }: { book: Transactions; onChange: () => void
   );
 }
 
-/**
- * The tab strip. On a phone it is one scrolling row wider than the screen:
- * `useTabStrip` keeps the open tab in its middle and fades the edge that has
- * more tabs past it.
- */
-function Tabs({ active, onPick }: { active: string; onPick: (tab: string) => void }) {
-  const t = useT();
-  const strip = useTabStrip(active);
-
-  return (
-    <div className="pf-tabs ag-fade-x" role="tablist" ref={strip}>
-      {TABS.map(([name, label]) => (
-        <button
-          key={name}
-          type="button"
-          role="tab"
-          aria-selected={name === active}
-          className={name === active ? "pf-tab pf-tab-on" : "pf-tab"}
-          onClick={() => onPick(name)}
-        >
-          {t(label)}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export default function Page() {
   const t = useT();
   const { params, setParams } = useRoute();
@@ -209,7 +182,13 @@ export default function Page() {
                 <Warn>{t("portfolio.ledger_no_positions")}</Warn>
               ) : (
                 <>
-                  <Tabs active={active[0]} onPick={(tab) => setParams({ tab })} />
+                  <Tabs
+                    className="pf-tabs"
+                    label={t("nav.portfolio")}
+                    items={TABS.map(([id, label]) => ({ id, label: t(label) }))}
+                    active={active[0]}
+                    onPick={(tab) => setParams({ tab })}
+                  />
                   <Tab />
                 </>
               )}

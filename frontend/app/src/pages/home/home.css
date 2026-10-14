@@ -20,7 +20,8 @@
 
 .hm-h2 {
   margin: 0;
-  font-size: var(--ag-fs-2xl, 22px);
+  font-size: var(--ag-fs-2xl, 1.375rem);
+  letter-spacing: var(--ag-track-2xl);
   font-weight: 600;
 }
 
@@ -37,7 +38,7 @@
 
 .hm-card-title {
   margin: 0;
-  font-size: var(--ag-fs-base, 14px);
+  font-size: var(--ag-fs-base, 0.875rem);
   font-weight: 600;
 }
 
@@ -52,14 +53,14 @@
 .hm-note {
   margin: 0;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.45;
 }
 
 .hm-caption {
   margin: 0;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   line-height: 1.45;
 }
 
@@ -70,7 +71,7 @@
 .hm-link {
   align-self: flex-start;
   color: var(--ag-brand-accent);
-  font-size: var(--ag-fs-md, 13px);
+  font-size: var(--ag-fs-md, 0.8125rem);
   text-decoration: none;
 }
 
@@ -182,7 +183,7 @@
   background: var(--ag-surface-card);
   color: var(--ag-text-secondary);
   font: inherit;
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
@@ -230,63 +231,6 @@
   }
 }
 
-/* ------------------------------------------------------------ the selectors */
-
-.hm-segmented {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-nav, 6px);
-  background: var(--ag-surface-page);
-}
-
-.hm-seg {
-  min-width: 32px;
-  min-height: 26px;
-  padding: 2px 10px;
-  border: none;
-  border-radius: var(--ag-radius-xs, 4px);
-  background: none;
-  color: var(--ag-text-muted);
-  font: inherit;
-  font-size: var(--ag-fs-md, 13px);
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  transition-property: background-color, color;
-  transition-duration: 120ms;
-  transition-timing-function: ease-out;
-}
-
-@media (hover: hover) {
-  .hm-seg:hover:not(.hm-seg-on) {
-    color: var(--ag-text-primary);
-  }
-}
-
-.hm-seg:focus-visible {
-  outline: 2px solid var(--ag-brand-accent);
-  outline-offset: 1px;
-}
-
-.hm-seg-on {
-  background: var(--ag-purple-900);
-  color: var(--ag-text-primary);
-}
-
-@media (pointer: coarse) {
-  .hm-seg,
-  .hm-spark-head .hm-segmented .hm-seg {
-    min-height: 44px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hm-seg {
-    transition: none;
-  }
-}
-
 /* ------------------------------------------------------------- the tables */
 
 /* Every auto-fit track is floored at `min(…, 100%)`: a page beside a wide
@@ -311,14 +255,14 @@
 .hm-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--ag-fs-md, 13px);
+  font-size: var(--ag-fs-md, 0.8125rem);
 }
 
 .hm-table th {
   padding: 4px 6px;
   border-bottom: 1px solid var(--ag-border);
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 500;
   text-align: left;
   white-space: nowrap;
@@ -408,7 +352,7 @@
   border-radius: 999px;
   background: var(--ag-surface-sunken);
   color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   font-weight: 600;
   line-height: 1.6;
   font-variant-numeric: tabular-nums;
@@ -418,7 +362,7 @@
 .hm-owed-chev::after {
   content: "▾";
   color: var(--ag-brand-accent);
-  font-size: var(--ag-fs-md, 13px);
+  font-size: var(--ag-fs-md, 0.8125rem);
   font-weight: 600;
 }
 
@@ -544,7 +488,7 @@
 .hm-group > summary {
   padding: 0.6rem 0.75rem;
   cursor: pointer;
-  font-size: var(--ag-fs-base, 14px);
+  font-size: var(--ag-fs-base, 0.875rem);
   font-weight: 600;
 }
 
@@ -580,7 +524,7 @@
   height: 32px;
   padding: 0;
   border: 0;
-  border-radius: var(--ag-radius-xs, 6px);
+  border-radius: var(--ag-radius-xs, 4px);
   background: transparent;
   color: var(--ag-text-secondary);
   cursor: pointer;
@@ -623,17 +567,17 @@
   gap: 0.15rem 0.5rem;
   margin-left: 0.4rem;
   vertical-align: baseline;
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
 }
 
 .hm-daily-when {
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
 }
 
 .hm-daily-headline {
   margin: 0;
-  font-size: var(--ag-fs-lg, 16px);
+  font-size: var(--ag-fs-lg, 1rem);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -644,7 +588,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  font-size: var(--ag-fs-base, 14px);
+  font-size: var(--ag-fs-base, 0.875rem);
   line-height: 1.45;
 }
 
@@ -673,7 +617,7 @@
 .hm-cal th {
   padding: 2px 4px;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs, 11px);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   font-weight: 500;
   text-align: left;
 }
@@ -697,7 +641,7 @@
 
 .hm-cal-day {
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs, 11px);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   line-height: 1.4;
 }
 
@@ -705,7 +649,7 @@
    not a seventh of a page, and three of them have to fit its 62px. */
 .hm-cal .earn-chip {
   margin: 2px 0 0;
-  font-size: var(--ag-fs-2xs, 11px);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
 }
 
 /* Three chips share a cell, so they grow only to 28px here and lean on the
@@ -723,7 +667,7 @@
 
 .hm-cal .earn-more {
   padding: 0 4px;
-  font-size: var(--ag-fs-2xs, 11px);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
 }
 
 /* The glance sparkline. Sits between the tile rows at a fixed height so the
@@ -753,6 +697,18 @@
   display: block;
   width: 100%;
   height: 56px;
+  /* The scrub dots sit on the plot's edge on the first and last day. */
+  overflow: visible;
+}
+
+/* The reserved box of a plot with nothing to draw yet. */
+.hm-spark-empty {
+  height: 56px;
+}
+
+/* Focus by keyboard shows the ring; a click's focus shows nothing. */
+.hm-spark-wrap:focus:not(:focus-visible) {
+  outline: none;
 }
 
 /* Two days being compared: the stretch between them and an edge at each. */
@@ -784,7 +740,7 @@
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-sm, 8px);
   box-shadow: var(--ag-shadow-overlay);
-  font-size: var(--ag-fs-2xs, 0.72rem);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
 }
@@ -843,13 +799,13 @@
 }
 
 .hm-start-title {
-  font-size: var(--ag-fs-base, 14px);
+  font-size: var(--ag-fs-base, 0.875rem);
   font-weight: 600;
 }
 
 .hm-start-count {
   color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-variant-numeric: tabular-nums;
 }
 
@@ -859,13 +815,24 @@
 
 /* An action that is not the thing the card is asking for: readable, and never
    competing with the node that still needs doing. */
+/* What is left of the start card for a few seconds after it is put away: the
+   way back from a press that was a slip. */
+.hm-start-undo {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 0;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+}
+
 .hm-quiet {
   padding: 0;
   border: none;
   background: none;
   color: var(--ag-text-muted);
   font: inherit;
-  font-size: var(--ag-fs-md, 13px);
+  font-size: var(--ag-fs-md, 0.8125rem);
   text-decoration: none;
   cursor: pointer;
 }
@@ -942,11 +909,11 @@ a.hm-step {
   border-radius: var(--ag-radius-pill, 9999px);
   background: var(--ag-surface-card);
   color: var(--ag-text-muted);
-  transition: transform 150ms ease-out;
+  transition: transform var(--ag-dur-move) var(--ag-ease-out);
 }
 
 .hm-step-label {
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.2;
   text-align: center;
 }
@@ -997,7 +964,7 @@ a.hm-step {
 .hm-start-locked {
   margin: 0;
   color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
 }
 
 /* The next thing, as the card's one real button. */
@@ -1042,7 +1009,7 @@ a.hm-step {
 .hm-start-try-label {
   margin-right: 0.25rem;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
 }
 
 .hm-chip {
@@ -1056,7 +1023,7 @@ a.hm-step {
   background: var(--ag-surface-page);
   color: var(--ag-text-primary);
   font: inherit;
-  font-size: var(--ag-fs-md, 13px);
+  font-size: var(--ag-fs-md, 0.8125rem);
   text-decoration: none;
   cursor: pointer;
 }
@@ -1078,8 +1045,13 @@ a.hm-step {
 
 @media (pointer: coarse) {
   .hm-chip,
-  .hm-start-go {
+  .hm-start-go,
+  .hm-start .hm-quiet {
     min-height: 44px;
+  }
+
+  .hm-start .hm-quiet {
+    padding-inline: 4px;
   }
 }
 
@@ -1102,7 +1074,7 @@ a.hm-step {
 .hm-retry {
   align-self: flex-start;
   padding: 0.3rem 0.7rem;
-  font-size: var(--ag-fs-md, 13px);
+  font-size: var(--ag-fs-md, 0.8125rem);
 }
 
 /* The chart's toolbar: key on the left, range selector on the right, one
@@ -1129,9 +1101,8 @@ a.hm-step {
     flex: 1 1 100%;
   }
 
-  .hm-spark-head .hm-seg {
+  .hm-spark-head .ag-seg-opt {
     flex: 1;
-    min-height: 32px;
   }
 }
 
@@ -1196,7 +1167,24 @@ a.hm-step {
 }
 
 .hm-spark-max {
-  border-top: 2px dashed var(--ag-text-faint);
+  border-top: 2px dashed var(--ag-text-muted);
+}
+
+/* The band's two signs: a swatch of the fill, so colour is not the only
+   word for gain and loss. */
+.hm-spark-band {
+  height: 8px;
+  border-top: 0;
+}
+
+.hm-spark-band-gain {
+  background: var(--ag-profit-band);
+  border-bottom: 2px solid var(--ag-up);
+}
+
+.hm-spark-band-loss {
+  background: var(--ag-loss-band);
+  border-bottom: 2px solid var(--ag-down);
 }
 
 /* ------------------------------------------------------------- the market */
@@ -1222,7 +1210,7 @@ a.hm-step {
   max-width: 100%;
   padding: 2px 8px;
   border-radius: 10px;
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
 }
 
 .hm-regime > * {
@@ -1254,7 +1242,7 @@ a.hm-step {
 }
 
 .hm-regime-delta {
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   opacity: 0.85;
 }
 
@@ -1298,7 +1286,7 @@ a.hm-step {
   height: 100%;
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--ag-rule-soft);
-  border-radius: var(--ag-radius-md, 10px);
+  border-radius: var(--ag-radius-md, 12px);
   background: var(--ag-surface-sunken);
   color: inherit;
   text-decoration: none;
@@ -1318,13 +1306,13 @@ a.hm-mtile:focus-visible {
 .hm-mtile-label {
   overflow: hidden;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .hm-mtile-value {
-  font-size: var(--ag-fs-base, 14px);
+  font-size: var(--ag-fs-base, 0.875rem);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1334,18 +1322,18 @@ a.hm-mtile:focus-visible {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .hm-mtile-arrow {
-  font-size: var(--ag-fs-2xs, 11px);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
 }
 
 .hm-mtile-sub {
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs, 11px);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   white-space: nowrap;
 }
 
@@ -1372,7 +1360,7 @@ a.hm-mtile:focus-visible {
   margin: 0;
   padding: 8px 12px;
   border-radius: var(--ag-radius-sm, 8px);
-  font-size: var(--ag-fs-md, 13px);
+  font-size: var(--ag-fs-md, 0.8125rem);
   line-height: 1.45;
   text-wrap: pretty;
   max-width: 72ch;
@@ -1390,7 +1378,7 @@ a.hm-mtile:focus-visible {
   gap: 4px;
   margin: 0;
   padding: 0;
-  font-size: var(--ag-fs-md, 13px);
+  font-size: var(--ag-fs-md, 0.8125rem);
   list-style: none;
 }
 
@@ -1645,7 +1633,7 @@ a.hm-mtile:focus-visible {
     padding: 7px 9px;
   }
   .hm-card .ag-kpi-value {
-    font-size: var(--ag-fs-lg, 16px);
+    font-size: var(--ag-fs-lg, 1rem);
   }
   .hm-card .ag-kpi-note {
     line-height: 1.3;
@@ -1653,6 +1641,6 @@ a.hm-mtile:focus-visible {
 }
 
 .hm-regime-label {
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   opacity: 0.85;
 }

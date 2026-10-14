@@ -1,10 +1,10 @@
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { ApiError } from "./shell/api";
 import { Broken, Crash } from "./shell/Crash";
 import { browserLang, pinnedLang, Translations, useT } from "./shell/i18n";
-import { Layout, Skeleton } from "./shell/Layout";
+import { Layout, MAIN_ID, Skeleton } from "./shell/Layout";
 import { pageFor } from "./shell/pages";
-import { useRoute } from "./shell/router";
+import { takeRestore, useRoute } from "./shell/router";
 import { SignIn } from "./shell/guest";
 import { WithSession } from "./shell/session";
 
@@ -68,6 +68,36 @@ function Current() {
   useEffect(() => {
     document.title = `${t(entry.label)} · TopStocks`;
   }, [t, entry.label]);
+
+  // A move to another screen is announced to a screen reader by where focus
+  // lands, and a keyboard reader would otherwise keep tabbing from a rail link
+  // that no longer matches the page. Focus goes to the page column (not past
+  // the first move: loading the app is not a navigation), and a back or
+  // forward step returns to where the reader was scrolled — retried while the
+  // lazy page fills in, because it is rarely tall enough on the first frame.
+  const first = useRef(true);
+  const focusKey = `${page}?${params.get("ticker") ?? ""}`;
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    document.getElementById(MAIN_ID)?.focus({ preventScroll: true });
+  }, [focusKey]);
+  const scrollKey = `${page}?${params.toString()}`;
+  useEffect(() => {
+    const y = takeRestore();
+    if (y === null) return;
+    let tries = 0;
+    let frame = 0;
+    const settle = () => {
+      window.scrollTo(0, y);
+      if (Math.abs(window.scrollY - y) > 2 && tries++ < 40)
+        frame = requestAnimationFrame(settle);
+    };
+    settle();
+    return () => cancelAnimationFrame(frame);
+  }, [scrollKey]);
 
   // A page that throws while rendering keeps the chrome around it: the rail
   // and the search box still take the reader somewhere that works.

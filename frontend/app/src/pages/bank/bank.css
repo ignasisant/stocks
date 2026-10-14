@@ -12,13 +12,14 @@
 
 .bk-title {
   margin: 0;
-  font-size: var(--ag-fs-3xl, 28px);
+  font-size: var(--ag-fs-3xl, 1.75rem);
+  letter-spacing: var(--ag-track-3xl);
   font-weight: 600;
 }
 
 .bk-h2 {
   margin: 0;
-  font-size: var(--ag-fs-lg, 16px);
+  font-size: var(--ag-fs-lg, 1rem);
   font-weight: 600;
 }
 
@@ -42,19 +43,19 @@
 }
 
 .bk-bank {
-  font-size: var(--ag-fs-base, 14px);
+  font-size: var(--ag-fs-base, 0.875rem);
 }
 
 .bk-note {
   margin: 0;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
 }
 
 .bk-warn {
   margin: 0;
   color: var(--ag-warn);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
 }
 
 /* The three outcomes of a round trip, told apart by colour as well as by the
@@ -64,7 +65,7 @@
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-md, 12px);
-  font-size: var(--ag-fs-md, 13px);
+  font-size: var(--ag-fs-md, 0.8125rem);
 }
 
 .bk-ok {
@@ -100,7 +101,7 @@
 }
 
 .bk-account-label {
-  font-size: var(--ag-fs-md, 13px);
+  font-size: var(--ag-fs-md, 0.8125rem);
 }
 
 .bk-balance {

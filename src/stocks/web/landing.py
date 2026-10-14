@@ -304,7 +304,7 @@ _BASE_CSS = """
 }
 .ag-l * { box-sizing: border-box; }
 .ag-l a { color: var(--ag-brand-accent); text-decoration: none; }
-.ag-l a:hover { color: var(--ag-purple-400); }
+@media (hover: hover) { .ag-l a:hover { color: var(--ag-purple-400); } }
 .ag-l h1, .ag-l h2, .ag-l h3 {
   font-family: 'Epilogue', sans-serif; margin: 0; letter-spacing: -0.015em;
 }
@@ -348,13 +348,35 @@ _BASE_CSS = """
   font-weight: 600; background: var(--ag-surface-card);
   color: var(--ag-text-primary);
 }
-.ag-l-lang a:hover { color: var(--ag-text-primary); }
+@media (hover: hover) { .ag-l-lang a:hover { color: var(--ag-text-primary); } }
 .ag-l-gh { width: 16px; height: 16px; fill: currentColor; }
 .ag-l-ghlink {
   display: flex; align-items: center; gap: 6px;
   font-size: var(--ag-fs-md); font-weight: 500; color: var(--ag-text-secondary);
 }
-.ag-l-ghlink:hover { color: var(--ag-text-primary); }
+@media (hover: hover) { .ag-l-ghlink:hover { color: var(--ag-text-primary); } }
+
+/* --- skip link and touch targets --- */
+/* First stop for a keyboard or screen-reader user: off-screen until focused,
+   then pinned top-left above the sticky bar. */
+.ag-l-skip {
+  position: absolute; left: 12px; top: -100px; z-index: 100;
+  padding: 10px 16px; border-radius: var(--ag-radius-sm);
+  background: var(--ag-brand-cta); color: var(--ag-on-brand); font-weight: 600;
+}
+.ag-l-skip:focus { top: calc(8px + env(safe-area-inset-top, 0px)); }
+html { scroll-padding-top: 72px; }
+@media (pointer: coarse) {
+  .ag-l-lang a, .ag-l-lang span, .ag-l-foot-lang a, .ag-l-foot-lang span {
+    min-height: 44px; display: inline-flex; align-items: center;
+  }
+  .ag-l-cta, .ag-l-cta-ghost, .ag-l-cta-text { min-height: 44px; }
+  .ag-l-foot-row a, .ag-l-jurswitch { padding: 12px 0; }
+  .ag-l-q summary { padding: 6px 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ag-l-lang a, .ag-l-lang span, .ag-l-cta, .ag-l-cta-ghost { transition: none; }
+}
 
 /* --- keyboard focus --- */
 /* The default UA ring is near-invisible on this dark surface; keyboard users
@@ -374,7 +396,9 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   cursor: pointer; transition: all 50ms ease-in-out;
   box-shadow: 0 4px 12px color-mix(in srgb, var(--ag-brand-cta) 25%, transparent);
 }
-.ag-l-cta:hover { background: var(--ag-purple-700); color: var(--ag-on-brand); }
+@media (hover: hover) {
+  .ag-l-cta:hover { background: var(--ag-purple-700); color: var(--ag-on-brand); }
+}
 .ag-l-cta-ghost {
   display: inline-flex; align-items: center;
   font-size: var(--ag-fs-md); font-weight: 600; color: var(--ag-text-primary);
@@ -382,8 +406,10 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   border-radius: var(--ag-radius-sm); padding: 8px 14px;
   transition: all 50ms ease-in-out; white-space: nowrap;
 }
-.ag-l-cta-ghost:hover {
-  border-color: var(--ag-text-faint); color: var(--ag-text-primary);
+@media (hover: hover) {
+  .ag-l-cta-ghost:hover {
+    border-color: var(--ag-text-faint); color: var(--ag-text-primary);
+  }
 }
 .ag-l-cta-text {
   font-size: var(--ag-fs-lg); font-weight: 600;
@@ -485,7 +511,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 .ag-l-axis {
   display: flex;
   justify-content: space-between;
-  font-size: 9px;
+  font-size: 11px;
   color: var(--ag-text-faint);
 }
 
@@ -511,7 +537,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 .ag-l-broker.generic { border-style: dashed; }
 .ag-l-broker b { font-family: 'Epilogue', sans-serif; font-weight: 700; font-size: 14px; }
 .ag-l-broker.generic b { color: var(--ag-text-secondary); }
-.ag-l-broker i { font-style: normal; font-size: 9px; color: var(--ag-text-muted); }
+.ag-l-broker i { font-style: normal; font-size: 11px; color: var(--ag-text-muted); }
 
 /* --- section headings --- */
 .ag-l-sec {
@@ -550,7 +576,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   border-radius: var(--ag-radius-md); padding: 20px;
   display: flex; flex-direction: column; gap: 14px;
 }
-.ag-l-eyebrow-sm { font-size: 10px; color: var(--ag-text-muted); letter-spacing: 0.06em; }
+.ag-l-eyebrow-sm { font-size: 11px; color: var(--ag-text-muted); letter-spacing: 0.06em; }
 .ag-l-note { font-size: 12.5px; color: var(--ag-text-muted); }
 .ag-l-lots { display: flex; gap: 8px; align-items: stretch; }
 .ag-l-lot {
@@ -568,7 +594,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 .ag-l-lot b { font-size: var(--ag-fs-sm); font-weight: 600; }
 .ag-l-lot.sold b { color: var(--ag-purple-400); }
 .ag-l-lot.held b { color: var(--ag-text-muted); }
-.ag-l-lot i { font-style: normal; font-size: 10px; }
+.ag-l-lot i { font-style: normal; font-size: 11px; }
 .ag-l-lot.sold i { color: var(--ag-brand-accent); }
 .ag-l-lot.held i { color: var(--ag-text-faint); }
 .ag-l-lotpair {
@@ -677,7 +703,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 }
 .ag-l-mini-h {
   display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 6px;
-  padding: 7px 12px; font-size: 10px; font-weight: 500;
+  padding: 7px 12px; font-size: 11px; font-weight: 500;
   color: var(--ag-text-faint); text-transform: uppercase;
   letter-spacing: 0.04em; background: var(--ag-surface-page);
 }
@@ -716,7 +742,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   font-size: var(--ag-fs-xs); color: var(--ag-purple-400);
 }
 .ag-l-chip {
-  font-size: 9px; font-style: normal; color: var(--ag-text-muted);
+  font-size: 11px; font-style: normal; color: var(--ag-text-muted);
   border: 1px solid var(--ag-border); border-radius: var(--ag-radius-xs);
   padding: 2px 6px;
 }
@@ -896,7 +922,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 }
 .ag-l-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 .ag-l-pill {
-  font-family: 'Martian Mono', monospace; font-size: 10px;
+  font-family: 'Martian Mono', monospace; font-size: 11px;
   color: var(--ag-brand-accent);
   background: color-mix(in srgb, var(--ag-brand-cta) 12%, transparent);
   border-radius: var(--ag-radius-xs); padding: 5px 9px;
@@ -992,7 +1018,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   color: var(--ag-landing-info); text-decoration: none;
   border-bottom: 1px solid currentColor;
 }
-.ag-l-jurswitch:hover { color: var(--ag-text-primary); }
+@media (hover: hover) { .ag-l-jurswitch:hover { color: var(--ag-text-primary); } }
 
 /* --- trust --- */
 .ag-l-trustgrid {
@@ -1058,7 +1084,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 .ag-l-foot-row img { width: 22px; height: auto; }
 .ag-l-foot-row .ag-l-brand span { font-size: var(--ag-fs-lg); }
 .ag-l-foot a { font-size: var(--ag-fs-md); color: var(--ag-text-muted); }
-.ag-l-foot a:hover { color: var(--ag-text-secondary); }
+@media (hover: hover) { .ag-l-foot a:hover { color: var(--ag-text-secondary); } }
 .ag-l-foot-lang {
   display: flex;
   align-items: center;
@@ -1276,7 +1302,7 @@ _CSS = (
 def _mark(width_class: str = "") -> str:
     src = esc(f"{ASSET_BASE}topstocks-icon.svg")
     cls = f' class="{width_class}"' if width_class else ""
-    return f'<img src="{src}" alt="TopStocks"{cls}>'
+    return f'<img src="{src}" alt="TopStocks" width="28" height="28"{cls}>'
 
 
 def _lang_toggle(*, footer: bool = False) -> str:
@@ -2094,7 +2120,9 @@ def page_body() -> str:
     """
     return (
         '<div class="ag-l">'
+        + f'<a class="ag-l-skip" href="#ag-main">{esc(tr("landing.skip"))}</a>'
         + _top_bar()
+        + '<main id="ag-main">'
         + _hero()
         + _brokers()
         + _gap()
@@ -2107,6 +2135,7 @@ def page_body() -> str:
         + _trust()
         + _faq()
         + _final()
+        + "</main>"
         + _footer()
         + _mobile_bar()
         + "</div>"

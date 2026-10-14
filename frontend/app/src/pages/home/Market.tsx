@@ -23,8 +23,9 @@ import { useTabStrip } from "../../shell/useTabStrip";
 import { Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { Link } from "../../shell/router";
-import type { Tone } from "../../ui/Kpi";
+import { Help, type Tone } from "../../ui/Kpi";
 import { Card, CardQuery, CardTitle, Note } from "./ui";
+import { Segmented } from "../../ui/Segmented";
 import { decimal, money, percent, plain, shortDate } from "./format";
 import type { MarketGlance, MarketTile, MarketWindow } from "./types";
 
@@ -116,23 +117,12 @@ export function Market({ data }: { data: MarketGlance }) {
           <Regime data={data} />
         </div>
         <div className="hm-market-tools">
-          <div
-            className="hm-segmented"
-            role="group"
-            aria-label={t("home.market_range")}
-          >
-            {WINDOWS.map(({ key, label }) => (
-              <button
-                key={key}
-                type="button"
-                className={key === range ? "hm-seg hm-seg-on" : "hm-seg"}
-                aria-pressed={key === range}
-                onClick={() => pick(key)}
-              >
-                {t(label)}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            label={t("home.market_range")}
+            items={WINDOWS.map(({ key, label }) => ({ id: key, label: t(label) }))}
+            value={range}
+            onPick={pick}
+          />
           <Link page="sentiment" className="hm-link">
             {t("home.market_link_pulse")}
           </Link>
@@ -183,10 +173,7 @@ function Regime({ data }: { data: MarketGlance }) {
   const week = last !== undefined && before !== undefined ? last - before : null;
   const run = data.run ? t("sentiment.regime_run", { n: data.run }) : null;
   return (
-    <span
-      className={`hm-regime ${REGIME_TONES[band] ?? "hm-regime-flat"}`}
-      title={[t("home.market_regime_help"), run].filter(Boolean).join(" · ")}
-    >
+    <span className={`hm-regime ${REGIME_TONES[band] ?? "hm-regime-flat"}`}>
       <span className="hm-regime-label">{t("home.market_regime_label")}</span>
       <strong>{Math.round(data.score)}</strong>
       <span>{t(`sentiment.regime_${band}`)}</span>
@@ -198,6 +185,7 @@ function Regime({ data }: { data: MarketGlance }) {
         </span>
       ) : null}
       <MiniSpark values={data.history} />
+      <Help text={[t("home.market_regime_help"), run].filter(Boolean).join(" · ")} />
     </span>
   );
 }
@@ -270,6 +258,7 @@ function Tile({ tile, range }: { tile: MarketTile; range: MarketWindow }) {
           <span
             className={`hm-mtile-arrow hm-tone-${arrow.tone}`}
             title={t(arrow.label)}
+            role="img"
             aria-label={t(arrow.label)}
           >
             {arrow.glyph}

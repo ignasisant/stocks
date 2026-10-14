@@ -32,7 +32,7 @@
   --v-c2: var(--ag-info);
   --v-c3: var(--ag-sma-fast);
   --v-c4: var(--ag-candle-up);
-  --v-c5: var(--ag-purple-300);
+  --v-c5: var(--ag-warn);
   --v-c6: var(--ag-candle-down);
 }
 
@@ -55,7 +55,7 @@
   --v-c2: var(--ag-info-deep);
   --v-c3: var(--ag-warn-orange);
   --v-c4: var(--ag-success-fill);
-  --v-c5: var(--ag-purple-400);
+  --v-c5: var(--ag-warn);
   --v-c6: var(--ag-critical-fill);
 }
 
@@ -216,7 +216,7 @@ a {
 .v-table th {
   text-align: left;
   font-weight: 500;
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   color: var(--v-muted);
   padding: 0 8px 6px;
   border-bottom: 1px solid var(--v-border);
@@ -276,6 +276,17 @@ a {
 }
 
 /* Value against capital */
+
+/* Read by a screen reader, drawn for nobody (the app's `.ag-sr`, which this
+   document does not load). */
+.v-sr {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 .v-chart {
   margin: 0;
@@ -365,6 +376,21 @@ a {
 @media (hover: hover) {
   .v-foot a:hover {
     text-decoration: underline;
+  }
+}
+
+/* The host's frame gives no ring of its own; keyboard focus gets one. */
+.v-foot a:focus-visible {
+  outline: 2px solid var(--v-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (pointer: coarse) {
+  .v-foot a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
   }
 }
 

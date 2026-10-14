@@ -111,7 +111,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .ag-aurora-band {
-    transition: opacity 1.2s ease;
+    transition: opacity 1.2s var(--ag-ease-out);
   }
   .ag-aurora[data-busy] .ag-aurora-band {
     transform: none;
@@ -129,6 +129,18 @@
    is dragged. */
 :root[data-chat="open"] .ag-shell {
   padding-right: calc(min(var(--chat-w, 420px), 60vw) + 20px);
+}
+
+/* Except for the spring back after a drag stretched past a limit
+   (`settle()` in width.ts): page and panel ease back together. */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-chat-settle] .ag-shell {
+    transition: padding-right var(--ag-dur-move) var(--ag-ease-settle);
+  }
+
+  :root[data-chat-settle] .ag-chat-panel {
+    transition: width var(--ag-dur-move) var(--ag-ease-settle);
+  }
 }
 
 /* Unless that would leave the page too narrow to read (`PAGE_MIN` in
@@ -172,7 +184,7 @@
   background: var(--ag-brand-accent);
   opacity: 0;
   content: "";
-  transition: opacity 120ms ease;
+  transition: opacity var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .ag-chat-grip:focus-visible::before {
@@ -1356,7 +1368,7 @@ a.ag-chat-btn {
 
 .ag-chat-setup h3 {
   margin: 0;
-  font-size: var(--ag-fs-md, 1rem);
+  font-size: var(--ag-fs-md, 0.8125rem);
 }
 
 .ag-chat-setup .ag-chat-btn {
@@ -2112,6 +2124,8 @@ a.ag-chat-btn {
    at the width it is measured at rather than scaled into it. */
 .ag-a2ui-chart {
   min-width: 0;
+  /* The frame's own floor, so a reply that grows a chart does not jump. */
+  min-height: 160px;
   touch-action: pan-y;
 }
 
@@ -2200,13 +2214,13 @@ a.ag-chat-btn {
    100ms for feedback. */
 
 .ag-chat-panel {
-  animation: ag-chat-panel-in 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  animation: ag-chat-panel-in var(--ag-dur-move) var(--ag-ease-out);
   /* The exit (`usePresence`), a transition so that re-opening mid-way turns
      the panel back from where it got to; and thrown by a finger on the
      header (`useSwipeDismiss`), off the edge rather than back. */
   transition:
-    transform 200ms cubic-bezier(0.23, 1, 0.32, 1),
-    opacity 200ms ease-out;
+    transform var(--ag-dur-move) var(--ag-ease-out),
+    opacity var(--ag-dur-move) var(--ag-ease-out);
 }
 
 .ag-chat-panel[data-leaving] {
@@ -2244,11 +2258,11 @@ a.ag-chat-btn {
 /* The exchange being asked (`fresh` in `Panel`): the question rises into
    place, and the answer fades in where the working line stood. */
 .ag-chat-turn-in {
-  animation: ag-chat-turn-in 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  animation: ag-chat-turn-in var(--ag-dur-move) var(--ag-ease-out);
 }
 
 .ag-chat-turn-in [aria-live] > :first-child {
-  animation: ag-chat-fade-in 160ms ease-out;
+  animation: ag-chat-fade-in var(--ag-dur-move) var(--ag-ease-out);
 }
 
 @keyframes ag-chat-turn-in {
@@ -2265,12 +2279,25 @@ a.ag-chat-btn {
 }
 
 /* The entrance, then `.ag-ai`'s turning rim — named together, because the
-   one `animation` here would otherwise replace the other. */
+   one `animation` here would otherwise replace the other. The rim waits, as
+   on every `.ag-ai`, until hover, focus or an answer being written. */
 .ag-chat-fab {
   animation:
-    ag-chat-fab-in 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    ag-chat-fab-in var(--ag-dur-move) var(--ag-ease-out),
     ag-ai-turn 12s linear infinite;
-  transition: transform 100ms ease-out;
+  animation-play-state: running, paused;
+  transition: transform var(--ag-dur-press) var(--ag-ease-out);
+}
+
+.ag-chat-fab:focus-visible,
+.ag-chat-fab[data-busy] {
+  animation-play-state: running;
+}
+
+@media (hover: hover) {
+  .ag-chat-fab:hover {
+    animation-play-state: running;
+  }
 }
 
 @keyframes ag-chat-fab-in {
@@ -2282,9 +2309,9 @@ a.ag-chat-btn {
 
 .ag-chat-send {
   transition:
-    background 100ms ease-out,
-    color 100ms ease-out,
-    transform 100ms ease-out;
+    background var(--ag-dur-press) var(--ag-ease-out),
+    color var(--ag-dur-press) var(--ag-ease-out),
+    transform var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .ag-chat-fab:active,
@@ -2337,7 +2364,7 @@ a.ag-chat-btn {
    and its result fades in over the ellipsis. */
 .ag-chat-live > li,
 .ag-chat-live .ag-chat-step-out {
-  animation: ag-chat-fade-in 160ms ease-out;
+  animation: ag-chat-fade-in var(--ag-dur-move) var(--ag-ease-out);
 }
 
 .ag-chat-live > li[aria-busy="true"] .ag-chat-step-out {
@@ -2347,7 +2374,7 @@ a.ag-chat-btn {
 /* Send and stop swap buttons as an answer starts and ends: the glyph comes
    in rather than cutting over. */
 .ag-chat-send > svg {
-  animation: ag-chat-icon-in 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  animation: ag-chat-icon-in var(--ag-dur-move) var(--ag-ease-out);
 }
 
 @keyframes ag-chat-icon-in {
@@ -2365,5 +2392,25 @@ a.ag-chat-btn {
   .ag-chat-live > li[aria-busy="true"] .ag-chat-step-out,
   .ag-chat-send > svg {
     animation: none;
+  }
+}
+
+/* Under a finger: the composer's controls reach 44px, and the field is 16px
+   because iOS zooms the page into any field set smaller when it takes focus. */
+@media (pointer: coarse) {
+  .ag-chat-send,
+  .ag-chat-clip,
+  .ag-chat-down {
+    width: 44px;
+    height: 44px;
+  }
+
+  .ag-chat-field {
+    font-size: 16px;
+  }
+
+  .ag-chat-regen,
+  .ag-chat-thread-btn {
+    min-height: 44px;
   }
 }

@@ -14,6 +14,7 @@ import { tone } from "./format";
 import { Chip as Pill, Help, Kpi, KpiGrid, toneOf } from "../../ui/Kpi";
 import { TickerCell as Cell } from "../../shell/tickers";
 import { DenseRows, Responsive, StackCards, type DenseSpec } from "../../ui/Rows";
+import { Segmented as Seg } from "../../ui/Segmented";
 
 /**
  * The two emphases the catalogs use.
@@ -506,19 +507,15 @@ export function Segmented<T extends string>({
   return (
     <div className="pf-controls">
       <span className="pf-control-label">{label}</span>
-      <div className="pf-seg" role="group" aria-label={label}>
-        {options.map((option) => (
-          <button
-            key={option}
-            type="button"
-            className={option === value ? "pf-seg-on" : undefined}
-            aria-pressed={option === value}
-            onClick={() => onChange(option)}
-          >
-            {format ? format(option) : option}
-          </button>
-        ))}
-      </div>
+      <Seg
+        label={label}
+        items={options.map((option) => ({
+          id: option,
+          label: format ? format(option) : option,
+        }))}
+        value={value}
+        onPick={onChange}
+      />
     </div>
   );
 }

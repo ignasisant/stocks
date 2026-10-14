@@ -161,7 +161,9 @@ export function CommitPanel({
             {pick === OTHER && (
               <input
                 aria-label={t("import.broker_name")}
+                autoComplete="off"
                 className="im-input"
+                enterKeyHint="done"
                 disabled={busy}
                 onChange={(event) => setTyped(event.target.value)}
                 placeholder={t("import.broker_name")}

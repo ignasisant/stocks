@@ -73,7 +73,7 @@
   padding: 8px 12px;
   border: 1px solid var(--ag-border);
   border-left: 3px solid var(--ag-brand-accent);
-  border-radius: var(--ag-radius-xs, 6px);
+  border-radius: var(--ag-radius-xs, 4px);
   background: var(--ag-surface-card);
   color: var(--ag-text-secondary);
   font-size: var(--ag-fs-sm);
@@ -111,6 +111,9 @@
 }
 
 .ag-pp-label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
   color: var(--ag-text-secondary);
   font-size: var(--ag-fs-sm);
 }
@@ -145,7 +148,7 @@
   max-width: 160px;
   max-height: 100px;
   border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-xs, 6px);
+  border-radius: var(--ag-radius-xs, 4px);
 }
 
 /* The guest banner's "Dismiss": the quietest thing in it. */
@@ -156,6 +159,12 @@
   color: var(--ag-text-muted);
   font: inherit;
   cursor: pointer;
+}
+
+@media (pointer: coarse) {
+  .ag-guest-dismiss {
+    min-height: 44px;
+  }
 }
 
 @media (hover: hover) {
@@ -169,4 +178,87 @@
    (styles.css) and a table's rows keep the height their text sets. */
 .ag-tick-name {
   color: var(--ag-text-muted);
+}
+
+/* The page you are on, said by shape as well as by fill: a bar on the rail's
+   inner edge (on the phone bar, along its top) in the brand accent. The sunken
+   fill alone is a few percent of lightness — nothing for a reader who cannot
+   tell the two greys apart. Inset shadows, so no row changes size. */
+.ag-nav .ag-nav-on {
+  box-shadow: inset 3px 0 0 var(--ag-brand-accent);
+}
+
+@media (max-width: 640px) {
+  .ag-nav .ag-nav-on {
+    box-shadow: inset 0 3px 0 var(--ag-brand-accent);
+  }
+  /* The sheet's rows are a column again, so the bar is on their edge. */
+  .ag-nav-sheet .ag-nav-on {
+    box-shadow: inset 3px 0 0 var(--ag-brand-accent);
+  }
+  /* A soft keyboard is up: the bar would ride above it and leave a sliver of
+     page (`Nav` in Layout.tsx sets the flag while a text field has focus). */
+  :root[data-kbd] .ag-nav {
+    display: none;
+  }
+}
+
+/* Off-screen until a keyboard reaches it, then the first thing on the page. */
+.ag-skip {
+  position: fixed;
+  z-index: 100;
+  top: max(0.5rem, env(safe-area-inset-top));
+  left: 0.5rem;
+  padding: 0.6rem 1rem;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+  text-decoration: none;
+  transform: translateY(-300%);
+}
+
+.ag-skip:focus {
+  transform: none;
+}
+
+/* `focus()` on the page column is how a navigation hands the keyboard over; a
+   ring around the whole page would be noise, and it is not a control. */
+.ag-main:focus {
+  outline: none;
+}
+
+/* The search option the arrow keys are on. The field keeps real focus, so this
+   is the only sign of where Enter will go: a fill and a bar, not the fill
+   alone. */
+.ag-search-row[aria-selected="true"],
+.ag-search-analyze[aria-selected="true"] {
+  background: var(--ag-surface-hover);
+  box-shadow: inset 3px 0 0 var(--ag-brand-accent);
+}
+
+.ag-search-analyze[aria-selected="true"] {
+  background: var(--ag-brand-cta);
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* Touch: every rail item, search row and the field itself reaches 44px, and
+   the panel stops short of where the keyboard will be. */
+@media (pointer: coarse) {
+  .ag-nav-item,
+  .ag-nav-fold,
+  .ag-search-row,
+  .ag-search-analyze,
+  .ag-search-field,
+  .ag-back {
+    min-height: 44px;
+  }
+  .ag-search-row {
+    align-items: center;
+  }
+  .ag-search-panel {
+    max-height: 40dvh;
+    overscroll-behavior: contain;
+  }
 }

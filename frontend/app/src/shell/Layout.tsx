@@ -23,7 +23,7 @@ import { Tour } from "./Tour";
 import { Link, depth, useRoute } from "./router";
 import { BOTTOM, PAGES, sections } from "./pages";
 import "./shell.css";
-import { isTransient } from "./api";
+import { ApiError, isTransient } from "./api";
 import { Icon } from "./Icon";
 import { GUEST_CHROME, SignIn } from "./guest";
 import { useBank, useGuest } from "./session";
@@ -86,6 +86,46 @@ function Nav() {
   // page it was opened over.
   const [more, setMore] = useState(false);
   useEffect(() => setMore(false), [page]);
+  // Escape closes it, and hands focus back to the button that opened it so a
+  // keyboard reader is not left on a link that has just left the tree.
+  const moreButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!more) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMore(false);
+      moreButton.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [more]);
+  // A soft keyboard covers the lower half of a phone; a tab bar riding above
+  // it would leave a sliver of page. Hidden for as long as a text field holds
+  // focus (`:root[data-kbd]`, shell.css) — only on touch, where there is one.
+  useEffect(() => {
+    const typing = (el: EventTarget | null) =>
+      el instanceof HTMLElement &&
+      (el.isContentEditable ||
+        el instanceof HTMLTextAreaElement ||
+        (el instanceof HTMLInputElement &&
+          !["button", "checkbox", "radio", "range", "file", "submit", "reset"].includes(
+            el.type,
+          )));
+    const set = (on: boolean) => {
+      if (on && !window.matchMedia?.("(pointer: coarse)").matches) return;
+      if (on) document.documentElement.dataset.kbd = "";
+      else delete document.documentElement.dataset.kbd;
+    };
+    const onIn = (event: FocusEvent) => set(typing(event.target));
+    const onOut = () => set(false);
+    document.addEventListener("focusin", onIn);
+    document.addEventListener("focusout", onOut);
+    return () => {
+      document.removeEventListener("focusin", onIn);
+      document.removeEventListener("focusout", onOut);
+      delete document.documentElement.dataset.kbd;
+    };
+  }, []);
   // It drops back behind the bar rather than vanishing, and a finger can pull
   // it down.
   const sheet = useRef<HTMLDivElement>(null);
@@ -201,6 +241,7 @@ function Nav() {
             <Link
               key={entry.slug}
               page={entry.slug}
+              current={entry.slug === page}
               className={[
                 "ag-nav-item",
                 entry.slug === page ? "ag-nav-on" : "",
@@ -213,7 +254,7 @@ function Nav() {
               title={folded && peek === "off" ? t(entry.label) : undefined}
               // The name a reader hears wherever the label is hidden: the
               // folded rail, and a peek before the labels arrive.
-              aria-label={t(entry.label)}
+              label={t(entry.label)}
             >
               <Icon name={entry.icon} />
               <span className="ag-nav-label">{t(entry.label)}</span>
@@ -238,8 +279,10 @@ function Nav() {
         className={
           more ? "ag-nav-item ag-nav-more ag-nav-on" : "ag-nav-item ag-nav-more"
         }
+        ref={moreButton}
         onClick={() => setMore(!more)}
         aria-expanded={more}
+        aria-controls="ag-nav-sheet"
         aria-label={t("nav.more")}
       >
         <Icon name="menu" />
@@ -254,6 +297,7 @@ function Nav() {
           />
           <div
             ref={sheet}
+            id="ag-nav-sheet"
             className="ag-nav-sheet"
             data-leaving={morePresence.leaving ? "" : undefined}
           >
@@ -269,6 +313,7 @@ function Nav() {
                     <Link
                       key={entry.slug}
                       page={entry.slug}
+                      current={entry.slug === page}
                       className={
                         entry.slug === page ? "ag-nav-item ag-nav-on" : "ag-nav-item"
                       }
@@ -313,15 +358,40 @@ function StaleNotice() {
   );
 }
 
+/** The page column, which the skip link and every navigation move focus to. */
+export const MAIN_ID = "ag-main";
+
+/**
+ * First stop for a keyboard: jumps past the rail to the page. A real anchor
+ * would push a history entry (and `popstate`), which the router would read as
+ * a step; so it focuses the column itself.
+ */
+function SkipLink() {
+  const t = useT();
+  return (
+    <a
+      className="ag-skip"
+      href={`#${MAIN_ID}`}
+      onClick={(event) => {
+        event.preventDefault();
+        document.getElementById(MAIN_ID)?.focus();
+      }}
+    >
+      {t("nav.skip")}
+    </a>
+  );
+}
+
 export function Layout({ children }: { children: ReactNode }) {
   const guest = useGuest();
   return (
     <div className="ag-shell">
+      <SkipLink />
       {/* The brand light behind everything (`shell/ambient`); `?ambient=0`
           turns it off. */}
       <AmbientLight />
       <Nav />
-      <main className="ag-main">
+      <main className="ag-main" id={MAIN_ID} tabIndex={-1}>
         {/* Above the page rather than in a bar of its own: the rail is this
             app's only chrome, and a second horizontal band would cost a phone
             the height the page needs. Both of these are on every screen, which
@@ -413,6 +483,38 @@ export function Skeleton({ rows = 3 }: { rows?: number }) {
 }
 
 /**
+ * What a failed block says, and the one press that tries again.
+ *
+ * Three causes read differently: no connection (and it retries by itself the
+ * moment the browser is back, which costs nothing while it is not), the price
+ * source throttling us (stale-not-broken: what is cached still shows), and
+ * anything else. Never the exception's own text — that is for the log.
+ */
+function LoadFailed({ error, retry }: { error: unknown; retry: () => void }) {
+  const t = useT();
+  const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+  useEffect(() => {
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  }, [retry]);
+  const key = offline
+    ? "common.offline"
+    : error instanceof ApiError && error.reason === "rate_limited"
+      ? "common.rate_limited"
+      : isTransient(error)
+        ? "common.data_unavailable"
+        : "common.failed";
+  return (
+    <div className="ag-note">
+      <p>{t(key)}</p>
+      <button className="ag-btn" onClick={retry}>
+        {t("common.retry")}
+      </button>
+    </div>
+  );
+}
+
+/**
  * Render a query's four states once, so no page has to.
  *
  * A transient failure — the upstream throttled us, or this client asked too
@@ -431,18 +533,13 @@ export function Loaded<T>({
   const t = useT();
   if (query.state === "loading") return <>{skeleton ?? <Skeleton />}</>;
   if (query.state === "signed-out")
-    return <p className="ag-note">{t("common.sign_in")}</p>;
-  if (query.state === "failed") {
     return (
       <div className="ag-note">
-        <p>
-          {t(isTransient(query.error) ? "common.data_unavailable" : "common.failed")}
-        </p>
-        <button className="ag-btn" onClick={query.retry}>
-          {t("common.retry")}
-        </button>
+        <p>{t("common.sign_in")}</p>
+        <SignIn />
       </div>
     );
-  }
+  if (query.state === "failed")
+    return <LoadFailed error={query.error} retry={query.retry} />;
   return <>{children(query.data, query.reload)}</>;
 }

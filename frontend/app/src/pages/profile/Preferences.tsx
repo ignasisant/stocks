@@ -77,7 +77,11 @@ function NumberField({
       setDraft(String(value));
       return;
     }
-    if (parsed !== value) onCommit(parsed);
+    // A figure outside the field's own bounds snaps to the nearest one rather
+    // than reaching the server to be refused with no word of why.
+    const bounded = Math.min(max ?? parsed, Math.max(min ?? parsed, parsed));
+    if (bounded !== parsed) setDraft(String(bounded));
+    if (bounded !== value) onCommit(bounded);
   };
 
   return (
@@ -86,6 +90,8 @@ function NumberField({
         className="pr-input"
         type="number"
         inputMode="decimal"
+        autoComplete="off"
+        enterKeyHint="done"
         aria-label={label}
         value={draft}
         min={min}

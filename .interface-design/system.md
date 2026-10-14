@@ -15,6 +15,12 @@ no Tailwind.
 - **Signature:** figures always read against the money that cost them
   (return on money put in), and forecasts drawn as a shaded fan, never as
   confident lines.
+- **Dark only, on purpose.** One theme: a dark workbench is the product's
+  feel, and every token, chart colour and contrast check is tuned against it.
+  No `prefers-color-scheme` switch and no light tokens in `ds.py`. The MCP
+  connector views carry their own light values only because a host may embed
+  them on a white page; they are not an app theme. Adding light mode means a
+  second full token set plus a contrast pass, not a few overrides.
 
 ## Depth & surfaces
 
@@ -49,19 +55,30 @@ no Tailwind.
   offset 2px. Never `--ag-border-focus` or `--ag-brand-cta` as a ring (1.6:1,
   2.7:1 on a card); a field that hides its outline shows an accent border
   plus a 1px accent box-shadow instead.
+- Families are tokens, never literals: `--ag-font-body`, `--ag-font-display`
+  (Epilogue, figures and display headings), `--ag-font-mono`. A
+  `var(--ag-x, fallback)` fallback must equal the token's value
+  (`test_stylesheet_fallbacks_match_the_design_system`); 11px floor covers
+  `em` sizes and TSX/SVG `fontSize` too.
 - **Every number** gets `font-variant-numeric: tabular-nums`.
 - One focal figure per view when the view answers one question
   (`.pf-proj-figure` = the ticker hero `.tk-hero-level`: `--ag-fs-3xl` 28px /
-  700 / line-height 1.1, same on mobile). Never touch letter-spacing. Supporting
+  700 / line-height 1.1, same on mobile). Letter-spacing only from the
+  tracking tokens: `--ag-track-xl` (-0.01em), `--ag-track-2xl` (-0.015em),
+  `--ag-track-3xl` (-0.02em) on headings and figures at that size — big type
+  tightens, body text keeps 0. Supporting
   facts drop to `--ag-fs-base` 600 with a muted label above.
 - KPI tile: `Kpi` / `KpiGrid` in `src/ui/Kpi.tsx`, the only one — the DS
   tile `tables.kpi_grid_html` draws: `--ag-surface-page` inside the card,
   `--ag-radius-md`, sentence-case `--ag-fs-sm` 500 secondary label, Epilogue
   `--ag-fs-xl` 700 value, optional `Chip` beside it (`chipFor`, tones
-  up/down/warn/flat; `off` = neutral; null draws nothing). Guarded by
+  up/down/warn/flat; `off` = neutral; null draws nothing). The tile is a
+  size container: the value steps down to `--ag-fs-lg` / `--ag-fs-md` when the
+  tile narrows, and wraps only between words, never mid-figure. Guarded by
   `tests/test_frontend_kpi.py`.
 - Choice / filter chip: `ToggleChip` in `src/ui/Toggle.tsx` — outline pill,
-  on = `--ag-brand-accent` edge + `--ag-cta-tint`. Never looks like `Chip`.
+  on = `--ag-brand-accent` edge + `--ag-cta-tint` + a check glyph, so "on"
+  never rests on colour alone. Never looks like `Chip`.
 
 ## Colour
 
@@ -75,10 +92,18 @@ no Tailwind.
 
 ## Component patterns
 
-- **Segmented** (`ui.tsx`): `.pf-seg`, 0.78rem, `--ag-surface-hover` for the
-  active option. Inside a side panel, label stacks over control and options wrap.
-- **Help:** the "?" pill (`Help` in `src/ui/Kpi.tsx`, text in `title` +
-  `aria-label`), never a dotted underline.
+- **Segmented** (`ui/Segmented.tsx`, the only one): one `--ag-surface-page`
+  track, `aria-pressed` buttons in a labelled `role="group"`, one
+  `.ag-seg-thumb` (`--ag-surface-hover` + card shadow) that slides to the
+  pressed option. `className` places the track, never restyles it. Inside a
+  side panel, label stacks over control and options wrap.
+- **Help:** the "?" pill (`Help` in `src/ui/Kpi.tsx`, text in `aria-label`),
+  never a dotted underline. Hover opens after 400ms, then the next "?" opens at
+  once for 300ms (warm group); the bubble is `aria-hidden` (the label already
+  read it) and fades out. Coarse hit area 44px via `::before`.
+- **Dense rows** tint `--ag-surface-hover` on hover, `(hover: hover)` only.
+- **Box tools** (`.ag-box-tool`): coarse `::before` grows the hit area to 44px
+  tall; width stays so neighbours never overlap.
 - **Mobile (≤640px):** 12px gap between cards, 44px touch targets.
 - **Hex:** none outside `shell/theme.ts` (`tests/test_frontend_tokens.py`);
   use tokens, or `black`/`transparent` for masks.
@@ -94,8 +119,21 @@ no Tailwind.
   above, crosshair + shared tooltip; series can carry `tipNote` (a % in
   parentheses), `tipOnly` (in tooltip, not stroked), `dashed`; optional
   `bands` and a `marker` (labelled "today" rule between record and forecast).
+- **Every chart, all pages** (ticker `plot.tsx` `Chart`, portfolio, Home
+  spark, chat): `aria-label` is a summary (title, window, headline change),
+  never just the title. Walkable by keyboard through `useKeyWalk`
+  (`shell/useKeyWalk.tsx`: arrows ±1, shift ±10, Home/End, Escape; keyboard
+  focus opens the readout on the last point) and spoken through `Spoken`, a
+  polite live region that talks only on key moves. Tooltips carry no
+  `role="status"`. Crosshair `--ag-text-muted` (faint fails 3:1). A drag
+  (mouse/pen button 0) takes `setPointerCapture`; touch stays free to scroll.
+  Lines are named at their ends (`EndLabels` + `spreadLabels`, ≤4, not narrow)
+  instead of colour-only legends; a third line is dashed. Up candles hollow
+  once the body is ≥4px. Axis digits come from the tick step (`tickDigits`).
+  The loading slot reserves the plot's height (`PriceChartWait`, Home spark
+  56px, chat `min-height: 160px`).
 - **Refetch on control change:** keep the last result on screen with
-  `aria-busy` → opacity 0.6 (100ms ease-out — DS motion is 50/100ms, none under reduced motion) instead
+  `aria-busy` → opacity 0.6 (`--ag-dur-press` `--ag-ease-out`, none under reduced motion) instead
   of swapping in a skeleton. Skeleton only on first load.
 - **Calendar chip** (`.earn-chip`, Earnings grid + Home four-week grid): a
   `<button>`, never a link — the click explains, the dialog carries the way
@@ -227,8 +265,11 @@ no Tailwind.
   document scroll through one `:root:has(…)` rule in styles.css, gutter kept.
   A new scrim joins that rule. Scrolling cards inside get
   `overscroll-behavior: contain`; dialog heights use `dvh`, never `vh`.
+  Scrims pad by `max(1rem, env(safe-area-inset-*))` on all four sides, and
+  a card that can outgrow a sideways phone with the keyboard up scrolls on
+  its own (`max-height: 100%; overflow-y: auto`).
 - **Sheets and side panels** (`shell/useSheet.ts`): enter as today (keyframe,
-  200ms `cubic-bezier(0.23,1,0.32,1)`), and leave the way they came:
+  `--ag-dur-move` `--ag-ease-out`), and leave the way they came:
   `usePresence` keeps them mounted 200ms under `data-leaving`, and the exit
   is a CSS transition so re-opening mid-way turns them back. Touch/pen can
   throw them toward their edge (`useSwipeDismiss`): 1:1 follow, rubber-band
@@ -241,6 +282,99 @@ no Tailwind.
   is sized to `visualViewport` (`useKeyboardFit`). Launched from a home screen
   (`display-mode: standalone`) the shell shows its own Back once the visit
   has gone somewhere.
+
+## Focus, forms & states
+
+- **Dialogs take focus** through `useDialog` (`shell/useDialog.ts`): focus
+  enters the card (or `initial`), Tab stays inside, focus returns to the
+  opener on close; `open` gates it for a dialog that stays mounted. Escape
+  closes. The card is `tabIndex=-1` with no outline. The primary button is
+  the trailing one in the footer.
+- **One `<main id="ag-main" tabIndex=-1>`** behind a skip link (app shell,
+  landing, legal). A route change moves focus to it; back/forward restores
+  the scroll the page was left at.
+- **Active nav** marks shape too (3px bar) plus `aria-current="page"`, never
+  fill alone.
+- **Search** is a WAI-ARIA combobox (listbox, `aria-activedescendant`); `/`
+  and ⌘K/Ctrl+K focus it from anywhere outside a field.
+- **Phone keyboard:** while a text field has focus `<html data-kbd>` hides
+  the tab bar. Text fields are 16px on coarse pointers so iOS does not zoom;
+  the chat composer takes focus on open only on a fine pointer.
+- **Ticker / ISIN / search fields:** `autoCapitalize="off"` (a field that
+  takes only a ticker: `"characters"`), `autoCorrect="off"`,
+  `autoComplete="off"`, `spellCheck={false}`, and an `enterKeyHint` that
+  names what Enter does (`search`, `send`, `done`).
+- **Number fields** clamp to their min/max on commit; an inline edit commits
+  on Enter as well as on blur.
+- **44px coarse targets** hold in page stylesheets too, not just shell
+  controls; a dense row grows its hit area with padding or `::before`.
+- **No hover-only actions:** what hover reveals on desktop (copy an answer,
+  row tools) is visible on touch.
+- **Loading:** skeletons keep their final height from the first frame and
+  fade in after `calc(var(--ag-dur-move) * 2)`, so a fast load never flashes.
+- **Failed loads** use `LoadFailed` (`shell/Layout.tsx`): offline,
+  rate-limited, transient or generic copy plus Retry; offline retries itself
+  when the connection returns. Never print a raw error. `role="alert"` only
+  for errors the reader must act on; progress and results are `role=status`.
+- **Onboarding dialogs** (tour, what's new, welcome, profile nudge): the
+  action that moves on is `.ag-tour-cta`, filled and trailing; a side door
+  ("take me there", "don't ask again") is `.ag-tour-lead`, pushed to the
+  leading edge. A multi-step dialog shows its way out ("Skip") in the header,
+  not only behind Escape or the scrim. A step change re-keys the content in
+  `.ag-redraw` and says "n of m: heading" through an `.ag-sr` live region.
+- **Locked for guests:** an action a guest cannot take becomes a `SignIn`
+  link, never a disabled button that answers a press with nothing.
+- **"Don't show again"** either offers Undo for a few seconds in place of what
+  it hid, or is an account pref (`setup_card_dismissed`,
+  `profile_prompt_off`) rather than a browser flag. A progress count counts
+  required steps only; optional rows say "(optional)".
+
+## Motion & input feedback
+
+- Tokens only: `--ag-dur-hover` (colour/background), `--ag-dur-press`
+  (press, popovers, chevrons), `--ag-dur-move` (sheets, dialogs, panels);
+  `--ag-ease-out` for anything entering or answering a press,
+  `--ag-ease-settle` for a spring back. No raw ms or cubic-bezier in a
+  stylesheet.
+- **Press:** buttons, chips and segment options `scale: 0.97` on `:active`
+  (one `:is(…)` list in styles.css, reduced motion excluded). A new pressable
+  joins that list and adds `scale var(--ag-dur-press) var(--ag-ease-out)` to
+  its transition.
+- **Tabs** (`ui/Tabs.tsx`, the only one): WAI-ARIA tablist with manual
+  activation (arrows move focus, Enter/Space pick), one `.ag-tabs-ink`
+  underline that slides to the picked tab. Never a per-page tab strip.
+- **Popovers** grow from their trigger: `ag-pop-in` (fade + scale 0.96) with
+  `transform-origin` at the trigger's corner (search panel top left, KPI help
+  at its "?", ticker menu top right).
+- **Dialogs** (`.ag-rev-modal`, `.earn-modal`, `.ag-tour-scrim`): scrim
+  fades, card `ag-dialog-in` from scale 0.97; on close `useExitGhost`
+  (`shell/useSheet.ts`) leaves an inert clone under `[data-leaving]` for
+  `--ag-dur-move`, so React can unmount at once. A new modal takes
+  `ref={scrim}` + `useExitGhost(scrim)`, and `useDialog(card)` for focus.
+- **Sticky headers** show their bottom edge only once content scrolls under
+  them: `container-type: scroll-state` + `@container scroll-state(stuck: top)`
+  drawing a 1px `::after` (`.im-confirm`, `.earn-week-h`). Browsers without
+  it keep the plain border.
+- **Chat resize:** the grip keeps the grab offset (no jump on press); past
+  min/max the panel gives with `rubberBand` (up to 96px) and springs back on
+  release (`settle()`, `[data-chat-settle]`).
+- **Chart redraw:** marks sit in `<g className="ag-redraw" key={range}>`, so
+  a range, zoom or series change cross-fades (opacity 0.25 → 1,
+  `--ag-dur-move`) instead of snapping; none under reduced motion.
+- **AI rim** (`.ag-ai`, chat FAB) is still at rest; it turns only on hover,
+  focus-visible or `[data-busy]`, paused (not reset) so it resumes in place.
+
+## Accessibility media
+
+- `prefers-reduced-motion: reduce`: no animation, no transition, no exit wait.
+- `prefers-reduced-transparency: reduce`: veils go opaque
+  (`--ag-surface-page-veil` = page), ambient light, aurora and AI glow hidden.
+- `prefers-contrast: more`: muted and faint text become secondary, borders
+  and soft rules become `--ag-border-focus`.
+- `forced-colors: active`: tab ink and on-segments paint `Highlight`, the AI
+  button gets a `ButtonText` border, decorative pseudos hidden, focus ring
+  `Highlight`.
+- All overrides use `:root:root` so they beat the server-inlined tokens.
 
 ## Copy
 

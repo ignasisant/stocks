@@ -16,6 +16,7 @@
 import { useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
 import { Help } from "../../ui/Kpi";
+import { Tabs } from "../../ui/Tabs";
 import { DownBody, YAHOO } from "./Down";
 import { Spark } from "./Spark";
 import {
@@ -611,8 +612,10 @@ export function Detail({
         </h3>
         <span className="sn-mono">{t("sentiment.detail_hint")}</span>
       </div>
-      <div className="sn-tabs" role="tablist">
-        {SPECS.map((entry) => {
+      {/* A tab is not a navigation the back button should walk through. */}
+      <Tabs
+        label={t("sentiment.detail_title")}
+        items={SPECS.map((entry) => {
           // The badge is the block's configured size, known before any fetch: a
           // tab whose count vanished while Yahoo was throttling reads as a
           // block with nothing in it, which is the claim a down block must
@@ -625,21 +628,11 @@ export function Detail({
             found?.expected ??
             found?.rows.filter((row) => !(entry.key === "rates" && row.key === "NFCI"))
               .length;
-          return (
-            <button
-              key={entry.key}
-              role="tab"
-              aria-selected={entry.key === active}
-              className={entry.key === active ? "sn-tab sn-tab-on" : "sn-tab"}
-              // A tab is not a navigation the back button should walk through.
-              onClick={() => setParams({ tab: entry.key })}
-            >
-              {t(entry.title)}
-              {rows ? <span className="sn-tab-n">{rows}</span> : null}
-            </button>
-          );
+          return { id: entry.key, label: t(entry.title), count: rows };
         })}
-      </div>
+        active={active}
+        onPick={(key) => setParams({ tab: key })}
+      />
       {/* A block with no rows is a block whose source died, whether or not the
           API named a reason for it. */}
       <div role="tabpanel" className="sn-tabpanel">

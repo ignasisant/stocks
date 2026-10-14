@@ -12,7 +12,7 @@
  * than waiting for the answer: an inert field for six seconds reads as broken.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { get, send } from "./api";
 import { assetLabel } from "./assets";
@@ -79,6 +79,35 @@ export function Search({
   const [names, setNames] = useState<Record<string, string>>({});
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
   const box = useRef<HTMLDivElement>(null);
+  const field = useRef<HTMLInputElement>(null);
+  // The option the arrow keys are on, by position in the list as drawn — the
+  // field keeps focus throughout (`aria-activedescendant`), so a reader can
+  // keep typing while they walk the results.
+  const [active, setActive] = useState(-1);
+  const uid = useId();
+  const listId = `${uid}-list`;
+  const optionId = (index: number) => `${uid}-opt-${index}`;
+
+  // "/" and Cmd/Ctrl+K jump to the top bar's field from anywhere, the way
+  // every search box a reader has met does. Not the picker: a page may hold
+  // several, and none of them should claim a global key.
+  useEffect(() => {
+    if (onPick) return;
+    const onKey = (event: KeyboardEvent) => {
+      const el = event.target;
+      const typing =
+        el instanceof HTMLElement &&
+        (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+      const chord = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k";
+      const slash = event.key === "/" && !typing && !event.metaKey && !event.ctrlKey;
+      if (!chord && !slash) return;
+      event.preventDefault();
+      field.current?.focus();
+      field.current?.select();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onPick]);
 
   // Clicking anywhere else closes the panel. Not blur: a click *on* a result
   // blurs the field first, and closing there would eat the click.
@@ -177,11 +206,40 @@ export function Search({
   const term = query.trim();
   const analyze = matches?.find((match) => match.kind === "analyze");
   const rows = (matches ?? []).filter((match) => match.kind !== "analyze");
+  // What the arrow keys walk, in drawing order: the rows, then "Analyze …".
+  const options = term
+    ? [
+        ...rows.map((match) => ({ ticker: match.ticker, name: match.name })),
+        ...(analyze ? [{ ticker: analyze.ticker, name: "" }] : []),
+      ]
+    : recent.map((ticker) => ({ ticker, name: names[ticker] ?? "" }));
+  const shown = open && (term !== "" || recent.length > 0);
+  // A new list starts with nothing chosen, so Enter keeps meaning "the top
+  // match" until the reader has actually moved.
+  const signature = options.map((option) => option.ticker).join(",");
+  useEffect(() => setActive(-1), [signature, shown]);
+  useEffect(() => {
+    if (active < 0) return;
+    document.getElementById(optionId(active))?.scrollIntoView({ block: "nearest" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
 
   return (
     <div className="ag-search" ref={box}>
       <input
+        ref={field}
         type="search"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={shown}
+        aria-controls={shown ? listId : undefined}
+        aria-activedescendant={shown && active >= 0 ? optionId(active) : undefined}
+        aria-keyshortcuts={onPick ? undefined : "/ Control+K Meta+K"}
+        autoCapitalize="off"
+        autoComplete="off"
+        autoCorrect="off"
+        enterKeyHint="search"
+        spellCheck={false}
         className="ag-search-field"
         value={query}
         placeholder={placeholder ?? t("widgets.search_placeholder")}
@@ -193,15 +251,36 @@ export function Search({
         }}
         onKeyDown={(event) => {
           if (event.key === "Escape") setOpen(false);
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            if (!options.length) return;
+            event.preventDefault();
+            if (!shown) return setOpen(true);
+            const step = event.key === "ArrowDown" ? 1 : -1;
+            // Wraps, and the field itself is the stop before the first row.
+            setActive(
+              ((active + 1 + step + options.length + 1) % (options.length + 1)) - 1,
+            );
+            return;
+          }
           if (event.key !== "Enter") return;
+          const chosen = options[active];
+          if (chosen) {
+            event.preventDefault();
+            return open_(chosen.ticker, chosen.name);
+          }
           if (rows[0]) open_(rows[0].ticker, rows[0].name);
           // A picker takes a symbol nothing matched, as typed: the caller
           // checks it, and an unlisted name is still worth asking about.
           else if (onPick && analyze) open_(analyze.ticker);
         }}
       />
-      {open && (term || recent.length > 0) ? (
-        <div className="ag-search-panel" role="listbox">
+      {shown ? (
+        // Held on to the field: a press on a row must not blur it first, or
+        // the panel's own `mousedown` bookkeeping and the caret both go.
+        <div
+          className="ag-search-panel"
+          onMouseDown={(event) => event.preventDefault()}
+        >
           {term ? (
             <Found
               busy={busy}
@@ -209,19 +288,28 @@ export function Search({
               analyze={analyze}
               term={term}
               onPick={open_}
+              listId={listId}
+              optionId={optionId}
+              active={active}
             />
           ) : (
             <>
-              <p className="ag-search-caption">{t("widgets.recent")}</p>
-              {recent.map((ticker) => (
-                <Row
-                  key={ticker}
-                  ticker={ticker}
-                  name={names[ticker]}
-                  quote={quotes[ticker]}
-                  onPick={open_}
-                />
-              ))}
+              <p className="ag-search-caption" id={`${uid}-recent`}>
+                {t("widgets.recent")}
+              </p>
+              <div role="listbox" id={listId} aria-labelledby={`${uid}-recent`}>
+                {recent.map((ticker, index) => (
+                  <Row
+                    key={ticker}
+                    ticker={ticker}
+                    name={names[ticker]}
+                    quote={quotes[ticker]}
+                    onPick={open_}
+                    id={optionId(index)}
+                    active={active === index}
+                  />
+                ))}
+              </div>
             </>
           )}
         </div>
@@ -236,7 +324,13 @@ function Found({
   analyze,
   term,
   onPick,
+  listId,
+  optionId,
+  active,
 }: {
+  listId: string;
+  optionId: (index: number) => string;
+  active: number;
   busy: boolean;
   rows: Match[];
   analyze: Match | undefined;
@@ -245,35 +339,66 @@ function Found({
 }) {
   const t = useT();
   if (busy && rows.length === 0 && !analyze) {
-    return <p className="ag-search-caption">{t("widgets.searching")}</p>;
+    return (
+      <p className="ag-search-caption" role="status">
+        {t("widgets.searching")}
+      </p>
+    );
   }
   if (rows.length === 0 && !analyze) {
     // Never leave the panel blank: an empty box reads as "still working",
     // which is the state this line exists to distinguish itself from.
-    return <p className="ag-search-caption">{t("widgets.no_results")}</p>;
+    return (
+      <p className="ag-search-caption" role="status">
+        {t("widgets.no_results")}
+      </p>
+    );
   }
+  // One run per tier: a listbox may hold only options and groups, so the
+  // caption becomes the group's name rather than a paragraph between rows.
+  const runs: { kind: string; start: number; rows: Match[] }[] = [];
+  rows.forEach((match, index) => {
+    const last = runs[runs.length - 1];
+    if (last && last.kind === match.kind) last.rows.push(match);
+    else runs.push({ kind: match.kind, start: index, rows: [match] });
+  });
   return (
-    <>
-      {rows.map((match, index) => (
-        <div key={`${match.kind}-${match.ticker}`}>
-          {/* A caption when the tier changes, so one head is printed per run
-              rather than one per row. */}
-          {CAPTIONS[match.kind] && match.kind !== rows[index - 1]?.kind ? (
-            <p className="ag-search-caption">{t(CAPTIONS[match.kind]!)}</p>
-          ) : null}
+    <div role="listbox" id={listId} aria-label={t("widgets.search_placeholder")}>
+      {runs.map((run) => {
+        const caption = CAPTIONS[run.kind];
+        const body = run.rows.map((match, offset) => (
           <Row
+            key={`${match.kind}-${match.ticker}`}
             ticker={match.ticker}
             name={match.name}
             mark={match.mark}
             exchange={match.exchange}
             asset={match.asset}
             onPick={onPick}
+            id={optionId(run.start + offset)}
+            active={active === run.start + offset}
           />
-        </div>
-      ))}
+        ));
+        return caption ? (
+          <div role="group" aria-label={t(caption)} key={run.start}>
+            <p className="ag-search-caption" aria-hidden="true">
+              {t(caption)}
+            </p>
+            {body}
+          </div>
+        ) : (
+          <div role="presentation" key={run.start}>
+            {body}
+          </div>
+        );
+      })}
       {analyze ? (
         <button
           type="button"
+          role="option"
+          id={optionId(rows.length)}
+          aria-selected={active === rows.length}
+          tabIndex={-1}
           className="ag-search-analyze"
           onClick={() => onPick(analyze.ticker)}
         >
@@ -282,7 +407,7 @@ function Found({
           {t("widgets.analyze", { q: term.toUpperCase() }).replaceAll("**", "")}
         </button>
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -294,7 +419,11 @@ function Row({
   asset,
   quote,
   onPick,
+  id,
+  active,
 }: {
+  id: string;
+  active: boolean;
   ticker: string;
   name?: string;
   mark?: string;
@@ -321,8 +450,10 @@ function Row({
     <button
       type="button"
       className="ag-search-row"
+      id={id}
       role="option"
-      aria-selected="false"
+      aria-selected={active}
+      tabIndex={-1}
       onClick={() => onPick(ticker, company)}
     >
       {mark && MARKS[mark] ? (

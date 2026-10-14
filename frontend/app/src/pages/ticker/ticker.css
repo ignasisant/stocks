@@ -26,7 +26,7 @@
 .tk-header h1 {
   margin: 0;
   font-size: var(--ag-fs-2xl);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--ag-track-2xl);
 }
 
 .tk-logo {
@@ -135,7 +135,7 @@
   padding: 0.75rem 1rem;
   border: 1px solid var(--ag-border);
   border-left: 3px solid var(--ag-brand-accent);
-  border-radius: var(--ag-radius-xs, 6px);
+  border-radius: var(--ag-radius-xs, 4px);
   background: var(--ag-surface-sunken);
   color: var(--ag-text-primary);
   font-size: var(--ag-fs-sm);
@@ -211,46 +211,14 @@
 /* Never wraps a label or cuts a pill: when the row is narrower than the
    seven ranges (a phone, or a page beside the chat drawer) it scrolls. */
 .tk-seg {
-  display: inline-flex;
-  max-width: 100%;
+  flex-wrap: nowrap;
   overflow-x: auto;
-  background: var(--ag-surface-page);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-pill);
-  padding: 2px;
-  gap: 2px;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
 }
 
-.tk-seg button {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: var(--ag-text-secondary);
-  font: inherit;
-  font-size: var(--ag-fs-sm);
-  padding: 6px 12px;
-  border-radius: var(--ag-radius-pill);
-  cursor: pointer;
-  min-height: 32px;
-  flex: none;
-  white-space: nowrap;
-}
-
-@media (hover: hover) {
-  .tk-seg button:hover {
-    background: var(--ag-surface-hover);
-    color: var(--ag-text-primary);
-  }
-}
-
-.tk-seg button.tk-seg-on {
-  background: var(--ag-brand-cta);
-  color: var(--ag-on-brand);
-}
-
-.tk-seg button:focus-visible {
-  outline: 2px solid var(--ag-brand-accent);
-  outline-offset: 1px;
+.tk-seg::-webkit-scrollbar {
+  display: none;
 }
 
 /* --------------------------------------------------------- metrics and KPIs */
@@ -365,11 +333,19 @@
 
 /* Labels inside the plot (phone): a halo in the card colour keeps them
    legible where a series runs under them. */
-.tk-grid-in text {
+.tk-grid-in text,
+.tk-end text {
   paint-order: stroke;
   stroke: var(--ag-surface-card);
   stroke-width: 3px;
   stroke-linejoin: round;
+}
+
+/* A line's name at its right end (`EndLabels`): the line's own colour, a
+   step heavier than the axis so it reads as a label, not a tick. */
+.tk-end text {
+  font-size: 11px;
+  font-weight: 600;
 }
 
 /* Per-bar YoY on the results chart: secondary text, never the bar's colour —
@@ -396,8 +372,10 @@
   font-weight: 600;
 }
 
+/* Muted, not faint: a mark the reader is following must clear 3:1 on the
+   card, and faint (2.7:1) is for rules nobody reads. */
 .tk-cross {
-  stroke: var(--ag-text-faint);
+  stroke: var(--ag-text-muted);
   stroke-width: 1;
 }
 
@@ -655,6 +633,7 @@
 .tk-hero-level {
   font-weight: 700;
   font-size: var(--ag-fs-3xl);
+  letter-spacing: var(--ag-track-3xl);
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
@@ -933,7 +912,7 @@
   text-align: left;
   font-weight: 500;
   color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   padding: 6px 10px 6px 0;
   white-space: nowrap;
 }
@@ -1107,6 +1086,9 @@
   border-radius: var(--ag-radius-md);
   box-shadow: var(--ag-shadow-card);
   text-align: left;
+  /* Hung from its button's right edge, so it grows from there. */
+  transform-origin: top right;
+  animation: ag-pop-in var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .tk-editor-label {
@@ -1268,8 +1250,8 @@
   }
 
   /* Seven range pills, "Todo" the widest, fit a 360px phone only at 10px. */
-  .tk-seg button {
-    padding: 6px 10px;
+  .tk-seg .ag-seg-opt {
+    padding-inline: 10px;
   }
 
   .tk-star,
@@ -1381,4 +1363,10 @@
   justify-content: space-between;
   font-size: 11px;
   color: var(--ag-text-muted);
+}
+
+/* A plot the arrow keys walk: the global ring on keyboard focus, none on a
+   click's. */
+.tk-svg:focus:not(:focus-visible) {
+  outline: none;
 }

@@ -814,6 +814,33 @@ export function useChat(live: boolean) {
   }, [busy, send, turns]);
 
   /**
+   * Ask the refused question again, of another provider.
+   *
+   * The retry waits for the next render rather than following the save in
+   * the same press: `send` reads who was meant to answer from the state it
+   * closed over, and the old one would put a false failover note on the turn.
+   */
+  const switching = useRef(false);
+  const retryWith = useCallback(
+    async (provider: string) => {
+      if (busy) return;
+      try {
+        const next = await saveSettings({ provider });
+        switching.current = true;
+        setState(next);
+      } catch {
+        // The refusal stays where it is, Retry and all.
+      }
+    },
+    [busy],
+  );
+  useEffect(() => {
+    if (!switching.current) return;
+    switching.current = false;
+    retry();
+  }, [retry]);
+
+  /**
    * Answer the last question again.
    *
    * Not `retry`: that one is for a question that was never answered, and it
@@ -1115,6 +1142,7 @@ export function useChat(live: boolean) {
     send,
     stop,
     retry,
+    retryWith,
     regenerate,
     decide,
     undo,

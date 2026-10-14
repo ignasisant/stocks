@@ -5,8 +5,10 @@
  * (`chat.engine.persona`), and an account that never filled them in gets
  * generic advice without knowing why — so a signed-in account whose profile was
  * never saved is asked, once per session, with "skip for now" one press away.
- * It nags again next session until the profile is saved here or on the Profile
- * page.
+ * It asks again next session until the profile is saved here or on the Profile
+ * page — or until the reader says not to (`profile_prompt_off`, an account
+ * setting): a question nobody can stop is a nag, and the Profile page keeps the
+ * same five fields for whenever they want them.
  *
  * Last in line on a first load. The walkthrough and "what's new" come first,
  * and only one modal gets a first load; the tour says whether it took the slot
@@ -18,11 +20,15 @@
  * most sessions never show would make every reader pay for it.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { get, send } from "./api";
 import { useT } from "./i18n";
+import { useGuest, useSession } from "./session";
 import { whenFirstLoadDecided } from "./tourPark";
+import { useDialog } from "./useDialog";
+import { useExitGhost } from "./useSheet";
+import { Help } from "../ui/Kpi";
 import { ToggleChip, ToggleRow } from "../ui/Toggle";
 
 type Options = {
@@ -62,12 +68,14 @@ function markSeen(): void {
 }
 
 export function ProfilePrompt() {
+  const { prefs } = useSession();
+  const off = prefs.profile_prompt_off;
   const [loaded, setLoaded] = useState<{ options: Options; profile: Profile } | null>(
     null,
   );
 
   useEffect(() => {
-    if (seen()) return;
+    if (off || seen()) return;
     let alive = true;
     whenFirstLoadDecided()
       .then(async (interrupted) => {
@@ -88,7 +96,7 @@ export function ProfilePrompt() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [off]);
 
   if (!loaded) return null;
   return (
@@ -110,9 +118,15 @@ function Dialog({
   onDone: () => void;
 }) {
   const t = useT();
+  const guest = useGuest();
+  const { reload } = useSession();
   const [profile, setProfile] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const scrim = useRef<HTMLDivElement>(null);
+  const card = useRef<HTMLDivElement>(null);
+  useExitGhost(scrim);
+  useDialog(card);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -139,12 +153,24 @@ function Dialog({
       .finally(() => setBusy(false));
   }
 
+  function never() {
+    // Closed first, written after, as the Home card's "don't show again": the
+    // press is the decision, and a failed write costs one more ask next
+    // session rather than an error in front of somebody saying no.
+    onDone();
+    void send("PATCH", "/prefs", { profile_prompt_off: true })
+      .then(reload)
+      .catch(() => undefined);
+  }
+
   const toggle = (list: string[], option: string) =>
     list.includes(option) ? list.filter((x) => x !== option) : [...list, option];
 
   return (
-    <div className="ag-tour-scrim" role="presentation" onClick={onDone}>
+    <div ref={scrim} className="ag-tour-scrim" role="presentation" onClick={onDone}>
       <div
+        ref={card}
+        tabIndex={-1}
         className="ag-tour ag-pp"
         role="dialog"
         aria-modal="true"
@@ -200,8 +226,22 @@ function Dialog({
             onChange={(event) => setProfile({ ...profile, notes: event.target.value })}
           />
         </label>
-        {failed ? <p className="ag-fb-bad">{t("profile.iv_save_failed")}</p> : null}
+        {failed ? (
+          <p className="ag-fb-bad" role="alert">
+            {t("profile.iv_save_failed")}
+          </p>
+        ) : null}
         <footer className="ag-tour-foot">
+          {/* A guest has no prefs to keep the answer in. */}
+          {guest ? null : (
+            <button
+              type="button"
+              className="ag-tour-quiet ag-tour-lead"
+              onClick={never}
+            >
+              {t("profile.iv_never")}
+            </button>
+          )}
           <button type="button" className="ag-tour-quiet" onClick={onDone}>
             {t("profile.iv_skip")}
           </button>
@@ -231,8 +271,11 @@ function Chips({
 }) {
   return (
     <div className="ag-pp-field" role="group" aria-label={label}>
-      <span className="ag-pp-label" title={help}>
+      {/* The "?" rather than a `title`: a tooltip on hover is nothing on a
+          phone, which is where most first sessions are. */}
+      <span className="ag-pp-label">
         {label}
+        <Help text={help} />
       </span>
       <ToggleRow>
         {options.map((option) => (

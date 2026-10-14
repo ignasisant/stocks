@@ -41,7 +41,9 @@ import {
   applyWidth,
   rememberPixels,
   restoreWidth,
+  settle,
   storedWidth,
+  stretchAt,
   widthAt,
   type WidthKey,
 } from "./width";
@@ -67,13 +69,20 @@ function Grip({ onWidth }: { onWidth: (key: WidthKey | null) => void }) {
     const grip = event.currentTarget;
     grip.setPointerCapture(event.pointerId);
     document.body.classList.add("ag-chat-dragging");
-    const move = (moved: PointerEvent) => applyPixels(widthAt(moved.clientX));
+    // Where on the strip the finger landed, kept for the whole drag: the edge
+    // stays under that same spot instead of jumping to the cursor.
+    const edge = grip.parentElement?.getBoundingClientRect().left ?? event.clientX;
+    const grab = Math.round(event.clientX - edge);
+    const move = (moved: PointerEvent) => applyPixels(stretchAt(moved.clientX - grab));
     const stop = (ended: PointerEvent) => {
       grip.removeEventListener("pointermove", move);
       grip.removeEventListener("pointerup", stop);
       grip.removeEventListener("pointercancel", stop);
       document.body.classList.remove("ag-chat-dragging");
-      onWidth(rememberPixels(widthAt(ended.clientX)));
+      // A release past a limit springs back to it rather than snapping.
+      const x = ended.clientX - grab;
+      if (stretchAt(x) !== widthAt(x)) settle();
+      onWidth(rememberPixels(widthAt(x)));
     };
     grip.addEventListener("pointermove", move);
     grip.addEventListener("pointerup", stop);
@@ -447,6 +456,17 @@ export default function Panel({
                       // Only the newest turn can be discarded: an older refusal
                       // is history the reader has already moved past.
                       onDrop={i === chat.turns.length - 1 ? chat.drop : undefined}
+                      // Who else could answer this minute: the free chain
+                      // while today's allowance lasts, a BYOK provider only
+                      // with a key in hand. A pick that still needs one goes
+                      // through settings instead.
+                      switchTo={state.providers.filter(
+                        (p) =>
+                          p.id !== state.answering &&
+                          (p.needs_key ? p.has_key : (state.free_left ?? 0) > 0),
+                      )}
+                      onSwitch={(provider) => void chat.retryWith(provider)}
+                      onPickAi={() => setView("settings")}
                       onDecide={chat.decide}
                       onUndo={chat.undo}
                       onLeave={onPark ?? onClose}

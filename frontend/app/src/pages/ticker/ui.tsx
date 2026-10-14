@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { Link } from "../../shell/router";
 import { useTickerProfile } from "../../shell/tickers";
 import { Kpi, KpiGrid, bandTone, chipFor } from "../../ui/Kpi";
+import { Segmented as Seg } from "../../ui/Segmented";
 import { num } from "../../shell/numbers";
 
 /**
@@ -242,19 +243,16 @@ export function Segmented<T extends string>({
   format?: (option: T) => string;
 }) {
   return (
-    <div className="tk-seg" role="group" aria-label={label}>
-      {options.map((option) => (
-        <button
-          key={option}
-          type="button"
-          className={option === value ? "tk-seg-on" : undefined}
-          aria-pressed={option === value}
-          onClick={() => onChange(option)}
-        >
-          {format ? format(option) : option}
-        </button>
-      ))}
-    </div>
+    <Seg
+      className="tk-seg"
+      label={label}
+      items={options.map((option) => ({
+        id: option,
+        label: format ? format(option) : option,
+      }))}
+      value={value}
+      onPick={onChange}
+    />
   );
 }
 

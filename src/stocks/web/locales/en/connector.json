@@ -51,5 +51,6 @@
   "connector.view_empty": "Nothing to show yet — import a statement in TopStocks first.",
   "connector.view_waiting": "Loading…",
   "connector.view_stale": "Some prices are from {time}; the feed is catching up.",
-  "connector.view_unknown": "This result has no view; Claude has the figures."
+  "connector.view_unknown": "This result has no view; Claude has the figures.",
+  "connector.view_chart_summary": "Value {value} against {injected} contributed, from {from} to {to}"
 }

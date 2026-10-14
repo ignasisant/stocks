@@ -2745,6 +2745,10 @@ class Prefs(BaseModel):
     # live portfolio. It says what to *do*; `setup_card_dismissed` hides what is
     # switched *on*.
     onboarding_dismissed: bool = False
+    # "Don't ask again" on the investor-profile nudge. Without it the dialog
+    # asks every session until the profile is saved, and a reader who would
+    # rather not answer had no way to say so.
+    profile_prompt_off: bool = False
     home_layout: list[HomeSlot] | None = Field(
         default=None,
         description=(

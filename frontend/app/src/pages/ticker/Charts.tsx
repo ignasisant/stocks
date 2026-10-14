@@ -34,6 +34,8 @@ import {
   frame,
   plotWidth,
   scale,
+  spoken,
+  summary,
   ticks,
   type TipLine,
 } from "./plot";
@@ -199,7 +201,17 @@ function Annual({ data }: { data: Financials }) {
     <div className="tk-plot" ref={node}>
       <Chart
         frame={box}
-        label={t("ticker.chart_annual_title")}
+        label={summary(
+          t("ticker.chart_annual_title"),
+          periods[0] ?? "",
+          periods[periods.length - 1] ?? "",
+        )}
+        walk={{ at: hover, last: periods.length - 1, set: setHover }}
+        readout={
+          hover !== null && periods[hover]
+            ? spoken(periods[hover] as string, lines)
+            : null
+        }
         onPointer={(x) =>
           setHover(
             Math.max(
@@ -468,12 +480,23 @@ function Quarterly({ data }: { data: Financials }) {
     Math.max(1, ...rows.map((row) => row.period.length)),
   );
   const point = hover === null ? null : values[hover];
+  const tipLines = [{ text: `EPS ${known(point) ? num(point, 2) : DASH}` }];
 
   return (
     <div className="tk-plot" ref={node}>
       <Chart
         frame={box}
-        label={t("ticker.chart_quarterly_title")}
+        label={summary(
+          t("ticker.chart_quarterly_title"),
+          rows[0]?.period ?? "",
+          rows[rows.length - 1]?.period ?? "",
+        )}
+        walk={{ at: hover, last: rows.length - 1, set: setHover }}
+        readout={
+          hover !== null && rows[hover]
+            ? spoken(rows[hover]?.period ?? "", tipLines)
+            : null
+        }
         onPointer={(x) =>
           setHover(
             Math.max(0, Math.min(rows.length - 1, Math.floor((x - box.left) / band))),
@@ -527,7 +550,7 @@ function Quarterly({ data }: { data: Financials }) {
           frame={box}
           x={xOf(hover)}
           title={rows[hover]?.period ?? ""}
-          lines={[{ text: `EPS ${known(point) ? num(point, 2) : DASH}` }]}
+          lines={tipLines}
         />
       ) : null}
     </div>
@@ -651,6 +674,18 @@ export function ValuationChart({
   const span = bounds([values, window.mean === null ? [] : [window.mean]]);
   const y = span ? scale(span.lo, span.hi, box.height - box.bottom, box.top) : null;
   const band_ = plotWidth(box) / Math.max(1, kept.length);
+  const tipTitle = hover === null ? "" : (kept[hover]?.day.slice(0, 10) ?? "");
+  const tipLines: TipLine[] =
+    hover === null
+      ? []
+      : [
+          {
+            text: `P/E ${known(values[hover]) ? num(values[hover] as number, 1) : DASH}`,
+          },
+          ...(window.mean === null
+            ? []
+            : [{ text: t("ticker.pe_avg_line", { avg: num(window.mean, 1) }) }]),
+        ];
   const xOf = (index: number) => box.left + (index + 0.5) * band_;
 
   return (
@@ -715,7 +750,16 @@ export function ValuationChart({
           <div className="tk-plot">
             <Chart
               frame={box}
-              label={t("ticker.chart_pe_title")}
+              label={summary(
+                t("ticker.chart_pe_title"),
+                kept[0]?.day.slice(0, 10) ?? "",
+                kept[kept.length - 1]?.day.slice(0, 10) ?? "",
+                data.current === null ? "" : `P/E ${num(data.current, 1)}`,
+              )}
+              walk={{ at: hover, last: kept.length - 1, set: setHover }}
+              readout={
+                hover !== null && kept[hover] ? spoken(tipTitle, tipLines) : null
+              }
               onPointer={(x) =>
                 setHover(
                   Math.max(
@@ -793,25 +837,7 @@ export function ValuationChart({
               />
             </Chart>
             {hover !== null && kept[hover] ? (
-              <Tooltip
-                frame={box}
-                x={xOf(hover)}
-                title={kept[hover]?.day.slice(0, 10) ?? ""}
-                lines={[
-                  {
-                    text: `P/E ${known(values[hover]) ? num(values[hover] as number, 1) : DASH}`,
-                  },
-                  ...(window.mean === null
-                    ? []
-                    : [
-                        {
-                          text: t("ticker.pe_avg_line", {
-                            avg: num(window.mean, 1),
-                          }),
-                        },
-                      ]),
-                ]}
-              />
+              <Tooltip frame={box} x={xOf(hover)} title={tipTitle} lines={tipLines} />
             ) : null}
           </div>
         ) : (
@@ -912,6 +938,12 @@ export function InsiderFlow({ insiders }: { insiders: Insiders }) {
   const width = Math.min(narrow ? 16 : 26, (band * 0.7) / 2);
   const every = stride(months.length, band, 7);
   const row = hover === null ? null : months[hover];
+  const tipLines: TipLine[] = row
+    ? [
+        { text: `${t("ticker.buy")} ${compact(row[1].buy, ccy)}`, tone: "up" },
+        { text: `${t("ticker.sell")} ${compact(row[1].sell, ccy)}`, tone: "down" },
+      ]
+    : [];
 
   return (
     <>
@@ -919,7 +951,13 @@ export function InsiderFlow({ insiders }: { insiders: Insiders }) {
       <div className="tk-plot" ref={node}>
         <Chart
           frame={box}
-          label={t("ticker.chart_insider_title", { ccy })}
+          label={summary(
+            t("ticker.chart_insider_title", { ccy }),
+            months[0]?.[0] ?? "",
+            months[months.length - 1]?.[0] ?? "",
+          )}
+          walk={{ at: hover, last: months.length - 1, set: setHover }}
+          readout={row ? spoken(row[0], tipLines) : null}
           onPointer={(x) =>
             setHover(
               Math.max(
@@ -979,13 +1017,7 @@ export function InsiderFlow({ insiders }: { insiders: Insiders }) {
             frame={box}
             x={xOf(hover as number)}
             title={row[0]}
-            lines={[
-              { text: `${t("ticker.buy")} ${compact(row[1].buy, ccy)}`, tone: "up" },
-              {
-                text: `${t("ticker.sell")} ${compact(row[1].sell, ccy)}`,
-                tone: "down",
-              },
-            ]}
+            lines={tipLines}
           />
         ) : null}
         <Legend

@@ -19,8 +19,10 @@
  * calendar: one dialog for both, so the two cannot drift.
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
+import { useDialog } from "../../shell/useDialog";
+import { useExitGhost } from "../../shell/useSheet";
 import { get } from "../../shell/api";
 import { Skeleton } from "../../shell/Layout";
 import { Link } from "../../shell/router";
@@ -713,6 +715,10 @@ export function Breakdown({
 
 function ResultDetail({ ticker, date, result, onClose }: ResultDetailProps) {
   const t = useT();
+  const scrim = useRef<HTMLDivElement>(null);
+  const card = useRef<HTMLDivElement>(null);
+  useDialog(card);
+  useExitGhost(scrim);
   const profile = useTickerProfile(ticker);
   const query = useApi(
     () =>
@@ -740,12 +746,15 @@ function ResultDetail({ ticker, date, result, onClose }: ResultDetailProps) {
 
   return (
     <div
+      ref={scrim}
       className="earn-modal"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <div
+        ref={card}
+        tabIndex={-1}
         className="earn-modal-card"
         role="dialog"
         aria-modal="true"

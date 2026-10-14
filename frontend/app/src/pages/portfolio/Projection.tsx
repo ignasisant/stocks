@@ -294,6 +294,12 @@ export default function Projection() {
                 book's real value and the money put in, the future carries
                 the spread. The two meet at "today". */}
             <ReturnLines
+              label={`${t(
+                years === "1"
+                  ? "portfolio.projection_years_n_one"
+                  : "portfolio.projection_years_n",
+                { n: years },
+              )}, ${t("portfolio.projection_range")} ${compact(low) ?? ""} – ${compact(high) ?? ""}`}
               dates={[...data.history_dates, ...data.dates]}
               format={(value) => compact(value) ?? ""}
               formatDate={formatDate}

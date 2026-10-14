@@ -14,12 +14,14 @@
 
 .ag-sec-h1 {
   font-size: var(--ag-fs-3xl);
+  letter-spacing: var(--ag-track-3xl);
   margin: 0 0 1rem;
   text-wrap: balance;
 }
 
 .ag-sec-h2 {
   font-size: var(--ag-fs-2xl);
+  letter-spacing: var(--ag-track-2xl);
   margin: 0 0 0.6rem;
   text-wrap: balance;
 }
@@ -66,7 +68,7 @@
   border-radius: var(--ag-radius-sm);
   padding: 0.4rem 0.55rem;
   min-height: 2.25rem;
-  transition: border-color 100ms ease-out;
+  transition: border-color var(--ag-dur-press) var(--ag-ease-out);
 }
 
 @media (hover: hover) {
@@ -165,6 +167,7 @@
 
 .ag-sec-score {
   font-size: var(--ag-fs-2xl);
+  letter-spacing: var(--ag-track-2xl);
   font-weight: 700;
   line-height: 1.15;
   margin-top: 0.35rem;
@@ -237,7 +240,7 @@
   border-right: 1.5px solid var(--ag-text-muted);
   border-bottom: 1.5px solid var(--ag-text-muted);
   transform: rotate(-45deg);
-  transition: transform 100ms ease-out;
+  transition: transform var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .ag-sec-controls[open] > summary::before,
@@ -436,7 +439,7 @@
   font: inherit;
   white-space: nowrap;
   cursor: pointer;
-  transition: color 100ms ease-out;
+  transition: color var(--ag-dur-press) var(--ag-ease-out);
 }
 
 @media (hover: hover) {
@@ -472,7 +475,7 @@
 }
 
 .ag-sec-table tbody tr > * {
-  transition: background-color 100ms ease-out;
+  transition: background-color var(--ag-dur-press) var(--ag-ease-out);
 }
 
 @media (hover: hover) {
@@ -578,7 +581,7 @@
 
 .ag-sec-rescan {
   min-height: 2.25rem;
-  transition: border-color 100ms ease-out;
+  transition: border-color var(--ag-dur-press) var(--ag-ease-out);
 }
 
 @media (hover: hover) {
