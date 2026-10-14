@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from datetime import date
@@ -310,7 +310,7 @@ class _Clock:
         self.ms: dict[str, int] = {}
 
     @contextmanager
-    def __call__(self, phase: str) -> Iterator[None]:
+    def __call__(self, phase: str) -> Generator[None]:
         started = perf_counter()
         try:
             yield
