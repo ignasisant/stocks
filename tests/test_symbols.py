@@ -26,12 +26,15 @@ def quote(sym, short, *, long=None, exch="", qtype="EQUITY"):
 MIPS = [
     quote("MIPS.ST", "Mips AB", long="Mips AB (publ)", exch="Stockholm"),
     quote("MPZAF", "MIPS AB", long="Mips AB (publ)", exch="OTC Markets"),
-    quote("7M1.F", "Mips AB                       N", long="Mips AB (publ)",
-          exch="Frankfurt"),
+    quote(
+        "7M1.F",
+        "Mips AB                       N",
+        long="Mips AB (publ)",
+        exch="Frankfurt",
+    ),
     quote("SE0009216278.SG", "MIPS AB O.N.", exch="Stuttgart"),
     quote("0RNQ.IL", "MIPS AB MIPS ORD SHS", long="Mips AB (publ)", exch="London"),
-    quote("MIPSX", "MassMutual Premier Inflation-Pr", exch="NASDAQ",
-          qtype="MUTUALFUND"),
+    quote("MIPSX", "MassMutual Premier Inflation-Pr", exch="NASDAQ", qtype="MUTUALFUND"),
 ]
 
 
@@ -74,17 +77,21 @@ def test_falls_back_to_shortname_when_longname_missing(monkeypatch):
 
 def test_short_prefix_does_not_swallow_a_different_issuer(monkeypatch):
     # "ASML" is under the dedup floor, so it must not absorb "ASML Group".
-    serve(monkeypatch, [
-        quote("1ASML.MI", "ASML", exch="Milan"),
-        quote("ASMLG", "ASML Group", exch="NASDAQ"),
-    ])
+    serve(
+        monkeypatch,
+        [
+            quote("1ASML.MI", "ASML", exch="Milan"),
+            quote("ASMLG", "ASML Group", exch="NASDAQ"),
+        ],
+    )
     assert [t for t, _, _ in search_symbols("asml")] == ["1ASML.MI", "ASMLG"]
 
 
 def test_honours_limit(monkeypatch):
-    serve(monkeypatch, [
-        quote(f"T{i}", f"Company Number {i}", exch="NYSE") for i in range(10)
-    ])
+    serve(
+        monkeypatch,
+        [quote(f"T{i}", f"Company Number {i}", exch="NYSE") for i in range(10)],
+    )
     assert len(search_symbols("company", limit=3)) == 3
 
 
@@ -162,10 +169,13 @@ def test_isin_cache_survives_a_new_process(monkeypatch, isin_cache):
 def test_us_isin_prefers_the_bare_us_listing(monkeypatch, isin_cache):
     # Yahoo answers a US ISIN with whatever venue ranks first, often a German
     # line ("9PDA.SG"); the home listing is the one the app can price.
-    serve(monkeypatch, [
-        quote("9PDA.SG", "PDD Holdings Inc. (ADRs)", exch="Stuttgart"),
-        quote("PDD", "PDD Holdings Inc", exch="NASDAQ"),
-    ])
+    serve(
+        monkeypatch,
+        [
+            quote("9PDA.SG", "PDD Holdings Inc. (ADRs)", exch="Stuttgart"),
+            quote("PDD", "PDD Holdings Inc", exch="NASDAQ"),
+        ],
+    )
     assert symbols.symbol_for_isin("US7223041028") == "PDD"
 
 
@@ -204,6 +214,7 @@ def test_search_keeps_each_rows_quote_type(monkeypatch):
 
 # ------------------------------------------------------ bare broker codes
 
+
 def serve_by_query(monkeypatch, answers, spy=None):
     """Answer each search with the rows for its `q`, nothing for the rest."""
     from urllib.parse import parse_qs, urlparse
@@ -220,31 +231,45 @@ def serve_by_query(monkeypatch, answers, spy=None):
 def test_a_bare_eur_code_lands_on_its_xetra_line(monkeypatch):
     # The search for "SIE" ranks Siemens Energy first; only the exact code on
     # a EUR venue counts, and of those XETRA beats Frankfurt.
-    serve_by_query(monkeypatch, {"SIE": [
-        quote("ENR.DE", "SIEMENS ENERGY AG", exch="XETRA"),
-        quote("SIE.F", "SIEMENS AG", exch="Frankfurt"),
-        quote("SIE.DE", "SIEMENS AG", exch="XETRA"),
-        quote("SIEGY", "Siemens AG ADR", exch="OTC"),
-    ]})
+    serve_by_query(
+        monkeypatch,
+        {
+            "SIE": [
+                quote("ENR.DE", "SIEMENS ENERGY AG", exch="XETRA"),
+                quote("SIE.F", "SIEMENS AG", exch="Frankfurt"),
+                quote("SIE.DE", "SIEMENS AG", exch="XETRA"),
+                quote("SIEGY", "Siemens AG ADR", exch="OTC"),
+            ]
+        },
+    )
     assert symbols.symbol_for_code("SIE", "EUR") == "SIE.DE"
 
 
 def test_a_code_the_bare_search_never_lists_is_asked_by_name(monkeypatch):
     # Yahoo answers "BOY" with Boyd Gaming and La-Z-Boy; "BOY.DE" it knows.
     spy = []
-    serve_by_query(monkeypatch, {
-        "BOY": [quote("BYD", "Boyd Gaming"), quote("BOY.L", "Bodycote plc")],
-        "BOY.DE": [quote("BOY.DE", "BANCO BILBAO VIZCAYA ARGENTARIA", exch="XETRA")],
-    }, spy=spy)
+    serve_by_query(
+        monkeypatch,
+        {
+            "BOY": [quote("BYD", "Boyd Gaming"), quote("BOY.L", "Bodycote plc")],
+            "BOY.DE": [quote("BOY.DE", "BANCO BILBAO VIZCAYA ARGENTARIA", exch="XETRA")],
+        },
+        spy=spy,
+    )
     assert symbols.symbol_for_code("BOY", "EUR") == "BOY.DE"
     assert spy == ["BOY", "BOY.DE"]
 
 
 def test_the_trade_currency_picks_the_venues(monkeypatch):
-    serve_by_query(monkeypatch, {"BOY": [
-        quote("BOY.DE", "BANCO BILBAO VIZCAYA ARGENTARIA", exch="XETRA"),
-        quote("BOY.L", "Bodycote plc", exch="LSE"),
-    ]})
+    serve_by_query(
+        monkeypatch,
+        {
+            "BOY": [
+                quote("BOY.DE", "BANCO BILBAO VIZCAYA ARGENTARIA", exch="XETRA"),
+                quote("BOY.L", "Bodycote plc", exch="LSE"),
+            ]
+        },
+    )
     assert symbols.symbol_for_code("BOY", "GBP") == "BOY.L"
 
 
@@ -282,19 +307,27 @@ def test_a_miss_is_remembered_for_the_process_only(monkeypatch):
 
 def test_a_home_exchange_beats_a_german_regional_floor(monkeypatch):
     # Philips trades in Amsterdam; Frankfurt only mirrors it.
-    serve_by_query(monkeypatch, {"PHIA": [
-        quote("PHIA.F", "KONINKLIJKE PHILIPS", exch="Frankfurt"),
-        quote("PHIA.AS", "KONINKLIJKE PHILIPS", exch="Amsterdam"),
-    ]})
+    serve_by_query(
+        monkeypatch,
+        {
+            "PHIA": [
+                quote("PHIA.F", "KONINKLIJKE PHILIPS", exch="Frankfurt"),
+                quote("PHIA.AS", "KONINKLIJKE PHILIPS", exch="Amsterdam"),
+            ]
+        },
+    )
     assert symbols.symbol_for_code("PHIA", "EUR") == "PHIA.AS"
 
 
-@pytest.mark.parametrize(("code", "currency", "wanted"), [
-    ("BT.A", "GBP", "BT-A.L"),     # LSE share class after a dot
-    ("VOLV B", "SEK", "VOLV-B.ST"),  # Nordic share class after a space
-    ("BRK.B", "USD", "BRK-B"),     # US class: Yahoo spells it with a dash
-    ("700", "HKD", "0700.HK"),     # HK codes are four digits on Yahoo
-])
+@pytest.mark.parametrize(
+    ("code", "currency", "wanted"),
+    [
+        ("BT.A", "GBP", "BT-A.L"),  # LSE share class after a dot
+        ("VOLV B", "SEK", "VOLV-B.ST"),  # Nordic share class after a space
+        ("BRK.B", "USD", "BRK-B"),  # US class: Yahoo spells it with a dash
+        ("700", "HKD", "0700.HK"),  # HK codes are four digits on Yahoo
+    ],
+)
 def test_a_code_is_spelled_the_way_yahoo_spells_it(monkeypatch, code, currency, wanted):
     # The search is asked for Yahoo's spelling, not the broker's.
     serve_by_query(monkeypatch, {wanted.split(".")[0]: [quote(wanted, "Some Co")]})
@@ -302,12 +335,15 @@ def test_a_code_is_spelled_the_way_yahoo_spells_it(monkeypatch, code, currency, 
     assert symbols.code_symbol(code) == wanted  # cached under the ledger label
 
 
-@pytest.mark.parametrize(("code", "currency", "wanted"), [
-    ("LLOY", "GBX", "LLOY.L"),        # pence are still London
-    ("005930", "KRW", "005930.KS"),
-    ("PETR4", "BRL", "PETR4.SA"),
-    ("D05", "SGD", "D05.SI"),
-])
+@pytest.mark.parametrize(
+    ("code", "currency", "wanted"),
+    [
+        ("LLOY", "GBX", "LLOY.L"),  # pence are still London
+        ("005930", "KRW", "005930.KS"),
+        ("PETR4", "BRL", "PETR4.SA"),
+        ("D05", "SGD", "D05.SI"),
+    ],
+)
 def test_every_quoted_currency_has_venues(monkeypatch, code, currency, wanted):
     serve_by_query(monkeypatch, {code: [quote(wanted, "Some Co")]})
     assert symbols.symbol_for_code(code, currency) == wanted
@@ -340,11 +376,15 @@ def test_a_miss_while_throttled_is_not_a_miss(monkeypatch):
 # for "MEQA" only ever finds the Frankfurt mirror, MEQA.F.
 
 MERLIN_FLOOR = quote(
-    "MEQA.F", "MERLIN PROP. SOCIMI", long="Merlin Properties SOCIMI, S.A.",
+    "MEQA.F",
+    "MERLIN PROP. SOCIMI",
+    long="Merlin Properties SOCIMI, S.A.",
     exch="Frankfurt",
 )
 MERLIN_HOME = quote(
-    "MRL.MC", "MERLIN PROPERTIES", long="Merlin Properties SOCIMI, S.A.",
+    "MRL.MC",
+    "MERLIN PROPERTIES",
+    long="Merlin Properties SOCIMI, S.A.",
     exch="Madrid",
 )
 
@@ -353,9 +393,7 @@ def floored(code, symbol):
     symbols._code_memo = {code: symbol}
 
 
-def test_a_floor_answer_moves_to_the_line_of_the_statements_isin(
-    monkeypatch, isin_cache
-):
+def test_a_floor_answer_moves_to_the_line_of_the_statements_isin(monkeypatch, isin_cache):
     spy = []
     serve_by_query(monkeypatch, {"ES0105025003": [MERLIN_HOME]}, spy=spy)
     floored("MEQA", "MEQA.F")
@@ -370,10 +408,13 @@ def test_an_isin_line_off_the_trade_currencys_venues_is_not_taken(
 ):
     # Yahoo answers Vanguard's All-World ISIN with London's dollar line; the
     # statement bought it in euros, on XETRA.
-    serve_by_query(monkeypatch, {
-        "IE00BK5BQT80": [quote("VWRA.L", "Vanguard FTSE All-World", exch="LSE")],
-        "VWCE": [quote("VWCE.DE", "Vanguard FTSE All-World", exch="XETRA")],
-    })
+    serve_by_query(
+        monkeypatch,
+        {
+            "IE00BK5BQT80": [quote("VWRA.L", "Vanguard FTSE All-World", exch="LSE")],
+            "VWCE": [quote("VWCE.DE", "Vanguard FTSE All-World", exch="XETRA")],
+        },
+    )
     assert symbols.symbol_for_code("VWCE", "EUR", isin="IE00BK5BQT80") == "VWCE.DE"
 
 
@@ -381,13 +422,17 @@ def test_without_an_isin_the_floors_name_is_searched_and_the_price_decides(
     monkeypatch,
 ):
     spy, vetted = [], []
-    serve_by_query(monkeypatch, {
-        "MEQA": [MERLIN_FLOOR],
-        "Merlin Properties": [
-            quote("MEQA.SG", "MERLIN PROPERTIES", exch="Stuttgart"),
-            MERLIN_HOME,
-        ],
-    }, spy=spy)
+    serve_by_query(
+        monkeypatch,
+        {
+            "MEQA": [MERLIN_FLOOR],
+            "Merlin Properties": [
+                quote("MEQA.SG", "MERLIN PROPERTIES", exch="Stuttgart"),
+                MERLIN_HOME,
+            ],
+        },
+        spy=spy,
+    )
 
     def vet(symbol):
         vetted.append(symbol)
@@ -404,14 +449,17 @@ def test_a_name_is_not_an_identity(monkeypatch):
     the line the price disowns is passed over, and a dollar ADR is never one
     of the candidates."""
     vetted = []
-    serve_by_query(monkeypatch, {
-        "OZTA": [quote("OZTA.F", "GRIFOLS SA A EO 0,25", long="Grifols, S.A.")],
-        "Grifols": [
-            quote("GRFS", "Grifols, S.A.", exch="NASDAQ"),
-            quote("GRF-P.MC", "GRIFOLS SA", long="Grifols, S.A."),
-            quote("GRF.MC", "GRIFOLS SA", long="Grifols, S.A."),
-        ],
-    })
+    serve_by_query(
+        monkeypatch,
+        {
+            "OZTA": [quote("OZTA.F", "GRIFOLS SA A EO 0,25", long="Grifols, S.A.")],
+            "Grifols": [
+                quote("GRFS", "Grifols, S.A.", exch="NASDAQ"),
+                quote("GRF-P.MC", "GRIFOLS SA", long="Grifols, S.A."),
+                quote("GRF.MC", "GRIFOLS SA", long="Grifols, S.A."),
+            ],
+        },
+    )
 
     def vet(symbol):
         vetted.append(symbol)
@@ -423,10 +471,14 @@ def test_a_name_is_not_an_identity(monkeypatch):
 
 def test_the_floor_stays_when_no_home_line_closed_near_the_fills(monkeypatch):
     spy = []
-    serve_by_query(monkeypatch, {
-        "MEQA": [MERLIN_FLOOR],
-        "Merlin Properties": [MERLIN_HOME],
-    }, spy=spy)
+    serve_by_query(
+        monkeypatch,
+        {
+            "MEQA": [MERLIN_FLOOR],
+            "Merlin Properties": [MERLIN_HOME],
+        },
+        spy=spy,
+    )
     floored("MEQA", "MEQA.F")
     assert symbols.symbol_for_code("MEQA", "EUR", vet=lambda s: False) == "MEQA.F"
     asked = len(spy)
@@ -437,10 +489,14 @@ def test_the_floor_stays_when_no_home_line_closed_near_the_fills(monkeypatch):
 
 def test_a_price_that_could_not_be_had_leaves_the_question_open(monkeypatch):
     spy = []
-    serve_by_query(monkeypatch, {
-        "MEQA": [MERLIN_FLOOR],
-        "Merlin Properties": [MERLIN_HOME],
-    }, spy=spy)
+    serve_by_query(
+        monkeypatch,
+        {
+            "MEQA": [MERLIN_FLOOR],
+            "Merlin Properties": [MERLIN_HOME],
+        },
+        spy=spy,
+    )
     floored("MEQA", "MEQA.F")
     assert symbols.symbol_for_code("MEQA", "EUR", vet=lambda s: None) == "MEQA.F"
     asked = len(spy)
@@ -461,20 +517,24 @@ def test_a_home_line_is_never_asked_again(monkeypatch, isin_cache):
     spy = []
     serve_by_query(monkeypatch, {}, spy=spy)
     floored("SIE", "SIE.DE")
-    assert symbols.symbol_for_code(
-        "SIE", "EUR", isin="DE0007236101", vet=lambda s: True
-    ) == "SIE.DE"
+    assert (
+        symbols.symbol_for_code("SIE", "EUR", isin="DE0007236101", vet=lambda s: True)
+        == "SIE.DE"
+    )
     assert spy == []
 
 
-@pytest.mark.parametrize(("name", "issuer"), [
-    ("Merlin Properties SOCIMI, S.A.", "Merlin Properties"),
-    ("GRIFOLS SA A EO 0,25", "GRIFOLS"),
-    ("Banco Bilbao Vizcaya Argentaria, S.A.", "Banco Bilbao Vizcaya Argentaria"),
-    ("Anheuser-Busch InBev SA/NV", "Anheuser-Busch InBev"),
-    ("A2A S.p.A.", ""),  # too little left to search for
-    ("", ""),
-])
+@pytest.mark.parametrize(
+    ("name", "issuer"),
+    [
+        ("Merlin Properties SOCIMI, S.A.", "Merlin Properties"),
+        ("GRIFOLS SA A EO 0,25", "GRIFOLS"),
+        ("Banco Bilbao Vizcaya Argentaria, S.A.", "Banco Bilbao Vizcaya Argentaria"),
+        ("Anheuser-Busch InBev SA/NV", "Anheuser-Busch InBev"),
+        ("A2A S.p.A.", ""),  # too little left to search for
+        ("", ""),
+    ],
+)
 def test_the_issuers_name_is_what_comes_before_its_legal_form(name, issuer):
     assert symbols._issuer(name) == issuer
 
@@ -483,13 +543,18 @@ def test_the_issuers_name_is_what_comes_before_its_legal_form(name, issuer):
 
 
 def test_the_lines_a_name_finds_are_its_currencys_with_the_floors_last(monkeypatch):
-    serve_by_query(monkeypatch, {"Merlin": [
-        MERLIN_FLOOR,
-        quote("MRPRF", "MERLIN PROPERTIES", exch="OTC Markets"),
-        MERLIN_HOME,
-        quote("MRL.MC", "dup", exch="Madrid"),
-        quote("MERL.PA", "a fund", exch="Paris", qtype="MUTUALFUND"),
-    ]})
+    serve_by_query(
+        monkeypatch,
+        {
+            "Merlin": [
+                MERLIN_FLOOR,
+                quote("MRPRF", "MERLIN PROPERTIES", exch="OTC Markets"),
+                MERLIN_HOME,
+                quote("MRL.MC", "dup", exch="Madrid"),
+                quote("MERL.PA", "a fund", exch="Paris", qtype="MUTUALFUND"),
+            ]
+        },
+    )
     assert symbols.lines_for("Merlin", "EUR") == [
         ("MRL.MC", "Merlin Properties SOCIMI, S.A.", "Madrid"),
         ("MEQA.F", "Merlin Properties SOCIMI, S.A.", "Frankfurt"),
@@ -527,11 +592,16 @@ def test_a_remembered_line_is_the_codes_answer_for_good(monkeypatch):
 def test_the_listings_put_the_searchs_own_venues_first(monkeypatch):
     # Yahoo ranks "SAN" to Sanofi and lists Santander nowhere; Madrid still
     # has to be on the list, by name, for the price to decide.
-    serve_by_query(monkeypatch, {"SAN": [
-        quote("SAN", "Santander ADR", exch="NYSE"),
-        quote("SAN.PA", "SANOFI", exch="Paris"),
-        quote("SAN.L", "Santander plc", exch="LSE"),
-    ]})
+    serve_by_query(
+        monkeypatch,
+        {
+            "SAN": [
+                quote("SAN", "Santander ADR", exch="NYSE"),
+                quote("SAN.PA", "SANOFI", exch="Paris"),
+                quote("SAN.L", "Santander plc", exch="LSE"),
+            ]
+        },
+    )
     found = symbols.listings_for_code("SAN", "EUR", limit=6)
     assert found[0] == "SAN.PA"
     assert "SAN.MC" in found
@@ -576,3 +646,36 @@ def test_resolve_reads_the_codes_the_search_placed(monkeypatch):
     assert fetch.resolve("sie") == "SIE.DE"
     assert fetch.resolve("RCF") == "TEP.PA"  # the hand-written alias wins
     assert fetch.resolve("AAPL") == "AAPL"
+
+
+def test_us_isin_with_only_foreign_lines_finds_its_home_by_name(monkeypatch, isin_cache):
+    # Trip.com's ADR: the ISIN search lists Mexico and Stuttgart, never TCOM,
+    # and the peso line fails the book's dollar fills. Its name finds TCOM.
+    serve_by_query(
+        monkeypatch,
+        {
+            "US89677Q1076": [
+                quote("TCOMN.MX", "TRIP COM GROUP LTD", long="Trip.com Group Limited"),
+                quote("US89677Q1076.SG", "Trip.com Group Ltd. (ADRs)"),
+            ],
+            "Trip.com Group Limited": [
+                quote("TCOM", "Trip.com Group Limited", exch="NASDAQ"),
+                quote("9961.HK", "TRIP.COM-S"),
+            ],
+        },
+    )
+    assert symbols.symbol_for_isin("US89677Q1076") == "TCOM"
+
+
+def test_us_isin_name_search_never_lands_on_another_issuer(monkeypatch, isin_cache):
+    serve_by_query(
+        monkeypatch,
+        {
+            "US89677Q1076": [
+                quote("TCOMN.MX", "TRIP COM GROUP LTD", long="Trip.com Group Limited"),
+            ],
+            "Trip.com Group Limited": [quote("TRIP", "Tripadvisor, Inc.")],
+        },
+    )
+    # "tripadvisor" is not "trip": the ISIN's own first line stands.
+    assert symbols.symbol_for_isin("US89677Q1076") == "TCOMN.MX"

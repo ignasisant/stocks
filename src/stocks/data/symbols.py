@@ -234,11 +234,12 @@ def symbol_for_isin(isin: str) -> str | None:
     # The raw rows, not `search_symbols`: that one collapses an issuer's
     # venues into its best-ranked line, and the line worth having here is
     # sometimes further down the list.
-    found = [
-        str(row.get("symbol") or "").strip()
+    rows = [
+        row
         for row in _quotes(key, 12)
         if row.get("quoteType") in QUOTE_TYPES and row.get("symbol")
     ]
+    found = [str(row["symbol"]).strip() for row in rows]
     if not found:
         _isin_misses.add(key)
         return None
@@ -247,10 +248,43 @@ def symbol_for_isin(isin: str) -> str | None:
         # A US security's ISIN is regularly answered with a European line
         # first ("US7223041028" -> "9PDA.SG", Stuttgart). The home listing is
         # the one with the deep history, and it takes no Yahoo suffix.
-        symbol = next((s for s in found if "." not in s), symbol)
+        symbol = next((s for s in found if "." not in s), None) or _us_home_by_name(
+            rows[0], symbol
+        )
     cache[key] = symbol
     _save_isin_cache(cache)
     return symbol
+
+
+def _us_home_by_name(row: dict, fallback: str) -> str:
+    """A US ISIN's bare listing, found by the issuer's name on `row`.
+
+    Some ISINs come back with foreign lines only: Trip.com's ADR
+    (US89677Q1076) lists TCOMN.MX and a Stuttgart line, never TCOM, and the
+    Mexican one prices in pesos the book's dollar fills reject. The name the
+    ISIN search printed does find TCOM. Only a bare symbol whose name starts
+    with the issuer's counts (as in `_home_by_name`), so a fuzzy hit on another
+    issuer never lands; with none, `fallback` (the ISIN search's own first
+    line) stands.
+    """
+    asked: set[str] = set()
+    for field in ("longname", "shortname"):
+        base = _issuer(str(row.get(field) or ""))
+        stem = _norm(base)
+        if not base or stem in asked:
+            continue
+        asked.add(stem)
+        for found in _quotes(base, 8):
+            symbol = _symbol(found)
+            name = _norm(str(found.get("longname") or found.get("shortname") or ""))
+            if (
+                symbol
+                and "." not in symbol
+                and found.get("quoteType") in QUOTE_TYPES
+                and name.startswith(stem)
+            ):
+                return symbol
+    return fallback
 
 
 # ------------------------------------------------------------ broker codes
@@ -280,8 +314,26 @@ CODE_CACHE = DATA_DIR / "code_symbols.json"
 # the German regional floors last: those quote nearly everything, thinly, so
 # Philips found on both is PHIA.AS, not PHIA.F.
 _VENUES = {
-    "EUR": (".DE", ".PA", ".AS", ".MI", ".MC", ".BR", ".LS", ".VI", ".HE",
-            ".IR", ".AT", ".F", ".SG", ".MU", ".DU", ".BE", ".HM", ".HA"),
+    "EUR": (
+        ".DE",
+        ".PA",
+        ".AS",
+        ".MI",
+        ".MC",
+        ".BR",
+        ".LS",
+        ".VI",
+        ".HE",
+        ".IR",
+        ".AT",
+        ".F",
+        ".SG",
+        ".MU",
+        ".DU",
+        ".BE",
+        ".HM",
+        ".HA",
+    ),
     "GBP": (".L", ".IL"),
     "GBX": (".L", ".IL"),  # London prices in pence; some brokers say so
     "CHF": (".SW",),

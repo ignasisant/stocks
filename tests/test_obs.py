@@ -216,3 +216,20 @@ def test_sdk_http_clients_log_quietly():
     obs.setup(force=True)
     for name in ("httpx2", "primp", "google_genai"):
         assert logging.getLogger(name).getEffectiveLevel() >= logging.WARNING
+
+
+def test_expected_failures_are_warnings_without_a_stack(cloud_lines):
+    """Prod: `prices.held_download` logged ERROR (and paged) each time Yahoo
+    throttled the egress IP, a refusal `retry` had already reported."""
+
+    class Throttled(Exception):
+        pass
+
+    with pytest.raises(Throttled):
+        with obs.timed("prices.held_download", expected=(Throttled,)):
+            raise Throttled("Too Many Requests")
+    (line,) = cloud_lines
+    assert line["severity"] == "WARNING"
+    assert line["ok"] is False
+    assert line["error_type"] == "Throttled"
+    assert "ReportedErrorEvent" not in line.get("@type", "")

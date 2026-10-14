@@ -455,7 +455,30 @@ def _openai_error(exc):
 # ------------------------------------------------------------- Gemini (Google)
 
 
+# A 503 "high demand" from Gemini is a spike, usually gone in a second or two
+# (prod: five a week on gemini-flash-latest). One more ask after this pause,
+# before anything was shown, beats handing a reader with their own key to the
+# free chain, which answered 2-35 s later and with another model.
+GEMINI_BUSY_RETRY_S = 1.5
+
+
 def _gemini_stream(api_key, model, system, messages):
+    from google.genai import errors
+
+    try:
+        first = True
+        for chunk in _gemini_stream_once(api_key, model, system, messages):
+            first = False
+            yield chunk
+    except errors.APIError as exc:
+        if not first or getattr(exc, "code", None) != 503:
+            raise
+        obs.warn("llm.gemini_busy_retry", model=model)
+        time.sleep(GEMINI_BUSY_RETRY_S)
+        yield from _gemini_stream_once(api_key, model, system, messages)
+
+
+def _gemini_stream_once(api_key, model, system, messages):
     from google import genai
     from google.genai import types
 

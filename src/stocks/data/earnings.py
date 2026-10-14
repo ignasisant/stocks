@@ -151,7 +151,12 @@ def fetch_earnings(ticker: str) -> tuple[list[date], list[EarningsResult]]:
     # pool.map in upcoming()/calendar_events() — but rate limits re-raise so
     # the web app's banner still sees them.
     try:
-        t = yf.Ticker(resolve(ticker))
+        symbol = resolve(ticker)
+        # A book holds a fund under its broker code or ISIN, which the catalog
+        # does not know; the line it resolves to (VUAA.DE, MEUD.PA) it does.
+        if symbol != ticker and is_fund(symbol, fetch=False):
+            return [], []
+        t = yf.Ticker(symbol)
     except YFRateLimitError:
         raise
     except Exception:

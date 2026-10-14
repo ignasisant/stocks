@@ -139,7 +139,7 @@ def _user(label: str, last_seen: str) -> SimpleNamespace:
 def test_the_most_recently_seen_are_warmed_first_until_the_budget_runs_out(
     monkeypatch,
 ):
-    import time
+    from types import SimpleNamespace
 
     users = [
         _user("monday", "2026-09-25"),
@@ -148,16 +148,20 @@ def test_the_most_recently_seen_are_warmed_first_until_the_budget_runs_out(
     ]
     monkeypatch.setattr("stocks.notify.fanout.iter_all_users", lambda: users)
     warmed: list[str] = []
+    # Each account takes 50 "seconds" of a clock the test owns: a real sleep
+    # against a real budget failed on a loaded CI runner (1 warmed, not 2).
+    clock = [0.0]
+    monkeypatch.setattr(warm, "time", SimpleNamespace(monotonic=lambda: clock[0]))
 
     def account(db, watchlist, base):
         warmed.append(db)
-        time.sleep(0.05)
+        clock[0] += 50
 
     monkeypatch.setattr(warm, "warm_account", account)
     assert warm.warm_recent(today=TODAY) == 3
     assert warmed == ["today.db", "yesterday.db", "monday.db"]
     warmed.clear()
-    assert warm.warm_recent(today=TODAY, budget_s=0.06) == 2
+    assert warm.warm_recent(today=TODAY, budget_s=60) == 2
     assert warmed == ["today.db", "yesterday.db"]
 
 
