@@ -15,9 +15,9 @@
 
 .sn-title {
   margin: 0;
-  font-size: var(--ag-fs-3xl, 2rem);
+  font-size: var(--ag-fs-3xl, 1.75rem);
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--ag-track-3xl);
 }
 
 .sn-card {
@@ -33,21 +33,21 @@
 
 .sn-caption {
   margin: 0;
-  font-size: var(--ag-fs-xs, 0.8rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   line-height: 1.5;
   color: var(--ag-text-muted);
 }
 
 .sn-help {
   margin: 0;
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.55;
   color: var(--ag-text-muted);
 }
 
 .sn-mono {
-  font-family: "Martian Mono", ui-monospace, monospace;
-  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   font-weight: 500;
   color: var(--ag-text-muted);
 }
@@ -61,8 +61,8 @@
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
-  font-family: "Martian Mono", ui-monospace, monospace;
-  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   font-weight: 500;
   letter-spacing: 0.06em;
   color: var(--ag-text-muted);
@@ -78,11 +78,11 @@
   display: inline-block;
   padding: 0.45rem 0.9rem;
   border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-xs, 6px);
+  border-radius: var(--ag-radius-xs, 4px);
   background: var(--ag-surface-hover);
   color: var(--ag-text-primary);
   font: inherit;
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   cursor: pointer;
   text-decoration: none;
 }
@@ -109,15 +109,15 @@
 }
 
 .sn-pill {
-  font-size: var(--ag-fs-xs, 0.8rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   font-weight: 600;
   padding: 0.15rem 0.55rem;
-  border-radius: var(--ag-radius-pill, 999px);
+  border-radius: var(--ag-radius-pill, 9999px);
   white-space: nowrap;
 }
 
 .sn-pill-lg {
-  font-size: var(--ag-fs-md, 1rem);
+  font-size: var(--ag-fs-md, 0.8125rem);
   padding: 0.25rem 0.75rem;
 }
 
@@ -178,7 +178,7 @@
   font-weight: 800;
   font-size: 3.6rem;
   line-height: 0.85;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--ag-track-3xl);
   color: var(--ag-text-primary);
 }
 
@@ -191,7 +191,7 @@
 }
 
 .sn-pulse-run {
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   color: var(--ag-text-secondary);
 }
 
@@ -220,14 +220,14 @@
 
 .sn-delta i {
   font-style: normal;
-  font-size: var(--ag-fs-xs, 0.8rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   color: var(--ag-text-muted);
 }
 
 .sn-delta b {
-  font-family: "Martian Mono", ui-monospace, monospace;
+  font-family: var(--ag-font-mono);
   font-weight: 500;
-  font-size: var(--ag-fs-md, 1rem);
+  font-size: var(--ag-fs-md, 0.8125rem);
 }
 
 /* The regime meter. The ramp runs between tokens only, with no literal steps
@@ -235,7 +235,7 @@
 .sn-meter {
   position: relative;
   height: 16px;
-  border-radius: var(--ag-radius-pill, 999px);
+  border-radius: var(--ag-radius-pill, 9999px);
   background: linear-gradient(
     90deg,
     var(--ag-down-fill) 0%,
@@ -278,8 +278,8 @@
   gap: 0.5rem;
   justify-content: space-between;
   white-space: nowrap;
-  font-family: "Martian Mono", ui-monospace, monospace;
-  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   font-weight: 500;
   color: var(--ag-text-muted);
 }
@@ -303,13 +303,13 @@
 }
 
 .sn-sparkbox-l span:first-child {
-  font-size: var(--ag-fs-xs, 0.8rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   color: var(--ag-text-muted);
 }
 
 .sn-sparkbox-l span:last-child {
-  font-family: "Martian Mono", ui-monospace, monospace;
-  font-size: var(--ag-fs-xs, 0.8rem);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   font-weight: 500;
   color: var(--ag-text-secondary);
 }
@@ -320,8 +320,8 @@
   justify-content: space-between;
   height: 56px;
   flex: none;
-  font-family: "Martian Mono", ui-monospace, monospace;
-  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   font-weight: 500;
   color: var(--ag-text-muted);
 }
@@ -334,6 +334,7 @@
 }
 
 .sn-hero-spark polyline {
+  vector-effect: non-scaling-stroke;
   fill: none;
   stroke: var(--ag-brand-accent);
   stroke-width: 1.8;
@@ -341,6 +342,7 @@
 }
 
 .sn-hero-spark line {
+  vector-effect: non-scaling-stroke;
   stroke: var(--ag-border);
   stroke-width: 1;
   stroke-dasharray: 3 4;
@@ -355,7 +357,8 @@
 
 .sn-lede {
   margin: 0;
-  font-size: var(--ag-fs-xl, 1.25rem);
+  font-size: var(--ag-fs-xl, 1.125rem);
+  letter-spacing: var(--ag-track-xl);
   line-height: 1.35;
   font-weight: 600;
   color: var(--ag-text-primary);
@@ -363,7 +366,7 @@
 }
 
 .sn-more {
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 600;
   color: var(--ag-brand-accent);
   text-decoration: none;
@@ -380,7 +383,7 @@
 
 .sn-invite p {
   margin: 0;
-  font-size: var(--ag-fs-lg, 1.125rem);
+  font-size: var(--ag-fs-lg, 1rem);
   line-height: 1.4;
   font-weight: 600;
   color: var(--ag-text-primary);
@@ -396,13 +399,13 @@
 
 .sn-sec-t {
   margin: 0;
-  font-size: var(--ag-fs-lg, 1.125rem);
+  font-size: var(--ag-fs-lg, 1rem);
   font-weight: 600;
   color: var(--ag-text-primary);
 }
 
 .sn-tcard-w {
-  font-size: var(--ag-fs-lg, 1.125rem);
+  font-size: var(--ag-fs-lg, 1rem);
   font-weight: 600;
   color: var(--ag-text-primary);
 }
@@ -433,13 +436,13 @@
 }
 
 .sn-comp-l span:first-child {
-  font-size: var(--ag-fs-md, 1rem);
+  font-size: var(--ag-fs-md, 0.8125rem);
   font-weight: 500;
   color: var(--ag-text-primary);
 }
 
 .sn-comp-sub {
-  font-size: var(--ag-fs-xs, 0.8rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   line-height: 1.35;
   color: var(--ag-text-muted);
 }
@@ -447,7 +450,7 @@
 .sn-comp-track {
   position: relative;
   height: 8px;
-  border-radius: var(--ag-radius-pill, 999px);
+  border-radius: var(--ag-radius-pill, 9999px);
   background: var(--ag-surface-hover);
 }
 
@@ -459,7 +462,7 @@
 .sn-comp-fill {
   position: absolute;
   inset: 0 auto 0 0;
-  border-radius: var(--ag-radius-pill, 999px);
+  border-radius: var(--ag-radius-pill, 9999px);
 }
 
 .sn-fill-good {
@@ -488,16 +491,16 @@
   left: 50%;
   top: -6px;
   transform: translateX(-50%);
-  font-family: "Martian Mono", ui-monospace, monospace;
-  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   color: var(--ag-text-muted);
   white-space: nowrap;
 }
 
 .sn-comp-v {
-  font-family: "Martian Mono", ui-monospace, monospace;
+  font-family: var(--ag-font-mono);
   font-weight: 500;
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   text-align: right;
   color: var(--ag-text-primary);
   font-variant-numeric: tabular-nums;
@@ -511,7 +514,7 @@
   border-left: 3px solid var(--ag-candle-up);
   border-radius: var(--ag-radius-sm, 8px);
   padding: 0.55rem 0.7rem;
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.5;
   color: var(--ag-text-secondary);
 }
@@ -538,16 +541,16 @@
   display: flex;
   justify-content: space-between;
   gap: 0.6rem;
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   color: var(--ag-text-secondary);
   border-bottom: 1px solid var(--ag-surface-sunken);
   padding: 0.15rem 0;
 }
 
 .sn-tilt-row b {
-  font-family: "Martian Mono", ui-monospace, monospace;
+  font-family: var(--ag-font-mono);
   font-weight: 500;
-  font-size: var(--ag-fs-xs, 0.8rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   color: var(--ag-text-primary);
   font-variant-numeric: tabular-nums;
 }
@@ -562,7 +565,7 @@
   display: flex;
   gap: 0.55rem;
   align-items: flex-start;
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.55;
   color: var(--ag-text-secondary);
 }
@@ -573,7 +576,7 @@
   width: 5px;
   height: 5px;
   flex: none;
-  border-radius: var(--ag-radius-pill, 999px);
+  border-radius: var(--ag-radius-pill, 9999px);
   background: var(--ag-brand-accent);
 }
 
@@ -589,71 +592,25 @@
 }
 
 .sn-down-t {
-  font-size: var(--ag-fs-lg, 1.125rem);
+  font-size: var(--ag-fs-lg, 1rem);
   font-weight: 600;
   color: var(--ag-text-primary);
 }
 
 .sn-down-b {
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.55;
   color: var(--ag-text-secondary);
 }
 
 /* ------------------------------------------------------------- the detail */
-.sn-tabs {
-  display: flex;
-  gap: 0.3rem;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--ag-border);
-  padding-bottom: 0.4rem;
-}
-
-.sn-tab {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.4rem 0.7rem;
-  border: 1px solid transparent;
-  border-radius: var(--ag-radius-xs, 6px);
-  background: none;
-  color: var(--ag-text-muted);
-  font: inherit;
-  font-size: var(--ag-fs-sm, 0.875rem);
-  cursor: pointer;
-}
-
-@media (hover: hover) {
-  .sn-tab:hover {
-    color: var(--ag-text-primary);
-  }
-}
-
+/* The strip is `ui/Tabs.tsx`; the touch target of the row's More link. */
 @media (pointer: coarse) {
-  .sn-tab {
-    min-height: 44px;
-  }
   .sn-more {
     display: inline-flex;
     align-items: center;
     min-height: 44px;
   }
-}
-
-.sn-tab-on {
-  background: var(--ag-purple-900);
-  border-color: var(--ag-purple-800);
-  color: var(--ag-purple-400);
-  font-weight: 600;
-}
-
-.sn-tab-n {
-  font-family: "Martian Mono", ui-monospace, monospace;
-  font-size: var(--ag-fs-2xs, 0.7rem);
-  padding: 0.05rem 0.35rem;
-  border-radius: var(--ag-radius-xs, 6px);
-  background: var(--ag-surface-hover);
-  color: var(--ag-text-secondary);
 }
 
 .sn-tabpanel {
@@ -689,7 +646,7 @@
 }
 
 .sn-trend-head {
-  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   color: var(--ag-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -700,7 +657,7 @@
 
 .sn-trend-row {
   padding: 0.34rem 0.35rem;
-  border-radius: var(--ag-radius-xs, 6px);
+  border-radius: var(--ag-radius-xs, 4px);
   border-bottom: 1px solid var(--ag-surface-sunken);
 }
 
@@ -715,7 +672,7 @@
 }
 
 .sn-trend-l {
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   color: var(--ag-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -742,7 +699,7 @@
 }
 
 .sn-trend-sub {
-  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   line-height: 1.35;
   color: var(--ag-text-muted);
   overflow: hidden;
@@ -751,14 +708,14 @@
 }
 
 .sn-trend-v {
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   color: var(--ag-text-primary);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
 .sn-trend-c {
-  font-size: var(--ag-fs-xs, 0.8rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -769,13 +726,13 @@
 }
 
 .sn-trend-st {
-  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   font-weight: 600;
   text-align: center;
   justify-self: end;
   max-width: 100%;
   padding: 0.15rem 0.45rem;
-  border-radius: var(--ag-radius-pill, 999px);
+  border-radius: var(--ag-radius-pill, 9999px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -826,6 +783,7 @@
 }
 
 .sn-spark polyline {
+  vector-effect: non-scaling-stroke;
   fill: none;
   stroke-width: 1.2;
   stroke-linejoin: round;
@@ -858,10 +816,10 @@
 }
 
 .sn-jump a {
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 600;
   padding: 0.5rem 0.75rem;
-  border-radius: var(--ag-radius-pill, 999px);
+  border-radius: var(--ag-radius-pill, 9999px);
   background: var(--ag-surface-card);
   border: 1px solid var(--ag-border);
   color: var(--ag-text-secondary);
@@ -933,7 +891,7 @@
     grid-row: 1;
   }
   .sn-trend-l {
-    font-size: var(--ag-fs-md, 1rem);
+    font-size: var(--ag-fs-md, 0.8125rem);
     white-space: normal;
   }
   .sn-trend-sub {
@@ -954,7 +912,7 @@
   .sn-trend-c::before {
     content: attr(data-h);
     display: block;
-    font-size: var(--ag-fs-2xs, 0.7rem);
+    font-size: var(--ag-fs-2xs, 0.6875rem);
     font-weight: 500;
     color: var(--ag-text-muted);
   }

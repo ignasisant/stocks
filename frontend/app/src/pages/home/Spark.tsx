@@ -20,10 +20,12 @@ import { useCallback, useRef, useState } from "react";
 import { useT, useLang } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { token } from "../../shell/theme";
+import { Spoken, useKeyWalk } from "../../shell/useKeyWalk";
 import { useSpan } from "../../shell/useSpan";
 import { useTouchHold } from "../../shell/useTouchHold";
 import { money, monthDay, percent } from "./format";
 import { Kpi, chipFor } from "../../ui/Kpi";
+import { Segmented } from "../../ui/Segmented";
 import type { History } from "./types";
 
 const WIDTH = 320;
@@ -103,38 +105,57 @@ export function Spark({ history }: { history: History | null }) {
     setHoverIndex(null);
     setMeasure({ from: Math.min(...pair), to: Math.max(...pair) });
   });
-  // The history failed with the tiles still standing: no picture, and no
-  // selector either — every range is a slice of the same missing array.
-  if (!history) return null;
-  const selector = (
-    <div className="hm-segmented" role="group" aria-label={t("home.chart_value")}>
-      {(Object.keys(RANGES) as Range[]).map((key) => (
-        <button
-          key={key}
-          type="button"
-          className={key === range ? "hm-seg hm-seg-on" : "hm-seg"}
-          aria-pressed={key === range}
-          onClick={() => {
-            setRange(key);
-            setMeasure(null);
-          }}
-        >
-          {key in WORDS ? t(WORDS[key as keyof typeof WORDS]) : key}
-        </button>
-      ))}
-    </div>
-  );
   // Both legs or the day is not comparable: a value with no reference line has
-  // nothing to be shaded against.
+  // nothing to be shaded against. Built before the early returns because the
+  // key walk below is a hook and needs the day count.
   const days: { date: string; injected: number; value: number }[] = [];
-  for (const point of slice(history, range)) {
+  for (const point of history ? slice(history, range) : []) {
     if (point.injected !== null && point.value !== null) {
       days.push({ date: point.date, injected: point.injected, value: point.value });
     }
   }
+  const walk = useKeyWalk({
+    at: hoverIndex,
+    last: days.length - 1,
+    set: (index) => {
+      setMeasure(null);
+      setHoverIndex(index);
+    },
+  });
+  // The history failed, or has not landed: the plot's box stays reserved, so
+  // the card is the height it will be and nothing below it shifts when the
+  // series arrives. No selector — every range is a slice of the same array.
+  const placeholder = (
+    <div className="hm-spark-plot">
+      <div className="hm-spark-wrap hm-spark-empty" aria-hidden="true" />
+    </div>
+  );
+  if (!history) return placeholder;
+  const selector = (
+    <Segmented
+      className="hm-segmented"
+      label={t("home.chart_value")}
+      items={(Object.keys(RANGES) as Range[]).map((key) => ({
+        id: key,
+        label: key in WORDS ? t(WORDS[key as keyof typeof WORDS]) : key,
+      }))}
+      value={range}
+      onPick={(key) => {
+        setRange(key);
+        setMeasure(null);
+      }}
+    />
+  );
   // The selector outlives a short window: one with too few points to draw must
   // still let somebody pick a wider one, or the card traps them there.
-  if (days.length < 2) return <div className="hm-spark-head">{selector}</div>;
+  if (days.length < 2) {
+    return (
+      <>
+        <div className="hm-spark-head">{selector}</div>
+        {placeholder}
+      </>
+    );
+  }
 
   const levels = days.flatMap((day) => [day.injected, day.value]);
   const floor = Math.min(...levels);
@@ -241,6 +262,50 @@ export function Spark({ history }: { history: History | null }) {
       : null;
   const indexAt = (event: { clientX: number }) => dayAt(event.clientX) ?? 0;
 
+  /** A gap as "+€1,200 (+8.4%)": the amount, and its share of what went in. */
+  const gap = (day: (typeof days)[number]) => {
+    const pct = day.injected
+      ? percent((day.value - day.injected) / day.injected, lang, { signed: true })
+      : null;
+    return `${money(day.value - day.injected, base, lang, { signed: true })}${pct ? ` (${pct})` : ""}`;
+  };
+  const end = days[days.length - 1]!;
+  const summary = t("home.chart_summary", {
+    value: money(end.value, base, lang) ?? "",
+    gap: gap(end),
+    injected: money(end.injected, base, lang) ?? "",
+    range: range in WORDS ? t(WORDS[range as keyof typeof WORDS]) : range,
+  });
+  const sentence = hovered
+    ? t("home.chart_spoken", {
+        date: monthDay(hovered.date, t) ?? hovered.date,
+        value: money(hovered.value, base, lang) ?? "",
+        injected: money(hovered.injected, base, lang) ?? "",
+        gap: gap(hovered),
+      })
+    : null;
+
+  /**
+   * A point drawn as a zero-length line with round caps. A `<circle>` in this
+   * stretched svg squashes to an ellipse; a non-scaling stroke is the same
+   * width both ways, so the cap is a true disc whatever the card's width.
+   */
+  const dot = (index: number, level: number, color: string, size: number) => (
+    <line
+      x1={x(index)}
+      x2={x(index)}
+      y1={y(level)}
+      y2={y(level)}
+      stroke={color}
+      strokeWidth={size}
+      strokeLinecap="round"
+      vectorEffect="non-scaling-stroke"
+      pointerEvents="none"
+    />
+  );
+  const hasGain = bands.some((band) => band.gain);
+  const hasLoss = bands.some((band) => !band.gain);
+
   return (
     <>
       {/* One toolbar: the key on the left, the window on the right. Stacked,
@@ -259,6 +324,18 @@ export function Spark({ history }: { history: History | null }) {
             <span className="hm-spark-key hm-spark-value" />
             {t("home.chart_value")}
           </li>
+          {hasGain ? (
+            <li>
+              <span className="hm-spark-key hm-spark-band hm-spark-band-gain" />
+              {t("home.chart_band_gain")}
+            </li>
+          ) : null}
+          {hasLoss ? (
+            <li>
+              <span className="hm-spark-key hm-spark-band hm-spark-band-loss" />
+              {t("home.chart_band_loss")}
+            </li>
+          ) : null}
           <li>
             <span className="hm-spark-key hm-spark-max" />
             {t("home.chart_period_max")}
@@ -279,12 +356,17 @@ export function Spark({ history }: { history: History | null }) {
         <div
           className="hm-spark-wrap"
           ref={wrap}
+          role="group"
+          aria-label={t("home.chart_value")}
+          {...walk.props}
           onPointerMove={(event) => {
+            walk.quiet();
             if (spanned.move(event, indexAt(event))) return;
             setHoverIndex(dayAt(event.clientX));
           }}
           // A tap is a pointer that never moves: it reads the day too.
           onPointerDown={(event) => {
+            walk.quiet();
             if (spanned.down(event, indexAt(event))) return;
             setHoverIndex(dayAt(event.clientX));
           }}
@@ -308,46 +390,43 @@ export function Spark({ history }: { history: History | null }) {
             viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
             preserveAspectRatio="none"
             role="img"
-            aria-label={t("portfolio.injected_vs_value")}
+            aria-label={summary}
           >
-            {bands.map((band, index) => (
-              <path
-                key={index}
-                d={band.path}
-                fill={band.gain ? token("profit-band") : token("loss-band")}
+            <g className="ag-redraw" key={range}>
+              {bands.map((band, index) => (
+                <path
+                  key={index}
+                  d={band.path}
+                  fill={band.gain ? token("profit-band") : token("loss-band")}
+                />
+              ))}
+              <polyline
+                points={line((day) => day.injected)}
+                fill="none"
+                stroke={token("text-muted")}
+                strokeWidth="1"
+                strokeDasharray="3 2"
+                vectorEffect="non-scaling-stroke"
               />
-            ))}
-            <polyline
-              points={line((day) => day.injected)}
-              fill="none"
-              stroke={token("text-muted")}
-              strokeWidth="1"
-              strokeDasharray="3 2"
-              vectorEffect="non-scaling-stroke"
-            />
-            <polyline
-              points={line((day) => day.value)}
-              fill="none"
-              stroke={token("brand-accent")}
-              strokeWidth="1.5"
-              vectorEffect="non-scaling-stroke"
-            />
-            <line
-              x1={0}
-              x2={WIDTH}
-              y1={y(maxValue)}
-              y2={y(maxValue)}
-              stroke={token("text-faint")}
-              strokeDasharray="2 2"
-              strokeWidth="1"
-              vectorEffect="non-scaling-stroke"
-            />
-            <circle
-              cx={x(maxIndex)}
-              cy={y(maxValue)}
-              r="2"
-              fill={token("text-faint")}
-            />
+              <polyline
+                points={line((day) => day.value)}
+                fill="none"
+                stroke={token("brand-accent")}
+                strokeWidth="1.5"
+                vectorEffect="non-scaling-stroke"
+              />
+              <line
+                x1={0}
+                x2={WIDTH}
+                y1={y(maxValue)}
+                y2={y(maxValue)}
+                stroke={token("text-muted")}
+                strokeDasharray="2 2"
+                strokeWidth="1"
+                vectorEffect="non-scaling-stroke"
+              />
+              {dot(maxIndex, maxValue, token("text-muted"), 5)}
+            </g>
             {measure && measure.to < days.length ? (
               <g className="hm-spark-span" pointerEvents="none">
                 {compared ? (
@@ -371,16 +450,20 @@ export function Spark({ history }: { history: History | null }) {
               </g>
             ) : null}
             {hovered && hoverIndex !== null ? (
-              <line
-                x1={x(hoverIndex)}
-                x2={x(hoverIndex)}
-                y1={0}
-                y2={HEIGHT}
-                stroke={token("text-faint")}
-                strokeDasharray="2 2"
-                vectorEffect="non-scaling-stroke"
-                pointerEvents="none"
-              />
+              <>
+                <line
+                  x1={x(hoverIndex)}
+                  x2={x(hoverIndex)}
+                  y1={0}
+                  y2={HEIGHT}
+                  stroke={token("text-muted")}
+                  strokeDasharray="2 2"
+                  vectorEffect="non-scaling-stroke"
+                  pointerEvents="none"
+                />
+                {dot(hoverIndex, hovered.injected, token("text-muted"), 5)}
+                {dot(hoverIndex, hovered.value, token("brand-accent"), 6)}
+              </>
             ) : null}
           </svg>
           {/* The hover label, as a positioned box rather than the browser's
@@ -409,6 +492,7 @@ export function Spark({ history }: { history: History | null }) {
               ))}
             </div>
           ) : null}
+          <Spoken text={walk.keyed ? sentence : null} />
         </div>
         {/* The two ends of the scale, pinned to the window's own extremes:
           without them the line has a shape and no size, and a reader cannot

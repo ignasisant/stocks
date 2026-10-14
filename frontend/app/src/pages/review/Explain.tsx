@@ -13,6 +13,8 @@
 
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useDialog } from "../../shell/useDialog";
+import { useExitGhost } from "../../shell/useSheet";
 import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { TickerCell } from "../../shell/tickers";
@@ -297,6 +299,8 @@ export function DetailsDialog({
 }) {
   const t = useT();
   const shut = useRef<HTMLButtonElement>(null);
+  const scrim = useRef<HTMLDivElement>(null);
+  useExitGhost(scrim);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -306,20 +310,19 @@ export function DetailsDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  useEffect(() => {
-    const before = document.activeElement as HTMLElement | null;
-    shut.current?.focus();
-    return () => before?.focus?.();
-  }, []);
+  const card = useRef<HTMLDivElement>(null);
+  useDialog(card, { initial: shut });
 
   return createPortal(
     <div
+      ref={scrim}
       className="ag-rev-modal"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <div
+        ref={card}
         className="ag-rev-modal-card"
         role="dialog"
         aria-modal="true"

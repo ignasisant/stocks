@@ -44,8 +44,8 @@
   margin: 0;
   min-width: 0;
   color: var(--ag-text-muted);
-  font-family: var(--ag-font-mono, ui-monospace, monospace);
-  font-size: var(--ag-fs-xs, 11px);
+  font-family: var(--ag-font-mono, "Martian Mono", ui-monospace, monospace);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -64,7 +64,7 @@
 
 .td-stamp {
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   font-variant-numeric: tabular-nums;
 }
 
@@ -74,16 +74,16 @@
   max-width: 34ch;
   margin: 0;
   color: var(--ag-text-primary);
-  font-size: var(--ag-fs-2xl, 1.5rem);
+  font-size: var(--ag-fs-2xl, 1.375rem);
   font-weight: 700;
-  letter-spacing: -0.015em;
+  letter-spacing: var(--ag-track-2xl);
   line-height: 1.2;
   text-wrap: balance;
 }
 
 @container ag-main (min-width: 56rem) {
   .td-headline {
-    font-size: var(--ag-fs-3xl, 2rem);
+    font-size: var(--ag-fs-3xl, 1.75rem);
   }
 }
 
@@ -102,7 +102,7 @@
   height: 32px;
   padding: 0;
   border: 0;
-  border-radius: var(--ag-radius-xs, 6px);
+  border-radius: var(--ag-radius-xs, 4px);
   background: transparent;
   color: var(--ag-text-secondary);
   cursor: pointer;
@@ -130,72 +130,16 @@
   outline-offset: 2px;
 }
 
-/* ----------------------------------------------------------------- the tabs */
-
-.td-tabs {
-  /* The offset parent of its tabs, so `useTabStrip` can centre the open one. */
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  margin: 0;
-  padding: 0;
-  border-bottom: 1px solid var(--ag-border);
-}
-
-.td-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.55rem 0.8rem;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--ag-text-muted);
-  font: inherit;
-  font-size: var(--ag-fs-sm, 0.875rem);
-  white-space: nowrap;
-  cursor: pointer;
-  appearance: none;
-}
-
-@media (hover: hover) {
-  .td-tab:hover {
-    color: var(--ag-text-primary);
-  }
-}
-
-.td-tab:focus-visible {
-  outline: 2px solid var(--ag-brand-accent);
-  outline-offset: -2px;
-}
-
-.td-tab-on {
-  border-bottom-color: var(--ag-brand-accent);
-  color: var(--ag-text-primary);
-}
-
-/* A narrow page scrolls the strip sideways rather than stacking it. */
-@container ag-main (max-width: 48rem) {
-  .td-tabs {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .td-tabs::-webkit-scrollbar {
-    display: none;
-  }
-}
+/* ---------------------------------------------- the tabs (`ui/Tabs.tsx`) */
 
 .td-count {
   display: inline-block;
   min-width: 1.25rem;
   padding: 0 0.35rem;
-  border-radius: var(--ag-radius-pill, 999px);
+  border-radius: var(--ag-radius-pill, 9999px);
   background: var(--ag-surface-sunken);
   color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   line-height: 1.5;
@@ -264,7 +208,7 @@
 .td-sec-title {
   margin: 0;
   color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -273,7 +217,7 @@
 .td-sub {
   margin: 0 0 0.3rem;
   color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 600;
 }
 
@@ -284,7 +228,7 @@
   padding-left: 0.7rem;
   border-left: 2px solid var(--ag-brand-accent);
   color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.55;
 }
 
@@ -304,7 +248,7 @@
   font-family: inherit;
   cursor: pointer;
   color: var(--ag-brand-accent);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 600;
   text-decoration: none;
 }
@@ -337,7 +281,7 @@
   max-width: 80ch;
   margin: 0;
   padding-left: 1.1rem;
-  font-size: var(--ag-fs-base, 14px);
+  font-size: var(--ag-fs-base, 0.875rem);
   line-height: 1.5;
   text-wrap: pretty;
 }
@@ -357,7 +301,7 @@
   gap: 0.15rem 0.5rem;
   margin-left: 0.4rem;
   vertical-align: baseline;
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
 }
 
 /* A text control after its line: it opens the line, it does not act. */
@@ -367,7 +311,7 @@
   background: none;
   color: var(--ag-brand-accent);
   font: inherit;
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 600;
   cursor: pointer;
 }
@@ -425,7 +369,7 @@
   flex-wrap: wrap;
   grid-area: who;
   gap: 0.15rem 0.5rem;
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
 }
 
 .td-row-who:not(:empty) {
@@ -437,8 +381,8 @@
   grid-area: wire;
   gap: 0.5rem;
   color: var(--ag-text-muted);
-  font-family: var(--ag-font-mono, ui-monospace, monospace);
-  font-size: var(--ag-fs-xs, 11px);
+  font-family: var(--ag-font-mono, "Martian Mono", ui-monospace, monospace);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -469,7 +413,7 @@
 .td-line {
   grid-area: line;
   max-width: 80ch;
-  font-size: var(--ag-fs-base, 14px);
+  font-size: var(--ag-fs-base, 0.875rem);
   line-height: 1.5;
   text-wrap: pretty;
 }
@@ -483,7 +427,7 @@
 .td-headlink::after {
   content: " ↗";
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
 }
 
 @media (hover: hover) {
@@ -529,7 +473,7 @@
 .td-etf {
   margin-right: 0.4em;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
 }
 
 /* ----------------------------------------------------------------- market */
@@ -559,7 +503,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
 }
 
 .td-sector-name {
@@ -591,7 +535,7 @@
 .td-wait {
   margin: 0;
   color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.5;
 }
 
@@ -599,7 +543,7 @@
 .td-an-verdict {
   max-width: 72ch;
   margin: 0;
-  font-size: var(--ag-fs-base, 14px);
+  font-size: var(--ag-fs-base, 0.875rem);
   font-weight: 500;
   line-height: 1.5;
 }
@@ -634,7 +578,7 @@
 .td-an-title {
   margin: 0 0 0.2rem;
   color: var(--ag-text-primary);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 600;
 }
 
@@ -642,7 +586,7 @@
   max-width: 72ch;
   margin: 0;
   color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.6;
 }
 
@@ -654,7 +598,7 @@
 .td-an-caption {
   margin-bottom: 0.25rem;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   font-weight: 600;
 }
 
@@ -680,7 +624,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -692,52 +636,13 @@
 
 /* The comparisons' span picker: one month, six months, a year. */
 .td-seg {
-  display: inline-flex;
   align-self: flex-start;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm, 8px);
-  overflow: hidden;
-}
-
-.td-seg button {
-  appearance: none;
-  border: none;
-  background: none;
-  color: var(--ag-text-muted);
-  font: inherit;
-  font-size: var(--ag-fs-xs, 0.78rem);
-  padding: 0.3rem 0.75rem;
-  cursor: pointer;
-}
-
-.td-seg button + button {
-  border-left: 1px solid var(--ag-border);
-}
-
-@media (hover: hover) {
-  .td-seg button:hover {
-    color: var(--ag-text-primary);
-  }
-}
-
-.td-seg button:focus-visible {
-  outline: 2px solid var(--ag-brand-accent);
-  outline-offset: -2px;
-}
-
-.td-seg .td-seg-on {
-  background: var(--ag-surface-hover);
-  color: var(--ag-text-primary);
 }
 
 /* --------------------------------------------------------------- touch */
 
 /* The DS 44px touch target, without growing the text. */
 @media (pointer: coarse) {
-  .td-tab {
-    min-height: 44px;
-  }
-
   .td-icon-btn {
     width: 44px;
     height: 44px;
@@ -747,11 +652,6 @@
   .td-toggle {
     display: block;
     min-height: 44px;
-  }
-
-  .td-seg button {
-    min-height: 44px;
-    padding-inline: 1rem;
   }
 
   .td-more-btn {

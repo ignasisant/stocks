@@ -14,8 +14,9 @@
  * `location.assign` and not a fetch.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, NotSignedIn, send } from "../../shell/api";
+import { useDialog } from "../../shell/useDialog";
 import { useT } from "../../shell/i18n";
 import { leave } from "../../shell/keep";
 import { useAccount } from "../../shell/session";
@@ -35,6 +36,9 @@ function Dialog({ email, onClose }: { email: string; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
   const armed = names(typed, email);
+  const card = useRef<HTMLDivElement>(null);
+  const field = useRef<HTMLInputElement>(null);
+  useDialog(card, { initial: field });
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -88,6 +92,7 @@ function Dialog({ email, onClose }: { email: string; onClose: () => void }) {
       }}
     >
       <div
+        ref={card}
         className="pr-modal-card"
         role="dialog"
         aria-modal="true"
@@ -102,9 +107,9 @@ function Dialog({ email, onClose }: { email: string; onClose: () => void }) {
             className="pr-input pr-input-wide"
             type="text"
             // The first thing to do in this dialog, and the only thing that
-            // arms the button — a keyboard reader starts here rather than on
-            // a control that is disabled until they have typed.
-            autoFocus
+            // arms the button — a keyboard reader starts here (`useDialog`'s
+            // `initial`) rather than on a control disabled until they type.
+            ref={field}
             autoComplete="off"
             autoCapitalize="off"
             spellCheck={false}

@@ -73,7 +73,10 @@ describe("a chart surface", () => {
       <Surface messages={surface({ window: "1y", chart: [eurusd] })} />,
     );
     expect(out).toContain('role="img"');
-    expect(out).toContain('aria-label="Price · past year: EURUSD=X"');
+    // The label is the summary a glance gives: window, then the change.
+    expect(out).toContain(
+      'aria-label="Price · past year, Oct 1, 2025 – Oct 1, 2026: EURUSD=X +6.5%"',
+    );
     expect(out).toContain("<polyline");
     // One line is drawn with its area under it, and needs no legend.
     expect(out).toContain("<path");

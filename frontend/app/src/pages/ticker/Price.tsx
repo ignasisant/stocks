@@ -14,7 +14,7 @@
  */
 
 import { useState } from "react";
-import { Loaded, Skeleton } from "../../shell/Layout";
+import { Loaded } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
 import type { Query } from "../../shell/useApi";
 import {
@@ -31,7 +31,7 @@ import {
   type Translate,
 } from "./format";
 import { layout, type MetricId, type Shape } from "./layout";
-import { PriceChart, type Window } from "./PriceChart";
+import { PriceChart, PriceChartWait, type Window } from "./PriceChart";
 import { Bold, Card, Empty, Metric, Metrics, Segmented, useMobile } from "./ui";
 import { Chip, Kpi, KpiGrid, chipFor } from "../../ui/Kpi";
 import type {
@@ -238,7 +238,7 @@ export function PriceSection({
       {query.state !== "loaded" ? (
         // Loading, failed or signed out: the chart's slot says so, and the
         // controls above stay where they are.
-        <Loaded query={query} skeleton={<Skeleton rows={8} />}>
+        <Loaded query={query} skeleton={<PriceChartWait mobile={mobile} />}>
           {() => null}
         </Loaded>
       ) : bars && bars.dates.length === 0 ? (

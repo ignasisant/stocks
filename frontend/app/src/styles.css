@@ -75,7 +75,13 @@ body {
   margin: 0;
   background: var(--ag-surface-page);
   color: var(--ag-text-primary);
-  font-family: var(--ag-font-body, system-ui, -apple-system, sans-serif);
+  font-family: var(
+    --ag-font-body,
+    "Instrument Sans",
+    system-ui,
+    -apple-system,
+    sans-serif
+  );
 }
 
 /* The brand light (`shell/ambient`, off with `?ambient=0`): three soft
@@ -214,11 +220,11 @@ body {
   :root[data-nav="peek-out"] .ag-nav {
     clip-path: inset(0 calc(100% - 3.5rem) 0 0);
     /* Leaving is quicker than arriving: the reader has already moved on. */
-    transition: clip-path 160ms cubic-bezier(0.23, 1, 0.32, 1);
+    transition: clip-path var(--ag-dur-move) var(--ag-ease-out);
   }
   :root[data-nav="peek"] .ag-nav {
     clip-path: inset(0 -24px 0 0);
-    transition: clip-path 200ms cubic-bezier(0.23, 1, 0.32, 1);
+    transition: clip-path var(--ag-dur-move) var(--ag-ease-out);
   }
   :root[data-nav="peek"] .ag-nav,
   :root[data-nav="peek-out"] .ag-nav {
@@ -304,7 +310,7 @@ body {
   flex: 0 0 auto;
   padding: 0.3rem;
   border: 0;
-  border-radius: var(--ag-radius-xs, 6px);
+  border-radius: var(--ag-radius-xs, 4px);
   background: none;
   color: var(--ag-text-muted);
   cursor: pointer;
@@ -329,7 +335,7 @@ body {
   align-items: center;
   gap: 0.6rem;
   padding: 0.5rem 0.7rem;
-  border-radius: var(--ag-radius-xs, 6px);
+  border-radius: var(--ag-radius-xs, 4px);
   color: var(--ag-text-muted);
   text-decoration: none;
 }
@@ -377,11 +383,22 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  /* Holds its room from the first frame but only shows after a beat: a block
+     that answers inside that beat never flashes grey bars, and nothing moves
+     when the real content lands. */
+  animation: ag-skel-in var(--ag-dur-move) var(--ag-ease-out)
+    calc(var(--ag-dur-move) * 2) backwards;
+}
+
+@keyframes ag-skel-in {
+  from {
+    opacity: 0;
+  }
 }
 
 .ag-skeleton-row {
   height: 1.6rem;
-  border-radius: var(--ag-radius-xs, 6px);
+  border-radius: var(--ag-radius-xs, 4px);
   background: var(--ag-surface-sunken);
   animation: ag-pulse 1.4s ease-in-out infinite;
 }
@@ -393,7 +410,7 @@ body {
   width: 4.5em;
   height: 0.9em;
   vertical-align: middle;
-  border-radius: var(--ag-radius-xs, 6px);
+  border-radius: var(--ag-radius-xs, 4px);
   background: var(--ag-surface-sunken);
   animation: ag-pulse 1.4s ease-in-out infinite;
 }
@@ -454,7 +471,7 @@ body {
 .ag-activity-bar > div {
   height: 100%;
   background: var(--ag-text-muted);
-  transition: width 0.3s ease;
+  transition: width var(--ag-dur-move) var(--ag-ease-out);
 }
 
 @keyframes ag-pulse {
@@ -495,12 +512,59 @@ body {
   display: inline-block;
   padding: 0.45rem 0.9rem;
   border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-xs, 6px);
+  border-radius: var(--ag-radius-xs, 4px);
   background: var(--ag-surface-sunken);
   color: var(--ag-text-primary);
   font: inherit;
   cursor: pointer;
   text-decoration: none;
+}
+
+/* Press: a button gives under the finger, on pointer-down, and comes back as
+   the finger lifts. `scale`, not `transform`, so it composes with any
+   transform a control already carries. Rules that set their own `transition`
+   list `scale` in it (import.css, `.ag-seg-opt` in ui.css). */
+:where(
+  .ag-btn,
+  .ag-tour-btn,
+  .ag-tour-cta,
+  .ag-tour-quiet,
+  .hm-chip,
+  .hm-start-go,
+  .hm-step:is(a, button),
+  button.ag-welcome-row,
+  .pr-btn,
+  .sn-btn,
+  .sn-cta,
+  .earn-chip,
+  .ag-toggle,
+  .ag-box-tool
+) {
+  transition: scale var(--ag-dur-press) var(--ag-ease-out);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :is(
+      .ag-btn,
+      .ag-tour-btn,
+      .ag-tour-cta,
+      .ag-tour-quiet,
+      .im-btn,
+      .im-chip,
+      .hm-chip,
+      .hm-start-go,
+      .hm-step:is(a, button),
+      button.ag-welcome-row,
+      .ag-seg-opt,
+      .ag-toggle,
+      .ag-box-tool,
+      .pr-btn,
+      .sn-btn,
+      .sn-cta,
+      .earn-chip
+    ):active:not(:disabled) {
+    scale: 0.97;
+  }
 }
 
 .ag-wall {
@@ -548,6 +612,7 @@ body {
 .ag-guest-title {
   margin: 0;
   font-size: var(--ag-fs-xl);
+  letter-spacing: var(--ag-track-xl);
   font-weight: 600;
   line-height: 1.3;
   text-wrap: balance;
@@ -746,7 +811,22 @@ body {
   );
   color: var(--ag-on-brand);
   font-weight: 600;
-  animation: ag-ai-turn 12s linear infinite;
+  animation: ag-ai-turn 12s linear infinite paused;
+}
+
+/* The rim turns only while something is happening: under the pointer, under
+   focus, or while the assistant is writing (`data-busy`). At rest it holds
+   still, wherever it stopped — a loop nobody asked for pulls the eye off the
+   page. Paused rather than removed, so it picks up from its angle, no jump. */
+.ag-ai:focus-visible,
+.ag-ai[data-busy] {
+  animation-play-state: running;
+}
+
+@media (hover: hover) {
+  .ag-ai:hover {
+    animation-play-state: running;
+  }
 }
 
 .ag-ai::before,
@@ -763,13 +843,13 @@ body {
   background: inherit;
   filter: blur(10px);
   opacity: 0.25;
-  transition: opacity 0.2s;
+  transition: opacity var(--ag-dur-move);
 }
 
 .ag-ai::after {
   inset: var(--ai-rim);
   background: var(--ai-fill);
-  transition: background-color 0.2s;
+  transition: background-color var(--ag-dur-move);
 }
 
 @media (hover: hover) {
@@ -927,10 +1007,10 @@ body {
     /* Rises out of the bar and drops back into it (`usePresence`); the exit
        is a transition, so pressing More again mid-way turns it round. A
        finger can pull it down (`useSwipeDismiss`). */
-    animation: ag-sheet-in 200ms cubic-bezier(0.23, 1, 0.32, 1);
+    animation: ag-sheet-in var(--ag-dur-move) var(--ag-ease-out);
     transition:
-      transform 200ms cubic-bezier(0.23, 1, 0.32, 1),
-      opacity 200ms ease-out;
+      transform var(--ag-dur-move) var(--ag-ease-out),
+      opacity var(--ag-dur-move) var(--ag-ease-out);
     touch-action: none;
   }
   .ag-nav-sheet[data-leaving] {
@@ -940,6 +1020,25 @@ body {
   }
   .ag-nav-sheet[data-leaving][data-swiped] {
     transform: translate3d(0, 100%, 0);
+  }
+}
+
+/* A popover grows out of what opened it: `transform-origin` on each one sits
+   at its trigger, so it reads as coming from there, not from nowhere. `scale`
+   rather than `transform`, which a popover may already use to stay on screen.
+   Reduced motion keeps the fade alone. */
+@keyframes ag-pop-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes ag-pop-in {
+    from {
+      opacity: 0;
+    }
   }
 }
 
@@ -1025,6 +1124,8 @@ body {
   border-radius: var(--ag-radius-md);
   background: var(--ag-surface-card);
   box-shadow: var(--ag-shadow-overlay);
+  transform-origin: top left;
+  animation: ag-pop-in var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .ag-search-caption {
@@ -1196,9 +1297,87 @@ img.ag-search-logo {
   z-index: 90;
   display: grid;
   inset: 0;
-  padding: 16px;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   background: var(--ag-surface-page-veil);
   place-items: center;
+}
+
+/* Every dialog over the page — a review row's details, an earnings date, the
+   tour, the welcome, the profile prompt — comes and goes the same way: the
+   scrim fades, the card settles from just under full size, and leaves along
+   the same path. The exit is `useExitGhost`'s inert copy, marked
+   `data-leaving`; its own entrance must not replay, hence `data-ghost`. */
+:is(.ag-rev-modal, .earn-modal, .ag-tour-scrim) {
+  animation: ag-fade-in var(--ag-dur-move) var(--ag-ease-out);
+  transition: opacity var(--ag-dur-move) var(--ag-ease-out);
+}
+
+:is(.ag-rev-modal-card, .earn-modal-card, .ag-tour) {
+  animation: ag-dialog-in var(--ag-dur-move) var(--ag-ease-out);
+  transition: scale var(--ag-dur-move) var(--ag-ease-out);
+}
+
+:is(.ag-rev-modal, .earn-modal, .ag-tour-scrim)[data-leaving] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+:is(.ag-rev-modal, .earn-modal, .ag-tour-scrim)[data-leaving]
+  > :is(.ag-rev-modal-card, .earn-modal-card, .ag-tour) {
+  scale: 0.97;
+}
+
+[data-ghost],
+[data-ghost] * {
+  animation: none !important;
+}
+
+@keyframes ag-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes ag-dialog-in {
+  from {
+    scale: 0.97;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.ag-rev-modal-card, .earn-modal-card, .ag-tour) {
+    animation: none;
+  }
+}
+
+/* A chart redrawn for a new range or zoom fades its marks back in, keyed on
+   what changed (`<g className="ag-redraw" key={range}>`): a whole new shape
+   appearing at once reads as a jump, a short fade as the same chart moving
+   on. Axes and readout sit outside the group and stay put. Reduced motion
+   keeps the snap. */
+@keyframes ag-redraw {
+  from {
+    opacity: 0.25;
+  }
+}
+
+.ag-redraw {
+  animation: ag-redraw var(--ag-dur-move) var(--ag-ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-redraw {
+    animation: none;
+  }
+}
+
+.ag-tour:focus,
+.earn-modal-card:focus,
+.ag-fb:focus {
+  /* Focus is parked on the dialog when it opens (`useDialog`) so it is named
+     and read; a ring round the whole card would say nothing. */
+  outline: none;
 }
 
 .ag-tour {
@@ -1232,6 +1411,19 @@ img.ag-search-logo {
   font-size: var(--ag-fs-xs);
 }
 
+.ag-tour-head-end {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+}
+
+/* "Skip" sits in the header as text, not as a fourth button in the footer:
+   it is the way out, not a step. The negative margin keeps its padding (the
+   hit area) from pushing the header's right edge in. */
+.ag-tour-skip {
+  margin: -7px -14px -7px 0;
+}
+
 .ag-tour-intro {
   margin: 6px 0 0;
   color: var(--ag-text-muted);
@@ -1244,6 +1436,7 @@ img.ag-search-logo {
   align-items: center;
   margin: 14px 0 6px;
   font-size: var(--ag-fs-2xl);
+  letter-spacing: var(--ag-track-2xl);
 }
 
 .ag-tour-badge {
@@ -1277,6 +1470,10 @@ img.ag-search-logo {
 .ag-tour-btn,
 .ag-tour-cta,
 .ag-tour-quiet {
+  /* Inline-flex so a sign-in link drawn in a button's place lines up with
+     the buttons beside it. */
+  display: inline-flex;
+  align-items: center;
   padding: 7px 14px;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-pill);
@@ -1284,12 +1481,13 @@ img.ag-search-logo {
   color: var(--ag-text-primary);
   font: inherit;
   font-size: var(--ag-fs-sm);
+  text-decoration: none;
   cursor: pointer;
 }
 
+/* A dialog's primary action is filled and trails the row, as on an iOS alert;
+   a side door off the dialog ("take me there") leads it on the left. */
 .ag-tour-cta {
-  /* The action the card exists to offer, so it leads the row. */
-  margin-right: auto;
   border-color: transparent;
   background: var(--ag-brand-cta);
   color: var(--ag-on-brand);
@@ -1298,6 +1496,18 @@ img.ag-search-logo {
 .ag-tour-quiet {
   border-color: transparent;
   color: var(--ag-text-muted);
+}
+
+.ag-tour-lead {
+  margin-right: auto;
+}
+
+@media (pointer: coarse) {
+  .ag-tour-btn,
+  .ag-tour-cta,
+  .ag-tour-quiet {
+    min-height: 44px;
+  }
 }
 
 @media (hover: hover) {
@@ -1394,7 +1604,7 @@ button.ag-welcome-row {
 .ag-welcome-go {
   flex: none;
   color: var(--ag-text-muted);
-  transition: transform 150ms ease-out;
+  transition: transform var(--ag-dur-move) var(--ag-ease-out);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1448,13 +1658,20 @@ button.ag-welcome-row {
   z-index: 95;
   display: grid;
   inset: 0;
-  padding: 16px;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   background: var(--ag-surface-page-veil);
   place-items: center;
 }
 
+/* A phone held sideways with the keyboard up leaves the form less height than
+   it needs; the card scrolls on its own so Send stays reachable, and the
+   scroll stops at its edge instead of handing on to the page. */
 .ag-fb {
   width: min(480px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 20px;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-lg);
@@ -1465,6 +1682,7 @@ button.ag-welcome-row {
 .ag-fb-h {
   margin: 0 0 4px;
   font-size: var(--ag-fs-xl);
+  letter-spacing: var(--ag-track-xl);
 }
 
 .ag-fb-caption {
@@ -1533,4 +1751,71 @@ button.ag-welcome-row {
 .ag-fb-quiet {
   background: none;
   color: var(--ag-text-muted);
+}
+
+/* ------------------------------------------------- what the reader asked for */
+
+/* Less transparency: veils go solid and the ambient light goes out, so text
+   never sits on something showing through. Doubled `:root` to outrank the
+   tokens the server inlines. */
+@media (prefers-reduced-transparency: reduce) {
+  :root:root {
+    --ag-surface-page-veil: var(--ag-surface-page);
+  }
+
+  .ag-ambient,
+  .ag-aurora {
+    display: none;
+  }
+
+  .ag-ai::before {
+    display: none;
+  }
+}
+
+/* More contrast: muted and "tenue" text both take the secondary grey, and
+   rules take the hover border's weight. */
+@media (prefers-contrast: more) {
+  :root:root {
+    --ag-text-muted: var(--ag-text-secondary);
+    --ag-text-faint: var(--ag-text-secondary);
+    --ag-border: var(--ag-border-focus);
+    --ag-rule-soft: var(--ag-border-focus);
+  }
+}
+
+/* Forced colours (Windows High Contrast) repaint every background as the
+   system's, which wipes out whatever says "this one is on" by fill alone:
+   the tab underline, the pressed segment, the AI rim. Those draw in system
+   colours instead. */
+@media (forced-colors: active) {
+  .ag-tabs-ink {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+
+  .ag-seg-thumb {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+
+  .ag-seg-opt[aria-pressed="true"] {
+    forced-color-adjust: none;
+    color: HighlightText;
+  }
+
+  .ag-ai {
+    border: 1px solid ButtonText;
+  }
+
+  .ag-ai::before,
+  .ag-ai::after,
+  .ag-ambient,
+  .ag-aurora {
+    display: none;
+  }
+
+  :focus-visible {
+    outline-color: Highlight;
+  }
 }

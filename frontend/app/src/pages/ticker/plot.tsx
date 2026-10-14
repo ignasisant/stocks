@@ -14,6 +14,7 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
+import { Spoken, useKeyWalk } from "../../shell/useKeyWalk";
 import { type Span, useSpan } from "../../shell/useSpan";
 import { useTouchHold } from "../../shell/useTouchHold";
 
@@ -124,7 +125,16 @@ export type { Span } from "../../shell/useSpan";
  * The responsive SVG every chart draws into.
  *
  * `role="img"` with a label, because these carry figures: a screen reader that
- * is handed an unlabelled canvas is handed nothing.
+ * is handed an unlabelled canvas is handed nothing. The label is a summary —
+ * what, over when, and where it went — not just the chart's name.
+ *
+ * With `walk`, the plot takes focus and the arrow keys move the readout
+ * (`shell/useKeyWalk`); `readout` is that reading as one sentence, spoken only
+ * when a key moved it.
+ *
+ * A mouse drag (the price chart's zoom) captures the pointer, so a drag that
+ * leaves the plot keeps reporting until the button lifts instead of dying at
+ * the edge; positions past it arrive outside the frame and a chart clamps.
  *
  * `onSpan` is the measuring gesture (`shell/useSpan`): two fingers, or a
  * secondary click and the pointer. A chart that passes none keeps the
@@ -140,6 +150,8 @@ export function Chart({
   onUp,
   onDouble,
   onSpan,
+  walk,
+  readout = null,
   className,
 }: {
   frame: Frame;
@@ -153,6 +165,9 @@ export function Chart({
   onDouble?: () => void;
   /** Two places being compared, or null once the comparison is put away. */
   onSpan?: (span: Span | null) => void;
+  /** The readout's index, the last one, and how to move it. */
+  walk?: { at: number | null; last: number; set: (index: number | null) => void };
+  readout?: string | null;
   className?: string;
 }) {
   const node = useRef<SVGSVGElement>(null);
@@ -165,6 +180,7 @@ export function Chart({
   useTouchHold(node, held, drop);
 
   const span = useSpan(onSpan);
+  const keys = useKeyWalk(walk ?? { at: null, last: -1, set: () => {} });
 
   const at = useCallback(
     (event: { clientX: number; clientY: number }): [number, number] => {
@@ -177,47 +193,154 @@ export function Chart({
   );
 
   return (
-    <svg
-      ref={node}
-      className={className ? `tk-svg ${className}` : "tk-svg"}
-      viewBox={`0 0 ${f.width} ${f.height}`}
-      role="img"
-      aria-label={label}
-      onPointerMove={(event) => {
-        const [x, y] = at(event);
-        if (span.move(event, x)) return;
-        onPointer?.(x, y);
-      }}
-      // A finger lifting is a leave too; the bar it read stays up until the
-      // reader touches elsewhere, since only then is the hand off the chart.
-      onPointerLeave={(event) => {
-        span.leave(event);
-        if (event.pointerType === "touch") {
-          if (onPointer || onSpan) setHeld(true);
-          return;
-        }
-        onLeave?.();
-      }}
-      onPointerCancel={span.cancel}
-      onPointerDown={(event) => {
-        const [x, y] = at(event);
-        if (span.down(event, x)) return;
-        // A tap is a pointer that never moves: it reads the bar too.
-        if (event.pointerType === "touch") onPointer?.(x, y);
-        // The secondary button is the measuring click, never a drag.
-        else if (event.button !== 0) return;
-        onDown?.(x);
-      }}
-      onPointerUp={(event) => {
-        if (span.up(event)) return;
-        if (event.pointerType !== "touch" && event.button !== 0) return;
-        onUp?.(at(event)[0]);
-      }}
-      onContextMenu={span.menu && ((event) => span.menu?.(event, at(event)[0]))}
-      onDoubleClick={onDouble}
-    >
-      {children}
-    </svg>
+    <>
+      <svg
+        ref={node}
+        className={className ? `tk-svg ${className}` : "tk-svg"}
+        viewBox={`0 0 ${f.width} ${f.height}`}
+        role="img"
+        aria-label={label}
+        {...(walk ? keys.props : {})}
+        onPointerMove={(event) => {
+          keys.quiet();
+          const [x, y] = at(event);
+          if (span.move(event, x)) return;
+          onPointer?.(x, y);
+        }}
+        // A finger lifting is a leave too; the bar it read stays up until the
+        // reader touches elsewhere, since only then is the hand off the chart.
+        onPointerLeave={(event) => {
+          span.leave(event);
+          if (event.pointerType === "touch") {
+            if (onPointer || onSpan) setHeld(true);
+            return;
+          }
+          onLeave?.();
+        }}
+        onPointerCancel={span.cancel}
+        onPointerDown={(event) => {
+          keys.quiet();
+          const [x, y] = at(event);
+          if (span.down(event, x)) return;
+          // A tap is a pointer that never moves: it reads the bar too.
+          if (event.pointerType === "touch") onPointer?.(x, y);
+          // The secondary button is the measuring click, never a drag.
+          else if (event.button !== 0) return;
+          // A drag keeps the pointer past the plot's edge. A finger is held by
+          // the browser already, and must stay free to scroll the page.
+          else if (onDown) event.currentTarget.setPointerCapture?.(event.pointerId);
+          onDown?.(x);
+        }}
+        onPointerUp={(event) => {
+          if (span.up(event)) return;
+          if (event.pointerType !== "touch" && event.button !== 0) return;
+          onUp?.(at(event)[0]);
+        }}
+        onContextMenu={span.menu && ((event) => span.menu?.(event, at(event)[0]))}
+        onDoubleClick={onDouble}
+      >
+        {children}
+      </svg>
+      {walk ? <Spoken text={keys.keyed ? readout : null} /> : null}
+    </>
+  );
+}
+
+/**
+ * A chart's name for a screen reader: what it is and the stretch it covers,
+ * then whatever headline the chart has (its change, its extremes). Dashes and
+ * arrows rather than words, so it reads the same in every language.
+ */
+export function summary(
+  title: string,
+  from: string,
+  to: string,
+  headline = "",
+): string {
+  const span =
+    from && to && from !== to ? `, ${from} – ${to}` : from ? `, ${from}` : "";
+  return `${title}${span}${headline ? `: ${headline}` : ""}`;
+}
+
+/** A tooltip as one sentence, for the readout `Chart` speaks. */
+export function spoken(title: string, lines: TipLine[]): string {
+  return [title, ...lines.map((line) => line.text)].filter(Boolean).join(", ");
+}
+
+/**
+ * Decimals for a price axis: enough that two ticks never print the same
+ * figure. Read from the tick step, not the top of the range — a narrow window
+ * over 100 steps by 0.5, and whole numbers there print "101 101".
+ */
+export function tickDigits(lo: number, hi: number, count = 4): number {
+  const [a, b] = ticks(lo, hi, count);
+  const step = a !== undefined && b !== undefined ? Math.abs(b - a) : 1;
+  const fine = step < 1 ? Math.ceil(-Math.log10(step) - 1e-9) : 0;
+  return Math.max(hi >= 100 ? 0 : 2, fine);
+}
+
+/**
+ * Where to set the labels that name lines at their right ends, so no two
+ * overlap: each as near its line's last value as `gap` allows, inside
+ * `top..bottom`. Input order is kept in the output.
+ */
+export function spreadLabels(
+  ys: number[],
+  gap: number,
+  top: number,
+  bottom: number,
+): number[] {
+  const order = ys.map((y, index) => ({ y, index })).sort((a, b) => a.y - b.y);
+  const out = order.map((one) => one.y);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = Math.max(out[i]!, top, i > 0 ? out[i - 1]! + gap : -Infinity);
+  }
+  for (let i = out.length - 1; i >= 0; i--) {
+    out[i] = Math.min(
+      out[i]!,
+      bottom,
+      i < out.length - 1 ? out[i + 1]! - gap : Infinity,
+    );
+  }
+  const placed: number[] = new Array(ys.length);
+  order.forEach((one, at) => (placed[one.index] = out[at]!));
+  return placed;
+}
+
+/**
+ * Names on the lines themselves, at their right ends — so telling the lines
+ * apart never rests on matching a colour to a legend swatch. Haloed in the
+ * card colour, since they sit over the plot.
+ */
+export function EndLabels({
+  frame: f,
+  items,
+}: {
+  frame: Frame;
+  /** Each line's last drawn y (viewBox units), its name and its colour. */
+  items: { y: number; text: string; color: string }[];
+}) {
+  if (items.length === 0) return null;
+  const ys = spreadLabels(
+    items.map((item) => item.y - 5),
+    12,
+    f.top + 9,
+    f.height - f.bottom - 3,
+  );
+  return (
+    <g className="tk-end" aria-hidden="true">
+      {items.map((item, index) => (
+        <text
+          key={item.text}
+          x={f.width - f.right - 2}
+          y={ys[index]}
+          textAnchor="end"
+          fill={item.color}
+        >
+          {item.text}
+        </text>
+      ))}
+    </g>
   );
 }
 
@@ -313,6 +436,9 @@ export type TipLine = {
  * the rendered size, and flipped to the left half once the cursor passes the
  * middle so it never leaves the card. Where nothing hovers it is not a box at
  * all but a readout strip over the plot (`ticker.css`).
+ *
+ * Not a live region: it is rewritten on every pointer move. What a screen
+ * reader hears is `Chart`'s `readout`, spoken only when a key moved it.
  */
 export function Tooltip({
   frame: f,
@@ -341,7 +467,6 @@ export function Tooltip({
         .filter(Boolean)
         .join(" ")}
       style={{ left: `${left}%` }}
-      role="status"
     >
       <span className="tk-tip-t">{title}</span>
       {lines.map((line, index) => (

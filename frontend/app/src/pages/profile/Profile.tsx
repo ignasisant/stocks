@@ -14,6 +14,7 @@
 import { useState } from "react";
 import { get } from "../../shell/api";
 import { useT } from "../../shell/i18n";
+import { Tabs } from "../../ui/Tabs";
 import { leave } from "../../shell/keep";
 import { useRoute } from "../../shell/router";
 import { useAccount, useGuest } from "../../shell/session";
@@ -152,26 +153,17 @@ function Settings() {
       </Card>
 
       {/* A tab switch is not a navigation the back button should walk through. */}
-      <div className="pr-tabs" role="tablist" aria-label={t("nav.profile")}>
-        {TABS.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            role="tab"
-            aria-selected={entry.id === tab}
-            className={entry.id === tab ? "pr-tab pr-tab-on" : "pr-tab"}
-            onClick={() => setParams({ tab: entry.id })}
-          >
-            {t(entry.label)}
-            {entry.id === "watch" && count > 0 && (
-              <>
-                {" "}
-                <span className="pr-tab-n">{count}</span>
-              </>
-            )}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        className="pr-tabs"
+        label={t("nav.profile")}
+        items={TABS.map((entry) => ({
+          id: entry.id,
+          label: t(entry.label),
+          count: entry.id === "watch" ? count : null,
+        }))}
+        active={tab}
+        onPick={(id) => setParams({ tab: id })}
+      />
 
       {tab === "prefs" && (
         <Preferences

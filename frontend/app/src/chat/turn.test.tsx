@@ -75,6 +75,41 @@ describe("a refused turn", () => {
   });
 });
 
+describe("switching AI on a refusal", () => {
+  const draw = (turn: Stored, onDrop?: () => void) =>
+    renderToStaticMarkup(
+      <Turn
+        turn={turn}
+        skills={[]}
+        providers={[]}
+        cap={null}
+        onRetry={() => {}}
+        onDrop={onDrop}
+        switchTo={[
+          { id: "free", label: "TopStocks AI" },
+          { id: "claude", label: "Claude" },
+          { id: "openai", label: "ChatGPT" },
+        ]}
+        onSwitch={() => {}}
+        onPickAi={() => {}}
+      />,
+    );
+
+  it("offers two other providers and the settings screen", () => {
+    const out = draw(refused(), () => {});
+    expect(out.match(/chat\.try_with/g)).toHaveLength(2);
+    expect(out).toContain("chat.pick_ai");
+  });
+
+  it("is only on the newest refusal", () => {
+    expect(draw(refused())).not.toContain("chat.try_with");
+  });
+
+  it("is not offered under a failed attachment", () => {
+    expect(draw(refused({ action: "import" }), () => {})).not.toContain("chat.pick_ai");
+  });
+});
+
 describe("the reader's own question", () => {
   it("is drawn folded, with no Show more until something was clipped", () => {
     const out = drawTurn(
@@ -349,7 +384,8 @@ describe("an answer's tool calls", () => {
   it("says a ledger edit taken back is undone, with nothing to press", () => {
     const out = undoable("undone", 7);
     expect(out).toContain("chat.action_undone");
-    expect(out).not.toContain("<button");
+    // The foot's copy button is the only one an answer may carry here.
+    expect(out).not.toMatch(/<button(?![^>]*chat\.copy)/);
   });
 
   it("offers no Edit on a ledger edit even beside a surface", () => {
@@ -376,8 +412,8 @@ describe("an answer's tool calls", () => {
   });
 
   it("ignores a tool it does not run", () => {
-    expect(answer([{ id: "x", name: "delete_everything", args: {} }])).not.toContain(
-      "<button",
+    expect(answer([{ id: "x", name: "delete_everything", args: {} }])).not.toMatch(
+      /<button(?![^>]*chat\.copy)/,
     );
   });
 });

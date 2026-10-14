@@ -15,7 +15,7 @@
    pushes the whole column off the side of the page. */
 .ag-kpis {
   display: grid;
-  gap: 8px;
+  gap: 0.5rem;
   grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
 }
 
@@ -65,12 +65,14 @@
 .ag-kpi {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 0.2rem;
   min-width: 0;
-  padding: 9px 11px;
+  padding: 0.55rem 0.7rem;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-md, 12px);
   background: var(--ag-surface-page);
+  /* The figure steps down a size in a narrow tile (below). */
+  container-type: inline-size;
 }
 
 .ag-kpi-head {
@@ -81,7 +83,7 @@
 }
 
 .ag-kpi-label {
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 500;
   line-height: 1.25;
   color: var(--ag-text-secondary);
@@ -97,17 +99,33 @@
 
 /* Epilogue, as the DS tile (`tables.kpi_grid_html`) draws its figure. */
 .ag-kpi-value {
-  font-family: "Epilogue", var(--ag-font-body);
-  font-size: var(--ag-fs-xl, 18px);
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-fs-xl, 1.125rem);
+  letter-spacing: var(--ag-track-xl);
   font-weight: 700;
   line-height: 1.1;
   color: var(--ag-text-primary);
   font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
+  /* A figure reads whole: a narrow tile takes a smaller size first, and only
+     a figure wider than the tile at that size breaks, as a last resort. */
+  overflow-wrap: break-word;
+}
+
+@container (max-width: 8.5rem) {
+  .ag-kpi-value {
+    font-size: var(--ag-fs-lg);
+    letter-spacing: 0;
+  }
+}
+
+@container (max-width: 6.5rem) {
+  .ag-kpi-value {
+    font-size: var(--ag-fs-md);
+  }
 }
 
 .ag-kpi-note {
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   line-height: 1.4;
   color: var(--ag-text-muted);
 }
@@ -135,17 +153,24 @@
   background: none;
   color: var(--ag-text-muted);
   font: inherit;
-  font-size: var(--ag-fs-2xs, 11px);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   line-height: 1;
   cursor: help;
 }
 
 /* A 14px mark is not a thing a thumb can hit. The pseudo-element grows the
-   target to 32px without moving anything around it. */
+   target to 32px under a mouse and 44px under a finger, without moving
+   anything around it. */
 .ag-kpi-help::before {
   content: "";
   position: absolute;
   inset: -9px;
+}
+
+@media (pointer: coarse) {
+  .ag-kpi-help::before {
+    inset: -15px;
+  }
 }
 
 .ag-kpi-help[aria-expanded="true"] {
@@ -172,7 +197,7 @@
   text-align: left;
   text-transform: none;
   letter-spacing: 0;
-  font-size: var(--ag-fs-xs, 0.8rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   font-weight: 400;
   line-height: 1.5;
   color: var(--ag-text-secondary);
@@ -181,6 +206,16 @@
   border-radius: var(--ag-radius-sm, 8px);
   box-shadow: var(--ag-shadow-overlay);
   padding: 0.5rem 0.65rem;
+  /* From the mark it hangs under. */
+  transform-origin: 0.85rem 0;
+  animation: ag-pop-in var(--ag-dur-press) var(--ag-ease-out);
+  transition: opacity var(--ag-dur-press) var(--ag-ease-out);
+}
+
+/* Away faster than it came, and in place: a fade, no scale. */
+.ag-kpi-help-pop[data-leaving] {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* ----------------------------------------------------------------- the pill */
@@ -189,8 +224,9 @@
   display: inline-block;
   padding: 1px 7px;
   border-radius: var(--ag-radius-pill, 9999px);
-  font-size: var(--ag-fs-xs, 11px);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   font-weight: 600;
+  line-height: 1.5;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -253,7 +289,7 @@
   background: transparent;
   color: var(--ag-text-secondary);
   font: inherit;
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.3;
   cursor: pointer;
   touch-action: manipulation;
@@ -282,6 +318,19 @@
   color: var(--ag-text-primary);
 }
 
+/* On is also a shape, not only a colour: a check ahead of the label, which
+   survives greyscale, colour blindness and forced colours. */
+.ag-toggle-on::before {
+  content: "";
+  flex: none;
+  width: 0.55em;
+  height: 0.3em;
+  margin: -0.15em 0 0 -0.1em;
+  border-bottom: 1.5px solid currentColor;
+  border-left: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+
 @media (pointer: coarse) {
   .ag-toggle {
     min-height: 44px;
@@ -295,9 +344,9 @@
   display: inline-flex;
   align-items: center;
   align-self: center;
-  padding: 1px 8px;
+  padding: 1px 7px;
   border-radius: var(--ag-radius-pill, 9999px);
-  font-size: var(--ag-fs-2xs, 11px);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   font-weight: 600;
   line-height: 1.5;
   white-space: nowrap;
@@ -351,7 +400,18 @@
   border-bottom: none;
 }
 
-/* Touch has no hover: the row washes the hover surface while pressed. */
+/* A mouse gets the wash on hover (an open chat narrows a desktop page into
+   these rows); touch has no hover, so the row washes while pressed. */
+@media (hover: hover) {
+  .ag-dense-row {
+    transition: background-color var(--ag-dur-hover) var(--ag-ease-out);
+  }
+
+  .ag-dense-row:hover {
+    background: var(--ag-surface-hover);
+  }
+}
+
 @media (hover: none) {
   .ag-dense-row:active {
     background: var(--ag-surface-hover);
@@ -376,7 +436,7 @@
   justify-content: center;
   background: var(--ag-surface-sunken);
   color: var(--ag-text-secondary);
-  font-size: 11px;
+  font-size: var(--ag-fs-2xs);
   font-weight: 700;
 }
 
@@ -537,6 +597,7 @@
 }
 
 .ag-box-tool {
+  position: relative;
   display: grid;
   width: 32px;
   height: 32px;
@@ -551,6 +612,16 @@
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* Under a finger the target grows to 44px tall without moving the field's
+   padding; sideways it stops at the neighbour, so two tools never overlap. */
+@media (pointer: coarse) {
+  .ag-box-tool::before {
+    content: "";
+    position: absolute;
+    inset: -6px -1px;
+  }
 }
 
 /* A tap leaves `:hover` behind on a touch screen, so only a mouse gets it;
@@ -596,5 +667,199 @@
   .ag-box-rec:hover:not(:disabled) {
     background: var(--ag-critical-fill);
     color: var(--ag-on-brand);
+  }
+}
+
+/* ------------------------------------------------------------------ tabs */
+
+/* `Tabs.tsx`. One row, never wrapped: wrapped tabs read as two strips. A row
+   wider than its page scrolls sideways (`useTabStrip` centres the open tab and
+   `.ag-fade-x` fades the edge with more past it). The strip is the tabs'
+   offset parent, so the underline can be placed from their `offsetLeft`. */
+.ag-tabs {
+  position: relative;
+  display: flex;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--ag-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.ag-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.ag-tab {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+  padding: 0.6rem 0.85rem;
+  border: none;
+  background: none;
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-md);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--ag-dur-hover) ease-in-out;
+}
+/* Colour and the underline mark the open tab, not weight: a bolder label
+   would widen it and shift every tab after it along the row. */
+.ag-tab-on {
+  color: var(--ag-text-primary);
+}
+@media (hover: hover) {
+  .ag-tab:hover {
+    color: var(--ag-text-primary);
+  }
+}
+/* Answered on the press, not the release. */
+.ag-tab:active {
+  color: var(--ag-text-primary);
+  transition: none;
+}
+/* Inside a scroller an outside ring is clipped: draw it within the tab. */
+.ag-tab:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: -2px;
+  border-radius: var(--ag-radius-nav);
+}
+@media (pointer: coarse) {
+  .ag-tab {
+    min-height: 44px;
+  }
+}
+
+.ag-tab-n {
+  min-width: 1.25rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-secondary);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-2xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* The underline: one 1px-wide mark scaled to the open tab's width and moved
+   under it, so the change is a glide on the compositor rather than two
+   borders swapping. Without `data-ink` (the first frame) it does not animate. */
+.ag-tabs-ink {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 2px;
+  background: var(--ag-brand-accent);
+  transform-origin: left;
+  transform: translateX(var(--ink-x, 0)) scaleX(var(--ink-w, 0));
+  pointer-events: none;
+}
+.ag-tabs[data-ink] .ag-tabs-ink {
+  transition: transform var(--ag-dur-move) var(--ag-ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ag-tabs[data-ink] .ag-tabs-ink {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------- segmented */
+
+/* `Segmented.tsx`. A sunken track, the open option on a raised thumb that
+   slides between options (`--seg-*`, placed by the component). A row wider
+   than its column wraps by option; the thumb follows onto the next line. */
+.ag-seg {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 100%;
+  padding: 2px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-page);
+}
+
+.ag-seg-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  width: var(--seg-w, 0);
+  height: var(--seg-h, 0);
+  border-radius: var(--ag-radius-xs);
+  background: var(--ag-surface-hover);
+  box-shadow: var(--ag-shadow-card);
+  transform: translate(var(--seg-x, 0), var(--seg-y, 0));
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ag-seg[data-thumb] .ag-seg-thumb {
+  opacity: 1;
+}
+
+.ag-seg[data-glide] .ag-seg-thumb {
+  transition:
+    transform var(--ag-dur-move) var(--ag-ease-out),
+    width var(--ag-dur-move) var(--ag-ease-out),
+    height var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.ag-seg-opt {
+  appearance: none;
+  flex: none;
+  min-height: 28px;
+  padding: 0.25rem 0.75rem;
+  border: 0;
+  border-radius: var(--ag-radius-xs);
+  background: none;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    color var(--ag-dur-hover) var(--ag-ease-out),
+    scale var(--ag-dur-press) var(--ag-ease-out);
+}
+
+/* Colour and the thumb mark the open option, not weight: a bolder label
+   would widen it and move the thumb's target mid-slide. */
+.ag-seg-opt[aria-pressed="true"] {
+  color: var(--ag-text-primary);
+}
+
+@media (hover: hover) {
+  .ag-seg-opt:hover {
+    color: var(--ag-text-primary);
+  }
+}
+
+.ag-seg-opt:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: -2px;
+}
+
+@media (pointer: coarse) {
+  .ag-seg-opt {
+    min-height: 44px;
+    padding-inline: 0.85rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-seg[data-glide] .ag-seg-thumb {
+    transition: none;
   }
 }

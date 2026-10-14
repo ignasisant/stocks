@@ -27,6 +27,7 @@
 import { useMemo, useState } from "react";
 import {
   Chart,
+  EndLabels,
   Legend,
   Tooltip,
   YGrid,
@@ -34,6 +35,8 @@ import {
   frame,
   plotWidth,
   scale,
+  spoken,
+  summary,
   ticks,
   type TipLine,
 } from "../pages/ticker/plot";
@@ -135,6 +138,9 @@ export function LineChart({
   const [span, setSpan] = useState<[number, number] | null>(null);
   const colors = palette();
   const hues = [colors.brandAccent, colors.info, colors.smaFast];
+  // Purple, blue and gold part three lines for most eyes, not for all: the
+  // second and third are dashed too, and each is named at its end.
+  const dashes = [undefined, "6 3", "2 3"];
 
   const lines = useMemo(
     () =>
@@ -260,7 +266,9 @@ export function LineChart({
     : [];
   const clamp = (x: number) => Math.max(box.left, Math.min(box.left + inner, x));
 
-  const xLabels = [0, 0.5, 1].map((share) => {
+  // Under ~300px the middle date crowds the two ends; the ends alone still
+  // say what the window is.
+  const xLabels = (inner < 300 ? [0, 1] : [0, 0.5, 1]).map((share) => {
     const i = Math.round((first.dates.length - 1) * share);
     return { x: (xs[0] as number[])[i] as number, stamp: first.dates[i] as string };
   });
@@ -269,7 +277,27 @@ export function LineChart({
     <div className="tk-plot ag-a2ui-chart" ref={node}>
       <Chart
         frame={box}
-        label={`${label}: ${lines.map(named).join(", ")}`}
+        label={summary(
+          label,
+          dates.long(first.dates[0] as string),
+          dates.long(first.dates[first.dates.length - 1] as string),
+          lines
+            .map((line) => {
+              const end = line.raw[line.raw.length - 1] as number;
+              return `${named(line)} ${change(end / (line.raw[0] as number) - 1)}`;
+            })
+            .join(", "),
+        )}
+        walk={{
+          at: picked ? lead : null,
+          last: first.raw.length - 1,
+          set: (i) => setHover(i === null ? null : ((xs[0] as number[])[i] as number)),
+        }}
+        readout={
+          picked && !measured
+            ? spoken(dates.long(first.dates[lead] as string), tip)
+            : null
+        }
         onPointer={(x) => setHover(clamp(x))}
         onLeave={() => {
           setHover(null);
@@ -295,28 +323,46 @@ export function LineChart({
             stroke={colors.textMuted}
           />
         ) : null}
-        {area ? <path d={area} fill={colors.accentArea} stroke="none" /> : null}
-        {lines.map((line, at) => (
-          <polyline
-            key={line.symbol}
-            className="tk-line"
-            points={points(at)}
-            stroke={hues[at % hues.length]}
-            strokeWidth={byTime ? 1.6 : 2}
-          />
-        ))}
-        {lines.map((line, at) => {
-          const end = line.ys.length - 1;
-          return (
-            <circle
-              key={`end-${line.symbol}`}
-              cx={(xs[at] as number[])[end]}
-              cy={y(line.ys[end] as number)}
-              r={3}
-              fill={hues[at % hues.length]}
+        <g
+          className="ag-redraw"
+          key={lines
+            .map((line) => `${line.symbol}-${line.dates[0]}-${line.dates.length}`)
+            .join("|")}
+        >
+          {area ? <path d={area} fill={colors.accentArea} stroke="none" /> : null}
+          {lines.map((line, at) => (
+            <polyline
+              key={line.symbol}
+              className="tk-line"
+              points={points(at)}
+              stroke={hues[at % hues.length]}
+              strokeWidth={byTime ? 1.6 : 2}
+              strokeDasharray={dashes[at % dashes.length]}
             />
-          );
-        })}
+          ))}
+          {lines.map((line, at) => {
+            const end = line.ys.length - 1;
+            return (
+              <circle
+                key={`end-${line.symbol}`}
+                cx={(xs[at] as number[])[end]}
+                cy={y(line.ys[end] as number)}
+                r={3}
+                fill={hues[at % hues.length]}
+              />
+            );
+          })}
+        </g>
+        {byTime ? (
+          <EndLabels
+            frame={box}
+            items={lines.map((line, at) => ({
+              y: y(line.ys[line.ys.length - 1] as number),
+              text: named(line),
+              color: hues[at % hues.length] as string,
+            }))}
+          />
+        ) : null}
         {ends ? (
           <g className="tk-span">
             {measured ? (
@@ -372,7 +418,9 @@ export function LineChart({
               key={stamp}
               x={x}
               y={box.height - 6}
-              textAnchor={slot === 0 ? "start" : slot === 2 ? "end" : "middle"}
+              textAnchor={
+                slot === 0 ? "start" : slot === xLabels.length - 1 ? "end" : "middle"
+              }
             >
               {dates.short(stamp)}
             </text>

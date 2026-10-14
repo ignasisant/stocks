@@ -10,39 +10,9 @@
  * phone without anybody writing three rules for it.
  */
 
+/* The strip itself is `ui/Tabs.tsx`; this is only its place on the page. */
 .pf-tabs {
-  /* The offset parent of its tabs, so `Tabs` can centre the open one. */
-  position: relative;
-  display: flex;
-  gap: 0.25rem;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--ag-border);
   margin: 0 0 1.25rem;
-  padding: 0;
-}
-
-.pf-tab {
-  appearance: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--ag-text-muted);
-  font: inherit;
-  font-size: var(--ag-fs-sm, 0.875rem);
-  padding: 0.55rem 0.8rem;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-@media (hover: hover) {
-  .pf-tab:hover {
-    color: var(--ag-text-primary);
-  }
-}
-
-.pf-tab-on {
-  color: var(--ag-text-primary);
-  border-bottom-color: var(--ag-brand-accent);
 }
 
 .pf-card {
@@ -56,13 +26,13 @@
 
 .pf-card > h2 {
   margin: 0 0 0.9rem;
-  font-size: var(--ag-fs-lg, 1.05rem);
+  font-size: var(--ag-fs-lg, 1rem);
   font-weight: 600;
 }
 
 .pf-caption {
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 0.78rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   line-height: 1.45;
   margin: 0.7rem 0 0;
 }
@@ -73,7 +43,7 @@
   border-radius: var(--ag-radius-sm, 8px);
   background: var(--ag-warn-fill-soft, var(--ag-surface-sunken));
   color: var(--ag-text-primary);
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.5;
   padding: 0.7rem 0.85rem;
   margin: 0 0 0.9rem;
@@ -84,7 +54,7 @@
   border-left: 3px solid var(--ag-info);
   border-radius: var(--ag-radius-sm, 8px);
   background: var(--ag-surface-sunken);
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.5;
   padding: 0.7rem 0.85rem;
   margin: 0 0 0.9rem;
@@ -99,7 +69,7 @@
 .pf-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-variant-numeric: tabular-nums;
 }
 
@@ -113,7 +83,7 @@
 
 .pf-table th {
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm, 12px);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -187,56 +157,7 @@
 
 .pf-control-label {
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 0.78rem);
-}
-
-.pf-seg {
-  display: inline-flex;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm, 8px);
-  overflow: hidden;
-}
-
-.pf-seg button {
-  appearance: none;
-  border: none;
-  background: none;
-  color: var(--ag-text-muted);
-  font: inherit;
-  font-size: var(--ag-fs-xs, 0.78rem);
-  padding: 0.3rem 0.65rem;
-  cursor: pointer;
-}
-
-.pf-seg button + button {
-  border-left: 1px solid var(--ag-border);
-}
-
-@media (hover: hover) {
-  .pf-seg button:hover {
-    color: var(--ag-text-primary);
-  }
-}
-
-.pf-seg .pf-seg-on {
-  background: var(--ag-surface-hover);
-  color: var(--ag-text-primary);
-}
-
-/* Under a finger a period button is 44px tall. The row may outgrow a phone
-   (four long projection scenarios), so it wraps by segment instead of
-   spilling: the borders sit on each button, not on the row. */
-@media (pointer: coarse) {
-  .pf-seg {
-    flex-wrap: wrap;
-    max-width: 100%;
-  }
-
-  .pf-seg button {
-    min-height: 44px;
-    padding-inline: 0.85rem;
-    flex: 1 1 auto;
-  }
+  font-size: var(--ag-fs-xs, 0.6875rem);
 }
 
 .pf-dropdown {
@@ -245,7 +166,7 @@
   background: var(--ag-surface-sunken);
   color: var(--ag-text-primary);
   font: inherit;
-  font-size: var(--ag-fs-xs, 0.78rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   padding: 0.3rem 0.5rem;
 }
 
@@ -270,7 +191,7 @@
   background: none;
   color: var(--ag-text-muted);
   font: inherit;
-  font-size: var(--ag-fs-xs, 0.78rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   padding: 0.3rem 0.6rem;
   cursor: pointer;
   white-space: nowrap;
@@ -330,7 +251,7 @@
 .pf-chart h3 {
   margin: 0 0 0.5rem;
   color: var(--ag-text-secondary, var(--ag-text-primary));
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 600;
 }
 
@@ -341,7 +262,7 @@
   margin: 0.55rem 0 0;
   padding: 0;
   list-style: none;
-  font-size: var(--ag-fs-xs, 0.78rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   color: var(--ag-text-secondary, var(--ag-text-primary));
 }
 
@@ -405,8 +326,8 @@
 .pf-slice {
   cursor: pointer;
   transition:
-    stroke-opacity 120ms ease,
-    stroke-width 120ms ease;
+    stroke-opacity var(--ag-dur-press) var(--ag-ease-out),
+    stroke-width var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .pf-donut-center {
@@ -459,7 +380,7 @@
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-sm, 8px);
   background: var(--ag-surface-sunken);
-  font-size: var(--ag-fs-xs, 0.78rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   font-variant-numeric: tabular-nums;
 }
 
@@ -525,7 +446,7 @@
   margin: 0 0 0.6rem;
   padding: 0;
   list-style: none;
-  font-size: var(--ag-fs-xs, 0.78rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   color: var(--ag-text-secondary, var(--ag-text-primary));
 }
 
@@ -547,7 +468,7 @@
   font: inherit;
   cursor: pointer;
   touch-action: manipulation;
-  transition: opacity 120ms ease;
+  transition: opacity var(--ag-dur-press) var(--ag-ease-out);
 }
 
 @media (hover: hover) {
@@ -589,8 +510,8 @@
 /* The lines' own fade when the legend picks one out. */
 .pf-line {
   transition:
-    stroke-opacity 120ms ease,
-    opacity 120ms ease;
+    stroke-opacity var(--ag-dur-press) var(--ag-ease-out),
+    opacity var(--ag-dur-press) var(--ag-ease-out);
 }
 
 /* A chart's caption is copy: a sentence across a 1900px card is unreadable,
@@ -642,7 +563,7 @@
 .pf-heat {
   display: grid;
   gap: 1px;
-  font-size: var(--ag-fs-2xs, 0.7rem);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   min-width: max-content;
 }
 
@@ -700,14 +621,14 @@
 
 .pf-empty h2 {
   margin: 0 0 0.5rem;
-  font-size: var(--ag-fs-lg, 1.05rem);
+  font-size: var(--ag-fs-lg, 1rem);
 }
 
 .pf-empty p {
   margin: 0 auto 1rem;
   max-width: 34rem;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.55;
 }
 
@@ -721,7 +642,7 @@
 }
 
 .pf-zoom-reset {
-  font-size: var(--ag-fs-2xs, 0.72rem);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   padding: 0.2rem 0.6rem;
 }
 
@@ -828,6 +749,13 @@
   stroke-linejoin: round;
 }
 
+/* A line's name at its right end: its own colour, a step heavier than the
+   axis labels, haloed by `pf-halo` where it sits over the plot. */
+.pf-end {
+  font-size: 11px;
+  font-weight: 600;
+}
+
 /* Plotly's unified hover label: date on top, one row per series with its
    swatch, name muted and figure bold. Never takes the pointer. */
 .pf-tip {
@@ -850,7 +778,7 @@
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-sm, 8px);
   box-shadow: var(--ag-shadow-overlay);
-  font-size: var(--ag-fs-xs, 0.78rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   line-height: 1.45;
   font-variant-numeric: tabular-nums;
 }
@@ -897,7 +825,7 @@
 .pf-tip-hint {
   margin-top: 2px;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs, 0.72rem);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
 }
 
 .pf-tip-tick {
@@ -908,7 +836,7 @@
 
 .pf-tip-title {
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs, 0.72rem);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
 }
 
 .pf-tip-row {
@@ -949,14 +877,14 @@
   gap: 0.5rem;
   margin-top: 0.6rem;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs, 0.72rem);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   font-variant-numeric: tabular-nums;
 }
 
 .pf-heat-ramp {
   flex: 0 1 14rem;
   height: 0.55rem;
-  border-radius: var(--ag-radius-pill, 999px);
+  border-radius: var(--ag-radius-pill, 9999px);
 }
 
 /* The ramp's ends and middle in words, under the figures. Sized to the ramp
@@ -973,13 +901,13 @@
   gap: 0.75rem;
   margin-top: 0.2rem;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs, 0.72rem);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
 }
 
 /* A cell under the pointer lights its row and column; the rest steps back. */
 .pf-heat-cell {
   cursor: pointer;
-  transition: opacity 120ms ease;
+  transition: opacity var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .pf-heat-focus .pf-heat-cell:not(.pf-heat-on) {
@@ -1014,7 +942,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 600;
 }
 
@@ -1052,14 +980,6 @@
   .pf-card {
     padding: 0.85rem 0.8rem 0.9rem;
   }
-  .pf-tabs {
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    scrollbar-width: none;
-  }
-  .pf-tabs::-webkit-scrollbar {
-    display: none;
-  }
 }
 
 /*
@@ -1086,7 +1006,7 @@
   flex: 1 1 18rem;
   margin: 0;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.5;
 }
 
@@ -1105,7 +1025,7 @@
 
 .pf-proj-main {
   margin: 0;
-  transition: opacity 100ms ease-out;
+  transition: opacity var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .pf-proj-main[aria-busy="true"] {
@@ -1132,7 +1052,7 @@
 .pf-proj-eyebrow,
 .pf-hero-eyebrow {
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 0.78rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   font-weight: 500;
 }
 
@@ -1140,6 +1060,7 @@
 .pf-proj-figure,
 .pf-hero-figure {
   font-size: var(--ag-fs-3xl);
+  letter-spacing: var(--ag-track-3xl);
   line-height: 1.1;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -1152,7 +1073,7 @@
   align-items: center;
   gap: 0.5rem;
   color: var(--ag-text-secondary, var(--ag-text-muted));
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1170,7 +1091,7 @@
   align-items: center;
   gap: 0.35rem;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 0.78rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   margin-bottom: 0.2rem;
 }
 
@@ -1184,14 +1105,14 @@
 
 .pf-proj-fact-value,
 .pf-hero-fact-value {
-  font-size: var(--ag-fs-base, 1rem);
+  font-size: var(--ag-fs-base, 0.875rem);
   font-weight: 600;
 }
 
 .pf-proj-fact-note,
 .pf-hero-fact-note {
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 0.78rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
 }
 
 .pf-proj-panel {
@@ -1225,7 +1146,7 @@
 .pf-proj-group > legend {
   padding: 0;
   margin-bottom: 0.75rem;
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-weight: 600;
   color: var(--ag-text-primary);
 }
@@ -1236,11 +1157,6 @@
   align-items: flex-start;
   gap: 0.35rem;
   margin: 0;
-}
-
-.pf-proj-group .pf-seg {
-  flex-wrap: wrap;
-  max-width: 100%;
 }
 
 .pf-proj-field {
@@ -1269,7 +1185,7 @@
   background: none;
   color: var(--ag-text-primary);
   font: inherit;
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-variant-numeric: tabular-nums;
   padding: 0.45rem 0.6rem;
   outline: none;
@@ -1283,12 +1199,12 @@
 .pf-proj-suffix {
   padding: 0 0.6rem;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
 }
 
 .pf-proj-hint {
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 0.78rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
 }
 
 .pf-swatch-dashed {
@@ -1386,7 +1302,7 @@
 .pf-tip-head {
   color: var(--ag-text-muted);
   white-space: nowrap;
-  font-size: var(--ag-fs-2xs, 0.72rem);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
   text-align: right;
 }
 
@@ -1431,8 +1347,8 @@
 
 .pf-line {
   transition:
-    stroke-width 120ms ease,
-    stroke-opacity 120ms ease;
+    stroke-width var(--ag-dur-press) var(--ag-ease-out),
+    stroke-opacity var(--ag-dur-press) var(--ag-ease-out);
 }
 
 /* A KPI chip that carries a sentence ("15,8 % · pesa 11,1 %") wraps inside
@@ -1463,9 +1379,9 @@
   margin-top: 8px;
   padding: 6px 10px;
   border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md, 8px);
+  border-radius: var(--ag-radius-md, 12px);
   background: var(--ag-surface-sunken);
-  font-size: var(--ag-fs-sm, 0.85rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
 }
 
 /* ---------------------------------------------------------- hero (shared) */
@@ -1502,7 +1418,7 @@
   flex: none;
   inline-size: 4.5rem;
   block-size: 6px;
-  border-radius: var(--ag-radius-pill, 999px);
+  border-radius: var(--ag-radius-pill, 9999px);
   background: var(--ag-surface-sunken);
   overflow: hidden;
 }
@@ -1577,7 +1493,7 @@
   flex-wrap: wrap;
   gap: 0.4rem 1rem;
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 0.78rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   margin: 0 0 0.75rem;
 }
 
@@ -1614,7 +1530,7 @@
   grid-template-columns: 2.75rem minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.75rem;
-  font-size: var(--ag-fs-sm, 0.875rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1649,12 +1565,12 @@
 }
 
 .pf-years-figures .pf-muted {
-  font-size: var(--ag-fs-xs, 0.78rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
 }
 
 .pf-missing > summary {
   color: var(--ag-text-muted);
-  font-size: var(--ag-fs-xs, 0.78rem);
+  font-size: var(--ag-fs-xs, 0.6875rem);
   cursor: pointer;
   margin-top: 0.7rem;
 }

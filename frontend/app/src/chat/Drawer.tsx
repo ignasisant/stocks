@@ -322,6 +322,9 @@ export function Drawer() {
           type="button"
           ref={fab}
           className="ag-ai ag-chat-fab"
+          // An answer still being written while the drawer is shut turns the
+          // rim, so the reader sees the assistant is at it.
+          data-busy={busy || undefined}
           title={t("chat.title")}
           aria-label={t("chat.title")}
           onClick={() => show(true)}

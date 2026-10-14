@@ -35,6 +35,13 @@ export type Row = {
    * yet. Search is the one that stays live.
    */
   signedIn?: boolean;
+  /**
+   * Worth having, not needed: the assistant answers without a key of the
+   * reader's own, and Telegram is a second place to read what Home says. Left
+   * out of the card's count, so finishing the setup means signing in and
+   * importing — not a 2/4 that reads as half a broken app.
+   */
+  optional?: boolean;
 };
 
 export const SETUP: Row[] = [
@@ -66,6 +73,7 @@ export const SETUP: Row[] = [
     cta: "home.start_go_ai",
     step: "assistant",
     signedIn: true,
+    optional: true,
   },
   {
     key: "telegram",
@@ -75,6 +83,7 @@ export const SETUP: Row[] = [
     step: "notify",
     tab: "notify",
     signedIn: true,
+    optional: true,
   },
 ];
 

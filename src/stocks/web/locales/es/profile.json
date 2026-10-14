@@ -55,6 +55,7 @@
   "profile.iv_dialog_title": "Configura tu perfil de inversor",
   "profile.iv_dialog_intro": "Unas preguntas rápidas para que el asistente de IA adapte su análisis a ti. Puedes omitirlo y rellenarlo más tarde en la página de Perfil.",
   "profile.iv_skip": "Omitir por ahora",
+  "profile.iv_never": "No volver a preguntar",
   "profile.iv_save_failed": "No se ha podido guardar tu perfil. Tus respuestas siguen aquí; vuelve a intentarlo.",
   "profile.notifications": "Notificaciones",
   "profile.notify_caption": "Recibe un resumen diario, una revisión los domingos y alertas de precio por Telegram.",

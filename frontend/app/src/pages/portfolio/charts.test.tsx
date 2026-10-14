@@ -565,7 +565,9 @@ describe("ReturnLines", () => {
 
   it("is a focusable, named plot", () => {
     const out = render("Return vs benchmarks");
-    expect(out).toMatch(/<svg[^>]*role="img"[^>]*aria-label="Return vs benchmarks"/);
+    expect(out).toMatch(
+      /<svg[^>]*role="img"[^>]*aria-label="Return vs benchmarks: Mine 30.0%/,
+    );
     expect(out).toMatch(/<svg[^>]*tabindex="0"/);
   });
 });

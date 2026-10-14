@@ -21,12 +21,13 @@
  * or ends it — the rules are in `tourPark.ts`, where they can be tested.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { get, send } from "./api";
 import { openAssistant } from "./assistant";
 import { Icon } from "./Icon";
 import { useT } from "./i18n";
+import { SignIn } from "./guest";
 import { canonical } from "./pages";
 import { useRoute } from "./router";
 import { useGuest } from "./session";
@@ -40,6 +41,8 @@ import {
   type Action,
   type Place,
 } from "./tourPark";
+import { useDialog } from "./useDialog";
+import { useExitGhost } from "./useSheet";
 
 type Step = {
   id: string;
@@ -300,11 +303,12 @@ export function Tour() {
         note={locked ? t("tour.locked") : null}
         actions={
           <>
-            {step && step.path !== null ? (
+            {locked ? (
+              <SignIn label="common.cta_sign_in" className="ag-tour-btn ag-tour-lead" />
+            ) : step && step.path !== null ? (
               <button
                 type="button"
-                className="ag-tour-cta"
-                disabled={locked}
+                className="ag-tour-btn ag-tour-lead"
                 onClick={() => {
                   act("goto", place);
                   go(canonical(step.path ?? ""), landing(step));
@@ -325,7 +329,7 @@ export function Tour() {
             {last ? (
               <button
                 type="button"
-                className="ag-tour-btn"
+                className="ag-tour-cta"
                 onClick={() => act("news_done", place)}
               >
                 {t("tour.news_dismiss")}
@@ -341,7 +345,7 @@ export function Tour() {
                 </button>
                 <button
                   type="button"
-                  className="ag-tour-btn"
+                  className="ag-tour-cta"
                   onClick={() => move(at + 1)}
                 >
                   {t("tour.next")}
@@ -380,13 +384,22 @@ export function Tour() {
       // Parks rather than ends: the tour is what the reader came for, and the
       // strip above the page is how they get back into it.
       onClose={() => act("dismiss", place)}
+      // The way out in words, on every step but the last (whose Finish is the
+      // same thing). Escape and the scrim only park the tour, and neither is a
+      // control anybody can see — on a phone, step one of twenty offered Next
+      // and nothing else.
+      skip={last ? null : { label: t("tour.skip"), onSkip: () => act("finish", place) }}
       actions={
         <>
-          {step.path !== null ? (
+          {locked ? (
+            /* A guest's way into a step that reads somebody's own data is an
+               account, so that is what the button offers — not a disabled
+               "open" that answers a press with nothing. */
+            <SignIn label="common.cta_sign_in" className="ag-tour-btn ag-tour-lead" />
+          ) : step.path !== null ? (
             <button
               type="button"
-              className="ag-tour-cta"
-              disabled={locked}
+              className="ag-tour-btn ag-tour-lead"
               onClick={() => {
                 act("goto", place);
                 go(canonical(step.path ?? ""), landing(step));
@@ -401,7 +414,7 @@ export function Tour() {
                has no drawer to open. */
             <button
               type="button"
-              className="ag-tour-cta"
+              className="ag-tour-btn ag-tour-lead"
               onClick={() => {
                 act("goto", place);
                 openAssistant();
@@ -419,9 +432,11 @@ export function Tour() {
               {t("tour.back")}
             </button>
           ) : null}
+          {/* Moving on is the tour's own action, so it is the filled one and
+              sits last; "take me there" leads the row as a way off it. */}
           <button
             type="button"
-            className="ag-tour-btn"
+            className="ag-tour-cta"
             onClick={() => (last ? act("finish", place) : move(at + 1))}
           >
             {last ? t("tour.finish") : t("tour.next")}
@@ -500,6 +515,7 @@ function Modal({
   badge,
   badgeOn,
   note,
+  skip,
   actions,
   onClose,
 }: {
@@ -513,9 +529,16 @@ function Modal({
   badgeOn?: boolean;
   /** A line under the body — why the button beside it is disabled. */
   note?: string | null;
+  /** A visible way out of the whole list, in the header. */
+  skip?: { label: string; onSkip: () => void } | null;
   actions: React.ReactNode;
   onClose: () => void;
 }) {
+  const id = useId();
+  const scrim = useRef<HTMLDivElement>(null);
+  const card = useRef<HTMLDivElement>(null);
+  useExitGhost(scrim);
+  useDialog(card);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -525,37 +548,64 @@ function Modal({
   }, [onClose]);
 
   return (
-    <div className="ag-tour-scrim" role="presentation" onClick={onClose}>
+    <div ref={scrim} className="ag-tour-scrim" role="presentation" onClick={onClose}>
       <div
+        ref={card}
+        tabIndex={-1}
         className="ag-tour"
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={`${id}-t ${id}-h`}
+        aria-describedby={`${id}-b`}
         onClick={(event) => event.stopPropagation()}
       >
         <header className="ag-tour-head">
-          <span className="ag-tour-title">{title}</span>
-          <span className="ag-tour-progress">
-            <Rich text={progress} />
+          <span className="ag-tour-title" id={`${id}-t`}>
+            {title}
+          </span>
+          <span className="ag-tour-head-end">
+            <span className="ag-tour-progress">
+              <Rich text={progress} />
+            </span>
+            {skip ? (
+              <button
+                type="button"
+                className="ag-tour-quiet ag-tour-skip"
+                onClick={skip.onSkip}
+              >
+                {skip.label}
+              </button>
+            ) : null}
           </span>
         </header>
+        {/* Next keeps focus on its own button, so the new step would change
+            under a screen reader in silence: the region speaks where the
+            reader now is. Filled from the first render, so only a change is
+            announced, never the opening (the dialog's name covers that). */}
+        <span className="ag-sr" aria-live="polite">
+          {`${progress.replaceAll("**", "")}: ${heading}`}
+        </span>
         {intro ? <p className="ag-tour-intro">{intro}</p> : null}
-        <h2 className="ag-tour-h">
-          {/* The registry names a Material Symbols ligature; this shell draws
-              the handful it has as inline SVG and simply omits the rest. An
-              icon is decoration on a heading that already says the thing. */}
-          <Icon name={icon} />
-          {heading}
-        </h2>
-        {badge ? (
-          <span className={badgeOn ? "ag-tour-badge ag-tour-on" : "ag-tour-badge"}>
-            {badge}
-          </span>
-        ) : null}
-        <p className="ag-tour-body">
-          <Rich text={body} />
-        </p>
-        {note ? <p className="ag-tour-note">{note}</p> : null}
+        {/* Keyed on the step, so moving on cross-fades the page instead of
+            swapping the words under a still frame. */}
+        <div key={heading} className="ag-redraw">
+          <h2 className="ag-tour-h" id={`${id}-h`}>
+            {/* The registry names a Material Symbols ligature; this shell draws
+                the handful it has as inline SVG and simply omits the rest. An
+                icon is decoration on a heading that already says the thing. */}
+            <Icon name={icon} />
+            {heading}
+          </h2>
+          {badge ? (
+            <span className={badgeOn ? "ag-tour-badge ag-tour-on" : "ag-tour-badge"}>
+              {badge}
+            </span>
+          ) : null}
+          <p className="ag-tour-body" id={`${id}-b`}>
+            <Rich text={body} />
+          </p>
+          {note ? <p className="ag-tour-note">{note}</p> : null}
+        </div>
         <footer className="ag-tour-foot">{actions}</footer>
       </div>
     </div>

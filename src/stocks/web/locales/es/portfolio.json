@@ -604,5 +604,7 @@
   "portfolio.projection_on_today": "sobre {amount}, el valor de hoy",
   "portfolio.projection_now": "hoy",
   "portfolio.projection_band_outer": "8 de cada 10 escenarios",
-  "portfolio.projection_band_inner": "La mitad central"
+  "portfolio.projection_band_inner": "La mitad central",
+  "portfolio.heat_label": "Correlación entre posiciones",
+  "portfolio.heat_summary": "Correlación entre posiciones. Más juntas: {high}. Más separadas: {low}."
 }

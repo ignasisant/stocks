@@ -241,6 +241,19 @@ export function Composer({
   // on, and the recogniser would keep writing into a field nobody sees.
   useEffect(() => () => clip.current?.cancel(), []);
 
+  // The drawer hands its focus to the panel on open (`Drawer.tsx`); with a
+  // mouse and keyboard the field is where it belongs. Not on a touch screen,
+  // where focusing raises the soft keyboard over the answer the reader opened
+  // the drawer to read.
+  useEffect(() => {
+    const el = field.current;
+    const host = el?.closest(".ag-chat-panel");
+    if (!el || !host || document.activeElement !== host) return;
+    if (window.matchMedia?.("(hover: hover) and (pointer: fine)").matches) {
+      el.focus({ preventScroll: true });
+    }
+  }, []);
+
   useEffect(() => {
     if (!caret) return;
     setCaret(false);
@@ -349,6 +362,7 @@ export function Composer({
             value={text}
             readOnly={live}
             rows={1}
+            enterKeyHint="send"
             placeholder={t("chat.placeholder")}
             aria-label={t("chat.placeholder")}
             onChange={(event) => {
@@ -358,7 +372,12 @@ export function Composer({
             onKeyDown={(event) => {
               // Enter sends, shift-enter writes a second line — the shape every
               // chat field in this app has had.
-              if (event.key === "Enter" && !event.shiftKey) {
+              // Not while an IME is composing: that Enter confirms a candidate.
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
                 event.preventDefault();
                 submit();
               }

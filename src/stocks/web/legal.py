@@ -313,6 +313,9 @@ nav { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 2.5rem;
       padding-top: 1rem; border-top: 1px solid #2C2933; font-size: 0.9rem; }
 .updated { color: #8E88A0; font-size: 0.85rem; margin-bottom: 1.5rem; }
 a:focus-visible { outline: 2px solid #9AD1FF; outline-offset: 2px; }
+@media (pointer: coarse) {
+  nav a { display: inline-flex; align-items: center; min-height: 44px; }
+}
 """
 
 
@@ -344,7 +347,9 @@ def document(doc: str, lang: str) -> str:
         "<!doctype html>"
         f'<html lang="{lang}"><head>'
         '<meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<meta name="viewport" '
+        'content="width=device-width, initial-scale=1, viewport-fit=cover">'
+        '<meta name="theme-color" content="#18161C">'
         '<meta name="robots" content="noindex">'
         f"<title>{esc(title)} — TopStocks</title>"
         f"<style>{_CSS}</style>"

@@ -34,6 +34,7 @@ import { ApiError, get, scoped, send } from "./api";
 import { GUEST_CHROME } from "./guest";
 import { useLang, useT } from "./i18n";
 import { useRoute } from "./router";
+import { useDialog } from "./useDialog";
 import { capture, fromFile, ShotFailed, type Shot } from "./screenshot";
 import { useGuest } from "./session";
 import { Box, Mic } from "../ui/Mic";
@@ -109,6 +110,19 @@ export function Feedback() {
   tape.current = taping;
   useEffect(() => () => tape.current?.cancel(), []);
 
+  // Escape closes like the scrim does; focus goes in on open and back to the
+  // button after.
+  const card = useRef<HTMLDivElement>(null);
+  useDialog(card, { open });
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
   function close() {
     // Dropped, and so are its words: they were never transcribed.
     if (taping) setText(before.current);
@@ -116,6 +130,8 @@ export function Feedback() {
     setTaping(null);
     setOpen(false);
   }
+  const closeRef = useRef(close);
+  closeRef.current = close;
 
   function attach(blob: Blob) {
     setShotNote(null);
@@ -225,6 +241,8 @@ export function Feedback() {
         ? createPortal(
             <div className="ag-fb-scrim" role="presentation" onClick={close}>
               <div
+                ref={card}
+                tabIndex={-1}
                 className="ag-fb"
                 role="dialog"
                 aria-modal="true"

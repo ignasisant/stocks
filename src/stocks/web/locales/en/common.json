@@ -36,6 +36,7 @@
   "nav.section_market": "Market",
   "nav.section_portfolio": "Portfolio",
   "nav.sections": "Sections",
+  "nav.skip": "Skip to content",
   "nav.sector": "Sectors",
   "nav.sentiment": "Pulse",
   "nav.ticker": "Ticker",
@@ -49,6 +50,6 @@
   "activity.earnings": "Earnings calendar",
   "activity.pulse": "Market indicators",
   "activity.other": "Data",
-  "common.crash": "This screen broke. Reload, or open another one.",
+  "common.crash": "This screen broke and we got the report. Reload, or open another.",
   "common.reload": "Reload"
 }

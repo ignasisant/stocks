@@ -26,6 +26,8 @@ import type { ReactNode } from "react";
 import { Link } from "../../shell/router";
 import { useLang, useT } from "../../shell/i18n";
 import { useTickerProfile } from "../../shell/tickers";
+import { useDialog } from "../../shell/useDialog";
+import { useExitGhost } from "../../shell/useSheet";
 import { Kpi, KpiGrid } from "../../ui/Kpi";
 import { moneyIn, percent, shares as formatShares } from "../portfolio/format";
 import type {
@@ -70,6 +72,8 @@ function Dialog({
 }) {
   const t = useT();
   const close = useRef<HTMLButtonElement>(null);
+  const scrim = useRef<HTMLDivElement>(null);
+  useExitGhost(scrim);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -81,20 +85,19 @@ function Dialog({
 
   // Focus moves into the dialog and goes back to the chip it came from, so a
   // keyboard reader paging through a month does not restart from the top.
-  useEffect(() => {
-    const before = document.activeElement as HTMLElement | null;
-    close.current?.focus();
-    return () => before?.focus?.();
-  }, []);
+  const card = useRef<HTMLDivElement>(null);
+  useDialog(card, { initial: close });
 
   return (
     <div
+      ref={scrim}
       className="earn-modal"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <div
+        ref={card}
         className="earn-modal-card earn-ev"
         role="dialog"
         aria-modal="true"

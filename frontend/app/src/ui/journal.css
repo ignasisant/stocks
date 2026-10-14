@@ -155,7 +155,7 @@
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: translateY(-2px) rotate(45deg);
-  transition: transform 120ms ease-out;
+  transition: transform var(--ag-dur-press) var(--ag-ease-out);
 }
 
 .ag-jr-fold[aria-expanded="true"] .ag-jr-chevron {
@@ -300,18 +300,18 @@
   border-left: 1px solid var(--ag-border);
   background: var(--ag-surface-card);
   box-shadow: var(--ag-shadow-overlay);
-  animation: ag-jr-in 140ms ease-out;
+  animation: ag-jr-in var(--ag-dur-move) var(--ag-ease-out);
   /* Out the way it came in (`usePresence`), as a transition so re-opening
      mid-way turns it back; off the edge when a finger throws it. Vertical
      moves stay the list's scroll. */
   transition:
-    transform 200ms cubic-bezier(0.23, 1, 0.32, 1),
-    opacity 200ms ease-out;
+    transform var(--ag-dur-move) var(--ag-ease-out),
+    opacity var(--ag-dur-move) var(--ag-ease-out);
   touch-action: pan-y;
 }
 
 .ag-jr-veil {
-  transition: opacity 200ms ease-out;
+  transition: opacity var(--ag-dur-move) var(--ag-ease-out);
 }
 
 .ag-jr-veil[data-leaving] {

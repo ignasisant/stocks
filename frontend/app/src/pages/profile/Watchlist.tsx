@@ -189,6 +189,8 @@ function EntryRow({
       <input
         className="pr-input pr-input-sm pr-wname"
         aria-label={t("watchlist.col_name")}
+        autoComplete="off"
+        enterKeyHint="done"
         value={name}
         disabled={busy}
         onChange={(event) => setName(event.target.value)}
@@ -206,6 +208,8 @@ function EntryRow({
         aria-label={t("watchlist.col_shares")}
         placeholder={t("watchlist.col_shares")}
         inputMode="decimal"
+        autoComplete="off"
+        enterKeyHint="done"
         value={shares}
         disabled={busy}
         onChange={(event) => setShares(event.target.value)}
@@ -220,6 +224,8 @@ function EntryRow({
         placeholder={t("watchlist.col_cost")}
         title={t("watchlist.col_cost_help")}
         inputMode="decimal"
+        autoComplete="off"
+        enterKeyHint="done"
         value={cost}
         disabled={busy}
         onChange={(event) => setCost(event.target.value)}
@@ -262,6 +268,8 @@ function EntryRow({
             <input
               className="pr-input pr-input-sm"
               aria-label={t("watchlist.col_tags")}
+              autoComplete="off"
+              enterKeyHint="done"
               placeholder={t("watchlist.add_groups_ph")}
               value={newGroup}
               disabled={busy}
@@ -307,9 +315,16 @@ function GroupHead({
             <input
               className="pr-input pr-input-sm"
               aria-label={t("watchlist.group_rename")}
+              autoComplete="off"
+              enterKeyHint="done"
               value={name}
               disabled={busy}
               onChange={(event) => setName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                const next = name.trim();
+                if (next && next !== section.tag) onRename(section.tag!, next);
+              }}
             />
             <button
               type="button"
@@ -403,6 +418,8 @@ function Editor({ entries, reload }: { entries: Entry[]; reload: () => void }) {
               <input
                 className="pr-input pr-input-sm"
                 type="search"
+                autoComplete="off"
+                enterKeyHint="search"
                 aria-label={t("watchlist.filter")}
                 placeholder={t("watchlist.filter_ph")}
                 value={needle}

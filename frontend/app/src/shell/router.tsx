@@ -97,9 +97,52 @@ export function depth(): number {
   return typeof value === "number" ? value : 0;
 }
 
+/**
+ * Where each visited address was scrolled to when the reader left it, so back
+ * and forward land where they were. The browser's own restoration cannot: the
+ * page is a lazy chunk that has not rendered, let alone fetched, by the time
+ * `popstate` fires, so there is nothing tall enough to scroll to yet.
+ */
+const scrolls = new Map<string, number>();
+let here = typeof window === "undefined" ? "" : place();
+// Set by a `popstate` that moved to another address, taken by the page once it
+// has rendered (`takeRestore`). A `push` is a fresh page and starts at the top.
+let restore: number | null = null;
+
+function place(): string {
+  const { pathname = "", search = "" } = window.location ?? {};
+  return `${pathname}${search}`;
+}
+
+if (typeof window !== "undefined") {
+  // Registered before any `useRoute`, so it sees the old page still scrolled
+  // where the reader left it. `push` and `setParams` move `here` themselves,
+  // which is how their own announcements are told apart from a real back.
+  window.addEventListener("popstate", () => {
+    const next = place();
+    if (next === here) return;
+    scrolls.set(here, window.scrollY);
+    here = next;
+    restore = scrolls.get(next) ?? null;
+  });
+}
+
+/**
+ * The scroll a back/forward step should return to, once; null after a push or
+ * when the address was never left scrolled.
+ */
+export function takeRestore(): number | null {
+  const y = restore;
+  restore = null;
+  return y;
+}
+
 /** `pushState` to `href`, one step deeper than here. */
 export function push(href: string): void {
+  scrolls.set(here, window.scrollY);
+  restore = null;
   window.history.pushState({ depth: depth() + 1 }, "", href);
+  here = place();
 }
 
 export function useRoute(): Route & {
@@ -140,6 +183,7 @@ export function useRoute(): Route & {
       "",
       `${window.location.pathname}${query ? `?${query}` : ""}`,
     );
+    here = place();
     announce();
   }, []);
 
@@ -153,6 +197,8 @@ export function Link({
   children,
   className,
   title,
+  current,
+  label,
 }: {
   page: string;
   params?: Record<string, string>;
@@ -160,6 +206,10 @@ export function Link({
   className?: string;
   /** Hover text. A ticker cell needs it: the symbol alone is not the name. */
   title?: string;
+  /** This link is the page the reader is on (`aria-current="page"`). */
+  current?: boolean;
+  /** The accessible name, where the visible text is hidden or clipped. */
+  label?: string;
 }) {
   const query = params ? `?${new URLSearchParams(params)}` : "";
   const href = `${BASE}/${page}${query}`;
@@ -168,6 +218,8 @@ export function Link({
       className={className}
       href={href}
       title={title}
+      aria-current={current ? "page" : undefined}
+      aria-label={label}
       onClick={(event) => {
         // Let the browser handle anything that is not a plain left click: a
         // middle click or ctrl-click means "open elsewhere", and swallowing it

@@ -98,6 +98,11 @@ export function WatchlistAdd({
         <input
           className="pr-input pr-input-wide"
           type="search"
+          autoCapitalize="off"
+          autoComplete="off"
+          autoCorrect="off"
+          enterKeyHint="search"
+          spellCheck={false}
           aria-label={t("watchlist.add_title")}
           placeholder={t("watchlist.add_placeholder")}
           value={query}
@@ -124,6 +129,8 @@ export function WatchlistAdd({
           <input
             className="pr-input pr-input-sm"
             aria-label={t("watchlist.add_groups")}
+            autoComplete="off"
+            enterKeyHint="done"
             placeholder={t("watchlist.add_groups_ph")}
             value={newGroup}
             onChange={(event) => setNewGroup(event.target.value)}

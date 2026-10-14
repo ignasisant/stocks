@@ -29,6 +29,7 @@ import { DividendLegend } from "./Dividends";
 import { RepurchaseLegend } from "./Repurchase";
 import { TaxLegend } from "./Tax";
 import { ToggleChip, ToggleRow } from "../../ui/Toggle";
+import { Segmented } from "../../ui/Segmented";
 
 type View = "calendar" | "list";
 
@@ -119,22 +120,15 @@ export default function Views({ data }: { data: EarningsCalendar }) {
   return (
     <>
       <div className="earn-bar">
-        <div className="earn-seg" role="group" aria-label={t("earnings.view_label")}>
-          <button
-            type="button"
-            aria-pressed={view === "calendar"}
-            onClick={() => setView("calendar")}
-          >
-            {t("earnings.view_calendar")}
-          </button>
-          <button
-            type="button"
-            aria-pressed={view === "list"}
-            onClick={() => setView("list")}
-          >
-            {t("earnings.view_list")}
-          </button>
-        </div>
+        <Segmented
+          label={t("earnings.view_label")}
+          items={[
+            { id: "calendar", label: t("earnings.view_calendar") },
+            { id: "list", label: t("earnings.view_list") },
+          ]}
+          value={view}
+          onPick={setView}
+        />
         {Object.keys(data.groups).length > 0 && (
           <ToggleRow label={t("earnings.filter_label")}>
             {Object.keys(data.groups).map((key) => {

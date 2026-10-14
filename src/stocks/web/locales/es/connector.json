@@ -51,5 +51,6 @@
   "connector.view_empty": "Aún no hay nada que mostrar — importa un extracto en TopStocks primero.",
   "connector.view_waiting": "Cargando…",
   "connector.view_stale": "Algunos precios son de {time}; la fuente se está poniendo al día.",
-  "connector.view_unknown": "Este resultado no tiene vista; Claude tiene las cifras."
+  "connector.view_unknown": "Este resultado no tiene vista; Claude tiene las cifras.",
+  "connector.view_chart_summary": "Valor {value} frente a {injected} aportados, del {from} al {to}"
 }

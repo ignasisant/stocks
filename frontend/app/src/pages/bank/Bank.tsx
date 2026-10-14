@@ -97,7 +97,7 @@ function failure(
   t: (key: string, slots?: Record<string, string | number>) => string,
   fallback: string,
 ): Notice {
-  const detail = error instanceof ApiError ? error.detail : String(error);
+  const detail = error instanceof ApiError ? error.detail : t("common.offline");
   const status = error instanceof ApiError ? error.status : 0;
   if (status === 429) return { tone: "warn", text: t("bank.rate_limited") };
   if (status === 409) return { tone: "warn", text: t("bank.consent_gone") };

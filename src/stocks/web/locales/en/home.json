@@ -16,6 +16,8 @@
   "home.guest_try_demo": "See the app with demo data",
   "home.dismiss": "Dismiss",
   "home.setup_hide": "Don't show again",
+  "home.setup_hidden": "Card hidden.",
+  "home.setup_undo": "Undo",
   "home.setup_progress": "{done}/{total} active",
   "home.start_title": "Start here",
   "home.start_progress": "{done}/{total}",
@@ -28,7 +30,7 @@
   "home.start_go_login": "Sign in with Google",
   "home.start_go_import": "Import your statement",
   "home.start_go_ai": "Add your AI key (optional)",
-  "home.start_go_telegram": "Connect Telegram",
+  "home.start_go_telegram": "Connect Telegram (optional)",
   "home.start_try": "Try it",
   "home.start_search": "Search",
   "home.start_ask": "Ask",
@@ -538,5 +540,9 @@
   "home.edit_reset_done": "Back to the default order. Nothing is saved until Done.",
   "home.edit_instructions": "To move a card, press space or enter, move it with the arrow keys, then press space or enter to drop it, or escape to cancel.",
   "home.daily_open": "Read Today",
-  "home.daily_more": "{n} more in Today"
+  "home.daily_more": "{n} more in Today",
+  "home.chart_band_gain": "Gain",
+  "home.chart_band_loss": "Loss",
+  "home.chart_summary": "Value {value}, {gap} against {injected} contributed, {range}",
+  "home.chart_spoken": "{date}: value {value}, contributed {injected}, {gap}"
 }

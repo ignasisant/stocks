@@ -11,12 +11,16 @@
  * on release projects the throw — a quick flick dismisses from a short drag, a
  * slow drag has to cover half the panel — the way an iOS sheet does. Touch and
  * pen only: a mouse drags text, and has a Close button and Esc.
+ *
+ * `useExitGhost` is the exit for a dialog its owner simply stops rendering —
+ * a tour whose every branch can close it, a modal opened by a value that is
+ * gone the moment it closes. It needs nothing from the owner.
  */
 
-import { type RefObject, useEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
-/** The exit's length (ms), and the stylesheet's: `--ag-leave` in styles.css. */
+/** The exit's length (ms): the design system's `--ag-dur-move` (`ds.DUR_MOVE`). */
 const LEAVE_MS = 200;
 
 function reducedMotion(): boolean {
@@ -43,6 +47,39 @@ export function usePresence(open: boolean): { mounted: boolean; leaving: boolean
     return () => window.clearTimeout(id);
   }, [open, shown]);
   return { mounted: open || shown, leaving: !open && shown };
+}
+
+/**
+ * Leave on the page, for one exit's length, an inert copy of the dialog `ref`
+ * drew last, marked `data-ghost data-leaving` so the stylesheet fades it out
+ * the way the dialog came in; then remove it.
+ *
+ * The copy goes where the dialog was, in the same parent, so it sits in the
+ * same containing block. Checked a microtask later, after the commit: if the
+ * dialog is still on the page it was StrictMode re-running its effects, not
+ * an unmount, and nothing is left behind. Under reduced motion, nothing.
+ */
+export function useExitGhost(ref: RefObject<HTMLElement | null>): void {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    return () => {
+      if (!el || reducedMotion()) return;
+      const parent = el.parentNode;
+      const next = el.nextSibling;
+      queueMicrotask(() => {
+        if (el.isConnected || !parent?.isConnected) return;
+        const ghost = el.cloneNode(true) as HTMLElement;
+        ghost.setAttribute("aria-hidden", "true");
+        ghost.inert = true;
+        ghost.dataset.ghost = "";
+        parent.insertBefore(ghost, next?.parentNode === parent ? next : null);
+        // Painted once as it was, then marked: the fade is a transition.
+        void ghost.offsetWidth;
+        ghost.dataset.leaving = "";
+        window.setTimeout(() => ghost.remove(), LEAVE_MS);
+      });
+    };
+  }, [ref]);
 }
 
 /** Where a throw at `velocity` (px/ms) comes to rest, at UIScrollView's
@@ -164,7 +201,7 @@ export function useSwipeDismiss(
         return;
       }
       // Back to rest on a spring-like curve, from wherever it was.
-      el.style.transition = "transform 320ms cubic-bezier(0.32, 0.72, 0, 1)";
+      el.style.transition = "transform 320ms var(--ag-ease-settle)";
       el.style.transform = "";
       const settle = () => {
         el.style.transition = "";

@@ -8,6 +8,8 @@
  * may take is a property of the monitor, not of the account.
  */
 
+import { rubberBand } from "../shell/useSheet";
+
 export const WIDTHS = [
   { key: "compact", css: "380px", icon: "width_normal" },
   { key: "wide", css: "720px", icon: "width_wide" },
@@ -71,6 +73,37 @@ export function applyWidth(key: WidthKey): void {
 export function widthAt(clientX: number): number {
   const room = window.innerWidth - clientX;
   return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, window.innerWidth, room));
+}
+
+/** How far past a limit a drag may stretch the panel, at most. */
+const GIVE = 96;
+
+/**
+ * The width mid-drag: `widthAt`, except that past a limit the panel follows
+ * the pointer a little, with growing resistance, instead of stopping dead.
+ * A hard stop reads as a broken handle; give says "this is the end" and the
+ * release springs back to the limit `widthAt` gives. The resistance is the
+ * sheets' (`rubberBand`): near 1:1 at first, flattening towards `GIVE`.
+ */
+export function stretchAt(clientX: number): number {
+  const room = window.innerWidth - clientX;
+  const low = MIN_WIDTH;
+  const high = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, window.innerWidth));
+  const give = (past: number) => -rubberBand(past, GIVE);
+  if (room < low) return low - give(low - room);
+  if (room > high) return high + give(room - high);
+  return room;
+}
+
+/**
+ * Let the next width change animate, for a moment: the release of a drag
+ * stretched past a limit, springing back to it (`[data-chat-settle]` in
+ * chat.css). Off again at once, since mid-drag the width tracks the pointer.
+ */
+export function settle(): void {
+  const root = document.documentElement;
+  root.dataset.chatSettle = "";
+  window.setTimeout(() => delete root.dataset.chatSettle, 240);
 }
 
 /** Size the panel mid-drag. Deliberately not stored: the release does that. */
