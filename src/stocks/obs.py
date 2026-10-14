@@ -41,7 +41,7 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 # Cloud Run sets these on every instance; their presence is how we tell prod
@@ -266,7 +266,7 @@ def current() -> dict:
 
 
 @contextmanager
-def context(**fields) -> Iterator[None]:
+def context(**fields) -> Generator[None]:
     """Bind fields for the duration of a block, then restore what was there."""
     token = _ctx.set({**_fields(), **fields})
     try:
@@ -346,7 +346,7 @@ def timed(
     *,
     passthrough: tuple[type[BaseException], ...] = (),
     **fields,
-) -> Iterator[dict]:
+) -> Generator[dict]:
     """Time a block and log it with `duration_ms` and `ok`.
 
     Yields a mutable dict: anything added to it inside the block joins the
@@ -383,7 +383,7 @@ def timed(
 
 
 @contextmanager
-def swallow(name: str, *, level: int = logging.WARNING, **fields) -> Iterator[dict]:
+def swallow(name: str, *, level: int = logging.WARNING, **fields) -> Generator[dict]:
     """`except Exception: pass`, but the exception leaves a trace.
 
     For the genuinely optional paths (a logo mirror, a nice-to-have enrichment)

@@ -39,7 +39,7 @@ from stocks import obs
 from stocks.connector import consent, oauth, store, tools, views
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncGenerator
 
     from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -208,7 +208,7 @@ class Door:
         await target(scope, receive, send)
 
     @asynccontextmanager
-    async def lifespan(self) -> AsyncIterator[None]:
+    async def lifespan(self) -> AsyncGenerator[None]:
         """Open for the length of the site's lifespan, when it can be."""
         from stocks.web.server import public_origin
 
