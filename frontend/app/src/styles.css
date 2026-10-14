@@ -78,7 +78,7 @@ body {
   font-family: var(--ag-font-body, system-ui, -apple-system, sans-serif);
 }
 
-/* The brand light (`shell/ambient`, a trial behind `?ambient=1`): three soft
+/* The brand light (`shell/ambient`, off with `?ambient=0`): three soft
    washes in DS hues — purple 600, purple 800, chart blue 600 — drifting
    behind every card. The cards stay opaque, so it reads in the gutters and
    never under a figure. Only `transform` moves, on layers of their own; the

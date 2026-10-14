@@ -317,8 +317,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const guest = useGuest();
   return (
     <div className="ag-shell">
-      {/* The brand light behind everything (`shell/ambient`): a trial, drawn
-          only while `?ambient=1` has switched it on. */}
+      {/* The brand light behind everything (`shell/ambient`); `?ambient=0`
+          turns it off. */}
       <AmbientLight />
       <Nav />
       <main className="ag-main">
