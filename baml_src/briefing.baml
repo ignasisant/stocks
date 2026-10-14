@@ -19,12 +19,20 @@ class BriefSection {
   lines CardLine[]?
 }
 
+// The Today page's computed sections (chat/today_sections.py): the rows are
+// the app's, the model adds at most one remark per section.
+class SectionNote {
+  id string? @description("news, insiders or compare, copied exactly")
+  note string?
+}
+
 class CardReply {
   headline string?
   items CardLine[]?
   focus string[]?
   routines RoutineAnswer[]?
   sections BriefSection[]?
+  today SectionNote[]?
 }
 
 function WriteDailyCard(instructions: string, input: string) -> CardReply {
@@ -72,6 +80,23 @@ class RoutinePlans {
 }
 
 function PlanRoutines(instructions: string, input: string) -> RoutinePlans {
+  client Wire
+  prompt #"{{ Frame(instructions, input) }}"#
+}
+
+// The day's market read (chat/today_market.py): shared by every account,
+// written once a morning by the cron from the market's own figures.
+class MarketNote {
+  topic string? @description("trend, sector, rates, macro or crypto")
+  line string?
+}
+
+class MarketReply {
+  headline string?
+  lines MarketNote[]?
+}
+
+function WriteMarketDay(instructions: string, input: string) -> MarketReply {
   client Wire
   prompt #"{{ Frame(instructions, input) }}"#
 }

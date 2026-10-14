@@ -536,5 +536,7 @@
   "home.edit_hidden": "{name} hidden; it waits in the tray.",
   "home.edit_added": "{name} added at the end.",
   "home.edit_reset_done": "Back to the default order. Nothing is saved until Done.",
-  "home.edit_instructions": "To move a card, press space or enter, move it with the arrow keys, then press space or enter to drop it, or escape to cancel."
+  "home.edit_instructions": "To move a card, press space or enter, move it with the arrow keys, then press space or enter to drop it, or escape to cancel.",
+  "home.daily_open": "Read Today",
+  "home.daily_more": "{n} more in Today"
 }

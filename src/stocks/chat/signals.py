@@ -150,6 +150,11 @@ TAX_DEADLINE = "tax_deadline"
 TAX_YEAR_END = "tax_year_end"
 TAX_BRACKET = "tax_bracket"
 REPURCHASE_CLEAR = "repurchase_clear"
+# The Today page's rows (chat/today_sections.py): never ranked on the card,
+# only remembered, so a headline is read once and an insider tally comes back
+# when a new trade lands.
+NEWS = "news"
+INSIDER = "insider"
 
 _URGENCY = {
     ALERT_HIT: 90,
@@ -266,6 +271,8 @@ _MATERIAL: dict[str, dict] = {
     TAX_YEAR_END: {"end": None, "phase": None},
     TAX_BRACKET: {"rate_pct": None, "room": _Rel(0.5)},
     REPURCHASE_CLEAR: {"clear_date": None},
+    NEWS: {},
+    INSIDER: {"latest": None, "net_value": _Rel(0.5), "cluster_buy": None},
 }
 
 # Days after which an unchanged trigger may come back as a reminder. None is
@@ -289,6 +296,8 @@ _COOLDOWN: dict[str, int | None] = {
     TAX_YEAR_END: None,
     TAX_BRACKET: 14,
     REPURCHASE_CLEAR: None,
+    NEWS: 30,
+    INSIDER: 14,
 }
 
 
@@ -1169,8 +1178,13 @@ def repeat(signal: Signal, shown: dict | None, today: date) -> bool:
     A memory entry from before the figures were stored ("v" missing) cannot
     say whether anything changed, so only its cooldown applies.
     """
-    entry = (shown or {}).get(signal.key)
-    if not isinstance(entry, dict) or signal.kind not in _MATERIAL:
+    return repeat_key(signal.kind, signal.key, signal.data, shown, today)
+
+
+def repeat_key(kind: str, key: str, data: dict, shown: dict | None, today: date) -> bool:
+    """`repeat()` for a trigger known by its key alone — a Today row."""
+    entry = (shown or {}).get(key)
+    if not isinstance(entry, dict) or kind not in _MATERIAL:
         return False
     try:
         last = date.fromisoformat(str(entry.get("last") or ""))
@@ -1179,13 +1193,13 @@ def repeat(signal: Signal, shown: dict | None, today: date) -> bool:
     if last >= today:
         return False
     before = entry.get("v")
-    rules = _MATERIAL[signal.kind]
-    now = measure(signal.kind, signal.data)
+    rules = _MATERIAL[kind]
+    now = measure(kind, data)
     if isinstance(before, dict) and _moved(before, now, rules):
         return False
-    if signal.kind == ALERT_HIT:
+    if kind == ALERT_HIT:
         return _weekdays(last, today) <= 1
-    cooldown = _COOLDOWN.get(signal.kind)
+    cooldown = _COOLDOWN.get(kind)
     if not isinstance(before, dict) and cooldown is None:
         # An event remembered without its phase: said once is enough until
         # the memory ages out.

@@ -44,6 +44,7 @@ def test_every_page_the_reader_can_see_is_linkable_and_nothing_else():
 @pytest.mark.parametrize(
     ("page", "path", "pattern"),
     [
+        ("today", "pages/today/card.ts", r'^\s+(?!all:)([a-z]+): "today\.tab_'),
         ("portfolio", "pages/portfolio/Portfolio.tsx",
          r'^\s+\["([a-z]+)", "portfolio\.tab_'),
         ("profile", "pages/profile/Profile.tsx",

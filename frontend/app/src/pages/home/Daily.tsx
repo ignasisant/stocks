@@ -1,10 +1,16 @@
 /**
- * The assistant's one-a-day briefing, first thing on the page.
+ * The assistant's one-a-day briefing on Home: the teaser of the Today page.
+ *
+ * Home is where the reader lands, not where they read: the card says the
+ * day's headline and its first few lines — the fired alerts first — and
+ * points at Today (`pages/today/`) for the rest: the full card with each
+ * line's analysis, news, filings, insiders, the comparisons and the market.
  *
  * The day's first visit writes the card, a provider that answers inside a
  * couple of seconds lands straight away, and a slower one leaves the computed
- * card up — the same triggers, stated without a model — with a pulsing line
- * saying the real one is still being written, until it swaps itself in. The section is never an empty slot and never a spinner.
+ * card up — the same triggers, stated without a model — with a status line
+ * saying the real one is still being written, until it swaps itself in. The
+ * section is never an empty slot and never a spinner.
  *
  * Three requests carry that over HTTP, and they are split on purpose:
  *
@@ -12,200 +18,41 @@
  *   could spend the account's free allowance is a GET a prefetch could empty.
  * - `POST /daily` asks for today's card when the stored one no longer stands
  *   (a new day, a new session, a language switch). The server spends at most
- *   one generation per account per key; asking again after a failure returns
- *   the computed card rather than calling the same dead provider.
+ *   one generation per account per key, and shares the job with Today's
+ *   `POST /today`, so the teaser and the page never start two.
  * - While the answer says `pending`, the card polls `GET /daily` every
  *   `POLL_MS` and stops the moment it does not.
  *
  * Regenerate is `POST /daily?force=true`: the old card goes the instant it
- * is pressed (the reader just dismissed it; leaving it up would have them
- * reading a briefing they asked to replace), the button stays disabled while
- * its own rewrite is out, and a second press cannot start a second paid
- * generation. Ask opens the drawer — it asks nothing on the
- * reader's behalf.
+ * is pressed, the button stays disabled while its own rewrite is out, and a
+ * second press cannot start a second paid generation. Ask opens the drawer —
+ * it asks nothing on the reader's behalf. Editing the brief lives on Today.
  *
  * `source: "computed"` is the fallback built from the triggers alone when no
- * model answered. It is not prose, and it is not presented as a briefing: that
- * card carries `home.daily_computed_note` in place of the model disclaimer.
- * It is stored too (tomorrow's card has to know what it said), and while it is
- * `upgradable` the page asks for a written one again on its next visit.
- *
- * The card is a summary: the headline names the day's few things and each
- * line says one. Each line with a trigger behind it opens its own analysis
- * (`POST /daily/analysis?key=`): the comparison the line invites, made — the
- * company against its peers, its sector and the index, the tax arithmetic of
- * a sale, which positions explain a month behind the index — as a verdict, a
- * few points and the computed tables they can be checked against. Written on
- * the first click of that line, stored with the card and read for free after
- * that, so collapsing and reopening never asks twice.
- *
- * By default the card reads in the same three sections every day, in the
- * same order, so the eye knows where to go: **Portfolio** (the book against
- * the index today, this week and this month, computed and drawn with the
- * drawer's own chart), **Today's alerts** (the reader's alerts that fired,
- * always all of them) and **Worth a look** (the rest of the triggers). A
- * section with nothing in it is left out; a card stored before sections had
- * none of them and keeps its plain list.
- *
- * A reader who wrote a brief gets their own card instead: a section per line
- * of it, titled by what was asked, under the fired alerts, which always stay
- * on top (`card.sections`). The pencil in the header opens the brief editor
- * (`BriefEditor.tsx`) in the card's place; a change rewrites the card there
- * and then, since a card written for the old brief no longer stands. While
- * the brief is being answered the default card stands in, and on a day no
- * model answered it the card says so rather than pass the default off as it.
- *
- * The header carries the card's three controls as icons — edit the brief,
- * regenerate, ask — each with its name as a label and tooltip; there is no
- * row of buttons under the card. A line's tickers sit at its end.
+ * model answered. It is not presented as a briefing: that card carries
+ * `home.daily_computed_note` in place of the model disclaimer.
  */
 
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { LineChart } from "../../chat/chart";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { get, send } from "../../shell/api";
 import { Skeleton } from "../../shell/Layout";
 import { useLang, useT } from "../../shell/i18n";
 import { openAssistant, openThread } from "../../shell/assistant";
-import { useGuest } from "../../shell/session";
-import { BriefEditor } from "./BriefEditor";
+import { Link } from "../../shell/router";
 import { Glyph } from "../../chat/icons";
-import { Card, TickerCell } from "./ui";
-import { dayKey, money, monthDay, percent, type Translate } from "./format";
-import type {
-  DailyAnalysis,
-  DailyBook,
-  DailyCard,
-  DailyItem,
-  DailySection,
-  DailyTable,
-} from "./types";
 import { Badge } from "../../ui/Badge";
-
-/** How often a card that is still being written asks whether it is done. */
-const POLL_MS = 1500;
-
-/**
- * "Today · 09:14" / "2 Sep" — the stamp under the badge.
- *
- * Before the 09:00 cutoff the page shows *yesterday's* card (see
- * `daily.action_day`), so the date is never decoration: it is how the reader
- * knows the briefing predates this morning. The clock is the browser's own,
- * which is the reader's zone.
- */
-export function stampOf(
-  card: Pick<DailyCard, "day" | "action_day" | "generated">,
-  t: Translate,
-  now: Date = new Date(),
-): string {
-  const stamp = card.day ?? card.action_day;
-  if (stamp !== dayKey(now)) return monthDay(stamp, t) ?? stamp;
-  if (!card.generated) return t("home.daily_today_no_time");
-  const at = new Date(card.generated * 1000);
-  const clock = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
-  return t("home.daily_today", { time: clock });
-}
-
-/**
- * Whether this card should be written now: it does not stand, nothing is
- * already writing it, and this page has not asked for this day yet.
- */
-export function wantsWriting(card: DailyCard, asked: string | null): boolean {
-  return (!card.fresh || card.upgradable) && !card.pending && asked !== card.action_day;
-}
-
-/** The card's lines as items — its own, or a pre-key card's bullets. */
-export function linesOf(card: Pick<DailyCard, "items" | "bullets">): DailyItem[] {
-  if (card.items?.length) return card.items;
-  return card.bullets.map((line, i) => ({
-    key: `line:${i}`,
-    kind: "",
-    line,
-    tickers: [],
-  }));
-}
-
-/** Whether a line has an analysis to open: a trigger behind it. */
-export function opens(item: DailyItem): boolean {
-  return item.kind !== "";
-}
-
-/** The lines split into the card's two trigger sections, alerts first. */
-export function sectionsOf(lines: DailyItem[]): {
-  alerts: DailyItem[];
-  watch: DailyItem[];
-} {
-  return {
-    alerts: lines.filter((item) => item.section === "alerts"),
-    watch: lines.filter((item) => item.section !== "alerts"),
-  };
-}
-
-/**
- * Whether the card is drawn in sections: it has something besides the plain
- * list. A card stored before sections (or one with only "worth a look" in it)
- * reads as it always did — one heading over one list is a label, not a map.
- */
-export function sectioned(
-  card: Pick<DailyCard, "book" | "sections">,
-  alerts: number,
-): boolean {
-  return (
-    Boolean(card.book?.rows.length) || Boolean(card.sections?.length) || alerts > 0
-  );
-}
-
-/**
- * The note a card earns under it, or null for the model's own disclaimer: the
- * stand-in while the brief or the briefing is written, the default card on a
- * day the brief went unanswered, the computed card said for what it is.
- */
-export function noteKey(
-  card: Pick<DailyCard, "pending" | "source" | "brief">,
-): string | null {
-  if (card.pending)
-    return card.brief === "pending"
-      ? "home.daily_brief_wait"
-      : "home.daily_computed_wait";
-  if (card.brief === "missed") return "home.daily_brief_missed";
-  if (card.source === "computed") return "home.daily_computed_note";
-  return null;
-}
-
-/**
- * The badge over the card: the default card, once it is final, does not wear
- * the AI label — a reader takes the badge before any note under it.
- */
-export function badgeKey(card: Pick<DailyCard, "pending" | "source">): string {
-  return card.source === "computed" && !card.pending
-    ? "home.daily_badge_computed"
-    : "home.daily_badge";
-}
-
-/**
- * The colour a table cell earns: a signed figure is a move, and reads green or
- * red; an unsigned one (a weight, a volatility, a multiple) is a level, and
- * stays ink.
- */
-export function tone(cell: string): "up" | "down" | null {
-  if (cell.startsWith("+")) return "up";
-  if (cell.startsWith("-") || cell.startsWith("\u2212")) return "down";
-  return null;
-}
-
-/** Which card an analysis belongs to — a new card never shows the old one's. */
-function stampKey(card: DailyCard | null): string {
-  return card ? `${card.day}|${card.generated}|${card.lang}` : "";
-}
-
-/** One line's analysis: absent while closed. */
-type Panel =
-  { kind: "loading" } | { kind: "failed" } | { kind: "open"; body: DailyAnalysis };
-
-function without(panels: Record<string, Panel>, key: string): Record<string, Panel> {
-  const rest = { ...panels };
-  delete rest[key];
-  return rest;
-}
+import { Status } from "../../ui/Status";
+import {
+  POLL_MS,
+  badgeKey,
+  noteKey,
+  stampOf,
+  teaserOf,
+  wantsWriting,
+} from "../today/card";
+import { Card, TickerCell } from "./ui";
+import { monthDay } from "./format";
+import type { DailyCard, DailyItem } from "./types";
 
 type State =
   | { kind: "loading" }
@@ -217,12 +64,6 @@ type State =
 export function Daily() {
   const t = useT();
   const lang = useLang();
-  const guest = useGuest();
-  // The brief editor, open in the card's place; and a count bumped when it
-  // closes on a change, which reads the card again — the one on screen was
-  // written for the old brief.
-  const [editing, setEditing] = useState(false);
-  const [reload, setReload] = useState(0);
   const [state, setState] = useState<State>({ kind: "loading" });
   // Which action day this page has already asked the server to write. The
   // server has its own once-a-day guard; this one stops a re-render from
@@ -255,9 +96,6 @@ export function Daily() {
         return;
       }
       asked.current = stored.action_day;
-      // An older card is not what shows while today's is written either: the
-      // slot says who is working, so the wait reads as writing rather than as
-      // a page that broke.
       setState({ kind: "writing" });
       try {
         const card = await write(false);
@@ -274,7 +112,7 @@ export function Daily() {
     return () => {
       live = false;
     };
-  }, [lang, write, reload]);
+  }, [lang, write]);
 
   // The poll: only while a briefing is being written, and one request at a
   // time — the next is scheduled when the last one has answered.
@@ -298,56 +136,6 @@ export function Daily() {
       window.clearTimeout(timer);
     };
   }, [pending, lang, state]);
-
-  // Each line's analysis: closed until asked, then kept per card and line so
-  // a collapse and reopen reads it from memory rather than asking again. Lines
-  // open independently — each one is its own fetch and its own call.
-  const shown = state.kind === "card" ? state.card : null;
-  const stamp = stampKey(shown);
-  const [panels, setPanels] = useState<Record<string, Panel>>({});
-  const analyses = useRef(new Map<string, DailyAnalysis>());
-  useEffect(() => {
-    setPanels({});
-  }, [stamp]);
-  const toggle = useCallback(
-    (key: string) => {
-      const now = panels[key];
-      if (now && now.kind !== "failed") {
-        setPanels((current) => without(current, key));
-        return;
-      }
-      const cached = analyses.current.get(`${stamp}|${key}`);
-      if (cached) {
-        setPanels((current) => ({ ...current, [key]: { kind: "open", body: cached } }));
-        return;
-      }
-      setPanels((current) => ({ ...current, [key]: { kind: "loading" } }));
-      const asked = stamp;
-      send<DailyAnalysis>(
-        "POST",
-        `/daily/analysis?${new URLSearchParams({ key }).toString()}`,
-      ).then(
-        (body) => {
-          analyses.current.set(`${asked}|${key}`, body);
-          // Only onto the wait it answers: a line collapsed meanwhile stays
-          // shut, and a new card has already cleared the panels.
-          setPanels((current) =>
-            current[key]?.kind === "loading"
-              ? { ...current, [key]: { kind: "open", body } }
-              : current,
-          );
-        },
-        () =>
-          setPanels((current) =>
-            current[key]?.kind === "loading"
-              ? { ...current, [key]: { kind: "failed" } }
-              : current,
-          ),
-      );
-    },
-    [panels, stamp],
-  );
-  const ids = useId();
 
   const regenerate = useCallback(() => {
     setState((current) =>
@@ -399,73 +187,17 @@ export function Daily() {
   // nothing being written: the section stays off the page.
   if (!card.headline && !card.pending) return null;
   const regenerating = !card.headline;
-  const written = monthDay(card.day ?? card.action_day, t);
-  const lines = linesOf(card);
-  const { alerts, watch } = sectionsOf(lines);
-  const answered = card.sections ?? [];
-  // The brief is the card: no Portfolio beside it, whatever a server sends.
-  const book = !answered.length && card.book?.rows.length ? card.book : null;
-  const split = sectioned(card, alerts.length);
-  // Not while a briefing is still being written: the stand-in on screen is
-  // about to be replaced, and its lines with it.
-  const canOpen = !regenerating && !card.pending;
   const note = regenerating ? null : noteKey(card);
-
-  const list = (items: DailyItem[]) => (
-    <ul className="hm-daily-list">
-      {items.map((item) => {
-        const panel = panels[item.key];
-        const expanded = panel !== undefined && panel.kind !== "failed";
-        const id = `${ids}-an-${item.key}`;
-        return (
-          <li key={item.key}>
-            {item.line}
-            {item.tickers.length > 0 ? (
-              <span className="hm-daily-tks">
-                {item.tickers.map((ticker) => (
-                  <TickerCell key={ticker} ticker={ticker} name={false} />
-                ))}
-              </span>
-            ) : null}
-            {canOpen && opens(item) ? (
-              <>
-                {" "}
-                <button
-                  type="button"
-                  className="hm-daily-toggle"
-                  aria-expanded={expanded}
-                  aria-controls={panel ? id : undefined}
-                  onClick={() => toggle(item.key)}
-                >
-                  {expanded ? t("home.daily_an_hide") : t("home.daily_an_show")}
-                </button>
-                <AnalysisPanel id={id} panel={panel} />
-              </>
-            ) : null}
-          </li>
-        );
-      })}
-    </ul>
-  );
+  const { lines, more } = teaserOf(card);
 
   const tools = (
     <div className="hm-daily-tools">
-      {!guest ? (
-        // The brief is the account's: a guest has none to write.
-        <IconButton
-          icon="edit"
-          label={t("home.daily_edit")}
-          pressed={editing}
-          disabled={regenerating}
-          onClick={() => setEditing((was) => !was)}
-        />
-      ) : null}
       <IconButton
         icon="refresh"
         label={t("home.daily_refresh")}
         // Disabled while its own rewrite is out: a second press would spend a
         // second unit of the allowance on a card already being written.
-        disabled={regenerating || editing}
+        disabled={regenerating}
         onClick={regenerate}
       />
       <IconButton
@@ -496,69 +228,55 @@ export function Daily() {
         <span className="hm-daily-when">{stampOf(card, t)}</span>
         {tools}
       </div>
-      {editing ? (
-        <BriefEditor
-          onClose={(changed) => {
-            setEditing(false);
-            if (!changed) return;
-            asked.current = null;
-            setReload((n) => n + 1);
-          }}
-        />
-      ) : (
-        <>
-          {/* Said before the headline: a fallback read as the AI's answer
-              first is already misread by the time the note comes. */}
-          {note ? (
-            <p className="hm-note" role="status">
-              {t(note)}
-            </p>
-          ) : null}
-          <p className="hm-daily-headline">{card.headline}</p>
-          {!split ? (
-            lines.length > 0 ? (
-              list(lines)
-            ) : null
-          ) : (
-            <>
-              {book ? (
-                <Section title={t("home.daily_sec_book")}>
-                  <BookSection book={book} />
-                </Section>
-              ) : null}
-              {alerts.length > 0 ? (
-                <Section title={t("home.daily_sec_alerts")}>{list(alerts)}</Section>
-              ) : null}
-              {watch.length > 0 && !answered.length ? (
-                <Section title={t("home.daily_sec_watch")}>{list(watch)}</Section>
-              ) : null}
-              {answered.map((section, n) => (
-                <Section key={n} title={section.title}>
-                  {section.lines.length > 0 ? list(section.lines) : null}
-                  <SectionChart section={section} />
-                </Section>
-              ))}
-            </>
-          )}
-          {card.pending ? (
-            // The difference between a card that looks final and one the
-            // reader knows will improve on its own.
-            <p className="hm-daily-pending" role="status">
-              <span className="hm-daily-dot" aria-hidden="true" />
-              {t("home.daily_pending")}
-            </p>
-          ) : null}
-          {!card.fresh && !card.pending ? (
-            <p className="hm-note">
-              {t("home.daily_stale", { date: written ?? card.day ?? "" })}
-            </p>
-          ) : null}
-          {!note && !card.pending ? (
-            <p className="hm-note">{t("home.daily_disclaimer")}</p>
-          ) : null}
-        </>
-      )}
+      {/* Said before the headline: a fallback read as the AI's answer first
+          is already misread by the time the note comes. */}
+      {note ? (
+        <p className="hm-note" role="status">
+          {t(note)}
+        </p>
+      ) : null}
+      <p className="hm-daily-headline">{card.headline}</p>
+      {lines.length ? <Lines items={lines} /> : null}
+      {card.pending ? <Status label={t("home.daily_pending")} /> : null}
+      <div className="hm-daily-open">
+        <Link page="today" className="ag-btn">
+          {t("home.daily_open")}
+        </Link>
+        {more ? (
+          <span className="hm-daily-when">{t("home.daily_more", { n: more })}</span>
+        ) : null}
+      </div>
+      {!card.fresh && !card.pending ? (
+        <p className="hm-note">
+          {t("home.daily_stale", {
+            date: monthDay(card.day ?? card.action_day, t) ?? card.day ?? "",
+          })}
+        </p>
+      ) : null}
+      {!note && !card.pending ? (
+        <p className="hm-note">{t("home.daily_disclaimer")}</p>
+      ) : null}
     </Card>
+  );
+}
+
+/** The teaser's lines: the text in full, its tickers at its end. */
+function Lines({ items }: { items: DailyItem[] }) {
+  return (
+    <ul className="hm-daily-list">
+      {items.map((item) => (
+        <li key={item.key}>
+          {item.line}
+          {item.tickers.length > 0 ? (
+            <span className="hm-daily-tks">
+              {item.tickers.map((ticker) => (
+                <TickerCell key={ticker} ticker={ticker} name={false} />
+              ))}
+            </span>
+          ) : null}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -568,13 +286,11 @@ function IconButton({
   label,
   onClick,
   disabled,
-  pressed,
 }: {
   icon: string;
   label: string;
   onClick: () => void;
   disabled?: boolean;
-  pressed?: boolean;
 }) {
   return (
     <button
@@ -582,203 +298,11 @@ function IconButton({
       className="hm-icon-btn"
       title={label}
       aria-label={label}
-      aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
     >
       <Glyph name={icon} size={17} />
     </button>
-  );
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="hm-daily-sec">
-      <h3 className="hm-daily-sec-title">{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-const WINDOWS = {
-  day: "home.daily_book_day",
-  week: "home.daily_book_week",
-  month: "home.daily_book_month",
-} as const;
-
-/** A move as the section prints it: signed, toned, "n/a" when unknown. */
-function Move({ pct }: { pct: number | null }) {
-  const t = useT();
-  const lang = useLang();
-  const text = pct === null ? null : percent(pct / 100, lang, { signed: true });
-  if (pct === null || text === null)
-    return <span className="hm-daily-na">{t("home.na")}</span>;
-  return <span className={pct < 0 ? "hm-an-down" : "hm-an-up"}>{text}</span>;
-}
-
-/**
- * The book against the index: today, this week, this month, each figure the
- * server computed, and the month drawn beside them with the drawer's chart.
- */
-export function BookSection({ book }: { book: DailyBook }) {
-  const t = useT();
-  const lang = useLang();
-  return (
-    <div className="hm-daily-book">
-      <table className="hm-table hm-daily-book-table">
-        <thead>
-          <tr>
-            <th scope="col" />
-            <th scope="col" className="hm-num">
-              {t("home.daily_book_you")}
-            </th>
-            <th scope="col" className="hm-num">
-              {book.index}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {book.rows.map((row) => {
-            const amount = money(row.amount, book.currency, lang, { signed: true });
-            return (
-              <tr key={row.window}>
-                <th scope="row">{t(WINDOWS[row.window])}</th>
-                <td className="hm-num">
-                  <Move pct={row.pct} />
-                  {amount ? <span className="hm-daily-amount">{amount}</span> : null}
-                </td>
-                <td className="hm-num">
-                  <Move pct={row.index_pct} />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      {book.chart.length > 0 ? (
-        <LineChart
-          series={book.chart}
-          rebased
-          label={t("home.daily_book_chart", { index: book.index })}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-/** A brief section's chart, when its figures drew one. */
-export function SectionChart({ section }: { section: DailySection }) {
-  if (!section.chart?.series.length) return null;
-  return (
-    <LineChart
-      series={section.chart.series}
-      rebased={section.chart.rebased}
-      label={section.title}
-    />
-  );
-}
-
-/** One line's analysis, under it: the wait, the failure, or the verdict, the
- * points and the tables. */
-function AnalysisPanel({ id, panel }: { id: string; panel: Panel | undefined }) {
-  const t = useT();
-  if (!panel) return null;
-  if (panel.kind === "loading") {
-    return (
-      <div className="hm-an" id={id}>
-        <p className="hm-daily-wait" role="status">
-          {t("home.daily_an_loading")}
-        </p>
-        <Skeleton rows={3} />
-      </div>
-    );
-  }
-  if (panel.kind === "failed") {
-    return (
-      <p className="hm-note hm-an-failed" id={id} role="status">
-        {t("home.daily_an_failed")}
-      </p>
-    );
-  }
-  const { body } = panel;
-  return (
-    <div className="hm-an" id={id}>
-      {body.verdict ? (
-        <p className="hm-an-verdict">
-          <b>{t("home.daily_an_verdict")}</b> {body.verdict}
-        </p>
-      ) : null}
-      {body.points.length > 0 ? (
-        <div className="hm-an-points">
-          {body.points.map((point, n) => (
-            <section key={n} className="hm-an-point">
-              <h4 className="hm-an-title">{point.title}</h4>
-              <p>{point.text}</p>
-            </section>
-          ))}
-        </div>
-      ) : null}
-      {body.tables.length > 0 ? (
-        <div className="hm-an-tables">
-          {body.tables.map((table, n) => (
-            <AnalysisTable key={n} table={table} />
-          ))}
-        </div>
-      ) : null}
-      {body.source === "computed" ? (
-        <p className="hm-note">{t("home.daily_an_computed")}</p>
-      ) : null}
-    </div>
-  );
-}
-
-/** A computed table under an analysis. Every symbol is a ticker cell — logo
- * and link — with the company's name beside it. */
-function AnalysisTable({ table }: { table: DailyTable }) {
-  return (
-    <figure className="hm-an-table">
-      <figcaption className="hm-an-caption">{table.title}</figcaption>
-      <div className="hm-an-scroll">
-        <table className="hm-table">
-          <thead>
-            <tr>
-              {table.columns.map((column, n) => (
-                <th key={n} scope="col" className={n ? "hm-num" : undefined}>
-                  {column}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {table.rows.map((row, n) => (
-              <tr key={n} className={row.highlight ? "hm-an-hl" : undefined}>
-                <td className="hm-an-name">
-                  {row.ticker ? (
-                    <span className="hm-an-who">
-                      <TickerCell ticker={row.ticker} name={false} />
-                      {row.label ? (
-                        <span className="hm-an-label">{row.label}</span>
-                      ) : null}
-                    </span>
-                  ) : (
-                    row.label
-                  )}
-                </td>
-                {row.cells.map((cell, m) => {
-                  const sign = tone(cell);
-                  return (
-                    <td key={m} className={sign ? `hm-num hm-an-${sign}` : "hm-num"}>
-                      {cell}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {table.note ? <p className="hm-note">{table.note}</p> : null}
-    </figure>
   );
 }
 
@@ -791,9 +315,7 @@ function Waiting({ title, tools }: { title: string; tools?: ReactNode }) {
         <Badge tone="brand">{t("home.daily_badge")}</Badge>
         {tools}
       </div>
-      <p className="hm-daily-wait" role="status">
-        <b>{t(title)}</b> {t("home.daily_wait_body")}
-      </p>
+      <Status label={t(title)} />
       <Skeleton rows={3} />
     </>
   );

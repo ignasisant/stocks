@@ -81,13 +81,14 @@ def seen_recently(last_seen: object, today: date, days: int = RECENT_DAYS) -> bo
 
 
 def warm_account(db: str, watchlist: str | Path, base: str) -> None:
-    """Fill the memos one Home and one Portfolio read: the book's close
-    download and the three frames built from it, then the watchlist's year."""
+    """Fill the memos one Home, one Portfolio and one Today read: the book's
+    close download and the three frames built from it, the watchlist's year,
+    then what Today's sections fetch for the largest names."""
     from stocks.api.home import closes_tuple, year_closes
 
     mtime = loaders.db_mtime(db)
     loaders.held_closes(db, mtime)
-    loaders.positions_table(db, mtime, base)
+    tbl = loaders.positions_table(db, mtime, base)
     loaders.history(db, mtime, base)
     loaders.basket_values(db, mtime, base)
     entries = load_watchlist(Path(watchlist))
@@ -96,6 +97,42 @@ def warm_account(db: str, watchlist: str | Path, base: str) -> None:
     # book's own prices do not cover, and that smaller tuple is the key Home
     # reads. Warming the whole tuple filled an entry nobody ever asked for.
     year_closes(closes_tuple(entries, owned), db, mtime)
+    warm_today(tbl)
+
+
+# What Today's comparisons and insider section read first: the Review metrics
+# of the largest names and the Form 4 feed of the largest US ones. The
+# comparisons' own cap, and fewer insider feeds than the section reads (SEC's
+# fair-access rule), so a warm is a handful of requests per account.
+TODAY_METRICS = 8
+TODAY_INSIDERS = 3
+
+
+def warm_today(tbl) -> None:
+    """Fill the memos the Today page's own sections gather from, largest
+    positions first. Best effort: each name stands alone, and a feed that
+    refuses costs that name, never the account's warm."""
+    from stocks.analysis.portfolio import value_weights
+    from stocks.chat.daily_routines import _companies
+
+    if tbl is None or getattr(tbl, "empty", True):
+        return
+    ranked = value_weights(tbl).sort_values(ascending=False, na_position="last")
+    names = _companies(str(t) for t in ranked.index)
+    us = [t for t in names if "." not in t]
+    for fill, tickers in (
+        (loaders.review_metrics, names[:TODAY_METRICS]),
+        (loaders.insiders, us[:TODAY_INSIDERS]),
+    ):
+        for ticker in tickers:
+            try:
+                fill(ticker)
+            except Exception as exc:  # noqa: BLE001 — see above
+                obs.warn(
+                    "api.warm_today_failed",
+                    ticker=ticker,
+                    error_type=type(exc).__name__,
+                )
 
 
 def warm_recent(today: date | None = None, *, budget_s: float | None = None) -> int:
@@ -120,6 +157,12 @@ def warm_recent(today: date | None = None, *, budget_s: float | None = None) -> 
             error=str(exc)[:200],
         )
         return 0
+    # Today's market read is one file for every account: read it once, so the
+    # first reader of the day does not pay its restore.
+    try:
+        loaders.today_market()
+    except Exception as exc:  # noqa: BLE001 — see above
+        obs.warn("api.warm_today_market_failed", error_type=type(exc).__name__)
     recent = [u for u in users if seen_recently(u.prefs.get("last_seen"), today)]
     recent.sort(key=lambda u: str(u.prefs.get("last_seen") or ""), reverse=True)
     for i, user in enumerate(recent):

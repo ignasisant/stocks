@@ -118,6 +118,7 @@ def written(day: date, headline: str = "Two names carry the week") -> daily.Dail
         as_of=(day - timedelta(days=1)).isoformat(),
         lang="en",
         generated=time.time(),
+        shape="mixed",
     )
 
 

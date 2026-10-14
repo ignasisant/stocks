@@ -100,7 +100,7 @@ def _back(series: pd.Series, days: int) -> float | None:
 
 
 def perf(series: pd.Series | None) -> dict:
-    """Price performance of one close series: 1/3/12 months, distance from
+    """Price performance of one close series: 1/3/6/12 months, distance from
     the 12-month high, annualised volatility and worst drawdown over the year.
     Empty for a series too short to say anything."""
     from stocks.analysis.portfolio import annualized_volatility, max_drawdown
@@ -115,6 +115,7 @@ def perf(series: pd.Series | None) -> dict:
     return {
         "m1_pct": _back(s, 30),
         "m3_pct": _back(s, 91),
+        "m6_pct": _back(s, 182),
         "y1_pct": _back(s, 365),
         "from_high_pct": _pct(float(year.iloc[-1]) / float(year.max()) - 1),
         "vol_1y_pct": _pct(annualized_volatility(returns)) if len(returns) > 20 else None,

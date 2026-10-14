@@ -56,6 +56,7 @@ from stocks.api.routes import (
     search,
     sector,
     ticker,
+    today,
     watchlist,
     watchlist_edit,
 )
@@ -326,6 +327,7 @@ _private.include_router(prefs.router)
 _private.include_router(watchlist_edit.router)
 _private.include_router(import_statement.router)
 _private.include_router(glance.router)
+_private.include_router(today.router)
 _private.include_router(home.router)
 _private.include_router(guide.router)
 _private.include_router(reference.router)

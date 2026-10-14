@@ -30,6 +30,8 @@ from stocks import obs
 # with extra steps.
 PAGES: dict[str, tuple[str, ...]] = {
     "home": (),
+    "today": ("alerts", "routines", "book", "news", "insiders", "compare",
+              "macro", "trends"),
     "portfolio": ("overview", "positions", "risk", "projection", "tax",
                   "dividends", "fees"),
     "review": (),
@@ -54,6 +56,11 @@ _SYMBOL_RE = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,14}$")
 # the prompt is, and the reader never sees these.
 _WHAT = {
     "home": "the daily briefing and the book at a glance",
+    "today": "the day's page: the reader's alerts, book, news, insider "
+             "trades, comparisons against sector and index, macro and "
+             "trends. Tabs: alerts, routines, book (the book against the "
+             "S&P 500), news, insiders, compare, macro (rates, Fed, ECB, "
+             "inflation), trends (regime, sectors, crypto)",
     "portfolio": "the reader's holdings. Tabs: overview, positions, "
                  "risk (allocation and risk), projection, tax (realized "
                  "gains and tax), dividends, fees",

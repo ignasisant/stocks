@@ -94,6 +94,12 @@ _TOUCH_TARGETS = [
     ("chat/chat.css", ".ag-chat-why-chips .ag-chat-chip", r"min-height\s*:\s*44px"),
     ("ui/journal.css", ".ag-jr-chip", r"min-height\s*:\s*44px"),
     ("ui/journal.css", ".ag-jr-fold", r"min-height\s*:\s*44px"),
+    ("pages/today/today.css", ".td-tab", r"min-height\s*:\s*44px"),
+    ("pages/today/today.css", ".td-icon-btn", r"min-height\s*:\s*44px"),
+    ("pages/today/today.css", ".td-toggle", r"min-height\s*:\s*44px"),
+    ("pages/today/today.css", ".td-seg button", r"min-height\s*:\s*44px"),
+    ("pages/today/today.css", ".td-more-btn", r"min-height\s*:\s*44px"),
+    ("pages/home/home.css", ".hm-daily-open .ag-btn", r"min-height\s*:\s*44px"),
 ]
 
 

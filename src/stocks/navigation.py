@@ -32,6 +32,7 @@ class Destination:
 # page is served at the root.
 DESTINATIONS: tuple[Destination, ...] = (
     Destination("", "nav.home", "home"),
+    Destination("today", "nav.today", "wb_sunny"),
     Destination("portfolio", "nav.portfolio", "pie_chart",
                 "nav.section_portfolio"),
     Destination("review", "nav.review", "swap_vert",
@@ -53,7 +54,7 @@ DESTINATIONS: tuple[Destination, ...] = (
 # The phone tab bar's four destinations, by path. The DS mobile spec replaces
 # the sidebar with a fixed bar, and four is what fits a 360px row with legible
 # labels; the rest of the pages stay reachable through the drawer.
-BOTTOM_NAV: tuple[str, ...] = ("", "portfolio", "sector", "profile")
+BOTTOM_NAV: tuple[str, ...] = ("", "today", "portfolio", "profile")
 
 # Every first path segment the React shell answers, for the server that has to
 # hand it the document. The menu's own paths, plus the shell's own names for

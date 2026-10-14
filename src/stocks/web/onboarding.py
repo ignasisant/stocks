@@ -143,6 +143,12 @@ STEPS: tuple[Step, ...] = (
         gated=True,
     ),
     Step(
+        id="today",
+        icon="wb_sunny",
+        page="today",
+        gated=True,
+    ),
+    Step(
         id="watchlist",
         icon="format_list_bulleted",
         page="profile",
@@ -462,6 +468,10 @@ RELEASES: tuple[Release, ...] = (
             # and its fate. The ticker header's chip and the chat tool read
             # the same record and are this card's step body, not cards.
             News(slug="journal", icon="history_edu", step="journal"),
+            # A page of its own: the day's alerts, news, insiders, comparisons
+            # and the market read. Home's briefing card is now its teaser,
+            # which is this card's step body, not a card.
+            News(slug="today", icon="wb_sunny", step="today"),
         ),
     ),
 )

@@ -536,5 +536,7 @@
   "home.edit_hidden": "{name} oculta; espera en la bandeja.",
   "home.edit_added": "{name} añadida al final.",
   "home.edit_reset_done": "Orden por defecto restablecido. No se guarda nada hasta pulsar Hecho.",
-  "home.edit_instructions": "Para mover una tarjeta, pulsa espacio o intro, muévela con las flechas y pulsa espacio o intro para soltarla, o escape para cancelar."
+  "home.edit_instructions": "Para mover una tarjeta, pulsa espacio o intro, muévela con las flechas y pulsa espacio o intro para soltarla, o escape para cancelar.",
+  "home.daily_open": "Leer Hoy",
+  "home.daily_more": "{n} más en Hoy"
 }

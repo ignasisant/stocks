@@ -57,6 +57,9 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         ("/v1/home/closes", "GET"),
         # The market strip: the Pulse's composite and series, no account.
         ("/v1/home/market", "GET"),
+        # The Today page's market read, shared by every account. The guest
+        # gets no personal card: the GET answers it as null.
+        ("/v1/today", "GET"),
         # --- Portfolio, every tab, over the shared demo book --------------
         ("/v1/portfolio/positions", "GET"),
         ("/v1/portfolio/summary", "GET"),

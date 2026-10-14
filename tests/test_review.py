@@ -924,11 +924,13 @@ def test_only_the_weakest_crumbs_are_sold_in_one_pass():
     assert review.cap_small_sells(crumbs[:5]) == crumbs[:5]
 
 
-def test_an_add_in_a_wide_book_is_an_even_share_not_five_percent():
+def test_an_add_in_a_wide_book_is_twice_an_even_share_not_five_percent():
     assert review.add_line(10) == review.ADD_TO
-    assert review.add_line(50) == pytest.approx(0.02)
+    assert review.add_line(40) == review.ADD_TO
+    assert review.add_line(50) == pytest.approx(0.04)
+    assert review.add_line(200) == pytest.approx(0.01)
     assert review.add_line(500) == review.ADD_MIN
-    v = review.judge_held(CHEAP_QUALITY, weight=0.005, names=50)
+    v = review.judge_held(CHEAP_QUALITY, weight=0.005, names=100)
     assert v.verdict == review.ADD
     assert v.target == pytest.approx(0.02)
 
@@ -985,5 +987,5 @@ def test_no_buy_is_opened_under_a_crumb_and_a_watch_is_never_sized():
 
 def test_a_buy_is_sized_to_the_add_line_of_the_book_it_joins():
     assert review.judge_candidate(CHEAP_QUALITY).fill == review.ADD_TO
-    assert review.judge_candidate(CHEAP_QUALITY, names=50).fill == pytest.approx(0.02)
+    assert review.judge_candidate(CHEAP_QUALITY, names=100).fill == pytest.approx(0.02)
     assert review.judge_candidate(DEAR_WEAK).fill is None

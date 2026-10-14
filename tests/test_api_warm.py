@@ -251,3 +251,39 @@ def test_in_place_a_stale_entry_is_refreshed_not_served():
         assert ask() == "new"
     finally:
         cache.SYNC.reset(token)
+
+
+def test_warm_today_reads_the_largest_names_first_and_survives_a_feed(monkeypatch):
+    tbl = pd.DataFrame(
+        {"value": [100.0, 900.0, 500.0, 300.0]},
+        index=["SAP.DE", "MSFT", "BTC-EUR", "AAPL"],
+    )
+    metrics: list[str] = []
+    feeds: list[str] = []
+
+    def insiders(ticker):
+        feeds.append(ticker)
+        if ticker == "MSFT":
+            raise RuntimeError("SEC refused")
+
+    monkeypatch.setattr(loaders, "review_metrics", metrics.append)
+    monkeypatch.setattr(loaders, "insiders", insiders)
+    monkeypatch.setattr(warm, "TODAY_INSIDERS", 2)
+    warm.warm_today(tbl)
+    # By value, coins left out; insiders only for US listings.
+    assert metrics == ["MSFT", "AAPL", "SAP.DE"]
+    assert feeds == ["MSFT", "AAPL"]
+
+
+def test_warm_today_skips_an_empty_book(monkeypatch):
+    monkeypatch.setattr(loaders, "review_metrics", lambda t: pytest.fail(t))
+    warm.warm_today(pd.DataFrame())
+    warm.warm_today(None)
+
+
+def test_warm_recent_reads_the_shared_market_once(monkeypatch):
+    monkeypatch.setattr("stocks.notify.fanout.iter_all_users", lambda: [])
+    reads: list[int] = []
+    monkeypatch.setattr(loaders, "today_market", lambda: reads.append(1) or {})
+    warm.warm_recent(today=TODAY)
+    assert reads == [1]

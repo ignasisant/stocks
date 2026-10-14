@@ -613,3 +613,34 @@ def _forget_inconsistencies():
     consistency.clear()
     yield
     consistency.clear()
+
+
+@pytest.fixture(autouse=True)
+def _own_today_market(_scratch):
+    """Give every test its own Today market file, and a lazy rebuild that
+    downloads nothing: `GET /today` (open to guests, so walked by the guest
+    suite) would otherwise start a background build that reaches for Yahoo,
+    FRED and the free chain. The build is recorded in `briefing.market_builds`
+    for a test that asserts on it; a test about the build itself patches
+    `briefing._market_start` back. Restored by hand for the reason
+    `_own_free_llm_counter` gives.
+    """
+    from stocks.api import briefing, loaders
+    from stocks.chat import today_market
+
+    before = (today_market.FILE, briefing._market_start)
+    builds: list[tuple[str, str]] = []
+
+    def inert(kind: str, lang: str) -> None:
+        builds.append((kind, lang))
+        briefing._market_lock.release()
+
+    today_market.FILE = _scratch / "today_market.json"
+    briefing._market_start = inert
+    briefing.market_builds = builds
+    briefing._market_tried.clear()
+    loaders.today_market.cache_clear()
+    yield
+    today_market.FILE, briefing._market_start = before
+    briefing._market_tried.clear()
+    loaders.today_market.cache_clear()
