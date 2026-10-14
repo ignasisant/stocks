@@ -576,7 +576,11 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     m["fcf_ebitda"] = owner / ebitda if owner is not None and has_ebitda else None
     # Price to sales in one currency: an ADR's filed sales converted, like
     # the yields above. The review's "no sales to speak of" test reads it.
-    m["ps"] = cap / (revenue * rate) if cap and revenue and revenue > 0 and rate else None
+    # Over the last four quarters when the feed has them: a name growing 4x
+    # a year (Nebius) is not pre-revenue at 35x sales because its last
+    # filed year, ten months old, made 89x of them.
+    sales = info.get("totalRevenue") or revenue
+    m["ps"] = cap / (sales * rate) if cap and sales and sales > 0 and rate else None
     if rate == 1.0:
         # Yahoo leaves the EV multiples out for many European small caps;
         # quote and filings share a currency here, so they are rebuilt.

@@ -46,6 +46,9 @@ const cache = new Map<string, Profile>();
 // Asked and answered with nothing. Kept apart from `cache` so a symbol nobody
 // has a logo for is not asked about again on every table that mentions it.
 const answered = new Set<string>();
+// Asked once and failed: the one retry has been spent.
+const retried = new Set<string>();
+const RETRY_MS = 4000;
 const listeners = new Set<() => void>();
 let queue = new Set<string>();
 let scheduled = false;
@@ -77,10 +80,18 @@ async function flush() {
         if (profile.logo || profile.name) cache.set(profile.ticker, profile);
       }
     } catch {
-      // A logo is decoration on a link that already works. A failed batch is
-      // marked answered so the page does not retry it on every scroll, and the
-      // cells render as plain links — which is what they do anyway until this
-      // lands.
+      // A logo is decoration on a link that already works, but one failed
+      // batch (a cold logo probe timing out) must not leave the whole page
+      // bare for the session: it is asked once more, a few seconds on. A
+      // second failure is marked answered so the page does not retry it on
+      // every scroll, and the cells stay plain links.
+      const fresh = batch.filter((ticker) => !retried.has(ticker));
+      if (fresh.length) {
+        for (const ticker of fresh) retried.add(ticker);
+        setTimeout(() => fresh.forEach(request), RETRY_MS);
+        for (const ticker of batch) if (!fresh.includes(ticker)) answered.add(ticker);
+        continue;
+      }
     }
     for (const ticker of batch) answered.add(ticker);
   }
