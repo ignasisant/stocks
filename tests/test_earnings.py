@@ -206,3 +206,19 @@ def test_pct_change_guards_a_nonpositive_base():
 def test_margins_need_revenue():
     bare = Quarter(end=date(2026, 4, 30), net_income=100.0)
     assert bare.net_margin is None and bare.tax_rate is None
+
+
+def test_a_fund_held_under_its_broker_code_is_not_asked_for_earnings(monkeypatch):
+    """Prod: yfinance "VUAA.DE: No earnings dates found" daily. The book holds
+    it under a code the fund catalog does not know; the line it resolves to
+    is in the catalog, and a fund never reports."""
+    import yfinance as yf
+
+    from stocks.data import earnings
+
+    monkeypatch.setattr(earnings, "resolve", lambda t: "VUAA.DE")
+
+    asked: list[str] = []
+    monkeypatch.setattr(yf, "Ticker", lambda symbol: asked.append(symbol))
+    assert earnings.fetch_earnings("IE00BFMXXD54") == ([], [])
+    assert asked == []
