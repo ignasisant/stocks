@@ -17,7 +17,7 @@ import { type RefObject, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 /** The exit's length (ms), and the stylesheet's: `--ag-leave` in styles.css. */
-export const LEAVE_MS = 200;
+const LEAVE_MS = 200;
 
 function reducedMotion(): boolean {
   return (

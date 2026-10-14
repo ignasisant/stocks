@@ -27,7 +27,7 @@ function readFlag(): boolean {
 }
 
 /** Read once: the flag is a trial switch, not a setting that changes mid-visit. */
-export const AMBIENT = typeof window !== "undefined" && readFlag();
+const AMBIENT = typeof window !== "undefined" && readFlag();
 
 /** The page's light, fixed to the viewport behind everything. */
 export function AmbientLight() {

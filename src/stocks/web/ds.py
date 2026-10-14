@@ -50,7 +50,8 @@ BORDER_FOCUS = "#48454F"    # outlined controls on hover; too faint for a focus 
 TEXT_PRIMARY = "#F9F9FA"    # neutral-50 — primary text (also the logo plate)
 TEXT_SECONDARY = "#B3AFBD"  # neutral-400 — widget labels, secondary body
 TEXT_MUTED = "#A09DAA"      # captions, chart axes, company names — 4.8:1 on SURFACE_HOVER
-TEXT_FAINT = "#696673"      # neutral-600 — rules, dashes, disabled text; under 4.5:1, never live text
+# neutral-600 — rules, dashes, disabled text; under 4.5:1, never live text
+TEXT_FAINT = "#696673"
 
 # Landing page. The public marketing surface needs two steps the app chrome
 # never asked for: a card fill between SURFACE_PAGE and SURFACE_CARD, and a
