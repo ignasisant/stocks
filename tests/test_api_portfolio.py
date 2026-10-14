@@ -456,6 +456,31 @@ def test_one_tax_year_is_already_all_of_them(client, book):
     assert payload["all_years"] is None
 
 
+def test_spanish_dividends_join_the_savings_base(client, book):
+    """Base del ahorro: dividends are taxed with the gains, year and month."""
+    book(
+        [
+            Transaction("2023-01-02", "AAPL", "buy", 20, 10.0, "EUR", 0.0),
+            Transaction("2024-03-15", "AAPL", "sell", 5, 20.0, "EUR", 0.0),
+            Transaction("2024-05-10", "AAPL", "dividend", 0, 30.0, "EUR", 4.5),
+            Transaction("2025-05-10", "AAPL", "dividend", 0, 40.0, "EUR", 6.0),
+        ],
+        prefs={"currency": "EUR", "tax_residence": "ES"},
+    )
+    payload = client.get(
+        "/v1/portfolio/tax", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    # A year that only collected dividends is a taxable year too.
+    assert [p["period"] for p in payload["years"]] == ["2024", "2025"]
+    first, second = payload["years"]
+    assert first["dividends"] == pytest.approx(30.0)
+    assert first["net_taxable"] == pytest.approx(80.0)  # 5 × (20 − 10) + 30
+    assert second["net_taxable"] == pytest.approx(40.0)
+    may = next(m for m in payload["months"] if m["period"] == "2024-05")
+    assert may["dividends"] == pytest.approx(30.0)
+    assert payload["all_years"]["dividends"] == pytest.approx(70.0)
+
+
 def test_months_cover_the_quiet_ones_between_two_sales(client, book):
     """A client charting the monthly view should not have to invent the gaps."""
     book(

@@ -22,6 +22,7 @@ from math import prod
 from stocks.data.dividends import DividendHistory
 from stocks.data.fx import ToBase, converter, prefetch
 from stocks.portfolio.ledger import RETURN_OF_CAPITAL, Transaction
+from stocks.portfolio.tax.base import Payment
 
 # Spain double-taxation treaty cap on dividend withholding (creditable ceiling).
 TREATY_WHT_CAP = 0.15
@@ -82,6 +83,22 @@ def by_year(
         dy.records.append(tx)
         dy.by_ticker[tx.ticker] = dy.by_ticker.get(tx.ticker, 0.0) + gross
     return years
+
+
+def payments(
+    transactions: list[Transaction], base: str = "EUR", to_base: ToBase | None = None
+) -> list[Payment]:
+    """Every booked dividend, gross, in `base` at its pay date — the tax feed.
+
+    One row per payment rather than a year's sum, so a jurisdiction can bucket
+    them under its own calendar (a UK year opens on 6 April) and by month.
+    Returns of capital are no income and stay out.
+    """
+    paid = [t for t in transactions if t.action == "dividend"]
+    if to_base is None:
+        prefetch((t.date, t.currency) for t in paid)
+        to_base = converter(base)
+    return [Payment(t.date, to_base(t.price, t.currency, t.date)) for t in paid]
 
 
 # How many of a name's latest booked withholdings its rate is read from: a

@@ -1131,7 +1131,14 @@ def tax_(account: Account) -> TaxReport:
         matching=jurisdiction.matching,
         funds_classified=bool(settings.fund_tickers),
     )
-    if not realized:
+    # Where dividends share the base with the gains (Spain's base del ahorro),
+    # a year that only collected them is a taxable year too.
+    paid = (
+        dividends.payments(txs, base=jurisdiction.currency)
+        if jurisdiction.dividends_in_base
+        else []
+    )
+    if not realized and not paid:
         return report
 
     # Normalized inside, as the replay is: a RealizedSale carries the replay's
@@ -1148,6 +1155,7 @@ def tax_(account: Account) -> TaxReport:
             disallowed_loss=_num(value.disallowed_loss) or 0.0,
             recovered_loss=_num(value.recovered_loss) or 0.0,
             deductible_loss=_num(value.deductible_loss) or 0.0,
+            dividends=_num(value.dividends) or 0.0,
             net_taxable=_num(value.net_taxable) or 0.0,
             estimated_tax=_num(value.estimated_tax) or 0.0,
             carryforward_loss=_num(value.carryforward_loss) or 0.0,
@@ -1170,10 +1178,12 @@ def tax_(account: Account) -> TaxReport:
         )
 
     # Tax years, not calendar years — the UK's open on 6 April.
-    years = sorted({jurisdiction.tax_year_of(s.sell_date) for s in realized})
-    months = sorted({s.sell_date[:7] for s in realized})
+    dates = [s.sell_date for s in realized] + [p.date for p in paid]
+    years = sorted({jurisdiction.tax_year_of(day) for day in dates})
+    months = sorted({day[:7] for day in dates})
     periods = [
-        jurisdiction.fiscal_year(realized, year, buy_dates, settings) for year in years
+        jurisdiction.fiscal_year(realized, year, buy_dates, settings, paid)
+        for year in years
     ]
     report.years = [
         period(value, year) for value, year in zip(periods, years, strict=True)
@@ -1192,6 +1202,7 @@ def tax_(account: Account) -> TaxReport:
             disallowed_loss=_num(total.disallowed_loss) or 0.0,
             recovered_loss=_num(total.recovered_loss) or 0.0,
             deductible_loss=_num(total.deductible_loss) or 0.0,
+            dividends=_num(total.dividends) or 0.0,
             sales=len(total.sales),
             kpis=[
                 TaxKpi(name=k.key, value=_num(k.value) or 0.0, help=k.help_key)
@@ -1201,7 +1212,7 @@ def tax_(account: Account) -> TaxReport:
     # Quiet months included (month_range), so a client charting this does not
     # have to invent the gaps between two sales.
     report.months = [
-        period(jurisdiction.fiscal_period(realized, month, buy_dates, settings))
+        period(jurisdiction.fiscal_period(realized, month, buy_dates, settings, paid))
         for month in month_range(months[0], months[-1])
     ]
     report.sales = [

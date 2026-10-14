@@ -203,6 +203,8 @@ export type TaxPeriod = {
   disallowed_loss: number;
   recovered_loss: number;
   deductible_loss: number;
+  /** Gross dividends in the period where they share the base (Spain); else 0. */
+  dividends: number;
   net_taxable: number;
   estimated_tax: number;
   carryforward_loss: number;
@@ -252,6 +254,7 @@ type TaxAllYears = {
   disallowed_loss: number;
   recovered_loss: number;
   deductible_loss: number;
+  dividends: number;
   sales: number;
   kpis: TaxKpi[];
 };

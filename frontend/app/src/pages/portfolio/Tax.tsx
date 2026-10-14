@@ -293,6 +293,7 @@ function Report({ report }: { report: TaxReport }) {
             periods={bars}
             labels={{
               gains: words.say("chart_gains"),
+              dividends: words.say("chart_dividends"),
               losses: words.say("chart_losses"),
               recovered: words.say("chart_recovered"),
               net: words.say("chart_net"),

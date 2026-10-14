@@ -1,6 +1,7 @@
 """Spain — IRPF savings base (base del ahorro) on securities.
 
-Scope: capital gains/losses on securities. NOT tax advice — a planning aid.
+Scope: capital gains/losses on securities, plus the dividends that share the
+base with them. NOT tax advice — a planning aid.
 Key rules encoded:
 
 * Progressive savings-base brackets (2023-2025 scale).
@@ -13,6 +14,11 @@ Key rules encoded:
   back are blocked: a partial buy-back defers that proportion of the loss.
 * Losses offset gains within the savings base; any excess carries forward 4
   years (surfaced as a note, not auto-applied across years here).
+* Dividends (rendimientos del capital mobiliario) join the same base, gross.
+  The two halves net separately: a net capital loss offsets at most 25% of
+  the year's dividends (art. 49.1 LIRPF), and the rest of it carries forward.
+  Withholding is a credit against the tax, not a lower base — the Dividends
+  tab reads it.
 * Modelo 720 / foreign-asset reporting flag (> 50.000 EUR held abroad).
 """
 
@@ -64,6 +70,8 @@ SAVINGS_BRACKETS_BY_YEAR: dict[int, list[tuple[float, float]]] = {
 
 MODELO_720_THRESHOLD_EUR = 50_000.0
 CARRYFORWARD_YEARS = 4
+# Share of the year's dividends a net capital loss may offset (art. 49.1 LIRPF).
+CROSS_OFFSET = 0.25
 
 # Two calendar months either side of the sale (art. 33.5.f).
 WINDOW = months_window(2)
@@ -85,6 +93,41 @@ def tax_on_savings_base(base: float, year: int) -> float:
 @dataclass
 class EsTaxPeriod(TaxPeriod):
     @property
+    def gains_net(self) -> float:
+        """The capital half of the base: gains less every deductible loss."""
+        return self.realized_gain - self.deductible_loss - self.recovered_loss
+
+    @property
+    def cross_offset(self) -> float:
+        """How much of a net capital loss the year's dividends absorb.
+
+        A year only: the cap is on the ejercicio's dividends, and a month is a
+        breakdown of when the result was booked, not a base of its own.
+        """
+        if len(self.period) > 4 or self.gains_net >= 0:
+            return 0.0
+        return min(-self.gains_net, CROSS_OFFSET * self.dividends)
+
+    @property
+    def net_taxable(self) -> float:
+        """The savings base: capital result plus dividends.
+
+        A year whose losses outrun its gains taxes the dividends less the
+        quarter the loss may take, and the rest of the loss is the
+        carryforward. With no dividends that year still reads as the negative
+        net it always did — the same figure as the carryforward.
+        """
+        if self.cross_offset:
+            return self.dividends - self.cross_offset
+        return self.gains_net + self.dividends
+
+    @property
+    def carryforward_loss(self) -> float:
+        if len(self.period) == 4:
+            return max(0.0, -self.gains_net - self.cross_offset)
+        return max(0.0, -self.net_taxable)
+
+    @property
     def estimated_tax(self) -> float:
         return tax_on_savings_base(self.net_taxable, self.year)
 
@@ -97,6 +140,14 @@ class EsTaxPeriod(TaxPeriod):
         if self.recovered_loss:
             out.append(
                 Note("recovered_note", {"recovered": f"{self.recovered_loss:,.0f}"})
+            )
+        if self.dividends:
+            out.append(
+                Note("dividends_note", {"dividends": f"{self.dividends:,.0f}"})
+            )
+        if self.cross_offset:
+            out.append(
+                Note("cross_offset_note", {"offset": f"{self.cross_offset:,.0f}"})
             )
         return out
 

@@ -313,6 +313,34 @@ describe("PeriodBars", () => {
     expect(out).toMatch(/text-anchor="end"[^>]*>€1000</);
     expect(out).toMatch(/text-anchor="end"[^>]*>€0</);
   });
+
+  it("stacks dividends on the gains and keys them only when paid", () => {
+    const period = (dividends: number) =>
+      ({
+        period: "2024",
+        realized_gain: 500,
+        deductible_loss: 0,
+        recovered_loss: 0,
+        dividends,
+        net_taxable: 500 + dividends,
+      }) as unknown as TaxPeriod;
+    const draw = (dividends: number) =>
+      renderToStaticMarkup(
+        <PeriodBars
+          periods={[period(dividends)]}
+          labels={{
+            gains: "Gains",
+            dividends: "Dividends",
+            losses: "Losses",
+            recovered: "Rec",
+            net: "Net",
+          }}
+          money={(v) => `€${v}`}
+        />,
+      );
+    expect(draw(200)).toContain("Dividends");
+    expect(draw(0)).not.toContain("Dividends");
+  });
 });
 
 describe("Heatmap", () => {
