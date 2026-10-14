@@ -373,6 +373,21 @@ def test_no_rate_at_all_blanks_the_mixed_ratios(monkeypatch):
     assert m["ev_ebitda"] is None and m["pb"] is None
 
 
+def test_price_to_sales_reads_the_last_four_quarters(monkeypatch):
+    from stocks.analysis import fundamentals as fm
+
+    # Nebius, Oct 2026: 530M filed for 2025, 1.36B over the last four
+    # quarters. The filed year made it 89x sales and "pre-revenue".
+    raw = sample_raw()
+    raw.info["totalRevenue"] = 1.9e12
+    assert abs(compute_metrics(raw)["ps"] - 2.0) < 1e-9
+    # An ADR's trailing sales are filed in its own currency too.
+    monkeypatch.setattr(fm.fx, "spot", lambda base, quote: (0.15, "2026-10-09"))
+    raw = _filed_in("DKK")
+    raw.info["totalRevenue"] = 1.9e12
+    assert abs(compute_metrics(raw)["ps"] - 3.8e12 / (1.9e12 * 0.15)) < 1e-9
+
+
 def test_no_revenue_has_no_margins_and_a_runway():
     raw = sample_raw()
     raw.income.loc["Total Revenue"] = [0.0] * 5
