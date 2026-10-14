@@ -41,6 +41,7 @@
   "journal.action_sell": "Vender",
   "journal.action_add": "Reforzar",
   "journal.action_buy": "Comprar",
+  "journal.action_stay": "Mantener la cartera",
   "journal.action_watch": "Seguir",
   "journal.action_unwatch": "Dejar de seguir",
   "journal.kind_alert_hit": "alerta de precio alcanzada",

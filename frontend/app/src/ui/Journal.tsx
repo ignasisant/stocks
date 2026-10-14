@@ -78,6 +78,7 @@ function actionTone(action: string): Tone {
     case "alert":
     case "consider":
     case "review":
+    case "stay":
       return "flat";
     default:
       return "warn";

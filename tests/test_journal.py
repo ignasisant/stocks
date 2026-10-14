@@ -95,6 +95,33 @@ def test_the_review_keeps_the_figures_it_judged_on(path):
     assert entry.snapshot["weight"] == 0.15 and entry.snapshot["verdict"] == "sell"
 
 
+def test_a_review_that_moves_nothing_is_one_stay_on_the_book(path):
+    rows = [_row("AMD", "hold"), _row("ADBE", "hold")]
+    journal.record(path, [journal.stay_in_review(10_000.0, "EUR")], DAY,
+                   judged=journal.judged_in_review(rows))
+    [stay] = journal.load(path)
+    assert (stay.action, stay.subject, stay.ticker) == ("stay", "review:book", "")
+    # The next plan that moves something withdraws it.
+    rows = [_row("AMD", "sell"), _row("ADBE", "hold")]
+    journal.record(path, journal.from_review(rows), DAY + timedelta(days=1),
+                   judged=journal.judged_in_review(rows))
+    states = {e.action: e.state for e in journal.load(path)}
+    assert states == {"stay": "lapsed", "sell": "open"}
+
+
+def test_the_review_reads_back_the_moves_it_still_proposes(path):
+    journal.record(path, journal.from_review([_row("AMD", "sell"),
+                                              _row("adbe", "add")]), DAY)
+    journal.record(path, [journal.stay_in_review(1.0, "EUR")], DAY)
+    journal.record(path, [_shown(source="daily", subject="harvest:SNAP",
+                                 action="harvest", ticker="SNAP")], DAY)
+    assert journal.open_in_review(path) == {"AMD": "sell", "ADBE": "add"}
+    rows = [_row("AMD", "hold")]
+    journal.record(path, [], DAY + timedelta(days=1),
+                   judged=journal.judged_in_review(rows))
+    assert journal.open_in_review(path) == {"ADBE": "add"}
+
+
 def test_card_lines_that_propose_nothing_are_not_recorded(path):
     items = [
         {"key": "harvest:ADBE", "kind": "harvest", "line": "Vende ADBE",

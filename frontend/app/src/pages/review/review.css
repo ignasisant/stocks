@@ -1424,3 +1424,28 @@
   font-weight: 500;
   vertical-align: middle;
 }
+
+/* Nothing to move is the advice, said plainly; what nearly moved under it. */
+.ag-rev-plan-stay {
+  margin-top: 0.5rem;
+  max-width: 62ch;
+}
+
+.ag-rev-plan-stay-title {
+  margin: 0 0 0.25rem;
+  font-size: var(--ag-fs-lg);
+  font-weight: 600;
+  color: var(--ag-text-primary);
+}
+
+.ag-rev-plan-stay-why {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+}
+
+/* What new money would buy, apart from the moves the sales pay for. */
+.ag-rev-wait {
+  margin-top: 1.25rem;
+}

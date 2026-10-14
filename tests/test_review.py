@@ -433,8 +433,19 @@ def test_heavy_debt_stops_an_add_or_a_buy():
 def test_cheap_on_its_kindest_reading_alone_is_no_margin_of_safety():
     one_reading = {**CHEAP_QUALITY, "pe_fwd": 8.0, "fcf_yield": 0.02, "ev_ebitda": 30.0}
     s = review.score(one_reading)
-    assert s.cheapness >= review.CHEAP > s.price_floor
+    assert s.cheapness >= review.CHEAP and s.cheap_reads == 1
     _blocked(one_reading, review.R_ONE_READING)
+
+
+def test_two_cheap_readings_are_a_margin_of_safety_even_beside_a_dear_one():
+    # HSBC's shape: cheap on earnings and on its book, dear on its ROE-fair
+    # book; the mean without the cheapest reading fell under 50 and blocked it.
+    two = {**CHEAP_QUALITY, "pe_fwd": 9.0, "fcf_yield": 0.03, "ev_ebitda": 14.0}
+    s = review.score(two)
+    assert s.cheap_reads == 2
+    v = review.judge_held(two, weight=0.02, risk_share=0.02)
+    assert review.R_ONE_READING not in v.reasons
+    assert v.verdict == review.ADD
 
 
 def test_cautions_never_make_an_add():
@@ -568,12 +579,130 @@ def test_a_seven_name_book_cuts_to_an_even_share_and_spends_what_it_frees():
 
 
 def test_adds_are_never_funded_with_money_the_plan_does_not_raise():
-    # Nothing sold: the underweight adds stand, nothing else is topped up.
+    # Nothing sold: the underweight names wait for new money, nothing moves.
     book = [(CHEAP_QUALITY, 0.02)] * 5 + [(FAIR_QUALITY, 0.10)] * 9
     plan = _plan(*book)
-    assert [v.verdict for v in plan[:5]] == [review.ADD] * 5
-    assert all(v.target == review.ADD_TO for v in plan[:5])
+    for v in plan[:5]:
+        assert v.verdict == review.HOLD and v.target is None
+        assert v.reasons[0] == review.R_NEW_MONEY and v.want == review.ADD_TO
     assert {v.verdict for v in plan[5:]} == {review.HOLD}
+    assert _moves(book, plan) == (0, 0)
+
+
+def test_the_sales_pay_for_the_best_adds_first_and_the_rest_wait():
+    book = (
+        [(DEAR_WEAK, 0.04)]
+        + [(CHEAP_QUALITY, 0.02)] * 2
+        + [(FAIR_QUALITY, 0.02)]
+        + [(FAIR_QUALITY, 0.10)] * 9
+    )
+    plan = _plan(*book)
+    sold, first, second, fair, *_ = plan
+    assert sold.verdict == review.SELL
+    # 4% freed: the first cheap name gets its whole 3%, the second the 1%
+    # left and keeps the rest of its mark as a wish.
+    assert first.verdict == review.ADD and first.target == pytest.approx(review.ADD_TO)
+    assert first.want is None
+    assert second.verdict == review.ADD and second.target == pytest.approx(0.03)
+    assert second.want == review.ADD_TO
+    assert fair.verdict == review.HOLD and fair.reasons[0] == review.R_NEW_MONEY
+    sells, buys = _moves(book, plan)
+    assert buys == pytest.approx(sells)
+
+
+def test_an_add_the_sales_reach_by_a_crumb_waits_whole():
+    book = [(DEAR_WEAK, 0.004), (CHEAP_QUALITY, 0.02)] + [(FAIR_QUALITY, 0.122)] * 8
+    plan = _plan(*book)
+    assert plan[0].verdict == review.SELL
+    assert plan[1].verdict == review.HOLD and plan[1].want == review.ADD_TO
+
+
+def _scored(monkeypatch, quality, cheapness):
+    monkeypatch.setattr(
+        review, "score", lambda metrics: review.Scores(quality, cheapness, cheap_reads=2)
+    )
+
+
+@pytest.mark.parametrize("quality, cheapness", [(38.0, 30.0), (30.0, 38.0)])
+def test_a_name_between_the_sell_lines_is_a_close_call_held(
+    monkeypatch, quality, cheapness
+):
+    _scored(monkeypatch, quality, cheapness)
+    v = review.judge_held({}, weight=0.05, names=20)
+    assert v.verdict == review.HOLD and v.reasons[0] == review.R_CLOSE_CALL
+    # Proposed before and still under the plain line: the sale stands.
+    kept = review.judge_held({}, weight=0.05, names=20, was=review.SELL)
+    assert kept.verdict == review.SELL
+
+
+def test_a_name_under_both_new_lines_is_sold_whatever_was_proposed(monkeypatch):
+    _scored(monkeypatch, 30.0, 30.0)
+    for was in (None, review.SELL, review.ADD):
+        verdict = review.judge_held({}, weight=0.05, names=20, was=was)
+        assert verdict.verdict == review.SELL
+
+
+def test_a_new_add_clears_the_lines_by_a_margin_and_an_old_one_holds_to_them(
+    monkeypatch,
+):
+    _scored(monkeypatch, review.GOOD + 2, review.CHEAP + 2)
+    v = review.judge_held({}, weight=0.02, names=20)
+    assert v.verdict == review.HOLD and v.reasons[0] == review.R_CLOSE_CALL
+    kept = review.judge_held({}, weight=0.02, names=20, was=review.ADD)
+    assert kept.verdict == review.ADD
+    _scored(monkeypatch, review.GOOD + 6, review.CHEAP + 6)
+    assert review.judge_held({}, weight=0.02, names=20).verdict == review.ADD
+
+
+def test_a_full_position_between_the_add_lines_is_no_close_call(monkeypatch):
+    _scored(monkeypatch, review.GOOD + 2, review.CHEAP + 2)
+    v = review.judge_held({}, weight=0.05, names=20)
+    assert v.verdict == review.HOLD and review.R_CLOSE_CALL not in v.reasons
+
+
+def test_an_outside_buy_clears_the_margin_unless_it_was_proposed(monkeypatch):
+    _scored(monkeypatch, review.GOOD + 2, review.CHEAP + 2)
+    v = review.judge_candidate({})
+    assert v.verdict == review.WATCH and review.R_CLOSE_CALL in v.reasons
+    assert review.judge_candidate({}, was=review.BUY).verdict == review.BUY
+
+
+def test_a_sale_that_costs_more_in_tax_than_its_case_is_worth_waits():
+    sell = review.judge_held(DEAR_WEAK, weight=0.05, names=20)
+    assert sell.verdict == review.SELL
+    held = review.hold_for_cost(sell, 0.08)
+    assert held.verdict == review.HOLD and held.target is None
+    assert held.reasons[0] == review.R_SALE_COSTLY
+    # Cheap in tax, or no replay to say: the sale stands.
+    assert review.hold_for_cost(sell, 0.03) is sell
+    assert review.hold_for_cost(sell, None) is sell
+
+
+def test_a_business_too_weak_to_keep_is_sold_whatever_the_tax(monkeypatch):
+    _scored(monkeypatch, review.COSTLY_FLOOR - 5, 10.0)
+    sell = review.judge_held({}, weight=0.05, names=20)
+    assert review.hold_for_cost(sell, 0.20) is sell
+
+
+def test_a_crumb_is_sold_whatever_its_tax():
+    crumb = review.judge_held(MIDDLING, weight=0.002, names=20)
+    assert review.R_SMALL in crumb.reasons
+    assert review.hold_for_cost(crumb, 0.20) is crumb
+
+
+def test_acquired_goodwill_does_not_sink_the_return_on_capital():
+    bought = DEAR_WEAK | {"roic_ex_goodwill": 0.12}
+    assert review.score(bought).quality > review.score(DEAR_WEAK).quality
+    assert review.R_LOW_ROIC not in review.judge_held(bought, weight=0.05).reasons
+    # The lower of the two never drags a high plain ROIC down.
+    plain = CHEAP_QUALITY | {"roic_ex_goodwill": 0.05}
+    assert review.score(plain).quality == review.score(CHEAP_QUALITY).quality
+
+
+def test_new_money_wishes_count_toward_idle_cash():
+    rows = _rows(("money_market", None, 0.25), ("stock", None, 0.75))
+    assert review.cash_note(rows, [review.HOLD]) is None
+    assert review.cash_note(rows, [review.HOLD], waiting=1) is not None
 
 
 def test_a_top_up_too_small_to_trade_is_left_alone():
@@ -848,13 +977,53 @@ def test_a_reit_paying_out_its_earnings_is_not_stretched():
         assert wrong not in v.reasons
 
 
+# A regulated network as the feed reads it: low ROIC, capex past its cash
+# flow and no moat on a company's ruler.
+UTILITY = {
+    "industry": "Utilities - Regulated Electric",
+    "roe": 0.11, "net_income_cagr": 0.05, "share_dilution": 0.0,
+    "pe_fwd": 14.0, "ev_ebitda": 9.0, "dividend_yield": 0.045,
+    "roic": 0.05, "op_margin": 0.30, "fcf_yield": -0.03, "moat": 30.0,
+    "runway_years": 0.5, "ev": 1e11,
+}
+
+
 def test_a_utility_carries_four_times_ebitda_without_blocking_an_add():
-    utility = {**CHEAP_QUALITY, "industry": "Utilities - Regulated Electric"}
     assert (
-        review.judge_held({**utility, "net_debt_ebitda": 4.0}, weight=0.02).verdict
+        review.judge_held({**UTILITY, "net_debt_ebitda": 4.0}, weight=0.02).verdict
         == review.ADD
     )
-    _blocked({**utility, "net_debt_ebitda": 5.5}, review.R_DEBT)
+    _blocked({**UTILITY, "net_debt_ebitda": 5.5}, review.R_DEBT)
+
+
+def test_a_regulated_utility_is_judged_on_its_allowed_return_not_its_roic():
+    s = review.score({**UTILITY, "net_debt_ebitda": 4.0})
+    assert s.lens == review.UTILITY
+    assert s.quality >= review.GOOD and s.cheapness >= review.CHEAP
+    v = review.judge_held({**UTILITY, "net_debt_ebitda": 4.0}, weight=0.02)
+    assert v.reasons[0] == review.R_UTILITY_LENS
+    for company_ruler in (
+        review.R_LOW_ROIC, review.R_NEGATIVE_FCF, review.R_NO_MOAT,
+        review.R_SHORT_RUNWAY,
+    ):
+        assert company_ruler not in v.reasons
+    weak = review.score({**UTILITY, "roe": 0.05, "net_income_cagr": -0.04})
+    assert weak.quality < s.quality
+
+
+def test_a_utility_paying_past_its_free_cash_flow_is_funding_capex_not_stretched():
+    funded = {**UTILITY, "net_debt_ebitda": 4.0, "dividend_fcf": 1.5}
+    v = review.judge_held(funded, weight=0.02)
+    assert review.R_PAYOUT_STRETCHED not in v.reasons
+    _blocked({**funded, "payout_ratio": 1.15}, review.R_PAYOUT_STRETCHED)
+
+
+def test_a_renewables_developer_keeps_the_standard_lens():
+    assert review.lens({"industry": "Utilities - Renewable"}) == review.STANDARD
+    assert (
+        review.lens({"industry": "Utilities - Independent Power Producers"})
+        == review.STANDARD
+    )
 
 
 def test_a_lender_outside_the_financial_industries_still_falls_back_on_the_float():
@@ -879,6 +1048,21 @@ def test_a_high_yield_counts_toward_a_mature_names_price():
     assert review.score({**PAYER, "dividend_yield": 0.05}).cheapness > plain
     # A token payout is not held against a name that reinvests.
     assert review.score({**PAYER, "dividend_yield": 0.015}).cheapness == plain
+
+
+def test_a_dividend_earnings_cover_is_not_stretched_by_a_short_cash_flow_alone():
+    # Coca-Cola: 62% of earnings, 116% of four years' free cash flow.
+    ko = {**CHEAP_QUALITY, "payout_ratio": 0.62, "dividend_fcf": 1.16}
+    assert review.R_PAYOUT_STRETCHED not in review.judge_held(ko, weight=0.02).reasons
+    _blocked({**ko, "payout_ratio": 0.80}, review.R_PAYOUT_STRETCHED)
+    _blocked({**ko, "dividend_fcf": 1.6}, review.R_PAYOUT_STRETCHED)
+
+
+def test_a_two_percent_payer_is_not_dearer_than_a_name_that_pays_nothing():
+    # Inditex: a 2.2% yield scored 24 and pulled a cheap name under the line.
+    plain = review.score(PAYER).cheapness
+    assert review.score({**PAYER, "dividend_yield": 0.022}).cheapness == plain
+    assert review.score({**PAYER, "dividend_yield": 0.034}).cheapness == plain
 
 
 def test_a_stretched_payout_stops_an_add():
@@ -989,3 +1173,21 @@ def test_a_buy_is_sized_to_the_add_line_of_the_book_it_joins():
     assert review.judge_candidate(CHEAP_QUALITY).fill == review.ADD_TO
     assert review.judge_candidate(CHEAP_QUALITY, names=100).fill == pytest.approx(0.02)
     assert review.judge_candidate(DEAR_WEAK).fill is None
+
+
+@pytest.mark.parametrize(
+    ("industry", "unmapped"),
+    [
+        ("Banks - Savings", True),
+        ("REIT - Data Centers", True),
+        ("Utilities - Regulated Electric", False),
+        ("Insurance Brokers", False),
+        ("Utilities - Renewable", False),
+        ("Semiconductors", False),
+        (None, False),
+    ],
+)
+def test_an_industry_that_sounds_like_a_lens_but_has_none_is_flagged(
+    industry, unmapped
+):
+    assert review.unmapped_industry(industry) is unmapped

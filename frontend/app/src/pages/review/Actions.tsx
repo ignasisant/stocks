@@ -13,6 +13,11 @@
  * weight to which, how much money, why, and what it costs in tax or when it
  * can be done; its details open in the dialog the tables' rows open. Holding
  * is not a move, so the quiet rows are the table's, not here.
+ *
+ * A plan that moves nothing is advice too, said as such: the book is fine as
+ * it is today, and why — names a few points from a move, sales whose tax
+ * would eat what they bring. The adds the sales cannot pay for are listed
+ * apart, as what new money would buy, never as cash the plan spends.
  */
 
 import { useLang, useT } from "../../shell/i18n";
@@ -22,18 +27,19 @@ import { Help } from "../../ui/Kpi";
 import { DetailsButton, VerdictChip } from "./Explain";
 import { useListFocus } from "./focus";
 import { useHelp } from "./lines";
-import { planMoves } from "./filter";
+import { planMoves, waitingMoves } from "./filter";
 import { longDay, money, percent, verdictTone } from "./format";
 import type { Review, ReviewRow } from "./types";
 import { jurisdictionLabel } from "../portfolio/format";
 
-export function Plan({ data }: { data: Review }) {
+export function Plan({ data, filtered = false }: { data: Review; filtered?: boolean }) {
   const t = useT();
   const lang = useLang();
   const na = t("review.na");
   const plan = data.plan;
   const { out, into } = planMoves(data);
   const moves = [...out, ...into];
+  const waiting = waitingMoves(data);
   const net = plan.buys - plan.sells;
   const scale = Math.max(plan.sells, plan.buys, 1);
   const focus = useListFocus(
@@ -46,8 +52,10 @@ export function Plan({ data }: { data: Review }) {
       <h2 className="ag-rev-h2" id="ag-rev-plan-h">
         {t("review.plan_title")}
       </h2>
-      {moves.length === 0 ? (
+      {moves.length === 0 && filtered ? (
         <p className="ag-rev-caption">{t("review.moves_none")}</p>
+      ) : moves.length === 0 ? (
+        <Stay data={data} />
       ) : (
         <>
           <div className="ag-rev-plan-sum">
@@ -130,7 +138,99 @@ export function Plan({ data }: { data: Review }) {
           </div>
         </>
       )}
+      {waiting.length > 0 ? (
+        <Waiting
+          rows={waiting}
+          total={plan.new_money ?? 0}
+          book={data.total}
+          base={data.base}
+        />
+      ) : null}
     </section>
+  );
+}
+
+/**
+ * Nothing to move: the advice is to stay, and the lines under it say what
+ * kept the book still when something nearly moved.
+ */
+function Stay({ data }: { data: Review }) {
+  const t = useT();
+  const has = (code: string) => (row: ReviewRow) => row.reasons.includes(code);
+  const close = data.held.filter(has("close_call")).length;
+  const costly = data.held.filter(has("sale_costly")).length;
+  return (
+    <div className="ag-rev-plan-stay">
+      <p className="ag-rev-plan-stay-title">{t("review.stay_title")}</p>
+      <p className="ag-rev-caption">{t("review.stay_body")}</p>
+      {close || costly ? (
+        <ul className="ag-rev-plan-stay-why">
+          {close ? <li>{t("review.stay_close", { count: close })}</li> : null}
+          {costly ? <li>{t("review.stay_costly", { count: costly })}</li> : null}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * What new money would buy: the adds the sales do not reach, best case
+ * first, each from its weight to its mark and the money that takes.
+ */
+function Waiting({
+  rows,
+  total,
+  book,
+  base,
+}: {
+  rows: ReviewRow[];
+  total: number;
+  book: number | null;
+  base: string;
+}) {
+  const t = useT();
+  const lang = useLang();
+  const na = t("review.na");
+  return (
+    <div className="ag-rev-mvs ag-rev-wait">
+      <h3 className="ag-rev-mvs-head">
+        <span>
+          {t("review.wait_title")} <span className="ag-rev-mvs-n">{rows.length}</span>
+          <Help text={t("review.wait_help")} />
+        </span>
+        <span className="ag-rev-tone-up">{money(total, base, lang, true)}</span>
+      </h3>
+      <ul className="ag-rev-mv-list">
+        {rows.map((row) => {
+          const from = row.target_weight ?? row.weight;
+          const to = from !== null && book ? from + (row.new_money ?? 0) / book : null;
+          return (
+            <li key={row.ticker} className="ag-rev-mv">
+              <div className="ag-rev-mv-who">
+                <TickerCell ticker={row.ticker} />
+              </div>
+              <span className="ag-rev-mv-weights">
+                {percent(from, lang) ?? na}
+                <i aria-hidden="true">→</i>
+                {percent(to, lang) ?? na}
+              </span>
+              <b className="ag-rev-mv-money ag-rev-tone-up">
+                {money(row.new_money ?? null, base, lang, true) ?? na}
+              </b>
+              <div className="ag-rev-mv-why">
+                <Reasons
+                  reasons={row.reasons.filter((code) => code !== "needs_new_money")}
+                  limit={2}
+                />
+              </div>
+              <span className="ag-rev-mv-more">
+                <DetailsButton row={row} variant="icon" />
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 

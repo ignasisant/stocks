@@ -32,9 +32,10 @@ QUALITY = {
     "pe_fwd": 9.0, "fcf_yield": 0.10, "ev_ebitda": 9.0, "ev": 1e11,
     "roic": 0.41, "op_margin": 0.36, "moat": 80.0,
 }
+# Weak enough that no tax bill holds its sale (`engine.COSTLY_FLOOR`).
 WEAK = {
     "pe_fwd": 40.0, "fcf_yield": 0.007, "ev_ebitda": 105.0, "ev": 1e12,
-    "roic": 0.05, "op_margin": 0.17, "moat": 33.0,
+    "roic": 0.03, "op_margin": 0.08, "moat": 20.0,
 }
 METRICS = {"ADBE": QUALITY, "AMD": WEAK, "BKNG": QUALITY, "SNAP": WEAK}
 KINDS = {"XEON.DE": "money_market"}
@@ -257,6 +258,124 @@ def test_what_the_page_proposes_goes_in_the_journal_once(client, book, monkeypat
     assert all(e.times == 1 and e.state == "open" for e in entries)
     amd = next(e for e in entries if e.ticker == "AMD")
     assert amd.snapshot["target_weight"] == 0.0 and amd.reasons
+
+
+def test_a_plan_that_moves_nothing_is_advice_to_stay(client, book, monkeypatch):
+    from stocks.chat import journal
+
+    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
+    moving = loaders.positions_table()
+    still = pd.DataFrame(
+        {
+            "shares": [10.0, 5.0],
+            "cost": [1_000.0, 2_000.0],
+            "value": [5_000.0, 5_000.0],
+            "pnl": [4_000.0, 3_000.0],
+            "pnl_pct": [4.0, 1.5],
+        },
+        index=pd.Index(["ADBE", "BKNG"], name="ticker"),
+    )
+    current = {"table": still}
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: current["table"])
+    body = _get(client)
+    assert (body["plan"]["sells"], body["plan"]["buys"]) == (0, 0)
+    # (BKNG is outside too: the ledger, not the priced table, says what is held.)
+    entries = journal.load(book.journal)
+    [stay] = [e for e in entries if e.source == "review" and not e.ticker]
+    assert (stay.action, stay.subject, stay.ticker) == ("stay", "review:book", "")
+    assert stay.snapshot == {"value": 10_000.0, "currency": "EUR"}
+    # A plan that moves again withdraws it.
+    current["table"] = moving
+    _get(client)
+    entries = journal.load(book.journal)
+    assert next(e for e in entries if e.action == "stay").state == "lapsed"
+    assert {e.action for e in entries if e.state == "open"} == {"sell", "add", "buy"}
+
+
+def test_an_add_the_sales_cannot_pay_for_waits_for_new_money(
+    client, book, monkeypatch
+):
+    table = pd.DataFrame(
+        {
+            "shares": [50.0, 5.0],
+            "cost": [9_700.0, 300.0],
+            "value": [9_700.0, 300.0],
+            "pnl": [0.0, 0.0],
+            "pnl_pct": [0.0, 0.0],
+        },
+        index=pd.Index(["XEON.DE", "ADBE"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    body = _get(client)
+    adbe = next(r for r in body["held"] if r["ticker"] == "ADBE")
+    assert adbe["verdict"] == "hold" and adbe["reasons"][0] == "needs_new_money"
+    assert adbe["delta"] is None
+    # 3% of a 10,000 book to the 5% line.
+    assert adbe["new_money"] == pytest.approx(200.0)
+    plan = body["plan"]
+    assert (plan["sells"], plan["buys"]) == (0, 0)
+    assert plan["new_money"] == pytest.approx(200.0)
+    # The idle cash counts it beside the outside buy.
+    [idle] = [n for n in body["notes"] if n["key"] == "cash_heavy"]
+    assert idle["count"] == 2
+
+
+def _scored_as(monkeypatch, metrics, quality, cheapness):
+    real = engine.score
+
+    def score(m):
+        if m is metrics:
+            return engine.Scores(quality, cheapness, cheap_reads=2)
+        return real(m)
+
+    monkeypatch.setattr(engine, "score", score)
+
+
+def test_a_sale_the_page_proposed_holds_to_the_plain_line(client, book, monkeypatch):
+    from datetime import date
+
+    from stocks.chat import journal
+
+    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
+    near = dict(WEAK)
+    monkeypatch.setitem(METRICS, "AMD", near)
+    _scored_as(monkeypatch, near, 37.0, 10.0)
+    # Light enough not to be trimmed instead, and at a loss: no tax holds it.
+    table = pd.DataFrame(
+        {
+            "shares": [10.0, 50.0, 5.0],
+            "cost": [1_000.0, 8_200.0, 2_000.0],
+            "value": [500.0, 9_000.0, 500.0],
+            "pnl": [-500.0, 800.0, -1_500.0],
+            "pnl_pct": [-0.5, 0.1, -0.75],
+        },
+        index=pd.Index(["AMD", "XEON.DE", "ADBE"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    amd = next(r for r in _get(client)["held"] if r["ticker"] == "AMD")
+    assert amd["verdict"] == "hold" and amd["reasons"][0] == "close_call"
+    journal.record(
+        book.journal,
+        [
+            journal.Shown(
+                source="review", subject="review:AMD", action="sell", ticker="AMD"
+            )
+        ],
+        date.today(),
+    )
+    amd = next(r for r in _get(client)["held"] if r["ticker"] == "AMD")
+    assert amd["verdict"] == "sell"
+
+
+def test_a_sale_dearer_in_tax_than_its_case_waits(client, book, monkeypatch):
+    # Weak but not hopeless (quality 33), sold at a 50% gain: Spain's tax
+    # is over 5% of what the sale raises.
+    _scored_as(monkeypatch, WEAK, 33.0, 2.0)
+    body = _get(client)
+    amd = next(r for r in body["held"] if r["ticker"] == "AMD")
+    assert amd["verdict"] == "hold" and amd["reasons"][0] == "sale_costly"
+    assert amd["delta"] is None and amd["tax"] is None
+    assert body["plan"]["sells"] == 0
 
 
 def test_a_book_of_one_or_two_companies_is_told_so(client, book, monkeypatch):
@@ -569,3 +688,118 @@ def test_a_slow_book_answers_within_its_budget_and_says_what_is_pending(
 
 def test_a_book_read_in_time_has_nothing_pending(client, book):
     assert _get(client)["pending"] == 0
+
+
+@pytest.fixture
+def warned(monkeypatch):
+    """Every once-a-window warning and `data.inconsistency` line the read
+    writes, as (event, fields)."""
+    seen: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        route.obs,
+        "warn_once",
+        lambda name, key="", **fields: seen.append((name, fields)) or True,
+    )
+    monkeypatch.setattr(
+        route.consistency,
+        "report",
+        lambda kind, **fields: seen.append((f"data.{kind}", fields)) or True,
+    )
+    return seen
+
+
+def test_the_read_says_why_a_company_read_blank_by_exchange_not_by_name(
+    client, book, monkeypatch, warned
+):
+    seen = []
+    monkeypatch.setattr(
+        route.obs, "event", lambda name, **fields: seen.append((name, fields))
+    )
+    _get(client, add="SAN.MC")
+    [fields] = [f for name, f in seen if name == "api.review"]
+    assert fields["unrated"] == {"no_metrics": 1}
+    assert fields["unrated_venues"] == {"MC": 1}
+    assert fields["added"] == 1 and fields["added_blank"] == 1
+    assert fields["added_venues"] == {"MC": 1}
+    assert fields["lenses"] == {"standard": 4}
+    assert {"gather", "prices", "risk"} <= set(fields["phases"])
+    assert fields["invariants"] == []
+    assert "SAN" not in repr(fields)
+
+
+def test_a_sound_plan_raises_no_invariant(client, book, warned):
+    _get(client)
+    assert not [f for name, f in warned if name == "review.invariant"]
+
+
+def _row(verdict, *, held=True, weight=None, target=None, delta=None, tax=None):
+    return route.ReviewRow(
+        ticker="X",
+        symbol="X",
+        held=held,
+        verdict=verdict,
+        weight=weight,
+        target_weight=target,
+        delta=delta,
+        tax=tax,
+    )
+
+
+def test_a_plan_that_cannot_be_right_is_named_by_kind(warned):
+    held = [
+        _row("trim", weight=0.6, target=0.3, delta=-300.0),
+        _row("add", weight=0.3, target=0.5, delta=-10.0),
+        _row("hold", weight=0.3),
+    ]
+    outside = [_row("buy", held=False, target=1.2, delta=50.0)]
+    kinds = route._invariants(held, outside, replayed=True)
+    assert set(kinds) == {
+        "weights_off",
+        "target_out_of_range",
+        "delta_against_verdict",
+        "sale_untaxed",
+    }
+    said = {f["kind"]: f for name, f in warned if name == "review.invariant"}
+    assert said["delta_against_verdict"]["verdicts"] == {"add": 1}
+    assert said["sale_untaxed"] == {"kind": "sale_untaxed", "count": 2, "replayed": True}
+
+
+def test_a_book_mostly_sold_is_an_odd_read_with_its_shape(warned):
+    held = [_row("sell") for _ in range(4)] + [_row("hold"), _row("core")]
+    route._odd_read(held, route.Counter(), jurisdiction="UK", base="GBP")
+    [(name, fields)] = warned
+    assert name == "review.odd_read"
+    assert fields["kind"] == "sells" and fields["companies"] == 6
+    assert fields["jurisdiction"] == "UK"
+    # Blanks a late pull explains are not a misread.
+    warned.clear()
+    route._odd_read(
+        [_row("unrated") for _ in range(5)], route.Counter(pending=5), base="EUR"
+    )
+    assert warned == []
+
+
+def test_a_name_priced_off_a_broken_cash_flow_is_logged_with_its_ratios(
+    client, book, monkeypatch, warned
+):
+    monkeypatch.setitem(METRICS, "ADBE", {**QUALITY, "ev": -1e9})
+    _get(client)
+    [fields] = [f for name, f in warned if name == "data.metric_suspect"]
+    assert fields["ticker"] == "ADBE" and fields["source"] == "review"
+    assert fields["ev_not_positive"] is True
+
+
+def test_a_bank_industry_no_lens_lists_is_named_by_industry(
+    client, book, monkeypatch, warned
+):
+    monkeypatch.setitem(METRICS, "AMD", {**QUALITY, "industry": "Banks - Savings"})
+    _get(client)
+    assert ("review.industry_unmapped", {"industry": "Banks - Savings"}) in warned
+
+
+@pytest.mark.parametrize(
+    ("symbol", "venue"),
+    [("SAN.MC", "MC"), ("VOD.L", "L"), ("AAPL", "none"), ("BRK.B", "B")],
+)
+def test_a_failure_is_placed_by_exchange(symbol, venue):
+    assert route._venue(symbol) == venue

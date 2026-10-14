@@ -138,6 +138,7 @@ export function applyFilter(data: Review, filter: Filter): Review {
     .map((row) => row.delta)
     .filter((d): d is number => d !== null);
   const taxes = held.map((row) => row.tax).filter((x): x is number => x !== null);
+  const waiting = held.reduce((sum, row) => sum + (row.new_money ?? 0), 0);
   return {
     ...data,
     held,
@@ -147,6 +148,7 @@ export function applyFilter(data: Review, filter: Filter): Review {
       sells: moves.filter((d) => d < 0).reduce((a, b) => a - b, 0),
       buys: moves.filter((d) => d > 0).reduce((a, b) => a + b, 0),
       tax: taxes.length ? taxes.reduce((a, b) => a + b, 0) : null,
+      new_money: waiting,
     },
   };
 }
@@ -247,4 +249,15 @@ export function planMoves(data: Review): { out: ReviewRow[]; into: ReviewRow[] }
     .sort(byDelta);
   const adds = held.filter((row) => row.verdict === "add").sort(byDelta);
   return { out, into: [...adds, ...opened] };
+}
+
+/**
+ * The adds the sales do not pay for, best case first: what new money would
+ * buy. A partly funded add is in both lists, the rest of its mark here.
+ */
+export function waitingMoves(data: Review): ReviewRow[] {
+  const score = (row: ReviewRow) => (row.quality ?? 0) + (row.cheapness ?? 0);
+  return data.held
+    .filter((row) => (row.new_money ?? 0) > 0)
+    .sort((a, b) => score(b) - score(a));
 }

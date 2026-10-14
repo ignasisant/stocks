@@ -210,7 +210,7 @@ function Screen({
 
         <Notes notes={read.notes ?? []} taxCurrency={plan.tax_currency} />
 
-        {data.held.length > 0 && <Plan data={data} />}
+        {data.held.length > 0 && <Plan data={data} filtered={isFiltered(filter)} />}
 
         <QualityMap
           held={data.held}

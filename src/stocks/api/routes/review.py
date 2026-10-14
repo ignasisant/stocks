@@ -25,7 +25,9 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, wait
+from contextlib import contextmanager
 from datetime import date
 from time import perf_counter
 from typing import Annotated, TypedDict
@@ -44,7 +46,7 @@ from stocks.api.schemas import Review, ReviewLines, ReviewNote, ReviewPlan, Revi
 from stocks.chat import journal
 from stocks.config import Holding, load_watchlist
 from stocks.data import fx, profiles
-from stocks.portfolio import tax
+from stocks.portfolio import consistency, tax
 from stocks.portfolio.tax import prefs as tax_prefs
 
 router = APIRouter(tags=["review"])
@@ -136,11 +138,11 @@ def _symbol(ticker: str) -> str:
 
 def _gather(
     symbols: list[str],
-) -> tuple[dict[str, tuple[str | None, dict | None]], int]:
-    """Kind and metrics per symbol, fetched side by side, and how many missed
-    `GATHER_BUDGET_S`; a fund skips the metrics pull, since a wrapper has no ROIC to
-    score. A late symbol is left out (its row reads unrated) while its pull
-    finishes in the background."""
+) -> tuple[dict[str, tuple[str | None, dict | None]], set[str]]:
+    """Kind and metrics per symbol, fetched side by side, and the symbols that
+    missed `GATHER_BUDGET_S`; a fund skips the metrics pull, since a wrapper
+    has no ROIC to score. A late symbol is left out (its row reads unrated)
+    while its pull finishes in the background."""
 
     def one(symbol: str) -> tuple[str | None, dict | None]:
         kind = _kind(symbol)
@@ -150,10 +152,10 @@ def _gather(
 
     unique = list(dict.fromkeys(symbols))
     if not unique:
-        return {}, 0
+        return {}, set()
     futures = {_POOL.submit(carried(one), symbol): symbol for symbol in unique}
     done, late = wait(futures, timeout=GATHER_BUDGET_S)
-    return {futures[f]: f.result() for f in done}, len(late)
+    return {futures[f]: f.result() for f in done}, {futures[f] for f in late}
 
 
 def _risk_shares(db: str, mtime: float, ccy: str) -> dict[str, float]:
@@ -300,6 +302,141 @@ def _book_price(row, ccy: str) -> tuple[float, str] | None:
     return value / count, ccy
 
 
+class _Clock:
+    """Milliseconds per phase of one read, summed over repeats, so a slow
+    answer says which source it waited on."""
+
+    def __init__(self) -> None:
+        self.ms: dict[str, int] = {}
+
+    @contextmanager
+    def __call__(self, phase: str) -> Iterator[None]:
+        started = perf_counter()
+        try:
+            yield
+        finally:
+            spent = round((perf_counter() - started) * 1000)
+            self.ms[phase] = self.ms.get(phase, 0) + spent
+
+
+# An unrated row is expected for a fund, cash or a coin; any other is a
+# source that failed the read, and these say which.
+_UNRATED_WHY = (engine.R_SUSPECT, engine.R_FCF_FLOAT, engine.R_NO_DATA)
+# Too many sells or blanks among a book's companies is a calibration that
+# misreads a kind of book (a bank-heavy one, a foreign one), not a verdict.
+ODD_MIN_NAMES = 5
+ODD_SHARE = 0.5
+
+
+def _venue(symbol: str) -> str:
+    """The exchange suffix of a symbol (MC, L, DE), "none" for a bare one:
+    where a failure keeps turning up, never which name."""
+    head, dot, tail = symbol.rpartition(".")
+    return tail.upper() if dot and head and tail.isalpha() and len(tail) <= 3 else "none"
+
+
+def _unrated_cause(row: ReviewRow, metrics: dict | None, late: set[str]) -> str | None:
+    """Why a company's row reads unrated, or None for a scored row or one a
+    kind leaves unrated on purpose."""
+    if row.verdict != engine.UNRATED or not engine.company(row.kind or "stock"):
+        return None
+    if row.symbol in late:
+        return "pending"
+    if metrics is None:
+        return "no_metrics"
+    return next((r for r in row.reasons if r in _UNRATED_WHY), "other")
+
+
+def _user() -> str:
+    return str(obs.current().get("user", ""))
+
+
+def _invariants(
+    held: list[ReviewRow], outside: list[ReviewRow], *, replayed: bool
+) -> list[str]:
+    """Plans that cannot be right, each said once per account and window as
+    `review.invariant`: the weights do not add up, a target falls outside
+    the book, a move goes against its verdict, or a sale went out without
+    its tax. Targets may sum past 1: adds are sized on today's total and
+    the plan's net buys are new money. Returns the kinds found, for the
+    read's own line."""
+    found: dict[str, dict] = {}
+    current = [r.weight for r in held if r.weight is not None]
+    if current and abs(sum(current) - 1.0) > 0.005:
+        found["weights_off"] = {"total": round(sum(current), 4)}
+    rows = held + outside
+    wild = [
+        r.target_weight
+        for r in rows
+        if r.target_weight is not None and not 0.0 <= r.target_weight <= 1.0
+    ]
+    if wild:
+        found["target_out_of_range"] = {"count": len(wild)}
+    against = [
+        r.verdict
+        for r in rows
+        if r.delta
+        and (
+            (r.delta > 0 and r.verdict in (engine.SELL, engine.TRIM))
+            or (r.delta < 0 and r.verdict in (engine.ADD, engine.BUY))
+        )
+    ]
+    if against:
+        found["delta_against_verdict"] = {"verdicts": dict(Counter(against))}
+    untaxed = sum(
+        1 for r in held if r.delta is not None and r.delta < 0 and r.tax is None
+    )
+    if untaxed:
+        found["sale_untaxed"] = {"count": untaxed, "replayed": replayed}
+    for kind, evidence in found.items():
+        obs.warn_once("review.invariant", (kind, _user()), kind=kind, **evidence)
+    return list(found)
+
+
+def _audit_names(
+    rows: list[ReviewRow], facts: dict[str, tuple[str | None, dict | None]]
+) -> None:
+    """What the feed got wrong about a name, said once: a name priced off a
+    cash flow too good to be true (`data.inconsistency` metric_suspect), and
+    an industry that sounds like a bank, landlord or utility but that no lens
+    lists (`review.industry_unmapped`, by industry, never a ticker)."""
+    for row in rows:
+        metrics = facts.get(row.symbol, (None, None))[1] or {}
+        if engine.R_SUSPECT in row.reasons:
+            fcf, ev = metrics.get("fcf_yield"), metrics.get("ev")
+            consistency.report(
+                "metric_suspect",
+                source="review",
+                ticker=row.symbol,
+                fcf_yield=round(fcf, 3) if isinstance(fcf, (int, float)) else None,
+                ev_not_positive=isinstance(ev, (int, float)) and ev <= 0,
+            )
+        industry = metrics.get("industry")
+        if engine.unmapped_industry(industry):
+            obs.warn_once("review.industry_unmapped", industry, industry=industry)
+
+
+def _odd_read(held: list[ReviewRow], unrated: Counter, **shape) -> None:
+    """A read where most of the companies are sold, or most read blank for a
+    reason other than a late pull: a kind of book the engine misreads.
+    Logged with the book's shape, once per account and window."""
+    companies = [r for r in held if engine.company(r.kind or "stock")]
+    if len(companies) < ODD_MIN_NAMES:
+        return
+    sells = sum(r.verdict == engine.SELL for r in companies) / len(companies)
+    blank = (sum(unrated.values()) - unrated.get("pending", 0)) / len(companies)
+    for kind, share in (("sells", sells), ("unrated", blank)):
+        if share > ODD_SHARE:
+            obs.warn_once(
+                "review.odd_read",
+                (kind, _user()),
+                kind=kind,
+                share=round(share, 2),
+                companies=len(companies),
+                **shape,
+            )
+
+
 @router.get("/review", response_model=Review, summary="What to sell and what to add")
 def review(
     account: Account,
@@ -316,6 +453,7 @@ def review(
     ] = "",
 ) -> Review:
     started = perf_counter()
+    clock = _Clock()
     ccy = reporting_currency(account, base)
     added = _parse_added(add)
     today = date.today()
@@ -352,12 +490,19 @@ def review(
     ][:MAX_CANDIDATES]
     outside_symbols = {c: _symbol(c) for c in candidates}
 
-    facts, pending = _gather(list(held_symbols.values()) + list(outside_symbols.values()))
-    windows = _windows(account, code, today)
+    with clock("gather"):
+        facts, late = _gather(
+            list(held_symbols.values()) + list(outside_symbols.values())
+        )
+    pending = len(late)
+    with clock("windows"):
+        windows = _windows(account, code, today)
     window_by_symbol = {_symbol(label): day for label, day in windows.items()}
 
-    table = pricing.result()
-    shares = risk.result() if held_labels else {}
+    with clock("prices"):
+        table = pricing.result()
+    with clock("risk"):
+        shares = risk.result() if held_labels else {}
     held_labels = [str(t) for t in table.index] if not table.empty else []
     weights = value_weights(table) if not table.empty else {}
     # The denominator `value_weights` divides by — priced rows at value, the
@@ -397,16 +542,21 @@ def review(
         key = (label, target)
         if key not in sales:
             if book is _NOT_REPLAYED:
-                book = _replay(account)
-            sales[key] = _sale(
-                book, label, weight, target, _book_price(table.loc[label], ccy)
-            )
+                with clock("replay"):
+                    book = _replay(account)
+            with clock("sales"):
+                sales[key] = _sale(
+                    book, label, weight, target, _book_price(table.loc[label], ccy)
+                )
         return sales[key]
 
     def tax_share(label: str, weight: float | None, verdict: engine.Verdict):
-        """A concentration cut's tax over what it raises, both in the
-        jurisdiction's currency; None for any other row."""
-        if verdict.verdict != engine.TRIM or engine.R_CONCENTRATED not in verdict.reasons:
+        """A concentration cut's or a sale's tax over what it raises, both in
+        the jurisdiction's currency; None for any other row (a crumb's sale
+        too: its tax is crumbs)."""
+        cut = verdict.verdict == engine.TRIM and engine.R_CONCENTRATED in verdict.reasons
+        sold = verdict.verdict == engine.SELL and engine.R_SMALL not in verdict.reasons
+        if not (cut or sold):
             return None
         if weight is None or verdict.target is None or total <= 0:
             return None
@@ -435,6 +585,15 @@ def review(
     ]
     notes = engine.book_notes(rows, ccy)
     company_share = sum(r.weight or 0.0 for r in rows if engine.company(r.kind))
+    # A move the page proposed before and still stands holds to the plain
+    # line; a new one has to clear the margin past it (`engine.judge_held`).
+    proposed: dict[str, str] = {}
+    with obs.swallow("api.review_journal"):
+        proposed = journal.open_in_review(account.journal)
+
+    def was(ticker: str, symbol: str) -> str | None:
+        return proposed.get(ticker.upper()) or proposed.get(symbol.upper())
+
     first = engine.cap_small_sells(
         [
             engine.judge_held(
@@ -444,6 +603,7 @@ def review(
                 kind=kind_of(label),
                 names=names,
                 company_share=company_share or 1.0,
+                was=was(label, symbol_of(label)),
             )
             for label in held_labels
         ]
@@ -452,6 +612,7 @@ def review(
     for label, verdict in zip(held_labels, first, strict=True):
         weight = _num(weights.get(label))
         share = tax_share(label, weight, verdict)
+        verdict = engine.hold_for_cost(verdict, share)
         staged.append((weight, engine.stage_for_tax(weight, verdict, share)))
     judged = engine.redeploy(staged, [sectors[label] for label in held_labels])
 
@@ -462,7 +623,8 @@ def review(
         for (w, _), v in zip(staged, judged, strict=True)
     ):
         if book is _NOT_REPLAYED:
-            book = _replay(account)
+            with clock("replay"):
+                book = _replay(account)
         plan_orders, losers = [], []
         loss_line, floor = _lines(book)
         for label, (weight, _), verdict in zip(held_labels, staged, judged, strict=True):
@@ -479,7 +641,9 @@ def review(
                 if loss is not None and loss < -loss_line:
                     losers.append((loss, order))
         losers.sort(key=lambda pair: pair[0])
-        if offset := _offset(book, plan_orders, [order for _, order in losers], floor):
+        with clock("offset"):
+            offset = _offset(book, plan_orders, [order for _, order in losers], floor)
+        if offset:
             notes.append(offset)
 
     held_rows: list[ReviewRow] = []
@@ -489,7 +653,10 @@ def review(
         row = table.loc[label]
         weight = _num(weights.get(label))
         risk = shares.get(label, shares.get(symbol))
-        delta = tax_due = after = None
+        delta = tax_due = after = wish = None
+        if verdict.want is not None and weight is not None and total > 0:
+            start = verdict.target if verdict.target is not None else weight
+            wish = (verdict.want - start) * total
         if verdict.target is not None and weight is not None and total > 0:
             delta = (verdict.target - weight) * total
             if verdict.target < weight:
@@ -516,6 +683,7 @@ def review(
                 pnl_pct=_num(row["pnl_pct"]),
                 target_weight=_num(verdict.target),
                 delta=_num(delta),
+                new_money=_num(wish),
                 tax=tax_due,
                 buy_after=after,
                 **watch(label, symbol),
@@ -529,7 +697,9 @@ def review(
         kind, metrics = facts.get(symbol, (None, None))
         if kind == "index":
             continue
-        verdict = engine.judge_candidate(metrics, kind=kind or "stock", names=names)
+        verdict = engine.judge_candidate(
+            metrics, kind=kind or "stock", names=names, was=was(ticker, symbol)
+        )
         outside.append((ticker, symbol, kind, _profile(symbol), verdict))
     placed, _ = engine.place_outside(
         [(w, v) for (w, _), v in zip(staged, judged, strict=True)],
@@ -576,26 +746,59 @@ def review(
 
     held_rows.sort(key=order)
     outside_rows.sort(key=order)
-    if idle := engine.cash_note(rows, [r.verdict for r in held_rows + outside_rows]):
+    waiting = [r for r in held_rows if r.new_money and r.verdict == engine.HOLD]
+    if idle := engine.cash_note(
+        rows, [r.verdict for r in held_rows + outside_rows], waiting=len(waiting)
+    ):
         notes.append(idle)
 
     # What the page proposes goes in the decision journal once the answer is
     # on its way: the sells, trims, adds and buys it shows, and the end of any
-    # it proposed before and no longer does.
+    # it proposed before and no longer does. A plan that moves nothing is
+    # advice too, and goes in as one stay on the whole book.
     shown = held_rows + outside_rows
+    moves = [r.delta for r in shown if r.delta is not None]
+    stay = bool(held_rows) and total > 0 and not moves
+    proposals = journal.from_review(shown)
+    if stay:
+        proposals.append(journal.stay_in_review(_num(total), ccy))
     background.add_task(
         journal.safely,
         journal.record,
         account.journal,
-        journal.from_review(shown),
+        proposals,
         today,
         judged=journal.judged_in_review(shown),
     )
 
-    moves = [r.delta for r in shown if r.delta is not None]
     taxes = [r.tax for r in held_rows if r.tax is not None]
     unpriced = int(table["value"].isna().sum()) if not table.empty else 0
-    # Which books use the page, in aggregate: never a ticker.
+    # Which books use the page and where it fails them, in aggregate: never a
+    # ticker. A source that failed one name is in `unrated`, by cause and by
+    # exchange; a plan that cannot be right is its own warning.
+    metrics_of = {r.symbol: facts.get(r.symbol, (None, None))[1] for r in shown}
+    causes = {
+        r.symbol: cause
+        for r in shown
+        if (cause := _unrated_cause(r, metrics_of[r.symbol], late))
+    }
+    unrated = Counter(causes.values())
+    scored = [m for r in shown if (m := metrics_of[r.symbol]) is not None]
+    blank_added = [a for a in added if causes.get(_symbol(a)) == "no_metrics"]
+    invariants = _invariants(
+        held_rows, outside_rows, replayed=book not in (None, _NOT_REPLAYED)
+    )
+    _audit_names(shown, facts)
+    verdicts = dict(Counter(r.verdict for r in shown))
+    lenses = dict(Counter(engine.lens(m) for m in scored))
+    _odd_read(
+        held_rows,
+        Counter(causes[r.symbol] for r in held_rows if r.symbol in causes),
+        jurisdiction=code,
+        base=ccy,
+        verdicts=verdicts,
+        lenses=lenses,
+    )
     obs.event(
         "api.review",
         jurisdiction=code,
@@ -605,10 +808,25 @@ def review(
         candidates=len(outside_rows),
         names=names,
         kinds=dict(Counter(r.kind or "stock" for r in held_rows)),
-        verdicts=dict(Counter(r.verdict for r in shown)),
+        verdicts=verdicts,
+        lenses=lenses,
+        stages=dict(Counter(engine.stage(m) for m in scored)),
         notes=[n.key for n in notes],
         unpriced=unpriced,
         pending=pending,
+        unrated=dict(unrated),
+        unrated_venues=dict(Counter(_venue(s) for s in causes)),
+        no_industry=sum(1 for m in scored if not m.get("industry")),
+        added=len(added),
+        added_blank=len(blank_added),
+        added_venues=dict(Counter(_venue(a) for a in blank_added)),
+        invariants=invariants,
+        stay=stay,
+        new_money_names=sum(1 for r in held_rows if r.new_money),
+        close_calls=sum(1 for r in shown if engine.R_CLOSE_CALL in r.reasons),
+        costly_holds=sum(1 for r in held_rows if engine.R_SALE_COSTLY in r.reasons),
+        held_by_journal=sum(1 for r in shown if was(r.ticker, r.symbol)),
+        phases=clock.ms,
         ms=round((perf_counter() - started) * 1000),
     )
     return Review(
@@ -622,6 +840,7 @@ def review(
             buys=sum(d for d in moves if d > 0),
             tax=sum(taxes) if taxes else None,
             tax_currency=tax.get(code).currency,
+            new_money=sum(r.new_money or 0.0 for r in held_rows),
         ),
         unpriced=unpriced,
         jurisdiction=code,

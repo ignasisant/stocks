@@ -73,6 +73,10 @@ DAILY_ACTIONS = {
 TODAY_ACTIONS = {"insider_cluster": "consider"}
 # Review verdicts that propose a move (held: sell, trim, add; outside: buy).
 REVIEW_ACTIONS = ("sell", "trim", "add", "buy")
+# A Review plan with no move is advice too: the book stays as it is. It is
+# one proposal about the whole book, not about any name.
+REVIEW_STAY = "stay"
+REVIEW_BOOK = "review:book"
 # Chat proposals about what to own or watch. The ledger edits are bookkeeping
 # — fixing what a statement said — not investment decisions.
 CHAT_ACTIONS = {
@@ -430,11 +434,31 @@ def from_review(rows: Iterable) -> list[Shown]:
     return out
 
 
+def stay_in_review(total: float | None, currency: str) -> Shown:
+    """The Review plan that moves nothing, as one proposal on the book."""
+    return Shown(source="review", subject=REVIEW_BOOK, action=REVIEW_STAY,
+                 snapshot={"value": total, "currency": currency})
+
+
 def judged_in_review(rows: Iterable) -> list[str]:
     """The Review rows rated and found nothing to do about (`record`'s
-    `judged`): a proposal open on one of them has been withdrawn."""
-    return [f"review:{r.ticker}" for r in rows
-            if r.verdict not in REVIEW_ACTIONS and r.verdict != "unrated"]
+    `judged`): a proposal open on one of them has been withdrawn. A plan
+    that moves something withdraws an open stay."""
+    rows = list(rows)
+    judged = [f"review:{r.ticker}" for r in rows
+              if r.verdict not in REVIEW_ACTIONS and r.verdict != "unrated"]
+    if any(r.verdict in REVIEW_ACTIONS for r in rows):
+        judged.append(REVIEW_BOOK)
+    return judged
+
+
+def open_in_review(path: Path) -> dict[str, str]:
+    """The moves the Review page proposed and still stand, by ticker: the
+    engine holds them to the plain line rather than the one a new proposal
+    has to clear, so a name a point either side does not flip daily."""
+    return {e.ticker.upper(): e.action for e in load(path)
+            if e.source == "review" and e.state == "open"
+            and e.ticker and e.action in REVIEW_ACTIONS}
 
 
 def from_chat(offer: dict, line: str) -> Shown | None:
