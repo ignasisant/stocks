@@ -20,7 +20,7 @@ from stocks.web.markup import esc
 PATH_PRIVACY = "/legal/privacy"
 PATH_TERMS = "/legal/terms"
 
-LAST_UPDATED = "2026-10-03"
+LAST_UPDATED = "2026-10-14"
 
 _CONTACT = f"{GITHUB_URL}/issues"
 
@@ -47,7 +47,10 @@ _PRIVACY = {
                 "stored in a private object-storage bucket and are never "
                 "visible to other users.",
                 "Server logs: page views and errors, tagged with a pseudonymous "
-                "account slug, kept for about 30 days for debugging. Periodic "
+                "account slug, kept for about 30 days for debugging. That "
+                "includes errors your browser hits in the app: the error, the "
+                "screen and where in our code it happened, with emails and "
+                "numbers masked. Periodic "
                 "backups of the storage bucket are kept for about 30 days.",
                 "Import diagnostics: when a broker statement fails to import we "
                 "record its shape — column headings, file type, encoding and "
@@ -131,7 +134,10 @@ _PRIVACY = {
                 "de objetos y ningún otro usuario puede verlos.",
                 "Registros del servidor: páginas vistas y errores, etiquetados "
                 "con un identificador seudónimo de cuenta, conservados unos "
-                "30 días para depuración. Las copias de seguridad periódicas "
+                "30 días para depuración. Incluyen los errores que tu navegador "
+                "encuentra en la app: el error, la pantalla y el punto de "
+                "nuestro código donde ocurrió, con correos y cifras "
+                "enmascarados. Las copias de seguridad periódicas "
                 "del bucket se conservan unos 30 días.",
                 "Diagnósticos de importación: cuando un extracto de bróker "
                 "falla al importarse registramos su forma —nombres de columna, "

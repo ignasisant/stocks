@@ -1,5 +1,6 @@
 import { Suspense, useEffect } from "react";
 import { ApiError } from "./shell/api";
+import { Broken, Crash } from "./shell/Crash";
 import { browserLang, pinnedLang, Translations, useT } from "./shell/i18n";
 import { Layout, Skeleton } from "./shell/Layout";
 import { pageFor } from "./shell/pages";
@@ -56,7 +57,7 @@ function SignInWall() {
 
 function Current() {
   const t = useT();
-  const { page } = useRoute();
+  const { page, params } = useRoute();
   const entry = pageFor(page);
   const Page = entry.component;
 
@@ -68,10 +69,17 @@ function Current() {
     document.title = `${t(entry.label)} · TopStocks`;
   }, [t, entry.label]);
 
+  // A page that throws while rendering keeps the chrome around it: the rail
+  // and the search box still take the reader somewhere that works.
   return (
-    <Suspense fallback={<Skeleton rows={6} />}>
-      <Page />
-    </Suspense>
+    <Crash
+      resetKey={`${page}?${params.toString()}`}
+      fallback={<Broken text={t("common.crash")} action={t("common.reload")} />}
+    >
+      <Suspense fallback={<Skeleton rows={6} />}>
+        <Page />
+      </Suspense>
+    </Crash>
   );
 }
 
