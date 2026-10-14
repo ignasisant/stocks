@@ -262,9 +262,8 @@ def _provision(email: str, source: str = "") -> None:
     # and carries the campaign token; `auth.login` dates a returning visit.
     user = accounts.slug(email)
     obs.event("session.start", logged_in=True, user=user, via="oidc")
-    obs.event(
-        f"auth.{kind}", user=user, via="oidc", **({"src": source} if source else {})
-    )
+    extra: dict[str, Any] = {"src": source} if source else {}
+    obs.event(f"auth.{kind}", user=user, via="oidc", **extra)
 
 
 async def logout(request: Request) -> Response:
