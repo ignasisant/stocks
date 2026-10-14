@@ -29,6 +29,7 @@ class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
 class ActionCall(BaseModel):
     action: typing.Optional[str] = Field(default=None, description='the action name, or null when the message asks for no change')
     ticker: typing.Optional[str] = Field(default=None, description='the symbol the action targets')
+    tickers: typing.Optional[typing.List[str]] = Field(default=None, description='every symbol, when the action targets several')
     alerts: typing.Optional[typing.List["AlertRule"]] = None
     tags: typing.Optional[typing.List[str]] = None
     name: typing.Optional[str] = None

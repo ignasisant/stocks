@@ -2,6 +2,8 @@
 id: cost-basis-and-currency
 title: Cost basis, currency conversion and missing prices
 as_of: 2026-10-11
+step: positions
+related: tax-engine, importing, returns-and-risk
 tags: coste, precio medio, base de coste, FIFO, lotes, cost basis, lots, divisa, moneda de referencia, reporting currency, tipo de cambio, FX, BCE, ECB, sin precio, unpriced, held at cost, pérdidas y ganancias, P/L, unrealised, plusvalía latente, peso, weight, demo, datos de demostración
 ---
 How the Portfolio page values what you hold: the cost of each position, the currency everything is shown in, and what happens when a live price is missing.

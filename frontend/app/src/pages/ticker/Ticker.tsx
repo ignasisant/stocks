@@ -383,7 +383,7 @@ export default function Page() {
           {ticker && shape.ai ? (
             <button
               type="button"
-              className="tk-ai"
+              className="ag-ai tk-ai"
               title={t("ticker.ai_analyze_help", { ticker })}
               onClick={() =>
                 askAssistant(

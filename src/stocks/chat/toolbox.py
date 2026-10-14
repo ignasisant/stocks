@@ -24,7 +24,7 @@ the answer needs (chat/tokens.py).
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from stocks.web.llm import ToolSpec
@@ -146,11 +146,25 @@ def _lookup_knowledge(args: dict, ctx: Context) -> str:
     from stocks.chat import knowledge
 
     query = str(args.get("query") or "").strip()
+    doc = str(args.get("doc") or "").strip()
+    heading = str(args.get("section") or "").strip()
+    if doc:
+        toc = knowledge.contents(doc)
+        if not toc:
+            return f"No document {doc!r}. The documents are:\n{knowledge.manifest()}"
+        if not heading:
+            return toc
+        whole = knowledge.section(doc, heading)
+        if whole is None:
+            return f"No section {heading!r} in {doc}. {toc}"
+        return _cap(knowledge.block([whole]))
     if not query:
         return "No query given."
     hits = knowledge.lookup(query)
     if not hits:
-        return "Nothing in the TopStocks documentation matches that."
+        return ("Nothing in the TopStocks documentation matches that. Say the "
+                "documentation does not cover it rather than guessing how the "
+                "app does it.")
     return _cap(knowledge.block(hits))
 
 
@@ -255,12 +269,20 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
             "how the app computes returns, cost basis, currency conversion, "
             "tax (per country) and its scores. Use for any question about the "
             "app itself or about why it shows a figure — the web does not know "
-            "this app.",
+            "this app. Pass `query` to search. To read further than a search "
+            "hit, pass `doc` alone for its sections, then `doc` and `section` "
+            "for one section whole. A search returns the nearest passages "
+            "whether or not they answer: when none does, say the "
+            "documentation does not cover it rather than stretching one.",
             {"type": "object",
-             "properties": {"query": {
-                 "type": "string",
-                 "description": "The question, in the user's own words."}},
-             "required": ["query"]},
+             "properties": {
+                 "query": {"type": "string",
+                           "description": "The question, in the user's own words."},
+                 "doc": {"type": "string",
+                         "description": "A document id from the list below."},
+                 "section": {"type": "string",
+                             "description": "A section heading of `doc`."}},
+             "required": []},
         ), _lookup_knowledge),
     )
 }
@@ -283,8 +305,13 @@ def specs(ctx: Context | None = None) -> list[ToolSpec]:
         if spec.name == "recall" and not (
                 ctx and ctx.memory_db is not None and memory.available()):
             continue
-        if spec.name == "lookup_knowledge" and not knowledge.available():
-            continue
+        if spec.name == "lookup_knowledge":
+            if not knowledge.available():
+                continue
+            # What exists, before the first search: a question about anything
+            # not listed is not one a search here will answer.
+            spec = replace(spec, description=(
+                f"{spec.description}\n\nDocuments:\n{knowledge.manifest()}"))
         if spec.name == "decisions" and not (ctx and ctx.journal is not None):
             continue
         out.append(spec)

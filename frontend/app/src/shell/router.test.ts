@@ -6,9 +6,9 @@
  * from any page and which live on in bookmarks and old digests.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { routeFor } from "./router";
+import { depth, push, routeFor } from "./router";
 
 describe("routeFor", () => {
   it("opens the page the path names", () => {
@@ -24,5 +24,33 @@ describe("routeFor", () => {
 
   it("does not jump for an empty ticker", () => {
     expect(routeFor("sector", "?ticker=").page).toBe("sector");
+  });
+});
+
+describe("depth", () => {
+  it("counts the in-app steps a visit has taken, from history's own state", () => {
+    let state: unknown = null;
+    vi.stubGlobal("window", {
+      history: {
+        get state() {
+          return state;
+        },
+        pushState: (next: unknown) => {
+          state = next;
+        },
+      },
+    });
+    try {
+      expect(depth()).toBe(0);
+      push("/app/portfolio");
+      push("/app/ticker?ticker=AAPL");
+      expect(depth()).toBe(2);
+      state = { depth: 1 }; // the browser's back button
+      expect(depth()).toBe(1);
+      state = { other: true };
+      expect(depth()).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

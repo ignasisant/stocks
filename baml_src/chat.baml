@@ -34,6 +34,7 @@ class AlertRule {
 class ActionCall {
   action string? @description("the action name, or null when the message asks for no change")
   ticker string? @description("the symbol the action targets")
+  tickers string[]? @description("every symbol, when the action targets several")
   alerts AlertRule[]?
   tags string[]?
   name string?

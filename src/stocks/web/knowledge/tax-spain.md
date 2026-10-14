@@ -2,6 +2,8 @@
 id: tax-spain
 title: Spanish tax (IRPF) as the app computes it
 as_of: 2026-10-11
+step: tax
+related: tax-engine, cost-basis-and-currency
 tags: IRPF, base del ahorro, tramos, savings base, brackets, regla de los dos meses, two-month rule, norma antiaplicación, art. 33.5.f, compensar pérdidas, pérdidas diferidas, carry forward, Modelo 720, Modelo 721, Hacienda, campaña de la renta, FIFO, retención dividendos, doble imposición, plusvalías
 ---
 For a Spanish tax resident, the Realized & tax tab in Portfolio computes the IRPF savings base (base del ahorro) on your securities sales, in euros. It is a planning aid, not tax advice.

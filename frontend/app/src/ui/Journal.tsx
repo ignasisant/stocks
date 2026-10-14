@@ -22,6 +22,7 @@ import { Link } from "../shell/router";
 import { useCurrency } from "../shell/session";
 import { TickerCell } from "../shell/tickers";
 import { useApi } from "../shell/useApi";
+import { usePresence, useSwipeDismiss } from "../shell/useSheet";
 import { Chip, type Tone } from "./Kpi";
 import "./journal.css";
 import { formatter } from "../shell/numbers";
@@ -409,6 +410,7 @@ export function JournalChip({ ticker }: { ticker: string }) {
   const query = useApi(() => getJournal({ ticker }), [ticker]);
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
+  const presence = usePresence(open);
   if (query.state !== "loaded" || query.data.total === 0) return null;
   return (
     <>
@@ -421,8 +423,13 @@ export function JournalChip({ ticker }: { ticker: string }) {
       >
         {t("journal.chip", { n: query.data.total })}
       </button>
-      {open ? (
-        <JournalPanel ticker={ticker} journal={query.data} onClose={close} />
+      {presence.mounted ? (
+        <JournalPanel
+          ticker={ticker}
+          journal={query.data}
+          onClose={close}
+          leaving={presence.leaving}
+        />
       ) : null}
     </>
   );
@@ -438,14 +445,18 @@ function JournalPanel({
   ticker,
   journal,
   onClose,
+  leaving,
 }: {
   ticker: string;
   journal: Journal;
   onClose: () => void;
+  leaving: boolean;
 }) {
   const t = useT();
   const shut = useRef<HTMLButtonElement>(null);
   const sheet = useRef<HTMLElement>(null);
+  // Thrown back off the edge it came in from, by a finger.
+  useSwipeDismiss(sheet, "x", onClose);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -482,6 +493,7 @@ function JournalPanel({
   return createPortal(
     <div
       className="ag-jr-veil"
+      data-leaving={leaving ? "" : undefined}
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}

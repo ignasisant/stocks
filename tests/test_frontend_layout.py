@@ -100,6 +100,11 @@ _TOUCH_TARGETS = [
     ("pages/today/today.css", ".td-seg button", r"min-height\s*:\s*44px"),
     ("pages/today/today.css", ".td-more-btn", r"min-height\s*:\s*44px"),
     ("pages/home/home.css", ".hm-daily-open .ag-btn", r"min-height\s*:\s*44px"),
+    ("chat/chat.css", ".ag-chat-icon", r"min-height\s*:\s*44px"),
+    ("chat/chat.css", ".ag-chat-back", r"min-height\s*:\s*44px"),
+    ("styles.css", ".ag-nav-fold", r"min-height\s*:\s*44px"),
+    ("pages/portfolio/portfolio.css", ".pf-donut-detail-close", r"min-height\s*:\s*44px"),
+    ("pages/earnings/earnings.css", ".earn-close", r"min-height\s*:\s*44px"),
 ]
 
 
@@ -214,3 +219,131 @@ def test_charts_with_labels_draw_at_their_real_width():
         builds_frame = re.search(r"\bframe\(\{", source) is not None
         if draws_text or builds_frame:
             assert "useWidth(" in source, rel
+
+
+def _contrast(fg: str, bg: str) -> float:
+    def lum(hex_: str) -> float:
+        rgb = [int(hex_.lstrip("#")[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+        lin = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+        return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+    hi, lo = sorted((lum(fg), lum(bg)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def test_text_and_focus_tokens_read_on_every_surface():
+    """Captions sit on the page, on cards and on hovered rows, at 11-12px: the
+    text steps clear WCAG AA (4.5:1) on all three, and the focus ring colour
+    clears the 3:1 a non-text indicator needs."""
+    from stocks.web import ds
+
+    surfaces = (ds.SURFACE_PAGE, ds.SURFACE_CARD, ds.SURFACE_HOVER)
+    for text in (ds.TEXT_PRIMARY, ds.TEXT_SECONDARY, ds.TEXT_MUTED):
+        for surface in surfaces:
+            assert _contrast(text, surface) >= 4.5, (text, surface)
+    for surface in surfaces:
+        assert _contrast(ds.BRAND_ACCENT, surface) >= 3, surface
+
+
+def _rules(css: str):
+    """(selector, body) for every innermost rule."""
+    return re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+
+
+def test_faint_is_never_live_text():
+    """TEXT_FAINT is under 4.5:1 on a card: it draws rules, dashes and
+    disabled controls (exempt from contrast), never text someone reads."""
+    bad = []
+    for path, css in _stylesheets():
+        for selector, body in _rules(css):
+            if re.search(r"(?<![-\w])color\s*:\s*var\(--ag-text-faint", body):
+                if ":disabled" not in selector:
+                    bad.append((str(path), " ".join(selector.split())))
+    assert not bad, bad
+
+
+def test_focus_is_always_visible():
+    """Every focused control shows a ring a keyboard user can find: one global
+    `:focus-visible` fallback, and no component ring in BORDER_FOCUS or
+    BRAND_CTA, which read at 1.6:1 and 2.7:1 on a card."""
+    assert re.search(
+        r":where\(:focus-visible\)\s*\{[^}]*"
+        r"outline\s*:\s*2px solid var\(--ag-brand-accent\)",
+        STYLES.read_text(),
+    )
+    bad = []
+    for path, css in _stylesheets():
+        for selector, body in _rules(css):
+            if re.search(r"outline\s*:[^;]*var\(--ag-(border-focus|brand-cta)\)", body):
+                bad.append((str(path), " ".join(selector.split())))
+    assert not bad, bad
+
+
+# Every scrim the app draws over the page. A new one goes here and into the
+# lock rule in styles.css, or a swipe on it scrolls the page underneath.
+_SCRIMS = [
+    ".ag-rev-modal",
+    ".earn-modal",
+    ".ag-tour-scrim",
+    ".ag-fb-scrim",
+    ".ag-jr-veil",
+    ".pr-modal",
+    ".ag-nav-scrim",
+]
+
+
+def test_overlays_hold_the_page_still():
+    """While a dialog, sheet or covering chat is open the document does not
+    scroll: one `:root:has(...)` rule names every scrim, plus the chat's
+    "overlay" state, and keeps the scrollbar's gutter so nothing shifts."""
+    css = re.sub(r"/\*.*?\*/", "", STYLES.read_text(), flags=re.S)
+    lock = re.search(
+        r":root:has\(([^)]*)\)\s*,\s*:root\[data-chat=\"overlay\"\]\s*\{([^}]*)\}", css
+    )
+    assert lock, "the scroll-lock rule is missing from styles.css"
+    named = {s.strip() for s in lock.group(1).split(",")}
+    assert set(_SCRIMS) <= named, set(_SCRIMS) - named
+    assert re.search(r"overflow\s*:\s*hidden", lock.group(2))
+    assert re.search(r"scrollbar-gutter\s*:\s*stable", lock.group(2))
+
+    sources = "\n".join(p.read_text() for p in APP.rglob("*.tsx"))
+    for scrim in _SCRIMS:
+        assert f'"{scrim[1:]}"' in sources, f"{scrim} is no longer rendered"
+
+
+def test_exits_stand_still_under_reduced_motion():
+    """An overlay that animates out (`data-leaving`, shell/useSheet.ts) turns
+    its transition off under reduced motion, in the same stylesheet."""
+    for path, css in _stylesheets():
+        if "[data-leaving]" not in css:
+            continue
+        at = css.find("prefers-reduced-motion")
+        reduced = css[at:] if at >= 0 else ""
+        assert re.search(r"transition\s*:\s*none", reduced), path
+
+
+def test_edges_clear_a_phone_on_its_side():
+    """In landscape a phone is wider than 640px and gets the desktop rail, with
+    the notch at one side: the rail, the page's far edge and the chat panel
+    pad themselves by the side insets."""
+    css = STYLES.read_text()
+    assert "safe-area-inset-left" in _block(css, ".ag-nav")
+    assert "safe-area-inset-right" in _block(css, ".ag-main")
+    chat = (APP / "chat/chat.css").read_text()
+    panel = _block(chat, ".ag-chat-panel")
+    for side in ("top", "right", "bottom"):
+        assert f"safe-area-inset-{side}" in panel, side
+
+
+def test_the_app_is_installable_and_finds_its_way_back():
+    """A home-screen app: the document says it is dark, and with no browser
+    toolbar the shell draws its own Back — only when launched standalone."""
+    html = (APP.parent / "index.html").read_text()
+    assert 'name="color-scheme" content="dark"' in html
+    manifest = APP.parents[2] / "src/stocks/web/assets/manifest.webmanifest"
+    assert manifest.is_file()
+
+    css = re.sub(r"/\*.*?\*/", "", STYLES.read_text(), flags=re.S)
+    assert re.search(r"display\s*:\s*none", _block(css, ".ag-back"))
+    standalone = css[css.index("@media (display-mode: standalone)") :]
+    assert ".ag-back" in standalone[: standalone.index("}") + 1]

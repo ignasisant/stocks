@@ -139,7 +139,7 @@
 }
 
 .pf-sort-mark {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   padding-left: 0.2rem;
 }
 
@@ -298,7 +298,7 @@
 
 .pf-sortbar .pf-dropdown:focus-visible,
 .pf-sort-dir:focus-visible {
-  outline: 2px solid var(--ag-border-focus);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 1px;
 }
 
@@ -481,6 +481,13 @@
   cursor: pointer;
 }
 
+@media (pointer: coarse) {
+  .pf-donut-detail-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .pf-donut-detail-figures {
   display: flex;
   flex-direction: column;
@@ -560,7 +567,7 @@
 
 .pf-legend-key:focus-visible,
 .pf-return-plot:focus-visible {
-  outline: 2px solid var(--ag-border-focus);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 1px;
 }
 
@@ -889,7 +896,7 @@
 
 .pf-tip-hint {
   margin-top: 2px;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-2xs, 0.72rem);
 }
 
@@ -965,7 +972,7 @@
   justify-content: space-between;
   gap: 0.75rem;
   margin-top: 0.2rem;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-2xs, 0.72rem);
 }
 
@@ -1251,7 +1258,8 @@
 }
 
 .pf-proj-input-wrap:focus-within {
-  border-color: var(--ag-border-focus, var(--ag-brand-accent));
+  border-color: var(--ag-brand-accent);
+  box-shadow: 0 0 0 1px var(--ag-brand-accent);
 }
 
 .pf-proj-input {
@@ -1279,7 +1287,7 @@
 }
 
 .pf-proj-hint {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-xs, 0.78rem);
 }
 
@@ -1376,7 +1384,7 @@
 }
 
 .pf-tip-head {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   white-space: nowrap;
   font-size: var(--ag-fs-2xs, 0.72rem);
   text-align: right;

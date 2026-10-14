@@ -44,6 +44,9 @@ if TYPE_CHECKING:
 # Symbols as the app knows them: Yahoo tickers, broker codes, crypto pairs
 # (BTC-EUR), class shares (BRK.B).
 _TICKER_RE = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,14}$")
+# The most symbols one watchlist action takes ("añádelas" after a list of
+# twenty). A runaway reply is cut here rather than written to the watchlist.
+MAX_SYMBOLS = 25
 
 # Cheap gate so the extra classifier call only happens when the message could
 # plausibly be an action (EN + ES vocabulary). False positives are fine — the
@@ -112,13 +115,30 @@ def earlier_turns(earlier: Sequence[dict], limit: int = _EARLIER_TURNS) -> str:
     """The last turns above the message, as the classifier's context ("" with none)."""
     lines = []
     for turn in earlier[-limit:]:
-        text = " ".join(str(turn.get("content", "")).split())[:_EARLIER_CHARS]
+        whole = " ".join(str(turn.get("content", "")).split())
+        text = whole[:_EARLIER_CHARS]
         if text:
             who = "User" if turn.get("role") == "user" else "Assistant"
+            # The cut keeps the classifier cheap, but "añádelas" after a table
+            # of ten names means every one of them, and the cut kept the first.
+            # What it left out is passed on as the symbols it names.
+            rest = _symbols_in(whole[_EARLIER_CHARS:], skip=text)
+            if rest:
+                text += f" … (also names: {', '.join(rest)})"
             lines.append(f"{who}: {text}")
     if not lines:
         return ""
     return "Earlier in this conversation (oldest first):\n" + "\n".join(lines)
+
+
+def _symbols_in(text: str, *, skip: str = "") -> list[str]:
+    """The ticker-shaped words of `text` not already in `skip`, in order."""
+    from stocks.chat import market
+
+    seen = set(market._TICKER_RE.findall(skip))
+    out = [t for t in dict.fromkeys(market._TICKER_RE.findall(text))
+           if len(t) > 1 and t not in market.NOT_TICKERS and t not in seen]
+    return out[:MAX_SYMBOLS]
 
 
 # Importing is not one of the actions below, and never will be: it needs the
@@ -165,6 +185,12 @@ class Action:
     kind: str
     ticker: str
     args: dict = field(default_factory=dict)
+
+    @property
+    def tickers(self) -> list[str]:
+        """Every symbol the action targets: `ticker`, then any in args["more"]
+        ("añade AAOI NBIS" is one action on two)."""
+        return [self.ticker, *self.args.get("more", [])]
 
     @property
     def alerts(self) -> list[dict]:
@@ -288,7 +314,9 @@ def _run_untag(act: Action, path: Path) -> None:
 
 
 def _run_add_ticker(act: Action, path: Path) -> None:
-    _auth().add_entry(act.ticker, act.args.get("name", ""), path)
+    # One company name cannot belong to several symbols.
+    name = act.args.get("name", "") if len(act.tickers) == 1 else ""
+    _auth().add_entry(act.ticker, name, path)
 
 
 def _run_remove_ticker(act: Action, path: Path) -> None:
@@ -311,6 +339,10 @@ class Tool:
     parse: Callable[[dict], dict | None]
     run: Callable[[Action, Path], None]
     reply_key: str  # locale key of the confirmation bubble
+    # Takes several symbols at once ("añade AAOI NBIS"). Its confirmation then
+    # reads `<reply_key>_many`. Alerts and positions carry figures that belong
+    # to one symbol, so they stay one.
+    many: bool = False
 
 
 TOOLS: dict[str, Tool] = {
@@ -319,12 +351,12 @@ TOOLS: dict[str, Tool] = {
         Tool(
             "favorite",
             "add the ticker to favorites (pins it to the top of the dashboard).",
-            _no_args, _run_favorite, "chat.action_favorited",
+            _no_args, _run_favorite, "chat.action_favorited", many=True,
         ),
         Tool(
             "unfavorite",
             "remove the ticker from favorites.",
-            _no_args, _run_unfavorite, "chat.action_unfavorited",
+            _no_args, _run_unfavorite, "chat.action_unfavorited", many=True,
         ),
         Tool(
             "set_alerts",
@@ -340,25 +372,25 @@ TOOLS: dict[str, Tool] = {
             'add the ticker to one or more groups. Fill "tags": ["<group>"]. '
             "Reuse the exact spelling of an existing group from the context "
             "when the user means it.",
-            _parse_tags, _run_tag, "chat.action_tagged",
+            _parse_tags, _run_tag, "chat.action_tagged", many=True,
         ),
         Tool(
             "untag",
             'remove the ticker from groups it is in. Fill "tags": ["<group>"].',
-            _parse_tags, _run_untag, "chat.action_untagged",
+            _parse_tags, _run_untag, "chat.action_untagged", many=True,
         ),
         Tool(
             "add_ticker",
             'put a symbol on the watchlist so the app tracks it. Optionally '
             'fill "name" with the company name.',
-            _parse_name, _run_add_ticker, "chat.action_added",
+            _parse_name, _run_add_ticker, "chat.action_added", many=True,
         ),
         Tool(
             "remove_ticker",
             "stop tracking a symbol — drops it from the watchlist entirely. "
             "Never for a holding the user wants gone from the portfolio: "
             "that is a recorded-trade action.",
-            _no_args, _run_remove_ticker, "chat.action_removed",
+            _no_args, _run_remove_ticker, "chat.action_removed", many=True,
         ),
         Tool(
             "set_position",
@@ -534,6 +566,8 @@ def _catalog() -> str:
     return "\n".join(lines)
 
 
+_MANY = ", ".join(f'"{t.name}"' for t in TOOLS.values() if t.many)
+
 # The reply's shape is BAML's (DetectAction in baml_src/chat.baml), appended
 # after this by structured.render.
 _SYSTEM = f"""You turn requests from a stock-tracker chat into ONE app action.
@@ -547,6 +581,10 @@ Rules:
 - "ticker": the symbol the action targets. Resolve "this"/"it" ("esto") from
   the context's ticker in focus; resolve company names against the watchlist
   listing and reuse the symbol exactly as listed there.
+- Several symbols for one action ("añade AAOI NBIS", "add them" / "añádelas"
+  after a list of companies): the first in "ticker", every one in "tickers".
+  "Them" means the symbols the earlier turn named, all of them. Only
+  {_MANY} take several.
 - Fill only the fields the chosen action names; leave the rest null.
 - The recorded-trade actions ("show_transactions" … "undo_change") are for
   the user's trades as the app has them. Dates are YYYY-MM-DD; resolve
@@ -595,7 +633,8 @@ def _action_from(data: dict) -> Action | None:
     None covers the whole "not an app operation" family — action null, an
     unknown tool, an unusable ticker, missing required fields — and sends the
     message down the normal answer path."""
-    ticker = str(data.get("ticker") or "").strip().upper()
+    symbols = _symbols(data)
+    ticker = symbols[0] if symbols else ""
     book = BOOK.get(data.get("action"))
     if book is not None:
         if ticker and not _TICKER_RE.match(ticker):
@@ -614,7 +653,24 @@ def _action_from(data: dict) -> Action | None:
     args = tool.parse(data)
     if args is None:
         return None
+    more = [t for t in symbols[1:] if _TICKER_RE.match(t)][:MAX_SYMBOLS - 1]
+    if tool.many and more:
+        args = {**args, "more": more}
     return Action(tool.name, ticker, args)
+
+
+def _symbols(data: dict) -> list[str]:
+    """Every symbol the reply names, "ticker" first, upper-cased and deduped.
+
+    "ticker" may itself hold several ("NVDA, AMD") — that is how a card's
+    edited symbol field comes back (`form_of`)."""
+    # Split on commas only: "not a ticker!" is one bad symbol, not three.
+    raw = str(data.get("ticker") or "").split(",")
+    extra = data.get("tickers")
+    if isinstance(extra, list):
+        raw += [str(t) for t in extra]
+    out = [t.strip().upper() for t in raw if t and t.strip()]
+    return list(dict.fromkeys(out))
 
 
 def parse_action(raw: str) -> Action | None:
@@ -668,8 +724,10 @@ def detect(
 
 
 def execute(action: Action, path: Path) -> None:
-    """Apply an Action to the account's watchlist."""
-    TOOLS[action.kind].run(action, path)
+    """Apply an Action to the account's watchlist, once per symbol it names."""
+    run = TOOLS[action.kind].run
+    for ticker in action.tickers:
+        run(Action(action.kind, ticker, action.args), path)
 
 
 def _slots(action: Action, translate: Callable[..., str]) -> dict[str, str]:
@@ -681,7 +739,8 @@ def _slots(action: Action, translate: Callable[..., str]) -> dict[str, str]:
         )
         return {"ticker": action.ticker, "rules": rules}
     if action.kind in ("tag", "untag"):
-        return {"ticker": action.ticker, "groups": ", ".join(action.tags)}
+        return {"ticker": ", ".join(action.tickers),
+                "groups": ", ".join(action.tags)}
     if action.kind == "set_position":
         parts = [
             translate(f"chat.action_position_{f}", value=f"{action.args[f]:g}")
@@ -689,7 +748,12 @@ def _slots(action: Action, translate: Callable[..., str]) -> dict[str, str]:
             if f in action.args
         ]
         return {"ticker": action.ticker, "details": " · ".join(parts)}
-    return {"ticker": action.ticker}
+    return {"ticker": ", ".join(action.tickers)}
+
+
+def _reply_key(action: Action) -> str:
+    key = TOOLS[action.kind].reply_key
+    return f"{key}_many" if len(action.tickers) > 1 else key
 
 
 def reply(action: Action, translate: Callable[..., str]) -> str:
@@ -700,7 +764,7 @@ def reply(action: Action, translate: Callable[..., str]) -> str:
     recipient's language — so this stays the single place that knows which
     locale key and which slots each tool's confirmation needs.
     """
-    return translate(TOOLS[action.kind].reply_key, **_slots(action, translate))
+    return translate(_reply_key(action), **_slots(action, translate))
 
 
 def proposal(action: Action, translate: Callable[..., str]) -> str:
@@ -711,7 +775,7 @@ def proposal(action: Action, translate: Callable[..., str]) -> str:
     confirmed afterwards can never describe two different changes. Its key is
     the reply key with `action_` turned into `propose_`.
     """
-    key = TOOLS[action.kind].reply_key.replace("chat.action_", "chat.propose_", 1)
+    key = _reply_key(action).replace("chat.action_", "chat.propose_", 1)
     return translate(key, **_slots(action, translate))
 
 
@@ -724,8 +788,11 @@ def revise(action: Action, ticker: str | None, args: dict | None) -> Action | No
     classifier's answer did, so a price of -5 or a symbol with a space in it is
     refused here exactly as it would have been refused there.
     """
-    data = {**action.args, **(args or {}), "action": action.kind,
-            "ticker": ticker if ticker is not None else action.ticker}
+    # The symbols come from `ticker` alone — the card's field holds them all
+    # (`form_of`) — so one the reader deleted there stays deleted.
+    kept = {k: v for k, v in action.args.items() if k != "more"}
+    data = {**kept, **(args or {}), "action": action.kind,
+            "ticker": ticker if ticker is not None else ", ".join(action.tickers)}
     return _action_from(data)
 
 
@@ -751,7 +818,7 @@ def _figure(value) -> str:
 
 def form_of(action: Action) -> dict[str, str]:
     """The proposal as its card's fields hold it."""
-    form = {"ticker": action.ticker}
+    form = {"ticker": ", ".join(action.tickers)}
     for name in FORMS.get(action.kind, ()):
         if name in ("above", "below"):
             rule = next((a for a in action.alerts if a["type"] == name), None)

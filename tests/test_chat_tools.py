@@ -71,6 +71,45 @@ def test_parse_favorite():
     assert act == Action("favorite", "NVDA")
 
 
+def test_parse_several_symbols_in_one_action():
+    """"añade AAOI NBIS": one action on both, not AAOI alone."""
+    act = parse_action('{"action": "add_ticker", "ticker": "aaoi", '
+                       '"tickers": ["AAOI", "nbis", "bad symbol"]}')
+    assert act == Action("add_ticker", "AAOI", {"more": ["NBIS"]})
+    assert act.tickers == ["AAOI", "NBIS"]
+
+
+def test_parse_several_symbols_only_for_tools_that_take_them():
+    """Alerts carry prices that belong to one symbol: the rest are dropped."""
+    act = parse_action('{"action": "set_alerts", "ticker": "NVDA", '
+                       '"tickers": ["NVDA", "AMD"], '
+                       '"alerts": [{"type": "above", "price": 150}]}')
+    assert act.tickers == ["NVDA"]
+
+
+def test_parse_several_symbols_capped():
+    many = [f"T{i}" for i in range(60)]
+    act = parse_action(json.dumps({"action": "favorite", "tickers": many}))
+    assert act.ticker == "T0" and len(act.tickers) == tools.MAX_SYMBOLS
+
+
+def test_revise_reads_the_edited_symbol_list():
+    """The card's symbol field holds them all; one deleted there is gone."""
+    act = Action("add_ticker", "NVDA", {"more": ["AMD", "PLTR"]})
+    assert tools.form_of(act)["ticker"] == "NVDA, AMD, PLTR"
+    assert tools.revise(act, "NVDA, PLTR", None).tickers == ["NVDA", "PLTR"]
+    assert tools.revise(act, None, None) == act
+
+
+def test_earlier_turns_name_the_symbols_past_the_cut():
+    """"añádelas" after a long table means every row, not those before 300 chars."""
+    answer = "Estas son las empresas con más potencial en IA. " * 8 + (
+        "| **AMD** | chips | **PLTR** | software | IRPF 19 % | **UPST** |")
+    out = tools.earlier_turns([{"role": "assistant", "content": answer}])
+    assert "also names: AMD, PLTR, UPST" in out
+    assert "IRPF" not in out
+
+
 def test_parse_alerts_dedupes_and_validates():
     raw = json.dumps({
         "action": "set_alerts",
@@ -286,6 +325,16 @@ def test_execute_add_ticker_never_overwrites_an_existing_name(tmp_path):
     assert _read(p)["NVDA"]["name"] == "My NVDA"
 
 
+def test_execute_several_symbols(tmp_path):
+    p = _watchlist(tmp_path, [{"ticker": "AAPL"}])
+    execute(Action("add_ticker", "AAOI", {"name": "Applied", "more": ["NBIS"]}), p)
+    items = _read(p)
+    assert {"AAOI", "NBIS"} <= set(items)
+    assert "name" not in items["NBIS"] and "name" not in items["AAOI"]
+    execute(Action("tag", "AAOI", {"tags": ["ai"], "more": ["NBIS"]}), p)
+    assert _read(p)["NBIS"]["tags"] == ["ai"]
+
+
 def test_execute_remove_ticker(tmp_path):
     p = _watchlist(tmp_path, [{"ticker": "AAPL"}, {"ticker": "NVDA"}])
     execute(Action("remove_ticker", "NVDA"), p)
@@ -343,6 +392,12 @@ def test_reply_position_lists_only_what_was_set():
     assert "position_cost" not in out
 
 
+def test_reply_several_symbols_reads_the_plural():
+    act = Action("add_ticker", "AAOI", {"more": ["NBIS"]})
+    assert tools.reply(act, _translate) == "chat.action_added_many(ticker=AAOI, NBIS)"
+    assert tools.proposal(act, _translate).startswith("chat.propose_added_many(")
+
+
 def test_every_tool_has_a_locale_key():
     """A tool whose confirmation key is missing would answer with the raw key."""
     import json
@@ -353,6 +408,10 @@ def test_every_tool_has_a_locale_key():
          / "locales" / "en" / "chat.json").read_text(encoding="utf-8")
     )
     assert all(t.reply_key in catalog for t in tools.TOOLS.values())
+    for t in tools.TOOLS.values():
+        if t.many:
+            assert t.reply_key + "_many" in catalog
+            assert t.reply_key.replace("action_", "propose_") + "_many" in catalog
 
 
 # ------------------------------------------------------------------ catalog

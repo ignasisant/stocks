@@ -2,6 +2,8 @@
 id: review-scoring
 title: How the Sell or add page scores holdings
 as_of: 2026-10-14
+step: review
+related: sector-screen, tax-engine
 tags: Vender o reforzar, no hacer nada, mantener la cartera, stay put, dinero nuevo, new money, decisión ajustada, close call, coste fiscal de vender, fondo de comercio, goodwill, trampa de valor, value trap, margen en máximos, ciclo, margen de seguridad, deuda, PEG, P/E por crecimiento, barato para su crecimiento, Sell or add, review, calidad, quality score, precio, valoración, price score, cheapness, vender, sell, recortar, trim, mantener, hold, reforzar, add, comprar, buy, vigilar, watch, descartar, pass, apuesta, bet, sin valorar, unrated, FCF yield, rentabilidad por flujo de caja libre, concentración, peso, riesgo, país, moneda, divisa, fondos indexados, liquidez, impuesto, ventana de recompra, mapa calidad precio, target weight, bancos, banks, aseguradoras, REIT, SOCIMI, utilities, dividendo, dividend yield, payout, ROE, P/B, valor en libros
 ---
 The Sell or add page (Vender o reforzar) gives every holding two 0-100 scores, one for the business and one for its price, and turns them plus the position's size into a verdict. It is a screen over your own records and public fundamentals, not advice.

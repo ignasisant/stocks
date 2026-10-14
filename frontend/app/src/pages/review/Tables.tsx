@@ -16,7 +16,7 @@
  * pointed at there lights its row here while the rest fade.
  */
 
-import { Fragment, type ReactNode, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useLang, useT } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { TickerCell, cachedName } from "../../shell/tickers";
@@ -197,7 +197,7 @@ export function HeldTable({
           narrow={
             <div className="ag-dense">
               {rows.map((row) => (
-                <Fragment key={row.ticker}>
+                <div key={row.ticker} className="ag-rev-dense-item">
                   <DenseRow
                     row={row}
                     spec={{
@@ -216,10 +216,8 @@ export function HeldTable({
                       wrap: true,
                     }}
                   />
-                  <div className="ag-rev-more-row">
-                    <DetailsButton row={row} taxCurrency={taxCurrency} />
-                  </div>
-                </Fragment>
+                  <DetailsButton row={row} variant="icon" taxCurrency={taxCurrency} />
+                </div>
               ))}
             </div>
           }
@@ -316,7 +314,7 @@ export function CandidateTable({ rows: all }: { rows: ReviewRow[] }) {
           narrow={
             <div className="ag-dense">
               {rows.map((row) => (
-                <Fragment key={row.ticker}>
+                <div key={row.ticker} className="ag-rev-dense-item">
                   <DenseRow
                     row={row}
                     spec={{
@@ -340,10 +338,8 @@ export function CandidateTable({ rows: all }: { rows: ReviewRow[] }) {
                       wrap: true,
                     }}
                   />
-                  <div className="ag-rev-more-row">
-                    <DetailsButton row={row} />
-                  </div>
-                </Fragment>
+                  <DetailsButton row={row} variant="icon" />
+                </div>
               ))}
             </div>
           }

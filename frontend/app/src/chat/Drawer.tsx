@@ -23,6 +23,8 @@ import { useAssistantAsks, useAssistantThreads } from "../shell/assistant";
 import { useSession } from "../shell/session";
 import { Glyph } from "./icons";
 import { useRoute } from "../shell/router";
+import { useKeyboardFit, usePresence, useSwipeDismiss } from "../shell/useSheet";
+import { ChatAurora } from "../shell/ambient";
 import { autoSeen, markAutoSeen, readGuide, type GuideState } from "./guide";
 import { useChat } from "./useChat";
 import type { ConnectAsk } from "./connect";
@@ -280,6 +282,15 @@ export function Drawer() {
   const panel = useRef<HTMLElement | null>(null);
   const fab = useRef<HTMLButtonElement | null>(null);
   const opened = useRef(false);
+  // Closing runs its exit before the panel unmounts, and a finger on the
+  // header can throw it off to the right — the header only, since the
+  // conversation under it has tables and code that scroll sideways.
+  const presence = usePresence(open);
+  useSwipeDismiss(panel, "x", () => show(false), {
+    handle: ".ag-chat-head",
+    enabled: presence.mounted,
+  });
+  useKeyboardFit(panel, presence.mounted);
   useEffect(() => {
     if (!opened.current) {
       opened.current = true;
@@ -310,7 +321,7 @@ export function Drawer() {
         <button
           type="button"
           ref={fab}
-          className="ag-chat-fab"
+          className="ag-ai ag-chat-fab"
           title={t("chat.title")}
           aria-label={t("chat.title")}
           onClick={() => show(true)}
@@ -318,16 +329,20 @@ export function Drawer() {
           <Glyph name="spark" size={22} />
         </button>
       )}
-      {open && (
+      {presence.mounted && (
         <aside
           ref={panel}
           className="ag-chat-panel"
+          data-leaving={presence.leaving ? "" : undefined}
           role="dialog"
           aria-label={t("chat.title")}
           // Focusable only on purpose: the drawer is not modal (the page
           // behind it stays usable), so it is never a Tab stop of its own.
           tabIndex={-1}
         >
+          {/* The drawer's own brand light, livelier while an answer is being
+              written (a trial behind `?ambient=1`, `shell/ambient`). */}
+          <ChatAurora busy={busy} />
           <Suspense
             fallback={
               <div className="ag-chat-body">

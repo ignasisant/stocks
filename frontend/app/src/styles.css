@@ -45,6 +45,14 @@ summary,
   opacity: 0.8;
 }
 
+/* A keyboard user always sees where focus is. The ring is BRAND_ACCENT, the
+   one brand step at 3:1+ on every surface (BORDER_FOCUS and BRAND_CTA are not);
+   zero specificity, so a component that draws its own ring keeps it. */
+:where(:focus-visible) {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+
 /* A row that scrolls sideways fades the edge that has more past it. The hook
    (`useTabStrip`) sets `data-more` from the scroll position. */
 .ag-fade-x[data-more="end"] {
@@ -68,6 +76,106 @@ body {
   background: var(--ag-surface-page);
   color: var(--ag-text-primary);
   font-family: var(--ag-font-body, system-ui, -apple-system, sans-serif);
+}
+
+/* The brand light (`shell/ambient`, a trial behind `?ambient=1`): three soft
+   washes in DS hues — purple 600, purple 800, chart blue 600 — drifting
+   behind every card. The cards stay opaque, so it reads in the gutters and
+   never under a figure. Only `transform` moves, on layers of their own; the
+   gradients never repaint. Slow on purpose: a full pass takes a minute and a half or more, so
+   nothing catches the eye while reading. */
+.ag-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ag-ambient > span {
+  position: absolute;
+  width: 70vmax;
+  height: 70vmax;
+  border-radius: 50%;
+  will-change: transform;
+  animation: ag-drift-a 90s ease-in-out infinite alternate;
+}
+
+.ag-ambient > span:nth-child(1) {
+  top: -35vmax;
+  left: -10vmax;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--ag-brand-cta) 9%, transparent),
+    transparent 65%
+  );
+}
+
+.ag-ambient > span:nth-child(2) {
+  top: -30vmax;
+  right: -20vmax;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--ag-info-deep) 7%, transparent),
+    transparent 65%
+  );
+  animation-name: ag-drift-b;
+  animation-duration: 115s;
+}
+
+.ag-ambient > span:nth-child(3) {
+  bottom: -40vmax;
+  left: 25vmax;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--ag-purple-800) 12%, transparent),
+    transparent 65%
+  );
+  animation-name: ag-drift-c;
+  animation-duration: 140s;
+}
+
+@keyframes ag-drift-a {
+  to {
+    transform: translate3d(18vw, 10vh, 0) scale(1.1);
+  }
+}
+
+@keyframes ag-drift-b {
+  to {
+    transform: translate3d(-20vw, 14vh, 0) scale(0.92);
+  }
+}
+
+@keyframes ag-drift-c {
+  to {
+    transform: translate3d(-12vw, -16vh, 0) scale(1.12);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-ambient > span {
+    animation: none;
+  }
+}
+
+/* While something is open over the page, the page holds still: a swipe on the
+   scrim or past the end of a dialog's own scroll used to drag the screen under
+   it. The chat locks it only where it covers the page ("overlay", which a
+   phone always is); docked beside the page it leaves the page usable. The
+   gutter keeps a classic scrollbar's width, so nothing shifts sideways. */
+:root:has(
+  .ag-rev-modal,
+  .earn-modal,
+  .ag-tour-scrim,
+  .ag-fb-scrim,
+  .ag-jr-veil,
+  .pr-modal,
+  .ag-nav-scrim
+),
+:root[data-chat="overlay"] {
+  overflow: hidden;
+  scrollbar-gutter: stable;
 }
 
 .ag-shell {
@@ -136,7 +244,8 @@ body {
    edge. Only an open chat drawer takes room, by padding the shell by its live
    width (chat/chat.css) — the page never reserves it up front. */
 .ag-main {
-  padding: 1.5rem;
+  /* The far edge clears the notch of a phone on its side. */
+  padding: 1.5rem max(1.5rem, env(safe-area-inset-right)) 1.5rem 1.5rem;
   min-width: 0;
   /* A size container, so a page can lay itself out by the room it actually
      has. A viewport media query cannot see the chat drawer: at 1440px with the
@@ -149,7 +258,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  padding: 1rem 0.6rem;
+  /* A phone on its side is wider than 640px and gets the rail, with the
+     notch at its left edge half the time. */
+  padding: 1rem 0.6rem 1rem max(0.6rem, env(safe-area-inset-left));
   border-right: 1px solid var(--ag-border);
   background: var(--ag-surface-card);
   /* Pinned to the viewport: a grid child stretches to the page's height and
@@ -197,6 +308,13 @@ body {
   background: none;
   color: var(--ag-text-muted);
   cursor: pointer;
+}
+
+@media (pointer: coarse) {
+  .ag-nav-fold {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 @media (hover: hover) {
@@ -287,8 +405,10 @@ body {
    something a progress note may sit on. */
 .ag-activity {
   position: fixed;
-  right: 16px;
-  bottom: 88px;
+  right: max(16px, env(safe-area-inset-right));
+  /* Over the assistant's launcher (48px at 20px, or over the tab bar on a
+     phone, `--dock`), and its gap. */
+  bottom: calc(var(--dock, 0px) + max(20px, env(safe-area-inset-bottom)) + 68px);
   z-index: 30;
   width: min(280px, calc(100vw - 32px));
   box-sizing: border-box;
@@ -340,6 +460,19 @@ body {
 @keyframes ag-pulse {
   50% {
     opacity: 0.45;
+  }
+}
+
+/* A placeholder that holds still is still a placeholder; the bar jumps to its
+   share instead of sliding there. */
+@media (prefers-reduced-motion: reduce) {
+  .ag-skeleton-row,
+  .ag-pending {
+    animation: none;
+  }
+
+  .ag-activity-bar > div {
+    transition: none;
   }
 }
 
@@ -584,6 +717,104 @@ body {
   outline-offset: 2px;
 }
 
+/* A press that asks the assistant (`.ag-ai`): the CTA fill inside a rim of
+   the chart hues turning slowly, with the same light blurred just outside it,
+   so "this goes to the AI" reads before the label does. Three layers in the
+   button's own stacking context: its background is the rim, `::before` the
+   glow, `::after` the fill one rim-width in. The angle is a registered
+   property so the gradient itself can be animated; a browser without
+   `@property` paints the rim still. */
+@property --ai-turn {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.ag-ai {
+  --ai-rim: 1px;
+  --ai-fill: var(--ag-purple-700);
+  position: relative;
+  isolation: isolate;
+  border: 0;
+  background: conic-gradient(
+    from var(--ai-turn),
+    var(--ag-brand-accent),
+    var(--ag-info),
+    var(--ag-chart-magenta),
+    var(--ag-purple-300),
+    var(--ag-brand-accent)
+  );
+  color: var(--ag-on-brand);
+  font-weight: 600;
+  animation: ag-ai-turn 12s linear infinite;
+}
+
+.ag-ai::before,
+.ag-ai::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.ag-ai::before {
+  inset: 0;
+  background: inherit;
+  filter: blur(10px);
+  opacity: 0.25;
+  transition: opacity 0.2s;
+}
+
+.ag-ai::after {
+  inset: var(--ai-rim);
+  background: var(--ai-fill);
+  transition: background-color 0.2s;
+}
+
+@media (hover: hover) {
+  .ag-ai:hover {
+    --ai-fill: var(--ag-brand-cta);
+  }
+
+  .ag-ai:hover::before {
+    opacity: 0.45;
+  }
+}
+
+/* Focus thickens the rim and lifts its glow rather than drawing a ring of its
+   own: an outline a few pixels out read as a second border round the first. */
+.ag-ai:focus-visible {
+  --ai-rim: 2px;
+  outline: none;
+}
+
+.ag-ai:focus-visible::before {
+  opacity: 0.6;
+}
+
+.ag-ai:disabled {
+  opacity: 0.6;
+  cursor: default;
+  animation-play-state: paused;
+}
+
+.ag-ai:disabled::before {
+  opacity: 0;
+}
+
+@keyframes ag-ai-turn {
+  to {
+    --ai-turn: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-ai {
+    animation: none;
+  }
+}
+
 /* The way out of the demo, at the foot of the rail. Full width so it reads as
    the rail's own control rather than as something a page put there, and hidden
    at the icon width where there is no room for a word. */
@@ -693,6 +924,65 @@ body {
     border-top: 1px solid var(--ag-border);
     background: var(--ag-surface-card);
     box-shadow: var(--ag-shadow-overlay);
+    /* Rises out of the bar and drops back into it (`usePresence`); the exit
+       is a transition, so pressing More again mid-way turns it round. A
+       finger can pull it down (`useSwipeDismiss`). */
+    animation: ag-sheet-in 200ms cubic-bezier(0.23, 1, 0.32, 1);
+    transition:
+      transform 200ms cubic-bezier(0.23, 1, 0.32, 1),
+      opacity 200ms ease-out;
+    touch-action: none;
+  }
+  .ag-nav-sheet[data-leaving] {
+    opacity: 0;
+    transform: translate3d(0, 1rem, 0);
+    pointer-events: none;
+  }
+  .ag-nav-sheet[data-leaving][data-swiped] {
+    transform: translate3d(0, 100%, 0);
+  }
+}
+
+@keyframes ag-sheet-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 1rem, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-nav-sheet {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* `Back` (Layout.tsx): only in an app launched from a home screen, which has
+   no browser toolbar to go back with. */
+.ag-back {
+  display: none;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 44px;
+  margin: -0.5rem 0 0.25rem -0.5rem;
+  padding: 0 0.5rem;
+  border: none;
+  background: none;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-base);
+  cursor: pointer;
+}
+
+@media (display-mode: standalone) {
+  .ag-back {
+    display: inline-flex;
+  }
+}
+
+@media (hover: hover) {
+  .ag-back:hover {
+    color: var(--ag-text-primary);
   }
 }
 
@@ -718,7 +1008,8 @@ body {
 
 .ag-search-field:focus {
   outline: none;
-  border-color: var(--ag-border-focus);
+  border-color: var(--ag-brand-accent);
+  box-shadow: 0 0 0 1px var(--ag-brand-accent);
 }
 
 .ag-search-panel {
@@ -727,7 +1018,7 @@ body {
   top: calc(100% + 4px);
   width: 100%;
   max-width: 420px;
-  max-height: 60vh;
+  max-height: 60dvh;
   overflow-y: auto;
   padding: 6px;
   border: 1px solid var(--ag-border);
@@ -784,7 +1075,7 @@ body {
 
 .ag-search-venue {
   margin-left: auto;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-xs);
 }
 
@@ -912,8 +1203,9 @@ img.ag-search-logo {
 
 .ag-tour {
   width: min(520px, 100%);
-  max-height: 86vh;
+  max-height: 86dvh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 20px;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-lg);
@@ -936,7 +1228,7 @@ img.ag-search-logo {
 }
 
 .ag-tour-progress {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-xs);
 }
 
@@ -1090,7 +1382,7 @@ button.ag-welcome-row {
 }
 
 .ag-welcome-n {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1141,8 +1433,8 @@ button.ag-welcome-row {
 .ag-fb-sent {
   position: fixed;
   z-index: 95;
-  right: 20px;
-  bottom: 20px;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: calc(var(--dock, 0px) + max(20px, env(safe-area-inset-bottom)));
   margin: 0;
   padding: 8px 14px;
   border: 1px solid var(--ag-success-fill);

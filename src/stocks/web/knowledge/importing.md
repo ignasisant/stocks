@@ -2,6 +2,8 @@
 id: importing
 title: Importing broker statements
 as_of: 2026-10-11
+step: import
+related: cost-basis-and-currency
 tags: importar, importación, extracto, estado de cuenta, CSV, Excel, PDF, Revolut, DEGIRO, Trading 212, Interactive Brokers, IBKR, ClickTrade, Saxo, Binance, Coinbase, Kraken, cripto, crypto, duplicados, duplicates, traspaso entre brokers, transfer between brokers, ejemplo, demo, borrar última importación, clear last import, vista previa, preview, pegar texto, paste, codificación, encoding, separador, delimiter, sin precio, held at cost, doctor
 ---
 The Import page turns a broker statement into transactions in your ledger. Positions, P/L, dividends, fees and tax reports on the Portfolio page are all derived from that ledger.

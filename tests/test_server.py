@@ -230,6 +230,27 @@ def test_the_share_card_is_served(client):
     assert r.headers["content-type"] == "image/png"
 
 
+def test_the_app_installs_to_a_home_screen_and_opens_past_the_pitch(client):
+    """A home-screen app keeps its own cookie jar, so the first launch has no
+    app cookie: its start URL has to ask for something, or every install opens
+    on the landing."""
+    import json
+
+    r = client.get("/lp/manifest.webmanifest")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/manifest+json")
+    manifest = json.loads(r.text)
+    assert manifest["display"] == "standalone"
+    for icon in manifest["icons"]:
+        assert client.get(icon["src"]).status_code == 200, icon["src"]
+    assert any(i.get("purpose") == "maskable" for i in manifest["icons"])
+    assert STUB in client.get(manifest["start_url"]).text
+    for page in ("/portfolio", "/"):
+        client.cookies.clear()
+        body = client.get(page if page != "/" else "/?landing=1").text
+        assert 'rel="manifest"' in body and 'rel="apple-touch-icon"' in body
+
+
 @pytest.mark.parametrize("name", ["..%2fapp.py", "%2e%2e/app.py", "nope.svg"])
 def test_the_asset_mount_serves_nothing_outside_itself(client, name):
     assert client.get(f"/lp/{name}").status_code == 404

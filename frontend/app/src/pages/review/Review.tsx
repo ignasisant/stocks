@@ -317,7 +317,7 @@ function Ask({ data, filter, busy }: { data: Review; filter: Filter; busy: boole
     <SignedInOnly>
       <button
         type="button"
-        className="ag-btn ag-btn-cta ag-rev-ask"
+        className="ag-btn ag-ai ag-rev-ask"
         title={t("review.ask_help")}
         disabled={busy}
         onClick={() => askAssistant(buildPrompt(data, t, lang, words), { fresh: true })}

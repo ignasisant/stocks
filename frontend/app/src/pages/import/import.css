@@ -126,7 +126,7 @@
 }
 
 .im-param {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font: 500 var(--ag-fs-2xs) var(--ag-font-mono);
 }
 
@@ -138,7 +138,7 @@
 }
 
 .im-faint {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
 }
 
 .im-mono {
@@ -243,7 +243,7 @@
 }
 
 .im-btn:focus-visible {
-  outline: 2px solid var(--ag-brand-cta);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 2px;
 }
 
@@ -475,7 +475,7 @@
 }
 
 .im-chip:focus-visible {
-  outline: 2px solid var(--ag-brand-cta);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 2px;
 }
 
@@ -528,7 +528,7 @@
 
 /* The input keeps its focus, so the ring belongs to the zone around it. */
 .im-drop:focus-within {
-  outline: 2px solid var(--ag-brand-cta);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 2px;
 }
 
@@ -728,7 +728,8 @@
 
 .im-input:focus-visible,
 .im-paste:focus-visible {
-  border-color: var(--ag-brand-cta);
+  border-color: var(--ag-brand-accent);
+  box-shadow: 0 0 0 1px var(--ag-brand-accent);
   outline: none;
 }
 
@@ -829,7 +830,7 @@
 }
 
 .im-jump:focus-visible {
-  outline: 2px solid var(--ag-brand-cta);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 2px;
 }
 
@@ -1188,7 +1189,7 @@
 /* The broker's own words for the rows, to find them in the statement by. */
 .im-skip-meta {
   margin: 0;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font: 500 var(--ag-fs-xs) var(--ag-font-mono);
 }
 
@@ -1429,7 +1430,7 @@
 /* The skipped table sits inside a box that already has a header row. */
 .im-table-quiet th {
   background: none;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
 }
 
 .im-op-buy {
@@ -1964,7 +1965,7 @@
   }
 
   .im-fold-head:focus-visible {
-    outline: 2px solid var(--ag-brand-cta);
+    outline: 2px solid var(--ag-brand-accent);
     outline-offset: -2px;
   }
 
@@ -2189,4 +2190,14 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+/* Disclosure glyphs flip to their end state rather than turning. */
+@media (prefers-reduced-motion: reduce) {
+  .im-disclose .im-glyph,
+  .im-skipped > summary .im-glyph,
+  .im-disclosure > summary .im-glyph,
+  .im-fold-head .im-glyph {
+    transition: none;
+  }
 }

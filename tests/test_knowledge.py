@@ -162,6 +162,64 @@ def test_golden_questions_find_their_document(question, expected):
     assert expected & set(got), f"{question!r} -> {got}"
 
 
+# Questions no document answers, sharing no word with any of them. Nearest-
+# neighbour search still has a nearest neighbour; these must come back empty
+# rather than as "documentation" the model then answers from.
+OFF_TOPIC = [
+    "who won the champions league",
+    "what's the P/E of Apple",
+    "¿qué opinas de Tesla?",
+    "¿hay app para iPhone?",
+    "hello",
+]
+
+
+@pytest.mark.skipif(not hybrid.available(),
+                    reason="the cut is on the semantic half's distance")
+@pytest.mark.parametrize("question", OFF_TOPIC)
+def test_a_question_nothing_answers_finds_nothing(question):
+    assert knowledge.lookup(question) == []
+
+
+@pytest.mark.skipif(not hybrid.available(),
+                    reason="the cut is on the semantic half's distance")
+def test_a_close_paraphrase_without_shared_words_still_answers():
+    # "dividendos" is too common in the corpus to count as a keyword, so this
+    # one rides on meaning alone — and is close enough to.
+    assert "tour:income" in [h.doc for h in knowledge.lookup("como veo los dividendos")]
+
+
+# ------------------------------------------------------------------ browsing
+
+
+def test_the_manifest_lists_every_document_once():
+    lines = knowledge.manifest().splitlines()
+    ids = [line.split(":")[0].removeprefix("- ") for line in lines]
+    assert sorted(ids) == sorted(p.stem for p in knowledge.DOCS_DIR.glob("*.md"))
+    assert not any(i.startswith("tour:") for i in ids)
+
+
+def test_a_document_reads_as_its_sections():
+    toc = knowledge.contents("tax-spain")
+    assert toc.startswith("Spanish tax") and "- Savings base brackets" in toc
+    assert knowledge.contents("nope") == ""
+
+
+def test_a_section_reads_whole_and_dated():
+    whole = knowledge.section("tax-spain", "savings base")
+    assert whole is not None and whole.section == "Savings base brackets"
+    assert "19%" in whole.text and whole.as_of
+    assert knowledge.section("tax-spain", "nope") is None
+    assert knowledge.section("tax-spain", "") is None
+
+
+def test_every_section_fits_one_result_uncut():
+    for doc, head in {(p.doc, p.section) for p in knowledge.passages()
+                      if not p.doc.startswith("tour:")}:
+        out = knowledge.block([knowledge.section(doc, head)])
+        assert len(out) <= toolbox.MAX_RESULT_CHARS, (doc, head)
+
+
 # ------------------------------------------------------------------ the tool
 
 
@@ -179,3 +237,83 @@ def test_the_tool_without_a_query_does_not_search():
 def test_the_tool_is_not_offered_without_documents(monkeypatch):
     monkeypatch.setattr(knowledge, "available", lambda: False)
     assert "lookup_knowledge" not in [s.name for s in toolbox.specs(Context())]
+
+
+def test_the_tool_lists_the_documents_it_holds():
+    spec = next(s for s in toolbox.specs(Context()) if s.name == "lookup_knowledge")
+    assert "- tax-spain: " in spec.description
+    assert spec.schema["required"] == []
+
+
+def test_the_tool_browses_a_document_then_a_section():
+    run = toolbox.executor(Context())
+    assert "- Savings base brackets" in run("lookup_knowledge", {"doc": "tax-spain"})
+    out = run("lookup_knowledge", {"doc": "tax-spain", "section": "Savings base"})
+    assert out.startswith(knowledge.HEADER) and "19%" in out
+    assert "- tax-spain: " in run("lookup_knowledge", {"doc": "nope"})
+    assert "Sections:" in run("lookup_knowledge",
+                              {"doc": "tax-spain", "section": "nope"})
+
+
+def test_the_tool_says_when_nothing_matches(monkeypatch):
+    monkeypatch.setattr(knowledge, "lookup", lambda q: [])
+    out = toolbox.executor(Context())("lookup_knowledge", {"query": "anything"})
+    assert "does not cover it" in out
+
+
+# ------------------------------------------------------------------ links
+
+
+def test_every_link_in_the_frontmatter_points_somewhere():
+    from stocks.web import onboarding
+
+    steps = {s.id for s in onboarding.STEPS}
+    ids = {p.stem for p in knowledge.DOCS_DIR.glob("*.md")}
+    for name, passages in _docs().items():
+        first = passages[0]
+        assert not first.step or first.step in steps, f"{name}: step {first.step}"
+        assert first.doc not in first.related, f"{name} links to itself"
+        assert set(first.related) <= ids, f"{name}: related {first.related}"
+
+
+def test_a_result_points_to_the_related_documents_it_left_out():
+    hit = knowledge.section("tax-spain", "Savings base")
+    out = knowledge.block([hit])
+    assert out.rstrip().splitlines()[-1].startswith("See also (doc=…): tax-engine (")
+    # A document the search already returned is not pointed to again.
+    out = knowledge.block([hit, knowledge.section("tax-engine", "Which countries"),
+                           knowledge.section("cost-basis-and-currency", "Cost basis")])
+    tail = out.split("See also", 1)[1]
+    assert "tax-engine" not in tail and "tax-spain" not in tail
+    assert "importing (" in tail
+
+
+def test_a_result_reads_back_as_the_documents_it_quoted():
+    hits = [knowledge.section("tax-spain", "Savings base"),
+            knowledge.section("tax-spain", "Two-month"),
+            next(p for p in knowledge.passages() if p.doc == "tour:import")]
+    got = knowledge.cited(knowledge.block(hits))
+    assert [p.doc for p in got] == ["tax-spain", "tour:import"]
+    assert knowledge.cited("[not a heading]\nhttps://example.com") == []
+
+
+def test_a_cited_document_opens_the_screen_it_is_about():
+    spain = knowledge.source(knowledge.section("tax-spain", "Savings base"))
+    assert spain == {"title": "Spanish tax (IRPF) as the app computes it",
+                     "url": "/portfolio?tab=tax", "step": "tax"}
+    tour = knowledge.source(next(p for p in knowledge.passages()
+                                 if p.doc == "tour:notify"))
+    assert tour == {"title": "", "url": "/profile?tab=notify", "step": "notify"}
+    assert knowledge.page("assistant") == ""  # a drawer, not a screen
+    assert knowledge.page("daily") == "/"
+    assert knowledge.page("nope") == ""
+
+
+def test_the_gather_step_lists_the_documents_it_read():
+    from stocks.chat.agent import Evidence
+    from stocks.web.llm import ToolCall
+
+    result = knowledge.block([knowledge.section("tax-spain", "Savings base")])
+    ev = Evidence(calls=[ToolCall("lookup_knowledge", {"query": "tramos"}, result),
+                         ToolCall("lookup_knowledge", {"query": "again"}, result)])
+    assert ev.sources() == [knowledge.source(knowledge.section("tax-spain", "Savings"))]

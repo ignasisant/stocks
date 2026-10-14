@@ -16,7 +16,7 @@ export const CSS = `
   margin-bottom: 16px;
 }
 .pr-title { font-size: var(--ag-fs-2xl); font-weight: 600; margin: 0; }
-.pr-savehint { font-size: var(--ag-fs-sm); color: var(--ag-text-faint); }
+.pr-savehint { font-size: var(--ag-fs-sm); color: var(--ag-text-muted); }
 
 /* ------------------------------------------------------------- identity */
 .pr-ident {
@@ -53,7 +53,7 @@ export const CSS = `
 }
 .pr-morehint {
   display: block; margin-top: 8px;
-  font-size: var(--ag-fs-sm); color: var(--ag-text-faint);
+  font-size: var(--ag-fs-sm); color: var(--ag-text-muted);
 }
 /* The setup progress under the tour button: capabilities on, of all of them. */
 .pr-prog { display: flex; align-items: center; gap: 8px; }
@@ -143,7 +143,7 @@ export const CSS = `
 }
 .pr-input-sm { padding: 4px 8px; font-size: var(--ag-fs-sm); max-width: 100%; }
 .pr-input-wide { max-width: 100%; width: 100%; }
-.pr-select:focus, .pr-input:focus { outline: 2px solid var(--ag-border-focus); }
+.pr-select:focus, .pr-input:focus { outline: 2px solid var(--ag-brand-accent); }
 .pr-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 /* Free text for the assistant. Resizes vertically only: a textarea a reader
    can drag wider than its card is a layout bug they caused themselves. */
@@ -153,7 +153,7 @@ export const CSS = `
   border: 1px solid var(--ag-border); border-radius: var(--ag-radius-sm);
   background: var(--ag-surface-page); color: var(--ag-text-primary);
 }
-.pr-notes:focus { outline: 2px solid var(--ag-border-focus); }
+.pr-notes:focus { outline: 2px solid var(--ag-brand-accent); }
 .pr-examples { list-style: none; margin: 8px 0; padding: 0; }
 .pr-examples li {
   display: flex; gap: 8px; align-items: baseline; padding: 4px 0;
@@ -232,7 +232,7 @@ export const CSS = `
 .pr-err {
   font-size: var(--ag-fs-sm); line-height: 1.5; color: var(--ag-critical-fill);
 }
-.pr-busy { font-size: var(--ag-fs-sm); color: var(--ag-text-faint); }
+.pr-busy { font-size: var(--ag-fs-sm); color: var(--ag-text-muted); }
 .pr-warn { font-size: var(--ag-fs-sm); color: var(--ag-warn); }
 .pr-hint { font-size: var(--ag-fs-sm); color: var(--ag-text-muted); line-height: 1.55; }
 .pr-badge {
@@ -341,7 +341,7 @@ export const CSS = `
   flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; color: var(--ag-text-secondary);
 }
-.pr-resrow-k { font-size: var(--ag-fs-xs); color: var(--ag-text-faint); }
+.pr-resrow-k { font-size: var(--ag-fs-xs); color: var(--ag-text-muted); }
 .pr-ghead {
   display: flex; align-items: center; gap: 10px; padding: 16px 0 6px;
 }
@@ -369,7 +369,7 @@ export const CSS = `
 .pr-star {
   appearance: none; background: none; border: none; cursor: pointer;
   font-size: var(--ag-fs-lg); line-height: 1; padding: 2px 4px;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
 }
 .pr-star-on { color: var(--ag-warn); }
 .pr-wtags { flex: 1 1 100%; }

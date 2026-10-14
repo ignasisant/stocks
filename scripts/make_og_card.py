@@ -5,7 +5,8 @@
 
 Writes `src/stocks/web/assets/og.png` (1200x630, the size Open Graph, Twitter/X,
 LinkedIn, WhatsApp and Slack all render at 1.91:1 without re-cropping) and
-`apple-touch-icon.png` (180x180). Both are committed: they change only when the
+`apple-touch-icon.png` (180x180), plus the manifest's 192/512 and maskable
+icons. All are committed: they change only when the
 brand does, and a container that generated them at boot would need the fonts.
 
 The card carries no sentence — one image serves both the English and Spanish
@@ -185,13 +186,26 @@ def build_card() -> Image.Image:
     return img.convert("RGB")
 
 
-def build_icon() -> Image.Image:
-    """180x180 touch icon: the tile alone, on the page background."""
-    size = 180
+def build_icon(size: int = 180, margin: float = 22 / 180) -> Image.Image:
+    """Square touch icon: the tile alone, on the page background.
+
+    `margin` is the share of the side left clear on each edge. A maskable
+    icon (Android crops it to a circle or squircle) keeps the mark inside the
+    central 80%, so it takes a wider one.
+    """
     img = Image.new("RGBA", (size, size), (*BG, 255))
     d = ImageDraw.Draw(img)
-    _mark(d, 22, 22, size - 44)
+    inset = round(size * margin)
+    _mark(d, inset, inset, size - 2 * inset)
     return img.convert("RGB")
+
+
+# The web app manifest's icons (`manifest.webmanifest`): name -> (size, margin).
+MANIFEST_ICONS = {
+    "icon-192.png": (192, 22 / 180),
+    "icon-512.png": (512, 22 / 180),
+    "icon-maskable-512.png": (512, 0.2),
+}
 
 
 def main() -> int:
@@ -200,7 +214,11 @@ def main() -> int:
     icon = ASSETS / "apple-touch-icon.png"
     build_card().save(card, "PNG", optimize=True)
     build_icon().save(icon, "PNG", optimize=True)
-    for p in (card, icon):
+    written = [card, icon]
+    for name, (size, margin) in MANIFEST_ICONS.items():
+        build_icon(size, margin).save(ASSETS / name, "PNG", optimize=True)
+        written.append(ASSETS / name)
+    for p in written:
         print(f"  wrote {p.relative_to(ROOT)} ({p.stat().st_size // 1024} KB)")
     return 0
 

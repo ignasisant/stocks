@@ -85,6 +85,23 @@ function announce(): void {
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
+/**
+ * How many in-app steps back the current entry is from where this visit
+ * started. Kept in each entry's `history.state`, so it holds across back and
+ * forward and a reload; the shell's back button needs it, because an app
+ * opened from a home screen has no browser one.
+ */
+export function depth(): number {
+  const state: unknown = typeof window === "undefined" ? null : window.history.state;
+  const value = (state as { depth?: unknown } | null)?.depth;
+  return typeof value === "number" ? value : 0;
+}
+
+/** `pushState` to `href`, one step deeper than here. */
+export function push(href: string): void {
+  window.history.pushState({ depth: depth() + 1 }, "", href);
+}
+
 export function useRoute(): Route & {
   go: (page: string, params?: Record<string, string>) => void;
   setParams: (params: Record<string, string | undefined>) => void;
@@ -99,7 +116,7 @@ export function useRoute(): Route & {
 
   const go = useCallback((page: string, params?: Record<string, string>) => {
     const query = params ? `?${new URLSearchParams(params)}` : "";
-    window.history.pushState(null, "", `${BASE}/${page}${query}`);
+    push(`${BASE}/${page}${query}`);
     announce();
     window.scrollTo(0, 0);
   }, []);
@@ -119,7 +136,7 @@ export function useRoute(): Route & {
     }
     const query = next.toString();
     window.history.replaceState(
-      null,
+      window.history.state,
       "",
       `${window.location.pathname}${query ? `?${query}` : ""}`,
     );
@@ -159,7 +176,7 @@ export function Link({
           return;
         if (event.button !== 0) return;
         event.preventDefault();
-        window.history.pushState(null, "", href);
+        push(href);
         window.dispatchEvent(new PopStateEvent("popstate"));
         window.scrollTo(0, 0);
       }}

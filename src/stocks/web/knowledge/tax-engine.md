@@ -2,6 +2,8 @@
 id: tax-engine
 title: How the app's tax engine works (all countries)
 as_of: 2026-10-11
+step: tax
+related: tax-spain, cost-basis-and-currency
 tags: tax engine, motor fiscal, jurisdictions, jurisdicciones, tax residence, residencia fiscal, FIFO, LIFO, average cost, coste medio, S104, wash sale, superficial loss, regla de los dos meses, repurchase window, plusvalías, capital gains, harvest, tax-loss harvesting, compensar pérdidas, withholding, retención, doble imposición, deadlines, plazos, Realized & tax
 ---
 The Realized & tax tab of Portfolio turns your ledger into a realized gain or loss per sale and an estimated tax bill under the rules of one country. It is a planning aid, not tax advice.

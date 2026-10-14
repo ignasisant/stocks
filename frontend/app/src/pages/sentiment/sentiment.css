@@ -49,7 +49,7 @@
   font-family: "Martian Mono", ui-monospace, monospace;
   font-size: var(--ag-fs-2xs, 0.7rem);
   font-weight: 500;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
 }
 
 .sn-spacer {
@@ -281,7 +281,7 @@
   font-family: "Martian Mono", ui-monospace, monospace;
   font-size: var(--ag-fs-2xs, 0.7rem);
   font-weight: 500;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
 }
 
 .sn-sparkbox {
@@ -323,7 +323,7 @@
   font-family: "Martian Mono", ui-monospace, monospace;
   font-size: var(--ag-fs-2xs, 0.7rem);
   font-weight: 500;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
 }
 
 .sn-hero-spark {
@@ -956,6 +956,6 @@
     display: block;
     font-size: var(--ag-fs-2xs, 0.7rem);
     font-weight: 500;
-    color: var(--ag-text-faint);
+    color: var(--ag-text-muted);
   }
 }

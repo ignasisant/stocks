@@ -14,7 +14,7 @@
 .ag-nav-section {
   margin: 0.9rem 0 0.2rem;
   padding: 0 0.7rem;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-2xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -129,7 +129,7 @@
 
 .ag-fb-hint {
   margin: 6px 0 0;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-xs);
 }
 

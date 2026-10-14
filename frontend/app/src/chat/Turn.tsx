@@ -43,7 +43,7 @@ import {
 import { ActionCard } from "./ActionCard";
 import { GuideCard, useVisit } from "./GuideCard";
 import { unshortcode, type GuideState, type GuideStep } from "./guide";
-import { PageLink } from "./links";
+import { AppSource, PageLink, type Source } from "./links";
 import { Surfaces } from "./Surfaces";
 import { Debate } from "./Debate";
 import type { A2uiAction } from "./a2ui";
@@ -130,10 +130,18 @@ function Live({ steps }: { steps: LiveStep[] }) {
         <li key={step.id} aria-busy={step.out === undefined}>
           <code>{step.tool}</code>
           {step.arg && <span> {step.arg}</span>}
+          {/* Keyed apart so the result comes in as its own line rather than
+              overwriting the ellipsis in place. */}
           {step.out === undefined ? (
-            <span className="ag-chat-step-out"> …</span>
+            <span key="wait" className="ag-chat-step-out">
+              {" "}
+              …
+            </span>
           ) : (
-            <span className="ag-chat-step-out"> → {step.out}</span>
+            <span key="done" className="ag-chat-step-out">
+              {" "}
+              → {step.out}
+            </span>
           )}
         </li>
       ))}
@@ -141,7 +149,7 @@ function Live({ steps }: { steps: LiveStep[] }) {
   );
 }
 
-function Sources({ web }: { web: { title: string; url: string }[] }) {
+function Sources({ web, onLeave }: { web: Source[]; onLeave: () => void }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   // The list is drawn closed rather than left unmounted, so that the button's
@@ -164,15 +172,19 @@ function Sources({ web }: { web: { title: string; url: string }[] }) {
       <ul className="ag-chat-sources" id={listId} hidden={!open}>
         {web.map((source, i) => (
           <li key={i}>
-            <a
-              className="ag-chat-a"
-              href={href(source.url) ?? undefined}
-              target="_blank"
-              rel="noopener noreferrer nofollow"
-              title={source.title}
-            >
-              {host(source.url)}
-            </a>
+            {href(source.url) === null ? (
+              <AppSource source={source} onLeave={onLeave} />
+            ) : (
+              <a
+                className="ag-chat-a"
+                href={href(source.url) ?? undefined}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                title={source.title}
+              >
+                {host(source.url)}
+              </a>
+            )}
           </li>
         ))}
       </ul>
@@ -646,6 +658,7 @@ export function Turn({
   askRating,
   onRated,
   walk,
+  fresh,
 }: {
   turn: Stored;
   skills: SkillInfo[];
@@ -675,6 +688,8 @@ export function Turn({
   askRating?: boolean;
   /** The conversation's vote changed on this turn. */
   onRated?: (vote: Rating | null) => void;
+  /** Part of the exchange being asked now: it comes in rather than appears. */
+  fresh?: boolean;
   /** The walkthrough, for a turn it wrote. Absent: no guide on this server. */
   walk?: {
     state: GuideState;
@@ -745,7 +760,15 @@ export function Turn({
   }
 
   return (
-    <div className={`ag-chat-turn ${mine ? "ag-chat-mine" : "ag-chat-assistant"}`}>
+    <div
+      className={[
+        "ag-chat-turn",
+        mine ? "ag-chat-mine" : "ag-chat-assistant",
+        fresh && "ag-chat-turn-in",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       {lens && <span className="ag-chat-lens">{lens}</span>}
       {/* A transcript is the reader's own words at one remove: Whisper
           mishears a ticker now and then, and a question that reads oddly
@@ -840,7 +863,9 @@ export function Turn({
         (turn.steps?.length ?? 0) > 0 ||
         rateable) && (
         <div className="ag-chat-foot">
-          {turn.web.length > 0 && <Sources web={turn.web} />}
+          {turn.web.length > 0 && (
+            <Sources web={turn.web} onLeave={onLeave ?? (() => {})} />
+          )}
           {/* The cost rides on the trace counter for an answer, so the clock
               beside it only says when. */}
           {!mine && !turn.pending && <Trace steps={turn.steps ?? []} spent={spent} />}

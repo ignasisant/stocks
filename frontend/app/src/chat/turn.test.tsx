@@ -685,3 +685,38 @@ describe("an answer's thumbs", () => {
     ]);
   });
 });
+
+describe("an answer's sources", () => {
+  const answered = (web: Stored["web"]): Stored => ({
+    role: "assistant",
+    content: "Answer.",
+    skills: [],
+    web,
+    action: null,
+  });
+
+  it("opens an app document's screen in place and a web page in a new tab", () => {
+    const html = drawTurn(
+      answered([
+        { title: "https://example.com/a", url: "https://example.com/a" },
+        { title: "Spanish tax (IRPF)", url: "/portfolio?tab=tax", step: "tax" },
+      ]),
+    );
+    expect(html).toContain("example.com</a>");
+    expect(html).toMatch(
+      /<a class="ag-chat-a" href="\/portfolio\?tab=tax">Spanish tax \(IRPF\)<\/a>/,
+    );
+    expect(html.match(/target="_blank"/g)).toHaveLength(1);
+  });
+
+  it("titles a tour step by its step and leaves a screenless document unlinked", () => {
+    const html = drawTurn(
+      answered([
+        { title: "", url: "/import_transactions", step: "import" },
+        { title: "What each part of TopStocks does", url: "", step: "" },
+      ]),
+    );
+    expect(html).toContain('href="/import_transactions">');
+    expect(html).toContain("<li><span>What each part of TopStocks does</span></li>");
+  });
+});
