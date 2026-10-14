@@ -127,5 +127,7 @@ wheels/
 # (src/stocks/web/static/app/) is deliberately committed — see
 # frontend/README.md for why.
 frontend/*/node_modules/
+# Vitest run from the repo root leaves its cache here; nothing installs to it.
+/node_modules/
 frontend/*/tsconfig.tsbuildinfo
 test-results/
