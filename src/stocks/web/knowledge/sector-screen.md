@@ -2,6 +2,8 @@
 id: sector-screen
 title: How the Sector screen builds and ranks a cohort
 as_of: 2026-10-11
+step: sector
+related: review-scoring
 tags: Cribado por sectores, Sector screen, sectores, sectors, cohorte, cohort, ETF, XLK, pares, peers, no estadounidenses, non-US, las tres mejores, best three, podio, podium, ROIC, valoración, calidad, momentum técnico, technical momentum, RSI, MACD, calendario, calendar, resultados, earnings, ex-dividendo, ex-dividend, plazos fiscales, tax deadlines, Fed, BCE, ECB
 ---
 The Sector screen (Cribado por sectores) compares companies inside one of eleven sectors, ranked against each other rather than against the whole market. It is a screen, not advice.

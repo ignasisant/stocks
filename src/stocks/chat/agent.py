@@ -80,11 +80,19 @@ class Evidence:
 
     def sources(self) -> list[dict]:
         """The pages this gather read, in chat_web.sources' shape, so the panel
-        can caption them with the widget it already has."""
+        can caption them with the widget it already has — and the app's own
+        documents it quoted, linked to the screen each is about."""
+        from stocks.chat import knowledge
+
         out: list[dict] = []
         for call in self.calls:
             url = str(call.args.get("url") or "")
-            if call.name == "read_page" and url.startswith("http"):
+            if call.name == "lookup_knowledge":
+                for passage in knowledge.cited(call.result):
+                    cited = knowledge.source(passage)
+                    if cited not in out:
+                        out.append(cited)
+            elif call.name == "read_page" and url.startswith("http"):
                 out.append({"title": url, "url": url})
             elif call.name == "search_web":
                 for line in call.result.splitlines():

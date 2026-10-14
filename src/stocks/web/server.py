@@ -813,7 +813,12 @@ def _filled(html: str) -> bytes:
     from stocks.web.ds import ds_vars_css
 
     html = html.replace("<!--AG-TOKENS-->", ds_vars_css())
-    icon = f'<link rel="icon" type="image/svg+xml" href="{ASSET_BASE}topstocks-icon.svg">'
+    icon = (
+        f'<link rel="icon" type="image/svg+xml" href="{ASSET_BASE}topstocks-icon.svg">'
+        f'<link rel="apple-touch-icon" href="{ASSET_BASE}apple-touch-icon.png">'
+        f'<link rel="manifest" href="{ASSET_BASE}manifest.webmanifest">'
+        '<meta name="apple-mobile-web-app-title" content="TopStocks">'
+    )
     return html.replace("<!--AG-FONTS-->", _faces() + icon).encode("utf-8")
 
 
@@ -946,7 +951,13 @@ async def asset(request: Request) -> Response:
     if _ASSETS.resolve() not in target.parents or not target.is_file():
         return Response("Not found", status_code=404, media_type="text/plain")
     return FileResponse(
-        target, headers={"Cache-Control": "public, max-age=3600"}
+        target,
+        headers={"Cache-Control": "public, max-age=3600"},
+        # Starlette guesses nothing for it; Chrome only installs a manifest
+        # it was told is one.
+        media_type="application/manifest+json"
+        if target.suffix == ".webmanifest"
+        else None,
     )
 
 

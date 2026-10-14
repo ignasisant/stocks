@@ -37,7 +37,7 @@ import json
 import re
 import sqlite3
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 
@@ -86,6 +86,14 @@ HEADER = (
     "tax law.\n\n"
 )
 
+# How near, by cosine distance, a passage must be to count on meaning alone —
+# when the question shares no word with any passage. Measured 2026-10-14 over
+# the golden set and off-topic questions: no single cut separates the two once
+# keywords also matched (a right answer sits at 0.63, "capital de Francia" at
+# 0.45), but with no keyword hit the right answers sat under 0.40 ("como veo
+# los dividendos") and the noise above 0.53 (Tesla, iPhone, "hello").
+_NEAR = 0.5
+
 
 # Words only Spanish has, among the ones a question is made of.
 _SPANISH = frozenset("""
@@ -115,6 +123,8 @@ class Passage:
     lang: str = "en"
     as_of: str = ""  # ISO date the methodology was checked against the code
     tags: str = ""  # extra search terms, keyword index only
+    step: str = ""  # the guided-tour step whose page this is about, if any
+    related: tuple[str, ...] = ()  # ids of the documents worth reading next
 
     def line(self) -> str:
         dated = f", as of {self.as_of}" if self.as_of else ""
@@ -172,9 +182,12 @@ def parse_doc(text: str, name: str = "") -> list[Passage]:
     for i, head in enumerate(heads):
         end = heads[i + 1].start() if i + 1 < len(heads) else len(body)
         sections.append((head.group(1).strip(), body[head.end():end]))
+    related = tuple(r.strip() for r in meta.get("related", "").split(",")
+                    if r.strip())
     return [
         Passage(doc=meta["id"], title=meta["title"], section=section,
-                text=piece, as_of=meta["as_of"], tags=meta.get("tags", ""))
+                text=piece, as_of=meta["as_of"], tags=meta.get("tags", ""),
+                step=meta.get("step", ""), related=related)
         for section, raw in sections
         for piece in _cut(raw)
     ]
@@ -209,7 +222,8 @@ def _tour() -> list[Passage]:
             if not body:
                 continue
             out.extend(Passage(doc=f"tour:{m.group(1)}", title=title,
-                               section=title, text=piece, lang=lang)
+                               section=title, text=piece, lang=lang,
+                               step=m.group(1))
                        for piece in _cut(body))
     return out
 
@@ -259,15 +273,17 @@ class _Index:
                 list(enumerate(blobs)))
             self.vectors = True
 
-    def _semantic(self, query: str, depth: int) -> list[int]:
+    def _semantic(self, query: str, depth: int,
+                  within: float | None = None) -> list[int]:
         if not self.vectors:
             return []
         blobs = hybrid.embed([query])
         if not blobs:
             return []
         return [r[0] for r in self.db.execute(
-            f"SELECT id FROM {_TABLE}_vec WHERE embedding MATCH ? AND k = ?"
-            " ORDER BY distance", (blobs[0], depth))]
+            f"SELECT id, distance FROM {_TABLE}_vec"
+            " WHERE embedding MATCH ? AND k = ? ORDER BY distance",
+            (blobs[0], depth)) if within is None or r[1] <= within]
 
     def _lexical(self, query: str, depth: int) -> list[int]:
         words = [w for w in query.split()
@@ -281,9 +297,17 @@ class _Index:
             f" ORDER BY bm25({_TABLE}_fts, {_RANK}) LIMIT ?", (match, depth))]
 
     def search(self, query: str, depth: int) -> list[int]:
+        """Row ids, best first — none when nothing is near enough to answer.
+
+        Nearest-neighbour search always has a nearest neighbour: asked who won
+        the league, it returns the sector screen. Handed to the model as
+        "documentation", that passage reads as an answer. So when no word of
+        the question matched anything, only a close semantic hit counts."""
         with self.lock:
-            return hybrid.fuse(self._semantic(query, depth),
-                               self._lexical(query, depth),
+            lexical = self._lexical(query, depth)
+            semantic = self._semantic(query, depth,
+                                      within=None if lexical else _NEAR)
+            return hybrid.fuse(semantic, lexical,
                                weights=(_spanish_weight(query), 1.0))
 
 
@@ -338,8 +362,36 @@ def lookup(query: str, limit: int = LOOKUP_LIMIT) -> list[Passage]:
 
 
 def block(hits: list[Passage]) -> str:
-    """`hits` as one tool result, under HEADER."""
-    return HEADER + "\n\n".join(p.line() for p in hits)
+    """`hits` as one tool result, under HEADER, ending in the documents the
+    hits point to that the search did not return.
+
+    Last, so the result cap cuts it before any passage: a question that
+    spans two documents ("why does my gain in euros differ from the one in
+    dollars?") finds one, and this is how the model knows to read the other."""
+    out = HEADER + "\n\n".join(p.line() for p in hits)
+    shown = {p.doc for p in hits}
+    titles = {p.doc: p.title for p in passages()}
+    more = [d for p in hits for d in p.related if d not in shown and d in titles]
+    more = list(dict.fromkeys(more))
+    if more:
+        out += "\n\nSee also (doc=…): " + "; ".join(
+            f"{d} ({titles[d]})" for d in more)
+    return out
+
+
+def cited(result: str) -> list[Passage]:
+    """The passages a lookup result quoted, read back from their headings.
+
+    How the answer's sources are listed: the tool result is all the gather
+    step keeps, and every passage in it opens with `Passage.line`'s heading.
+    One per document, first seen first."""
+    heads = {p.line().split("\n", 1)[0]: p for p in passages()}
+    out: list[Passage] = []
+    for line in result.splitlines():
+        p = heads.get(line.strip())
+        if p and all(q.doc != p.doc for q in out):
+            out.append(p)
+    return out
 
 
 EXCERPT_CHARS = 1800
@@ -367,3 +419,92 @@ def excerpt(refs: tuple[tuple[str, str], ...], limit: int = EXCERPT_CHARS) -> st
         out.append(line)
         used += len(line)
     return HEADER + "\n\n".join(out) if out else ""
+
+
+# ------------------------------------------------------------------ browsing
+
+
+def manifest() -> str:
+    """One line per methodology document, `- <id>: <title>`.
+
+    Read into the tool's description, so the model knows what exists before it
+    searches — and that a question about something not listed (an iPhone app,
+    the price of a plan) is not going to be answered by any search here."""
+    titles: dict[str, str] = {}
+    for p in passages():
+        if not p.doc.startswith("tour:"):
+            titles.setdefault(p.doc, p.title)
+    return "\n".join(f"- {doc}: {title}" for doc, title in titles.items())
+
+
+def contents(doc: str) -> str:
+    """`doc`'s section headings, one per line under its title — or ""."""
+    heads: list[str] = []
+    title = ""
+    for p in passages():
+        if p.doc == doc:
+            title = p.title
+            if p.section != p.title and p.section not in heads:
+                heads.append(p.section)
+    if not title:
+        return ""
+    return f"{title} ({doc}). Sections:\n" + "\n".join(f"- {h}" for h in heads)
+
+
+# One section read whole: with HEADER and its title line it still fits one
+# tool result (toolbox.MAX_RESULT_CHARS) uncut.
+SECTION_CHARS = 3200
+
+
+def section(doc: str, heading: str, limit: int = SECTION_CHARS) -> Passage | None:
+    """One whole section of `doc` as a single passage, or None.
+
+    A search hit is a cut of at most MAX_CHARS; the explanation it came from
+    can run to several. `heading` matches case-insensitively by prefix, so
+    the model can name a section the way a search hit printed it. Stops
+    between passages at `limit` characters, saying so, rather than mid-way."""
+    want = heading.strip().lower()
+    parts = [p for p in passages()
+             if p.doc == doc and want and p.section.lower().startswith(want)]
+    if not parts:
+        return None
+    first = parts[0]
+    texts: list[str] = []
+    used = 0
+    for p in parts:
+        if p.section != first.section:
+            break
+        if texts and used + len(p.text) > limit:
+            texts.append("[…the section continues; search for the rest.]")
+            break
+        texts.append(p.text)
+        used += len(p.text)
+    return replace(first, text="\n".join(texts))
+
+
+def page(step: str) -> str:
+    """The in-app path a tour step lands on ("/portfolio?tab=tax"), or "".
+
+    Built from the tour's own registry, the way the tour's button builds it,
+    so a cited document opens the same screen the tour would."""
+    from urllib.parse import urlencode
+
+    from stocks.web import onboarding
+
+    target = next((s for s in onboarding.STEPS if s.id == step), None)
+    if target is None or target.page is None:
+        return ""
+    query = dict(target.query or {})
+    tab = target.session.get("profile_tab")
+    if tab and "tab" not in query:
+        query["tab"] = str(tab)
+    return f"/{target.page}" + (f"?{urlencode(query)}" if query else "")
+
+
+def source(p: Passage) -> dict:
+    """`p` as an answer's source: its document, and the screen it is about.
+
+    `step` rides along so the reader's own language can title a tour step;
+    a methodology document is titled by its own (English) title."""
+    return {"title": "" if p.doc.startswith("tour:") else p.title,
+            "url": page(p.step) if p.step else "", "step": p.step}

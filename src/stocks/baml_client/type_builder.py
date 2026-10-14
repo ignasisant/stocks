@@ -291,7 +291,7 @@ class ActionCallAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
         self._bldr = _tb.class_("ActionCall")
-        self._properties: typing.Set[str] = set([  "action",  "ticker",  "alerts",  "tags",  "name",  "shares",  "cost",  "broker",  "to_broker",  "date",  "since",  "until",  "trade",  "quantity",  "price",  "fee",  "currency",  "to",  "ids",  "new_date",  "new_quantity",  "new_price",  "new_fee",  ])
+        self._properties: typing.Set[str] = set([  "action",  "ticker",  "tickers",  "alerts",  "tags",  "name",  "shares",  "cost",  "broker",  "to_broker",  "date",  "since",  "until",  "trade",  "quantity",  "price",  "fee",  "currency",  "to",  "ids",  "new_date",  "new_quantity",  "new_price",  "new_fee",  ])
         self._props = ActionCallProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
@@ -326,6 +326,10 @@ class ActionCallProperties:
     @property
     def ticker(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("ticker"))
+    
+    @property
+    def tickers(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("tickers"))
     
     @property
     def alerts(self) -> type_builder.ClassPropertyViewer:

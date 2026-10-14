@@ -2,6 +2,8 @@
 id: returns-and-risk
 title: How returns and risk are measured
 as_of: 2026-10-11
+step: risk
+related: cost-basis-and-currency, pulse-risk-appetite
 tags: rentabilidad, retorno, TWR, TIR, IRR, rentabilidad ponderada por tiempo, rentabilidad ponderada por dinero, time-weighted return, money-weighted return, volatilidad, volatility, caída máxima, max drawdown, drawdown, benchmark, índice de referencia, beta, proyección, projection, Monte Carlo, escenarios, rendimiento real, riesgo de la cesta actual, Allocation & risk, return on your money, return on your picks
 ---
 The Portfolio page measures performance in two different ways and risk in a separate way. Which number answers which question is the main thing to get right.

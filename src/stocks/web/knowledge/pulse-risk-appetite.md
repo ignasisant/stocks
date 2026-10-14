@@ -2,6 +2,8 @@
 id: pulse-risk-appetite
 title: How the Market pulse page reads risk appetite
 as_of: 2026-10-11
+step: pulse
+related: returns-and-risk
 tags: Pulso de mercado, Pulso, Market pulse, apetito de riesgo, risk appetite, Tensión, Cautela, Neutral, Apetito, Euforia, stress, caution, euphoria, amplitud, breadth, volatilidad, VIX, crédito, credit spread, correlación bolsa-bonos, stock bond correlation, régimen de tipos, rates regime, bear steepening, bull flattening, beta, tu cartera contra este régimen, rotación, sectores, inflación
 ---
 The Market pulse page (Pulso de mercado) condenses market conditions into one 0-100 Risk appetite score, then shows what sits behind it and how your own book would react. It is a relative reading of the last year, not an absolute one, and not advice.

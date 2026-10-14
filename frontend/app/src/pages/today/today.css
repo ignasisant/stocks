@@ -52,7 +52,7 @@
 }
 
 .td-session {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
 }
 
 .td-byline {
@@ -126,7 +126,7 @@
 }
 
 .td-icon-btn:focus-visible {
-  outline: 2px solid var(--ag-border-focus);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 2px;
 }
 
@@ -166,7 +166,7 @@
 }
 
 .td-tab:focus-visible {
-  outline: 2px solid var(--ag-border-focus);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: -2px;
 }
 
@@ -379,7 +379,7 @@
 }
 
 .td-toggle:focus-visible {
-  outline: 2px solid var(--ag-border-focus);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 2px;
   border-radius: 2px;
 }
@@ -494,7 +494,7 @@
 }
 
 .td-headlink:focus-visible {
-  outline: 2px solid var(--ag-border-focus);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 2px;
   border-radius: 2px;
 }
@@ -721,7 +721,7 @@
 }
 
 .td-seg button:focus-visible {
-  outline: 2px solid var(--ag-border-focus);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: -2px;
 }
 

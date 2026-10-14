@@ -92,3 +92,45 @@ export function PageLink({
     </div>
   );
 }
+
+/** An answer's source: a web page, or one of the app's own documents. */
+export type Source = { title: string; url: string; step?: string };
+
+/**
+ * One of the app's own documents an answer quoted, in its sources list.
+ *
+ * Titled by the tour step it is about, in the reader's language, when it is
+ * the tour's copy; a methodology document keeps its own title. When it is
+ * about one screen it opens that screen in place — a link to the app is not
+ * a page to read in another tab — and on a phone the drawer steps aside.
+ */
+export function AppSource({
+  source,
+  onLeave,
+}: {
+  source: Source;
+  onLeave: () => void;
+}) {
+  const t = useT();
+  const { go } = useRoute();
+  const key = source.step ? `tour.${source.step}_title` : "";
+  const label = source.title || (key && t(key) !== key ? t(key) : t("chat.app_guide"));
+  if (!source.url.startsWith("/")) return <span>{label}</span>;
+  const target = new URL(source.url, "http://app"); // only its path and query are read;
+  return (
+    <a
+      className="ag-chat-a"
+      href={source.url}
+      onClick={(event) => {
+        event.preventDefault();
+        go(
+          canonical(target.pathname.slice(1)),
+          Object.fromEntries(target.searchParams),
+        );
+        if (phone()) onLeave();
+      }}
+    >
+      {label}
+    </a>
+  );
+}

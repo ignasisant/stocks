@@ -293,10 +293,15 @@ function tableAt(lines: string[], i: number): { block: Block; next: number } | n
   return { block: { kind: "table", head: columns, align, rows }, next: cut };
 }
 
+/** gpt-oss cites as `【2†L13-L17】`, pointers into a browser it does not
+ * have here: noise to a reader. A half-streamed one goes too. */
+const CITE_MARK = /【[^】\n]*(】|$)/g;
+
 /** The answer as lines, a leading tab worth four spaces of indent. */
 function split(source: string): string[] {
   return source
     .replace(/\r\n/g, "\n")
+    .replace(CITE_MARK, "")
     .split("\n")
     .map((line) => line.replace(/^\t+/, (tabs) => "    ".repeat(tabs.length)));
 }

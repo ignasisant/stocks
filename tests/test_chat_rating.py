@@ -29,6 +29,7 @@ from .test_api_chat import (  # noqa: F401 — fixtures
     client,
     events,
     finished,
+    proposes,
     run,
     served,
     signed_in,
@@ -156,6 +157,25 @@ def test_a_thumbs_down_tells_the_operator_what_missed(
     assert data["question"] == "hola" and data["answer"] == "Hola mundo"
     assert data["provider"] == "fake" and data["turn"] == tid
     assert data["thread"] and data["history"] == []
+
+
+def test_an_app_action_is_rated_like_an_answer(
+    client, account, signed_in, served, sink, proposes
+):
+    """The classifier read the message, and a misread ("añádelas" adding one
+    of six) is what the thumbs catch — so the action's line carries them too,
+    and the operator's copy says which action it was."""
+    from stocks.chat.tools import Action
+
+    served()
+    proposes(Action("add_ticker", "AAOI", {"more": ["NBIS"]}))
+    stream = events(signed_in.post("/v1/chat/runs", json=run("añade AAOI NBIS")).text)
+    tid = finished(stream)["result"]["id"]
+    assert tid
+    signed_in.put(f"/v1/chat/turns/{tid}/rating", json={"vote": "down"})
+    (copy,) = sink.glob("*.json")
+    data = json.loads(copy.read_text())
+    assert data["action"] == "add_ticker" and data["question"] == "añade AAOI NBIS"
 
 
 def test_rating_an_unknown_answer_is_a_404(client, account, signed_in, sink):

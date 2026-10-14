@@ -32,8 +32,8 @@ INFO_DEEP = "#4667D0"       # DS chart blue 600 — second info step
 PURPLE_900 = "#301263"  # active nav row / active chip fill
 PURPLE_800 = "#4E2092"  # brand badge fill, active chip border
 PURPLE_700 = "#6A2EBF"  # hover state on purple fills
-BRAND_CTA = "#7F3FE8"   # purple 600 — CTAs, primary buttons, focus rings
-BRAND_ACCENT = "#A98EF7"  # purple 500 — accents, active iconography, links
+BRAND_CTA = "#7F3FE8"   # purple 600 — CTAs, primary buttons (never a focus ring: 2.7:1)
+BRAND_ACCENT = "#A98EF7"  # purple 500 — accents, active iconography, links, focus rings
 PURPLE_400 = "#C6B7FB"  # accent text on purple fills
 PURPLE_300 = "#DED7FD"  # primary text on purple fills, mono/code
 
@@ -46,11 +46,11 @@ RULE_PANEL = "#232128"      # hairline one step under BORDER — the assistant
                             # drawer's internal dividers (header rows, the
                             # onboarding list's rules, the composer's edge),
                             # where a full BORDER reads as a box seam
-BORDER_FOCUS = "#48454F"    # DS focus/hover border — outlined controls on hover
+BORDER_FOCUS = "#48454F"    # outlined controls on hover; too faint for a focus ring
 TEXT_PRIMARY = "#F9F9FA"    # neutral-50 — primary text (also the logo plate)
 TEXT_SECONDARY = "#B3AFBD"  # neutral-400 — widget labels, secondary body
-TEXT_MUTED = "#827F8C"      # neutral-500 — captions, chart axes, company names
-TEXT_FAINT = "#696673"      # neutral-600 — section headers, separators, rules
+TEXT_MUTED = "#A09DAA"      # captions, chart axes, company names — 4.8:1 on SURFACE_HOVER
+TEXT_FAINT = "#696673"      # neutral-600 — rules, dashes, disabled text; under 4.5:1, never live text
 
 # Landing page. The public marketing surface needs two steps the app chrome
 # never asked for: a card fill between SURFACE_PAGE and SURFACE_CARD, and a
@@ -148,19 +148,21 @@ FONT_BODY = "'Instrument Sans', system-ui, -apple-system, sans-serif"
 FONT_MONO = "'Martian Mono', ui-monospace, monospace"
 
 # Type scale — the DS heading sizes (28/22/18/16/14/12) extended down with
-# the three chrome steps the app needs. px, like the DS scale, so a root
-# font-size change never silently rescales our own HTML.
+# the three chrome steps the app needs. rem, so text follows the reader's own
+# browser text size (the web's Dynamic Type); no stylesheet sets a root
+# font-size, so at the default 16px each step renders at the DS px value in
+# its comment.
 # FS_2XS is the DS floor: a phone reads nothing smaller.
-FS_2XS = "11px"   # nav-section caps, dense calendar chips
-FS_XS = "11px"    # captions, tile labels, small pills
-FS_SM = "12px"    # metric labels, muted secondary lines
-FS_MD = "13px"    # nav rows, selector chips, table cells
-FS_BASE = "14px"  # body
-FS_LG = "16px"    # tile values
-FS_XL = "18px"    # h3 / KPI figures
-FS_2XL = "22px"   # h2
-FS_3XL = "28px"   # h1
-FS_DISPLAY = "32px"  # hero price figure (Epilogue), one step above h1
+FS_2XS = "0.6875rem"    # 11px — nav-section caps, dense calendar chips
+FS_XS = "0.6875rem"     # 11px — captions, tile labels, small pills
+FS_SM = "0.75rem"       # 12px — metric labels, muted secondary lines
+FS_MD = "0.8125rem"     # 13px — nav rows, selector chips, table cells
+FS_BASE = "0.875rem"    # 14px — body
+FS_LG = "1rem"          # 16px — tile values
+FS_XL = "1.125rem"      # 18px — h3 / KPI figures
+FS_2XL = "1.375rem"     # 22px — h2
+FS_3XL = "1.75rem"      # 28px — h1
+FS_DISPLAY = "2rem"     # 32px — hero price figure (Epilogue), one step above h1
 
 # Icon sizing is its own dimension, not a type step: a Material glyph takes
 # its size from font-size, and the wrapper spans' width/height must match it
@@ -237,6 +239,7 @@ def tokens() -> dict[str, str]:
         # these same series and must not keep its own copy of the hexes.
         "candle-up": CANDLE_UP, "candle-down": CANDLE_DOWN,
         "sma-fast": SMA_FAST, "sma-slow": SMA_SLOW, "sma-long": SMA_LONG,
+        "chart-magenta": CHART_MAGENTA,
         # color — brand
         "purple-900": PURPLE_900, "purple-800": PURPLE_800,
         "purple-700": PURPLE_700, "brand-cta": BRAND_CTA,

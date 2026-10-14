@@ -11,7 +11,8 @@
 import type { A2uiMessage } from "./a2ui";
 
 /** One web hit that grounded an answer. */
-type Source = { title: string; url: string };
+/** A web page, or one of the app's own documents (`step`, an in-app `url`). */
+type Source = { title: string; url: string; step?: string };
 
 /** One tool line behind an answer: what ran, on what, and what came back. */
 export type Step = { tool: string; arg: string; out: string };

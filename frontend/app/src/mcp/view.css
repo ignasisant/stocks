@@ -16,7 +16,7 @@
   --v-bg: var(--color-background-primary, var(--ag-surface-card));
   --v-text: var(--color-text-primary, var(--ag-text-primary));
   --v-muted: var(--color-text-secondary, var(--ag-text-muted));
-  --v-faint: var(--color-text-tertiary, var(--ag-text-faint));
+  --v-faint: var(--color-text-tertiary, var(--ag-text-muted));
   --v-border: var(--color-border-primary, var(--ag-border));
   --v-sunken: var(--color-background-secondary, var(--ag-surface-sunken));
   /* A tile is the page ground inside the card, as on every page. */
@@ -41,7 +41,7 @@
   --v-bg: var(--color-background-primary, var(--ag-on-brand));
   --v-text: var(--color-text-primary, var(--ag-surface-page));
   --v-muted: var(--color-text-secondary, var(--ag-text-faint));
-  --v-faint: var(--color-text-tertiary, var(--ag-text-secondary));
+  --v-faint: var(--color-text-tertiary, var(--ag-text-faint));
   --v-border: var(--color-border-primary, var(--ag-rule-soft));
   /* The dark sink is a grey slab on white; a trace of the ink reads as one. */
   --v-tile: var(

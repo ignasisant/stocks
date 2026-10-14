@@ -20,7 +20,7 @@ import { Feedback } from "./Feedback";
 import { Search } from "./Search";
 import { ProfilePrompt } from "./ProfilePrompt";
 import { Tour } from "./Tour";
-import { Link, useRoute } from "./router";
+import { Link, depth, useRoute } from "./router";
 import { BOTTOM, PAGES, sections } from "./pages";
 import "./shell.css";
 import { isTransient } from "./api";
@@ -30,6 +30,8 @@ import { useBank, useGuest } from "./session";
 import type { Query } from "./useApi";
 import { useStaleSince } from "./freshness";
 import { useActivity } from "./activity";
+import { AmbientLight } from "./ambient";
+import { usePresence, useSwipeDismiss } from "./useSheet";
 
 /**
  * Whether the rail is folded to its icons, remembered per browser.
@@ -56,6 +58,25 @@ function storedFold(): boolean {
  *  transition under `[data-nav="peek-out"]` in styles.css. */
 const PEEK_OUT_MS = 160;
 
+/**
+ * Back, for an app opened from a home screen: standalone, there is no browser
+ * toolbar and so no back button, and iOS has no system one either — a reader
+ * who tapped through to a ticker had no way to the list they came from. Only
+ * once this visit has gone somewhere (`depth`), so it never walks out of the
+ * app; hidden by the stylesheet everywhere but standalone.
+ */
+function Back() {
+  const t = useT();
+  useRoute(); // re-read `depth` on every navigation
+  if (depth() === 0) return null;
+  return (
+    <button type="button" className="ag-back" onClick={() => window.history.back()}>
+      <Icon name="arrow_back" />
+      <span>{t("nav.back")}</span>
+    </button>
+  );
+}
+
 function Nav() {
   const t = useT();
   const { page } = useRoute();
@@ -65,6 +86,11 @@ function Nav() {
   // page it was opened over.
   const [more, setMore] = useState(false);
   useEffect(() => setMore(false), [page]);
+  // It drops back behind the bar rather than vanishing, and a finger can pull
+  // it down.
+  const sheet = useRef<HTMLDivElement>(null);
+  const morePresence = usePresence(more);
+  useSwipeDismiss(sheet, "y", () => setMore(false), { enabled: morePresence.mounted });
 
   // Folded, a pointer resting on the rail unfolds it over the page — labels and
   // all — and leaving folds it back. Over, not beside: the grid column keeps
@@ -219,14 +245,18 @@ function Nav() {
         <Icon name="menu" />
         <span className="ag-nav-label">{t("nav.more")}</span>
       </button>
-      {more ? (
+      {morePresence.mounted ? (
         <>
           <div
             className="ag-nav-scrim"
             role="presentation"
             onClick={() => setMore(false)}
           />
-          <div className="ag-nav-sheet">
+          <div
+            ref={sheet}
+            className="ag-nav-sheet"
+            data-leaving={morePresence.leaving ? "" : undefined}
+          >
             {groups.map((group) => {
               const extra = group.pages.filter((entry) => !BOTTOM.includes(entry.slug));
               if (!extra.length) return null;
@@ -287,12 +317,16 @@ export function Layout({ children }: { children: ReactNode }) {
   const guest = useGuest();
   return (
     <div className="ag-shell">
+      {/* The brand light behind everything (`shell/ambient`): a trial, drawn
+          only while `?ambient=1` has switched it on. */}
+      <AmbientLight />
       <Nav />
       <main className="ag-main">
         {/* Above the page rather than in a bar of its own: the rail is this
             app's only chrome, and a second horizontal band would cost a phone
             the height the page needs. Both of these are on every screen, which
             is the whole reason they live out here. */}
+        <Back />
         <Search />
         <StaleNotice />
         {/* Inside the page column, above the body: when the tour is parked

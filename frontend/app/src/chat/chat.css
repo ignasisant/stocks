@@ -17,10 +17,7 @@
   place-items: center;
   width: 48px;
   height: 48px;
-  border: 0;
   border-radius: var(--ag-radius-pill);
-  background: var(--ag-brand-cta);
-  color: var(--ag-on-brand);
   box-shadow: 0 6px 18px var(--ag-cta-glow);
   cursor: pointer;
   /* No double-tap-to-zoom delay on a control that is pressed, not read. */
@@ -30,10 +27,10 @@
   z-index: 60;
 }
 
-@media (hover: hover) {
-  .ag-chat-fab:hover {
-    background: var(--ag-purple-700);
-  }
+/* `.ag-ai` (styles.css) sets `position: relative` for its rim layers, and
+   which sheet lands last is not ours to pick; fixed holds them just as well. */
+.ag-chat-fab.ag-ai {
+  position: fixed;
 }
 
 /* ---------------------------------------------------------------- the panel */
@@ -51,6 +48,77 @@
   border-left: 1px solid var(--ag-border);
   background: var(--ag-surface-raised);
   box-shadow: var(--ag-shadow-overlay);
+  /* The panel runs to the screen's top, right and foot: its fill goes under
+     the notch, the status bar and the home indicator, its controls do not.
+     Zero on a desktop. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) 0;
+}
+
+/* The drawer's own light (`shell/ambient`, trial): an aurora flowing along
+   its foot, painted under its contents (the panel is a stacking context, so
+   -1 lands above its fill). The band is two tiles wide and slides one tile,
+   so the loop has no seam; while an answer is written it rises and brightens. */
+.ag-aurora {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ag-aurora-band {
+  position: absolute;
+  inset: auto 0 0;
+  height: 55%;
+  opacity: 0.65;
+  transform-origin: bottom;
+  transition:
+    opacity 1.2s ease,
+    transform 1.6s ease;
+}
+.ag-aurora[data-busy] .ag-aurora-band {
+  opacity: 1;
+  transform: scaleY(1.3);
+}
+.ag-aurora-band > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 200%;
+  background:
+    radial-gradient(
+      22% 70% at 22% 100%,
+      color-mix(in srgb, var(--ag-brand-cta) 24%, transparent),
+      transparent
+    ),
+    radial-gradient(
+      20% 55% at 50% 100%,
+      color-mix(in srgb, var(--ag-info-deep) 16%, transparent),
+      transparent
+    ),
+    radial-gradient(
+      24% 80% at 76% 100%,
+      color-mix(in srgb, var(--ag-purple-800) 30%, transparent),
+      transparent
+    );
+  background-size: 50% 100%;
+  will-change: transform;
+  animation: ag-aurora-flow 80s linear infinite;
+}
+@keyframes ag-aurora-flow {
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ag-aurora-band {
+    transition: opacity 1.2s ease;
+  }
+  .ag-aurora[data-busy] .ag-aurora-band {
+    transform: none;
+  }
+  .ag-aurora-band > span {
+    animation: none;
+  }
 }
 
 /* An open drawer takes its width off the page instead of covering it: a
@@ -394,7 +462,7 @@
   gap: 8px;
   align-items: center;
   margin-top: 4px;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-2xs);
 }
 
@@ -408,7 +476,7 @@
 
 .ag-chat-thumb {
   padding: 4px 6px;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
 }
 
 .ag-chat-thumb-on {
@@ -461,7 +529,8 @@
 
 @media (pointer: coarse) {
   .ag-chat-thumb,
-  .ag-chat-why .ag-chat-icon {
+  .ag-chat-icon,
+  .ag-chat-back {
     min-width: 44px;
     min-height: 44px;
     justify-content: center;
@@ -478,7 +547,7 @@
 
 .ag-chat-clock,
 .ag-chat-lens {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
 }
 
 .ag-chat-retry {
@@ -585,7 +654,7 @@
 
 .ag-chat-recall-when {
   flex: none;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-2xs);
 }
 
@@ -955,7 +1024,8 @@
 
 .ag-chat-field:focus-visible {
   outline: none;
-  border-color: var(--ag-border-focus);
+  border-color: var(--ag-brand-accent);
+  box-shadow: 0 0 0 1px var(--ag-brand-accent);
 }
 
 /* Words still being said, or about to be replaced by the transcript. Not
@@ -985,7 +1055,7 @@
 }
 
 .ag-chat-hint {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-2xs);
 }
 
@@ -1045,7 +1115,7 @@
 }
 
 .ag-chat-step-out {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
 }
 
 /* What a turn was, when it was not simply typed and answered: a transcript,
@@ -1264,7 +1334,7 @@ a.ag-chat-btn {
 
 .ag-chat-group {
   margin-bottom: 6px;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-2xs);
   letter-spacing: 0.06em;
 }
@@ -1298,7 +1368,7 @@ a.ag-chat-btn {
   gap: 8px;
   align-items: center;
   margin: 4px 0;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-2xs);
 }
 
@@ -1324,7 +1394,7 @@ a.ag-chat-btn {
   gap: 8px;
   align-items: center;
   margin: 0;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-2xs);
 }
 
@@ -1350,7 +1420,7 @@ a.ag-chat-btn {
   padding: 4px 6px;
   border: none;
   background: transparent;
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font: inherit;
   font-size: var(--ag-fs-2xs);
   cursor: pointer;
@@ -1580,7 +1650,7 @@ a.ag-chat-btn {
 }
 
 .ag-chat-tile-tag {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-2xs);
 }
 
@@ -1683,7 +1753,8 @@ a.ag-chat-btn {
 }
 
 .ag-chat-search:focus-within {
-  border-color: var(--ag-border-focus);
+  border-color: var(--ag-brand-accent);
+  box-shadow: 0 0 0 1px var(--ag-brand-accent);
 }
 
 /* Standalone — the rename field — this is the box itself. */
@@ -1762,7 +1833,7 @@ a.ag-chat-btn {
 }
 
 .ag-chat-card-meta {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-2xs);
 }
 
@@ -1870,7 +1941,6 @@ a.ag-chat-btn {
    left a keyboard reader with whatever ring the browser draws by default —
    here, over a raised dark surface, almost nothing. Same ring the segmented
    control on the ticker page and the fields on the import page already use. */
-.ag-chat-fab:focus-visible,
 .ag-chat-down:focus-visible,
 .ag-chat-thread-btn:focus-visible,
 .ag-chat-icon:focus-visible,
@@ -2120,4 +2190,180 @@ a.ag-chat-btn {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* ---------------------------------------------------------------- motion */
+
+/* Small, functional motion: what arrives comes in, what is pressed answers
+   the press. Transform and opacity only, enter eased out; none of it under
+   reduced motion. Durations follow the app's drawers (200ms) and the DS's
+   100ms for feedback. */
+
+.ag-chat-panel {
+  animation: ag-chat-panel-in 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  /* The exit (`usePresence`), a transition so that re-opening mid-way turns
+     the panel back from where it got to; and thrown by a finger on the
+     header (`useSwipeDismiss`), off the edge rather than back. */
+  transition:
+    transform 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 200ms ease-out;
+}
+
+.ag-chat-panel[data-leaving] {
+  opacity: 0;
+  transform: translate3d(24px, 0, 0);
+  pointer-events: none;
+}
+
+.ag-chat-panel[data-leaving][data-swiped] {
+  transform: translate3d(100%, 0, 0);
+}
+
+/* A keyboard up (`useKeyboardFit`): the panel is the strip of screen above
+   it, wherever Safari has panned the page, and the home indicator's inset is
+   under the keys. */
+.ag-chat-panel[data-keyboard] {
+  top: var(--kb-top, 0);
+  bottom: auto;
+  height: var(--kb-h, 100%);
+  padding-bottom: 0;
+}
+
+/* Horizontal moves on the header are the drag; vertical ones stay the page's. */
+.ag-chat-head {
+  touch-action: pan-y;
+}
+
+@keyframes ag-chat-panel-in {
+  from {
+    opacity: 0;
+    transform: translate3d(24px, 0, 0);
+  }
+}
+
+/* The exchange being asked (`fresh` in `Panel`): the question rises into
+   place, and the answer fades in where the working line stood. */
+.ag-chat-turn-in {
+  animation: ag-chat-turn-in 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.ag-chat-turn-in [aria-live] > :first-child {
+  animation: ag-chat-fade-in 160ms ease-out;
+}
+
+@keyframes ag-chat-turn-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+}
+
+@keyframes ag-chat-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* The entrance, then `.ag-ai`'s turning rim — named together, because the
+   one `animation` here would otherwise replace the other. */
+.ag-chat-fab {
+  animation:
+    ag-chat-fab-in 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    ag-ai-turn 12s linear infinite;
+  transition: transform 100ms ease-out;
+}
+
+@keyframes ag-chat-fab-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+
+.ag-chat-send {
+  transition:
+    background 100ms ease-out,
+    color 100ms ease-out,
+    transform 100ms ease-out;
+}
+
+.ag-chat-fab:active,
+.ag-chat-send:not(:disabled):active {
+  transform: scale(0.94);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-chat-panel {
+    transition: none;
+  }
+
+  .ag-chat-panel,
+  .ag-chat-turn-in,
+  .ag-chat-turn-in [aria-live] > :first-child,
+  .ag-chat-fab {
+    animation: none;
+  }
+
+  .ag-chat-fab:active,
+  .ag-chat-send:not(:disabled):active {
+    transform: none;
+  }
+}
+
+/* An answer still being written ends in a pulsing mark where the next words
+   will land, so a pause in the stream reads as the model thinking, not as
+   the answer having stopped. On a paragraph, heading or last list item;
+   a table or a code block ends without it. */
+.ag-chat-bubble [aria-busy="true"] > :is(p, .ag-chat-h):last-child::after,
+.ag-chat-bubble [aria-busy="true"] > :is(ul, ol):last-child > li:last-child::after {
+  display: inline-block;
+  width: 0.45em;
+  height: 0.45em;
+  margin-left: 0.3em;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-brand-accent);
+  content: "";
+  vertical-align: middle;
+  animation: ag-chat-caret 1s ease-in-out infinite;
+}
+
+@keyframes ag-chat-caret {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* The research list as it runs: each lookup comes in, waits with a pulse,
+   and its result fades in over the ellipsis. */
+.ag-chat-live > li,
+.ag-chat-live .ag-chat-step-out {
+  animation: ag-chat-fade-in 160ms ease-out;
+}
+
+.ag-chat-live > li[aria-busy="true"] .ag-chat-step-out {
+  animation: ag-chat-caret 1s ease-in-out infinite;
+}
+
+/* Send and stop swap buttons as an answer starts and ends: the glyph comes
+   in rather than cutting over. */
+.ag-chat-send > svg {
+  animation: ag-chat-icon-in 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@keyframes ag-chat-icon-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-chat-bubble [aria-busy="true"] > :is(p, .ag-chat-h):last-child::after,
+  .ag-chat-bubble [aria-busy="true"] > :is(ul, ol):last-child > li:last-child::after,
+  .ag-chat-live > li,
+  .ag-chat-live .ag-chat-step-out,
+  .ag-chat-live > li[aria-busy="true"] .ag-chat-step-out,
+  .ag-chat-send > svg {
+    animation: none;
+  }
 }

@@ -196,7 +196,7 @@
 }
 
 .hm-customize:focus-visible {
-  outline: 2px solid var(--ag-border-focus);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 2px;
 }
 
@@ -696,7 +696,7 @@
 }
 
 .hm-cal-day {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-2xs, 11px);
   line-height: 1.4;
 }
@@ -1211,13 +1211,21 @@ a.hm-step {
 
 /* The Pulse's band, in the Pulse's colours — the `sn-regime-*` rules live in
    a stylesheet Home does not load, so the pairs are restated here. */
+/* A narrow card wraps the chip onto a second line instead of running past the
+   card's edge; each piece stays whole. A 10px radius still reads as a pill on
+   one line (half its height) and as a rounded box on two. */
 .hm-regime {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 2px 6px;
+  max-width: 100%;
   padding: 2px 8px;
-  border-radius: var(--ag-radius-pill, 999px);
+  border-radius: 10px;
   font-size: var(--ag-fs-sm, 12px);
+}
+
+.hm-regime > * {
   white-space: nowrap;
 }
 
@@ -1303,7 +1311,7 @@ a.hm-step {
 }
 
 a.hm-mtile:focus-visible {
-  outline: 2px solid var(--ag-border-focus);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 2px;
 }
 
@@ -1336,7 +1344,7 @@ a.hm-mtile:focus-visible {
 }
 
 .hm-mtile-sub {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
   font-size: var(--ag-fs-2xs, 11px);
   white-space: nowrap;
 }
@@ -1415,7 +1423,7 @@ a.hm-mtile:focus-visible {
 }
 
 .hm-edit-title:focus-visible {
-  outline: 2px solid var(--ag-border-focus);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 4px;
   border-radius: var(--ag-radius-xs);
 }
@@ -1559,7 +1567,7 @@ a.hm-mtile:focus-visible {
 .hm-edit-handle:focus-visible,
 .hm-edit-icon:focus-visible,
 .hm-edit-btn:focus-visible {
-  outline: 2px solid var(--ag-border-focus);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 2px;
 }
 

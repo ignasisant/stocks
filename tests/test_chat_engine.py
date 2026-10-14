@@ -707,6 +707,16 @@ def test_the_prompt_caps_how_long_an_answer_runs():
     assert "Keep it short" in tail and "about 150 words" in tail
 
 
+def test_the_prompt_bans_the_chatbot_voice():
+    # Openers, hedges and vague verdicts are what make an answer read as
+    # machine-written; the rule names them, since "write naturally" alone
+    # gives a small model nothing to check against.
+    got = engine.system_prompt({}, "Portfolio: NVDA 10 shares", [])
+    tail = " ".join(got.split("RULES — these hold")[1].split())
+    assert "not like a chatbot" in tail
+    assert "no em dashes" in tail and "vague verdict" in tail
+
+
 # ------------------------------------------------------- an interruptible wait
 # Blocking on each future in one call leaves a stop pressed during routing
 # or a page read with nothing to act on until the pass returns. With a tick
@@ -936,3 +946,8 @@ def test_today_is_the_madrid_day_and_outranks_web_dates(monkeypatch):
     assert clock.today().isoformat() == "2026-10-05"  # 01:30 in Madrid
     assert "2026-10-05 (Europe/Madrid)" in clock.line()
     assert "never today's" in clock.line()
+
+
+def test_gpt_oss_citation_marks_never_reach_the_reader():
+    said = "Volatility stays【2†L13-L17】 and rates fall 【6†L1-L3】.\n【1†L2】 Next."
+    assert engine.strip_cite_marks(said) == "Volatility stays and rates fall.\n Next."

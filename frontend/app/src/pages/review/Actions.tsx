@@ -18,8 +18,13 @@
  * it is today, and why — names a few points from a move, sales whose tax
  * would eat what they bring. The adds the sales cannot pay for are listed
  * apart, as what new money would buy, never as cash the plan spends.
+ *
+ * Folded, the plan is its headline: the figures, then every name to sell, to
+ * add to and to buy with new money, one dense line each — who, from which
+ * weight to which, how much. The full read (why, tax, details) unfolds below.
  */
 
+import { useState } from "react";
 import { useLang, useT } from "../../shell/i18n";
 import { Link } from "../../shell/router";
 import { TickerCell } from "../../shell/tickers";
@@ -42,6 +47,8 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
   const waiting = waitingMoves(data);
   const net = plan.buys - plan.sells;
   const scale = Math.max(plan.sells, plan.buys, 1);
+  const [open, setOpen] = useState(false);
+  const brief = !open;
   const focus = useListFocus(
     "plan",
     moves.map((row) => row.ticker),
@@ -118,10 +125,13 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
               <Link page="profile">{t("review.tax_assumed_link")}</Link>
             </p>
           ) : null}
-          <div className={`ag-rev-plan-cols${focus.fading ? " ag-rev-fading" : ""}`}>
+          <div
+            className={`ag-rev-plan-cols${brief ? " ag-rev-plan-brief" : ""}${focus.fading ? " ag-rev-fading" : ""}`}
+          >
             <MoveList
               title={t("review.out_title")}
               rows={out}
+              brief={brief}
               total={-plan.sells}
               base={data.base}
               taxCurrency={plan.tax_currency}
@@ -130,21 +140,41 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
             <MoveList
               title={t("review.in_title")}
               rows={into}
+              brief={brief}
               total={plan.buys}
               base={data.base}
               taxCurrency={plan.tax_currency}
               focus={focus}
             />
+            {brief && waiting.length > 0 ? (
+              <Waiting
+                rows={waiting}
+                total={plan.new_money ?? 0}
+                book={data.total}
+                base={data.base}
+                brief
+              />
+            ) : null}
           </div>
         </>
       )}
-      {waiting.length > 0 ? (
+      {waiting.length > 0 && (open || moves.length === 0) ? (
         <Waiting
           rows={waiting}
           total={plan.new_money ?? 0}
           book={data.total}
           base={data.base}
         />
+      ) : null}
+      {moves.length > 0 ? (
+        <button
+          type="button"
+          className="ag-rev-plan-toggle"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          {t(open ? "review.plan_less" : "review.plan_more")}
+        </button>
       ) : null}
     </section>
   );
@@ -182,17 +212,19 @@ function Waiting({
   total,
   book,
   base,
+  brief = false,
 }: {
   rows: ReviewRow[];
   total: number;
   book: number | null;
   base: string;
+  brief?: boolean;
 }) {
   const t = useT();
   const lang = useLang();
   const na = t("review.na");
   return (
-    <div className="ag-rev-mvs ag-rev-wait">
+    <div className={`ag-rev-mvs${brief ? "" : " ag-rev-wait"}`}>
       <h3 className="ag-rev-mvs-head">
         <span>
           {t("review.wait_title")} <span className="ag-rev-mvs-n">{rows.length}</span>
@@ -217,15 +249,19 @@ function Waiting({
               <b className="ag-rev-mv-money ag-rev-tone-up">
                 {money(row.new_money ?? null, base, lang, true) ?? na}
               </b>
-              <div className="ag-rev-mv-why">
-                <Reasons
-                  reasons={row.reasons.filter((code) => code !== "needs_new_money")}
-                  limit={2}
-                />
-              </div>
-              <span className="ag-rev-mv-more">
-                <DetailsButton row={row} variant="icon" />
-              </span>
+              {brief ? null : (
+                <>
+                  <div className="ag-rev-mv-why">
+                    <Reasons
+                      reasons={row.reasons.filter((code) => code !== "needs_new_money")}
+                      limit={2}
+                    />
+                  </div>
+                  <span className="ag-rev-mv-more">
+                    <DetailsButton row={row} variant="icon" />
+                  </span>
+                </>
+              )}
             </li>
           );
         })}
@@ -282,6 +318,7 @@ function Flow({
 function MoveList({
   title,
   rows,
+  brief,
   total,
   base,
   taxCurrency,
@@ -289,6 +326,7 @@ function MoveList({
 }: {
   title: string;
   rows: ReviewRow[];
+  brief: boolean;
   total: number;
   base: string;
   taxCurrency: string;
@@ -310,6 +348,7 @@ function MoveList({
           <Move
             key={row.ticker}
             row={row}
+            brief={brief}
             base={base}
             taxCurrency={taxCurrency}
             on={focus.on(row.ticker)}
@@ -323,12 +362,14 @@ function MoveList({
 
 function Move({
   row,
+  brief,
   base,
   taxCurrency,
   on,
   bind,
 }: {
   row: ReviewRow;
+  brief: boolean;
   base: string;
   taxCurrency: string;
   on: boolean;
@@ -376,13 +417,17 @@ function Move({
       <b className={`ag-rev-mv-money ag-rev-tone-${tone}`}>
         {money(row.delta, base, lang, true) ?? na}
       </b>
-      <div className="ag-rev-mv-why">
-        <Reasons reasons={row.reasons} limit={3} />
-      </div>
-      {note ? <span className="ag-rev-mv-note">{note}</span> : null}
-      <span className="ag-rev-mv-more">
-        <DetailsButton row={row} variant="icon" taxCurrency={taxCurrency} />
-      </span>
+      {brief ? null : (
+        <>
+          <div className="ag-rev-mv-why">
+            <Reasons reasons={row.reasons} limit={3} />
+          </div>
+          {note ? <span className="ag-rev-mv-note">{note}</span> : null}
+          <span className="ag-rev-mv-more">
+            <DetailsButton row={row} variant="icon" taxCurrency={taxCurrency} />
+          </span>
+        </>
+      )}
     </li>
   );
 }

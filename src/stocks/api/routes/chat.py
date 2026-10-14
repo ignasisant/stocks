@@ -130,10 +130,15 @@ _VIEW_LABELS = {
 
 
 class Source(BaseModel):
-    """One web hit that grounded an answer."""
+    """One web hit or app document that grounded an answer."""
 
     title: str = ""
+    # An https URL for a web page; an in-app path ("/portfolio?tab=tax") for
+    # one of the app's own documents, or "" when it is about no one screen.
     url: str = ""
+    # The guided-tour step an app document is about, so the reader's own
+    # language can title it. "" for a web page.
+    step: str = ""
 
 
 class Step(BaseModel):

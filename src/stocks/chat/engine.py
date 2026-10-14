@@ -976,6 +976,14 @@ RULES — these hold whatever the conversation asks:
   or two, not a paragraph. Never restate the question, never list caveats the
   user did not ask about, and end when the answer is given — no summary, no
   "let me know if…".
+- Write like a person who knows the numbers, not like a chatbot. No opener
+  ("great question", "sure", "in short"), no "it is worth noting" or "it is
+  important to remember". Name the figure or the company instead of a vague
+  verdict ("the outlook is mixed", "the risks are significant"). Say what is
+  true instead of what is not ("it is not just X, it is Y"). No adverbs
+  propping a claim up (really, truly, significantly), no em dashes, and no
+  closing line that sounds like a quote. Talk to the user as "you", in the
+  active voice.
 - Never draw a chart, plot or diagram out of text characters (ASCII art, bars
   or lines of symbols in a code block): it renders as noise and its shape is
   made up. Give the figures — first, last, high, low, the change — or a small
@@ -1840,7 +1848,10 @@ def _book_turn(act: Action, *, history: list[dict], prefs: dict, db: Path,
         obs.warn("chat.engine.book_failed", action=act.kind,
                  error_type=type(exc).__name__, error=str(exc)[:300])
         return Reply(error="chat.action_failed")
-    entry: dict = {"role": "assistant", "content": drafted.text, "action": act.kind}
+    # An id, like any answer: the classifier read the message, and a misread
+    # ("añádelas" adding one of six) is what the thumbs are there to catch.
+    entry: dict = {"role": "assistant", "content": drafted.text,
+                   "action": act.kind, "id": secrets.token_hex(6)}
     offer = None
     if drafted.fill is not None and not typed:
         # A trade missing a figure: the drawer asks for it with a form (its
@@ -1865,7 +1876,8 @@ def _book_turn(act: Action, *, history: list[dict], prefs: dict, db: Path,
                 shown["state"] = "cancelled"
     history.append(stored(entry))
     auth.save_chat(history, chat_path, thread)
-    return Reply(text=entry["content"], proposal=dict(offer) if offer else None)
+    return Reply(text=entry["content"], proposal=dict(offer) if offer else None,
+                 turn_id=entry["id"])
 
 
 # ------------------------------------------------------------------ memory
@@ -2620,14 +2632,16 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         if act is not None and confirm_actions:
             offer = _proposal(act)
             note = tools.proposal(act, lambda k, **kw: _tr(k, lang, **kw))
+            tid = secrets.token_hex(6)
             history.append(stored({"role": "assistant", "content": note,
-                                   "action": act.kind, "proposal": offer}))
+                                   "action": act.kind, "proposal": offer,
+                                   "id": tid, "provider": provider.id}))
             auth.save_chat(history, chat_path, thread)
             autotitle(chat_path, provider, key, history, lang, thread)
             _keep_byok(prefs, prefs_path)
             obs.event("chat.action_proposed", action=act.kind)
             return settled(Reply(text=note, provider_id=provider.id,
-                                 proposal=dict(offer)))
+                                 proposal=dict(offer), turn_id=tid))
         if act is not None:
             try:
                 tools.execute(act, watchlist)
@@ -2637,12 +2651,16 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                 act = None
         if act is not None:
             note = action_reply(act, lang)
+            # Rateable like an answer (`_book_turn` says why).
+            tid = secrets.token_hex(6)
             history.append(stored({"role": "assistant", "content": note,
-                                   "action": act.kind}))
+                                   "action": act.kind, "id": tid,
+                                   "provider": provider.id}))
             auth.save_chat(history, chat_path, thread)
             autotitle(chat_path, provider, key, history, lang, thread)
             _keep_byok(prefs, prefs_path)
-            return settled(Reply(text=note, provider_id=provider.id))
+            return settled(Reply(text=note, provider_id=provider.id,
+                                 turn_id=tid))
 
     # Skill routing and the lookup are independent, so they run at the same
     # time rather than stacking their latencies. The lookup is the model's own
@@ -2859,6 +2877,16 @@ def _refund(prefs: dict, prefs_path: Path, provider: Provider) -> None:
     auth.save_prefs(prefs, prefs_path)
 
 
+# gpt-oss cites as "【2†L13-L17】", pointers into a browser it does not have
+# here; the reader sees noise. The panel drops them while it streams
+# (chat/markdown.tsx), this keeps them out of what is stored and sent.
+_CITE_MARK = re.compile(r" ?【[^】\n]*】")
+
+
+def strip_cite_marks(text: str) -> str:
+    return _CITE_MARK.sub("", text)
+
+
 def close_markdown(text: str) -> str:
     """A half-written answer made whole enough to render.
 
@@ -2922,6 +2950,7 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
     turn.learned = [*turn.learned, *_unseen(chat_path)]
     # `id` is what a rating names the turn by (`rate_turn`); `provider` is who
     # wrote it, which a thumbs-down needs and the turn never said before.
+    text = strip_cite_marks(text)
     entry: dict = {"role": "assistant", "content": text,
                    "id": secrets.token_hex(6), "provider": provider.id}
     if turn.skills:

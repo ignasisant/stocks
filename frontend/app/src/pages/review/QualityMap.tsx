@@ -58,6 +58,10 @@ const CHEAP = 50;
 
 // The right pad leaves room for a ticker label on a dot at 100.
 const PAD = { top: 14, right: 44, bottom: 34, left: 40 };
+// Phone-wide every pixel is plot: the quality axis is named above it instead
+// of turned up its side, and a label at 100 goes left of its dot.
+const PAD_NARROW = { top: 24, right: 10, bottom: 34, left: 26 };
+const NARROW = 480;
 
 /** How long the pointer rests on a dot before its tooltip opens, in ms. */
 const TIP_DELAY = 300;
@@ -155,10 +159,12 @@ export function QualityMap({
   // 190px of plot and every name between 40 and 60 lands on one line.
   const tall = width < 560 ? width * 0.95 : width * 0.55;
   const height = Math.round(Math.min(420, Math.max(260, tall)));
-  const plotW = Math.max(1, width - PAD.left - PAD.right);
-  const plotH = height - PAD.top - PAD.bottom;
-  const x = (value: number) => PAD.left + (value / 100) * plotW;
-  const y = (value: number) => PAD.top + (1 - value / 100) * plotH;
+  const narrow = width < NARROW;
+  const pad = narrow ? PAD_NARROW : PAD;
+  const plotW = Math.max(1, width - pad.left - pad.right);
+  const plotH = height - pad.top - pad.bottom;
+  const x = (value: number) => pad.left + (value / 100) * plotW;
+  const y = (value: number) => pad.top + (1 - value / 100) * plotH;
   // Heaviest last so a small dot is never buried under a big one.
   const ordered = [...placed].sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));
   const key = (row: ReviewRow) => `${row.held ? "h" : "c"}-${row.ticker}`;
@@ -227,8 +233,12 @@ export function QualityMap({
         r: radius(row),
         text: row.symbol || row.ticker,
       })),
-    { x0: 16, y0: 0, x1: width, y1: y(0) },
-    [...captions, ...ticks],
+    { x0: narrow ? 0 : 16, y0: 0, x1: width, y1: y(0) },
+    [
+      ...captions,
+      ...ticks,
+      ...(narrow ? [{ x0: 0, y0: 0, x1: width, y1: pad.top - 8 }] : []),
+    ],
   );
 
   return (
@@ -326,13 +336,19 @@ export function QualityMap({
           <text className="ag-rev-map-axis" x={x(100)} y={height - 2} textAnchor="end">
             {t("review.axis_cheap")}
           </text>
-          <text
-            className="ag-rev-map-axis"
-            transform={`translate(11 ${y(100)}) rotate(-90)`}
-            textAnchor="end"
-          >
-            {t("review.axis_quality")}
-          </text>
+          {narrow ? (
+            <text className="ag-rev-map-axis" x={0} y={10}>
+              {t("review.axis_quality").replace("→", "↑")}
+            </text>
+          ) : (
+            <text
+              className="ag-rev-map-axis"
+              transform={`translate(11 ${y(100)}) rotate(-90)`}
+              textAnchor="end"
+            >
+              {t("review.axis_quality")}
+            </text>
+          )}
           {ordered.map((row) => (
             <Dot
               key={key(row)}
@@ -341,7 +357,9 @@ export function QualityMap({
               cy={y(row.quality as number)}
               label={
                 labels.get(key(row)) ??
-                (row === pointed ? besideLabel(spotOf(row), width) : undefined)
+                (row === pointed
+                  ? besideLabel(spotOf(row), width - pad.right)
+                  : undefined)
               }
               dim={!lit(row)}
               on={
@@ -390,8 +408,8 @@ export function QualityMap({
  * A label for a dot `placeLabels` left bare, forced because it is the name
  * pointed at: beside the dot, on the side with room, over whatever is there.
  */
-function besideLabel(spot: Spot, width: number): LabelSpot {
-  const right = spot.cx < width - PAD.right - 8;
+function besideLabel(spot: Spot, edge: number): LabelSpot {
+  const right = spot.cx < edge - 8;
   return {
     x: right ? spot.cx + spot.r + 4 : spot.cx - spot.r - 4,
     y: spot.cy + 4,

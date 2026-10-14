@@ -425,7 +425,7 @@
 .tk-hint {
   margin: 4px 0 0;
   font-size: var(--ag-fs-2xs);
-  color: var(--ag-text-faint);
+  color: var(--ag-text-muted);
 }
 
 .tk-hint-touch {
@@ -1037,6 +1037,7 @@
 
 .tk-field:focus {
   border-color: var(--ag-brand-accent);
+  box-shadow: 0 0 0 1px var(--ag-brand-accent);
 }
 
 /* ------------------------------------------------------- actions and peers */
@@ -1295,22 +1296,15 @@
 /* The header's Analyse-with-AI action. Primary, because it is the one thing on
    this page that does something rather than shows something — and icon-only on
    a phone, where the header already carries logo, name, badge and marks. */
+/* The chromatic rim, fill and hover are `.ag-ai`'s (styles.css). */
 .tk-ai {
   padding: 6px 12px;
-  border: 0;
   border-radius: var(--ag-radius-pill);
-  background: var(--ag-brand-cta);
-  color: var(--ag-on-brand);
   font: inherit;
   font-size: var(--ag-fs-sm);
+  font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-}
-
-@media (hover: hover) {
-  .tk-ai:hover {
-    background: var(--ag-purple-700);
-  }
 }
 
 /* -------------------------------------------------------------- coin cards

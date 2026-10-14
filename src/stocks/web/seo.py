@@ -274,6 +274,8 @@ def head(
         + _meta("author", SITE_NAME)
         + f'<link rel="icon" href="{esc(ICON_SVG)}" type="image/svg+xml">'
         + f'<link rel="apple-touch-icon" href="{esc(APPLE_ICON)}">'
+        # Added to a home screen from the pitch, it still opens the app.
+        + f'<link rel="manifest" href="{ASSET_BASE}manifest.webmanifest">'
         + _prop("og:type", "website")
         + _prop("og:site_name", SITE_NAME)
         + _prop("og:locale", _OG_LOCALE.get(lang, "en_US"))

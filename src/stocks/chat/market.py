@@ -46,9 +46,10 @@ _TICKER_RE = re.compile(r"\b[A-Z]{1,5}(?:[.\-][A-Z]{1,4})?\b")
 # web/chat_web.py screens the same false positives when it decides, without a
 # model, whether a message names a company worth searching for.
 NOT_TICKERS = {
-    "A", "AI", "ALL", "AND", "ANY", "API", "AT", "BE", "BUY", "BY", "CEO",
-    "CFO", "CPI", "DCF", "DE", "DO", "EBIT", "EL", "EPS", "ES", "ETF", "ETFS",
-    "EU", "EUR", "FED", "FOR", "FX", "GDP", "GO", "HOY", "I", "IA", "IF",
+    "A", "AI", "ALL", "AND", "ANY", "API", "AT", "BE", "BUY", "BY", "CAGR",
+    "CEO", "CFO", "CPI", "DCF", "DE", "DO", "EBIT", "EBITDA", "EL", "EPS",
+    "ES", "ETF", "ETFS", "EU", "EUR", "EV", "FCF", "FED", "FOR", "FX", "GDP",
+    "GO", "HOY", "I", "IA", "IF",
     "IN", "IPO", "IRPF", "IS", "IT", "LA", "LO", "MI", "MY", "NO", "NOT",
     "OF", "OK", "ON", "OR", "P", "PE", "PEG", "PER", "PIB", "PM", "PS", "QQQ",
     "ROE", "ROIC", "SEC", "SELL", "SI", "SP", "TAM", "TO", "TWR", "UK", "US",

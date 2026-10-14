@@ -59,7 +59,7 @@
 }
 
 .ag-jr-row:focus-visible {
-  outline: 2px solid var(--ag-border-focus);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 2px;
 }
 
@@ -301,6 +301,30 @@
   background: var(--ag-surface-card);
   box-shadow: var(--ag-shadow-overlay);
   animation: ag-jr-in 140ms ease-out;
+  /* Out the way it came in (`usePresence`), as a transition so re-opening
+     mid-way turns it back; off the edge when a finger throws it. Vertical
+     moves stay the list's scroll. */
+  transition:
+    transform 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 200ms ease-out;
+  touch-action: pan-y;
+}
+
+.ag-jr-veil {
+  transition: opacity 200ms ease-out;
+}
+
+.ag-jr-veil[data-leaving] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ag-jr-veil[data-leaving] .ag-jr-panel {
+  transform: translate3d(1.5rem, 0, 0);
+}
+
+.ag-jr-veil[data-leaving] .ag-jr-panel[data-swiped] {
+  transform: translate3d(100%, 0, 0);
 }
 
 @keyframes ag-jr-in {
@@ -363,7 +387,7 @@
 .ag-jr-close:focus-visible,
 .ag-jr-link:focus-visible,
 .ag-jr-all:focus-visible {
-  outline: 2px solid var(--ag-border-focus);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 1px;
 }
 
@@ -400,8 +424,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ag-jr-panel {
+  .ag-jr-panel,
+  .ag-jr-veil {
     animation: none;
+    transition: none;
   }
 
   .ag-jr-chevron {

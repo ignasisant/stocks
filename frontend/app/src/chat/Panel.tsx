@@ -454,6 +454,10 @@ export default function Panel({
                       onOpenThread={openThread}
                       onMemory={() => setView("memory")}
                       askRating={i === rateAt(all)}
+                      // The exchange being asked right now: the question and
+                      // the answer under it come in; a thread opened onto
+                      // history is already there and does not.
+                      fresh={chat.busy && i >= all.length - 2}
                       onRated={(vote) => turn.id && chat.rated(turn.id, vote)}
                     />
                   ))

@@ -39,7 +39,16 @@ no Tailwind.
 ## Type & hierarchy
 
 - Three levers together: size, weight, colour. Labels `--ag-fs-xs` muted
-  (500); values 600 primary; meta `--ag-fs-xs` faint.
+  (500); values 600 primary; meta `--ag-fs-xs` muted at weight 400.
+- Text contrast: primary, secondary and muted all clear 4.5:1 on page, card
+  and hover. `--ag-text-faint` is never live text — rules, dashes and
+  `:disabled` only (`test_faint_is_never_live_text`).
+- Type tokens are rem (11px = 0.6875rem at the default root): text follows
+  the reader's browser text size. No stylesheet sets a root font-size.
+- Focus: a global `:where(:focus-visible)` ring, 2px `--ag-brand-accent`
+  offset 2px. Never `--ag-border-focus` or `--ag-brand-cta` as a ring (1.6:1,
+  2.7:1 on a card); a field that hides its outline shows an accent border
+  plus a 1px accent box-shadow instead.
 - **Every number** gets `font-variant-numeric: tabular-nums`.
 - One focal figure per view when the view answers one question
   (`.pf-proj-figure` = the ticker hero `.tk-hero-level`: `--ag-fs-3xl` 28px /
@@ -74,8 +83,8 @@ no Tailwind.
 - **Hex:** none outside `shell/theme.ts` (`tests/test_frontend_tokens.py`);
   use tokens, or `black`/`transparent` for masks.
 - **Amount field** (`AmountField` in `Projection.tsx`): label over a
-  `--ag-surface-sunken` box with a muted unit suffix (€), focus ring via
-  `--ag-border-focus` on `:focus-within`, commit on blur/Enter, text input with
+  `--ag-surface-sunken` box with a muted unit suffix (€), accent border +
+  1px accent ring on `:focus-within`, commit on blur/Enter, text input with
   `inputMode="decimal"` (never `type=number` — it drops "1.500,5"), parsed by
   `parseAmount`. Empty = null ("no value"), not zero.
 - **Assumptions panel** (`.pf-proj-panel`): 300px sticky column beside the
@@ -212,6 +221,26 @@ no Tailwind.
 - **Layers:** page modal `z-index: 65` — above the chat launcher and guide
   strip (60), below the open chat drawer (70); tour scrim 90 above all. A
   modal under 60 lets the launcher float over its scrim on a phone.
+- **Overlays hold the page still:** any scrim (`.ag-rev-modal`, `.earn-modal`,
+  `.ag-tour-scrim`, `.ag-fb-scrim`, `.ag-jr-veil`, `.pr-modal`,
+  `.ag-nav-scrim`) or a covering chat (`data-chat="overlay"`) locks the
+  document scroll through one `:root:has(…)` rule in styles.css, gutter kept.
+  A new scrim joins that rule. Scrolling cards inside get
+  `overscroll-behavior: contain`; dialog heights use `dvh`, never `vh`.
+- **Sheets and side panels** (`shell/useSheet.ts`): enter as today (keyframe,
+  200ms `cubic-bezier(0.23,1,0.32,1)`), and leave the way they came:
+  `usePresence` keeps them mounted 200ms under `data-leaving`, and the exit
+  is a CSS transition so re-opening mid-way turns them back. Touch/pen can
+  throw them toward their edge (`useSwipeDismiss`): 1:1 follow, rubber-band
+  past rest, release projected at 0.998 deceleration and dismissed past half
+  the panel; `[data-swiped]` exits off the edge (100%). The chat drags by its
+  header only. Reduced motion: no animation, no transition, no exit wait.
+- **Phone chrome:** `viewport-fit=cover`; anything fixed to an edge pads by
+  `env(safe-area-inset-*)` — the rail (left) and page (right) for a phone in
+  landscape, the chat panel on three sides. With a keyboard up, the chat panel
+  is sized to `visualViewport` (`useKeyboardFit`). Launched from a home screen
+  (`display-mode: standalone`) the shell shows its own Back once the visit
+  has gone somewhere.
 
 ## Copy
 

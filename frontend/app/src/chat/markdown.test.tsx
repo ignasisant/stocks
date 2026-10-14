@@ -271,3 +271,14 @@ describe("tickers", () => {
     expect(out).toContain('href="/ticker?ticker=SNPS"');
   });
 });
+
+describe("citation marks", () => {
+  it("drops gpt-oss's browser pointers, finished or half-streamed", () => {
+    expect(html("Volatility stays【6†L1-L3】.")).toBe(
+      '<p class="ag-chat-p">Volatility stays.</p>',
+    );
+    expect(html("Volatility stays【2†L1")).toBe(
+      '<p class="ag-chat-p">Volatility stays</p>',
+    );
+  });
+});

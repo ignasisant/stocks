@@ -80,7 +80,7 @@
 .ag-sec-pick select:focus-visible,
 .ag-sec-field select:focus-visible,
 .ag-sec-filter > input:focus-visible {
-  outline: 2px solid var(--ag-brand-cta);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 1px;
 }
 
@@ -247,7 +247,7 @@
 
 .ag-sec-controls > summary:focus-visible,
 .ag-sec-help > summary:focus-visible {
-  outline: 2px solid var(--ag-brand-cta);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: 2px;
   border-radius: var(--ag-radius-xs);
 }
@@ -446,7 +446,7 @@
 }
 
 .ag-sec-head:focus-visible {
-  outline: 2px solid var(--ag-brand-cta);
+  outline: 2px solid var(--ag-brand-accent);
   outline-offset: -2px;
   border-radius: var(--ag-radius-xs);
 }

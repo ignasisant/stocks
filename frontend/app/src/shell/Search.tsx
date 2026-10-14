@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import { get, send } from "./api";
 import { assetLabel } from "./assets";
 import { useLang, useT } from "./i18n";
-import { BASE } from "./router";
+import { BASE, push } from "./router";
 import { useTickerProfile } from "./tickers";
 import { Badge } from "../ui/Badge";
 import { formatter } from "./numbers";
@@ -169,11 +169,7 @@ export function Search({
       .catch(() => undefined);
     setOpen(false);
     setQuery("");
-    window.history.pushState(
-      null,
-      "",
-      `${BASE}/ticker?ticker=${encodeURIComponent(ticker)}`,
-    );
+    push(`${BASE}/ticker?ticker=${encodeURIComponent(ticker)}`);
     window.dispatchEvent(new PopStateEvent("popstate"));
     window.scrollTo(0, 0);
   }

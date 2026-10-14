@@ -38,5 +38,5 @@ export const chart = () => ({
   border: token("border", "#3B3942"),
   textPrimary: token("text-primary", "#F9F9FA"),
   textSecondary: token("text-secondary", "#B3AFBD"),
-  textMuted: token("text-muted", "#827F8C"),
+  textMuted: token("text-muted", "#A09DAA"),
 });
