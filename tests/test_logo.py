@@ -198,6 +198,22 @@ def test_mirror_logo_downloads_once_then_serves_from_disk(tmp_path, monkeypatch)
     assert len(calls) == 1
 
 
+def test_mirror_writes_the_file_in_one_step(tmp_path, monkeypatch):
+    """Prod: one 500 on /app/static/logos/ADBE.png while it was being
+    mirrored. A reader sees no file or the whole file, never half of one."""
+    monkeypatch.setattr(logo_mod, "logo_url", lambda t: "https://x/ADBE.png")
+    monkeypatch.setattr(
+        logo_mod, "get_bytes_and_type", lambda url, **kw: (b"png", "image/png")
+    )
+    wrote: list = []
+    real = logo_mod.atomic.write_bytes
+    monkeypatch.setattr(
+        logo_mod.atomic, "write_bytes", lambda p, d: wrote.append(p) or real(p, d)
+    )
+    assert logo_mod.mirror_logo("ADBE", tmp_path) == "ADBE.png"
+    assert wrote == [tmp_path / "ADBE.png"]
+
+
 def test_mirror_logo_ignores_a_longer_stem(tmp_path, monkeypatch):
     """BRK's glob also matches BRK.B.png; that is not BRK's logo."""
     (tmp_path / "BRK.B.png").write_bytes(b"b")
