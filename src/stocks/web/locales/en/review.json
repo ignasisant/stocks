@@ -16,6 +16,8 @@
   "review.plan_buys_help": "Money to take each 'add' to its target and open the outside buys. What the sales free goes first to your best cheap names.",
   "review.plan_net_help": "Adds minus sales. If they need more than the sales free, it takes new money; if less, cash is left with no home in your book.",
   "review.plan_unplaced": "{amount} from the sales has no home in your book: see the 'Buy' candidates below or an index fund.",
+  "review.plan_more": "See the full analysis",
+  "review.plan_less": "See the summary",
   "review.note_few_names": "You hold {count} names: concentration is your book's shape, not one position's fault, so nothing is trimmed for it. Add tickers above to weigh candidates.",
   "review.note_sector_heavy": "{sector} is {weight} of your book across {count} names: what the sales free goes elsewhere. See 'Buy' candidates from other sectors.",
   "review.note_crypto_heavy": "Crypto is {weight} of your book. Nothing here scores or cuts it: your call how much a coin crash may take.",
