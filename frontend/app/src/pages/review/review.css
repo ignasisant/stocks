@@ -1449,3 +1449,74 @@
 .ag-rev-wait {
   margin-top: 1.25rem;
 }
+
+/* The folded plan: every list side by side, one line a name — who, from
+   which weight to which, how much. The why and the tax are the full read's. */
+.ag-rev-plan-brief {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 1rem 1.75rem;
+}
+
+.ag-rev-plan-brief .ag-rev-mv {
+  grid-template-columns: minmax(0, 1fr) auto minmax(5rem, auto);
+  grid-template-areas: "who weights money";
+  gap: 0 0.6rem;
+  padding: 0.3rem 0.5rem;
+}
+
+.ag-rev-plan-brief .ag-rev-mv-who {
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-rev-plan-brief .ag-rev-mv-weights {
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-rev-plan-brief .ag-rev-mv-money {
+  font-size: var(--ag-fs-sm);
+}
+
+/* Too narrow for the weights beside the name: name and money only. */
+@container ag-rev-mvs (max-width: 20rem) {
+  .ag-rev-plan-brief .ag-rev-mv {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "who money";
+  }
+
+  .ag-rev-plan-brief .ag-rev-mv-weights {
+    display: none;
+  }
+}
+
+/* Unfolds the plan into the full read, and folds it back. */
+.ag-rev-plan-toggle {
+  display: block;
+  margin: 0.75rem auto 0;
+  min-height: 2rem;
+  padding: 0 0.85rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  font-weight: 500;
+  color: var(--ag-text-secondary);
+  cursor: pointer;
+}
+
+.ag-rev-plan-toggle:focus-visible {
+  outline: 2px solid var(--ag-border-focus);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  .ag-rev-plan-toggle:hover {
+    color: var(--ag-text-primary);
+  }
+}
+
+@media (pointer: coarse) {
+  .ag-rev-plan-toggle {
+    min-height: 44px;
+  }
+}
