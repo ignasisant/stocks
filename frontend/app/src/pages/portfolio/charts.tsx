@@ -985,9 +985,9 @@ function HeatLegend({
 }
 
 /**
- * The realized result per period: gains stack up, deductible losses (and any
- * recovered from an earlier deferral) stack down, and the diamond marks the
- * net the brackets then tax.
+ * The realized result per period: gains (and dividends, where they share the
+ * base) stack up, deductible losses (and any recovered from an earlier
+ * deferral) stack down, and the diamond marks the net the brackets then tax.
  *
  * A value axis in the gutter, as Plotly draws one, so a bar's height reads as
  * an amount and not only as a shape; and one hover box per period — every
@@ -999,7 +999,13 @@ function HeatLegend({
  */
 type PeriodBarsProps = {
   periods: TaxPeriod[];
-  labels: { gains: string; losses: string; recovered: string; net: string };
+  labels: {
+    gains: string;
+    losses: string;
+    recovered: string;
+    net: string;
+    dividends?: string;
+  };
   money: (value: number) => string;
   /** Compact formatter for the gutter; falls back to `money` when omitted. */
   axisMoney?: (value: number) => string;
@@ -1037,13 +1043,18 @@ function PeriodBarsPlot({
   const up = token("candle-up");
   const down = token("candle-down");
   const recoveredColor = token("warn-orange");
+  // The Dividends tab's own bar colour, so the two read as one income.
+  const dividendColor = token("brand-accent");
   const netColor = token("info");
   const axis = token("border");
   const text = token("text-muted");
 
   const anyRecovered = periods.some((period) => period.recovered_loss !== 0);
+  // Absent from a jurisdiction that taxes dividends apart: no series, no key.
+  const paid = (period: TaxPeriod) => period.dividends || 0;
+  const anyDividends = periods.some((period) => paid(period) > 0);
   const tops = periods.map((period) =>
-    Math.max(period.realized_gain, period.net_taxable, 0),
+    Math.max(period.realized_gain + paid(period), period.net_taxable, 0),
   );
   const bottoms = periods.map((period) =>
     Math.max(period.deductible_loss + period.recovered_loss, -period.net_taxable, 0),
@@ -1074,6 +1085,9 @@ function PeriodBarsPlot({
 
   const legend: [string, string][] = [
     [labels.gains, up],
+    ...(anyDividends
+      ? ([[labels.dividends ?? "", dividendColor]] as [string, string][])
+      : []),
     [labels.losses, down],
     ...(anyRecovered
       ? ([[labels.recovered, recoveredColor]] as [string, string][])
@@ -1099,7 +1113,9 @@ function PeriodBarsPlot({
   const final = periods[periods.length - 1]!;
   const summary = `${labels.net}, ${first.period} ${money(first.net_taxable)} → ${final.period} ${money(final.net_taxable)}`;
   const spoken = at
-    ? `${at.period}: ${labels.gains} ${money(at.realized_gain)}, ${labels.losses} ${money(at.deductible_loss)}${
+    ? `${at.period}: ${labels.gains} ${money(at.realized_gain)}${
+        anyDividends ? `, ${labels.dividends ?? ""} ${money(paid(at))}` : ""
+      }, ${labels.losses} ${money(at.deductible_loss)}${
         anyRecovered ? `, ${labels.recovered} ${money(at.recovered_loss)}` : ""
       }, ${labels.net} ${money(at.net_taxable)}`
     : "";
@@ -1196,6 +1212,7 @@ function PeriodBarsPlot({
               const centre = left + index * slot + slot / 2;
               const x = centre - bar / 2;
               const gain = period.realized_gain * scale;
+              const dividend = paid(period) * scale;
               const loss = period.deductible_loss * scale;
               const recovered = period.recovered_loss * scale;
               const net = y(period.net_taxable);
@@ -1203,6 +1220,15 @@ function PeriodBarsPlot({
                 <g key={period.period} pointerEvents="none">
                   {gain > 0 ? (
                     <rect x={x} y={zero - gain} width={bar} height={gain} fill={up} />
+                  ) : null}
+                  {dividend > 0 ? (
+                    <rect
+                      x={x}
+                      y={zero - gain - dividend}
+                      width={bar}
+                      height={dividend}
+                      fill={dividendColor}
+                    />
                   ) : null}
                   {loss > 0 ? (
                     <rect x={x} y={zero} width={bar} height={loss} fill={down} />
@@ -1248,6 +1274,15 @@ function PeriodBarsPlot({
             title={at.period}
             rows={[
               { label: labels.gains, value: money(at.realized_gain), color: up },
+              ...(anyDividends
+                ? [
+                    {
+                      label: labels.dividends ?? "",
+                      value: money(paid(at)),
+                      color: dividendColor,
+                    },
+                  ]
+                : []),
               { label: labels.losses, value: money(at.deductible_loss), color: down },
               ...(anyRecovered
                 ? [

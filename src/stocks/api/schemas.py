@@ -1633,6 +1633,14 @@ class TaxPeriod(BaseModel):
         default=0.0, description="Earlier blocked losses that became deductible now."
     )
     deductible_loss: float = 0.0
+    dividends: float = Field(
+        default=0.0,
+        description=(
+            "Gross dividends paid in the period, where the jurisdiction taxes "
+            "them in this base (Spain's base del ahorro) and so in `net_taxable`; "
+            "0 everywhere else."
+        ),
+    )
     net_taxable: float
     estimated_tax: float
     carryforward_loss: float = 0.0
@@ -1703,6 +1711,7 @@ class TaxAllYears(BaseModel):
     disallowed_loss: float = 0.0
     recovered_loss: float = 0.0
     deductible_loss: float = 0.0
+    dividends: float = 0.0
     sales: int = Field(default=0, description="Matched parcels across them all.")
     kpis: list[TaxKpi] = Field(
         default_factory=list,
