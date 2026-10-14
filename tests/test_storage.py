@@ -444,3 +444,19 @@ def test_list_keys_filters_by_prefix(bucket):
 
 def test_list_keys_disabled_returns_empty(disabled):
     assert storage.list_keys("data/") == []
+
+
+def test_the_client_pools_enough_connections_for_the_threads_sharing_it(monkeypatch):
+    """Prod: urllib3 "Connection pool is full ... size: 10" ×18 against R2,
+    every one a connection opened, used once and discarded."""
+    import boto3
+
+    seen: dict = {}
+    monkeypatch.setattr(
+        storage,
+        "_cached",
+        {"config": {"access_key_id": "k", "secret_access_key": "s", "bucket": "b"}},
+    )
+    monkeypatch.setattr(boto3, "client", lambda *a, **kw: seen.update(kw) or object())
+    storage._client()
+    assert seen["config"].max_pool_connections >= 32
