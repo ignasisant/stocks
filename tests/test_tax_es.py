@@ -239,3 +239,79 @@ def test_modelo_720_flag_threshold():
     assert not modelo_720_flag(49_999).reportable
     assert modelo_720_flag(50_000).reportable
     assert modelo_720_flag(120_000).reportable
+
+
+# --- dividends in the savings base (art. 49 LIRPF) ---
+
+def _with_dividends(realized, period: str, *paid):
+    from stocks.portfolio import tax
+
+    return tax.get("ES").fiscal_period(realized, period, {}, None, list(paid))
+
+
+def test_dividends_join_a_positive_capital_result():
+    from stocks.portfolio.tax import Payment
+
+    ty = _with_dividends(
+        [sale("AAA", "2024-01-02", "2025-03-01", 1_000, 1_500)],
+        "2025",
+        Payment("2025-06-10", 200.0),
+        Payment("2024-12-30", 999.0),  # another year's
+    )
+    assert ty.dividends == pytest.approx(200)
+    assert ty.net_taxable == pytest.approx(700)
+    assert ty.estimated_tax == pytest.approx(tax_on_savings_base(700, 2025))
+    assert ty.carryforward_loss == 0.0
+    assert [n.key for n in ty.notes()] == ["dividends_note"]
+
+
+def test_a_net_loss_offsets_only_a_quarter_of_the_dividends():
+    from stocks.portfolio.tax import Payment
+
+    ty = _with_dividends(
+        [sale("AAA", "2024-01-02", "2025-03-01", 1_500, 500)],
+        "2025",
+        Payment("2025-06-10", 2_000.0),
+    )
+    # 1,000 loss against 2,000 of dividends: 500 offset, 1,500 taxed, 500 carried.
+    assert ty.cross_offset == pytest.approx(500)
+    assert ty.net_taxable == pytest.approx(1_500)
+    assert ty.carryforward_loss == pytest.approx(500)
+    assert "cross_offset_note" in [n.key for n in ty.notes()]
+
+
+def test_a_small_loss_is_absorbed_whole():
+    from stocks.portfolio.tax import Payment
+
+    ty = _with_dividends(
+        [sale("AAA", "2024-01-02", "2025-03-01", 1_100, 1_000)],
+        "2025",
+        Payment("2025-06-10", 2_000.0),
+    )
+    assert ty.net_taxable == pytest.approx(1_900)
+    assert ty.carryforward_loss == 0.0
+
+
+def test_a_month_adds_its_dividends_without_the_yearly_cap():
+    from stocks.portfolio.tax import Payment
+
+    month = _with_dividends(
+        [sale("AAA", "2024-01-02", "2025-06-01", 1_500, 500)],
+        "2025-06",
+        Payment("2025-06-10", 200.0),
+        Payment("2025-07-10", 300.0),
+    )
+    assert month.dividends == pytest.approx(200)
+    assert month.net_taxable == pytest.approx(-800)
+
+
+def test_other_jurisdictions_ignore_dividends():
+    from stocks.portfolio import tax
+    from stocks.portfolio.tax import Payment
+
+    ty = tax.get("US").fiscal_period(
+        [sale("AAA", "2024-01-02", "2025-03-01", 1_000, 1_500)],
+        "2025", {}, None, [Payment("2025-06-10", 200.0)],
+    )
+    assert ty.dividends == 0.0
+    assert ty.net_taxable == pytest.approx(500)

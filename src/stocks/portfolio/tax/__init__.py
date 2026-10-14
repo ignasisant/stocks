@@ -19,7 +19,7 @@ keys; nothing in the web or CLI layer branches on the code.
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 
@@ -31,12 +31,14 @@ from stocks.portfolio.tax.base import (
     Kpi,
     Note,
     OpenWindow,
+    Payment,
     ReportingFlag,
     Split,
     TaxPeriod,
     TaxSettings,
     TaxTotal,
     Window,
+    covers,
     month_range,
     open_windows,
     tax_year_of,
@@ -52,6 +54,7 @@ __all__ = [
     "Kpi",
     "Note",
     "OpenWindow",
+    "Payment",
     "ReportingFlag",
     "Split",
     "TaxPeriod",
@@ -112,6 +115,11 @@ class Jurisdiction:
     # short from long term at a year, Australia discounts gains past twelve
     # months and Portugal aggregates anything under 365 days.
     _long_term: Callable[[str, str], bool] | None = None
+    # Whether dividends join the gains in one taxable base. Spain's base del
+    # ahorro holds both, netted against each other (art. 49 LIRPF); everywhere
+    # else they are a separate schedule this tab does not model, and passing
+    # them changes nothing.
+    dividends_in_base: bool = False
 
     @property
     def splits_holding_period(self) -> bool:
@@ -155,9 +163,19 @@ class Jurisdiction:
         period: str,
         buy_dates: Acquisitions,
         settings: TaxSettings | None = None,
+        dividends: Sequence[Payment] = (),
     ) -> TaxPeriod:
-        """Summarize an ISO period prefix: "YYYY" (a real base) or "YYYY-MM"."""
-        return self._period(realized, period, buy_dates, settings)
+        """Summarize an ISO period prefix: "YYYY" (a real base) or "YYYY-MM".
+
+        `dividends` is every payment in the ledger; the period picks its own
+        under this calendar, and only where they share the base.
+        """
+        out = self._period(realized, period, buy_dates, settings)
+        if self.dividends_in_base:
+            out.dividends = sum(
+                p.gross for p in dividends if covers(period, p.date, self.year_start)
+            )
+        return out
 
     def fiscal_year(
         self,
@@ -165,8 +183,11 @@ class Jurisdiction:
         year: int,
         buy_dates: Acquisitions,
         settings: TaxSettings | None = None,
+        dividends: Sequence[Payment] = (),
     ) -> TaxPeriod:
-        return self.fiscal_period(realized, f"{year:04d}", buy_dates, settings)
+        return self.fiscal_period(
+            realized, f"{year:04d}", buy_dates, settings, dividends
+        )
 
     def reporting_flags(
         self, total_foreign_value: float, settings: TaxSettings | None = None
@@ -198,6 +219,7 @@ JURISDICTIONS: dict[str, Jurisdiction] = {
         carryforward_years=es.CARRYFORWARD_YEARS,
         repurchase_window="2m",
         _window=es.WINDOW,
+        dividends_in_base=True,
     ),
     us.CODE: Jurisdiction(
         code=us.CODE,

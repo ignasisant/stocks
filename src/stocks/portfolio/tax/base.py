@@ -101,6 +101,14 @@ class ReportingFlag:
     message: str = ""
 
 
+@dataclass(frozen=True)
+class Payment:
+    """One dividend received, gross, in the jurisdiction's currency."""
+
+    date: str
+    gross: float
+
+
 @dataclass
 class TaxPeriod:
     """One period's realized result. Subclassed per jurisdiction.
@@ -120,6 +128,10 @@ class TaxPeriod:
     # because the replacement shares were sold in this period.
     recovered_loss: float = 0.0
     sales: list[RealizedSale] = field(default_factory=list)
+    # Gross dividends paid in the period, where the jurisdiction taxes them in
+    # this same base (`Jurisdiction.dividends_in_base`) — 0 everywhere else,
+    # and then nothing below moves. Only a country module reads it.
+    dividends: float = 0.0
 
     def __post_init__(self) -> None:
         self.period = self.period or f"{self.year:04d}"
@@ -184,6 +196,7 @@ class TaxTotal:
     realized_loss: float = 0.0
     disallowed_loss: float = 0.0
     recovered_loss: float = 0.0
+    dividends: float = 0.0
     sales: list[RealizedSale] = field(default_factory=list)
     # Each year's KPIs summed key by key — see `total_of`.
     totals: list[Kpi] = field(default_factory=list)
@@ -223,6 +236,7 @@ def total_of(periods: Iterable[TaxPeriod]) -> TaxTotal:
         out.realized_loss += p.realized_loss
         out.disallowed_loss += p.disallowed_loss
         out.recovered_loss += p.recovered_loss
+        out.dividends += p.dividends
         out.sales.extend(p.sales)
         for k in p.kpis():
             prev = summed.get(k.key)
