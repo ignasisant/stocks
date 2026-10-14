@@ -341,7 +341,7 @@ export function Drawer() {
           tabIndex={-1}
         >
           {/* The drawer's own brand light, livelier while an answer is being
-              written (a trial behind `?ambient=1`, `shell/ambient`). */}
+              written (`shell/ambient`; `?ambient=0` turns it off). */}
           <ChatAurora busy={busy} />
           <Suspense
             fallback={
