@@ -222,7 +222,9 @@ class Performance(BaseModel):
     )
     twr_is_annual: bool = Field(
         default=True,
-        description="False when the span is under a year: `twr_annualised` is then cumulative.",
+        description=(
+            "False when the span is under a year: `twr_annualised` is then cumulative."
+        ),
     )
     twr_volatility: float | None = Field(
         default=None,
