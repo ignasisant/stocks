@@ -764,6 +764,45 @@ def test_a_multi_broker_book_gets_the_split_it_earns(client, book, monkeypatch):
     assert split["clicktrade"] == pytest.approx(0.375)
 
 
+def test_the_broker_donut_reads_the_priced_values_the_other_donuts_do(
+    client, book, monkeypatch
+):
+    """A backtest's last-close weights are not the tiles' euros: the broker
+    split is weighed on the same priced rows as its own slice values."""
+    from stocks.portfolio.custody import Custody
+
+    book(trades())
+    basket = report()
+    basket.weights = {"AAPL": 0.8, "MSFT": 0.1, "SPY": 0.1}  # deliberately off
+    monkeypatch.setattr(
+        loaders, "basket_report", lambda db, mtime, base, period: basket
+    )
+    table = pd.DataFrame(
+        {"cost": [1_000.0, 800.0], "value": [2_000.0, 1_000.0]},
+        index=pd.Index(["AAPL", "MSFT"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    monkeypatch.setattr(
+        loaders,
+        "custody",
+        lambda db, mtime: {
+            "AAPL": {
+                "revolut": Custody("AAPL", "revolut", quantity=5.0),
+                "clicktrade": Custody("AAPL", "clicktrade", quantity=5.0),
+            },
+            "MSFT": {"revolut": Custody("MSFT", "revolut", quantity=5.0)},
+        },
+    )
+    alloc = client.get(
+        "/v1/portfolio/risk", params={"account": EMAIL}, headers=AUTH
+    ).json()["allocation"]
+    rows = {row["label"]: row for row in alloc["broker"]}
+    assert rows["revolut"]["weight"] == pytest.approx(2_000 / 3_000)
+    assert rows["clicktrade"]["weight"] == pytest.approx(1_000 / 3_000)
+    for row in rows.values():
+        assert row["weight"] == pytest.approx(row["value"] / 3_000)
+
+
 def test_a_window_nobody_defined_is_refused_rather_than_guessed_at(
     client, book, monkeypatch
 ):

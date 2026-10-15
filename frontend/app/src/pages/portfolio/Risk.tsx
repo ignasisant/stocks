@@ -9,10 +9,15 @@
  * changed shape, and showing one in place of the other is the mistake this
  * layout is arranged to prevent.
  *
- * TWR and IRR share one tile — the TWR measures the selection and is
- * comparable against an index, the IRR (a chip on that tile) measures what
- * the money did. Neither stands in for the other; the tile exists so a
+ * TWR and IRR share one figure — the TWR measures the selection and is
+ * comparable against an index, the IRR (a chip beside it) measures what
+ * the money did. Neither stands in for the other; the figure exists so a
  * reader sees both readings of the same window at once.
+ *
+ * Each card leads with its one figure (the yearly return, the simulated
+ * swings) and the rest are facts under it, and each says in a line what it is:
+ * the two cards share labels, so the scope has to be on the page, not only in
+ * a tooltip.
  */
 
 import { useState } from "react";
@@ -28,10 +33,10 @@ import {
   type Risk as RiskData,
   type RiskPeriod,
 } from "./api";
-import { brokerName, decimal, moneyIn, percent } from "./format";
+import { brokerName, compactMoneyIn, decimal, moneyIn, percent } from "./format";
 import { Donut, ReturnLines, type LineMoney, type SliceDetail } from "./charts";
 import { CorrelationCard } from "./Correlation";
-import { Caption, Card, Empty, Kpis, MissingPrices, Segmented } from "./ui";
+import { Caption, Card, Chip, Empty, Hero, Lede, MissingPrices, Segmented } from "./ui";
 import { maybe, sectorKey } from "../sentiment/format";
 
 /** Allocation splits, in the order they are laid out. */
@@ -47,13 +52,28 @@ export default function Risk() {
   const lang = useLang();
   const base = useCurrency();
   const money = moneyIn(lang, base);
+  const axisMoney = compactMoneyIn(lang, base);
   // Since inception by default: a window that reaches back before the first
   // trade scores years nobody held anything.
   const [period, setPeriod] = useState<RiskPeriod>("inception");
+  // Today's holdings replayed over the past answer a second question — "is
+  // what I hold now any good" — so their line waits to be asked for: shown
+  // by default it was the one most often read as the account's own.
+  const [basket, setBasket] = useState(false);
   // Same axis labels as the history chart next door, for the same reason: two
   // charts of the same book should not date themselves differently.
   const date = new Intl.DateTimeFormat(lang, { month: "short", year: "2-digit" });
   const formatDate = (iso: string) => date.format(new Date(`${iso}T00:00:00`));
+  // Two-digit years read "mar 24" as the 24th of March; where a date stands
+  // alone, in a chip or a sentence, the year is written out.
+  const longDate = new Intl.DateTimeFormat(lang, { month: "short", year: "numeric" });
+  const formatMonth = (iso: string) => longDate.format(new Date(`${iso}T00:00:00`));
+  const dayDate = new Intl.DateTimeFormat(lang, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+  const formatDay = (iso: string) => dayDate.format(new Date(`${iso}T00:00:00`));
   // What a slice's hover box and its pinned breakdown read its money with.
   const detail: SliceDetail = {
     money: (value, signed) => money(value, { signed }) ?? "",
@@ -66,6 +86,8 @@ export default function Risk() {
       more: (count) => t("portfolio.alloc_more", { n: count }),
       pin: t("portfolio.alloc_pin_hint"),
       close: t("portfolio.alloc_close"),
+      includes: (names) => t("portfolio.alloc_includes", { names }),
+      note: t("portfolio.alloc_funds_note"),
     },
   };
   const lineMoney: Omit<LineMoney, "invested"> = {
@@ -87,6 +109,41 @@ export default function Risk() {
     palette.warnOrange,
     palette.brandAccent,
   ];
+
+  /** An index by the name a reader knows it by, the ticker when unnamed. */
+  const benchName = (bench: string) =>
+    maybe(t, `portfolio.bench_${bench.toLowerCase()}`) ?? bench;
+
+  /** The chart's answer in one line: what the money made on the last day
+      with money in, and how far that sits from the best index. */
+  const flowLede = (curves: NonNullable<RiskData["curves"]>): string | null => {
+    let day = -1;
+    for (let i = curves.dates.length - 1; i >= 0 && day < 0; i--)
+      if (curves.invested[i] != null && curves.portfolio[i] != null) day = i;
+    if (day < 0) return null;
+    const invested = curves.invested[day]!;
+    const mine = curves.portfolio[day]!;
+    const head = t("portfolio.flow_lede", {
+      gain: money(invested * mine, { signed: true }) ?? "",
+      pct: percent(lang, mine, { signed: true }) ?? "",
+      invested: money(invested) ?? "",
+    });
+    let best: [string, number] | null = null;
+    for (const [bench, points] of Object.entries(curves.benchmarks)) {
+      const value = points[day];
+      if (value != null && (best === null || value > best[1])) best = [bench, value];
+    }
+    if (best === null) return head;
+    const gap = invested * (mine - best[1]);
+    const tail = t(
+      gap >= 0 ? "portfolio.flow_lede_ahead" : "portfolio.flow_lede_behind",
+      {
+        diff: money(Math.abs(gap)) ?? "",
+        bench: benchName(best[0]),
+      },
+    );
+    return `${head} ${tail}`;
+  };
 
   // Two calls, one window. The selector sits above both cards and drives both:
   // the real-performance tiles are re-taken from the window's start (TWR, IRR
@@ -111,92 +168,124 @@ export default function Risk() {
         value={period}
         onChange={setPeriod}
         format={(option) =>
-          option === "inception" ? t("portfolio.from_start") : option
+          option === "inception"
+            ? t("portfolio.from_start")
+            : t(`portfolio.period_${option}`)
+        }
+        // The window as dates, once the ledger has said which they are, and
+        // which cards it moves: the allocation below is today's, whatever
+        // the window.
+        note={
+          performance.state === "loaded" &&
+          performance.data.start &&
+          performance.data.end
+            ? t("portfolio.period_span", {
+                start: formatDay(performance.data.start),
+                end: formatDay(performance.data.end),
+              })
+            : null
         }
       />
 
-      <Card title={t("portfolio.real_perf")}>
+      <Card title={t("portfolio.real_perf")} sub={t("portfolio.real_perf_sub")}>
         <Loaded query={performance} skeleton={<Skeleton rows={4} />}>
           {(data) => (
             <>
-              <Kpis
-                items={[
+              <Hero
+                // Under a year of history the API hands back the cumulative
+                // figure in `twr_annualised`; the label must not say "yearly".
+                eyebrow={
+                  data.twr_is_annual === false
+                    ? t("portfolio.return_to_date")
+                    : t("portfolio.annualised_return")
+                }
+                help={t("portfolio.twr_return_help")}
+                value={percent(lang, data.twr_annualised, { signed: true })}
+                // The IRR rides beside the TWR rather than in a figure of its
+                // own: both are the window's return, just weighted
+                // differently, and the mismatch between them (not either
+                // alone) is what a reader is checking for. Under a year of
+                // history it is a cumulative figure, and says so.
+                sub={
+                  data.irr === null ? null : (
+                    <>
+                      <Chip
+                        value={data.irr}
+                        text={`${t("portfolio.mwr_short")} ${
+                          percent(lang, data.irr, { signed: true }) ?? ""
+                        }`}
+                      />
+                      {data.irr_annualised === false ? (
+                        <span>{t("portfolio.irr_not_annualised")}</span>
+                      ) : null}
+                    </>
+                  )
+                }
+                facts={[
+                  // The same two readings the simulated card below shows,
+                  // taken over the flow-adjusted path instead of today's
+                  // holdings at fixed weights — which is why they carry a
+                  // different label and help. Reading one for the other is the
+                  // mistake both exist to prevent.
                   {
-                    label: t("portfolio.annualised_return"),
-                    value: percent(lang, data.twr_annualised, { signed: true }),
-                    help: t("portfolio.twr_return_help"),
-                    // The IRR rides as a chip on the TWR tile rather than a
-                    // tile of its own: both are the window's annualised
-                    // return, just weighted differently, and the mismatch
-                    // between them (not either figure alone) is what a
-                    // reader is checking for.
-                    chip:
-                      data.irr === null
-                        ? null
-                        : {
-                            text: `${t("portfolio.mwr_short")} ${
-                              percent(lang, data.irr, { signed: true }) ?? ""
-                            }`,
-                            value: data.irr,
-                          },
-                  },
-                  // The same two readings the basket card below shows, taken
-                  // over the flow-adjusted path instead of today's holdings at
-                  // fixed weights — which is why they carry a different help
-                  // and sit in a different card. Reading one for the other is
-                  // the mistake both helps exist to prevent.
-                  {
-                    label: t("portfolio.annualised_vol"),
+                    label: t("portfolio.real_swings"),
                     value: percent(lang, data.twr_volatility),
                     help: t("portfolio.twr_vol_help"),
                   },
                   {
-                    label: t("portfolio.max_drawdown"),
+                    label: t("portfolio.real_drawdown"),
                     value: percent(lang, data.twr_max_drawdown),
-                    // The number alone reads as "what the book lost", and on
-                    // a TWR it is not: a fall on a €800 book of two coins
-                    // counts as much as one on today's. When it ran and what
-                    // was at stake is what makes it legible.
+                    // The number alone reads as "what the account lost", and
+                    // on a TWR it is not: a fall on a €800 account of two
+                    // coins counts as much as one on today's. When it ran and
+                    // what was at stake is what makes it legible.
                     help:
                       data.twr_drawdown_peak && data.twr_drawdown_trough
                         ? t("portfolio.twr_dd_help_span", {
-                            peak: formatDate(data.twr_drawdown_peak),
-                            trough: formatDate(data.twr_drawdown_trough),
+                            peak: formatMonth(data.twr_drawdown_peak),
+                            trough: formatMonth(data.twr_drawdown_trough),
                             value:
                               money(data.twr_drawdown_peak_value) ?? t("portfolio.na"),
                           })
                         : t("portfolio.twr_dd_help"),
-                    chip:
+                    note:
                       data.twr_drawdown_peak && data.twr_drawdown_trough
-                        ? {
-                            text: `${formatDate(data.twr_drawdown_peak)} → ${formatDate(
-                              data.twr_drawdown_trough,
-                            )}`,
-                            value: null,
-                            off: true,
-                          }
+                        ? t("portfolio.dd_span_chip", {
+                            peak: formatMonth(data.twr_drawdown_peak),
+                            trough: formatMonth(data.twr_drawdown_trough),
+                          })
                         : null,
                   },
                   {
                     label: t("portfolio.market_value"),
-                    value: money(data.value),
-                    // The injected total moves into this tile's help instead
-                    // of a tile of its own: it is the buy-in the chip's P&L
-                    // is measured against, not a reading in its own right.
-                    help:
-                      data.injected === null
-                        ? undefined
-                        : t("portfolio.market_value_injected_help", {
-                            injected: money(data.injected) ?? t("portfolio.na"),
-                          }),
-                    chip:
-                      data.value === null || data.injected === null
+                    value: (
+                      <>
+                        {money(data.value)}
+                        {/* Measured against the window's buy-in, not the
+                            all-time total: a figure under a window selector
+                            has to obey it. */}
+                        {data.value === null || data.injected_window == null ? null : (
+                          <>
+                            {" "}
+                            <Chip
+                              value={data.value - data.injected_window}
+                              text={t("portfolio.gain_chip", {
+                                gain:
+                                  money(data.value - data.injected_window, {
+                                    signed: true,
+                                  }) ?? "",
+                              })}
+                            />
+                          </>
+                        )}
+                      </>
+                    ),
+                    note:
+                      data.injected_window == null
                         ? null
-                        : {
-                            text:
-                              money(data.value - data.injected, { signed: true }) ?? "",
-                            value: data.value - data.injected,
-                          },
+                        : t("portfolio.market_value_injected_help", {
+                            injected: money(data.injected_window) ?? t("portfolio.na"),
+                          }),
                   },
                 ]}
               />
@@ -230,14 +319,15 @@ export default function Risk() {
             .join(" · ");
           return (
             <>
-              <Card title={t("portfolio.basket_risk")}>
-                <Kpis
-                  items={[
-                    {
-                      label: t("portfolio.annualised_vol"),
-                      value: percent(lang, data.volatility),
-                      help: t("portfolio.basket_vol_help"),
-                    },
+              <Card
+                title={t("portfolio.basket_risk")}
+                sub={t("portfolio.basket_risk_sub")}
+              >
+                <Hero
+                  eyebrow={t("portfolio.sim_swings")}
+                  help={t("portfolio.basket_vol_help")}
+                  value={percent(lang, data.volatility)}
+                  facts={[
                     {
                       label: t("portfolio.effective_names"),
                       value: decimal(lang, data.effective_names, 1),
@@ -249,7 +339,7 @@ export default function Risk() {
                       help: t("portfolio.top5_help"),
                     },
                     {
-                      label: t("portfolio.max_drawdown"),
+                      label: t("portfolio.sim_drawdown"),
                       value: percent(lang, data.max_drawdown),
                       help: t("portfolio.basket_dd_help"),
                     },
@@ -260,11 +350,18 @@ export default function Risk() {
                 ) : null}
               </Card>
 
-              <Card title={t("portfolio.allocation")}>
+              <Card title={t("portfolio.allocation")} sub={t("portfolio.alloc_sub")}>
                 <div className="pf-donuts">
                   {SPLITS.map(([key, labelKey]) => {
                     const title = t(labelKey);
-                    const slices = data.allocation[key] ?? [];
+                    // The API's "Unknown" bucket (a fund's unclassified
+                    // remainder, a holding with no sector) in the reader's
+                    // words; the broker split has its own.
+                    const slices = (data.allocation[key] ?? []).map((slice) =>
+                      key !== "broker" && slice.label === "Unknown"
+                        ? { ...slice, label: t("portfolio.alloc_unknown") }
+                        : slice,
+                    );
                     // Custody only joins when the book actually spans brokers,
                     // so the API omits it for a single-broker book rather than
                     // shipping a 100% slice that says nothing.
@@ -323,13 +420,18 @@ export default function Risk() {
                   shape the book has not always had. */}
               {data.curves ? (
                 <Card title={t("portfolio.flow_matched_return")}>
+                  <Lede>{flowLede(data.curves)}</Lede>
                   <ReturnLines
                     dates={data.curves.dates}
                     label={t("portfolio.flow_matched_return")}
                     format={(value) =>
                       percent(lang, value, { digits: 1, signed: true }) ?? ""
                     }
-                    tickFormat={(value) => percent(lang, value, { digits: 0 }) ?? ""}
+                    // Euros won or lost, the figure the legend prints: a
+                    // percentage on the first months' few hundred euros drew
+                    // swings that dwarfed years of the real book.
+                    plot="gain"
+                    tickFormat={(value) => axisMoney(value, { signed: true }) ?? ""}
                     formatDate={formatDate}
                     money={{
                       ...lineMoney,
@@ -346,28 +448,44 @@ export default function Risk() {
                         color: palette.textPrimary,
                         focal: true,
                       },
-                      {
-                        label: t("portfolio.series_current_basket"),
-                        points: data.curves.basket,
-                        color: palette.textSecondary,
-                        dashed: true,
-                      },
+                      ...(basket
+                        ? [
+                            {
+                              label: t("portfolio.series_current_basket"),
+                              points: data.curves.basket,
+                              color: palette.textSecondary,
+                              dashed: true,
+                            },
+                          ]
+                        : []),
                       ...Object.entries(data.curves.benchmarks).map(
                         ([bench, points], index) => ({
-                          label: bench,
+                          label: benchName(bench),
                           points,
                           color: benchmarkColors[index] ?? palette.textMuted,
                         }),
                       ),
                     ]}
                   />
+                  <button
+                    type="button"
+                    className="pf-legend-key pf-chart-toggle"
+                    aria-pressed={basket}
+                    onClick={() => setBasket((on) => !on)}
+                  >
+                    <span
+                      className="pf-swatch pf-swatch-dashed"
+                      style={{ background: palette.textSecondary }}
+                    />
+                    <span>{t("portfolio.flow_show_basket")}</span>
+                  </button>
                   <Caption>{t("portfolio.flow_matched_note")}</Caption>
                   <MissingPrices tickers={data.missing} />
                 </Card>
               ) : null}
 
-              {/* A single name still gets its 1×1 grid, as Plotly draws it:
-                  the card is where a reader looks for the answer. */}
+              {/* A single name still gets the card, which says why there is
+                  nothing to compare: it is where a reader looks for the answer. */}
               {Object.keys(data.correlation).length > 0 ? (
                 <CorrelationCard data={data} />
               ) : null}

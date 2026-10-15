@@ -1093,6 +1093,29 @@ body {
   margin: 0 0 16px;
 }
 
+/* The search row: the field on the left, a page's own action (`TopActions`)
+   at the right end. The action wraps under the field once both do not fit. */
+.ag-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0 12px;
+}
+
+.ag-top > .ag-search {
+  flex: 1 1 14rem;
+}
+
+.ag-top-actions {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 16px auto;
+}
+
+.ag-top-actions:empty {
+  display: none;
+}
+
 .ag-search-field {
   width: 100%;
   max-width: 420px;

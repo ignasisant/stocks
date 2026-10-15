@@ -111,7 +111,13 @@ export function Performance({ data, words }: { data: Data; words: Words }) {
   }
   const figures: [string, number | null][] = [
     ["connector.view_twr", p.twr_cumulative],
-    ["connector.view_twr_annual", p.twr_annualised],
+    // Under a year it is the cumulative figure again, under an annual label.
+    ...(p.twr_is_annual === false
+      ? []
+      : ([["connector.view_twr_annual", p.twr_annualised]] as [
+          string,
+          number | null,
+        ][])),
     ["connector.view_irr", p.irr],
     ["connector.view_drawdown", p.twr_max_drawdown],
   ];

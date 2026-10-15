@@ -20,6 +20,7 @@ import {
   compact,
   growthLabel,
   known,
+  orElse,
   legend as legendOf,
   percent,
 } from "./format";
@@ -41,7 +42,8 @@ import {
 } from "./plot";
 import { Banner, Card, Empty, Note, Segmented, Subhead, useMobile } from "./ui";
 import { Kpi, KpiGrid, bandTone } from "../../ui/Kpi";
-import type { Financials, Fund, Insiders, Valuation } from "./types";
+import type { Financials, Fund, Insiders, Trade, Valuation } from "./types";
+import { placeFills } from "./hover";
 import { num } from "../../shell/numbers";
 
 /** Where the layout reads as a phone: the page's own flag, or a card too
@@ -603,10 +605,13 @@ export function FinancialsChart({ data }: { data: Financials }) {
 export function ValuationChart({
   data,
   fundamentalPe,
+  trades = [],
 }: {
   data: Valuation;
   /** The KPI grid's P/E (TTM), for the divergence warning below. */
   fundamentalPe: number | null;
+  /** The reader's own buys and sells, marked at the multiple of their day. */
+  trades?: Trade[];
 }) {
   const t = useT();
   const mobile = useMobile();
@@ -631,6 +636,18 @@ export function ValuationChart({
       .map((day, index) => ({ day, value: data.pe[index] ?? null }))
       .filter((row) => Date.parse(row.day) >= floor);
   }, [data, window]);
+  // Each fill sits on the line at its day's multiple, not at a P/E worked out
+  // from the fill's own price: the series' close is split-adjusted and in the
+  // listing's currency, and a fill can be neither. A fill on a loss-making
+  // stretch has no multiple and is left off.
+  const fills = useMemo(
+    () =>
+      placeFills(
+        trades,
+        kept.map((row) => row.day),
+      ).filter((fill) => known(kept[fill.index]?.value)),
+    [trades, kept],
+  );
 
   // No feed had the quarters. Said outright rather than left as an empty panel,
   // which would read as a P/E that never moved.
@@ -685,6 +702,17 @@ export function ValuationChart({
           ...(window.mean === null
             ? []
             : [{ text: t("ticker.pe_avg_line", { avg: num(window.mean, 1) }) }]),
+          ...fills
+            .filter((fill) => fill.index === hover)
+            .map((fill) => ({
+              text: t(
+                fill.trade.action === "buy"
+                  ? "ticker.pe_fill_buy"
+                  : "ticker.pe_fill_sell",
+                { qty: num(fill.trade.quantity, 4) },
+              ),
+              swatch: colors.textPrimary,
+            })),
         ];
   const xOf = (index: number) => box.left + (index + 0.5) * band_;
 
@@ -706,7 +734,15 @@ export function ValuationChart({
           value={data.current === null ? DASH : num(data.current, 1)}
           chip={
             data.current_verdict
-              ? { text: data.current_verdict, tone: bandTone(data.current_tone) }
+              ? {
+                  // The band's label arrives in English, as the KPI grid's do.
+                  text: orElse(
+                    t,
+                    `ticker.verdict_${data.current_verdict.replace(/ /g, "_")}`,
+                    data.current_verdict,
+                  ),
+                  tone: bandTone(data.current_tone),
+                }
               : null
           }
         />
@@ -799,6 +835,26 @@ export function ValuationChart({
                   strokeWidth={1.8}
                 />
               ))}
+              {/* The reader's fills, drawn as on the price chart: triangles in
+                the primary text colour, buys up and sells down. */}
+              {fills.map((fill, at) => {
+                const cx = xOf(fill.index);
+                const cy = y(kept[fill.index]?.value as number);
+                const size = 6;
+                const path =
+                  fill.trade.action === "buy"
+                    ? `M ${cx} ${cy - size} L ${cx + size} ${cy + size} L ${cx - size} ${cy + size} Z`
+                    : `M ${cx} ${cy + size} L ${cx + size} ${cy - size} L ${cx - size} ${cy - size} Z`;
+                return (
+                  <path
+                    key={`f-${fill.index}-${at}`}
+                    d={path}
+                    fill={colors.textPrimary}
+                    stroke={colors.surfacePage}
+                    strokeWidth={1.5}
+                  />
+                );
+              })}
               {hover !== null ? (
                 <line
                   className="tk-cross"
@@ -838,6 +894,30 @@ export function ValuationChart({
             </Chart>
             {hover !== null && kept[hover] ? (
               <Tooltip frame={box} x={xOf(hover)} title={tipTitle} lines={tipLines} />
+            ) : null}
+            {fills.length ? (
+              <Legend
+                items={[
+                  ...(fills.some((fill) => fill.trade.action === "buy")
+                    ? [
+                        {
+                          label: t("ticker.my_buys"),
+                          color: colors.textPrimary,
+                          mark: "up" as const,
+                        },
+                      ]
+                    : []),
+                  ...(fills.some((fill) => fill.trade.action === "sell")
+                    ? [
+                        {
+                          label: t("ticker.my_sells"),
+                          color: colors.textPrimary,
+                          mark: "down" as const,
+                        },
+                      ]
+                    : []),
+                ]}
+              />
             ) : null}
           </div>
         ) : (

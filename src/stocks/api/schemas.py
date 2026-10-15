@@ -198,6 +198,13 @@ class Performance(BaseModel):
     injected: float | None = Field(
         default=None, description="Net capital put in, at each trade date's rate."
     )
+    injected_window: float | None = Field(
+        default=None,
+        description=(
+            "The window's buy-in: the book's value on its first day plus the "
+            "net money put in since. Equals `injected` since inception."
+        ),
+    )
     value: float | None = Field(default=None, description="Latest book value.")
     twr_cumulative: float | None = Field(
         default=None,
@@ -206,7 +213,19 @@ class Performance(BaseModel):
             "so deposits and withdrawals do not read as performance."
         ),
     )
-    twr_annualised: float | None = None
+    twr_annualised: float | None = Field(
+        default=None,
+        description=(
+            "Per-year time-weighted return; equals `twr_cumulative` when the "
+            "span is under a year (see `twr_is_annual`)."
+        ),
+    )
+    twr_is_annual: bool = Field(
+        default=True,
+        description=(
+            "False when the span is under a year: `twr_annualised` is then cumulative."
+        ),
+    )
     twr_volatility: float | None = Field(
         default=None,
         description=(
@@ -248,8 +267,16 @@ class Performance(BaseModel):
     irr: float | None = Field(
         default=None,
         description=(
-            "Annualised money-weighted return. Unlike the TWR, flow timing "
+            "Money-weighted return, per year from a year of span and "
+            "cumulative before (`irr_annualised`). Unlike the TWR, flow timing "
             "moves it: it answers how the money did, not how the strategy did."
+        ),
+    )
+    irr_annualised: bool = Field(
+        default=True,
+        description=(
+            "False when the span is under a year: then `irr` is cumulative, "
+            "not annualised."
         ),
     )
     missing: list[str] = Field(

@@ -70,6 +70,7 @@
   "home.irr_note": "IRR · counts when you added money",
   "home.twr_note": "TWR · ignores when you added money",
   "home.twr_annualised": "Return on your picks",
+  "home.young_note": "{note} · to date, under a year in",
   "home.movers_title": "**Movers**",
   "home.movers_range": "Range",
   "home.none_moved": "No moves.",

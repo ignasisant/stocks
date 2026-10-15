@@ -14,12 +14,13 @@
  */
 
 import {
-  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
+  type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
   type ReactNode,
@@ -335,6 +336,8 @@ export type Slice = {
   cost?: number | null;
   /** What the slice is made of, largest value first. */
   holdings?: SliceHolding[];
+  /** On a folded "Others" slice: the names it swallowed, largest first. */
+  includes?: string[];
 };
 
 /** What a donut needs to read its slices as money, not only as shares. */
@@ -352,6 +355,10 @@ export type SliceDetail = {
     /** The hint that a click keeps the breakdown open. */
     pin: string;
     close: string;
+    /** "Includes: Health, Energy, +3" under a folded slice's breakdown. */
+    includes?: (names: string) => string;
+    /** Said once under a pinned breakdown: what a slice's figures do not add up to. */
+    note?: string;
   };
 };
 
@@ -391,6 +398,7 @@ export function foldSlices(tail: Slice[], label: string): Slice {
       ? priced.reduce((sum, slice) => sum + (slice.cost ?? 0), 0)
       : null,
     holdings: [...merged.values()].sort((a, b) => b.value - a.value),
+    includes: [...tail].sort((a, b) => b.weight - a.weight).map((slice) => slice.label),
   };
 }
 
@@ -470,6 +478,14 @@ export function Donut({
     w: number;
     h: number;
   } | null>(null);
+  // A keyboard pin hands focus to the breakdown's close button, so the one
+  // thing that changed is where the reader is; a pointer click keeps its own.
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const focusDetail = useRef(false);
+  useEffect(() => {
+    if (pinned !== null && focusDetail.current) closeButton.current?.focus();
+    focusDetail.current = false;
+  }, [pinned]);
   const colors = categorical();
   const total = slices.reduce((sum, slice) => sum + slice.weight, 0);
   if (!(total > 0)) return null;
@@ -484,7 +500,7 @@ export function Donut({
       : sorted;
   const palette =
     sorted.length > colors.length
-      ? [...colors.slice(0, colors.length - 1), token("text-faint")]
+      ? [...colors.slice(0, colors.length - 1), token("text-muted")]
       : colors;
 
   const radius = 40;
@@ -493,7 +509,12 @@ export function Donut({
 
   const find = (label: string | null) => shown.find((slice) => slice.label === label);
   const active = find(hover) ?? find(pinned);
-  const focus = active ?? shown[0];
+  // At rest the hole says what the ring adds up to — the priced market value —
+  // not its largest slice, which read as a total it is not. The largest slice
+  // stays for a donut with no money to sum.
+  const pricedTotal = shown.reduce((sum, slice) => sum + (slice.value ?? 0), 0);
+  const restTotal = detail && pricedTotal > 0 ? pricedTotal : null;
+  const focus = active ?? (restTotal === null ? shown[0] : undefined);
   const open = detail ? find(pinned) : undefined;
   const toggle = (label: string) => setPinned((now) => (now === label ? null : label));
   const track = (event: PointerEvent<HTMLDivElement>) => {
@@ -536,20 +557,13 @@ export function Donut({
           setPointer(null);
         }}
       >
-        <svg
-          viewBox="0 0 100 100"
-          role="img"
-          aria-label={`${title}: ${shown
-            .slice(0, 4)
-            .map((slice) => `${slice.label} ${format(slice.weight / total)}`)
-            .join(", ")}`}
-        >
+        <svg viewBox="0 0 100 100" aria-hidden="true">
           {shown.map((slice, index) => {
             const fraction = slice.weight / total;
             const length = fraction * circumference;
             // A 1px surface gap so adjacent fills never touch, dropped when the
             // slice is too thin to spare it.
-            const drawn = length > 2 ? length - 1 : length;
+            const drawn = length > 3 ? length - 1.5 : length;
             const start = offset;
             offset += length;
             const on = active?.label === slice.label;
@@ -561,7 +575,7 @@ export function Donut({
                 cy="50"
                 r={radius}
                 fill="none"
-                stroke={palette[index % palette.length] ?? token("text-faint")}
+                stroke={palette[index % palette.length] ?? token("text-muted")}
                 strokeWidth={on ? 18 : 15}
                 strokeOpacity={active && !on ? 0.35 : 1}
                 strokeDasharray={`${drawn} ${circumference - drawn}`}
@@ -573,7 +587,12 @@ export function Donut({
             );
           })}
         </svg>
-        {focus ? (
+        {restTotal !== null && detail && !active ? (
+          <div className="pf-donut-center" aria-hidden="true">
+            <span className="pf-donut-center-label">{detail.labels.value}</span>
+            <strong>{detail.money(restTotal)}</strong>
+          </div>
+        ) : focus ? (
           <div className="pf-donut-center" aria-hidden="true">
             <span className="pf-donut-center-label">{focus.label}</span>
             <strong>{format(focus.weight / total)}</strong>
@@ -617,40 +636,18 @@ export function Donut({
           </ChartTip>
         ) : null}
       </div>
-      <ul className="pf-legend">
-        {shown.map((slice, index) => (
-          <li key={slice.label}>
-            <button
-              type="button"
-              className={
-                active?.label === slice.label
-                  ? "pf-legend-row pf-legend-btn pf-legend-on"
-                  : "pf-legend-row pf-legend-btn"
-              }
-              aria-pressed={detail ? pinned === slice.label : undefined}
-              onPointerEnter={() => setHover(slice.label)}
-              onPointerLeave={() => setHover(null)}
-              onFocus={() => setHover(slice.label)}
-              onBlur={() => setHover(null)}
-              onClick={() => toggle(slice.label)}
-            >
-              <span
-                className="pf-swatch"
-                style={{ background: palette[index % palette.length] }}
-              />
-              <span>
-                {slice.label} · {format(slice.weight / total)}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
       {open && detail ? (
-        <div className="pf-donut-detail">
+        <div
+          className="pf-donut-detail"
+          role="region"
+          aria-live="polite"
+          aria-label={open.label}
+        >
           <div className="pf-donut-detail-head">
             <strong>{open.label}</strong>
             <button
               type="button"
+              ref={closeButton}
               className="pf-donut-detail-close"
               aria-label={detail.labels.close}
               onClick={() => setPinned(null)}
@@ -669,6 +666,15 @@ export function Donut({
               </span>
             ))}
           </div>
+          {open.includes?.length && detail.labels.includes ? (
+            <p className="pf-donut-note">
+              {detail.labels.includes(
+                open.includes.length > 4
+                  ? `${open.includes.slice(0, 3).join(", ")}, +${open.includes.length - 3}`
+                  : open.includes.join(", "),
+              )}
+            </p>
+          ) : null}
           {open.holdings?.length ? (
             <ul className="pf-donut-holdings">
               {open.holdings.map((one) => (
@@ -679,24 +685,86 @@ export function Donut({
               ))}
             </ul>
           ) : null}
+          {detail.labels.note ? (
+            <p className="pf-donut-note">{detail.labels.note}</p>
+          ) : null}
         </div>
       ) : null}
+      <ul className="pf-legend" aria-label={title}>
+        {shown.map((slice, index) => (
+          <li key={slice.label}>
+            <button
+              type="button"
+              className={
+                active?.label === slice.label
+                  ? "pf-legend-row pf-legend-btn pf-legend-on"
+                  : "pf-legend-row pf-legend-btn"
+              }
+              aria-pressed={detail ? pinned === slice.label : undefined}
+              onPointerEnter={() => setHover(slice.label)}
+              onPointerLeave={() => setHover(null)}
+              onFocus={() => {
+                // No pointer to anchor the box to: the keyboard gets it at the
+                // ring's centre, so the holdings are reachable without a mouse.
+                const box = plot.current?.getBoundingClientRect();
+                if (box)
+                  setPointer({
+                    x: box.width / 2,
+                    y: box.height / 2,
+                    w: box.width,
+                    h: box.height,
+                  });
+                setHover(slice.label);
+              }}
+              onBlur={() => {
+                setHover(null);
+                setPointer(null);
+              }}
+              onClick={(event) => {
+                focusDetail.current = event.detail === 0;
+                toggle(slice.label);
+              }}
+            >
+              <span
+                className="pf-swatch"
+                style={{ background: palette[index % palette.length] }}
+              />
+              <span className="pf-legend-name">
+                {slice.label} · {format(slice.weight / total)}
+              </span>
+              {detail ? (
+                <span className="pf-legend-money">
+                  {slice.value != null ? detail.money(slice.value) : "—"}
+                </span>
+              ) : null}
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
 /**
- * The diverging ramp `ds.py` gives the correlation heatmap: strongly inverse
- * through uncorrelated to moving together. Blended with `color-mix` rather
- * than parsed, because some tokens are `rgba()` and some are hex.
+ * The diverging ramp for the correlation heatmap: moving apart (blue) through
+ * uncorrelated (the card's own border grey) to moving together (red).
+ *
+ * Lightness rises from the middle outwards on both sides, so the two ends
+ * are the most visible cells and a strong pair, either way, stands out from a
+ * weak one by lightness as well as hue. The old ramp ended on a pale pink
+ * that was lighter than every other stop, which made the diagonal (always 1)
+ * the loudest thing in the grid. Blended with `color-mix` rather than parsed,
+ * because some tokens are `rgba()` and some are hex.
  */
 function correlationColor(value: number): string {
+  const mix = (top: string, share: number, base: string) =>
+    `color-mix(in srgb, ${top} ${share}%, ${base})`;
   const stops = [
-    token("info-deep"),
     token("info"),
+    mix(token("info"), 60, token("border")),
     token("border"),
+    mix(token("critical-fill"), 75, token("border")),
     token("critical-fill"),
-    token("down"),
   ];
   const clamped = Math.max(-1, Math.min(1, value));
   const position = ((clamped + 1) / 2) * (stops.length - 1);
@@ -720,11 +788,26 @@ export function correlationBand(value: number): CorrelationBand {
 
 type Pair = { name: string; value: number };
 
+export type CorrelationPair = {
+  a: string;
+  b: string;
+  value: number;
+  /** What the two hold together, as a fraction of the book; 0 when unknown. */
+  together: number;
+};
+
+/** Below this combined weight a pair is too small to speak for the book. */
+export const PAIR_FLOOR = 0.02;
+
 export type CorrelationStats = {
   /** Mean pairwise correlation, each pair weighted by both its weights. */
   average: number | null;
-  /** The pair that moves most alike. */
-  closest: { a: string; b: string; value: number } | null;
+  /** The pair that moves most alike *where the book is*: ranked by the
+      correlation times what the two hold together, so two 0.4 % positions
+      at 0.98 do not outrank the two largest at 0.8. */
+  closest: CorrelationPair | null;
+  /** Every measured pair, most linked first by the same ranking. */
+  pairs: CorrelationPair[];
   /** The name least like the rest of the book. */
   diversifier: Pair | null;
   /** Per name: its weighted mean correlation with the others, and the other
@@ -750,7 +833,7 @@ export function correlationStats(
   const weight = (name: string) => (known ? (weights[name] ?? 0) : 1);
   let sum = 0;
   let mass = 0;
-  let closest: CorrelationStats["closest"] = null;
+  const pairs: CorrelationPair[] = [];
   const perName: CorrelationStats["perName"] = {};
   for (const a of names) {
     let own = 0;
@@ -766,7 +849,8 @@ export function correlationStats(
       mass += weight(a) * weight(b);
       if (!peer || value > peer.value) peer = { name: b, value };
       if (!hedge || value < hedge.value) hedge = { name: b, value };
-      if (a < b && (!closest || value > closest.value)) closest = { a, b, value };
+      if (a < b)
+        pairs.push({ a, b, value, together: (weights[a] ?? 0) + (weights[b] ?? 0) });
     }
     perName[a] = { average: ownMass ? own / ownMass : null, peer, hedge };
   }
@@ -777,17 +861,39 @@ export function correlationStats(
     if (!diversifier || average < diversifier.value)
       diversifier = { name, value: average };
   }
-  return { average: mass ? sum / mass : null, closest, diversifier, perName };
+  // A pair that moves apart weighs nothing here: only the pull together is
+  // scaled by size, so the ranking never lifts a negative above a positive.
+  const score = (one: CorrelationPair) =>
+    known && one.value > 0 ? one.value * one.together : one.value;
+  pairs.sort((x, y) => score(y) - score(x));
+  return {
+    average: mass ? sum / mass : null,
+    closest: pairs[0] ?? null,
+    pairs,
+    diversifier,
+    perName,
+  };
 }
 
 type HeatFocus = { row: string; column: string; rect: DOMRect };
+
+/** Up to this many names the squares are big enough to print their figure. */
+const HEAT_PRINTED = 10;
 
 /**
  * Pairwise return correlation as a grid of squares.
  *
  * A pair the API had no overlap for is absent from the matrix rather than 0 —
  * an uncorrelated pair and an unmeasurable one are not the same reading — so
- * those cells are left blank instead of painted at the neutral stop.
+ * those cells are drawn as a dashed outline, not painted at the neutral stop.
+ * A name against itself is always 1 and says nothing, so it is drawn in the
+ * surface grey with a dot rather than at the loud end of the ramp.
+ *
+ * It is an ARIA grid with one tab stop: arrows walk the cells, Home / End
+ * jump along the row (with Ctrl, along the whole grid), Escape puts the
+ * reading away. A focused cell opens the same reading a hover does, and its
+ * own label says the pair, the figure and the band, so a screen reader hears
+ * the content without needing the box.
  *
  * Hovering a cell (tapping, on a phone) lights its row and column and opens
  * `explain`'s reading of that pair beside it. The box is portalled to the
@@ -798,17 +904,23 @@ export function Heatmap({
   matrix,
   format,
   explain,
+  describe,
   scale,
 }: {
   matrix: Record<string, Record<string, number>>;
   format: (value: number) => string;
   /** The reading of one cell; a name against itself when row = column. */
   explain?: (row: string, column: string) => ReactNode;
+  /** What a screen reader hears on a cell; defaults to "row × column value". */
+  describe?: (row: string, column: string, value: number | undefined) => string;
   /** Words under the colour ramp's two ends and its middle. */
   scale?: { low: string; mid: string; high: string };
 }) {
   const t = useT();
   const [focus, setFocus] = useState<HeatFocus | null>(null);
+  // The one cell in the tab order; arrows move it.
+  const [cursor, setCursor] = useState<[number, number]>([0, 0]);
+  const grid = useRef<HTMLDivElement>(null);
   // A tapped cell stays read until the page scrolls under it.
   useEffect(() => {
     if (!focus) return;
@@ -818,9 +930,8 @@ export function Heatmap({
   }, [focus]);
   const names = Object.keys(matrix);
   if (!names.length) return null;
-  // The grid is one picture to a screen reader, read by its two extremes —
-  // the pair that moves most together and the one that moves most apart;
-  // the rest is on the page's own lists.
+  // The grid is summed up for a screen reader by its two extremes — the pair
+  // that moves most together and the one that moves most apart.
   const pairs = names.flatMap((row, i) =>
     names.slice(i + 1).flatMap((column) => {
       const value = matrix[row]?.[column];
@@ -840,62 +951,149 @@ export function Heatmap({
   const open = (row: string, column: string, target: Element) =>
     setFocus({ row, column, rect: target.getBoundingClientRect() });
   const lit = (name: string) => focus?.row === name || focus?.column === name;
+  const last = names.length - 1;
+  const printed = names.length <= HEAT_PRINTED;
+  const go = (r: number, c: number) => {
+    const next: [number, number] = [
+      Math.max(0, Math.min(last, r)),
+      Math.max(0, Math.min(last, c)),
+    ];
+    setCursor(next);
+    grid.current
+      ?.querySelector<HTMLElement>(`[data-pos="${next[0]}-${next[1]}"]`)
+      ?.focus();
+  };
+  const walk = (event: KeyboardEvent<Element>, r: number, c: number) => {
+    const far = event.ctrlKey || event.metaKey;
+    const to: Record<string, [number, number]> = {
+      ArrowUp: [r - 1, c],
+      ArrowDown: [r + 1, c],
+      ArrowLeft: [r, c - 1],
+      ArrowRight: [r, c + 1],
+      Home: [far ? 0 : r, 0],
+      End: [far ? last : r, last],
+    };
+    if (event.key === "Escape") {
+      setFocus(null);
+      return;
+    }
+    const next = to[event.key];
+    if (!next) return;
+    event.preventDefault();
+    go(next[0], next[1]);
+  };
   return (
     <div className="pf-scroll">
       <div
+        ref={grid}
         className={focus ? "pf-heat pf-heat-focus" : "pf-heat"}
-        role="img"
+        role="grid"
         aria-label={
           top && bottom
             ? t("portfolio.heat_summary", { high: said(top), low: said(bottom) })
             : t("portfolio.heat_label")
         }
-        style={{
-          gridTemplateColumns: `auto repeat(${names.length}, minmax(1.5rem, 1fr))`,
-        }}
+        aria-rowcount={names.length + 1}
+        aria-colcount={names.length + 1}
+        style={
+          {
+            gridTemplateColumns: `auto repeat(${names.length}, minmax(${
+              printed ? "2.75rem" : "1.5rem"
+            }, 1fr))`,
+            "--heat-n": names.length,
+          } as CSSProperties
+        }
         onPointerLeave={(event) => {
           if (event.pointerType !== "touch") setFocus(null);
         }}
+        onBlur={(event) => {
+          // Focus leaving the grid puts the reading away; moving between
+          // cells keeps it (the next focus reopens it at once).
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+            setFocus(null);
+        }}
       >
-        <span />
-        {names.map((name) => (
-          <span
-            className={lit(name) ? "pf-heat-col pf-heat-lit" : "pf-heat-col"}
-            key={`head-${name}`}
-          >
-            {name}
-          </span>
-        ))}
-        {names.map((row) => (
-          <Fragment key={row}>
-            <span className={lit(row) ? "pf-heat-label pf-heat-lit" : "pf-heat-label"}>
+        <div className="pf-heat-row" role="row">
+          <span role="presentation" />
+          {names.map((name) => (
+            <span
+              className={lit(name) ? "pf-heat-col pf-heat-lit" : "pf-heat-col"}
+              key={`head-${name}`}
+              role="columnheader"
+            >
+              {name}
+            </span>
+          ))}
+        </div>
+        {names.map((row, r) => (
+          <div className="pf-heat-row" role="row" key={row}>
+            <span
+              className={lit(row) ? "pf-heat-label pf-heat-lit" : "pf-heat-label"}
+              role="rowheader"
+            >
               <TickerCell ticker={row} name={false} className="pf-ticker" />
             </span>
-            {names.map((column) => {
+            {names.map((column, c) => {
               const value = matrix[row]?.[column];
+              const self = row === column;
               const on = focus?.row === row || focus?.column === column;
+              const classes = [
+                "pf-heat-cell",
+                on ? "pf-heat-on" : "",
+                self ? "pf-heat-self" : "",
+                value === undefined ? "pf-heat-gap" : "",
+              ]
+                .filter(Boolean)
+                .join(" ");
               return (
                 <span
-                  className={on ? "pf-heat-cell pf-heat-on" : "pf-heat-cell"}
+                  className={classes}
                   key={`${row}-${column}`}
-                  style={{
-                    background:
-                      value === undefined ? "transparent" : correlationColor(value),
-                  }}
-                  aria-hidden="true"
+                  role="gridcell"
+                  data-pos={`${r}-${c}`}
+                  tabIndex={cursor[0] === r && cursor[1] === c ? 0 : -1}
+                  aria-label={
+                    describe
+                      ? describe(row, column, value)
+                      : value === undefined
+                        ? `${row} × ${column}`
+                        : `${row} × ${column} ${format(value)}`
+                  }
+                  style={
+                    self || value === undefined
+                      ? undefined
+                      : { background: correlationColor(value) }
+                  }
                   onPointerEnter={(event) => {
                     if (event.pointerType !== "touch")
                       open(row, column, event.currentTarget);
                   }}
                   onClick={(event) => {
+                    setCursor([r, c]);
                     const same = focus?.row === row && focus?.column === column;
                     if (same) setFocus(null);
                     else open(row, column, event.currentTarget);
                   }}
-                />
+                  onFocus={(event) => {
+                    setCursor([r, c]);
+                    // A click's focus is the pointer's: it opens the box
+                    // itself. Only a key's focus opens it here.
+                    if (event.currentTarget.matches(":focus-visible"))
+                      open(row, column, event.currentTarget);
+                  }}
+                  onKeyDown={(event) => walk(event, r, c)}
+                >
+                  {self
+                    ? "·"
+                    : value === undefined
+                      ? "·"
+                      : printed
+                        ? format(value)
+                        : null}
+                </span>
               );
             })}
-          </Fragment>
+          </div>
         ))}
       </div>
       <HeatLegend format={format} scale={scale} />
@@ -1470,6 +1668,7 @@ export function ReturnLines({
   money,
   label,
   legendValues = false,
+  plot = "return",
 }: {
   dates: string[];
   series: ReturnSeries[];
@@ -1489,6 +1688,12 @@ export function ReturnLines({
   label?: string;
   /** Print each line's last value on its legend entry. */
   legendValues?: boolean;
+  /** What the value axis measures. "gain" (needs `money`) plots each line as
+      euros won or lost — net money in times its return — so a month with
+      €800 in it moves the line by what €800 can move, where a percentage on
+      that small a base dwarfed years of the real book. `tickFormat` then
+      formats money; `format` still reads the returns. */
+  plot?: "return" | "gain";
 }) {
   const [pointer, setHover] = useState<number | null>(null);
   const [peek, setPeek] = useState<string | null>(null);
@@ -1511,9 +1716,21 @@ export function ReturnLines({
   // A shorter window can arrive under a pointer still resting on the old one.
   const hover = pointer !== null && pointer < dates.length ? pointer : null;
   const last = dates.length - 1;
+  // Where each point sits on the value axis: its return, or with "gain" the
+  // euros that return made on the day's net money in.
+  const invested = plot === "gain" ? money?.invested : undefined;
+  const placed = drawn.map((one) => ({
+    ...one,
+    at: invested
+      ? one.points.map((value, index) => {
+          const base = invested[index];
+          return value == null || base == null ? null : base * value;
+        })
+      : one.points,
+  }));
 
   const values = [
-    ...drawn.flatMap((one) => one.points),
+    ...placed.flatMap((one) => one.at),
     ...bands.flatMap((band) => [...band.low, ...band.high]),
   ].filter((v): v is number => v !== null);
   // Zero is always on the axis: a chart of returns that crops it hides whether
@@ -1543,7 +1760,7 @@ export function ReturnLines({
   const y = (value: number) => RETURN.top + (1 - (value - low) / span) * plotH;
 
   const ramp = categorical();
-  const colored = drawn.map((one, index) => ({
+  const colored = placed.map((one, index) => ({
     ...one,
     color: one.color ?? ramp[index % ramp.length]!,
   }));
@@ -1609,7 +1826,7 @@ export function ReturnLines({
     let best: string | null = null;
     let gap = 24;
     for (const one of colored) {
-      const value = one.points[index];
+      const value = one.at[index];
       if (one.tipOnly || value == null) continue;
       const off = Math.abs(y(value) - at);
       if (off < gap) [best, gap] = [one.label, off];
@@ -1650,7 +1867,7 @@ export function ReturnLines({
   const endNames = named
     ? [
         ...listed.flatMap((one) => {
-          const end = lastValue(one.points);
+          const end = lastValue(one.at);
           return end === null ? [] : [{ text: one.label, y: y(end), color: one.color }];
         }),
         ...bands.flatMap((band) => {
@@ -1717,7 +1934,9 @@ export function ReturnLines({
                 <span>{one.label}</span>
                 {money && value != null && base != null ? (
                   <span className="pf-muted">
-                    {money.money(lineMoney(base, value, null).worth)}
+                    {invested
+                      ? money.money(lineMoney(base, value, null).gain, true)
+                      : money.money(lineMoney(base, value, null).worth)}
                   </span>
                 ) : null}
                 {end === null ? null : (
@@ -1815,7 +2034,7 @@ export function ReturnLines({
               </g>
             ) : null}
             {stacked.map((one) =>
-              paths(one.points).map((d, index) => (
+              paths(one.at).map((d, index) => (
                 <path
                   key={`${one.label}-${index}`}
                   className="pf-line"
@@ -1834,7 +2053,7 @@ export function ReturnLines({
             {/* Where the reader's own line ends, ringed in the card's surface so
             it stays one dot where the others run into it. */}
             {stacked.map((one) => {
-              const end = one.points[last];
+              const end = one.at[last];
               return !one.focal || end === null || end === undefined ? null : (
                 <circle
                   key={`${one.label}-end`}
@@ -1876,7 +2095,7 @@ export function ReturnLines({
                 strokeDasharray="2 2"
               />
               {colored.map((one) => {
-                const value = one.points[hover];
+                const value = one.at[hover];
                 return value === null || value === undefined ? null : (
                   <circle
                     key={one.label}

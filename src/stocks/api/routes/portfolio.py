@@ -119,6 +119,10 @@ _RISK_PERIODS = ("inception", "6mo", "1y", "2y", "5y", "max")
 # day: "the last year" of a book is the calendar's last year.
 _PERFORMANCE_DAYS = {"6mo": 182, "1y": 365, "2y": 730, "5y": 1826}
 _PERFORMANCE_WINDOWS = ("inception", *_PERFORMANCE_DAYS)
+# A year of span, less a week: a "1y" window starts on the first trading day
+# after today-365, so its path is a few days short of 365 and would read as
+# young when it is the full year asked for.
+_YEAR = pd.Timedelta(days=358)
 
 # Windows the daily series is offered over, in calendar days — the union of the
 # two range controls the app already has, under the same codes, so a client and
@@ -434,7 +438,11 @@ def performance(
     selector does: the TWR, its volatility and drawdown over the clipped path,
     and the IRR with the book's value on the first day as the buy-in
     (`money_weighted_return(start=)`). `injected` and `value` stay the latest
-    levels — they are where the book stands, not a return over anything.
+    levels — they are where the book stands, not a return over anything —
+    and `injected_window` is that buy-in plus the money put in since, which
+    is what `value` is read against over a window. Under a year of span the
+    IRR and `twr_annualised` are cumulative, flagged by `irr_annualised` /
+    `twr_is_annual`.
     """
     if window not in _PERFORMANCE_WINDOWS:
         raise HTTPException(
@@ -460,10 +468,32 @@ def performance(
     # compounding by those months understates what the money that was in did.
     annualised = annualized_return(twr) if not twr.empty else float("nan")
     txs = loaders.ledger_state(db, mtime, ccy)[0]
-    irr = money_weighted_return(hist["value"], flow_series(txs, base=ccy), start=start)
+    flows = flow_series(txs, base=ccy)
     shown = hist[hist.index >= start] if start is not None else hist
     if shown.empty:
         shown = hist
+    # Same rule as the monthly table (`analysis.monthly`): a pace is only
+    # quoted per year once there is a year of it. Inside the first year a
+    # +8% over three months compounds to a headline nobody earned, so both
+    # money-weighted and time-weighted read what they made over the span.
+    spanned = pd.Timestamp(shown.index[-1]) - pd.Timestamp(shown.index[0])
+    annual = spanned >= _YEAR
+    irr = money_weighted_return(hist["value"], flows, start=start, annual=annual)
+    if not annual and not twr.empty:
+        annualised = cumulative
+    # The window's buy-in, exactly as the IRR above takes it: the book's value
+    # on the first day plus what went in after it. Since inception that is the
+    # all-time net money in, which is what `injected` already says.
+    value_path = hist["value"].dropna()
+    if start is not None:
+        clipped = value_path[value_path.index >= start]
+        value_path = clipped if not clipped.empty else value_path
+    if start is None or value_path.empty:
+        buy_in = _num(hist["injected"].iloc[-1])
+    else:
+        t0 = value_path.index[0]
+        later = flows[(flows.index > t0)] if not flows.empty else flows
+        buy_in = _num(float(value_path.iloc[0]) + float(later.sum()))
     path = cumulative_returns(twr) + 1
     span = drawdown_span(path)
 
@@ -473,9 +503,11 @@ def performance(
         start=str(pd.Timestamp(shown.index[0]).date()),
         end=str(pd.Timestamp(hist.index[-1]).date()),
         injected=_num(hist["injected"].iloc[-1]),
+        injected_window=buy_in,
         value=_num(loaders.book_value_today(db, mtime, ccy, hist)),
         twr_cumulative=_num(cumulative),
         twr_annualised=_num(annualised),
+        twr_is_annual=annual,
         # Volatility and drawdown of the flow-adjusted path, which is the only
         # series either can be taken over honestly: the book's own value moves
         # every time money is added, and a deposit is not a return.
@@ -490,6 +522,7 @@ def performance(
             if start is None or pd.Timestamp(day) >= start
         ],
         irr=_num(irr),
+        irr_annualised=annual,
         missing=missing,
     )
 
@@ -1592,7 +1625,14 @@ def risk(
     # Custody joins only when the book actually spans brokers: a single-broker
     # 100% slice says nothing. It reuses the weights above, so it costs no fetch.
     held_by = loaders.custody(db, mtime)
-    by_broker = custody.broker_weights(held_by, report.weights)
+    # Weighted off the priced values the three splits above and the slices'
+    # own sums read, not the backtest's last-close weights: those drop names
+    # with no series in the window, so the donut disagreed with its own euros.
+    by_broker = (
+        _shares(custody.broker_parts(held_by, values))
+        if values
+        else custody.broker_weights(held_by, report.weights)
+    )
     if len(by_broker) > 1:
         allocations["broker"] = slices(
             by_broker,
@@ -1636,6 +1676,15 @@ def risk(
             str(pd.Timestamp(day).date()) for day in twr.attrs.get("dropped_days", ())
         ],
     )
+
+
+def _shares(parts: dict[str, dict[str, float]]) -> dict[str, float]:
+    """Each bucket's sum as a share of all of them, largest first."""
+    sums = {label: sum(held.values()) for label, held in parts.items()}
+    total = sum(sums.values())
+    if not total:
+        return {}
+    return dict(sorted(((k, v / total) for k, v in sums.items()), key=lambda kv: -kv[1]))
 
 
 def _names(report) -> dict[str, RiskName]:

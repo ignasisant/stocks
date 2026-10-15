@@ -11,9 +11,16 @@
 
 import { useLang, useT } from "../../shell/i18n";
 import type { Risk } from "./api";
-import { correlationBand, correlationStats, Heatmap } from "./charts";
+import {
+  correlationBand,
+  correlationStats,
+  Heatmap,
+  PAIR_FLOOR,
+  type CorrelationPair,
+} from "./charts";
+import { TickerCell } from "../../shell/tickers";
 import { decimal, percent } from "./format";
-import { Caption, Card, Kpis } from "./ui";
+import { Caption, Card, Chip, Kpis, Lede } from "./ui";
 
 export function CorrelationCard({ data }: { data: Risk }) {
   const t = useT();
@@ -58,21 +65,7 @@ export function CorrelationCard({ data }: { data: Risk }) {
             rows={[
               [t("portfolio.corr_tip_weight"), pct(data.weights[row])],
               [t("portfolio.corr_tip_vol"), pct(data.names[row]?.volatility)],
-              ...(bench
-                ? [
-                    [
-                      t("portfolio.corr_tip_beta", { bench }),
-                      data.names[row]?.betas[bench] == null
-                        ? "—"
-                        : num(data.names[row]!.betas[bench]!),
-                    ] as [string, string],
-                  ]
-                : []),
               [t("portfolio.corr_tip_risk"), pct(data.names[row]?.risk_share)],
-              [
-                t("portfolio.corr_tip_avg"),
-                own?.average == null ? "—" : num(own.average),
-              ],
               ...(own?.peer
                 ? [
                     [
@@ -81,20 +74,12 @@ export function CorrelationCard({ data }: { data: Risk }) {
                     ] as [string, string],
                   ]
                 : []),
-              ...(own?.hedge && own.hedge.name !== own.peer?.name
-                ? [
-                    [
-                      t("portfolio.corr_tip_hedge"),
-                      `${own.hedge.name} · ${num(own.hedge.value)}`,
-                    ] as [string, string],
-                  ]
-                : []),
             ]}
           />
         </>
       );
     }
-    const together = (data.weights[row] ?? 0) + (data.weights[column] ?? 0);
+    const combined = (data.weights[row] ?? 0) + (data.weights[column] ?? 0);
     return (
       <>
         <span className="pf-tip-title">
@@ -115,25 +100,18 @@ export function CorrelationCard({ data }: { data: Risk }) {
             </span>
           </>
         )}
-        <Rows rows={[[t("portfolio.corr_tip_together"), pct(together)]]} />
+        <Rows rows={[[t("portfolio.corr_tip_together"), pct(combined)]]} />
         <span className="pf-heat-tip-names">
           <span className="pf-tip-head pf-heat-tip-who" />
           <span className="pf-tip-head">{t("portfolio.corr_tip_weight")}</span>
-          <span className="pf-tip-head">{t("portfolio.corr_tip_vol")}</span>
-          <span className="pf-tip-head">
-            {bench ? t("portfolio.corr_tip_beta", { bench }) : "β"}
-          </span>
           <span className="pf-tip-head">{t("portfolio.corr_tip_risk")}</span>
           {[row, column].map((name) => {
             const one = data.names[name];
-            const beta = bench ? one?.betas[bench] : undefined;
             return [
               <strong className="pf-heat-tip-who" key={`${name}-who`}>
                 {name}
               </strong>,
               <span key={`${name}-w`}>{pct(data.weights[name])}</span>,
-              <span key={`${name}-v`}>{pct(one?.volatility)}</span>,
-              <span key={`${name}-b`}>{beta == null ? "—" : num(beta)}</span>,
               <span key={`${name}-r`}>{pct(one?.risk_share)}</span>,
             ];
           })}
@@ -142,8 +120,69 @@ export function CorrelationCard({ data }: { data: Risk }) {
     );
   };
 
+  const names = Object.keys(data.correlation);
+  if (names.length < 2)
+    return (
+      <Card title={t("portfolio.return_correlation")}>
+        <Caption>{t("portfolio.corr_single")}</Caption>
+      </Card>
+    );
+
+  // Which window, basis and currency the figures are in: the card's one
+  // honest answer to "correlation over what?".
+  const window = t(`portfolio.corr_window_${data.period}`);
+  // Held names with no pair measured: too few shared days to say anything.
+  const unmeasured = Object.keys(data.weights).filter(
+    (name) =>
+      (data.weights[name] ?? 0) > 0 &&
+      !Object.entries(data.correlation[name] ?? {}).some(
+        ([other, value]) => other !== name && value !== undefined,
+      ),
+  );
+  const together = (one: CorrelationPair) => pct(one.together);
+  // Pairs too small to speak for the book do not head the "diversifying" list.
+  const apart = [...stats.pairs]
+    .filter((one) => !stats.pairs.some((p) => p.together) || one.together >= PAIR_FLOOR)
+    .sort((x, y) => x.value - y.value)
+    .slice(0, 5);
+  const linked = stats.pairs.slice(0, 5);
+  // Bad news is red, good news green: a high average is the bad end.
+  const tone = (average: number) => (average >= 0.4 ? -1 : average < 0.2 ? 1 : 0);
+
+  const pairList = (heading: string, list: CorrelationPair[]) => (
+    <div>
+      <h3>{heading}</h3>
+      <ol>
+        {list.map((one) => (
+          <li key={`${one.a}-${one.b}`}>
+            <span className="pf-corr-pair">
+              <TickerCell ticker={one.a} name={false} className="pf-ticker" /> ×
+              <TickerCell ticker={one.b} name={false} className="pf-ticker" />
+            </span>
+            {one.together ? (
+              <span className="pf-corr-together">
+                {t("portfolio.corr_together_chip", { weight: together(one) })}
+              </span>
+            ) : null}
+            <Chip text={`${num(one.value)} · ${band(one.value)}`} value={null} off />
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+
   return (
     <Card title={t("portfolio.return_correlation")}>
+      <Caption>{t("portfolio.corr_basis", { base: data.base, window })}</Caption>
+      {stats.average !== null && stats.closest ? (
+        <Lede>
+          {t("portfolio.corr_verdict", {
+            how: t(`portfolio.corr_verdict_${correlationBand(stats.average)}`),
+            value: num(stats.average),
+            pair: `${stats.closest.a} × ${stats.closest.b}`,
+          })}
+        </Lede>
+      ) : null}
       <Kpis
         items={[
           {
@@ -153,7 +192,7 @@ export function CorrelationCard({ data }: { data: Risk }) {
             chip:
               stats.average === null
                 ? null
-                : { text: band(stats.average), value: null, off: true },
+                : { text: band(stats.average), value: tone(stats.average) },
           },
           {
             label: t("portfolio.corr_top_pair"),
@@ -161,7 +200,9 @@ export function CorrelationCard({ data }: { data: Risk }) {
             help: t("portfolio.corr_top_pair_help"),
             chip: stats.closest
               ? {
-                  text: `${stats.closest.a} × ${stats.closest.b}`,
+                  text: stats.closest.together
+                    ? `${stats.closest.a} × ${stats.closest.b} · ${together(stats.closest)}`
+                    : `${stats.closest.a} × ${stats.closest.b}`,
                   value: null,
                   off: true,
                 }
@@ -181,6 +222,11 @@ export function CorrelationCard({ data }: { data: Risk }) {
                 }
               : null,
           },
+        ]}
+      />
+      <p className="pf-corr-sub">{t("portfolio.corr_sub_risk")}</p>
+      <Kpis
+        items={[
           {
             label: t("portfolio.corr_risk_top"),
             value: riskiest?.[0] ?? null,
@@ -218,17 +264,36 @@ export function CorrelationCard({ data }: { data: Risk }) {
             : []),
         ]}
       />
-      <Caption>{t("portfolio.corr_how")}</Caption>
-      <Heatmap
-        matrix={data.correlation}
-        format={num}
-        explain={explain}
-        scale={{
-          low: t("portfolio.corr_scale_low"),
-          mid: t("portfolio.corr_scale_mid"),
-          high: t("portfolio.corr_scale_high"),
-        }}
-      />
+      <div className="pf-corr-pairs">
+        {pairList(t("portfolio.corr_list_linked"), linked)}
+        {pairList(t("portfolio.corr_list_apart"), apart)}
+      </div>
+      {unmeasured.length ? (
+        <Caption>
+          {t("portfolio.corr_unmeasured", { names: unmeasured.join(", ") })}
+        </Caption>
+      ) : null}
+      <details className="pf-corr-more" open={names.length <= 12}>
+        <summary>{t("portfolio.corr_matrix")}</summary>
+        <Caption>{t("portfolio.corr_how")}</Caption>
+        <Heatmap
+          matrix={data.correlation}
+          format={num}
+          explain={explain}
+          describe={(row, column, value) =>
+            row === column
+              ? row
+              : value === undefined
+                ? `${row} × ${column}, ${t("portfolio.corr_no_overlap")}`
+                : `${row} × ${column}, ${num(value)}, ${band(value)}`
+          }
+          scale={{
+            low: t("portfolio.corr_scale_low"),
+            mid: t("portfolio.corr_scale_mid"),
+            high: t("portfolio.corr_scale_high"),
+          }}
+        />
+      </details>
     </Card>
   );
 }

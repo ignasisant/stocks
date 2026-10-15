@@ -70,6 +70,7 @@
   "home.irr_note": "TIR · cuenta cuándo aportaste",
   "home.twr_note": "TWR · sin el efecto de tus aportes",
   "home.twr_annualised": "Rentabilidad de tu selección",
+  "home.young_note": "{note} · acumulada, sin un año aún",
   "home.movers_title": "**Movimientos**",
   "home.movers_range": "Rango",
   "home.none_moved": "Sin movimientos.",

@@ -449,6 +449,72 @@ def test_performance_reports_both_returns_and_what_it_could_not_price(
     assert body["dropped_days"] == []
 
 
+def test_performance_window_buy_in_and_young_spans_are_cumulative(
+    client, token, account, monkeypatch
+):
+    """The chip's buy-in follows the window; a span under a year is not annualised."""
+    from stocks.api.routes import portfolio as route
+
+    index = pd.date_range("2024-01-02", periods=4, freq="D")
+    hist = pd.DataFrame(
+        {"injected": [100.0, 100.0, 150.0, 150.0],
+         "value": [100.0, 110.0, 170.0, 180.0],
+         "pnl_pct": [0.0, 0.1, 0.13, 0.2]},
+        index=index,
+    )
+    twr = pd.Series([0.1, 0.0, 0.0], index=index[1:])
+    monkeypatch.setattr(loaders, "history", lambda *a, **k: (hist, twr, []))
+    flows = pd.Series([100.0, 50.0], index=[index[0], index[2]])
+    monkeypatch.setattr(route, "flow_series", lambda *a, **k: flows)
+
+    body = client.get(
+        "/v1/portfolio/performance", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert body["injected_window"] == body["injected"] == 150.0
+    assert body["irr_annualised"] is False and body["twr_is_annual"] is False
+    assert body["twr_annualised"] == pytest.approx(body["twr_cumulative"])
+
+    # Windowed: the value on the first day inside it, plus the flows after it.
+    days = pd.date_range(end=pd.Timestamp.today().normalize(), periods=300, freq="D")
+    long = pd.DataFrame(
+        {"injected": 500.0, "value": [100.0 + i for i in range(300)], "pnl_pct": 0.0},
+        index=days,
+    )
+    monkeypatch.setattr(
+        loaders, "history",
+        lambda *a, **k: (long, pd.Series(0.001, index=days[1:]), []),
+    )
+    inside = days[days >= pd.Timestamp.today().normalize() - pd.Timedelta(days=182)]
+    monkeypatch.setattr(
+        route, "flow_series",
+        lambda *a, **k: pd.Series([40.0, 60.0], index=[days[10], inside[5]]),
+    )
+    body = client.get(
+        "/v1/portfolio/performance",
+        params={"account": EMAIL, "window": "6mo"},
+        headers=AUTH,
+    ).json()
+    first = long["value"][inside[0]]
+    assert body["injected_window"] == pytest.approx(first + 60.0)
+    assert body["injected"] == 500.0
+
+
+def test_a_year_of_span_is_annualised(client, token, account, monkeypatch):
+    index = pd.date_range("2022-01-03", periods=800, freq="D")
+    hist = pd.DataFrame(
+        {"injected": 100.0, "value": [100.0 + i / 10 for i in range(800)],
+         "pnl_pct": 0.0},
+        index=index,
+    )
+    twr = pd.Series(0.0005, index=index[1:])
+    monkeypatch.setattr(loaders, "history", lambda *a, **k: (hist, twr, []))
+    body = client.get(
+        "/v1/portfolio/performance", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert body["irr_annualised"] is True and body["twr_is_annual"] is True
+    assert body["injected_window"] == body["injected"]
+
+
 def test_performance_names_the_days_it_threw_out(
     client, token, account, monkeypatch
 ):

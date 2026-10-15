@@ -13,7 +13,6 @@
  * to NAV for a closed-end fund.
  */
 
-import { useState } from "react";
 import { Loaded } from "../../shell/Layout";
 import { useT } from "../../shell/i18n";
 import type { Query } from "../../shell/useApi";
@@ -31,7 +30,7 @@ import {
   type Translate,
 } from "./format";
 import { layout, type MetricId, type Shape } from "./layout";
-import { PriceChart, PriceChartWait, type Window } from "./PriceChart";
+import { PriceChart, PriceChartWait } from "./PriceChart";
 import { Bold, Card, Empty, Metric, Metrics, Segmented, useMobile } from "./ui";
 import { Chip, Kpi, KpiGrid, chipFor } from "../../ui/Kpi";
 import type {
@@ -107,7 +106,6 @@ export function PriceSection({
 }) {
   const t = useT();
   const mobile = useMobile();
-  const [window, setWindow] = useState<Window>(null);
   const bars = query.state === "loaded" ? query.data : null;
   // No figures over bars that have nothing to show: the metric row clears
   // whenever the chart under it cannot draw.
@@ -254,21 +252,8 @@ export function PriceSection({
           overlays={shape.overlays}
           markers={shape.markers}
           mobile={mobile}
-          onWindow={setWindow}
           t={t}
         />
-      ) : null}
-
-      {/* Only where a window can be picked: a phone pins both axes so a finger
-          drag scrolls the page. */}
-      {!mobile && window ? (
-        <p className={`tk-readout tk-is-${window.pct >= 0 ? "green" : "red"}`}>
-          {t("ticker.range_change", {
-            pct: `${signed(window.pct)}%`,
-            start: window.from,
-            end: window.to,
-          })}
-        </p>
       ) : null}
 
       <LastBuy position={held} last={last} units={shape.units} t={t} />

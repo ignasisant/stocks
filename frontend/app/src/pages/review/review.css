@@ -8,23 +8,24 @@
 
 /* Title left, the ask right; the button drops under the title when the
    column is too narrow for both. */
-.ag-rev-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 1rem;
-  margin-bottom: 0.4rem;
-}
-
-.ag-rev-head .ag-rev-h1 {
-  margin: 0;
-}
-
 .ag-rev-ask {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+}
+
+/* On a phone the press keeps the search row by dropping its label: a row of
+   its own under the field cost more height than the words were worth. */
+@container ag-main (max-width: 40rem) {
+  .ag-rev-ask {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+  .ag-rev-ask-label {
+    display: none;
+  }
 }
 
 .ag-rev-h1 {
@@ -32,6 +33,10 @@
   letter-spacing: var(--ag-track-3xl);
   margin: 0 0 0.4rem;
   text-wrap: balance;
+}
+
+.ag-rev-head .ag-rev-h1 {
+  margin-bottom: 0.25rem;
 }
 
 /* Section titles read like the portfolio's (`.pf-card > h2`). */
@@ -61,12 +66,12 @@
 .ag-rev-intro {
   max-width: 62ch;
   font-size: var(--ag-fs-sm);
-  margin-bottom: 0.9rem;
+  margin-bottom: 0.75rem;
 }
 
-/* The intro and the ticker box share a row once there is room for both: the
-   copy is capped at a reading width, so stacked they left the right half of
-   a desktop page empty above the map. */
+/* Title and intro on the left, the ticker box on the right, once there is
+   room for both: stacked, the box left the right half of a desktop page empty
+   and the title sat on a row of its own above them. */
 @container ag-main (min-width: 52rem) {
   .ag-rev-lead {
     display: grid;
@@ -74,7 +79,7 @@
     justify-content: space-between;
     align-items: end;
     gap: 0 2.5rem;
-    margin-bottom: 0.9rem;
+    margin-bottom: 0.75rem;
   }
   .ag-rev-lead .ag-rev-intro,
   .ag-rev-lead .ag-rev-add {

@@ -49,6 +49,8 @@ export type Performance = {
     value: number | null;
     twr_cumulative: number | null;
     twr_annualised: number | null;
+    /** False under a year of history: `twr_annualised` is then cumulative. */
+    twr_is_annual?: boolean;
     twr_max_drawdown: number | null;
     irr: number | null;
   };

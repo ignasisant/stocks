@@ -507,15 +507,26 @@ export function Tooltip({
  *
  * With `onToggle`, an item that carries a `key` is a button that hides or
  * shows the series it names (`hidden` holds the keys switched off); without
- * it the legend is a plain list.
+ * it the legend is a plain list. `onFocus` hears which keyed entry the
+ * pointer or the keyboard is on (null once it leaves), so the chart can draw
+ * that series up.
  */
 export function Legend({
   items,
   onToggle,
+  onFocus,
   hidden,
 }: {
-  items: { label: string; color: string; dashed?: boolean; key?: string }[];
+  items: {
+    label: string;
+    color: string;
+    dashed?: boolean;
+    /** A marker series' swatch: its triangle, pointing the way it is drawn, or its diamond. */
+    mark?: "up" | "down" | "diamond";
+    key?: string;
+  }[];
   onToggle?: (key: string) => void;
+  onFocus?: (key: string | null) => void;
   hidden?: ReadonlySet<string>;
 }) {
   return (
@@ -523,7 +534,13 @@ export function Legend({
       {items.map((item) => {
         const swatch = (
           <span
-            className={item.dashed ? "tk-swatch tk-swatch-dash" : "tk-swatch"}
+            className={
+              item.dashed
+                ? "tk-swatch tk-swatch-dash"
+                : item.mark
+                  ? `tk-swatch tk-swatch-mark tk-swatch-${item.mark}`
+                  : "tk-swatch"
+            }
             style={{ background: item.color }}
           />
         );
@@ -544,6 +561,10 @@ export function Legend({
               className={off ? "tk-legend-btn tk-legend-off" : "tk-legend-btn"}
               aria-pressed={!off}
               onClick={() => onToggle(key)}
+              onPointerEnter={() => onFocus?.(key)}
+              onPointerLeave={() => onFocus?.(null)}
+              onFocus={() => onFocus?.(key)}
+              onBlur={() => onFocus?.(null)}
             >
               {swatch}
               <span>{item.label}</span>

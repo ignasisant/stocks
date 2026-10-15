@@ -44,10 +44,20 @@ function Markup({ text }: { text: string }) {
 const said = (children: ReactNode) =>
   typeof children === "string" ? <Markup text={children} /> : children;
 
-export function Card({ title, children }: { title?: string; children: ReactNode }) {
+export function Card({
+  title,
+  sub,
+  children,
+}: {
+  title?: string;
+  /** One visible line saying what the card is, under its title. */
+  sub?: string;
+  children: ReactNode;
+}) {
   return (
     <section className="pf-card">
       {title ? <h2>{title}</h2> : null}
+      {sub ? <p className="pf-card-sub">{sub}</p> : null}
       {children}
     </section>
   );
@@ -55,6 +65,13 @@ export function Card({ title, children }: { title?: string; children: ReactNode 
 
 export function Caption({ children }: { children: ReactNode }) {
   return <p className="pf-caption">{said(children)}</p>;
+}
+
+/** A chart's answer in one sentence, above it: what a reader came to learn,
+    before the lines that show how. */
+export function Lede({ children }: { children: ReactNode }) {
+  if (children === null || children === undefined || children === "") return null;
+  return <p className="pf-lede">{said(children)}</p>;
 }
 
 /** Names without a price history, folded: said once, opened on demand. */
@@ -127,6 +144,8 @@ export type KpiItem = {
   value: string | null;
   help?: string;
   chip?: { text: string; value: number | null; off?: boolean } | null;
+  /** One muted line under the figure. */
+  note?: string;
 };
 
 export function Kpis({ items }: { items: KpiItem[] }) {
@@ -138,6 +157,7 @@ export function Kpis({ items }: { items: KpiItem[] }) {
           key={item.label}
           label={item.label}
           help={item.help}
+          note={item.note}
           value={item.value === null ? t("portfolio.na") : item.value}
           chip={
             item.chip
@@ -163,11 +183,14 @@ export function Kpis({ items }: { items: KpiItem[] }) {
  */
 export function Hero({
   eyebrow,
+  help,
   value,
   sub,
   facts,
 }: {
   eyebrow: string;
+  /** The "?" beside the eyebrow, as on a fact. */
+  help?: string;
   /** Already formatted, or null when the figure could not be computed. */
   value: string | null;
   sub?: ReactNode;
@@ -177,7 +200,10 @@ export function Hero({
   return (
     <div className="pf-hero">
       <div className="pf-hero-focus">
-        <span className="pf-hero-eyebrow">{eyebrow}</span>
+        <span className="pf-hero-eyebrow">
+          {eyebrow}
+          <Help text={help} />
+        </span>
         <span className="pf-hero-figure">{value ?? t("portfolio.na")}</span>
         {sub ? <span className="pf-hero-sub">{sub}</span> : null}
       </div>
@@ -497,12 +523,15 @@ export function Segmented<T extends string>({
   value,
   onChange,
   format,
+  note,
 }: {
   label: string;
   options: readonly T[];
   value: T;
   onChange: (next: T) => void;
   format?: (option: T) => string;
+  /** What the choice resolves to, muted beside it: the dates a window spans. */
+  note?: ReactNode;
 }) {
   return (
     <div className="pf-controls">
@@ -516,6 +545,7 @@ export function Segmented<T extends string>({
         value={value}
         onPick={onChange}
       />
+      {note ? <span className="pf-control-label pf-control-note">{note}</span> : null}
     </div>
   );
 }

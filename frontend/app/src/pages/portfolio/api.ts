@@ -113,9 +113,13 @@ export type Performance = {
   start: string | null;
   end: string | null;
   injected: number | null;
+  /** The window's buy-in: the book's value on its first day plus the net money put in since. Equals `injected` since inception. */
+  injected_window: number | null;
   value: number | null;
   twr_cumulative: number | null;
   twr_annualised: number | null;
+  /** False when the span is under a year: then `twr_annualised` is cumulative. */
+  twr_is_annual: boolean;
   /** Of the flow-adjusted path, over the whole span — not today's basket. */
   twr_volatility: number | null;
   twr_max_drawdown: number | null;
@@ -127,6 +131,8 @@ export type Performance = {
   /** Days left out of every figure above, because their flow could not price. */
   dropped_days: string[];
   irr: number | null;
+  /** False when the span is under a year: then `irr` is cumulative, not annualised. */
+  irr_annualised: boolean;
   /** Held names with no price series, carried at cost in `value`. */
   missing: string[];
 };

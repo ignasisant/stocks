@@ -320,7 +320,11 @@ function GlanceCard({ book }: { book: Book }) {
             label={t("home.irr_annualised")}
             value={percent(performance.irr, lang, { signed: true, digits: 1 }) ?? na}
             help={t("portfolio.mwr_help")}
-            note={t("home.irr_note")}
+            note={
+              performance.irr_annualised === false
+                ? t("home.young_note", { note: t("home.irr_note") })
+                : t("home.irr_note")
+            }
           />
           <Kpi
             label={t("home.twr_annualised")}
@@ -329,7 +333,11 @@ function GlanceCard({ book }: { book: Book }) {
               na
             }
             help={t("portfolio.twr_return_help")}
-            note={t("home.twr_note")}
+            note={
+              performance.twr_is_annual === false
+                ? t("home.young_note", { note: t("home.twr_note") })
+                : t("home.twr_note")
+            }
           />
         </KpiGrid>
         {/* Every figure above is invented while the example book is loaded, and
