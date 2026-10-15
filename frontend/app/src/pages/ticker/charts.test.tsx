@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FinancialsChart, InsiderFlow, ValuationChart } from "./Charts";
 import { InsidersSection } from "./Sections";
-import type { Financials, Insiders, Valuation } from "./types";
+import type { Financials, Insiders, Trade, Valuation } from "./types";
 
 // The palette reads CSS tokens off the document; with none, each is "".
 const dom = (width?: number) => {
@@ -22,6 +22,14 @@ const dom = (width?: number) => {
 };
 
 afterEach(() => vi.unstubAllGlobals());
+
+// One Spanish string, so a label the API sends in English shows whether it
+// was looked up; every other key renders as itself, as with no catalog.
+vi.mock("../../shell/i18n", async (original) => ({
+  ...(await original<typeof import("../../shell/i18n")>()),
+  useT: () => (key: string) =>
+    ({ "ticker.verdict_very_expensive": "Muy cara" })[key] ?? key,
+}));
 
 const financials: Financials = {
   ticker: "X",
@@ -115,6 +123,48 @@ describe("results, P/E and insider charts", () => {
   it("put the axis inside the plot on a phone", () => {
     dom(380);
     for (const html of render()) expect(html).toContain("tk-grid-in");
+  });
+});
+
+describe("P/E chart verdict", () => {
+  it("names the band in the reader's language, not the API's English", () => {
+    dom();
+    const html = renderToStaticMarkup(
+      <ValuationChart
+        data={{ ...valuation, current_verdict: "very expensive", current_tone: "red" }}
+        fundamentalPe={20}
+      />,
+    );
+    expect(html).toContain(">Muy cara<");
+  });
+});
+
+describe("P/E chart fills", () => {
+  const lossy: Valuation = {
+    ...valuation,
+    pe: valuation.pe.map((value, i) => (i >= 30 ? null : value)),
+  };
+  const draw = (trades: Trade[]) =>
+    renderToStaticMarkup(
+      <ValuationChart data={lossy} fundamentalPe={20} trades={trades} />,
+    );
+
+  it("marks buys and sells on the line, each with its own triangle", () => {
+    dom();
+    const html = draw([
+      { date: "2026-02-01", action: "buy", price: 10, quantity: 1 },
+      { date: "2026-03-01", action: "sell", price: 12, quantity: 1 },
+    ]);
+    expect(html).toContain("tk-swatch-up");
+    expect(html).toContain("tk-swatch-down");
+  });
+
+  it("leaves out a fill with no multiple to sit on", () => {
+    dom();
+    // Past the window's last P/E: the stretch is loss-making, so nothing to mark.
+    const html = draw([{ date: "2026-09-01", action: "buy", price: 10, quantity: 1 }]);
+    expect(html).not.toContain("tk-swatch-up");
+    expect(html).not.toContain("tk-legend");
   });
 });
 

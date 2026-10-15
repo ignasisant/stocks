@@ -30,11 +30,41 @@
   font-weight: 600;
 }
 
+.pf-card > h2:has(+ .pf-card-sub) {
+  margin-bottom: 0.25rem;
+}
+
+/* What the card is, said once under its title: a paragraph's measure. */
+.pf-card-sub {
+  max-width: 70ch;
+  margin: 0 0 0.9rem;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm, 0.75rem);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
 .pf-caption {
   color: var(--ag-text-muted);
   font-size: var(--ag-fs-xs, 0.6875rem);
   line-height: 1.45;
   margin: 0.7rem 0 0;
+}
+
+/* A chart's one-line answer, under the card title and over the plot: a step
+   above a caption, still a paragraph's measure. */
+.pf-lede {
+  max-width: 70ch;
+  margin: -0.4rem 0 0.8rem;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm, 0.8125rem);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.pf-lede strong {
+  color: var(--ag-text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 .pf-warn {
@@ -160,6 +190,10 @@
   font-size: var(--ag-fs-xs, 0.6875rem);
 }
 
+.pf-control-note {
+  flex: 1 1 12rem;
+}
+
 .pf-dropdown {
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius-sm, 8px);
@@ -247,6 +281,39 @@
   gap: 1rem;
 }
 
+/* A narrow page would stack four full-width rings, each over its own legend,
+   a couple of thousand pixels of scroll: ring beside legend instead. */
+@container ag-main (max-width: 38rem) {
+  .pf-donuts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pf-donut {
+    display: grid;
+    grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr);
+    gap: 0 0.9rem;
+    align-items: center;
+  }
+
+  .pf-donut > h3,
+  .pf-donut > .pf-donut-detail {
+    grid-column: 1 / -1;
+  }
+
+  .pf-donut > .pf-donut-plot {
+    grid-area: 2 / 1;
+  }
+
+  .pf-donut > .pf-legend {
+    grid-area: 2 / 2;
+    margin-top: 0;
+  }
+
+  .pf-donut > .pf-donut-detail {
+    grid-row: 3;
+  }
+}
+
 .pf-donut h3,
 .pf-chart h3 {
   margin: 0 0 0.5rem;
@@ -272,12 +339,25 @@
   gap: 0.4rem;
 }
 
+.pf-legend-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The money on the row, so a slice reads without opening it. */
+.pf-legend-money {
+  flex: none;
+  color: var(--ag-text-secondary, var(--ag-text-primary));
+  font-variant-numeric: tabular-nums;
+}
+
 /* A donut's legend rows are buttons: hovering one lifts its slice, and a
    click keeps its breakdown open, as on the ring itself. */
 .pf-legend-btn {
   box-sizing: border-box;
   width: calc(100% + 0.6rem);
   margin: 0 -0.3rem;
+  min-height: 28px;
   padding: 0.1rem 0.3rem;
   border: 0;
   border-radius: var(--ag-radius-xs, 4px);
@@ -393,6 +473,8 @@
 }
 
 .pf-donut-detail-close {
+  min-width: 28px;
+  min-height: 28px;
   padding: 0 0.2rem;
   border: 0;
   background: none;
@@ -407,6 +489,12 @@
     min-width: 44px;
     min-height: 44px;
   }
+}
+
+.pf-donut-note {
+  margin: 0.5rem 0 0;
+  color: var(--ag-text-muted);
+  line-height: 1.4;
 }
 
 .pf-donut-detail-figures {
@@ -480,6 +568,14 @@
 .pf-legend-key[aria-pressed="true"] {
   background: var(--ag-surface-sunken);
   color: var(--ag-text-primary);
+}
+
+/* An extra line a chart draws only when asked: a legend key on its own,
+   under the plot, at the legend's size rather than the body's. */
+.pf-legend-key.pf-chart-toggle {
+  margin: 0.5rem -0.4rem 0;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs, 0.6875rem);
 }
 
 .pf-legend-key[data-dim] {
@@ -567,10 +663,55 @@
   min-width: max-content;
 }
 
+/* Rows are boxes only for the grid's roles; the cells still lay out in the
+   one CSS grid, so a row contributes no box of its own. */
+.pf-heat-row {
+  display: contents;
+}
+
 .pf-heat-cell {
   min-width: 1.5rem;
   height: 1.5rem;
   border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--ag-fs-2xs, 0.6875rem);
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-primary);
+}
+
+/* A name against itself is always 1: surface grey, not the ramp's loud end. */
+.pf-heat-self {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-muted);
+}
+
+/* A pair with too few shared days is unmeasured, which is not the same as
+   uncorrelated: an outline, never a fill. */
+.pf-heat-gap {
+  outline: 1px dashed var(--ag-border);
+  outline-offset: -1px;
+  color: var(--ag-text-muted);
+}
+
+.pf-heat-cell:focus-visible {
+  outline: 2px solid var(--ag-text-primary);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
+/* Fingers: the squares are tap targets, so they are 44px. The grid scrolls
+   sideways anyway. */
+@media (pointer: coarse) {
+  .pf-heat {
+    grid-template-columns: auto repeat(var(--heat-n, 1), 2.75rem) !important;
+  }
+
+  .pf-heat-cell {
+    min-width: 2.75rem;
+    height: 2.75rem;
+  }
 }
 
 .pf-heat-label {
@@ -911,7 +1052,7 @@
 }
 
 .pf-heat-focus .pf-heat-cell:not(.pf-heat-on) {
-  opacity: 0.4;
+  opacity: 0.55;
 }
 
 .pf-heat-lit,
@@ -955,7 +1096,7 @@
 /* The pair side by side: one row a name, its weight, swing, beta and share. */
 .pf-heat-tip-names {
   display: grid;
-  grid-template-columns: auto repeat(4, auto);
+  grid-template-columns: auto repeat(2, auto);
   gap: 2px 10px;
   margin-top: 4px;
   padding-top: 6px;
@@ -1057,6 +1198,12 @@
 }
 
 /* The ticker hero's figure (.tk-hero-level): same step, same weight. */
+.pf-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .pf-proj-figure,
 .pf-hero-figure {
   font-size: var(--ag-fs-3xl);
@@ -1577,6 +1724,81 @@
 
 @media (pointer: coarse) {
   .pf-missing > summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+/* The correlation card's verdict, ranked pairs and subheads. */
+.pf-corr-pairs {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem 2rem;
+  margin: 0.9rem 0 0.4rem;
+}
+
+@container ag-main (min-width: 40rem) {
+  .pf-corr-pairs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.pf-corr-pairs h3,
+.pf-corr-sub {
+  margin: 0 0 0.35rem;
+  color: var(--ag-text-secondary, var(--ag-text-primary));
+  font-size: var(--ag-fs-sm, 0.75rem);
+  font-weight: 500;
+}
+
+.pf-corr-sub {
+  margin-top: 1rem;
+}
+
+.pf-corr-pairs ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pf-corr-pairs li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  border-top: 1px solid var(--ag-border);
+  font-size: var(--ag-fs-sm, 0.75rem);
+}
+
+.pf-corr-pair {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.pf-corr-together {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs, 0.6875rem);
+  white-space: nowrap;
+}
+
+.pf-corr-more > summary {
+  color: var(--ag-text-secondary, var(--ag-text-primary));
+  font-size: var(--ag-fs-sm, 0.75rem);
+  cursor: pointer;
+  margin: 0.8rem 0 0.4rem;
+}
+
+@media (pointer: coarse) {
+  .pf-corr-pairs li {
+    min-height: 44px;
+  }
+
+  .pf-corr-more > summary {
     display: flex;
     align-items: center;
     min-height: 44px;

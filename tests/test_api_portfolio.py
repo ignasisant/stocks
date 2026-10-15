@@ -456,6 +456,31 @@ def test_one_tax_year_is_already_all_of_them(client, book):
     assert payload["all_years"] is None
 
 
+def test_spanish_dividends_join_the_savings_base(client, book):
+    """Base del ahorro: dividends are taxed with the gains, year and month."""
+    book(
+        [
+            Transaction("2023-01-02", "AAPL", "buy", 20, 10.0, "EUR", 0.0),
+            Transaction("2024-03-15", "AAPL", "sell", 5, 20.0, "EUR", 0.0),
+            Transaction("2024-05-10", "AAPL", "dividend", 0, 30.0, "EUR", 4.5),
+            Transaction("2025-05-10", "AAPL", "dividend", 0, 40.0, "EUR", 6.0),
+        ],
+        prefs={"currency": "EUR", "tax_residence": "ES"},
+    )
+    payload = client.get(
+        "/v1/portfolio/tax", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    # A year that only collected dividends is a taxable year too.
+    assert [p["period"] for p in payload["years"]] == ["2024", "2025"]
+    first, second = payload["years"]
+    assert first["dividends"] == pytest.approx(30.0)
+    assert first["net_taxable"] == pytest.approx(80.0)  # 5 × (20 − 10) + 30
+    assert second["net_taxable"] == pytest.approx(40.0)
+    may = next(m for m in payload["months"] if m["period"] == "2024-05")
+    assert may["dividends"] == pytest.approx(30.0)
+    assert payload["all_years"]["dividends"] == pytest.approx(70.0)
+
+
 def test_months_cover_the_quiet_ones_between_two_sales(client, book):
     """A client charting the monthly view should not have to invent the gaps."""
     book(
@@ -737,6 +762,45 @@ def test_a_multi_broker_book_gets_the_split_it_earns(client, book, monkeypatch):
     # AAPL's 0.75 halves between the two; MSFT's 0.25 is Revolut's alone.
     assert split["revolut"] == pytest.approx(0.625)
     assert split["clicktrade"] == pytest.approx(0.375)
+
+
+def test_the_broker_donut_reads_the_priced_values_the_other_donuts_do(
+    client, book, monkeypatch
+):
+    """A backtest's last-close weights are not the tiles' euros: the broker
+    split is weighed on the same priced rows as its own slice values."""
+    from stocks.portfolio.custody import Custody
+
+    book(trades())
+    basket = report()
+    basket.weights = {"AAPL": 0.8, "MSFT": 0.1, "SPY": 0.1}  # deliberately off
+    monkeypatch.setattr(
+        loaders, "basket_report", lambda db, mtime, base, period: basket
+    )
+    table = pd.DataFrame(
+        {"cost": [1_000.0, 800.0], "value": [2_000.0, 1_000.0]},
+        index=pd.Index(["AAPL", "MSFT"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    monkeypatch.setattr(
+        loaders,
+        "custody",
+        lambda db, mtime: {
+            "AAPL": {
+                "revolut": Custody("AAPL", "revolut", quantity=5.0),
+                "clicktrade": Custody("AAPL", "clicktrade", quantity=5.0),
+            },
+            "MSFT": {"revolut": Custody("MSFT", "revolut", quantity=5.0)},
+        },
+    )
+    alloc = client.get(
+        "/v1/portfolio/risk", params={"account": EMAIL}, headers=AUTH
+    ).json()["allocation"]
+    rows = {row["label"]: row for row in alloc["broker"]}
+    assert rows["revolut"]["weight"] == pytest.approx(2_000 / 3_000)
+    assert rows["clicktrade"]["weight"] == pytest.approx(1_000 / 3_000)
+    for row in rows.values():
+        assert row["weight"] == pytest.approx(row["value"] / 3_000)
 
 
 def test_a_window_nobody_defined_is_refused_rather_than_guessed_at(

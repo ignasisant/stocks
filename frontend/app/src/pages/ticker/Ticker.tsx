@@ -485,7 +485,11 @@ export default function Page() {
           ) : null}
 
           {valuation.state === "loaded" && valuation.data ? (
-            <ValuationChart data={valuation.data} fundamentalPe={gridPe} />
+            <ValuationChart
+              data={valuation.data}
+              fundamentalPe={gridPe}
+              trades={held?.trades ?? []}
+            />
           ) : null}
 
           {/* What the street makes of it, right after what it is priced at. */}

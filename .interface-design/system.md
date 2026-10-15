@@ -89,6 +89,12 @@ no Tailwind.
   Real/recorded line = `textPrimary`; money-in / baselines = `textMuted`
   dashed; projected median = `brandAccent`.
 - Up/down chips: `--ag-up` / `--ag-down` via `Chip`.
+- A price line takes its move's sign, first close to last in the window on
+  screen (range, or zoomed slice): `candleUp` when flat or rising,
+  `candleDown` when falling, as Home's sparklines do; its area fades from that
+  colour at 14% to nothing.
+  Anything drawn over it (the reader's fills) stays `textPrimary` and is told
+  apart by shape, never by green/red.
 
 ## Component patterns
 
@@ -119,19 +125,41 @@ no Tailwind.
   above, crosshair + shared tooltip; series can carry `tipNote` (a % in
   parentheses), `tipOnly` (in tooltip, not stroked), `dashed`; optional
   `bands` and a `marker` (labelled "today" rule between record and forecast).
+  A comparison chart opens with a `Lede` (`.pf-lede`, sm secondary, 70ch):
+  its answer in one sentence, the key figure in `**bold**`, before the lines
+  that show how (HIG charts › "Summarize the main message"). When the legend
+  prints money the axis does too (`plot="gain"`, `compactMoneyIn` signed
+  ticks): a percentage on a small early base dwarfs later years. A
+  hypothetical line (backtest of today's holdings) is off by default behind a
+  `.pf-chart-toggle` key (`aria-pressed`); readers took it for their own.
+  Series wear the name people know (`portfolio.bench_<ticker>`: "S&P 500"),
+  never a bare ETF ticker.
 - **Every chart, all pages** (ticker `plot.tsx` `Chart`, portfolio, Home
   spark, chat): `aria-label` is a summary (title, window, headline change),
   never just the title. Walkable by keyboard through `useKeyWalk`
   (`shell/useKeyWalk.tsx`: arrows ±1, shift ±10, Home/End, Escape; keyboard
   focus opens the readout on the last point) and spoken through `Spoken`, a
   polite live region that talks only on key moves. Tooltips carry no
-  `role="status"`. Crosshair `--ag-text-muted` (faint fails 3:1). A drag
+  `role="status"`. Crosshair `--ag-text-muted` (faint fails 3:1);
+  `--ag-text-secondary` where it crosses a filled area (ticker price). A drag
   (mouse/pen button 0) takes `setPointerCapture`; touch stays free to scroll.
   Lines are named at their ends (`EndLabels` + `spreadLabels`, ≤4, not narrow)
   instead of colour-only legends; a third line is dashed. Up candles hollow
   once the body is ≥4px. Axis digits come from the tick step (`tickDigits`).
   The loading slot reserves the plot's height (`PriceChartWait`, Home spark
   56px, chat `min-height: 160px`).
+- **Price chart hierarchy** (ticker `PriceChart.tsx`): lines are not equals.
+  Price 2.25px, drawn last, with a 3.5px dot on the last close; overlays
+  (SMAs) 1.25px at 0.7 opacity underneath (0.7 keeps SMA50 blue ≥3:1).
+  Hovering or focusing a legend key lifts that overlay to 1 / 1.75px and fades
+  the rest to 0.2 (`--ag-dur-press`, none under reduced motion). Event marks
+  keep one colour per meaning: dividend `warn`, results `brandAccent`
+  diamond, legend swatch to match. The readout is a fixed strip above the
+  plot on every pointer (`.tk-plot-strip`, not a floating tooltip over the
+  line): idle shows the last bar (desktop), hover the bar, measure the span.
+  Zoom state sits in the legend row: the slice's change + dates and a
+  "Restablecer" pill. The gesture hint shows until the first measure
+  (`tk-span-learned` in localStorage).
 - **Refetch on control change:** keep the last result on screen with
   `aria-busy` → opacity 0.6 (`--ag-dur-press` `--ag-ease-out`, none under reduced motion) instead
   of swapping in a skeleton. Skeleton only on first load.
@@ -389,3 +417,21 @@ no Tailwind.
   past, today while ahead), and the line says which.
 - All strings in `src/stocks/web/locales/{en,es}/*.json`, same keys and
   placeholders in both (`tests/test_i18n_parity.py`).
+
+## Matrices and heatmaps
+
+- A grid of cells is an ARIA `grid`: one tab stop, arrows walk it, each cell labelled
+  "row × column, value, band"; the focused cell opens the same reading as hover.
+- Lead with the answer (a verdict line and the ranked top pairs); the full matrix is a
+  disclosure, open by default only for small N.
+- Diverging ramps rise in lightness from the neutral outwards; the diagonal and
+  "no data" never use the ramp (surface grey / dashed outline).
+- Rank "most linked" by what the book holds, not by raw value.
+
+## Cards that share labels say their scope on the page
+
+Two cards with the same tile name (volatility, drawdown) need a visible
+subtitle (`Card sub`) and distinct labels ("real" / "simulated"); a tooltip is
+not enough. A selector that scopes cards shows the resolved dates and says
+which cards it moves. A donut's hole shows the total at rest, a slice only on
+hover or pin; every legend row carries its money.

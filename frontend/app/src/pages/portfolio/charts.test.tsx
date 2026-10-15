@@ -313,6 +313,34 @@ describe("PeriodBars", () => {
     expect(out).toMatch(/text-anchor="end"[^>]*>€1000</);
     expect(out).toMatch(/text-anchor="end"[^>]*>€0</);
   });
+
+  it("stacks dividends on the gains and keys them only when paid", () => {
+    const period = (dividends: number) =>
+      ({
+        period: "2024",
+        realized_gain: 500,
+        deductible_loss: 0,
+        recovered_loss: 0,
+        dividends,
+        net_taxable: 500 + dividends,
+      }) as unknown as TaxPeriod;
+    const draw = (dividends: number) =>
+      renderToStaticMarkup(
+        <PeriodBars
+          periods={[period(dividends)]}
+          labels={{
+            gains: "Gains",
+            dividends: "Dividends",
+            losses: "Losses",
+            recovered: "Rec",
+            net: "Net",
+          }}
+          money={(v) => `€${v}`}
+        />,
+      );
+    expect(draw(200)).toContain("Dividends");
+    expect(draw(0)).not.toContain("Dividends");
+  });
 });
 
 describe("Heatmap", () => {
@@ -321,6 +349,28 @@ describe("Heatmap", () => {
       <Heatmap matrix={{ A: { A: 1 } }} format={(v) => v.toFixed(2)} />,
     );
     expect(out.match(/pf-heat-cell/g)).toHaveLength(1);
+  });
+
+  it("is a grid a keyboard can walk: one tab stop, labelled cells", () => {
+    const out = renderToStaticMarkup(
+      <Heatmap
+        matrix={{ A: { A: 1, B: 0.2 }, B: { A: 0.2, B: 1 } }}
+        format={(v) => v.toFixed(2)}
+        describe={(r, c, v) => `${r} × ${c} ${v}`}
+      />,
+    );
+    expect(out).toContain('role="grid"');
+    expect(out.match(/role="gridcell"/g)).toHaveLength(4);
+    expect(out.match(/tabindex="0"/g)).toHaveLength(1);
+    expect(out).toContain('aria-label="A × B 0.2"');
+  });
+
+  it("draws the diagonal and an unmeasured pair apart from the ramp", () => {
+    const out = renderToStaticMarkup(
+      <Heatmap matrix={{ A: { A: 1 }, B: { B: 1 } }} format={(v) => v.toFixed(2)} />,
+    );
+    expect(out).toContain("pf-heat-self");
+    expect(out).toContain("pf-heat-gap");
   });
 
   it("draws its colour scale from −1 to +1", () => {
@@ -345,7 +395,7 @@ describe("correlationStats", () => {
 
   it("finds the most alike pair and the name least like the rest", () => {
     const stats = correlationStats(matrix);
-    expect(stats.closest).toEqual({ a: "A", b: "B", value: 0.9 });
+    expect(stats.closest).toMatchObject({ a: "A", b: "B", value: 0.9 });
     expect(stats.diversifier?.name).toBe("C");
     expect(stats.perName.A?.peer?.name).toBe("B");
     expect(stats.perName.A?.hedge?.name).toBe("C");
@@ -356,6 +406,19 @@ describe("correlationStats", () => {
   it("weighs each pair by what the book holds of it", () => {
     const stats = correlationStats(matrix, { A: 0.45, B: 0.45, C: 0.1 });
     expect(stats.average).toBeGreaterThan(correlationStats(matrix).average!);
+  });
+
+  it("ranks the closest pair by what the book holds of it", () => {
+    const big = {
+      A: { A: 1, B: 0.8, C: 0.98, D: 0.98 },
+      B: { A: 0.8, B: 1, C: 0, D: 0 },
+      C: { A: 0.98, B: 0, C: 1, D: 0.99 },
+      D: { A: 0.98, B: 0, C: 0.99, D: 1 },
+    };
+    // C and D are 0.4 % each at 0.99; A and B are the book.
+    const stats = correlationStats(big, { A: 0.5, B: 0.49, C: 0.005, D: 0.005 });
+    expect(stats.closest).toMatchObject({ a: "A", b: "B" });
+    expect(stats.closest?.together).toBeCloseTo(0.99);
   });
 
   it("reads a value in words", () => {
@@ -458,7 +521,7 @@ describe("Donut", () => {
     ]);
   });
 
-  it("names its largest slice in the hole and its money with it", () => {
+  it("says what the ring adds up to in the hole, and each slice's money on its row", () => {
     const html = renderToStaticMarkup(
       <Donut
         title="Sector"
@@ -471,10 +534,40 @@ describe("Donut", () => {
         ]}
       />,
     );
+    // At rest: the total, not the largest slice read as one.
+    expect(html).toContain(
+      '<span class="pf-donut-center-label">Value</span><strong>€1000</strong>',
+    );
+    expect(html).toContain('<span class="pf-legend-money">€750</span>');
+    expect(html).toContain('<span class="pf-legend-money">€250</span>');
+  });
+
+  it("names its largest slice in the hole when there is no money to sum", () => {
+    const html = renderToStaticMarkup(
+      <Donut
+        title="Sector"
+        otherLabel="Others"
+        format={(f) => `${(f * 100).toFixed(1)}%`}
+        slices={[
+          { label: "Health", weight: 0.25 },
+          { label: "Technology", weight: 0.75 },
+        ]}
+      />,
+    );
     expect(html).toContain(
       '<span class="pf-donut-center-label">Technology</span><strong>75.0%</strong>',
     );
-    expect(html).toContain("€750");
+  });
+
+  it("lists the names a folded slice swallowed, largest first", () => {
+    const folded = foldSlices(
+      [
+        { label: "Energy", weight: 0.01 },
+        { label: "Utilities", weight: 0.03 },
+      ],
+      "Others",
+    );
+    expect(folded.includes).toEqual(["Utilities", "Energy"]);
   });
 });
 
@@ -569,6 +662,32 @@ describe("ReturnLines", () => {
       /<svg[^>]*role="img"[^>]*aria-label="Return vs benchmarks: Mine 30.0%/,
     );
     expect(out).toMatch(/<svg[^>]*tabindex="0"/);
+  });
+
+  it("plots euros won with gain: the axis and the legend in money", () => {
+    // A -50% month on €10 in, then +30% on €1,000: in percent the dip is the
+    // chart's extreme; in euros it is a €5 blip under a €300 gain.
+    const invested = dates.map((_, i) => (i < 30 ? 10 : 1000));
+    const points = dates.map((_, i) => (i < 30 ? -0.5 : 0.3));
+    const out = renderToStaticMarkup(
+      <ReturnLines
+        dates={dates}
+        format={(v) => `${(v * 100).toFixed(1)}%`}
+        tickFormat={(v) => `€${Math.round(v)}`}
+        formatDate={(iso) => iso.slice(0, 7)}
+        plot="gain"
+        money={{
+          invested,
+          money: (v, signed) => `${signed && v > 0 ? "+" : ""}€${Math.round(v)}`,
+          change: (v) => `${v}`,
+          labels: { invested: "In", value: "Value", gain: "Gain", versus: "vs" },
+        }}
+        series={[{ label: "Mine", points, color: "#fff", focal: true }]}
+      />,
+    );
+    expect(out).toMatch(/Mine<\/span><span class="pf-muted">\+€300</);
+    expect(out).toMatch(/text-anchor="end"[^>]*>€100</);
+    expect(out).not.toMatch(/>-?\d+%</);
   });
 });
 

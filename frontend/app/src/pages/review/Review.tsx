@@ -31,7 +31,7 @@
 import { useEffect, useState } from "react";
 import { get } from "../../shell/api";
 import { askAssistant } from "../../shell/assistant";
-import { Loaded, Skeleton } from "../../shell/Layout";
+import { Loaded, Skeleton, TopActions } from "../../shell/Layout";
 import { SignedInOnly } from "../../shell/guest";
 import { Icon } from "../../shell/Icon";
 import { useLang, useT } from "../../shell/i18n";
@@ -115,18 +115,20 @@ export default function Page() {
 
   return (
     <>
-      <div className="ag-rev-head">
-        <h1 className="ag-rev-h1">{t("review.title")}</h1>
-        {book ? (
+      {book ? (
+        <TopActions>
           <Ask
             data={applyFilter(book, filter)}
             filter={filter}
             busy={review.state === "loading"}
           />
-        ) : null}
-      </div>
+        </TopActions>
+      ) : null}
       <div className="ag-rev-lead">
-        <p className="ag-rev-caption ag-rev-intro">{t("review.intro")}</p>
+        <div className="ag-rev-head">
+          <h1 className="ag-rev-h1">{t("review.title")}</h1>
+          <p className="ag-rev-caption ag-rev-intro">{t("review.intro")}</p>
+        </div>
         <AddTickers
           added={added}
           onChange={(next) =>
@@ -302,7 +304,7 @@ function Coins({ rows }: { rows: ReviewRow[] }) {
 }
 
 /**
- * "Ask the AI", top right of the page: it reads the filtered
+ * "Ask the AI", on the search row at the top right: it reads the filtered
  * rows, so it is the same press at the top as it was at the bottom, and the
  * reader finds it before scrolling through every table. Dimmed while a new
  * read loads — the question would be about the old one. It is asked in a new
@@ -319,11 +321,12 @@ function Ask({ data, filter, busy }: { data: Review; filter: Filter; busy: boole
         type="button"
         className="ag-btn ag-ai ag-rev-ask"
         title={t("review.ask_help")}
+        aria-label={t("review.ask")}
         disabled={busy}
         onClick={() => askAssistant(buildPrompt(data, t, lang, words), { fresh: true })}
       >
         <Icon name="auto_awesome" size={18} />
-        {t("review.ask")}
+        <span className="ag-rev-ask-label">{t("review.ask")}</span>
       </button>
     </SignedInOnly>
   );

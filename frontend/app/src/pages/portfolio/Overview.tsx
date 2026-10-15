@@ -93,12 +93,18 @@ export default function Overview() {
             {
               label: t("portfolio.overview_annualised"),
               value: read(performance, (data) => pct(data.irr)),
-              help: t("portfolio.overview_annualised_help", {
-                twr:
-                  performance.state === "loaded"
-                    ? (pct(performance.data.twr_annualised) ?? t("portfolio.na"))
-                    : "…",
-              }),
+              help: t(
+                performance.state === "loaded" &&
+                  performance.data.irr_annualised === false
+                  ? "portfolio.overview_young_help"
+                  : "portfolio.overview_annualised_help",
+                {
+                  twr:
+                    performance.state === "loaded"
+                      ? (pct(performance.data.twr_annualised) ?? t("portfolio.na"))
+                      : "…",
+                },
+              ),
             },
             {
               label: t("portfolio.overview_tax", { year }),

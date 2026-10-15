@@ -198,6 +198,13 @@ class Performance(BaseModel):
     injected: float | None = Field(
         default=None, description="Net capital put in, at each trade date's rate."
     )
+    injected_window: float | None = Field(
+        default=None,
+        description=(
+            "The window's buy-in: the book's value on its first day plus the "
+            "net money put in since. Equals `injected` since inception."
+        ),
+    )
     value: float | None = Field(default=None, description="Latest book value.")
     twr_cumulative: float | None = Field(
         default=None,
@@ -206,7 +213,17 @@ class Performance(BaseModel):
             "so deposits and withdrawals do not read as performance."
         ),
     )
-    twr_annualised: float | None = None
+    twr_annualised: float | None = Field(
+        default=None,
+        description=(
+            "Per-year time-weighted return; equals `twr_cumulative` when the "
+            "span is under a year (see `twr_is_annual`)."
+        ),
+    )
+    twr_is_annual: bool = Field(
+        default=True,
+        description="False when the span is under a year: `twr_annualised` is then cumulative.",
+    )
     twr_volatility: float | None = Field(
         default=None,
         description=(
@@ -248,8 +265,16 @@ class Performance(BaseModel):
     irr: float | None = Field(
         default=None,
         description=(
-            "Annualised money-weighted return. Unlike the TWR, flow timing "
+            "Money-weighted return, per year from a year of span and "
+            "cumulative before (`irr_annualised`). Unlike the TWR, flow timing "
             "moves it: it answers how the money did, not how the strategy did."
+        ),
+    )
+    irr_annualised: bool = Field(
+        default=True,
+        description=(
+            "False when the span is under a year: then `irr` is cumulative, "
+            "not annualised."
         ),
     )
     missing: list[str] = Field(
@@ -1633,6 +1658,14 @@ class TaxPeriod(BaseModel):
         default=0.0, description="Earlier blocked losses that became deductible now."
     )
     deductible_loss: float = 0.0
+    dividends: float = Field(
+        default=0.0,
+        description=(
+            "Gross dividends paid in the period, where the jurisdiction taxes "
+            "them in this base (Spain's base del ahorro) and so in `net_taxable`; "
+            "0 everywhere else."
+        ),
+    )
     net_taxable: float
     estimated_tax: float
     carryforward_loss: float = 0.0
@@ -1703,6 +1736,7 @@ class TaxAllYears(BaseModel):
     disallowed_loss: float = 0.0
     recovered_loss: float = 0.0
     deductible_loss: float = 0.0
+    dividends: float = 0.0
     sales: int = Field(default=0, description="Matched parcels across them all.")
     kpis: list[TaxKpi] = Field(
         default_factory=list,

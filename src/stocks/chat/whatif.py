@@ -129,6 +129,9 @@ class Replay:
     year: int
     day: str
     before: Any  # TaxPeriod, this tax year without any sale
+    # Booked dividends, where they share the base: they raise the bracket a
+    # sale's gain lands in (Spain's base del ahorro).
+    paid: tuple = ()
 
     @property
     def currency(self) -> str:
@@ -159,7 +162,7 @@ class Replay:
         )]
         _, realized = build(txs, base=jur.currency, matching=jur.matching)
         return realized, jur.fiscal_year(realized, self.year, tax.buy_dates(txs),
-                                         self.settings)
+                                         self.settings, self.paid)
 
     def scenario(self, symbol: str, shares: float, price: float,
                  currency: str = "") -> Scenario | None:
@@ -194,7 +197,7 @@ class Replay:
 def replay(*, db: Path, prefs_path: Path, today: date | None = None) -> Replay | None:
     """The account's ledger replayed under its tax residence's matching rule
     and currency, or None without a ledger."""
-    from stocks.portfolio import tax
+    from stocks.portfolio import dividends, tax
     from stocks.portfolio.ledger import all_transactions
     from stocks.portfolio.positions import build
     from stocks.portfolio.tax import prefs as tax_prefs
@@ -209,11 +212,17 @@ def replay(*, db: Path, prefs_path: Path, today: date | None = None) -> Replay |
     day = (today or date.today()).isoformat()
     year = jur.tax_year_of(day)
     settings = tax_prefs.with_funds(tax_prefs.settings(prefs), tax.labels(txs))
+    paid = (
+        tuple(dividends.payments(txs, base=jur.currency))
+        if jur.dividends_in_base
+        else ()
+    )
     return Replay(
         code=code, jurisdiction=jur, transactions=tuple(txs),
         positions=tuple(positions), realized=tuple(realized), settings=settings,
         year=year, day=day,
-        before=jur.fiscal_year(realized, year, tax.buy_dates(txs), settings),
+        before=jur.fiscal_year(realized, year, tax.buy_dates(txs), settings, paid),
+        paid=paid,
     )
 
 

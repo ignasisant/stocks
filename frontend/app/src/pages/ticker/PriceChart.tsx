@@ -14,7 +14,7 @@
  * scales them, since the ledger stores what was actually paid.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { chart as palette, token } from "../../shell/theme";
 import { useLang } from "../../shell/i18n";
 import { useWidth } from "../../shell/useWidth";
@@ -73,7 +73,19 @@ const MIN_SPAN = 3;
 /** How far from a fill's triangle, in px, the pointer still reads that fill. */
 const SNAP = 8;
 
-export type Window = { pct: number; from: string; to: string } | null;
+/**
+ * Set once the reader has measured between two dates: the hint under the chart
+ * has done its job and stops taking a line under every chart after it.
+ */
+const LEARNED = "tk-span-learned";
+
+function knowsSpan(): boolean {
+  try {
+    return window.localStorage.getItem(LEARNED) === "1";
+  } catch {
+    return false;
+  }
+}
 
 /** A series split at its nulls, so a warm-up gap is a gap and not a straight line. */
 function segments(values: (number | null)[], from: number, to: number): number[][] {
@@ -168,7 +180,6 @@ export function PriceChart({
   overlays: shown = ALL_OVERLAYS,
   markers = ALL_MARKERS,
   mobile,
-  onWindow,
   t,
 }: {
   bars: Bars;
@@ -188,11 +199,12 @@ export function PriceChart({
   /** The corporate events worth a vertical on this kind of chart. */
   markers?: readonly Marker[];
   mobile: boolean;
-  /** The change across a window the reader dragged out, for the readout. */
-  onWindow: (window: Window) => void;
   t: Translate;
 }) {
   const lang = useLang();
+  // The area fade's gradient id; React's ids carry colons, which `url(#…)`
+  // does not want.
+  const fadeId = `tk-fade-${useId().replace(/[^\w-]/g, "")}`;
   const colors = palette();
   const smaLong = token("sma-long", colors.textMuted);
 
@@ -209,6 +221,19 @@ export function PriceChart({
   const [hidden, setHidden] = useState<ReadonlySet<string>>(
     () => new Set(mobile ? ["SMA200"] : []),
   );
+  // The average a legend entry is pointed at: drawn up, the others faded, so
+  // one of three thin lines can be followed across the plot.
+  const [focus, setFocus] = useState<string | null>(null);
+  const [learned, setLearned] = useState(knowsSpan);
+  const learn = () => {
+    if (learned) return;
+    setLearned(true);
+    try {
+      window.localStorage.setItem(LEARNED, "1");
+    } catch {
+      // Private window: the hint just stays.
+    }
+  };
   const toggle = (key: string) =>
     setHidden((now) => {
       const next = new Set(now);
@@ -224,8 +249,7 @@ export function PriceChart({
     setZoom(null);
     setDrag(null);
     setSpan(null);
-    onWindow(null);
-  }, [bars, onWindow]);
+  }, [bars]);
 
   const from = zoom ? Math.max(0, zoom.from) : 0;
   const to = zoom ? Math.min(n - 1, zoom.to) : n - 1;
@@ -327,12 +351,11 @@ export function PriceChart({
     ([, kind]) => !hidden.has(kind),
   );
 
+  // Results take the brand hue, which no line on a share's chart wears: in
+  // SMA50's blue a results mark read as part of that average. Cycle events
+  // share it, but they only exist on a coin, which has no results.
   const markColor = (kind: "dividend" | "results" | "cycle") =>
-    kind === "dividend"
-      ? colors.warn
-      : kind === "cycle"
-        ? colors.brandAccent
-        : colors.smaSlow;
+    kind === "dividend" ? colors.warn : colors.brandAccent;
 
   // The y range spans everything drawn in the window, as Plotly's autorange
   // does: the price, the averages, the fills (a lot bought below this year's
@@ -398,24 +421,11 @@ export function PriceChart({
     setDrag(null);
     if (hi - lo < MIN_SPAN) return;
     setZoom({ from: lo, to: hi });
-    report(lo, hi);
-  };
-
-  const report = (lo: number, hi: number) => {
-    const move = moveBetween(close, lo, hi);
-    onWindow(
-      move && {
-        pct: move.pct,
-        from: dateLabel(bars.dates[move.a] ?? ""),
-        to: dateLabel(bars.dates[move.z] ?? ""),
-      },
-    );
   };
 
   const reset = () => {
     setZoom(null);
     setDrag(null);
-    onWindow(null);
   };
 
   // The area fade runs against an invisible baseline pinned at the window's
@@ -434,6 +444,13 @@ export function PriceChart({
     })
     .join(" ");
 
+  // The line takes the sign of the move it shows, first close to last in the
+  // window on screen: the range's change, or the zoomed slice's, the same
+  // figure the header or the readout prints beside it. Flat reads as up.
+  const whole = moveBetween(close, from, to);
+  const falling = whole !== null && whole.pct < 0;
+  const lineColor = falling ? colors.candleDown : colors.candleUp;
+
   const overlays = (
     [
       ["SMA20", colors.smaFast, t("ticker.sma20_label")],
@@ -449,36 +466,73 @@ export function PriceChart({
   const drawn = present.filter(([key]) => !hidden.has(key));
 
   const legend = [
-    { label: t("ticker.price"), color: candles ? colors.candleUp : colors.brandAccent },
+    { label: t("ticker.price"), color: candles ? colors.candleUp : lineColor },
     ...present.map(([key, color, name]) => ({ key, label: name, color })),
     ...(fills.some((fill) => fill.trade.action === "buy")
-      ? [{ label: t("ticker.my_buys"), color: colors.textPrimary }]
+      ? [{ label: t("ticker.my_buys"), color: colors.textPrimary, mark: "up" as const }]
       : []),
     ...(fills.some((fill) => fill.trade.action === "sell")
-      ? [{ label: t("ticker.my_sells"), color: colors.down }]
+      ? [
+          {
+            label: t("ticker.my_sells"),
+            color: colors.textPrimary,
+            mark: "down" as const,
+          },
+        ]
       : []),
     // One entry per kind actually drawn, and each in the colour its verticals
     // are stroked with: a dividend marked "Results" is a worse legend than no
     // legend, and the two are drawn in different colours for that reason.
     ...([...marks.kinds.values()].includes("dividend")
-      ? [{ key: "dividend", label: t("ticker.ev_dividends"), color: colors.warn }]
+      ? [
+          {
+            key: "dividend",
+            label: t("ticker.ev_dividends"),
+            color: markColor("dividend"),
+            mark: "diamond" as const,
+          },
+        ]
       : []),
     ...([...marks.kinds.values()].includes("results")
-      ? [{ key: "results", label: t("ticker.ev_results"), color: colors.smaSlow }]
+      ? [
+          {
+            key: "results",
+            label: t("ticker.ev_results"),
+            color: markColor("results"),
+            mark: "diamond" as const,
+          },
+        ]
       : []),
     ...([...marks.kinds.values()].includes("cycle")
-      ? [{ key: "cycle", label: t("ticker.ev_cycle"), color: colors.brandAccent }]
+      ? [
+          {
+            key: "cycle",
+            label: t("ticker.ev_cycle"),
+            color: markColor("cycle"),
+            mark: "diamond" as const,
+          },
+        ]
       : []),
   ];
 
   // A span of one bar is a mouse anchor just dropped: until the pointer moves
   // off it there is nothing to compare, and the bar reads as usual.
   const measure = span && span.b > span.a ? moveBetween(close, span.a, span.b) : null;
-  const tip = measure ? spanTip(measure) : hover === null ? null : tooltip(hover);
+  // The readout is a strip over the plot, never a box beside the crosshair: a
+  // box sat on the line the reader was following. With nothing pointed at, a
+  // desktop strip reads the window's last bar, so the space it keeps is never
+  // blank; a phone's hero already prints that price.
+  const lastAt = whole?.z ?? null;
+  const pointed = measure ? spanTip(measure) : hover === null ? null : tooltip(hover);
+  const tip = pointed ?? (mobile || lastAt === null ? null : tooltip(lastAt));
+  const tipX = measure
+    ? (xOf(measure.a) + xOf(measure.z)) / 2
+    : xOf(hover ?? lastAt ?? 0);
 
   // What the chart says to a screen reader before anything is pointed at:
-  // the window's move and its extremes, as the headline above it does.
-  const whole = moveBetween(close, from, to);
+  // the window's move and its extremes, as the headline above it does. The
+  // move is the one the line is coloured by, so the sign never rests on the
+  // colour alone.
   const ends = close.slice(from, to + 1).filter((v): v is number => v != null);
   const label = whole
     ? t("ticker.price_summary", {
@@ -498,7 +552,7 @@ export function PriceChart({
    * `hover.ts` for what each row says.
    */
   function tooltip(index: number): { title: string; lines: TipLine[]; more: boolean } {
-    const priceSwatch = candles ? colors.candleUp : colors.brandAccent;
+    const priceSwatch = candles ? colors.candleUp : lineColor;
     const lines: TipLine[] = priceRows(
       {
         close: close[index] ?? null,
@@ -527,14 +581,13 @@ export function PriceChart({
     // zoomed — the same figure the price metric prints.
     const lastClose = latest(close);
     for (const fill of fills.filter((one) => one.index === index)) {
-      const buy = fill.trade.action === "buy";
       lines.push(
         ...fillRows(
           fill.trade,
           {
             last: lastClose,
             avgCost,
-            swatch: buy ? colors.textPrimary : colors.down,
+            swatch: colors.textPrimary,
           },
           t,
         ),
@@ -597,8 +650,30 @@ export function PriceChart({
     };
   }
 
+  /**
+   * The moving averages: context for the price, never its equal. Thin and
+   * translucent (`.tk-avg`), drawn up when their legend entry is pointed at
+   * while the others fade.
+   */
+  const averages = drawn.map(([key, color]) => {
+    const series = bars.series[key];
+    if (!series) return null;
+    const state = focus === null ? "" : focus === key ? " tk-avg-on" : " tk-avg-off";
+    return segments(series, from, to).map((run) => (
+      <polyline
+        key={`${key}-${run[0]}`}
+        className={`tk-line tk-avg${state}`}
+        points={run
+          .map((i) => `${xOf(i).toFixed(1)},${y(series[i] as number).toFixed(1)}`)
+          .join(" ")}
+        stroke={color}
+        strokeWidth={1.25}
+      />
+    ));
+  });
+
   return (
-    <div className="tk-plot" ref={wrap}>
+    <div className="tk-plot tk-plot-strip" ref={wrap}>
       <Chart
         frame={box}
         label={label}
@@ -608,21 +683,22 @@ export function PriceChart({
           last: to - from,
           set: (index) => setHover(index === null ? null : from + index),
         }}
-        readout={tip ? spoken(tip.title, tip.lines) : null}
+        readout={pointed ? spoken(pointed.title, pointed.lines) : null}
         onPointer={(x) => setHover(markerAt(x))}
         onLeave={() => {
           setHover(null);
           setDrag(null);
           setSpan(null);
         }}
-        onSpan={(pair) =>
+        onSpan={(pair) => {
+          if (pair) learn();
           setSpan(
             pair && {
               a: indexAt(Math.min(pair[0], pair[1])),
               b: indexAt(Math.max(pair[0], pair[1])),
             },
-          )
-        }
+          );
+        }}
         // A phone pins the window: a finger drag has to scroll the page.
         onDown={
           mobile ? undefined : (x) => setDrag({ from: indexAt(x), to: indexAt(x) })
@@ -760,7 +836,20 @@ export function PriceChart({
             </g>
           ) : (
             <g>
-              <path d={area} fill={colors.accentArea} stroke="none" />
+              {/* The area fades from the line's colour at 14% under its
+                peak to nothing at the floor: a tint that says which side of
+                the line is "below", not a second mark competing with it. The
+                averages run through it. */}
+              <defs>
+                <linearGradient id={fadeId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor={lineColor} stopOpacity={0.14} />
+                  <stop offset="1" stopColor={lineColor} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <path d={area} fill={`url(#${fadeId})`} stroke="none" />
+              {/* The averages are context for the price, so they go under
+                it: drawn last, they crossed over the line they annotate. */}
+              {averages}
               {line.map((run) => {
                 const head = run[0];
                 return (
@@ -773,35 +862,35 @@ export function PriceChart({
                           `${xOf(i).toFixed(1)},${y(close[i] as number).toFixed(1)}`,
                       )
                       .join(" ")}
-                    stroke={colors.brandAccent}
-                    strokeWidth={2}
+                    stroke={lineColor}
+                    strokeWidth={2.25}
                   />
                 );
               })}
+              {/* Where the price is now, the one point the eye looks for. */}
+              {lastAt !== null ? (
+                <circle
+                  className="tk-last"
+                  cx={xOf(lastAt)}
+                  cy={y(close[lastAt] as number)}
+                  r={3.5}
+                  fill={lineColor}
+                  stroke={colors.surfaceCard}
+                  strokeWidth={1.5}
+                />
+              ) : null}
             </g>
           )}
 
-          {drawn.map(([key, color]) => {
-            const series = bars.series[key];
-            if (!series) return null;
-            return segments(series, from, to).map((run) => (
-              <polyline
-                key={`${key}-${run[0]}`}
-                className="tk-line"
-                points={run
-                  .map(
-                    (i) => `${xOf(i).toFixed(1)},${y(series[i] as number).toFixed(1)}`,
-                  )
-                  .join(" ")}
-                stroke={color}
-                strokeWidth={1.4}
-              />
-            ));
-          })}
+          {/* Over candles the averages stay on top: a 1px line under a solid
+            body is a line that is not there. */}
+          {candles ? averages : null}
 
-          {/* The reader's own fills: 12px triangles, buys up in the primary
-            text colour and sells down in the loss colour, outlined in the
-            canvas colour so they read against candles of either sign. */}
+          {/* The reader's own fills: 12px triangles in the primary text
+            colour, buys pointing up and sells down, outlined in the canvas
+            colour so they read against a line or candles of either sign. The
+            direction tells them apart: a red sell would vanish into a falling
+            line. */}
           {fills
             .filter((fill) => fill.index >= from && fill.index <= to)
             .map((fill, at) => {
@@ -816,7 +905,7 @@ export function PriceChart({
                 <path
                   key={`f-${fill.index}-${at}`}
                   d={path}
-                  fill={buy ? colors.textPrimary : colors.down}
+                  fill={colors.textPrimary}
                   stroke={colors.surfacePage}
                   strokeWidth={1.5}
                 />
@@ -919,22 +1008,50 @@ export function PriceChart({
         />
       </Chart>
 
-      {tip && (measure || hover !== null) ? (
+      {tip ? (
         <Tooltip
           frame={box}
-          x={measure ? (xOf(measure.a) + xOf(measure.z)) / 2 : xOf(hover ?? 0)}
+          x={tipX}
           title={tip.title}
           lines={tip.lines}
           more={tip.more}
         />
       ) : null}
 
-      <Legend items={legend} onToggle={toggle} hidden={hidden} />
-      {/* How to measure, for the input this device has. */}
-      <p className="tk-hint">
-        <span className="tk-hint-touch">{t("ticker.span_hint_touch")}</span>
-        <span className="tk-hint-mouse">{t("ticker.span_hint_mouse")}</span>
-      </p>
+      <div className="tk-chart-foot">
+        <Legend
+          items={legend}
+          onToggle={toggle}
+          hidden={hidden}
+          onFocus={(key) =>
+            setFocus(key && overlays.some(([one]) => one === key) ? key : null)
+          }
+        />
+        {/* A zoomed window says so, with its change and the way back: the
+            range control above still reads the range it came from. */}
+        {zoom && whole ? (
+          <p className="tk-zoom">
+            <span className={`tk-is-${whole.pct >= 0 ? "green" : "red"}`}>
+              {t("ticker.range_change", {
+                pct: `${signed(whole.pct)}%`,
+                start: dateLabel(bars.dates[whole.a] ?? ""),
+                end: dateLabel(bars.dates[whole.z] ?? ""),
+              })}
+            </span>
+            <button type="button" className="tk-zoom-reset" onClick={reset}>
+              {t("ticker.zoom_reset")}
+            </button>
+          </p>
+        ) : null}
+      </div>
+      {/* How to zoom and measure, for the input this device has — until the
+          reader has measured once. */}
+      {learned ? null : (
+        <p className="tk-hint">
+          <span className="tk-hint-touch">{t("ticker.span_hint_touch")}</span>
+          <span className="tk-hint-mouse">{t("ticker.span_hint_mouse")}</span>
+        </p>
+      )}
     </div>
   );
 }

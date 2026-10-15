@@ -167,6 +167,8 @@ const BROKER_NAMES: Record<string, string> = {
  */
 export function brokerName(key: string, t: (k: string) => string): string {
   if (key === "manual") return t("portfolio.broker_manual");
+  // platforms.OTHER: a real origin the registry does not parse.
+  if (key === "other") return t("portfolio.broker_other");
   if (key === "unknown" || key === "") return t("portfolio.broker_unknown");
   return (
     BROKER_NAMES[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())

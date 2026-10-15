@@ -8,7 +8,16 @@
  * API was built to make impossible.
  */
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 // The mark the landing and the favicon already draw (`web/assets/`),
 // imported rather than copied into this app: two files would be one logo only
 // until somebody changed one of them. Vite hashes it into the build and emits
@@ -382,8 +391,22 @@ function SkipLink() {
   );
 }
 
+/** The right end of the search row, where a page puts its own top action. */
+const TopSlot = createContext<HTMLElement | null>(null);
+
+/**
+ * A page's action on the search row, level with the top bar's field rather
+ * than on a row of its own under it: the row's right side is empty on every
+ * page anyway. Renders nothing until the slot has mounted.
+ */
+export function TopActions({ children }: { children: ReactNode }) {
+  const slot = useContext(TopSlot);
+  return slot ? createPortal(children, slot) : null;
+}
+
 export function Layout({ children }: { children: ReactNode }) {
   const guest = useGuest();
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   return (
     <div className="ag-shell">
       <SkipLink />
@@ -397,7 +420,10 @@ export function Layout({ children }: { children: ReactNode }) {
             the height the page needs. Both of these are on every screen, which
             is the whole reason they live out here. */}
         <Back />
-        <Search />
+        <div className="ag-top">
+          <Search />
+          <div className="ag-top-actions" ref={setSlot} />
+        </div>
         <StaleNotice />
         {/* Inside the page column, above the body: when the tour is parked
             this is where its strip sits, on every page. The modal itself is
@@ -405,7 +431,7 @@ export function Layout({ children }: { children: ReactNode }) {
             guests too — `?tour=1` opens it for them — but it never opens
             itself at somebody who has not arrived anywhere yet. */}
         {!guest || GUEST_CHROME.tour ? <Tour /> : null}
-        {children}
+        <TopSlot.Provider value={slot}>{children}</TopSlot.Provider>
       </main>
       {/* What a guest does not get, read off one table rather than out of the
           JSX: the assistant spends the operator's API keys and writes a

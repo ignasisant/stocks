@@ -55,7 +55,6 @@ const render = (mobile: boolean) =>
       avgCost={null}
       candles={false}
       mobile={mobile}
-      onWindow={() => {}}
       t={(key) => key}
     />,
   );
