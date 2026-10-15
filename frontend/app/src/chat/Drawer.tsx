@@ -27,6 +27,7 @@ import { useKeyboardFit, usePresence, useSwipeDismiss } from "../shell/useSheet"
 import { ChatAurora } from "../shell/ambient";
 import { autoSeen, markAutoSeen, readGuide, type GuideState } from "./guide";
 import { useChat } from "./useChat";
+import { hasDraft } from "./draft";
 import type { ConnectAsk } from "./connect";
 import "./chat.css";
 
@@ -205,6 +206,13 @@ export function Drawer() {
       show(true);
     });
   }, [code]);
+
+  // Back from a sign-in that a question started (`draft.ts`): the drawer opens
+  // and its composer takes the question into the field. Once, on mount — the
+  // composer clears the draft when it takes it.
+  useEffect(() => {
+    if (hasDraft()) show(true);
+  }, []);
 
   // `?chat=memory` — the profile's link to what the assistant remembers. Read
   // once and taken off the URL like `?guide=`; the drawer opens on that view.

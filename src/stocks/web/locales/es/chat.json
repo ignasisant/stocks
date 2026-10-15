@@ -491,5 +491,11 @@
   "chat.rate_other": "Otra cosa",
   "chat.rate_note": "¿Algo más? (opcional)",
   "chat.rate_send": "Enviar",
-  "chat.rate_thanks": "Gracias — nos ayuda a arreglarlo."
+  "chat.rate_thanks": "Gracias — nos ayuda a arreglarlo.",
+  "chat.guest_sample": "Ejemplo sobre la cartera de demo",
+  "chat.guest_q": "¿Qué riesgo tiene esta cartera?",
+  "chat.guest_a": "Tres cosas:\n\n- **Un solo sector.** Las siete son tecnológicas de EE. UU.: suelen caer juntas.\n- **Un nombre manda.** NVIDIA pesa más que cualquier otra.\n- **Todo en dólares.** Si sube el euro, pierdes aunque las acciones no bajen.",
+  "chat.guest_lock": "Entra y la IA lee tu cartera y te responde.",
+  "chat.guest_asked": "Entra y la IA te responde a esto, con tu cartera.",
+  "chat.import_nudge": "Importa tu cartera y la IA la leerá"
 }

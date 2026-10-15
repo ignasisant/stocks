@@ -492,7 +492,10 @@ export default function Panel({
                     onSettings={() => setView("settings")}
                   />
                 ) : (
-                  <Empty onAsk={(question) => void chat.send(question)} />
+                  <Empty
+                    onAsk={(question) => void chat.send(question)}
+                    onLeave={onPark ?? onClose}
+                  />
                 )}
                 {/* Below the turns, not inside one: the note the server filed
                     is the turn, and this card is the offer it refers to —

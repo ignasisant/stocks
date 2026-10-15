@@ -73,8 +73,16 @@ describe("signInHref", () => {
 
   it("comes back to the screen the reader was on", () => {
     expect(signInHref("/auth/login", at("/portfolio", "?tab=fees"))).toBe(
-      "/auth/login?next=" + encodeURIComponent("/portfolio?tab=fees"),
+      "/auth/login?next=" +
+        encodeURIComponent("/portfolio?tab=fees") +
+        "&wall=portfolio",
     );
+  });
+
+  it("names the prompt pressed: the page's own, or the one the caller names", () => {
+    expect(signInHref("/auth/login", at("/ticker/NVDA"))).toMatch(/&wall=ticker$/);
+    expect(signInHref("/auth/login", at("/"))).toMatch(/&wall=home$/);
+    expect(signInHref("/auth/login", at("/review"), "chat")).toMatch(/&wall=chat$/);
   });
 
   it("translates the dev server's base back to where the shell really lives", () => {
@@ -83,10 +91,10 @@ describe("signInHref", () => {
     // because it is the redirect URI Google has registered — is a static-file
     // route that 404s.
     expect(signInHref("/auth/login", at("/next-assets/portfolio"))).toBe(
-      "/auth/login?next=" + encodeURIComponent("/portfolio"),
+      "/auth/login?next=" + encodeURIComponent("/portfolio") + "&wall=portfolio",
     );
     expect(signInHref("/auth/login", at("/next-assets/"))).toBe(
-      "/auth/login?next=" + encodeURIComponent("/"),
+      "/auth/login?next=" + encodeURIComponent("/") + "&wall=home",
     );
   });
 });

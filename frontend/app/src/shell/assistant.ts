@@ -26,10 +26,9 @@ const listeners = new Set<Listener>();
 /**
  * Ask the assistant something, from anywhere.
  *
- * A no-op when nothing is listening — the drawer is only mounted for a
- * signed-in reader, and a button that throws for a guest is worse than one
- * that does nothing. Callers gate on the session themselves where the button
- * should not be drawn at all.
+ * A no-op when nothing is listening. An account's listener is the drawer; a
+ * guest's is the locked drawer (`chat/Locked.tsx`), which shows the question
+ * and keeps it for after the sign-in rather than answering it.
  */
 export function askAssistant(prompt: string, { fresh = false } = {}): void {
   const text = prompt.trim();

@@ -388,3 +388,27 @@ def test_a_cookie_is_secure_behind_a_tls_proxy(client, google, monkeypatch):
     monkeypatch.setenv("APP_PUBLIC_URL", "https://app.example.com")
     _, flow = start(client, google)
     assert "Secure" in flow
+
+
+# --------------------------------------------------------------- which prompt
+
+
+def test_the_signup_says_which_prompt_was_pressed(client, google, monkeypatch):
+    """`?wall=` rides the flow cookie and lands on `auth.signup`, so the funnel
+    can say whether the locked assistant or a page's banner converts."""
+    seen: list[tuple[str, dict]] = []
+    monkeypatch.setattr(oidc.obs, "event", lambda name, **f: seen.append((name, f)))
+    google.install()
+    client.get(f"{session.LOGIN_PATH}?next=/review&wall=chat")
+    response = client.get(f"{session.CALLBACK_PATH}?state=st-1&code=c")
+    assert signed_in_as(response) == EMAIL
+    _, fields = next(e for e in seen if e[0] == "auth.signup")
+    assert fields["wall"] == "chat"
+    assert fields["via"] == "oidc"
+
+
+@pytest.mark.parametrize("hostile", ["<script>", "Chat", "a" * 40, "chat%0Aevil"])
+def test_a_prompt_name_the_app_does_not_write_is_dropped(hostile):
+    assert oidc._wall(hostile) == ""
+    assert oidc._wall("review") == "review"
+    assert oidc._wall(None) == ""

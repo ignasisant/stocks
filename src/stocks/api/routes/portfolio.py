@@ -275,7 +275,12 @@ def positions(
         )
         for ticker, row in table.iterrows()
     ]
-    return Positions(base=ccy, positions=rows, unpriced=int(table["value"].isna().sum()))
+    return Positions(
+        base=ccy,
+        positions=rows,
+        unpriced=int(table["value"].isna().sum()),
+        demo=demo.active(account.db),
+    )
 
 
 def _unpriced_tickers(table: pd.DataFrame) -> list[str]:

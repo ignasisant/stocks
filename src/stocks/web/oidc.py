@@ -19,6 +19,7 @@ is not an error page, it is somebody signed in as the wrong person.
 from __future__ import annotations
 
 import hmac
+import re
 from functools import lru_cache
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
@@ -135,6 +136,7 @@ def _home(request: Request, target: str = "/") -> Response:
 async def login(request: Request) -> Response:
     """Start the round trip: stash state, nonce and verifier, leave for Google."""
     target = _safe_next(request.query_params.get("next", "/"))
+    wall = _wall(request.query_params.get("wall"))
     if not configured():
         obs.warn("auth.not_configured")
         return _home(request, target)
@@ -151,6 +153,7 @@ async def login(request: Request) -> Response:
         "nonce": started.get("nonce", ""),
         "code_verifier": started.get("code_verifier", ""),
         "next": target,
+        "wall": wall,
     })
     if flow is None:
         return _home(request, target)
@@ -169,6 +172,7 @@ async def callback(request: Request) -> Response:
     flow = session.open_flow(request.cookies) or {}
     target = _safe_next(str(flow.get("next") or "/"))
     source = _source(target)
+    wall = _wall(str(flow.get("wall") or ""))
     # The browser goes home to a clean URL: the token is recorded on the event
     # and on the account, and a campaign parameter left in the address bar is
     # one re-share away from attributing somebody else to this post.
@@ -219,7 +223,7 @@ async def callback(request: Request) -> Response:
         return response
     if session.verified(claims.get("email_verified")):
         await run_in_threadpool(
-            _provision, str(claims["email"]).strip().lower(), source
+            _provision, str(claims["email"]).strip().lower(), source, wall
         )
     _set(response, session.COOKIE, cookie, session.MAX_AGE, request)
     return response
@@ -235,7 +239,20 @@ def _source(target: str) -> str:
     return attribution.source(dict(parse_qsl(urlsplit(target).query)))
 
 
-def _provision(email: str, source: str = "") -> None:
+#: A prompt's name as the app writes it (`shell/guest.tsx` `signInHref`): a
+#: page slug, or "chat" / "nav" / "tour". Anything else is dropped rather than
+#: cleaned — it is a label to group signups by, and a query parameter is the
+#: last thing that should reach a log field unchecked.
+_WALL = re.compile(r"[a-z][a-z0-9-]{0,23}")
+
+
+def _wall(raw: str | None) -> str:
+    """Which sign-in prompt was pressed, or "" for none worth recording."""
+    value = (raw or "").strip()
+    return value if _WALL.fullmatch(value) else ""
+
+
+def _provision(email: str, source: str = "", wall: str = "") -> None:
     """Create the account this sign-in names, and date the sign-in.
 
     Done here, at the one moment a new address is known to be real: without
@@ -259,10 +276,13 @@ def _provision(email: str, source: str = "") -> None:
         obs.error("auth.provision_failed", exc)
         return
     # `auth.signup` is the funnel's signup step (`logs_query.FUNNEL_STEPS`)
-    # and carries the campaign token; `auth.login` dates a returning visit.
+    # and carries the campaign token and the in-app prompt that was pressed
+    # (`wall`); `auth.login` dates a returning visit.
     user = accounts.slug(email)
     obs.event("session.start", logged_in=True, user=user, via="oidc")
     extra: dict[str, Any] = {"src": source} if source else {}
+    if wall:
+        extra["wall"] = wall
     obs.event(f"auth.{kind}", user=user, via="oidc", **extra)
 
 

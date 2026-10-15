@@ -127,6 +127,19 @@ def test_clearing_an_untouched_ledger_is_a_no_op(tmp_path):
     assert len(all_transactions(db)) == 1
 
 
+def test_only_a_row_the_reader_brought_counts_as_an_import(tmp_path):
+    """A demo book is for looking: it must not tick the import step or open
+    the Review page an import opens."""
+    db = tmp_path / "portfolio.db"
+    assert not demo.has_real(db)
+    demo.seed(db)
+    assert not demo.has_real(db)
+    assert onboarding._has_ledger({}, type("P", (), {"db": db})) is False
+    add_many([Transaction("2026-01-05", "AAPL", "buy", 1, 150.0, note="")], db)
+    assert demo.has_real(db)
+    assert onboarding._has_ledger({}, type("P", (), {"db": db})) is True
+
+
 def test_without_drops_the_demo_rows_from_a_validation_baseline():
     """The incoming batch is checked against the ledger *as it will be*: demo
     rows are about to go, so duplicates against them are not duplicates, and

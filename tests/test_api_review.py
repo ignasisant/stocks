@@ -803,3 +803,35 @@ def test_a_bank_industry_no_lens_lists_is_named_by_industry(
 )
 def test_a_failure_is_placed_by_exchange(symbol, venue):
     assert route._venue(symbol) == venue
+
+
+# ------------------------------------------------------------- the import wall
+
+
+def test_an_account_with_no_import_is_walled_not_judged(client, book, monkeypatch):
+    """The starter watchlist is not something to judge: the page is the reason
+    to import, so it answers `locked` and judges nothing."""
+    from stocks.portfolio import demo
+
+    paths = book
+    ledger.delete_many([t.id for t in ledger.all_transactions(paths.db)], paths.db)
+    demo.seed(paths.db)  # a demo book is for looking, not an import
+    gathered = []
+    monkeypatch.setattr(route, "_gather", lambda *a: gathered.append(a) or ({}, set()))
+    body = _get(client)
+    assert body["locked"] is True
+    assert body["held"] == [] and body["candidates"] == []
+    assert gathered == []
+
+
+def test_an_account_with_an_import_is_not_walled(client, book):
+    assert _get(client)["locked"] is False
+
+
+def test_the_preview_judges_the_shared_demo_book(client, book, monkeypatch):
+    monkeypatch.setattr(accounts, "guest_paths", lambda: book)
+    response = client.get("/v1/review/preview", headers=AUTH)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["locked"] is False
+    assert {r["ticker"] for r in body["held"]} == {"AMD", "XEON.DE", "ADBE"}

@@ -19,7 +19,10 @@
 
 import { get } from "../shell/api";
 import { useT } from "../shell/i18n";
+import { Icon } from "../shell/Icon";
+import { useRoute } from "../shell/router";
 import { useApi } from "../shell/useApi";
+import { phone } from "./GuideCard";
 import { CAP_PATHS, CapGlyph } from "./icons";
 import { Inline } from "./markdown";
 
@@ -57,6 +60,8 @@ const CAPS = [
 
 type Book = {
   positions: { ticker: string; shares: number; weight?: number | null }[];
+  /** The rows are the example book, not an import. */
+  demo?: boolean;
 };
 type Watch = { entries: { ticker: string; favorite: boolean }[] };
 
@@ -93,8 +98,16 @@ export function heaviest(positions: Book["positions"]): { top: string; n: number
   return { top: top.ticker, n: Math.max(1, Math.round(((top.weight ?? 0) * 100) / 2)) };
 }
 
-export function Empty({ onAsk }: { onAsk: (question: string) => void }) {
+export function Empty({
+  onAsk,
+  onLeave,
+}: {
+  onAsk: (question: string) => void;
+  /** Step aside for the page a row sends the reader to (a phone only). */
+  onLeave: () => void;
+}) {
   const t = useT();
+  const { go } = useRoute();
   const account = useApi(async () => {
     const [book, watch] = await Promise.all([
       get<Book>("/portfolio/positions"),
@@ -102,6 +115,7 @@ export function Empty({ onAsk }: { onAsk: (question: string) => void }) {
     ]);
     return {
       held: book.positions.filter((p) => p.shares).length,
+      demo: Boolean(book.demo),
       heaviest: heaviest(book.positions),
       entries: watch.entries,
     };
@@ -120,6 +134,10 @@ export function Empty({ onAsk }: { onAsk: (question: string) => void }) {
         ? t("chat.empty_body", { n: held })
         : t("chat.empty_body_new", { n: loaded?.entries.length ?? 0 });
   const starters = held ? BOOK : FRESH;
+  // No import of the reader's own — none at all, or only the example book:
+  // the chat works either way, but what it is best at is the reader's book,
+  // so the first row asks for it. A failed read asks for nothing.
+  const bare = loaded !== null && (held === 0 || loaded.demo);
 
   return (
     <div className="ag-chat-empty">
@@ -127,6 +145,20 @@ export function Empty({ onAsk }: { onAsk: (question: string) => void }) {
         <span className="ag-chat-empty-title">{t("chat.empty_title")}</span>
         {intro && <span className="ag-chat-empty-body">{intro}</span>}
       </div>
+      {bare ? (
+        <button
+          type="button"
+          className="ag-chat-nudge"
+          onClick={() => {
+            go("import");
+            if (phone()) onLeave();
+          }}
+        >
+          <Icon name="upload_file" size={18} />
+          <span>{t("chat.import_nudge")}</span>
+          <Icon name="arrow_forward" size={16} />
+        </button>
+      ) : null}
       <div className="ag-chat-caps">
         {CAPS.map(([key, paths]) => (
           <div className="ag-chat-cap" key={key}>

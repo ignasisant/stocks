@@ -60,6 +60,9 @@ export type ReviewRow = {
 export type Review = {
   base: string;
   as_of: string;
+  /** No import of its own (demo rows do not count): nothing was judged, and
+   * the page draws `/review/preview` behind the import wall. */
+  locked?: boolean;
   total: number | null;
   held: ReviewRow[];
   candidates: ReviewRow[];

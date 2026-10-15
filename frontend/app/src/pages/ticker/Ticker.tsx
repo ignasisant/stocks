@@ -371,33 +371,30 @@ export default function Page() {
             <JournalChip ticker={ticker} />
           </SignedInOnly>
         ) : null}
-        {/* The assistant spends the operator's API keys and writes into a
-            `chat.json` every anonymous visitor would share, and the drawer it
-            opens is not mounted for a guest anyway — so the button that would
-            open it goes with it rather than becoming one that does nothing. */}
+        {/* Drawn for a guest too: it opens the locked assistant
+            (`chat/Locked.tsx`), which shows the question and keeps it for
+            after the sign-in — the button is the reason to make an account. */}
         {/* The question is the kind's: a coin has no fundamentals, a fund no
             business of its own, and an index nothing to buy — so no button. A
             symbol still loading reads as a share: the prompt is a question,
             not a claim. */}
-        <SignedInOnly>
-          {ticker && shape.ai ? (
-            <button
-              type="button"
-              className="ag-ai tk-ai"
-              title={t("ticker.ai_analyze_help", { ticker })}
-              onClick={() =>
-                askAssistant(
-                  t(shape.ai ?? "ticker.ai_prompt", {
-                    ticker,
-                    name: drawn?.name || ticker,
-                  }),
-                )
-              }
-            >
-              {mobile ? "✨" : t("ticker.ai_analyze")}
-            </button>
-          ) : null}
-        </SignedInOnly>
+        {ticker && shape.ai ? (
+          <button
+            type="button"
+            className="ag-ai tk-ai"
+            title={t("ticker.ai_analyze_help", { ticker })}
+            onClick={() =>
+              askAssistant(
+                t(shape.ai ?? "ticker.ai_prompt", {
+                  ticker,
+                  name: drawn?.name || ticker,
+                }),
+              )
+            }
+          >
+            {mobile ? "✨" : t("ticker.ai_analyze")}
+          </button>
+        ) : null}
         {/* One swap covers three controls: the star, the tag menu and the
             price alert are all somebody's own edits to their own list, and all
             three live inside `<Actions>`. A guest is offered the thing that

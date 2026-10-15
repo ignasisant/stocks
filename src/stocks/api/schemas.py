@@ -96,6 +96,14 @@ class Positions(BaseModel):
     unpriced: int = Field(
         description="How many positions the price pass had no series for."
     )
+    demo: bool = Field(
+        default=False,
+        description=(
+            "These rows are the example book (`POST /portfolio/demo`), not an "
+            "import: the assistant's opening screen asks for one instead of "
+            "offering questions about a book that is not the reader's."
+        ),
+    )
 
 
 class Summary(BaseModel):
@@ -4132,6 +4140,14 @@ class ReviewLines(BaseModel):
 class Review(BaseModel):
     base: str
     as_of: str
+    locked: bool = Field(
+        default=False,
+        description=(
+            "The account has no import of its own (demo rows do not count): "
+            "nothing is judged, and the page shows `/review/preview` behind "
+            "an import wall."
+        ),
+    )
     total: float | None = Field(
         default=None, description="Priced book value, base currency."
     )

@@ -491,5 +491,11 @@
   "chat.rate_other": "Something else",
   "chat.rate_note": "Anything else? (optional)",
   "chat.rate_send": "Send",
-  "chat.rate_thanks": "Thanks — this helps fix it."
+  "chat.rate_thanks": "Thanks — this helps fix it.",
+  "chat.guest_sample": "An example, on the demo portfolio",
+  "chat.guest_q": "How risky is this portfolio?",
+  "chat.guest_a": "Three things:\n\n- **One sector.** All seven are US tech: they tend to fall together.\n- **One name leads.** NVIDIA weighs more than any other.\n- **All in dollars.** If the euro rises, you lose even when the shares don't.",
+  "chat.guest_lock": "Sign in and the AI reads your portfolio and answers.",
+  "chat.guest_asked": "Sign in and the AI answers this, with your portfolio.",
+  "chat.import_nudge": "Import your portfolio and the AI will read it"
 }

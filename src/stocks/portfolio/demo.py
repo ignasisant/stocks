@@ -133,6 +133,21 @@ def active(path: Path = DB_PATH) -> bool:
         ).fetchone() is not None
 
 
+def has_real(path: Path = DB_PATH) -> bool:
+    """Whether this ledger holds a row the reader brought — anything not demo.
+
+    "Has this account imported" everywhere it gates something: a demo book is
+    for looking, so it must not tick the import step or open what an import
+    opens.
+    """
+    with closing(connect(path)) as conn:
+        return conn.execute(
+            "SELECT 1 FROM transactions "
+            "WHERE NOT (lower(note) = ? OR lower(note) LIKE ?) LIMIT 1",
+            (BROKER, f"{BROKER} %"),
+        ).fetchone() is not None
+
+
 def seed(path: Path = DB_PATH) -> list[int]:
     """Write the demo book. Returns the inserted ids.
 

@@ -24,6 +24,7 @@ import { createPortal } from "react-dom";
 // it beside the bundle; `vite.config.ts` grants the dev server the read.
 import logoUrl from "../../../../src/stocks/web/assets/topstocks-icon.svg?url";
 import { Drawer } from "../chat/Drawer";
+import { LockedDrawer } from "../chat/Locked";
 import { useT } from "./i18n";
 import { Feedback } from "./Feedback";
 import { Search } from "./Search";
@@ -279,7 +280,7 @@ function Nav() {
           into the "More" sheet. */}
       <div className="ag-nav-foot">
         {!guest || GUEST_CHROME.feedback ? <Feedback /> : null}
-        {guest ? <SignIn className="ag-btn ag-nav-signin" /> : null}
+        {guest ? <SignIn className="ag-btn ag-nav-signin" wall="nav" /> : null}
       </div>
       {/* Phones only: the bar holds `BOTTOM`, and this is the way to the rest
           — the drawer the DS spec keeps behind the bar. */}
@@ -335,7 +336,7 @@ function Nav() {
               );
             })}
             {!guest || GUEST_CHROME.feedback ? <Feedback /> : null}
-            {guest ? <SignIn className="ag-btn" /> : null}
+            {guest ? <SignIn className="ag-btn" wall="nav" /> : null}
           </div>
         </>
       ) : null}
@@ -435,9 +436,10 @@ export function Layout({ children }: { children: ReactNode }) {
       </main>
       {/* What a guest does not get, read off one table rather than out of the
           JSX: the assistant spends the operator's API keys and writes a
-          `chat.json` every anonymous visitor would share, and the profile
-          nudge is about an account a guest does not have. */}
-      {!guest || GUEST_CHROME.chat ? <Drawer /> : null}
+          `chat.json` every anonymous visitor would share, so a guest gets it
+          locked — the launcher, one sample answer, the sign-in — and the
+          profile nudge is about an account a guest does not have. */}
+      {!guest ? <Drawer /> : GUEST_CHROME.chat === "locked" ? <LockedDrawer /> : null}
       {!guest || GUEST_CHROME.profilePrompt ? <ProfilePrompt /> : null}
       <ActivityBanner />
     </div>
