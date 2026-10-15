@@ -304,7 +304,11 @@ export function Tour() {
         actions={
           <>
             {locked ? (
-              <SignIn label="common.cta_sign_in" className="ag-tour-btn ag-tour-lead" />
+              <SignIn
+                label="common.cta_sign_in"
+                className="ag-tour-btn ag-tour-lead"
+                wall="tour"
+              />
             ) : step && step.path !== null ? (
               <button
                 type="button"
@@ -395,7 +399,11 @@ export function Tour() {
             /* A guest's way into a step that reads somebody's own data is an
                account, so that is what the button offers — not a disabled
                "open" that answers a press with nothing. */
-            <SignIn label="common.cta_sign_in" className="ag-tour-btn ag-tour-lead" />
+            <SignIn
+              label="common.cta_sign_in"
+              className="ag-tour-btn ag-tour-lead"
+              wall="tour"
+            />
           ) : step.path !== null ? (
             <button
               type="button"

@@ -1901,6 +1901,42 @@ a.ag-chat-btn {
   font-size: var(--ag-fs-sm);
 }
 
+/* No import yet: the one row on the opening screen that leaves the chat, for
+   the thing the chat reads best (`Empty.tsx`). */
+.ag-chat-nudge {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ag-cta-tint-edge);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-cta-tint);
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ag-chat-nudge span {
+  flex: 1;
+}
+
+@media (hover: hover) {
+  .ag-chat-nudge:hover {
+    border-color: var(--ag-brand-accent);
+  }
+}
+
+@media (pointer: coarse) {
+  .ag-chat-nudge {
+    min-height: 44px;
+  }
+}
+
 .ag-chat-starters {
   display: flex;
   flex-direction: column;
@@ -2411,6 +2447,48 @@ a.ag-chat-btn {
 
   .ag-chat-regen,
   .ag-chat-thread-btn {
+    min-height: 44px;
+  }
+}
+
+/* ------------------------------------------------------- the locked drawer */
+
+/* A guest's assistant (`Locked.tsx`): one exchange written in advance, and the
+   sign-in where the composer would be. */
+.ag-chat-locked-title {
+  display: inline-flex;
+  flex: 1;
+  gap: 8px;
+  align-items: center;
+  font-weight: 600;
+}
+
+.ag-chat-locked-label {
+  margin: 0 0 10px;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+}
+
+.ag-chat-locked-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+  padding: 14px 12px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--ag-border);
+  text-align: center;
+}
+
+.ag-chat-locked-foot p {
+  margin: 0;
+}
+
+.ag-chat-locked-foot .ag-btn {
+  justify-content: center;
+}
+
+@media (pointer: coarse) {
+  .ag-chat-locked-foot .ag-btn {
     min-height: 44px;
   }
 }

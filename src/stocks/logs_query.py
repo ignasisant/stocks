@@ -322,8 +322,13 @@ def funnel(entries: Iterable[dict]) -> dict:
     A source is the campaign token the link carried; requests that arrived with
     none are grouped under "-", which is the honest answer for a bookmark, a
     typed address, or a post that dropped the parameter.
+
+    Signups are also counted by `wall` — the in-app prompt that was pressed
+    (the locked assistant, a page's banner, the rail; `oidc._wall`) — which
+    says which ask converts where `src` says which post brought the visitor.
     """
     days: dict[str, dict] = {}
+    walls: dict[str, int] = {}
     sources: dict[str, dict] = {}
     totals = dict.fromkeys(("views", "ctas", "signups", "imports"), 0)
     step_of = {
@@ -345,6 +350,9 @@ def funnel(entries: Iterable[dict]) -> dict:
             )
             row[step] += 1
         totals[step] += 1
+        if step == "signups":
+            wall = str(body.get("wall") or "-")
+            walls[wall] = walls.get(wall, 0) + 1
     return {
         "days": [{"day": d, **row} for d, row in sorted(days.items())],
         "sources": sorted(
@@ -353,6 +361,11 @@ def funnel(entries: Iterable[dict]) -> dict:
             reverse=True,
         ),
         "totals": totals,
+        "walls": sorted(
+            ({"wall": w, "signups": n} for w, n in walls.items()),
+            key=lambda r: (r["signups"], r["wall"]),
+            reverse=True,
+        ),
     }
 
 
@@ -386,6 +399,11 @@ def render_funnel(summary: dict) -> str:
                 f"{r['src'][:24]:<24} {r['views']:>7} {r['ctas']:>8} "
                 f"{r['signups']:>8} {_rate(r['ctas'], r['views']):>8}"
             )
+    if summary.get("walls"):
+        head = f"{'signed in from':<24} {'signups':>8}"
+        lines += ["\nby prompt:", head, "-" * len(head)]
+        for r in summary["walls"]:
+            lines.append(f"{r['wall'][:24]:<24} {r['signups']:>8}")
     return "\n".join(lines)
 
 

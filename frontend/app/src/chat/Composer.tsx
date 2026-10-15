@@ -54,6 +54,7 @@ import { Box, Mic } from "../ui/Mic";
 import { Status } from "../ui/Status";
 import type { ChatState, SettingsPatch, SkillsMode } from "./types";
 import { canRecord, dictate, join, VoiceFailed, type Dictation } from "./voice";
+import { takeDraft } from "./draft";
 
 const MODES: SkillsMode[] = ["auto", "manual", "off"];
 
@@ -252,6 +253,16 @@ export function Composer({
     if (window.matchMedia?.("(hover: hover) and (pointer: fine)").matches) {
       el.focus({ preventScroll: true });
     }
+  }, []);
+
+  // A question asked as a guest, kept across the sign-in (`draft.ts`): put in
+  // the field, caret at its end, and left for the reader to send — sending it
+  // would spend the daily allowance on a press made before there was one.
+  useEffect(() => {
+    const kept = takeDraft();
+    if (!kept) return;
+    setText(kept);
+    setCaret(true);
   }, []);
 
   useEffect(() => {

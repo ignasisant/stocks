@@ -32,7 +32,7 @@ import { useEffect, useState } from "react";
 import { get } from "../../shell/api";
 import { askAssistant } from "../../shell/assistant";
 import { Loaded, Skeleton, TopActions } from "../../shell/Layout";
-import { SignedInOnly } from "../../shell/guest";
+import { LockedPreview } from "../../shell/LockedPreview";
 import { Icon } from "../../shell/Icon";
 import { useLang, useT } from "../../shell/i18n";
 import { useRoute } from "../../shell/router";
@@ -96,6 +96,22 @@ export default function Page() {
   // The ask sits in the header, written from whatever read is on screen.
   const shown = review.state === "loaded" ? review.data : last;
 
+  // Nothing of the reader's to judge: the page is the reason to import, so it
+  // is drawn from the demo book behind the import wall, with nothing to type.
+  if (shown?.locked) {
+    return (
+      <>
+        <div className="ag-rev-lead">
+          <div className="ag-rev-head">
+            <h1 className="ag-rev-h1">{t("review.title")}</h1>
+            <p className="ag-rev-caption ag-rev-intro">{t("review.intro")}</p>
+          </div>
+        </div>
+        <ImportWall />
+      </>
+    );
+  }
+
   const book = shown ? splitCoins(shown)[0] : null;
 
   // Opens on the book alone, unless nothing is held: then on everything.
@@ -152,6 +168,33 @@ export default function Page() {
     </>
   );
 }
+
+/**
+ * The page an import opens, judged over the shared demo book and drawn behind
+ * glass. Its filter is the page's opening one; nothing on it answers a press.
+ */
+function ImportWall() {
+  const t = useT();
+  const base = useCurrency();
+  const preview = useApi(() => get<Review>("/review/preview", { base }), [base]);
+  return (
+    <LockedPreview
+      title={t("review.locked_title")}
+      body={t("review.locked_body")}
+      cta={{ label: t("review.locked_cta"), page: "import" }}
+    >
+      {preview.state === "loaded" ? (
+        <div className="ag-rev-body">
+          <Screen data={preview.data} filter={OPENING} onFilter={() => {}} />
+        </div>
+      ) : preview.state === "loading" ? (
+        <Skeleton rows={8} />
+      ) : null}
+    </LockedPreview>
+  );
+}
+
+const OPENING = parseFilter(null, null);
 
 function Screen({
   data: read,
@@ -308,7 +351,8 @@ function Coins({ rows }: { rows: ReviewRow[] }) {
  * rows, so it is the same press at the top as it was at the bottom, and the
  * reader finds it before scrolling through every table. Dimmed while a new
  * read loads — the question would be about the old one. It is asked in a new
- * conversation, sent at once. The drawer it asks through is not mounted for a guest, so for a guest there is no button at all.
+ * conversation, sent at once. A guest gets the button too: it opens the
+ * locked assistant, which keeps the question for after the sign-in.
  */
 function Ask({ data, filter, busy }: { data: Review; filter: Filter; busy: boolean }) {
   const t = useT();
@@ -316,18 +360,16 @@ function Ask({ data, filter, busy }: { data: Review; filter: Filter; busy: boole
   const words = useFilterWords(filter);
   if (data.held.length === 0 && data.candidates.length === 0) return null;
   return (
-    <SignedInOnly>
-      <button
-        type="button"
-        className="ag-btn ag-ai ag-rev-ask"
-        title={t("review.ask_help")}
-        aria-label={t("review.ask")}
-        disabled={busy}
-        onClick={() => askAssistant(buildPrompt(data, t, lang, words), { fresh: true })}
-      >
-        <Icon name="auto_awesome" size={18} />
-        <span className="ag-rev-ask-label">{t("review.ask")}</span>
-      </button>
-    </SignedInOnly>
+    <button
+      type="button"
+      className="ag-btn ag-ai ag-rev-ask"
+      title={t("review.ask_help")}
+      aria-label={t("review.ask")}
+      disabled={busy}
+      onClick={() => askAssistant(buildPrompt(data, t, lang, words), { fresh: true })}
+    >
+      <Icon name="auto_awesome" size={18} />
+      <span className="ag-rev-ask-label">{t("review.ask")}</span>
+    </button>
   );
 }

@@ -34,7 +34,7 @@ from typing import Annotated, TypedDict
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 
-from stocks import obs
+from stocks import accounts, obs
 from stocks.analysis import review as engine
 from stocks.analysis.listing import quote_unit
 from stocks.analysis.portfolio import risk_shares, value_weights
@@ -46,7 +46,7 @@ from stocks.api.schemas import Review, ReviewLines, ReviewNote, ReviewPlan, Revi
 from stocks.chat import journal
 from stocks.config import Holding, load_watchlist
 from stocks.data import fx, profiles
-from stocks.portfolio import consistency, tax
+from stocks.portfolio import consistency, demo, tax
 from stocks.portfolio.tax import prefs as tax_prefs
 
 router = APIRouter(tags=["review"])
@@ -452,9 +452,36 @@ def review(
         ),
     ] = "",
 ) -> Review:
+    ccy = reporting_currency(account, base)
+    # An account with nothing of its own to judge gets the wall, not a review
+    # of the starter watchlist: the page is the reason to import. The guest
+    # dir is the demo book every visitor reads, so a guest is never walled.
+    if account.root != accounts.GUEST_DIR and not _imported(account):
+        obs.event("review.locked", base=ccy)
+        return Review(base=ccy, as_of=date.today().isoformat(), locked=True)
+    return _judge(account, background, ccy, add)
+
+
+@router.get(
+    "/review/preview",
+    response_model=Review,
+    summary="The demo book judged, for the wall of an account with no import",
+)
+def preview(background: BackgroundTasks, base: Base = None) -> Review:
+    guest = accounts.guest_paths()
+    return _judge(guest, background, reporting_currency(guest, base), "")
+
+
+def _imported(account) -> bool:
+    try:
+        return demo.has_real(account.db)
+    except Exception:
+        return False  # unreadable/missing ledger reads as "nothing imported"
+
+
+def _judge(account, background: BackgroundTasks, ccy: str, add: str) -> Review:
     started = perf_counter()
     clock = _Clock()
-    ccy = reporting_currency(account, base)
     added = _parse_added(add)
     today = date.today()
     db = str(account.db)

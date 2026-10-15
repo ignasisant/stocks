@@ -4,7 +4,7 @@
  * An anonymous visitor sees most of this app: the watchlist, the whole
  * Portfolio over a shared demo book, a ticker, a sector, the earnings calendar,
  * the market regime. What they do not see is anything that is *somebody's* —
- * favourites, tags, alerts, imports, the assistant, the profile — and every one
+ * favourites, tags, alerts, imports, the assistant's answers, the profile — and every one
  * of those is hidden the same two ways, deliberately:
  *
  * - `<SignedInOnly>` where a block is **replaced**. Not rendering the child also
@@ -29,12 +29,26 @@ import { Icon } from "./Icon";
  * Vite under its asset base, and that path on the API's origin is a static-file
  * route that 404s. So the dev base is translated back to where the shell really
  * lives before it is handed over as `next`.
+ *
+ * `wall` names the prompt that was pressed, so the signup it leads to can say
+ * which one converts (`auth.signup wall=`, `stocks logs funnel`). It defaults
+ * to the page — a banner or a sign-in wall is the page's own prompt — and is
+ * named outright where the button belongs to the shell rather than the page:
+ * the rail, the tour, the locked assistant.
  */
-export function signInHref(target: string | null, here?: Location): string | null {
+export function signInHref(
+  target: string | null,
+  here?: Location,
+  wall?: string,
+): string | null {
   if (!target) return null;
   const { pathname, search } = here ?? window.location;
   const page = pagePath(pathname);
-  return `${target}?next=${encodeURIComponent(`${BASE}/${page}${search}`)}`;
+  const from = wall || page.split("/")[0] || "home";
+  return (
+    `${target}?next=${encodeURIComponent(`${BASE}/${page}${search}`)}` +
+    `&wall=${encodeURIComponent(from)}`
+  );
 }
 
 /**
@@ -47,12 +61,15 @@ export function signInHref(target: string | null, here?: Location): string | nul
 export function SignIn({
   label,
   className = "ag-btn",
+  wall,
 }: {
   label?: string;
   className?: string;
+  /** Which prompt this is, where it is not the page's own (`signInHref`). */
+  wall?: string;
 }) {
   const t = useT();
-  const href = signInHref(useSignIn());
+  const href = signInHref(useSignIn(), undefined, wall);
   if (!href) return null;
   return (
     <a className={className} href={href}>
@@ -277,7 +294,9 @@ export function SignInWall({
  * offered to guests on purpose, the tour is mounted but never opens itself at
  * somebody who has not arrived anywhere yet (`?tour=1` opens it, with the
  * steps that read somebody's own data locked), and the chat drawer spends the
- * operator's API keys and writes a file every visitor would share. The
+ * operator's API keys and writes a file every visitor would share — so a guest
+ * gets it `"locked"`: the launcher and a sample answer, with the sign-in where
+ * the composer would be (`chat/Locked.tsx`). The
  * investor-profile nudge is an account's, and voice dictation in feedback
  * spends the transcription key a `Writer` route guards.
  */
@@ -287,7 +306,7 @@ export const GUEST_CHROME = {
   feedback: true,
   /** Mounted, so `?tour=1` works — but it never opens itself for a guest. */
   tour: true,
-  chat: false,
+  chat: "locked",
   profilePrompt: false,
   dictation: false,
 } as const;

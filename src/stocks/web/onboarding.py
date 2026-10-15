@@ -21,7 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from stocks.config import load_watchlist
-from stocks.portfolio.ledger import has_transactions
+from stocks.portfolio import demo
 from stocks.web import auth
 
 # ------------------------------------------------------------- prefs / state
@@ -64,8 +64,10 @@ class Step:
 
 
 def _has_ledger(_prefs: dict, paths) -> bool:
+    # Demo rows are for looking: seeding them is not an import, and reading
+    # them as one ticked the import step and hid the start card's next move.
     try:
-        return has_transactions(paths.db)
+        return demo.has_real(paths.db)
     except Exception:
         return False  # unreadable/missing ledger reads as "nothing imported"
 

@@ -330,3 +330,18 @@ def test_the_events_the_funnel_reads_are_the_ones_the_app_emits(caplog):
     assert json.loads(obs.CloudLoggingFormatter().format(caplog.records[-1]))[
         "event"
     ] == "landing.view"
+
+
+def test_the_funnel_counts_signups_by_the_prompt_pressed():
+    summary = logs_query.funnel([
+        _entry("2026-09-20", "auth.signup", wall="chat"),
+        _entry("2026-09-20", "auth.signup", wall="chat"),
+        _entry("2026-09-20", "auth.signup", wall="review"),
+        _entry("2026-09-20", "auth.signup"),  # a sign-in from before `wall`
+    ])
+    assert summary["walls"] == [
+        {"wall": "chat", "signups": 2},
+        {"wall": "review", "signups": 1},
+        {"wall": "-", "signups": 1},
+    ]
+    assert "by prompt:" in logs_query.render_funnel(summary)

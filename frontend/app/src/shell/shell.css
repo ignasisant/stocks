@@ -262,3 +262,105 @@
     overscroll-behavior: contain;
   }
 }
+
+/* ------------------------------------------------- a page behind glass */
+
+/* `LockedPreview`: the page drawn from the demo book, blurred, with the step
+   that opens it on a card above. The page keeps its own height, so the card
+   sits over what would be there rather than in an empty box. */
+.ag-locked {
+  position: relative;
+  isolation: isolate;
+  min-height: 24rem;
+}
+
+.ag-locked-behind {
+  max-height: 40rem;
+  overflow: hidden;
+  filter: blur(6px) saturate(0.7);
+  opacity: 0.55;
+  pointer-events: none;
+  user-select: none;
+  mask-image: linear-gradient(to bottom, black 55%, transparent);
+}
+
+.ag-locked-card {
+  position: absolute;
+  inset: 3rem 0 auto;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: min(26rem, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 24px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-overlay);
+  color: var(--ag-text-secondary);
+  text-align: center;
+}
+
+.ag-locked-title {
+  margin: 0;
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-lg);
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.ag-locked-body {
+  margin: 0;
+  font-size: var(--ag-fs-md);
+  text-wrap: pretty;
+}
+
+.ag-locked-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 40px;
+  margin-top: 6px;
+  padding: 0.5rem 1rem;
+  border-radius: var(--ag-radius-sm, 8px);
+  background: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .ag-locked-go:hover {
+    background: var(--ag-purple-700);
+  }
+}
+
+.ag-locked-aside {
+  font-size: var(--ag-fs-sm);
+}
+
+.ag-locked-aside a {
+  color: var(--ag-text-secondary);
+}
+
+@media (pointer: coarse) {
+  .ag-locked-go {
+    min-height: 44px;
+  }
+
+  .ag-locked-aside a {
+    display: inline-block;
+    min-height: 44px;
+    line-height: 44px;
+  }
+}
+
+/* Nothing shows through: the page behind goes, the card stays. */
+@media (prefers-reduced-transparency: reduce) {
+  .ag-locked-behind {
+    filter: none;
+    opacity: 0.08;
+  }
+}
