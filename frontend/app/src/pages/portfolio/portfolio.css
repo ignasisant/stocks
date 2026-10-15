@@ -57,7 +57,7 @@
   max-width: 70ch;
   margin: -0.4rem 0 0.8rem;
   color: var(--ag-text-secondary);
-  font-size: var(--ag-fs-sm, 0.8125rem);
+  font-size: var(--ag-fs-sm, 0.75rem);
   line-height: 1.45;
   text-wrap: pretty;
 }
