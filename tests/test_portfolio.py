@@ -352,6 +352,39 @@ def test_plausible_closes_keeps_real_moves_and_short_histories():
     assert set(plausible_closes(closes, txs, units={})) == {"X"}
 
 
+def _reverse_split_book(with_split: bool):
+    """BYND, 2026: bought at ~0.9 before a 1:30 reverse split on 08-14, once
+    more after it at ~7. Yahoo's closes are split-adjusted, so the pre-split
+    days read ~27 — thirty times the fill."""
+    idx = pd.date_range("2026-08-01", "2026-09-30", freq="D")
+    closes = {"BYND": pd.Series(
+        [27.0 if d < pd.Timestamp("2026-08-14") else 7.0 for d in idx], index=idx)}
+    txs = [
+        Transaction("2026-08-04", "BYND", "buy", quantity=300, price=0.9, currency="USD"),
+        Transaction("2026-08-05", "BYND", "buy", quantity=300, price=0.9, currency="USD"),
+        Transaction("2026-09-20", "BYND", "buy", quantity=10, price=7.1, currency="USD"),
+    ]
+    if with_split:
+        txs.append(Transaction("2026-08-14", "BYND", "split", quantity=1 / 30,
+                               currency="USD"))
+    return txs, closes
+
+
+def test_plausible_closes_restates_fills_across_the_books_own_splits():
+    """Prod 2026-10-16: a book that holds BYND's 1:30 split row still had its
+    series rejected (`portfolio.price_ticker_mismatch`), because the check
+    compared as-traded fills with split-adjusted closes."""
+    txs, closes = _reverse_split_book(with_split=True)
+    assert set(plausible_closes(closes, txs, units={})) == {"BYND"}
+
+
+def test_plausible_closes_still_rejects_a_book_missing_the_split():
+    """Without the row the book holds 30x the shares: pricing them would
+    read the position 30x too big. It stays at cost until the split is in."""
+    txs, closes = _reverse_split_book(with_split=False)
+    assert plausible_closes(closes, txs, units={}) == {}
+
+
 # ------------------------------------------------------- time-weighted returns
 from stocks.analysis.portfolio import (  # noqa: E402
     flow_series,

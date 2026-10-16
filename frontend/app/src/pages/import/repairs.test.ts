@@ -65,6 +65,8 @@ describe("the ratio", () => {
   it("prints whole and fractional ratios as the page always has", () => {
     expect(ratioLabel(20)).toBe("20:1");
     expect(ratioLabel(1.5)).toBe("1.5:1");
+    expect(ratioLabel(1 / 30)).toBe("1:30");
+    expect(ratioLabel(1 / 1.5)).toBe("1:1.5");
   });
 });
 

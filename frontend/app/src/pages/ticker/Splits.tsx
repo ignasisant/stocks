@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useApi } from "../../shell/useApi";
 import { useGuest } from "../../shell/session";
 import { useT } from "../../shell/i18n";
+import { ratioLabel } from "../import/repairs";
 import { applySplits, getSplits, undoChange } from "./data";
 import { money, shares } from "./format";
 import type { TickerPosition, TickerSplit } from "./types";
@@ -151,7 +152,7 @@ type Translate = ReturnType<typeof useT>;
 
 export function fields(split: TickerSplit) {
   return {
-    ratio: `${split.ratio}`,
+    ratio: ratioLabel(split.ratio),
     date: split.date,
     price: money(split.priced_at),
     day: split.priced_on,
