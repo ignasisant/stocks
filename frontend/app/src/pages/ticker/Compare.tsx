@@ -29,14 +29,14 @@ import type { CompareLine, CompareOffer, Comparison, SearchMatch } from "./types
 // The chart and its legend are styled with the portfolio's, as the chat's are.
 import "../portfolio/portfolio.css";
 
-export const COMPARE_RANGES = ["1m", "6m", "1y", "2y"] as const;
+const COMPARE_RANGES = ["1m", "6m", "1y", "2y"] as const;
 export type CompareRange = (typeof COMPARE_RANGES)[number];
 
 /** What the card opens with — `analysis.compare.INDICES`. */
-export const INDICES = ["SPY", "QQQ", "EEM"] as const;
+const INDICES = ["SPY", "QQQ", "EEM"] as const;
 
 /** Lines beside the subject — `analysis.compare.MAX_OTHERS`. */
-export const MAX_OTHERS = 6;
+const MAX_OTHERS = 6;
 
 const DEBOUNCE_MS = 160;
 

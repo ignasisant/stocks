@@ -21,7 +21,7 @@ import { Segmented } from "../../ui/Segmented";
 import { percent } from "./format";
 import type { NameReturns, ReviewReturns } from "./types";
 
-export const WINDOWS = ["1m", "6m", "1y", "2y"] as const;
+const WINDOWS = ["1m", "6m", "1y", "2y"] as const;
 export type ReturnWindow = (typeof WINDOWS)[number];
 
 /** The S&P 500 every gap is measured against — `routes.review.INDEX`. */
@@ -144,7 +144,7 @@ function tone(value: number | null): string | undefined {
 }
 
 /** A return or a gap as the cells print it: signed, one decimal. */
-export function useReturnText() {
+function useReturnText() {
   const t = useT();
   const lang = useLang();
   const signed = (value: number) =>

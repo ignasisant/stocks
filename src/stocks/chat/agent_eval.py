@@ -171,7 +171,9 @@ class Tally:
 
 
 def _sum(costs: list[float | None]) -> float | None:
-    return None if None in costs else round(sum(costs), 6)
+    if None in costs:
+        return None
+    return round(sum(c for c in costs if c is not None), 6)
 
 
 def tally(case: Case, runs: Iterable[Run]) -> Tally:

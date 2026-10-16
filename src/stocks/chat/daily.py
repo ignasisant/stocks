@@ -594,7 +594,8 @@ def build_facts(
             chg = (
                 money_change(money, days)
                 if money is not None
-                else basket_change(hist, days)
+                else basket_change(hist, days) if hist is not None
+                else None
             )
             if chg:
                 facts[label] = {"amount": round(chg[0], 2), "pct": _pct(chg[1])}

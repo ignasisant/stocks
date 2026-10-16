@@ -27,6 +27,7 @@ from stocks.analysis.listing import price_units, quote_unit
 from stocks.config import Holding, load_watchlist
 from stocks.data.crypto import is_crypto
 from stocks.data.fx import ToBase, converter
+from stocks.frames import midnights
 from stocks.portfolio import consistency, transfers
 
 if TYPE_CHECKING:
@@ -1681,7 +1682,7 @@ def _naive_index(series: pd.Series) -> pd.Series:
     idx = pd.DatetimeIndex(series.index)
     if idx.tz is not None:
         idx = idx.tz_localize(None)
-    out = series.set_axis(idx.normalize())
+    out = series.set_axis(midnights(idx))
     return out[~out.index.duplicated(keep="last")].sort_index()
 
 
@@ -1707,7 +1708,7 @@ def money_change(hist: pd.DataFrame | None, days: int) -> tuple[float, float] | 
         return None
     value = _naive_index(hist["value"])
     injected = _naive_index(hist["injected"])
-    window = _window(value.index, days)
+    window = _window(pd.DatetimeIndex(value.index), days)
     if window is None:
         return None
     start, end = window
@@ -1762,7 +1763,7 @@ def index_change(
         return None
     value = _naive_index(hist["value"])
     injected = _naive_index(hist["injected"])
-    window = _window(value.index, days)
+    window = _window(pd.DatetimeIndex(value.index), days)
     if window is None or not value.loc[window[0]] > 0:
         return None
     start, end = window

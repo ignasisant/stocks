@@ -28,16 +28,19 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from typing import Literal
 
 US = "us"
 XETRA = "xetra"
 BME = "bme"
 LSE = "lse"
 
-CLOSED = "closed"
-EARLY = "early"
+Closure = Literal["closed", "early"]
 
-_CALENDAR: dict[str, dict[str, str]] = {
+CLOSED: Closure = "closed"
+EARLY: Closure = "early"
+
+_CALENDAR: dict[str, dict[str, Closure]] = {
     US: {
         # 2026
         "2026-01-01": CLOSED, "2026-01-19": CLOSED, "2026-02-16": CLOSED,
@@ -82,7 +85,7 @@ _CALENDAR: dict[str, dict[str, str]] = {
     },
 }
 
-DAYS: dict[str, dict[date, str]] = {
+DAYS: dict[str, dict[date, Closure]] = {
     venue: {date.fromisoformat(day): kind for day, kind in days.items()}
     for venue, days in _CALENDAR.items()
 }

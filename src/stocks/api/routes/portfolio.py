@@ -80,6 +80,7 @@ from stocks.api.schemas import (
 from stocks.api.schemas import TaxPeriod as TaxPeriodOut
 from stocks.api.security import Authed
 from stocks.data import fetch
+from stocks.frames import midnight
 from stocks.portfolio import (
     custody,
     demo,
@@ -1573,7 +1574,7 @@ def projection(
     past = pd.DataFrame()
     if not hist.empty and {"value", "injected"} <= set(hist.columns):
         monthly_end = hist[["value", "injected"]].resample("ME").last()
-        month = pd.Timestamp(date.today()).replace(day=1)
+        month = midnight(date.today().replace(day=1))
         past = monthly_end[
             (monthly_end.index < month)
             & (monthly_end.index >= month - pd.DateOffset(months=_PAST_MONTHS))

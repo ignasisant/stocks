@@ -180,7 +180,7 @@ def summary(judgments: list[Judgment]) -> dict:
     goals = [v for j in judgments for v in j.goals.values()]
     means = {}
     for s in SCORES:
-        got = [j.scores[s.id] for j in judgments if j.scores.get(s.id) is not None]
+        got = [v for j in judgments if (v := j.scores.get(s.id)) is not None]
         means[s.id] = round(sum(got) / len(got), 2) if got else None
     return {"rubric": judgments[0].rubric, "runs": len(judgments),
             "met": goals.count("met"), "goals": len(goals), "scores": means}

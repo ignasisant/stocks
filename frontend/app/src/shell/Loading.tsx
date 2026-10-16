@@ -37,7 +37,7 @@ import { usePresence } from "./useSheet";
 import "../ui/ui.css";
 
 /** Re-render every `every` ms while it is not null; returns the time now. */
-export function useNow(every: number | null): number {
+function useNow(every: number | null): number {
   const [, tick] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
     if (every === null) return;

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
-from typing import Annotated, cast
+from typing import Annotated, Literal, cast
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Path, Query, status
@@ -267,7 +267,7 @@ def compare(
         axis,
     )
 
-    def role(name: str) -> str:
+    def role(name: str) -> Literal["subject", "index", "sector", "peer", "pick"]:
         if name == ticker:
             return "subject"
         if name in INDICES:

@@ -1114,7 +1114,8 @@ def test_a_refund_gives_back_every_unit_a_turn_took(monkeypatch):
     assert prefs[_today()] == 0 and engine._global_free["used"] == 0
 
 
-def test_closing_the_stream_stops_the_research_still_running(monkeypatch, paths):
+def test_closing_the_stream_stops_the_research_still_running(monkeypatch, paths,
+        providers):
     # Stop (or an abort) closes the stream at a yield. The gather beside it
     # used to run on for its whole two minutes, paid for and never read.
     import threading
@@ -1140,7 +1141,8 @@ def test_closing_the_stream_stops_the_research_still_running(monkeypatch, paths)
     assert saw_stop.wait(2)
 
 
-def test_a_deep_plan_is_handed_over_while_the_research_runs(monkeypatch, paths):
+def test_a_deep_plan_is_handed_over_while_the_research_runs(monkeypatch, paths,
+        providers):
     plan = [{"text": "Precio de ASML", "done": False}]
 
     def researching(*_a, on_plan=None, **_kw):

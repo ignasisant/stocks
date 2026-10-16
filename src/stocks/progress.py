@@ -21,7 +21,7 @@ from __future__ import annotations
 import contextvars
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
@@ -53,7 +53,7 @@ _current: contextvars.ContextVar[Job | None] = contextvars.ContextVar(
 
 
 @contextmanager
-def job(key: str, step: str, total: int = 0) -> Iterator[Job]:
+def job(key: str, step: str, total: int = 0) -> Generator[Job]:
     """Mark `key` as busy on `step` for the length of the block.
 
     Nested calls for a key already busy join the outer job rather than

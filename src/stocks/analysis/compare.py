@@ -23,6 +23,7 @@ from __future__ import annotations
 import pandas as pd
 
 from stocks.analysis.history import WINDOW
+from stocks.frames import midnight, midnights
 
 # The window labels the card offers, in `analysis.history.PERIODS` spelling.
 # Daily bars all: an intraday window would put a US session against a closed
@@ -47,7 +48,7 @@ def day_index(index: pd.Index) -> pd.DatetimeIndex:
     stamps = pd.DatetimeIndex(index)
     if stamps.tz is not None:
         stamps = stamps.tz_localize(None)
-    return stamps.normalize()
+    return midnights(stamps)
 
 
 def closes_by_day(closes: pd.Series) -> pd.Series:
@@ -153,14 +154,14 @@ def window_days(
     after that day, which is where `history.shape` starts a chart: a column and
     a chart over the same window then measure from the same close.
     """
-    day = pd.Timestamp(anchor).normalize()
+    day = midnight(anchor)
     out: dict[str, pd.Timestamp] = {}
     for label in RANGES:
         start = day - WINDOW[label]
         if sessions is not None:
             later = sessions[sessions >= start]
             if len(later):
-                start = pd.Timestamp(later[0]).normalize()
+                start = midnight(later[0])
         out[label] = start
     return out
 
@@ -169,7 +170,7 @@ def window_axis(
     anchor: pd.Timestamp, days: dict[str, pd.Timestamp] | None = None
 ) -> pd.DatetimeIndex:
     """The only days `window_returns` reads: each window's first and `anchor`."""
-    day = pd.Timestamp(anchor).normalize()
+    day = midnight(anchor)
     opens = days if days is not None else window_days(day)
     return pd.DatetimeIndex(sorted({*opens.values(), day}))
 
@@ -189,7 +190,7 @@ def window_returns(
     same stretch, and the gap between two of them is a gap in performance,
     not in calendars.
     """
-    day = pd.Timestamp(anchor).normalize()
+    day = midnight(anchor)
     opens = days if days is not None else window_days(day)
     axis = window_axis(day, opens)
     values = on_axis(closes, axis)

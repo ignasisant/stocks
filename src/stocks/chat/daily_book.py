@@ -131,7 +131,7 @@ def window_days(span: str, today: pd.Timestamp | None = None) -> int:
     the last close of the year before, so January's first session counts."""
     if span == "ytd":
         now = (today or pd.Timestamp.today()).normalize()
-        return max(1, (now - pd.Timestamp(year=now.year, month=1, day=1)).days + 1)
+        return max(1, int((now - pd.Timestamp(year=now.year, month=1, day=1)).days) + 1)
     return RANGES.get(span, CHART_DAYS)
 
 

@@ -30,7 +30,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from datetime import date
 from time import perf_counter
-from typing import Annotated, TypedDict
+from typing import Annotated, TypedDict, cast
 
 import pandas as pd
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
@@ -64,6 +64,7 @@ from stocks.chat import journal
 from stocks.config import Holding, load_watchlist
 from stocks.data import fx, profiles
 from stocks.data.crypto import is_crypto
+from stocks.frames import midnight
 from stocks.portfolio import consistency, demo, tax
 from stocks.portfolio.tax import prefs as tax_prefs
 
@@ -603,7 +604,7 @@ def _window_calendar() -> tuple[pd.Timestamp, dict[str, pd.Timestamp]]:
     chart draws on SPY's axis, so a column and the line beside it read one
     stretch. Today by the calendar when SPY's bars will not come."""
     try:
-        sessions = closes_by_day(loaders.bar_closes(INDEX, "2y")).index
+        sessions = pd.DatetimeIndex(closes_by_day(loaders.bar_closes(INDEX, "2y")).index)
     except Exception as exc:  # noqa: BLE001
         obs.warn(
             "api.review_returns_failed",
@@ -613,9 +614,9 @@ def _window_calendar() -> tuple[pd.Timestamp, dict[str, pd.Timestamp]]:
         )
         sessions = pd.DatetimeIndex([])
     if len(sessions) == 0:
-        day = pd.Timestamp(date.today())
+        day = midnight(date.today())
         return day, window_days(day)
-    day = pd.Timestamp(sessions[-1])
+    day = cast(pd.Timestamp, pd.Timestamp(sessions[-1]))
     return day, window_days(day, sessions)
 
 
