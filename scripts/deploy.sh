@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy to Cloud Run — staging or prod, named every time; prod behind a CI
-# check + confirm.
+# check, and a typed confirm only when the deploy would take commits away.
 #
 # Usage:
 #   ./scripts/deploy.sh staging            # -> topstocks-staging
@@ -191,9 +191,19 @@ if [ "$ENV" = "prod" ]; then
         read -r reply
         [ "$reply" = "$SERVICE" ] || { echo "aborted"; exit 1; }
     else
-        printf "Deploy %s to PRODUCTION (%s)? [y/N] " "${SHA:0:10}" "$SERVICE"
-        read -r reply
-        case "$reply" in y|Y|yes) ;; *) echo "aborted"; exit 1 ;; esac
+        # A fast-forward: every gate above has passed and the canary below
+        # still smoke-tests before promoting, so a [y/N] here would only be
+        # typed on reflex. Show what goes out instead of asking.
+        echo "Deploying ${SHA:0:10} to PRODUCTION ($SERVICE)."
+        if [ -n "${LIVE_SHA:-}" ] && git cat-file -e "${LIVE_SHA}^{commit}" 2>/dev/null; then
+            ADDS="$(git log --oneline --first-parent "$LIVE_SHA..HEAD")"
+            if [ -n "$ADDS" ]; then
+                echo "New since ${LIVE_SHA:0:10}:"
+                echo "$ADDS" | sed 's/^/  /'
+            else
+                echo "Same commit prod already runs (${LIVE_SHA:0:10})."
+            fi
+        fi
     fi
 fi
 
