@@ -227,6 +227,7 @@
   "chat.depth_normal": "Normal",
   "chat.depth_deep": "In depth",
   "chat.depth_hint": "Reads more sources and takes up to 2 min. For the next question only.",
+  "chat.depth_hint_kept": "Reads more sources and takes up to 2 min. With your own key it stays on.",
   "chat.depth_cost": "Uses {n} free messages.",
   "chat.steps_n": "{n} steps · {took}",
   "chat.no_tools": "no tools · {took}",

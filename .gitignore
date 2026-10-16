@@ -26,6 +26,8 @@ wheels/
 
 # Portfolio ledger (private holdings) + cached FX history
 /data/portfolio.db
+# Restart checkpoints of chat runs in flight (stocks.chat.checkpoint)
+/data/chat_runs/
 /data/portfolio.db.bak*
 /data/fx_history.json
 

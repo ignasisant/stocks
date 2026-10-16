@@ -69,6 +69,31 @@ import { takeDraft } from "./draft";
 
 const MODES: SkillsMode[] = ["auto", "manual", "off"];
 
+/**
+ * Where an own-key reader's "in depth" is remembered. On the free chain the
+ * switch is for one question — each deep turn spends several of the day's
+ * uses — but an account whose own key answers spends none, so the depth it
+ * picked stays picked, across questions and reloads.
+ */
+const DEEP_KEPT = "chatDeep";
+
+function keptDeep(): boolean {
+  try {
+    return window.localStorage.getItem(DEEP_KEPT) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function keepDeep(deep: boolean): void {
+  try {
+    if (deep) window.localStorage.setItem(DEEP_KEPT, "1");
+    else window.localStorage.removeItem(DEEP_KEPT);
+  } catch {
+    // Private mode: the switch still holds until the drawer closes.
+  }
+}
+
 function Skills({
   id,
   hidden,
@@ -113,7 +138,7 @@ function Skills({
       />
       {deep && (
         <p className="ag-chat-hint">
-          {t("chat.depth_hint")}
+          {t(free ? "chat.depth_hint" : "chat.depth_hint_kept")}
           {free && ` ${t("chat.depth_cost", { n: state.deep_units })}`}
         </p>
       )}
@@ -193,7 +218,8 @@ export function Composer({
   const lang = useLang();
   const [text, setText] = useState("");
   const [picking, setPicking] = useState(false);
-  const [deep, setDeep] = useState(false);
+  const byok = state.providers.some((p) => p.id === state.answering && p.needs_key);
+  const [deep, setDeep] = useState(() => byok && keptDeep());
   const file = useRef<HTMLInputElement | null>(null);
   const field = useRef<HTMLTextAreaElement | null>(null);
   // The field holds a transcript, so the turn it becomes is badged as spoken.
@@ -225,7 +251,6 @@ export function Composer({
   // The counter and the wall are about the free chain, so neither is drawn for
   // an account whose own key answers: it has no allowance to spend and no wall
   // to hit.
-  const byok = state.providers.some((p) => p.id === state.answering && p.needs_key);
   const wall = !byok && state.cap_reason ? state.cap_reason : null;
 
   /**
@@ -319,7 +344,12 @@ export function Composer({
     setText("");
     onSend(question, spoken.current || undefined, deep || undefined);
     spoken.current = false;
-    setDeep(false);
+    if (!byok) setDeep(false);
+  };
+
+  const pickDepth = (next: boolean) => {
+    setDeep(next);
+    if (byok) keepDeep(next);
   };
 
   return (
@@ -347,7 +377,7 @@ export function Composer({
         state={state}
         onSave={onSave}
         deep={deep}
-        onDeep={setDeep}
+        onDeep={pickDepth}
         free={!byok && state.free_cap !== null}
       />
       <form

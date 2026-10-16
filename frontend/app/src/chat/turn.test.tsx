@@ -138,10 +138,10 @@ const state: ChatState = {
   voice: false,
 };
 
-const drawComposer = (busy: boolean) =>
+const drawComposer = (busy: boolean, over: Partial<ChatState> = {}) =>
   renderToStaticMarkup(
     <Composer
-      state={state}
+      state={{ ...state, ...over }}
       busy={busy}
       reading={false}
       onSend={() => {}}
@@ -174,6 +174,43 @@ describe("the composer's research switch", () => {
     expect(out).toMatch(/aria-pressed="true"[^>]*>chat.depth_normal/);
     expect(out).not.toContain("chat.depth_cost");
     expect(out).toContain('placeholder="chat.placeholder"');
+  });
+
+  describe("in depth, once picked", () => {
+    const own = {
+      id: "claude",
+      label: "Claude",
+      models: [],
+      model: "",
+      needs_key: true,
+      has_key: true,
+      console_url: "",
+      key_placeholder: "",
+      key_days_left: null,
+      domain: null,
+    };
+    const kept = (value: string | null) =>
+      vi.stubGlobal("window", {
+        location: { pathname: "/", search: "" },
+        matchMedia: () => ({ matches: false }),
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        localStorage: { getItem: () => value },
+      });
+
+    it("stays on for an account its own key answers", () => {
+      kept("1");
+      const out = drawComposer(false, { providers: [own], answering: "claude" });
+      expect(out).toMatch(/aria-pressed="true"[^>]*>chat.depth_deep/);
+      expect(out).toContain("chat.depth_hint_kept");
+      expect(out).toContain('placeholder="chat.placeholder_deep"');
+    });
+
+    it("is for one question on the free chain, whatever was kept", () => {
+      kept("1");
+      const out = drawComposer(false);
+      expect(out).toMatch(/aria-pressed="true"[^>]*>chat.depth_normal/);
+    });
   });
 
   it("is the segmented control every other one-of-a-few choice is", () => {
