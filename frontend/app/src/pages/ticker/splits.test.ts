@@ -40,7 +40,8 @@ describe("split repair", () => {
 
   it("states the buy price as it reads after the split", () => {
     const said = fields(AMZN);
-    expect(said.ratio).toBe("20");
+    expect(said.ratio).toBe("20:1");
+    expect(fields({ ...AMZN, ratio: 1 / 30 }).ratio).toBe("1:30");
     expect(said.day).toBe("2022-05-24");
     expect(said.adjusted).toBe(fields({ ...AMZN, priced_at: 102.5, ratio: 1 }).price);
   });

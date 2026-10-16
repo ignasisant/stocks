@@ -190,11 +190,13 @@ def fetch_history(ticker: str) -> DividendHistory:
 
     from stocks import obs
     from stocks.data.crypto import is_crypto
-    from stocks.data.fetch import resolve, throttle_remaining, trip_throttle
+    from stocks.data.fetch import resolve, retired, throttle_remaining, trip_throttle
 
     if is_crypto(ticker):
         return DividendHistory(ticker)
     key = resolve(ticker)
+    if retired(key):
+        return DividendHistory(ticker)
     with _history_lock:
         hit = _history_memo.get(key)
     if hit is not None:

@@ -22,7 +22,9 @@ export const moveKey = (move: Move): string =>
  * it into a split's note (`f"{ratio:g}:1"`), which is a shape and not a
  * measured figure, so it is not localised and not padded.
  */
-export const ratioLabel = (ratio: number): string => `${ratio}:1`;
+/** "20:1" forward, "1:30" reverse (Yahoo's ratio for it is 1/30). */
+export const ratioLabel = (ratio: number): string =>
+  ratio > 0 && ratio < 1 ? `1:${Number((1 / ratio).toFixed(2))}` : `${ratio}:1`;
 
 /** Same comparison the server makes on a typed confirmation: trimmed, folded. */
 export function names(typed: string, email: string): boolean {

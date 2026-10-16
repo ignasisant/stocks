@@ -325,11 +325,27 @@ def _save_unlisted() -> None:
 
 
 def unlisted(tickers) -> set[str]:
-    """Those of `tickers` Yahoo said, within the last week, it has no symbol for."""
+    """Those of `tickers` Yahoo said, within the last week, it has no symbol
+    for, plus the retired lines it is never asked about (`retired`)."""
+    tickers = set(tickers)
+    gone = {t for t in tickers if retired(resolve(t))}
     cutoff = time.time() - UNLISTED_TTL_S
     with _unlisted_lock:
         _load_unlisted()
-        return {t for t in set(tickers) if _unlisted.get(t, -1.0) > cutoff}
+        return gone | {t for t in tickers if _unlisted.get(t, -1.0) > cutoff}
+
+
+def retired(symbol: str) -> bool:
+    """Whether `symbol` is a line a restructuring cancelled (WOLF.OLD), which
+    no request may name.
+
+    Brokers keep the cancelled shares under the code plus ".OLD", and Yahoo
+    answers every symbol with that exact suffix with a 429 (WOLF.OLD, ZZZZ.OLD;
+    WOLF.NEW and FOO-OLD answer normally — measured 2026-10-16). A 429 is the
+    breaker's signal, so one such name in a book opened the cooldown and
+    blanked the whole page for five minutes.
+    """
+    return symbol.upper().endswith(".OLD")
 
 
 def relisted(ticker: str) -> None:
@@ -517,6 +533,8 @@ def info(ticker: str) -> dict:
     under a lock, so a `load_meta` fan-out over one ticker fetches once.
     """
     key = resolve(ticker)
+    if retired(key):
+        return {}
     now = time.monotonic()
     with _info_lock:
         hit = _info_memo.get(key)
@@ -561,7 +579,7 @@ def splits(ticker: str) -> list[tuple[str, float]]:
         hit = _splits_memo.get(key)
     if hit is not None:
         return hit
-    if throttle_remaining():
+    if throttle_remaining() or retired(key):
         return []
     try:
         series = yf.Ticker(key).splits
@@ -603,6 +621,8 @@ def close_on(ticker: str, day: str) -> float | None:
     with _close_lock:
         if key in _close_memo:
             return _close_memo[key]
+    if retired(key[0]):
+        return None
     if throttle_remaining():
         return None  # not cached: a throttle is temporary, an answer is forever
     start = (pd.Timestamp(day) - pd.Timedelta(days=10)).date().isoformat()
@@ -639,7 +659,10 @@ def fetch_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.D
     bars, and it is what tells the price chart that a 2y range of a stock listed
     last spring would draw the same bars as "max".
     """
-    handle = yf.Ticker(resolve(ticker))
+    symbol = resolve(ticker)
+    if retired(symbol):
+        return pd.DataFrame(index=pd.DatetimeIndex([], name="Date"))
+    handle = yf.Ticker(symbol)
     df = retry(lambda: handle.history(period=period, interval=interval))
     df.index.name = "Date"
     first = _first_trade(handle) if not df.empty else None
@@ -709,7 +732,10 @@ def fetch_many(
         return _coingecko_fallback(gecko, period, interval)
     _place_isins(tickers)
     symbol_of = {t: resolve(t) for t in tickers}
-    symbols = list(dict.fromkeys(symbol_of.values()))
+    tickers = [t for t in tickers if not retired(symbol_of[t])]
+    if not tickers:
+        return _coingecko_fallback(gecko, period, interval) if gecko else {}
+    symbols = list(dict.fromkeys(symbol_of[t] for t in tickers))
     failures: dict[str, str] = {}
 
     def download() -> pd.DataFrame:
@@ -1024,6 +1050,8 @@ def _coingecko_fallback(
 
 def latest_price(ticker: str) -> float:
     """Most recent price — fast_info first, 5d history as fallback."""
+    if retired(resolve(ticker)):
+        raise ValueError(f"no data for {ticker}")
     t = yf.Ticker(resolve(ticker))
     with obs.swallow("yahoo.fast_info", ticker=ticker):
         price = t.fast_info["lastPrice"]

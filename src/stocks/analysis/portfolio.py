@@ -408,7 +408,16 @@ def _close_matches_trades(px: pd.Series, ticker: str, ccy: str, transactions) ->
     ground truth for what a name costs; a series whose price near a fill date
     sits a magnitude off is the wrong instrument, not a real move, and is
     rejected rather than trusted for the whole history.
+
+    Each fill is first restated across the book's own split rows: the closes
+    are split-adjusted and a fill is as-traded, so a 1:30 reverse split the
+    book does carry read every earlier buy 30x under its close (BYND, prod
+    2026-10-16). A split the book lacks still fails, as it should — its share
+    count is off by the same factor.
     """
+    from stocks.portfolio.corporate import on_market_scale, split_factors
+
+    factors = split_factors(transactions)
     ratios = []
     for t in transactions:
         if t.ticker != ticker or t.action not in ("buy", "sell"):
@@ -418,7 +427,8 @@ def _close_matches_trades(px: pd.Series, ticker: str, ccy: str, transactions) ->
         near = px[px.index <= pd.Timestamp(t.date)].dropna()
         if near.empty:
             continue
-        ratios.append(float(near.iloc[-1]) / t.price)
+        price, _ = on_market_scale(t, factors)
+        ratios.append(float(near.iloc[-1]) / price)
     if not ratios:
         return True
     ratios.sort()

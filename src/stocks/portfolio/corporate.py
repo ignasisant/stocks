@@ -1,4 +1,4 @@
-"""Corporate actions the ledger never heard about — missing forward splits.
+"""Corporate actions the ledger never heard about — missing splits.
 
 A broker statement prints trades. Most print nothing else, so a position
 bought before a split and still held after it keeps the share count and the
@@ -16,7 +16,12 @@ other evidence: what the buy was *priced* at.
 Yahoo's daily closes are split-adjusted, ledger prices are as-traded (the
 same asymmetry portfolio.fees replays by hand). So for a buy on day D:
 
-    recorded_price / close_on(D)  ~=  every forward split after D
+    recorded_price / close_on(D)  ~=  every split after D
+
+A reverse split works the same way with a quotient under one: a 1:30 leaves a
+raw pre-split buy at 1/30 of the adjusted close, and the row it needs shrinks
+the position to the shares that survived. A broker that already restated the
+row prices it on today's scale, and nothing is proposed.
 
 When the quotient matches the *full* product of Yahoo's post-D splits, the
 row is raw and the ledger needs all of them. When it matches the product
@@ -46,9 +51,8 @@ CloseLookup = Callable[[str, str], float | None]
 # close. Wide enough to absorb the fill, far too narrow to confuse 1.5 with 1.
 _PRICE_TOLERANCE = 0.12
 
-# Reverse splits (ratio < 1) are left alone: they shrink a position, the
-# broker reports the share count that survives, and a wrongly applied one
-# would delete shares rather than leave a visible pre-split price behind.
+# The tightest split this module believes, either way: 1.5 forward, 1/1.5
+# reverse. Anything closer to 1 hides inside the tolerance above.
 _MIN_RATIO = 1.5
 
 
@@ -82,7 +86,7 @@ def missing_splits(
     close_on: CloseLookup,
     source: consistency.Source = "import",
 ) -> list[MissingSplit]:
-    """Forward splits the ledger is missing, oldest first.
+    """Splits, forward or reverse, the ledger is missing, oldest first.
 
     A candidate has to clear all of: the ledger holds shares the day before
     it, no `split` row already covers that day, and the pre-split price
@@ -122,7 +126,7 @@ def _ticker_gaps(
         events = [
             (str(day), float(ratio))
             for day, ratio in (splits(ticker) or [])
-            if float(ratio) >= _MIN_RATIO
+            if _believable(float(ratio))
         ]
     except Exception:  # a lookup that can't answer proposes nothing
         return []
@@ -173,6 +177,10 @@ def _ticker_gaps(
     return out
 
 
+def _believable(ratio: float) -> bool:
+    return ratio >= _MIN_RATIO or 0 < ratio <= 1 / _MIN_RATIO
+
+
 def _unadjusted_splits(
     quotient: float, events: list[tuple[str, float]], bought: str
 ) -> list[tuple[str, float]]:
@@ -181,19 +189,22 @@ def _unadjusted_splits(
 
     A broker restates the splits that had already happened when it printed the
     statement, so the ones a row still carries at face value are a *suffix* of
-    the event list: the most recent ones. Each suffix has a distinct product
-    (every ratio is at least 1.5, far outside the tolerance), so the quotient
-    names exactly one of them — including the empty suffix, which is a row
-    already on today's scale and needs no split at all. A quotient that fits
-    none of them is not evidence of anything and returns none.
+    the event list: the most recent ones. With splits all one way each suffix
+    has a distinct product (every ratio is at least 1.5 from 1, far outside
+    the tolerance), so the quotient names exactly one of them — including the
+    empty suffix, which is a row already on today's scale and needs no split
+    at all. A forward and a reverse split can cancel (2:1 then 1:2), and a
+    quotient two suffixes fit is ambiguous. That, or a quotient that fits
+    none of them, is not evidence of anything and returns none.
     """
     after = [(d, r) for d, r in events if d > bought]
+    fits = []
     for cut in range(len(after) + 1):
         suffix = after[cut:]
         product = math.prod(r for _, r in suffix)
         if abs(quotient - product) <= _PRICE_TOLERANCE * product:
-            return suffix
-    return []
+            fits.append(suffix)
+    return fits[0] if len(fits) == 1 else []
 
 
 def _close(close_on: CloseLookup, ticker: str, day: str) -> float | None:
@@ -246,7 +257,8 @@ def _held_at(
 def split_factors(
     transactions: list[Transaction],
 ) -> dict[str, list[tuple[str, float]]]:
-    """ticker -> [(date, ratio), …] from the ledger's own forward-split rows."""
+    """ticker -> [(date, ratio), …] from the ledger's own split rows (a reverse
+    split's ratio is under one)."""
     out: dict[str, list[tuple[str, float]]] = {}
     for t in transactions:
         if t.action == "split" and t.quantity > 0:

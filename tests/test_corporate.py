@@ -115,12 +115,39 @@ def test_lookup_failures_propose_nothing():
     )
 
 
-def test_reverse_splits_are_ignored():
-    """A 1-for-10 shrinks a position; the broker reports what survives."""
-    ledger = [_buy("2020-01-02", 100.0, 5.0, ticker="XYZ")]
+def test_finds_the_reverse_split_the_statement_never_printed():
+    """BYND's 1:30 on 2026-08-14 (prod 2026-10-16): the book kept 600 shares
+    at 0.9 while Yahoo's adjusted close that day reads 27 — the fill sits at
+    1/30 of it, and the 20 shares that survive are what the account holds."""
+    ledger = [_buy("2026-08-04", 600.0, 0.9, ticker="BYND")]
     found = missing_splits(
         ledger,
-        splits=_splits([("2021-06-01", 0.1)]),
+        splits=_splits([("2026-08-14", 1 / 30)]),
+        close_on=_closes({("BYND", "2026-08-04"): 27.0}),
+    )
+    assert [(g.ticker, g.tx.date) for g in found] == [("BYND", "2026-08-14")]
+    assert found[0].ratio == pytest.approx(1 / 30)
+    assert found[0].held_after == pytest.approx(20.0)
+
+
+def test_a_reverse_split_the_broker_already_restated_is_left_alone():
+    """20 shares at 27: the statement already speaks post-split shares."""
+    ledger = [_buy("2026-08-04", 20.0, 27.0, ticker="BYND")]
+    found = missing_splits(
+        ledger,
+        splits=_splits([("2026-08-14", 1 / 30)]),
+        close_on=_closes({("BYND", "2026-08-04"): 27.0}),
+    )
+    assert not found
+
+
+def test_splits_that_cancel_out_are_not_evidence():
+    """A 2:1 then a 1:2 multiply to 1, the same as a row already on today's
+    scale: the price cannot say which, so nothing is proposed."""
+    ledger = [_buy("2020-01-02", 10.0, 50.0, ticker="XYZ")]
+    found = missing_splits(
+        ledger,
+        splits=_splits([("2021-01-04", 2.0), ("2023-01-03", 0.5)]),
         close_on=_closes({("XYZ", "2020-01-02"): 50.0}),
     )
     assert not found
