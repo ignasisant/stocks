@@ -380,3 +380,75 @@ def test_retry_without_trip_raises_but_leaves_the_breaker_shut():
     with pytest.raises(YFRateLimitError):
         fetch.retry(refused, attempts=1)
     assert fetch.throttle_remaining() > 0
+
+
+# ------------------------------------------------------------- retired lines
+# A broker keeps the line a restructuring cancelled under its code plus ".OLD"
+# (WOLF.OLD). Yahoo answers ANY symbol ending in ".OLD" with a 429 — not a
+# 404 — so asking for one opened the cooldown and blanked a whole book for five
+# minutes (prod 2026-10-16, twice). They are never asked.
+
+
+class _NoYahoo:
+    """A `yf.Ticker` that answers every symbol the way Yahoo answers WOLF.OLD."""
+
+    asked: list[str] = []
+
+    def __init__(self, symbol):
+        _NoYahoo.asked.append(symbol)
+
+    def __getattr__(self, name):
+        raise YFRateLimitError()
+
+
+@pytest.fixture
+def no_yahoo(monkeypatch):
+    _NoYahoo.asked = []
+    monkeypatch.setattr(fetch, "ticker_aliases", lambda: {"WOLFX": "WOLF.OLD"})
+    monkeypatch.setattr(fetch.yf, "Ticker", _NoYahoo)
+    return _NoYahoo.asked
+
+
+@pytest.mark.parametrize("ticker", ["WOLF.OLD", "wolf.old", "WOLFX"])
+def test_a_retired_line_is_not_asked_for_its_dividends(no_yahoo, ticker):
+    from stocks.data import dividends
+
+    dividends.clear_history_cache()
+    assert dividends.fetch_history(ticker).payments == ()
+    assert dividends.fetch_ex_dividend(ticker) == (None, None, None)
+    assert no_yahoo == []
+    assert fetch.throttle_remaining() == 0
+
+
+def test_a_retired_line_is_not_asked_one_symbol_at_a_time(no_yahoo):
+    assert fetch.info("WOLF.OLD") == {}
+    assert fetch.splits("WOLF.OLD") == []
+    assert fetch.close_on("WOLF.OLD", "2026-10-01") is None
+    assert fetch.fetch_history("WOLF.OLD").empty
+    with pytest.raises(ValueError):
+        fetch.latest_price("WOLF.OLD")
+    assert no_yahoo == []
+    assert fetch.throttle_remaining() == 0
+
+
+def test_a_retired_line_stays_out_of_the_bulk_download(monkeypatch):
+    monkeypatch.setattr(fetch, "ticker_aliases", dict)
+    asked = []
+    idx = pd.date_range("2026-01-05", periods=2, name="Date")
+
+    def download(symbols, **kwargs):
+        asked.extend(symbols)
+        return pd.concat({s: pd.DataFrame({"Close": [1.0, 2.0]}, index=idx)
+                          for s in symbols}, axis=1)
+
+    monkeypatch.setattr(fetch.yf, "download", download)
+    assert list(fetch.fetch_many(["AAPL", "WOLF.OLD"])) == ["AAPL"]
+    assert asked == ["AAPL"]
+    assert fetch.fetch_many(["WOLF.OLD"]) == {}
+    # Unlisted, so a gutted-download check does not count it as refused.
+    assert fetch.unlisted(["AAPL", "WOLF.OLD"]) == {"WOLF.OLD"}
+
+
+def test_only_the_exact_suffix_is_retired():
+    assert fetch.retired("WOLF.OLD") and fetch.retired("zzzz.old")
+    assert not any(map(fetch.retired, ["WOLF.NEW", "FOO-OLD", "XX.OLD2", "OLD"]))
