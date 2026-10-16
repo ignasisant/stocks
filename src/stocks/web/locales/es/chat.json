@@ -227,6 +227,7 @@
   "chat.depth_normal": "Normal",
   "chat.depth_deep": "A fondo",
   "chat.depth_hint": "Lee más fuentes y tarda hasta 2 min. Solo para la próxima pregunta.",
+  "chat.depth_hint_kept": "Lee más fuentes y tarda hasta 2 min. Con tu clave se queda puesto.",
   "chat.depth_cost": "Gasta {n} usos gratis.",
   "chat.steps_n": "{n} pasos · {took}",
   "chat.no_tools": "sin herramientas · {took}",
