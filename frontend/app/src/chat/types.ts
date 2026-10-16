@@ -15,7 +15,8 @@ import type { A2uiMessage } from "./a2ui";
 type Source = { title: string; url: string; step?: string };
 
 /** One tool line behind an answer: what ran, on what, and what came back. */
-export type Step = { tool: string; arg: string; out: string };
+/** `why` is the model's own words for the call, when it gave them. */
+export type Step = { tool: string; arg: string; out: string; why?: string };
 
 /** One analyst's case in the bull/bear debate an answer weighed. */
 export type DebateSide = { side: string; text: string };
@@ -24,7 +25,16 @@ export type DebateSide = { side: string; text: string };
 export type Arguing = DebateSide & { id: string; state: "arguing" | "done" | "failed" };
 
 /** A tool line while the answer is still being researched: `out` once back. */
-export type LiveStep = { id: string; tool: string; arg: string; out?: string };
+export type LiveStep = {
+  id: string;
+  tool: string;
+  arg: string;
+  out?: string;
+  why?: string;
+};
+
+/** One part of a deep research's plan, as the model last ticked it. */
+export type PlanStep = { text: string; done: boolean };
 
 /**
  * A frontend tool call an answer carried — AG-UI's, as the stream handed it
@@ -172,6 +182,11 @@ export type Turn = Message & {
    */
   live?: LiveStep[];
   /**
+   * A deep research's plan while it runs, replaced whole each time the model
+   * updates it. Session-only, like `live`: the answer is what it was for.
+   */
+  plan?: PlanStep[];
+  /**
    * The debate while it is argued: each side as it starts, speaks and ends.
    * Dropped when the answer lands, which carries the cases as `debate`.
    */
@@ -291,6 +306,8 @@ export type ChatState = {
   preferred: string | null;
   free_left: number | null;
   free_cap: number | null;
+  /** What an "in depth" question takes from the free allowance. */
+  deep_units: number;
   cap_reason: string | null;
   skills: SkillInfo[];
   skills_mode: string;

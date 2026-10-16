@@ -951,3 +951,210 @@ def test_today_is_the_madrid_day_and_outranks_web_dates(monkeypatch):
 def test_gpt_oss_citation_marks_never_reach_the_reader():
     said = "Volatility stays【2†L13-L17】 and rates fall 【6†L1-L3】.\n【1†L2】 Next."
     assert engine.strip_cite_marks(said) == "Volatility stays and rates fall.\n Next."
+
+
+# ------------------------------------------------------------------- cost
+
+
+@dataclass
+class _MeteredProvider(FakeProvider):
+    """Reports usage the way llm's providers do."""
+
+    def complete(self, api_key, model, system, messages) -> str:
+        from stocks.web import metering
+
+        metering.note("gpt-4o-mini", input=1000, output=100)
+        return super().complete(api_key, model, system, messages)
+
+    def stream(self, api_key, model, system, messages):
+        from stocks.web import metering
+
+        yield "Free "
+        metering.note("gpt-4o-mini", input=1000, output=100)
+        yield "answer."
+
+
+def _costs(monkeypatch) -> list[dict]:
+    seen: list[dict] = []
+    real = engine.obs.event
+
+    def event(name, **fields):
+        if name == "chat.cost":
+            seen.append(fields)
+        return real(name, **fields)
+
+    monkeypatch.setattr(engine.obs, "event", event)
+    return seen
+
+
+def test_a_turn_logs_what_its_model_calls_cost(monkeypatch, paths):
+    from stocks.web import llm
+
+    monkeypatch.setattr(llm, "PROVIDERS", {"free": _MeteredProvider("free")})
+    seen = _costs(monkeypatch)
+    engine.answer(prefs=dict(BASE_PREFS), message="hola", **paths)
+    (cost,) = seen
+    assert cost["profile"] == "fast"
+    assert cost["steps"]["answer"] == 1100
+    assert cost["usd"] is not None and cost["usd"] > 0
+
+
+def test_a_streamed_turn_logs_its_cost_though_each_chunk_ran_elsewhere(
+        monkeypatch, paths):
+    import threading
+
+    from stocks.web import llm
+
+    monkeypatch.setattr(llm, "PROVIDERS", {"free": _MeteredProvider("free")})
+    seen = _costs(monkeypatch)
+    it = engine.answer_stream(prefs=dict(BASE_PREFS), message="hola", **paths)
+    got: list = []
+
+    def step():
+        got.append(next(it, None))
+
+    # The server's way: every chunk pulled on a pool thread of its own.
+    while not got or got[-1] is not None:
+        t = threading.Thread(target=step)
+        t.start()
+        t.join()
+    (cost,) = seen
+    assert cost["steps"]["answer"] == 1100
+
+
+def test_the_turns_log_lines_carry_the_id_its_rating_will_name(
+        monkeypatch, paths):
+    from stocks.web import llm
+
+    monkeypatch.setattr(llm, "PROVIDERS", {"free": _MeteredProvider("free")})
+    seen: list[dict] = []
+    real = engine.obs.event
+
+    def event(name, **fields):
+        if name == "chat.cost":
+            seen.append(engine.obs.current())
+        return real(name, **fields)
+
+    monkeypatch.setattr(engine.obs, "event", event)
+    done = [v for k, v in engine.answer_stream(
+        prefs=dict(BASE_PREFS), message="hola", **paths) if k == "done"]
+    (reply,) = done
+    assert seen and seen[0]["turn"] == reply.turn_id
+
+
+def test_a_call_the_model_explained_carries_its_reason_not_as_its_argument():
+    from stocks.chat import engine
+    from stocks.web.llm import ToolCall
+
+    call = ToolCall("harvest_losses",
+                    {"reason": "  <b>Pérdidas</b> que   compensan " + "x" * 80},
+                    "")
+    step = engine.live_step("c1", call, "es", done=False)
+    assert step["arg"] == ""
+    assert step["why"].startswith("Pérdidas que compensan x")
+    assert len(step["why"]) <= 60
+    plain = engine.live_step("c2", ToolCall("search_web", {"query": "q"}, ""),
+                             "es", done=False)
+    assert "why" not in plain
+    (traced,) = engine.trace(engine.agent.Evidence(calls=[call]), [], [], "es")
+    assert traced["why"] == step["why"]
+
+
+# ------------------------------------------------------------ in depth
+
+
+def _today() -> str:
+    return f"free_msgs::{time.strftime('%Y-%m-%d')}"
+
+
+def test_an_in_depth_question_takes_more_of_the_free_allowance(
+        monkeypatch, paths):
+    from stocks.web import llm
+
+    monkeypatch.setenv("FREE_LLM_DAILY_CAP", "5")
+    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
+    monkeypatch.setattr(llm, "PROVIDERS", {"free": _MeteredProvider("free")})
+    seen = _costs(monkeypatch)
+    prefs = dict(BASE_PREFS)
+    engine.answer(prefs=prefs, message="analiza ASML a fondo", **paths)
+    assert seen[-1]["profile"] == "deep"
+    assert prefs[_today()] == engine.DEEP_UNITS
+    assert engine._global_free["used"] == engine.DEEP_UNITS
+
+
+def test_with_one_unit_left_the_research_is_the_quick_one(monkeypatch, paths):
+    """The gather runs before the answer is charged, so a reader without the
+    units for a deep one gets the quick one — never a deep read the wall
+    then refuses to answer."""
+    from stocks.web import llm
+
+    monkeypatch.setenv("FREE_LLM_DAILY_CAP", "5")
+    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
+    monkeypatch.setattr(llm, "PROVIDERS", {"free": _MeteredProvider("free")})
+    from stocks import accounts
+
+    monkeypatch.setattr(auth, "_persist", lambda path: None)
+    seen = _costs(monkeypatch)
+    prefs = {**BASE_PREFS, _today(): 4}
+    # On file too: the charge re-reads the counter there (`_fresh_free_count`).
+    accounts.save_prefs(paths["prefs_path"], prefs, persist=lambda p: None)
+    reply = engine.answer(prefs=prefs, message="analiza ASML a fondo", **paths)
+    assert reply.text and not reply.error
+    assert seen[-1]["profile"] == "fast"
+    assert prefs[_today()] == 5
+
+
+def test_a_refund_gives_back_every_unit_a_turn_took(monkeypatch):
+    monkeypatch.setenv("FREE_LLM_DAILY_CAP", "5")
+    monkeypatch.setattr(engine, "_global_free", {"day": "", "used": 0})
+    prefs: dict = {}
+    assert engine.spend_free_quota(prefs, 2)
+    assert not engine.spend_free_quota(prefs, 4)  # 2 + 4 > 5: none taken
+    engine.refund_free_quota(prefs, 2)
+    assert prefs[_today()] == 0 and engine._global_free["used"] == 0
+
+
+def test_closing_the_stream_stops_the_research_still_running(monkeypatch, paths):
+    # Stop (or an abort) closes the stream at a yield. The gather beside it
+    # used to run on for its whole two minutes, paid for and never read.
+    import threading
+
+    from stocks.chat import stopping
+
+    saw_stop = threading.Event()
+
+    def researching(*_a, **_kw):
+        for _ in range(100):
+            if stopping.requested():
+                saw_stop.set()
+                break
+            time.sleep(0.02)
+        return engine.agent.Evidence(ok=False)
+
+    monkeypatch.setattr(engine, "gather_evidence", researching)
+    monkeypatch.setattr(engine, "web_enabled", lambda: True)
+    it = engine.answer_stream(prefs=dict(BASE_PREFS), message="¿qué tal ASML?",
+                              **paths)
+    assert next(it) == ("phase", "gathering")
+    it.close()
+    assert saw_stop.wait(2)
+
+
+def test_a_deep_plan_is_handed_over_while_the_research_runs(monkeypatch, paths):
+    plan = [{"text": "Precio de ASML", "done": False}]
+
+    def researching(*_a, on_plan=None, **_kw):
+        on_plan(plan)
+        return engine.agent.Evidence(ok=False)
+
+    monkeypatch.setattr(engine, "gather_evidence", researching)
+    monkeypatch.setattr(engine, "web_enabled", lambda: True)
+    it = engine.answer_stream(prefs=dict(BASE_PREFS), message="¿qué tal ASML?",
+                              **paths)
+    said = []
+    for kind, payload in it:
+        said.append((kind, payload))
+        if kind == "plan":
+            break
+    it.close()
+    assert ("plan", plan) in said

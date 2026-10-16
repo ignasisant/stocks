@@ -547,9 +547,16 @@
   }
 }
 
+/* Reduced motion: still alive, only gentler — a slower, shallower pulse. */
 @media (prefers-reduced-motion: reduce) {
   .ag-work-glyph {
-    animation: none;
+    animation: ag-work-soft 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes ag-work-soft {
+  50% {
+    opacity: 0.6;
   }
 }
 

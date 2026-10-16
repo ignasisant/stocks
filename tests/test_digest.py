@@ -141,6 +141,14 @@ def test_compute_digest_data_with_ledger(tmp_path, monkeypatch):
         "position_value_frames",
         lambda pos, period="1mo", base="EUR": (values, values),
     )
+    # 500 of the week's rise was a deposit: the week is what the money made,
+    # over the 400 at work plus the 500 put in.
+    hist = pd.DataFrame(
+        {"value": [400.0, 950.0, 1000.0], "injected": [400.0, 900.0, 900.0]},
+        index=idx,
+    )
+    twr = pd.Series([450.0 / 400.0 - 1, 50.0 / 950.0], index=idx[1:])
+    monkeypatch.setattr(ap, "book_history", lambda txs, base="EUR": (hist, twr, []))
     monkeypatch.setattr(ap, "session_moves", lambda ts, max_workers=8: {"NVDA": 0.05})
     monkeypatch.setattr(dg, "calendar_events", lambda holdings: ([], []))
 
@@ -148,7 +156,9 @@ def test_compute_digest_data_with_ledger(tmp_path, monkeypatch):
     assert data.watchlist_only is False
     assert data.total == 1000.0
     assert data.day == pytest.approx((50.0, 50.0 / 950.0))
-    assert data.week == pytest.approx((100.0, 100.0 / 900.0))
+    gain, pct = data.week
+    assert gain == pytest.approx(100.0)
+    assert pct == pytest.approx(100.0 / 900.0)
     assert data.movers == [("NVDA", 0.05)]
 
 

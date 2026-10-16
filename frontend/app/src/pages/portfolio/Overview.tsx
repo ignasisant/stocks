@@ -177,7 +177,7 @@ function MonthlyCard() {
           option === "inception" ? t("portfolio.from_start") : option.toUpperCase()
         }
       />
-      <Loaded query={monthly} skeleton={<Skeleton rows={8} />}>
+      <Loaded query={monthly} skeleton={<Skeleton shape="chart" />}>
         {(data) => {
           if (!data.months.length) {
             return <Caption>{t("portfolio.not_enough_history")}</Caption>;

@@ -127,6 +127,7 @@ const state: ChatState = {
   preferred: null,
   free_left: null,
   free_cap: null,
+  deep_units: 2,
   cap_reason: null,
   skills: [],
   skills_mode: "auto",
@@ -163,6 +164,24 @@ describe("the composer's button", () => {
     expect(out).toContain('aria-label="chat.stop"');
     expect(out).not.toContain('aria-label="chat.send"');
     expect(out).not.toContain('type="submit"');
+  });
+});
+
+describe("the composer's research switch", () => {
+  it("starts at normal, its cost unsaid until it is turned on", () => {
+    const out = drawComposer(false);
+    expect(out).toContain("chat.depth_mode");
+    expect(out).toMatch(/aria-pressed="true"[^>]*>chat.depth_normal/);
+    expect(out).not.toContain("chat.depth_cost");
+    expect(out).toContain('placeholder="chat.placeholder"');
+  });
+
+  it("is the segmented control every other one-of-a-few choice is", () => {
+    const out = drawComposer(false);
+    expect(out).toMatch(
+      /class="ag-seg"[^>]*role="group"[^>]*aria-label="chat.depth_mode"/,
+    );
+    expect(out).toMatch(/aria-label="chat.skills_mode"/);
   });
 });
 
@@ -419,7 +438,7 @@ describe("an answer's tool calls", () => {
 });
 
 describe("an answer still being researched", () => {
-  const pending = (live: Stored["live"]) =>
+  const pending = (live: Stored["live"], plan?: Stored["plan"]) =>
     renderToStaticMarkup(
       <Turn
         turn={{
@@ -430,6 +449,7 @@ describe("an answer still being researched", () => {
           action: null,
           pending: true,
           live,
+          plan,
         }}
         skills={[]}
         providers={[]}
@@ -448,6 +468,49 @@ describe("an answer still being researched", () => {
     expect(out).toContain('aria-busy="true"');
     // The wait still names itself beside the lines.
     expect(out).toContain("chat.work_thinking");
+  });
+
+  it("reads a lookup the model explained as its reason, in the reader's words", () => {
+    const out = pending([
+      { id: "a", tool: "search_web", arg: "asml news", why: "Noticias de ASML de hoy" },
+    ]);
+    expect(out).toContain("Noticias de ASML de hoy");
+    expect(out).not.toContain("search_web");
+  });
+
+  it("shows a deep research's plan above its lookups, ticked as it goes", () => {
+    const out = pending(
+      [{ id: "a", tool: "get_quotes", arg: "NVDA" }],
+      [
+        { text: "Precio de NVDA", done: true },
+        { text: "Noticias de AMD", done: false },
+      ],
+    );
+    expect(out).toContain("Noticias de AMD");
+    expect(out.indexOf("ag-chat-plan")).toBeLessThan(out.indexOf("ag-chat-live"));
+    // Done in words for a screen reader, not only as a check mark.
+    expect(out.match(/chat\.plan_done/g)).toHaveLength(1);
+    expect(out).toMatch(/<ol class="ag-chat-plan" aria-label="chat\.plan"/);
+  });
+
+  it("draws no plan once the answer is in", () => {
+    const out = renderToStaticMarkup(
+      <Turn
+        turn={{
+          role: "assistant",
+          content: "Done.",
+          skills: [],
+          web: [],
+          action: null,
+          plan: [{ text: "Precio de NVDA", done: true }],
+        }}
+        skills={[]}
+        providers={[]}
+        cap={null}
+        onRetry={() => {}}
+      />,
+    );
+    expect(out).not.toContain("ag-chat-plan");
   });
 });
 

@@ -23,6 +23,7 @@ import time
 from datetime import date, timedelta
 
 import pandas as pd
+import pytest
 
 from stocks.chat import (
     charts,
@@ -129,32 +130,104 @@ def test_a_watchlist_only_account_has_no_section():
     assert daily_book.section(facts) == {}
 
 
-def test_the_month_is_drawn_as_growth_from_its_first_day(monkeypatch):
-    idx = pd.date_range("2026-08-20", "2026-09-29", freq="D")
-    hist = pd.DataFrame(
-        {"A": [100.0 + i for i in range(len(idx))],
-         # Priced only from mid-window: summed over the names priced at both
-         # ends, as basket_change sums them, so it is left out.
-         "B": [None] * 20 + [50.0] * (len(idx) - 20)},
-        index=idx,
-    )
-    spy = daily_series("2026-08-15", [400.0 + i for i in range(46)])
+def _book(start, values, injected):
+    days = pd.bdate_range(start, periods=len(values))
+    return pd.DataFrame({"value": values, "injected": injected}, index=days)
+
+
+def test_the_month_is_drawn_as_the_book_against_its_own_money_in_the_index(monkeypatch):
+    # 1 000 in, 1 000 more on the tenth day: the index line buys with both,
+    # each on its own day, at that day's close.
+    n = 40
+    value = [1000.0 + 10 * i + (1000.0 if i >= 10 else 0) for i in range(n)]
+    hist = _book("2026-08-20", value, [1000.0] * 10 + [2000.0] * (n - 10))
+    spy = daily_series("2026-08-15", [400.0 + i for i in range(80)])
     monkeypatch.setattr(daily_book, "index_series", lambda closes, ccy: (spy, "EUR"))
-    lines = daily_book.chart(hist, {}, "EUR", label="Your portfolio")
+    lines = daily_book.versus(hist, {}, "EUR", label="Your portfolio")
     book, index = lines
     assert book["symbol"] == daily_book.BOOK and book["label"] == "Your portfolio"
-    assert book["values"][0] == 100.0
-    start = hist["A"].loc["2026-08-30"]
-    assert book["values"][-1] == round(hist["A"].iloc[-1] / start * 100, 4)
-    assert book["index"] is True and index["index"] is True
-    assert index["symbol"] == "SPY" and index["values"][0] == 100.0
-    assert index["dates"][0] == book["dates"][0]
+    assert book["money"] is True and index["money"] is True
+    assert index["symbol"] == "SPY" and index["dates"] == book["dates"]
+    start = pd.Timestamp(book["dates"][0])
+    assert start >= hist.index[-1] - pd.Timedelta(days=daily_book.CHART_DAYS + 4)
+    # Bought on the book's first day, then cut to the window: the month is a
+    # stretch of the whole race, not one restarted where it opens.
+    assert index["opens"] == "2026-08-20"
+    # Units: 1 000 on the first day, 1 000 more the day it went in.
+    whole = 1000.0 / spy.loc[hist.index[0]] + 1000.0 / spy.loc[hist.index[10]]
+    assert index["values"][0] == pytest.approx(whole * spy.loc[start], abs=0.01)
+    assert book["values"][0] == hist.loc[start, "value"]
+    assert book["injected"][-1] == 2000.0
+    assert book["values"][-1] == hist["value"].iloc[-1]
+
+
+def test_the_book_is_drawn_against_another_index_in_the_readers_currency(monkeypatch):
+    from stocks.analysis import portfolio
+
+    hist = _book("2026-06-01", [1000.0] * 90, [1000.0] * 90)
+    qqq = daily_series("2026-05-01", [500.0 + i for i in range(200)])
+    # Dollars at 0.5 euro, then 0.6: the euros the index is bought with
+    # must see the rate move.
+    rate = pd.Series(0.5, index=qqq.index)
+    rate.loc["2026-09-01":] = 0.6
+    monkeypatch.setattr(portfolio, "fx_frame",
+                        lambda ccys, index, base: {"USD": rate.reindex(index).ffill()})
+    lines = daily_book.versus(hist, {"QQQ": qqq}, "EUR", days=91, index="QQQ")
+    book, index = lines
+    assert index["symbol"] == "QQQ" and index["label"] == "Nasdaq 100"
+    assert index["currency"] == "EUR" and index["dates"][0] == book["dates"][0]
+    last = pd.Timestamp(book["dates"][-1])
+    held = 1000.0 / (qqq.loc["2026-06-01"] * 0.5)  # bought on the book's first day
+    assert index["values"][-1] == pytest.approx(held * qqq.loc[last] * 0.6, abs=0.01)
+
+
+def test_an_index_out_of_the_readers_currency_is_not_bought(monkeypatch):
+    from stocks.analysis import portfolio
+
+    monkeypatch.setattr(portfolio, "fx_frame", lambda ccys, index, base: {})
+    hist = _book("2026-06-01", [1000.0] * 40, [1000.0] * 40)
+    eem = daily_series("2026-05-01", [40.0 + i for i in range(100)])
+    book, = daily_book.versus(hist, {"EEM": eem}, "EUR", index="EEM")
+    assert book["symbol"] == daily_book.BOOK
+
+
+def test_an_index_in_the_readers_currency_is_not_converted(monkeypatch):
+    from stocks.analysis import portfolio
+
+    def boom(*a, **k):
+        raise AssertionError("no rate needed")
+
+    monkeypatch.setattr(portfolio, "fx_frame", boom)
+    ibex = daily_series("2026-01-01", [10_000.0 + i for i in range(60)])
+    series, unit = daily_book.compare_series({"^IBEX": ibex}, "EUR", "^IBEX")
+    assert unit == "EUR" and series.iloc[-1] == ibex.iloc[-1]
+
+
+def test_an_index_with_no_rate_stays_in_its_own_currency(monkeypatch):
+    from stocks.analysis import portfolio
+
+    monkeypatch.setattr(portfolio, "fx_frame", lambda ccys, index, base: {})
+    eem = daily_series("2026-01-01", [40.0 + i for i in range(60)])
+    series, unit = daily_book.compare_series({"EEM": eem}, "EUR", "EEM")
+    assert unit == "USD" and series.iloc[-1] == eem.iloc[-1]
+    assert daily_book.compare_series({}, "EUR", "EEM") == (None, "")
+    assert daily_book.compare_series({"XYZ": eem}, "EUR", "XYZ") == (None, "")
+
+
+def test_the_year_to_date_opens_on_the_last_close_of_the_year_before():
+    today = pd.Timestamp("2026-10-15")
+    opens = today - pd.Timedelta(days=daily_book.window_days("ytd", today))
+    assert opens == pd.Timestamp("2025-12-31")
+    assert daily_book.window_days("ytd", pd.Timestamp("2026-01-01")) == 1
+    assert daily_book.window_days("6m") == 182
+    assert daily_book.window_days("5y") == 1826
+    assert daily_book.window_days("nonsense") == daily_book.CHART_DAYS
 
 
 def test_no_history_draws_nothing():
-    assert daily_book.chart(None, {}, "EUR") == []
-    one = pd.DataFrame({"A": [1.0]}, index=pd.date_range("2026-09-29", periods=1))
-    assert daily_book.chart(one, {}, "EUR") == []
+    assert daily_book.versus(None, {}, "EUR") == []
+    assert daily_book.versus(pd.DataFrame(), {}, "EUR") == []
+    assert daily_book.versus(_book("2026-09-29", [1.0], [1.0]), {}, "EUR") == []
 
 
 def test_build_facts_drops_the_month_against_the_index_once_the_section_says_it():
@@ -685,3 +758,24 @@ def test_a_card_without_a_book_takes_no_chart():
     card = daily.computed(book_facts(index=None), "en", TODAY)
     assert daily.dressed(card, [{"symbol": "@BOOK"}]).book == {}
     assert daily.dressed(None, []) is None
+
+
+def test_the_whole_book_is_drawn_from_its_first_day_with_the_money_put_in(monkeypatch):
+    # A deposit lifts both lines alike; only what the money made sets them apart.
+    days = pd.to_datetime(["2026-06-01", "2026-06-02", "2026-06-04", "2026-06-05"])
+    hist = pd.DataFrame(
+        {"injected": [1000.0, 1000.0, 2000.0, 2000.0],
+         "value": [1000.0, 1010.0, 2030.0, 2050.0]},
+        index=days,
+    )
+    spy = pd.Series([100.0, 101.0, 102.0, 102.0], index=days)
+    monkeypatch.setattr(daily_book, "index_series", lambda closes, ccy: (spy, "EUR"))
+    book, index = daily_book.versus(hist, {}, "EUR",
+                                    days=daily_book.window_days("max"))
+    assert book["dates"] == ["2026-06-01", "2026-06-02", "2026-06-04", "2026-06-05"]
+    assert book["values"] == [1000.0, 1010.0, 2030.0, 2050.0]
+    assert book["injected"] == [1000.0, 1000.0, 2000.0, 2000.0]
+    assert "injected" not in index
+    # 10 units, then 1 000 more at 102 the day it went in.
+    assert index["values"] == pytest.approx([1000.0, 1010.0, 2020.0, 2020.0], abs=0.01)
+

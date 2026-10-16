@@ -27,7 +27,7 @@ import time
 import pandas as pd
 from yfinance.exceptions import YFRateLimitError
 
-from stocks import obs
+from stocks import obs, progress
 from stocks.analysis import naive_dates
 from stocks.data.fetch import (
     failure_kind,
@@ -140,10 +140,14 @@ def closes(
     out: dict[str, pd.Series] = {}
     with obs.timed("yahoo.spark", symbols=len(symbols)) as rec:
         for i in range(0, len(symbols), chunk):
-            for entry in _ask(symbols[i : i + chunk], range_, deadline):
+            batch = symbols[i : i + chunk]
+            for entry in _ask(batch, range_, deadline):
                 symbol = str(entry.get("symbol") or "")
                 series = _series(entry)
                 if symbol and series is not None:
                     out[symbol] = series.rename(symbol)
+            # The corner banner counts these: a book's refresh is a few
+            # chunks, and each one landing is the bar moving.
+            progress.tick(len(batch))
         rec["series"] = len(out)
     return out

@@ -1130,6 +1130,25 @@
   color: var(--ag-text-muted);
 }
 
+/* The model's own words for a call: the line itself while it runs. In the
+   folded trace it heads the call, with the tool and its result under it —
+   the purpose is what a reader checks first, the mechanics second. */
+.ag-chat-step-why {
+  color: var(--ag-text-primary);
+}
+
+.ag-chat-steps:not(.ag-chat-live) .ag-chat-step-why {
+  display: block;
+}
+
+.ag-chat-step-why + code {
+  color: var(--ag-text-secondary);
+}
+
+.ag-chat-steps:not(.ag-chat-live) > li + li {
+  margin-top: 4px;
+}
+
 /* What a turn was, when it was not simply typed and answered: a transcript,
    or an answer the reader cut short. Above the bubble, where the lens is. */
 /* ------------------------------------------------- the attached statement */
@@ -1293,6 +1312,32 @@
 
 .ag-chat-chips {
   margin-top: 8px;
+}
+
+/* Research and lens mode are the DS's segmented control, full width so the
+   options split the box rather than huddle at its left edge; a group after
+   one needs the air a label over its own control does not. */
+.ag-chat-picker .ag-seg {
+  display: flex;
+}
+
+.ag-chat-picker .ag-seg-opt {
+  flex: 1 1 auto;
+}
+
+.ag-chat-picker .ag-chat-group:not(:first-child) {
+  margin-top: 12px;
+}
+
+.ag-chat-picker .ag-chat-hint {
+  margin: 6px 0 0;
+}
+
+/* The lens chips are pressed with a thumb as often as with a mouse. */
+@media (pointer: coarse) {
+  .ag-chat-picker .ag-chat-chip {
+    min-height: 44px;
+  }
 }
 
 /* Inline-flex, because a glyph left inline sits on the text's baseline and
@@ -2095,6 +2140,53 @@ a.ag-chat-btn {
   list-style: none;
 }
 
+/* A deep research's plan (`Turn.Plan`), above its lookups: one row per part,
+   an empty ring until the model says it is done, then a filled check. The
+   part stays readable once done, only quieter. */
+.ag-chat-plan {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ag-fs-2xs);
+  color: var(--ag-text-primary);
+}
+
+.ag-chat-plan > li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ag-chat-plan > li[data-done] {
+  color: var(--ag-text-secondary);
+}
+
+.ag-chat-plan-mark {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--ag-text-muted);
+  border-radius: 50%;
+  transform: translateY(2px);
+  transition:
+    background-color var(--ag-dur-move) var(--ag-ease-out),
+    border-color var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.ag-chat-plan > li[data-done] .ag-chat-plan-mark {
+  border-color: var(--ag-brand-cta);
+  background: var(--ag-brand-cta);
+  color: var(--ag-on-brand);
+}
+
+.ag-chat-plan + .ag-chat-live {
+  margin-top: 8px;
+}
+
 /* An A2UI surface (`chat/a2ui.tsx`): the server's layout, the drawer's look.
    Rows wrap rather than squeeze, because a 380px drawer is the usual width. */
 .ag-a2ui-col {
@@ -2428,6 +2520,10 @@ a.ag-chat-btn {
   .ag-chat-live > li[aria-busy="true"] .ag-chat-step-out,
   .ag-chat-send > svg {
     animation: none;
+  }
+
+  .ag-chat-plan-mark {
+    transition: none;
   }
 }
 

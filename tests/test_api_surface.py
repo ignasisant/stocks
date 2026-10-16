@@ -156,7 +156,14 @@ def test_the_guest_list_is_not_silently_growing():
     # personal card (the route drops it), and the read never writes or spends.
     # 57: `POST /client-error` — a guest's page breaks like anyone's; one log
     # line, nothing on disk, metered per address (`guest.OPEN_WRITES`).
-    assert len(guest.OPEN) == 57
+    # 58: `GET /ticker/{symbol}/compare` — the price card's comparison: market
+    # data like `/bars`, read off the same memo; the account only names the
+    # currency.
+    # 59: `GET /review/returns` — the review tables' return columns, closes
+    # off Yahoo for the rows the guest's review already drew.
+    # 60: `GET /progress` — the corner banner's view of a slow load: the demo
+    # book's own download step and count, nothing else; no write, no spend.
+    assert len(guest.OPEN) == 60
 
 
 def test_every_route_a_guest_may_read_is_a_read():

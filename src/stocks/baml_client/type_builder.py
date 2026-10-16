@@ -20,7 +20,7 @@ from .globals import DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIM
 class TypeBuilder(type_builder.TypeBuilder):
     def __init__(self):
         super().__init__(classes=set(
-          ["ActionCall","AlertRule","AnalysisPoint","AnalysisReply","BriefSection","CardLine","CardReply","ColumnMap","Columns","CryptoColumns","CryptoMap","LessonOp","LessonOps","MarketNote","MarketReply","PeerPicks","QueryPlan","RoutineAnswer","RoutinePlan","RoutinePlans","SectionNote","SkillPick","StatementPage","StatementRow",]
+          ["ActionCall","AlertRule","AnalysisPoint","AnalysisReply","AnswerJudged","BriefSection","CardLine","CardReply","ColumnMap","Columns","CryptoColumns","CryptoMap","GoalJudged","LessonOp","LessonOps","MarketNote","MarketReply","PeerPicks","QueryPlan","RoutineAnswer","RoutinePlan","RoutinePlans","ScopeVerdict","ScoreJudged","SectionNote","SkillPick","StatementPage","StatementRow",]
         ), enums=set(
           ["AssetClass","CryptoLayout","DocumentKind",]
         ), runtime=DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIME)
@@ -43,7 +43,7 @@ class TypeBuilder(type_builder.TypeBuilder):
 
 
     # #########################################################################
-    # Generated classes 24
+    # Generated classes 28
     # #########################################################################
 
     @property
@@ -61,6 +61,10 @@ class TypeBuilder(type_builder.TypeBuilder):
     @property
     def AnalysisReply(self) -> "AnalysisReplyViewer":
         return AnalysisReplyViewer(self)
+
+    @property
+    def AnswerJudged(self) -> "AnswerJudgedViewer":
+        return AnswerJudgedViewer(self)
 
     @property
     def BriefSection(self) -> "BriefSectionViewer":
@@ -89,6 +93,10 @@ class TypeBuilder(type_builder.TypeBuilder):
     @property
     def CryptoMap(self) -> "CryptoMapViewer":
         return CryptoMapViewer(self)
+
+    @property
+    def GoalJudged(self) -> "GoalJudgedViewer":
+        return GoalJudgedViewer(self)
 
     @property
     def LessonOp(self) -> "LessonOpViewer":
@@ -125,6 +133,14 @@ class TypeBuilder(type_builder.TypeBuilder):
     @property
     def RoutinePlans(self) -> "RoutinePlansViewer":
         return RoutinePlansViewer(self)
+
+    @property
+    def ScopeVerdict(self) -> "ScopeVerdictViewer":
+        return ScopeVerdictViewer(self)
+
+    @property
+    def ScoreJudged(self) -> "ScoreJudgedViewer":
+        return ScoreJudgedViewer(self)
 
     @property
     def SectionNote(self) -> "SectionNoteViewer":
@@ -284,7 +300,7 @@ class DocumentKindValues:
 
 
 # #########################################################################
-# Generated classes 24
+# Generated classes 28
 # #########################################################################
 
 class ActionCallAst:
@@ -543,6 +559,49 @@ class AnalysisReplyProperties:
     @property
     def points(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("points"))
+    
+    
+
+
+class AnswerJudgedAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("AnswerJudged")
+        self._properties: typing.Set[str] = set([  "goals",  "scores",  ])
+        self._props = AnswerJudgedProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "AnswerJudgedProperties":
+        return self._props
+
+
+class AnswerJudgedViewer(AnswerJudgedAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class AnswerJudgedProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def goals(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("goals"))
+    
+    @property
+    def scores(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("scores"))
     
     
 
@@ -1016,6 +1075,53 @@ class CryptoMapProperties:
     
 
 
+class GoalJudgedAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("GoalJudged")
+        self._properties: typing.Set[str] = set([  "n",  "verdict",  "why",  ])
+        self._props = GoalJudgedProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "GoalJudgedProperties":
+        return self._props
+
+
+class GoalJudgedViewer(GoalJudgedAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class GoalJudgedProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def n(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("n"))
+    
+    @property
+    def verdict(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("verdict"))
+    
+    @property
+    def why(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("why"))
+    
+    
+
+
 class LessonOpAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
@@ -1403,6 +1509,96 @@ class RoutinePlansProperties:
     @property
     def plans(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("plans"))
+    
+    
+
+
+class ScopeVerdictAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("ScopeVerdict")
+        self._properties: typing.Set[str] = set([  "in_scope",  "refusal",  ])
+        self._props = ScopeVerdictProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "ScopeVerdictProperties":
+        return self._props
+
+
+class ScopeVerdictViewer(ScopeVerdictAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class ScopeVerdictProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def in_scope(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("in_scope"))
+    
+    @property
+    def refusal(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("refusal"))
+    
+    
+
+
+class ScoreJudgedAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("ScoreJudged")
+        self._properties: typing.Set[str] = set([  "id",  "value",  "why",  ])
+        self._props = ScoreJudgedProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "ScoreJudgedProperties":
+        return self._props
+
+
+class ScoreJudgedViewer(ScoreJudgedAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class ScoreJudgedProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def id(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("id"))
+    
+    @property
+    def value(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("value"))
+    
+    @property
+    def why(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("why"))
     
     
 

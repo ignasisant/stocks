@@ -638,3 +638,32 @@ export type AlertForm = {
 
 /** The fields a watchlist write may carry. Only the ones sent are applied. */
 export type EntryFields = { favorite?: boolean; tags?: string[]; name?: string };
+
+/** One line on the comparison card: cumulative return per date, in `base`. */
+export type CompareLine = {
+  ticker: string;
+  name: string;
+  role: "subject" | "index" | "sector" | "peer" | "pick";
+  points: (number | null)[];
+};
+
+/** A name the card offers to draw: the indices, the sector's ETF, peers. */
+export type CompareOffer = {
+  ticker: string;
+  name: string;
+  role: "index" | "sector" | "peer";
+  /** The subject's sector, on the sector ETF's offer. */
+  sector: string | null;
+};
+
+/** `GET /ticker/{symbol}/compare`. */
+export type Comparison = {
+  ticker: string;
+  range: string;
+  base: string;
+  dates: string[];
+  lines: CompareLine[];
+  offered: CompareOffer[];
+  /** Asked for but not drawn: no history, or no rate into `base`. */
+  missing: string[];
+};

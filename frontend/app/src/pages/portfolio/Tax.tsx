@@ -84,6 +84,57 @@ export function salesByTicker(sales: TaxSale[]) {
   return [...byTicker.values()].sort((a, b) => Math.abs(b.gain) - Math.abs(a.gain));
 }
 
+/** One position's sales in a period, added up: the row of the grouped table. */
+export type PositionSales = {
+  ticker: string;
+  sales: number;
+  first_buy: string;
+  last_buy: string;
+  first_sell: string;
+  last_sell: string;
+  quantity: number;
+  cost: number;
+  proceeds: number;
+  gain: number;
+};
+
+/** The sales folded into one row per name, in the order the names first sold. */
+export function salesByPosition(sales: TaxSale[]): PositionSales[] {
+  const byTicker = new Map<string, PositionSales>();
+  for (const sale of sales) {
+    const one = byTicker.get(sale.ticker);
+    if (!one) {
+      byTicker.set(sale.ticker, {
+        ticker: sale.ticker,
+        sales: 1,
+        first_buy: sale.buy_date,
+        last_buy: sale.buy_date,
+        first_sell: sale.sell_date,
+        last_sell: sale.sell_date,
+        quantity: sale.quantity,
+        cost: sale.cost,
+        proceeds: sale.proceeds,
+        gain: sale.gain,
+      });
+      continue;
+    }
+    one.sales += 1;
+    if (sale.buy_date < one.first_buy) one.first_buy = sale.buy_date;
+    if (sale.buy_date > one.last_buy) one.last_buy = sale.buy_date;
+    if (sale.sell_date < one.first_sell) one.first_sell = sale.sell_date;
+    if (sale.sell_date > one.last_sell) one.last_sell = sale.sell_date;
+    one.quantity += sale.quantity;
+    one.cost += sale.cost;
+    one.proceeds += sale.proceeds;
+    one.gain += sale.gain;
+  }
+  return [...byTicker.values()];
+}
+
+/** A first–last date pair, one date when they are the same day. */
+const span = (first: string, last: string) =>
+  first === last ? first : `${first} – ${last}`;
+
 /** Names listed in a bar's hover box before the rest fold into "+n more". */
 const TIP_SALES = 6;
 
@@ -136,6 +187,9 @@ function Report({ report }: { report: TaxReport }) {
   // A month bar clicked in the monthly view narrows the sales below to it.
   // Any other way of choosing what the card shows lets it go again.
   const [month, setMonth] = useState<string | null>(null);
+  // Every parcel as its own row, or one row per name — a name sold in five
+  // lots reads as five lines otherwise.
+  const [group, setGroup] = useState<"sale" | "position">("sale");
   const pickYear = (next: string) => {
     setYear(next);
     setMonth(null);
@@ -316,27 +370,46 @@ function Report({ report }: { report: TaxReport }) {
       ) : null}
 
       <Card>
-        {/* Few fiscal years read faster as buttons than as a dropdown — up to
+        <div className="pf-controls-bar">
+          {/* Few fiscal years read faster as buttons than as a dropdown — up to
             four options counting "all years". */}
-        {options.length <= 4 ? (
-          <Segmented
-            label={words.say("fiscal_year")}
-            options={options}
-            value={year}
-            onChange={pickYear}
-            format={yearLabel}
-          />
-        ) : (
-          <Dropdown
-            label={words.say("fiscal_year")}
-            // Newest first, the way the dropdown opens on it; the all-years
-            // entry stays at the bottom, after the years.
-            options={[...periods].reverse().concat(report.all_years ? [ALL_YEARS] : [])}
-            value={year}
-            onChange={pickYear}
-            format={yearLabel}
-          />
-        )}
+          {options.length <= 4 ? (
+            <Segmented
+              label={words.say("fiscal_year")}
+              options={options}
+              value={year}
+              onChange={pickYear}
+              format={yearLabel}
+            />
+          ) : (
+            <Dropdown
+              label={words.say("fiscal_year")}
+              // Newest first, the way the dropdown opens on it; the all-years
+              // entry stays at the bottom, after the years.
+              options={[...periods]
+                .reverse()
+                .concat(report.all_years ? [ALL_YEARS] : [])}
+              value={year}
+              onChange={pickYear}
+              format={yearLabel}
+            />
+          )}
+          {sales.length ? (
+            <Segmented
+              label={t("portfolio.tax_group")}
+              options={["sale", "position"] as const}
+              value={group}
+              onChange={setGroup}
+              format={(option) =>
+                t(
+                  option === "sale"
+                    ? "portfolio.tax_group_sale"
+                    : "portfolio.tax_group_position",
+                )
+              }
+            />
+          ) : null}
+        </div>
         <h2>
           {total
             ? words.say("all_years_header")
@@ -399,7 +472,13 @@ function Report({ report }: { report: TaxReport }) {
             </button>
           </div>
         ) : null}
-        {sales.length ? <SalesTable report={report} sales={sales} /> : null}
+        {sales.length ? (
+          group === "sale" ? (
+            <SalesTable report={report} sales={sales} />
+          ) : (
+            <PositionsTable report={report} sales={sales} />
+          )
+        ) : null}
         {report.flags.map((flag) => (
           <Caption key={flag.name}>{flagCaption(flag, words, money)}</Caption>
         ))}
@@ -550,6 +629,119 @@ function SalesTable({ report, sales }: { report: TaxReport; sales: TaxSale[] }) 
         sub: (row) => [
           `${t("portfolio.col_bought")} ${row.buy_date}`,
           `${t("portfolio.col_sold")} ${row.sell_date}`,
+          `${t("portfolio.col_shares")} ${formatShares(lang, row.quantity, true) ?? ""}`,
+        ],
+        wrap: true,
+      }}
+    />
+  );
+}
+
+/** The same sales, one row per name: what each position made in the period. */
+function PositionsTable({ report, sales }: { report: TaxReport; sales: TaxSale[] }) {
+  const t = useT();
+  const lang = useLang();
+  const money = moneyIn(lang, report.currency);
+  const rows = salesByPosition(sales);
+  const pctOf = (row: PositionSales) => (row.cost ? row.gain / row.cost : null);
+
+  const columns: Column<PositionSales>[] = [
+    {
+      key: "ticker",
+      label: t("portfolio.col_position"),
+      left: true,
+      sort: (row) => row.ticker,
+      cell: (row) => <TickerCell ticker={row.ticker} />,
+    },
+    {
+      key: "count",
+      label: t("portfolio.col_sales"),
+      sort: (row) => row.sales,
+      cell: (row) => <Figure value={String(row.sales)} />,
+    },
+    {
+      key: "buy",
+      label: t("portfolio.col_bought"),
+      left: true,
+      sort: (row) => row.first_buy,
+      cell: (row) => (
+        <span className="pf-muted">{span(row.first_buy, row.last_buy)}</span>
+      ),
+    },
+    {
+      key: "sell",
+      label: t("portfolio.col_sold"),
+      left: true,
+      sort: (row) => row.last_sell,
+      cell: (row) => (
+        <span className="pf-muted">{span(row.first_sell, row.last_sell)}</span>
+      ),
+    },
+    {
+      key: "qty",
+      label: t("portfolio.col_shares"),
+      sort: (row) => row.quantity,
+      cell: (row) => <Figure value={formatShares(lang, row.quantity, true)} />,
+    },
+    {
+      key: "cost",
+      label: t("portfolio.cost_basis"),
+      sort: (row) => row.cost,
+      cell: (row) => <Figure value={money(row.cost, { digits: 2 })} />,
+    },
+    {
+      key: "proceeds",
+      label: t("portfolio.col_proceeds"),
+      sort: (row) => row.proceeds,
+      cell: (row) => <Figure value={money(row.proceeds, { digits: 2 })} />,
+    },
+    {
+      key: "gain",
+      label: t("portfolio.col_gain"),
+      sort: (row) => row.gain,
+      cell: (row) => {
+        const pct = pctOf(row);
+        return (
+          <span className="pf-pair">
+            <Signed
+              value={row.gain}
+              text={money(row.gain, { digits: 2, signed: true })}
+            />
+            {pct === null ? null : (
+              <Chip value={pct} text={percent(lang, pct, { signed: true })} />
+            )}
+          </span>
+        );
+      },
+    },
+  ];
+
+  return (
+    <Table
+      columns={columns}
+      rows={rows}
+      rowKey={(row) => row.ticker}
+      initial={{ key: "gain", desc: true }}
+      dense={{
+        ticker: (row) => row.ticker,
+        badge: (row) => {
+          const pct = pctOf(row);
+          return pct === null ? null : (
+            <Chip value={pct} text={percent(lang, pct, { signed: true })} />
+          );
+        },
+        value: (row) => <Figure value={money(row.proceeds, { digits: 2 })} />,
+        delta: (row) => (
+          <Signed
+            value={row.gain}
+            text={money(row.gain, { digits: 2, signed: true })}
+          />
+        ),
+        sub: (row) => [
+          row.sales === 1
+            ? t("portfolio.tip_sale_one")
+            : t("portfolio.tip_sale_count", { n: row.sales }),
+          `${t("portfolio.col_sold")} ${span(row.first_sell, row.last_sell)}`,
           `${t("portfolio.col_shares")} ${formatShares(lang, row.quantity, true) ?? ""}`,
         ],
         wrap: true,

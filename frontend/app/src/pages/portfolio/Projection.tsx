@@ -87,7 +87,7 @@ export default function Projection() {
 
   if (!data || query.state === "failed" || query.state === "signed-out")
     return (
-      <Loaded query={query} skeleton={<Skeleton rows={10} />}>
+      <Loaded query={query} skeleton={<Skeleton shape="chart" />}>
         {() => null}
       </Loaded>
     );

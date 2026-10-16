@@ -47,6 +47,7 @@ import { Filters, useFilterWords } from "./Filters";
 import { QualityMap } from "./QualityMap";
 import { FocusProvider } from "./focus";
 import { LinesProvider } from "./lines";
+import { ReturnsProvider } from "./returns";
 import { CandidateTable, HeldTable } from "./Tables";
 import {
   CLEAR,
@@ -154,13 +155,13 @@ export default function Page() {
       </div>
       {stale ? (
         <div className="ag-rev-body" aria-busy="true">
-          <Screen data={stale} filter={filter} onFilter={setFilter} />
+          <Screen data={stale} filter={filter} onFilter={setFilter} measured />
         </div>
       ) : (
         <Loaded query={review} skeleton={<Skeleton rows={8} />}>
           {(data) => (
             <div className="ag-rev-body">
-              <Screen data={data} filter={filter} onFilter={setFilter} />
+              <Screen data={data} filter={filter} onFilter={setFilter} measured />
             </div>
           )}
         </Loaded>
@@ -200,10 +201,13 @@ function Screen({
   data: read,
   filter,
   onFilter,
+  measured = false,
 }: {
   data: Review;
   filter: Filter;
   onFilter: (next: Filter) => void;
+  /** Ask what each name returned; the import wall's glass does not. */
+  measured?: boolean;
 }) {
   const t = useT();
   const lang = useLang();
@@ -223,7 +227,7 @@ function Screen({
     );
   }
 
-  return (
+  const page = (
     <LinesProvider lines={read.lines}>
       <FocusProvider>
         <Filters
@@ -293,6 +297,14 @@ function Screen({
         <p className="ag-rev-caption ag-rev-disclaimer">{t("review.disclaimer")}</p>
       </FocusProvider>
     </LinesProvider>
+  );
+  if (!measured) return page;
+  // Every row the read drew, filtered or not: a filter must not refetch.
+  const names = [...all.held, ...all.candidates].map((row) => row.symbol);
+  return (
+    <ReturnsProvider names={[...new Set(names)]} base={read.base}>
+      {page}
+    </ReturnsProvider>
   );
 }
 

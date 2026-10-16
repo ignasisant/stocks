@@ -42,7 +42,7 @@ export function WatchlistGroups({
 }) {
   const query = useApi(() => get<Watchlist>("/watchlist"), []);
   return (
-    <Loaded query={query} skeleton={<Skeleton rows={5} />}>
+    <Loaded query={query} skeleton={<Skeleton shape="table" rows={5} />}>
       {(data) =>
         data.entries.length === 0 ? (
           <>

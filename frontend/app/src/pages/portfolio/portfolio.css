@@ -185,6 +185,21 @@
   margin: 0 0 0.9rem;
 }
 
+/* Two choices on one line: the first at the left edge, the next pushed right;
+   they stack when the card is too narrow for both. */
+.pf-controls-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1.2rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.9rem;
+}
+
+.pf-controls-bar > .pf-controls {
+  margin: 0;
+}
+
 .pf-control-label {
   color: var(--ag-text-muted);
   font-size: var(--ag-fs-xs, 0.6875rem);

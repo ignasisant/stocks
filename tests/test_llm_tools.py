@@ -129,6 +129,38 @@ def test_anthropic_returns_parallel_results_in_one_user_message(anthropic_client
     assert last["role"] == "user" and len(last["content"]) == 2
 
 
+def test_a_rounds_calls_run_at_once_and_answer_in_order(anthropic_client):
+    # Three searches asked in one turn were asked independently; back to back
+    # they are three times the wait.
+    import threading
+    import time
+
+    inside, most = [0], [0]
+    lock = threading.Lock()
+
+    def slow(name, args):
+        with lock:
+            inside[0] += 1
+            most[0] = max(most[0], inside[0])
+        time.sleep(0.05 if args["n"] == 0 else 0.0)  # the first returns last
+        with lock:
+            inside[0] -= 1
+        return f"r{args['n']}"
+
+    client = anthropic_client(
+        SimpleNamespace(content=[_use(f"t{n}", "get_quotes", {"n": n})
+                                 for n in range(3)]),
+        SimpleNamespace(content=[_text("DONE")]),
+    )
+    run = llm._anthropic_tools("k", "m", "sys", [{"role": "user", "content": "hi"}],
+                               _TOOLS, slow, 3)
+    assert most[0] > 1
+    assert [c.result for c in run.calls] == ["r0", "r1", "r2"]
+    results = client.sent[1]["messages"][-1]["content"]
+    assert [(r["tool_use_id"], r["content"]) for r in results] == [
+        ("t0", "r0"), ("t1", "r1"), ("t2", "r2")]
+
+
 def test_anthropic_stops_at_the_round_cap(anthropic_client):
     forever = [SimpleNamespace(content=[_use(f"t{i}", "get_quotes", {})])
                for i in range(10)]
@@ -136,6 +168,17 @@ def test_anthropic_stops_at_the_round_cap(anthropic_client):
     run = llm._anthropic_tools("k", "m", "sys", [{"role": "user", "content": "hi"}],
                                _TOOLS, _echo, 2)
     assert len(client.sent) == 2 and len(run.calls) == 2
+
+
+def test_anthropic_ends_the_loop_when_told_to_stop(anthropic_client):
+    client = anthropic_client(*[
+        SimpleNamespace(content=[_use(f"t{i}", "get_quotes", {})])
+        for i in range(5)])
+    asked = []
+    run = llm._anthropic_tools(
+        "k", "m", "sys", [{"role": "user", "content": "hi"}], _TOOLS, _echo, 5,
+        stop=lambda: asked.append(1) or len(asked) >= 2)
+    assert len(client.sent) == 2 and len(run.calls) == 2 and run.text == ""
 
 
 def test_an_empty_tool_result_is_still_sent_back(anthropic_client):
@@ -216,13 +259,51 @@ def test_openai_answers_each_tool_call_by_id(openai_client):
         "content": "get_quotes:[('tickers', ['NVDA'])]"}
 
 
-def test_openai_survives_unparseable_arguments(openai_client):
+def test_openai_answers_parallel_calls_in_the_order_asked(openai_client):
+    import time
+
+    def slow(name, args):
+        time.sleep(0.05 if args["n"] == 0 else 0.0)
+        return f"r{args['n']}"
+
+    client = openai_client(
+        _Message(tool_calls=[_tool_call(f"c{n}", "get_quotes", {"n": n})
+                             for n in range(3)]),
+        _Message(content="DONE"),
+    )
+    llm._openai_tools("k", "m", "sys", [{"role": "user", "content": "hi"}],
+                      _TOOLS, slow, 3)
+    sent = client.sent[1]["messages"][-3:]
+    assert [(m["tool_call_id"], m["content"]) for m in sent] == [
+        ("c0", "r0"), ("c1", "r1"), ("c2", "r2")]
+
+
+def test_unparseable_arguments_are_sent_back_not_run(openai_client):
+    # Run with {}, the call failed on a missing argument and the model read a
+    # refusal about the wrong thing.
     bad = SimpleNamespace(id="c1", type="function", function=SimpleNamespace(
         name="get_quotes", arguments="{not json"))
-    openai_client(_Message(tool_calls=[bad]), _Message(content="DONE"))
+    client = openai_client(
+        _Message(tool_calls=[bad, _tool_call("c2", "get_quotes", {"n": 1})]),
+        _Message(content="DONE"))
+    ran = []
     run = llm._openai_tools("k", "m", "sys", [{"role": "user", "content": "hi"}],
-                            _TOOLS, _echo, 3)
-    assert run.calls[0].args == {}  # the tool decides what to do with nothing
+                            _TOOLS, lambda n, a: ran.append(a) or "ok", 3)
+    assert ran == [{"n": 1}] and [c.args for c in run.calls] == [{"n": 1}]
+    sent = client.sent[1]["messages"][-2:]
+    assert sent == [
+        {"role": "tool", "tool_call_id": "c1", "content": llm.BAD_ARGS},
+        {"role": "tool", "tool_call_id": "c2", "content": "ok"}]
+
+
+def test_openai_ends_the_loop_when_told_to_stop(openai_client):
+    # The budget is spent: the next call would only be told so.
+    client = openai_client(*[
+        _Message(tool_calls=[_tool_call(f"c{i}", "get_quotes", {})])
+        for i in range(5)])
+    run = llm._openai_tools("k", "m", "sys", [{"role": "user", "content": "hi"}],
+                            _TOOLS, _echo, 5, stop=lambda: True)
+    assert len(client.sent) == 1 and run.text == "" and len(run.calls) == 1
 
 
 def test_openai_stops_at_the_round_cap(openai_client):
@@ -274,7 +355,7 @@ def test_the_free_chain_moves_on_when_a_backend_refuses(monkeypatch):
 
     def backend(base_url, **_opts):
         def run(api_key, model, system, messages, tools, execute, rounds,
-                cap=0):
+                cap=0, stop=None):
             tried.append(base_url)
             if base_url == "one":
                 raise RuntimeError("no tool support on this model")
@@ -290,6 +371,32 @@ def test_the_free_chain_moves_on_when_a_backend_refuses(monkeypatch):
     assert tried == ["one", "two"] and run.text == "DONE"
 
 
+def test_a_call_the_backend_could_not_parse_is_asked_again_once(monkeypatch):
+    # Groq's 400 tool_use_failed is the model's slip, and the same request
+    # usually parses on a second try: the next backend is a worse model.
+    tried = []
+
+    class Unparsed(Exception):
+        status_code = 400
+
+    def backend(base_url, **_opts):
+        def run(api_key, model, system, messages, tools, execute, rounds,
+                cap=0, stop=None):
+            tried.append(base_url)
+            if len(tried) == 1:
+                raise Unparsed("Error code: 400 - {'code': 'tool_use_failed'}")
+            return llm.ToolRun("DONE", [])
+        return run
+
+    monkeypatch.setattr(llm, "_openai_compat_tools", backend)
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        llm._FreeBackend("a", "k1", "m1", None, "one"),
+        llm._FreeBackend("b", "k2", "m2", None, "two"),
+    ])
+    assert llm._free_tools("", "", "sys", [], _TOOLS, _echo, 3).text == "DONE"
+    assert tried == ["one", "one"]
+
+
 def test_the_free_chain_raises_when_every_backend_refuses(monkeypatch):
     monkeypatch.setattr(llm, "_openai_compat_tools", lambda url, **_: (
         lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("429"))))
@@ -303,3 +410,42 @@ def test_an_unconfigured_free_chain_has_nothing_to_run(monkeypatch):
     monkeypatch.setattr(llm, "_free_backends", lambda: [])
     with pytest.raises(llm.FreeTierExhausted):
         llm._free_tools("", "", "sys", [], _TOOLS, _echo, 3)
+
+
+# ----------------------------------------------------------------- usage
+
+
+def test_each_round_reports_its_tokens_to_the_turns_meter(monkeypatch):
+    import openai
+
+    from stocks.web import metering
+
+    usage = SimpleNamespace(prompt_tokens=120, completion_tokens=8,
+                            prompt_tokens_details=None)
+    replies = [_Message(tool_calls=[_tool_call("c1", "get_quotes", {})]),
+               _Message(content="DONE")]
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
+        create=lambda **kw: SimpleNamespace(
+            choices=[SimpleNamespace(message=replies.pop(0))], usage=usage))))
+    monkeypatch.setattr(openai, "OpenAI", lambda **kw: client)
+    with metering.metered() as m, metering.step("gather"):
+        llm._openai_compat_tools(free=True)(
+            "k", "gpt-4o", "sys", [{"role": "user", "content": "hi"}],
+            _TOOLS, _echo, 3)
+    assert [(u.step, u.input, u.output, u.free) for u in m.uses] == [
+        ("gather", 120, 8, True)] * 2
+    assert m.usd() == 0.0  # the free chain's
+
+
+def test_anthropic_rounds_report_their_tokens(anthropic_client):
+    from stocks.web import metering
+
+    usage = SimpleNamespace(input_tokens=50, output_tokens=5,
+                            cache_read_input_tokens=0,
+                            cache_creation_input_tokens=0)
+    anthropic_client(SimpleNamespace(content=[_text("DONE")], usage=usage))
+    with metering.metered() as m:
+        llm._anthropic_tools("k", "claude-haiku-4-5", "sys",
+                             [{"role": "user", "content": "hi"}], _TOOLS,
+                             _echo, 3)
+    assert m.tokens() == 55 and m.usd() == pytest.approx(75e-6)

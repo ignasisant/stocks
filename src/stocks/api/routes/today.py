@@ -12,17 +12,18 @@ can never start two generations for one reader.
 from __future__ import annotations
 
 import time
-from typing import Annotated
+from datetime import date, timedelta
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import ValidationError
 
 from stocks import obs
 from stocks.api import briefing, daily_card
 from stocks.api.deps import Account, Writer
-from stocks.api.schemas import MarketCard, TodayCard
+from stocks.api.schemas import BookCompare, DailyChartLine, MarketCard, TodayCard
 from stocks.api.security import Who
-from stocks.chat import daily
+from stocks.chat import daily, daily_book
 from stocks.web.i18n import supported
 
 router = APIRouter(tags=["glance"])
@@ -111,3 +112,53 @@ def write_today(
         market_stale=stale,
         personal=personal,
     )
+
+
+@router.get(
+    "/today/book", response_model=BookCompare, summary="The book against an index"
+)
+def book_compare(
+    account: Account,
+    lang: Lang = "en",
+    range: Annotated[  # noqa: A002 — the query's own name
+        Literal["1m", "3m", "6m", "ytd", "1y", "2y", "5y", "max"],
+        Query(description="The window drawn."),
+    ] = "1m",
+    index: Annotated[
+        str,
+        Query(max_length=16, description="One of the indexes the page offers."),
+    ] = daily_book.INDEX_SYMBOL,
+) -> BookCompare:
+    """The Portfolio section's chart redrawn: today's basket and `index`, both
+    as growth over `range`, the index in the reader's currency. The card
+    carries the month against the S&P 500; this is every other pairing.
+
+    Computed off the book's own download and one shared index request, never
+    written. Not open to a guest (`guest.OPEN`): the demo book has no card.
+    """
+    if index not in daily_book.INDEXES:
+        raise HTTPException(status_code=422, detail="unknown index")
+    lines: list[dict] = []
+    try:
+        lines = briefing.book_compare(account, supported(lang) or "en", range, index)
+    except Exception as exc:  # noqa: BLE001 — the card's own chart stays up
+        obs.warn("today.book_compare_failed", index=index, range=range,
+                 error_type=type(exc).__name__)
+    chart = [DailyChartLine.model_validate(line) for line in lines]
+    return BookCompare(range=range, index=index, chart=chart,
+                       since=_late_start(chart, daily_book.window_days(range)))
+
+
+# A window opening this many days after the asked one still reads as whole:
+# weekends, holidays and the anchor's last close before it.
+_LATE_DAYS = 7
+
+
+def _late_start(chart: list[DailyChartLine], days: int) -> str | None:
+    """The chart's first day when it opens well after the window does — the
+    book is younger than the window, so the reader is told where it begins."""
+    if not chart or not chart[0].dates:
+        return None
+    first = date.fromisoformat(chart[0].dates[0][:10])
+    asked = date.today() - timedelta(days=days)
+    return first.isoformat() if (first - asked).days > _LATE_DAYS else None

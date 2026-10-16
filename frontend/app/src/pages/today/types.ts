@@ -7,6 +7,7 @@
  * could not be computed has no figure, and the page prints none.
  */
 
+import type { Line } from "../../chat/chart";
 import type { DailyCard } from "../home/types";
 
 /** One computed line of a Today section. */
@@ -133,4 +134,13 @@ export type TodayCard = {
   market_stale: boolean;
   /** Null for a guest. */
   personal: PersonalCard | null;
+};
+
+/** `GET /today/book`: the book against an index over a window, as growth. */
+export type BookCompare = {
+  range: string;
+  index: string;
+  chart: Line[];
+  /** The first day drawn, when the book is younger than the window. */
+  since?: string | null;
 };

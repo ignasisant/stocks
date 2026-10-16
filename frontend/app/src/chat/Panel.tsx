@@ -569,7 +569,7 @@ export default function Panel({
             state={state}
             busy={chat.busy}
             reading={chat.reading}
-            onSend={(text, spoken) => void chat.send(text, spoken)}
+            onSend={(text, spoken, deep) => void chat.send(text, spoken, false, deep)}
             onStop={chat.stop}
             onSave={(patch) => void chat.settings(patch)}
             onAttach={(file) => void chat.attach(file)}

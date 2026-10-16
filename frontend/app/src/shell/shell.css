@@ -55,6 +55,11 @@
 /* The "figures are from <when>" line (shell/Layout.tsx StaleNotice): muted,
    inside the page column, gone the moment the source answers again. */
 .ag-stale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+  max-width: 60rem;
   margin: 0 0 12px;
   padding: 8px 12px;
   border: 1px solid var(--ag-border);
@@ -62,6 +67,60 @@
   border-radius: 8px;
   color: var(--ag-text-secondary);
   font-size: 13px;
+  /* In and out by fading (shell/Loading.tsx, usePresence). */
+  animation: ag-stale-in var(--ag-dur-move) var(--ag-ease-out);
+  transition: opacity var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.ag-stale[data-leaving] {
+  opacity: 0;
+}
+
+.ag-stale[data-mode="fresh"] {
+  border-left-color: var(--ag-up, var(--ag-text-muted));
+}
+
+@keyframes ag-stale-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* No exit to wait for under reduced motion (usePresence unmounts at once). */
+@media (prefers-reduced-motion: reduce) {
+  .ag-stale {
+    transition: none;
+  }
+}
+
+.ag-stale-next {
+  color: var(--ag-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-stale-ok {
+  color: var(--ag-up, var(--ag-text-muted));
+}
+
+/* A text button: the line is a notice, not a form. Coarse pointers get the
+   44px target (mobile-usability rules) through padding, not a bigger font. */
+.ag-stale-retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ag-brand-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .ag-stale-retry {
+    min-height: 44px;
+    padding: 0 4px;
+  }
 }
 
 .ag-tour-strip {

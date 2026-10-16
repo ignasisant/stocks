@@ -301,7 +301,7 @@ function Positions() {
   if (pending && rows.state === "loaded" && rows.data.positions.length > 0) {
     return (
       <Card title={t("portfolio.open_positions_pl", { ccy: base })}>
-        <Skeleton rows={2} />
+        <Skeleton shape="kpis" rows={4} />
         {table(rows.data.positions)}
         <Caption>{t("portfolio.positions_caption")}</Caption>
       </Card>
@@ -309,7 +309,7 @@ function Positions() {
   }
 
   return (
-    <Loaded query={query} skeleton={<Skeleton rows={8} />}>
+    <Loaded query={query} skeleton={<Skeleton shape="table" rows={8} />}>
       {({ positions, summary, market, moves }) => {
         if (!positions.positions.length) {
           return (

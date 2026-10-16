@@ -490,6 +490,39 @@ def test_a_gutted_download_prices_the_table_itself_and_caches_nothing(
     assert len(calls) >= 2  # the refused download was never cached
 
 
+def test_a_refused_download_reads_what_the_live_pass_missed_off_the_kept_frames(
+    client, book, monkeypatch
+):
+    """One throttled morning the live pass priced 7 names of 47 and Home set a
+    28k "value today" beside 111k injected. The rest read the book's last kept
+    close now, flagged stale; a name the kept frames never held stays unpriced
+    and its basis is reported, for the headline to hold it at cost."""
+    from yfinance.exceptions import YFRateLimitError
+
+    from stocks.analysis import portfolio as analysis
+
+    book(trades() + [Transaction(START, "MSFT", "buy", 1, 100.0, "EUR", 0.0)]
+         + [Transaction(START, f"X{i}", "buy", 1, 100.0, "EUR", 0.0) for i in range(3)])
+
+    def refused(db, mtime):
+        raise YFRateLimitError()
+
+    monkeypatch.setattr(loaders, "held_closes", refused)
+    monkeypatch.setattr(
+        analysis, "market_values",
+        lambda positions, base="EUR", **k: {"AAPL": 15 * 7.0},
+    )
+    kept = download({"MSFT": 150.0, "X0": 50.0, "X1": 50.0})(["MSFT", "X0", "X1"])
+    monkeypatch.setattr(loaders, "_stored_base", lambda db: (START, kept, 0.0))
+    loaders._self_priced_positions.cache_clear()
+    summary = client.get("/v1/portfolio/summary", params=WHO, headers=AUTH).json()
+    assert summary["stale"] == ["MSFT", "X0", "X1"]
+    assert summary["unpriced"] == 1  # X2: nowhere to read it from
+    assert summary["unpriced_cost"] == pytest.approx(100.0)
+    assert summary["value"] == pytest.approx(15 * 7.0 + 150.0 + 2 * 50.0)
+    loaders._self_priced_positions.cache_clear()
+
+
 def test_a_new_download_moves_the_tile_and_the_history_together(
     client, book, monkeypatch
 ):

@@ -196,6 +196,23 @@ def _finnhub_off():
 
 
 @pytest.fixture(autouse=True)
+def _chat_guard_off():
+    """Start every test with the chat's scope check off (`chat/guard.py`).
+
+    Its default is `log`, which on the keyless chain is one more model call
+    beside every longer message — a call each fake provider would answer and
+    count, on a thread of its own. `tests/test_chat_guard.py` switches it on.
+    Restored by hand for the reason `_own_free_llm_counter` gives.
+    """
+    from stocks.chat import guard
+
+    before = guard.mode
+    guard.mode = lambda: "off"
+    yield
+    guard.mode = before
+
+
+@pytest.fixture(autouse=True)
 def _own_free_llm_counter(_scratch):
     """Give every test its own global free-LLM counter, on its own path.
 

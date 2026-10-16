@@ -71,6 +71,8 @@ export type Shape = {
   ai: string | null;
   /** The level is in index points, not money. */
   points: boolean;
+  /** Whether the card that overlays it on the indices is offered. */
+  compare: boolean;
 };
 
 const ALL_AVERAGES: readonly Overlay[] = ["SMA20", "SMA50", "SMA200"];
@@ -100,6 +102,7 @@ const SHAPES: Record<AssetKind, Shape> = {
     units: false,
     ai: "ticker.ai_prompt",
     points: false,
+    compare: true,
   },
   equity_fund: {
     kind: "equity_fund",
@@ -112,6 +115,7 @@ const SHAPES: Record<AssetKind, Shape> = {
     units: false,
     ai: "ticker.ai_prompt_fund",
     points: false,
+    compare: true,
   },
   bond_fund: {
     kind: "bond_fund",
@@ -124,6 +128,7 @@ const SHAPES: Record<AssetKind, Shape> = {
     units: false,
     ai: "ticker.ai_prompt_fund",
     points: false,
+    compare: true,
   },
   money_market: {
     kind: "money_market",
@@ -136,6 +141,8 @@ const SHAPES: Record<AssetKind, Shape> = {
     units: false,
     ai: "ticker.ai_prompt_cash",
     points: false,
+    // A fund that holds its price: its line is the axis.
+    compare: false,
   },
   closed_end: {
     kind: "closed_end",
@@ -148,6 +155,7 @@ const SHAPES: Record<AssetKind, Shape> = {
     units: false,
     ai: "ticker.ai_prompt_fund",
     points: false,
+    compare: true,
   },
   crypto: {
     kind: "crypto",
@@ -169,6 +177,7 @@ const SHAPES: Record<AssetKind, Shape> = {
     units: true,
     ai: "ticker.ai_prompt_crypto",
     points: false,
+    compare: true,
   },
   index: {
     kind: "index",
@@ -181,6 +190,7 @@ const SHAPES: Record<AssetKind, Shape> = {
     units: false,
     ai: null,
     points: true,
+    compare: true,
   },
 };
 

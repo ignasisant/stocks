@@ -37,6 +37,7 @@ def slept(monkeypatch):
     waits = []
     monkeypatch.setattr(llm, "_sleep", waits.append)
     monkeypatch.setattr(llm, "_free_dead", set())
+    monkeypatch.setattr(llm, "_free_resting", {})
     return waits
 
 
@@ -50,6 +51,7 @@ def test_short_wait_parses_the_retry_after_the_backend_names():
     assert llm._short_wait(err("6m7.3s")) is None
     assert llm._short_wait(err("1s", status=500)) is None
     assert llm._short_wait(RuntimeError("nothing")) is None
+    assert llm._retry_after(err("6m7.3s")) == pytest.approx(367.3)
 
 
 def test_a_short_rate_limit_is_waited_out_on_the_same_backend(monkeypatch, slept):
@@ -73,6 +75,37 @@ def test_a_long_rate_limit_moves_on_without_sleeping(monkeypatch, slept):
         _ok("openrouter", ["x"])])
     assert list(llm._free_stream("", "auto", "sys", [])) == ["x"]
     assert slept == []
+
+
+def test_a_long_rate_limit_rests_the_backend_until_the_wait_it_named(
+        monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(llm.time, "monotonic", lambda: now[0])
+    calls = []
+
+    def groq(api_key, model, system, messages):
+        calls.append("groq")
+        if len(calls) == 1:
+            raise _HttpError(429, _GROQ_429.format("20s"))
+        yield "g"
+
+    monkeypatch.setattr(llm, "_free_backends", lambda: [
+        _FreeBackend("groq", "k", "m", groq), _ok("openrouter", ["x"])])
+    assert list(llm._free_stream("", "auto", "sys", [])) == ["x"]
+    # Inside the window the next turn goes straight to the next backend...
+    assert list(llm._free_stream("", "auto", "sys", [])) == ["x"]
+    assert calls == ["groq"]
+    # ...and once it lifts, groq answers again.
+    now[0] += 21
+    assert list(llm._free_stream("", "auto", "sys", [])) == ["g"]
+    assert calls == ["groq", "groq"]
+
+
+def test_a_resting_backend_is_still_tried_when_it_is_the_last_awake(
+        monkeypatch):
+    monkeypatch.setattr(llm, "_free_resting", {"groq": float("inf")})
+    monkeypatch.setattr(llm, "_free_backends", lambda: [_ok("groq", ["g"])])
+    assert list(llm._free_stream("", "auto", "sys", [])) == ["g"]
 
 
 def test_the_wait_is_taken_once_per_backend(monkeypatch, slept):

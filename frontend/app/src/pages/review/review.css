@@ -362,6 +362,25 @@
   margin: 0.75rem 0;
 }
 
+/* The search box and the return window share one row over a table; with no
+   box (a short list) the window sits alone at its start. */
+.ag-rev-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.ag-rev-tools .ag-rev-find {
+  flex: 1 1 14rem;
+  margin: 0;
+}
+
+.ag-rev-wait {
+  color: var(--ag-text-muted);
+}
+
 .ag-rev-find .ag-search-field {
   flex: 1 1 14rem;
   max-width: 22rem;
@@ -1497,6 +1516,17 @@
   .ag-rev-plan-brief .ag-rev-mv-weights {
     display: none;
   }
+}
+
+/* The moves drawn against the S&P 500, under the full read's lists. */
+.ag-rev-plan-chart {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--ag-border);
+}
+
+.ag-rev-plan-chart .ag-rev-caption {
+  max-width: 60ch;
 }
 
 /* Unfolds the plan into the full read, and folds it back. */

@@ -161,12 +161,25 @@ class _Pos:
         self.ticker, self.quantity, self.currency = ticker, quantity, currency
 
 
-def _book(monkeypatch, values: pd.DataFrame, positions):
+def _book(monkeypatch, values: pd.DataFrame, positions, injected=None):
+    """A book whose value path is `values` summed, with `injected` (the
+    money put in, constant by default) as its flows."""
     monkeypatch.setattr(wk, "all_transactions", lambda path: ["tx"])
     monkeypatch.setattr(wk, "build", lambda txs, base="EUR": (positions, []))
     monkeypatch.setattr(
         "stocks.analysis.portfolio.position_value_frames",
-        lambda pos, period="1y", base="EUR": (values, values),
+        lambda pos, period="1mo", base="EUR": (values, values),
+    )
+    value = values.sum(axis=1)
+    put_in = pd.Series(
+        float(value.iloc[0]) if injected is None else injected, index=value.index
+    )
+    flows = put_in.diff().fillna(0.0)
+    twr = ((value - flows) / value.shift(1) - 1).iloc[1:]
+    hist = pd.DataFrame({"value": value, "injected": put_in})
+    monkeypatch.setattr(
+        "stocks.analysis.portfolio.book_history",
+        lambda txs, base="EUR": (hist, twr, []),
     )
 
 
@@ -200,6 +213,23 @@ def test_compute_reads_three_windows_and_the_weights_off_one_frame(
     # Weights off the last row: 800/1000 and 200/1000, so the top 5 is all of it.
     assert data.top_weight == pytest.approx(1.0)
     assert data.effective_names == pytest.approx(1 / (0.8**2 + 0.2**2))
+
+
+def test_a_deposit_is_not_a_year_to_date_gain(tmp_path, monkeypatch):
+    """Doubling the book in September is money put in, not return: the year
+    is what the money made, over all the money that was at work."""
+    watchlist = tmp_path / "watchlist.yaml"
+    watchlist.write_text("watchlist: []\n")
+    idx = pd.to_datetime(["2025-12-31", "2026-08-14", "2026-09-06", "2026-09-13"])
+    values = pd.DataFrame({"A": [1000.0, 1100.0, 2200.0, 2200.0]}, index=idx)
+    _book(monkeypatch, values, [_Pos("A")],
+          injected=[1000.0, 1000.0, 2000.0, 2000.0])
+
+    data = wk.compute_weekly_data(watchlist, tmp_path / "portfolio.db", today=D)
+    gain, pct = data.ytd
+    assert gain == pytest.approx(200.0)
+    assert pct == pytest.approx(200.0 / 2000.0)
+    assert data.month == pytest.approx((100.0, 100.0 / 2100.0))
 
 
 def test_compute_returns_early_for_an_account_with_no_book(tmp_path, monkeypatch):

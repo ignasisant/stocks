@@ -62,6 +62,7 @@ import type {
   Proposal,
   LiveStep,
   Meta,
+  PlanStep,
   Rating,
   Recalled,
   SettingsPatch,
@@ -132,13 +133,20 @@ type Listeners = {
   tool: (line: LiveStep) => void;
   side: (side: Arguing) => void;
   recalled: (recalled: Recalled[]) => void;
+  plan: (plan: PlanStep[]) => void;
 };
 
 /** The request that opens a run's stream: `run` for a question, or `rejoin`. */
 type Opener = (signal: AbortSignal, on: Listeners) => Promise<Done>;
 
-/** Times a dropped stream is followed again before the turn is given up. */
-const REJOINS = 3;
+/**
+ * Times a dropped stream is followed again before the turn is given up, and
+ * the wait before each. Long enough, all told, to ride out a server restart:
+ * the next process picks a run back up once its old one has been silent a
+ * few seconds (`chat/checkpoint.py`), and the rejoin is what asks it to.
+ */
+const REJOINS = 6;
+const rejoinWait = (tries: number) => (tries ? Math.min(1000 * 2 ** tries, 10_000) : 0);
 
 /** Away this long, a stream still open is not trusted to be alive. */
 const AWAY_MS = 15_000;
@@ -328,6 +336,7 @@ export function useChat(live: boolean) {
               : [...(turn.arguing ?? []), side],
           })),
         recalled: (recalled) => write((turn) => ({ ...turn, recalled })),
+        plan: (plan) => write((turn) => ({ ...turn, plan })),
       };
       // Stopped, not failed. The words that arrived are kept and marked as cut
       // short; the server recorded none of it, so the thread is unchanged and
@@ -340,6 +349,7 @@ export function useChat(live: boolean) {
           pending: false,
           phase: undefined,
           live: undefined,
+          plan: undefined,
           arguing: undefined,
           stopped: true,
           ts: Date.now(),
@@ -354,6 +364,7 @@ export function useChat(live: boolean) {
           pending: false,
           phase: undefined,
           live: undefined,
+          plan: undefined,
           arguing: undefined,
           error,
           ...(wait !== undefined ? { wait } : {}),
@@ -397,10 +408,11 @@ export function useChat(live: boolean) {
             content: "",
             phase: undefined,
             live: undefined,
+            plan: undefined,
             arguing: undefined,
             recalled: undefined,
           }));
-          await new Promise((wake) => setTimeout(wake, 1000 * tries));
+          await new Promise((wake) => setTimeout(wake, rejoinWait(tries)));
           if (!mine()) return;
           if (stopping.current) return await cut();
           open = (signal, listen) =>
@@ -413,6 +425,7 @@ export function useChat(live: boolean) {
               listen.tool,
               listen.side,
               listen.recalled,
+              listen.plan,
             );
         }
       } finally {
@@ -445,6 +458,7 @@ export function useChat(live: boolean) {
           pending: false,
           phase: undefined,
           live: undefined,
+          plan: undefined,
           arguing: undefined,
           ts: Date.now(),
           took,
@@ -529,7 +543,7 @@ export function useChat(live: boolean) {
   }, []);
 
   const send = useCallback(
-    async (text: string, spoken = false, again = false) => {
+    async (text: string, spoken = false, again = false, deep = false) => {
       const message = text.trim();
       // A second send while one is in flight is refused, not queued: one
       // thread takes one answer at a time, and the server says 409 anyway.
@@ -557,11 +571,22 @@ export function useChat(live: boolean) {
         ...where,
         // A card is waiting: "import these" is answered with its button.
         staged_import: preview?.filename,
+        ...(deep ? { depth: "deep" as const } : {}),
       });
       await track(
         input.runId,
         (signal, on) =>
-          run(input, on.meta, on.text, on.phase, signal, on.tool, on.side, on.recalled),
+          run(
+            input,
+            on.meta,
+            on.text,
+            on.phase,
+            signal,
+            on.tool,
+            on.side,
+            on.recalled,
+            on.plan,
+          ),
         started,
         chose,
       );
@@ -600,6 +625,7 @@ export function useChat(live: boolean) {
             on.tool,
             on.side,
             on.recalled,
+            on.plan,
           ),
         Date.now(),
         null,

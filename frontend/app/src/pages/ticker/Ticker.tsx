@@ -58,6 +58,7 @@ import {
   getLastViewed,
   getWatchlist,
 } from "./data";
+import { CompareSection } from "./Compare";
 import { PeerPicker } from "./Peers";
 import { PriceSection, isRange, type Range } from "./Price";
 import { SplitRepair } from "./Splits";
@@ -449,6 +450,12 @@ export default function Page() {
             stats={stats.state === "loaded" ? stats.data : null}
             cycle={events.state === "loaded" ? (events.data?.cycle ?? []) : []}
           />
+
+          {/* Right under the price it rebases: "did it beat the index" is the
+              question the chart above cannot answer on its own scale. */}
+          {shape.compare ? (
+            <CompareSection key={ticker} ticker={ticker} base={base} />
+          ) : null}
 
           {/* A fund stops here. */}
           {shape.sections.fund && fund.state === "loaded" && fund.data?.is_fund ? (

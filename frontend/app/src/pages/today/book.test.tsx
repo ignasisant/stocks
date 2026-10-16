@@ -15,7 +15,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BookChart, BookKpis, IndexKpis, SectionChart } from "./Book";
+import { BookChart, BookKpis, INDEXES, IndexKpis, RANGES, SectionChart } from "./Book";
 import { Rows } from "./Section";
 import type { DailyBook, DailySection } from "../home/types";
 import type { TodayRow } from "./types";
@@ -96,6 +96,14 @@ describe("the book chart", () => {
 
   it("draws no chart when there is none", () => {
     expect(renderToStaticMarkup(<BookChart book={{ ...book, chart: [] }} />)).toBe("");
+  });
+
+  it("offers the windows and the indexes, the card's month against the S&P on", () => {
+    const html = renderToStaticMarkup(<BookChart book={book} />);
+    for (const range of RANGES) expect(html).toContain(`today.book_range_${range}`);
+    for (const index of INDEXES) expect(html).toContain(`value="${index.id}"`);
+    expect(html).toMatch(/aria-pressed="true"[^>]*>today\.book_range_1m</);
+    expect(html).toMatch(/<option value="SPY" selected="">/);
   });
 });
 

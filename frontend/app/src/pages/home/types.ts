@@ -198,6 +198,10 @@ export type Summary = {
   pnl_pct: number | null;
   positions: number;
   unpriced: number;
+  /** Basis of the unpriced rows: the headline holds them at it. */
+  unpriced_cost?: number;
+  /** Valued at the last kept close because Yahoo refused the download. */
+  stale?: string[];
   /**
    * All-time result of closed sales, FIFO-matched, in the reporting currency.
    * Null for a book that has never sold: no sale is not a result of zero.

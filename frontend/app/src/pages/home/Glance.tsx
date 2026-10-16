@@ -135,7 +135,7 @@ export function Glance({
     <CardQuery
       query={query}
       note={t("home.data_unavailable")}
-      skeleton={<Skeleton rows={5} />}
+      skeleton={<Skeleton shape="kpis" rows={4} />}
     >
       {(book) => {
         if (!book) return null;
@@ -188,7 +188,7 @@ export function MoversSlot({
       query={query}
       note={t("home.data_unavailable")}
       title={plain(t("home.movers_title"))}
-      skeleton={<Skeleton rows={4} />}
+      skeleton={<Skeleton shape="table" rows={4} />}
     >
       {(book) =>
         book && book.summary.positions > 0 ? (
@@ -233,6 +233,12 @@ function GlanceCard({ book }: { book: Book }) {
 
   const realized = summary.realized ?? 0;
   const paid = money(summary.cost, currency, lang) ?? na;
+  // The row sets the value beside everything that went in, so a name with no
+  // price stands in it at what it cost, as the value history carries it.
+  // Leaving it out put a 28k "value today" beside 111k injected one
+  // throttled morning. Its gain is unknown, so the unsold tile still skips it.
+  const worth = summary.value + (summary.unpriced_cost ?? 0);
+  const kept = summary.stale?.length ?? 0;
   const total = realized + summary.pnl;
   const totalPct =
     performance.injected && performance.injected > 0
@@ -260,7 +266,7 @@ function GlanceCard({ book }: { book: Book }) {
           />
           <Kpi
             label={t("home.market_value")}
-            value={money(summary.value, currency, lang) ?? na}
+            value={money(worth, currency, lang) ?? na}
             help={t("portfolio.market_value_help")}
           />
           {/* The chip is the gain over the money put in — the figure the
@@ -271,7 +277,7 @@ function GlanceCard({ book }: { book: Book }) {
             // The sum itself, in the reader's figures: the one sentence that
             // makes "gain" mean "value less what went in".
             help={t("home.total_gain_help", {
-              value: money(summary.value, currency, lang) ?? na,
+              value: money(worth, currency, lang) ?? na,
               injected: money(performance.injected, currency, lang) ?? na,
               gain: money(total, currency, lang, { signed: true }) ?? na,
             })}
@@ -356,6 +362,9 @@ function GlanceCard({ book }: { book: Book }) {
           <Note>
             {t("home.unpriced_note", { n: unpriced, total: summary.positions })}
           </Note>
+        ) : null}
+        {kept > 0 ? (
+          <Note>{t("home.stale_note", { n: kept, total: summary.positions })}</Note>
         ) : null}
         <KpiGrid>
           {WINDOWS.map(({ key, tile }) => {

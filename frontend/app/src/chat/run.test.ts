@@ -62,6 +62,15 @@ describe("the run the drawer sends", () => {
     expect(input.resume).toEqual([{ interruptId: "act_1", status: "cancelled" }]);
     expect(input.forwardedProps).toEqual({});
   });
+
+  it("asks for research in depth on a question, never on a regenerate", () => {
+    expect(runInput({ message: "ASML?" }, { depth: "deep" }).forwardedProps).toEqual({
+      depth: "deep",
+    });
+    expect(runInput({ regenerate: true }, { depth: "deep" }).forwardedProps).toEqual({
+      regenerate: true,
+    });
+  });
 });
 
 describe("the events it reads", () => {
@@ -232,6 +241,34 @@ describe("the events it reads", () => {
     expect(refused.learned).toEqual(learned);
   });
 
+  it("hands over a deep research's plan, whole, each time it is updated", async () => {
+    const first = [{ text: "Precio de NVDA", done: false }];
+    const then = [{ text: "Precio de NVDA", done: true }];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        stream([
+          { type: "CUSTOM", name: "chat.plan", value: first },
+          { type: "CUSTOM", name: "chat.plan", value: then },
+          { type: "RUN_ERROR", message: "x", code: "chat.api_error" },
+        ]),
+      ),
+    );
+    const seen: unknown[] = [];
+    await run(
+      runInput({ message: "compare NVDA and AMD" }, {}),
+      () => {},
+      () => {},
+      () => {},
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (plan) => seen.push(plan),
+    );
+    expect(seen).toEqual([first, then]);
+  });
+
   it("tells the research as it runs, and keeps it out of the answer's calls", async () => {
     vi.stubGlobal(
       "fetch",
@@ -270,6 +307,45 @@ describe("the events it reads", () => {
       { id: "tool_1", tool: "search_web", arg: "nvidia guidance", out: "5 results" },
     ]);
     expect(done.calls).toEqual([]);
+  });
+
+  it("labels a lookup with what the model said it was for, never as its argument", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        stream([
+          {
+            type: "TOOL_CALL_START",
+            toolCallId: "tool_1",
+            toolCallName: "harvest_losses",
+          },
+          {
+            type: "TOOL_CALL_ARGS",
+            toolCallId: "tool_1",
+            delta: '{"reason": "Pérdidas que **compensan**   este año"}',
+          },
+          { type: "TOOL_CALL_END", toolCallId: "tool_1" },
+          { type: "RUN_FINISHED", threadId: "c", runId: "r", result: { text: "ok" } },
+        ]),
+      ),
+    );
+    const lines: object[] = [];
+    await run(
+      runInput({ message: "¿pérdidas?" }, {}),
+      () => {},
+      () => {},
+      () => {},
+      undefined,
+      (line) => lines.push(line),
+    );
+    expect(lines).toEqual([
+      {
+        id: "tool_1",
+        tool: "harvest_losses",
+        arg: "",
+        why: "Pérdidas que compensan este año",
+      },
+    ]);
   });
 
   it("keeps a subagent's words out of the answer and hands them to its side", async () => {

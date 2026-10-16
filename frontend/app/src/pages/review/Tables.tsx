@@ -28,6 +28,7 @@ import { bucket, findRows } from "./filter";
 import { useListFocus } from "./focus";
 import { useHelp } from "./lines";
 import { foreign, longDay, metric, money, percent, score, verdictTone } from "./format";
+import { ReturnCells, ReturnHeads, WindowPicker, useReturnLine } from "./returns";
 import type { ReviewRow } from "./types";
 
 /** The quote currency beside the name, only when it is not the page's. */
@@ -94,6 +95,9 @@ function useFind(rows: ReviewRow[]): { rows: ReviewRow[]; box: ReactNode } {
   };
 }
 
+/** A return column's head, as `ReturnHeads` lays it. */
+const head = (label: string, help: string) => <Head label={label} help={help} />;
+
 export function HeldTable({
   rows: all,
   base,
@@ -107,6 +111,7 @@ export function HeldTable({
   const lang = useLang();
   const help = useHelp();
   const na = t("review.na");
+  const returned = useReturnLine();
   const reason = (row: ReviewRow) =>
     row.reasons[0] ? t(`review.reason_${row.reasons[0]}`) : null;
   const find = useFind(all);
@@ -117,7 +122,10 @@ export function HeldTable({
   );
   return (
     <>
-      {find.box}
+      <div className="ag-rev-tools">
+        {find.box}
+        <WindowPicker />
+      </div>
       {rows.length > 0 && (
         <Responsive
           wide={
@@ -150,6 +158,7 @@ export function HeldTable({
                     />
                     <Head label={t("review.col_tax")} help={t("review.col_tax_help")} />
                     <Head label={t("review.col_pnl")} help={t("review.col_pnl_help")} />
+                    <ReturnHeads head={head} />
                     <th aria-hidden="true" />
                   </tr>
                 </thead>
@@ -181,6 +190,7 @@ export function HeldTable({
                       <td>
                         <PnlChip row={row} />
                       </td>
+                      <ReturnCells symbol={row.symbol} na={na} />
                       <td className="ag-rev-fold-cell">
                         <DetailsButton
                           row={row}
@@ -206,6 +216,7 @@ export function HeldTable({
                       sub: (r) => [
                         percent(r.weight, lang),
                         foreign(r, base),
+                        returned(r.symbol),
                         reason(r),
                       ],
                       value: (r) => money(r.delta, base, lang, true),
@@ -235,6 +246,7 @@ export function CandidateTable({ rows: all }: { rows: ReviewRow[] }) {
   const lang = useLang();
   const base = useCurrency();
   const na = t("review.na");
+  const returned = useReturnLine();
   const find = useFind(all);
   const rows = find.rows;
   const focus = useListFocus(
@@ -243,7 +255,10 @@ export function CandidateTable({ rows: all }: { rows: ReviewRow[] }) {
   );
   return (
     <>
-      {find.box}
+      <div className="ag-rev-tools">
+        {find.box}
+        <WindowPicker />
+      </div>
       {rows.length > 0 && (
         <Responsive
           wide={
@@ -269,6 +284,7 @@ export function CandidateTable({ rows: all }: { rows: ReviewRow[] }) {
                         help={t(`kpi.${key}.desc`).replaceAll("*", "")}
                       />
                     ))}
+                    <ReturnHeads head={head} />
                     <th aria-hidden="true" />
                   </tr>
                 </thead>
@@ -302,6 +318,7 @@ export function CandidateTable({ rows: all }: { rows: ReviewRow[] }) {
                       {OUTSIDE.map((key) => (
                         <td key={key}>{metric(key, row.metrics[key], lang) ?? na}</td>
                       ))}
+                      <ReturnCells symbol={row.symbol} na={na} />
                       <td className="ag-rev-fold-cell">
                         <DetailsButton row={row} variant="icon" />
                       </td>
@@ -323,6 +340,7 @@ export function CandidateTable({ rows: all }: { rows: ReviewRow[] }) {
                       names: true,
                       sub: (r) => [
                         foreign(r, base),
+                        returned(r.symbol),
                         ...r.reasons
                           .slice(0, 2)
                           .map((code) => t(`review.reason_${code}`)),

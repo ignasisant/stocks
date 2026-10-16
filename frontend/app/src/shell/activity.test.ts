@@ -26,7 +26,9 @@ describe("activity", () => {
     vi.advanceTimersByTime(SLOW_MS + 10);
     expect(current().slow).toEqual(["activity.book"]);
     expect(current()).toMatchObject({ done: 1, total: 2 });
+    expect(current().since).not.toBeNull();
     slow();
+    expect(current().since).toBeNull();
     expect(current().slow).toEqual([]);
   });
 

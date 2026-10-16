@@ -282,7 +282,8 @@ class _Researcher(FakeProvider):
     def supports_tools(self):
         return True
 
-    def run_tools(self, api_key, model, system, messages, tools, execute):
+    def run_tools(self, api_key, model, system, messages, tools, execute,
+                  max_rounds=3, stop=None):
         from stocks.web.llm import ToolCall, ToolRun
 
         out = execute("get_quotes", {"tickers": "SHOP"})

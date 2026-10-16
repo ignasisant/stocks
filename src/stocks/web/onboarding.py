@@ -476,6 +476,16 @@ RELEASES: tuple[Release, ...] = (
             News(slug="today", icon="wb_sunny", step="today"),
         ),
     ),
+    Release(
+        version="2026.10.7",
+        date="2026-10",
+        items=(
+            # Something the ticker page could not do at all: one listing over
+            # the indices, its sector or a rival, in the reader's money. More
+            # names or ranges on the card are its step body, not cards.
+            News(slug="compare", icon="show_chart", step="market"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

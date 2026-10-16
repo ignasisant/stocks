@@ -7,7 +7,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { noteFreshness, noteRefreshing, resetFreshness } from "./freshness";
+import {
+  currentRetry,
+  noteFreshness,
+  noteRefreshing,
+  resetFreshness,
+} from "./freshness";
 import { FOLLOW_MS, followStale } from "./useApi";
 
 const OLD = "2026-10-11T08:00:00+00:00";
@@ -85,5 +90,43 @@ describe("followStale", () => {
     stop();
     await vi.runAllTimersAsync();
     expect(api.asks()).toBe(0);
+  });
+
+  it("says when the next try is due, while it is out, and when it gave up", async () => {
+    vi.setSystemTime(0);
+    noteFreshness("/v1/book", OLD);
+    let release: (n: number) => void = () => undefined;
+    const ask = () => ({
+      result: new Promise<number>((resolve) => (release = resolve)),
+      urls: new Set(["/v1/book"]),
+    });
+    const stop = followStale(new Set(["/v1/book"]), ask, () => undefined, "card");
+    expect(currentRetry()).toEqual({ due: FOLLOW_MS[0], asking: false });
+    await vi.advanceTimersByTimeAsync(FOLLOW_MS[0]);
+    expect(currentRetry()).toEqual({ due: null, asking: true });
+    release(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(currentRetry().due).toBe(FOLLOW_MS[0] + FOLLOW_MS[1]);
+    stop();
+    expect(currentRetry()).toEqual({ due: null, asking: false });
+  });
+
+  it("announces nothing once the source is back", async () => {
+    noteFreshness("/v1/book", OLD);
+    const api = server(0);
+    followStale(new Set(["/v1/book"]), api.ask, () => undefined, "card");
+    await vi.runAllTimersAsync();
+    expect(currentRetry()).toEqual({ due: null, asking: false });
+  });
+
+  it("a failed try ends the follow and its countdown", async () => {
+    noteFreshness("/v1/book", OLD);
+    const ask = () => ({
+      result: Promise.reject(new Error("down")),
+      urls: new Set(["/v1/book"]),
+    });
+    followStale(new Set(["/v1/book"]), ask, () => undefined, "card");
+    await vi.runAllTimersAsync();
+    expect(currentRetry()).toEqual({ due: null, asking: false });
   });
 });

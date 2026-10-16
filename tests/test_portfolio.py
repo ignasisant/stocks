@@ -574,6 +574,56 @@ def test_basket_change_ignores_tickers_missing_at_either_endpoint():
     assert abs(chg[1] - 0.10) < 1e-9
 
 
+from stocks.analysis.portfolio import (  # noqa: E402
+    index_change,
+    money_change,
+    same_money,
+)
+
+
+def _deposit_book():
+    idx = pd.date_range("2024-01-01", periods=10, freq="D")
+    # 1 000 in, +10 % on day 6, then 1 000 more on day 9: the book doubles
+    # in value but made 100 on 1 100 at work.
+    value = [1000.0] * 5 + [1100.0] * 3 + [2100.0] * 2
+    injected = [1000.0] * 8 + [2000.0] * 2
+    return pd.DataFrame({"value": value, "injected": injected}, index=idx)
+
+
+def test_money_change_is_the_gain_on_the_money_at_stake():
+    hist = _deposit_book()
+    gain, pct = money_change(hist, 7)  # anchored on Jan 3
+    assert gain == pytest.approx(100.0)
+    assert pct == pytest.approx(100.0 / 2000.0)  # 1 000 at the start + 1 000 put in
+    assert money_change(hist, 1) == (0.0, 0.0)
+    assert money_change(hist, 30) is None
+    assert money_change(None, 7) is None
+
+
+def test_same_money_buys_the_index_with_the_books_own_flows():
+    hist = _deposit_book()
+    # The index doubles on day 9, the day the second 1 000 goes in: that
+    # money bought at the new price and made nothing.
+    closes = pd.Series([10.0] * 8 + [20.0] * 2, index=hist.index)
+    shadow = same_money(hist, closes)
+    assert shadow.iloc[0] == pytest.approx(1000.0)
+    assert shadow.iloc[-1] == pytest.approx(2000.0 + 1000.0)
+    # From Jan 3 on, the index is bought with the book's value that day.
+    late = same_money(hist, closes, "2024-01-06")
+    assert late.iloc[0] == pytest.approx(1100.0)
+    assert late.iloc[-1] == pytest.approx(2200.0 + 1000.0)
+    assert same_money(hist, closes.iloc[5:]) is None  # does not reach back
+
+
+def test_index_change_reads_the_index_on_the_books_money():
+    hist = _deposit_book()
+    closes = pd.Series([10.0] * 8 + [20.0] * 2, index=hist.index)
+    gain, pct = index_change(hist, closes, 7)
+    assert gain == pytest.approx(1000.0)  # the 1 000 at the start doubled
+    assert pct == pytest.approx(1000.0 / 2000.0)
+    assert index_change(hist, closes, 30) is None
+
+
 from stocks.analysis.portfolio import ticker_changes  # noqa: E402
 
 

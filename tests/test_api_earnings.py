@@ -544,3 +544,84 @@ def test_the_rate_decisions_ride_along_oldest_first(client, account):
     for row in banks:
         assert row["days_until"] == (date.fromisoformat(row["date"]) - date.today()).days
 
+
+
+# ------------------------------------------------------- the book's own days
+# What the reader did (buys, sells) and what landed (booked payouts), on the
+# day the statement booked them — read off the ledger, never Yahoo.
+
+
+def test_one_days_fills_are_one_trade_and_a_sell_carries_its_gain(
+    client, account, calendar
+):
+    bought = date.today() - timedelta(days=30)
+    sold = date.today() - timedelta(days=3)
+    ledger.add_many(
+        [
+            Transaction(bought.isoformat(), "MSFT", "buy", 2, 100.0, "EUR", 1.0),
+            Transaction(bought.isoformat(), "MSFT", "buy", 2, 110.0, "EUR", 1.0),
+            Transaction(sold.isoformat(), "MSFT", "sell", 1, 300.0, "EUR", 0.5),
+        ],
+        path=account.db,
+    )
+    payload = client.get(
+        "/v1/earnings", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    buy, sell = payload["trades"]
+    assert buy["side"] == "buy" and buy["date"] == bought.isoformat()
+    assert buy["quantity"] == 4 and buy["amount"] == pytest.approx(420.0)
+    assert buy["price"] == pytest.approx(105.0) and buy["fee"] == pytest.approx(2.0)
+    assert buy["gain"] is None
+    assert sell["side"] == "sell" and sell["days_until"] == -3
+    # FIFO: the share sold is one of the 2024 lot's (200 + 1/5 of its fee).
+    assert sell["gain"] == pytest.approx(300.0 - 0.5 - 200.2)
+    assert sell["base_currency"] == "EUR"
+
+
+def test_a_broker_move_is_not_a_trade(client, account, calendar):
+    moved = date.today() - timedelta(days=5)
+    ledger.add_many(
+        [Transaction(moved.isoformat(), "MSFT", "transfer_out", 5, 0.0, "EUR")],
+        path=account.db,
+    )
+    payload = client.get(
+        "/v1/earnings", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert payload["trades"] == []
+
+
+def test_a_booked_dividend_lands_on_its_pay_date_net(client, account, calendar):
+    paid = date.today() - timedelta(days=12)
+    ledger.add_many(
+        [Transaction(paid.isoformat(), "MSFT", "dividend", 0, 10.0, "USD", 1.5)],
+        path=account.db,
+    )
+    payload = client.get(
+        "/v1/earnings", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    (payment,) = payload["payments"]
+    assert payment["date"] == paid.isoformat() and payment["capital"] is False
+    assert payment["gross"] == 10.0 and payment["withheld"] == 1.5
+    assert payment["net"] == pytest.approx(8.5)
+    assert payment["net_base"] == pytest.approx(8.5 * USD_PAST)
+
+
+def test_trades_older_than_two_years_are_left_out(client, account, calendar):
+    # The fixture's only trade is the 2024 buy, past the lookback.
+    payload = client.get(
+        "/v1/earnings", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert payload["trades"] == [] and payload["payments"] == []
+
+
+def test_only_the_exchanges_the_calendar_trades_on_close(client, account, calendar):
+    payload = client.get(
+        "/v1/earnings", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    # AAPL and MSFT are US listings; the coin never closes.
+    assert {h["venue"] for h in payload["market_holidays"]} == {"us"}
+    dates = [h["date"] for h in payload["market_holidays"]]
+    assert dates == sorted(dates)
+    assert {"date": "2026-12-25", "kind": "closed"}.items() <= next(
+        h for h in payload["market_holidays"] if h["date"] == "2026-12-25"
+    ).items()

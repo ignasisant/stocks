@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  currentRetry,
+  keptSince,
+  noteKept,
+  noteRetry,
+  onRetryStale,
+  retryStale,
   isRefreshing,
   noteFreshness,
   noteRefreshing,
@@ -44,5 +50,35 @@ describe("freshness", () => {
     expect(staleSince()).toBeNull();
     noteRefreshing("/a", null);
     expect(isRefreshing("/a")).toBe(false);
+  });
+
+  it("keeps the soonest retry, and says when one is out", () => {
+    noteRetry("a", 30_000);
+    noteRetry("b", 15_000);
+    expect(currentRetry()).toEqual({ due: 15_000, asking: false });
+    noteRetry("b", 0);
+    expect(currentRetry()).toEqual({ due: 30_000, asking: true });
+    noteRetry("a", null);
+    noteRetry("b", null);
+    expect(currentRetry()).toEqual({ due: null, asking: false });
+  });
+
+  it("marks the last visit's figures until the live ones land", () => {
+    noteKept("a", 2_000);
+    noteKept("b", 1_000);
+    expect(keptSince()).toBe(1_000);
+    noteKept("b", null);
+    expect(keptSince()).toBe(2_000);
+    noteKept("a", null);
+    expect(keptSince()).toBeNull();
+  });
+
+  it("hands the stale line's press to every screen listening", () => {
+    let heard = 0;
+    const stop = onRetryStale(() => (heard += 1));
+    retryStale();
+    stop();
+    retryStale();
+    expect(heard).toBe(1);
   });
 });

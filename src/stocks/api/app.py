@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from yfinance.exceptions import YFRateLimitError
 
-from stocks import accounts, memstat, obs
+from stocks import accounts, loadtest, memstat, obs
 from stocks.api import cache, guest, guestbook, holds, security, warm
 from stocks.api.routes import (
     account,
@@ -51,6 +51,7 @@ from stocks.api.routes import (
     onboarding,
     portfolio,
     prefs,
+    progress,
     pulse,
     reference,
     review,
@@ -94,6 +95,9 @@ async def _lifespan(app: FastAPI):
     # At boot: without it every event goes out through logging's last resort —
     # bare text, fields lost, yfinance's misses still at ERROR.
     obs.setup()
+    # Before anything can fetch: the mode swaps every upstream for fakes.
+    if loadtest.active():
+        loadtest.install()
     guestbook.provision()
     # The price memos for the accounts seen lately, on a thread of its own,
     # given the startup window to run in — see `api.warm`. Off unless the
@@ -313,6 +317,7 @@ def gate(request: Request, who: Who) -> Caller:
 # so that adding a route cannot accidentally add an open one.
 _private = APIRouter(prefix=f"/{API_VERSION}", dependencies=[Depends(gate)])
 _private.include_router(me.router)
+_private.include_router(progress.router)
 _private.include_router(portfolio.router)
 _private.include_router(watchlist.router)
 _private.include_router(market.router)

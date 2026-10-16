@@ -111,6 +111,55 @@ export type CentralBankDecision = {
   days_until: number;
 };
 
+/** The book's buys or sells of one name on one day, every fill summed. */
+export type CalendarTrade = {
+  ticker: string;
+  date: string;
+  /** Negative: trades are always behind. */
+  days_until: number;
+  side: "buy" | "sell";
+  quantity: number;
+  /** Average fill price, in `currency`. */
+  price: number | null;
+  /** quantity × price, before fees, in `currency`. */
+  amount: number;
+  fee: number;
+  currency: string;
+  /** Sells only: what the matched lots realised, in `base_currency`. */
+  gain: number | null;
+  base_currency: string | null;
+};
+
+/**
+ * A payout the statements booked, on the day the cash landed — unlike
+ * `CalendarDividend`, which is the ex-date and an estimate.
+ */
+export type CalendarPayment = {
+  ticker: string;
+  /** The pay date, ISO. */
+  date: string;
+  days_until: number;
+  gross: number;
+  withheld: number;
+  /** gross − withheld: what reached the account. */
+  net: number;
+  currency: string;
+  /** A return of capital: lowers the shares' cost, not income. */
+  capital: boolean;
+  base_currency: string | null;
+  /** `net` at the pay date's rate; null when no rate could be had. */
+  net_base: number | null;
+};
+
+/** A day an exchange something on the calendar trades on is shut, or shuts early. */
+export type MarketHoliday = {
+  venue: "us" | "xetra" | "bme" | "lse";
+  date: string;
+  days_until: number;
+  /** All day, or a half session. */
+  kind: "closed" | "early";
+};
+
 /**
  * A chip the reader clicked, for the dialog that explains it. One union, so a
  * grid holds a single piece of state and one dialog serves every kind.
@@ -121,7 +170,11 @@ export type EventPick =
   | { kind: "dividend"; item: CalendarDividend }
   | { kind: "tax"; item: TaxDeadline }
   | { kind: "rebuy"; item: RepurchaseWindow }
-  | { kind: "bank"; item: CentralBankDecision };
+  | { kind: "bank"; item: CentralBankDecision }
+  | { kind: "trade"; item: CalendarTrade }
+  | { kind: "payment"; item: CalendarPayment }
+  /** Every venue shut or shortened on one day: one marker, one dialog. */
+  | { kind: "holiday"; item: MarketHoliday[] };
 
 export type EarningsCalendar = {
   upcoming: CalendarEvent[];
@@ -139,6 +192,12 @@ export type EarningsCalendar = {
   repurchase_windows: RepurchaseWindow[];
   /** Oldest first; the whole published schedule, past days included. */
   central_banks: CentralBankDecision[];
+  /** The ledger's buys and sells, last two years, oldest first. */
+  trades: CalendarTrade[];
+  /** Booked dividends and returns of capital, on their pay dates. */
+  payments: CalendarPayment[];
+  /** Closures of the exchanges the watchlist trades on, oldest first. */
+  market_holidays: MarketHoliday[];
 };
 
 /**

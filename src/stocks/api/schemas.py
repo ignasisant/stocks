@@ -23,6 +23,28 @@ class Health(BaseModel):
     booted: str = Field(description="ISO-8601 UTC timestamp of process start.")
 
 
+class ProgressJob(BaseModel):
+    step: str = Field(
+        description=(
+            "What the download is doing: `prices.tail` (the last month, twenty "
+            "names a request), `prices.rebase` (the daily month of chart) or "
+            "`prices.full` (whole histories)."
+        )
+    )
+    done: int = Field(description="Names done in this step; 0 when it cannot count.")
+    total: int = Field(description="Names in this step.")
+    elapsed_s: float = Field(description="Seconds since the whole load started.")
+    step_elapsed_s: float = Field(description="Seconds since this step started.")
+    expected_s: float | None = Field(
+        default=None,
+        description="How long this step took last time on this book, if known.",
+    )
+
+
+class Progress(BaseModel):
+    job: ProgressJob | None = None
+
+
 class Position(BaseModel):
     ticker: str
     shares: float
@@ -118,6 +140,22 @@ class Summary(BaseModel):
             "Positions left out of cost and value alike — both sums come from "
             "the same rows, so the percentage between them is like-for-like."
         )
+    )
+    unpriced_cost: float = Field(
+        default=0.0,
+        description=(
+            "Basis of the unpriced rows. A headline that sets the book's value "
+            "beside everything that went in holds them at this, as the value "
+            "history does — leaving them out sets a fraction of the book "
+            "against all of the money."
+        ),
+    )
+    stale: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Tickers valued at the book's last kept close, not a live price, "
+            "because Yahoo refused this download. Counted in cost and value."
+        ),
     )
     unlisted: list[str] = Field(
         default_factory=list,
@@ -443,6 +481,62 @@ class Bars(BaseModel):
             "Range labels worth offering for this listing, in display order: a "
             "window longer than its whole history is dropped, since it would "
             "draw the same bars as `max`. Every label when `listed` is null."
+        ),
+    )
+
+
+class CompareLine(BaseModel):
+    ticker: str
+    name: str = Field(
+        default="",
+        description="SEC or watchlist name; empty for an index the app names itself.",
+    )
+    role: Literal["subject", "index", "sector", "peer", "pick"] = Field(
+        description=(
+            "Why the line is there: the page's own name, one of the three "
+            "indices, its sector's ETF, a related company, or the reader's pick."
+        )
+    )
+    points: list[float | None] = Field(
+        description=(
+            "Cumulative total return in `base` since the window's first day, a "
+            "fraction, aligned to `dates`. Null before the listing has a price."
+        )
+    )
+
+
+class CompareOffer(BaseModel):
+    ticker: str
+    name: str = ""
+    role: Literal["index", "sector", "peer"]
+    sector: str | None = Field(
+        default=None, description="The yfinance sector a `sector` ETF stands for."
+    )
+
+
+class Comparison(BaseModel):
+    """Several listings rebased to one day and one currency."""
+
+    ticker: str
+    range: str = Field(description="One of 1m, 6m, 1y, 2y.")
+    base: str = Field(description="The currency every line is measured in.")
+    dates: list[str] = Field(description="The subject's sessions, YYYY-MM-DD.")
+    lines: list[CompareLine] = Field(
+        default_factory=list,
+        description="The subject first, then the asked names in the order asked.",
+    )
+    offered: list[CompareOffer] = Field(
+        default_factory=list,
+        description=(
+            "What the picker suggests: the indices, the sector's ETF when the "
+            "sector is known, and Yahoo's related names."
+        ),
+    )
+    missing: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Asked names left off: no price history for the window, or no rate "
+            "into `base` for the currency they are quoted in."
         ),
     )
 
@@ -2045,7 +2139,10 @@ class Projection(BaseModel):
     )
     history_dates: list[str] = Field(
         default_factory=list,
-        description="Past month ends since the first trade, oldest first; not today.",
+        description=(
+            "Past month ends over the last year (since the first trade if "
+            "younger), oldest first; not today."
+        ),
     )
     history_value: list[float | None] = Field(
         default_factory=list, description="The book's value at each past month end."
@@ -2272,6 +2369,62 @@ class CentralBankDecision(BaseModel):
     days_until: int = Field(description="Days from today; negative once it passed.")
 
 
+class CalendarTrade(BaseModel):
+    """The book's buys or sells of one name on one day, fills summed."""
+
+    ticker: str
+    date: str = Field(description="Trade date as the statement booked it, ISO.")
+    days_until: int = Field(description="Days from today; negative once it passed.")
+    side: Literal["buy", "sell"]
+    quantity: float = Field(description="Shares, every fill of the day added up.")
+    price: float | None = Field(
+        default=None, description="Average fill price in `currency`."
+    )
+    amount: float = Field(description="quantity × price, before fees, in `currency`.")
+    fee: float = Field(default=0.0, description="Commissions, in `currency`.")
+    currency: str
+    gain: float | None = Field(
+        default=None,
+        description=(
+            "Sells only: what the matched lots realised, in `base_currency`, "
+            "under the book's share matching. Null on a buy."
+        ),
+    )
+    base_currency: str | None = None
+
+
+class CalendarPayment(BaseModel):
+    """A dividend (or return of capital) the statements actually booked."""
+
+    ticker: str
+    date: str = Field(description="The day the cash was booked, ISO — the pay date.")
+    days_until: int = Field(description="Days from today; negative once it passed.")
+    gross: float = Field(description="Before withholding, in `currency`.")
+    withheld: float = Field(default=0.0, description="Tax kept at source.")
+    net: float = Field(description="gross − withheld: what reached the account.")
+    currency: str
+    capital: bool = Field(
+        default=False,
+        description="A return of capital: it lowers the shares' cost, no income.",
+    )
+    base_currency: str | None = None
+    net_base: float | None = Field(
+        default=None,
+        description="`net` in `base_currency` at the pay date's rate; null if none.",
+    )
+
+
+class MarketHoliday(BaseModel):
+    """A day an exchange the watchlist trades on is shut, or shuts early."""
+
+    venue: str = Field(description='"us", "xetra", "bme" or "lse".')
+    date: str
+    days_until: int = Field(description="Days from today; negative once it passed.")
+    kind: Literal["closed", "early"] = Field(
+        description='"closed" all day, or "early": a half session.'
+    )
+
+
 class EarningsCalendar(BaseModel):
     upcoming: list[CalendarEvent] = Field(
         default_factory=list, description="Soonest first; a same-day print counts."
@@ -2325,6 +2478,28 @@ class EarningsCalendar(BaseModel):
         description=(
             "Every Fed and ECB decision day the calendar carries, oldest first. "
             "Independent of the watchlist."
+        ),
+    )
+    trades: list[CalendarTrade] = Field(
+        default_factory=list,
+        description=(
+            "The ledger's buys and sells over the same two years the past "
+            "ex-dates reach, one row per name, day and side. Oldest first. "
+            "Broker moves (transfer in/out) are not trades and are left out."
+        ),
+    )
+    payments: list[CalendarPayment] = Field(
+        default_factory=list,
+        description=(
+            "Dividends and returns of capital the statements booked, on the "
+            "day the cash landed, over the same two years. Oldest first."
+        ),
+    )
+    market_holidays: list[MarketHoliday] = Field(
+        default_factory=list,
+        description=(
+            "Closures and half sessions of the exchanges the watchlist and "
+            "the book trade on (`stocks.data.market_holidays`). Oldest first."
         ),
     )
 
@@ -3281,6 +3456,22 @@ class DailyChartLine(BaseModel):
         default=False,
         description="Growth from the window's first day, not a price.",
     )
+    money: bool = Field(
+        default=False,
+        description="An amount in `currency` each day, not a price: the "
+        "book's value, or the same money in an index.",
+    )
+    injected: list[float] | None = Field(
+        default=None,
+        description="The book only: the money put in by each of `dates`, net "
+        "of withdrawals, in `currency`.",
+    )
+    opens: str | None = Field(
+        default=None,
+        description="The same money in an index only: the day it was first "
+        "bought (the book's first day the index reaches), before `dates` "
+        "when the window is shorter.",
+    )
 
 
 class DailyBookRow(BaseModel):
@@ -3303,6 +3494,23 @@ class DailyBook(BaseModel):
     chart: list[DailyChartLine] = Field(
         default_factory=list,
         description="The month drawn, book and index rebased to 100.",
+    )
+
+
+class BookCompare(BaseModel):
+    """The Today chart over a chosen window, against a chosen index."""
+
+    range: str = Field(description="`1m`, `3m`, `6m`, `ytd`, `1y`, `2y`, `5y` or `max`.")
+    index: str = Field(description="The index's symbol, e.g. `QQQ` or `^IBEX`.")
+    chart: list[DailyChartLine] = Field(
+        default_factory=list,
+        description="The book and the index, rebased to 100; empty when the "
+        "basket or the index has no series for the window.",
+    )
+    since: str | None = Field(
+        default=None,
+        description="The first day drawn, when the book is younger than the "
+        "window and its prices begin later; null when the window is whole.",
     )
 
 
@@ -4135,6 +4343,45 @@ class ReviewLines(BaseModel):
     small: float = Field(description="A held company under this is a crumb.")
     add_to: float = Field(description="Where an add takes a mature company.")
     sector: float = Field(description="One sector from here is named and not added to.")
+
+
+class NameReturns(BaseModel):
+    ticker: str
+    returns: dict[str, float | None] = Field(
+        description=(
+            "Total return in `base` per window (1m, 6m, 1y, 2y), a fraction. "
+            "Null where the listing has no price that far back."
+        )
+    )
+    sector_etf: str | None = Field(
+        default=None,
+        description="The ETF its sector is measured by; null for a fund or a coin.",
+    )
+
+
+class ReviewReturns(BaseModel):
+    """What each name on the review returned, beside what the index did."""
+
+    base: str = Field(description="The currency every return is measured in.")
+    as_of: str = Field(description="The day every window ends on, YYYY-MM-DD.")
+    names: list[NameReturns] = Field(
+        default_factory=list, description="The asked names, in the order asked."
+    )
+    benchmarks: list[NameReturns] = Field(
+        default_factory=list,
+        description="SPY, then each sector ETF a name points at, same windows.",
+    )
+    missing: list[str] = Field(
+        default_factory=list,
+        description="Asked names with no history or no rate into `base`.",
+    )
+    pending: int = Field(
+        default=0,
+        description=(
+            "Names whose download missed the time budget: neither measured nor "
+            "missing. They keep loading, and asking again finds them."
+        ),
+    )
 
 
 class Review(BaseModel):

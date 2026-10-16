@@ -492,6 +492,7 @@ def build_facts(
     today: date | None = None,
     index: dict | None = None,
     brief: dict | None = None,
+    money=None,
 ) -> dict:
     """What the card is written from: the candidate actions, plus context.
 
@@ -508,8 +509,12 @@ def build_facts(
             value/cost/pnl/weight/day_pct per ticker, plus the
             `day_asof` stamp saying which session each day_pct is from (the
             last completed one, off-hours).
-        hist: fixed-basket daily values (basket_history), for the week and
-            month deltas. Optional: without it those read None.
+        hist: fixed-basket daily values (basket_history), for the day when
+            `day` is not given, and the week and month when `money` is not.
+        money: the book's value and money put in, day by day
+            (`loaders.history`): the week and month on the book's own money
+            (`money_change`), so a deposit inside the window is not a gain,
+            and a month on 5,000 € does not read as one on 100,000 €.
         day: today's (change, pct) when the caller already resolved it — Home
             overrides the close-to-close basket off-session, and the card must
             show the same number the KPI row above it does.
@@ -521,7 +526,7 @@ def build_facts(
         brief: the reader's brief with its data (`daily_routines.gather`), or
             only its lines while that is fetched (`daily_routines.seeded`).
     """
-    from stocks.analysis.portfolio import basket_change, priced_totals
+    from stocks.analysis.portfolio import basket_change, money_change, priced_totals
 
     facts: dict = {
         "date": (today or date.today()).isoformat(),
@@ -584,9 +589,13 @@ def build_facts(
         facts["session"] = session
         if "day" in facts:
             facts["day"]["as_of"] = session["date"]
-    if hist is not None and not hist.empty:
+    if money is not None or (hist is not None and not hist.empty):
         for label, days in (("week", 7), ("month", 30)):
-            chg = basket_change(hist, days)
+            chg = (
+                money_change(money, days)
+                if money is not None
+                else basket_change(hist, days)
+            )
             if chg:
                 facts[label] = {"amount": round(chg[0], 2), "pct": _pct(chg[1])}
 
@@ -689,8 +698,9 @@ _KINDS = (
     "sector beat (or trailed) the index this month — whether the bet is "
     "paying.\n"
     "- vs_benchmark: the book returned `book_month_pct` over the month against "
-    "the index's `index_month_pct`, a `gap_pp`-point difference. Both figures "
-    "are already in the user's own currency.\n"
+    "the index's `index_month_pct`, a `gap_pp`-point difference. Both are on "
+    "the user's own money — the index bought with the same euros on the same "
+    "days — and already in the user's own currency.\n"
     "- fx: the book holds `share_pct` in `currency` (`foreign_share_pct` "
     "outside `base` in total) and that currency moved `move_month_pct` this "
     "month, which added `drag_month_pct` to the book's return before any "

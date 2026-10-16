@@ -38,8 +38,7 @@ import { Icon } from "./Icon";
 import { GUEST_CHROME, SignIn } from "./guest";
 import { useBank, useGuest } from "./session";
 import type { Query } from "./useApi";
-import { useStaleSince } from "./freshness";
-import { useActivity } from "./activity";
+import { ActivityBanner, Skeleton, StaleNotice, WaitingFor } from "./Loading";
 import { AmbientLight } from "./ambient";
 import { usePresence, useSwipeDismiss } from "./useSheet";
 
@@ -344,29 +343,7 @@ function Nav() {
   );
 }
 
-/**
- * One line, on every page, whenever a figure on it is older than it looks.
- *
- * The API says so per response (`X-Data-Stale-Since`) when the price source
- * refused and the last good data stood in; this reads the oldest such mark and
- * goes away on its own once a live answer replaces it. Here rather than in each
- * card because the same download feeds half the cards on a screen, and one
- * sentence beats six badges saying the same thing.
- */
-function StaleNotice() {
-  const t = useT();
-  const since = useStaleSince();
-  if (since === null) return null;
-  const when = new Date(since).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-  return (
-    <p className="ag-stale" role="status">
-      {t("common.stale_notice", { when })}
-    </p>
-  );
-}
+export { Skeleton };
 
 /** The page column, which the skip link and every navigation move focus to. */
 export const MAIN_ID = "ag-main";
@@ -447,38 +424,6 @@ export function Layout({ children }: { children: ReactNode }) {
 }
 
 /**
- * The corner banner: what is taking a while, and how far along the page is.
- *
- * Silent until a request has been out for `activity.SLOW_MS` — a page that
- * answers promptly never shows it. Bottom-left on a phone would sit on the tab
- * bar, so it is bottom-right everywhere, above the assistant's button.
- */
-function ActivityBanner() {
-  const t = useT();
-  const { slow, done, total } = useActivity();
-  if (slow.length === 0) return null;
-  const share = total ? Math.min(1, done / total) : 0;
-  return (
-    <div className="ag-activity" role="status" aria-live="polite">
-      <div className="ag-activity-head">
-        <span className="ag-activity-title">{t("activity.title")}</span>
-        <span className="ag-activity-count">
-          {t("activity.progress", { done, total })}
-        </span>
-      </div>
-      <ul className="ag-activity-list">
-        {slow.slice(0, 3).map((kind) => (
-          <li key={kind}>{t(kind)}</li>
-        ))}
-      </ul>
-      <div className="ag-activity-bar" aria-hidden="true">
-        <div style={{ width: `${Math.round(share * 100)}%` }} />
-      </div>
-    </div>
-  );
-}
-
-/**
  * One figure that is still on its way, in the cell it will land in.
  *
  * For tables whose rows are already known — the tickers a reader holds, the
@@ -489,25 +434,6 @@ function ActivityBanner() {
 export function Pending() {
   const t = useT();
   return <span className="ag-pending" role="img" aria-label={t("common.loading")} />;
-}
-
-/**
- * A block of the page that is still loading — the shape of what is coming.
- *
- * A status with the word in it, not a hidden shape: the grey bars are all a
- * sighted reader needs, and without the word a screen reader hears nothing
- * where the block will land.
- */
-export function Skeleton({ rows = 3 }: { rows?: number }) {
-  const t = useT();
-  return (
-    <div className="ag-skeleton" role="status">
-      <span className="ag-sr">{t("common.loading")}</span>
-      {Array.from({ length: rows }, (_, i) => (
-        <div className="ag-skeleton-row" key={i} />
-      ))}
-    </div>
-  );
 }
 
 /**
@@ -559,7 +485,12 @@ export function Loaded<T>({
   children: (data: T, reload: () => void) => ReactNode;
 }) {
   const t = useT();
-  if (query.state === "loading") return <>{skeleton ?? <Skeleton />}</>;
+  if (query.state === "loading")
+    return (
+      <WaitingFor.Provider value={query.urls}>
+        {skeleton ?? <Skeleton />}
+      </WaitingFor.Provider>
+    );
   if (query.state === "signed-out")
     return (
       <div className="ag-note">
