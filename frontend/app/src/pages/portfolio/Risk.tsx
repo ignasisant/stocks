@@ -189,117 +189,134 @@ export default function Risk() {
 
       <Card title={t("portfolio.real_perf")} sub={t("portfolio.real_perf_sub")}>
         <Loaded query={performance} skeleton={<Skeleton rows={4} />}>
-          {(data) => (
-            <>
-              <Hero
-                // Under a year of history the API hands back the cumulative
-                // figure in `twr_annualised`; the label must not say "yearly".
-                eyebrow={
-                  data.twr_is_annual === false
-                    ? t("portfolio.return_to_date")
-                    : t("portfolio.annualised_return")
-                }
-                help={t("portfolio.twr_return_help")}
-                value={percent(lang, data.twr_annualised, { signed: true })}
-                // The IRR rides beside the TWR rather than in a figure of its
-                // own: both are the window's return, just weighted
-                // differently, and the mismatch between them (not either
-                // alone) is what a reader is checking for. Under a year of
-                // history it is a cumulative figure, and says so.
-                sub={
-                  data.irr === null ? null : (
-                    <>
-                      <Chip
-                        value={data.irr}
-                        text={`${t("portfolio.mwr_short")} ${
-                          percent(lang, data.irr, { signed: true }) ?? ""
-                        }`}
-                      />
-                      {data.irr_annualised === false ? (
-                        <span>{t("portfolio.irr_not_annualised")}</span>
-                      ) : null}
-                    </>
-                  )
-                }
-                facts={[
-                  // The same two readings the simulated card below shows,
-                  // taken over the flow-adjusted path instead of today's
-                  // holdings at fixed weights — which is why they carry a
-                  // different label and help. Reading one for the other is the
-                  // mistake both exist to prevent.
-                  {
-                    label: t("portfolio.real_swings"),
-                    value: percent(lang, data.twr_volatility),
-                    help: t("portfolio.twr_vol_help"),
-                  },
-                  {
-                    label: t("portfolio.real_drawdown"),
-                    value: percent(lang, data.twr_max_drawdown),
-                    // The number alone reads as "what the account lost", and
-                    // on a TWR it is not: a fall on a €800 account of two
-                    // coins counts as much as one on today's. When it ran and
-                    // what was at stake is what makes it legible.
-                    help:
-                      data.twr_drawdown_peak && data.twr_drawdown_trough
-                        ? t("portfolio.twr_dd_help_span", {
-                            peak: formatMonth(data.twr_drawdown_peak),
-                            trough: formatMonth(data.twr_drawdown_trough),
-                            value:
-                              money(data.twr_drawdown_peak_value) ?? t("portfolio.na"),
-                          })
-                        : t("portfolio.twr_dd_help"),
-                    note:
-                      data.twr_drawdown_peak && data.twr_drawdown_trough
-                        ? t("portfolio.dd_span_chip", {
-                            peak: formatMonth(data.twr_drawdown_peak),
-                            trough: formatMonth(data.twr_drawdown_trough),
-                          })
-                        : null,
-                  },
-                  {
-                    label: t("portfolio.market_value"),
-                    value: (
+          {(data) => {
+            const total =
+              data.twr_is_annual === false
+                ? null
+                : percent(lang, data.twr_cumulative, { signed: true });
+            return (
+              <>
+                <Hero
+                  // Under a year of history the API hands back the cumulative
+                  // figure in `twr_annualised`; the label must not say "yearly".
+                  eyebrow={
+                    data.twr_is_annual === false
+                      ? t("portfolio.return_to_date")
+                      : t("portfolio.annualised_return")
+                  }
+                  help={t("portfolio.twr_return_help")}
+                  value={percent(lang, data.twr_annualised, { signed: true })}
+                  // The IRR rides beside the TWR rather than in a figure of its
+                  // own: both are the window's return, just weighted
+                  // differently, and the mismatch between them (not either
+                  // alone) is what a reader is checking for. Under a year of
+                  // history it is a cumulative figure, and says so.
+                  // A yearly rate beside the window's total, so the figure
+                  // reads as the one the Today chart ends on (+39.6% over two
+                  // years is +18.2% a year, the same return).
+                  sub={
+                    data.irr === null && total === null ? null : (
                       <>
-                        {money(data.value)}
-                        {/* Measured against the window's buy-in, not the
+                        {total === null ? null : (
+                          <span>{t("portfolio.twr_total", { pct: total })}</span>
+                        )}
+                        {data.irr === null ? null : (
+                          <Chip
+                            value={data.irr}
+                            text={`${t("portfolio.mwr_short")} ${
+                              percent(lang, data.irr, { signed: true }) ?? ""
+                            }`}
+                          />
+                        )}
+                        {data.irr !== null && data.irr_annualised === false ? (
+                          <span>{t("portfolio.irr_not_annualised")}</span>
+                        ) : null}
+                      </>
+                    )
+                  }
+                  facts={[
+                    // The same two readings the simulated card below shows,
+                    // taken over the flow-adjusted path instead of today's
+                    // holdings at fixed weights — which is why they carry a
+                    // different label and help. Reading one for the other is the
+                    // mistake both exist to prevent.
+                    {
+                      label: t("portfolio.real_swings"),
+                      value: percent(lang, data.twr_volatility),
+                      help: t("portfolio.twr_vol_help"),
+                    },
+                    {
+                      label: t("portfolio.real_drawdown"),
+                      value: percent(lang, data.twr_max_drawdown),
+                      // The number alone reads as "what the account lost", and
+                      // on a TWR it is not: a fall on a €800 account of two
+                      // coins counts as much as one on today's. When it ran and
+                      // what was at stake is what makes it legible.
+                      help:
+                        data.twr_drawdown_peak && data.twr_drawdown_trough
+                          ? t("portfolio.twr_dd_help_span", {
+                              peak: formatMonth(data.twr_drawdown_peak),
+                              trough: formatMonth(data.twr_drawdown_trough),
+                              value:
+                                money(data.twr_drawdown_peak_value) ??
+                                t("portfolio.na"),
+                            })
+                          : t("portfolio.twr_dd_help"),
+                      note:
+                        data.twr_drawdown_peak && data.twr_drawdown_trough
+                          ? t("portfolio.dd_span_chip", {
+                              peak: formatMonth(data.twr_drawdown_peak),
+                              trough: formatMonth(data.twr_drawdown_trough),
+                            })
+                          : null,
+                    },
+                    {
+                      label: t("portfolio.market_value"),
+                      value: (
+                        <>
+                          {money(data.value)}
+                          {/* Measured against the window's buy-in, not the
                             all-time total: a figure under a window selector
                             has to obey it. */}
-                        {data.value === null || data.injected_window == null ? null : (
-                          <>
-                            {" "}
-                            <Chip
-                              value={data.value - data.injected_window}
-                              text={t("portfolio.gain_chip", {
-                                gain:
-                                  money(data.value - data.injected_window, {
-                                    signed: true,
-                                  }) ?? "",
-                              })}
-                            />
-                          </>
-                        )}
-                      </>
-                    ),
-                    note:
-                      data.injected_window == null
-                        ? null
-                        : t("portfolio.market_value_injected_help", {
-                            injected: money(data.injected_window) ?? t("portfolio.na"),
-                          }),
-                  },
-                ]}
-              />
-              <Caption>{t("portfolio.real_perf_note")}</Caption>
-              {data.dropped_days.length ? (
-                <Caption>
-                  {t("portfolio.twr_note_skipped", {
-                    days: data.dropped_days.join(", "),
-                  })}
-                </Caption>
-              ) : null}
-              <MissingPrices tickers={data.missing} />
-            </>
-          )}
+                          {data.value === null ||
+                          data.injected_window == null ? null : (
+                            <>
+                              {" "}
+                              <Chip
+                                value={data.value - data.injected_window}
+                                text={t("portfolio.gain_chip", {
+                                  gain:
+                                    money(data.value - data.injected_window, {
+                                      signed: true,
+                                    }) ?? "",
+                                })}
+                              />
+                            </>
+                          )}
+                        </>
+                      ),
+                      note:
+                        data.injected_window == null
+                          ? null
+                          : t("portfolio.market_value_injected_help", {
+                              injected:
+                                money(data.injected_window) ?? t("portfolio.na"),
+                            }),
+                    },
+                  ]}
+                />
+                <Caption>{t("portfolio.real_perf_note")}</Caption>
+                {data.dropped_days.length ? (
+                  <Caption>
+                    {t("portfolio.twr_note_skipped", {
+                      days: data.dropped_days.join(", "),
+                    })}
+                  </Caption>
+                ) : null}
+                <MissingPrices tickers={data.missing} />
+              </>
+            );
+          }}
         </Loaded>
       </Card>
 

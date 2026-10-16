@@ -250,7 +250,7 @@ export function PeerPicker({
  * pick. The marks come from the same batched `/market/profiles` lookup every
  * ticker cell uses, so a forty-name watchlist costs one request, not forty.
  */
-function ChipMark({ ticker }: { ticker: string }) {
+export function ChipMark({ ticker }: { ticker: string }) {
   const profile = useTickerProfile(ticker);
   return profile?.logo ? (
     <img className="tk-chip-logo" src={profile.logo} alt="" loading="lazy" />

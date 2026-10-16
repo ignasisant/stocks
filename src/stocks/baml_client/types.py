@@ -55,7 +55,7 @@ class DocumentKind(str, Enum):
     Neither = "Neither"
 
 # #########################################################################
-# Generated classes (24)
+# Generated classes (28)
 # #########################################################################
 
 class ActionCall(BaseModel):
@@ -95,6 +95,10 @@ class AnalysisPoint(BaseModel):
 class AnalysisReply(BaseModel):
     verdict: typing.Optional[str] = None
     points: typing.Optional[typing.List["AnalysisPoint"]] = None
+
+class AnswerJudged(BaseModel):
+    goals: typing.List["GoalJudged"]
+    scores: typing.List["ScoreJudged"]
 
 class BriefSection(BaseModel):
     asks: typing.Optional[typing.List[int]] = Field(default=None, description='the `n` of the brief lines this section answers')
@@ -166,6 +170,11 @@ class CryptoMap(BaseModel):
     thousands: typing.Optional[str] = Field(default=None, description='the thousands separator, or an empty string')
     type_map: typing.Optional[typing.Dict[str, str]] = Field(default=None, description='the exact text in the type column -> buy, sell, trade, convert, reward, receive, send, move, fee or ignore')
 
+class GoalJudged(BaseModel):
+    n: int = Field(description='the goal\'s number')
+    verdict: str = Field(description='met, not_met or unclear')
+    why: typing.Optional[str] = Field(default=None, description='one short sentence')
+
 class LessonOp(BaseModel):
     op: typing.Optional[str] = Field(default=None, description='add, update or delete')
     id: typing.Optional[str] = Field(default=None, description='the saved item\'s id, for update and delete')
@@ -203,6 +212,15 @@ class RoutinePlan(BaseModel):
 class RoutinePlans(BaseModel):
     plans: typing.Optional[typing.List["RoutinePlan"]] = None
 
+class ScopeVerdict(BaseModel):
+    in_scope: typing.Optional[bool] = Field(default=None, description='false only when clearly not for this assistant')
+    refusal: typing.Optional[str] = Field(default=None, description='when out of scope: one short sentence in the message\'s language')
+
+class ScoreJudged(BaseModel):
+    id: str = Field(description='the score\'s id')
+    value: typing.Optional[int] = Field(default=None, description='1 to 5; null when it does not apply')
+    why: typing.Optional[str] = Field(default=None, description='one short sentence')
+
 class SectionNote(BaseModel):
     id: typing.Optional[str] = Field(default=None, description='news, insiders or compare, copied exactly')
     note: typing.Optional[str] = None
@@ -230,7 +248,7 @@ class StatementRow(BaseModel):
 
 
 # #########################################################################
-# Model rebuilds (24)
+# Model rebuilds (28)
 # #########################################################################
 # Resolve string forward references now that every model above is defined so
 # class declaration order never breaks Pydantic construction (issue #793).
@@ -240,6 +258,7 @@ ActionCall.model_rebuild()
 AlertRule.model_rebuild()
 AnalysisPoint.model_rebuild()
 AnalysisReply.model_rebuild()
+AnswerJudged.model_rebuild()
 BriefSection.model_rebuild()
 CardLine.model_rebuild()
 CardReply.model_rebuild()
@@ -247,6 +266,7 @@ ColumnMap.model_rebuild()
 Columns.model_rebuild()
 CryptoColumns.model_rebuild()
 CryptoMap.model_rebuild()
+GoalJudged.model_rebuild()
 LessonOp.model_rebuild()
 LessonOps.model_rebuild()
 MarketNote.model_rebuild()
@@ -256,6 +276,8 @@ QueryPlan.model_rebuild()
 RoutineAnswer.model_rebuild()
 RoutinePlan.model_rebuild()
 RoutinePlans.model_rebuild()
+ScopeVerdict.model_rebuild()
+ScoreJudged.model_rebuild()
 SectionNote.model_rebuild()
 SkillPick.model_rebuild()
 StatementPage.model_rebuild()

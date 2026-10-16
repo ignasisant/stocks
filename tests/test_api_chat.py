@@ -995,7 +995,8 @@ def test_the_research_streams_while_it_happens(
         def supports_tools(self):
             return True
 
-        def run_tools(self, api_key, model, system, messages, tools, execute):
+        def run_tools(self, api_key, model, system, messages, tools, execute,
+                      max_rounds=3, stop=None):
             from stocks.web.llm import ToolCall, ToolRun
 
             out = execute("search_web", {"query": "nvidia guidance"})
@@ -1354,6 +1355,81 @@ def test_a_proposal_is_answered_once(client, account, signed_in, served, propose
     assert _resume(signed_in, pid, approved=True).status_code == 200
     assert _resume(signed_in, pid, approved=True).status_code == 409
     assert _resume(signed_in, "act_nope", approved=True).status_code == 404
+
+
+def _researched(monkeypatch, said=None, **args):
+    """A gather that ends by drafting `args` with `propose_action`; `said` is
+    what the tool answered (drafted, unless given)."""
+    from stocks.chat import agent, toolbox
+    from stocks.web.llm import ToolCall
+
+    seen = []
+    said = said or toolbox.DRAFTED + " card"
+
+    def gather(*a, **kw):
+        seen.append(kw)
+        return agent.Evidence(calls=[ToolCall("propose_action", args, said)])
+
+    monkeypatch.setattr(engine, "gather_evidence", gather)
+    return seen
+
+
+def test_the_research_may_put_one_change_under_its_answer(
+    client, account, signed_in, served, monkeypatch
+):
+    """The model proposes and the app writes: a `propose_action` call in the
+    gather becomes the same confirm card a request would have, under the
+    answer, and the watchlist waits for the reader."""
+    seen = _researched(monkeypatch, action="favorite", ticker="AAPL")
+    served(FakeProvider(chunks=("AAPL looks fine.",)))
+    stream = events(signed_in.post("/v1/chat/runs", json=run("¿y AAPL?")).text)
+    assert seen[0]["proposes"] is True
+    assert painted(stream) == "AAPL looks fine."
+    (call,) = [c for c in calls(stream) if c["name"] == "confirm_action"]
+    assert call["args"] == {"kind": "favorite", "ticker": "AAPL", "args": {}}
+    end = finished(stream)
+    assert end["outcome"]["type"] == "interrupt"
+    assert end["result"]["proposal"]["by"] == "agent"
+    assert _holding(account).favorite is False
+
+    stream = events(_resume(signed_in, call["id"], approved=True).text)
+    assert _holding(account).favorite is True
+    # Approved, the answer is still there: the receipt is its last line.
+    text = finished(stream)["result"]["text"]
+    assert text.startswith("AAPL looks fine.\n\n") and text.count("AAPL") == 2
+    cid = signed_in.get("/v1/chat/conversations").json()["conversations"][0]["id"]
+    turns = signed_in.get(f"/v1/chat/conversations/{cid}").json()["messages"]
+    assert turns[-1]["content"] == text
+
+
+@pytest.mark.parametrize("args", [
+    {"action": "remove_ticker", "ticker": "AAPL"},  # the reader's to ask
+    {"action": "set_alerts", "ticker": "AAPL"},  # no price to watch
+    {"action": "favorite", "ticker": "AAPL; rm -rf"},
+])
+def test_a_proposal_the_app_would_not_make_is_no_card(
+    client, account, signed_in, served, monkeypatch, args
+):
+    _researched(monkeypatch, **args)
+    served(FakeProvider(chunks=("ok",)))
+    stream = events(signed_in.post("/v1/chat/runs", json=run("¿y AAPL?")).text)
+    assert not [c for c in calls(stream) if c["name"] == "confirm_action"]
+    assert "proposal" not in finished(stream)["result"]
+
+
+def test_a_proposal_the_tool_turned_down_is_no_card(
+    client, account, signed_in, served, monkeypatch
+):
+    """The tool refused it (the reader never named the ticker, or never asked
+    to be told at a price): the model read that, and the app files nothing."""
+    from stocks.chat import toolbox
+
+    _researched(monkeypatch, said=toolbox._NOT_PROPOSED["ticker"],
+                action="favorite", ticker="AAPL")
+    served(FakeProvider(chunks=("ok",)))
+    stream = events(signed_in.post("/v1/chat/runs", json=run("¿y AAPL?")).text)
+    assert not [c for c in calls(stream) if c["name"] == "confirm_action"]
+    assert "proposal" not in finished(stream)["result"]
 
 
 def test_a_typed_yes_is_the_button_pressed(
@@ -2225,6 +2301,26 @@ def test_a_memory_command_is_not_read_again_for_more(
     assert provider.read == []
 
 
+def test_a_comparison_gets_the_deep_gather_on_the_answering_model(
+    account, signed_in, served, monkeypatch
+):
+    """Research is decided from the message: a comparison is researched on the
+    model that will answer it, with the tax settings the engines replay under;
+    a lookup stays on the quick gather."""
+    seen = []
+    monkeypatch.setattr(engine, "gather_evidence",
+                        lambda *a, **kw: seen.append(kw) or None)
+    served(FakeProvider())
+    for asked in ("compara NVDA y AMD", "nvidia?"):
+        finished(events(signed_in.post("/v1/chat/runs", json=run(asked)).text))
+    deep, quick = seen
+    assert deep["profile"] is engine.agent.DEEP
+    assert deep["model"] == FakeProvider().default_model
+    assert deep["prefs_path"] == account.prefs
+    assert deep["timeout"] >= engine.agent.DEEP.timeout
+    assert quick["profile"] is engine.agent.FAST
+
+
 def test_recall_switched_off_keeps_earlier_conversations_out_of_the_lookup(
     account, monkeypatch
 ):
@@ -2239,6 +2335,24 @@ def test_recall_switched_off_keeps_earlier_conversations_out_of_the_lookup(
                                account.watchlist, account.db, account.chat)
     assert seen[0].memory_db == account.memory_index
     assert seen[1].memory_db is None
+
+
+def test_the_lookup_knows_the_readers_last_turns_and_only_theirs(
+    account, monkeypatch
+):
+    """What a proposal is checked against: the reader's own recent words,
+    never the assistant's, and not a thread-old ask."""
+    seen = []
+    monkeypatch.setattr(engine, "web_enabled", lambda: True)
+    monkeypatch.setattr(engine.agent, "gather",
+                        lambda provider, key, msgs, ctx, **kw: seen.append(ctx))
+    said = ["avísame si NVDA cae", "vale", "¿y AMD?", "¿y MELI?"]
+    msgs = [m for text in said for m in (
+        {"role": "user", "content": text},
+        {"role": "assistant", "content": "GME ok"})][:-1]
+    engine.gather_evidence({}, FakeProvider(), "k", msgs, account.watchlist,
+                           account.db, account.chat)
+    assert seen[0].asked == tuple(said[-engine.ASKED_TURNS:])
 
 
 # ---------------------------------------------------- earlier conversations
@@ -2364,3 +2478,47 @@ def test_recall_switched_off_quotes_no_earlier_conversation(
         signed_in.post("/v1/chat/runs", json=run(_AGAIN)).text))["result"]
     assert "recalled" not in done
     assert _GOLAR not in provider.asked[-1]
+
+
+def test_in_depth_reaches_the_research_and_less_is_never_asked_for(
+    client, account, signed_in, served, monkeypatch
+):
+    """The panel's "in depth" switch is `forwardedProps.depth`. A reader
+    cannot ask for less research than the question needs: "fast" is refused."""
+    served()
+    asked: list[str] = []
+    real = engine.answer_stream
+
+    def spy(**kw):
+        asked.append(kw.get("depth", ""))
+        return real(**kw)
+
+    monkeypatch.setattr(engine, "answer_stream", spy)
+    signed_in.post("/v1/chat/runs", json=run("ASML?", depth="deep"))
+    signed_in.post("/v1/chat/runs", json=run("ASML?"))
+    assert asked == ["deep", ""]
+    refused = signed_in.post("/v1/chat/runs", json=run("ASML?", depth="fast"))
+    assert refused.status_code == 422
+    assert signed_in.get("/v1/chat/state").json()["deep_units"] == engine.DEEP_UNITS
+
+
+def test_the_research_plan_streams_as_it_is_updated(
+    client, account, signed_in, served, monkeypatch
+):
+    """A deep gather's plan is a `CUSTOM` "chat.plan", replaced whole each
+    time, before the answer's words."""
+    served()
+    real = engine.answer_stream
+    plan = [{"text": "Precio de ASML", "done": True}]
+
+    def spy(**kw):
+        yield ("plan", plan)
+        yield from real(**kw)
+
+    monkeypatch.setattr(engine, "answer_stream", spy)
+    stream = events(signed_in.post("/v1/chat/runs", json=run("ASML?")).text)
+    [said] = [e for e in stream
+              if e["type"] == "CUSTOM" and e["name"] == "chat.plan"]
+    assert said["value"] == plan
+    assert stream.index(said) < next(
+        i for i, e in enumerate(stream) if e["type"] == "TEXT_MESSAGE_CONTENT")

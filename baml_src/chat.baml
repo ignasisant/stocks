@@ -83,3 +83,39 @@ function ExtractLessons(instructions: string, input: string) -> LessonOps {
   client Wire
   prompt #"{{ Frame(instructions, input) }}"#
 }
+
+// The chat's input guard (chat/guard.py): is this message something an
+// investing assistant is for? Fail-open, so every field has a safe default.
+class ScopeVerdict {
+  in_scope bool? @description("false only when clearly not for this assistant")
+  refusal string? @description("when out of scope: one short sentence in the message's language")
+}
+
+function CheckScope(instructions: string, input: string) -> ScopeVerdict {
+  client Wire
+  prompt #"{{ Frame(instructions, input) }}"#
+}
+
+// The eval's judge (chat/agent_judge.py): one answer read against its case's
+// goals and the score rubrics. Offline only, never on a reader's turn.
+class GoalJudged {
+  n int @description("the goal's number")
+  verdict string @description("met, not_met or unclear")
+  why string? @description("one short sentence")
+}
+
+class ScoreJudged {
+  id string @description("the score's id")
+  value int? @description("1 to 5; null when it does not apply")
+  why string? @description("one short sentence")
+}
+
+class AnswerJudged {
+  goals GoalJudged[]
+  scores ScoreJudged[]
+}
+
+function JudgeAnswer(instructions: string, input: string) -> AnswerJudged {
+  client Wire
+  prompt #"{{ Frame(instructions, input) }}"#
+}

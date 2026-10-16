@@ -12,13 +12,17 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
-from typing import Annotated, cast
+from typing import Annotated, Literal, cast
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Path, Query, status
 
 from stocks import obs
 from stocks.analysis import crypto_market
+from stocks.analysis.compare import INDICES, OFFERED_PEERS, day_index, rates_into
+from stocks.analysis.compare import MAX_OTHERS as MAX_COMPARED
+from stocks.analysis.compare import RANGES as COMPARE_RANGES
+from stocks.analysis.compare import lines as compare_lines
 from stocks.analysis.fundamentals import (
     FUNDAMENTAL_TILES,
     KPI_SOURCES,
@@ -38,7 +42,9 @@ from stocks.analysis.listing import (
 from stocks.analysis.moat import PILLAR_WEIGHTS, moat_score
 from stocks.analysis.pe_history import DISPLAY_WINDOWS, window_stats
 from stocks.analysis.portfolio import market_live, session_quote
+from stocks.analysis.sentiment import SECTOR_ETFS
 from stocks.api import loaders
+from stocks.api.cache import carried
 from stocks.api.deps import Account, Base, Writer, reporting_currency
 from stocks.api.jsonsafe import num as _num
 from stocks.api.jsonsafe import scalar as _scalar
@@ -51,6 +57,9 @@ from stocks.api.schemas import (
     Bars,
     CashYield,
     ClosedEnd,
+    CompareLine,
+    CompareOffer,
+    Comparison,
     Custodian,
     CycleEvent,
     EarningsEvent,
@@ -183,6 +192,155 @@ def bars(symbol: Symbol, range: Range = "1y") -> Bars:
         listed=since,
         ranges=ranges(df, since),
     )
+
+
+@router.get("/{symbol}/compare", response_model=Comparison, summary="Against the index")
+def compare(
+    symbol: Symbol,
+    account: Account,
+    range: Annotated[
+        str,
+        Query(alias="range", description=f"One of: {', '.join(COMPARE_RANGES)}."),
+    ] = "1y",
+    others: Annotated[
+        str | None,
+        Query(
+            alias="with",
+            description=(
+                "Comma-separated symbols to draw beside this one, at most "
+                f"{MAX_COMPARED}. Omitted: {', '.join(INDICES)}. Empty: none."
+            ),
+        ),
+    ] = None,
+    base: Base = None,
+) -> Comparison:
+    """This listing against others over one window, in the reader's money.
+
+    Every line is the total return of one unit of `base` put in on the
+    subject's first session of the window (`analysis.compare`). The bars come
+    off the same memo as `/bars`, so the subject — and an index another page
+    already drew — costs no download.
+    """
+    label = range.strip().lower()
+    if label not in COMPARE_RANGES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"range must be one of {', '.join(COMPARE_RANGES)}",
+        )
+    ticker = symbol.strip().upper()
+    ccy = reporting_currency(account, base)
+    asked = _compared(ticker, others)
+    names = [ticker, *asked]
+    with ThreadPoolExecutor(max_workers=min(8, len(names) + 3)) as pool:
+        shown = pool.submit(carried(loaders.price_bars), ticker, label)
+        closes = {
+            name: pool.submit(carried(_closes_or_none), name, label) for name in names
+        }
+        quoted = pool.submit(carried(listing_currencies), names)
+        sector = pool.submit(carried(_sector_of), ticker)
+        related = pool.submit(carried(_related_or_none), ticker)
+        df = shown.result()
+        got = {name: future.result() for name, future in closes.items()}
+        currencies = quoted.result()
+        own_sector = sector.result()
+        peers = related.result()
+
+    etf = SECTOR_ETFS.get(own_sector or "")
+    offered = [CompareOffer(ticker=index, role="index") for index in INDICES]
+    if etf and etf != ticker:
+        offered.append(CompareOffer(ticker=etf, role="sector", sector=own_sector))
+    shares = [peer for peer in peers if peer != ticker and not is_crypto(peer)]
+    offered += [
+        CompareOffer(ticker=peer, name=loaders.sec_title(peer) or "", role="peer")
+        for peer in shares[:OFFERED_PEERS]
+    ]
+    if df.empty:
+        return Comparison(ticker=ticker, range=label, base=ccy, dates=[], offered=offered)
+
+    axis = day_index(df.index)
+    rates, unpriced = rates_into(
+        ccy, axis, {name: currencies.get(name) for name in names}
+    )
+    drawn = compare_lines(
+        {name: s for name, s in got.items() if s is not None and name not in unpriced},
+        rates,
+        axis,
+    )
+
+    def role(name: str) -> Literal["subject", "index", "sector", "peer", "pick"]:
+        if name == ticker:
+            return "subject"
+        if name in INDICES:
+            return "index"
+        if name == etf:
+            return "sector"
+        return "peer" if name in peers else "pick"
+
+    return Comparison(
+        ticker=ticker,
+        range=label,
+        base=ccy,
+        dates=[str(day.date()) for day in axis],
+        lines=[
+            CompareLine(
+                ticker=name,
+                name="" if name in INDICES else (loaders.sec_title(name) or ""),
+                role=role(name),
+                points=drawn[name],
+            )
+            for name in names
+            if name in drawn
+        ],
+        offered=offered,
+        missing=[name for name in asked if name not in drawn],
+    )
+
+
+def _compared(ticker: str, asked: str | None) -> list[str]:
+    """The names `?with=` asks for, cleaned: upper-case, once each, never the
+    subject, at most `MAX_COMPARED`. Omitted means the indices."""
+    if asked is None:
+        raw: list[str] = list(INDICES)
+    else:
+        raw = [part.strip().upper() for part in asked.split(",")]
+    out: list[str] = []
+    for name in raw:
+        if name and name != ticker and name not in out and len(name) <= 32:
+            out.append(name)
+    return out[:MAX_COMPARED]
+
+
+def _closes_or_none(ticker: str, label: str) -> pd.Series | None:
+    """One listing's closes, or None when Yahoo has none or refused: a line
+    the card leaves off, not a failed card."""
+    try:
+        closes = loaders.bar_closes(ticker, label)
+    except Exception as exc:  # noqa: BLE001
+        obs.warn("api.compare_closes_failed", ticker=ticker,
+                 error_type=type(exc).__name__, error=str(exc)[:300])
+        return None
+    return None if closes.dropna().empty else closes
+
+
+def _sector_of(ticker: str) -> str | None:
+    """The yfinance sector of a company, or None for a coin, a fund or a name
+    Yahoo files none for. The profile memo first; `info` records into it."""
+    from stocks.data.fetch import info, resolve
+    from stocks.data.profiles import known
+
+    if is_crypto(ticker):
+        return None
+    stored = known(resolve(ticker))
+    if stored is not None:
+        return stored.get("sector") or None
+    try:
+        return info(ticker).get("sector") or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _related_or_none(ticker: str) -> tuple[str, ...]:
+    return () if is_crypto(ticker) else loaders.related(ticker)
 
 
 @router.get("/{symbol}/quote", response_model=Quote, summary="Live quote")

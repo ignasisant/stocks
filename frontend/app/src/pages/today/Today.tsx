@@ -261,7 +261,7 @@ export default function Today() {
           ))
         : null}
       {shows(active, "book") && book ? (
-        <Block id="book" title={t("home.daily_sec_book")}>
+        <Block id="book" title={t("home.daily_sec_book")} help={t("today.book_help")}>
           <BookChart book={book} />
         </Block>
       ) : null}

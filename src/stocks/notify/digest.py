@@ -194,7 +194,6 @@ def compute_digest_data(
                 last = values.iloc[-1].dropna()
                 data.total = float(last.sum()) if not last.empty else None
                 data.day = basket_change(values, 1)
-                data.week = basket_change(values, WINDOW_DAYS)
                 # Same frame, same anchoring as `day` — so the contributions
                 # sum to the day change the header just reported.
                 data.contrib = {
@@ -202,6 +201,10 @@ def compute_digest_data(
                     for t, v in ticker_money_changes(values, 1).items()
                 }
                 data.fx_effect = fx_share(values, frozen, 1)
+
+    if positions:
+        with obs.swallow("digest.returns", positions=len(positions)):
+            data.week = money_changes(txs, base, [WINDOW_DAYS])[0][WINDOW_DAYS]
 
     tickers = (
         [p.ticker for p in positions]
@@ -245,6 +248,30 @@ def compute_digest_data(
             data.stale_import_days = stale_import_days(import_record, data.date)
 
     return data
+
+
+def money_changes(
+    transactions: list[Transaction], base: str, windows: list[int], index=None
+) -> tuple[dict[int, tuple[float, float] | None], dict[int, float | None]]:
+    """({days: (gain, pct)} of the book, {days: pct} of `index`) over each
+    window, both on the book's own money.
+
+    Money put in or taken out during the window is neither a gain nor a loss,
+    and the pct is over the money at stake (`money_change`): how much was in
+    the book, and when, is what the figure is worth. `index` (its closes) is
+    bought with the same money on the same days (`index_change`), so the two
+    figures can be set side by side; {} without it."""
+    from stocks.analysis.portfolio import book_history, index_change, money_change
+
+    hist, _twr, _missing = book_history(transactions, base)
+    own = {days: money_change(hist, days) for days in windows}
+    if index is None:
+        return own, {}
+    same = {}
+    for days in windows:
+        change = index_change(hist, index, days)
+        same[days] = None if change is None else change[1]
+    return own, same
 
 
 def _result_moves(results: list[EarningsResult]) -> dict[str, float]:

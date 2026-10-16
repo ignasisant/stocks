@@ -47,30 +47,36 @@ const listeners = new Set<() => void>();
 let next = 0;
 let total = 0;
 let done = 0;
-let snapshot: Activity = { slow: [], done: 0, total: 0 };
+let snapshot: Activity = { slow: [], since: null, done: 0, total: 0 };
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 export type Activity = {
   /** Distinct kinds of request out longer than `SLOW_MS`, oldest first. */
   slow: string[];
+  /** When the oldest of those went out (epoch ms), for "18 s" in the banner:
+   * a wait that shows its seconds climbing is visibly still alive. */
+  since: number | null;
   done: number;
   total: number;
 };
 
 function publish(now = Date.now()): void {
   const slow: string[] = [];
+  let oldest: number | null = null;
   let soonest: number | null = null;
   for (const { kind, since } of [...out.values()].sort((a, b) => a.since - b.since)) {
     const due = since + SLOW_MS;
     if (due <= now) {
       if (!slow.includes(kind)) slow.push(kind);
+      oldest ??= since;
     } else if (soonest === null || due < soonest) soonest = due;
   }
   const changed =
     slow.join() !== snapshot.slow.join() ||
+    oldest !== snapshot.since ||
     (slow.length > 0 && (done !== snapshot.done || total !== snapshot.total));
   if (changed) {
-    snapshot = { slow, done, total };
+    snapshot = { slow, since: oldest, done, total };
     listeners.forEach((fn) => fn());
   }
   // Wake up when the next request crosses the line, not on a polling loop.

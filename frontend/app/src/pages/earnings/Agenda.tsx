@@ -1,6 +1,7 @@
 /**
  * What is coming, as one agenda: every dated thing ahead — prints, ex-dates,
- * filing deadlines, buy-back days, rate decisions — under the week it falls in.
+ * filing deadlines, buy-back days, rate decisions, market holidays — under the
+ * week it falls in.
  *
  * The per-kind tables this replaces ran months of rows end to end (about
  * fifty thousand pixels on a phone for a busy watchlist). A week header is
@@ -17,9 +18,11 @@ import type {
   CalendarDividend,
   CalendarEvent,
   CentralBankDecision,
+  MarketHoliday,
   RepurchaseWindow,
   TaxDeadline,
 } from "./data";
+import { venueName } from "./Book";
 import { cash } from "./Dividends";
 import { days, plain } from "./format";
 import type { T } from "./format";
@@ -158,12 +161,14 @@ export default function Agenda({
   windows,
   banks,
   dividends,
+  holidays = [],
 }: {
   events: CalendarEvent[];
   deadlines: TaxDeadline[];
   windows: RepurchaseWindow[];
   banks: CentralBankDecision[];
   dividends: CalendarDividend[];
+  holidays?: MarketHoliday[];
 }) {
   const t = useT();
   const [shown, setShown] = useState(WEEKS);
@@ -213,6 +218,22 @@ export default function Agenda({
             sub={t("earnings.kind_banks")}
             date={b.date}
             until={b.days_until}
+          />
+        ),
+      })),
+    ...holidays
+      .filter((h) => h.days_until >= 0)
+      .map((h) => ({
+        key: `market-${h.venue}-${h.date}`,
+        date: h.date,
+        node: (
+          <Plain
+            title={venueName(h.venue, t)}
+            sub={t(
+              h.kind === "early" ? "earnings.holiday_early" : "earnings.holiday_closed",
+            )}
+            date={h.date}
+            until={h.days_until}
           />
         ),
       })),

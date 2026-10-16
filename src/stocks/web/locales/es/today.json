@@ -126,5 +126,20 @@
   "today.fear_greed_week": "hace una semana: {value}",
   "today.btc_dom": "Dominancia BTC",
   "today.leaders": "Lideran el mes",
-  "today.laggards": "A la cola"
+  "today.laggards": "A la cola",
+  "today.book_help": "Tu cartera y el mismo dinero metido en el índice en las mismas fechas. En tu moneda.",
+  "today.book_range": "Periodo",
+  "today.book_index": "Índice",
+  "today.book_range_1m": "1M",
+  "today.book_range_3m": "3M",
+  "today.book_range_6m": "6M",
+  "today.book_range_ytd": "Año",
+  "today.book_range_1y": "1A",
+  "today.book_range_2y": "2A",
+  "today.book_range_5y": "5A",
+  "today.book_range_max": "Todo",
+  "today.book_chart": "Cartera frente al {index}, {window}",
+  "today.book_empty": "Sin datos para este periodo.",
+  "today.book_failed": "No se pudo dibujar este periodo.",
+  "today.book_since": "Tu cartera empieza en {date}; antes no había posiciones."
 }

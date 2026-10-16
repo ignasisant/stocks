@@ -19,9 +19,12 @@
  * axis in common, and a coin that trades on Saturdays must not slide out of
  * step with a stock that does not.
  *
- * A line marked `index` is the reader's own book: its time-weighted return as
- * a growth index from 100, which has no price to print — the tooltip gives it
- * the change alone, under the name the server sent.
+ * A line marked `index` is a growth index from 100, which has no price to
+ * print — the tooltip gives it the change alone, under the name the server
+ * sent. A line marked `money` is an amount: the reader's book, what it was
+ * worth each day, and the same money in an index (`daily_book.versus`). The
+ * tooltip prints the amounts, the money put in by then and the gap between
+ * the two; a measured span, what each made net of that money.
  */
 
 import { useMemo, useState } from "react";
@@ -41,7 +44,8 @@ import {
   type TipLine,
 } from "../pages/ticker/plot";
 import "../pages/ticker/ticker.css";
-import { useLang } from "../shell/i18n";
+import { money } from "../pages/home/format";
+import { useLang, useT } from "../shell/i18n";
 import { chart as palette } from "../shell/theme";
 import { useWidth } from "../shell/useWidth";
 import { num } from "../shell/numbers";
@@ -55,6 +59,13 @@ export type Line = {
   label?: string;
   /** A growth index, not a price: only its change means anything. */
   index?: boolean;
+  /** An amount each day, in `currency`: the book's value, or the same money
+   * in an index. */
+  money?: boolean;
+  /** The book only: the money put in by each date, net of withdrawals. */
+  injected?: number[];
+  /** The same money in an index: the day it was first bought. */
+  opens?: string;
 };
 
 const named = (line: Line) => line.label || line.symbol;
@@ -131,6 +142,7 @@ export function LineChart({
   rebased: boolean;
   label: string;
 }) {
+  const t = useT();
   const lang = useLang();
   const [node, width] = useWidth(FALLBACK);
   const [hover, setHover] = useState<number | null>(null);
@@ -183,7 +195,14 @@ export function LineChart({
     byTime ? line.ts.map(xTime) : line.ts.map((_, i) => xIndex(i)),
   );
   const y = scale(range.lo, range.hi, box.height - box.bottom, box.top);
-  const format = axis(range.lo, range.hi, rebased);
+  // Amounts read in thousands on the axis; the tooltip has them in full.
+  const format = lines.every((line) => line.money)
+    ? (value: number) =>
+        new Intl.NumberFormat(lang || undefined, {
+          notation: "compact",
+          maximumFractionDigits: 1,
+        }).format(value)
+    : axis(range.lo, range.hi, rebased);
   const dates = dater(
     lang,
     first.dates[0] as string,
@@ -207,33 +226,73 @@ export function LineChart({
   const picked =
     hover === null ? null : lines.map((_, at) => nearest(xs[at] as number[], hover));
   const lead = picked?.[0] ?? 0;
+  const cash = (amount: number | undefined, line: Line, signed = false) =>
+    money(amount, line.currency || "EUR", lang, { signed }) ?? "";
+  const toned = (amount: number) => (amount >= 0 ? ("up" as const) : ("down" as const));
+  // The money the book had in, which the index line was bought with too.
+  const flows = lines.find((line) => line.injected?.length)?.injected;
+  const row = (
+    label: string,
+    text: string,
+    extra?: Partial<TipLine>,
+    tone?: "up" | "down",
+  ) => ({
+    text: `${label}  ${text}`,
+    ...extra,
+    parts: [
+      { text: `${label}  `, tone: "dim" as const },
+      { text, bold: true, ...(tone ? { tone } : {}) },
+    ],
+  });
   const tip: TipLine[] = picked
-    ? lines.map((line, at) => {
+    ? lines.flatMap((line, at): TipLine[] => {
         const i = picked[at] as number;
         const value = line.raw[i] as number;
+        const swatch = byTime ? hues[at % hues.length] : undefined;
+        if (line.money) {
+          const put = line.injected?.[i];
+          return [
+            row(named(line), cash(value, line), { swatch }),
+            ...(put === undefined
+              ? []
+              : [row(t("home.chart_injected"), cash(put, line))]),
+          ];
+        }
         // Since the window opened, whichever axis the line is drawn on.
         const swing = value / (line.raw[0] as number) - 1;
         const tone = swing >= 0 ? ("up" as const) : ("down" as const);
         if (line.index)
-          return {
-            text: `${named(line)}  ${change(swing)}`,
-            swatch: byTime ? hues[at % hues.length] : undefined,
+          return [
+            {
+              text: `${named(line)}  ${change(swing)}`,
+              swatch,
+              parts: [
+                { text: `${named(line)}  `, tone: "dim" as const },
+                { text: change(swing), bold: true, tone },
+              ],
+            },
+          ];
+        return [
+          {
+            text: `${named(line)}  ${price(value)}`,
+            swatch,
             parts: [
               { text: `${named(line)}  `, tone: "dim" as const },
-              { text: change(swing), bold: true, tone },
+              { text: price(value), bold: true },
+              { text: `  ${change(swing)}`, tone },
             ],
-          };
-        return {
-          text: `${named(line)}  ${price(value)}`,
-          swatch: byTime ? hues[at % hues.length] : undefined,
-          parts: [
-            { text: `${named(line)}  `, tone: "dim" as const },
-            { text: price(value), bold: true },
-            { text: `  ${change(swing)}`, tone },
-          ],
-        };
+          },
+        ];
       })
     : [];
+  // The book against the same money in the index: what the picks made.
+  const [mine, theirs] = lines;
+  if (picked && mine?.money && theirs?.money) {
+    const gap =
+      (mine.raw[picked[0] as number] as number) -
+      (theirs.raw[picked[1] as number] as number);
+    tip.push(row(t("home.chart_gap"), cash(gap, mine, true), {}, toned(gap)));
+  }
   // Between two places: each line's nearest session at either end, and what
   // it did across them. A span of one place is a mouse anchor just dropped.
   const ends = span
@@ -249,9 +308,15 @@ export function LineChart({
         const [a, b] = measured[at] as [number, number];
         const start = line.raw[a] as number;
         const end = line.raw[b] as number;
+        const swatch = byTime ? hues[at % hues.length] : undefined;
+        if (line.money) {
+          // Made, not moved: the money put in across the span is no gain.
+          const put = flows ? (flows[b] ?? 0) - (flows[a] ?? 0) : 0;
+          const made = end - start - put;
+          return row(named(line), cash(made, line, true), { swatch }, toned(made));
+        }
         const swing = start ? end / start - 1 : 0;
         const tone = swing >= 0 ? ("up" as const) : ("down" as const);
-        const swatch = byTime ? hues[at % hues.length] : undefined;
         const levels = line.index ? "" : `${price(start)} → ${price(end)}  `;
         return {
           text: `${named(line)}  ${levels}${change(swing)}`,
@@ -444,6 +509,7 @@ export function LineChart({
           x={(xs[0] as number[])[lead] as number}
           title={dates.long(first.dates[lead] as string)}
           lines={tip}
+          more={tip.length > lines.length}
         />
       ) : null}
       {byTime ? (

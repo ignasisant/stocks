@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -34,13 +35,15 @@ def yaml_dump(data) -> str:
 load_dotenv()
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = PROJECT_ROOT / "data"
+# STOCKS_DATA_DIR moves every cache and account elsewhere: a load test
+# (stocks.loadtest) fills them with made-up prices the dev server must not read.
+DATA_DIR = Path(os.environ.get("STOCKS_DATA_DIR") or PROJECT_ROOT / "data")
 WATCHLIST_FILE = PROJECT_ROOT / "watchlist.yaml"
 # watchlist.yaml is git-ignored (personal positions); the tracked example
 # carries the global reference maps (aliases/tv) for checkouts without it.
 EXAMPLE_WATCHLIST_FILE = PROJECT_ROOT / "watchlist.example.yaml"
 
-DATA_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # Alert types that only need the latest price (evaluated by Alert.triggered).

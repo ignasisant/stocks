@@ -80,6 +80,7 @@ from stocks.api.schemas import (
 from stocks.api.schemas import TaxPeriod as TaxPeriodOut
 from stocks.api.security import Authed
 from stocks.data import fetch
+from stocks.frames import midnight
 from stocks.portfolio import (
     custody,
     demo,
@@ -290,6 +291,22 @@ def _unpriced_tickers(table: pd.DataFrame) -> list[str]:
     return [str(t) for t in table.index[table["value"].isna()]]
 
 
+def _unpriced_cost(table: pd.DataFrame) -> float:
+    """Basis of the rows `priced_totals` left out."""
+    if table.empty or "cost" not in table:
+        return 0.0
+    if "value" not in table:
+        return float(table["cost"].sum())
+    return float(table.loc[table["value"].isna(), "cost"].sum())
+
+
+def _stale_tickers(table: pd.DataFrame) -> list[str]:
+    """Rows valued at the last kept close (`loaders._self_priced_positions`)."""
+    if "stale" not in table:
+        return []
+    return sorted(str(t) for t in table.index[table["stale"].fillna(False).astype(bool)])
+
+
 @router.get("/summary", response_model=Summary, summary="Book totals")
 def summary(account: Account, base: Base = None) -> Summary:
     """Cost, value and P/L over the rows that priced.
@@ -318,6 +335,8 @@ def summary(account: Account, base: Base = None) -> Summary:
         pnl_pct=_num(value / cost - 1) if cost else None,
         positions=int(len(table)),
         unpriced=unpriced,
+        unpriced_cost=_unpriced_cost(table),
+        stale=_stale_tickers(table),
         # Which of the unpriced are a code Yahoo does not know, rather than a
         # feed that is down: those need an alias, and waiting will not help.
         unlisted=sorted(fetch.unlisted(_unpriced_tickers(table))) if unpriced else [],
@@ -466,7 +485,10 @@ def performance(
     start: pd.Timestamp | None = None
     if window in _PERFORMANCE_DAYS:
         start = pd.Timestamp(date.today()) - pd.Timedelta(days=_PERFORMANCE_DAYS[window])  # ty: ignore[invalid-assignment]  -- today minus days is never NaT
-        twr = twr[twr.index >= start] if not twr.empty else twr
+        # The window opens at the start day's close, as the Today chart and
+        # `money_change` anchor it: that day's own return is the day before
+        # the window, and counting it made a year one session longer.
+        twr = twr[twr.index > start] if not twr.empty else twr
     cumulative = float((1 + twr).prod() - 1) if not twr.empty else float("nan")
     # Over the span the return was actually measured on, not the ledger's:
     # a book that sat empty for a year has no return for it, and dividing the
@@ -524,7 +546,7 @@ def performance(
         dropped_days=[
             str(pd.Timestamp(day).date())
             for day in dropped
-            if start is None or pd.Timestamp(day) >= start
+            if start is None or pd.Timestamp(day) > start
         ],
         irr=_num(irr),
         irr_annualised=annual,
@@ -1340,6 +1362,11 @@ _DEFAULT_GROWTH = {"stocks": 0.08, "crypto": 0.0}
 _DEFAULT_VOL = {"stocks": 0.20, "crypto": 0.60}
 # Deflator for "today's money": the ECB's target, not a forecast of it.
 _INFLATION = 0.02
+# How far back the projection draws the book before its fan starts.
+_PAST_MONTHS = 12
+# Share of a sleeve's value the risk download must price for its measured
+# volatility and growth to stand for the sleeve.
+_MIN_COVERAGE = 0.5
 
 
 @router.get(
@@ -1427,6 +1454,23 @@ def projection(
     suggested = max(float(recent.sum()) / 12, 0.0) if not recent.empty else 0.0
     suggested = round(suggested / 10) * 10
 
+    # The split comes off the positions table, unpriced rows at cost, not off
+    # the risk report's weights: those are renormalised over whatever the
+    # download priced, so a throttled fetch that only brought back one coin
+    # read as a book 100% in that coin, at that coin's volatility.
+    table = loaders.positions_table(db, mtime, ccy)
+    worth = (
+        table["value"].fillna(table["cost"])
+        if not table.empty and {"value", "cost"} <= set(table.columns)
+        else pd.Series(dtype=float)
+    )
+    sleeve_of = {t: "crypto" if is_crypto(t) else "stocks" for t in worth.index}
+    held = {
+        key: float(worth[[sleeve_of[t] == key for t in worth.index]].sum())
+        for key in ("stocks", "crypto")
+    }
+    total = held["stocks"] + held["crypto"]
+
     vols: dict[str, float] = {}
     measured: dict[str, float] = {}
     corr = None
@@ -1442,10 +1486,23 @@ def projection(
             vols, corr, measured = sleeve_stats(
                 report.returns, weights, groups, since=first_owned(txs)
             )
+            # A sleeve the download covered less than half of is measured on
+            # the names that happened to price, not on what is held: its
+            # figures fall back to the presets, and the correlation with them.
+            for key, names in groups.items():
+                covered = float(worth.reindex(names).fillna(0).sum())
+                if held[key] and covered < _MIN_COVERAGE * held[key]:
+                    vols.pop(key, None)
+                    measured.pop(key, None)
+                    corr = None
     except (URLError, YFRateLimitError):
         obs.warn("projection.volatility_unavailable")
 
-    crypto_weight = sum(w for t, w in weights.items() if is_crypto(t))
+    crypto_weight = (
+        held["crypto"] / total
+        if total > 0
+        else sum(w for t, w in weights.items() if is_crypto(t))
+    )
     share = crypto_weight if crypto_share is None else crypto_share
     chosen = {"stocks": stock_growth, "crypto": crypto_growth}
     own = {
@@ -1510,13 +1567,18 @@ def projection(
         inflation=_INFLATION if real else 0.0,
     )
     # The road so far, one point a month, so the fan reads as a continuation
-    # of the book rather than a line out of nowhere. The current month is
-    # left off: today's value is the fan's own first point. Past figures stay
-    # the euros they were — only the future is deflated.
+    # of the book rather than a line out of nowhere. Only the last year: the
+    # chart looks ahead, and a long past squeezes the fan into a corner. The
+    # current month is left off: today's value is the fan's own first point.
+    # Past figures stay the euros they were — only the future is deflated.
     past = pd.DataFrame()
     if not hist.empty and {"value", "injected"} <= set(hist.columns):
         monthly_end = hist[["value", "injected"]].resample("ME").last()
-        past = monthly_end[monthly_end.index < pd.Timestamp(date.today()).replace(day=1)]
+        month = midnight(date.today().replace(day=1))
+        past = monthly_end[
+            (monthly_end.index < month)
+            & (monthly_end.index >= month - pd.DateOffset(months=_PAST_MONTHS))
+        ]
         past = past[past["injected"].fillna(0) > 0]
     today = pd.Timestamp(date.today())
     dates = [today + pd.DateOffset(months=m) for m in range(len(fan))]

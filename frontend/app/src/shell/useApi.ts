@@ -24,7 +24,9 @@
  * what is on screen without a spinner. Without it the stale line promised the
  * figures would update and only the next navigation delivered. The same for
  * an answer the server says it is refreshing behind (`X-Data-Refreshing`):
- * recent figures, newer ones on the way.
+ * recent figures, newer ones on the way. Each re-ask is announced
+ * (`freshness.noteRetry`), so the line counts down to it and says when it is
+ * out; once they stop, the line's own button asks again (`retryStale`).
  *
  * And it abandons what it asked for once nobody can see it: the component
  * unmounting (the reader moved to another screen, or closed this one) or its
@@ -42,7 +44,14 @@ import {
   watched,
   withMemo,
 } from "./api";
-import { isRefreshing, noteFreshness, staleAt } from "./freshness";
+import {
+  isRefreshing,
+  noteFreshness,
+  noteKept,
+  noteRetry,
+  onRetryStale,
+  staleAt,
+} from "./freshness";
 
 /** When a stale answer is asked for again: past a refresh on the server's one
  * throttled vCPU, which runs twenty seconds to a minute. Then it stops — a
@@ -54,20 +63,31 @@ type Asked<T> = { result: Promise<T>; urls: Set<string> };
 /**
  * Ask again, on `FOLLOW_MS`, while any of `urls` last came back stale or
  * refreshing, and hand each answer to `landed`. A failed re-ask is dropped:
- * what is on screen stays, and so does the stale line. Returns the stop.
+ * what is on screen stays, and so does the stale line. Each try is announced
+ * under `id` (`freshness.noteRetry`): when it is due, while it is out, and
+ * nothing once the follow ends. Returns the stop.
  */
 export function followStale<T>(
   urls: Set<string>,
   ask: () => Asked<T>,
   landed: (data: T) => void,
+  id = "",
 ): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
+  const announce = (at: number | null) => id && noteRetry(id, at);
   const step = (seen: Set<string>, attempt: number) => {
     const stale = [...seen].filter((url) => staleAt(url) !== null || isRefreshing(url));
-    if (stopped || !stale.length || attempt >= FOLLOW_MS.length) return;
+    if (stopped || !stale.length || attempt >= FOLLOW_MS.length) {
+      if (!stopped) announce(null);
+      return;
+    }
+    // Only a stale answer is worth a countdown; a refreshing one is recent.
+    const wait = FOLLOW_MS[attempt] ?? 0;
+    if (stale.some((url) => staleAt(url) !== null)) announce(Date.now() + wait);
     timer = setTimeout(() => {
       if (stopped) return;
+      if (stale.some((url) => staleAt(url) !== null)) announce(0);
       forget(stale);
       const next = ask();
       next.result.then(
@@ -76,19 +96,23 @@ export function followStale<T>(
           landed(data);
           step(next.urls, attempt + 1);
         },
-        () => undefined,
+        () => {
+          if (!stopped) announce(null);
+        },
       );
-    }, FOLLOW_MS[attempt]);
+    }, wait);
   };
   step(urls, 0);
   return () => {
     stopped = true;
     clearTimeout(timer);
+    announce(null);
   };
 }
 
 export type Query<T> =
-  | { state: "loading" }
+  /** `urls`: what the first stage asked for, for the skeleton's caption. */
+  | { state: "loading"; urls?: string[] }
   | { state: "signed-out" }
   | { state: "failed"; error: unknown; retry: () => void }
   | { state: "loaded"; data: T; reload: () => void };
@@ -126,17 +150,43 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[]): Query<T> 
       );
     const ask = () => watched(() => withMemo(run, scope.signal));
     let stop = () => {};
+    // What the last answer was built from, for the stale line's own retry.
+    let seen = new Set<string>();
     const follow = (urls: Set<string>) => {
-      if (live) stop = followStale(urls, ask, loaded);
+      seen = urls;
+      if (live) stop = followStale(urls, ask, loaded, mark);
     };
+    // The stale line's "retry": ask again now, in place — the figures stay
+    // up while it is out, as with the scheduled re-asks.
+    const unhear = onRetryStale(() => {
+      const stale = [...seen].filter((url) => staleAt(url) !== null);
+      if (!live || (!stale.length && staleAt(mark) === null)) return;
+      stop();
+      noteRetry(mark, 0);
+      forget(stale);
+      const retried = ask();
+      retried.result.then(
+        (data) => {
+          if (!live) return;
+          noteFreshness(mark, null);
+          loaded(data);
+          follow(retried.urls);
+        },
+        () => live && noteRetry(mark, null),
+      );
+    });
+    const waiting = (urls: Set<string>) =>
+      live && urls.size && setQuery({ state: "loading", urls: [...urls] });
     if (reask) {
       const asked = ask();
+      waiting(asked.urls);
       asked.result.then((data) => {
         loaded(data);
         follow(asked.urls);
       }, failed);
     } else {
       const first = watched(() => fromKept(run, scope.signal));
+      waiting(first.urls);
       first.result.answer.then((data) => {
         const at = first.result.keptAt();
         loaded(data);
@@ -145,13 +195,17 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[]): Query<T> 
           follow(first.urls);
           return;
         }
+        // Last visit's figures on screen: the shell says so until these land.
+        noteKept(mark, at);
         const current = ask();
         current.result.then(
           (fresh) => {
+            noteKept(mark, null);
             loaded(fresh);
             follow(current.urls);
           },
           (error) => {
+            noteKept(mark, null);
             if (!live || error instanceof Cancelled) return;
             if (error instanceof NotSignedIn) failed(error);
             else noteFreshness(mark, new Date(at).toISOString());
@@ -162,8 +216,11 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[]): Query<T> 
     return () => {
       live = false;
       stop();
+      unhear();
       scope.abort();
       noteFreshness(mark, null);
+      noteKept(mark, null);
+      noteRetry(mark, null);
     };
   }, [run, nonce, again]);
 

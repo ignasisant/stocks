@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import date
 
 import pandas as pd
 import pytest
@@ -956,7 +957,9 @@ def test_performance_is_retaken_from_the_window_start(client, book, monkeypatch)
     ).json()
     assert whole["window"] == "inception" and year["window"] == "1y"
     assert whole["twr_cumulative"] == pytest.approx(1.001**800 - 1)
-    assert year["twr_cumulative"] == pytest.approx(1.001**366 - 1, rel=1e-2)
+    # 365 days of returns from the start day's close, not 366: the start
+    # day's own return belongs to the day before, as on the Today chart.
+    assert year["twr_cumulative"] == pytest.approx(1.001**365 - 1)
     assert year["start"] > whole["start"]
     # Where the book stands is not a return over anything: same either way.
     assert year["value"] == whole["value"]
@@ -1104,9 +1107,11 @@ def test_projection_fans_out_from_todays_value(client, book, monkeypatch):
     growth unless told otherwise, the contribution asked for, and the share of
     paths that reach a target."""
     book(trades())
-    index = pd.to_datetime(["2024-01-02", "2024-01-03"])
+    # Two years of month ends: only the last twelve before this month draw.
+    month = pd.Timestamp(date.today()).replace(day=1)
+    index = pd.date_range(end=month - pd.Timedelta(days=1), periods=24, freq="ME")
     hist = pd.DataFrame(
-        {"value": [1000.0, 1200.0], "injected": [1000.0, 1000.0]}, index=index
+        {"value": [1000.0] * 23 + [1200.0], "injected": [1000.0] * 24}, index=index
     )
     empty = pd.Series(dtype=float)
     monkeypatch.setattr(
@@ -1129,10 +1134,10 @@ def test_projection_fans_out_from_todays_value(client, book, monkeypatch):
     assert payload["contributed"][-1] == pytest.approx(1200 + 50 * 60)
     assert payload["p10"][-1] < payload["p50"][-1] < payload["p90"][-1]
     assert payload["target_probability"] == 0.0
-    # The past, one point per month end, before the fan starts.
-    assert payload["history_dates"] == ["2024-01-31"]
-    assert payload["history_value"] == [1200.0]
-    assert payload["history_invested"] == [1000.0]
+    # The past, one point per month end over the last year, before the fan.
+    assert payload["history_dates"] == [str(d.date()) for d in index[-12:]]
+    assert payload["history_value"][-1] == 1200.0
+    assert payload["history_invested"] == [1000.0] * 12
 
     real = client.get(
         "/v1/portfolio/projection",
@@ -1141,6 +1146,44 @@ def test_projection_fans_out_from_todays_value(client, book, monkeypatch):
     ).json()
     assert real["real"] is True
     assert real["contributed"][-1] < payload["contributed"][-1]
+
+
+def test_projection_splits_by_what_is_held_not_by_what_priced(
+    client, book, monkeypatch
+):
+    """A throttled risk download that only priced one coin renormalises its
+    weights onto that coin. The split must still come off the book, and the
+    coin's volatility must not stand for a sleeve it barely covers."""
+    book(trades())
+    index = pd.to_datetime(["2024-01-02", "2024-01-03"])
+    hist = pd.DataFrame(
+        {"value": [1000.0, 1200.0], "injected": [1000.0, 1000.0]}, index=index
+    )
+    empty = pd.Series(dtype=float)
+    monkeypatch.setattr(
+        loaders, "history", lambda db, mtime, base="EUR": (hist, empty, [])
+    )
+    days = pd.date_range("2024-01-02", periods=30)
+    wild = report()
+    wild.weights = {"BTC-EUR": 1.0}
+    wild.returns = pd.DataFrame({"BTC-EUR": [0.3, -0.3] * 15}, index=days)
+    monkeypatch.setattr(loaders, "basket_report", lambda db, mtime, base, period: wild)
+    held = pd.DataFrame(
+        {"cost": [1000.0, 50.0], "value": [1200.0, None]},
+        index=pd.Index(["AAPL", "BTC-EUR"], name="ticker"),
+    )
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: held)
+    payload = client.get(
+        "/v1/portfolio/projection", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    # The coin held at cost when unpriced: 50 of 1250, not the whole book.
+    assert payload["crypto_weight"] == pytest.approx(0.04)
+    stocks, crypto = payload["sleeves"]
+    assert stocks["weight"] == pytest.approx(0.96)
+    # The coin measures its own sleeve; stocks, which the download missed,
+    # take the preset rather than borrow the coin's swings.
+    assert crypto["volatility_measured"] is True
+    assert stocks["volatility_measured"] is False
 
 
 def test_projection_grows_a_sleeve_at_its_own_rate_only_when_asked(

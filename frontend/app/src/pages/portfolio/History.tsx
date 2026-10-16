@@ -57,7 +57,7 @@ export default function History() {
               : option.toUpperCase()
         }
       />
-      <Loaded query={query} skeleton={<Skeleton rows={6} />}>
+      <Loaded query={query} skeleton={<Skeleton shape="chart" />}>
         {(history) =>
           history.points.length < 2 ? (
             <Caption>{t("portfolio.not_enough_history")}</Caption>

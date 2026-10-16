@@ -10,9 +10,11 @@ These pin that a miss is computed once and shared, exception included.
 from __future__ import annotations
 
 import json
+import pickle
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -571,11 +573,39 @@ def test_disk_max_caps_a_memo_directory(monkeypatch):
     assert len(list((cache.MEMO_DIR / "t_cap").glob("*.pkl"))) == 2
 
 
+
+def test_a_trim_skips_a_file_another_trim_removed(monkeypatch, tmp_path):
+    """Two writers trim one directory at once; the file the other already
+    unlinked must not raise out of the write that is trimming."""
+    for name in ("a", "b", "c"):
+        (tmp_path / f"{name}.pkl").write_bytes(b"x")
+    real_glob = Path.glob
+
+    def glob(self, pattern):
+        yield tmp_path / "gone.pkl"  # listed, then unlinked by the other trim
+        yield from real_glob(self, pattern)
+
+    monkeypatch.setattr(Path, "glob", glob)
+    cache._trim(tmp_path, 2)
+    assert len(list(real_glob(tmp_path, "*.pkl"))) == 2
+
+
+def test_entries_land_compressed_and_read_back(tmp_path):
+    """Zlib'd on disk; a bare pickle from before still reads (the restore
+    test below writes one)."""
+    days = pd.bdate_range("2020-01-01", periods=1500)
+    prices = [round(100 + i * 0.01, 2) for i in range(1500)]
+    value = {"AAPL": pd.Series(prices, index=days)}
+    path = tmp_path / "m" / "e.pkl"
+    cache.write_entry(path, (0.0, value, time.time()))
+    assert len(path.read_bytes()) < len(pickle.dumps(value)) / 2
+    entry = cache.read_entry(path, 0.0)
+    assert entry is not None and entry[1]["AAPL"].equals(value["AAPL"])
+
+
 def test_a_restore_from_the_bucket_does_not_grow_the_directory_back(monkeypatch):
     """The bucket keeps every copy ever written; restoring them one miss at a
     time must not refill a directory the cap emptied."""
-    import pickle
-
     from stocks import storage
 
     clock = _clocks(monkeypatch, 1000.0)

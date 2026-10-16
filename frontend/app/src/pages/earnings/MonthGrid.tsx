@@ -19,6 +19,10 @@
  * shut, and almost nothing lands there. The stacking and the fold live in
  * `DayChips`, which the Home screen's four-week grid draws its cells with too.
  *
+ * The reader's own trades sit after the prints (hollow: something they did,
+ * not something coming) and booked payouts after the ex-dates they paid. A
+ * market holiday is no chip: it is a mark beside the day number (`Book.tsx`).
+ *
  * A loss sale's buy-back window is more than its last day: every day from the
  * sale up to the chip is shaded amber, because a buy on any of them would
  * defer the loss.
@@ -32,13 +36,17 @@ import { blocking, byDate, isSoon, monthWeeks } from "./data";
 import type {
   CalendarDividend,
   CalendarEvent,
+  CalendarPayment,
   CalendarResult,
+  CalendarTrade,
   CentralBankDecision,
   Day,
   EventPick,
+  MarketHoliday,
   RepurchaseWindow,
   TaxDeadline,
 } from "./data";
+import { HolidayMark, PaymentChip, TradeChip } from "./Book";
 import { CentralBankChip } from "./CentralBanks";
 import { DividendChip } from "./Dividends";
 import { eps, signedPct } from "./format";
@@ -146,6 +154,9 @@ export type DayItems = {
   windows: RepurchaseWindow[];
   banks: CentralBankDecision[];
   dividends: CalendarDividend[];
+  /** The reader's own fills and payouts; the Home card draws neither. */
+  trades?: CalendarTrade[];
+  payments?: CalendarPayment[];
 };
 
 /**
@@ -160,6 +171,8 @@ export function DayChips({
   windows,
   banks,
   dividends,
+  trades = [],
+  payments = [],
   onPick,
   limit = CELL_CHIPS,
 }: DayItems & { onPick: (pick: EventPick) => void; limit?: number }) {
@@ -185,8 +198,22 @@ export function DayChips({
     ...events.map((event) => (
       <EventChip key={`e-${event.ticker}`} event={event} onPick={onPick} />
     )),
+    ...trades.map((trade) => (
+      <TradeChip
+        key={`x-${trade.ticker}-${trade.side}`}
+        trade={trade}
+        onPick={onPick}
+      />
+    )),
     ...dividends.map((dividend) => (
       <DividendChip key={`d-${dividend.ticker}`} dividend={dividend} onPick={onPick} />
+    )),
+    ...payments.map((payment) => (
+      <PaymentChip
+        key={`p-${payment.ticker}-${payment.capital ? "c" : "d"}`}
+        payment={payment}
+        onPick={onPick}
+      />
     )),
   ];
   const folds = chips.length > limit;
@@ -213,11 +240,13 @@ export function DayChips({
 function Cell({
   day,
   blocked,
+  holidays,
   onPick,
   ...items
 }: DayItems & {
   day: Day;
   blocked: RepurchaseWindow[];
+  holidays: MarketHoliday[];
   onPick: (pick: EventPick) => void;
 }) {
   const t = useT();
@@ -231,7 +260,10 @@ function Cell({
       className={classes.join(" ")}
       title={shaded ? blockedTitle(blocked, t) : undefined}
     >
-      <div className="earn-daynum">{day.day}</div>
+      <div className="earn-dayhead">
+        <div className="earn-daynum">{day.day}</div>
+        <HolidayMark holidays={holidays} onPick={onPick} />
+      </div>
       <DayChips {...items} onPick={onPick} />
     </div>
   );
@@ -247,6 +279,9 @@ export default function MonthGrid({
   windows,
   banks,
   dividends,
+  trades = [],
+  payments = [],
+  holidays = [],
   onPick,
 }: {
   year: number;
@@ -258,6 +293,9 @@ export default function MonthGrid({
   windows: RepurchaseWindow[];
   banks: CentralBankDecision[];
   dividends: CalendarDividend[];
+  trades?: CalendarTrade[];
+  payments?: CalendarPayment[];
+  holidays?: MarketHoliday[];
   onPick: (pick: EventPick) => void;
 }) {
   const t = useT();
@@ -267,6 +305,9 @@ export default function MonthGrid({
   const freed = byDate(windows);
   const decided = byDate(banks);
   const exDates = byDate(dividends);
+  const filled = byDate(trades);
+  const paid = byDate(payments);
+  const shut = byDate(holidays);
   return (
     <div className="earn-cal-scroll">
       <div className="earn-cal">
@@ -287,6 +328,9 @@ export default function MonthGrid({
               blocked={blocking(windows, day.iso)}
               banks={decided.get(day.iso) ?? []}
               dividends={exDates.get(day.iso) ?? []}
+              trades={filled.get(day.iso) ?? []}
+              payments={paid.get(day.iso) ?? []}
+              holidays={shut.get(day.iso) ?? []}
               onPick={onPick}
             />
           )),

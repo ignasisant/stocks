@@ -25,6 +25,7 @@ import type {
   Memories,
   Memory,
   Meta,
+  PlanStep,
   Preview,
   Proposal,
   Rating,
@@ -346,12 +347,8 @@ const ARG_KEYS = ["query", "url", "tickers", "ticker", "symbol"];
  * trace line that replaces it when the answer lands.
  */
 function stepArg(raw: string): string {
-  let args: Record<string, unknown> = {};
-  try {
-    args = JSON.parse(raw || "{}") as Record<string, unknown>;
-  } catch {
-    return "";
-  }
+  const args = parsed(raw);
+  delete args.reason; // the line's label, not its argument (`stepWhy`)
   const key = ARG_KEYS.find((name) => args[name]);
   const value = key
     ? args[key]
@@ -361,6 +358,32 @@ function stepArg(raw: string): string {
         .find(Boolean);
   const text = Array.isArray(value) ? value.join(", ") : String(value ?? "");
   return text.split(/\s+/).filter(Boolean).join(" ").slice(0, 56);
+}
+
+function parsed(raw: string): Record<string, unknown> {
+  try {
+    const args: unknown = JSON.parse(raw || "{}");
+    return args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * What the model said a call was for — its own words, in the reader's
+ * language — cleaned as the server's `_step_why` cleans it. Empty when it
+ * said nothing, and the line falls back to the tool and its argument.
+ */
+function stepWhy(raw: string): string {
+  const said = parsed(raw).reason;
+  if (typeof said !== "string") return "";
+  return said
+    .replace(/<[^>]*>|[<>*_`#[\]]/g, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 60)
+    .trim();
 }
 
 /** What one run asks: a question, a regenerate, or an answer to a proposal. */
@@ -379,7 +402,7 @@ const fresh = () =>
  * Only the new message travels: the thread on disk is the history, and the
  * server reads nothing else of `messages`. Where the reader is rides in
  * `state`; what AG-UI has no field for (the language, regenerate, the staged
- * statement) in `forwardedProps`.
+ * statement, "in depth") in `forwardedProps`.
  */
 export function runInput(
   ask: Ask,
@@ -392,6 +415,8 @@ export function runInput(
     focus?: string;
     /** The statement a preview card is waiting on, when there is one. */
     staged_import?: string;
+    /** "In depth": the research reads further (`agent.DEEP`). A question's only. */
+    depth?: "deep";
   },
 ): RunAgentInput {
   const props: Record<string, unknown> = {};
@@ -399,6 +424,7 @@ export function runInput(
   if (ask.regenerate) props.regenerate = true;
   if (where.staged_import && ask.message !== undefined)
     props.staged_import = where.staged_import;
+  if (where.depth && ask.message !== undefined) props.depth = where.depth;
   return {
     threadId: where.conversation ?? "",
     runId: fresh(),
@@ -439,6 +465,8 @@ export async function run(
   onSide?: (side: Arguing) => void,
   /** The earlier conversations the answer was handed, before it is written. */
   onRecalled?: (recalled: Recalled[]) => void,
+  /** A deep research's plan, whole, each time the model updates it. */
+  onPlan?: (plan: PlanStep[]) => void,
 ): Promise<Done> {
   const response = await fetch("/api/v1/chat/runs", {
     method: "POST",
@@ -454,7 +482,7 @@ export async function run(
     // effect between two chunks rather than at the end of the answer.
     signal,
   });
-  return follow(response, onMeta, onText, onPhase, onTool, onSide, onRecalled);
+  return follow(response, onMeta, onText, onPhase, onTool, onSide, onRecalled, onPlan);
 }
 
 /**
@@ -474,13 +502,14 @@ export async function rejoin(
   onTool?: (line: LiveStep) => void,
   onSide?: (side: Arguing) => void,
   onRecalled?: (recalled: Recalled[]) => void,
+  onPlan?: (plan: PlanStep[]) => void,
 ): Promise<Done> {
   const response = await fetch(`/api/v1/chat/runs/${id(runId)}`, {
     credentials: "same-origin",
     headers: { Accept: "text/event-stream" },
     signal,
   });
-  return follow(response, onMeta, onText, onPhase, onTool, onSide, onRecalled);
+  return follow(response, onMeta, onText, onPhase, onTool, onSide, onRecalled, onPlan);
 }
 
 /**
@@ -498,6 +527,7 @@ async function follow(
   onTool?: (line: LiveStep) => void,
   onSide?: (side: Arguing) => void,
   onRecalled?: (recalled: Recalled[]) => void,
+  onPlan?: (plan: PlanStep[]) => void,
 ): Promise<Done> {
   if (!response.ok) await refusal(response);
 
@@ -541,6 +571,7 @@ async function follow(
           if (event.name === "chat.meta") onMeta(event.value as Meta);
           else if (event.name === "chat.recalled")
             onRecalled?.(event.value as Recalled[]);
+          else if (event.name === "chat.plan") onPlan?.(event.value as PlanStep[]);
           else if (event.name === "chat.learned") learned = event.value as Learned[];
           break;
         case "TEXT_MESSAGE_CONTENT":
@@ -583,6 +614,7 @@ async function follow(
               id: event.toolCallId,
               tool: call.name,
               arg: stepArg(call.args),
+              ...(stepWhy(call.args) ? { why: stepWhy(call.args) } : {}),
             });
           }
           break;
@@ -594,6 +626,7 @@ async function follow(
               id: event.toolCallId,
               tool: call.name,
               arg: stepArg(call.args),
+              ...(stepWhy(call.args) ? { why: stepWhy(call.args) } : {}),
               out: String(event.content),
             });
           }

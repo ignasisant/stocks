@@ -29,6 +29,11 @@ def midnights(index) -> pd.DatetimeIndex:
     return pd.DatetimeIndex(index).normalize()  # ty: ignore[unresolved-attribute]
 
 
+def midnight(stamp) -> pd.Timestamp:
+    """One timestamp (or date) at midnight of its calendar day."""
+    return cast(pd.Timestamp, pd.Timestamp(stamp)).normalize()
+
+
 def weekdays(df: pd.DataFrame):
     """Monday=0 .. Sunday=6 for every bar."""
     return dates(df).dayofweek  # ty: ignore[unresolved-attribute]

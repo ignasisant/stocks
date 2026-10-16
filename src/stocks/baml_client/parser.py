@@ -23,6 +23,12 @@ class LlmResponseParser:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    def CheckScope(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> types.ScopeVerdict:
+        __result__ = self.__options.merge_options(baml_options).parse_response(function_name="CheckScope", llm_response=llm_response, mode="request")
+        return typing.cast(types.ScopeVerdict, __result__)
+
     def DetectAction(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> types.ActionCall:
@@ -40,6 +46,12 @@ class LlmResponseParser:
     ) -> types.StatementPage:
         __result__ = self.__options.merge_options(baml_options).parse_response(function_name="ExtractStatement", llm_response=llm_response, mode="request")
         return typing.cast(types.StatementPage, __result__)
+
+    def JudgeAnswer(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> types.AnswerJudged:
+        __result__ = self.__options.merge_options(baml_options).parse_response(function_name="JudgeAnswer", llm_response=llm_response, mode="request")
+        return typing.cast(types.AnswerJudged, __result__)
 
     def MapColumns(
         self, llm_response: str, baml_options: BamlCallOptions = {},
@@ -109,6 +121,12 @@ class LlmStreamParser:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    def CheckScope(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> stream_types.ScopeVerdict:
+        __result__ = self.__options.merge_options(baml_options).parse_response(function_name="CheckScope", llm_response=llm_response, mode="stream")
+        return typing.cast(stream_types.ScopeVerdict, __result__)
+
     def DetectAction(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> stream_types.ActionCall:
@@ -126,6 +144,12 @@ class LlmStreamParser:
     ) -> stream_types.StatementPage:
         __result__ = self.__options.merge_options(baml_options).parse_response(function_name="ExtractStatement", llm_response=llm_response, mode="stream")
         return typing.cast(stream_types.StatementPage, __result__)
+
+    def JudgeAnswer(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> stream_types.AnswerJudged:
+        __result__ = self.__options.merge_options(baml_options).parse_response(function_name="JudgeAnswer", llm_response=llm_response, mode="stream")
+        return typing.cast(stream_types.AnswerJudged, __result__)
 
     def MapColumns(
         self, llm_response: str, baml_options: BamlCallOptions = {},

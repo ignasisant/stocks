@@ -21,10 +21,11 @@
  *
  * Folded, the plan is its headline: the figures, then every name to sell, to
  * add to and to buy with new money, one dense line each — who, from which
- * weight to which, how much. The full read (why, tax, details) unfolds below.
+ * weight to which, how much. The full read (why, tax, details, and the moves
+ * drawn against the S&P 500 over the tables' window) unfolds below.
  */
 
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { useLang, useT } from "../../shell/i18n";
 import { Link } from "../../shell/router";
 import { TickerCell } from "../../shell/tickers";
@@ -32,10 +33,14 @@ import { Help } from "../../ui/Kpi";
 import { DetailsButton, VerdictChip } from "./Explain";
 import { useListFocus } from "./focus";
 import { useHelp } from "./lines";
+import { useReturns } from "./returns";
 import { planMoves, waitingMoves } from "./filter";
 import { longDay, money, percent, verdictTone } from "./format";
 import type { Review, ReviewRow } from "./types";
 import { jurisdictionLabel } from "../portfolio/format";
+
+// The chart and its code wait for the full read: folded, the plan is figures.
+const PlanChart = lazy(() => import("./PlanChart"));
 
 export function Plan({ data, filtered = false }: { data: Review; filtered?: boolean }) {
   const t = useT();
@@ -49,6 +54,7 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
   const scale = Math.max(plan.sells, plan.buys, 1);
   const [open, setOpen] = useState(false);
   const brief = !open;
+  const returns = useReturns();
   const focus = useListFocus(
     "plan",
     moves.map((row) => row.ticker),
@@ -156,6 +162,11 @@ export function Plan({ data, filtered = false }: { data: Review; filtered?: bool
               />
             ) : null}
           </div>
+          {open && returns ? (
+            <Suspense fallback={null}>
+              <PlanChart out={out} into={into} base={data.base} span={returns.span} />
+            </Suspense>
+          ) : null}
         </>
       )}
       {waiting.length > 0 && (open || moves.length === 0) ? (

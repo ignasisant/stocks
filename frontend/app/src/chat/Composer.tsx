@@ -43,6 +43,16 @@
  * the browser's recogniser writes it into the field as it is heard (`voice.ts`)
  * — greyed and read-only, with Send held, until Whisper's transcript replaces
  * it at the stop.
+ *
+ * "In depth" lives in the lens picker too, above the lenses: it changes how far
+ * the next answer's research goes (`agent.DEEP`), which is a minute or two of
+ * reading and, on the free chain, more of the day's allowance — said under it.
+ * It is for the next question only, not a setting: a switch left on would
+ * spend that allowance on every "thanks" after it. The lens icon is marked
+ * while it is on, the way a lens off its default is, and the field's prompt
+ * says it in words. Both it and the lens mode are one-of-a-few choices, so
+ * they are the DS's segmented control; the lenses themselves are chips,
+ * because several can be on at once.
  */
 
 import { useEffect, useId, useRef, useState } from "react";
@@ -51,6 +61,7 @@ import { capMessage, skillName } from "./format";
 import { Glyph } from "./icons";
 import { acceptOf } from "../pages/import/api";
 import { Box, Mic } from "../ui/Mic";
+import { Segmented } from "../ui/Segmented";
 import { Status } from "../ui/Status";
 import type { ChatState, SettingsPatch, SkillsMode } from "./types";
 import { canRecord, dictate, join, VoiceFailed, type Dictation } from "./voice";
@@ -63,12 +74,19 @@ function Skills({
   hidden,
   state,
   onSave,
+  deep,
+  onDeep,
+  free,
 }: {
   id: string;
   /** Drawn closed rather than unmounted: see the chip's `aria-controls`. */
   hidden: boolean;
   state: ChatState;
   onSave: (patch: SettingsPatch) => void;
+  deep: boolean;
+  onDeep: (deep: boolean) => void;
+  /** The free chain answers, so a deep question costs more of its allowance. */
+  free: boolean;
 }) {
   const t = useT();
   const mode = (MODES as string[]).includes(state.skills_mode)
@@ -81,20 +99,33 @@ function Skills({
 
   return (
     <div className="ag-chat-picker" id={id} hidden={hidden}>
-      <div className="ag-chat-group">{t("chat.skills_mode")}</div>
-      <div className="ag-chat-modes">
-        {MODES.map((name) => (
-          <button
-            type="button"
-            key={name}
-            className={`ag-chat-btn${name === mode ? " ag-chat-btn-on" : ""}`}
-            aria-pressed={name === mode}
-            onClick={() => onSave({ skills_mode: name })}
-          >
-            {t(`chat.skills_${name}`)}
-          </button>
-        ))}
+      <div className="ag-chat-group" aria-hidden="true">
+        {t("chat.depth_mode")}
       </div>
+      <Segmented
+        items={[
+          { id: "normal", label: t("chat.depth_normal") },
+          { id: "deep", label: t("chat.depth_deep") },
+        ]}
+        value={deep ? "deep" : "normal"}
+        onPick={(next) => onDeep(next === "deep")}
+        label={t("chat.depth_mode")}
+      />
+      {deep && (
+        <p className="ag-chat-hint">
+          {t("chat.depth_hint")}
+          {free && ` ${t("chat.depth_cost", { n: state.deep_units })}`}
+        </p>
+      )}
+      <div className="ag-chat-group" aria-hidden="true">
+        {t("chat.skills_mode")}
+      </div>
+      <Segmented
+        items={MODES.map((name) => ({ id: name, label: t(`chat.skills_${name}`) }))}
+        value={mode}
+        onPick={(name) => onSave({ skills_mode: name })}
+        label={t("chat.skills_mode")}
+      />
       {mode === "auto" && <p className="ag-chat-hint">{t("chat.skills_auto_hint")}</p>}
       {mode === "manual" && (
         <>
@@ -151,7 +182,7 @@ export function Composer({
   busy: boolean;
   /** A statement is being read, or written. The clip and Send both wait. */
   reading: boolean;
-  onSend: (text: string, spoken?: boolean) => void;
+  onSend: (text: string, spoken?: boolean, deep?: boolean) => void;
   /** Cut the answer being written. Offered in Send's place while it streams. */
   onStop?: () => void;
   onSave: (patch: SettingsPatch) => void;
@@ -162,6 +193,7 @@ export function Composer({
   const lang = useLang();
   const [text, setText] = useState("");
   const [picking, setPicking] = useState(false);
+  const [deep, setDeep] = useState(false);
   const file = useRef<HTMLInputElement | null>(null);
   const field = useRef<HTMLTextAreaElement | null>(null);
   // The field holds a transcript, so the turn it becomes is badged as spoken.
@@ -185,7 +217,11 @@ export function Composer({
   const pickerId = `${uid}-skills`;
 
   const mode = state.skills_mode;
-  const lens = t("chat.skills_chip", { mode: t(`chat.skills_${mode}`) });
+  const skills = t("chat.skills_chip", { mode: t(`chat.skills_${mode}`) });
+  const lens = deep ? `${skills} · ${t("chat.depth_deep")}` : skills;
+  // Said in the field too, not only by the icon's colour: the switch is for
+  // this question, and the field is where the reader is looking when it goes.
+  const hint = t(deep ? "chat.placeholder_deep" : "chat.placeholder");
   // The counter and the wall are about the free chain, so neither is drawn for
   // an account whose own key answers: it has no allowance to spend and no wall
   // to hit.
@@ -281,8 +317,9 @@ export function Composer({
     const question = text.trim();
     if (!question || busy || live) return;
     setText("");
-    onSend(question, spoken.current || undefined);
+    onSend(question, spoken.current || undefined, deep || undefined);
     spoken.current = false;
+    setDeep(false);
   };
 
   return (
@@ -304,7 +341,15 @@ export function Composer({
           </button>
         </div>
       )}
-      <Skills id={pickerId} hidden={!picking} state={state} onSave={onSave} />
+      <Skills
+        id={pickerId}
+        hidden={!picking}
+        state={state}
+        onSave={onSave}
+        deep={deep}
+        onDeep={setDeep}
+        free={!byok && state.free_cap !== null}
+      />
       <form
         className="ag-chat-form"
         onSubmit={(event) => {
@@ -346,7 +391,7 @@ export function Composer({
               <button
                 type="button"
                 className={`ag-box-tool${picking ? " ag-box-open" : ""}${
-                  mode !== "auto" ? " ag-box-set" : ""
+                  mode !== "auto" || deep ? " ag-box-set" : ""
                 }`}
                 aria-expanded={picking}
                 aria-controls={pickerId}
@@ -374,8 +419,8 @@ export function Composer({
             readOnly={live}
             rows={1}
             enterKeyHint="send"
-            placeholder={t("chat.placeholder")}
-            aria-label={t("chat.placeholder")}
+            placeholder={hint}
+            aria-label={hint}
             onChange={(event) => {
               setText(event.target.value);
               if (!event.target.value.trim()) spoken.current = false;

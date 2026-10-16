@@ -26,26 +26,45 @@ from __future__ import annotations
 import re
 from collections import Counter
 from collections.abc import Generator
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from datetime import date
 from time import perf_counter
-from typing import Annotated, TypedDict
+from typing import Annotated, TypedDict, cast
 
+import pandas as pd
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 
 from stocks import accounts, obs
 from stocks.analysis import review as engine
-from stocks.analysis.listing import quote_unit
+from stocks.analysis.compare import (
+    closes_by_day,
+    rates_into,
+    window_axis,
+    window_days,
+    window_returns,
+)
+from stocks.analysis.listing import listing_currencies, quote_unit
 from stocks.analysis.portfolio import risk_shares, value_weights
+from stocks.analysis.sentiment import SECTOR_ETFS
 from stocks.api import loaders
 from stocks.api.cache import carried
 from stocks.api.deps import Account, Base, reporting_currency
 from stocks.api.jsonsafe import num as _num
-from stocks.api.schemas import Review, ReviewLines, ReviewNote, ReviewPlan, ReviewRow
+from stocks.api.schemas import (
+    NameReturns,
+    Review,
+    ReviewLines,
+    ReviewNote,
+    ReviewPlan,
+    ReviewReturns,
+    ReviewRow,
+)
 from stocks.chat import journal
 from stocks.config import Holding, load_watchlist
 from stocks.data import fx, profiles
+from stocks.data.crypto import is_crypto
+from stocks.frames import midnight
 from stocks.portfolio import consistency, demo, tax
 from stocks.portfolio.tax import prefs as tax_prefs
 
@@ -66,6 +85,12 @@ _POOL = ThreadPoolExecutor(max_workers=_WORKERS, thread_name_prefix="review")
 # answer with what arrived and say how many are still coming.
 GATHER_BUDGET_S = 20.0
 _NOT_REPLAYED = object()
+# The return columns: every name a table can show, held and outside, and the
+# index each is measured against. A download each, on a pool of their own so
+# they never queue behind the fundamentals pulls the same visit started.
+MAX_RETURNS = 200
+INDEX = "SPY"
+_RETURNS_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="returns")
 # Open losses weighed against the plan's gains, largest first: a replay each.
 MAX_OFFSETS = 6
 # A loss this small, or a saving this small, is not worth a line on the page.
@@ -470,6 +495,143 @@ def review(
 def preview(background: BackgroundTasks, base: Base = None) -> Review:
     guest = accounts.guest_paths()
     return _judge(guest, background, reporting_currency(guest, base), "")
+
+
+@router.get(
+    "/review/returns",
+    response_model=ReviewReturns,
+    summary="What each name returned, beside the index and its sector",
+)
+def returns(
+    account: Account,
+    names: Annotated[
+        str,
+        Query(
+            description=(
+                f"Comma-separated symbols, at most {MAX_RETURNS}: the review's "
+                "rows as `symbol`."
+            )
+        ),
+    ] = "",
+    base: Base = None,
+) -> ReviewReturns:
+    """Total return in the reader's money over 1m, 6m, 1y and 2y per name,
+    and the same for SPY and each name's sector ETF, so the page can say by
+    how much a name led or lagged either.
+
+    Its own request, after the review has answered: the verdicts do not wait
+    on five years of closes per name. Every window ends on the same day for
+    every name (`analysis.compare.window_returns`), so a gap is a gap in
+    performance. Downloads past the budget keep going and are counted in
+    `pending`; asking again finds them.
+    """
+    ccy = reporting_currency(account, base)
+    asked = _parse_names(names)
+    etfs = {
+        name: None if is_crypto(name) else SECTOR_ETFS.get(_profile(name)["sector"] or "")
+        for name in asked
+    }
+    benchmarks = list(dict.fromkeys([INDEX, *(etf for etf in etfs.values() if etf)]))
+    every = list(dict.fromkeys([*asked, *benchmarks]))
+    day, days = _window_calendar()
+    axis = window_axis(day, days)
+    key = ",".join(str(one.date()) for one in axis)
+
+    closes: dict[str, Future] = {
+        name: _RETURNS_POOL.submit(carried(_window_closes), name, key) for name in every
+    }
+    quoted = _RETURNS_POOL.submit(carried(listing_currencies), every)
+    wait([*closes.values(), quoted], timeout=GATHER_BUDGET_S)
+    currencies = quoted.result() if quoted.done() and not quoted.exception() else {}
+    landed = {name: future.result() for name, future in closes.items() if future.done()}
+    pending = {name for name in every if name not in landed}
+    rates, unpriced = rates_into(
+        ccy, axis, {name: currencies.get(name) for name in landed}
+    )
+
+    def measured(name: str) -> NameReturns | None:
+        series = landed.get(name)
+        if series is None or name in unpriced or series.dropna().empty:
+            return None
+        out = window_returns(series, rates.get(name), day, days)
+        if all(value is None for value in out.values()):
+            return None
+        return NameReturns(ticker=name, returns=out, sector_etf=etfs.get(name))
+
+    rows = {name: measured(name) for name in every if name not in pending}
+    obs.event(
+        "api.review_returns",
+        base=ccy,
+        names=len(asked),
+        benchmarks=len(benchmarks),
+        pending=len(pending),
+        missing=sum(1 for name in asked if name not in pending and rows[name] is None),
+    )
+    return ReviewReturns(
+        base=ccy,
+        as_of=str(day.date()),
+        names=[row for name in asked if (row := rows.get(name)) is not None],
+        benchmarks=[row for name in benchmarks if (row := rows.get(name)) is not None],
+        missing=[name for name in asked if name not in pending and rows[name] is None],
+        pending=sum(1 for name in asked if name in pending),
+    )
+
+
+def _parse_names(raw: str) -> list[str]:
+    out: list[str] = []
+    for part in raw.split(","):
+        symbol = part.strip().upper()
+        if not symbol:
+            continue
+        if not _SYMBOL.match(symbol):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"not a ticker: {part.strip()[:24]}",
+            )
+        if symbol not in out:
+            out.append(symbol)
+    if len(out) > MAX_RETURNS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"at most {MAX_RETURNS} names",
+        )
+    return out
+
+
+def _window_calendar() -> tuple[pd.Timestamp, dict[str, pd.Timestamp]]:
+    """The day every window ends on and the day each opens on: SPY's last
+    session, and its sessions cut the way the price chart cuts them. The plan's
+    chart draws on SPY's axis, so a column and the line beside it read one
+    stretch. Today by the calendar when SPY's bars will not come."""
+    try:
+        sessions = pd.DatetimeIndex(closes_by_day(loaders.bar_closes(INDEX, "2y")).index)
+    except Exception as exc:  # noqa: BLE001
+        obs.warn(
+            "api.review_returns_failed",
+            symbol=INDEX,
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        sessions = pd.DatetimeIndex([])
+    if len(sessions) == 0:
+        day = midnight(date.today())
+        return day, window_days(day)
+    day = cast(pd.Timestamp, pd.Timestamp(sessions[-1]))
+    return day, window_days(day, sessions)
+
+
+def _window_closes(symbol: str, days: str) -> pd.Series | None:
+    """`loaders.window_closes`, or None when Yahoo has none or refused: a
+    blank cell, not a failed column."""
+    try:
+        return loaders.window_closes(symbol, days)
+    except Exception as exc:  # noqa: BLE001
+        obs.warn(
+            "api.review_returns_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
+        return None
 
 
 def _imported(account) -> bool:

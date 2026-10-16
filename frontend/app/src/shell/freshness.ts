@@ -67,9 +67,99 @@ export function subscribe(fn: () => void): () => void {
 export function resetFreshness(): void {
   since.clear();
   refreshing.clear();
+  retries.clear();
+  kept.clear();
   recompute();
+  recomputeRetry();
 }
 
 export function useStaleSince(): number | null {
   return useSyncExternalStore(subscribe, staleSince);
+}
+
+/*
+ * What the stale line says it is doing about it.
+ *
+ * "Se actualizan solos" was a promise the line could not show being kept:
+ * `useApi.followStale` asked again on its schedule in silence, and stopped
+ * after its last try while the line kept promising. These say, per follow,
+ * when the next try is due (`due`, epoch ms) or that one is out now (`0`),
+ * so the line can count down, say "retrying…", and once nobody is trying any
+ * more, offer the press itself (`retryStale`).
+ *
+ * And the figures the last visit left (`shell/keep`): drawn at once, but not
+ * live until the same fetch answers again. `keptSince` marks them while that
+ * fetch is out, so the line can say they are the last visit's and being
+ * brought up to date — rather than pass for live.
+ */
+
+const retries = new Map<string, number>();
+const kept = new Map<string, number>();
+const retryListeners = new Set<() => void>();
+let retrySnap: Retry = { due: null, asking: false };
+let keptOldest: number | null = null;
+
+export type Retry = {
+  /** When the soonest scheduled re-ask goes out, epoch ms; null when none. */
+  due: number | null;
+  /** Whether a re-ask is out right now. */
+  asking: boolean;
+};
+
+function recomputeRetry(): void {
+  let due: number | null = null;
+  let asking = false;
+  for (const at of retries.values()) {
+    if (at === 0) asking = true;
+    else if (due === null || at < due) due = at;
+  }
+  let oldestKept: number | null = null;
+  for (const at of kept.values())
+    if (oldestKept === null || at < oldestKept) oldestKept = at;
+  if (due !== retrySnap.due || asking !== retrySnap.asking) retrySnap = { due, asking };
+  keptOldest = oldestKept;
+  listeners.forEach((fn) => fn());
+}
+
+/** One follow's next try: `at` (epoch ms), `0` while asking, null when done. */
+export function noteRetry(id: string, at: number | null): void {
+  if (at === null) retries.delete(id);
+  else retries.set(id, at);
+  recomputeRetry();
+}
+
+/** Kept figures on screen for `id` since `at` (epoch ms), or null once live. */
+export function noteKept(id: string, at: number | null): void {
+  if (at === null) kept.delete(id);
+  else kept.set(id, at);
+  recomputeRetry();
+}
+
+export function currentRetry(): Retry {
+  return retrySnap;
+}
+
+export function keptSince(): number | null {
+  return keptOldest;
+}
+
+export function useRetry(): Retry {
+  return useSyncExternalStore(subscribe, currentRetry);
+}
+
+/** The oldest kept answer still waiting for its live one, as epoch ms. */
+export function useKeptSince(): number | null {
+  return useSyncExternalStore(subscribe, keptSince);
+}
+
+/** Ask every screen holding stale figures to fetch them again, now. */
+export function retryStale(): void {
+  retryListeners.forEach((fn) => fn());
+}
+
+export function onRetryStale(fn: () => void): () => void {
+  retryListeners.add(fn);
+  return () => {
+    retryListeners.delete(fn);
+  };
 }

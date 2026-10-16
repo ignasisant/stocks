@@ -15,7 +15,12 @@
  *   ex-date's rate once it went ex, today's while it is ahead. No ticker CTA:
  *   the reader clicked to see the cash, not to leave;
  * - a tax deadline, a buy-back window, a rate decision: the date, the rule
- *   behind it in plain words, and where to act on it if anywhere.
+ *   behind it in plain words, and where to act on it if anywhere;
+ * - the reader's own trade or booked payout: the ledger's figures for the
+ *   day, a sell's realised gain, a payout's net of what the source country
+ *   kept;
+ * - a market holiday: which exchanges are shut or close early, and that an
+ *   order placed then waits for the next session.
  *
  * Shared by the Earnings page and the Home screen's four-week grid, so the two
  * explain a date the same way.
@@ -29,16 +34,20 @@ import { useTickerProfile } from "../../shell/tickers";
 import { useDialog } from "../../shell/useDialog";
 import { useExitGhost } from "../../shell/useSheet";
 import { Kpi, KpiGrid } from "../../ui/Kpi";
-import { moneyIn, percent, shares as formatShares } from "../portfolio/format";
+import { moneyIn, percent, shares as formatShares, tone } from "../portfolio/format";
 import type {
   CalendarDividend,
   CalendarEvent,
+  CalendarPayment,
+  CalendarTrade,
   CentralBankDecision,
   EventPick,
+  MarketHoliday,
   RepurchaseWindow,
   TaxDeadline,
 } from "./data";
 import { isSoon } from "./data";
+import { gainText, venueName } from "./Book";
 import { cash } from "./Dividends";
 import { longDate } from "./format";
 import type { T } from "./format";
@@ -394,6 +403,135 @@ function BankCard({ decision }: { decision: CentralBankDecision }) {
   );
 }
 
+function TradeCard({ trade }: { trade: CalendarTrade }) {
+  const t = useT();
+  const lang = useLang();
+  const sell = trade.side === "sell";
+  return (
+    <>
+      <Hero
+        label={longDate(trade.date, t)}
+        value={cash(lang, trade.amount, trade.currency)}
+        sub={t("earnings.trade_breakdown", {
+          shares: formatShares(lang, trade.quantity) ?? DASH,
+          price: cash(lang, trade.price, trade.currency),
+        })}
+        tags={<span className="earn-ev-tag">{relative(trade.days_until, t)}</span>}
+      />
+      <KpiGrid>
+        <Kpi
+          label={t("earnings.ev_trade_shares")}
+          value={formatShares(lang, trade.quantity) ?? DASH}
+        />
+        <Kpi
+          label={t("earnings.ev_trade_price")}
+          value={cash(lang, trade.price, trade.currency)}
+        />
+        <Kpi
+          label={t("earnings.ev_trade_fee")}
+          value={cash(lang, trade.fee, trade.currency)}
+        />
+        {sell && (
+          <Kpi
+            label={t("earnings.ev_trade_gain")}
+            value={gainText(lang, trade)}
+            valueTone={tone(trade.gain)}
+          />
+        )}
+      </KpiGrid>
+      <Notes
+        lines={[sell && trade.gain !== null && t("earnings.ev_trade_gain_note")]}
+      />
+      <Actions>
+        <Link className="ag-btn" page="ticker" params={{ ticker: trade.ticker }}>
+          {t("earnings.ev_open", { name: trade.ticker })}
+        </Link>
+      </Actions>
+    </>
+  );
+}
+
+function PaymentCard({ payment }: { payment: CalendarPayment }) {
+  const t = useT();
+  const lang = useLang();
+  const base = payment.base_currency;
+  const converted =
+    base !== null &&
+    payment.net_base !== null &&
+    payment.currency.toUpperCase() !== base.toUpperCase();
+  return (
+    <>
+      <Hero
+        label={t("earnings.ev_pay_got")}
+        value={cash(lang, payment.net, payment.currency)}
+        sub={
+          converted
+            ? t("earnings.ev_pay_in_base", {
+                amount: moneyIn(lang, base!)(payment.net_base, { digits: 2 }) ?? DASH,
+              })
+            : undefined
+        }
+        tags={<span className="earn-ev-tag">{relative(payment.days_until, t)}</span>}
+      />
+      <KpiGrid>
+        <Kpi
+          label={t("earnings.ev_div_gross_tile")}
+          value={cash(lang, payment.gross, payment.currency)}
+        />
+        <Kpi
+          label={t("earnings.ev_div_withheld")}
+          value={cash(lang, payment.withheld, payment.currency)}
+        />
+      </KpiGrid>
+      <Notes
+        lines={[
+          t("earnings.ev_pay_body"),
+          payment.capital && t("earnings.ev_pay_capital_note"),
+        ]}
+      />
+      <Actions>
+        <Link className="ag-btn" page="portfolio" params={{ tab: "dividends" }}>
+          {t("earnings.ev_open", { name: t("portfolio.tab_dividends") })}
+        </Link>
+      </Actions>
+    </>
+  );
+}
+
+function HolidayCard({ holidays }: { holidays: MarketHoliday[] }) {
+  const t = useT();
+  const first = holidays[0];
+  const closed = holidays.some((h) => h.kind === "closed");
+  return (
+    <>
+      <Hero
+        label={first ? longDate(first.date, t) : DASH}
+        value={relative(first?.days_until ?? null, t)}
+      />
+      <ul className="earn-ev-venues">
+        {holidays.map((holiday) => (
+          <li key={holiday.venue}>
+            <span className="earn-ev-venue">{venueName(holiday.venue, t)}</span>
+            <span className={`earn-ev-tag${holiday.kind === "early" ? "" : " warn"}`}>
+              {t(
+                holiday.kind === "early"
+                  ? "earnings.holiday_early"
+                  : "earnings.holiday_closed",
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <Notes
+        lines={[
+          closed && t("earnings.ev_holiday_body"),
+          holidays.some((h) => h.kind === "early") && t("earnings.ev_holiday_early"),
+        ]}
+      />
+    </>
+  );
+}
+
 // ------------------------------------------------------------------ dialog
 
 export default function EventDetail({
@@ -480,6 +618,52 @@ export default function EventDetail({
           onClose={onClose}
         >
           <BankCard decision={pick.item} />
+        </Dialog>
+      );
+    case "trade":
+      return (
+        <Dialog
+          head={
+            <TickerHead
+              ticker={pick.item.ticker}
+              sub={t(`earnings.trade_${pick.item.side}`)}
+            />
+          }
+          onClose={onClose}
+        >
+          <TradeCard trade={pick.item} />
+        </Dialog>
+      );
+    case "payment":
+      return (
+        <Dialog
+          head={
+            <TickerHead
+              ticker={pick.item.ticker}
+              sub={`${t(pick.item.capital ? "earnings.pay_capital" : "earnings.pay_kind")} · ${longDate(pick.item.date, t)}`}
+            />
+          }
+          onClose={onClose}
+        >
+          <PaymentCard payment={pick.item} />
+        </Dialog>
+      );
+    case "holiday":
+      return (
+        <Dialog
+          head={
+            <PlainHead
+              title={t(
+                pick.item.some((h) => h.kind === "closed")
+                  ? "earnings.ev_holiday_title"
+                  : "earnings.ev_holiday_title_early",
+              )}
+              sub={t("earnings.ev_holiday_kind")}
+            />
+          }
+          onClose={onClose}
+        >
+          <HolidayCard holidays={pick.item} />
         </Dialog>
       );
   }

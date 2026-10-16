@@ -82,6 +82,21 @@ class BamlAsyncClient:
     def parse_stream(self):
       return self.__llm_stream_parser
 
+    async def CheckScope(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> types.ScopeVerdict:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            # Use streaming internally when on_tick is provided
+            __stream__ = self.stream.CheckScope(instructions=instructions,input=input,
+                baml_options=baml_options)
+            return await __stream__.get_final_response()
+        else:
+            # Original non-streaming code
+            __result__ = await self.__options.merge_options(baml_options).call_function_async(function_name="CheckScope", args={
+                "instructions": instructions,"input": input,
+            })
+            return typing.cast(types.ScopeVerdict, __result__.cast_to(types, types, stream_types, False, __runtime__))
     async def DetectAction(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> types.ActionCall:
@@ -127,6 +142,21 @@ class BamlAsyncClient:
                 "instructions": instructions,"input": input,
             })
             return typing.cast(types.StatementPage, __result__.cast_to(types, types, stream_types, False, __runtime__))
+    async def JudgeAnswer(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> types.AnswerJudged:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            # Use streaming internally when on_tick is provided
+            __stream__ = self.stream.JudgeAnswer(instructions=instructions,input=input,
+                baml_options=baml_options)
+            return await __stream__.get_final_response()
+        else:
+            # Original non-streaming code
+            __result__ = await self.__options.merge_options(baml_options).call_function_async(function_name="JudgeAnswer", args={
+                "instructions": instructions,"input": input,
+            })
+            return typing.cast(types.AnswerJudged, __result__.cast_to(types, types, stream_types, False, __runtime__))
     async def MapColumns(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> types.ColumnMap:
@@ -286,6 +316,18 @@ class BamlStreamClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    def CheckScope(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlStream[stream_types.ScopeVerdict, types.ScopeVerdict]:
+        __ctx__, __result__ = self.__options.merge_options(baml_options).create_async_stream(function_name="CheckScope", args={
+            "instructions": instructions,"input": input,
+        })
+        return baml_py.BamlStream[stream_types.ScopeVerdict, types.ScopeVerdict](
+          __result__,
+          lambda x: typing.cast(stream_types.ScopeVerdict, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.ScopeVerdict, x.cast_to(types, types, stream_types, False, __runtime__)),
+          __ctx__,
+        )
     def DetectAction(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlStream[stream_types.ActionCall, types.ActionCall]:
@@ -320,6 +362,18 @@ class BamlStreamClient:
           __result__,
           lambda x: typing.cast(stream_types.StatementPage, x.cast_to(types, types, stream_types, True, __runtime__)),
           lambda x: typing.cast(types.StatementPage, x.cast_to(types, types, stream_types, False, __runtime__)),
+          __ctx__,
+        )
+    def JudgeAnswer(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlStream[stream_types.AnswerJudged, types.AnswerJudged]:
+        __ctx__, __result__ = self.__options.merge_options(baml_options).create_async_stream(function_name="JudgeAnswer", args={
+            "instructions": instructions,"input": input,
+        })
+        return baml_py.BamlStream[stream_types.AnswerJudged, types.AnswerJudged](
+          __result__,
+          lambda x: typing.cast(stream_types.AnswerJudged, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.AnswerJudged, x.cast_to(types, types, stream_types, False, __runtime__)),
           __ctx__,
         )
     def MapColumns(self, instructions: str,input: str,
@@ -450,6 +504,13 @@ class BamlHttpRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    async def CheckScope(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="CheckScope", args={
+            "instructions": instructions,"input": input,
+        }, mode="request")
+        return __result__
     async def DetectAction(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
@@ -468,6 +529,13 @@ class BamlHttpRequestClient:
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="ExtractStatement", args={
+            "instructions": instructions,"input": input,
+        }, mode="request")
+        return __result__
+    async def JudgeAnswer(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="JudgeAnswer", args={
             "instructions": instructions,"input": input,
         }, mode="request")
         return __result__
@@ -549,6 +617,13 @@ class BamlHttpStreamRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
+    async def CheckScope(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="CheckScope", args={
+            "instructions": instructions,"input": input,
+        }, mode="stream")
+        return __result__
     async def DetectAction(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
@@ -567,6 +642,13 @@ class BamlHttpStreamRequestClient:
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="ExtractStatement", args={
+            "instructions": instructions,"input": input,
+        }, mode="stream")
+        return __result__
+    async def JudgeAnswer(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = await self.__options.merge_options(baml_options).create_http_request_async(function_name="JudgeAnswer", args={
             "instructions": instructions,"input": input,
         }, mode="stream")
         return __result__

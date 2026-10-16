@@ -1497,3 +1497,36 @@
 .tk-svg:focus:not(:focus-visible) {
   outline: none;
 }
+
+/* ---- Compare: the listing beside the indices ---- */
+
+.tk-compare-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.tk-compare-chips {
+  margin-bottom: 8px;
+}
+
+/* The line's hue on its chip, so the two read as one thing. */
+.tk-compare-swatch {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 2px;
+  flex: none;
+  align-self: center;
+}
+
+/* The chart's height held while a range or a pick reloads, so the card does
+   not collapse and jump the page under the reader's thumb. */
+.tk-compare-wait {
+  min-height: 220px;
+}
+
+.tk-compare-stale {
+  opacity: 0.55;
+  transition: opacity var(--ag-dur-hover) ease;
+}

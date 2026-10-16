@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from stocks import obs, secrets_env
+from stocks.web import metering
 
 # Output ceiling per turn. It has to leave room for reasoning tokens as well as
 # the answer: on Opus 5.5 and Sonnet 5.5 adaptive thinking is on whenever
@@ -40,6 +41,38 @@ MAX_TOKENS = 16000
 # for search -> read -> check a quote, and a cap is what stops a model that
 # keeps asking for one more page from owning the whole turn.
 MAX_TOOL_ROUNDS = 3
+
+# Calls of one round run at once, up to this many: a model that asks for three
+# searches in one turn asked for them independently, and back to back they are
+# three times the wait. Bounded so one greedy round does not open a socket per
+# ticker in the book.
+TOOL_WORKERS = 4
+
+# What a call whose arguments were not JSON gets back instead of running. Run
+# with `{}` it failed on a missing argument and the model read a refusal about
+# the wrong thing; told this, it sends the call again (Groq, OpenRouter free
+# models, prod 2026-10).
+BAD_ARGS = "The arguments were not valid JSON. Send the call again with valid JSON."
+
+
+def _execute_round(execute: Callable[[str, dict], str],
+                   wanted: list[tuple[str, dict]]) -> list[str]:
+    """`execute` over one round's calls, results in the order they were asked.
+
+    One call runs inline: a pool for it is only overhead. The dispatcher must
+    not raise (`toolbox.executor` turns a failure into a sentence), so a
+    failure here is a bug and is allowed to end the loop like any other."""
+    if len(wanted) <= 1:
+        return [execute(name, args) for name, args in wanted]
+    import contextvars
+    from concurrent.futures import ThreadPoolExecutor
+
+    # Each call in a copy of the round's context: the turn's log fields and
+    # meter (`metering`) go with it to the pool thread.
+    with ThreadPoolExecutor(max_workers=min(len(wanted), TOOL_WORKERS)) as pool:
+        futures = [pool.submit(contextvars.copy_context().run, execute, *call)
+                   for call in wanted]
+        return [f.result() for f in futures]
 
 
 @dataclass(frozen=True)
@@ -199,9 +232,14 @@ class Provider:
         tools: list[ToolSpec],
         execute: Callable[[str, dict], str],
         max_rounds: int = MAX_TOOL_ROUNDS,
+        stop: Callable[[], bool] | None = None,
     ) -> ToolRun:
         """Let the model call `tools` until it stops asking, then hand back what
         it said and what it ran.
+
+        `stop()` is asked after each round: True ends the loop there, without
+        the model call that would only have been told the budget is spent
+        (chat/agent.py `_Budget`). The closing text is then "".
 
         `execute(name, args) -> str` is the caller's dispatcher; the loop itself
         (and every backend's message shape) stays in here. Raises the SDK's own
@@ -211,7 +249,7 @@ class Provider:
         if self._tools is None:
             raise NotImplementedError(f"{self.id} has no tool support")
         return self._tools(api_key, model or self.default_model, system,
-                           messages, tools, execute, max_rounds)
+                           messages, tools, execute, max_rounds, stop=stop)
 
 
 # ------------------------------------------------------------- Claude (Anthropic)
@@ -253,11 +291,14 @@ def _anthropic_stream(api_key, model, system, messages):
         messages=cast(Any, _with_cache_breakpoint(messages)),
     ) as stream:
         yield from stream.text_stream
-        if stream.get_final_message().stop_reason == "max_tokens":
+        final = stream.get_final_message()
+        metering.note_anthropic(model, final.usage)
+        if final.stop_reason == "max_tokens":
             yield Cut()
 
 
-def _anthropic_tools(api_key, model, system, messages, tools, execute, rounds):
+def _anthropic_tools(api_key, model, system, messages, tools, execute, rounds,
+                     stop=None):
     """Anthropic's tool loop: create, run every tool_use block, feed the results
     back, repeat until the model stops asking.
 
@@ -280,19 +321,22 @@ def _anthropic_tools(api_key, model, system, messages, tools, execute, rounds):
             model=model, max_tokens=MAX_TOKENS, system=system,
             messages=convo, tools=cast(Any, schema),
         )
+        metering.note_anthropic(model, getattr(resp, "usage", None))
         text = "".join(b.text for b in resp.content if b.type == "text")
         uses = [b for b in resp.content if b.type == "tool_use"]
         if not uses:
             break
         convo.append({"role": "assistant", "content": resp.content})
+        wanted = [(block.name, dict(block.input or {})) for block in uses]
         results = []
-        for block in uses:
-            args = dict(block.input or {})
-            out = execute(block.name, args)
-            calls.append(ToolCall(block.name, args, out))
+        for block, (name, args), out in zip(
+                uses, wanted, _execute_round(execute, wanted), strict=True):
+            calls.append(ToolCall(name, args, out))
             results.append({"type": "tool_result", "tool_use_id": block.id,
                             "content": out or "(no result)"})
         convo.append({"role": "user", "content": results})
+        if stop is not None and stop():
+            return ToolRun("", calls)
     return ToolRun(text, calls)
 
 
@@ -311,24 +355,33 @@ def _anthropic_error(exc):
 # ------------------------------------------------------------- ChatGPT (OpenAI)
 
 
-def _openai_compat_stream(base_url: str | None = None, **client_opts):
+def _openai_compat_stream(base_url: str | None = None, *, free: bool = False,
+                          **client_opts):
     """Streaming generator for OpenAI and any OpenAI-compatible endpoint
     (Groq, Cerebras, OpenRouter, ...) — only the base_url differs.
 
     `client_opts` reach the OpenAI client as given (the free chain passes
-    `_FREE_CLIENT`)."""
+    `_FREE_CLIENT`); `free` marks its usage as costing nothing
+    (`metering`)."""
 
     def _stream(api_key, model, system, messages):
         from openai import OpenAI
 
         client = OpenAI(api_key=api_key, base_url=base_url, **client_opts)
+        # Usage on the last chunk is OpenAI's opt-in; the hosts behind a
+        # base_url send it unasked or not at all, and an option one of them
+        # does not know is a 400 on every answer.
+        extra: dict[str, Any] = ({"stream_options": {"include_usage": True}}
+                                 if base_url is None else {})
         stream = client.chat.completions.create(
             model=model,
             messages=[{"role": "system", "content": system}, *messages],
-            stream=True,
+            stream=True, **extra,
         )
         cut = False
         for chunk in stream:
+            if getattr(chunk, "usage", None) is not None:
+                metering.note_openai(model, chunk.usage, free=free)
             # OpenRouter interleaves comment frames with no choices; skip them.
             if chunk.choices and chunk.choices[0].finish_reason == "length":
                 cut = True
@@ -373,7 +426,8 @@ def _squeeze_tool_results(convo: list[dict], budget: int) -> None:
         big["content"] = text[: len(text) // 2].rstrip() + tokens.TRIM_MARK
 
 
-def _openai_compat_tools(base_url: str | None = None, **client_opts):
+def _openai_compat_tools(base_url: str | None = None, *, free: bool = False,
+                         **client_opts):
     """The same loop over any OpenAI-compatible host: OpenAI itself, and every
     backend in the free chain (groq and openrouter both speak it).
 
@@ -383,7 +437,7 @@ def _openai_compat_tools(base_url: str | None = None, **client_opts):
     """
 
     def run(api_key, model, system, messages, tools, execute, rounds,
-            cap: int = 0):
+            cap: int = 0, stop=None):
         import json
 
         from openai import OpenAI
@@ -403,6 +457,7 @@ def _openai_compat_tools(base_url: str | None = None, **client_opts):
                 model=model, max_tokens=MAX_TOKENS, messages=convo,
                 tools=cast(Any, schema),
             )
+            metering.note_openai(model, getattr(resp, "usage", None), free=free)
             if not resp.choices:
                 # OpenRouter answers an upstream failure with HTTP 200 and an
                 # "error" object where the choices should be.
@@ -413,22 +468,36 @@ def _openai_compat_tools(base_url: str | None = None, **client_opts):
             if not msg.tool_calls:
                 break
             convo.append(msg.model_dump(exclude_none=True))
-            for tc in msg.tool_calls:
-                # Only function tools are ever sent, so a custom-tool call
-                # (which carries no `.function`) can't be one of ours.
-                if tc.type != "function":
-                    continue
+            # Only function tools are ever sent, so a custom-tool call (which
+            # carries no `.function`) can't be one of ours.
+            asked = [tc for tc in msg.tool_calls if tc.type == "function"]
+            wanted: list[tuple[str, dict]] = []
+            bad: set[int] = set()
+            for n, tc in enumerate(asked):
                 # Never string-match the serialized arguments: models escape
-                # them differently. Bad JSON is the model's error to see.
+                # them differently. Bad JSON is the model's error to see, and
+                # it is not run: `{}` would fail on the wrong thing.
                 try:
                     args = json.loads(tc.function.arguments or "{}")
                 except ValueError:
-                    args = {}
-                out = execute(tc.function.name, args if isinstance(args, dict) else {})
-                calls.append(ToolCall(tc.function.name,
-                                      args if isinstance(args, dict) else {}, out))
+                    args = None
+                if not isinstance(args, dict):
+                    bad.add(n)
+                    obs.warn("llm.malformed_call", tool=tc.function.name,
+                             model=model, action="told")
+                    continue
+                wanted.append((tc.function.name, args))
+            ran = iter(zip(wanted, _execute_round(execute, wanted), strict=True))
+            for n, tc in enumerate(asked):
+                if n in bad:
+                    out = BAD_ARGS
+                else:
+                    (name, args), out = next(ran)
+                    calls.append(ToolCall(name, args, out))
                 convo.append({"role": "tool", "tool_call_id": tc.id,
                               "content": out or "(no result)"})
+            if stop is not None and stop():
+                return ToolRun("", calls)
         return ToolRun(text, calls)
 
     return run
@@ -496,9 +565,12 @@ def _gemini_stream_once(api_key, model, system, messages):
         contents=cast(Any, contents),
         config=types.GenerateContentConfig(system_instruction=system),
     )
+    usage = None
     for chunk in stream:
+        usage = getattr(chunk, "usage_metadata", None) or usage
         if chunk.text:
             yield chunk.text
+    metering.note_gemini(model, usage)
 
 
 def _gemini_error(exc):
@@ -724,26 +796,69 @@ _free_dead: set[str] = set()
 # groq's 429 says how long to wait ("Please try again in 1.6125s"). Up to this
 # is worth sitting out once on the same backend; past it, the next one's turn.
 _MAX_RETRY_WAIT_S = 5.0
-_RETRY_IN = re.compile(r"try again in (\d+(?:\.\d+)?)\s*(ms|s)\b", re.I)
+_RETRY_IN = re.compile(
+    r"try again in (?:(\d+)m)?(\d+(?:\.\d+)?)\s*(ms|s)\b", re.I)
 
 _sleep = time.sleep  # a name of its own so tests need not wait
 
+# Past the short wait, a 429 rests its backend for the wait it named (capped):
+# every turn in that window would otherwise pay the SDK's own retry-after on it
+# before the next backend got its turn. Per process, like `_free_dead`.
+_free_resting: dict[str, float] = {}  # backend id -> monotonic time it lifts
+_MAX_REST_S = 60.0
 
-def _short_wait(exc: Exception) -> float | None:
-    """Seconds a rate-limited backend asked us to wait, when that is short."""
+
+def _retry_after(exc: Exception) -> float | None:
+    """Seconds a 429 asked us to wait ("1.6s", "307ms", "6m7.3s"), or None."""
     if getattr(exc, "status_code", None) != 429:
         return None
     m = _RETRY_IN.search(str(exc))
     if not m:
         return None
-    secs = float(m.group(1)) / (1000 if m.group(2).lower() == "ms" else 1)
-    return secs + 0.25 if secs <= _MAX_RETRY_WAIT_S else None
+    secs = float(m.group(2)) / (1000 if m.group(3).lower() == "ms" else 1)
+    return secs + 60 * int(m.group(1) or 0)
+
+
+def _short_wait(exc: Exception) -> float | None:
+    """Seconds a rate-limited backend asked us to wait, when that is short."""
+    secs = _retry_after(exc)
+    return secs + 0.25 if secs is not None and secs <= _MAX_RETRY_WAIT_S else None
 
 
 def _note_dead(b: _FreeBackend, exc: Exception) -> None:
     if getattr(exc, "status_code", None) == 402 and b.id not in _free_dead:
         _free_dead.add(b.id)
         obs.error("llm.free.backend_dead", exc, backend=b.id)
+
+
+def _note_rest(b: _FreeBackend, exc: Exception) -> None:
+    """A 429 the chain moves on from: skip `b` until the wait it named."""
+    secs = _retry_after(exc)
+    if secs is not None and secs > _MAX_RETRY_WAIT_S:
+        _free_resting[b.id] = time.monotonic() + min(secs, _MAX_REST_S)
+        obs.warn("llm.free.backend_resting", backend=b.id,
+                 seconds=round(secs, 1))
+
+
+def _resting(b: _FreeBackend) -> bool:
+    until = _free_resting.get(b.id)
+    if until is None:
+        return False
+    if time.monotonic() >= until:
+        _free_resting.pop(b.id, None)
+        return False
+    return True
+
+
+def _skip(plan: list, attempt: int) -> bool:
+    """Whether the chain passes over `plan[attempt]`: dead, or resting while a
+    later entry is awake — the last one awake is tried even resting, since a
+    wait beats no answer."""
+    b = plan[attempt][0]
+    if b.id in _free_dead:
+        return True
+    return _resting(b) and any(
+        n.id not in _free_dead and not _resting(n) for n, _ in plan[attempt + 1:])
 
 
 def _free_secrets() -> dict:
@@ -798,7 +913,7 @@ def _free_backends() -> list[_FreeBackend]:
             tpm = int(cfg.get(f"{bid}_tpm") or _FREE_TPM.get(bid, 0))
         except (TypeError, ValueError):
             tpm = _FREE_TPM.get(bid, 0)
-        stream = _openai_compat_stream(base_url, **_FREE_CLIENT)
+        stream = _openai_compat_stream(base_url, free=True, **_FREE_CLIENT)
         # A gone primary stays in: its failure is what asks /models for a
         # replacement. Gone fallbacks are only dead hops.
         out.append(_FreeBackend(bid, key, model, stream, base_url, tpm))
@@ -886,7 +1001,7 @@ def _free_stream(api_key, model, system, messages):
     attempt = -1
     while (attempt := attempt + 1) < len(plan):
         b, thread = plan[attempt]
-        if b.id in _free_dead:
+        if _skip(plan, attempt):
             continue
         # Grows by at most one entry: a retired slug appends the replacement
         # /models named, so the same backend gets a second shot before the
@@ -927,6 +1042,7 @@ def _free_stream(api_key, model, system, messages):
                          error=str(exc)[:300],
                          status=getattr(exc, "status_code", None))
                 _note_dead(b, exc)
+                _note_rest(b, exc)
                 if (b.id not in refitted
                         and _learn_skew(b, exc, _sent(system, thread))):
                     # Their count ran over ours: the same backend, the thread
@@ -963,7 +1079,21 @@ def _free_stream(api_key, model, system, messages):
     raise FreeTierExhausted("all free backends failed")
 
 
-def _free_tools(api_key, model, system, messages, tools, execute, rounds):
+# What a backend says when the model wrote a tool call it could not parse:
+# Groq answers 400 "tool_use_failed" ("Failed to call a function. Please
+# adjust your prompt."). The same request usually parses on a second try.
+_MALFORMED = ("tool_use_failed", "failed to call a function")
+
+
+def _malformed(exc: Exception) -> bool:
+    if getattr(exc, "status_code", None) not in (None, 400):
+        return False
+    text = str(exc).lower()
+    return any(m in text for m in _MALFORMED)
+
+
+def _free_tools(api_key, model, system, messages, tools, execute, rounds,
+                stop=None):
     """The chain again, for the tool loop: first backend that gets through wins.
 
     Simpler than _free_stream on purpose — nothing has been shown to the user
@@ -988,20 +1118,22 @@ def _free_tools(api_key, model, system, messages, tools, execute, rounds):
     attempt = -1
     while (attempt := attempt + 1) < len(plan):
         b, thread = plan[attempt]
-        if b.id in _free_dead:
+        if _skip(plan, attempt):
             continue
         cap = _tpm_cap(b)
         for retry in range(2):
             try:
-                return _openai_compat_tools(b.base_url or None, **_FREE_CLIENT)(
+                return _openai_compat_tools(b.base_url or None, free=True,
+                                            **_FREE_CLIENT)(
                     b.api_key, b.model, system, thread, tools, execute, rounds,
-                    cap)
+                    cap, stop=stop)
             except Exception as exc:
                 obs.warn("llm.free.tools_failed", backend=b.id, model=b.model,
                          attempt=attempt, error_type=type(exc).__name__,
                          error=str(exc)[:300],
                          status=getattr(exc, "status_code", None))
                 _note_dead(b, exc)
+                _note_rest(b, exc)
                 # Each round is squeezed under `cap`, and the one that failed
                 # may be a later, fuller one than the thread: `cap` is the
                 # nearest thing to what was sent, and errs to a smaller skew.
@@ -1013,6 +1145,14 @@ def _free_tools(api_key, model, system, messages, tools, execute, rounds):
                 if _retired_model(exc):
                     _free_gone.add((b.id, b.model))
                     break
+                if retry == 0 and _malformed(exc):
+                    # Once, on the same backend: a call it could not parse is
+                    # the model's slip, not the backend's limit. The rounds
+                    # already run replay from the dispatcher's memory
+                    # (agent._Budget), so the second try costs no fetches.
+                    obs.warn("llm.malformed_call", backend=b.id, model=b.model,
+                             action="retry")
+                    continue
                 wait = _short_wait(exc) if retry == 0 else None
                 if wait is None:
                     break

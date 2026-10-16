@@ -659,6 +659,22 @@ def _action_from(data: dict) -> Action | None:
     return Action(tool.name, ticker, args)
 
 
+# What the research step may put to the reader on its own initiative
+# (toolbox `propose_action`): things that add to what the app watches. A
+# removal, a figure on a position or a ledger edit is the reader's to ask for,
+# never a suggestion that arrives under an answer.
+PROPOSABLE = ("add_ticker", "favorite", "set_alerts", "tag")
+
+
+def proposed(data: dict) -> Action | None:
+    """The Action a `propose_action` call drafts, or None when it is not one
+    of PROPOSABLE or does not parse — read by the same rules as the
+    classifier's reply, so a proposal and a request can never disagree."""
+    if data.get("action") not in PROPOSABLE:
+        return None
+    return _action_from(data)
+
+
 def _symbols(data: dict) -> list[str]:
     """Every symbol the reply names, "ticker" first, upper-cased and deduped.
 

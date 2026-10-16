@@ -43,7 +43,12 @@ import pandas as pd
 
 from stocks import accounts, obs
 from stocks.analysis import sentiment as sm
-from stocks.analysis.portfolio import basket_change, us_market_open
+from stocks.analysis.portfolio import (
+    basket_change,
+    index_change,
+    money_change,
+    us_market_open,
+)
 from stocks.api import home, loaders
 from stocks.api.cache import ttl_cache
 from stocks.api.deps import reporting_currency
@@ -134,6 +139,24 @@ CARD_TICKERS: tuple[str, ...] = tuple(
     sorted({"SPY", "EURUSD=X", *sm.SECTOR_ETFS.values()})
 )
 CARD_PERIOD = "2y"
+# The Today chart's longest fixed window (`daily_book.RANGES`), a little over;
+# a book older than this is drawn against the indexes' "max".
+COMPARE_PERIOD = "6y"
+
+
+def _closes_since(first, index: str = daily_book.INDEX_SYMBOL) -> dict:
+    """Index closes reaching back to `first`, the book's first day: the same
+    money goes into the index from there, whatever window is drawn. The card's
+    own two years when they reach (SPY, no request), else the indexes' six
+    years, else their whole history."""
+    # A download opens a week or so late on its own first day.
+    def reaches(years: int) -> bool:
+        floor = pd.Timestamp.today().normalize() - pd.DateOffset(years=years, days=-7)
+        return first is None or pd.Timestamp(first) >= floor
+
+    if index == daily_book.INDEX_SYMBOL and reaches(2):
+        return _card_closes()
+    return _compare_closes(COMPARE_PERIOD if reaches(6) else "max")
 
 
 @ttl_cache(900.0, max_entries=1, persist="card_closes")
@@ -143,6 +166,17 @@ def _card_closes() -> dict[str, pd.Series]:
     from stocks.analysis.portfolio import load_closes
 
     return load_closes(list(CARD_TICKERS), period=CARD_PERIOD)
+
+
+@ttl_cache(900.0, max_entries=2, persist="compare_closes")
+def _compare_closes(period: str = COMPARE_PERIOD) -> dict[str, pd.Series]:
+    """Every index the Today chart offers (`daily_book.INDEXES`) and the euro
+    pair SPY is converted with, over its longest window, in one bulk request
+    shared by every account — and only once someone asks for a pairing the
+    card's own two years cannot draw."""
+    from stocks.analysis.portfolio import load_closes
+
+    return load_closes(sorted({*daily_book.INDEXES, "EURUSD=X"}), period=period)
 
 
 @ttl_cache(86400.0, max_entries=32)
@@ -171,8 +205,9 @@ def book_sectors(tbl) -> pd.Series:
 def index_month_base(closes: dict[str, pd.Series], base: str = "EUR") -> float:
     """SPY's month, in the reader's own currency.
 
-    The book's month comes off a basket valued in `base`; the index's comes off
-    a series quoted in dollars. Subtracting one from the other without this
+    The fallback when the book's own money cannot be replayed into the index
+    (`index_change`): the book's month is in `base`; the index's comes
+    off a series quoted in dollars. Subtracting one from the other without this
     conversion reports the currency's move as skill, in whichever direction it
     happened to go — which is the single easiest way for this card to tell a
     reader something false about their own performance.
@@ -207,7 +242,7 @@ def index_in_base(closes: dict[str, pd.Series], base: str = "EUR") -> pd.Series 
     return in_base if not in_base.empty else None
 
 
-def _market(tbl, hist, currency: str) -> list:
+def _market(tbl, money, currency: str) -> list:
     """The market-wide candidates, or none of them.
 
     The one part of the card with a download of its own, and the only part
@@ -220,14 +255,21 @@ def _market(tbl, hist, currency: str) -> list:
         ccy = None
         if tbl is not None and not tbl.empty and {"ccy", "weight"} <= set(tbl.columns):
             ccy = tbl.groupby("ccy")["weight"].sum()
-        month = basket_change(hist, 30) if hist is not None and not hist.empty else None
+        # The book's month and the index's on the same money: the index
+        # bought with the reader's own deposits, on their days. Without the
+        # second there is no comparison to make, so neither is passed.
+        month = money_change(money, 30) if money is not None else None
+        index = index_in_base(closes, currency)
+        bench = index_change(money, index, 30) if month else None
         return signals.market_candidates(
             closes,
             book_sectors=sectors,
             bench_sectors=loaders.benchmark_sectors(),
             currency_weights=ccy,
-            book_month_pct=None if not month else month[1] * 100,
-            bench_month_pct=index_month_base(closes, currency) * 100,
+            book_month_pct=month[1] * 100 if month and bench else None,
+            bench_month_pct=(
+                bench[1] * 100 if bench else index_month_base(closes, currency) * 100
+            ),
             currency=currency,
         )
     except Exception as exc:  # noqa: BLE001 — best-effort by contract
@@ -354,14 +396,15 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
     if not (positions or entries):
         return None
 
-    tbl = hist = None
+    tbl = hist = money = None
     if positions:
         try:
             tbl = home.enriched(db, mtime, ccy)
             hist = loaders.basket_values(db, mtime, ccy).dropna(how="all")
+            money = _money(db, mtime, ccy)
         except Exception as exc:  # noqa: BLE001 — alerts and 52w still work
             obs.warn("daily_action.prices_unavailable", error_type=type(exc).__name__)
-            tbl = hist = None
+            tbl = hist = money = None
 
     owned = {p.ticker for p in positions}
     earn = _reporting(owned, entries)
@@ -392,7 +435,8 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
         day=_day_move(tbl, hist),
         earnings=events,
         extremes=extremes,
-        index=_index(ccy) if positions else None,
+        index=_index(ccy, money) if positions else None,
+        money=money,
         # The brief's lines alone: their data is fetched on the job's thread
         # (`start`), so the request is not held for it.
         brief=daily_routines.seeded(daily_routines.load(prefs, paths.chat)),
@@ -404,7 +448,7 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
             earnings=events,
             results=results,
             extremes=extremes,
-            market=_market(tbl, hist, ccy),
+            market=_market(tbl, money, ccy),
             macro=_macro(day, ccy),
             shown=stored.shown if stored else None,
             jurisdiction=_jurisdiction(prefs),
@@ -415,32 +459,64 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
     )
 
 
-def _index(currency: str) -> dict | None:
-    """The index's day, week and month for the Portfolio section, or None —
-    a section with the book's figures alone still stands."""
+def _money(db: str, mtime: float, ccy: str) -> pd.DataFrame | None:
+    """The book's value and money put in, day by day (`loaders.history`):
+    what every figure set beside an index is measured on (`money_change`,
+    `index_change`, `daily_book.versus`); None when it has no history yet."""
+    hist, _twr, _missing = loaders.history(db, mtime, ccy)
+    return None if hist.empty else hist
+
+
+def _index(currency: str, money: pd.DataFrame | None = None) -> dict | None:
+    """The index's day, week and month for the Portfolio section, on the
+    book's own money when `money` is given, or None — a section with the
+    book's figures alone still stands."""
     try:
-        return daily_book.index_facts(_card_closes(), currency)
+        return daily_book.index_facts(_card_closes(), currency, money)
     except Exception as exc:  # noqa: BLE001 — best-effort, like the market block
         obs.warn("daily_action.index_unavailable", error_type=type(exc).__name__)
         return None
 
 
 def book_chart(paths, lang: str) -> list[dict]:
-    """The Portfolio section's month, drawn: the book and the index as
-    growth (`daily_book.chart`). Off the loaders `build_facts` just warmed,
-    so it costs no download; [] on any failure — the rows still stand."""
+    """The Portfolio section's month, drawn: the book's value and the same
+    money in the index (`daily_book.versus`). Off the loaders `build_facts`
+    just warmed, so it costs no download; [] on any failure — the rows still
+    stand."""
     from stocks.web.i18n import translate
 
     db = str(paths.db)
     ccy = reporting_currency(paths)
     try:
-        hist = loaders.basket_values(db, loaders.db_mtime(db), ccy).dropna(how="all")
-        return daily_book.chart(
-            hist, _card_closes(), ccy, label=translate("chat.chart_book", lang)
+        money = _money(db, loaders.db_mtime(db), ccy)
+        if money is None:
+            return []
+        return daily_book.versus(
+            money, _closes_since(money.index[0]), ccy,
+            label=translate("chat.chart_book", lang),
         )
     except Exception as exc:  # noqa: BLE001
         obs.warn("daily_action.chart_unavailable", error_type=type(exc).__name__)
         return []
+
+
+def book_compare(paths, lang: str, span: str, index: str) -> list[dict]:
+    """The Portfolio section's chart over another window or against another
+    index: the book's value beside the same money in the index
+    (`daily_book.versus`, off the Portfolio page's own history), so the
+    index is bought with the reader's deposits on their days, from the
+    book's first day (`_closes_since`). [] when it cannot be drawn."""
+    from stocks.web.i18n import translate
+
+    db = str(paths.db)
+    mtime = loaders.db_mtime(db)
+    ccy = reporting_currency(paths)
+    days = daily_book.window_days(span)
+    label = translate("chat.chart_book", lang)
+    hist, _twr, _missing = loaders.history(db, mtime, ccy)
+    closes = _closes_since(None if hist.empty else hist.index[0], index)
+    return daily_book.versus(None if hist.empty else hist, closes, ccy,
+                             label=label, days=days, index=index)
 
 
 def _reporting(owned: set[str], entries) -> tuple[str, ...]:

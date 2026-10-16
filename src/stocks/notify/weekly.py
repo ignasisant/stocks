@@ -26,7 +26,12 @@ from stocks.config import load_watchlist
 from stocks.data.dividends import DividendEvent, upcoming_ex_dividends
 from stocks.data.earnings import EarningsEvent, calendar_events
 from stocks.notify import links
-from stocks.notify.digest import BENCHMARK, BENCHMARK_LABEL, recent_dividends
+from stocks.notify.digest import (
+    BENCHMARK,
+    BENCHMARK_LABEL,
+    money_changes,
+    recent_dividends,
+)
 from stocks.notify.render import (
     date_line,
     delta,
@@ -73,7 +78,7 @@ class WeeklyData:
 
     @property
     def ytd_days(self) -> int:
-        """Calendar days back to 1 January — the YTD window for basket_change."""
+        """Calendar days back to 1 January — the YTD window for money_change."""
         return (self.date - date(self.date.year, 1, 1)).days
 
 
@@ -82,9 +87,8 @@ def compute_weekly_data(
 ) -> WeeklyData:
     """Gather one account's weekly review, in `base`. Sections fail alone."""
     from stocks.analysis.portfolio import (
-        basket_change,
-        benchmark_changes,
         effective_positions,
+        load_closes,
         position_value_frames,
         ticker_changes,
         ticker_money_changes,
@@ -108,15 +112,11 @@ def compute_weekly_data(
         return data
 
     with obs.swallow("weekly.position_values", positions=len(positions)):
-        # A year of history: YTD is the point of the message, and the month
-        # and week windows read off the same frame for free.
-        values, _ = position_value_frames(positions, period="1y", base=base)
+        # The week's movers and today's weights: a month of closes covers both.
+        values, _ = position_value_frames(positions, period="1mo", base=base)
         if not values.empty:
             last = values.iloc[-1].dropna()
             data.total = float(last.sum()) if not last.empty else None
-            data.week = basket_change(values, WEEK)
-            data.month = basket_change(values, MONTH)
-            data.ytd = basket_change(values, data.ytd_days)
             data.best, data.worst = _week_movers(
                 ticker_money_changes(values, WEEK), ticker_changes(values, WEEK)
             )
@@ -125,11 +125,20 @@ def compute_weekly_data(
                 data.top_weight = top_n_weight(weights, TOP_N)
                 data.effective_names = effective_positions(weights)
 
-    if data.week is not None:
-        with obs.swallow("weekly.benchmark", ticker=BENCHMARK):
-            data.benchmark = benchmark_changes(
-                [WEEK, MONTH, data.ytd_days], BENCHMARK
-            )
+    index = None
+    with obs.swallow("weekly.benchmark", ticker=BENCHMARK):
+        index = load_closes([BENCHMARK], period="1y").get(BENCHMARK)
+
+    with obs.swallow("weekly.returns", positions=len(positions)):
+        # On the book's own money, the index bought with the same deposits on
+        # the same days: a deposit in March is not a year-to-date gain, and a
+        # good spring on 5,000 € is not one on 100,000 € (`money_changes`).
+        windows = [WEEK, MONTH, data.ytd_days]
+        changes, same = money_changes(txs, base, windows, index)
+        data.week, data.month = changes[WEEK], changes[MONTH]
+        data.ytd = changes[data.ytd_days]
+        if data.week is not None:
+            data.benchmark = same
 
     tickers = [p.ticker for p in positions]
     with obs.swallow("weekly.earnings"):

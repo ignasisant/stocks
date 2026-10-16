@@ -15,6 +15,7 @@ last-write-wins — accepted, the overlap window is a single turn.
 
 from __future__ import annotations
 
+import contextvars
 import json
 import math
 import queue
@@ -39,23 +40,26 @@ from stocks.chat import (
     charts,
     clock,
     debate,
+    guard,
     harvest,
     journal,
     learnings,
     market,
     memory,
     rebalance,
+    stopping,
     tokens,
     toolbox,
     whatif,
 )
 from stocks.config import DATA_DIR, currency_symbol
 from stocks.secrets_env import secret
-from stocks.web import chat_skills, chat_web
+from stocks.web import chat_skills, chat_web, metering
 
 if TYPE_CHECKING:
     import pandas as pd
 
+    from stocks.chat.checkpoint import Checkpoint
     from stocks.chat.tools import Action
     from stocks.web.llm import Provider, ToolCall
 
@@ -460,7 +464,7 @@ def _save_global_free() -> None:
                  error=str(exc)[:200])
 
 
-def _spend_global_free() -> bool:
+def _spend_global_free(units: int = 1) -> bool:
     _load_global_free()
     day = time.strftime("%Y-%m-%d")
     cap = free_global_daily_cap()
@@ -469,9 +473,9 @@ def _spend_global_free() -> bool:
     with _global_free_lock:
         if _global_free["day"] != day:
             _global_free["day"], _global_free["used"] = day, 0
-        spent = _global_free["used"] < cap
+        spent = _global_free["used"] + units <= cap
         if spent:
-            _global_free["used"] += 1
+            _global_free["used"] += units
     if not spent:
         obs.event("llm.free.global_cap")
         return False
@@ -479,8 +483,14 @@ def _spend_global_free() -> bool:
     return True
 
 
-def spend_free_quota(prefs: dict) -> bool:
-    """Consume one unit of today's free allowance; False when it's spent.
+# What a deep research turn costs on the free chain, in daily units. Its
+# gather runs up to `agent.DEEP.max_calls` lookups and several model rounds
+# against the shared free pot, where a quick one runs a handful.
+DEEP_UNITS = 2
+
+
+def spend_free_quota(prefs: dict, units: int = 1) -> bool:
+    """Consume `units` of today's free allowance; False when they are not left.
 
     Mutates `prefs` in place — the caller saves, so the web panel and the
     Telegram bot share one counter ("free_msgs::<date>"). Keys from previous
@@ -497,13 +507,13 @@ def spend_free_quota(prefs: dict) -> bool:
     day = time.strftime("%Y-%m-%d")
     key = f"free_msgs::{day}"
     used = int(prefs.get(key, 0))
-    if used >= free_daily_cap(prefs):
+    if used + units > free_daily_cap(prefs):
         return False
-    if not _spend_global_free():
+    if not _spend_global_free(units):
         return False
     for stale in [k for k in prefs if k.startswith("free_msgs::") and k != key]:
         prefs.pop(stale)
-    prefs[key] = used + 1
+    prefs[key] = used + units
     return True
 
 
@@ -1206,8 +1216,25 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
                     timeout: float | None = None,
                     focus: str = "",
                     on_tool: Callable[[str, ToolCall, bool], None] | None = None,
+                    profile: agent.Profile = agent.FAST,
+                    model: str = "",
+                    prefs_path: Path | None = None,
+                    proposes: bool = False,
+                    on_plan: Callable[[list[dict]], None] | None = None,
+                    checkpoint: Checkpoint | None = None,
                     ) -> agent.Evidence:
-    """The model-directed lookup for a Telegram turn (chat/agent.py).
+    """The model-directed lookup for a turn (chat/agent.py), as far as
+    `profile` lets it go; `model` is the one that will answer, which a DEEP
+    gather researches on, and `prefs_path` the tax settings its engines
+    replay the ledger under. `proposes` offers it `propose_action`: the
+    caller shows a card the reader can press (`_proposed`). `on_plan` is
+    told a deep gather's plan each time the model sets it (`agent.gather`).
+
+    `checkpoint` is the run's progress on disk (`chat/checkpoint.py`): each
+    lookup is filed there as it returns and the finished evidence once the
+    loop is over, and a run picked up after a restart starts from what it
+    holds — a finished gather is handed back as it was, shown again in the
+    live research, and an unfinished one is answered from its lookups.
 
     Gated like the fixed pre-flight (`web_enabled`): the tools reach the
     internet. Unsupported or failed both mean Evidence with ok=False, which
@@ -1215,6 +1242,25 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
     if not web_enabled():
         return agent.Evidence(ok=False)
     from stocks.web import auth
+    from stocks.web.llm import ToolCall
+
+    if checkpoint is not None and (done := checkpoint.evidence) is not None:
+        calls = [ToolCall(c["name"], c["args"], c["result"]) for c in done["calls"]]
+        if checkpoint.plan and on_plan is not None:
+            on_plan(checkpoint.plan)
+        for n, call in enumerate(calls):
+            if on_tool is not None:
+                on_tool(f"tool_kept{n}", call, False)
+                on_tool(f"tool_kept{n}", call, True)
+        return agent.Evidence(calls, ok=bool(done["ok"]), plan=checkpoint.plan,
+                              missing=str(done["missing"] or ""))
+    if checkpoint is not None:
+        told = on_plan
+
+        def on_plan(plan: list[dict]) -> None:
+            checkpoint.planned(plan)
+            if told is not None:
+                told(plan)
 
     memory_db, thread, decisions = None, "", None
     if chat_path is not None:
@@ -1226,9 +1272,28 @@ def gather_evidence(prefs: dict, provider: Provider, api_key: str,
     # `focus` is what "this" and "it" mean: the ticker on the reader's screen.
     ctx = toolbox.Context(watchlist=watchlist, db=db, memory_db=memory_db,
                           journal=decisions, thread=thread, focus=focus,
-                          currency=reporting_currency(prefs))
-    return agent.gather(provider, api_key, msgs, ctx,
-                        timeout=timeout or agent.TIMEOUT, on_tool=on_tool)
+                          currency=reporting_currency(prefs),
+                          prefs_path=prefs_path, proposes=proposes,
+                          asked=_asked(msgs))
+    evidence = agent.gather(
+        provider, api_key, msgs, ctx, model=model, profile=profile,
+        timeout=timeout, on_tool=on_tool, on_plan=on_plan,
+        known=checkpoint.known() if checkpoint is not None else None,
+        on_call=checkpoint.called if checkpoint is not None else None)
+    if checkpoint is not None:
+        checkpoint.gathered(evidence.calls, evidence.ok, evidence.missing)
+    return evidence
+
+
+# The reader's turns a proposal may answer to (`toolbox.Context.asked`): a
+# follow-up ("¿y AMD?") keeps the ask from two turns back, while an "avísame"
+# from far up the thread does not license today's alert.
+ASKED_TURNS = 3
+
+
+def _asked(msgs: list[dict]) -> tuple[str, ...]:
+    said = [str(m.get("content") or "") for m in msgs if m.get("role") == "user"]
+    return tuple(said[-ASKED_TURNS:])
 
 
 def _settle(future, timeout: float | None,
@@ -1282,7 +1347,9 @@ def in_parallel(*calls: Callable[[], object],
     """
     pool = ThreadPoolExecutor(max_workers=max(1, len(calls)))
     try:
-        futures = [pool.submit(c) for c in calls]
+        # Each in a copy of the turn's context, so its log fields and meter
+        # (`metering`) reach the pool thread.
+        futures = [pool.submit(contextvars.copy_context().run, c) for c in calls]
         return [_settle(f, timeout, tick, poll) for f in futures]
     finally:
         # No wait: shutdown would block on whatever the timeout just escaped.
@@ -1601,6 +1668,27 @@ def _proposal(act: Action) -> dict:
             "ticker": act.ticker, "args": dict(act.args), "state": "pending"}
 
 
+def _proposed(evidence: agent.Evidence) -> dict | None:
+    """The card a `propose_action` call in the research drafted, or None.
+
+    Read back from the call's own arguments by the rule the tool checked them
+    with (`tools.proposed`), so what the model was told it drafted and what
+    the reader is shown are one change. The first that parses: the tool tells
+    the model one per answer. `by` marks it as the answer's, which keeps its
+    analysis when it is settled (`settle_proposal`)."""
+    from stocks.chat import tools
+
+    for call in evidence.calls:
+        # A refusal (`toolbox._unwarranted`) is what the model read back, so
+        # no card: only a call the tool drafted becomes one.
+        if (call.name == "propose_action"
+                and str(call.result or "").startswith(toolbox.DRAFTED)):
+            act = tools.proposed(dict(call.args or {}))
+            if act is not None:
+                return {**_proposal(act), "by": "agent"}
+    return None
+
+
 def _open_proposal(history: list[dict]) -> int | None:
     """Index of the last turn when it is an assistant turn still asking."""
     if not history:
@@ -1759,6 +1847,11 @@ def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
     note = _apply(offer, approve, watchlist=watchlist, lang=lang,
                   ticker=ticker, args=args, form=form, db=db)
     _journal(offer, chat_path, asked)
+    # A card under an answer (`_proposed`): the answer stays, and the outcome
+    # is its last line. Every other card was only the question, so its words
+    # become the outcome.
+    if offer.get("by") == "agent":
+        note = f"{asked}\n\n{note}"
     entry["content"] = note
     if offer["state"] == "done":
         entry["action"] = offer["kind"]
@@ -2363,7 +2456,20 @@ class Turn:
     #: is stored even if the active one has moved since (`auth.save_chat`).
     #: None is the active one, as the bot has always meant it.
     thread: str | None = None
+    #: The gather's `agent.Profile` name, "fast" or "deep": what the turn's
+    #: cost line (`_log_cost`) is broken down by.
+    profile: str = "fast"
+    #: What the stored answer is named by (`rate_turn`), and the `turn` field
+    #: on the turn's log lines: a thumbs-down finds its tools and its cost.
+    id: str = dc_field(default_factory=lambda: secrets.token_hex(6))
+    #: A change the research put to the reader (`_proposed`), filed as a
+    #: pending card under the answer; None when it proposed nothing.
+    proposal: dict | None = None
 
+    @property
+    def units(self) -> int:
+        """Free units this turn costs: a deep gather reads for several."""
+        return DEEP_UNITS if self.profile == "deep" else 1
 
 
 # ------------------------------------------------------------ the tool trace
@@ -2374,10 +2480,20 @@ class Turn:
 
 _STEP_ARG_CHARS = 56  # of a tool's argument kept on its line
 _STEP_ARG_KEYS = ("query", "url", "tickers", "ticker", "symbol")
+_STEP_WHY_CHARS = 60  # of the model's own words for a call (`_step_why`)
+
+
+def _step_why(args: dict) -> str:
+    """What the model said a call was for (`toolbox.REASON`), as one short
+    line of plain text: it is the model's words on the reader's screen."""
+    text = " ".join(str(args.get(toolbox.REASON) or "").split())
+    text = re.sub(r"<[^>]*>|[<>*_`#\[\]]", "", text)
+    return text[:_STEP_WHY_CHARS].strip()
 
 
 def _step_arg(args: dict) -> str:
     """The argument that identifies a call — the query, the URL, the tickers."""
+    args = {k: v for k, v in args.items() if k != toolbox.REASON}
     value = next((args[k] for k in _STEP_ARG_KEYS if args.get(k)), None)
     if value is None:
         value = next((v for _, v in sorted(args.items()) if v), "")
@@ -2408,6 +2524,8 @@ def live_step(cid: str, call: ToolCall, lang: str, done: bool) -> dict:
         else {}
     step = {"id": cid, "tool": call.name, "arg": _step_arg(call.args),
             "args": args}
+    if why := _step_why(call.args):
+        step["why"] = why
     if done:
         step["out"] = _step_out(call, lang)
     return step
@@ -2424,7 +2542,8 @@ def trace(evidence, hits: list, live: list, lang: str = "en") -> list[dict]:
     from stocks.web.i18n import translate
 
     steps = [
-        {"tool": call.name, "arg": _step_arg(call.args), "out": _step_out(call, lang)}
+        {"tool": call.name, "arg": _step_arg(call.args), "out": _step_out(call, lang),
+         **({"why": why} if (why := _step_why(call.args)) else {})}
         for call in getattr(evidence, "calls", [])
     ]
     if hits:
@@ -2485,6 +2604,10 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
             on_subagent: Callable[[dict], None] | None = None,
             draws: bool = False,
             thread: str | None = None,
+            depth: str = "",
+            turn_id: str = "",
+            on_plan: Callable[[list[dict]], None] | None = None,
+            checkpoint: Checkpoint | None = None,
             ) -> tuple[Turn | None, Reply | None]:
     """Everything before the model: history, provider chain, prompt, evidence.
 
@@ -2506,6 +2629,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     `trace` will file: `{id, tool, arg, args}` when a call starts and the same
     with `out` when it returns (`live_step`). The model's own calls are told
     as they run; the fixed pre-flight's, once both have come back.
+    `on_plan` is told a deep gather's plan, `[{text, done}]`, each time the
+    model sets it.
 
     `on_subagent` turns on the bull/bear debate (`chat/debate.py`) for a
     question that asks for a decision, and is told each side's lifecycle as it
@@ -2526,6 +2651,9 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     `thread` pins the turn to the conversation it was asked in: its history is
     read from there and everything it files is written there, wherever the
     active pointer has moved in the meantime. None is the active one.
+
+    `depth` is how far the research goes (`agent.profile_for`): "fast" or
+    "deep" when the reader chose, "" to let the message decide.
     """
     from stocks.chat import tools
     from stocks.web import auth, llm
@@ -2608,7 +2736,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     live = answerable(prefs, atts)
     if not live:
         return settled(_exhausted(prefs, atts, capped=True))
-    provider, key, _ = live[0]
+    provider, key, model = live[0]
 
     # App actions first (favorite / alerts / groups): a deterministic
     # localized confirmation — no main-model call, no free-quota spend.
@@ -2632,7 +2760,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         if act is not None and confirm_actions:
             offer = _proposal(act)
             note = tools.proposal(act, lambda k, **kw: _tr(k, lang, **kw))
-            tid = secrets.token_hex(6)
+            tid = turn_id or secrets.token_hex(6)
             history.append(stored({"role": "assistant", "content": note,
                                    "action": act.kind, "proposal": offer,
                                    "id": tid, "provider": provider.id}))
@@ -2652,7 +2780,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         if act is not None:
             note = action_reply(act, lang)
             # Rateable like an answer (`_book_turn` says why).
-            tid = secrets.token_hex(6)
+            tid = turn_id or secrets.token_hex(6)
             history.append(stored({"role": "assistant", "content": note,
                                    "action": act.kind, "id": tid,
                                    "provider": provider.id}))
@@ -2681,58 +2809,96 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     # command already wrote what the message asked to keep.
     learning = None if order is not None else learn(
         prefs, chat_path, history, watchlist, session_keys)
+    # Beside the research too, and waited for only once it is back
+    # (`chat/guard.py`): a question in scope pays nothing for the check.
+    vetting = guard.start(provider, key, message)
+
+    def watching() -> None:
+        if vetting is not None:
+            vetting.check()
+        stopping.check()
 
     msgs = recent(history)
     say("gathering")
-    skills, evidence, sale, chart, mix, losses, moved = in_parallel(
-        lambda: resolve_skills(prefs, provider, key, history,
-                               context=context + view),
-        lambda: gather_evidence(prefs, provider, key, msgs, watchlist, db,
-                                chat_path, timeout=timeout_s, focus=focus,
-                                on_tool=watch if on_tool else None),
-        lambda: _simulate_sale(message, watchlist, db, prefs_path, focus, lang,
-                               told),
-        lambda: (_chart(message, prefs, watchlist, db, focus, lang, told)
-                 if draws else None),
-        lambda: (_allocation(message, prefs, db, lang, told) if draws else None),
-        lambda: _harvest(message, db, prefs_path, lang, told),
-        lambda: _rebalance(message, watchlist, db, prefs_path, focus, lang, told),
-        timeout=timeout_s,
-    )
-    skills = skills or []
-    evidence = evidence or agent.Evidence(ok=False)
-    hits, quotes = [], []
-    if not evidence.ok:
-        say("searching")
-        # The lookup may have just found the head's key refused: the planner
-        # then runs on the next candidate that is not, or it fails the same
-        # way and the search falls to keywords.
-        scout, scout_key = next(
-            ((p, k) for p, k, _m in live if not llm.rejected(p, k)),
-            (provider, key))
-        hits, quotes = in_parallel(
-            lambda: ground_web(prefs, scout, scout_key, history, view),
-            lambda: market.lookup_for(message, watchlist, focus=focus, lang=lang),
-            timeout=timeout_s,
+    # A question that is research gets the deep gather: more rounds, the
+    # answering model choosing what to read, the app's engines as tools. It
+    # sets the wait for everything that runs beside it, since the turn cannot
+    # go on before the research is back.
+    # A caller's `timeout_s` has always bounded the quick gather too; a deep
+    # one may take longer than that, and the lookups beside it wait as long.
+    profile = agent.profile_for(message, depth)
+    if (profile is agent.DEEP and provider.id == "free"
+            and free_account_left(prefs) < DEEP_UNITS):
+        # The research runs before the answer is charged, so what it may
+        # cost is settled here: a reader with one unit left gets the quick
+        # gather and is charged one, not a deep one the wall then refuses.
+        profile = agent.FAST
+        obs.event("chat.deep_downgraded", left=free_account_left(prefs))
+    researched = max(timeout_s, profile.timeout)
+    try:
+        skills, evidence, sale, chart, mix, losses, moved = in_parallel(
+            lambda: resolve_skills(prefs, provider, key, history,
+                                   context=context + view),
+            lambda: gather_evidence(prefs, provider, key, msgs, watchlist, db,
+                                    chat_path, timeout=researched, focus=focus,
+                                    on_tool=watch if on_tool else None,
+                                    profile=profile, model=model,
+                                    prefs_path=prefs_path,
+                                    proposes=confirm_actions, on_plan=on_plan,
+                                    checkpoint=checkpoint),
+            lambda: _simulate_sale(message, watchlist, db, prefs_path, focus, lang,
+                                   told),
+            lambda: (_chart(message, prefs, watchlist, db, focus, lang, told)
+                     if draws else None),
+            lambda: (_allocation(message, prefs, db, lang, told) if draws else None),
+            lambda: _harvest(message, db, prefs_path, lang, told),
+            lambda: _rebalance(message, watchlist, db, prefs_path, focus, lang, told),
+            timeout=researched + 5.0,
+            # A stopped turn stops waiting here (`chat/stopping.py`); the gather
+            # beside it has already stopped starting things. So does a message
+            # the guard refused.
+            tick=watching,
         )
-        hits, quotes = hits or [], quotes or []
-        # No loop to watch here: the search and the quotes are told once
-        # both have landed, already finished.
-        for n, line in enumerate(trace(None, hits, quotes, lang)):
-            told({"id": f"tool_pre{n}", **line, "args": {}})
-    elif web_enabled() and not any(
-            c.name in ("search_web", "read_page") for c in evidence.calls):
-        # Searching is the default, and the model's own lookup skipped it.
-        # Keywords decide instead — no second planner call — so small talk,
-        # a definition or a question about the reader's own book still goes
-        # without, and everything else reads the web.
-        queries = chat_web.heuristic_queries(message, web_context(history, view))
-        if queries:
+        skills = skills or []
+        evidence = evidence or agent.Evidence(ok=False)
+        hits, quotes = [], []
+        if not evidence.ok:
             say("searching")
-            hits = in_parallel(lambda: chat_web.collect(queries, message),
-                               timeout=timeout_s)[0] or []
-            for n, line in enumerate(trace(None, hits, [], lang)):
+            # The lookup may have just found the head's key refused: the planner
+            # then runs on the next candidate that is not, or it fails the same
+            # way and the search falls to keywords.
+            scout, scout_key = next(
+                ((p, k) for p, k, _m in live if not llm.rejected(p, k)),
+                (provider, key))
+            hits, quotes = in_parallel(
+                lambda: ground_web(prefs, scout, scout_key, history, view),
+                lambda: market.lookup_for(message, watchlist, focus=focus, lang=lang),
+                timeout=timeout_s,
+                tick=watching,
+            )
+            hits, quotes = hits or [], quotes or []
+            # No loop to watch here: the search and the quotes are told once
+            # both have landed, already finished.
+            for n, line in enumerate(trace(None, hits, quotes, lang)):
                 told({"id": f"tool_pre{n}", **line, "args": {}})
+        elif web_enabled() and not any(
+                c.name in ("search_web", "read_page") for c in evidence.calls):
+            # Searching is the default, and the model's own lookup skipped it.
+            # Keywords decide instead — no second planner call — so small talk,
+            # a definition or a question about the reader's own book still goes
+            # without, and everything else reads the web.
+            queries = chat_web.heuristic_queries(message, web_context(history, view))
+            if queries:
+                say("searching")
+                hits = in_parallel(lambda: chat_web.collect(queries, message),
+                                   timeout=timeout_s, tick=watching)[0] or []
+                for n, line in enumerate(trace(None, hits, [], lang)):
+                    told({"id": f"tool_pre{n}", **line, "args": {}})
+        if vetting is not None and (said := vetting.refusal()):
+            raise guard.Blocked(said)
+    except guard.Blocked as refused:
+        return settled(_refused(refused.refusal, history, chat_path, thread,
+                                turn_id, lang, provider.id))
     recalled_notes, recalled = earlier(prefs, chat_path, message)
     system = system_prompt(
         auth.load_profile(prefs),
@@ -2769,6 +2935,7 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     # reads, and a cheap model's window is the smaller one — then the cases
     # join the question and the whole is fitted again.
     sides: list[dict] = []
+    stopping.check()
     if on_subagent is not None and debate.wants(message):
         say("debating")
         sides = debate.run(provider, key, msgs, lang, on_event=on_subagent,
@@ -2827,11 +2994,15 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         recalled=recalled,
         learning=learning,
         thread=thread,
+        profile=profile.name,
+        id=turn_id or secrets.token_hex(6),
+        proposal=_proposed(evidence) if confirm_actions else None,
     ), None
 
 
-def _charge(prefs: dict, prefs_path: Path, provider: Provider) -> bool:
-    """Take this attempt's free unit up front. False when today's is gone.
+def _charge(prefs: dict, prefs_path: Path, provider: Provider,
+            units: int = 1) -> bool:
+    """Take this attempt's free units up front. False when today's are gone.
 
     Charged before the call rather than after it because the shared pot is
     what a runaway caller drains, and a unit taken for a call that then fails
@@ -2847,7 +3018,7 @@ def _charge(prefs: dict, prefs_path: Path, provider: Provider) -> bool:
     # would otherwise both see it free.
     with accounts.prefs_lock(prefs_path):
         _fresh_free_count(prefs, prefs_path)
-        if not spend_free_quota(prefs):
+        if not spend_free_quota(prefs, units):
             return False
         auth.save_prefs(prefs, prefs_path)
     return True
@@ -2867,13 +3038,14 @@ def _fresh_free_count(prefs: dict, prefs_path: Path) -> None:
         prefs.base[key] = held
 
 
-def _refund(prefs: dict, prefs_path: Path, provider: Provider) -> None:
-    """Give back a unit taken for a call that never answered."""
+def _refund(prefs: dict, prefs_path: Path, provider: Provider,
+            units: int = 1) -> None:
+    """Give back the units taken for a call that never answered."""
     if provider.id != "free":
         return
     from stocks.web import auth
 
-    refund_free_quota(prefs)
+    refund_free_quota(prefs, units)
     auth.save_prefs(prefs, prefs_path)
 
 
@@ -2951,8 +3123,15 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
     # `id` is what a rating names the turn by (`rate_turn`); `provider` is who
     # wrote it, which a thumbs-down needs and the turn never said before.
     text = strip_cite_marks(text)
+    if guard.leaked(text, system_prompt({}, "")):
+        # The fixed instructions, repeated back (`chat/guard.py`). Under
+        # `block` the stored and finished answer is the refusal instead; the
+        # words already streamed are replaced by it on the reader's screen.
+        obs.warn("chat.guard_leak", provider=provider.id, model=model)
+        if guard.mode() == "block":
+            text = _tr("chat.guard_refusal", turn.lang)
     entry: dict = {"role": "assistant", "content": text,
-                   "id": secrets.token_hex(6), "provider": provider.id}
+                   "id": turn.id, "provider": provider.id}
     if turn.skills:
         entry["skills"] = list(turn.skills)
     if turn.sources:
@@ -2967,6 +3146,10 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
         entry["learned"] = list(turn.learned)
     if turn.recalled:
         entry["recalled"] = list(turn.recalled)
+    if turn.proposal is not None:
+        entry["proposal"] = turn.proposal
+        obs.event("chat.action_proposed", action=turn.proposal["kind"],
+                  by="agent")
     if polish is not None:
         polish(entry)
         text = str(entry.get("content") or "")
@@ -2981,7 +3164,24 @@ def _record(turn: Turn, text: str, provider: Provider, model: str, key: str, *,
                  sources=tuple(turn.sources), provider_id=provider.id,
                  steps=tuple(turn.steps), activities=tuple(turn.activities),
                  debate=tuple(turn.debate), learned=tuple(turn.learned),
-                 recalled=tuple(turn.recalled), turn_id=entry["id"])
+                 recalled=tuple(turn.recalled), turn_id=entry["id"],
+                 proposal=dict(turn.proposal) if turn.proposal else None)
+
+
+def _refused(text: str, history: list[dict], chat_path: Path,
+             thread: str | None, turn_id: str, lang: str,
+             provider_id: str) -> Reply:
+    """File and return the guard's refusal (`chat/guard.py`) as the answer:
+    the reader sees why nothing else came, and the thread keeps it."""
+    from stocks.web import auth
+
+    text = text or _tr("chat.guard_refusal", lang)
+    tid = turn_id or secrets.token_hex(6)
+    history.append({"role": "assistant", "content": text, "action": "refused",
+                    "id": tid, "provider": provider_id})
+    auth.save_chat(history, chat_path, thread)
+    obs.event("chat.refused")
+    return Reply(text=text, provider_id=provider_id, turn_id=tid)
 
 
 def _exhausted(prefs: dict, atts: list[tuple[Provider, str, str]],
@@ -3002,6 +3202,18 @@ def _exhausted(prefs: dict, atts: list[tuple[Provider, str, str]],
     return Reply(error=FREE_CAP_ERRORS[free_cap_reason(prefs)], learned=learned)
 
 
+def _log_cost(meter: metering.Meter, turn: Turn | None) -> None:
+    """One line per turn with what its model calls spent: tokens by step and
+    dollars (None when a model on it is unpriced). The question it answers is
+    what a deep turn costs against a fast one:
+        stocks logs stats --event chat.cost --by profile"""
+    if not meter.uses:
+        return
+    obs.event("chat.cost", profile=turn.profile if turn else "",
+              models=meter.models(), tokens=meter.tokens(),
+              steps=meter.by_step(), usd=meter.usd())
+
+
 def answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
            watchlist: Path, db: Path, message: str, lang: str = "en",
            context: str = TELEGRAM_CONTEXT, timeout_s: float = 90.0,
@@ -3017,43 +3229,70 @@ def answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
     chat.api_error. `learn_grace` overrides how long the answer waits for
     what the message is teaching the memory (`_record`).
     """
+    meter = metering.Meter()
+    turn = None
+    turn_id = secrets.token_hex(6)
+    try:
+        with metering.metered(meter), obs.context(turn=turn_id):
+            turn, reply = _answer(
+                prefs=prefs, prefs_path=prefs_path, chat_path=chat_path,
+                watchlist=watchlist, db=db, message=message, lang=lang,
+                context=context, timeout_s=timeout_s,
+                staged_import=staged_import, view=view, focus=focus,
+                fence=fence, session_keys=session_keys, polish=polish,
+                learn_grace=learn_grace, turn_id=turn_id)
+            return reply
+    finally:
+        with obs.context(turn=turn_id):
+            _log_cost(meter, turn)
+
+
+def _answer(*, prefs: dict, prefs_path: Path, chat_path: Path,
+            watchlist: Path, db: Path, message: str, lang: str,
+            context: str, timeout_s: float, staged_import: str, view: str,
+            focus: str, fence: str, session_keys: dict[str, str] | None,
+            polish: Callable[[dict], None] | None,
+            learn_grace: float | None,
+            turn_id: str) -> tuple[Turn | None, Reply]:
+    """`answer`'s body, handing back the turn it built for the cost line."""
     turn, settled = prepare(prefs=prefs, prefs_path=prefs_path,
                             chat_path=chat_path, watchlist=watchlist, db=db,
                             message=message, lang=lang, context=context,
                             timeout_s=timeout_s, staged_import=staged_import,
                             view=view, focus=focus, fence=fence,
-                            session_keys=session_keys)
+                            session_keys=session_keys, turn_id=turn_id)
     if turn is None:
         assert settled is not None
-        return settled
+        return None, settled
 
     capped = False
     for provider, key, model in turn.attempts:
         model = model or provider.default_model
-        if not _charge(prefs, prefs_path, provider):
+        if not _charge(prefs, prefs_path, provider, turn.units):
             capped = True
             continue
         # No `with`: executor shutdown would block on a hung worker and defeat
         # the timeout. The thread dies with the short-lived process.
         pool = ThreadPoolExecutor(max_workers=1)
         try:
-            future = pool.submit(provider.complete, key, model, turn.system,
-                                 turn.messages)
+            future = pool.submit(
+                metering.bound(provider.complete, step="answer"), key, model,
+                turn.system, turn.messages)
             text = (future.result(timeout=timeout_s) or "").strip()
         except Exception as exc:
             # timeout, bad key, rate limit — next candidate. The unit was taken
             # before the call that never answered, so it goes back.
             _provider_failed(exc, provider, model, key)
-            _refund(prefs, prefs_path, provider)
+            _refund(prefs, prefs_path, provider, turn.units)
             continue
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
         if text:
-            return _record(turn, text, provider, model, key, prefs=prefs,
-                           prefs_path=prefs_path, chat_path=chat_path,
-                           polish=polish, grace=learn_grace)
+            return turn, _record(turn, text, provider, model, key, prefs=prefs,
+                                 prefs_path=prefs_path, chat_path=chat_path,
+                                 polish=polish, grace=learn_grace)
 
-    return _exhausted(prefs, turn.attempts, capped, tuple(turn.learned))
+    return turn, _exhausted(prefs, turn.attempts, capped, tuple(turn.learned))
 
 
 def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
@@ -3068,13 +3307,16 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                   debating: bool = False,
                   draws: bool = False,
                   thread: str | None = None,
+                  depth: str = "",
+                  checkpoint: Checkpoint | None = None,
                   ) -> Iterator[tuple[str, object]]:
     """The same turn, handed over as the model writes it.
 
     Yields `("phase", key)` while the turn is being built — `gathering`,
     `searching`, `writing`, the panel's own `chat.work_*` lines — and
     `("tool", step)` for each piece of research as it starts and returns
-    (`live_step`), `("subagent", event)` for the bull/bear debate when
+    (`live_step`), `("plan", [{text, done}])` each time a deep gather sets
+    its plan, `("subagent", event)` for the bull/bear debate when
     `debating` (`chat/debate.py`) — and, when `draws`, a price chart among
     the turn's surfaces for a message that asks for one (`prepare`) —
     `("recalled", [...])` once the turn is built if earlier conversations
@@ -3090,8 +3332,46 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     answer mid-paragraph reads as corruption. What arrived is kept and stored,
     so the thread does not lose it.
 
-    `thread` is `prepare`'s: the conversation the answer is stored in.
+    `thread` and `depth` are `prepare`'s: the conversation the answer is
+    stored in, and how far its research goes.
     """
+    meter = metering.Meter()
+    built: dict = {}
+    turn_id = secrets.token_hex(6)
+    # Set however this stream ends — finished, failed, or closed by Stop or a
+    # reader's abort — so research still running for it stops starting
+    # things (`chat/stopping.py`).
+    halt = threading.Event()
+    try:
+        yield from metering.iterate(_answer_stream(
+            prefs=prefs, prefs_path=prefs_path, chat_path=chat_path,
+            watchlist=watchlist, db=db, message=message, lang=lang,
+            context=context, timeout_s=timeout_s, staged_import=staged_import,
+            view=view, focus=focus, fence=fence, session_keys=session_keys,
+            polish=polish, confirm_actions=confirm_actions, debating=debating,
+            draws=draws, thread=thread, depth=depth, built=built,
+            turn_id=turn_id, halt=halt, checkpoint=checkpoint,
+        ), meter=meter, fields={"turn": turn_id})
+    finally:
+        halt.set()
+        with obs.context(turn=turn_id):
+            _log_cost(meter, built.get("turn"))
+
+
+def _answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
+                   watchlist: Path, db: Path, message: str, lang: str,
+                   context: str, timeout_s: float, staged_import: str,
+                   view: str, focus: str, fence: str,
+                   session_keys: dict[str, str] | None,
+                   polish: Callable[[dict], None] | None,
+                   confirm_actions: bool, debating: bool, draws: bool,
+                   thread: str | None, depth: str, built: dict,
+                   turn_id: str, halt: threading.Event,
+                   checkpoint: Checkpoint | None = None,
+                   ) -> Iterator[tuple[str, object]]:
+    """`answer_stream`'s body; the turn it builds goes in `built`."""
+    # In the stream's own context, which the prepare worker below copies.
+    stopping.arm(halt)
     # `prepare` runs on a worker so its phases can be handed over *while* it
     # works: routing, the gather and the web search are most of the wait
     # before the first token, and a stream that says nothing for fifteen
@@ -3109,18 +3389,21 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
                 staged_import=staged_import,
                 on_phase=lambda phase: phases.put(("phase", phase)),
                 on_tool=lambda step: phases.put(("tool", step)),
+                on_plan=lambda plan: phases.put(("plan", plan)),
                 on_subagent=(
                     (lambda said: phases.put(("subagent", said))) if debating else None
                 ),
                 view=view, focus=focus, fence=fence, session_keys=session_keys,
                 confirm_actions=confirm_actions, draws=draws, thread=thread,
+                depth=depth, turn_id=turn_id, checkpoint=checkpoint,
             )
         except BaseException as exc:  # noqa: BLE001 — re-raised just below
             box["exc"] = exc
         finally:
             phases.put(None)
 
-    worker = threading.Thread(target=work, name="chat-prepare", daemon=True)
+    worker = threading.Thread(target=metering.bound(work), name="chat-prepare",
+                              daemon=True)
     worker.start()
     while (said := phases.get()) is not None:
         yield said
@@ -3128,6 +3411,7 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     if "exc" in box:
         raise box["exc"]
     turn, settled = box["out"]
+    built["turn"] = turn
     if turn is None:
         assert settled is not None
         yield ("done", settled)
@@ -3141,16 +3425,24 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
     from stocks.web.llm import Cut
 
     capped = False
+    # A run picked up after a restart that had already paid for its answer
+    # (`chat/checkpoint.py`) is not charged for it again.
+    prepaid = checkpoint.prepaid if checkpoint is not None else ""
     for provider, key, model in turn.attempts:
         model = model or provider.default_model
-        if not _charge(prefs, prefs_path, provider):
+        if prepaid and provider.id == prepaid:
+            prepaid = ""
+        elif not _charge(prefs, prefs_path, provider, turn.units):
             capped = True
             continue
+        elif checkpoint is not None and provider.id == "free":
+            checkpoint.charged(provider.id)
         parts: list[str] = []
         cut = False
         try:
-            for chunk in provider.stream(key, model, turn.system,
-                                         turn.messages):
+            for chunk in metering.iterate(
+                    provider.stream(key, model, turn.system, turn.messages),
+                    step="answer"):
                 if isinstance(chunk, Cut):
                     cut = True
                     continue
@@ -3168,7 +3460,9 @@ def answer_stream(*, prefs: dict, prefs_path: Path, chat_path: Path,
         except Exception as exc:
             _provider_failed(exc, provider, model, key)
             if not parts:
-                _refund(prefs, prefs_path, provider)
+                _refund(prefs, prefs_path, provider, turn.units)
+                if checkpoint is not None:
+                    checkpoint.charged("")
                 continue
             cut = True  # the stream died mid-answer: what arrived is a stub
         text = "".join(parts).strip()

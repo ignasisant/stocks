@@ -1,0 +1,47 @@
+{
+ "at": "2026-10-15T21:24:02+00:00",
+ "cases": {
+  "injected-page": {
+   "id": "injected-page",
+   "kind": "regression",
+   "passes": 1,
+   "runs": 2,
+   "seconds": 50.0,
+   "tokens": 8583,
+   "usd": 0.0
+  },
+  "knowledge-empty": {
+   "id": "knowledge-empty",
+   "kind": "regression",
+   "passes": 2,
+   "runs": 2,
+   "seconds": 39.0,
+   "tokens": 5078,
+   "usd": 0.0
+  },
+  "price-to-watch": {
+   "id": "price-to-watch",
+   "kind": "capability",
+   "passes": 0,
+   "runs": 2,
+   "seconds": 27.4,
+   "tokens": 9214,
+   "usd": 0.0
+  },
+  "quotes-down": {
+   "id": "quotes-down",
+   "kind": "regression",
+   "passes": 2,
+   "runs": 2,
+   "seconds": 39.6,
+   "tokens": 8501,
+   "usd": 0.0
+  }
+ },
+ "complete": true,
+ "model": "",
+ "prompt": "96437f4e",
+ "provider": "free",
+ "repeat": 2,
+ "sha": "b14d7d9"
+}

@@ -28,6 +28,9 @@ type_map = {
     "types.AnalysisReply": types.AnalysisReply,
     "stream_types.AnalysisReply": stream_types.AnalysisReply,
 
+    "types.AnswerJudged": types.AnswerJudged,
+    "stream_types.AnswerJudged": stream_types.AnswerJudged,
+
     "types.BriefSection": types.BriefSection,
     "stream_types.BriefSection": stream_types.BriefSection,
 
@@ -48,6 +51,9 @@ type_map = {
 
     "types.CryptoMap": types.CryptoMap,
     "stream_types.CryptoMap": stream_types.CryptoMap,
+
+    "types.GoalJudged": types.GoalJudged,
+    "stream_types.GoalJudged": stream_types.GoalJudged,
 
     "types.LessonOp": types.LessonOp,
     "stream_types.LessonOp": stream_types.LessonOp,
@@ -75,6 +81,12 @@ type_map = {
 
     "types.RoutinePlans": types.RoutinePlans,
     "stream_types.RoutinePlans": stream_types.RoutinePlans,
+
+    "types.ScopeVerdict": types.ScopeVerdict,
+    "stream_types.ScopeVerdict": stream_types.ScopeVerdict,
+
+    "types.ScoreJudged": types.ScoreJudged,
+    "stream_types.ScoreJudged": stream_types.ScoreJudged,
 
     "types.SectionNote": types.SectionNote,
     "stream_types.SectionNote": stream_types.SectionNote,

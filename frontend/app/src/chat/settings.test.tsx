@@ -49,6 +49,7 @@ const state = (over: Partial<ChatState>): ChatState => ({
   preferred: "free",
   free_left: 12,
   free_cap: 30,
+  deep_units: 2,
   cap_reason: null,
   skills: [],
   skills_mode: "auto",

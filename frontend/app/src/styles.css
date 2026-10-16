@@ -380,6 +380,7 @@ body {
 }
 
 .ag-skeleton {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -401,6 +402,87 @@ body {
   border-radius: var(--ag-radius-xs, 4px);
   background: var(--ag-surface-sunken);
   animation: ag-pulse 1.4s ease-in-out infinite;
+}
+
+/* Shaped skeletons (shell/Loading.tsx Skeleton `shape`): bars laid out like
+   what lands, so the eye is already where the figures will be. */
+.ag-skeleton-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 12px 16px;
+}
+
+.ag-skeleton-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ag-skeleton-row[data-w="label"] {
+  width: 55%;
+  height: 0.8rem;
+}
+
+.ag-skeleton-row[data-w="figure"] {
+  width: 80%;
+  height: 1.6rem;
+}
+
+.ag-skeleton-row[data-w="chart"] {
+  height: clamp(10rem, 28vh, 16rem);
+}
+
+/* A table row: name, then two figures to the right, as the rows will be. */
+.ag-skeleton-row[data-cells] {
+  display: grid;
+  grid-template-columns: minmax(6rem, 2fr) 1fr 1fr;
+  gap: 16px;
+  align-items: center;
+  height: 2.25rem;
+  padding: 0 4px;
+  background: none;
+  border-bottom: 1px solid var(--ag-border);
+  border-radius: 0;
+}
+
+.ag-skeleton-row[data-cells] > span {
+  height: 0.9rem;
+  border-radius: var(--ag-radius-xs, 4px);
+  background: var(--ag-surface-sunken);
+}
+
+.ag-skeleton-row[data-cells] > span:not(:first-child) {
+  justify-self: end;
+  width: 70%;
+}
+
+/* What the bars are waiting for, after a few seconds of them: on the first
+   bar, where the eye already is. Fades in rather than popping. */
+.ag-skeleton-cap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  max-width: 100%;
+  min-height: 1.6rem;
+  padding: 0 8px;
+  color: var(--ag-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: ag-skel-in var(--ag-dur-move) var(--ag-ease-out) backwards;
+}
+
+.ag-skeleton-secs {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.ag-skeleton-secs::before {
+  content: "· ";
 }
 
 /* A single figure still on its way (shell/Layout.tsx Pending): the width of
@@ -436,6 +518,49 @@ body {
   box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
   font-size: 13px;
   color: var(--ag-text-secondary);
+  /* In from below and out the same way (shell/Loading.tsx, usePresence). */
+  animation: ag-activity-in var(--ag-dur-move) var(--ag-ease-out);
+  transition:
+    opacity var(--ag-dur-move) var(--ag-ease-out),
+    transform var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.ag-activity[data-leaving] {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+@keyframes ag-activity-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.ag-activity-glyph {
+  display: inline-block;
+  width: 1em;
+  margin-right: 6px;
+  color: var(--ag-brand-accent);
+  animation: ag-work-pulse 1.2s ease-in-out infinite;
+}
+
+.ag-activity[data-done] .ag-activity-glyph {
+  color: var(--ag-up, var(--ag-text-primary));
+  animation: none;
+}
+
+.ag-activity-step {
+  margin: -4px 0 8px;
+  color: var(--ag-text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ag-activity-hint {
+  margin: 8px 0 0;
+  color: var(--ag-text-muted);
+  font-size: 12px;
 }
 
 .ag-activity-head {
@@ -462,16 +587,54 @@ body {
 }
 
 .ag-activity-bar {
+  position: relative;
   height: 4px;
   border-radius: 2px;
   background: var(--ag-surface-sunken);
   overflow: hidden;
 }
 
+/* A light passing along the track, all the time the banner is working: even
+   a bar whose length has not changed in ten seconds is visibly alive. */
+.ag-activity-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.18), transparent);
+  transform: translateX(-100%);
+  animation: ag-sweep 1.6s ease-in-out infinite;
+}
+
+.ag-activity[data-done] .ag-activity-bar::after {
+  content: none;
+}
+
 .ag-activity-bar > div {
   height: 100%;
   background: var(--ag-text-muted);
-  transition: width var(--ag-dur-move) var(--ag-ease-out);
+  transition: width 600ms var(--ag-ease-out);
+}
+
+/* A time estimate, not a count: a little dimmer than a measured length. */
+.ag-activity-bar[data-guess] > div {
+  opacity: 0.7;
+}
+
+.ag-activity[data-done] .ag-activity-bar > div {
+  background: var(--ag-up, var(--ag-text-muted));
+}
+
+/* Nothing to measure: a segment travelling the track instead of a length. */
+.ag-activity-bar[data-sweep]::after {
+  background: var(--ag-text-muted);
+  width: 35%;
+  animation-duration: 1.4s;
+}
+
+@keyframes ag-sweep {
+  to {
+    transform: translateX(300%);
+  }
 }
 
 @keyframes ag-pulse {
@@ -480,16 +643,52 @@ body {
   }
 }
 
-/* A placeholder that holds still is still a placeholder; the bar jumps to its
-   share instead of sliding there. */
+/* Reduced motion keeps the signs of life and drops the travel: nothing slides
+   or sweeps, placeholders and the bar's track breathe in opacity instead —
+   slower than the normal pulse, and far from the 0.2 Hz range that reads as
+   a flicker. The bar jumps to its share; the banner fades in and out. */
 @media (prefers-reduced-motion: reduce) {
   .ag-skeleton-row,
-  .ag-pending {
+  .ag-pending,
+  .ag-skeleton-row[data-cells] > span {
+    animation: ag-pulse-soft 2.4s ease-in-out infinite;
+  }
+
+  .ag-skeleton-row[data-cells] {
     animation: none;
   }
 
   .ag-activity-bar > div {
     transition: none;
+  }
+
+  .ag-activity,
+  .ag-activity[data-leaving] {
+    transform: none;
+    transition: none;
+  }
+
+  @keyframes ag-activity-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  .ag-activity-bar::after {
+    transform: none;
+    animation: ag-pulse-soft 2.4s ease-in-out infinite;
+    opacity: 0.6;
+  }
+
+  .ag-activity-bar[data-sweep]::after {
+    width: 100%;
+    opacity: 0.35;
+  }
+}
+
+@keyframes ag-pulse-soft {
+  50% {
+    opacity: 0.6;
   }
 }
 

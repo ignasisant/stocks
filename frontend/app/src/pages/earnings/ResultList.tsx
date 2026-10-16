@@ -1,6 +1,7 @@
 /**
- * The flat view: what is coming, week by week (`Agenda`), then the dividends
- * that already went ex and what already printed.
+ * The flat view: what is coming, week by week (`Agenda`), then the reader's
+ * own trades and payouts — facts off the statements, so ahead of the ex-date
+ * estimates — the dividends that already went ex, and what already printed.
  *
  * The phone default, and the reason the grid is not the only view — seven
  * columns at 390px squeeze a day cell to about 55px and the chips ellipsize to
@@ -10,11 +11,15 @@
 import { useState } from "react";
 import { useT } from "../../shell/i18n";
 import Agenda from "./Agenda";
+import { BookList } from "./Book";
 import type {
   CalendarDividend,
   CalendarEvent,
+  CalendarPayment,
   CalendarResult,
+  CalendarTrade,
   CentralBankDecision,
+  MarketHoliday,
   RepurchaseWindow,
   TaxDeadline,
 } from "./data";
@@ -121,6 +126,9 @@ export default function ResultList({
   windows,
   banks,
   dividends,
+  trades,
+  payments,
+  holidays,
 }: {
   events: CalendarEvent[];
   results: CalendarResult[];
@@ -128,6 +136,9 @@ export default function ResultList({
   windows: RepurchaseWindow[];
   banks: CentralBankDecision[];
   dividends: CalendarDividend[];
+  trades: CalendarTrade[];
+  payments: CalendarPayment[];
+  holidays: MarketHoliday[];
 }) {
   return (
     <>
@@ -137,7 +148,9 @@ export default function ResultList({
         windows={windows}
         banks={banks}
         dividends={dividends}
+        holidays={holidays}
       />
+      <BookList trades={trades} payments={payments} />
       <DividendTable dividends={dividends.filter((d) => d.days_until < 0)} />
       {results.length > 0 && <Past all={results} />}
     </>

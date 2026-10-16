@@ -857,6 +857,123 @@
   color: var(--ag-text-secondary);
 }
 
+/* ------------------------------------------------------ the book's own days */
+
+/* A trade is hollow and neutral: something the reader did, not something
+   coming, so a reporting week with a sell in it still reads as prints. */
+.earn-chip.trade {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ag-border);
+  color: var(--ag-text-secondary);
+}
+
+@media (hover: hover) {
+  .earn-chip.trade:hover {
+    background: var(--ag-surface-sunken);
+  }
+}
+
+/* A booked payout: the ex-date's blue, filled deeper — the cash it promised. */
+.earn-chip.pay {
+  background: color-mix(in srgb, var(--ag-info) 32%, transparent);
+  color: var(--ag-info);
+}
+
+@media (hover: hover) {
+  .earn-chip.pay:hover {
+    background: color-mix(in srgb, var(--ag-info) 42%, transparent);
+  }
+}
+
+.earn-swatch.trades {
+  box-shadow: inset 0 0 0 1px var(--ag-text-muted);
+}
+
+.earn-swatch.markets {
+  background: var(--ag-surface-sunken);
+  box-shadow: inset 0 0 0 1px var(--ag-border);
+}
+
+/* The day number and, beside it, the market-holiday mark. */
+.earn-dayhead {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-bottom: 3px;
+}
+
+.earn-dayhead .earn-daynum {
+  flex: none;
+  margin-bottom: 0;
+}
+
+/* A quiet note, not a chip: it belongs to no name and must not take the room
+   a print needs on the same day. A half session is the same mark, dashed. */
+.earn-holiday {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 5px;
+  border: none;
+  border-radius: var(--ag-radius-xs);
+  background: var(--ag-surface-sunken);
+  color: var(--ag-text-muted);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.earn-holiday.early {
+  background: transparent;
+  outline: 1px dashed var(--ag-border);
+  outline-offset: -1px;
+}
+
+@media (hover: hover) {
+  .earn-holiday:hover {
+    color: var(--ag-text-secondary);
+  }
+}
+
+.earn-holiday:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 1px;
+}
+
+.earn-holiday.earn-holiday-key {
+  display: inline-block;
+  padding: 1px 8px;
+  cursor: default;
+  pointer-events: none;
+}
+
+@media (pointer: coarse) {
+  .earn-holiday {
+    position: relative;
+    min-height: 36px;
+  }
+
+  .earn-holiday::before {
+    content: "";
+    position: absolute;
+    inset: -4px 0;
+  }
+
+  .earn-holiday.earn-holiday-key {
+    min-height: 0;
+  }
+}
+
+/* In a narrow cell the mark gives way to the day number, never the reverse. */
+@container earn-day (max-width: 5.5rem) {
+  .earn-holiday {
+    padding-inline: 3px;
+  }
+}
+
 /* ------------------------------------------------------- the event dialog */
 
 /* A date and a figure, not a breakdown: narrow enough to read as a note over
@@ -1022,4 +1139,25 @@
   .earn-show-more {
     min-height: 44px;
   }
+}
+
+/* A holiday's venues: one line each, the exchange and whether it shuts. */
+.earn-ev-venues {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.earn-ev-venues li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.earn-ev-venue {
+  color: var(--ag-text-primary);
+  font-weight: 600;
 }

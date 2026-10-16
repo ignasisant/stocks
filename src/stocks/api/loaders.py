@@ -29,7 +29,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from stocks import identity, obs
+from stocks import identity, obs, progress
 from stocks.analysis import naive_dates
 from stocks.analysis.history import PERIODS, bars_download, shape
 from stocks.analysis.portfolio import (
@@ -175,10 +175,16 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
     # Yahoo throttling the egress IP is reported by `retry` as
     # `yahoo.rate_limit_exhausted`, and callers price the book without these
     # frames (`_self_priced_positions`): weather, not a crash to page on.
-    with obs.timed(
-        "prices.held_download", expected=(YFRateLimitError,), tickers=len(tickers)
-    ) as rec:
-        asked = [t for t in tickers if t not in settled]
+    asked = [t for t in tickers if t not in settled]
+    # What the corner banner reads while this runs (`GET /progress`): the step,
+    # the names it has done, and how long the same step took last time.
+    first = "prices.full" if not base else "prices.rebase" if rebase else "prices.tail"
+    with (
+        progress.job(db, first, total=len(tickers if not base else asked)),
+        obs.timed(
+            "prices.held_download", expected=(YFRateLimitError,), tickers=len(tickers)
+        ) as rec,
+    ):
         if not base:
             frames, stale = {}, tickers
         elif rebase:
@@ -189,6 +195,7 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
                 # it may well answer what that refused. The rebase waits.
                 obs.warn("prices.rebase_refused", tickers=len(asked))
                 rebase = False
+                progress.step("prices.tail", total=len(asked))
                 frames, stale = _extend(base, asked, currencies)
         else:
             frames, stale = _extend(base, asked, currencies)
@@ -196,9 +203,11 @@ def _held_frames(db: str, mtime: float) -> dict[str, pd.DataFrame]:
         rec["settled"] = len(settled)
         rec["rebase"] = rebase or not base
         if stale:
+            progress.step("prices.full", total=len(stale))
             frames.update(
                 fetch_many(stale, period=period, auto_adjust=False, currencies=currencies)
             )
+            progress.tick(len(stale))
         rec["full"] = len(stale)
     # Judged here, at the download, and only here: a gutted download memoised
     # as the book's frames would land on disk and in the bucket besides. The
@@ -354,11 +363,25 @@ _bases_lock = threading.Lock()
 # As many live as `_held_frames` keeps — they share its frames — and on disk
 # as many books as the readings of them (`held_closes`).
 _BASES_LIVE = 4
-_BASES_ON_DISK = 4
+# Frames compress 2.5x against the closes' 5x, so fewer of them on disk keep
+# the bytes where four raw ones were (`_HELD_ON_DISK`).
+_BASES_ON_DISK = 10
 
 
 def _base_path(db: str) -> Path:
     return disk_path("held_base", (db,))
+
+
+def _stored_base(db: str) -> tuple | None:
+    """The book's last kept frames as `_keep_base` wrote them, memory first."""
+    with _bases_lock:
+        held = _bases.get(db)
+    if held is None:
+        with obs.swallow("prices.base_restore"):
+            entry = read_entry(_base_path(db), 0.0, _BASES_ON_DISK)
+            if entry is not None:
+                held = entry[1]
+    return held
 
 
 def _frames_base(
@@ -367,13 +390,7 @@ def _frames_base(
     """(the book's previous frames, when they were rebased), when they reach
     back to `since` (ISO). A base written before rebases were stamped reads
     as never rebased."""
-    with _bases_lock:
-        held = _bases.get(db)
-    if held is None:
-        with obs.swallow("prices.base_restore"):
-            entry = read_entry(_base_path(db), 0.0, _BASES_ON_DISK)
-            if entry is not None:
-                held = entry[1]
+    held = _stored_base(db)
     if held is None:
         return None
     reaches: str = held[0]
@@ -423,6 +440,11 @@ def _close_series(frames: dict[str, pd.DataFrame], column: str) -> dict[str, pd.
 # a fraction of the frames' size, one Series per name.
 _HELD_STALE = 2 * 86400.0
 _HELD_QUIET = 3 * _PRICES_TTL
+# Four books live, sixteen on disk: past four readers in a morning a book
+# evicted from memory comes back off disk in milliseconds, not off the bucket
+# or a fresh download. Compressed (`cache._ZLEVEL`), sixteen weigh about what
+# four did raw — memory, on Cloud Run.
+_HELD_ON_DISK = 16
 
 
 @ttl_cache(
@@ -431,7 +453,7 @@ _HELD_QUIET = 3 * _PRICES_TTL
     stale_s=_HELD_STALE,
     quiet_s=_HELD_QUIET,
     persist="held_closes",
-    disk_max=4,
+    disk_max=_HELD_ON_DISK,
 )
 def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     """Adjusted close per name the book has ever held, from `_held_frames`,
@@ -454,7 +476,7 @@ def held_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     stale_s=_HELD_STALE,
     quiet_s=_HELD_QUIET,
     persist="held_printed_closes",
-    disk_max=4,
+    disk_max=_HELD_ON_DISK,
 )
 def held_printed_closes(db: str, mtime: float) -> dict[str, pd.Series]:
     """Close as printed per held name, from the same download as `held_closes`.
@@ -658,7 +680,46 @@ def _priced_positions(db: str, mtime: float, base: str, closes) -> pd.DataFrame:
 
 @ttl_cache(_PRICES_TTL, max_entries=16)
 def _self_priced_positions(db: str, mtime: float, base: str) -> pd.DataFrame:
-    return positions_frame(ledger_state(db, mtime, base)[1], base=base)
+    """The table while Yahoo refuses the book's download.
+
+    The live pass alone priced 7 of 47 names one throttled morning, and the
+    Home row then set a 28k "Valor hoy" beside the 111k that went in. Whatever
+    it misses reads the book's last kept frames instead (`_stored_base`) — a
+    close a day old at most, flagged `stale` so the page can say so — and
+    only a name those never held stays NaN.
+    """
+    from yfinance.exceptions import YFRateLimitError
+
+    from stocks.analysis import portfolio as analysis
+
+    positions = ledger_state(db, mtime, base)[1]
+    try:
+        values = analysis.market_values(positions, base=base)
+    except YFRateLimitError:
+        values = {}
+    missing = [p for p in positions if p.ticker not in values]
+    kept = _kept_values(db, missing, base) if missing else {}
+    if not values and not kept:
+        # Nothing at all: the caller's own degrade path, as before.
+        raise YFRateLimitError()
+    table = positions_frame(positions, base=base, values={**kept, **values})
+    if not table.empty:
+        table["stale"] = table.index.isin(list(kept))
+    return table
+
+
+def _kept_values(db: str, positions: list, base: str) -> dict[str, float]:
+    """`base` value per position at its last close in the kept frames."""
+    held = _stored_base(db)
+    if held is None:
+        return {}
+    txs, _tickers = _held(db)
+    closes = plausible_closes(_close_series(held[1], "Adj Close"), txs)
+    with obs.swallow("prices.kept_values"):
+        vals = position_values_history(positions, base=base, closes=closes)
+        if not vals.empty:
+            return {t: float(v) for t, v in vals.iloc[-1].items() if pd.notna(v)}
+    return {}
 
 
 def positions_table(db: str, mtime: float, base: str = "EUR") -> pd.DataFrame:
@@ -834,6 +895,38 @@ def price_bars(ticker: str, label: str) -> pd.DataFrame:
 
 
 price_bars.cache_clear = _bars_download.cache_clear  # ty: ignore[unresolved-attribute]
+
+
+def bar_closes(ticker: str, label: str) -> pd.Series:
+    """Adjusted daily closes behind `label`, untrimmed — its whole download.
+
+    The comparison card reads other listings at the subject's first day, which
+    can sit a session before their own trimmed window opens. Same memo as
+    `price_bars`, so a name the reader also charts costs nothing more.
+    """
+    period, interval = PERIODS[label]
+    df = _bars_download(ticker, period, interval)
+    if df.empty or "Close" not in df:
+        return pd.Series(dtype=float)
+    return df["Close"]
+
+
+# The review's return columns: a book of 150 names would evict every chart
+# the ticker pages keep warm in `_bars_download`'s 64 entries, and needs five
+# closes of each, not five years. So the download is its own and only the
+# closes on the days a window opens or ends are kept.
+@ttl_cache(_PRICES_TTL, max_entries=512)
+def window_closes(ticker: str, days: str) -> pd.Series:
+    """Adjusted close in the listing's own money on each of `days` (ISO,
+    comma-separated — `analysis.compare.window_axis`): the last close on or
+    before each, NaN before the listing's history."""
+    from stocks.analysis.compare import on_axis
+    from stocks.data.fetch import fetch_history
+
+    df = fetch_history(ticker, period="5y", interval="1d")
+    if df.empty or "Close" not in df:
+        return pd.Series(dtype=float)
+    return on_axis(df["Close"], pd.DatetimeIndex(days.split(",")))
 
 
 @ttl_cache(_EVENTS_TTL, max_entries=64, persist="earnings")

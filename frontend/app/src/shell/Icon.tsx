@@ -29,6 +29,7 @@ const PATHS: Record<string, string> = {
   account_circle:
     "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4a3 3 0 1 1 0 6 3 3 0 0 1 0-6zm0 14a7.9 7.9 0 0 1-5.6-2.3c.6-1.9 3-3 5.6-3s5 1.1 5.6 3A7.9 7.9 0 0 1 12 20z",
   query_stats: "M4 20V10h3v10H4zm6.5 0V4h3v16h-3zM17 20v-7h3v7h-3z",
+  show_chart: "M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z",
   filter_list: "M10 18v-2h4v2h-4zm-4-5v-2h12v2H6zM3 8V6h18v2H3z",
   swap_vert: "M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3 5 6.99h3V14h2V6.99h3L9 3z",
   menu: "M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z",

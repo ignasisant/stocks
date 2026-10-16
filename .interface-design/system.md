@@ -102,7 +102,14 @@ no Tailwind.
   track, `aria-pressed` buttons in a labelled `role="group"`, one
   `.ag-seg-thumb` (`--ag-surface-hover` + card shadow) that slides to the
   pressed option. `className` places the track, never restyles it. Inside a
-  side panel, label stacks over control and options wrap.
+  side panel, label stacks over control and options wrap. Any one-of-a-few
+  choice is this, popovers included (chat's research/lens mode); pills or
+  chips only where several can be on at once.
+- **Progress checklist** (chat's deep-research plan, `.ag-chat-plan`): an
+  `<ol>` whose `aria-label` counts "n of m done"; each row a 14px ring that
+  fills `--ag-brand-cta` with a check when done, the text turning secondary,
+  never struck through, plus "done" in `.ag-sr`. Above the live lookups, gone
+  once the answer lands.
 - **Help:** the "?" pill (`Help` in `src/ui/Kpi.tsx`, text in `aria-label`),
   never a dotted underline. Hover opens after 400ms, then the next "?" opens at
   once for 300ms (warm group); the bubble is `aria-hidden` (the label already

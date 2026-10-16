@@ -27,6 +27,7 @@ from stocks.analysis.listing import price_units, quote_unit
 from stocks.config import Holding, load_watchlist
 from stocks.data.crypto import is_crypto
 from stocks.data.fx import ToBase, converter
+from stocks.frames import midnights
 from stocks.portfolio import consistency, transfers
 
 if TYPE_CHECKING:
@@ -1663,6 +1664,116 @@ def basket_change(values: pd.DataFrame, days: int) -> tuple[float, float] | None
     if not v0:
         return None
     return v1 - v0, v1 / v0 - 1
+
+
+def _window(idx: pd.DatetimeIndex, days: int):
+    """(start, end) of a ~`days` calendar-day window on `idx`, anchored as
+    `basket_change` anchors it; None when `idx` does not reach that far."""
+    if len(idx) < 2:
+        return None
+    end = idx[-1]
+    if days <= 1:
+        return idx[-2], end
+    prior = idx[idx <= end - pd.Timedelta(days=days)]
+    return None if prior.empty else (prior[-1], end)
+
+
+def _naive_index(series: pd.Series) -> pd.Series:
+    idx = pd.DatetimeIndex(series.index)
+    if idx.tz is not None:
+        idx = idx.tz_localize(None)
+    out = series.set_axis(midnights(idx))
+    return out[~out.index.duplicated(keep="last")].sort_index()
+
+
+def _at_stake(value: pd.Series, flows: pd.Series, start, end) -> float:
+    """The money a window put to work: the book's value where it opens plus
+    every euro put in across it. Withdrawals do not shrink it — money taken
+    out was at work until it left."""
+    put = flows[(flows.index > start) & (flows.index <= end)]
+    return float(value.loc[start] + put[put > 0].sum())
+
+
+def money_change(hist: pd.DataFrame | None, days: int) -> tuple[float, float] | None:
+    """(gain, pct) of the book over ~`days` calendar days, on its own money.
+
+    The gain is the value's move less the money put in or taken out over the
+    window; the pct is that gain over the money at stake (`_at_stake`). How
+    much was in the book, and when, is the whole point: a good month on
+    5,000 € is not a good month on 100,000 €. `index_change` reads an index on
+    exactly this money, so the two are comparable. Anchored as
+    `basket_change`; None when `hist` does not cover the window.
+    """
+    if hist is None or len(hist) < 2:
+        return None
+    value = _naive_index(hist["value"])
+    injected = _naive_index(hist["injected"])
+    window = _window(pd.DatetimeIndex(value.index), days)
+    if window is None:
+        return None
+    start, end = window
+    if not value.loc[start] > 0:
+        return None
+    flows = injected.diff().fillna(0.0)
+    put_in = injected.loc[end] - injected.loc[start]
+    gain = float(value.loc[end] - value.loc[start] - put_in)
+    stake = _at_stake(value, flows, start, end)
+    return gain, gain / stake if stake else 0.0
+
+
+def same_money(
+    hist: pd.DataFrame | None, closes: pd.Series | None, start=None
+) -> pd.Series | None:
+    """What the book's own money would be worth in an index, day by day.
+
+    From `start` (the book's first day by default) the index is bought with
+    the book's value that day, then with every euro put in and sold for every
+    euro taken out, on the same days, at that day's close — the book's cash
+    flows replayed into the index. The fair comparison: an index that had all
+    of today's money from the first day credits the book's timing to the
+    market, and a time-weighted return ignores how much money was in at each
+    moment. `closes` in the book's currency. None when the index does not
+    cover the window.
+    """
+    if hist is None or hist.empty or closes is None or closes.dropna().empty:
+        return None
+    value = _naive_index(hist["value"])
+    injected = _naive_index(hist["injected"])
+    days = value.index
+    if start is not None:
+        days = days[days >= pd.Timestamp(start)]
+    if len(days) < 2:
+        return None
+    price = _naive_index(closes.dropna()).reindex(days, method="ffill")
+    if price.isna().any() or not (price > 0).all():
+        return None
+    flows = injected.reindex(days).diff()
+    flows.iloc[0] = value.loc[days[0]]
+    units = (flows / price).cumsum()
+    return units * price
+
+
+def index_change(
+    hist: pd.DataFrame | None, closes: pd.Series | None, days: int
+) -> tuple[float, float] | None:
+    """(gain, pct) the book's own money would have made in an index over ~`days`
+    calendar days (`same_money`), over the same money at stake as
+    `money_change` — the index's figure to set beside the book's."""
+    if hist is None or len(hist) < 2:
+        return None
+    value = _naive_index(hist["value"])
+    injected = _naive_index(hist["injected"])
+    window = _window(pd.DatetimeIndex(value.index), days)
+    if window is None or not value.loc[window[0]] > 0:
+        return None
+    start, end = window
+    shadow = same_money(hist, closes, start)
+    if shadow is None:
+        return None
+    put = injected.loc[end] - injected.loc[start]
+    gain = float(shadow.iloc[-1] - shadow.iloc[0] - put)
+    stake = _at_stake(value, injected.diff().fillna(0.0), start, end)
+    return gain, gain / stake if stake else 0.0
 
 
 def ticker_changes(values: pd.DataFrame, days: int) -> pd.Series:

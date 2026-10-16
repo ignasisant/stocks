@@ -119,3 +119,23 @@ export type ReviewNote = {
   /** ISO day a repurchase stops undoing the loss. */
   day: string | null;
 };
+
+/** One name's total return per window, in the page's currency, a fraction. */
+export type NameReturns = {
+  ticker: string;
+  returns: Partial<Record<"1m" | "6m" | "1y" | "2y", number | null>>;
+  /** The ETF its sector is measured by; null for a fund or a coin. */
+  sector_etf: string | null;
+};
+
+/** What `/api/v1/review/returns` answers with (`ReviewReturns`). */
+export type ReviewReturns = {
+  base: string;
+  as_of: string;
+  names: NameReturns[];
+  /** SPY first, then each sector ETF a name points at. */
+  benchmarks: NameReturns[];
+  missing: string[];
+  /** Names still downloading on the server; asking again finds them. */
+  pending: number;
+};

@@ -45,6 +45,7 @@ import pickle
 import queue
 import threading
 import time
+import zlib
 from collections.abc import Callable
 from contextvars import ContextVar
 from functools import wraps
@@ -72,6 +73,11 @@ MEMO_DIR = DATA_DIR / "memo"
 # whose entries are big (a whole book's frames, a ticker's bars) declares a
 # tighter `disk_max` of its own.
 DISK_MAX_FILES = 256
+# Every file is zlib'd at the fastest level: a book's closes shrink 5x, its
+# frames 2.5x, for a few milliseconds a write and two a read — memory on Cloud
+# Run, so the held_* memos keep more books for what four cost raw.
+# A file from before (a bare pickle) still reads.
+_ZLEVEL = 1
 KEEP_DEFAULT_S = 3 * 86400.0
 
 # The marker. The API middleware sets a fresh holder per request; a memo that
@@ -335,7 +341,8 @@ def write_entry(path: Path, entry: Entry, disk_max: int = DISK_MAX_FILES) -> Non
         "value": entry[1],
         "since": entry[3] if len(entry) > 3 else None,
     }
-    atomic.write_bytes(path, pickle.dumps(blob, protocol=pickle.HIGHEST_PROTOCOL))
+    raw = pickle.dumps(blob, protocol=pickle.HIGHEST_PROTOCOL)
+    atomic.write_bytes(path, zlib.compress(raw, _ZLEVEL))
     _trim(path.parent, disk_max)
     _enqueue_mirror(path)
 
@@ -402,8 +409,16 @@ def _mirror(path: Path) -> None:
 
 def _trim(directory: Path, disk_max: int = DISK_MAX_FILES) -> None:
     """Keep a memo's directory to `disk_max` files, oldest written first out."""
-    files = sorted(directory.glob("*.pkl"), key=lambda p: p.stat().st_mtime)
-    for old in files[: max(0, len(files) - disk_max)]:
+    # Two writers trim the same directory at once; a file the other one has
+    # already removed is skipped rather than raised out of the write.
+    stamped = []
+    for file in directory.glob("*.pkl"):
+        try:
+            stamped.append((file.stat().st_mtime, file))
+        except FileNotFoundError:
+            continue
+    stamped.sort(key=lambda item: item[0])
+    for _, old in stamped[: max(0, len(stamped) - disk_max)]:
         old.unlink(missing_ok=True)
 
 
@@ -430,7 +445,9 @@ def read_entry(
     if not path.exists():
         return None
     try:
-        blob = pickle.loads(path.read_bytes())
+        raw = path.read_bytes()
+        # A pickle opens 0x80; zlib at any level opens 0x78.
+        blob = pickle.loads(zlib.decompress(raw) if raw[:1] == b"\x78" else raw)
         wall = float(blob["wall"])
         value = blob["value"]
         since = blob.get("since")

@@ -22,6 +22,7 @@ a question typed by a user does not belong in a URL that lands in logs.
 from __future__ import annotations
 
 import json
+import time
 import uuid
 from collections.abc import Generator, Iterator
 from typing import Literal
@@ -73,6 +74,8 @@ from stocks.chat import (
     tools,
     whatif,
 )
+from stocks.chat import checkpoint as checkpoints
+from stocks.chat.checkpoint import Checkpoint
 from stocks.config import PROJECT_ROOT
 from stocks.portfolio import autodetect
 from stocks.web import chat_skills, llm, stt
@@ -402,6 +405,8 @@ class State(BaseModel):
     preferred: str | None
     free_left: int | None
     free_cap: int | None
+    # What an "in depth" question takes from that allowance (`DEEP_UNITS`).
+    deep_units: int
     cap_reason: str | None  # locale key, set only when there is a wall
     skills: list[SkillInfo]
     skills_mode: str
@@ -557,6 +562,10 @@ class Forwarded(BaseModel):
     # these" is then answered with "press the button below", not with "attach
     # the file" — the drawer knows the card is up, the engine cannot.
     staged_import: str = Field(default="", max_length=255)
+    # How far the research goes (`agent.profile_for`): "deep" is the panel's
+    # "in depth" switch, "" lets the question decide. Never "fast" from the
+    # panel — a reader cannot ask for less than the question needs.
+    depth: Literal["", "deep"] = ""
 
 
 class Run(RunAgentInput):
@@ -838,6 +847,7 @@ def _state(paths: UserPaths, held: dict[str, str] | None = None) -> State:
         preferred=prefs.get("llm_provider") or llm.default_provider_id(),
         free_left=left,
         free_cap=engine.free_daily_cap(prefs) if eligible else None,
+        deep_units=engine.DEEP_UNITS,
         # Only when there is actually a wall: a reader with allowance left does
         # not need to be told which one they have not hit.
         cap_reason=(
@@ -891,14 +901,17 @@ def conversations(paths: Account) -> Conversations:
     response_model=Thread,
     summary="One thread, with its turns",
 )
-def thread(cid: str, paths: Account) -> Thread:
+def thread(cid: str, paths: Account, request: Request) -> Thread:
+    """The thread, and the run still answering on it. One a restart cut short
+    is started again here (`_resumed`), so it is still answering."""
     from stocks.web import auth
 
     lang = str(_prefs(paths).get("language") or "en")
     book = auth.load_book(paths.chat)
     for conv in book["conversations"]:
         if conv["id"] == cid:
-            run = runs.on_thread(str(paths.chat), cid)
+            run = runs.on_thread(str(paths.chat), cid) or _resumed(
+                paths, request, thread=cid)
             return Thread(
                 id=conv["id"],
                 title=conv["title"],
@@ -1192,7 +1205,8 @@ def _events(
     *, thread: str, run: str, prefs: dict, paths: UserPaths, message: str,
     lang: str, staged_import: str = "", view: str = "", focus: str = "",
     guided: bool = False, linked: bool = False,
-    held: dict[str, str] | None = None,
+    held: dict[str, str] | None = None, depth: str = "",
+    checkpoint: Checkpoint | None = None,
 ) -> Generator[str]:
     """The turn, as AG-UI events. Never raises: a stream that dies mid-answer
     cannot be turned back into a status code, so every failure becomes a
@@ -1215,6 +1229,9 @@ def _events(
     over the same way with `{page, tab?, ticker?}`. An app action the engine
     would have run comes back as a `confirm_action` call instead, and the run
     finishes *interrupted* on it — AG-UI's human-in-the-loop pause.
+
+    `checkpoint` keeps the run's progress on disk while it runs
+    (`chat/checkpoint.py`) and goes when the stream does, however it ends.
     """
     # Flushes headers (and any proxy buffer) before the model is even asked, so
     # the client's reader resolves immediately instead of at the first token.
@@ -1361,6 +1378,8 @@ def _events(
             # Pinned: the reader may switch threads while this one is being
             # answered, and the answer still belongs where it was asked.
             thread=thread,
+            depth=depth,
+            checkpoint=checkpoint,
         ):
             if kind == "phase":
                 yield from close_step()
@@ -1378,6 +1397,10 @@ def _events(
                 assert isinstance(payload, dict)
                 yield from close_step()
                 yield _frame(CustomEvent(name="chat.meta", value=payload))
+            elif kind == "plan":
+                # The deep research's own plan, replaced whole each time the
+                # model updates it; the drawer ticks it off while it waits.
+                yield _frame(CustomEvent(name="chat.plan", value=payload))
             elif kind == "recalled":
                 # The "based on N conversations" line, drawn while the answer
                 # is still being written; `RUN_FINISHED.result` repeats it.
@@ -1441,6 +1464,11 @@ def _events(
                 ))
     except Exception:  # pragma: no cover - the engine already swallows its own
         yield _frame(RunErrorEvent(message="chat.api_error", code="chat.api_error"))
+    finally:
+        # Not on a process that dies mid-run, which is the point: the file
+        # stays for the next one (`_resumed`).
+        if checkpoint is not None:
+            checkpoint.close()
 
 
 def _call_args(offer: dict) -> dict:
@@ -1661,35 +1689,18 @@ def ask(
     if props.regenerate:
         message = _rewind(paths)
     held = session_keys(x_chat_provider, x_chat_key)
+    asked_how = {
+        "lang": lang, "staged_import": props.staged_import.strip(), "view": view,
+        "focus": focus, "guided": guided,
+        "linked": not guided and body.declares(navigate.TOOL_NAME),
+        "depth": props.depth,
+    }
     try:
-        run = runs.start(
-            owner=str(paths.chat),
-            rid=body.run_id,
-            thread=thread,
-            question=message,
-            events=lambda _run: _events(
-                thread=thread,
-                run=body.run_id,
-                prefs=prefs,
-                paths=paths,
-                message=message,
-                lang=lang,
-                staged_import=props.staged_import.strip(),
-                view=view,
-                focus=focus,
-                guided=guided,
-                linked=not guided and body.declares(navigate.TOOL_NAME),
-                held=held,
-            ),
-            stopped=_frame(RunErrorEvent(message=STOPPED, code=STOPPED)),
-            failed=lambda frame: '"type":"RUN_ERROR"' in frame,
-        )
+        run = _launch(paths, request, rid=body.run_id, thread=thread,
+                      question=message, prefs=prefs, how=asked_how, held=held)
     except runs.Busy as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail="this thread is still being answered") from exc
-    if runs.on_cloud_run():
-        url = str(request.url_for("hold", rid=run.id))
-        runs.hold(run, cpu_hold.pinned(url))
     return StreamingResponse(
         runs.tail(run),
         media_type="text/event-stream",
@@ -1697,8 +1708,85 @@ def ask(
     )
 
 
-def _run(rid: str, paths: UserPaths) -> runs.Run:
-    found = runs.find(str(paths.chat), rid)
+def _launch(paths: UserPaths, request: Request, *, rid: str, thread: str,
+            question: str, prefs: dict, how: dict,
+            held: dict[str, str] | None = None,
+            resumed: dict | None = None) -> runs.Run:
+    """Start run `rid` answering `question` on `thread`, asked `how`
+    (`checkpoint.PROPS`), and on Cloud Run hold the CPU for it.
+
+    The run keeps a checkpoint (`chat/checkpoint.py`) — `resumed`, the one a
+    process before this one left, or a new one — unless it is on a key held
+    for the session only, which may never be written down."""
+    point = None
+    if resumed is not None:
+        point = Checkpoint.resume(paths.chat, resumed)
+    elif not held:
+        point = Checkpoint.open(paths.chat, rid=rid, thread=thread,
+                                question=question, props=how)
+    try:
+        run = runs.start(
+            owner=str(paths.chat),
+            rid=rid,
+            thread=thread,
+            question=question,
+            events=lambda _run: _events(
+                thread=thread,
+                run=rid,
+                prefs=prefs,
+                paths=paths,
+                message=question,
+                lang=str(how.get("lang") or "en"),
+                staged_import=str(how.get("staged_import") or ""),
+                view=str(how.get("view") or ""),
+                focus=str(how.get("focus") or ""),
+                guided=bool(how.get("guided")),
+                linked=bool(how.get("linked")),
+                held=held,
+                depth=str(how.get("depth") or ""),
+                checkpoint=point,
+            ),
+            stopped=_frame(RunErrorEvent(message=STOPPED, code=STOPPED)),
+            failed=lambda frame: '"type":"RUN_ERROR"' in frame,
+        )
+    except runs.Busy:
+        # Refused before it ran: a new checkpoint goes, and a resumed one is
+        # the thread's live run's business, not ours.
+        if point is not None and resumed is None:
+            point.close()
+        raise
+    if runs.on_cloud_run():
+        url = str(request.url_for("hold", rid=run.id))
+        runs.hold(run, cpu_hold.pinned(url))
+    return run
+
+
+def _resumed(paths: UserPaths, request: Request, *, thread: str = "",
+             rid: str = "") -> runs.Run | None:
+    """The run a process before this one was answering on `thread` (or as
+    `rid`) and never finished — a deploy, a crash — started again from its
+    checkpoint under the same id; None when there is none.
+
+    Run from a read (opening the thread, following the run): the turn was
+    asked, and paid for, by the write that started it."""
+    record = checkpoints.orphan(paths.chat, thread=thread, rid=rid)
+    if record is None:
+        return None
+    obs.event("chat.run_resumed", age=round(time.time() - float(record["started"])),
+              calls=len(record.get("calls") or []),
+              gathered=record.get("evidence") is not None,
+              charged=bool(record.get("charged")))
+    try:
+        return _launch(paths, request, rid=str(record["rid"]),
+                       thread=str(record["thread"]),
+                       question=str(record["question"]), prefs=_prefs(paths),
+                       how=dict(record.get("props") or {}), resumed=record)
+    except runs.Busy:
+        return runs.on_thread(str(paths.chat), str(record["thread"]))
+
+
+def _run(rid: str, paths: UserPaths, request: Request) -> runs.Run:
+    found = runs.find(str(paths.chat), rid) or _resumed(paths, request, rid=rid)
     if found is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail=f"no run {rid}")
@@ -1706,17 +1794,18 @@ def _run(rid: str, paths: UserPaths) -> runs.Run:
 
 
 @router.get("/runs/{rid}", summary="Follow a run again, from its first event")
-def rejoin(rid: str, paths: Account) -> StreamingResponse:
+def rejoin(rid: str, paths: Account, request: Request) -> StreamingResponse:
     """The run's events from `RUN_STARTED` on, then the rest as it is written.
 
     For a reader who left while it was answered and is back: the thread names
     the run (`Thread.running`), and this replays it. 404 once the run is
-    forgotten — a few minutes after it ended, or a restart — when the thread
-    on disk is the whole answer. A read, so `Account`: following an answer
-    spends nothing.
+    forgotten — a few minutes after it ended — when the thread on disk is the
+    whole answer. A run a restart cut is started again from its checkpoint
+    (`_resumed`) and followed from there. A read, so `Account`: following an
+    answer spends nothing more than its asking already did.
     """
     return StreamingResponse(
-        runs.tail(_run(rid, paths)),
+        runs.tail(_run(rid, paths, request)),
         media_type="text/event-stream",
         headers=_STREAM_HEADERS,
     )
@@ -1724,12 +1813,16 @@ def rejoin(rid: str, paths: Account) -> StreamingResponse:
 
 @router.post("/runs/{rid}/stop", status_code=status.HTTP_204_NO_CONTENT,
              summary="Stop the answer being written")
-def stop(rid: str, paths: Writer) -> Response:
+def stop(rid: str, paths: Writer, request: Request) -> Response:
     """Cut a run: nothing of it is stored, as when Stop was the reader's own
     abort. Closing the connection no longer does this — that only stops the
     reading — so Stop has to say it. Stopping a run that already ended is a
-    no-op."""
-    run = _run(rid, paths)
+    no-op. A run a restart cut is not started again only to be stopped: its
+    checkpoint just goes."""
+    found = runs.find(str(paths.chat), rid)
+    if found is None and checkpoints.discard(paths.chat, rid):
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    run = _run(rid, paths, request)
     if run.live:
         runs.stop(run)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

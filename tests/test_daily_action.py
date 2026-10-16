@@ -215,6 +215,20 @@ def test_day_override_wins_over_the_basket():
     assert f["day"] == {"amount": -120.0, "pct": -1.2}
 
 
+def test_the_week_and_month_are_on_the_books_own_money_when_it_is_given():
+    """Money put in mid-month is not a gain, and a gain is read over all the
+    money that was at work: 100 made on 1 000 in plus 1 000 put in."""
+    idx = pd.date_range(end=pd.Timestamp(DAY), periods=40, freq="D")
+    hist = pd.DataFrame(
+        {"value": [1000.0] * 35 + [2100.0] * 5,
+         "injected": [1000.0] * 35 + [2000.0] * 5},
+        index=idx,
+    )
+    f = daily.build_facts(frame(), history(), money=hist, today=DAY)
+    assert f["week"] == {"amount": 100.0, "pct": 5.0}
+    assert f["month"] == {"amount": 100.0, "pct": 5.0}
+
+
 def test_facts_survive_an_empty_book():
     f = daily.build_facts(pd.DataFrame(), None, today=DAY)
     assert f == {"date": "2026-09-03", "currency": "EUR"}

@@ -19,6 +19,7 @@ import type {
   AssetStats,
   Bars,
   Comparables,
+  Comparison,
   CryptoCycle,
   CryptoHolding,
   CryptoPositioning,
@@ -50,6 +51,18 @@ const at = (ticker: string) => `/ticker/${encodeURIComponent(ticker)}`;
 
 export const getBars = (ticker: string, range: string) =>
   get<Bars>(`${at(ticker)}/bars`, { range });
+
+/**
+ * The subject beside `others`, each rebased to the window's first day in
+ * `base`. `others` left out draws the three indices; an empty list draws the
+ * subject alone.
+ */
+export const getCompare = (
+  ticker: string,
+  range: string,
+  base: string,
+  others?: string[],
+) => get<Comparison>(`${at(ticker)}/compare`, { range, base, with: others?.join(",") });
 
 /** `base` buys the one converted figure: `price_base`, in the reader's money. */
 export const getQuote = (ticker: string, base: string) =>

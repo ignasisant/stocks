@@ -45,6 +45,8 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         # and never reads the shared file. Both before the first page renders.
         ("/v1/me", "GET"),
         ("/v1/prefs", "GET"),
+        # What a slow load is doing: the demo book's own download, no more.
+        ("/v1/progress", "GET"),
         # --- Home ---------------------------------------------------------
         ("/v1/watchlist", "GET"),
         ("/v1/earnings", "GET"),
@@ -84,6 +86,7 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         ("/v1/ticker/{symbol}/profile", "GET"),
         ("/v1/ticker/{symbol}/position", "GET"),
         ("/v1/ticker/{symbol}/bars", "GET"),
+        ("/v1/ticker/{symbol}/compare", "GET"),
         ("/v1/ticker/{symbol}/quote", "GET"),
         ("/v1/ticker/{symbol}/events", "GET"),
         ("/v1/ticker/{symbol}/metrics", "GET"),
@@ -113,6 +116,8 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         # Computed from the book and cached fundamentals; `?add=` rides the
         # URL and nothing is written.
         ("/v1/review", "GET"),
+        # Its return columns: market closes only, the account names the money.
+        ("/v1/review/returns", "GET"),
         # --- Sentiment: the regime and the indices half -------------------
         ("/v1/pulse", "GET"),
         ("/v1/pulse/book", "GET"),

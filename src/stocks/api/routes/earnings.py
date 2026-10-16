@@ -25,18 +25,21 @@ from stocks.api.jsonsafe import num as _num
 from stocks.api.schemas import (
     CalendarDividend,
     CalendarEvent,
+    CalendarPayment,
     CalendarResult,
+    CalendarTrade,
     CentralBankDecision,
     ConsensusPeriod,
     EarningsCalendar,
     EarningsResultDetail,
+    MarketHoliday,
     QuarterBreakdown,
     QuarterFigures,
     RepurchaseWindow,
     TaxDeadline,
 )
 from stocks.config import currency_symbol, load_watchlist
-from stocks.data import fx, macro_calendar
+from stocks.data import fx, macro_calendar, market_holidays
 from stocks.data.crypto import is_crypto
 from stocks.data.dividends import project
 from stocks.data.earnings import (
@@ -61,6 +64,7 @@ from stocks.data.estimates import (
 from stocks.data.funds import is_fund
 from stocks.portfolio import dividends as dividend_book
 from stocks.portfolio import tax, transfers
+from stocks.portfolio.ledger import RETURN_OF_CAPITAL
 from stocks.portfolio.tax import deadlines
 from stocks.portfolio.tax import prefs as tax_prefs
 
@@ -138,6 +142,7 @@ def earnings(account: Account) -> EarningsCalendar:
     ]
     dividends = _dividends(account, today)
     windows = _repurchase_windows(account, code, today)
+    trades, payments = _book(account, today)
 
     return EarningsCalendar(
         upcoming=[
@@ -156,6 +161,11 @@ def earnings(account: Account) -> EarningsCalendar:
         dividends=dividends,
         repurchase_windows=windows,
         central_banks=_central_banks(today),
+        trades=trades,
+        payments=payments,
+        market_holidays=_market_holidays(
+            [h.ticker for h in holdings] + list(held), today
+        ),
     )
 
 
@@ -337,6 +347,113 @@ def _central_banks(today: date) -> list[CentralBankDecision]:
             for day in days
         ),
         key=lambda row: (row.date, row.bank),
+    )
+
+
+def _book(
+    account: Account, today: date
+) -> tuple[list[CalendarTrade], list[CalendarPayment]]:
+    """What the reader did and what landed: the ledger's trades and payouts.
+
+    Read off the relabelled ledger, so a book moved between brokers draws one
+    name, the one the chips and filters already use. Fills of one name on one
+    day and side are summed: a statement that split an order in five is still
+    one decision. A sell carries the gain its matched lots realised, from the
+    same FIFO replay in the reporting currency the portfolio screen shows.
+
+    Same lookback as the past ex-dates, and the same rule on failure: a broken
+    replay leaves these empty, never the calendar around them.
+    """
+    db = str(account.db)
+    ccy = reporting_currency(account)
+    since = (today - timedelta(days=DIVIDEND_LOOKBACK_DAYS)).isoformat()
+    trades: list[CalendarTrade] = []
+    payments: list[CalendarPayment] = []
+    with obs.swallow("api.calendar_book"):
+        txs, _, realized = loaders.ledger_state(db, loaders.db_mtime(db), ccy)
+        gains: dict[tuple[str, str], float] = {}
+        for sale in realized:
+            key = (sale.ticker, sale.sell_date)
+            gains[key] = gains.get(key, 0.0) + sale.gain
+        days: dict[tuple[str, str, str], CalendarTrade] = {}
+        for tx in transfers.relabel(txs):
+            if tx.date < since:
+                continue
+            until = (date.fromisoformat(tx.date) - today).days
+            if tx.action in ("buy", "sell"):
+                key = (tx.ticker, tx.date, tx.action)
+                row = days.get(key)
+                if row is None:
+                    row = days[key] = CalendarTrade(
+                        ticker=tx.ticker,
+                        date=tx.date,
+                        days_until=until,
+                        side=tx.action,
+                        quantity=0.0,
+                        amount=0.0,
+                        currency=tx.currency,
+                        base_currency=ccy,
+                    )
+                row.quantity += tx.quantity
+                row.amount += tx.quantity * tx.price
+                row.fee += tx.fee
+            elif tx.action in ("dividend", RETURN_OF_CAPITAL):
+                payments.append(
+                    CalendarPayment(
+                        ticker=tx.ticker,
+                        date=tx.date,
+                        days_until=until,
+                        gross=_num(tx.price) or 0.0,
+                        withheld=_num(tx.fee) or 0.0,
+                        net=_num(tx.price - tx.fee) or 0.0,
+                        currency=tx.currency,
+                        capital=tx.action == RETURN_OF_CAPITAL,
+                        base_currency=ccy,
+                    )
+                )
+        for row in days.values():
+            row.price = _num(row.amount / row.quantity) if row.quantity else None
+            row.amount = _num(row.amount) or 0.0
+            row.fee = _num(row.fee) or 0.0
+            if row.side == "sell":
+                row.gain = _num(gains.get((row.ticker, row.date)))
+        trades = sorted(days.values(), key=lambda r: (r.date, r.ticker, r.side))
+        payments.sort(key=lambda r: (r.date, r.ticker))
+    with obs.swallow("api.calendar_payments_fx"):
+        fx.prefetch(((p.date, p.currency) for p in payments), quote=ccy)
+        for payment in payments:
+            try:
+                payment.net_base = _num(
+                    fx.to_base(payment.net, payment.currency, payment.date, ccy)
+                )
+            except Exception:
+                continue
+    return trades, payments
+
+
+def _market_holidays(tickers: list[str], today: date) -> list[MarketHoliday]:
+    """The closures of every exchange something on the calendar trades on.
+
+    A venue nobody here trades on would only be noise: a book of US names has
+    no use for Xetra's Christmas Eve. Coins never close.
+    """
+    venues = {
+        v
+        for ticker in tickers
+        if not is_crypto(ticker) and (v := market_holidays.venue(ticker))
+    }
+    return sorted(
+        (
+            MarketHoliday(
+                venue=venue,
+                date=day.isoformat(),
+                days_until=(day - today).days,
+                kind=kind,
+            )
+            for venue in venues
+            for day, kind in market_holidays.DAYS.get(venue, {}).items()
+        ),
+        key=lambda row: (row.date, row.venue),
     )
 
 

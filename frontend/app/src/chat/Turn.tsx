@@ -51,6 +51,7 @@ import type {
   Edits,
   Learned,
   LiveStep,
+  PlanStep,
   Rating,
   RatingReason,
   Recalled as Earlier,
@@ -104,6 +105,7 @@ function Trace({ steps, spent }: { steps: Step[]; spent: string }) {
       <ul className="ag-chat-steps" id={listId} hidden={!open}>
         {steps.map((step, i) => (
           <li key={i}>
+            {step.why && <span className="ag-chat-step-why">{step.why}</span>}
             <code>{step.tool}</code>
             {step.arg && <span> {step.arg}</span>}
             {step.out && <span className="ag-chat-step-out"> → {step.out}</span>}
@@ -122,14 +124,25 @@ function Trace({ steps, spent }: { steps: Step[]; spent: string }) {
  * nvidia guidance …" and then "→ 5 results" is the difference between a
  * spinner and watching someone work. Beside the status line, never instead
  * of it: every wait still names itself.
+ *
+ * A call the model said the purpose of reads as that sentence ("Noticias de
+ * ASML de hoy"), in the reader's words; the tool and its argument are for
+ * the folded trace. Laid side by side, a deep gather's first lines are its
+ * plan.
  */
 function Live({ steps }: { steps: LiveStep[] }) {
   return (
     <ul className="ag-chat-steps ag-chat-live">
       {steps.map((step) => (
         <li key={step.id} aria-busy={step.out === undefined}>
-          <code>{step.tool}</code>
-          {step.arg && <span> {step.arg}</span>}
+          {step.why ? (
+            <span className="ag-chat-step-why">{step.why}</span>
+          ) : (
+            <>
+              <code>{step.tool}</code>
+              {step.arg && <span> {step.arg}</span>}
+            </>
+          )}
           {/* Keyed apart so the result comes in as its own line rather than
               overwriting the ellipsis in place. */}
           {step.out === undefined ? (
@@ -146,6 +159,33 @@ function Live({ steps }: { steps: LiveStep[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * A deep research's plan while it runs: the parts the model set itself, each
+ * ticked as it says it is done.
+ *
+ * Above the lookups, because it answers the question the lines below cannot —
+ * how much is left. A check, not a strike-through: a part done is still worth
+ * reading. Replaced whole on each update, so a part reworded is not a part
+ * added.
+ */
+function Plan({ steps }: { steps: PlanStep[] }) {
+  const t = useT();
+  const done = steps.filter((step) => step.done).length;
+  return (
+    <ol className="ag-chat-plan" aria-label={t("chat.plan", { done, n: steps.length })}>
+      {steps.map((step, i) => (
+        <li key={i} data-done={step.done || undefined}>
+          <span className="ag-chat-plan-mark" aria-hidden="true">
+            {step.done && <Glyph name="check" size={12} />}
+          </span>
+          <span>{step.text}</span>
+          {step.done && <span className="ag-sr"> {t("chat.plan_done")}</span>}
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -876,6 +916,9 @@ export function Turn({
           </div>
         )}
         {turn.pending && !turn.content && <Working phase={turn.phase} />}
+        {turn.pending && (turn.plan?.length ?? 0) > 0 && (
+          <Plan steps={turn.plan ?? []} />
+        )}
         {turn.pending && (turn.live?.length ?? 0) > 0 && (
           <Live steps={turn.live ?? []} />
         )}

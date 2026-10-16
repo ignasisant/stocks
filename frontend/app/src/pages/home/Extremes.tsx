@@ -88,7 +88,7 @@ export function ExtremesCard({
       query={query}
       title={plain(t("home.extremes_52w"))}
       note={t("home.extremes_unavailable")}
-      skeleton={<Skeleton rows={4} />}
+      skeleton={<Skeleton shape="table" rows={4} />}
     >
       {(data) =>
         !data || data.scanned === 0 ? null : (

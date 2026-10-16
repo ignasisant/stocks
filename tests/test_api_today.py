@@ -14,15 +14,16 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
 from stocks import accounts
 from stocks.api import briefing, daily_card, loaders
 from stocks.api.app import app as fastapi_app
-from stocks.chat import today_market
+from stocks.chat import daily_book, today_market
 
 TOKEN = "s3cret-token"
 EMAIL = "holder@example.com"
@@ -187,6 +188,111 @@ def test_a_guest_reads_the_market_only(client, current, monkeypatch):
     body = client.get("/v1/today").json()
     assert body["market"]["headline"] == "Headline en"
     assert body["personal"] is None
+
+
+def test_the_book_is_redrawn_over_a_window_against_an_index(client, account, monkeypatch):
+    asked = []
+
+    def compare(paths, lang, span, index):
+        asked.append((paths, lang, span, index))
+        dates = ["2026-01-02", "2026-10-12"]
+        return [{"symbol": "@BOOK", "currency": "EUR", "dates": dates,
+                 "values": [1000.0, 1040.0], "money": True, "label": "Tu cartera"},
+                {"symbol": "^IBEX", "currency": "EUR", "dates": dates,
+                 "values": [1000.0, 1100.0], "money": True, "label": "IBEX 35"}]
+
+    monkeypatch.setattr(briefing, "book_compare", compare)
+    query = {"lang": "es", "range": "ytd", "index": "^IBEX"}
+    body = client.get("/v1/today/book", headers=AUTH, params=WHO | query).json()
+    assert asked == [(account, "es", "ytd", "^IBEX")]
+    assert body["range"] == "ytd" and body["index"] == "^IBEX"
+    assert [line["symbol"] for line in body["chart"]] == ["@BOOK", "^IBEX"]
+
+
+def test_a_young_book_says_where_it_begins(client, account, monkeypatch):
+    today = date.today()
+
+    def drawn(opens):
+        dates = [opens.isoformat(), today.isoformat()]
+        line = {"symbol": "@BOOK", "currency": "EUR", "dates": dates,
+                "values": [1000.0, 1200.0], "money": True}
+        return lambda *a, **k: [line, line | {"symbol": "SPY"}]
+
+    young = today - timedelta(days=400)
+    monkeypatch.setattr(briefing, "book_compare", drawn(young))
+    body = client.get("/v1/today/book", headers=AUTH, params=WHO | {"range": "5y"}).json()
+    assert body["since"] == young.isoformat()
+    # A window that opens on its last close before a long weekend is whole.
+    monkeypatch.setattr(briefing, "book_compare", drawn(today - timedelta(days=726)))
+    body = client.get("/v1/today/book", headers=AUTH, params=WHO | {"range": "2y"}).json()
+    assert body["since"] is None
+
+
+@pytest.mark.parametrize(("opened", "index", "asked"), [
+    (8, "SPY", ["max"]),
+    (3, "SPY", ["6y"]),
+    (1, "SPY", []),
+    (1, "QQQ", ["6y"]),
+    (8, "QQQ", ["max"]),
+])
+def test_the_index_is_read_back_to_the_books_first_day(
+    account, monkeypatch, opened, index, asked
+):
+    days = pd.date_range(end=pd.Timestamp.today().normalize(),
+                         start=pd.Timestamp.today() - pd.DateOffset(years=opened))
+    value = pd.Series(range(1, len(days) + 1), index=days, dtype=float)
+    hist = pd.DataFrame({"value": value, "injected": 1.0})
+    monkeypatch.setattr(loaders, "history", lambda *a, **k: (hist, None, []))
+    periods = []
+    monkeypatch.setattr(briefing, "_compare_closes",
+                        lambda period="6y": periods.append(period) or {})
+    monkeypatch.setattr(briefing, "_card_closes", dict)
+    # Whatever the window: the same money goes in from the book's first day.
+    lines = briefing.book_compare(account, "en", "1m", index)
+    assert periods == asked
+    assert lines and lines[0]["symbol"] == "@BOOK"
+
+
+def test_every_window_is_the_book_against_its_own_money_in_the_index(
+    account, monkeypatch
+):
+    days = pd.date_range(end=pd.Timestamp.today().normalize(), periods=800)
+    # A deposit doubles the value halfway: the book's line shows the money,
+    # and the index line is bought with it on the same day.
+    value = pd.Series([100.0] * 400 + [200.0] * 400, index=days)
+    injected = pd.Series([100.0] * 400 + [200.0] * 400, index=days)
+    spy = pd.Series(50.0, index=days)
+    hist = pd.DataFrame({"value": value, "injected": injected})
+    monkeypatch.setattr(loaders, "history", lambda *a, **k: (hist, None, []))
+    monkeypatch.setattr(briefing, "_compare_closes", lambda period="6y": {})
+    monkeypatch.setattr(briefing, "_card_closes", dict)
+    monkeypatch.setattr(daily_book, "index_series", lambda closes, ccy: (spy, "EUR"))
+    for span, days_back in (("1m", 30), ("6m", 182), ("2y", 730)):
+        book, index = briefing.book_compare(account, "en", span, "SPY")
+        assert book["values"][-1] == index["values"][-1] == 200.0
+        assert book["injected"][-1] == 200.0
+        opens = (days[-1] - pd.Timedelta(days=days_back)).date().isoformat()
+        assert book["dates"][0] == index["dates"][0] == opens
+
+
+def test_the_book_chart_refuses_what_it_does_not_offer(client, account):
+    bad_index = client.get("/v1/today/book", headers=AUTH,
+                           params=WHO | {"index": "AAPL"})
+    bad_range = client.get("/v1/today/book", headers=AUTH, params=WHO | {"range": "10y"})
+    assert bad_index.status_code == 422 and bad_range.status_code == 422
+
+
+def test_a_failed_redraw_is_an_empty_chart(client, account, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("download")
+
+    monkeypatch.setattr(briefing, "book_compare", boom)
+    body = client.get("/v1/today/book", headers=AUTH, params=WHO | {"range": "1y"}).json()
+    assert body["chart"] == []
+
+
+def test_a_guest_has_no_book_to_redraw(client, current):
+    assert client.get("/v1/today/book", params={"range": "3m"}).status_code in (401, 403)
 
 
 def test_a_guest_cannot_post(client, current):
