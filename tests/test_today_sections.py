@@ -27,6 +27,7 @@ import pytest
 
 from stocks.analysis import sentiment as sm
 from stocks.chat import daily, journal, signals, today_sections
+from stocks.data.earnings import EarningsResult
 from stocks.data.edgar import CurrentReport
 from stocks.data.insiders import InsiderTx
 from stocks.data.news import Headline
@@ -160,6 +161,155 @@ def test_a_results_filing_names_its_other_items():
     rows = today_sections.news_rows(
         "AAPL", [], reports, DAY, lambda key, **kw: f"{key}|{kw.get('topics', '')}")
     assert rows[0]["line"] == "today.results_row_more|today.item_5_02|"
+
+
+# ----------------------------------------------------------------- prints
+
+RELEASE = (
+    "Apple today announced financial results for its fiscal fourth quarter. "
+    "A conference call will be held at 2:00 p.m. PT on October 30, 2026. "
+    "Looking ahead, the company expects revenue of $54.0 billion to $55.0 "
+    "billion for the first quarter, up 9 percent year over year. "
+    "Forward-looking statements involve risks and uncertainties as of 2026."
+)
+GUIDANCE = ("Looking ahead, the company expects revenue of $54.0 billion to $55.0 "
+            "billion for the first quarter, up 9 percent year over year.")
+PRINT_DAY = DAY - timedelta(days=2)  # a Sunday: sessions on either side
+
+
+def _print(ticker, iso):
+    return {"revenue": 35.1e9, "revenue_yoy_pct": 94.0, "currency": "USD",
+            "release": RELEASE}
+
+
+def _result(when=PRINT_DAY, **over):
+    return EarningsResult("AAPL", when, **({"eps_estimate": 0.98, "reported_eps": 1.05,
+                                            "surprise_pct": 7.1} | over))
+
+
+def _news(out):
+    return next(s for s in out["sections"] if s["id"] == "news")
+
+
+def test_a_results_filing_carries_the_prints_figures():
+    reports = [CurrentReport("8-K", PRINT_DAY, ("2.02", "9.01"), "https://www.sec.gov/x")]
+    sources = _sources(filings=lambda t: reports if t == "AAPL" else [],
+                       results=lambda: [_result()], print=_print, closes=_closes)
+    row = _news(_gather({"AAPL": 0.7, "KO": 0.3}, sources=sources))["rows"][0]
+    # The print's row comes first, keeps the filing's key and reads as one.
+    assert row["key"] == "filing:AAPL:2026-10-11"
+    assert row["kind"] == "results" and row["source"] == "8k"
+    assert row["url"] == "https://www.sec.gov/x"
+    assert row["line"] == ("AAPL reported: EPS 1.05 vs 0.98 expected (+7.1%), "
+                           "revenue $35.1B (+94.0% y/y), +0.1% on the print.")
+    assert row["data"]["guidance"] == GUIDANCE
+    assert row["data"]["beat"] is True and row["data"]["reaction_pct"] == 0.1
+    assert row["data"]["items"] == "2.02"  # 9.01 (exhibits) is never a topic
+
+
+def test_a_print_outside_the_sec_is_a_row_of_its_own():
+    sources = _sources(results=lambda: [_result()], print=None, closes=_closes)
+    rows = _news(_gather({"AAPL": 1.0}, sources=sources))["rows"]
+    assert rows[0]["key"] == "print:AAPL:2026-10-11"
+    assert rows[0]["kind"] == "results" and rows[0]["source"] == "earnings"
+    assert rows[0]["url"] == "" and rows[0]["date"] == "2026-10-11"
+    assert rows[0]["line"] == ("AAPL reported: EPS 1.05 vs 0.98 expected (+7.1%), "
+                               "+0.1% on the print.")
+    assert "guidance" not in rows[0]["data"] and "revenue" not in rows[0]["data"]
+    # The row's figures are the memory's: the same print is not news twice.
+    assert today_sections.memory([{"rows": rows}])[rows[0]["key"]][0] == signals.RESULTS
+
+
+def test_a_results_filing_with_no_figures_keeps_its_own_line():
+    reports = [CurrentReport("8-K", PRINT_DAY, ("2.02", "5.02"), "https://www.sec.gov/x")]
+    sources = _sources(filings=lambda t: reports, results=lambda: [], print=None)
+    row = _news(_gather({"AAPL": 1.0}, sources=sources))["rows"][0]
+    assert row["line"] == ("AAPL filed its results with the SEC "
+                           "(and director or officer change).")
+    assert "reported_eps" not in row["data"]
+
+
+def test_a_calendar_print_days_from_the_filing_is_another_print():
+    reports = [CurrentReport("8-K", PRINT_DAY, ("2.02",), "https://www.sec.gov/x")]
+    stale = _result(when=PRINT_DAY - timedelta(days=today_sections.PRINT_SLACK_DAYS + 1))
+    sources = _sources(filings=lambda t: reports, results=lambda: [stale], print=None)
+    row = _news(_gather({"AAPL": 1.0}, sources=sources))["rows"][0]
+    assert row["line"] == "AAPL filed its results with the SEC."
+
+
+def test_a_slow_print_source_costs_the_row_only_its_revenue(monkeypatch):
+    monkeypatch.setattr(today_sections, "PRINT_BUDGET_S", 0.2)
+
+    def slow(ticker, iso):
+        time.sleep(1.0)
+        return _print(ticker, iso)
+
+    sources = _sources(results=lambda: [_result()], print=slow, closes=_closes)
+    row = _news(_gather({"AAPL": 1.0}, sources=sources))["rows"][0]
+    assert row["line"].startswith("AAPL reported: EPS 1.05")
+    assert "revenue" not in row["data"]
+
+
+def test_the_print_row_reads_in_spanish():
+    sources = _sources(results=lambda: [_result()], print=_print, closes=_closes)
+    out = today_sections.gather({"AAPL": 1.0}, kinds=STOCKS, day=DAY, lang="es",
+                                sources=sources)
+    assert _news(out)["rows"][0]["line"] == (
+        "AAPL presentó resultados: BPA 1,05 frente a 0,98 esperado (+7,1%), "
+        "ingresos $35,1 mil M (+94,0% interanual), +0,1% tras la publicación.")
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    (RELEASE, GUIDANCE),
+    # The call's logistics name a date too; they are not an outlook.
+    ("A conference call will be held at 2:00 p.m. PT on October 30, 2026. "
+     "We expect strong demand.", ""),
+    # An outlook without a figure is not quoted.
+    ("The company expects continued growth next quarter.", ""),
+    ("", ""),
+    # A long sentence is cut at a word.
+    ("For fiscal 2027 the company projects revenue growth of 12 to 14 percent, "
+     "operating margin expansion of 150 basis points, free cash flow above "
+     "$10 billion and a tax rate near 16 percent, all before currency.",
+     "For fiscal 2027 the company projects revenue growth of 12 to 14 percent, "
+     "operating margin expansion of 150 basis points, free cash flow above "
+     "$10 billion and…"),
+])
+def test_guidance_is_the_first_look_ahead_sentence_with_a_figure(text, expected):
+    assert today_sections.guidance_of(text) == expected
+    assert len(today_sections.guidance_of(text)) <= today_sections.GUIDANCE_CHARS
+
+
+def test_the_reaction_waits_for_a_session_after_the_print():
+    series = _series(0.0012)
+    assert today_sections.reaction(series, DAY) is None  # no close after DAY yet
+    assert today_sections.reaction(None, DAY) is None
+    assert today_sections.reaction(series, PRINT_DAY) == pytest.approx(0.12, abs=0.01)
+    # A print on a session day spans that day: the close before to the one after.
+    friday = date(2026, 10, 9)
+    expected = (series.iloc[-1] / series[pd.Timestamp("2026-10-08")] - 1) * 100
+    assert today_sections.reaction(series, friday) == pytest.approx(expected)
+
+
+def test_a_print_is_said_once_and_again_when_the_price_answers():
+    closes = {"AAPL": _series(0.0012)}  # ends the session before DAY
+    sources = _sources(results=lambda: [_result(when=DAY)], closes=lambda: closes)
+    first = _gather({"AAPL": 1.0}, sources=sources)
+    row = _news(first)["rows"][0]
+    assert row["key"] == "print:AAPL:2026-10-13" and "reaction_pct" not in row["data"]
+    shown = daily.seen(None, {}, DAY, [], today_sections.memory(first["sections"]))
+
+    def later():
+        out = today_sections.gather({"AAPL": 1.0}, kinds=STOCKS, day=DAY + timedelta(1),
+                                    lang="en", sources=sources, shown=shown)
+        return [r for r in _news(out)["rows"] if r["kind"] == "results"]
+
+    assert later() == []
+    closes["AAPL"] = pd.concat([closes["AAPL"], pd.Series(
+        [closes["AAPL"].iloc[-1] * 1.05], index=[pd.Timestamp(DAY + timedelta(1))])])
+    (again,) = later()
+    assert again["data"]["reaction_pct"] == 5.0
+    assert again["line"].endswith(", +5.0% on the print.")
 
 
 def test_a_headline_url_that_is_not_https_is_dropped():

@@ -346,6 +346,21 @@ def test_gather_today_reads_the_account_off_the_loaders(account, monkeypatch):
     row = SimpleNamespace(ticker="AAPL", verdict="trim", sector="Technology",
                           quality=70.0, cheapness=20.0)
     monkeypatch.setattr(briefing, "_review_rows", lambda paths: [row])
+    # The followed names' prints come off the calendar the card already read;
+    # a print's revenue off `_print_source`, the release left unread without
+    # EDGAR (it would only cache the refusal).
+    from stocks.data.earnings import EarningsResult
+
+    monkeypatch.setattr(briefing, "_followed", lambda paths: ("AAPL", "KO"))
+    monkeypatch.setattr(loaders, "earnings_calendar", lambda tickers: (
+        [], [EarningsResult("AAPL", date(2026, 10, 12), 0.98, 1.05, 7.1)]))
+    asked: list = []
+
+    def print_source(action, release=True):
+        asked.append((action, release))
+        return {"revenue": 35.1e9, "revenue_yoy_pct": 12.0, "currency": "USD"}
+
+    monkeypatch.setattr(briefing, "_print_source", print_source)
     reviewed: list = []
     out = briefing.gather_today(
         account, {}, {"actions": [{"kind": "alert_hit", "ticker": "KO"}]}, "en",
@@ -354,3 +369,8 @@ def test_gather_today_reads_the_account_off_the_loaders(account, monkeypatch):
     news = next(s for s in out["sections"] if s["id"] == "news")
     assert "edgar" in news["missing"]
     assert reviewed == [row]
+    assert asked == [({"ticker": "AAPL", "date": "2026-10-12"}, False)]
+    print_row = next(r for r in news["rows"] if r["kind"] == "results")
+    assert print_row["key"] == "print:AAPL:2026-10-12"
+    assert print_row["line"].startswith(
+        "AAPL reported: EPS 1.05 vs 0.98 expected (+7.1%), revenue $35.1B (+12.0% y/y)")

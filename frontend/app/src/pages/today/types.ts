@@ -18,13 +18,18 @@ export type TodayRow = {
   kind: string;
   line: string;
   tickers: string[];
-  /** yahoo | 8k | sec | bafin | computed — where it was read. */
+  /** yahoo | 8k | earnings | sec | bafin | computed — where it was read. */
   source: string;
   /** The article or filing; empty when none. */
   url: string;
   /** ISO day it is from; empty when undated. */
   date: string;
-  /** The figures behind the line; for a comparison see `CompareData`. */
+  /**
+   * The figures behind the line; for a comparison see `CompareData`. A
+   * results row carries the print's `reported_eps`, `eps_estimate`,
+   * `surprise_pct`, `revenue`, `revenue_yoy_pct`, `reaction_pct` and the
+   * release's `guidance` sentence, each only when known.
+   */
   data: Record<string, number | string | boolean | null>;
 };
 

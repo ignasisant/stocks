@@ -151,10 +151,12 @@ TAX_YEAR_END = "tax_year_end"
 TAX_BRACKET = "tax_bracket"
 REPURCHASE_CLEAR = "repurchase_clear"
 # The Today page's rows (chat/today_sections.py): never ranked on the card,
-# only remembered, so a headline is read once and an insider tally comes back
-# when a new trade lands.
+# only remembered, so a headline is read once, an insider tally comes back
+# when a new trade lands and a print when a figure of it lands (the EPS the
+# calendar did not have yet, the next session's reaction).
 NEWS = "news"
 INSIDER = "insider"
+RESULTS = "results"
 
 _URGENCY = {
     ALERT_HIT: 90,
@@ -273,6 +275,8 @@ _MATERIAL: dict[str, dict] = {
     REPURCHASE_CLEAR: {"clear_date": None},
     NEWS: {},
     INSIDER: {"latest": None, "net_value": _Rel(0.5), "cluster_buy": None},
+    RESULTS: {"reported_eps": None, "revenue": None, "guidance": None,
+              "reaction_pct": 2.0},
 }
 
 # Days after which an unchanged trigger may come back as a reminder. None is
@@ -298,6 +302,7 @@ _COOLDOWN: dict[str, int | None] = {
     REPURCHASE_CLEAR: None,
     NEWS: 30,
     INSIDER: 14,
+    RESULTS: 30,
 }
 
 

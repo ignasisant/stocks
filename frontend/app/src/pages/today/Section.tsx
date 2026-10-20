@@ -168,6 +168,9 @@ export function Rows({
                 ) : (
                   row.line
                 )}
+                {typeof row.data.guidance === "string" && row.data.guidance ? (
+                  <span className="td-quote">“{row.data.guidance}”</span>
+                ) : null}
               </span>
               {source || day ? (
                 <span className="td-wire">

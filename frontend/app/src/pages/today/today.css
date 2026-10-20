@@ -483,6 +483,15 @@
   text-wrap: pretty;
 }
 
+/* A print row's outlook, quoted from the release under its figures. */
+.td-quote {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm, 0.75rem);
+  line-height: 1.45;
+}
+
 /* The headline is the link to its article or filing. */
 .td-headlink {
   color: var(--ag-text-primary);
