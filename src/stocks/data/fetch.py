@@ -311,8 +311,20 @@ def _load_unlisted() -> None:
         return
     if isinstance(data, dict):
         for t, at in data.items():
-            if isinstance(at, int | float):
+            if isinstance(at, int | float) and not _judged_on_usd(str(t)):
                 _unlisted.setdefault(str(t), float(at))
+
+
+def _judged_on_usd(ticker: str) -> bool:
+    """A coin paired to EUR or GBP, which Yahoo rarely lists and
+    `_crypto_usd_fallback` prices off the USD pair. Yahoo disowning the EUR
+    pair says nothing about the coin: a USD pair that is dead too is noted
+    by the fallback's own download, under its own name. Before 2026-10-20
+    the EUR pair was noted whenever that errand ran out of budget, which
+    alerted on CHILLGUY-EUR and kept `fetch_tail` from asking for it for a
+    week (ERR-02) — verdicts stored then are ignored on load."""
+    pair = split_pair(ticker)
+    return pair is not None and pair[1] != "USD"
 
 
 def _save_unlisted() -> None:
@@ -406,6 +418,8 @@ def _note_failures(
         changed = False
         for t in tickers:
             why = failures.get(symbol_of[t].upper(), "")
+            if _judged_on_usd(t):
+                continue
             if t not in priced and why.lower().startswith(UNLISTED_REASON):
                 said = _unlisted.get(t, -1.0)
                 if said <= now - UNLISTED_TTL_S:
