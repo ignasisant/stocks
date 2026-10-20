@@ -15,6 +15,7 @@ from stocks.analysis.portfolio import (
     equal_weights,
     first_owned,
     hhi,
+    historical_var,
     market_value_weights,
     max_drawdown,
     portfolio_returns,
@@ -106,6 +107,24 @@ def test_drawdown_span_dates_the_worst_fall():
     assert drawdown_span(prices) == (idx[1], idx[4])
     # A path that only ever rose has no fall to date.
     assert drawdown_span(pd.Series([1.0, 1.1, 1.2], index=idx[:3])) is None
+
+
+def test_historical_var_is_the_tail_day_not_the_spread():
+    """Ninety quiet days and ten −5% ones: the 5% quantile lands on the bad
+    tail as it happened. Volatility would spread those ten over every day."""
+    r = pd.Series([-0.05 if i % 10 == 0 else 0.001 for i in range(100)])
+    assert historical_var(r) == pytest.approx(-0.05, abs=1e-9)
+    # Tighter level, deeper tail: 99% on this series is still the −5% days.
+    assert historical_var(r, level=0.99) == pytest.approx(-0.05, abs=1e-9)
+    # A book that never fell has a VaR at or above zero, never a made-up loss.
+    assert historical_var(pd.Series([0.001] * 100)) == pytest.approx(0.001)
+
+
+def test_historical_var_needs_enough_days_to_mean_anything():
+    """Under MIN_VAR_DAYS the 5th percentile is just the worst day seen."""
+    r = pd.Series([-0.05, 0.01, 0.02, -0.01] * 10)  # 40 days
+    assert math.isnan(historical_var(r))
+    assert math.isnan(historical_var(pd.Series([], dtype=float)))
 
 
 def test_concentration_metrics():

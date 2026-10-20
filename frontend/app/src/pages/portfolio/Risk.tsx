@@ -235,7 +235,7 @@ export default function Risk() {
                     )
                   }
                   facts={[
-                    // The same two readings the simulated card below shows,
+                    // The same three readings the simulated card below shows,
                     // taken over the flow-adjusted path instead of today's
                     // holdings at fixed weights — which is why they carry a
                     // different label and help. Reading one for the other is the
@@ -267,6 +267,19 @@ export default function Risk() {
                           ? t("portfolio.dd_span_chip", {
                               peak: formatMonth(data.twr_drawdown_peak),
                               trough: formatMonth(data.twr_drawdown_trough),
+                            })
+                          : null,
+                    },
+                    {
+                      label: t("portfolio.real_var"),
+                      value: percent(lang, data.twr_var_95),
+                      help: t("portfolio.twr_var_help"),
+                      // The percentage is of the path; what it comes to on
+                      // today's book is the figure a bad day actually costs.
+                      note:
+                        data.twr_var_95 !== null && data.value !== null
+                          ? t("portfolio.var_money_note", {
+                              value: money(data.value * data.twr_var_95) ?? "",
                             })
                           : null,
                     },
@@ -359,6 +372,11 @@ export default function Risk() {
                       label: t("portfolio.sim_drawdown"),
                       value: percent(lang, data.max_drawdown),
                       help: t("portfolio.basket_dd_help"),
+                    },
+                    {
+                      label: t("portfolio.sim_var"),
+                      value: percent(lang, data.var_95),
+                      help: t("portfolio.basket_var_help"),
                     },
                   ]}
                 />

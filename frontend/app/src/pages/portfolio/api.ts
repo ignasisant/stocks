@@ -128,6 +128,8 @@ export type Performance = {
   /** Of the flow-adjusted path, over the whole span — not today's basket. */
   twr_volatility: number | null;
   twr_max_drawdown: number | null;
+  /** One-day historical VaR at 95% of the same path, as a return (<= 0); null under 60 days. */
+  twr_var_95: number | null;
   /** When the worst fall ran, and what the book was worth at its top — the
    *  TWR weighs every day alike, so a fall on a small early book needs saying. */
   twr_drawdown_peak: string | null;
@@ -165,6 +167,8 @@ export type Risk = {
   period: string;
   volatility: number | null;
   max_drawdown: number | null;
+  /** One-day historical VaR at 95% of today's basket over the window, as a return (<= 0). */
+  var_95: number | null;
   effective_names: number | null;
   top5_weight: number | null;
   betas: Record<string, number>;
