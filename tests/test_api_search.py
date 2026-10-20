@@ -239,27 +239,81 @@ def test_a_dead_tier_degrades_the_search_instead_of_failing_it(
         raise RuntimeError("Yahoo said no")
 
     _REAL_WORLD.cache_clear()
-    monkeypatch.setattr("stocks.data.symbols.search_symbols", boom)
+    monkeypatch.setattr("stocks.data.symbols.search_rows", boom)
     monkeypatch.setattr(loaders, "world_matches", _REAL_WORLD)
-    assert [m["ticker"] for m in find(client, "AAPL") if m["kind"] == "watch"] == [
-        "AAPL"
-    ]
+    assert [m["ticker"] for m in find(client, "AAPL") if m["kind"] == "watch"] == ["AAPL"]
 
 
-def test_limit_is_honoured(client, account, token, monkeypatch):
-    monkeypatch.setattr(
-        loaders, "sec_matches", lambda q: [(f"T{i}", f"Thing {i}") for i in range(6)]
-    )
-    assert len(find(client, "T", limit=3)) == 3
+def test_without_world_the_yahoo_tier_is_not_asked(client, account, token, monkeypatch):
+    """`world=false` is the box's first paint: local rows at once, no Yahoo."""
+
+    def boom(_q):
+        raise AssertionError("asked Yahoo")
+
+    monkeypatch.setattr(loaders, "world_matches", boom)
+    kinds = {m["kind"] for m in find(client, "AAPL", world="false")}
+    assert kinds == {"watch"}
+
+
+# ----------------------------------------------------- the shared world memo
+
+
+def _yahoo(monkeypatch, answer):
+    """Stub Yahoo's search with `answer`, counting the calls."""
+    from stocks.data import symbols
+
+    calls = []
+
+    def rows(q, limit=6):
+        calls.append(q)
+        return answer
+
+    monkeypatch.setattr(symbols, "search_rows", rows)
+    _REAL_WORLD.cache_clear()
+    return calls
+
+
+def test_a_worldwide_answer_is_asked_once_for_every_account(monkeypatch):
+    """What Yahoo lists for "mips" is the same for everybody: the second ask —
+    another account, or this one after the process memo is gone — is served
+    from the shared memo, not from Yahoo."""
+    calls = _yahoo(monkeypatch, [("MIPS.ST", "Mips AB", "Stockholm", "EQUITY")])
+    assert _REAL_WORLD("mips") == [("MIPS.ST", "Mips AB", "Stockholm")]
+    _REAL_WORLD.cache_clear()
+    assert _REAL_WORLD("MIPS") == [("MIPS.ST", "Mips AB", "Stockholm")]
+    assert calls == ["MIPS"]
+
+
+def test_the_shared_memo_does_not_keep_what_was_typed(monkeypatch):
+    """The bucket is no log of the search box: the query is hashed, and an
+    empty answer (throttled or a real "nothing") is not kept at all."""
+    _yahoo(monkeypatch, [("MIPS.ST", "Mips AB", "Stockholm", "EQUITY")])
+    _REAL_WORLD("mips")
+    _yahoo(monkeypatch, [])
+    _REAL_WORLD("my secret typo")
+    loaders.WORLD_MEMO.flush()
+    stored = loaders.WORLD_MEMO.path.read_text()
+    assert "MIPS.ST" in stored
+    assert '"MIPS"' not in stored and "SECRET" not in stored.upper()
+
+
+def test_an_isin_never_reaches_the_shared_memo(monkeypatch):
+    """A typed ISIN is one somebody holds — a fingerprint of a portfolio."""
+    calls = _yahoo(monkeypatch, [("NOW", "ServiceNow", "NYSE", "EQUITY")])
+    assert _REAL_WORLD("US81762P1021") == [("NOW", "ServiceNow", "NYSE")]
+    _REAL_WORLD.cache_clear()
+    _REAL_WORLD("US81762P1021")
+    assert len(calls) == 2
+    assert loaders.WORLD_MEMO.items() == []
 
 
 # --------------------------------------------------------------- the recents
 
 
 def test_recents_start_empty_and_grow_by_one_post(client, account, token, signed_in):
-    assert client.get("/v1/search/recent", params=WHO, headers=AUTH).json()[
-        "tickers"
-    ] == []
+    assert (
+        client.get("/v1/search/recent", params=WHO, headers=AUTH).json()["tickers"] == []
+    )
     response = client.post(
         "/v1/search/recent", params=WHO, headers=AUTH, json={"ticker": "aapl"}
     )
@@ -268,6 +322,20 @@ def test_recents_start_empty_and_grow_by_one_post(client, account, token, signed
     assert client.get("/v1/search/recent", params=WHO, headers=AUTH).json()[
         "tickers"
     ] == ["AAPL"]
+
+
+def test_a_symbol_that_does_not_exist_is_not_kept(
+    client, account, token, signed_in, monkeypatch
+):
+    """The "analyze" row hands on whatever was typed: a typo Yahoo has never
+    heard of must not sit in the history to be clicked again."""
+    monkeypatch.setattr(loaders, "company_name", lambda t, w: None)
+    monkeypatch.setattr(loaders, "listed", lambda t: t != "DIGITALOCE")
+    for ticker in ("DOCN", "DIGITALOCE"):
+        client.post(
+            "/v1/search/recent", params=WHO, headers=AUTH, json={"ticker": ticker}
+        )
+    assert accounts.load_recent_searches(account.prefs) == ["DOCN"]
 
 
 def test_a_repeat_moves_to_the_front_rather_than_duplicating(
@@ -297,9 +365,7 @@ def test_a_name_sent_with_the_pick_comes_back_with_the_list(
     assert body["names"]["005930.KS"] == "Samsung Electronics Co., Ltd."
 
 
-def test_names_leave_with_the_ticker_they_belong_to(
-    client, account, token, signed_in
-):
+def test_names_leave_with_the_ticker_they_belong_to(client, account, token, signed_in):
     for i in range(accounts.RECENT_SEARCHES_MAX + 1):
         client.post(
             "/v1/search/recent",
@@ -334,9 +400,7 @@ def test_recents_are_per_account(client, account, token, signed_in):
     assert accounts.load_recent_searches(account.prefs) == ["AAPL"]
 
 
-def test_a_token_cannot_plant_entries_in_somebody_else_history(
-    client, account, token
-):
+def test_a_token_cannot_plant_entries_in_somebody_else_history(client, account, token):
     """The rule the whole write gate exists for: a bearer token names nobody and
     any holder can name any account, so one leaked secret must not be able to
     edit a stranger's data — not even a search history."""

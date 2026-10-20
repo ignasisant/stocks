@@ -38,6 +38,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from stocks import accounts, obs
 from stocks.analysis import review as engine
 from stocks.analysis.compare import (
+    TRAIL_STEPS,
     closes_by_day,
     rates_into,
     window_axis,
@@ -59,10 +60,11 @@ from stocks.api.schemas import (
     ReviewPlan,
     ReviewReturns,
     ReviewRow,
+    ScorePoint,
 )
 from stocks.chat import journal
 from stocks.config import Holding, load_watchlist
-from stocks.data import fx, profiles
+from stocks.data import fx, profiles, score_history
 from stocks.data.crypto import is_crypto
 from stocks.frames import midnight
 from stocks.portfolio import consistency, demo, tax
@@ -153,6 +155,13 @@ def _metrics(symbol: str) -> dict | None:
     with obs.swallow("api.review_metrics"):
         return loaders.review_metrics(symbol)
     return None
+
+
+def _history(symbol: str) -> list[dict]:
+    """`symbol`'s business at its last filings (`filed_history`), or none."""
+    with obs.swallow("api.review_history"):
+        return loaders.review_history(symbol)
+    return []
 
 
 def _symbol(ticker: str) -> str:
@@ -533,15 +542,28 @@ def returns(
     }
     benchmarks = list(dict.fromkeys([INDEX, *(etf for etf in etfs.values() if etf)]))
     every = list(dict.fromkeys([*asked, *benchmarks]))
-    day, days = _window_calendar()
-    axis = window_axis(day, days)
+    day, days, steps = _window_calendar()
+    axis = window_axis(day, steps)
     key = ",".join(str(one.date()) for one in axis)
 
     closes: dict[str, Future] = {
         name: _RETURNS_POOL.submit(carried(_window_closes), name, key) for name in every
     }
     quoted = _RETURNS_POOL.submit(carried(listing_currencies), every)
-    wait([*closes.values(), quoted], timeout=GATHER_BUDGET_S)
+    # The KPIs the review itself just read, from its memo, and the business
+    # at its past filings: the map's trails.
+    kpis: dict[str, Future] = {
+        name: _POOL.submit(carried(_metrics), name)
+        for name in asked
+        if not is_crypto(name)
+    }
+    filings: dict[str, Future] = {
+        name: _POOL.submit(carried(_history), name) for name in kpis
+    }
+    wait(
+        [*closes.values(), quoted, *kpis.values(), *filings.values()],
+        timeout=GATHER_BUDGET_S,
+    )
     currencies = quoted.result() if quoted.done() and not quoted.exception() else {}
     landed = {name: future.result() for name, future in closes.items() if future.done()}
     pending = {name for name in every if name not in landed}
@@ -556,7 +578,16 @@ def returns(
         out = window_returns(series, rates.get(name), day, days)
         if all(value is None for value in out.values()):
             return None
-        return NameReturns(ticker=name, returns=out, sector_etf=etfs.get(name))
+        future = kpis.get(name)
+        metrics = future.result() if future and future.done() else None
+        filed = filings.get(name)
+        history = filed.result() if filed and filed.done() else []
+        return NameReturns(
+            ticker=name,
+            returns=out,
+            sector_etf=etfs.get(name),
+            then=_then(name, metrics, series, day, steps, history),
+        )
 
     rows = {name: measured(name) for name in every if name not in pending}
     obs.event(
@@ -574,6 +605,88 @@ def returns(
         benchmarks=[row for name in benchmarks if (row := rows.get(name)) is not None],
         missing=[name for name in asked if name not in pending and rows[name] is None],
         pending=sum(1 for name in asked if name in pending),
+    )
+
+
+# How far from the day a window opens a recorded score may be and still stand
+# for it: a month's trail wants that week, a year's that fortnight.
+_RECORD_SLACK = {"1m": 3}
+_RECORD_SLACK_DEFAULT = 10
+
+
+def _then(
+    name: str,
+    metrics: dict | None,
+    closes: pd.Series,
+    day: pd.Timestamp,
+    days: dict[str, pd.Timestamp],
+    history: list[dict] | None = None,
+) -> dict[str, ScorePoint]:
+    """Where `name` sat on the map the day each of `days` opened (the windows
+    and the trail's half-year steps), in the listing's own money — a
+    multiple does not care what the reader's currency did. Nothing for a
+    name the map does not place today.
+
+    Best first: the scores the review recorded near that day; else the
+    business as its filings stood that day, at that day's share price
+    (`_filed_point`); else, with no filing that old, today's business at that
+    price (`engine.at_price`).
+    """
+    if not metrics:
+        return {}
+    now = engine.score(metrics)
+    if now.quality is None or now.cheapness is None:
+        return {}
+    moves = window_returns(closes, None, day, days)
+    out: dict[str, ScorePoint] = {}
+    for label, start in days.items():
+        slack = _RECORD_SLACK.get(label, _RECORD_SLACK_DEFAULT)
+        if hit := score_history.at(name, start.date(), slack):
+            out[label] = ScorePoint(quality=hit[0], cheapness=hit[1], source="record")
+            continue
+        move = moves.get(label)
+        if move is None or move <= -1:
+            continue
+        if point := _filed_point(now, history or [], start, 1 / (1 + move)):
+            out[label] = point
+            continue
+        then = engine.score(engine.at_price(metrics, 1 / (1 + move)))
+        if then.quality is None or then.cheapness is None:
+            continue
+        out[label] = ScorePoint(
+            quality=round(then.quality, 1),
+            cheapness=round(then.cheapness, 1),
+            source="price",
+        )
+    return out
+
+
+def _filed_point(
+    now: engine.Scores, history: list[dict], start: pd.Timestamp, factor: float
+) -> ScorePoint | None:
+    """Today's scores moved by what changed since the newest filing out by
+    `start`: that filing at `start`'s price, against today's filings read the
+    same way (`filed_history`'s `base`). The move is added to the real score,
+    not swapped for it — a filing alone lacks the forward estimates and the
+    last quarters the live score reads, and that gap would show as a move.
+    None with no filing that old, or one the engine cannot place."""
+    when = start.date().isoformat()
+    entry = next((one for one in history if one["filed"] <= when), None)
+    if entry is None:
+        return None
+    then = engine.score(engine.at_price(entry["then"], factor))
+    base = engine.score(entry["base"])
+    parts = (then.quality, then.cheapness, base.quality, base.cheapness)
+    if any(part is None for part in parts):
+        return None
+
+    def moved(today: float, past: float, ref: float) -> float:
+        return round(min(100.0, max(0.0, today + past - ref)), 1)
+
+    return ScorePoint(
+        quality=moved(now.quality, then.quality, base.quality),
+        cheapness=moved(now.cheapness, then.cheapness, base.cheapness),
+        source="filings",
     )
 
 
@@ -598,11 +711,14 @@ def _parse_names(raw: str) -> list[str]:
     return out
 
 
-def _window_calendar() -> tuple[pd.Timestamp, dict[str, pd.Timestamp]]:
-    """The day every window ends on and the day each opens on: SPY's last
-    session, and its sessions cut the way the price chart cuts them. The plan's
-    chart draws on SPY's axis, so a column and the line beside it read one
-    stretch. Today by the calendar when SPY's bars will not come."""
+def _window_calendar() -> tuple[
+    pd.Timestamp, dict[str, pd.Timestamp], dict[str, pd.Timestamp]
+]:
+    """The day every window ends on, the day each opens on, and those plus the
+    map's half-year trail steps (`TRAIL_STEPS`): SPY's last session, and its
+    sessions cut the way the price chart cuts them. The plan's chart draws on
+    SPY's axis, so a column and the line beside it read one stretch. Today by
+    the calendar when SPY's bars will not come."""
     try:
         sessions = pd.DatetimeIndex(closes_by_day(loaders.bar_closes(INDEX, "2y")).index)
     except Exception as exc:  # noqa: BLE001
@@ -615,9 +731,11 @@ def _window_calendar() -> tuple[pd.Timestamp, dict[str, pd.Timestamp]]:
         sessions = pd.DatetimeIndex([])
     if len(sessions) == 0:
         day = midnight(date.today())
-        return day, window_days(day)
+        days = window_days(day)
+        return day, days, {**days, **window_days(day, spans=TRAIL_STEPS)}
     day = cast(pd.Timestamp, pd.Timestamp(sessions[-1]))
-    return day, window_days(day, sessions)
+    days = window_days(day, sessions)
+    return day, days, {**days, **window_days(day, sessions, TRAIL_STEPS)}
 
 
 def _window_closes(symbol: str, days: str) -> pd.Series | None:
@@ -951,6 +1069,15 @@ def _judge(account, background: BackgroundTasks, ccy: str, add: str) -> Review:
     proposals = journal.from_review(shown)
     if stay:
         proposals.append(journal.stay_in_review(_num(total), ccy))
+    # Where each name sits today, for the trail a later visit draws from it.
+    background.add_task(
+        score_history.record,
+        {
+            r.symbol: (r.quality, r.cheapness)
+            for r in shown
+            if r.quality is not None and r.cheapness is not None
+        },
+    )
     background.add_task(
         journal.safely,
         journal.record,

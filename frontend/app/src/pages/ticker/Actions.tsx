@@ -12,9 +12,9 @@
  * editor being edited.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useT } from "../../shell/i18n";
-import { complete, draft, payload, summary } from "./alerts";
+import { complete, draft, duplicateAt, payload, summary } from "./alerts";
 import { follow, getAlertTypes, getAlerts, getTags, setAlerts } from "./data";
 import { Popover } from "./ui";
 import type { AlertForm, AlertRule, WatchlistEntry } from "./types";
@@ -111,6 +111,9 @@ function AlertEditor({
   const t = useT();
   const [type, setType] = useState("");
   const [drafted, setDrafted] = useState<AlertRule | null>(null);
+  // Set by "Add" and cleared by the next edit: the draft then equals the rule
+  // it just made, and the line under the button says "added", not "repeat".
+  const [added, setAdded] = useState(false);
 
   // The first form the server sent leads, as the app's selectbox does.
   useEffect(() => {
@@ -126,22 +129,40 @@ function AlertEditor({
   const set = (field: "price" | "pct" | "level" | "window", value: number) => {
     if (!rule) return;
     setDrafted({ ...rule, [field]: value });
+    setAdded(false);
+  };
+
+  const sent = form && rule ? payload(form, rule) : null;
+  const repeat = sent ? duplicateAt(rules, sent) : -1;
+  const ready = !!form && !!rule && complete(form, rule) && repeat < 0;
+
+  const add = (event: FormEvent) => {
+    event.preventDefault();
+    if (!ready || !sent) return;
+    onRules([...rules, sent]);
+    setAdded(true);
   };
 
   return (
-    <div className="tk-editor">
+    <form className="tk-editor" onSubmit={add} noValidate>
       <p className="tk-editor-help">{t("widgets.alerts_caption")}</p>
       {rules.length > 0 ? (
         <ul className="tk-rules">
           {rules.map((one, index) => (
-            <li key={`${one.type}-${index}`}>
+            <li
+              key={`${one.type}-${index}`}
+              className={index === repeat && !added ? "tk-rule-same" : undefined}
+            >
               <span>{summary(one, t)}</span>
               <button
                 type="button"
                 className="tk-x"
                 title={t("widgets.alert_removed")}
                 aria-label={t("widgets.alert_removed")}
-                onClick={() => onRules(rules.filter((_, at) => at !== index))}
+                onClick={() => {
+                  onRules(rules.filter((_, at) => at !== index));
+                  setAdded(false);
+                }}
               >
                 ×
               </button>
@@ -160,6 +181,7 @@ function AlertEditor({
         onChange={(event) => {
           const next = forms.find((one) => one.type === event.target.value);
           setType(event.target.value);
+          setAdded(false);
           // A fresh draft per type: carrying the last one over would send a
           // price on a rule that reads a percentage.
           setDrafted(next ? draft(next) : null);
@@ -178,7 +200,10 @@ function AlertEditor({
           <input
             className="tk-field"
             type="number"
+            inputMode="decimal"
+            enterKeyHint="done"
             aria-label={t(`widgets.alert_${form.field}`)}
+            aria-describedby="tk-alert-status"
             min={0}
             max={form.field === "level" ? 100 : undefined}
             value={rule[form.field] ?? 0}
@@ -192,6 +217,8 @@ function AlertEditor({
           <input
             className="tk-field"
             type="number"
+            inputMode="numeric"
+            enterKeyHint="done"
             aria-label={t("widgets.alert_window")}
             min={2}
             value={rule.window ?? form.window}
@@ -200,15 +227,19 @@ function AlertEditor({
         </>
       ) : null}
 
-      <button
-        type="button"
-        className="tk-add"
-        disabled={!form || !rule || !complete(form, rule)}
-        onClick={() => form && rule && onRules([...rules, payload(form, rule)])}
-      >
+      <button type="submit" className="tk-add" disabled={!ready}>
         {t("widgets.alert_add")}
       </button>
-    </div>
+      {/* Why the button is off, or that it worked: said in place, never as
+          a dialog. Always rendered, so a screen reader hears the change. */}
+      <p id="tk-alert-status" className="tk-editor-help tk-alert-status" role="status">
+        {added
+          ? t("widgets.alert_added", { ticker })
+          : repeat >= 0
+            ? t("widgets.alert_duplicate")
+            : ""}
+      </p>
+    </form>
   );
 }
 

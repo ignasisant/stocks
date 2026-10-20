@@ -24,7 +24,7 @@ export type SegItem<T extends string> = { id: T; label: ReactNode };
  * first placement does not animate (`data-glide` comes a frame later), so a
  * page opens with the thumb already in place; no option pressed hides it.
  */
-function useThumb<T extends HTMLElement>(value: string) {
+function useThumb<T extends HTMLElement>(value: string | null) {
   const track = useRef<T>(null);
 
   const place = () => {
@@ -69,7 +69,8 @@ export function Segmented<T extends string>({
   className,
 }: {
   items: readonly SegItem<T>[];
-  value: T;
+  /** The option pressed; null presses none and hides the thumb. */
+  value: T | null;
   onPick: (next: T) => void;
   /** Names the group for assistive tech. */
   label: string;

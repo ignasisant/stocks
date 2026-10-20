@@ -58,6 +58,9 @@ wheels/
 /data/form4.json
 # Names Yahoo has no data for (stocks.data.fetch) — runtime, restored from R2
 /data/unlisted.json
+# What Yahoo lists per search query (stocks.api.loaders.WORLD_MEMO), shared
+# by every account — runtime, merged with its R2 copy
+/data/symbol_search.json
 # The API's persisted memos (stocks.api.cache) — runtime state, restored from R2.
 /data/memo/
 /data/last_import.json
@@ -70,6 +73,9 @@ wheels/
 /data/sector_scan.json
 # Tonight's crypto market figures (`stocks crypto-scan`), same story.
 /data/crypto_scan.json
+# Where each name sat on the review's map, a point a day (stocks.data.
+# score_history) — runtime state restored from R2, and the names judged.
+/data/scores/
 # This morning's market read for /today (`stocks today-market`), same story.
 /data/today_market.json
 # The owner account's per-sector AI reads, like its daily_action.json.

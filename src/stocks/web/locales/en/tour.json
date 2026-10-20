@@ -46,7 +46,7 @@
   "tour.income_body": "Dividends per year and per holding, including ones your statement missed. **Fees** shows what your broker charged and what the spread cost you.",
   "tour.income_cta": "Open Dividends",
   "tour.review_title": "Sell or add",
-  "tour.review_body": "Each holding scored on quality and price: what to sell, trim or add to, with the tax each move costs. Type any ticker to judge it the same way. Needs your import. Not advice.",
+  "tour.review_body": "Each holding scored on quality and price: what to sell, trim or add to, with its tax. The map shows where each name sat 1M to 2Y ago. Rate any ticker. Needs your import. Not advice.",
   "tour.review_cta": "Open Sell or add",
   "tour.pulse_title": "Market pulse",
   "tour.pulse_body": "Market mood as a 0–100 **risk appetite** score, what drives it and what it means for your portfolio. The detail tables sit below.",

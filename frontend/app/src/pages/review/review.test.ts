@@ -17,8 +17,15 @@ import { BUDGET, buildPrompt, noteText } from "./prompt";
 import { countryName } from "./countries";
 import { NARROW, lineSlots } from "./lines";
 import { labelRank, placeLabels } from "./labels";
-import { tipPlace } from "./QualityMap";
-import type { Review, ReviewRow } from "./types";
+import {
+  driftOf,
+  gainOf,
+  sampleTrail,
+  TRAIL_MARK,
+  tipPlace,
+  trailOf,
+} from "./QualityMap";
+import type { Review, ReviewRow, ScorePoint } from "./types";
 
 const t = (key: string, slots?: Record<string, string | number>) =>
   slots ? `${key}(${Object.values(slots).join(",")})` : key;
@@ -319,8 +326,60 @@ describe("map tooltip placement", () => {
   it("never leaves the map at either side or the bottom", () => {
     expect(tipPlace({ cx: 10, cy: 200, r: 4 }, box, map).left).toBe(8);
     expect(tipPlace({ cx: 595, cy: 200, r: 4 }, box, map).left).toBe(392);
-    const tall = tipPlace({ cx: 300, cy: 90, r: 4 }, { w: 200, h: 250 }, map);
-    expect(tall.top).toBe(42); // bottom edge at 300 - 8
+    const low = tipPlace({ cx: 300, cy: 250, r: 4 }, { w: 200, h: 100 }, map);
+    expect(low.top).toBe(138); // above, clear of the dot
+  });
+
+  it("goes beside a dot when it is too tall for above or below", () => {
+    const tall = { w: 200, h: 250 };
+    // Right of it, the dot left uncovered (300 + 4 + 8).
+    expect(tipPlace({ cx: 300, cy: 90, r: 4 }, tall, map)).toEqual({
+      left: 312,
+      top: 8,
+    });
+    // Near the right edge, left of it (500 - 4 - 8 - 200).
+    expect(tipPlace({ cx: 500, cy: 150, r: 4 }, tall, map)).toEqual({
+      left: 288,
+      top: 25,
+    });
+  });
+
+  it("keeps clear of the name's trail when a spot clear of it exists", () => {
+    // Too tall for above or below: right of the dot is the usual place, but
+    // the trail runs off that way, so the box goes left of the dot instead.
+    const tall = { w: 200, h: 250 };
+    const trail = sampleTrail([
+      [560, 150],
+      [300, 150],
+    ]);
+    expect(tipPlace({ cx: 300, cy: 150, r: 4 }, tall, map).left).toBe(312);
+    const spot = tipPlace({ cx: 300, cy: 150, r: 4 }, tall, map, trail);
+    expect(spot.left + tall.w).toBeLessThanOrEqual(296);
+  });
+
+  it("hides a stretch of line before a named step when it must hide one", () => {
+    // Nearly as tall as the map: whatever it does, it covers some of a path
+    // that crosses it, so it sits between the steps, not over one.
+    const tall = { w: 200, h: 270 };
+    const steps: [number, number][] = [
+      [60, 250],
+      [500, 60],
+      [560, 150],
+    ];
+    const marks = steps.map(([x, y]): [number, number, number] => [x, y, TRAIL_MARK]);
+    const spot = tipPlace({ cx: 560, cy: 150, r: 4 }, tall, map, [
+      ...sampleTrail(steps),
+      ...marks,
+    ]);
+    for (const [x] of steps) {
+      expect(x < spot.left - 8 || x > spot.left + tall.w + 8).toBe(true);
+    }
+  });
+
+  it("overlaps only when there is no room on any side", () => {
+    const phone = { width: 340, height: 300 };
+    const spot = tipPlace({ cx: 170, cy: 90, r: 4 }, { w: 300, h: 250 }, phone);
+    expect(spot).toEqual({ left: 20, top: 42 });
   });
 });
 
@@ -359,6 +418,27 @@ describe("map labels", () => {
 
   it("flips to the left at the right edge", () => {
     expect(placeLabels([dot("AAPL", 290, 100)], area).get("AAPL")?.anchor).toBe("end");
+  });
+
+  it("keeps a label off the path drawn when a spot allows, but never drops it", () => {
+    // A path running right out of the dot: the label goes another way.
+    const path = Array.from({ length: 40 }, (_, k) => ({
+      x0: 105 + k * 4,
+      y0: 99,
+      x1: 107 + k * 4,
+      y1: 101,
+    }));
+    const spot = placeLabels([dot("SEZL", 100, 100)], area, [], path).get("SEZL");
+    expect(spot?.anchor).not.toBe("start");
+    // Paths all round: the label still shows, where it would have gone.
+    const everywhere = [{ x0: 0, y0: 0, x1: 300, y1: 300 }];
+    expect(
+      placeLabels([dot("SEZL", 100, 100)], area, [], everywhere).get("SEZL"),
+    ).toEqual({
+      x: 108,
+      y: 104,
+      anchor: "start",
+    });
   });
 
   it("moves a second label off the first and drops one with nowhere to go", () => {
@@ -474,5 +554,45 @@ describe("review pending names", () => {
     expect(askAgain(partial, "EUR|", "EUR|")).toBe(false);
     expect(askAgain(partial, "EUR|", "USD|")).toBe(true);
     expect(askAgain(review([]), null, "EUR|")).toBe(false);
+  });
+});
+
+describe("driftOf / gainOf", () => {
+  const then = { quality: 60.4, cheapness: 40.4, source: "filings" as const };
+
+  it("reads which way each score moved since the window opened", () => {
+    expect(driftOf(30, then)).toBe("dear");
+    expect(driftOf(55, then)).toBe("cheap");
+    expect(gainOf(70, then)).toBe("better");
+    expect(gainOf(50, then)).toBe("worse");
+  });
+
+  it("takes a move within the printed whole number as none", () => {
+    expect(driftOf(40.2, then)).toBe("flat");
+    expect(gainOf(59.6, then)).toBe("flat");
+  });
+
+  it("has no move without a past point or a score now", () => {
+    expect(driftOf(40, null)).toBeNull();
+    expect(gainOf(null, then)).toBeNull();
+  });
+});
+
+describe("map trail", () => {
+  const cheapness: Record<string, number> = { "2y": 20, "1y": 40, "6m": 60, "1m": 70 };
+  const at = (step: string): ScorePoint | null => {
+    const value = cheapness[step];
+    return value === undefined
+      ? null
+      : { quality: 50, cheapness: value, source: "price" };
+  };
+
+  it("runs two years through every half year, oldest first, skipping a step it lacks", () => {
+    expect(trailOf("2y", at).map((point) => point.cheapness)).toEqual([20, 40, 60]);
+  });
+
+  it("starts a short window at its own first day alone", () => {
+    expect(trailOf("1m", at).map((point) => point.cheapness)).toEqual([70]);
+    expect(trailOf("1y", at).map((point) => point.cheapness)).toEqual([40, 60]);
   });
 });

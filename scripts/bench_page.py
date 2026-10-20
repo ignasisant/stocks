@@ -64,8 +64,12 @@ def install_stubs():
     scratch = Path(tempfile.mkdtemp(prefix="bench-data-"))
     profiles.PROFILE_CACHE = scratch / "profiles.json"
     profiles.clear()
-    funds.TYPE_CACHE = scratch / "quote_types.json"
+    funds.TYPE_MEMO.clear()
+    funds.TYPE_MEMO.path = scratch / "quote_types.json"
     funds._types = None
+    from stocks.api import loaders
+    loaders.WORLD_MEMO.clear()
+    loaders.WORLD_MEMO.path = scratch / "symbol_search.json"
     # Memos on disk too: the dev memo dir would serve a run from the last one
     # and keep this bench's made-up prices for the dev server to read.
     from stocks.api import cache

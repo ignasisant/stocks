@@ -95,7 +95,7 @@ export function useStaleSince(): number | null {
 
 const retries = new Map<string, number>();
 const kept = new Map<string, number>();
-const retryListeners = new Set<() => void>();
+const retryListeners = new Set<RetryListener>();
 let retrySnap: Retry = { due: null, asking: false };
 let keptOldest: number | null = null;
 
@@ -152,12 +152,27 @@ export function useKeptSince(): number | null {
   return useSyncExternalStore(subscribe, keptSince);
 }
 
-/** Ask every screen holding stale figures to fetch them again, now. */
-export function retryStale(): void {
-  retryListeners.forEach((fn) => fn());
+/** Every URL whose last answer was stale. */
+export function staleUrls(): string[] {
+  return [...since.keys()].filter((key) => key.startsWith("/"));
 }
 
-export function onRetryStale(fn: () => void): () => void {
+/**
+ * Ask every screen holding stale figures to fetch them again, now. Returns
+ * the URLs some screen took; `useApi.retryNow` asks for the rest itself.
+ */
+export function retryStale(): Set<string> {
+  const taken = new Set<string>();
+  retryListeners.forEach((fn) => {
+    for (const url of fn() ?? []) taken.add(url);
+  });
+  return taken;
+}
+
+/** A screen's half of the press: ask again, and say which URLs it took. */
+type RetryListener = () => Iterable<string> | void;
+
+export function onRetryStale(fn: RetryListener): () => void {
   retryListeners.add(fn);
   return () => {
     retryListeners.delete(fn);

@@ -32,7 +32,8 @@ import {
 import { useT } from "./i18n";
 import { kindOf, useActivity } from "./activity";
 import { barShare, useServerProgress } from "./progress";
-import { retryStale, useKeptSince, useRetry, useStaleSince } from "./freshness";
+import { useKeptSince, useRetry, useStaleSince } from "./freshness";
+import { retryNow } from "./useApi";
 import { usePresence } from "./useSheet";
 import "../ui/ui.css";
 
@@ -186,6 +187,9 @@ export function ActivityBanner() {
 const FRESH_MS = 2500;
 /** Last visit's figures say so only past this: most live answers beat it. */
 const KEPT_MS = 1000;
+/** "Retrying…" stays at least this long after a press: an answer back in a
+ * few milliseconds would otherwise leave the press looking ignored. */
+const PRESS_MS = 800;
 
 function formatWhen(at: number): string {
   return new Date(at).toLocaleString(undefined, {
@@ -215,6 +219,17 @@ export function StaleNotice() {
   const retry = useRetry();
   const kept = useKeptSince();
   const now = useNow(since !== null && retry.due !== null ? 1000 : null);
+
+  const [pressed, setPressed] = useState(false);
+  useEffect(() => {
+    if (!pressed) return;
+    const id = window.setTimeout(() => setPressed(false), PRESS_MS);
+    return () => window.clearTimeout(id);
+  }, [pressed]);
+  const press = () => {
+    setPressed(true);
+    retryNow();
+  };
 
   const [fresh, setFresh] = useState(false);
   const wasStale = useRef(false);
@@ -262,7 +277,7 @@ export function StaleNotice() {
       {mode === "stale" && since !== null ? (
         <>
           <span>{t("common.stale_notice", { when: formatWhen(since) })}</span>{" "}
-          {retry.asking ? (
+          {retry.asking || pressed ? (
             <span className="ag-stale-next">
               <span className="ag-work-glyph" aria-hidden="true">
                 ✻
@@ -276,7 +291,7 @@ export function StaleNotice() {
               })}
             </span>
           ) : (
-            <button type="button" className="ag-stale-retry" onClick={retryStale}>
+            <button type="button" className="ag-stale-retry" onClick={press}>
               {t("common.stale_retry")}
             </button>
           )}

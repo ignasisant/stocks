@@ -56,3 +56,19 @@ export function payload(form: AlertForm, rule: AlertRule): AlertRule {
   if (rule.window !== null && rule.window !== undefined) out.window = rule.window;
   return out;
 }
+
+/**
+ * Where this rule already stands in the list, or -1.
+ *
+ * Two rules alike in type, threshold and window fire the same message twice,
+ * so the editor refuses the second rather than storing it; the server drops a
+ * repeat too (`watchlist.unique_alerts`).
+ */
+export function duplicateAt(rules: AlertRule[], rule: AlertRule): number {
+  const fields = ["price", "pct", "level", "window"] as const;
+  return rules.findIndex(
+    (one) =>
+      one.type === rule.type &&
+      fields.every((field) => (one[field] ?? null) === (rule[field] ?? null)),
+  );
+}

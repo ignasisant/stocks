@@ -382,6 +382,21 @@ def test_a_cyclical_at_its_peak_margin_is_not_added_to():
     _blocked(peak, review.R_PEAK_MARGIN)
 
 
+def test_a_cyclical_at_its_peak_is_priced_on_a_normal_year():
+    # The P/E it shows is on the peak margin; a normal year's earnings are
+    # its median margin on today's sales, a dearer multiple.
+    peak = {**CHEAP_QUALITY, "op_margin_median": 0.20, "revenue_down_years": 1}
+    at_top, plain = review.score(peak), review.score(CHEAP_QUALITY)
+    assert at_top.normal_pe and not plain.normal_pe
+    assert at_top.cheapness < plain.cheapness
+    pe, _ = review._pe(peak)
+    assert review._normal_pe(peak, pe) == pytest.approx(
+        pe * peak["op_margin"] / peak["op_margin_median"]
+    )
+    # A median at a loss: a normal year has no multiple, the dear end.
+    assert review._normal_pe({**peak, "op_margin_median": -0.02}, pe) == 0.0
+
+
 def test_a_compounder_widening_its_margin_is_no_peak():
     no_down_year = {**CHEAP_QUALITY, "op_margin_median": 0.20, "revenue_down_years": 0}
     fast = {
@@ -393,6 +408,45 @@ def test_a_compounder_widening_its_margin_is_no_peak():
         assert review.R_PEAK_MARGIN not in reasons
     v = review.judge_held(no_down_year, weight=0.02, risk_share=0.02)
     assert v.verdict == review.ADD
+
+
+def test_heavy_dilution_blocks_and_mild_is_only_named():
+    _blocked({**CHEAP_QUALITY, "share_dilution": 0.06}, review.R_HEAVY_DILUTION)
+    mild = review.judge_held({**CHEAP_QUALITY, "share_dilution": 0.035}, weight=0.02)
+    assert review.R_DILUTION in mild.reasons
+    assert review.R_HEAVY_DILUTION not in mild.reasons
+    reit = {**CHEAP_QUALITY, "industry": "REIT - Retail", "share_dilution": 0.14}
+    assert review.R_HEAVY_DILUTION not in review.judge_held(reit, weight=0.02).reasons
+
+
+def test_earnings_the_cash_does_not_back_block():
+    _blocked({**CHEAP_QUALITY, "accruals": 0.14}, review.R_EARNINGS_NOT_CASH)
+    _blocked({**CHEAP_QUALITY, "cfo_ni": 0.55}, review.R_EARNINGS_NOT_CASH)
+    backed = {**CHEAP_QUALITY, "accruals": 0.03, "cfo_ni": 1.1}
+    v = review.judge_held(backed, weight=0.02, risk_share=0.02)
+    assert v.verdict == review.ADD
+    # A bank's operating cash is deposits moving: not read.
+    bank = {**CHEAP_QUALITY, "industry": "Banks - Regional", "cfo_ni": 0.2}
+    assert review.R_EARNINGS_NOT_CASH not in review.judge_held(bank, weight=0.02).reasons
+
+
+def test_goodwill_blocks_only_when_the_deals_do_not_earn_it():
+    # Heavy goodwill and a thin return on all the capital: the premium paid
+    # is not coming back. The business's own return stays high (ex goodwill).
+    heavy = {**CHEAP_QUALITY, "goodwill_assets": 0.6, "roic": 0.06,
+             "roic_ex_goodwill": 0.41}
+    _blocked(heavy, review.R_GOODWILL_HEAVY)
+    _blocked({**heavy, "goodwill_assets": None, "goodwill_equity": 1.4},
+             review.R_GOODWILL_HEAVY)
+    earning = {**heavy, "roic": 0.15}
+    assert review.R_GOODWILL_HEAVY not in review.judge_held(earning, weight=0.02).reasons
+
+
+def test_share_pay_is_named_on_a_tenth_of_sales_too():
+    paid = review.judge_held({**CHEAP_QUALITY, "sbc_revenue": 0.12}, weight=0.02)
+    assert review.R_SHARE_PAY in paid.reasons
+    light = review.judge_held({**CHEAP_QUALITY, "sbc_revenue": 0.04}, weight=0.02)
+    assert review.R_SHARE_PAY not in light.reasons
 
 
 def test_cheap_and_shrinking_is_a_value_trap():
@@ -923,6 +977,38 @@ def test_a_bank_paying_more_for_its_book_than_its_return_earns_reads_dear():
     assert review.R_EXPENSIVE in v.reasons and review.R_LOW_ROE in v.reasons
 
 
+def test_a_bank_is_priced_on_its_tangible_book():
+    # Same book on paper, but most of it goodwill: on tangible book it costs
+    # far more, for a thinner return on the capital that is left.
+    tangible = {**BANK, "ptbv": 1.0, "rotce": 0.17}
+    padded = {**BANK, "ptbv": 2.4, "rotce": 0.08}
+    assert review.score(tangible).cheapness > review.score(padded).cheapness
+    # (17% - 3%) / (10% - 3%) = 2x justified: 1x paid is half of it.
+    assert review._pb_for_roe(tangible) == pytest.approx(0.5)
+    # Earning under the growth rate: no price is cheap.
+    assert review._pb_for_roe({**BANK, "ptbv": 0.5, "rotce": 0.02}) == float("inf")
+    shown = review.judge_held(tangible, weight=0.02).metrics
+    assert shown["ptbv"] == 1.0 and shown["rotce"] == 0.17
+    firm = review.judge_held({**CHEAP_QUALITY, "ptbv": 30.0}, weight=0.02).metrics
+    assert firm["ptbv"] is None
+    # Without a tangible book, the whole book.
+    assert review._pb_for_roe(BANK) == pytest.approx(0.9 / ((0.13 - 0.03) / 0.07))
+
+
+def test_a_name_nobody_trades_is_not_added_to():
+    _blocked({**CHEAP_QUALITY, "turnover_usd": 4e5}, review.R_THIN_TRADING)
+    liquid = review.judge_held({**CHEAP_QUALITY, "turnover_usd": 5e7}, weight=0.02)
+    assert review.R_THIN_TRADING not in liquid.reasons
+
+
+def test_insiders_holding_a_tenth_are_named_not_scored():
+    owned = {**CHEAP_QUALITY, "insider_share": 0.14}
+    assert review.R_INSIDERS_OWN in review.judge_held(owned, weight=0.02).reasons
+    assert review.score(owned) == review.score(CHEAP_QUALITY)
+    few = {**CHEAP_QUALITY, "insider_share": 0.02}
+    assert review.R_INSIDERS_OWN not in review.judge_held(few, weight=0.02).reasons
+
+
 def test_a_bank_never_reads_as_a_growth_or_early_stage():
     racing = {
         **BANK,
@@ -1191,3 +1277,51 @@ def test_an_industry_that_sounds_like_a_lens_but_has_none_is_flagged(
     industry, unmapped
 ):
     assert review.unmapped_industry(industry) is unmapped
+
+
+# ------------------------------------------------------------- at_price
+
+
+def test_at_a_lower_price_the_same_business_reads_cheaper():
+    """The map's trail: half the price is half every multiple and twice
+    every yield; the business behind them does not move."""
+    metrics = {**DEAR_QUALITY, "market_cap": 2.8e12, "pb": 12.0, "dividend_yield": 0.01}
+    then = review.at_price(metrics, 0.5)
+    assert then["pe_fwd"] == pytest.approx(16.0)
+    assert then["pb"] == pytest.approx(6.0)
+    assert then["fcf_yield"] == pytest.approx(0.06)
+    assert then["dividend_yield"] == pytest.approx(0.02)
+    # EV falls by the cap's change only: 3e12 - 1.4e12.
+    assert then["ev"] == pytest.approx(1.6e12)
+    assert then["ev_ebitda"] == pytest.approx(26.0 * 1.6 / 3.0)
+    assert then["roic"] == metrics["roic"] and then["moat"] == metrics["moat"]
+    now, past = review.score(metrics), review.score(then)
+    # Quality reads the cash yield too, so it moves, but far less.
+    assert past.cheapness - now.cheapness > 3 * abs(past.quality - now.quality)
+
+
+def test_at_its_own_price_nothing_moves():
+    metrics = {**CHEAP_QUALITY, "market_cap": 9e10}
+    assert review.at_price(metrics, 1.0) == pytest.approx(metrics)
+    assert review.at_price(metrics, 0.0) == metrics  # no price, no replay
+
+
+def test_the_ticker_page_reads_the_same_cautions_and_peak_pe(monkeypatch):
+    """The company page names what the review would hold against it, minus the
+    one warning that is about the review's own cheap call."""
+    peak = {
+        **CHEAP_QUALITY,
+        "pe_ttm": 10.0,
+        "op_margin_median": 0.20,
+        "revenue_down_years": 1,
+    }
+    assert review.R_PEAK_MARGIN in review.cautions(peak)
+    assert review.peak_pe(peak) == pytest.approx(
+        10.0 * peak["op_margin"] / peak["op_margin_median"]
+    )
+    assert review.peak_pe({**CHEAP_QUALITY, "pe_ttm": 10.0}) is None, "no peak"
+    assert review.cautions({**peak, "quote_type": "ETF"}) == []
+    monkeypatch.setattr(
+        review, "_cautions", lambda m, s: [review.R_ONE_READING, review.R_DEBT]
+    )
+    assert review.cautions(CHEAP_QUALITY) == [review.R_DEBT]

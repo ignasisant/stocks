@@ -139,6 +139,31 @@ def set_name(
     update_entry(path, ticker, _set, persist=persist)
 
 
+def unique_alerts(alerts: list[dict]) -> list[dict]:
+    """The rules with repeats dropped, first one kept, order otherwise intact.
+
+    Two rules alike in type, threshold and window would fire the same message
+    twice, so a second copy is never what anybody meant. Numbers compare as
+    numbers: 90 and 90.0 are the same price.
+    """
+
+    def key(alert: dict) -> tuple:
+        def number(field: str) -> float | None:
+            value = alert.get(field)
+            return None if value is None else float(value)
+
+        return (alert.get("type"), number("price"), number("pct"),
+                number("level"), number("window"))
+
+    seen: set[tuple] = set()
+    out: list[dict] = []
+    for alert in alerts:
+        if (k := key(alert)) not in seen:
+            seen.add(k)
+            out.append(alert)
+    return out
+
+
 def set_alerts(
     path: Path, ticker: str, alerts: list[dict], *, persist: Persist | None = None
 ) -> None:
@@ -146,13 +171,13 @@ def set_alerts(
 
     Each dict is the YAML shape `config.Alert` accepts: {"type": …, and one of
     price/pct/level, optional window}. None values are dropped so the YAML stays
-    clean.
+    clean, and a rule repeated in the list is kept once.
     """
     clean = [
         {k: v for k, v in alert.items() if v is not None and v != ""}
         for alert in alerts
     ]
-    clean = [alert for alert in clean if alert.get("type")]
+    clean = unique_alerts([alert for alert in clean if alert.get("type")])
 
     def _set(entry: dict) -> None:
         if clean:
