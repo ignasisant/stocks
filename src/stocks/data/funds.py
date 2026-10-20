@@ -241,7 +241,7 @@ def remember(ticker: str, quote_type: str | None) -> None:
     """Record `ticker`'s Yahoo quoteType, so no one has to fetch it again —
     on this host or any other: the memo rides the storage bucket.
 
-    Called wherever the app already holds an `.info` payload (the ticker page,
+    Called wherever the app already holds an `.info` payload (`fetch.info`,
     the screener pull, a search row). Writing it out is best-effort and off the
     request: a read-only or full filesystem costs a repeated lookup, never a
     failed render.

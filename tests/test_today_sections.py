@@ -197,6 +197,35 @@ def test_a_slow_source_runs_out_the_budget():
     assert "yahoo" in news["missing"]
 
 
+def test_the_review_rows_get_their_own_budget():
+    """A whole Review computed outlives a feed's budget (ERR-01): the
+    comparisons wait for it rather than naming the review missing."""
+    def verdicts():
+        time.sleep(0.4)
+        return {}
+
+    out = _gather({"AAPL": 1.0}, sources=_sources(verdicts=verdicts),
+                  budget_s=0.1, verdicts_budget_s=2.0)
+    compare = next(s for s in out["sections"] if s["id"] == "compare")
+    assert "review" not in compare["missing"]
+
+
+def test_the_review_rows_start_before_the_feeds(monkeypatch):
+    monkeypatch.setattr(today_sections, "WORKERS", 1)  # one queue, in order
+    order = []
+
+    def news(t):
+        order.append("news")
+        return []
+
+    def verdicts():
+        order.append("verdicts")
+        return {}
+
+    _gather({"AAPL": 1.0}, sources=_sources(news=news, verdicts=verdicts))
+    assert order[0] == "verdicts"
+
+
 def test_an_alerted_name_reads_its_news_first():
     seen = []
 

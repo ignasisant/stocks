@@ -81,11 +81,13 @@ def seen_recently(last_seen: object, today: date, days: int = RECENT_DAYS) -> bo
 
 
 def warm_account(db: str, watchlist: str | Path, base: str) -> None:
-    """Fill the memos one Home, one Portfolio and one Today read: the book's
-    close download and the three frames built from it, the watchlist's year,
-    then what Today's sections fetch for the largest names."""
+    """Repair the book's missing splits, then fill the memos one Home, one
+    Portfolio and one Today read: the book's close download and the three
+    frames built from it, the watchlist's year, then what Today's sections
+    fetch for the largest names."""
     from stocks.api.home import closes_tuple, year_closes
 
+    repair_splits(db)
     mtime = loaders.db_mtime(db)
     loaders.held_closes(db, mtime)
     tbl = loaders.positions_table(db, mtime, base)
@@ -98,6 +100,24 @@ def warm_account(db: str, watchlist: str | Path, base: str) -> None:
     # reads. Warming the whole tuple filled an entry nobody ever asked for.
     year_closes(closes_tuple(entries, owned), db, mtime)
     warm_today(tbl)
+
+
+def repair_splits(db: str) -> None:
+    """Write the splits the book is missing before pricing it, so the memos
+    below are filled on the repaired ledger (`portfolio.split_sweep`). Best
+    effort: a scan that fails costs the repair, never the warm."""
+    from stocks.data import fetch
+    from stocks.portfolio import split_sweep
+
+    try:
+        split_sweep.repair(
+            db,
+            splits=fetch.splits,
+            close_on=fetch.close_on,
+            throttled=lambda: fetch.throttle_remaining() > 0,
+        )
+    except Exception as exc:  # noqa: BLE001 — see above
+        obs.warn("api.warm_splits_failed", error_type=type(exc).__name__)
 
 
 # What Today's comparisons and insider section read first: the Review metrics
