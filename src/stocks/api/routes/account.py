@@ -1,4 +1,5 @@
-"""Erasing an account, which is the one promise the legal page makes by name.
+"""Erasing an account, and taking its data away — the two promises the legal
+page makes by name.
 
 `web/auth.delete_account` is the whole of it — bucket copies first, then disk,
 refusing the owner and guest directories — and it is deliberately not reopened
@@ -15,7 +16,9 @@ next.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from datetime import date
+
+from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
 from stocks import obs, session
@@ -92,3 +95,40 @@ def erase(caller: Authed, account: Writer, body: Erase) -> Erased:
         obs.warn("account.revoke_failed", error_type=type(exc).__name__)
     obs.event("account.deleted", via="api")
     return Erased()
+
+
+@router.get(
+    "/account/export",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {"application/zip": {}},
+            "description": "Everything the account holds, one file each.",
+        }
+    },
+    summary="Download this account's data",
+)
+def export(account: Writer) -> Response:
+    """What this account holds, as one zip to keep or take elsewhere: the
+    ledger as CSV in the reporting currency, the watchlist, the settings
+    without their provider keys, the conversations, the memories and the
+    decision journal (`web.exports.account_bundle`).
+
+    A session only, like `erase`, and for the same reason: a bearer token
+    names any account it likes, so a token that could download one could
+    download every book on the deployment.
+    """
+    from stocks.api.deps import reporting_currency
+    from stocks.web import exports
+
+    body = exports.account_bundle(account, base=reporting_currency(account))
+    obs.event("account.exported")
+    return Response(
+        content=body,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="aguait-account-{date.today():%Y-%m-%d}.zip"'
+            )
+        },
+    )

@@ -14,7 +14,10 @@ a refusal.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
+import zipfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -133,6 +136,77 @@ def test_a_token_cannot_erase_an_account(client, account):
     )
     assert response.status_code == 403
     assert account.watchlist.exists()
+
+
+# ------------------------------------------------------------------- export
+
+
+def _bundle(response) -> zipfile.ZipFile:
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["content-disposition"].startswith(
+        'attachment; filename="aguait-account-'
+    )
+    return zipfile.ZipFile(io.BytesIO(response.content))
+
+
+def test_the_export_bundles_what_the_account_holds_without_its_keys(
+    client, account, signed_in
+):
+    """Every file the account has, as it is — except the settings, which go
+    without the provider key typed in (and the dates around it): an export is
+    a file people forward."""
+    account.prefs.write_text(json.dumps({
+        "currency": "EUR",
+        "anthropic_key_enc": "gAAAAABn-not-for-export",
+        "anthropic_key_saved_at": 1.0,
+        "anthropic_key_first_at": 1.0,
+        "telegram_chat_id": "42",
+    }))
+    account.chat.write_text(json.dumps({"conversations": []}))
+    account.learnings.write_text("[]")
+    bundle = _bundle(signed_in.get("/v1/account/export"))
+    assert bundle.namelist() == [
+        "README.txt", "watchlist.yaml", "prefs.json", "chat.json", "chat_learnings.json",
+    ]
+    assert json.loads(bundle.read("prefs.json")) == {
+        "currency": "EUR", "telegram_chat_id": "42",
+    }
+    assert bundle.read("watchlist.yaml") == account.watchlist.read_bytes()
+    assert bundle.read("chat.json") == account.chat.read_bytes()
+    readme = bundle.read("README.txt").decode()
+    assert "chat_learnings.json" in readme and "ledger.csv" not in readme
+
+
+def test_the_export_carries_the_ledger_as_csv_not_as_a_database(
+    client, account, signed_in
+):
+    from stocks.portfolio import ledger
+    from stocks.portfolio.ledger import Transaction
+
+    ledger.add(Transaction("2024-01-02", "AAPL", "buy", 10, 100.0, "EUR", 2.0),
+               path=account.db)
+    bundle = _bundle(signed_in.get("/v1/account/export"))
+    assert "ledger.csv" in bundle.namelist()
+    assert "portfolio.db" not in bundle.namelist()
+    [row] = csv.DictReader(io.StringIO(bundle.read("ledger.csv").decode()))
+    assert (row["ticker"], row["action"], row["quantity"]) == ("AAPL", "buy", "10.0")
+    assert "amount_eur" in row
+
+
+def test_a_token_cannot_export_an_account(client, account):
+    response = client.get("/v1/account/export", params={"account": EMAIL}, headers=AUTH)
+    assert response.status_code == 403
+
+
+def test_every_user_file_is_bundled_or_deliberately_left_out(account):
+    """A file the app starts keeping for an account has to be in the export
+    or named in `NOT_BUNDLED` with its reason — never silently missing."""
+    from stocks.chat import memory
+    from stocks.web import exports
+
+    assert set(exports.bundled(account)) | exports.NOT_BUNDLED == set(accounts.USER_FILES)
+    assert exports.NOT_BUNDLED == {"portfolio.db", memory.FILE}
 
 
 # ----------------------------------------------------------------- telegram

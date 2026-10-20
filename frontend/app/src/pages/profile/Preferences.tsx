@@ -395,6 +395,16 @@ export function Preferences({
               <span className="pr-muted">{t("profile.export_none")}</span>
             )}
           </Row>
+          {/* The whole account, not only the ledger: always on offer, since
+              settings and conversations exist before a statement does. */}
+          <Row
+            label={t("profile.export_all_title")}
+            help={t("profile.export_all_help")}
+          >
+            <a className="pr-download" href="/api/v1/account/export">
+              {t("profile.export_all_button")}
+            </a>
+          </Row>
           {/* The other half of the promise the privacy policy makes: the data
               can be taken out, and it can be erased. Never offered to the
               owner: that "account" is the repo-root files the CLI shares, and
