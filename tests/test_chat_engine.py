@@ -1201,14 +1201,21 @@ def test_a_pasted_list_is_not_a_one_trade_question():
 
 
 def test_a_pasted_review_opens_no_trade_card(providers, paths, monkeypatch):
-    opened: list[str] = []
+    # Keyed by message: a turn another test left running on a thread may
+    # still reach the patched cards, and its calls are not this test's.
+    opened: list[tuple[str, str]] = []
     for name in ("_simulate_sale", "_chart", "_allocation", "_harvest",
                  "_rebalance"):
         monkeypatch.setattr(engine, name,
-                            lambda *a, _n=name, **k: opened.append(_n))
+                            lambda message, *a, _n=name, **k:
+                            opened.append((_n, message)))
+
+    def cards(message: str) -> list[str]:
+        return sorted(name for name, said in opened if said == message)
+
     engine.answer(prefs=dict(BASE_PREFS), lang="es", message=REVIEW_PASTE,
                   **paths)
-    assert opened == []
+    assert cards(REVIEW_PASTE) == []
     engine.answer(prefs=dict(BASE_PREFS), lang="es", message="baja FISV al 5%",
                   **paths)
-    assert sorted(opened) == ["_harvest", "_rebalance", "_simulate_sale"]
+    assert cards("baja FISV al 5%") == ["_harvest", "_rebalance", "_simulate_sale"]
