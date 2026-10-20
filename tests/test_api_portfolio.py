@@ -1254,3 +1254,116 @@ def test_unpriced_positions_answer_from_the_ledger_alone(client, book, monkeypat
     assert [r["ticker"] for r in rows] == ["AAPL"]
     assert rows[0]["shares"] > 0 and rows[0]["cost"] > 0
     assert rows[0]["value"] is None and rows[0]["day"] is None
+
+
+# ------------------------------------------------------------- the tax file
+
+
+def _rows(text: str) -> list[dict[str, str]]:
+    import csv
+    import io
+
+    return list(csv.DictReader(io.StringIO(text)))
+
+
+def test_the_tax_file_lists_each_lot_sold_and_each_dividend(client, book):
+    """The Realized & tax tab as a file: the same FIFO parcel the tab shows,
+    and the dividend gross and withheld beside it — the figures a return asks
+    for, in the jurisdiction's currency."""
+    book(
+        trades() + [Transaction("2024-06-01", "AAPL", "dividend", 0, 20.0, "EUR", 3.0)],
+        prefs={"currency": "EUR", "tax_residence": "ES"},
+    )
+    response = client.get(
+        "/v1/portfolio/tax.csv", params={"account": EMAIL}, headers=AUTH
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    disposition = response.headers["content-disposition"]
+    assert disposition.startswith('attachment; filename="aguait-tax-es-all-')
+    assert disposition.endswith('.csv"')
+
+    sale, dividend = _rows(response.text)
+    assert sale["kind"] == "sale" and sale["tax_year"] == "2024"
+    assert (sale["ticker"], sale["acquired"], sale["date"]) == (
+        "AAPL", "2024-01-02", "2024-03-01")
+    # 4 of the first lot's 10 at 100, carrying 4/10 of its 2.00 fee; the sale
+    # at 130 less its own 1.50.
+    assert float(sale["quantity"]) == 4.0
+    assert float(sale["cost"]) == pytest.approx(400.8)
+    assert float(sale["proceeds"]) == pytest.approx(518.5)
+    assert float(sale["gain"]) == pytest.approx(117.7)
+    assert (sale["currency"], sale["matched"]) == ("EUR", "fifo")
+    assert sale["gross"] == "" and sale["withheld"] == ""
+
+    assert dividend["kind"] == "dividend" and dividend["date"] == "2024-06-01"
+    assert float(dividend["gross"]) == 20.0 and float(dividend["withheld"]) == 3.0
+    assert dividend["cost"] == "" and dividend["acquired"] == ""
+
+
+def test_the_tax_file_reconciles_with_the_tab(client, book):
+    """Same replay, same currency, same matching: the file's gains add up to
+    the year the tab reports, so the two can be checked against each other."""
+    book(
+        [
+            Transaction("2023-01-02", "AAPL", "buy", 20, 10.0, "EUR", 0.0),
+            Transaction("2023-06-15", "AAPL", "sell", 5, 15.0, "EUR", 0.0),
+            Transaction("2024-06-15", "AAPL", "sell", 5, 20.0, "EUR", 0.0),
+        ],
+        prefs={"currency": "EUR", "tax_residence": "ES"},
+    )
+    who = {"account": EMAIL}
+    tab = client.get("/v1/portfolio/tax", params=who, headers=AUTH).json()
+    rows = _rows(client.get("/v1/portfolio/tax.csv", params=who, headers=AUTH).text)
+    by_year: dict[str, float] = {}
+    for row in rows:
+        by_year[row["tax_year"]] = by_year.get(row["tax_year"], 0.0) + float(row["gain"])
+    assert by_year == {
+        period["period"]: pytest.approx(period["realized_gain"])
+        for period in tab["years"]
+    }
+
+
+def test_the_tax_file_keeps_one_year_by_the_jurisdictions_own_calendar(client, book):
+    """`?year=` is a tax year, not a calendar year: a UK disposal on 2 May 2024
+    files under 2024/25 and one on 15 March 2024 under 2023/24."""
+    book(
+        [
+            Transaction("2023-01-02", "AAPL", "buy", 10, 10.0, "GBP", 0.0),
+            Transaction("2024-03-15", "AAPL", "sell", 5, 12.0, "GBP", 0.0),
+            Transaction("2024-05-02", "AAPL", "sell", 5, 15.0, "GBP", 0.0),
+        ],
+        prefs={"currency": "EUR", "tax_residence": "UK"},
+    )
+    for year, sold_on in (("2024", "2024-05-02"), ("2023", "2024-03-15")):
+        response = client.get(
+            "/v1/portfolio/tax.csv",
+            params={"account": EMAIL, "year": year},
+            headers=AUTH,
+        )
+        assert response.status_code == 200
+        disposition = response.headers["content-disposition"]
+        assert f'filename="aguait-tax-uk-{year}-' in disposition
+        [row] = _rows(response.text)
+        assert (row["date"], row["tax_year"], row["currency"]) == (sold_on, year, "GBP")
+        assert row["matched"] in {"s104", "pool", "average"}
+
+
+def test_a_year_with_nothing_taxable_has_no_file(client, book):
+    """404, not a zero-byte attachment — the ledger export's rule."""
+    book(trades())
+    response = client.get(
+        "/v1/portfolio/tax.csv",
+        params={"account": EMAIL, "year": 2030},
+        headers=AUTH,
+    )
+    assert response.status_code == 404
+    assert "2030" in response.json()["detail"]
+
+
+def test_an_empty_book_has_no_tax_file(client, book):
+    book([])
+    response = client.get(
+        "/v1/portfolio/tax.csv", params={"account": EMAIL}, headers=AUTH
+    )
+    assert response.status_code == 404

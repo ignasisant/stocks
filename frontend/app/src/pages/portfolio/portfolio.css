@@ -200,6 +200,35 @@
   margin: 0;
 }
 
+/* The file link: a pill like Profile's export, because a download is a
+   navigation the browser does and not a button the page handles. */
+.pf-download {
+  display: inline-block;
+  white-space: nowrap;
+  font-size: var(--ag-fs-sm);
+  text-decoration: none;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  padding: 5px 12px;
+  color: var(--ag-text-primary);
+  background: var(--ag-surface-page);
+}
+
+@media (hover: hover) {
+  .pf-download:hover {
+    border-color: var(--ag-border-focus);
+  }
+}
+
+@media (pointer: coarse) {
+  .pf-download {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+}
+
 .pf-control-label {
   color: var(--ag-text-muted);
   font-size: var(--ag-fs-xs, 0.6875rem);
