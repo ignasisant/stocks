@@ -286,14 +286,100 @@ def _provision(email: str, source: str = "", wall: str = "") -> None:
     obs.event(f"auth.{kind}", user=user, via="oidc", **extra)
 
 
+def _same_site(request: Request) -> bool:
+    """Whether a POST came from this site rather than from a page elsewhere.
+
+    `Sec-Fetch-Site` is the browser's own word on it and cannot be set by a
+    page: `same-origin` is our form or our fetch, `none` is the address bar.
+    A browser too old to send it is judged on its Origin (or Referer) against
+    the host, and one that sends neither is let through — the session cookie
+    is SameSite=Lax, so a cross-site POST would arrive without it anyway and
+    end nothing; this check is what turns that quiet no-op into a refusal.
+    """
+    site = request.headers.get("sec-fetch-site")
+    if site is not None:
+        return site in ("same-origin", "none")
+    origin = request.headers.get("origin") or request.headers.get("referer")
+    if not origin:
+        return True
+    return urlsplit(origin).netloc.lower() == request.headers.get("host", "").lower()
+
+
+async def logout_page(request: Request) -> Response:
+    """`GET /auth/logout`: ask, never act.
+
+    A sign-out that a GET could perform can be aimed from any page on the web
+    — an `<img src>` is enough — and a reader whose session kept vanishing
+    would never learn why. The link in the app's own menu fetches the POST
+    below; this page is for the bookmark, the typed address and the browser
+    without JavaScript. Nobody signed in has nothing to confirm and goes home.
+    """
+    if not session.signed_in_email(request.cookies):
+        return _home(request)
+    from stocks.web.i18n import negotiated, translate
+    from stocks.web.markup import esc
+
+    lang = negotiated(
+        request.query_params.get("lang"), request.headers.get("accept-language")
+    )
+    say = {
+        key: esc(translate(f"auth.sign_out_{key}", lang))
+        for key in ("title", "body", "confirm", "cancel")
+    }
+    html = (
+        "<!doctype html>"
+        f'<html lang="{lang}"><head>'
+        '<meta charset="utf-8">'
+        '<meta name="viewport" '
+        'content="width=device-width, initial-scale=1, viewport-fit=cover">'
+        '<meta name="theme-color" content="#18161C">'
+        '<meta name="robots" content="noindex">'
+        f"<title>{say['title']} — TopStocks</title>"
+        f"<style>{_SIGN_OUT_CSS}</style>"
+        "</head><body><main>"
+        f"<h1>{say['title']}</h1>"
+        f"<p>{say['body']}</p>"
+        f'<form method="post" action="{session.LOGOUT_PATH}">'
+        f'<button type="submit">{say["confirm"]}</button>'
+        f'<a href="/">{say["cancel"]}</a>'
+        "</form>"
+        "</main></body></html>"
+    )
+    return Response(html, media_type="text/html; charset=utf-8",
+                    headers={"Cache-Control": "no-store"})
+
+
+_SIGN_OUT_CSS = """
+:root { color-scheme: dark; }
+body { margin: 0; background: #18161C; color: #E8E5EF;
+       font: 16px/1.65 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 28rem; margin: 0 auto; padding: 4rem 1.25rem; }
+h1 { font-size: 1.5rem; line-height: 1.25; margin: 0 0 0.4rem; }
+p { margin: 0.6rem 0 1.5rem; color: #C9C4D4; }
+form { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+button { font: inherit; font-weight: 600; color: #18161C; background: #E8E5EF;
+         border: 0; border-radius: 10px; padding: 0.6rem 1.1rem; min-height: 44px;
+         cursor: pointer; }
+a { color: #9AD1FF; min-height: 44px; display: inline-flex; align-items: center; }
+button:focus-visible, a:focus-visible { outline: 2px solid #9AD1FF; outline-offset: 2px; }
+"""
+
+
 async def logout(request: Request) -> Response:
-    """Clear the session and come back to the app as a guest.
+    """`POST /auth/logout`: clear the session and come back as a guest.
 
     No trip to Google. We asked for `openid email profile`, kept no token and
     have no Google API to call, so there is nothing at Google that outlives this
     cookie — and sending somebody to Google's global sign-out would sign them
     out of Gmail, which is a hostile surprise from a portfolio app.
+
+    POST only, from this site only (`_same_site`): see `logout_page` for why a
+    GET must not do this.
     """
+    if not _same_site(request):
+        obs.warn("session.logout_cross_site", site=request.headers.get("sec-fetch-site"))
+        return Response("sign-out must come from the app\n", status_code=403,
+                        media_type="text/plain", headers={"Cache-Control": "no-store"})
     try:
         session.end(request.cookies)
     except Exception as exc:  # noqa: BLE001 — still clear this browser
@@ -332,5 +418,6 @@ def routes() -> list[Route]:
     return [
         Route(session.LOGIN_PATH, login, methods=["GET"]),
         Route(session.CALLBACK_PATH, callback, methods=["GET"]),
-        Route(session.LOGOUT_PATH, logout, methods=["GET"]),
+        Route(session.LOGOUT_PATH, logout_page, methods=["GET"]),
+        Route(session.LOGOUT_PATH, logout, methods=["POST"]),
     ]

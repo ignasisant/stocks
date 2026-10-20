@@ -18,7 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError, NotSignedIn, send } from "../../shell/api";
 import { useDialog } from "../../shell/useDialog";
 import { useT } from "../../shell/i18n";
-import { leave } from "../../shell/keep";
+import { signOut } from "../../shell/keep";
 import { useAccount } from "../../shell/session";
 import { Failure, Prose, Row } from "./ui";
 
@@ -60,13 +60,13 @@ function Dialog({ email, onClose }: { email: string; onClose: () => void }) {
         const path = done.sign_out;
         const to =
           path.startsWith("/") && !path.startsWith("//") ? path : "/auth/logout";
-        void leave(to);
+        void signOut(to);
       },
       (error: unknown) => {
         setBusy(false);
         if (error instanceof NotSignedIn) {
           // Nothing left to delete from here, and nothing to say about it.
-          void leave("/auth/logout");
+          void signOut();
           return;
         }
         // 422 is the one refusal the reader can act on — the address did not

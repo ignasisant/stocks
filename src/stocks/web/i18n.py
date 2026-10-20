@@ -77,6 +77,15 @@ def catalog(lang: str) -> dict[str, str]:
     return _catalog(lang)
 
 
+def negotiated(asked: str | None, accept_language: str | None = None) -> str:
+    """The language a server-rendered page speaks: `asked` (a `?lang=`), else
+    the browser's first preference from its Accept-Language, else English."""
+    if (code := supported(asked)) is not None:
+        return code
+    first = (accept_language or "").split(",")[0].split(";")[0].strip()
+    return supported(first) or DEFAULT_LANG
+
+
 def supported(lang: str | None) -> str | None:
     """Normalize a locale tag ('es-ES', 'en_US') to a supported code, or None.
 

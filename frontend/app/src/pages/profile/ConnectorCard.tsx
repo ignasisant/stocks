@@ -18,6 +18,7 @@
 import { useEffect, useState } from "react";
 import { ApiError, NotSignedIn, get, send } from "../../shell/api";
 import { useLang, useT } from "../../shell/i18n";
+import { signOut } from "../../shell/keep";
 import { useApi } from "../../shell/useApi";
 import { Badge } from "../../ui/Badge";
 import { Card, Failure, Prose, Row } from "./ui";
@@ -95,7 +96,7 @@ function Line({ connection, onGone }: { connection: Connection; onGone: () => vo
       (error: unknown) => {
         setBusy(false);
         if (error instanceof NotSignedIn) {
-          window.location.assign("/auth/logout");
+          void signOut();
           return;
         }
         // 404 is a grant that already ended — revoked from another tab, or
