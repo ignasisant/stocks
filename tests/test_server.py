@@ -863,3 +863,41 @@ def test_the_connector_opens_with_the_server_and_again_on_reboot(monkeypatch):
             assert r.json()["issuer"] == "https://testserver"
     with TestClient(server.app, base_url="https://testserver") as c:
         assert c.post("/mcp", json={}).status_code == 401
+
+
+# ------------------------------------------------------------ ticker share card
+
+
+def test_the_ticker_page_carries_a_link_preview_for_its_symbol(client, monkeypatch):
+    """The one app page a reader pastes into a chat: its unfurl says which
+    ticker, from the query string alone, with the name the profiles memo
+    already holds — never a fetch on a document request."""
+    monkeypatch.setattr(
+        "stocks.data.profiles.known",
+        lambda symbol: {"name": "NVIDIA"} if symbol == "NVDA" else None,
+    )
+    text = client.get("/ticker?ticker=nvda").text
+    assert 'property="og:title" content="NVDA · NVIDIA · TopStocks"' in text
+    assert (
+        'property="og:url" content="https://topstocks.example/ticker?ticker=NVDA"'
+        in text
+    )
+    assert STUB in text, "the shell itself is untouched"
+    # A name the memo has never seen is still a card, of the symbol alone.
+    assert 'property="og:title" content="AMD · TopStocks"' in client.get(
+        "/ticker?ticker=AMD"
+    ).text
+    # In the language the browser asks for, as the client router will resolve.
+    spanish = client.get(
+        "/ticker?ticker=NVDA", headers={"Accept-Language": "es-ES,es;q=0.9,en;q=0.5"}
+    ).text
+    assert 'property="og:locale" content="es_ES"' in spanish
+
+
+@pytest.mark.parametrize(
+    "path", ["/portfolio", "/ticker", "/ticker?ticker=", "/ticker?ticker=%3Cscript%3E"]
+)
+def test_no_other_page_and_no_nonsense_symbol_gets_a_card(client, path):
+    text = client.get(path).text
+    assert "og:title" not in text and "<script>" not in text
+    assert STUB in text

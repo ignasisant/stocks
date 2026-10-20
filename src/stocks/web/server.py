@@ -864,6 +864,48 @@ def _faces() -> str:
     )
 
 
+def _shell_lang(request: Request) -> str:
+    """The language a shell document's own metadata is written in.
+
+    `?lang=`, else the browser's first preference, else English — the same
+    answer the client router reaches once it runs, taken one step earlier for
+    the one reader that never runs it: the unfurler fetching a pasted link.
+    """
+    from stocks.web.i18n import DEFAULT_LANG, supported
+
+    asked = supported(request.query_params.get("lang"))
+    if asked:
+        return asked
+    first = request.headers.get("accept-language", "").split(",")[0].split(";")[0]
+    return supported(first.strip()) or DEFAULT_LANG
+
+
+def _with_card(request: Request, document: bytes) -> bytes:
+    """`document` with a link preview for the ticker it names, if it names one.
+
+    The shell is one document for every page, and the ticker page is the one a
+    reader pastes into a chat: an unfurl that says only "TopStocks" loses the
+    link's whole point. The symbol comes from the query string, so it is
+    validated before it is written anywhere, and the company name is the
+    profiles memo's or nothing — never a fetch on a document request.
+    """
+    if request.url.path.rstrip("/") != seo.TICKER_PATH:
+        return document
+    symbol = seo.ticker_symbol(request.query_params.get("ticker"))
+    if symbol is None:
+        return document
+    from stocks.data import profiles
+    from stocks.web.markup import esc
+
+    known = profiles.known(symbol) or {}
+    title, tags = seo.ticker_head(
+        symbol, base_url(request), _shell_lang(request), name=known.get("name")
+    )
+    html = document.decode("utf-8")
+    html = html.replace("<title>TopStocks</title>", f"<title>{esc(title)}</title>", 1)
+    return html.replace("</head>", tags + "</head>", 1).encode("utf-8")
+
+
 async def app_shell(request: Request) -> Response:
     """Every page of the app — the client router reads the path.
 
@@ -872,7 +914,7 @@ async def app_shell(request: Request) -> Response:
     drawn in the browser.
     """
     if _VITE:
-        return Response(_dev_document(_VITE), media_type=_HTML,
+        return Response(_with_card(request, _dev_document(_VITE)), media_type=_HTML,
                         headers={"Cache-Control": "no-store"})
     index = _APP_BUILD / "index.html"
     if not index.is_file():
@@ -881,7 +923,7 @@ async def app_shell(request: Request) -> Response:
         return Response("The app is not built: cd frontend/app && npm run build\n",
                         status_code=503, media_type="text/plain")
     return Response(
-        _app_document(index.stat().st_mtime),
+        _with_card(request, _app_document(index.stat().st_mtime)),
         media_type=_HTML,
         # A shell over somebody's book, with the tokens inlined into it: never
         # a cacheable file.

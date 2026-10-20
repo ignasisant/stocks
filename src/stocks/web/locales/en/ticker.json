@@ -1,5 +1,6 @@
 {
   "ticker.pick_prompt": "Search or pick a ticker from the sidebar list.",
+  "ticker.seo_description": "{name}: price, fundamentals, insider filings and the AI's read.",
   "ticker.not_found": "No ticker {ticker} exists. Check the symbol and search again.",
   "ticker.ev_dividends": "Dividends",
   "ticker.ev_dividend_one": "Dividend",
