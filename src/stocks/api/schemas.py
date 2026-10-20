@@ -285,6 +285,13 @@ class Performance(BaseModel):
         default=None,
         description="Worst peak-to-trough fall of the TWR path (<= 0).",
     )
+    twr_var_95: float | None = Field(
+        default=None,
+        description=(
+            "One-day historical VaR at 95%: the daily flow-adjusted return "
+            "that 19 days in 20 beat, as a return (<= 0). Null under 60 days."
+        ),
+    )
     twr_drawdown_peak: str | None = Field(
         default=None,
         description="ISO date the worst fall started from; null when it never fell.",
@@ -2088,6 +2095,13 @@ class Risk(BaseModel):
     period: str = Field(description="Window the returns were measured over.")
     volatility: float | None = Field(default=None, description="Annualised.")
     max_drawdown: float | None = None
+    var_95: float | None = Field(
+        default=None,
+        description=(
+            "One-day historical VaR at 95% of today's basket over the window, "
+            "as a return (<= 0). Null under 60 days."
+        ),
+    )
     effective_names: float | None = Field(
         default=None, description="1 / HHI — how many equal names it behaves like."
     )

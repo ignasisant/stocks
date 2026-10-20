@@ -631,6 +631,9 @@ def test_risk_reports_the_shape_of_the_basket(client, book, monkeypatch):
     # 1 / (0.75^2 + 0.25^2) — a two-name book that behaves like 1.6 equal ones.
     assert payload["effective_names"] == pytest.approx(1.6)
     assert payload["betas"] == {"^GSPC": pytest.approx(1.25)}
+    # Three days of returns cannot carry a VaR: null, as every other figure
+    # that has nothing to measure.
+    assert payload["var_95"] is None
     assert payload["allocation"]["sector"] == [
         {
             "label": "Technology",

@@ -191,6 +191,26 @@ def cumulative_returns(returns: pd.Series) -> pd.Series:
     return (1 + returns).cumprod() - 1
 
 
+# Days a daily-return series needs before its tail says anything. The 5th
+# percentile of fifteen days is the worst one; of a hundred it is a reading.
+MIN_VAR_DAYS = 60
+
+
+def historical_var(returns: pd.Series, level: float = 0.95) -> float:
+    """One-day historical value at risk: the daily return that `level` of the
+    series' days beat, as a return (<= 0 on any book that ever fell).
+
+    Historical, not parametric: the empirical quantile of the days as they
+    were, so a fat left tail counts as it happened rather than as a normal
+    curve would smooth it. NaN under `MIN_VAR_DAYS` days — a quantile of a
+    handful of days is one of those days, not a risk figure.
+    """
+    returns = returns.dropna()
+    if len(returns) < MIN_VAR_DAYS:
+        return float("nan")
+    return float(returns.quantile(1 - level, interpolation="linear"))
+
+
 # A pair needs this many shared days to be compared: a coin listed last week
 # otherwise "diversifies" the book on three data points.
 MIN_CORR_DAYS = 30

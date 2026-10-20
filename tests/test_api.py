@@ -446,7 +446,34 @@ def test_performance_reports_both_returns_and_what_it_could_not_price(
     # to measure.
     assert body["twr_volatility"] == pytest.approx(0.0)
     assert body["twr_max_drawdown"] == pytest.approx(0.0)
+    # Two days have no tail to read a VaR off: null, never the worse of them.
+    assert body["twr_var_95"] is None
     assert body["dropped_days"] == []
+
+
+def test_performance_var_is_the_fifth_percentile_day_once_there_are_enough_days(
+    client, token, account, monkeypatch
+):
+    """Historical, one day, 95%: the daily flow-adjusted return that nineteen
+    days in twenty beat, read straight off the days rather than a normal fit."""
+    index = pd.date_range("2024-01-02", periods=101, freq="D")
+    # Mostly flat with one bad day in ten; the 5th percentile sits in the bad
+    # tail, not on the mean, which is what distinguishes it from volatility.
+    daily = pd.Series([-0.03 if i % 10 == 0 else 0.002 for i in range(100)],
+                      index=index[1:])
+    value = 100.0 * (1 + daily).cumprod()
+    hist = pd.DataFrame(
+        {"injected": 100.0, "value": [100.0, *value],
+         "pnl_pct": [0.0, *(value / 100.0 - 1)]},
+        index=index,
+    )
+    monkeypatch.setattr(loaders, "history", lambda *a, **k: (hist, daily, []))
+
+    body = client.get(
+        "/v1/portfolio/performance", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert body["twr_var_95"] == pytest.approx(float(daily.quantile(0.05)))
+    assert body["twr_var_95"] < 0
 
 
 def test_performance_window_buy_in_and_young_spans_are_cumulative(

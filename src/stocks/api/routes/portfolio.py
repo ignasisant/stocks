@@ -25,6 +25,7 @@ from stocks.analysis.portfolio import (
     effective_positions,
     flow_matched_curves,
     flow_series,
+    historical_var,
     market_active,
     market_live,
     max_drawdown,
@@ -526,6 +527,7 @@ def performance(
         # every time money is added, and a deposit is not a return.
         twr_volatility=_num(annualized_volatility(twr)),
         twr_max_drawdown=_num(max_drawdown(path)),
+        twr_var_95=_num(historical_var(twr)),
         twr_drawdown_peak=str(span[0].date()) if span else None,
         twr_drawdown_trough=str(span[1].date()) if span else None,
         twr_drawdown_peak_value=(_num(hist["value"].get(span[0])) if span else None),
@@ -1705,6 +1707,7 @@ def risk(
         period=period,
         volatility=_num(report.volatility),
         max_drawdown=_num(report.max_drawdown),
+        var_95=_num(historical_var(report.port_returns)),
         effective_names=_num(effective_positions(report.weights)),
         top5_weight=_num(top_n_weight(report.weights, 5)),
         betas={
