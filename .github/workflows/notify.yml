@@ -73,8 +73,10 @@ jobs:
       FREE_LLM_CEREBRAS: ${{ secrets.FREE_LLM_CEREBRAS }}
       FREE_LLM_OPENROUTER: ${{ secrets.FREE_LLM_OPENROUTER }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       - run: uv sync --frozen --no-dev
       - run: uv run stocks digest --all-users
 
@@ -90,8 +92,10 @@ jobs:
       FREE_LLM_CEREBRAS: ${{ secrets.FREE_LLM_CEREBRAS }}
       FREE_LLM_OPENROUTER: ${{ secrets.FREE_LLM_OPENROUTER }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       - run: uv sync --frozen --no-dev
       - run: uv run stocks weekly --all-users
 
@@ -100,8 +104,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       - run: uv sync --frozen --no-dev
       - run: uv run stocks alerts --all-users
 
@@ -113,8 +119,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       - run: uv sync --frozen --no-dev
       - run: uv run stocks nudge
 
@@ -126,10 +134,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       - run: uv sync --frozen --no-dev
+      # Inputs reach the shell as environment variables, never as template
+      # expansions inside the script: an expansion is spliced into the command
+      # text before bash sees it, so a crafted value would run as code.
       - run: >
           uv run stocks notify-test --all-users
-          ${{ inputs.user && format('--user {0}', inputs.user) || '' }}
+          ${NOTIFY_USER:+--user "$NOTIFY_USER"}
           ${{ inputs.dry_run && '--dry-run' || '' }}
+        env:
+          NOTIFY_USER: ${{ inputs.user }}

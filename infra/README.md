@@ -40,6 +40,14 @@ After apply, print the block for the deploy's `secrets.toml`:
 terraform output deploy_secrets_reminder
 ```
 
+## CI
+
+The `infra` job in `.github/workflows/ci.yml` runs `terraform fmt -check`
+and `terraform validate` (after `init -backend=false`) on every push and
+PR. It needs no credentials and never reads or writes state — it only
+catches syntax, unknown attributes and type errors before the next manual
+`apply` would.
+
 ## State is secret
 
 `terraform.tfstate` holds every secret in plaintext (`sensitive = true` only
