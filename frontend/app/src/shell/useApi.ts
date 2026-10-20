@@ -41,6 +41,8 @@ import {
   forget,
   fromKept,
   invalidate,
+  isTransient,
+  refresh,
   watched,
   withMemo,
 } from "./api";
@@ -50,7 +52,9 @@ import {
   noteKept,
   noteRetry,
   onRetryStale,
+  retryStale,
   staleAt,
+  staleUrls,
 } from "./freshness";
 
 /** When a stale answer is asked for again: past a refresh on the server's one
@@ -110,6 +114,28 @@ export function followStale<T>(
   };
 }
 
+/** Under this id the stale line hears about `retryNow`'s own asks. */
+const ORPHANS = "orphans";
+
+/**
+ * The stale line's press. Each screen holding a stale URL asks again in place
+ * (`retryStale`); a stale URL none of them took — its screen was left, or it
+ * was fetched outside `useApi` — is asked for here, so its mark clears or
+ * renews instead of the press doing nothing and the line staying for good.
+ */
+export function retryNow(): void {
+  const taken = retryStale();
+  const rest = staleUrls().filter((url) => !taken.has(url));
+  if (!rest.length) return;
+  noteRetry(ORPHANS, 0);
+  const ask = (url: string) =>
+    refresh(url).catch((error) => {
+      // A URL that now fails outright will never answer live: drop its mark.
+      if (!isTransient(error)) noteFreshness(url, null);
+    });
+  void Promise.all(rest.map(ask)).then(() => noteRetry(ORPHANS, null));
+}
+
 export type Query<T> =
   /** `urls`: what the first stage asked for, for the skeleton's caption. */
   | { state: "loading"; urls?: string[] }
@@ -160,7 +186,7 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[]): Query<T> 
     // up while it is out, as with the scheduled re-asks.
     const unhear = onRetryStale(() => {
       const stale = [...seen].filter((url) => staleAt(url) !== null);
-      if (!live || (!stale.length && staleAt(mark) === null)) return;
+      if (!live || (!stale.length && staleAt(mark) === null)) return [];
       stop();
       noteRetry(mark, 0);
       forget(stale);
@@ -174,6 +200,7 @@ export function useApi<T>(fetcher: () => Promise<T>, deps: unknown[]): Query<T> 
         },
         () => live && noteRetry(mark, null),
       );
+      return stale;
     });
     const waiting = (urls: Set<string>) =>
       live && urls.size && setQuery({ state: "loading", urls: [...urls] });

@@ -393,6 +393,25 @@ def _own_logo_cache(_scratch):
 
 
 @pytest.fixture(autouse=True)
+def _own_world_search_memo(_scratch):
+    """Point the shared worldwide-search memo at this test's scratch.
+
+    It is every account's memory of what Yahoo listed for a query, kept in
+    `data/symbol_search.json`: a suite that serves a fake MIPS.ST would
+    otherwise teach the dev server, and the next test, a listing that isn't.
+    """
+    from stocks.api import loaders
+
+    memo = loaders.WORLD_MEMO
+    before = memo.path
+    memo.clear()
+    memo.path = _own(_scratch, "world_search") / "symbol_search.json"
+    yield
+    memo.clear()
+    memo.path = before
+
+
+@pytest.fixture(autouse=True)
 def _listing_at_the_ledgers_word():
     """Answer "which currency is this price series in" with "unknown".
 
@@ -499,14 +518,17 @@ def _own_symbol_kinds(_scratch):
     """
     from stocks.data import asset_kind, funds
 
-    before = (funds.TYPE_CACHE, funds._types, asset_kind.KIND_CACHE, asset_kind._kinds)
+    memo = funds.TYPE_MEMO
+    before = (memo.path, funds._types, asset_kind.KIND_CACHE, asset_kind._kinds)
     made = _own(_scratch, "kinds")
-    funds.TYPE_CACHE = made / "quote_types.json"
+    memo.clear()
+    memo.path = made / "quote_types.json"
     funds._types = None
     asset_kind.KIND_CACHE = made / "asset_kinds.json"
     asset_kind._kinds = None
     yield
-    funds.TYPE_CACHE, funds._types, asset_kind.KIND_CACHE, asset_kind._kinds = before
+    memo.clear()
+    memo.path, funds._types, asset_kind.KIND_CACHE, asset_kind._kinds = before
 
 
 @pytest.fixture(autouse=True)
@@ -568,9 +590,7 @@ def _no_statement_model():
     autodetect.forget()
     instruments._memo.clear()
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(
-            import_statement, "_provider", lambda paths, held=None: (None, "")
-        )
+        patch.setattr(import_statement, "_provider", lambda paths, held=None: (None, ""))
         yield
     autodetect.forget()
     instruments._memo.clear()
@@ -619,6 +639,21 @@ def _own_revocations(_scratch):
     yield
     revocation.DIR = before
     revocation.reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _own_score_history(_scratch):
+    """The review map's recorded scores in a per-test directory: every review
+    a test asks for records its names, and `score_history.DIR` is the
+    checkout's real `data/scores`."""
+    from stocks.data import score_history
+
+    before = score_history.DIR
+    score_history.DIR = _own(_scratch, "scores")
+    score_history.clear()
+    yield
+    score_history.DIR = before
+    score_history.clear()
 
 
 @pytest.fixture(autouse=True)

@@ -6,7 +6,12 @@ const data: ReviewReturns = {
   base: "EUR",
   as_of: "2026-10-16",
   names: [
-    { ticker: "ESTC", returns: { "1y": 0.3, "2y": null }, sector_etf: "XLK" },
+    {
+      ticker: "ESTC",
+      returns: { "1y": 0.3, "2y": null },
+      sector_etf: "XLK",
+      then: { "1y": { quality: 70, cheapness: 40, source: "price" } },
+    },
     { ticker: "SAN.MC", returns: { "1y": 0.05 }, sector_etf: null },
   ],
   benchmarks: [
@@ -28,7 +33,22 @@ describe("measure", () => {
 
   it("has no gap where the name has no return that far back", () => {
     const cells = measure(data, "2y", false)("ESTC");
-    expect(cells).toEqual({ own: null, index: null, sector: null, etf: "XLK" });
+    expect(cells).toEqual({
+      own: null,
+      index: null,
+      sector: null,
+      etf: "XLK",
+      then: null,
+    });
+  });
+
+  it("carries where the name sat on the map when the window opened", () => {
+    expect(measure(data, "1y", false)("ESTC")?.then).toEqual({
+      quality: 70,
+      cheapness: 40,
+      source: "price",
+    });
+    expect(measure(data, "1y", false)("SAN.MC")?.then).toBeNull();
   });
 
   it("has no sector gap for a name with no sector ETF", () => {

@@ -727,6 +727,13 @@ class Kpi(BaseModel):
         ),
     )
     desc: str = ""
+    peer_band: list[float] | None = Field(
+        default=None,
+        description=(
+            "The rivals' [P25, median, P75] (`Metrics.peers`), raw like `value`. "
+            "Only on the grid's ratios, and only with three rivals reporting it."
+        ),
+    )
 
 
 class MetricTile(BaseModel):
@@ -744,6 +751,14 @@ class MetricTile(BaseModel):
     )
 
 
+class PeerScope(BaseModel):
+    """The rivals a company grid reads its middle off: the nightly scan's."""
+
+    kind: str = Field(description="industry | sector — which cohort it fell back to.")
+    name: str = Field(description="Yahoo's industry or sector name, in English.")
+    count: int = Field(description="How many names the cohort holds, subject left out.")
+
+
 class Metrics(BaseModel):
     ticker: str
     currency: str | None = None
@@ -755,8 +770,33 @@ class Metrics(BaseModel):
         default_factory=list,
         description=(
             "The handful of KPIs a company page shows, in order "
-            "(`fundamentals.FUNDAMENTAL_TILES`). `kpis` carries all 23; a page "
+            "(`fundamentals.fundamental_tiles(lens)`). `kpis` carries the rest; a page "
             "drawing every one of them is a reference table, not a screen."
+        ),
+    )
+    lens: str = Field(
+        default="standard",
+        description=(
+            "standard | financial | real_estate | utility — which ratios judge "
+            "the business (`review.lens`), and so which `grid`."
+        ),
+    )
+    peers: PeerScope | None = Field(
+        default=None,
+        description="Whose middle `Kpi.peer_band` is. Null when the scan has none.",
+    )
+    normal_pe: float | None = Field(
+        default=None,
+        description=(
+            "Trailing P/E on the median operating margin, when today's margin is "
+            "a cycle's peak (`review.peak_pe`). Null otherwise."
+        ),
+    )
+    cautions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The review's warning codes on this company (`review.cautions`); a "
+            "client prints `review.reason_<code>`."
         ),
     )
     market_cap_base: float | None = Field(
@@ -1481,6 +1521,15 @@ class Profile(BaseModel):
             "symbol nothing is known about."
         ),
     )
+    found: bool = Field(
+        default=True,
+        description=(
+            "False when no such symbol exists: Yahoo has no quote and no "
+            "history for it, and neither this account's book nor any name "
+            "source knows it. True when it could not be told — a throttled "
+            "feed is not a missing company."
+        ),
+    )
     sector: str | None = Field(
         default=None,
         description=(
@@ -1519,6 +1568,25 @@ class Comparables(BaseModel):
         description=(
             "Ticker to 🥇/🥈/🥉 for the three best composite ranks. Empty below "
             "three qualifying names — a two-horse race has no podium."
+        ),
+    )
+    peer_median: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The rivals' median per row (every ticker but the first), aligned "
+            "to `labels`. Empty where the row is size or price, or fewer than "
+            "three rivals report it."
+        ),
+    )
+    peer_range: list[str] = Field(
+        default_factory=list,
+        description="The rivals' P25 – P75 per row, aligned to `labels`; empty as above.",
+    )
+    outliers: dict[str, list[int]] = Field(
+        default_factory=dict,
+        description=(
+            "Ticker to the row indexes where it sits over 3 robust sigmas from "
+            "the median of the other names."
         ),
     )
 
@@ -3389,18 +3457,16 @@ class Changes(BaseModel):
 class BookFinding(BaseModel):
     """Something that looks wrong in the book (`stocks.portfolio.doctor`)."""
 
-    key: str = Field(
-        description="Names this finding on this book; the same on a rescan."
-    )
-    kind: Literal[
-        "transfer", "two_labels", "oversold", "duplicate", "fee_in_coins"
-    ] = Field(
-        description=(
-            "`transfer`: a sale at one broker and an arrival at another that "
-            "are one move of shares. `two_labels`: one security kept under two "
-            "labels. `oversold`: a sale of shares the book never saw arrive. "
-            "`duplicate`: one trade imported from two brokers. `fee_in_coins`: "
-            "Revolut crypto buys booked with the coins their fee took."
+    key: str = Field(description="Names this finding on this book; the same on a rescan.")
+    kind: Literal["transfer", "two_labels", "oversold", "duplicate", "fee_in_coins"] = (
+        Field(
+            description=(
+                "`transfer`: a sale at one broker and an arrival at another that "
+                "are one move of shares. `two_labels`: one security kept under two "
+                "labels. `oversold`: a sale of shares the book never saw arrive. "
+                "`duplicate`: one trade imported from two brokers. `fee_in_coins`: "
+                "Revolut crypto buys booked with the coins their fee took."
+            )
         )
     )
     ticker: str = Field(description="The label a fix keeps.")
@@ -3752,9 +3818,7 @@ class MarketBank(BaseModel):
 class MarketSector(BaseModel):
     ticker: str
     name: str
-    week: float | None = Field(
-        default=None, description="5-session excess over SPY, %."
-    )
+    week: float | None = Field(default=None, description="5-session excess over SPY, %.")
     month: float | None = Field(
         default=None, description="21-session excess over SPY, %."
     )
@@ -3845,9 +3909,7 @@ class DailyAnalysisRow(BaseModel):
         default_factory=list,
         description="The values, formatted in the card's language, one per column.",
     )
-    highlight: bool = Field(
-        default=False, description="The row the analysis is about."
-    )
+    highlight: bool = Field(default=False, description="The row the analysis is about.")
 
 
 class DailyAnalysisTable(BaseModel):
@@ -4345,6 +4407,21 @@ class ReviewLines(BaseModel):
     sector: float = Field(description="One sector from here is named and not added to.")
 
 
+class ScorePoint(BaseModel):
+    """Where a name sat on the review's map on the day a window opens."""
+
+    quality: float = Field(description="0-100, the engine's quality score.")
+    cheapness: float = Field(description="0-100, the engine's cheapness score.")
+    source: Literal["record", "filings", "price"] = Field(
+        description=(
+            "`record`: the scores the review gave it that day. `filings`: none "
+            "was recorded, so the business as its filings stood that day, at "
+            "that day's share price. `price`: no filing goes back that far, so "
+            "today's business at that day's share price."
+        )
+    )
+
+
 class NameReturns(BaseModel):
     ticker: str
     returns: dict[str, float | None] = Field(
@@ -4356,6 +4433,15 @@ class NameReturns(BaseModel):
     sector_etf: str | None = Field(
         default=None,
         description="The ETF its sector is measured by; null for a fund or a coin.",
+    )
+    then: dict[str, ScorePoint] = Field(
+        default_factory=dict,
+        description=(
+            "Per window, where the name sat on the map the day it opened, plus "
+            "`18m`: the map's trail steps back half a year at a time (2y, 18m, "
+            "1y, 6m). A window is missing when it cannot be placed (no score "
+            "today, no price that far back). Empty for the benchmarks."
+        ),
     )
 
 

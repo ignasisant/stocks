@@ -7,10 +7,11 @@
  * the total return of one euro (or whatever the account reports in) put in on
  * the first day — so the answer is which line ends higher.
  *
- * The three indices the portfolio's risk tab uses open the card, in the same
- * hues. The sector's ETF and Yahoo's related names sit beside them as chips,
- * and the search adds anything else; six lines beside the subject at most,
- * past which the legend outgrows the chart.
+ * It opens on what one name answers to: SPY, the sector's ETF and a few of
+ * Yahoo's related names, picked by the server (`?with=` omitted). The rest of
+ * the related names sit beside them as chips, and the search adds anything
+ * else — QQQ or EEM included; six lines beside the subject at most, past
+ * which the legend outgrows the chart.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -31,9 +32,6 @@ import "../portfolio/portfolio.css";
 
 const COMPARE_RANGES = ["1m", "6m", "1y", "2y"] as const;
 export type CompareRange = (typeof COMPARE_RANGES)[number];
-
-/** What the card opens with — `analysis.compare.INDICES`. */
-const INDICES = ["SPY", "QQQ", "EEM"] as const;
 
 /** Lines beside the subject — `analysis.compare.MAX_OTHERS`. */
 const MAX_OTHERS = 6;
@@ -74,10 +72,11 @@ export function CompareSection({ ticker, base }: { ticker: string; base: string 
   const t = useT();
   const lang = useLang();
   const [range, setRange] = useState<CompareRange>("1y");
-  const [selected, setSelected] = useState<string[]>([...INDICES]);
+  // Null until a chip is pressed: the server's opening lines.
+  const [picked, setPicked] = useState<string[] | null>(null);
   const query = useApi(
-    () => getCompare(ticker, range, base, selected),
-    [ticker, range, base, selected.join(",")],
+    () => getCompare(ticker, range, base, picked ?? undefined),
+    [ticker, range, base, picked?.join(",") ?? null],
   );
   // The chips outlive a reload: a new range or pick must not blank the very
   // controls the reader just pressed.
@@ -89,18 +88,23 @@ export function CompareSection({ ticker, base }: { ticker: string; base: string 
     offered.current = query.data.offered;
     last.current = query.data;
   }
+  const selected =
+    picked ??
+    (last.current?.lines ?? [])
+      .filter((line) => line.role !== "subject")
+      .map((line) => line.ticker);
 
   const palette = chart();
   const colors = lineColors(selected, palette);
   const full = selected.length >= MAX_OTHERS;
 
   const toggle = (name: string) =>
-    setSelected((now) =>
-      now.includes(name)
-        ? now.filter((one) => one !== name)
-        : now.length >= MAX_OTHERS
-          ? now
-          : [...now, name],
+    setPicked(
+      selected.includes(name)
+        ? selected.filter((one) => one !== name)
+        : selected.length >= MAX_OTHERS
+          ? selected
+          : [...selected, name],
     );
 
   const date = new Intl.DateTimeFormat(lang, { day: "numeric", month: "short" });

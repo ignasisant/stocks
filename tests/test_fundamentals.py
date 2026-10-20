@@ -12,7 +12,11 @@ from stocks.analysis.fundamentals import (
     comp_scores,
     comparables_table,
     compute_metrics,
+    filed_history,
     format_value,
+    fundamental_tiles,
+    lens_verdict,
+    peer_band,
     quarterly_eps,
     sources_table,
     verdict,
@@ -186,7 +190,9 @@ def test_compute_metrics_missing_data():
 
 
 def test_kpi_sources_cover_metric_order():
-    assert set(METRIC_ORDER) == set(KPI_SOURCES)
+    from stocks.analysis.fundamentals import _LENS_ONLY
+
+    assert set(METRIC_ORDER) | _LENS_ONLY == set(KPI_SOURCES)
     m = compute_metrics(sample_raw())
     for key in METRIC_ORDER:
         assert key in m, f"compute_metrics missing {key}"
@@ -206,6 +212,35 @@ def test_comparables_table_shape():
     table = comparables_table([m, peer])
     assert list(table.columns) == ["TEST", "PEER"]
     assert len(table) == len(METRIC_ORDER)
+
+
+def test_the_peer_band_is_the_rivals_not_the_subject():
+    from stocks.analysis.fundamentals import peer_band
+
+    rows = [{"ticker": "SUBJ", "pe_ttm": 90.0, "market_cap": 5e9}] + [
+        {"ticker": f"P{i}", "pe_ttm": pe, "market_cap": 1e9}
+        for i, pe in enumerate((10.0, 20.0, 30.0))
+    ]
+    band = peer_band(rows)
+    assert band["pe_ttm"] == (15.0, 20.0, 25.0), "the subject's 90 pulls nothing"
+    assert "market_cap" not in band, "size has no normal across rivals"
+    assert "pe_ttm" not in peer_band(rows[:3]), "two rivals are no band"
+    loss = [*rows, {"ticker": "LOSS", "pe_ttm": -4.0}]
+    assert peer_band(loss)["pe_ttm"] == band["pe_ttm"], "a loss is no P/E to average"
+
+
+def test_an_outlier_is_far_from_the_others_median():
+    from stocks.analysis.fundamentals import comp_outliers
+
+    pes = {"A": 18.0, "B": 20.0, "C": 22.0, "D": 21.0, "WILD": 80.0}
+    rows = [{"ticker": t, "pe_ttm": pe} for t, pe in pes.items()]
+    assert comp_outliers(rows) == {"WILD": ["pe_ttm"]}
+    tight = [{"ticker": t, "pe_ttm": pe} for t, pe in
+             {"A": 20.0, "B": 20.0, "C": 20.0, "X": 23.0}.items()]
+    assert comp_outliers(tight) == {}, "a cohort agreeing to the decimal flags no 23"
+    cash = [{"ticker": t, "net_debt_ebitda": v} for t, v in
+            {"A": 0.0, "B": 0.0, "C": 0.0, "X": 0.4, "LEVERED": 9.9}.items()]
+    assert comp_outliers(cash) == {"LEVERED": ["net_debt_ebitda"]}, "0.4x is no outlier"
 
 
 def test_annual_financials_shape_and_order():
@@ -271,6 +306,62 @@ def test_verdict_bands():
     assert verdict("net_debt_ebitda", -1.2) == ("net cash", "green")
 
 
+def test_a_multiple_at_or_under_zero_is_no_reading_and_a_pe_there_is_a_loss():
+    """EV/EBITDA on a negative EBITDA banded as the cheapest name on the page."""
+    assert verdict("ev_ebitda", -6.6) is None
+    assert verdict("pb", -2.0) is None
+    assert verdict("ptbv", 0.0) is None
+    assert verdict("pe_fwd", -7.1) == ("loss", "red")
+    assert verdict("pe_ttm", 0) == ("loss", "red")
+    # A negative figure that IS a reading keeps its band.
+    assert verdict("net_debt_ebitda", -0.5) == ("net cash", "green")
+
+
+def test_the_grid_follows_the_lens():
+    """A bank has no EBITDA and its FCF is deposits moving: it is read on book."""
+    standard = [t.key for t in fundamental_tiles("standard")]
+    bank = [t.key for t in fundamental_tiles("financial")]
+    landlord = [t.key for t in fundamental_tiles("real_estate")]
+    assert "ev_ebitda" in standard and "ptbv" not in standard
+    assert {"ptbv", "rotce", "pb"} <= set(bank)
+    assert not {"ev_ebitda", "fcf_yield", "net_debt_ebitda", "roic"} & set(bank)
+    assert "dividend_yield" in landlord and "fcf_yield" not in landlord
+    assert fundamental_tiles("utility") == fundamental_tiles("real_estate")
+    for view in ("standard", "financial", "real_estate"):
+        assert len(fundamental_tiles(view)) == 9, view
+        assert all(t.key in KPI_SOURCES for t in fundamental_tiles(view))
+    # The lens KPIs stay off the comps table and the sector screen.
+    assert not {"ptbv", "rotce", "dividend_yield", "payout_ratio"} & set(METRIC_ORDER)
+
+
+def test_debt_and_dilution_read_on_the_company_s_own_lens():
+    """A utility borrows on purpose; a landlord grows on new shares."""
+    utility = {"industry": "Utilities - Regulated Electric"}
+    landlord = {"industry": "REIT - Industrial"}
+    plain = {"industry": "Semiconductors"}
+    assert lens_verdict("net_debt_ebitda", 4.0, plain) == ("high", "red")
+    assert lens_verdict("net_debt_ebitda", 4.0, utility) == ("moderate", "orange")
+    assert lens_verdict("net_debt_ebitda", 5.8, utility) == ("high", "red")
+    assert lens_verdict("net_debt_ebitda", 0.5, utility) == ("low", "green")
+    assert lens_verdict("share_dilution", 0.14, landlord) == ("heavy dilution", "gray")
+    assert lens_verdict("share_dilution", 0.14, plain) == ("heavy dilution", "red")
+    # Depreciation inflates a landlord's P/E: no band, the rivals say it.
+    assert lens_verdict("pe_ttm", 40.2, landlord) is None
+    assert lens_verdict("pe_ttm", -3.0, landlord) == ("loss", "red")
+    assert lens_verdict("pe_ttm", 40.2, plain) is not None
+
+
+def test_the_grid_band_reads_the_lens_kpis_the_comps_table_leaves_out():
+    rows = [{"ticker": "O", "dividend_yield": 0.058}] + [
+        {"ticker": f"R{i}", "dividend_yield": y}
+        for i, y in enumerate((0.03, 0.04, 0.05))
+    ]
+    assert "dividend_yield" not in peer_band(rows)
+    band = peer_band(rows, ["dividend_yield", "price"])
+    assert band["dividend_yield"][1] == pytest.approx(0.04)
+    assert "price" not in band, "size has no middle"
+
+
 def test_verdict_missing_and_nonnumeric():
     assert verdict("peg", None) is None
     assert verdict("rsi", float("nan")) is None  # NaN falls through every band
@@ -316,6 +407,83 @@ def test_comp_scores_skips_sparse_and_nonnumeric():
     ]
     scores = comp_scores(rows)
     assert set(scores) == {"A", "B"}
+
+
+def test_a_multiple_at_or_under_zero_never_ranks_cheapest():
+    # EV/EBITDA on a loss is no reading; ranked as "lower is better" it won.
+    rows = [_peer("A", 0.5), _peer("B", 0.5), {**_peer("LOSS", 0.5), "ev_ebitda": -12.0}]
+    scores = comp_scores(rows)
+    assert scores["LOSS"] == pytest.approx(scores["A"])
+    # A P/E at or under zero is a loss: last on that KPI, not first.
+    rows = [_peer("A", 0.5), _peer("B", 0.5), {**_peer("LOSS", 0.5), "pe_ttm": -8.0}]
+    scores = comp_scores(rows)
+    assert scores["LOSS"] < scores["A"]
+
+
+def test_a_bank_ranks_on_its_own_lens_only():
+    # A bank with the best EV/EBITDA in the cohort: a number its lens does not
+    # read, so it lifts nothing.
+    def peer(ticker, better, **extra):
+        # what a bank's lens reads, on top of the generic synthetic row
+        return {**_peer(ticker, better), "roe": 0.05 + 0.2 * better,
+                "net_income_cagr": 0.02 + 0.1 * better, **extra}
+
+    bank = peer("BANK", 0.5, industry="Banks - Regional", ev_ebitda=1.0)
+    plain = peer("BANK", 0.5, industry="Banks - Regional")
+    others = [peer("A", 0.2), peer("B", 0.8)]
+    assert comp_scores([bank, *others])["BANK"] == comp_scores([plain, *others])["BANK"]
+    # The same number on an industrial does count.
+    firm = peer("FIRM", 0.5, ev_ebitda=1.0)
+    lifted = comp_scores([firm, *others])["FIRM"]
+    assert lifted > comp_scores([peer("FIRM", 0.5), *others])["FIRM"]
+
+
+def test_the_peg_is_ours_not_the_feeds():
+    m = compute_metrics(sample_raw())
+    from stocks.analysis.review import growth_pe
+
+    assert m["peg"] == growth_pe(m)
+    assert m["peg"] != 2.6  # the feed's trailingPegRatio
+
+
+def test_earnings_quality_inputs_come_from_the_statements():
+    raw = sample_raw()
+    raw.balance.loc["Total Assets"] = [500e9] * 5
+    raw.balance.loc["Goodwill"] = [300e9] * 5
+    raw.balance.loc["Stockholders Equity"] = [200e9] * 5
+    raw.cashflow.loc["Operating Cash Flow"] = [60e9, 60e9, 60e9, 60e9, 60e9]
+    raw.cashflow.loc["Stock Based Compensation"] = [48e9] * 5
+    m = compute_metrics(raw)
+    assert m["accruals"] == pytest.approx((100e9 - 60e9) / 500e9)
+    # summed over the five years: 300 of cash on 440 of profit
+    assert m["cfo_ni"] == pytest.approx(300 / 440)
+    assert m["goodwill_assets"] == pytest.approx(0.6)
+    assert m["goodwill_equity"] == pytest.approx(1.5)
+    assert m["sbc_revenue"] == pytest.approx(0.12)
+    # none of it filed: blank, never zero
+    bare = compute_metrics(sample_raw())
+    assert bare["accruals"] is None and bare["cfo_ni"] is None
+    assert bare["goodwill_assets"] is None and bare["sbc_revenue"] is None
+
+
+def test_turnover_is_in_dollars_and_pence_are_pence(monkeypatch):
+    from stocks.analysis import fundamentals as f
+
+    monkeypatch.setattr(f.fx, "spot", lambda base, quote: (1.25, "spot"))
+    info = {"currency": "GBp", "averageVolume": 1_000_000}
+    # 250p x 1M shares = GBP 2.5M = USD 3.125M
+    assert f._turnover_usd(info, 250.0) == pytest.approx(3.125e6)
+    assert f._turnover_usd({"currency": "USD", "averageVolume": 10}, 5.0) == 50.0
+    assert f._turnover_usd({"currency": "USD"}, 5.0) is None
+
+
+def test_tangible_book_and_its_return():
+    raw = sample_raw()
+    raw.balance.loc["Tangible Book Value"] = [80e9] * 5
+    m = compute_metrics(raw)
+    assert m["rotce"] == pytest.approx(100e9 / 80e9)
+    assert m["ptbv"] == pytest.approx(3.8e12 / 80e9)
+    assert compute_metrics(sample_raw())["ptbv"] is None
 
 
 def test_comp_medals_podium():
@@ -455,3 +623,40 @@ def test_statements_in_a_currency_nothing_converts_are_logged(monkeypatch):
     assert compute_metrics(raw)["fcf_yield"] is None
     assert ("feed_currency", {"source": "feed", "ticker": raw.ticker,
             "filed": "XYZ", "quoted": "USD"}) in seen
+
+
+# ----------------------------------------------------- the map's past point
+
+
+def test_each_past_filing_is_read_on_its_own_statements():
+    """One entry per year back, newest first, each out a quarter after its
+    year closed. The newest is its own base; an older one reads that year's
+    margins and share count at today's price."""
+    history = filed_history(sample_raw())
+    assert [one["filed"] for one in history] == [
+        "2025-04-01", "2024-03-31", "2023-04-01", "2022-04-01"
+    ]
+    assert history[0]["then"] is history[0]["base"]
+    then = history[1]["then"]
+    assert then["net_margin"] == pytest.approx(95 / 380)
+    assert then["market_cap"] == pytest.approx(3.8e12 * 15.3 / 15)
+    assert then["pe_ttm"] == pytest.approx(3.8e12 * 15.3 / 15 / 95e9)
+    assert then["revenue_growth"] == pytest.approx(380 / 365 - 1)
+    assert then["pe_fwd"] is None  # an estimate has no past
+
+
+def test_a_past_filing_is_measured_against_as_many_newest_years():
+    """`base` spans as many years as `then`, so a CAGR or a moat read over
+    fewer years is not mistaken for the business moving."""
+    history = filed_history(sample_raw())
+    then, base = history[2]["then"], history[2]["base"]
+    assert then["revenue_cagr"] == pytest.approx((365 / 300) ** (1 / 2) - 1)
+    assert base["revenue_cagr"] == pytest.approx((400 / 365) ** (1 / 2) - 1)
+
+
+def test_no_history_without_statements_or_a_rate_for_them(monkeypatch):
+    from stocks.analysis import fundamentals
+
+    assert filed_history(RawFundamentals("EMPTY")) == []
+    monkeypatch.setattr(fundamentals, "_statement_fx", lambda info: None)
+    assert filed_history(sample_raw()) == []

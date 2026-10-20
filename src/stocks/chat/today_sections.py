@@ -69,6 +69,11 @@ COMPARE_NAMES = 8
 NOTABLE_PP = 5.0
 
 BUDGET_S = 15.0
+# The Review rows are a whole Review computed, not one feed read: its p90 in
+# prod is ~21s and a cold book reaches ~43s (2026-10-20 triage, ERR-01), so on
+# the shared budget the first card of the day lost its comparisons. It gets
+# its own, and starts first so the feeds cannot queue it behind them.
+VERDICTS_BUDGET_S = 45.0
 WORKERS = 8
 
 INDEX = "SPY"
@@ -485,6 +490,7 @@ def gather(
     shown: dict | None = None,
     sources: Sources | None = None,
     budget_s: float = BUDGET_S,
+    verdicts_budget_s: float = VERDICTS_BUDGET_S,
 ) -> dict:
     """{"shape", "sections", "missing"} for one book.
 
@@ -553,11 +559,14 @@ def gather(
     found: dict[str, object] = {}
     failed: set[str] = set()
     if tasks:
-        deadline = time.monotonic() + budget_s
+        begun = time.monotonic()
         pool = ThreadPoolExecutor(max_workers=min(len(tasks), WORKERS))
         try:
-            futures = {name: pool.submit(task) for name, task in tasks.items()}
+            futures = {name: pool.submit(tasks[name])
+                       for name in sorted(tasks, key=lambda n: n != "verdicts")}
             for name, future in futures.items():
+                deadline = begun + (max(budget_s, verdicts_budget_s)
+                                    if name == "verdicts" else budget_s)
                 try:
                     found[name] = future.result(
                         timeout=max(0.0, deadline - time.monotonic()))

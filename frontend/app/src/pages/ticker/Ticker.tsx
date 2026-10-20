@@ -260,6 +260,10 @@ export default function Page() {
   // stands in, so a fund page does not flash them. A failed profile reads as a
   // company: the sections degrade on their own.
   const drawn = profile.state === "loaded" ? profile.data : null;
+  // No such symbol: a typo through the search's "analyze" row, or a stale
+  // link. The header says so and the page stops — fourteen cards each saying
+  // "no data" is the same answer told badly, and every one of them a fetch.
+  const absent = drawn?.found === false;
   const fundSays =
     fund.state === "loaded" ? Boolean(fund.data?.is_fund) : Boolean(drawn?.is_fund);
   const kind = resolveKind(assetKind(drawn?.asset), {
@@ -268,10 +272,10 @@ export default function Page() {
   });
   const shape = layout(kind);
   const crypto = shape.sections.stats;
-  const company = profile.state !== "loading" && shape.sections.company;
+  const company = profile.state !== "loading" && shape.sections.company && !absent;
   // Named once the profile has answered: a label that flips from "Share" to
   // "Money market" as the page loads is a wrong answer shown first.
-  const named = drawn ? ASSETS[kind] : null;
+  const named = drawn && !absent ? ASSETS[kind] : null;
 
   const metrics = useApi(
     () => (ticker && company ? getMetrics(ticker, base) : Promise.resolve(null)),
@@ -367,7 +371,7 @@ export default function Page() {
         <Custody marks={held?.custody ?? []} />
         {/* What the app has proposed on this name, behind a chip: the record
             reads in a side panel, so the page's own figures keep the column. */}
-        {ticker ? (
+        {ticker && !absent ? (
           <SignedInOnly>
             <JournalChip ticker={ticker} />
           </SignedInOnly>
@@ -379,7 +383,7 @@ export default function Page() {
             business of its own, and an index nothing to buy — so no button. A
             symbol still loading reads as a share: the prompt is a question,
             not a claim. */}
-        {ticker && shape.ai ? (
+        {ticker && shape.ai && !absent ? (
           <button
             type="button"
             className="ag-ai tk-ai"
@@ -400,7 +404,7 @@ export default function Page() {
             price alert are all somebody's own edits to their own list, and all
             three live inside `<Actions>`. A guest is offered the thing that
             would make them theirs instead. */}
-        {ticker ? (
+        {ticker && !absent ? (
           <SignedInOnly fallback={<SignIn className="ag-btn tk-signin" />}>
             <Actions ticker={ticker} entry={entry} onEntry={onEntry} />
           </SignedInOnly>
@@ -421,6 +425,8 @@ export default function Page() {
         ) : (
           <Empty>{t("ticker.pick_prompt")}</Empty>
         )
+      ) : absent ? (
+        <Empty>{t("ticker.not_found", { ticker })}</Empty>
       ) : (
         <>
           {/* The bars go down as a query: the price card keeps its range and

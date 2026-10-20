@@ -10,6 +10,9 @@ Three reliability levels apply to every number shown downstream:
 
 from __future__ import annotations
 
+import math
+import statistics
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 import pandas as pd
@@ -83,14 +86,14 @@ KPI_SOURCES: dict[str, KpiSource] = {
         "earnings to grow.",
     ),
     "peg": KpiSource(
-        "PEG (TTM)",
+        "P/E per growth",
         "x",
-        "consensus",
-        "yfinance info.trailingPegRatio",
+        "derived",
+        "forward (else trailing) P/E / sustained sales growth per share",
         "Koyfin/TIKR consensus growth",
-        "yfinance PEG is unreliable — never act on it without cross-check",
-        desc="P/E divided by expected EPS growth — a growth-adjusted P/E. Under ~1 is "
-        "classically 'cheap for its growth'.",
+        "growth capped at 40%; blank without a positive P/E and positive growth",
+        desc="P/E over sustained sales growth per share (net of dilution). 1x or under "
+        "is cheap for its growth; 2.5x is dear.",
     ),
     "pb": KpiSource(
         "P/B",
@@ -253,9 +256,52 @@ KPI_SOURCES: dict[str, KpiSource] = {
         "(20%), durable growth (15%), no dilution (5%). ≥70 wide, 45-70 narrow, "
         "<45 no moat. A screen, not a verdict.",
     ),
+    # The lens KPIs: read on the company grid of the business they judge, and
+    # nowhere else (`_LENS_ONLY`). A bank's price to tangible book is its P/E;
+    # a telecom's is 30x and means nothing.
+    "ptbv": KpiSource(
+        "P/TBV",
+        "x",
+        "derived",
+        "market cap / Tangible Book Value (yfinance balance sheet)",
+        "EDGAR equity less goodwill & intangibles",
+        desc="Price / tangible book: book value without goodwill and intangibles. "
+        "How a bank is priced; 1x is its net assets at cost.",
+    ),
+    "rotce": KpiSource(
+        "ROTCE",
+        "pct",
+        "derived",
+        "net income / Tangible Book Value (yfinance statements)",
+        "EDGAR NI / tangible equity",
+        desc="Return on tangible common equity: what a bank earns on the capital "
+        "it could lose. Over 15% is a strong lender.",
+    ),
+    "dividend_yield": KpiSource(
+        "Dividend yield",
+        "pct",
+        "fact",
+        "yfinance info.dividendYield",
+        "company dividend history",
+        desc="Dividends of the last year over the price. What a landlord or a "
+        "utility is mostly bought for.",
+    ),
+    "payout_ratio": KpiSource(
+        "Payout",
+        "pct",
+        "fact",
+        "yfinance info.payoutRatio",
+        "EDGAR dividends paid / net income",
+        desc="Share of the year's earnings paid out. A REIT pays most of them by "
+        "law; anyone else over 100% pays from somewhere else.",
+    ),
 }
 
-METRIC_ORDER = list(KPI_SOURCES)
+#: KPIs only one lens's grid reads. Out of `METRIC_ORDER`, so the comps table
+#: and the sector screen do not grow a row every other company leaves blank.
+_LENS_ONLY = frozenset({"ptbv", "rotce", "dividend_yield", "payout_ratio"})
+
+METRIC_ORDER = [key for key in KPI_SOURCES if key not in _LENS_ONLY]
 
 
 @dataclass(frozen=True)
@@ -285,8 +331,8 @@ class Tile:
 FUNDAMENTAL_TILES: tuple[Tile, ...] = (
     Tile("pe_ttm", "ticker.kpi_pe_ttm"),
     Tile("pe_fwd", "ticker.kpi_pe_fwd"),
-    # The one tooltip that is a warning rather than a definition: yfinance's
-    # PEG is unreliable and the page says so where it is read.
+    # Ours, not Yahoo's: forward P/E over sustained per-share sales growth
+    # (`review.growth_pe`). The tooltip says what it divides by.
     Tile("peg", "ticker.kpi_peg", "ticker.kpi_peg_help"),
     Tile("ev_ebitda", "ticker.kpi_ev_ebitda"),
     Tile("ev_sales", "ticker.kpi_ev_sales"),
@@ -295,6 +341,41 @@ FUNDAMENTAL_TILES: tuple[Tile, ...] = (
     Tile("net_debt_ebitda", "ticker.kpi_net_debt_ebitda"),
     Tile("share_dilution", "ticker.kpi_dilution"),
 )
+
+# The same nine for a business another lens judges (`review.lens`). A bank has
+# no EBITDA and its free cash flow is deposits moving: it is read on book and
+# the return on it. A landlord and a utility are bought for the payout and
+# carry debt on purpose, so EV/EBITDA and the yield replace sales and FCF.
+_LENS_TILES: dict[str, tuple[Tile, ...]] = {
+    "financial": (
+        Tile("pe_ttm", "ticker.kpi_pe_ttm"),
+        Tile("pe_fwd", "ticker.kpi_pe_fwd"),
+        Tile("pb", "ticker.kpi_pb"),
+        Tile("ptbv", "ticker.kpi_ptbv"),
+        Tile("roe", "ticker.kpi_roe"),
+        Tile("rotce", "ticker.kpi_rotce"),
+        Tile("dividend_yield", "ticker.kpi_dividend_yield"),
+        Tile("payout_ratio", "ticker.kpi_payout"),
+        Tile("share_dilution", "ticker.kpi_dilution"),
+    ),
+    "real_estate": (
+        Tile("pe_ttm", "ticker.kpi_pe_ttm"),
+        Tile("pe_fwd", "ticker.kpi_pe_fwd"),
+        Tile("pb", "ticker.kpi_pb"),
+        Tile("ev_ebitda", "ticker.kpi_ev_ebitda"),
+        Tile("dividend_yield", "ticker.kpi_dividend_yield"),
+        Tile("payout_ratio", "ticker.kpi_payout"),
+        Tile("roe", "ticker.kpi_roe"),
+        Tile("net_debt_ebitda", "ticker.kpi_net_debt_ebitda"),
+        Tile("share_dilution", "ticker.kpi_dilution"),
+    ),
+}
+_LENS_TILES["utility"] = _LENS_TILES["real_estate"]
+
+
+def fundamental_tiles(view: str) -> tuple[Tile, ...]:
+    """The company grid for a business judged on `view` (`review.lens`)."""
+    return _LENS_TILES.get(view, FUNDAMENTAL_TILES)
 
 
 def cagr(start: float | None, end: float | None, years: float) -> float | None:
@@ -480,6 +561,36 @@ def _dividend_cover(cashflow: pd.DataFrame) -> tuple[float | None, float | None]
     return owner, float(sum(float(paid[y]) for y in years))
 
 
+def _turnover_usd(info: dict, price: float | None) -> float | None:
+    """Not a KPI: what trades in a day, in dollars, over the last three
+    months (price times average volume). The review's "can you get in and
+    out" test; a small cap's spread and price impact live here."""
+    volume = info.get("averageVolume") or info.get("averageDailyVolume10Day")
+    iso, scale = quote_unit(info.get("currency"))
+    if not price or not volume or not iso:
+        return None
+    try:
+        rate = 1.0 if iso == "USD" else fx.spot(iso, "USD")[0]
+    except Exception:  # noqa: BLE001 - an unquoted currency is a blank
+        return None
+    return float(price) * float(volume) * scale * rate
+
+
+def _cash_backing(raw: RawFundamentals) -> float | None:
+    """Operating cash flow over net income, each summed over the filed years
+    that carry both: one year's working-capital swing is not a habit. None
+    when the summed earnings are not a profit."""
+    cfo = _row(raw.cashflow, "Operating Cash Flow")
+    earned = _row(raw.income, "Net Income")
+    if cfo is None or earned is None:
+        return None
+    years = [y for y in earned.index if y in cfo.index]
+    profit = float(sum(float(earned[y]) for y in years))
+    if len(years) < 2 or profit <= 0:
+        return None
+    return float(sum(float(cfo[y]) for y in years)) / profit
+
+
 def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     """All KPIs for one ticker. Missing data -> None, never invented."""
     info = raw.info
@@ -491,11 +602,13 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     # callers need to know a row is a fund whose every ratio will be blank.
     m["quote_type"] = info.get("quoteType")
     m["price"] = info.get("currentPrice") or info.get("regularMarketPrice")
+    m["turnover_usd"] = _turnover_usd(info, m["price"])
+    # Not a KPI: the share the company's own people hold (Yahoo's, any market).
+    m["insider_share"] = info.get("heldPercentInsiders")
     m["market_cap"] = info.get("marketCap")
     m["ev"] = info.get("enterpriseValue")
     m["pe_ttm"] = info.get("trailingPE")
     m["pe_fwd"] = info.get("forwardPE")
-    m["peg"] = info.get("trailingPegRatio") or info.get("pegRatio")
     m["pb"] = info.get("priceToBook")
     m["ev_ebitda"] = info.get("enterpriseToEbitda")
     m["ev_sales"] = info.get("enterpriseToRevenue")
@@ -616,6 +729,45 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
 
     net_income = _latest(raw.income, "Net Income")
     m["cash_conversion"] = fcf / net_income if fcf and net_income else None
+    # Not KPIs: whether the earnings are cash, for the review's cautions.
+    # Accruals (Sloan): profit the cash flow does not show, over the assets;
+    # past a tenth, earnings tend to fall back. Both in the filing currency.
+    assets = _latest(raw.balance, "Total Assets")
+    cfo = _latest(raw.cashflow, "Operating Cash Flow")
+    m["accruals"] = (
+        (net_income - cfo) / assets
+        if net_income is not None and cfo is not None and assets and assets > 0
+        else None
+    )
+    m["cfo_ni"] = _cash_backing(raw)
+    # What an acquirer paid over book, against what it owns and what is the
+    # owners': an impairment comes off both.
+    equity_now = _latest(raw.balance, "Stockholders Equity")
+    has_goodwill = goodwill is not None and goodwill > 0
+    m["goodwill_assets"] = (
+        goodwill / assets if has_goodwill and assets and assets > 0 else None
+    )
+    m["goodwill_equity"] = (
+        goodwill / equity_now if has_goodwill and equity_now and equity_now > 0 else None
+    )
+    # Not KPIs: a bank's book without the premium it paid for others' (the
+    # goodwill and intangibles a crisis writes off first), what is paid for
+    # it, and what it earns. Book and profit in the filing currency, the cap
+    # in the quote's.
+    tangible = _latest(raw.balance, "Tangible Book Value")
+    if tangible is None and equity_now is not None:
+        intangible = _latest(raw.balance, "Goodwill And Other Intangible Assets")
+        tangible = equity_now - (intangible or 0.0)
+    has_tangible = tangible is not None and tangible > 0
+    m["ptbv"] = (
+        cap / (tangible * rate) if has_tangible and cap and rate else None
+    )
+    m["rotce"] = (
+        net_income / tangible if has_tangible and net_income is not None else None
+    )
+    m["sbc_revenue"] = (
+        sbc / revenue if sbc and sbc > 0 and revenue and revenue > 0 else None
+    )
 
     m["revenue_cagr"] = _series_cagr(raw.income, "Total Revenue")
     m["net_income_cagr"] = _series_cagr(raw.income, "Net Income")
@@ -634,7 +786,138 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     sales = next((p.facts for p in moat.pillars if p.key == "growth"), {})
     years, up = sales.get("years"), sales.get("up")
     m["revenue_down_years"] = years - up if years is not None and up is not None else None
+    # Our own P/E per growth, never the feed's: Yahoo's PEG is unreliable and
+    # the review already scores this one, so the ticker, the sector screen and
+    # the review read the same number.
+    from stocks.analysis.review import growth_pe
+
+    m["peg"] = growth_pe(m)
     return m
+
+
+# A year's statements reach the feed weeks after it closes: a 10-K is due
+# 60 to 90 days out. A day before that still read the year before's.
+FILING_LAG_DAYS = 90
+# How many years back `filed_history` goes: the review's longest window is two.
+PAST_FILINGS = 3
+
+# What `compute_metrics` reads from `info` that is not about the statements
+# or the price, carried as it is: identity, and the dividend, which a price
+# replay (`review.at_price`) moves on its own.
+_KEPT_INFO = (
+    "currency",
+    "financialCurrency",
+    "quoteType",
+    "industry",
+    "currentPrice",
+    "regularMarketPrice",
+    "dividendYield",
+    "dividendRate",
+    "trailingAnnualDividendYield",
+    "payoutRatio",
+)
+
+
+def _years(df: pd.DataFrame | None, newest: pd.Timestamp, oldest: pd.Timestamp):
+    """`df`'s annual columns between `oldest` and `newest`, give or take the
+    few weeks one statement's year-end differs from another's."""
+    if df is None or df.empty:
+        return df
+    slack = pd.Timedelta(days=45)
+    dates = pd.to_datetime(df.columns, errors="coerce")
+    keep = [(d >= oldest - slack) and (d <= newest + slack) for d in dates]
+    return df.loc[:, keep]
+
+
+def _filed_info(info: dict, raw: RawFundamentals, shares_now: float | None) -> dict:
+    """An `info` built from `raw`'s statements alone, at today's share price.
+
+    Yahoo's own ratios (trailing P/E, margins, ROE, EV) are today's, off the
+    last four quarters; a past year's have to come from that year's filing.
+    The market cap follows the share count the year reported, so buybacks
+    and dilution count. Forward estimates have no past and are left out.
+    """
+    out = {key: info.get(key) for key in _KEPT_INFO}
+    rate = _statement_fx(info)
+    cap = info.get("marketCap")
+    shares = _latest(raw.income, "Diluted Average Shares")
+    if cap and shares and shares_now:
+        cap = cap * shares / shares_now
+    out["marketCap"] = cap
+    revenue = _latest(raw.income, "Total Revenue")
+    net = _latest(raw.income, "Net Income")
+    equity = _latest(raw.balance, "Stockholders Equity")
+
+    def share(part: float | None) -> float | None:
+        return part / revenue if part is not None and revenue else None
+
+    out["grossMargins"] = share(_latest(raw.income, "Gross Profit"))
+    out["operatingMargins"] = share(_latest(raw.income, "Operating Income"))
+    out["profitMargins"] = share(net)
+    positive = equity is not None and equity > 0
+    out["returnOnEquity"] = net / equity if net is not None and positive else None
+    out["trailingPE"] = (
+        cap / (net * rate) if cap and net is not None and net > 0 and rate else None
+    )
+    out["priceToBook"] = cap / (equity * rate) if cap and positive and rate else None
+    sales = _row(raw.income, "Total Revenue")
+    out["revenueGrowth"] = (
+        float(sales.iloc[0]) / float(sales.iloc[1]) - 1
+        if sales is not None and len(sales) >= 2 and float(sales.iloc[1]) > 0
+        else None
+    )
+    out["totalDebt"] = _latest(raw.balance, "Total Debt")
+    out["totalCash"] = _latest(
+        raw.balance, "Cash Cash Equivalents And Short Term Investments"
+    )
+    return out
+
+
+def _as_filed(raw: RawFundamentals, first: int, count: int, dates) -> dict:
+    """`compute_metrics` over `count` annual years from the `first`-newest
+    on, every ratio read off those statements at today's share price."""
+    newest, oldest = dates[first], dates[first + count - 1]
+    cut = RawFundamentals(
+        ticker=raw.ticker,
+        income=_years(raw.income, newest, oldest),
+        balance=_years(raw.balance, newest, oldest),
+        cashflow=_years(raw.cashflow, newest, oldest),
+    )
+    shares_now = _latest(raw.income, "Diluted Average Shares")
+    cut.info = _filed_info(raw.info, cut, shares_now)
+    return compute_metrics(cut)
+
+
+def filed_history(raw: RawFundamentals) -> list[dict]:
+    """The business as each of its last filings showed it, for the review's
+    map to place a name where it sat when a window opened.
+
+    One entry per year back (`PAST_FILINGS`, newest first): `filed` is the
+    first day the feed could have had that year (`FILING_LAG_DAYS` past its
+    close); `then` is `compute_metrics` over the statements up to that year,
+    `base` the same over the newest years, as many of them. Both are read the
+    same way — statements only, at today's price — so what separates them is
+    the business, not two methods or two lengths of history: `then` against
+    `base` is what moved, to add to today's real score. A replay at that
+    day's price (`review.at_price`) puts the price in.
+
+    Empty with no annual statements, or with filings in a currency there is
+    no rate for (every yield would be blank on both sides).
+    """
+    if raw.income is None or raw.income.empty or _statement_fx(raw.info) is None:
+        return []
+    dates = [
+        d for d in pd.to_datetime(raw.income.columns, errors="coerce") if pd.notna(d)
+    ]
+    dates.sort(reverse=True)
+    out: list[dict] = []
+    for first in range(min(len(dates), PAST_FILINGS + 1)):
+        count = len(dates) - first
+        then = _as_filed(raw, first, count, dates)
+        base = then if first == 0 else _as_filed(raw, 0, count, dates)
+        filed = (dates[first] + pd.Timedelta(days=FILING_LAG_DAYS)).date()
+        out.append({"filed": filed.isoformat(), "then": then, "base": base})
+    return out
 
 
 def format_value(key: str, value: float | str | None) -> str:
@@ -677,7 +960,11 @@ _VERDICT_BANDS: dict[str, list[tuple[float, str, str]]] = {
                   (float("inf"), "expensive", "red")],
     "ev_sales": [(3, "cheap", "green"), (8, "fair", "orange"),
                  (float("inf"), "expensive", "red")],
+    "ptbv": [(1, "cheap", "green"), (2.5, "fair", "orange"),
+             (float("inf"), "expensive", "red")],
     # quality / returns — higher is better (fraction values)
+    "rotce": [(0.10, "weak", "red"), (0.15, "decent", "orange"),
+              (float("inf"), "strong", "green")],
     "roic": [(0.08, "weak", "red"), (0.15, "decent", "orange"),
              (float("inf"), "strong", "green")],
     "roe": [(0.10, "weak", "red"), (0.20, "decent", "orange"),
@@ -700,6 +987,13 @@ _VERDICT_BANDS: dict[str, list[tuple[float, str, str]]] = {
 }
 
 
+# A multiple at or under zero is no reading at all (EV/EBITDA on a loss, P/B on
+# negative equity): banded, it came out "cheap". A P/E there is a loss, which
+# is a reading, and the worst one a P/E has.
+_VERDICT_POSITIVE_ONLY = frozenset({"peg", "pb", "ptbv", "ev_ebitda", "ev_sales"})
+_VERDICT_LOSS = frozenset({"pe_ttm", "pe_fwd"})
+
+
 def verdict(key: str, value: float | str | None) -> tuple[str, str] | None:
     """Cheap/fair/expensive read on a KPI: (label, color name).
 
@@ -711,10 +1005,40 @@ def verdict(key: str, value: float | str | None) -> tuple[str, str] | None:
     bands = _VERDICT_BANDS.get(key)
     if bands is None or isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
+    if value <= 0 and key in _VERDICT_LOSS:
+        return "loss", "red"
+    if value <= 0 and key in _VERDICT_POSITIVE_ONLY:
+        return None
     for upper, label, color in bands:
         if value < upper:
             return label, color
     return None
+
+
+def lens_verdict(
+    key: str, value: float | str | None, metrics: dict
+) -> tuple[str, str] | None:
+    """`verdict`, read the way the company's own lens (`review.lens`) reads it.
+
+    Net debt is heavy from the industry's line (`review.debt_line`: a landlord
+    and a utility borrow on purpose), and a landlord's new shares are how it
+    grows, so they read as a fact rather than a warning. Its P/E carries the
+    depreciation FFO adds back, so the generic bands would call every landlord
+    dear: the rivals' median is the only fair read of it.
+    """
+    from stocks.analysis.review import REAL_ESTATE, debt_line, lens
+
+    banded = verdict(key, value)
+    if banded is None or isinstance(value, str) or value is None:
+        return banded
+    if key == "net_debt_ebitda" and value >= 1:
+        line = debt_line(metrics)
+        return ("moderate", "orange") if value < line else ("high", "red")
+    if key in _VERDICT_LOSS and value > 0 and lens(metrics) == REAL_ESTATE:
+        return None
+    if key == "share_dilution" and lens(metrics) == REAL_ESTATE and value > 0:
+        return banded[0], "gray"
+    return banded
 
 
 def verdict_md(key: str, value: float | str | None) -> str:
@@ -746,6 +1070,48 @@ _RANK_HIGHER_BETTER = frozenset(
 _RANK_MIN_METRICS = 5
 
 
+# A multiple at or under zero is no reading: EV/EBITDA on a loss, P/B on
+# negative equity, EV/Sales on a negative EV. Ranked as "lower is better" it
+# came out the cheapest of the cohort. A P/E at or under zero is a loss, the
+# worst reading a P/E has, as in the review.
+_RANK_POSITIVE_ONLY = ("peg", "pb", "ptbv", "ev_ebitda", "ev_sales")
+_RANK_LOSS_LAST = ("pe_ttm", "pe_fwd")
+
+
+# KPIs that say nothing about a business judged on another lens (the review's
+# `lens`): a bank has no gross margin or EBITDA and its FCF is deposits
+# moving; a landlord's FCF and a utility's are capex-shaped. Left in, a bank
+# ranked on EV/EBITDA against an insurance broker. Blanked, it ranks only on
+# what its own lens reads, against the names that report the same.
+_LENS_BLANK = {
+    "financial": frozenset(
+        {"ev_ebitda", "ev_sales", "gross_margin", "op_margin", "fcf_yield",
+         "cash_conversion", "fcf_cagr", "net_debt_ebitda", "roic", "peg"}
+    ),
+    "real_estate": frozenset(
+        {"fcf_yield", "cash_conversion", "fcf_cagr", "roic", "gross_margin",
+         "ev_sales", "peg"}
+    ),
+    "utility": frozenset(
+        {"fcf_yield", "cash_conversion", "fcf_cagr", "roic", "gross_margin",
+         "ev_sales", "peg"}
+    ),
+}
+
+
+def _rankable(row: dict) -> dict:
+    from stocks.analysis.review import lens
+
+    out = dict(row)
+    for key in _LENS_BLANK.get(lens(row), ()):
+        out[key] = None
+    for key in _RANK_POSITIVE_ONLY + _RANK_LOSS_LAST:
+        value = out.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value <= 0:
+            out[key] = math.inf if key in _RANK_LOSS_LAST else None
+    return out
+
+
 def comp_scores(metrics: list[dict]) -> dict[str, float]:
     """Composite comps score per ticker in [0, 1] — cross-sectional, not banded.
 
@@ -755,7 +1121,10 @@ def comp_scores(metrics: list[dict]) -> dict[str, float]:
     KPIs are dropped — too sparse to compare fairly.
     """
     return ranking.percentile_rank_scores(
-        metrics, _RANK_LOWER_BETTER, _RANK_HIGHER_BETTER, _RANK_MIN_METRICS
+        [_rankable(row) for row in metrics],
+        _RANK_LOWER_BETTER,
+        _RANK_HIGHER_BETTER,
+        _RANK_MIN_METRICS,
     )
 
 
@@ -763,6 +1132,91 @@ def comp_medals(metrics: list[dict]) -> dict[str, str]:
     """Medal emoji for the 3 best composite comps scores (skipped when fewer
     than 3 tickers qualify — a 2-horse race has no podium)."""
     return ranking.podium_from_scores(comp_scores(metrics))
+
+
+# The peer band is read on ratios and rates only: market cap, EV, price and
+# raw FCF have no "normal" across companies of different size.
+_BAND_KEYS = _RANK_LOWER_BETTER | _RANK_HIGHER_BETTER
+# ...and the lens KPIs, which a company grid reads but the comps table has no
+# row for (`_LENS_ONLY`).
+GRID_BAND_KEYS = _BAND_KEYS | _LENS_ONLY
+# Fewer reporting rivals than this and a median is one name's figure.
+_BAND_MIN_PEERS = 3
+# A cell this many robust sigmas (1.4826 x MAD) from the others' median is
+# flagged. The comps-sheet rule is 2 sigma, but five rivals give a jumpy MAD:
+# at 2 a semis set flagged a quarter of its cells and the mark meant nothing.
+# The scale never drops under half that median either, so a cohort that
+# happens to agree to the decimal does not flag a P/E of 23 against 20.
+_OUTLIER_SIGMAS = 3.0
+_OUTLIER_FLOOR = 0.5
+# ...nor under a unit's smallest gap worth a mark: a median near zero has no
+# half worth the name, and 0.4x of net debt against 0.0x is no outlier.
+_OUTLIER_MIN_SCALE = {"x": 1.0, "pct": 0.05}
+
+
+def _band_value(row: dict, key: str) -> float | None:
+    """`key` of a `_rankable` row as a finite number, or None."""
+    value = row.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if math.isfinite(value) else None
+
+
+def _band_values(rows: list[dict], key: str) -> list[float]:
+    values = (_band_value(row, key) for row in rows)
+    return [v for v in values if v is not None]
+
+
+def peer_band(
+    metrics: list[dict], keys: Iterable[str] | None = None
+) -> dict[str, tuple[float, float, float]]:
+    """KPI -> (P25, median, P75) of the rivals: every row but the first.
+
+    The subject is left out so its own figure is read against the others,
+    never against a middle it pulled. A KPI fewer than `_BAND_MIN_PEERS`
+    rivals report has no band. `keys` defaults to the comps table's rows.
+    """
+    out: dict[str, tuple[float, float, float]] = {}
+    rivals = [_rankable(row) for row in metrics[1:]]
+    for key in METRIC_ORDER if keys is None else keys:
+        if key not in GRID_BAND_KEYS:
+            continue
+        values = _band_values(rivals, key)
+        if len(values) < _BAND_MIN_PEERS:
+            continue
+        low, mid, high = statistics.quantiles(values, n=4, method="inclusive")
+        out[key] = (low, mid, high)
+    return out
+
+
+def comp_outliers(metrics: list[dict]) -> dict[str, list[str]]:
+    """Ticker -> the KPIs where it sits far from everyone else in the set.
+
+    Leave-one-out: each name against the median and spread of the others, so
+    one wild figure cannot widen the spread that should flag it.
+    """
+    ranked = [_rankable(row) for row in metrics]
+    out: dict[str, list[str]] = {}
+    for i, mine in enumerate(ranked):
+        others = ranked[:i] + ranked[i + 1 :]
+        for key in METRIC_ORDER:
+            value = _band_value(mine, key) if key in _BAND_KEYS else None
+            if value is None:
+                continue
+            values = _band_values(others, key)
+            if len(values) < _BAND_MIN_PEERS:
+                continue
+            mid = statistics.median(values)
+            mad = statistics.median(abs(v - mid) for v in values)
+            unit = KPI_SOURCES[key].unit
+            scale = max(
+                1.4826 * mad,
+                _OUTLIER_FLOOR * abs(mid),
+                _OUTLIER_MIN_SCALE.get(unit, 0.0),
+            )
+            if scale and abs(value - mid) > _OUTLIER_SIGMAS * scale:
+                out.setdefault(str(mine["ticker"]), []).append(key)
+    return out
 
 
 def sources_table() -> pd.DataFrame:

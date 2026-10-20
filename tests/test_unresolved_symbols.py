@@ -187,3 +187,49 @@ def test_relisted_forgets_the_verdict_on_disk_too(monkeypatch):
     fetch.relisted("ORGN")
     fetch._forget_unlisted_in_memory()
     assert fetch.unlisted(["ORGN"]) == set()
+
+
+# ------------------------------------- a coin is judged on its USD pair (ERR-02)
+def test_a_eur_coin_pair_is_not_unlisted_when_its_usd_errand_runs_out(monkeypatch):
+    """Yahoo has no CHILLGUY-EUR; the USD fallback prices the coin. When that
+    errand ran out of budget the EUR pair was noted unlisted, alerted, and
+    skipped by the tail for a week. The coin's verdict is its USD pair's."""
+    obs._once.clear()
+    seen: list[list[str]] = []
+
+    def warn(name, **fields):
+        if name == "yahoo.unlisted":
+            seen.append(fields["tickers"])
+
+    monkeypatch.setattr(obs, "warn", warn)
+    monkeypatch.setattr(fetch.yf, "download", _fake_download([], {"CHILLGUY-EUR"}))
+    monkeypatch.setattr(fetch, "_crypto_usd_fallback", lambda *a, **k: {})
+
+    fetch.fetch_many(["CHILLGUY-EUR"])
+
+    assert seen == []
+    assert fetch.unlisted(["CHILLGUY-EUR"]) == set()
+
+
+def test_a_dead_usd_coin_pair_is_still_unlisted(monkeypatch):
+    obs._once.clear()
+    seen: list[list[str]] = []
+    monkeypatch.setattr(
+        obs, "warn",
+        lambda name, **f: seen.append(f["tickers"]) if name == "yahoo.unlisted" else None,
+    )
+    monkeypatch.setattr(fetch.yf, "download", _fake_download([], {"DEADCOIN-USD"}))
+    fetch.fetch_many(["DEADCOIN-USD"])
+    assert seen == [["DEADCOIN-USD"]]
+
+
+def test_a_stored_eur_coin_verdict_is_ignored(monkeypatch):
+    import json
+    import time
+
+    fetch.UNLISTED_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    fetch.UNLISTED_CACHE.write_text(
+        json.dumps({"METIS-EUR": time.time(), "ORGN": time.time()})
+    )
+    fetch._forget_unlisted_in_memory()
+    assert fetch.unlisted(["METIS-EUR", "ORGN"]) == {"ORGN"}

@@ -25,6 +25,7 @@
   "widgets.alert_level": "Nivel",
   "widgets.alert_window": "Ventana (días)",
   "widgets.alert_add": "Añadir alerta",
+  "widgets.alert_duplicate": "Ya tienes esta alerta.",
   "widgets.alert_added": "Alerta añadida para {ticker}.",
   "widgets.alert_removed": "Alerta eliminada.",
   "widgets.alert_t_above": "Precio por encima de",

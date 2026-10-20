@@ -120,9 +120,15 @@ def search_symbols(query: str, limit: int = 6) -> list[tuple[str, str, str]]:
     after a failure: once Yahoo starts rejecting this host, retrying on every
     keystroke only deepens the throttle.
     """
+    return [row[:3] for row in search_rows(query, limit)]
+
+
+def search_rows(query: str, limit: int = 6) -> list[tuple[str, str, str, str]]:
+    """`search_symbols` plus each row's Yahoo quoteType, for a caller that keeps
+    the answer and must still be able to label the rows (`funds.remember`)."""
     from stocks.data import funds
 
-    out: list[tuple[str, str, str]] = []
+    out: list[tuple[str, str, str, str]] = []
     seen: list[str] = []
     for row in _quotes(query, max(limit * 3, 12)):
         symbol = str(row.get("symbol") or "").strip()
@@ -141,7 +147,9 @@ def search_symbols(query: str, limit: int = 6) -> list[tuple[str, str, str]]:
         if _is_dup(keys, seen):
             continue
         seen.extend(keys)
-        out.append((symbol, name, str(row.get("exchDisp") or "")))
+        out.append(
+            (symbol, name, str(row.get("exchDisp") or ""), str(row.get("quoteType")))
+        )
         if len(out) >= limit:
             break
     return out

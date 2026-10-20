@@ -46,7 +46,7 @@
   "tour.income_body": "Dividendos por año y por posición, también los que tu extracto no trae. **Comisiones** te enseña lo que cobró el bróker y lo que te costó el spread.",
   "tour.income_cta": "Abrir Dividendos",
   "tour.review_title": "Vender o reforzar",
-  "tour.review_body": "Cada posición puntuada por calidad y precio: qué vender, recortar o reforzar, con el impuesto de cada movimiento. Escribe cualquier ticker para valorarlo igual. Necesita tu importación. No es asesoramiento.",
+  "tour.review_body": "Calidad y precio de cada posición: qué vender, recortar o reforzar, con su impuesto. El mapa enseña dónde estaba cada valor hace 1M a 2A. Valora cualquier ticker. Necesita tu importación. No es asesoramiento.",
   "tour.review_cta": "Abrir Vender o reforzar",
   "tour.pulse_title": "Pulso de mercado",
   "tour.pulse_body": "El ánimo del mercado en una puntuación de **apetito de riesgo** de 0 a 100, qué la mueve y qué significa para tu cartera. Las tablas de detalle, debajo.",

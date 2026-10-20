@@ -102,6 +102,7 @@ Outside names: buy, watch, pass. Either side: bet, unrated.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
@@ -256,6 +257,9 @@ DIVIDEND_FCF_MAX = 1.0
 DIVIDEND_FCF_HARD = 1.5
 #: The return a bank's equity has to earn to be worth its book.
 COST_OF_EQUITY = 0.10
+#: The growth a bank's book compounds at for ever, in the justified price to
+#: tangible book (ROTCE - g) / (COE - g): nominal GDP's, no more.
+BANK_GROWTH = 0.03
 HIGH_ROE = 0.15
 LOW_ROE = 0.08
 # The analysts' next-year earnings this far under the last twelve months'
@@ -275,8 +279,32 @@ FCF_FLOAT = 2.0
 FCF_SANE = 0.25
 FCF_BACKED = 2.0
 FCF_MAX = 0.50
-# Share-based pay this share of FCF is named: the yield is scored without it.
+# Share-based pay this share of FCF, or of sales, is named: the yield is
+# scored without it.
 SHARE_PAY = 0.5
+SHARE_PAY_SALES = 0.10
+# Share count growing this fast a year: each share owns a shrinking slice of
+# whatever the business earns, so a cheap price per share may not stay cheap.
+HEAVY_DILUTION = 0.05
+# Earnings the cash does not back: accruals (Sloan's net income less operating
+# cash flow, over assets) past `ACCRUALS_HIGH`, or operating cash under
+# `CASH_BACKED_MIN` of the profit summed over the filed years. Profits that
+# are bookkeeping tend to come back down; a cheap P/E on them is not cheap.
+ACCRUALS_HIGH = 0.10
+CASH_BACKED_MIN = 0.70
+# Goodwill this share of assets, or past the owners' equity, is a bet that the
+# acquisitions were worth their price; with a return on all the capital
+# (goodwill in) under `GOODWILL_ROIC` they are not earning it back, and the
+# write-down that says so comes off the book.
+GOODWILL_ASSETS = 0.50
+GOODWILL_EQUITY = 1.0
+GOODWILL_ROIC = 0.08
+# Dollars traded a day under which getting in and out costs a spread and moves
+# the price: a cheap reading on a name nobody trades may be the reason.
+THIN_TURNOVER = 1_000_000.0
+# Insiders holding this share run the company with their own money in it:
+# named, never scored (Yahoo's figure counts a family's or a state's stake).
+INSIDERS_OWN = 0.10
 
 # Score bands.
 GOOD = 60.0
@@ -320,6 +348,8 @@ SHOWN = (
     "pe_ttm",
     "pb",
     "roe",
+    "ptbv",
+    "rotce",
     "dividend_yield",
     "payout_ratio",
 )
@@ -451,6 +481,11 @@ R_PEAK_MARGIN = "peak_margin"
 R_SALES_FALLING = "sales_falling"
 R_MARGIN_FALLING = "margin_falling"
 R_EARNINGS_FALLING = "earnings_falling"
+R_HEAVY_DILUTION = "heavy_dilution"
+R_EARNINGS_NOT_CASH = "earnings_not_cash"
+R_GOODWILL_HEAVY = "goodwill_heavy"
+R_THIN_TRADING = "thin_trading"
+R_INSIDERS_OWN = "insiders_own"
 R_ONE_READING = "cheap_on_one_reading"
 R_FEW_NAMES = "few_names"
 R_REDEPLOY = "redeploy"
@@ -570,6 +605,8 @@ class Scores:
     trailing_pe: bool = False
     #: Book value joined the price because the feed gave too little else.
     book_priced: bool = False
+    #: The P/E was read on the median margin: this one is a cycle's peak.
+    normal_pe: bool = False
 
     @property
     def total(self) -> float | None:
@@ -663,10 +700,51 @@ def _pe(metrics: Mapping) -> tuple[float | None, bool]:
     return trailing, trailing is not None
 
 
-def growth_pe(metrics: Mapping) -> float | None:
-    """P/E (`_pe`) per point of sustained per-share sales growth; None
-    without a positive P/E or positive growth."""
-    pe, _ = _pe(metrics)
+def _at_peak(metrics: Mapping) -> bool:
+    """The operating margin is a cycle's top (`PEAK_RATIO`), not a new normal."""
+    margin = _num(metrics, "op_margin")
+    median = _num(metrics, "op_margin_median")
+    growth = sustained_growth(metrics)
+    return (
+        margin is not None
+        and median is not None
+        and margin - median >= PEAK_GAP
+        and (median <= 0 or margin >= PEAK_RATIO * median)
+        and (_num(metrics, "revenue_down_years") or 0) >= 1
+        and (growth is None or growth < RULE_40_MIN)
+    )
+
+
+def _normal_pe(metrics: Mapping, pe: float | None) -> float | None:
+    """The P/E on the median margin instead of the peak one: today's sales at
+    a normal year's margin. A cyclical at the top looks cheapest exactly when
+    its earnings are about to fall; a median at or under zero is a normal
+    year at a loss, the dear end."""
+    if pe is None or pe <= 0:
+        return pe
+    margin = _num(metrics, "op_margin")
+    median = _num(metrics, "op_margin_median")
+    if margin is None or median is None or margin <= 0:
+        return pe
+    if median <= 0:
+        return 0.0
+    return pe * margin / median
+
+
+def peak_pe(metrics: Mapping) -> float | None:
+    """The trailing P/E on a normal year's margin, when this year's is a
+    cycle's peak (`_at_peak`); None when it is not, or there is no P/E."""
+    if lens(metrics) != STANDARD or stage(metrics) != MATURE or not _at_peak(metrics):
+        return None
+    pe = _num(metrics, "pe_ttm")
+    return _normal_pe(metrics, pe) if pe is not None and pe > 0 else None
+
+
+def growth_pe(metrics: Mapping, pe: float | None = None) -> float | None:
+    """P/E (`_pe`, or the one given) per point of sustained per-share sales
+    growth; None without a positive P/E or positive growth."""
+    if pe is None:
+        pe, _ = _pe(metrics)
     growth = per_share_growth(metrics)
     if pe is None or pe <= 0 or growth is None or growth <= 0:
         return None
@@ -770,10 +848,13 @@ def score(metrics: Mapping) -> Scores:
         quality.append(_lin(rule_40, 0.0, 0.60))
 
     cheap: list[float] = []
+    peak = _at_peak(metrics)
+    if peak:
+        pe = _normal_pe(metrics, pe)
     if pe is not None:
         # A forward loss has no multiple; it is the dear end, not a missing one.
         pe_score = _lin(-pe, -40.0, -8.0) if pe > 0 else 0.0
-        peg = growth_pe(metrics)
+        peg = growth_pe(metrics, pe) if pe > 0 else None
         if peg is not None:
             pe_score = max(pe_score, _lin(-peg, -PEG_HI, -PEG_LO))
         cheap.append(pe_score)
@@ -798,17 +879,67 @@ def score(metrics: Mapping) -> Scores:
         cheap_reads=_cheap_reads(cheap),
         trailing_pe=trailing and pe is not None,
         book_priced=book and not floated,
+        normal_pe=peak and pe is not None,
     )
 
 
+# The KPIs that are a price over something the filings fix, and the ones that
+# are something over a price: at another price the first scale with it and
+# the second against it. Everything else in `compute_metrics` is the business.
+_PRICED = ("price", "market_cap", "pe_ttm", "pe_fwd", "pb", "ptbv", "ps", "turnover_usd")
+_YIELDS = ("fcf_yield", "owner_fcf_yield", "dividend_yield")
+
+
+def at_price(metrics: Mapping, factor: float) -> dict:
+    """`metrics` as they read with the share price at `factor` times the one
+    they were taken at, the business unchanged.
+
+    The map's trail where no score was recorded that far back: the price is
+    known for every day, the statements of that day are not, so this is where
+    today's company would sit at that day's price. The enterprise value moves
+    by the market cap's change only; the debt and cash under it stay. A
+    forward P/E keeps today's estimate of the earnings. Quality moves a
+    little too: it reads the cash yield as "does it make cash at all".
+    """
+    out = dict(metrics)
+    if not factor or factor <= 0 or factor != factor:
+        return out
+    for key in _PRICED:
+        if (value := _num(metrics, key)) is not None:
+            out[key] = value * factor
+    for key in _YIELDS:
+        if (value := _num(metrics, key)) is not None:
+            out[key] = value / factor
+    ev = _num(metrics, "ev")
+    cap = _num(metrics, "market_cap")
+    if ev is not None and cap is not None:
+        then = ev + cap * (factor - 1)
+        out["ev"] = then
+        for key in ("ev_ebitda", "ev_sales"):
+            if key not in metrics:
+                continue
+            value = _num(metrics, key)
+            # A multiple over a non-positive EV has no "same business" scale.
+            out[key] = (
+                value * then / ev if value is not None and ev > 0 and then > 0 else None
+            )
+    return out
+
+
 def _pb_for_roe(metrics: Mapping) -> float | None:
-    """Price to book over the book's worth at `COST_OF_EQUITY`: a bank
-    earning 20% on equity is worth twice its book, one earning 5% half."""
-    pb = _num(metrics, "pb")
-    roe = _num(metrics, "roe")
-    if pb is None or pb <= 0 or roe is None or roe <= 0:
+    """Price to book over the book's worth: (return - g) / (`COST_OF_EQUITY`
+    - g), g `BANK_GROWTH`. On the tangible book when the filings give it
+    (goodwill is the first thing a bad year writes off), else on the whole.
+    A bank earning 15% on tangible equity is worth 1.7 times it; one earning
+    under g is worth less than any price, so it reads as dear."""
+    pb, roe = _num(metrics, "ptbv"), _num(metrics, "rotce")
+    if pb is None or roe is None:
+        pb, roe = _num(metrics, "pb"), _num(metrics, "roe")
+    if pb is None or pb <= 0 or roe is None:
         return None
-    return pb / (roe / COST_OF_EQUITY)
+    if roe <= BANK_GROWTH:
+        return math.inf
+    return pb / ((roe - BANK_GROWTH) / (COST_OF_EQUITY - BANK_GROWTH))
 
 
 def _financial_scores(metrics: Mapping) -> Scores:
@@ -817,7 +948,8 @@ def _financial_scores(metrics: Mapping) -> Scores:
     earnings = _num(metrics, "net_income_cagr")
     dilution = _num(metrics, "share_dilution")
     pe, trailing = _pe(metrics)
-    pb = _num(metrics, "pb")
+    # A bank is priced on its tangible book when the filings give one.
+    pb = _num(metrics, "ptbv") or _num(metrics, "pb")
     fair = _pb_for_roe(metrics)
 
     quality = [
@@ -988,19 +1120,10 @@ def _cautions(metrics: Mapping, s: Scores) -> list[str]:
     """Why two good scores still do not make an add or a buy (see the module
     docstring): the reasons the numbers behind them may not hold."""
     out: list[str] = []
-    margin = _num(metrics, "op_margin")
     median = _num(metrics, "op_margin_median")
     change = _num(metrics, "op_margin_change")
-    growth = sustained_growth(metrics)
     if s.stage == MATURE and s.lens == STANDARD:
-        if (
-            margin is not None
-            and median is not None
-            and margin - median >= PEAK_GAP
-            and (median <= 0 or margin >= PEAK_RATIO * median)
-            and (_num(metrics, "revenue_down_years") or 0) >= 1
-            and (growth is None or growth < RULE_40_MIN)
-        ):
+        if _at_peak(metrics):
             out.append(R_PEAK_MARGIN)
         if (
             change is not None
@@ -1052,6 +1175,32 @@ def _cautions(metrics: Mapping, s: Scores) -> list[str]:
         payout is not None and payout > PAYOUT_STRETCHED and s.lens != REAL_ESTATE
     ) or short_of_cash:
         out.append(R_PAYOUT_STRETCHED)
+    if s.stage != EARLY and s.lens != REAL_ESTATE:
+        # A landlord pays its earnings out by law and grows on new shares;
+        # its lens scores the dilution instead.
+        dilution = _num(metrics, "share_dilution")
+        if dilution is not None and dilution >= HEAVY_DILUTION:
+            out.append(R_HEAVY_DILUTION)
+    if s.stage != EARLY and s.lens == STANDARD:
+        # A lender's operating cash is its customers' money moving; a
+        # landlord's and a utility's earnings sit under their cash on purpose.
+        accruals = _num(metrics, "accruals")
+        backed = _num(metrics, "cfo_ni")
+        if (accruals is not None and accruals > ACCRUALS_HIGH) or (
+            backed is not None and backed < CASH_BACKED_MIN
+        ):
+            out.append(R_EARNINGS_NOT_CASH)
+    if s.stage != EARLY and s.lens != FINANCIAL:
+        heavy = (_num(metrics, "goodwill_assets") or 0) > GOODWILL_ASSETS or (
+            _num(metrics, "goodwill_equity") or 0
+        ) > GOODWILL_EQUITY
+        # The return with the premium paid left in: `_roic` takes it out.
+        whole = _num(metrics, "roic")
+        if heavy and whole is not None and whole < GOODWILL_ROIC:
+            out.append(R_GOODWILL_HEAVY)
+    turnover = _num(metrics, "turnover_usd")
+    if turnover is not None and turnover < THIN_TURNOVER:
+        out.append(R_THIN_TRADING)
     # Cheap on the average but on one input alone: that input may be the
     # feed's mistake or a one-off, and nothing else confirms the price.
     if s.cheapness is not None and s.cheapness >= CHEAP and s.cheap_reads < 2:
@@ -1100,10 +1249,17 @@ def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
     if dilution is not None:
         if dilution <= -0.02:
             out.append(R_BUYBACKS)
-        elif dilution >= 0.03:
+        elif 0.03 <= dilution < HEAVY_DILUTION:
+            # Past it the caution (`R_HEAVY_DILUTION`) says it instead.
             out.append(R_DILUTION)
+    insiders = _num(metrics, "insider_share")
+    if insiders is not None and insiders >= INSIDERS_OWN:
+        out.append(R_INSIDERS_OWN)
     share_pay = _num(metrics, "sbc_fcf")
-    if share_pay is not None and share_pay >= SHARE_PAY:
+    pay_sales = _num(metrics, "sbc_revenue")
+    if (share_pay is not None and share_pay >= SHARE_PAY) or (
+        pay_sales is not None and pay_sales >= SHARE_PAY_SALES
+    ):
         out.append(R_SHARE_PAY)
     if debt is not None and debt >= debt_line(metrics):
         out.append(R_DEBT)
@@ -1135,7 +1291,10 @@ def _business_reasons(metrics: Mapping, s: Scores) -> list[str]:
         rule_40 = _rule_40(metrics, s.fcf_float)
         if rule_40 is not None and rule_40 >= 0.40:
             out.append(R_RULE_40)
-        peg = growth_pe(metrics)
+        pe, _ = _pe(metrics)
+        if s.normal_pe:
+            pe = _normal_pe(metrics, pe)
+        peg = growth_pe(metrics, pe) if pe is not None and pe > 0 else None
         if peg is not None and peg <= PEG_CHEAP:
             out.append(R_CHEAP_FOR_GROWTH)
     # A long runway only matters to a company that needs one; a short one
@@ -1231,10 +1390,32 @@ class BookRow:
     currency: str | None = None
 
 
+def cautions(metrics: Mapping) -> list[str]:
+    """The review's warnings on a company alone (`_cautions`), for a page that
+    shows the company rather than judges it: everything but the one that is
+    about the review's own cheap call."""
+    if str(metrics.get("quote_type") or "EQUITY").upper() != "EQUITY":
+        return []
+    return [r for r in _cautions(metrics, score(metrics)) if r != R_ONE_READING]
+
+
+#: Shown only for the lens that reads them: a telecom's price to tangible
+#: book is 30x and means nothing.
+_FINANCIAL_ONLY = frozenset({"ptbv", "rotce"})
+
+
 def _shown(metrics: Mapping | None) -> dict[str, float | None]:
     metrics = metrics or {}
     derived = {"growth_pe": growth_pe(metrics)}
-    return {key: derived[key] if key in derived else _num(metrics, key) for key in SHOWN}
+    bank = lens(metrics) == FINANCIAL
+    return {
+        key: None
+        if key in _FINANCIAL_ONLY and not bank
+        else derived[key]
+        if key in derived
+        else _num(metrics, key)
+        for key in SHOWN
+    }
 
 
 def _kind_verdict(kind: str | None, held: bool) -> Verdict | None:

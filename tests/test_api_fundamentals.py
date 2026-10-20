@@ -702,6 +702,23 @@ def test_a_two_horse_race_has_no_podium(client, monkeypatch):
     assert body["medals"] == {}
 
 
+def test_the_rivals_median_and_outliers_ride_along(client, monkeypatch):
+    pes = {"S": 60.0, "A": 18.0, "B": 20.0, "C": 22.0}
+    monkeypatch.setattr(loaders, "fundamentals", lambda t: FakeRaw(ticker=t))
+    monkeypatch.setattr(
+        "stocks.api.routes.comparables.compute_metrics",
+        lambda raw: {"ticker": raw.ticker, "pe_ttm": pes[raw.ticker]},
+    )
+    body = client.get(
+        "/v1/comparables", params={"tickers": "S,A,B,C"}, headers=AUTH
+    ).json()
+    row = body["labels"].index("P/E (TTM)")
+    assert body["peer_median"][row] == "20.0x"
+    assert body["peer_range"][row] == "19.0x – 21.0x"
+    assert body["outliers"] == {"S": [row]}
+    assert len(body["peer_median"]) == len(body["labels"])
+
+
 def test_the_fan_out_is_bounded(client):
     """Each name is a fundamentals pull, and Yahoo throttles cloud IPs hard."""
     many = ",".join(f"T{i}" for i in range(20))

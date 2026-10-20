@@ -344,6 +344,50 @@ export function EndLabels({
   );
 }
 
+/**
+ * One of the reader's own fills: a disc in the trade's hue with a triangle
+ * cut out of it pointing the trade's way, up bought and down sold, ringed in
+ * the page colour. The ring is what keeps a red sell legible on a falling red
+ * line, and the direction tells buy from sell to a reader who cannot tell the
+ * hues apart. The one under the pointer grows and wears a halo, so a reading
+ * in the tooltip points back at the mark it describes.
+ */
+export function FillMark({
+  x,
+  y,
+  buy,
+  color,
+  ring,
+  active = false,
+}: {
+  x: number;
+  y: number;
+  buy: boolean;
+  color: string;
+  /** The page colour: the disc's outline and the triangle cut out of it. */
+  ring: string;
+  active?: boolean;
+}) {
+  const r = active ? 9.5 : 8;
+  const g = r * 0.48;
+  const tip = buy ? -g : g;
+  const base = buy ? g * 0.62 : -g * 0.62;
+  const glyph = `M ${x} ${y + tip} L ${x + g} ${y + base} L ${x - g} ${y + base} Z`;
+  return (
+    <g aria-hidden="true">
+      {active ? <circle cx={x} cy={y} r={r + 5} fill={color} opacity={0.22} /> : null}
+      <circle cx={x} cy={y} r={r} fill={color} stroke={ring} strokeWidth={2} />
+      <path
+        d={glyph}
+        fill={ring}
+        stroke={ring}
+        strokeWidth={1}
+        strokeLinejoin="round"
+      />
+    </g>
+  );
+}
+
 type GridProps = {
   frame: Frame;
   lo: number;

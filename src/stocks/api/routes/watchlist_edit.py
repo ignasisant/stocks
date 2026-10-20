@@ -261,16 +261,19 @@ def _alerts(path, ticker: str) -> list[AlertRule]:
     symbol = ticker.strip().upper()
     for holding in load_watchlist(path):
         if holding.ticker.upper() == symbol:
-            return [
-                AlertRule(
-                    type=alert.type,
-                    price=alert.price,
-                    pct=alert.pct,
-                    level=alert.level,
-                    window=alert.window,
-                )
+            # A file written before repeats were refused may still hold one;
+            # it reads back once, so removing it removes it.
+            rules = wl.unique_alerts([
+                {
+                    "type": alert.type,
+                    "price": alert.price,
+                    "pct": alert.pct,
+                    "level": alert.level,
+                    "window": alert.window,
+                }
                 for alert in holding.alerts
-            ]
+            ])
+            return [AlertRule(**rule) for rule in rules]
     return []
 
 

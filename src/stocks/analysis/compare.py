@@ -30,9 +30,25 @@ from stocks.frames import midnight, midnights
 # European one minute by minute.
 RANGES: tuple[str, ...] = ("1m", "6m", "1y", "2y")
 
-# The indices every comparison opens with — the same three the portfolio's
-# risk tab measures the book against (`portfolio.DEFAULT_BENCHMARKS`).
-INDICES: tuple[str, ...] = ("SPY", "QQQ", "EEM")
+# The index every comparison opens with. One name is not a book: what it
+# answers to is its sector and its rivals; the market is the one line that
+# says whether all of them were worth holding. QQQ or EEM would be a second
+# and third market line around a name that is neither (the search adds them).
+INDICES: tuple[str, ...] = ("SPY",)
+
+# The review map's trail steps back half a year at a time, so two years read
+# as a path through four places rather than one line: a window's trail is its
+# own first day and every step younger than it. 18m is a step, never a column.
+TRAIL_STEPS: dict[str, pd.DateOffset] = {
+    "6m": pd.DateOffset(months=6),
+    "1y": pd.DateOffset(years=1),
+    "18m": pd.DateOffset(months=18),
+    "2y": pd.DateOffset(years=2),
+}
+
+# Rivals drawn when the card opens, beside the index and the sector's ETF:
+# with the subject that is five lines, and the chips offer the rest.
+OPENING_PEERS = 3
 
 # Lines beside the subject. Past six the legend is longer than the chart is
 # readable, and each one is a price download.
@@ -145,10 +161,13 @@ def rates_into(
 
 
 def window_days(
-    anchor: pd.Timestamp, sessions: pd.DatetimeIndex | None = None
+    anchor: pd.Timestamp,
+    sessions: pd.DatetimeIndex | None = None,
+    spans: dict[str, pd.DateOffset] | None = None,
 ) -> dict[str, pd.Timestamp]:
-    """{window: the day it opens on} for every range in `RANGES`, back from
-    `anchor` — calendar months and years, as the price chart cuts them.
+    """{window: the day it opens on} for every range in `RANGES` (or each of
+    `spans`), back from `anchor` — calendar months and years, as the price
+    chart cuts them.
 
     Given `sessions` (the index's days), each opens on the first of them on or
     after that day, which is where `history.shape` starts a chart: a column and
@@ -156,8 +175,8 @@ def window_days(
     """
     day = midnight(anchor)
     out: dict[str, pd.Timestamp] = {}
-    for label in RANGES:
-        start = day - WINDOW[label]
+    for label, span in (spans or {label: WINDOW[label] for label in RANGES}).items():
+        start = day - span
         if sessions is not None:
             later = sessions[sessions >= start]
             if len(later):

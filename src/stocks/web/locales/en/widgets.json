@@ -25,6 +25,7 @@
   "widgets.alert_level": "Level",
   "widgets.alert_window": "Window (days)",
   "widgets.alert_add": "Add alert",
+  "widgets.alert_duplicate": "You already have this alert.",
   "widgets.alert_added": "Alert added for {ticker}.",
   "widgets.alert_removed": "Alert removed.",
   "widgets.alert_t_above": "Price above",

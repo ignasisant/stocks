@@ -717,6 +717,17 @@ def test_the_prompt_bans_the_chatbot_voice():
     assert "no em dashes" in tail and "vague verdict" in tail
 
 
+
+def test_the_prompt_never_maps_an_unknown_holding_onto_another():
+    # A reader asked about a fund their book does not hold; the answer guessed
+    # an ETF from the web and called it their coin position (2026-10-20
+    # triage, IA-01). The rule asks back instead.
+    got = engine.system_prompt({}, "Portfolio: NVDA 10 shares", [])
+    tail = " ".join(got.split("RULES — these hold")[1].split())
+    assert "must match a ticker or a name in the book" in tail
+    assert "ask which one they mean" in tail
+    assert "a fund is not a coin" in tail
+
 # ------------------------------------------------------- an interruptible wait
 # Blocking on each future in one call leaves a stop pressed during routing
 # or a page read with nothing to act on until the pass returns. With a tick
@@ -1160,3 +1171,51 @@ def test_a_deep_plan_is_handed_over_while_the_research_runs(monkeypatch, paths,
             break
     it.close()
     assert ("plan", plan) in said
+
+
+# The Review page's "Pregunta a la IA" message, as the frontend builds it
+# from `review.prompt_*`: a header naming "peso", then a row per holding with
+# its weight and target. The 2026-10-20 triage (IA-02) found it opened a
+# "rebalance FISV 42%" card nobody asked for.
+REVIEW_PASTE = "\n".join([
+    "Revisa esta lectura de vender o reforzar de mi cartera (2026-10-19, en EUR)"
+    " y cuestiónala.",
+    "Plan: vender FISV, comprar MSFT, impuesto estimado 120 €.",
+    "En cartera (veredicto, peso → objetivo, calidad/precio sobre 100, motivos,"
+    " cifras):",
+    "- FISV vender, 4% → 0%, calidad 42 / precio 60, deuda alta",
+    "- MSFT reforzar, 8% → 11%, calidad 88 / precio 35, FCF 30%",
+    "- NVDA mantener, 12% → 12%, calidad 91 / precio 20, margen 55%",
+    "Empieza por el plan entero.",
+])
+
+
+def test_a_pasted_list_is_not_a_one_trade_question():
+    from stocks.chat import rebalance, whatif
+
+    # Both one-trade detectors fire on it: the gate is what keeps them off.
+    assert rebalance.wants(REVIEW_PASTE) and whatif.wants(REVIEW_PASTE)
+    assert engine.pasted_report(REVIEW_PASTE)
+    assert not engine.pasted_report("baja FISV al 5%")
+    assert not engine.pasted_report("vende la mitad de FISV\ny luego 10% de MSFT")
+
+
+def test_a_pasted_review_opens_no_trade_card(providers, paths, monkeypatch):
+    # Keyed by message: a turn another test left running on a thread may
+    # still reach the patched cards, and its calls are not this test's.
+    opened: list[tuple[str, str]] = []
+    for name in ("_simulate_sale", "_chart", "_allocation", "_harvest",
+                 "_rebalance"):
+        monkeypatch.setattr(engine, name,
+                            lambda message, *a, _n=name, **k:
+                            opened.append((_n, message)))
+
+    def cards(message: str) -> list[str]:
+        return sorted(name for name, said in opened if said == message)
+
+    engine.answer(prefs=dict(BASE_PREFS), lang="es", message=REVIEW_PASTE,
+                  **paths)
+    assert cards(REVIEW_PASTE) == []
+    engine.answer(prefs=dict(BASE_PREFS), lang="es", message="baja FISV al 5%",
+                  **paths)
+    assert cards("baja FISV al 5%") == ["_harvest", "_rebalance", "_simulate_sale"]

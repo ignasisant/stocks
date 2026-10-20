@@ -12,6 +12,7 @@
  */
 
 import { get, send } from "../../shell/api";
+import { findTickers, forgetSearches } from "../../shell/findTickers";
 import type {
   AlertForm,
   AlertRule,
@@ -153,15 +154,18 @@ export const getWatchlist = () => get<{ entries: WatchlistEntry[] }>("/watchlist
 export const getTags = () => get<{ tags: string[] }>("/watchlist/tags");
 
 export const searchTickers = (q: string, limit = 12) =>
-  get<{ query: string; matches: SearchMatch[] }>("/search", { q, limit });
+  findTickers<SearchMatch>(q, { limit });
 
 /**
  * An upsert: favouriting or tagging a symbol that is only held — or only
  * searched for — lists it. PATCH would 404 on exactly the
  * symbols somebody is most likely to be starring.
  */
-export const follow = (ticker: string, fields: EntryFields) =>
-  send<WatchlistEntry>("POST", "/watchlist", { ticker, ...fields });
+export const follow = (ticker: string, fields: EntryFields) => {
+  // A star or a group changes the ticker's own-list row in every search box.
+  forgetSearches();
+  return send<WatchlistEntry>("POST", "/watchlist", { ticker, ...fields });
+};
 
 export const getAlerts = (ticker: string) =>
   get<{ ticker: string; alerts: AlertRule[] }>(
