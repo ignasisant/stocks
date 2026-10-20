@@ -16,6 +16,7 @@
   "connector.consent_cannot": "Leave the box empty and it can only read. Either way it cannot wipe your book or delete your account, and it never sees your Google sign-in.",
   "connector.consent_return": "After you answer, you go back to:",
   "connector.consent_revoke_hint": "You can disconnect it at any time from Profile.",
+  "connector.consent_privacy": "Privacy policy",
   "connector.consent_allow": "Allow",
   "connector.consent_deny": "Cancel",
   "connector.consent_error_title": "This connection can't continue",

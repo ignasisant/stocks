@@ -37,6 +37,7 @@ from starlette.routing import Route, request_response
 
 from stocks import accounts, obs, session
 from stocks.connector import clients, oauth, store
+from stocks.web.legal import PATH_PRIVACY
 
 FORM_PURPOSE = "mcp.consent"
 FORM_MAX_AGE = 600
@@ -185,7 +186,11 @@ def _page(lang: str, *, name: str, unverified: bool, host: str, email: str,
         f"<p>{_t('consent_cannot', lang)}</p>"
         f'<p class="note">{_t("consent_return", lang)}<br>'
         f'<span class="host">{html.escape(host)}</span></p>'
-        f'<p class="note">{_t("consent_revoke_hint", lang)}</p>'
+        f'<p class="note">{_t("consent_revoke_hint", lang)} '
+        # What the client gets to read leaves this site: the policy says
+        # where it is kept and how to have it deleted.
+        f'<a href="{html.escape(f"{PATH_PRIVACY}?lang={lang}")}">'
+        f'{_t("consent_privacy", lang)}</a></p>'
         f'<input type="hidden" name="req" value="{html.escape(req)}">'
         f'<input type="hidden" name="csrf" value="{html.escape(form)}">'
         '<div class="actions">'

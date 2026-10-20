@@ -22,7 +22,7 @@ import os
 import shutil
 import subprocess
 from collections.abc import Iterable, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from stocks.config import DATA_DIR
@@ -311,6 +311,34 @@ def render_usage(summary: dict) -> str:
 # only the arithmetic over them.
 FUNNEL_STEPS = ("landing.view", "landing.cta", "auth.signup", "import.committed")
 
+# A signup "came back" when the account shows up again this many days after
+# it was created: one week is past the first look and the import that follows
+# it, so a return is the habit forming rather than the onboarding finishing.
+RETURN_DAYS = 7
+
+
+def _retention(signups: dict[str, str], seen: dict[str, set[str]], last: str) -> dict:
+    """Signups old enough to judge, and how many were seen RETURN_DAYS later.
+
+    `last` is the newest day in the range: a signup whose week has not ended
+    by then is not counted either way, so a fresh cohort never drags the rate
+    down. Any event carrying the account slug counts as a visit — the log
+    has no "page view" of its own, and a session cookie outlives a login.
+    """
+    eligible = returned = 0
+    for user, day in signups.items():
+        try:
+            due = (datetime.strptime(day, "%Y-%m-%d")
+                   + timedelta(days=RETURN_DAYS)).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+        if due > last:
+            continue
+        eligible += 1
+        if any(d >= due for d in seen.get(user, ())):
+            returned += 1
+    return {"days": RETURN_DAYS, "eligible": eligible, "returned": returned}
+
 
 def funnel(entries: Iterable[dict]) -> dict:
     """Landing view -> app entry -> signup -> first import, per day and per source.
@@ -326,10 +354,16 @@ def funnel(entries: Iterable[dict]) -> dict:
     Signups are also counted by `wall` — the in-app prompt that was pressed
     (the locked assistant, a page's banner, the rail; `oidc._wall`) — which
     says which ask converts where `src` says which post brought the visitor.
+
+    `retention` closes the loop: of the signups old enough to tell, how many
+    were seen again RETURN_DAYS later (`_retention`).
     """
     days: dict[str, dict] = {}
     walls: dict[str, int] = {}
     sources: dict[str, dict] = {}
+    signups: dict[str, str] = {}  # account slug -> day it signed up
+    seen: dict[str, set[str]] = {}  # account slug -> days with any event
+    last = ""
     totals = dict.fromkeys(("views", "ctas", "signups", "imports"), 0)
     step_of = {
         "landing.view": "views",
@@ -339,10 +373,19 @@ def funnel(entries: Iterable[dict]) -> dict:
     }
     for entry in entries:
         body = payload(entry)
-        step = step_of.get(str(body.get("event") or ""))
-        if step is None or body.get("bot"):
+        if body.get("bot"):
             continue
         day = str(entry.get("timestamp", ""))[:10] or "-"
+        user = str(body.get("user") or "")
+        if day != "-":
+            last = max(last, day)
+            if user and user != "-":
+                seen.setdefault(user, set()).add(day)
+        step = step_of.get(str(body.get("event") or ""))
+        if step is None:
+            continue
+        if step == "signups" and user and user != "-":
+            signups.setdefault(user, day)
         src = str(body.get("src") or "-")
         for bucket, key in ((days, day), (sources, src)):
             row = bucket.setdefault(
@@ -366,6 +409,7 @@ def funnel(entries: Iterable[dict]) -> dict:
             key=lambda r: (r["signups"], r["wall"]),
             reverse=True,
         ),
+        "retention": _retention(signups, seen, last),
     }
 
 
@@ -391,6 +435,12 @@ def render_funnel(summary: dict) -> str:
         f"({_rate(t['ctas'], t['views'])}) -> {t['signups']} signups "
         f"({_rate(t['signups'], t['ctas'])}) -> {t['imports']} imports"
     )
+    r = summary.get("retention") or {}
+    if r.get("eligible"):
+        lines.append(
+            f"came back after {r['days']}d: {r['returned']} of {r['eligible']} "
+            f"signups ({_rate(r['returned'], r['eligible'])})"
+        )
     if summary["sources"]:
         head = f"{'source':<24} {'views':>7} {'entries':>8} {'signups':>8} {'entry%':>8}"
         lines += ["\nby source:", head, "-" * len(head)]

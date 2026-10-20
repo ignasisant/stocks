@@ -31,7 +31,9 @@ permissions:
 jobs:
   snapshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Copies run 16 at a time (stocks.backup.WORKERS); a run that still hits
+    # this limit means the bucket outgrew the job, not a slow day.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7

@@ -249,6 +249,23 @@ def _columns(key: str, header: list[str]) -> dict[str, int]:
     return cols
 
 
+def _delimiter(text: str) -> str:
+    """The separator this statement uses, read off its first line.
+
+    IBKR writes commas, but a file that went through Excel on a Spanish
+    machine comes back with semicolons (or tabs). The second cell of every
+    line is the row kind, so the separator that puts "Header" or "Data"
+    there is the right one; anything else falls back to the comma and is
+    then refused as a foreign shape like before.
+    """
+    first = next((line for line in text.splitlines() if line.strip()), "")
+    for sep in (",", ";", "\t"):
+        row = next(csv.reader([first], delimiter=sep), [])
+        if len(row) >= 3 and row[1] in ("Header", "Data"):
+            return sep
+    return ","
+
+
 def parse_csv(text: str) -> ParseResult:
     """Parse IBKR activity-statement CSV text into a ParseResult (no writes)."""
     result = ParseResult()
@@ -259,7 +276,8 @@ def parse_csv(text: str) -> ParseResult:
     isins: dict[str, str] = {}  # symbol -> ISIN, from the instrument table
     venues: dict[str, str] = {}  # symbol -> Yahoo suffix for its listing
 
-    for i, row in enumerate(csv.reader(io.StringIO(text)), start=1):
+    reader = csv.reader(io.StringIO(text), delimiter=_delimiter(text))
+    for i, row in enumerate(reader, start=1):
         if len(row) < 3:
             continue
         name, kind, rest = row[0], row[1], row[2:]

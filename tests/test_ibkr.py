@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import csv
+import io
+
 from stocks.portfolio import ibkr
 
 IBKR_CSV = (
@@ -231,3 +234,16 @@ def test_spanish_trades_section_wins_over_the_snapshot():
     assert (trade.ticker, trade.action, trade.quantity) == ("ASML", "buy", 1)
     assert (trade.price, trade.currency, trade.fee) == (633.9, "EUR", 1.25)
     assert trade.date == "2026-09-14" and trade.note == "ibkr"
+
+
+def test_a_statement_resaved_with_semicolons_imports_like_the_original():
+    # What Excel writes back on an es-ES machine: the same cells, ";" between
+    # them, and the timestamps no longer need their quotes.
+    out = io.StringIO()
+    csv.writer(out, delimiter=";", lineterminator="\n").writerows(
+        csv.reader(io.StringIO(IBKR_CSV))
+    )
+    original = ibkr.parse_csv(IBKR_CSV)
+    resaved = ibkr.parse_csv(out.getvalue())
+    assert resaved.transactions == original.transactions
+    assert resaved.skipped == original.skipped

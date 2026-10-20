@@ -345,3 +345,17 @@ def test_the_funnel_counts_signups_by_the_prompt_pressed():
         {"wall": "-", "signups": 1},
     ]
     assert "by prompt:" in logs_query.render_funnel(summary)
+
+
+def test_the_funnel_counts_who_came_back_a_week_after_signing_up():
+    summary = logs_query.funnel([
+        _entry("2026-09-01", "auth.signup", user="ann"),
+        _entry("2026-09-09", "page.render", user="ann"),
+        _entry("2026-09-01", "auth.signup", user="bob"),
+        _entry("2026-09-03", "page.render", user="bob"),  # the same week: not a return
+        _entry("2026-09-20", "auth.signup", user="cy"),  # week not over by the last day
+        _entry("2026-09-21", "page.render", user="cy"),
+    ])
+    assert summary["retention"] == {"days": 7, "eligible": 2, "returned": 1}
+    text = logs_query.render_funnel(summary)
+    assert "came back after 7d: 1 of 2 signups (50.0%)" in text

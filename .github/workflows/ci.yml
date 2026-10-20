@@ -43,7 +43,7 @@ jobs:
   # A red run here means a new annotation slipped.
   types:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7

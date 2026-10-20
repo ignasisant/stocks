@@ -16,6 +16,7 @@
   "connector.consent_cannot": "Si dejas la casilla vacía, solo podrá leer. En ningún caso puede vaciar tu libro ni borrar tu cuenta, y nunca ve tu inicio de sesión de Google.",
   "connector.consent_return": "Cuando respondas, vuelves a:",
   "connector.consent_revoke_hint": "Puedes desconectarla cuando quieras desde Perfil.",
+  "connector.consent_privacy": "Política de privacidad",
   "connector.consent_allow": "Permitir",
   "connector.consent_deny": "Cancelar",
   "connector.consent_error_title": "Esta conexión no puede seguir",
