@@ -34,6 +34,7 @@
   "portfolio.postmarket_note": "After hours — the day change includes the post-close move.",
   "portfolio.col_position": "Position",
   "portfolio.col_shares": "Shares",
+  "portfolio.col_price": "Price",
   "portfolio.col_currency": "Currency",
   "portfolio.col_weight": "Weight",
   "portfolio.col_total_pl": "Total P/L",

@@ -119,6 +119,8 @@
   "review.col_tax_help": "Extra tax this year if the sale is made, with your tax jurisdiction and lots.",
   "review.col_pnl": "P/L",
   "review.col_pnl_help": "Unrealised gain or loss on the position against its cost.",
+  "review.col_price": "Price",
+  "review.col_price_help": "Last price of one share, in the currency it trades in.",
   "review.col_return": "Return {span}",
   "review.col_return_help": "Total return in your currency over the window, dividends included.",
   "review.col_vs_index": "vs S&P 500",

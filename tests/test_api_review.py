@@ -174,6 +174,22 @@ def test_a_sale_carries_its_money_and_its_tax(client, book):
     assert amd["tax"] is not None and amd["tax"] > 0
 
 
+def test_a_held_share_is_priced_in_the_currency_it_trades_in(client, book, monkeypatch):
+    table = loaders.positions_table().assign(ccy=["USD", "EUR", "EUR"])
+    monkeypatch.setattr(loaders, "positions_table", lambda *a, **k: table)
+    monkeypatch.setattr(
+        loaders, "spot_rates", lambda ccys, base="EUR": {"USD": 0.5, "EUR": 1.0}
+    )
+    body = _get(client, add="bkng")
+    rows = {r["ticker"]: r for r in body["held"] + body["candidates"]}
+    # 1,500 EUR over 10 shares at 0.5 EUR a dollar: the dollar quote.
+    assert (rows["AMD"]["price"], rows["AMD"]["currency"]) == (300.0, "USD")
+    assert rows["XEON.DE"]["price"] == pytest.approx(164.0)
+    # Never profiled, so no code to print it under; an outside name has none.
+    assert rows["ADBE"]["price"] is None
+    assert rows["BKNG"]["price"] is None
+
+
 def test_a_buy_inside_the_repurchase_window_says_when(client, book):
     adbe = next(r for r in _get(client)["held"] if r["ticker"] == "ADBE")
     # 3% of a 10,000 book taken to 5%.

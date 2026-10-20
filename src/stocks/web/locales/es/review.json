@@ -119,6 +119,8 @@
   "review.col_tax_help": "Impuesto extra de este año si haces la venta, con tu jurisdicción fiscal y tus lotes.",
   "review.col_pnl": "P/G",
   "review.col_pnl_help": "Ganancia o pérdida latente de la posición frente a su coste.",
+  "review.col_price": "Precio",
+  "review.col_price_help": "Último precio de una acción, en la moneda en que cotiza.",
   "review.col_return": "Rent. {span}",
   "review.col_return_help": "Rentabilidad total en tu moneda en el periodo, dividendos incluidos.",
   "review.col_vs_index": "vs S&P 500",

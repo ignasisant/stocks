@@ -336,6 +336,15 @@ def _book_price(row, ccy: str) -> tuple[float, str] | None:
     return value / count, ccy
 
 
+def _held_price(row, rates: dict[str, float], currency: str | None) -> float | None:
+    """One held share's price in `currency`, the row's quote currency — or
+    null when the priced listing trades in another one, since the client
+    prints the figure under the row's code."""
+    if not currency or str(row.get("ccy") or "").upper() != currency.upper():
+        return None
+    return _num(loaders.native_price(row, rates))
+
+
 class _Clock:
     """Milliseconds per phase of one read, summed over repeats, so a slow
     answer says which source it waited on."""
@@ -806,6 +815,15 @@ def _judge(account, background: BackgroundTasks, ccy: str, add: str) -> Review:
 
     with clock("prices"):
         table = pricing.result()
+        # One spot per currency, to quote each held share back in its own
+        # market's currency — the pairs `/portfolio/positions` reads too.
+        rates = (
+            loaders.spot_rates(
+                tuple(sorted({str(c).upper() for c in table["ccy"] if c})), ccy
+            )
+            if not table.empty and "ccy" in table
+            else {}
+        )
     with clock("risk"):
         shares = risk.result() if held_labels else {}
     held_labels = [str(t) for t in table.index] if not table.empty else []
@@ -982,6 +1000,7 @@ def _judge(account, background: BackgroundTasks, ccy: str, add: str) -> Review:
                 cheapness=_num(verdict.cheapness),
                 metrics=verdict.metrics,
                 value=_num(row["value"]),
+                price=_held_price(row, rates, places[label]["currency"]),
                 weight=weight,
                 risk_share=risk,
                 pnl=_num(row["pnl"]),

@@ -38,6 +38,9 @@ export type ReviewRow = {
   cheapness: number | null;
   metrics: Record<string, number | null>;
   value: number | null;
+  /** One held share's last price in `currency`; null outside the book.
+   * Optional for an older server. */
+  price?: number | null;
   weight: number | null;
   risk_share: number | null;
   pnl: number | null;

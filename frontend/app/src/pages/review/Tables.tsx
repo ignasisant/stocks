@@ -27,9 +27,16 @@ import { DetailsButton, Head, VerdictChip, PnlChip } from "./Explain";
 import { bucket, findRows } from "./filter";
 import { useListFocus } from "./focus";
 import { useHelp } from "./lines";
+import { money as amount, priceDigits } from "../home/format";
 import { foreign, longDay, metric, money, percent, score, verdictTone } from "./format";
 import { ReturnCells, ReturnHeads, WindowPicker, useReturnLine } from "./returns";
 import type { ReviewRow } from "./types";
+
+/** One share's price as its own market quotes it, not in the page's money. */
+function sharePrice(row: ReviewRow, lang: string): string | null {
+  if (!row.currency) return null;
+  return amount(row.price, row.currency, lang, { digits: priceDigits(row.price) });
+}
 
 /** The quote currency beside the name, only when it is not the page's. */
 function Ccy({ row, base }: { row: ReviewRow; base: string }) {
@@ -157,6 +164,10 @@ export function HeldTable({
                       help={t("review.col_move_help")}
                     />
                     <Head label={t("review.col_tax")} help={t("review.col_tax_help")} />
+                    <Head
+                      label={t("review.col_price")}
+                      help={t("review.col_price_help")}
+                    />
                     <Head label={t("review.col_pnl")} help={t("review.col_pnl_help")} />
                     <ReturnHeads head={head} />
                     <th aria-hidden="true" />
@@ -187,6 +198,7 @@ export function HeldTable({
                         {money(row.delta, base, lang, true) ?? "—"}
                       </td>
                       <td>{money(row.tax, taxCurrency, lang) ?? "—"}</td>
+                      <td>{sharePrice(row, lang) ?? na}</td>
                       <td>
                         <PnlChip row={row} />
                       </td>

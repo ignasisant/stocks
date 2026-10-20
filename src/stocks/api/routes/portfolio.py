@@ -142,20 +142,6 @@ _HISTORY_SPANS = {
 _HISTORY_WINDOWS = (*_HISTORY_SPANS, "ytd", "all")
 
 
-def _native_price(row, rates: dict[str, float]) -> float | None:
-    """One share's price in the currency it trades in, backed out of `value`.
-
-    `value` is shares * price * rate, so dividing by the shares and the rate
-    recovers the quote. Null rather than a guess when the row has no value or
-    the pair is missing: a price under the wrong symbol is worse than none.
-    """
-    shares, value = row.get("shares"), row.get("value")
-    rate = rates.get(str(row.get("ccy") or "").upper())
-    if not shares or not rate or value is None or pd.isna(value):
-        return None
-    return float(value) / float(shares) / rate
-
-
 def _day_moves(
     db: str, ccy: str, table: pd.DataFrame
 ) -> dict[str, tuple[float | None, float | None]]:
@@ -265,7 +251,7 @@ def positions(
             currency=str(row["ccy"]),
             cost=float(row["cost"]),
             value=_num(row["value"]),
-            price=_native_price(row, rates),
+            price=loaders.native_price(row, rates),
             pnl=_num(row["pnl"]),
             pnl_pct=_num(row["pnl_pct"]),
             weight=_num(weights.get(ticker)),

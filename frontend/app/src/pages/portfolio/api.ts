@@ -15,6 +15,11 @@ export type Position = {
   /** Basis in the reporting currency. */
   cost: number;
   value: number | null;
+  /**
+   * One share's last price in `currency` — the listing's, not the reporting
+   * one; null when the row did not price or its pair could not be read.
+   */
+  price: number | null;
   pnl: number | null;
   pnl_pct: number | null;
   /** Share of the book by market value; null when the row did not price. */
