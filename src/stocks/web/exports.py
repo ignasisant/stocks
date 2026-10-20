@@ -10,12 +10,20 @@ rate for its OWN trade date and the converted amount alongside the original.
 
 from __future__ import annotations
 
+import io
+import json
+import zipfile
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
 from stocks.portfolio.ledger import all_transactions
+
+if TYPE_CHECKING:
+    from stocks.accounts import UserPaths
 
 # The signed amount a row moves, by action. `split` has no cash leg, so it
 # exports with an empty amount rather than a zero that would look like a
@@ -174,3 +182,105 @@ def tax_csv(
         return b""
     rows.sort(key=lambda row: (row["date"], row["kind"], row["ticker"]))
     return pd.DataFrame(rows, columns=TAX_COLUMNS).to_csv(index=False).encode()
+
+
+# ------------------------------------------------------------ the whole account
+
+# The account's files `account_bundle` leaves out, and why: the ledger goes as
+# `ledger.csv` instead of its SQLite file (the rows are the data, the schema
+# is the app's), and the conversation index is derived from chat.json and
+# holds embeddings nobody can read back.
+NOT_BUNDLED = frozenset({"portfolio.db", "chat_memory.db"})
+
+# Prefs keys that are credentials, or about one, rather than preferences: a
+# provider key the account typed in (`engine.byok_fields`) is stored encrypted
+# and never travels — an export is a file people forward.
+_SECRET_SUFFIXES = ("_key_enc", "_key_saved_at", "_key_first_at")
+_SECRET_WORDS = ("secret", "token", "password")
+
+# What each file is, for the README — one line per name, in this order.
+_ABOUT = {
+    "ledger.csv": "every transaction, with the ECB rate of its own date",
+    "watchlist.yaml": "the names you follow",
+    "prefs.json": "your settings (provider keys left out)",
+    "chat.json": "your conversations with the assistant",
+    "chat_learnings.json": "what the assistant remembers about you",
+    "decisions.json": "the decision journal: what the app proposed and what became of it",
+    "daily_action.json": "the last daily briefing",
+    "sector_verdict.json": "the last sector reads",
+    "last_import.json": "the last statement import",
+    "bank.json": "the bank connection, without credentials",
+}
+
+
+def bundled(paths: UserPaths) -> dict[str, Path]:
+    """The account's files the bundle carries, by the name they get in it.
+
+    Named through `UserPaths` rather than listed under `root`, because the
+    owner's "root" is the checkout and its files live under data/.
+    """
+    files = (
+        paths.watchlist, paths.prefs, paths.chat, paths.learnings, paths.journal,
+        paths.action, paths.verdicts, paths.last_import, paths.bank,
+    )
+    return {path.name: path for path in files}
+
+
+def _is_secret(key: str) -> bool:
+    name = key.lower()
+    return name.endswith(_SECRET_SUFFIXES) or any(w in name for w in _SECRET_WORDS)
+
+
+def _public_prefs(raw: bytes) -> bytes:
+    """The prefs file without its credentials. Unreadable prefs export as
+    nothing rather than as bytes that might hold half a key."""
+    try:
+        prefs = json.loads(raw)
+    except ValueError:
+        return b"{}"
+    if not isinstance(prefs, dict):
+        return b"{}"
+    kept = {k: v for k, v in prefs.items() if not _is_secret(k)}
+    return json.dumps(kept, indent=2, ensure_ascii=False, sort_keys=True).encode()
+
+
+def _readme(names: list[str], base: str) -> bytes:
+    lines = [f"Your TopStocks data, exported {date.today():%Y-%m-%d}.", ""]
+    width = max(len(n) for n in names) + 2
+    for name in names:
+        about = _ABOUT.get(name, "")
+        if name == "ledger.csv":
+            about += f" and the amount in {base}"
+        lines.append(f"{name.ljust(width)}{about}".rstrip())
+    lines += ["", "Only the files this account holds are included."]
+    return "\n".join(lines).encode()
+
+
+def account_bundle(paths: UserPaths, *, base: str = "EUR") -> bytes:
+    """Everything the account holds, as one zip: the privacy policy's promise
+    that the data can be taken away, kept for the whole account and not only
+    the ledger.
+
+    The ledger rides as `ledger_csv` in the reporting currency; the settings
+    go without their provider keys; the rest — watchlist, conversations,
+    memories, journal, briefings — is each file as it is. Files the account
+    does not have are simply absent, and the README says what is there.
+    """
+    files: dict[str, bytes] = {}
+    if paths.db.is_file():
+        ledger = ledger_csv(paths.db, base)
+        if ledger:
+            files["ledger.csv"] = ledger
+    for name, path in bundled(paths).items():
+        if not path.is_file():
+            continue
+        data = path.read_bytes()
+        files[name] = _public_prefs(data) if path == paths.prefs else data
+    order = [n for n in _ABOUT if n in files] + sorted(set(files) - set(_ABOUT))
+    files["README.txt"] = _readme(order, base)
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name in ["README.txt", *order]:
+            archive.writestr(name, files[name])
+    return buffer.getvalue()

@@ -108,6 +108,10 @@ _PRIVACY = {
                 "Your data is never sold and never used for advertising.",
             ]),
             ("Your rights and deletion", [
+                "You can download everything the account holds — ledger, "
+                "watchlist, settings, conversations, memories and the "
+                "decision journal — as one zip from Profile → Data and "
+                "account → Download your data.",
                 "You can delete your account and all stored data yourself "
                 "from Profile → Preferences → Delete account. Deletion removes "
                 "your data folder and its cloud copies; log lines and backup "
@@ -198,6 +202,9 @@ _PRIVACY = {
                 "Tus datos nunca se venden ni se usan para publicidad.",
             ]),
             ("Tus derechos y la eliminación", [
+                "Puedes descargar todo lo que guarda la cuenta — libro, lista, "
+                "ajustes, conversaciones, memorias y diario de decisiones — "
+                "en un zip desde Perfil → Datos y cuenta → Descargar tus datos.",
                 "Puedes borrar tu cuenta con todos los datos "
                 "desde Perfil → Preferencias → Eliminar cuenta. El borrado "
                 "elimina tu carpeta de datos y sus copias en la nube; los "
