@@ -141,6 +141,12 @@ export type Profile = {
    * from an older server: both read as the booleans above.
    */
   asset?: string | null;
+  /**
+   * false when no such symbol exists — Yahoo has neither a quote nor a
+   * history for it and nothing in the account knows it. Absent from an older
+   * server, and true whenever the feed could not tell: both read as found.
+   */
+  found?: boolean;
 };
 
 export type AssetStats = {
@@ -261,7 +267,7 @@ export type PriceEvents = {
   cycle?: CycleEvent[];
 };
 
-type Kpi = {
+export type Kpi = {
   key: string;
   label: string;
   value: number | string | null;
@@ -274,6 +280,8 @@ type Kpi = {
   /** green | orange | red | gray. Colour by this, never by the label. */
   verdict_tone: string | null;
   desc: string;
+  /** The rivals' [P25, median, P75], raw like `value`; null without three. */
+  peer_band: [number, number, number] | null;
 };
 
 type MetricTile = {
@@ -289,8 +297,16 @@ export type Metrics = {
   quote_type: string | null;
   /** All 23 of them — a reference table, not a screen. */
   kpis: Kpi[];
-  /** The handful the page actually draws, in order. */
+  /** The handful the page actually draws, in order — per `lens`. */
   grid: MetricTile[];
+  /** standard | financial | real_estate | utility. */
+  lens: string;
+  /** Whose middle `Kpi.peer_band` is: the nightly scan's cohort. */
+  peers: { kind: "industry" | "sector"; name: string; count: number } | null;
+  /** Trailing P/E on a normal year's margin, when this one is a peak. */
+  normal_pe: number | null;
+  /** The review's warning codes; print `review.reason_<code>`. */
+  cautions: string[];
   /** Market cap in the reader's own money; only computed with `?base=`. */
   market_cap_base: number | null;
   /** …formatted by the server, so the client never rounds it. */
@@ -587,6 +603,12 @@ export type Comparables = {
   labels: string[];
   rows: Record<string, string[]>;
   medals: Record<string, string>;
+  /** The rivals' median per row (all but the first ticker); "" for none. */
+  peer_median: string[];
+  /** The rivals' P25 – P75 per row; "" for none. */
+  peer_range: string[];
+  /** Ticker to the rows where it sits over 3σ from the others' median. */
+  outliers: Record<string, number[]>;
 };
 
 export type Peer = { ticker: string; name: string };

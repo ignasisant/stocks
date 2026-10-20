@@ -27,13 +27,14 @@ import {
   type Translate,
 } from "./format";
 import { Banner, Bold, Card, Note, Scroll, TickerLink, useMobile } from "./ui";
-import { Kpi, KpiGrid, bandTone } from "../../ui/Kpi";
+import { Chip, Help, Kpi, KpiGrid, bandTone } from "../../ui/Kpi";
 import type {
   ClosedEnd,
   Comparables,
   FigureSource,
   Fund,
   Insiders,
+  Kpi as KpiRow,
   Metrics,
   Moat,
   MoatPillar,
@@ -44,6 +45,59 @@ import { num } from "../../shell/numbers";
 import { calendarDay } from "../../shell/dates";
 
 // ------------------------------------------------------------------ KPI grid
+
+/**
+ * The muted line under a tile: the rivals' median, and on the P/E the figure
+ * at a normal year's margin when this one is a cycle's peak. The P25–P75
+ * rides the title; the median is what a glance needs.
+ */
+function KpiNote({ kpi, normalPe }: { kpi: KpiRow; normalPe: number | null }) {
+  const t = useT();
+  const normal =
+    kpi.key === "pe_ttm" && normalPe !== null
+      ? t("ticker.kpi_normal_pe", { value: kpiText(normalPe, "x") })
+      : null;
+  const band = kpi.peer_band;
+  const peers = band
+    ? t("ticker.kpi_peer_median", { value: kpiText(band[1], kpi.unit) })
+    : null;
+  if (!normal && !peers) return null;
+  return (
+    <span
+      title={
+        band
+          ? t("ticker.kpi_peer_range", {
+              low: kpiText(band[0], kpi.unit),
+              high: kpiText(band[2], kpi.unit),
+            })
+          : undefined
+      }
+    >
+      {[normal, peers].filter(Boolean).join(" · ")}
+    </span>
+  );
+}
+
+/**
+ * What the review engine would hold against this company, named on its page:
+ * the same codes and the same strings, so a warning reads alike wherever it
+ * shows. Amber, because each one is a reason to look, not a verdict.
+ */
+function Cautions({ codes }: { codes: string[] }) {
+  const t = useT();
+  if (codes.length === 0) return null;
+  return (
+    <div className="tk-watch" role="group" aria-label={t("ticker.watch_title")}>
+      <span className="tk-watch-title">{t("ticker.watch_title")}</span>
+      {codes.map((code) => (
+        <span key={code} className="tk-watch-item">
+          <Chip chip={{ text: t(`review.reason_${code}`), tone: "warn" }} />
+          <Help text={t(`review.reason_${code}_help`)} />
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export function MetricsSection({ metrics }: { metrics: Metrics }) {
   const t = useT();
@@ -91,6 +145,7 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
               label={label}
               help={help || undefined}
               value={kpiText(kpi.value, kpi.unit)}
+              note={<KpiNote kpi={kpi} normalPe={metrics.normal_pe} />}
               // Coloured by the tone the domain's band carries, never by the
               // label: the labels grow ("net cash", "heavy dilution") and a
               // client matching on them shows each new one as neutral.
@@ -110,6 +165,22 @@ export function MetricsSection({ metrics }: { metrics: Metrics }) {
           );
         })}
       </KpiGrid>
+      <Cautions codes={metrics.cautions} />
+      {metrics.peers ? (
+        <Note>
+          {t("ticker.kpi_peers_from", {
+            n: metrics.peers.count,
+            name:
+              metrics.peers.kind === "sector"
+                ? orElse(
+                    t,
+                    `sentiment.sector_${metrics.peers.name.toLowerCase().replace(/ /g, "_")}`,
+                    metrics.peers.name,
+                  )
+                : metrics.peers.name,
+          })}
+        </Note>
+      ) : null}
       {fxFailed ? <Note>{t("ticker.fx_unavailable")}</Note> : null}
       {/* The one figure here that is the reader's rather than the company's: a
           dollar market cap restated in the money they keep their book in. */}
@@ -803,15 +874,16 @@ export function ComparablesSection({
 }) {
   const t = useT();
   const mobile = useMobile();
+  const note = [
+    comps && Object.keys(comps.medals).length ? t("ticker.medals_caption") : "",
+    comps && Object.keys(comps.outliers ?? {}).length
+      ? t("ticker.comps_flag_caption")
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
-    <Card
-      title={t("ticker.comparables")}
-      note={
-        comps && Object.keys(comps.medals).length
-          ? t("ticker.medals_caption")
-          : undefined
-      }
-    >
+    <Card title={t("ticker.comparables")} note={note || undefined}>
       {children}
       {!comps ? <Note>{t("ticker.pick_peers")}</Note> : null}
       {comps ? (
@@ -825,29 +897,75 @@ export function ComparablesSection({
   );
 }
 
+/** A cell over 3σ from the others' median carries a mark, not only a hue. */
+function CompsValue({
+  comps,
+  ticker,
+  row,
+}: {
+  comps: Comparables;
+  ticker: string;
+  row: number;
+}) {
+  const t = useT();
+  const cell = comps.rows[ticker]?.[row] ?? DASH;
+  if (!comps.outliers?.[ticker]?.includes(row)) return <>{cell}</>;
+  return (
+    <span className="tk-comps-out" title={t("ticker.comps_flag")}>
+      {cell}
+      <span aria-label={t("ticker.comps_flag")}> •</span>
+    </span>
+  );
+}
+
+/** The rivals' middle, the subject's own column read against it. */
+function hasBand(comps: Comparables): boolean {
+  return (comps.peer_median ?? []).some(Boolean);
+}
+
 /** Peers across the columns: reads at a glance on a desktop. */
 function CompsGrid({ comps }: { comps: Comparables }) {
+  const t = useT();
+  const [subject, ...rivals] = comps.tickers;
+  const band = hasBand(comps);
+  const head = (ticker: string) => (
+    <th key={ticker}>
+      {comps.medals[ticker] ? `${comps.medals[ticker]} ` : ""}
+      <TickerLink ticker={ticker} />
+    </th>
+  );
+  const cell = (ticker: string, row: number) => (
+    <td key={ticker}>
+      <CompsValue comps={comps} ticker={ticker} row={row} />
+    </td>
+  );
   return (
     <Scroll>
       <table className="tk-table tk-comps">
         <thead>
           <tr>
             <th />
-            {comps.tickers.map((ticker) => (
-              <th key={ticker}>
-                {comps.medals[ticker] ? `${comps.medals[ticker]} ` : ""}
-                <TickerLink ticker={ticker} />
-              </th>
-            ))}
+            {subject ? head(subject) : null}
+            {band ? <th className="tk-comps-mid">{t("ticker.comps_median")}</th> : null}
+            {rivals.map(head)}
           </tr>
         </thead>
         <tbody>
           {comps.labels.map((label, row) => (
             <tr key={label}>
               <th scope="row">{label}</th>
-              {comps.tickers.map((ticker) => (
-                <td key={ticker}>{comps.rows[ticker]?.[row] ?? DASH}</td>
-              ))}
+              {subject ? cell(subject, row) : null}
+              {band ? (
+                <td className="tk-comps-mid">
+                  {comps.peer_median[row] || DASH}
+                  {comps.peer_range[row] ? (
+                    <span className="tk-comps-range" title={t("ticker.comps_range")}>
+                      {comps.peer_range[row]}
+                    </span>
+                  ) : null}
+                </td>
+              ) : null}
+              {rivals.map((ticker) => cell(ticker, row))}
             </tr>
           ))}
         </tbody>
@@ -863,21 +981,44 @@ function CompsGrid({ comps }: { comps: Comparables }) {
  * to three characters, and a short card beats a complete one there.
  */
 function CompsCards({ comps }: { comps: Comparables }) {
+  const t = useT();
+  const card = (ticker: string) => (
+    <div className="tk-stack-card" key={ticker}>
+      <p className="tk-stack-title">
+        {comps.medals[ticker] ? `${comps.medals[ticker]} ` : ""}
+        <TickerLink ticker={ticker} />
+      </p>
+      {comps.labels.map((label, row) => {
+        const cell = comps.rows[ticker]?.[row];
+        if (!cell || cell === "n/a") return null;
+        return (
+          <p className="tk-stack-line" key={label}>
+            <span>{label}</span>
+            <CompsValue comps={comps} ticker={ticker} row={row} />
+          </p>
+        );
+      })}
+    </div>
+  );
+  const [subject, ...rivals] = comps.tickers;
   return (
     <div className="tk-stack">
-      {comps.tickers.map((ticker) => (
-        <div className="tk-stack-card" key={ticker}>
-          <p className="tk-stack-title">
-            {comps.medals[ticker] ? `${comps.medals[ticker]} ` : ""}
-            <TickerLink ticker={ticker} />
-          </p>
-          {comps.labels.map((label, row) => {
-            const cell = comps.rows[ticker]?.[row];
-            if (!cell || cell === "n/a") return null;
-            return <Line key={label} label={label} value={cell} />;
-          })}
+      {subject ? card(subject) : null}
+      {hasBand(comps) ? (
+        <div className="tk-stack-card">
+          <p className="tk-stack-title">{t("ticker.comps_median")}</p>
+          {comps.labels.map((label, row) =>
+            comps.peer_median[row] ? (
+              <Line
+                key={label}
+                label={label}
+                value={`${comps.peer_median[row]} (${comps.peer_range[row]})`}
+              />
+            ) : null,
+          )}
         </div>
-      ))}
+      ) : null}
+      {rivals.map(card)}
     </div>
   );
 }

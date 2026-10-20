@@ -352,8 +352,11 @@ def write_entry(path: Path, entry: Entry, disk_max: int = DISK_MAX_FILES) -> Non
 # ten ("Connection pool is full, discarding connection" in the prod log) and
 # held every pickle's upload buffer in memory at the same moment. A path
 # written again while it waits is uploaded once, with its latest bytes.
-MIRROR_QUEUE_MAX = 64
-_mirror_queue: queue.Queue[Path] = queue.Queue(maxsize=MIRROR_QUEUE_MAX)
+# Unbounded: it holds paths, not bytes, and each path at most once, so it
+# never outgrows the memo files on disk. A cap of 64 dropped copies whenever
+# the held-ticker refresh landed ~80 entries at once (2026-10-20 triage,
+# ERR-03), and a dropped copy waited for that entry's next write.
+_mirror_queue: queue.Queue[Path] = queue.Queue()
 _mirror_waiting: set[Path] = set()
 _mirror_lock = threading.Lock()
 _mirror_worker: threading.Thread | None = None
@@ -364,13 +367,7 @@ def _enqueue_mirror(path: Path) -> None:
     with _mirror_lock:
         if path in _mirror_waiting:
             return
-        try:
-            _mirror_queue.put_nowait(path)
-        except queue.Full:
-            # The bucket is behind by a whole queue: this copy is skipped, and
-            # the next write of the same entry tries again.
-            obs.warn("cache.mirror_dropped", path=path.name)
-            return
+        _mirror_queue.put_nowait(path)
         _mirror_waiting.add(path)
         if _mirror_worker is None or not _mirror_worker.is_alive():
             _mirror_worker = threading.Thread(

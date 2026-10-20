@@ -73,11 +73,14 @@ function spots(item: Item): [LabelSpot, Box][] {
  * Place the labels of `items` (already in labelling order) inside `area`,
  * clear of every dot but their own, of each other and of `blocked` (the
  * quadrant captions). Returns a spot per key; a key left out gets no label.
+ * `soft` (a path drawn under the dots) is kept clear when a spot allows it,
+ * never at the cost of the label.
  */
 export function placeLabels(
   items: Item[],
   area: Box,
   blocked: Box[] = [],
+  soft: Box[] = [],
 ): Map<string, LabelSpot> {
   const dots = items.map((item) => ({
     key: item.key,
@@ -91,14 +94,17 @@ export function placeLabels(
   const taken: Box[] = [...blocked];
   const out = new Map<string, LabelSpot>();
   for (const item of items) {
-    for (const [spot, box] of spots(item)) {
-      if (!inside(box, area)) continue;
-      if (taken.some((other) => hits(box, other))) continue;
-      if (dots.some((dot) => dot.key !== item.key && hits(box, dot.box))) continue;
-      taken.push(box);
-      out.set(item.key, spot);
-      break;
-    }
+    const free = spots(item).filter(
+      ([, box]) =>
+        inside(box, area) &&
+        !taken.some((other) => hits(box, other)) &&
+        !dots.some((dot) => dot.key !== item.key && hits(box, dot.box)),
+    );
+    const best =
+      free.find(([, box]) => !soft.some((other) => hits(box, other))) ?? free[0];
+    if (!best) continue;
+    taken.push(best[1]);
+    out.set(item.key, best[0]);
   }
   return out;
 }

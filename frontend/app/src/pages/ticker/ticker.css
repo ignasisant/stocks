@@ -1063,6 +1063,32 @@
   padding-right: 16px;
 }
 
+/* The rivals' median sits beside the subject, set apart as a reading of the
+   others rather than one more name. */
+.tk-comps .tk-comps-mid {
+  color: var(--ag-text-secondary);
+  border-left: 1px solid var(--ag-border);
+  border-right: 1px solid var(--ag-border);
+  padding-left: 10px;
+}
+
+.tk-comps-range {
+  display: block;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-xs);
+}
+
+/* Far from the rest is not worse than the rest — an ROIC of 70% is the
+   outlier the reader wants — so the mark is the brand's, never a warning. */
+.tk-comps-out {
+  color: var(--ag-text-primary);
+  font-weight: 600;
+}
+
+.tk-comps-out > span {
+  color: var(--ag-brand-accent);
+}
+
 .tk-ticker {
   display: inline-flex;
   align-items: center;
@@ -1261,9 +1287,25 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 0;
+  padding: 2px 0;
   font-size: var(--ag-fs-sm);
   font-variant-numeric: tabular-nums;
+}
+
+/* The rule the draft repeats: pointed at, so "you already have it" has a
+   place to look. */
+.tk-rules li.tk-rule-same {
+  margin: 0 -6px;
+  padding: 2px 0 2px 6px;
+  background: var(--ag-surface-hover);
+  border-radius: var(--ag-radius-sm);
+  transition: background-color var(--ag-dur-press) var(--ag-ease-out);
+}
+
+/* Holds the live region in the tree when it has nothing to say, without the
+   gap a filled line takes. */
+.tk-alert-status:empty {
+  margin: 0;
 }
 
 .tk-peers {
@@ -1345,9 +1387,33 @@
   cursor: pointer;
 }
 
+/* A rule's remove control: the glyph stays small, the hit area does not
+   (28pt pointer, 44pt touch). */
+.tk-rules .tk-x {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ag-radius-sm);
+}
+
+@media (pointer: coarse) {
+  .tk-rules .tk-x {
+    width: 44px;
+    height: 44px;
+    margin-right: -8px;
+  }
+}
+
 @media (hover: hover) {
   .tk-x:hover {
     color: var(--ag-text-primary);
+  }
+
+  .tk-rules .tk-x:hover {
+    background: var(--ag-surface-hover);
   }
 }
 
@@ -1529,4 +1595,26 @@
 .tk-compare-stale {
   opacity: 0.55;
   transition: opacity var(--ag-dur-hover) ease;
+}
+
+/* "A vigilar": the review's warnings on this company, under its grid. Wraps
+   as a row of chips; each chip's definition sits behind its own mark. */
+.tk-watch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 12px;
+}
+
+.tk-watch-title {
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+}
+
+.tk-watch-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }

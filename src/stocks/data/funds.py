@@ -12,13 +12,14 @@ stocks.data.crypto: a cheap classifier the render paths can gate on, and one
 profile fetch that carries the fund's own numbers.
 
 **Classification** keys off Yahoo's ``quoteType`` (ETF / MUTUALFUND), learned
-once per symbol and kept in ``data/quote_types.json`` — an instrument's kind
-is a global fact, not per-account, and it does not change, so the cache never
-expires. `KNOWN_FUNDS` seeds it with the funds a European retail investor
-actually meets (US majors plus the UCITS lines sold in Spain), which means the
-common cases classify with no network at all. Everything else costs one
-``.info`` call, once, and callers on hot paths pass ``fetch=False`` to get a
-cache-only answer.
+once per symbol and kept in ``data/quote_types.json`` and its bucket copy
+(`stocks.data.shared_memo`) — an instrument's kind is a global fact, not
+per-account, and it does not change, so one instance's lookup answers every
+other one and the cache never expires. `KNOWN_FUNDS` seeds it with the funds
+a European retail investor actually meets (US majors plus the UCITS lines
+sold in Spain), which means the common cases classify with no network at all.
+Everything else costs one ``.info`` call, once, and callers on hot paths pass
+``fetch=False`` to get a cache-only answer.
 
 **Units** are normalised here because Yahoo is not consistent about them:
 ``fundOperations`` reports the expense ratio as a fraction (0.000945) while
@@ -32,11 +33,10 @@ and a reciprocal that is silently wrong is worse than a blank).
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 
-from stocks import atomic
 from stocks.config import DATA_DIR
+from stocks.data.shared_memo import SharedMemo
 from stocks.formatting import finite
 from stocks.fuzzy import FUZZY_CUTOFF, MIN_QUERY, fuzzy_ratio
 
@@ -44,8 +44,10 @@ from stocks.fuzzy import FUZZY_CUTOFF, MIN_QUERY, fuzzy_ratio
 # absent: an index is not holdable, and the app charts it as a benchmark.
 FUND_TYPES = frozenset({"ETF", "MUTUALFUND"})
 
-# symbol -> quoteType, learned once and never expired (see module docstring).
-TYPE_CACHE = DATA_DIR / "quote_types.json"
+# symbol -> quoteType, learned once, for every account and every instance
+# (see module docstring). A decade is "never" with room for the odd SPAC that
+# turns into a company.
+TYPE_MEMO = SharedMemo(DATA_DIR / "quote_types.json", ttl=10 * 365 * 86400.0, cap=50_000)
 
 # Yahoo's sector slugs spelled the way `info["sector"]` spells them for a
 # single stock, so a fund's look-through weights land in the SAME allocation
@@ -222,31 +224,27 @@ class FundProfile:
 # ------------------------------------------------------------- classification
 
 
-def _read_types() -> dict[str, str]:
-    try:
-        data = json.loads(TYPE_CACHE.read_text())
-    except (OSError, ValueError):
-        return {}
-    return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
-
-
 _types: dict[str, str] | None = None
 
 
 def _known_types() -> dict[str, str]:
-    """The learned cache, seeded with the catalog, read from disk once."""
+    """The learned cache, seeded with the catalog, read once per process."""
     global _types
     if _types is None:
-        _types = {s: "ETF" for s in KNOWN_FUNDS} | _read_types()
+        _types = {s: "ETF" for s in KNOWN_FUNDS} | {
+            k: str(v) for k, v in TYPE_MEMO.items()
+        }
     return _types
 
 
 def remember(ticker: str, quote_type: str | None) -> None:
-    """Record `ticker`'s Yahoo quoteType, so no one has to fetch it again.
+    """Record `ticker`'s Yahoo quoteType, so no one has to fetch it again —
+    on this host or any other: the memo rides the storage bucket.
 
-    Called wherever the app already holds an `.info` payload (the ticker page,
-    the screener pull). Writing the cache is best-effort: a read-only or full
-    filesystem costs a repeated lookup, never a failed render.
+    Called wherever the app already holds an `.info` payload (`fetch.info`,
+    the screener pull, a search row). Writing it out is best-effort and off the
+    request: a read-only or full filesystem costs a repeated lookup, never a
+    failed render.
     """
     if not ticker or not quote_type:
         return
@@ -255,11 +253,7 @@ def remember(ticker: str, quote_type: str | None) -> None:
     if cache.get(key) == value:
         return
     cache[key] = value
-    stored = _read_types() | {key: value}
-    try:
-        atomic.write_json(TYPE_CACHE, stored, indent=0, sort_keys=True)
-    except OSError:
-        pass
+    TYPE_MEMO.put(key, value)
 
 
 def quote_type(ticker: str, *, fetch: bool = True) -> str | None:
@@ -275,6 +269,10 @@ def quote_type(ticker: str, *, fetch: bool = True) -> str | None:
         return None
     if hit := _known_types().get(key):
         return hit
+    # Learned by another instance since this one read the memo.
+    if hit := TYPE_MEMO.get(key):
+        _known_types()[key] = str(hit)
+        return str(hit)
     if not fetch:
         return None
     try:
@@ -461,12 +459,7 @@ def fetch_profile(ticker: str, info: dict | None = None) -> FundProfile | None:
 
     return FundProfile(
         ticker=key,
-        name=str(
-            info.get("longName")
-            or info.get("shortName")
-            or fund_name(key)
-            or key
-        ),
+        name=str(info.get("longName") or info.get("shortName") or fund_name(key) or key),
         quote_type=kind,
         currency=info.get("currency"),
         category=info.get("category") or overview.get("categoryName"),

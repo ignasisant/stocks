@@ -18,9 +18,13 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, status
 
 from stocks.analysis.fundamentals import (
+    METRIC_ORDER,
     comp_medals,
+    comp_outliers,
     comparables_table,
     compute_metrics,
+    format_value,
+    peer_band,
 )
 from stocks.api import loaders
 from stocks.api.schemas import Comparables
@@ -58,9 +62,25 @@ def comparables(
 
     rows = [compute_metrics(loaders.fundamentals(t)) for t in wanted]
     table = comparables_table(rows)
+    band = peer_band(rows)
+    flagged = comp_outliers(rows)
     return Comparables(
         tickers=wanted,
         labels=[str(label) for label in table.index],
         rows={str(col): [str(v) for v in table[col]] for col in table.columns},
         medals=comp_medals(rows),
+        peer_median=[
+            format_value(key, band[key][1]) if key in band else ""
+            for key in METRIC_ORDER
+        ],
+        peer_range=[
+            f"{format_value(key, band[key][0])} – {format_value(key, band[key][2])}"
+            if key in band
+            else ""
+            for key in METRIC_ORDER
+        ],
+        outliers={
+            ticker: [METRIC_ORDER.index(key) for key in keys]
+            for ticker, keys in flagged.items()
+        },
     )

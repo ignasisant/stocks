@@ -146,6 +146,86 @@ def _plain(metrics: dict) -> dict:
     return out
 
 
+def industry_rivals(
+    scans: dict[str, SectorScan],
+    ticker: str,
+    industry: str | None = None,
+    limit: int = 6,
+) -> list[str]:
+    """Names in the nightly cohorts filed under `ticker`'s industry, cohort
+    order (the ETF's by weight, then the validated extras).
+
+    Same industry, not same sector: XLK puts a chip designer beside a phone
+    maker and a software house. `industry` defaults to the one the scan
+    recorded for `ticker`; a name outside every cohort needs it passed in.
+    """
+    subject = ticker.upper()
+    rows = [m for scan in scans.values() for m in scan.metrics]
+    if industry is None:
+        industry = next(
+            (
+                m.get("industry")
+                for m in rows
+                if str(m.get("ticker", "")).upper() == subject
+            ),
+            None,
+        )
+    if not industry:
+        return []
+    out: list[str] = []
+    for m in rows:
+        name = str(m.get("ticker") or "")
+        same = m.get("industry") == industry
+        if name and name.upper() != subject and same and name not in out:
+            out.append(name)
+    return out[:limit]
+
+
+#: Fewer same-industry names than this in the scan and the industry's middle
+#: is a handful of companies: the sector cohort reads it instead.
+PEER_INDUSTRY_MIN = 5
+
+
+def peer_rows(
+    scans: dict[str, SectorScan],
+    ticker: str,
+    industry: str | None,
+    sector: str | None,
+) -> tuple[str, str, list[dict]] | None:
+    """(kind, name, rows) the company grid reads its rivals' middle off:
+    every scanned name in `ticker`'s industry, across cohorts, when there are
+    `PEER_INDUSTRY_MIN`; else its sector's cohort. The subject is never in
+    the rows. None when neither has anyone to read.
+
+    The scan's rows, not a fetch: a night old, and free.
+    """
+    subject = ticker.upper()
+
+    def others(rows) -> list[dict]:
+        seen: set[str] = set()
+        out = []
+        for m in rows:
+            name = str(m.get("ticker") or "").upper()
+            if name and name != subject and name not in seen:
+                seen.add(name)
+                out.append(m)
+        return out
+
+    if industry:
+        same = others(
+            m for scan in scans.values() for m in scan.metrics
+            if m.get("industry") == industry
+        )
+        if len(same) >= PEER_INDUSTRY_MIN:
+            return "industry", industry, same
+    cohort = scans.get(sector or "")
+    if cohort is not None:
+        rows = others(cohort.metrics)
+        if rows:
+            return "sector", cohort.sector, rows
+    return None
+
+
 # ------------------------------------------------------------- the cohort
 
 

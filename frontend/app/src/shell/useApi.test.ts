@@ -11,9 +11,11 @@ import {
   currentRetry,
   noteFreshness,
   noteRefreshing,
+  onRetryStale,
   resetFreshness,
+  staleSince,
 } from "./freshness";
-import { FOLLOW_MS, followStale } from "./useApi";
+import { FOLLOW_MS, followStale, retryNow } from "./useApi";
 
 const OLD = "2026-10-11T08:00:00+00:00";
 
@@ -128,5 +130,66 @@ describe("followStale", () => {
     followStale(new Set(["/v1/book"]), ask, () => undefined, "card");
     await vi.runAllTimersAsync();
     expect(currentRetry()).toEqual({ due: null, asking: false });
+  });
+});
+
+describe("retryNow", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetFreshness();
+  });
+
+  /** A server answering `status`, live (no stale header), counting asks. */
+  function answering(status: number) {
+    const asked: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        asked.push(url);
+        return new Response(JSON.stringify({}), { status });
+      }),
+    );
+    return asked;
+  }
+
+  it("asks again for a stale URL no screen holds, and the line clears", async () => {
+    const asked = answering(200);
+    noteFreshness("/api/v1/portfolio/risk", OLD);
+    retryNow();
+    expect(currentRetry().asking).toBe(true);
+    await vi.waitFor(() => expect(currentRetry().asking).toBe(false));
+    expect(asked).toEqual(["/api/v1/portfolio/risk"]);
+    expect(staleSince()).toBeNull();
+  });
+
+  it("leaves a URL a screen took to that screen", async () => {
+    const asked = answering(200);
+    noteFreshness("/api/v1/portfolio/summary", OLD);
+    const stop = onRetryStale(() => ["/api/v1/portfolio/summary"]);
+    retryNow();
+    stop();
+    expect(asked).toEqual([]);
+  });
+
+  it("drops the mark of a URL that now fails for good", async () => {
+    answering(404);
+    noteFreshness("/api/v1/gone", OLD);
+    retryNow();
+    await vi.waitFor(() => expect(currentRetry().asking).toBe(false));
+    expect(staleSince()).toBeNull();
+  });
+
+  it("keeps the mark while the source is still down", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ reason: "throttled" }), { status: 503 }),
+      ),
+    );
+    noteFreshness("/api/v1/portfolio/risk", OLD);
+    retryNow();
+    await vi.waitFor(() => expect(currentRetry().asking).toBe(false));
+    expect(staleSince()).toBe(Date.parse(OLD));
   });
 });

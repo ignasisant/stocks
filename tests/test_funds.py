@@ -18,9 +18,11 @@ from stocks.data import funds
 @pytest.fixture(autouse=True)
 def _isolated_cache(tmp_path, monkeypatch):
     """Point the learned-type cache at tmp_path and drop the in-process copy."""
-    monkeypatch.setattr(funds, "TYPE_CACHE", tmp_path / "quote_types.json")
+    funds.TYPE_MEMO.clear()
+    monkeypatch.setattr(funds.TYPE_MEMO, "path", tmp_path / "quote_types.json")
     monkeypatch.setattr(funds, "_types", None)
     yield
+    funds.TYPE_MEMO.clear()
     monkeypatch.setattr(funds, "_types", None)
 
 
@@ -133,19 +135,24 @@ def test_quote_type_fetches_once_then_reads_the_cache(fake_yf):
 
 def test_learned_types_persist_to_disk(tmp_path, monkeypatch):
     funds.remember("VFIAX", "mutualfund")
+    funds.TYPE_MEMO.flush()
     stored = json.loads((tmp_path / "quote_types.json").read_text())
-    assert stored == {"VFIAX": "MUTUALFUND"}
+    assert stored["entries"]["VFIAX"][1] == "MUTUALFUND"
 
     # A fresh process reads it back and needs no lookup.
+    funds.TYPE_MEMO.clear()
     monkeypatch.setattr(funds, "_types", None)
     assert funds.is_fund("VFIAX", fetch=False)
 
 
 def test_remember_ignores_blanks_and_survives_a_readonly_cache(tmp_path, monkeypatch):
-    monkeypatch.setattr(funds, "TYPE_CACHE", tmp_path / "nope" / "types.json")
+    blocked = tmp_path / "nope"
+    blocked.write_text("a file, so no directory can be made under it")
+    monkeypatch.setattr(funds.TYPE_MEMO, "path", blocked / "types.json")
     funds.remember("AAPL", None)
     funds.remember("", "ETF")
     funds.remember("AAPL", "EQUITY")  # unwritable path must not raise
+    funds.TYPE_MEMO._flush_quiet()
     assert funds.quote_type("AAPL", fetch=False) == "EQUITY"
 
 
@@ -252,9 +259,7 @@ def test_profile_is_none_for_a_stock(fake_yf):
 
 def test_profile_survives_missing_fund_data(fake_yf):
     """funds_data raises for some listings; the costs half must still render."""
-    fake_yf.payloads = {
-        "ODD.MI": ({"quoteType": "ETF", "netExpenseRatio": 0.1}, None)
-    }
+    fake_yf.payloads = {"ODD.MI": ({"quoteType": "ETF", "netExpenseRatio": 0.1}, None)}
     p = funds.fetch_profile("ODD.MI")
 
     assert p is not None
@@ -301,7 +306,9 @@ def test_profile_accepts_preloaded_info_without_a_second_lookup(fake_yf):
 
 def test_sector_split_normalises_to_one():
     profile = funds.FundProfile(
-        ticker="X", name="X", quote_type="ETF",
+        ticker="X",
+        name="X",
+        quote_type="ETF",
         sectors=(("Technology", 0.30), ("Energy", 0.10)),
     )
     split = funds.sector_split(profile)
@@ -311,9 +318,10 @@ def test_sector_split_normalises_to_one():
 
 def test_sector_split_is_empty_without_weights():
     assert funds.sector_split(None) == {}
-    assert funds.sector_split(
-        funds.FundProfile(ticker="X", name="X", quote_type="ETF")
-    ) == {}
+    assert (
+        funds.sector_split(funds.FundProfile(ticker="X", name="X", quote_type="ETF"))
+        == {}
+    )
 
 
 def test_allocation_looks_through_a_fund():
@@ -363,7 +371,8 @@ def test_allocation_parts_spread_a_fund_by_ticker_and_stay_linear():
     }
     parts = allocation_parts({"NVDA": 100.0, "BND": 50.0}, meta, "sector")
     assert parts["Technology"] == {
-        "NVDA": pytest.approx(100.0), "BND": pytest.approx(30.0)
+        "NVDA": pytest.approx(100.0),
+        "BND": pytest.approx(30.0),
     }
     assert parts["Unknown"] == {"BND": pytest.approx(20.0)}
 
@@ -385,3 +394,32 @@ def test_risk_shares_carry_more_than_the_weight_when_a_name_moves_with_the_book(
     assert sum(shares.values()) == pytest.approx(1.0)
     assert shares["BIG"] > weights["BIG"]
     assert shares["HEDGE"] < 0
+
+
+# ------------------------------------------------------------- ERR-04
+def test_every_info_blob_teaches_the_fund_cache(monkeypatch):
+    """The allocation splits fetch `.info` per holding; that already says the
+    line is an ETF, so the calendar's cache-only screen learns it there."""
+    from stocks.data import earnings, fetch, profiles
+
+    monkeypatch.setattr("stocks.storage.restore", lambda path: False)
+    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
+    monkeypatch.setattr(profiles, "remember", lambda *a: None)
+    monkeypatch.setattr(fetch, "resolve", lambda t: t)
+    monkeypatch.setattr(fetch, "retired", lambda t: False)
+    monkeypatch.setattr(fetch, "_info_memo", {})
+
+    class Ticker:
+        def __init__(self, symbol):
+            self.info = {"quoteType": "ETF", "symbol": symbol}
+
+    monkeypatch.setattr(fetch.yf, "Ticker", Ticker)
+    fetch.info("UETW.DE")
+
+    import yfinance as yf
+
+    asked: list[str] = []
+    monkeypatch.setattr(earnings, "resolve", lambda t: t)
+    monkeypatch.setattr(yf, "Ticker", lambda symbol: asked.append(symbol))
+    assert earnings.fetch_earnings("UETW.DE") == ([], [])
+    assert asked == []

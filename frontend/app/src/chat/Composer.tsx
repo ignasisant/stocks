@@ -53,9 +53,13 @@
  * says it in words. Both it and the lens mode are one-of-a-few choices, so
  * they are the DS's segmented control; the lenses themselves are chips,
  * because several can be on at once.
+ *
+ * The picker closes on a press anywhere outside it, and on Escape: it is a
+ * popover over the conversation, and a reader who has picked turns back to the
+ * answer — reaching for the icon again to put it away was one press too many.
  */
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type Ref } from "react";
 import { useLang, useT } from "../shell/i18n";
 import { capMessage, skillName } from "./format";
 import { Glyph } from "./icons";
@@ -96,6 +100,7 @@ function keepDeep(deep: boolean): void {
 
 function Skills({
   id,
+  box,
   hidden,
   state,
   onSave,
@@ -104,6 +109,7 @@ function Skills({
   free,
 }: {
   id: string;
+  box: Ref<HTMLDivElement>;
   /** Drawn closed rather than unmounted: see the chip's `aria-controls`. */
   hidden: boolean;
   state: ChatState;
@@ -123,7 +129,7 @@ function Skills({
   const full = picked.length >= state.max_manual;
 
   return (
-    <div className="ag-chat-picker" id={id} hidden={hidden}>
+    <div className="ag-chat-picker" id={id} ref={box} hidden={hidden}>
       <div className="ag-chat-group" aria-hidden="true">
         {t("chat.depth_mode")}
       </div>
@@ -241,6 +247,34 @@ export function Composer({
   const [caret, setCaret] = useState(false);
   const uid = useId();
   const pickerId = `${uid}-skills`;
+  const picker = useRef<HTMLDivElement | null>(null);
+  const lensButton = useRef<HTMLButtonElement | null>(null);
+
+  // A press outside the picker puts it away. The icon is left out: its own
+  // click toggles, and closing here first would have that click reopen it.
+  useEffect(() => {
+    if (!picking) return;
+    const away = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (picker.current?.contains(target)) return;
+      if (lensButton.current?.contains(target)) return;
+      setPicking(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      // Only the picker: the drawer closes on Escape too (on `window`, which
+      // this `document` listener runs before), and one press is one step back.
+      event.stopPropagation();
+      setPicking(false);
+      lensButton.current?.focus();
+    };
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [picking]);
 
   const mode = state.skills_mode;
   const skills = t("chat.skills_chip", { mode: t(`chat.skills_${mode}`) });
@@ -373,6 +407,7 @@ export function Composer({
       )}
       <Skills
         id={pickerId}
+        box={picker}
         hidden={!picking}
         state={state}
         onSave={onSave}
@@ -419,6 +454,7 @@ export function Composer({
           tools={
             <>
               <button
+                ref={lensButton}
                 type="button"
                 className={`ag-box-tool${picking ? " ag-box-open" : ""}${
                   mode !== "auto" || deep ? " ag-box-set" : ""
