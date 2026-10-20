@@ -139,3 +139,6 @@ frontend/*/node_modules/
 /node_modules/
 frontend/*/tsconfig.tsbuildinfo
 test-results/
+
+# hypothesis example database (tests/test_properties.py)
+.hypothesis/
