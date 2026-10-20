@@ -44,6 +44,55 @@ PAGES: dict[str, tuple[str, ...]] = {
     "profile": ("prefs", "iv", "watch", "notify"),
 }
 
+# Each tab's catalog key, by page slug and `?tab=` value: the label the shell
+# draws on the tab itself (the drawer's `chat/links.tsx` keeps the same table
+# for its buttons, and `tests/test_chat_navigate.py` holds the two together).
+# The prompt names the tab the reader is on by this label, so "what is this
+# column?" asked on the Fees tab is answered about fees.
+TAB_LABELS: dict[str, dict[str, str]] = {
+    "today": {
+        "alerts": "today.tab_alerts",
+        "routines": "today.tab_routines",
+        "book": "today.tab_book",
+        "news": "today.tab_news",
+        "insiders": "today.tab_insiders",
+        "compare": "today.tab_compare",
+        "macro": "today.tab_macro",
+        "trends": "today.tab_trends",
+    },
+    "portfolio": {
+        "overview": "portfolio.tab_overview",
+        "positions": "portfolio.tab_positions",
+        "risk": "portfolio.tab_alloc_risk",
+        "projection": "portfolio.tab_projection",
+        "tax": "portfolio.tab_realized_tax",
+        "dividends": "portfolio.tab_dividends",
+        "fees": "portfolio.tab_fees",
+    },
+    "sentiment": {
+        "indices": "sentiment.indices_title",
+        "gauges": "sentiment.risk_title",
+        "rates": "sentiment.rates_title",
+        "inflation": "sentiment.inflation_title",
+        "rotation": "sentiment.rotation_title",
+        "factors": "sentiment.factors_title",
+        "cross": "sentiment.cross_title",
+    },
+    "profile": {
+        "prefs": "profile.preferences",
+        "iv": "profile.iv_section",
+        "watch": "profile.watchlist",
+        "notify": "profile.notifications",
+    },
+}
+
+
+def tab_label(page: str, tab: str) -> str:
+    """The catalog key of `tab` on `page`, or '' when the page has no such
+    tab — a value off the URL is never echoed into a prompt as it came."""
+    return TAB_LABELS.get(page, {}).get((tab or "").strip().lower(), "")
+
+
 # `[[open:page]]`, `[[open:page/tab]]` or `[[open:ticker/SYMBOL]]`. One group,
 # so `MarkerFilter.found` collects the whole target.
 MARKER_RE = re.compile(

@@ -32,9 +32,41 @@ def _say(key: str, **slots) -> str:
     "chart NVDA",
     "how has EUR/USD evolved this year?",
     "plot gold vs silver",
+    # The verb with its pronoun, as a Spanish reader types it in a hurry.
+    "grafícame NVDA",
+    "gráficalo",
+    "haz un grafico de la tendencia de apple",
 ])
 def test_a_request_for_a_chart_is_heard(message):
     assert charts.wants(message)
+
+
+def test_a_lower_case_name_behind_a_describing_word_is_still_looked_up():
+    """"gráfico de la tendencia de apple": the first word after "de" says
+    what to draw, not whom, and the name comes after it. Skipped, not
+    searched — the one lookup is spent on the name."""
+    asked: list[str] = []
+
+    def lookup(name: str) -> str:
+        asked.append(name)
+        return "AAPL" if name.lower() == "apple" else ""
+
+    assert charts.targets("haz un grafico de la tendencia de apple", {}, "",
+                          lookup=lookup) == ["AAPL"]
+    assert asked == ["apple"]
+    # A prediction names nothing to draw: no lookup for "prediccion".
+    asked.clear()
+    assert charts.targets("haz un grafico de prediccion de valor de cartera",
+                          {}, "", lookup=lookup) == []
+    assert asked == []
+
+
+def test_the_drawer_is_told_it_draws_and_what_it_cannot():
+    """The sentence a drawing surface adds to the prompt: a small model asked
+    for a chart otherwise says it cannot draw one, which is false there, and
+    a projection is the one chart request that stays undrawn."""
+    assert "never say you cannot draw or show charts" in charts.PROMPT
+    assert "Projection tab" in charts.PROMPT
 
 
 @pytest.mark.parametrize("message", [

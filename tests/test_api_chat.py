@@ -129,10 +129,10 @@ def served(monkeypatch):
 
 def run(message: str | None = None, *, thread: str = "", tools: tuple = (),
         resume: list | None = None, **props) -> dict:
-    """An AG-UI RunAgentInput. `props` split into `state` (view, focus) and
-    `forwardedProps` (lang, regenerate, staged_import) the way the drawer
+    """An AG-UI RunAgentInput. `props` split into `state` (view, focus, tab)
+    and `forwardedProps` (lang, regenerate, staged_import) the way the drawer
     sends them."""
-    state = {k: props.pop(k) for k in ("view", "focus") if k in props}
+    state = {k: props.pop(k) for k in ("view", "focus", "tab") if k in props}
     body: dict = {
         "threadId": thread,
         "runId": "run-1",
@@ -1063,6 +1063,28 @@ def test_the_page_and_the_ticker_on_screen_reach_the_prompt_and_the_lookup(
     assert focused == ["NVDA"]
 
 
+def test_the_open_tab_reaches_the_prompt_by_its_own_label(
+    client, account, signed_in, served
+):
+    """"What is this column?" asked on the Fees tab is about fees: the tab
+    the drawer reports is named by the label the page draws on it, in the
+    reader's language, and a tab the page does not have is dropped."""
+    provider = served(Recorder())
+    signed_in.post(
+        "/v1/chat/runs",
+        json=run("¿qué es esta columna?", view="portfolio", tab="fees", lang="es"),
+    )
+    assert "Current view: The user is currently on the Asignación page, " \
+        "Comisiones tab." in provider.systems[0]
+    signed_in.post(
+        "/v1/chat/runs",
+        json=run("hola", view="home", tab="fees", lang="en"),
+    )
+    assert "Current view: The user is currently on the Home page.\n" \
+        in provider.systems[1]
+    assert "tab" not in provider.systems[1].split("Current view:")[1].split("\n")[0]
+
+
 def test_a_view_that_is_not_a_page_and_a_focus_that_is_not_a_ticker_are_dropped(
     client, account, signed_in, served
 ):
@@ -1641,6 +1663,8 @@ def test_a_chart_asked_for_is_drawn_under_the_answer_not_typed_in_it(
     system, messages = seen[0]
     assert "draws a price chart of this under your answer" in messages[-1]["content"]
     assert "Never draw a chart, plot or diagram out of text" in system
+    # The drawer draws, so its prompt says so before the model can deny it.
+    assert "never say you cannot draw or show charts" in system
 
 
 def test_a_window_chip_is_answered_with_new_closes_not_a_model(

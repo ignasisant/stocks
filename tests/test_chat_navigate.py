@@ -69,6 +69,26 @@ def test_every_tab_the_server_accepts_has_a_button_label():
     assert drawn == {page: tabs for page, tabs in navigate.PAGES.items() if tabs}
 
 
+def test_the_prompt_names_the_open_tab_by_the_label_the_drawer_draws():
+    """`TAB_LABELS` here is the catalog key the prompt names the open tab by;
+    the drawer's copy in `chat/links.tsx` is what its buttons say. The same
+    table, key for key: a tab labelled one way on screen and another in the
+    prompt is a tab the model and the reader call different things."""
+    text = (APP / "chat" / "links.tsx").read_text()
+    start = text.index("const TAB_LABELS")
+    block = text[start:text.index("};\n", start)]
+    drawn: dict[str, dict[str, str]] = {}
+    for page, body in re.findall(r"\n  ([a-z]+): \{(.*?)\n  \}", block, re.S):
+        drawn[page] = dict(re.findall(r"\n    ([a-z]+): \"([a-z_.]+)\"", body))
+    assert navigate.TAB_LABELS == drawn
+    assert navigate.tab_label("portfolio", " Fees ") == "portfolio.tab_fees"
+    # A tab the page does not have, or a page without tabs, names nothing:
+    # the value came off the URL and is never echoed into a prompt as it was.
+    assert navigate.tab_label("portfolio", "prefs") == ""
+    assert navigate.tab_label("home", "tax") == ""
+    assert navigate.tab_label("nope", "tax") == ""
+
+
 def test_the_prompt_names_every_tab_it_would_accept():
     block = navigate.prompt_block()
     for page, tabs in navigate.PAGES.items():

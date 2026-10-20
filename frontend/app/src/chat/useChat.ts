@@ -178,6 +178,10 @@ export function useChat(live: boolean) {
     route.page === "ticker"
       ? (route.params.get("ticker") ?? route.params.get("symbol") ?? "").trim()
       : "";
+  // The open tab of a page that has them (`?tab=`), so "what is this column?"
+  // on the Fees tab is about fees. The server keeps it only when the page
+  // lists that tab (`chat/navigate.py` TAB_LABELS); anything else is dropped.
+  const tab = (route.params.get("tab") ?? "").trim();
   const [state, setState] = useState<ChatState | null>(null);
   const [threads, setThreads] = useState<Conversation[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -564,7 +568,7 @@ export function useChat(live: boolean) {
       ]);
       // Read when the question goes out, not when it is answered: a reader who
       // navigates while the answer is written asked about the page they were on.
-      const where = { view, ...(focus ? { focus } : {}) };
+      const where = { view, ...(focus ? { focus } : {}), ...(tab ? { tab } : {}) };
       const input = runInput(again ? { regenerate: true } : { message }, {
         conversation: activeId ?? undefined,
         lang,

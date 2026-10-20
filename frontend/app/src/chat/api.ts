@@ -413,6 +413,8 @@ export function runInput(
     view?: string;
     /** The ticker on screen, so "is it cheap?" has an "it". */
     focus?: string;
+    /** The page's open `?tab=`, so "this column" is the open tab's. */
+    tab?: string;
     /** The statement a preview card is waiting on, when there is one. */
     staged_import?: string;
     /** "In depth": the research reads further (`agent.DEEP`). A question's only. */
@@ -432,7 +434,11 @@ export function runInput(
       ask.message !== undefined
         ? [{ id: fresh(), role: "user", content: ask.message }]
         : [],
-    state: { view: where.view ?? "", ...(where.focus ? { focus: where.focus } : {}) },
+    state: {
+      view: where.view ?? "",
+      ...(where.focus ? { focus: where.focus } : {}),
+      ...(where.tab ? { tab: where.tab } : {}),
+    },
     tools: TOOLS,
     context: [],
     forwardedProps: props,

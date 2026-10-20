@@ -43,6 +43,15 @@
   must_not: [read_page]
   max_calls: 2
 
+- id: lots-bought
+  message: "¿cuándo compré NVDA y a qué precio?"
+  goals:
+    - Lists both buys with their dates and prices (2024-03-11 at 88.40, 2025-06-02 at 136.10)
+    - Says which lot a sale takes first (the 2024 one, FIFO)
+  must: [trade_history]
+  must_not: [read_page, search_web]
+  max_calls: 2
+
 - id: quote
   message: "is NVDA above 200 yet?"
   goals:

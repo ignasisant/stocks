@@ -246,6 +246,46 @@ def _book(tmp_path):
     return Context(db=db, prefs_path=tmp_path / "prefs.json", focus="ASML.AS")
 
 
+def test_trade_history_is_offered_wherever_there_is_a_ledger_to_read(tmp_path):
+    # Quick gather included: "when did I buy" is asked in passing, not in
+    # depth, and the answer is a read of the ledger, not a replay of it.
+    assert "trade_history" in [s.name for s in toolbox.specs(_book(tmp_path))]
+    assert "trade_history" not in [s.name for s in toolbox.specs(Context())]
+
+
+def test_trade_history_lists_the_trades_and_the_lots_a_sale_takes_next(tmp_path):
+    from stocks.portfolio.ledger import Transaction, add_many
+
+    ctx = _book(tmp_path)
+    add_many([
+        Transaction("2024-03-01", "ASML.AS", "buy", 10, 600.0, "EUR", 2.0),
+        Transaction("2024-09-01", "ASML.AS", "buy", 5, 800.0, "EUR"),
+        Transaction("2025-01-15", "ASML.AS", "sell", 8, 700.0, "EUR", 1.0),
+        Transaction("2025-02-01", "SAN.MC", "buy", 100, 4.0, "EUR"),
+    ], ctx.db)
+    out = _run("trade_history", {"ticker": "asml.as"}, ctx)
+    assert out.splitlines()[:4] == [
+        "Recorded trades of ASML.AS (3), oldest first:",
+        "- 2024-03-01 buy 10 ASML.AS @ 600.00 EUR, fee 2.00 EUR",
+        "- 2024-09-01 buy 5 ASML.AS @ 800.00 EUR",
+        "- 2025-01-15 sell 8 ASML.AS @ 700.00 EUR, fee 1.00 EUR",
+    ]
+    # Spain is FIFO: the sale took 8 of the first ten, and what is left of
+    # that lot carries its share of the buy fee.
+    assert "Open lots under FIFO (ES)" in out
+    assert ("- ASML.AS bought 2024-03-01: 2 shares, cost 1,200.40 EUR "
+            "(600.20 each, fee included)") in out
+    assert ("- ASML.AS bought 2024-09-01: 5 shares, cost 4,000.00 EUR "
+            "(800.00 each, fee included)") in out
+    assert "SAN.MC" not in out
+    # The ticker on screen, when none is given; the whole book without one.
+    assert "Recorded trades of ASML.AS (3)" in _run("trade_history", {}, ctx)
+    whole = _run("trade_history", {}, Context(db=ctx.db, prefs_path=ctx.prefs_path))
+    assert "Recorded trades (4)" in whole and "SAN.MC" in whole
+    assert "No recorded trade of XYZ." == _run("trade_history", {"ticker": "xyz"}, ctx)
+    assert _run("trade_history", {}, Context()) == toolbox._NO_LEDGER
+
+
 def test_the_engines_are_offered_only_to_a_deep_gather_with_a_ledger(tmp_path):
     ctx = _book(tmp_path)
     deep = [s.name for s in toolbox.specs(ctx, engines=True)]
