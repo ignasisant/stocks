@@ -671,3 +671,22 @@ def test_a_path_written_twice_while_queued_is_uploaded_once(monkeypatch, tmp_pat
     gate.set()
     assert cache._mirror_flush()
     assert seen == ["busy.pkl", "a.pkl"]
+
+
+def test_a_burst_wider_than_any_cap_is_uploaded_whole(monkeypatch, tmp_path):
+    """The held-ticker refresh lands ~80 entries in a second while the worker
+    is on one upload; a queue capped at 64 dropped the rest (ERR-03)."""
+    gate, seen = threading.Event(), []
+
+    def upload(path):
+        if path.parent != tmp_path / "m":
+            return
+        gate.wait(timeout=5)
+        seen.append(path.name)
+
+    monkeypatch.setattr(cache, "_mirror", upload)
+    for i in range(120):
+        cache.write_entry(tmp_path / "m" / f"{i}.pkl", (0.0, i, time.time()))
+    gate.set()
+    assert cache._mirror_flush()
+    assert sorted(seen) == sorted(f"{i}.pkl" for i in range(120))
