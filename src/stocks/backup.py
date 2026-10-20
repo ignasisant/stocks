@@ -21,12 +21,31 @@ configured; without it the commands refuse rather than silently do nothing.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from stocks import obs, storage
 
 PREFIX = "backups/"
 KEEP_DEFAULT = 30  # snapshots retained by prune (roughly a month of dailies)
+
+# CopyObject calls in flight at once. Each is one round trip to R2 for a
+# server-side copy, so the job is latency-bound: a serial loop over every
+# live object outgrew the cron's timeout as accounts grew. Below
+# storage.MAX_POOL so the client never queues on its own connections.
+WORKERS = 16
+
+
+def _each(fn: Callable[[str], None], keys: Iterable[str]) -> int:
+    """Apply `fn` to every key, WORKERS at a time; returns the count.
+
+    The first failure propagates (the map re-raises when it reaches it), so a
+    run that could not copy something ends loud rather than with a snapshot
+    that quietly misses an account.
+    """
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        return sum(1 for _ in pool.map(fn, keys))
 
 
 def _require_storage() -> None:
@@ -81,8 +100,7 @@ def run(keep: int = KEEP_DEFAULT) -> tuple[str, int]:
     stamp = _stamp()
     keys = live_keys()
     with obs.timed("backup.run", stamp=stamp, objects=len(keys)):
-        for key in keys:
-            storage.copy_key(key, f"{PREFIX}{stamp}/{key}")
+        _each(lambda key: storage.copy_key(key, f"{PREFIX}{stamp}/{key}"), keys)
     prune(keep)
     return stamp, len(keys)
 
@@ -94,8 +112,7 @@ def prune(keep: int = KEEP_DEFAULT) -> list[str]:
         raise ValueError("keep must be >= 1 — pruning everything is deletion")
     doomed = snapshots()[:-keep]
     for stamp in doomed:
-        for key in storage.list_keys(f"{PREFIX}{stamp}/"):
-            storage.delete_key(key)
+        _each(storage.delete_key, storage.list_keys(f"{PREFIX}{stamp}/"))
         obs.event("backup.prune", stamp=stamp)
     return doomed
 
@@ -118,10 +135,9 @@ def restore(stamp: str, only: str = "") -> int:
             f"no snapshot {stamp!r} — `stocks backup list` shows what exists"
         )
     src_prefix = f"{PREFIX}{stamp}/{only}"
-    count = 0
     fields: dict[str, Any] = {"only": only} if only else {}
     with obs.timed("backup.restore", stamp=stamp, **fields):
-        for key in storage.list_keys(src_prefix):
-            storage.copy_key(key, key.removeprefix(f"{PREFIX}{stamp}/"))
-            count += 1
-    return count
+        return _each(
+            lambda key: storage.copy_key(key, key.removeprefix(f"{PREFIX}{stamp}/")),
+            storage.list_keys(src_prefix),
+        )
