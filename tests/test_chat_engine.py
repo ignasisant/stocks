@@ -717,6 +717,17 @@ def test_the_prompt_bans_the_chatbot_voice():
     assert "no em dashes" in tail and "vague verdict" in tail
 
 
+
+def test_the_prompt_never_maps_an_unknown_holding_onto_another():
+    # A reader asked about a fund their book does not hold; the answer guessed
+    # an ETF from the web and called it their coin position (2026-10-20
+    # triage, IA-01). The rule asks back instead.
+    got = engine.system_prompt({}, "Portfolio: NVDA 10 shares", [])
+    tail = " ".join(got.split("RULES — these hold")[1].split())
+    assert "must match a ticker or a name in the book" in tail
+    assert "ask which one they mean" in tail
+    assert "a fund is not a coin" in tail
+
 # ------------------------------------------------------- an interruptible wait
 # Blocking on each future in one call leaves a stop pressed during routing
 # or a page read with nothing to act on until the pass returns. With a tick
