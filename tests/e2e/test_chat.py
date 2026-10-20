@@ -27,7 +27,11 @@ def test_a_question_gets_its_streamed_answer(page: Page, sign_in):
     box.press("Enter")
 
     expect(drawer).to_contain_text("¿Cómo va mi cartera?")
-    expect(drawer).to_contain_text(CHAT_ANSWER)
+    # The first turn of a cold server builds the chat engine (prompt, memory,
+    # knowledge index) before the fake provider answers; on a CI runner that
+    # has run past the default 5 s (run 38386262098: "Thinking" still on
+    # screen). The answer itself is instant, so the wait is on the engine.
+    expect(drawer).to_contain_text(CHAT_ANSWER, timeout=20_000)
 
 
 def test_a_guest_meets_the_assistant_locked(page: Page):
