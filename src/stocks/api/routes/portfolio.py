@@ -1292,6 +1292,88 @@ def tax_(account: Account) -> TaxReport:
     return report
 
 
+@ttl_cache(3600.0, max_entries=8)
+def _tax_csv(db: str, mtime: float, code: str, year: int | None) -> bytes:
+    """The tax file, memoized on (db, ledger mtime, jurisdiction, year).
+
+    The jurisdiction is in the key because it picks the replay — currency and
+    share-matching both — and a residence changed on the Profile page has to
+    hand back a different file at once.
+    """
+    from stocks.web.exports import tax_csv
+
+    jurisdiction = tax.get(code)
+    txs, _, realized = loaders.ledger_state(
+        db, mtime, jurisdiction.currency, jurisdiction.matching
+    )
+    return tax_csv(
+        realized,
+        txs,
+        currency=jurisdiction.currency,
+        tax_year_of=jurisdiction.tax_year_of,
+        year=year,
+    )
+
+
+@router.get(
+    "/tax.csv",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {"text/csv": {}},
+            "description": "The taxable rows: one per lot sold, one per dividend.",
+        }
+    },
+    summary="The realized result as a file",
+)
+def tax_file(
+    account: Account,
+    year: Annotated[
+        int | None,
+        Query(
+            description=(
+                "One tax year, by the jurisdiction's own calendar; every year "
+                "when omitted."
+            )
+        ),
+    ] = None,
+) -> Response:
+    """The Realized & tax tab as a file for the return.
+
+    One row per matched lot sold — acquisition and sale dates, quantity, cost,
+    proceeds, gain — and one per dividend, gross and withheld, all in the
+    jurisdiction's currency at each date's own rate. The rows follow `/tax`:
+    the same replay, the same currency, the same share-matching, so the file
+    reconciles against the tab line by line. Dividends are listed whether or
+    not the jurisdiction nets them with the gains; a return asks for them
+    either way.
+
+    A year with nothing taxable is a 404 rather than a zero-byte attachment,
+    like the ledger export.
+    """
+    prefs = tax_prefs.load(account.prefs)
+    code, _ = tax_prefs.resolve(prefs)
+    db = str(account.db)
+    body = _tax_csv(db, loaders.db_mtime(db), code, year)
+    if not body:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="this book has nothing taxable to export"
+            + (f" in {year}" if year is not None else ""),
+        )
+    which = str(year) if year is not None else "all"
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="aguait-tax-{code.lower()}-{which}-'
+                f'{date.today():%Y-%m-%d}.csv"'
+            )
+        },
+    )
+
+
 def _reporting_flags(account, jurisdiction, settings) -> list[TaxFlag]:
     """Foreign-asset thresholds (Modelo 720, FBAR, Form 8938…) against the book.
 

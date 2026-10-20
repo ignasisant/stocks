@@ -409,6 +409,17 @@ function Report({ report }: { report: TaxReport }) {
               }
             />
           ) : null}
+          {/* A plain link, as on Profile: a download is a navigation the
+              browser does, and the filename comes from Content-Disposition.
+              The file follows the selector — one tax year, or all of them. */}
+          <a
+            className="pf-download"
+            href={`/api/v1/portfolio/tax.csv${
+              year === ALL_YEARS ? "" : `?year=${encodeURIComponent(year)}`
+            }`}
+          >
+            {t("portfolio.tax_download")}
+          </a>
         </div>
         <h2>
           {total
@@ -416,6 +427,9 @@ function Report({ report }: { report: TaxReport }) {
             : words.say("tax_header", { year: labelOf(selected.period) })}
         </h2>
         <Caption>{words.say(total ? "all_years_caption" : "tax_caption")}</Caption>
+        <Caption>
+          {words.say("tax_download_hint", { currency: report.currency })}
+        </Caption>
         {/* The browser named a country this app does not model, so everything
             on this tab is another country's law applied to this book. Say it
             here, where the wrong numbers are. */}
