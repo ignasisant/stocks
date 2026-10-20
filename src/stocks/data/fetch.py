@@ -21,7 +21,7 @@ from yfinance.exceptions import YFRateLimitError
 from stocks import atomic, obs
 from stocks.analysis import naive_dates
 from stocks.config import DATA_DIR, ticker_aliases
-from stocks.data import profiles
+from stocks.data import funds, profiles
 from stocks.data.crypto import COINGECKO_IDS, split_pair
 from stocks.data.fx import rates_range
 from stocks.data.http import get_json
@@ -560,6 +560,9 @@ def info(ticker: str) -> dict:
     # go to the on-disk profile memo, so the allocation splits stop paying a
     # quoteSummary per holding on every cold process (stocks.data.profiles).
     profiles.remember(key, blob)
+    # And its kind: a fund learned here is screened out of the earnings
+    # calendar on the next refresh, which asks the cache only.
+    funds.remember(key, blob.get("quoteType"))
     with _info_lock:
         _info_memo[key] = (time.monotonic(), blob)
         # Bounded: a long-lived server would otherwise accumulate an entry per

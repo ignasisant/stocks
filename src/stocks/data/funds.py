@@ -35,7 +35,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from stocks import atomic
+from stocks import atomic, obs, storage
 from stocks.config import DATA_DIR
 from stocks.formatting import finite
 from stocks.fuzzy import FUZZY_CUTOFF, MIN_QUERY, fuzzy_ratio
@@ -234,9 +234,18 @@ _types: dict[str, str] | None = None
 
 
 def _known_types() -> dict[str, str]:
-    """The learned cache, seeded with the catalog, read from disk once."""
+    """The learned cache, seeded with the catalog, read from disk once.
+
+    A fresh host pulls the bucket's copy first. Without it every cold Cloud
+    Run instance forgot every fund it had learned outside the catalog, and the
+    earnings calendar asked Yahoo for SBX.DE's and UETW.DE's earnings on each
+    one (2026-10-20 triage, ERR-04).
+    """
     global _types
     if _types is None:
+        if not TYPE_CACHE.exists():
+            with obs.swallow("funds.types_restore"):
+                storage.restore(TYPE_CACHE)
         _types = {s: "ETF" for s in KNOWN_FUNDS} | _read_types()
     return _types
 
@@ -244,7 +253,7 @@ def _known_types() -> dict[str, str]:
 def remember(ticker: str, quote_type: str | None) -> None:
     """Record `ticker`'s Yahoo quoteType, so no one has to fetch it again.
 
-    Called wherever the app already holds an `.info` payload (the ticker page,
+    Called wherever the app already holds an `.info` payload (`fetch.info`,
     the screener pull). Writing the cache is best-effort: a read-only or full
     filesystem costs a repeated lookup, never a failed render.
     """
@@ -259,7 +268,9 @@ def remember(ticker: str, quote_type: str | None) -> None:
     try:
         atomic.write_json(TYPE_CACHE, stored, indent=0, sort_keys=True)
     except OSError:
-        pass
+        return
+    with obs.swallow("funds.types_persist"):
+        storage.persist(TYPE_CACHE)
 
 
 def quote_type(ticker: str, *, fetch: bool = True) -> str | None:

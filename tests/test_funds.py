@@ -385,3 +385,67 @@ def test_risk_shares_carry_more_than_the_weight_when_a_name_moves_with_the_book(
     assert sum(shares.values()) == pytest.approx(1.0)
     assert shares["BIG"] > weights["BIG"]
     assert shares["HEDGE"] < 0
+
+
+# ------------------------------------------------------------- ERR-04
+def test_a_fresh_host_reads_the_types_the_bucket_kept(monkeypatch, tmp_path):
+    """Cloud Run starts every instance with an empty disk: a fund learned on
+    another one (SBX.DE) must still be screened out of the earnings asks."""
+    pulled = []
+
+    def restore(path):
+        pulled.append(path)
+        path.write_text(json.dumps({"SBX.DE": "ETF"}))
+        return True
+
+    monkeypatch.setattr("stocks.storage.restore", restore)
+    assert funds.is_fund("SBX.DE", fetch=False)
+    assert pulled == [funds.TYPE_CACHE]
+
+
+def test_a_learned_type_is_mirrored(monkeypatch):
+    pushed = []
+    monkeypatch.setattr("stocks.storage.restore", lambda path: False)
+    monkeypatch.setattr("stocks.storage.persist", pushed.append)
+    funds.remember("UETW.DE", "ETF")
+    assert pushed == [funds.TYPE_CACHE]
+    assert json.loads(funds.TYPE_CACHE.read_text()) == {"UETW.DE": "ETF"}
+
+
+def test_a_failing_bucket_never_fails_a_lookup(monkeypatch):
+    def down(path):
+        raise RuntimeError("bucket down")
+
+    monkeypatch.setattr("stocks.storage.restore", down)
+    monkeypatch.setattr("stocks.storage.persist", down)
+    assert not funds.is_fund("SBX.DE", fetch=False)
+    funds.remember("SBX.DE", "ETF")  # no raise
+    assert funds.is_fund("SBX.DE", fetch=False)
+
+
+def test_every_info_blob_teaches_the_fund_cache(monkeypatch):
+    """The allocation splits fetch `.info` per holding; that already says the
+    line is an ETF, so the calendar's cache-only screen learns it there."""
+    from stocks.data import earnings, fetch, profiles
+
+    monkeypatch.setattr("stocks.storage.restore", lambda path: False)
+    monkeypatch.setattr("stocks.storage.persist", lambda path: None)
+    monkeypatch.setattr(profiles, "remember", lambda *a: None)
+    monkeypatch.setattr(fetch, "resolve", lambda t: t)
+    monkeypatch.setattr(fetch, "retired", lambda t: False)
+    monkeypatch.setattr(fetch, "_info_memo", {})
+
+    class Ticker:
+        def __init__(self, symbol):
+            self.info = {"quoteType": "ETF", "symbol": symbol}
+
+    monkeypatch.setattr(fetch.yf, "Ticker", Ticker)
+    fetch.info("UETW.DE")
+
+    import yfinance as yf
+
+    asked: list[str] = []
+    monkeypatch.setattr(earnings, "resolve", lambda t: t)
+    monkeypatch.setattr(yf, "Ticker", lambda symbol: asked.append(symbol))
+    assert earnings.fetch_earnings("UETW.DE") == ([], [])
+    assert asked == []
