@@ -14,6 +14,7 @@
  * every other page draws it in.
  */
 
+import { useState } from "react";
 import { useLang, useT } from "../../shell/i18n";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { chart } from "../../shell/theme";
@@ -66,6 +67,11 @@ export default function PlanChart({
     () => getCompare(INDEX, span, base, names),
     [span, base, names.join(",")],
   );
+  // A new window refetches. The last chart stays up, dimmed, until the next
+  // one draws: a skeleton of another height here, above both tables, moves
+  // the page under the reader's hand on every press of the window picker.
+  const [last, setLast] = useState<Comparison | null>(null);
+  if (query.state === "loaded" && query.data !== last) setLast(query.data);
 
   const date = new Intl.DateTimeFormat(lang, { day: "numeric", month: "short" });
   const yearly = new Intl.DateTimeFormat(lang, { month: "short", year: "2-digit" });
@@ -83,11 +89,19 @@ export default function PlanChart({
         </span>
       </h3>
       <p className="ag-rev-caption">{t("review.plan_chart_note", { base })}</p>
-      <Loaded query={query} skeleton={<Skeleton rows={5} />}>
-        {(data) => (
-          <Lines data={data} sells={sells} adds={adds} formatDate={formatDate} />
-        )}
-      </Loaded>
+      {query.state === "loading" && last ? (
+        <div className="ag-rev-plan-lines" aria-busy="true">
+          <Lines data={last} sells={sells} adds={adds} formatDate={formatDate} />
+        </div>
+      ) : (
+        <Loaded query={query} skeleton={<Skeleton rows={5} />}>
+          {(data) => (
+            <div className="ag-rev-plan-lines">
+              <Lines data={data} sells={sells} adds={adds} formatDate={formatDate} />
+            </div>
+          )}
+        </Loaded>
+      )}
       {left > 0 ? (
         <p className="ag-rev-caption">{t("review.plan_chart_more", { count: left })}</p>
       ) : null}

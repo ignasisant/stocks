@@ -83,6 +83,23 @@ export function forget(urls: Iterable<string>): void {
   for (const url of urls) memo.delete(url);
 }
 
+/**
+ * Ask the server for `url` again, past the memo, and memoize the new answer —
+ * for a stale URL no screen on view holds (`useApi.retryNow`): its answer
+ * clears or renews the mark, and the next screen to want it gets this one.
+ */
+export function refresh(url: string): Promise<unknown> {
+  const flight = start<unknown>(url);
+  memo.set(url, { at: Date.now(), flight });
+  flight.answer.then(
+    (body) => landed(url, body),
+    () => {
+      if (memo.get(url)?.flight === flight) memo.delete(url);
+    },
+  );
+  return join(flight, null);
+}
+
 /** Set while `watched` runs a fetcher: every URL its gets asked for. */
 let asked: Set<string> | null = null;
 

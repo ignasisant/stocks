@@ -9,13 +9,12 @@
  */
 
 import { useEffect, useState } from "react";
-import { get } from "../../shell/api";
+import { findTickers } from "../../shell/findTickers";
 import { useT } from "../../shell/i18n";
 import { Card, Failure } from "./ui";
 import { ToggleChip } from "../../ui/Toggle";
 
 type Match = { ticker: string; name: string; kind: string; exchange: string };
-type Results = { query: string; matches: Match[] };
 
 /**
  * `/search` names its escape-hatch tier `analyze`; the catalog calls that row
@@ -62,7 +61,7 @@ export function WatchlistAdd({
     // Typing is not a request per keystroke: the field settles first.
     let live = true;
     const timer = window.setTimeout(() => {
-      get<Results>("/search", { q: term, limit: 8 }).then(
+      findTickers<Match>(term, { limit: 8 }).then(
         (results) => live && (setMatches(results.matches), setSearchFailed(null)),
         () => live && (setMatches([]), setSearchFailed(t("common.offline"))),
       );

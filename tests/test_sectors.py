@@ -366,3 +366,52 @@ def test_the_default_run_is_every_sector(cron, monkeypatch):
     monkeypatch.setattr(sectors, "etf_candidates", lambda s, limit=10: ["X"])
     sectors.run_scan(pause_s=0)
     assert seen == list(sectors.SECTORS)
+
+
+def _scan(sector, rows):
+    return sectors.SectorScan(
+        sector, "2026-10-17", tuple(t for t, _ in rows),
+        tuple({"ticker": t, "industry": i} for t, i in rows), {}, (),
+    )
+
+
+def test_rivals_are_the_same_industry_not_the_whole_sector():
+    scans = {
+        "Technology": _scan("Technology", [
+            ("NVDA", "Semiconductors"), ("AAPL", "Consumer Electronics"),
+            ("AMD", "Semiconductors"), ("ASML", "Semiconductor Equipment & Materials"),
+            ("AVGO", "Semiconductors"),
+        ]),
+    }
+    assert sectors.industry_rivals(scans, "NVDA") == ["AMD", "AVGO"]
+    # A name outside every cohort: its industry is passed in.
+    assert sectors.industry_rivals(scans, "MRVL", "Semiconductors") == [
+        "NVDA", "AMD", "AVGO",
+    ]
+    assert sectors.industry_rivals(scans, "MRVL") == []
+
+
+def test_peer_rows_read_the_industry_across_cohorts_when_it_is_deep_enough():
+    semis = [(f"S{i}", "Semiconductors") for i in range(5)]
+    scans = {
+        "Technology": _scan("Technology", [("NVDA", "Semiconductors"), *semis[:3],
+                                           ("AAPL", "Consumer Electronics")]),
+        # The same industry filed in another cohort still counts, once.
+        "Industrials": _scan("Industrials", [*semis[2:]]),
+    }
+    kind, name, rows = sectors.peer_rows(scans, "NVDA", "Semiconductors", "Technology")
+    assert (kind, name) == ("industry", "Semiconductors")
+    assert [r["ticker"] for r in rows] == ["S0", "S1", "S2", "S3", "S4"]
+
+
+def test_a_thin_industry_falls_back_to_the_sector_cohort_without_the_subject():
+    scans = {
+        "Technology": _scan("Technology", [
+            ("NVDA", "Semiconductors"), ("AMD", "Semiconductors"),
+            ("AAPL", "Consumer Electronics"), ("MSFT", "Software - Infrastructure"),
+        ]),
+    }
+    kind, name, rows = sectors.peer_rows(scans, "NVDA", "Semiconductors", "Technology")
+    assert (kind, name) == ("sector", "Technology")
+    assert [r["ticker"] for r in rows] == ["AMD", "AAPL", "MSFT"]
+    assert sectors.peer_rows(scans, "XOM", "Oil & Gas Integrated", "Energy") is None

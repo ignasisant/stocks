@@ -19,10 +19,12 @@ import { useRoute } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
 import { Segmented } from "../../ui/Segmented";
 import { percent } from "./format";
-import type { NameReturns, ReviewReturns } from "./types";
+import type { NameReturns, ReviewReturns, ScorePoint } from "./types";
 
-const WINDOWS = ["1m", "6m", "1y", "2y"] as const;
+export const WINDOWS = ["1m", "6m", "1y", "2y"] as const;
 export type ReturnWindow = (typeof WINDOWS)[number];
+/** A window, or the map trail's half-year step that is no column (`TRAIL_STEPS`). */
+export type TrailStep = ReturnWindow | "18m";
 
 /** The S&P 500 every gap is measured against — `routes.review.INDEX`. */
 export const INDEX = "SPY";
@@ -43,12 +45,16 @@ export type Measured = {
   index: number | null;
   sector: number | null;
   etf: string | null;
+  /** Where it sat on the quality map the day the window opened. */
+  then: ScorePoint | null;
 };
 
 type Bundle = {
   span: ReturnWindow;
   setSpan: (next: ReturnWindow) => void;
   of: (symbol: string) => Measured | null | undefined;
+  /** Where `symbol` sat on the map when `window` opened, whatever `span` is. */
+  thenAt: (symbol: string, step: TrailStep) => ScorePoint | null;
 };
 
 const Context = createContext<Bundle | null>(null);
@@ -89,7 +95,14 @@ export function ReturnsProvider({
 
   const data = query.state === "loaded" ? query.data : null;
   const of = measure(data, span, query.state === "loading");
-  return <Context.Provider value={{ span, setSpan, of }}>{children}</Context.Provider>;
+  const thenAt = (symbol: string, step: TrailStep) =>
+    data?.names.find((row) => row.ticker === symbol.toUpperCase())?.then?.[step] ??
+    null;
+  return (
+    <Context.Provider value={{ span, setSpan, of, thenAt }}>
+      {children}
+    </Context.Provider>
+  );
 }
 
 /** A lookup from symbol to its cells over `span`, from one answer. */
@@ -113,6 +126,7 @@ export function measure(
       index: own !== null && index !== null ? own - index : null,
       sector: own !== null && sector !== null ? own - sector : null,
       etf: row.sector_etf,
+      then: row.then?.[span] ?? null,
     };
   };
 }

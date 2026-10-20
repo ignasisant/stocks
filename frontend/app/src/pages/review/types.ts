@@ -120,12 +120,26 @@ export type ReviewNote = {
   day: string | null;
 };
 
+/** Where a name sat on the review's map the day a window opened. */
+export type ScorePoint = {
+  quality: number;
+  cheapness: number;
+  /** "record": the scores the review gave it that day; "filings": none was
+   * kept, so the business as its filings stood then, at that day's share
+   * price; "price": no filing that old, so today's business at that price. */
+  source: "record" | "filings" | "price";
+};
+
 /** One name's total return per window, in the page's currency, a fraction. */
 export type NameReturns = {
   ticker: string;
   returns: Partial<Record<"1m" | "6m" | "1y" | "2y", number | null>>;
   /** The ETF its sector is measured by; null for a fund or a coin. */
   sector_etf: string | null;
+  /** Per window, where it sat on the map, plus "18m": the trail's half-year
+   * step that is no column. A window it cannot be placed in is missing.
+   * Older servers leave it out. */
+  then?: Partial<Record<"1m" | "6m" | "1y" | "18m" | "2y", ScorePoint>>;
 };
 
 /** What `/api/v1/review/returns` answers with (`ReviewReturns`). */

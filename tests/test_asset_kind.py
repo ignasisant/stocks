@@ -35,12 +35,14 @@ LOCALES = Path(__file__).resolve().parents[1] / "src/stocks/web/locales"
 def _isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(asset_kind, "KIND_CACHE", tmp_path / "asset_kinds.json")
     monkeypatch.setattr(asset_kind, "_kinds", None)
-    monkeypatch.setattr(funds, "TYPE_CACHE", tmp_path / "quote_types.json")
+    funds.TYPE_MEMO.clear()
+    monkeypatch.setattr(funds.TYPE_MEMO, "path", tmp_path / "quote_types.json")
     monkeypatch.setattr(funds, "_types", None)
     monkeypatch.setattr(cef, "CEF_CACHE", tmp_path / "closed_end.json")
     monkeypatch.setattr(cef, "_verdicts", None)
     yield
     monkeypatch.setattr(asset_kind, "_kinds", None)
+    funds.TYPE_MEMO.clear()
     monkeypatch.setattr(funds, "_types", None)
 
 

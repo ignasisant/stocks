@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { complete, draft, num, payload, summary } from "./alerts";
+import { complete, draft, duplicateAt, num, payload, summary } from "./alerts";
 import { cycleLine, cycleTag, dividendLine, resultsLines, snap } from "./events";
 import {
   barGrowth,
@@ -259,6 +259,33 @@ describe("a draft of a new rule", () => {
 
   it("starts a price empty rather than at a number nobody chose", () => {
     expect(draft(PRICE)).toEqual({ type: "above", price: 0 });
+  });
+});
+
+describe("a rule already on the list", () => {
+  const rules = [
+    { type: "above", price: 90 },
+    { type: "rsi_below", level: 30, window: 14 },
+  ];
+
+  it("is found where it stands", () => {
+    expect(duplicateAt(rules, { type: "above", price: 90 })).toBe(0);
+    expect(duplicateAt(rules, { type: "rsi_below", level: 30, window: 14 })).toBe(1);
+  });
+
+  it("is a different rule once any threshold or window differs", () => {
+    expect(duplicateAt(rules, { type: "above", price: 91 })).toBe(-1);
+    expect(duplicateAt(rules, { type: "below", price: 90 })).toBe(-1);
+    expect(duplicateAt(rules, { type: "rsi_below", level: 30, window: 7 })).toBe(-1);
+  });
+
+  it("reads a field the server sent as null like one it left out", () => {
+    expect(
+      duplicateAt([{ type: "above", price: 90, pct: null }], {
+        type: "above",
+        price: 90,
+      }),
+    ).toBe(0);
   });
 });
 

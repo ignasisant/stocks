@@ -152,6 +152,18 @@ def test_the_book_is_judged_actions_first(client, book):
     assert body["total"] == 10_000.0
 
 
+def test_every_scored_name_is_recorded_for_the_maps_trail(client, book):
+    from datetime import date
+
+    from stocks.data import score_history
+
+    body = _get(client)
+    adbe = next(r for r in body["held"] if r["ticker"] == "ADBE")
+    point = score_history.at("ADBE", date.today(), 0)
+    assert point == (round(adbe["quality"], 1), round(adbe["cheapness"], 1))
+    assert score_history.at("XEON.DE", date.today(), 0) is None  # cash: no score
+
+
 def test_a_sale_carries_its_money_and_its_tax(client, book):
     amd = next(r for r in _get(client)["held"] if r["ticker"] == "AMD")
     assert amd["target_weight"] == 0.0
