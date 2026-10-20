@@ -61,7 +61,7 @@
   "profile.notify_caption": "Get a daily portfolio digest, a Sunday review and price alerts on Telegram.",
   "profile.tg_not_configured": "Telegram notifications aren't configured on this deployment.",
   "profile.tg_connect": "Connect Telegram",
-  "profile.tg_how_body": "- **Daily digest** — value, day and week change, top movers and earnings; weekday evenings.\n- **Price alerts** — your watchlist thresholds, hourly on market days.\n\nPress **Connect Telegram**, then **Start** in the chat. Only your chat id is stored; disconnect anytime.",
+  "profile.tg_how_body": "- **Daily digest** — value, day and week change, top movers and earnings; weekday evenings.\n- **Price alerts** — your watchlist thresholds, hourly on market days.\n- **Away a week?** — one reminder with your book's week, two at most.\n\nPress **Connect Telegram**, then **Start** in the chat. Only your chat id is stored; disconnect anytime.",
   "profile.tg_manual": "No Start button in Telegram? Send {bot} this message: `/start {code}`",
   "profile.tg_open": "Open Telegram and press Start",
   "profile.tg_waiting": "Waiting for you to press Start in Telegram…",

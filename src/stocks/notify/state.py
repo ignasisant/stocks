@@ -135,6 +135,23 @@ def remember_tax_reminders(
     state["tax_reminded"] = told[-keep:]
 
 
+def nudges_sent(state: dict) -> list[str]:
+    """When this dormancy spell's reminders went out (ISO stamps, oldest first)."""
+    got = state.get("nudges")
+    if not isinstance(got, list):
+        return []
+    return [str(x) for x in got if str(x).strip()]
+
+
+def remember_nudge(state: dict, now: datetime) -> None:
+    state["nudges"] = [*nudges_sent(state), now.isoformat()]
+
+
+def forget_nudges(state: dict) -> None:
+    """The account came back: the next spell starts from zero."""
+    state.pop("nudges", None)
+
+
 def previous_top_weight(state: dict) -> float | None:
     """Last week's top-5 concentration, or None the first time round.
 

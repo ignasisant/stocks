@@ -20,14 +20,15 @@ on:
     - cron: "30 21 * * 1-5" # digest — evenings, after US close
     - cron: "0 17 * * 0" # weekly review — Sunday afternoon, before the week starts
     - cron: "7 7-20 * * 1-5" # alerts — hourly, off the top-of-hour rush
+    - cron: "0 10 * * 1-5" # nudge — late morning, for accounts quiet a week
   workflow_dispatch:
     inputs:
       job:
-        description: "Which job to run (digest | weekly | alerts | test)"
+        description: "Which job to run (digest | weekly | alerts | nudge | test)"
         required: true
         default: "digest"
         type: choice
-        options: [digest, weekly, alerts, test]
+        options: [digest, weekly, alerts, nudge, test]
       user:
         description: "test only: one account label ('owner' or a slug); blank = all"
         required: false
@@ -103,6 +104,19 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - run: uv sync --frozen --no-dev
       - run: uv run stocks alerts --all-users
+
+  # Accounts that linked Telegram and have not opened the app for a week get
+  # one reminder, and one more a week later; then nothing until they come
+  # back (notify/nudge.py). Daily, because the week runs out on any day.
+  nudge:
+    if: github.event.schedule == '0 10 * * 1-5' || inputs.job == 'nudge'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --frozen --no-dev
+      - run: uv run stocks nudge
 
   # Manual only: proves the secrets, the bucket roster and the bot are wired,
   # without waiting for a cron or computing anything. Sends one short message

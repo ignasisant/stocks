@@ -61,7 +61,7 @@
   "profile.notify_caption": "Recibe un resumen diario, una revisión los domingos y alertas de precio por Telegram.",
   "profile.tg_not_configured": "Las notificaciones de Telegram no están configuradas en este despliegue.",
   "profile.tg_connect": "Conectar Telegram",
-  "profile.tg_how_body": "- **Resumen diario** — valor, variación del día y la semana, mayores movimientos y resultados; tardes laborables.\n- **Alertas de precio** — umbrales de tu lista, cada hora en días de mercado.\n\nPulsa **Conectar Telegram** y luego **Iniciar** en el chat. Solo guardamos tu id de chat; desconecta cuando quieras.",
+  "profile.tg_how_body": "- **Resumen diario** — valor, variación del día y la semana, mayores movimientos y resultados; tardes laborables.\n- **Alertas de precio** — umbrales de tu lista, cada hora en días de mercado.\n- **¿Una semana sin entrar?** — un recordatorio con la semana de tu cartera, dos como mucho.\n\nPulsa **Conectar Telegram** y luego **Iniciar** en el chat. Solo guardamos tu id de chat; desconecta cuando quieras.",
   "profile.tg_manual": "¿No aparece el botón Iniciar en Telegram? Envía a {bot} este mensaje: `/start {code}`",
   "profile.tg_open": "Abre Telegram y pulsa Iniciar",
   "profile.tg_waiting": "Esperando a que pulses Iniciar en Telegram…",
