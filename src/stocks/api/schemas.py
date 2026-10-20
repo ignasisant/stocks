@@ -4308,6 +4308,14 @@ class ReviewRow(BaseModel):
     cheapness: float | None = Field(default=None, description="0-100; null if unscored.")
     metrics: dict[str, float | None] = Field(default_factory=dict)
     value: float | None = Field(default=None, description="Held value, base currency.")
+    price: float | None = Field(
+        default=None,
+        description=(
+            "Last price of ONE held share, in `currency` — the one its market "
+            "quotes it in, not the base. Null for an outside name, an unpriced "
+            "row, or when the pair to convert back could not be read."
+        ),
+    )
     weight: float | None = Field(
         default=None, description="Share of the priced book, 0-1."
     )

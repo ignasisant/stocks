@@ -981,6 +981,21 @@ def spot_rates(ccys: tuple[str, ...], base: str = "EUR") -> dict[str, float]:
     return {ccy: r for ccy, r in zip(unique, rates, strict=True) if r is not None}
 
 
+def native_price(row, rates: dict[str, float]) -> float | None:
+    """One share's price in the currency it trades in, backed out of `value`.
+
+    `value` is shares * price * rate, so dividing by the shares and the rate
+    (`spot_rates`) recovers the quote. Null rather than a guess when the row
+    has no value or the pair is missing: a price under the wrong symbol is
+    worse than none.
+    """
+    shares, value = row.get("shares"), row.get("value")
+    rate = rates.get(str(row.get("ccy") or "").upper())
+    if not shares or not rate or value is None or pd.isna(value):
+        return None
+    return float(value) / float(shares) / rate
+
+
 @ttl_cache(_LEDGER_TTL, max_entries=32)
 def native_positions(db: str, mtime: float):
     """Open positions carrying *native-currency* cost — identity FX, no network.

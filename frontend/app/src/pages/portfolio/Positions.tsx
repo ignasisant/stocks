@@ -22,6 +22,7 @@ import type {
   Position,
   Summary,
 } from "./api";
+import { priceDigits } from "../home/format";
 import { brokerName, moneyIn, percent, shares as formatShares } from "./format";
 import {
   Caption,
@@ -142,6 +143,8 @@ function Positions() {
   const pending = query.state === "loading";
   // A figure still on its way, or the cell it lands in.
   const priced = (cell: ReactNode): ReactNode => (pending ? <Pending /> : cell);
+  const price = (row: Position) =>
+    moneyIn(lang, row.currency)(row.price, { digits: priceDigits(row.price) });
 
   const columns: Column<Position>[] = [
     {
@@ -158,6 +161,14 @@ function Positions() {
       // Four decimals always: a whole share and a fractional one line up in
       // the column.
       cell: (row) => <Figure value={formatShares(lang, row.shares, true)} />,
+    },
+    {
+      key: "price",
+      label: t("portfolio.col_price"),
+      sort: (row) => row.price,
+      // In the currency the name trades in, as its own market quotes it: a
+      // dollar share converted to euros is a price no screen anywhere shows.
+      cell: (row) => priced(<Figure value={price(row)} />),
     },
     {
       key: "currency",
@@ -259,8 +270,8 @@ function Positions() {
         },
       ]}
       // The phone's row: value and today's move on the right, the total
-      // result as a pill by the symbol, weight and custodians on the dim
-      // line.
+      // result as a pill by the symbol, price, weight and custodians on the
+      // dim line.
       dense={{
         ticker: (row) => row.ticker,
         badge: (row) =>
@@ -289,6 +300,7 @@ function Positions() {
             </span>,
           ),
         sub: (row) => [
+          pending ? null : price(row),
           pending ? null : percent(lang, row.weight),
           custodyText(row.custody, t, lang, false),
         ],

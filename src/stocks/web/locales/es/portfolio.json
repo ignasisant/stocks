@@ -34,6 +34,7 @@
   "portfolio.postmarket_note": "Fuera de hora — la variación del día incluye el movimiento posterior al cierre.",
   "portfolio.col_position": "Posición",
   "portfolio.col_shares": "Acciones",
+  "portfolio.col_price": "Precio",
   "portfolio.col_currency": "Moneda",
   "portfolio.col_weight": "Peso",
   "portfolio.col_total_pl": "P/L total",

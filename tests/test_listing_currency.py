@@ -163,7 +163,7 @@ def test_the_positions_table_is_priced_in_the_listing_and_pl_has_no_fx_jump(
     """Cost stays what was paid (at each trade date's rate), value is the
     listing's close at its own rate, and `ccy` labels the price the table backs
     out of `value` — so that price is the listing's real quote."""
-    from stocks.api.routes.portfolio import _native_price
+    from stocks.api.loaders import native_price
 
     monkeypatch.setattr(ap, "load_closes", lambda tickers, period="5d": CLOSES)
     tbl = ap.positions_frame(_positions(), base="EUR")
@@ -180,8 +180,8 @@ def test_the_positions_table_is_priced_in_the_listing_and_pl_has_no_fx_jump(
     assert weights.sum() == pytest.approx(1.0)
 
     rates = {c: _rate(c, "EUR") for c in ("EUR", "USD", "GBP")}
-    assert _native_price(tbl.loc["ASML"], rates) == pytest.approx(700.0)
-    assert _native_price(tbl.loc["AZN.L"], rates) == pytest.approx(100.0)
+    assert native_price(tbl.loc["ASML"], rates) == pytest.approx(700.0)
+    assert native_price(tbl.loc["AZN.L"], rates) == pytest.approx(100.0)
 
 
 def test_risk_weights_scale_pence_before_converting(fixed_fx):
