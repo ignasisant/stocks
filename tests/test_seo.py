@@ -268,3 +268,59 @@ def test_the_page_paths_track_the_navigation_table():
     paths = seo.app_page_paths()
     assert "/portfolio" in paths and "/ticker" in paths
     assert not any(p.startswith("/_") for p in paths)
+
+
+# ------------------------------------------------------------ ticker share card
+
+
+def test_a_ticker_card_names_the_symbol_and_fits_a_preview():
+    title, tags = seo.ticker_head("NVDA", BASE, "en", name="NVIDIA Corporation")
+    assert title == "NVDA · NVIDIA Corporation · TopStocks"
+    assert len(title) <= 60
+    assert f'property="og:title" content="{title}"' in tags
+    assert f'property="og:url" content="{BASE}/ticker?ticker=NVDA"' in tags
+    assert f'property="og:image" content="{BASE}{seo.OG_IMAGE}"' in tags
+    assert 'name="twitter:card" content="summary_large_image"' in tags
+    description = re.search(r'name="description" content="([^"]*)"', tags).group(1)
+    assert "NVDA" in description and "NVIDIA" in description
+    assert len(description) <= 160
+
+
+def test_a_ticker_card_without_a_name_is_the_symbol_in_the_readers_language():
+    title, tags = seo.ticker_head("BTC-EUR", BASE, "es")
+    assert title == "BTC-EUR · TopStocks"
+    assert 'property="og:locale" content="es_ES"' in tags
+    wanted = markup.esc(translate("ticker.seo_description", "es", name="BTC-EUR"))
+    assert f'property="og:description" content="{wanted}"' in tags
+
+
+@pytest.mark.parametrize("lang", sorted(LANGUAGES))
+def test_the_longest_card_description_still_fits(lang):
+    """A 32-character symbol and a name cut at NAME_MAX, in either language."""
+    who = "X" * 32 + " · " + "N" * seo.NAME_MAX
+    assert len(translate("ticker.seo_description", lang, name=who)) <= 160
+
+
+def test_a_long_or_hostile_name_is_cut_and_escaped():
+    title, tags = seo.ticker_head("X", BASE, "en", name="<b>" + "a" * 80)
+    assert "<b>" not in tags and "&lt;b&gt;" in tags
+    assert len(title) <= len("X · ") + seo.NAME_MAX + len(" · TopStocks")
+
+
+@pytest.mark.parametrize(
+    ("raw", "want"),
+    [
+        ("nvda", "NVDA"),
+        (" btc-eur ", "BTC-EUR"),
+        ("BRK.B", "BRK.B"),
+        ("^GSPC", "^GSPC"),
+        ("EURUSD=X", "EURUSD=X"),
+        ("", None),
+        (None, None),
+        ("<script>", None),
+        ("NV DA", None),
+        ("A" * 33, None),
+    ],
+)
+def test_only_a_symbol_gets_a_card(raw, want):
+    assert seo.ticker_symbol(raw) == want

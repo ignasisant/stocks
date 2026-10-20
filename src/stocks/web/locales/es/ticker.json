@@ -1,5 +1,6 @@
 {
   "ticker.pick_prompt": "Busca o elige un valor en la lista lateral.",
+  "ticker.seo_description": "{name}: precio, fundamentales, operaciones de insiders y la lectura de la IA.",
   "ticker.not_found": "No existe ningún valor {ticker}. Revisa el símbolo y vuelve a buscar.",
   "ticker.ev_dividends": "Dividendos",
   "ticker.ev_dividend_one": "Dividendo",

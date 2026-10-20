@@ -26,6 +26,7 @@ Three things are worth knowing about the choices below.
 from __future__ import annotations
 
 import json
+import re
 
 from stocks import navigation
 from stocks.web import landing
@@ -302,6 +303,66 @@ def head(
         + json_ld(lang, base_url, jur)
         + extra_styles
     )
+
+
+# A symbol as the share card accepts it: Yahoo's alphabet, upper-cased, the
+# length the ticker API itself allows. Anything else is not a ticker and gets
+# no card — the query string is the one thing on this page a stranger writes.
+SYMBOL_RE = re.compile(r"^[A-Z0-9^][A-Z0-9.\-=^]{0,31}$")
+TICKER_PATH = "/ticker"
+# How much of a company name the card carries: a long fund name past this
+# would push the symbol out of the ~60 characters a preview shows.
+NAME_MAX = 48
+
+
+def ticker_symbol(raw: str | None) -> str | None:
+    """`raw` as the symbol of a share card, or None when it is not one."""
+    symbol = (raw or "").strip().upper()
+    return symbol if SYMBOL_RE.match(symbol) else None
+
+
+def ticker_head(
+    symbol: str, base_url: str, lang: str, *, name: str | None = None
+) -> tuple[str, str]:
+    """(title, meta tags) for a ticker page's link preview.
+
+    The app shell is one document for every page and the ticker page is the one
+    a reader pastes into a chat: without these the unfurl is "TopStocks" and
+    nothing else, whatever the link was about. Open Graph and Twitter only —
+    the shell stays noindex, this is for the preview, not the index.
+
+    `name` is the company name when it is already known offline (the profiles
+    memo); the card never fetches one, since it is written on every shell
+    request and a lookup would put Yahoo on the page's critical path.
+    """
+    lang = lang if lang in LANGUAGES else DEFAULT_LANG
+    name = " ".join((name or "").split())[:NAME_MAX].strip()
+    who = f"{symbol} · {name}" if name else symbol
+    title = f"{who} · {SITE_NAME}"
+    description = translate("ticker.seo_description", lang, name=who)
+    canonical = _abs(base_url, f"{TICKER_PATH}?ticker={symbol}")
+    image = _abs(base_url, OG_IMAGE)
+    image_alt = translate("landing.seo_image_alt", lang)
+    tags = (
+        _meta("description", description)
+        + _prop("og:type", "website")
+        + _prop("og:site_name", SITE_NAME)
+        + _prop("og:locale", _OG_LOCALE.get(lang, "en_US"))
+        + _prop("og:title", title)
+        + _prop("og:description", description)
+        + _prop("og:url", canonical)
+        + _prop("og:image", image)
+        + _prop("og:image:type", OG_IMAGE_TYPE)
+        + _prop("og:image:width", OG_IMAGE_W)
+        + _prop("og:image:height", OG_IMAGE_H)
+        + _prop("og:image:alt", image_alt)
+        + _meta("twitter:card", "summary_large_image")
+        + _meta("twitter:title", title)
+        + _meta("twitter:description", description)
+        + _meta("twitter:image", image)
+        + _meta("twitter:image:alt", image_alt)
+    )
+    return title, tags
 
 
 # Crawlers that collect text to train or ground models rather than to send
