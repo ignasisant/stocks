@@ -75,7 +75,9 @@ describe("freshness", () => {
 
   it("hands the stale line's press to every screen listening", () => {
     let heard = 0;
-    const stop = onRetryStale(() => (heard += 1));
+    const stop = onRetryStale(() => {
+      heard += 1;
+    });
     retryStale();
     stop();
     retryStale();

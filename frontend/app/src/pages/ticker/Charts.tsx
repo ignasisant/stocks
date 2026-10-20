@@ -26,6 +26,7 @@ import {
 } from "./format";
 import {
   Chart,
+  FillMark,
   Legend,
   Tooltip,
   YGrid,
@@ -711,7 +712,7 @@ export function ValuationChart({
                   : "ticker.pe_fill_sell",
                 { qty: num(fill.trade.quantity, 4) },
               ),
-              swatch: colors.textPrimary,
+              swatch: fill.trade.action === "buy" ? colors.candleUp : colors.candleDown,
             })),
         ];
   const xOf = (index: number) => box.left + (index + 0.5) * band_;
@@ -835,26 +836,20 @@ export function ValuationChart({
                   strokeWidth={1.8}
                 />
               ))}
-              {/* The reader's fills, drawn as on the price chart: triangles in
-                the primary text colour, buys up and sells down. */}
-              {fills.map((fill, at) => {
-                const cx = xOf(fill.index);
-                const cy = y(kept[fill.index]?.value as number);
-                const size = 6;
-                const path =
-                  fill.trade.action === "buy"
-                    ? `M ${cx} ${cy - size} L ${cx + size} ${cy + size} L ${cx - size} ${cy + size} Z`
-                    : `M ${cx} ${cy + size} L ${cx + size} ${cy - size} L ${cx - size} ${cy - size} Z`;
-                return (
-                  <path
-                    key={`f-${fill.index}-${at}`}
-                    d={path}
-                    fill={colors.textPrimary}
-                    stroke={colors.surfacePage}
-                    strokeWidth={1.5}
-                  />
-                );
-              })}
+              {/* The reader's fills, drawn as on the price chart. */}
+              {fills.map((fill, at) => (
+                <FillMark
+                  key={`f-${fill.index}-${at}`}
+                  x={xOf(fill.index)}
+                  y={y(kept[fill.index]?.value as number)}
+                  buy={fill.trade.action === "buy"}
+                  color={
+                    fill.trade.action === "buy" ? colors.candleUp : colors.candleDown
+                  }
+                  ring={colors.surfacePage}
+                  active={hover === fill.index}
+                />
+              ))}
               {hover !== null ? (
                 <line
                   className="tk-cross"
@@ -902,7 +897,7 @@ export function ValuationChart({
                     ? [
                         {
                           label: t("ticker.my_buys"),
-                          color: colors.textPrimary,
+                          color: colors.candleUp,
                           mark: "up" as const,
                         },
                       ]
@@ -911,7 +906,7 @@ export function ValuationChart({
                     ? [
                         {
                           label: t("ticker.my_sells"),
-                          color: colors.textPrimary,
+                          color: colors.candleDown,
                           mark: "down" as const,
                         },
                       ]

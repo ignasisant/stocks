@@ -19,6 +19,8 @@ Eleven sectors map to SPDR ETFs: XLK, XLF, XLE, XLV, XLY, XLP, XLI, XLU, XLB, XL
 The first podium ranks cohort members on 18 KPIs by percentile within the cohort, so it names the best three of these, not the best anywhere.
 - Lower is better (8): trailing P/E, forward P/E, PEG, P/B, EV/EBITDA, EV/sales, net debt/EBITDA, share dilution.
 - Higher is better (10): ROE, ROIC, gross margin, operating margin, net margin, FCF yield, cash conversion, revenue CAGR, net income CAGR, FCF CAGR.
+- Each company is ranked only on the KPIs its kind of business is judged by, as in Sell or add: banks, insurers and asset managers skip EV/EBITDA, EV/sales, margins, FCF, ROIC, net debt and PEG; REITs and regulated utilities skip FCF, ROIC, gross margin, EV/sales and PEG.
+- A multiple at or under zero (EV/EBITDA on a loss, P/B on negative equity) does not count; a loss-making P/E ranks last. PEG is the app's own P/E per sustained sales growth per share, not Yahoo's.
 - A KPI counts only when at least 2 names report it, and a company needs at least 5 ranked KPIs to be scored. Its score is the average of its normalised ranks (best 1, worst 0, ties share).
 - With fewer than 3 qualifying companies there is no podium.
 - It measures neither momentum nor analyst expectations.

@@ -65,3 +65,27 @@ def test_related_tickers_network_failure(monkeypatch):
 
     monkeypatch.setattr(related, "get_json", boom)
     assert related_tickers("NVDA") == []
+
+
+def test_the_cohort_rivals_come_before_the_co_viewed(monkeypatch):
+    from stocks.analysis import sectors
+    from stocks.api import loaders
+
+    scan = sectors.SectorScan(
+        "Technology", "2026-10-17", ("NVDA", "AMD", "AVGO"),
+        (
+            {"ticker": "NVDA", "industry": "Semiconductors"},
+            {"ticker": "AMD", "industry": "Semiconductors"},
+            {"ticker": "AVGO", "industry": "Semiconductors"},
+        ),
+        {}, (),
+    )
+    monkeypatch.setattr(loaders, "sector_scans", lambda: {"Technology": scan})
+    monkeypatch.setattr(loaders, "sec_title", lambda t: t)
+    monkeypatch.setattr(related, "get_json", lambda url: {
+        "finance": {"result": [{"recommendedSymbols": [
+            {"symbol": "TSLA"}, {"symbol": "AMD"},
+        ]}]}
+    })
+    loaders.related.cache_clear()
+    assert loaders.related("NVDA") == ("AMD", "AVGO", "TSLA")

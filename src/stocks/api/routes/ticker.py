@@ -18,18 +18,26 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Path, Query, status
 
 from stocks import obs
-from stocks.analysis import crypto_market
-from stocks.analysis.compare import INDICES, OFFERED_PEERS, day_index, rates_into
+from stocks.analysis import crypto_market, review
+from stocks.analysis.compare import (
+    INDICES,
+    OFFERED_PEERS,
+    OPENING_PEERS,
+    day_index,
+    rates_into,
+)
 from stocks.analysis.compare import MAX_OTHERS as MAX_COMPARED
 from stocks.analysis.compare import RANGES as COMPARE_RANGES
 from stocks.analysis.compare import lines as compare_lines
 from stocks.analysis.fundamentals import (
-    FUNDAMENTAL_TILES,
     KPI_SOURCES,
     METRIC_ORDER,
     annual_financials,
     compute_metrics,
     format_value,
+    fundamental_tiles,
+    lens_verdict,
+    peer_band,
     quarterly_eps,
     verdict,
 )
@@ -77,6 +85,7 @@ from stocks.api.schemas import (
     MoatPillar,
     Peer,
     Peers,
+    PeerScope,
     PriceEvents,
     Profile,
     ProjectedRow,
@@ -208,7 +217,8 @@ def compare(
             alias="with",
             description=(
                 "Comma-separated symbols to draw beside this one, at most "
-                f"{MAX_COMPARED}. Omitted: {', '.join(INDICES)}. Empty: none."
+                f"{MAX_COMPARED}. Omitted: {', '.join(INDICES)}, the sector's ETF "
+                f"and {OPENING_PEERS} related names. Empty: none."
             ),
         ),
     ] = None,
@@ -229,27 +239,37 @@ def compare(
         )
     ticker = symbol.strip().upper()
     ccy = reporting_currency(account, base)
-    asked = _compared(ticker, others)
-    names = [ticker, *asked]
-    with ThreadPoolExecutor(max_workers=min(8, len(names) + 3)) as pool:
+    with ThreadPoolExecutor(max_workers=MAX_COMPARED + 4) as pool:
         shown = pool.submit(carried(loaders.price_bars), ticker, label)
-        closes = {
-            name: pool.submit(carried(_closes_or_none), name, label) for name in names
-        }
-        quoted = pool.submit(carried(listing_currencies), names)
         sector = pool.submit(carried(_sector_of), ticker)
         related = pool.submit(carried(_related_or_none), ticker)
+        # An explicit list starts downloading at once; the opening one waits
+        # on the sector and the rivals it is made of.
+        asked = _compared(ticker, others) if others is not None else []
+        closes = {
+            name: pool.submit(carried(_closes_or_none), name, label)
+            for name in [ticker, *asked]
+        }
+        own_sector = sector.result()
+        peers = related.result()
+        etf = SECTOR_ETFS.get(own_sector or "")
+        shares = [peer for peer in peers if peer != ticker and not is_crypto(peer)]
+        if others is None:
+            opening = [*INDICES, *([etf] if etf else []), *shares[:OPENING_PEERS]]
+            asked = _compared(ticker, ",".join(opening))
+            closes |= {
+                name: pool.submit(carried(_closes_or_none), name, label)
+                for name in asked
+            }
+        names = [ticker, *asked]
+        quoted = pool.submit(carried(listing_currencies), names)
         df = shown.result()
         got = {name: future.result() for name, future in closes.items()}
         currencies = quoted.result()
-        own_sector = sector.result()
-        peers = related.result()
 
-    etf = SECTOR_ETFS.get(own_sector or "")
     offered = [CompareOffer(ticker=index, role="index") for index in INDICES]
     if etf and etf != ticker:
         offered.append(CompareOffer(ticker=etf, role="sector", sector=own_sector))
-    shares = [peer for peer in peers if peer != ticker and not is_crypto(peer)]
     offered += [
         CompareOffer(ticker=peer, name=loaders.sec_title(peer) or "", role="peer")
         for peer in shares[:OFFERED_PEERS]
@@ -298,11 +318,8 @@ def compare(
 
 def _compared(ticker: str, asked: str | None) -> list[str]:
     """The names `?with=` asks for, cleaned: upper-case, once each, never the
-    subject, at most `MAX_COMPARED`. Omitted means the indices."""
-    if asked is None:
-        raw: list[str] = list(INDICES)
-    else:
-        raw = [part.strip().upper() for part in asked.split(",")]
+    subject, at most `MAX_COMPARED`."""
+    raw = [part.strip().upper() for part in (asked or "").split(",")]
     out: list[str] = []
     for name in raw:
         if name and name != ticker and name not in out and len(name) <= 32:
@@ -701,15 +718,29 @@ def metrics(symbol: Symbol, base: Base = None) -> Metrics:
     # cap in their own money — is asked for explicitly with `?base=`.
     ccy = _base_currency(base)
     cap, rate, as_of = _market_cap_in(computed, ccy) if ccy else (None, None, None)
+    equity = str(computed.get("quote_type") or "EQUITY").upper() == "EQUITY"
+    view = review.lens(computed)
+    tiles = fundamental_tiles(view) if equity else fundamental_tiles(review.STANDARD)
+    keys = list(dict.fromkeys([*METRIC_ORDER, *(tile.key for tile in tiles)]))
+    scope, band = (
+        _peer_band(ticker, computed, raw, [tile.key for tile in tiles])
+        if equity
+        else (None, {})
+    )
+    normal = review.peak_pe(computed) if equity else None
     return Metrics(
         ticker=ticker,
         currency=cast(str | None, computed.get("currency")),
         quote_type=cast(str | None, computed.get("quote_type")),
-        kpis=[_kpi(key, computed.get(key)) for key in METRIC_ORDER],
+        kpis=[_kpi(key, computed.get(key), computed, band.get(key)) for key in keys],
         grid=[
             MetricTile(key=tile.key, label_key=tile.label, help_key=tile.help)
-            for tile in FUNDAMENTAL_TILES
+            for tile in tiles
         ],
+        lens=view,
+        peers=scope,
+        normal_pe=normal,
+        cautions=review.cautions(computed) if equity else [],
         market_cap_base=cap,
         market_cap_base_formatted=(
             format_value("market_cap", cap) if cap is not None else None
@@ -718,6 +749,34 @@ def metrics(symbol: Symbol, base: Base = None) -> Metrics:
         fx_as_of=as_of,
         base=ccy,
     )
+
+
+def _peer_band(
+    ticker: str, computed: dict, raw, keys: list[str]
+) -> tuple[PeerScope | None, dict[str, tuple[float, float, float]]]:
+    """The rivals' P25/median/P75 per KPI, off the nightly sector scan.
+
+    The scan, never a fetch: forty rivals' fundamentals would be the slowest
+    thing on the page, and a night-old middle is the same middle. Nothing on
+    any failure — a reference line must never be what fails the grid.
+    """
+    from stocks.analysis.sectors import peer_rows
+
+    try:
+        industry = cast(str | None, computed.get("industry"))
+        sector = raw.info.get("sector")
+        if not industry and not sector:
+            return None, {}
+        found = peer_rows(loaders.sector_scans(), ticker, industry, sector)
+    except Exception as exc:
+        obs.warn("api.peer_band_failed", ticker=ticker,
+                 error_type=type(exc).__name__, error=str(exc)[:300])
+        return None, {}
+    if found is None:
+        return None, {}
+    kind, name, rows = found
+    scope = PeerScope(kind=kind, name=name, count=len(rows))
+    return scope, peer_band([computed, *rows], keys)
 
 
 def _base_currency(asked: str | None) -> str | None:
@@ -758,14 +817,20 @@ def _market_cap_in(
     return float(cap) * rate, rate, as_of
 
 
-def _kpi(key: str, value) -> Kpi:
+def _kpi(
+    key: str,
+    value,
+    metrics: dict,
+    band: tuple[float, float, float] | None = None,
+) -> Kpi:
     """One KPI row, with its band's label AND the tone that band carries.
 
     Both, because the labels are a growing set — "net cash", "buybacks",
     "heavy dilution" — and a client colouring by label shows every band it has
-    not heard of as neutral.
+    not heard of as neutral. Banded on the company's own lens
+    (`lens_verdict`), and with its rivals' middle when the scan has one.
     """
-    banded = verdict(key, value)
+    banded = lens_verdict(key, value, metrics)
     return Kpi(
         key=key,
         label=KPI_SOURCES[key].label,
@@ -776,6 +841,7 @@ def _kpi(key: str, value) -> Kpi:
         verdict=banded[0] if banded else None,
         verdict_tone=banded[1] if banded else None,
         desc=KPI_SOURCES[key].desc,
+        peer_band=list(band) if band else None,
     )
 
 
@@ -958,14 +1024,19 @@ def profile(symbol: Symbol, account: Account) -> Profile:
         logo = pool.submit(loaders.logo, ticker)
         kind = pool.submit(loaders.asset_kind, resolved)
         asset = kind.result()
+        known = name.result() or ""
+        # After the kind, not beside it: both read the same `.info`, and the
+        # kind has memoized it by now.
+        missing = loaders.missing(ticker, str(account.db), known)
         return Profile(
             ticker=ticker,
             symbol=resolved,
-            name=name.result() or "",
+            name=known,
             logo=logo.result(),
             is_crypto=asset == CRYPTO or is_crypto(resolved),
             is_fund=asset in FUND_KINDS,
-            asset=asset,
+            asset=None if missing else asset,
+            found=not missing,
         )
 
 

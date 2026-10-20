@@ -8,14 +8,17 @@
  * about what "best match" means.
  *
  * The last tier is a network round-trip (worldwide symbols, up to six seconds
- * on a cold query), which is why the panel opens with a "searching" row rather
- * than waiting for the answer: an inert field for six seconds reads as broken.
+ * on a query no account has typed before), so each keystroke asks twice: the
+ * local tiers alone, drawn in milliseconds, and the full answer that replaces
+ * them. A "searching" line stays under the rows until it lands — an inert
+ * field for six seconds reads as broken.
  */
 
 import { useEffect, useId, useRef, useState } from "react";
 
 import { get, send } from "./api";
 import { assetLabel } from "./assets";
+import { findTickers } from "./findTickers";
 import { useLang, useT } from "./i18n";
 import { BASE, push } from "./router";
 import { useTickerProfile } from "./tickers";
@@ -38,7 +41,6 @@ type Match = {
   asset?: string | null;
 };
 
-type Results = { query: string; matches: Match[] };
 type Recents = { tickers: string[]; names: Record<string, string> };
 type Quote = { ticker: string; price: number | null; pct: number | null };
 type Quotes = { quotes: Quote[] };
@@ -129,18 +131,31 @@ export function Search({
     setBusy(true);
     let live = true;
     const timer = window.setTimeout(() => {
-      get<Results>("/search", { q: term })
+      let full = false;
+      let local: Match[] | null = null;
+      findTickers<Match>(term)
         .then((results) => {
+          full = true;
           // A reply for a query the reader has already typed past is not an
           // answer any more — it would overwrite the newer one it raced.
           if (live) setMatches(results.matches);
         })
         .catch(() => {
-          if (live) setMatches([]);
+          full = true;
+          if (live) setMatches(local ?? []);
         })
         .finally(() => {
           if (live) setBusy(false);
         });
+      // Asked second so that a kept full answer lands first and this one is
+      // ignored. Without the "analyze" offer: the worldwide rows still on
+      // their way may be the very listing it would send the reader past.
+      findTickers<Match>(term, { world: false })
+        .then((results) => {
+          local = results.matches.filter((match) => match.kind !== "analyze");
+          if (live && !full) setMatches(local);
+        })
+        .catch(() => undefined);
     }, DEBOUNCE_MS);
     return () => {
       live = false;
@@ -363,51 +378,60 @@ function Found({
     else runs.push({ kind: match.kind, start: index, rows: [match] });
   });
   return (
-    <div role="listbox" id={listId} aria-label={t("widgets.search_placeholder")}>
-      {runs.map((run) => {
-        const caption = CAPTIONS[run.kind];
-        const body = run.rows.map((match, offset) => (
-          <Row
-            key={`${match.kind}-${match.ticker}`}
-            ticker={match.ticker}
-            name={match.name}
-            mark={match.mark}
-            exchange={match.exchange}
-            asset={match.asset}
-            onPick={onPick}
-            id={optionId(run.start + offset)}
-            active={active === run.start + offset}
-          />
-        ));
-        return caption ? (
-          <div role="group" aria-label={t(caption)} key={run.start}>
-            <p className="ag-search-caption" aria-hidden="true">
-              {t(caption)}
-            </p>
-            {body}
-          </div>
-        ) : (
-          <div role="presentation" key={run.start}>
-            {body}
-          </div>
-        );
-      })}
-      {analyze ? (
-        <button
-          type="button"
-          role="option"
-          id={optionId(rows.length)}
-          aria-selected={active === rows.length}
-          tabIndex={-1}
-          className="ag-search-analyze"
-          onClick={() => onPick(analyze.ticker)}
-        >
-          {/* The catalog string is "Analyze **{q}**" — the emphasis is markup
+    <>
+      <div role="listbox" id={listId} aria-label={t("widgets.search_placeholder")}>
+        {runs.map((run) => {
+          const caption = CAPTIONS[run.kind];
+          const body = run.rows.map((match, offset) => (
+            <Row
+              key={`${match.kind}-${match.ticker}`}
+              ticker={match.ticker}
+              name={match.name}
+              mark={match.mark}
+              exchange={match.exchange}
+              asset={match.asset}
+              onPick={onPick}
+              id={optionId(run.start + offset)}
+              active={active === run.start + offset}
+            />
+          ));
+          return caption ? (
+            <div role="group" aria-label={t(caption)} key={run.start}>
+              <p className="ag-search-caption" aria-hidden="true">
+                {t(caption)}
+              </p>
+              {body}
+            </div>
+          ) : (
+            <div role="presentation" key={run.start}>
+              {body}
+            </div>
+          );
+        })}
+        {analyze ? (
+          <button
+            type="button"
+            role="option"
+            id={optionId(rows.length)}
+            aria-selected={active === rows.length}
+            tabIndex={-1}
+            className="ag-search-analyze"
+            onClick={() => onPick(analyze.ticker)}
+          >
+            {/* The catalog string is "Analyze **{q}**" — the emphasis is markup
               this panel does not render, so it is stripped rather than shown. */}
-          {t("widgets.analyze", { q: term.toUpperCase() }).replaceAll("**", "")}
-        </button>
+            {t("widgets.analyze", { q: term.toUpperCase() }).replaceAll("**", "")}
+          </button>
+        ) : null}
+      </div>
+      {/* The local rows are drawn; the worldwide ones are still coming. Outside
+        the listbox, which may hold only options and groups. */}
+      {busy ? (
+        <p className="ag-search-caption" role="status">
+          {t("widgets.searching")}
+        </p>
       ) : null}
-    </div>
+    </>
   );
 }
 

@@ -19,6 +19,7 @@ day move is only worth having live.
 
 from __future__ import annotations
 
+import hashlib
 import threading
 import time
 from datetime import date
@@ -51,6 +52,8 @@ from stocks.api.cache import (
     ttl_cache,
     write_entry,
 )
+from stocks.config import DATA_DIR
+from stocks.data.shared_memo import SharedMemo
 from stocks.frames import midnights
 from stocks.portfolio import fees, transfers
 from stocks.portfolio.custody import Custody, by_position
@@ -384,9 +387,7 @@ def _stored_base(db: str) -> tuple | None:
     return held
 
 
-def _frames_base(
-    db: str, since: str
-) -> tuple[dict[str, pd.DataFrame], float] | None:
+def _frames_base(db: str, since: str) -> tuple[dict[str, pd.DataFrame], float] | None:
     """(the book's previous frames, when they were rebased), when they reach
     back to `since` (ISO). A base written before rebases were stamped reads
     as never rebased."""
@@ -786,8 +787,7 @@ def allocation_weights(
     if table.empty or "value" not in table:
         return dict(fallback)
     amounts = {
-        str(ticker): float(value)
-        for ticker, value in table["value"].dropna().items()
+        str(ticker): float(value) for ticker, value in table["value"].dropna().items()
     }
     parts = allocation_parts(amounts, meta, key)
     sums = {label: sum(held.values()) for label, held in parts.items()}
@@ -1029,15 +1029,26 @@ _METRICS_TTL = 4 * 3600.0
 _metrics_gate = threading.BoundedSemaphore(6)
 
 
-@ttl_cache(
-    _METRICS_TTL, max_entries=256, stale_s=20 * 3600.0, persist="review_metrics"
-)
+@ttl_cache(_METRICS_TTL, max_entries=256, stale_s=20 * 3600.0, persist="review_metrics")
 def review_metrics(ticker: str) -> dict:
     """`compute_metrics` over `fundamentals(ticker)`, memoized as the dict."""
     from stocks.analysis.fundamentals import compute_metrics
 
     with _metrics_gate:
         return compute_metrics(fundamentals(ticker))
+
+
+# Where each name's business stood at its last few filings, for the review
+# map's "then" point. A filing lands once a quarter at most, so a day is fresh
+# and a week still right; kept apart from `review_metrics` so the API's row
+# metrics stay today's.
+@ttl_cache(24 * 3600.0, max_entries=256, stale_s=7 * 86400.0, persist="review_history")
+def review_history(ticker: str) -> list[dict]:
+    """`filed_history` over `fundamentals(ticker)`: [{filed, then, base}]."""
+    from stocks.analysis.fundamentals import filed_history
+
+    with _metrics_gate:
+        return filed_history(fundamentals(ticker))
 
 
 @ttl_cache(_EVENTS_TTL, max_entries=32, persist="estimates")
@@ -1330,7 +1341,9 @@ def policy_rate(currency: str) -> tuple[str, float, date] | None:
 # keystroke.
 
 _SEARCH_TTL = 86400.0
-_WORLD_TTL = 3600.0
+# Short and strict: the answers themselves live in WORLD_MEMO, and an empty
+# list from a throttled Yahoo must not stand in for a minute longer than this.
+_WORLD_TTL = 60.0
 
 
 @ttl_cache(_LEDGER_TTL, max_entries=32)
@@ -1369,17 +1382,50 @@ def sec_matches(query: str) -> list[tuple[str, str]]:
         return []
 
 
-@ttl_cache(_WORLD_TTL, max_entries=128)
+# What Yahoo lists for a query, shared by every account and kept across boots:
+# a symbol, once listed, stays listed, and the same few hundred queries ("nvda",
+# "asml") are what everybody types. A month an answer — new listings do appear.
+# A few MB of JSON at the cap.
+#
+# The bucket must not become a log of what people type, so the key is a hash
+# of the query, an empty answer (a typo, a name, whatever was in the field)
+# is never kept, and an ISIN is never asked through it: an ISIN somebody types
+# is one they hold, which is the fingerprint `isin_symbols.json` stays local
+# to avoid.
+WORLD_MEMO = SharedMemo(DATA_DIR / "symbol_search.json", ttl=30 * 86400.0, cap=5000)
+
+
+def _world_key(query: str) -> str:
+    return hashlib.sha256(query.encode("utf-8")).hexdigest()[:24]
+
+
+@ttl_cache(_WORLD_TTL, max_entries=128, stale_s=0.0)
 def world_matches(query: str) -> list[tuple[str, str, str]]:
     """Worldwide symbol search (Yahoo) — the only search tier that is a network
-    round-trip, hence an hour per query and a hard cap inside `search_symbols`.
-    """
-    from stocks.data.symbols import search_symbols
+    round-trip, so its answers live in `WORLD_MEMO` for every account; this
+    process-wide memo in front is what makes a burst of keystrokes one call.
 
+    Only a listing is kept: an empty list from a throttled host is "could not
+    ask", and a real "nothing" is a typed string nobody else needs to read.
+    """
+    from stocks.data import funds, symbols
+    from stocks.fuzzy import MIN_QUERY
+
+    key = query.strip().upper()
+    if len(key) < MIN_QUERY:
+        return []
+    shared = not symbols.is_isin(key)
+    if shared and (hit := WORLD_MEMO.get(_world_key(key))) is not None:
+        for symbol, _, _, quote_type in hit:
+            funds.remember(symbol, quote_type)  # the row's label, as on a miss
+        return [(s, n, x) for s, n, x, _ in hit]
     try:
-        return search_symbols(query, limit=6)
+        rows = symbols.search_rows(key, limit=6)
     except Exception:
         return []
+    if shared and rows:
+        WORLD_MEMO.put(_world_key(key), rows)
+    return [(s, n, x) for s, n, x, _ in rows]
 
 
 @ttl_cache(_SEARCH_TTL, max_entries=128)
@@ -1406,17 +1452,34 @@ def fund_matches(query: str) -> list[tuple[str, str]]:
 
 @ttl_cache(86400.0, max_entries=128)
 def related(ticker: str) -> tuple[str, ...]:
-    """Symbols Yahoo considers related — the comps picker's suggestions.
+    """Rivals for the comps picker and Compare: the sector screen's cohort in
+    the same industry first, then the names Yahoo says people also watch.
 
-    A day's ttl and empty on any failure: a suggestion nobody asked for must
-    never be the thing that fails the page.
+    The cohort's names are double-checked (`analysis.sectors`); Yahoo's list
+    is what readers co-view, which mixes in funds, other industries and the
+    stock of the month. A day's ttl and empty on any failure: a suggestion
+    nobody asked for must never be the thing that fails the page.
     """
+    from stocks.analysis.sectors import industry_rivals
     from stocks.data.related import related_tickers
 
     try:
-        return tuple(related_tickers(ticker))
+        yahoo = related_tickers(ticker)
     except Exception:
-        return ()
+        yahoo = []
+    try:
+        scans = sector_scans()
+        rivals = industry_rivals(scans, ticker)
+        if not rivals and scans:
+            from stocks.data.fetch import info
+
+            rivals = industry_rivals(scans, ticker, info(ticker).get("industry"))
+    except Exception:
+        rivals = []
+    # Another class of the same company (GOOG beside GOOGL) is no rival.
+    own = sec_title(ticker)
+    rivals = [r for r in rivals if not own or sec_title(r) != own]
+    return tuple(dict.fromkeys([*rivals, *yahoo]))
 
 
 # ------------------------------------------------------------------- identity
@@ -1430,6 +1493,51 @@ _IDENTITY_TTL = 86400.0
 def display_symbol(ticker: str) -> str:
     """The Yahoo symbol a stored broker label resolves to."""
     return identity.yahoo_symbol(ticker)
+
+
+def listed(ticker: str) -> bool | None:
+    """Whether Yahoo quotes `ticker` at all — None when it could not say.
+
+    False only on two agreeing answers: a profile that came back cleanly with
+    no quoteType (Yahoo's 404 for a symbol it has never heard of) and no year
+    of bars. A throttle raises instead, and that is None: a page must never
+    call a real company missing because the feed was busy. Both reads are the
+    ones the page makes anyway, so asking costs nothing extra.
+    """
+    from stocks.data import asset_kind as kinds
+    from stocks.data import fetch
+    from stocks.data.crypto import is_crypto
+    from stocks.data.funds import quote_type
+
+    if is_crypto(ticker) or kinds.known(ticker) or quote_type(ticker, fetch=False):
+        return True
+    if fetch.retired(ticker):
+        return None
+    try:
+        if fetch.info(ticker).get("quoteType"):
+            return True
+        return not price_bars(ticker, "1y").empty
+    except Exception:
+        return None
+
+
+def missing(ticker: str, db: str, name: str | None) -> bool:
+    """Whether `ticker` is no symbol at all, for this account.
+
+    `name` is `company_name`'s answer, which the caller already holds. A name
+    from any source (the account's own list first), or a row in the book,
+    makes it somebody's: a delisted line held at cost is still a page worth
+    opening. Only then is Yahoo asked, and only its sure "no" counts. The
+    ledger is read uncached: only a symbol nothing knows gets this far.
+    """
+    if name:
+        return False
+    if listed(display_symbol(ticker)) is not False:
+        return False
+    try:
+        return not any(t.ticker == ticker for t in all_transactions(Path(db)))
+    except Exception:
+        return False
 
 
 @ttl_cache(_IDENTITY_TTL, max_entries=512)
@@ -1455,9 +1563,7 @@ def logo(ticker: str) -> str | None:
 def mirrored_logo(ticker: str) -> str | None:
     """`logo`, from this host's mirror only — never a network call. Not
     memoized: a stat per row, and a miss must see the file once it lands."""
-    return identity.logo_src(
-        ticker, prefix="/" + identity.STATIC_PREFIX, fetch=False
-    )
+    return identity.logo_src(ticker, prefix="/" + identity.STATIC_PREFIX, fetch=False)
 
 
 @ttl_cache(_IDENTITY_TTL, max_entries=64)
@@ -1544,8 +1650,12 @@ def daily_closes(ticker: str, period: str = "max") -> pd.Series:
     try:
         df = _bars_download(ticker, period, "1d")
     except Exception as exc:
-        obs.warn("api.daily_closes_failed", ticker=ticker,
-                 error_type=type(exc).__name__, error=str(exc)[:300])
+        obs.warn(
+            "api.daily_closes_failed",
+            ticker=ticker,
+            error_type=type(exc).__name__,
+            error=str(exc)[:300],
+        )
         return pd.Series(dtype=float)
     if df is None or df.empty or "Close" not in df:
         return pd.Series(dtype=float)
@@ -1611,7 +1721,8 @@ def dividend_estimates(db: str, mtime: float, base: str = "EUR") -> tuple:
     forward = div.forward_income(txs, history)
     totals = div.forward_totals(forward, base=base)
     unrecorded = div.unrecorded_by_year(
-        div.by_year(txs, base=base, capital=True), estimated)
+        div.by_year(txs, base=base, capital=True), estimated
+    )
     return estimated, forward, totals, unrecorded
 
 

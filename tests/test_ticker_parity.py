@@ -125,13 +125,19 @@ def test_the_kpi_grid_names_strings_that_exist_in_both_languages():
     back to `KpiSource.label`, which is English — so this is the only thing
     standing between a new tile and a Spanish reader seeing "Net debt/EBITDA".
     """
-    from stocks.analysis.fundamentals import FUNDAMENTAL_TILES
+    from stocks.analysis.fundamentals import fundamental_tiles
+    from stocks.analysis.review import FINANCIAL, REAL_ESTATE, STANDARD, UTILITY
 
+    tiles = {
+        tile
+        for view in (STANDARD, FINANCIAL, REAL_ESTATE, UTILITY)
+        for tile in fundamental_tiles(view)
+    }
     for lang in ("en", "es"):
         strings = catalog(lang)
         missing = sorted(
             key
-            for tile in FUNDAMENTAL_TILES
+            for tile in tiles
             for key in (tile.label, tile.help)
             if key and key not in strings
         )

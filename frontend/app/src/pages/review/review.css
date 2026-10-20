@@ -199,12 +199,18 @@
   transition: opacity var(--ag-dur-press) var(--ag-ease-out);
 }
 
-.ag-rev-body[aria-busy="true"] {
+.ag-rev-body[aria-busy="true"],
+.ag-rev-plan-lines[aria-busy="true"] {
   opacity: 0.6;
 }
 
+.ag-rev-plan-lines {
+  transition: opacity var(--ag-dur-press) var(--ag-ease-out);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .ag-rev-body {
+  .ag-rev-body,
+  .ag-rev-plan-lines {
     transition: none;
   }
 }
@@ -920,6 +926,117 @@
   background: var(--ag-text-muted);
 }
 
+/* A trail's swatch: a short line from a hollow end, as on the map. */
+.ag-rev-key-trail {
+  width: 1.1rem;
+  height: 0;
+  border-radius: 0;
+  border: none;
+  border-top: 1.5px solid var(--ag-text-muted);
+  opacity: 0.7;
+}
+
+/* Where a dot sat the day the window opened, under every dot: faint until
+   its name is the one looked at. */
+.ag-rev-trail polyline {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-opacity: 0.45;
+}
+
+.ag-rev-trail circle {
+  fill: var(--ag-surface-card);
+  stroke-width: 1.25;
+  stroke-opacity: 0.7;
+}
+
+.ag-rev-trail-up polyline,
+.ag-rev-trail-up circle {
+  stroke: var(--ag-up);
+}
+
+.ag-rev-trail-down polyline,
+.ag-rev-trail-down circle {
+  stroke: var(--ag-down);
+}
+
+.ag-rev-trail-warn polyline,
+.ag-rev-trail-warn circle {
+  stroke: var(--ag-warn);
+}
+
+.ag-rev-trail-flat polyline,
+.ag-rev-trail-flat circle {
+  stroke: var(--ag-text-muted);
+}
+
+.ag-rev-trail-on polyline {
+  stroke-width: 2.5;
+  stroke-opacity: 1;
+}
+
+.ag-rev-trail-on circle {
+  stroke-opacity: 1;
+}
+
+.ag-rev-trail {
+  transition: opacity var(--ag-dur-press) var(--ag-ease-out);
+}
+
+.ag-rev-trail-dim {
+  opacity: 0.15;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ag-rev-trail {
+    transition: none;
+  }
+}
+
+/* A drift option's count: a figure beside the word, read as secondary. */
+.ag-rev-drift-n {
+  color: var(--ag-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Under the title, one row read left to right: where from, then the two
+   filters that window opens, each named above its track. Narrow, they wrap. */
+.ag-rev-map-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.ag-rev-map-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.ag-rev-map-group-label {
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-xs);
+  font-weight: 500;
+}
+
+/* The one name looked at: its path's steps named where they sit. */
+.ag-rev-trail-step {
+  fill: var(--ag-text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  paint-order: stroke;
+  stroke: var(--ag-surface-card);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
 /* ---------------------------------------------------------------- tables */
 
 .ag-rev-scroll {
@@ -1339,6 +1456,11 @@
 }
 
 /* The KPIs behind the scores, two to a row: label muted, value bold. */
+.ag-rev-tip-then {
+  color: var(--ag-text-secondary);
+  font-size: var(--ag-fs-2xs);
+}
+
 .ag-rev-tip-kpis {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

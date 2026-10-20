@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from stocks import accounts
@@ -298,6 +299,45 @@ def test_putting_replaces_the_whole_set(client, account, signed_in):
         json={"alerts": [{"type": "below", "price": 150}]},
     ).json()
     assert [rule["type"] for rule in payload["alerts"]] == ["below"]
+
+
+def test_the_same_rule_twice_is_kept_once(client, account, signed_in):
+    """Two alike rules would send the same message twice; 90 and 90.0 are the
+    same price."""
+    payload = signed_in.put(
+        "/v1/watchlist/AAPL/alerts",
+        json={"alerts": [
+            {"type": "above", "price": 90},
+            {"type": "above", "price": 90.0},
+            {"type": "above", "price": 95},
+            {"type": "rsi_below", "level": 30, "window": 14},
+            {"type": "rsi_below", "level": 30, "window": 7},
+        ]},
+    ).json()
+    assert [(r["type"], r["price"], r["window"]) for r in payload["alerts"]] == [
+        ("above", 90.0, None),
+        ("above", 95.0, None),
+        ("rsi_below", None, 14),
+        ("rsi_below", None, 7),
+    ]
+    entry = next(
+        i for i in yaml_load(account.watchlist.read_text())["watchlist"]
+        if i["ticker"] == "AAPL"
+    )
+    assert len(entry["alerts"]) == 4
+
+
+def test_a_repeat_already_on_file_reads_back_once(client, account, signed_in):
+    """Written before repeats were refused: one copy shows, so the reader's ×
+    on it clears it rather than revealing its twin."""
+    text = account.watchlist.read_text()
+    data = yaml_load(text)
+    for entry in data["watchlist"]:
+        if entry["ticker"] == "AAPL":
+            entry["alerts"] = [{"type": "above", "price": 90}] * 2
+    account.watchlist.write_text(yaml.safe_dump(data))
+    payload = client.get("/v1/watchlist/AAPL/alerts", params=WHO, headers=AUTH).json()
+    assert len(payload["alerts"]) == 1
 
 
 def test_an_empty_set_clears_the_rules(client, account, signed_in):

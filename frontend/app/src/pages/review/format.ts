@@ -75,6 +75,8 @@ export const SHOWN = [
   "pe_ttm",
   "pb",
   "roe",
+  "ptbv",
+  "rotce",
   "dividend_yield",
   "payout_ratio",
 ] as const;
@@ -110,6 +112,8 @@ export const OWN_LABEL = new Set<string>([
   "runway_years",
   "dividend_yield",
   "payout_ratio",
+  "ptbv",
+  "rotce",
 ]);
 
 /** The KPIs a row carries, each in its own unit. */
@@ -117,6 +121,7 @@ const UNITS: Record<string, "pct" | "x" | "score" | "years"> = {
   pe_fwd: "x",
   pe_ttm: "x",
   pb: "x",
+  ptbv: "x",
   growth_pe: "x",
   ev_ebitda: "x",
   ev_sales: "x",
@@ -131,6 +136,7 @@ const UNITS: Record<string, "pct" | "x" | "score" | "years"> = {
   revenue_growth: "pct",
   fcf_margin: "pct",
   roe: "pct",
+  rotce: "pct",
   dividend_yield: "pct",
   payout_ratio: "pct",
   moat: "score",

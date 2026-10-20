@@ -40,6 +40,7 @@ import { Skeleton } from "../../shell/Layout";
 import {
   Chart,
   EndLabels,
+  FillMark,
   Legend,
   Tooltip,
   YGrid,
@@ -70,8 +71,8 @@ const LABEL_SLOT = 120;
 /** Fewer bars than this in a drag is a mis-click, not a window somebody picked. */
 const MIN_SPAN = 3;
 
-/** How far from a fill's triangle, in px, the pointer still reads that fill. */
-const SNAP = 8;
+/** How far from a fill's disc, in px, the pointer still reads that fill. */
+const SNAP = 10;
 
 /**
  * Set once the reader has measured between two dates: the hint under the chart
@@ -399,8 +400,8 @@ export function PriceChart({
   const indexAt = (x: number) =>
     Math.max(from, Math.min(to, from + Math.floor((x - box.left) / band)));
 
-  // A fill is a 12px triangle over a bar a pixel or two wide: pointing at the
-  // triangle has to read the fill, not whichever bar is under its edge.
+  // A fill is a 16px disc over a bar a pixel or two wide: pointing at the
+  // disc has to read the fill, not whichever bar is under its edge.
   const markerAt = (x: number) => {
     let best: number | null = null;
     for (const fill of fills) {
@@ -469,13 +470,13 @@ export function PriceChart({
     { label: t("ticker.price"), color: candles ? colors.candleUp : lineColor },
     ...present.map(([key, color, name]) => ({ key, label: name, color })),
     ...(fills.some((fill) => fill.trade.action === "buy")
-      ? [{ label: t("ticker.my_buys"), color: colors.textPrimary, mark: "up" as const }]
+      ? [{ label: t("ticker.my_buys"), color: colors.candleUp, mark: "up" as const }]
       : []),
     ...(fills.some((fill) => fill.trade.action === "sell")
       ? [
           {
             label: t("ticker.my_sells"),
-            color: colors.textPrimary,
+            color: colors.candleDown,
             mark: "down" as const,
           },
         ]
@@ -587,7 +588,7 @@ export function PriceChart({
           {
             last: lastClose,
             avgCost,
-            swatch: colors.textPrimary,
+            swatch: fill.trade.action === "buy" ? colors.candleUp : colors.candleDown,
           },
           t,
         ),
@@ -886,31 +887,24 @@ export function PriceChart({
             body is a line that is not there. */}
           {candles ? averages : null}
 
-          {/* The reader's own fills: 12px triangles in the primary text
-            colour, buys pointing up and sells down, outlined in the canvas
-            colour so they read against a line or candles of either sign. The
-            direction tells them apart: a red sell would vanish into a falling
-            line. */}
+          {/* The reader's own fills, drawn last in the plot so nothing
+            covers them: what they bought and sold is what this chart is
+            read for, above any average. */}
           {fills
             .filter((fill) => fill.index >= from && fill.index <= to)
-            .map((fill, at) => {
-              const cx = xOf(fill.index);
-              const cy = y(fill.trade.price);
-              const buy = fill.trade.action === "buy";
-              const size = 6;
-              const path = buy
-                ? `M ${cx} ${cy - size} L ${cx + size} ${cy + size} L ${cx - size} ${cy + size} Z`
-                : `M ${cx} ${cy + size} L ${cx + size} ${cy - size} L ${cx - size} ${cy - size} Z`;
-              return (
-                <path
-                  key={`f-${fill.index}-${at}`}
-                  d={path}
-                  fill={colors.textPrimary}
-                  stroke={colors.surfacePage}
-                  strokeWidth={1.5}
-                />
-              );
-            })}
+            .map((fill, at) => (
+              <FillMark
+                key={`f-${fill.index}-${at}`}
+                x={xOf(fill.index)}
+                y={y(fill.trade.price)}
+                buy={fill.trade.action === "buy"}
+                color={
+                  fill.trade.action === "buy" ? colors.candleUp : colors.candleDown
+                }
+                ring={colors.surfacePage}
+                active={hover === fill.index}
+              />
+            ))}
         </g>
 
         {/* The lines' names at their right ends: three averages in three hues

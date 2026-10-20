@@ -822,6 +822,54 @@ def test_an_unknown_quote_type_keeps_the_company_layout(client, account, bare_he
     assert (body["asset"], body["is_fund"]) == ("stock", False)
 
 
+def test_a_symbol_yahoo_has_never_heard_of_is_not_found(
+    client, account, bare_header, monkeypatch
+):
+    """What stops the page drawing a column of empty cards for a typo."""
+    monkeypatch.setattr(loaders, "listed", lambda t: False)
+    body = _profile(client, "DIGITALOCE")
+    assert (body["found"], body["asset"]) == (False, None)
+
+
+def test_a_feed_that_could_not_tell_is_not_a_missing_company(
+    client, account, bare_header, monkeypatch
+):
+    """A throttled Yahoo answers None, and a real company must still get its
+    page — only a sure "no" counts."""
+    monkeypatch.setattr(loaders, "listed", lambda t: None)
+    assert _profile(client, "AAPL")["found"] is True
+
+
+def test_a_name_or_a_row_in_the_book_keeps_an_unquoted_symbol_found(
+    client, account, bare_header, monkeypatch
+):
+    """A delisted line held at cost is still somebody's position."""
+    from stocks.portfolio import ledger
+    from stocks.portfolio.ledger import Transaction
+
+    monkeypatch.setattr(loaders, "listed", lambda t: False)
+    ledger.add(Transaction("2024-01-02", "GONE", "buy", 1, 10.0), path=account.db)
+    assert _profile(client, "GONE")["found"] is True
+    monkeypatch.setattr(loaders, "company_name", lambda t, w: "Named Corp")
+    assert _profile(client, "NAMED")["found"] is True
+
+
+def test_listed_needs_both_a_clean_empty_profile_and_no_bars(monkeypatch):
+    from stocks.data import fetch
+
+    monkeypatch.setattr(fetch, "info", lambda t: {"trailingPegRatio": None})
+    monkeypatch.setattr(loaders, "price_bars", lambda t, label: pd.DataFrame())
+    assert loaders.listed("ZZZZQQ") is False
+
+    def throttled(t):
+        raise RuntimeError("Too Many Requests")
+
+    monkeypatch.setattr(fetch, "info", throttled)
+    assert loaders.listed("ZZZZQQ") is None
+    monkeypatch.setattr(fetch, "info", lambda t: {"quoteType": "EQUITY"})
+    assert loaders.listed("ZZZZQQ") is True
+
+
 def test_the_profile_is_keyed_to_the_asking_account(client, account, monkeypatch):
     """A name someone set by hand on their own list must not render for
     another account, so the watchlist path is an argument, not a lookup."""
@@ -934,3 +982,37 @@ def test_a_dollar_buy_charted_off_a_euro_listing_is_restated_onto_its_axis(
     assert [t["price"] for t in body["trades"]] == pytest.approx(
         [720 * 0.9, 690 * 0.86]
     )
+
+
+def test_a_bank_gets_the_bank_grid_with_its_rivals_middle(client, monkeypatch):
+    """The grid follows the lens, and each tile carries the scan's middle."""
+    from types import SimpleNamespace
+
+    from stocks.analysis import sectors
+
+    bank = {"currency": "USD", "quote_type": "EQUITY",
+            "industry": "Banks - Diversified", "pe_ttm": 14.0, "pb": 2.5}
+    rivals = [
+        {"ticker": f"B{i}", "industry": "Banks - Diversified", "pe_ttm": pe, "pb": pb}
+        for i, (pe, pb) in enumerate([(10, 1.0), (12, 1.4), (13, 1.6), (11, 1.2),
+                                      (12.5, 1.5)])
+    ]
+    scan = sectors.SectorScan("Financial Services", "2026-10-19",
+                              tuple(r["ticker"] for r in rivals), tuple(rivals), {}, ())
+    monkeypatch.setattr("stocks.api.routes.ticker.compute_metrics", lambda raw: bank)
+    monkeypatch.setattr(loaders, "sector_scans", lambda: {scan.sector: scan})
+    monkeypatch.setattr(
+        loaders, "fundamentals",
+        lambda ticker: SimpleNamespace(info={"sector": "Financial Services"}),
+    )
+    body = client.get("/v1/ticker/JPM/metrics", headers=AUTH).json()
+
+    assert body["lens"] == "financial"
+    keys = [tile["key"] for tile in body["grid"]]
+    assert "ptbv" in keys and "ev_ebitda" not in keys
+    assert body["peers"] == {"kind": "industry", "name": "Banks - Diversified",
+                             "count": 5}
+    by = {kpi["key"]: kpi for kpi in body["kpis"]}
+    assert by["pe_ttm"]["peer_band"][1] == pytest.approx(12.0)
+    assert by["ptbv"]["peer_band"] is None, "no rival reports it"
+    assert body["cautions"] == [] and body["normal_pe"] is None

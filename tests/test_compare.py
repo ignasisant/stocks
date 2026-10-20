@@ -119,6 +119,7 @@ def offline(monkeypatch, tmp_path):
         "QQQ": [200.0, 210.0, 220.0],
         "EEM": [40.0, 40.0, 44.0],
         "XLK": [50.0, 55.0, 60.0],
+        "MDB": [300.0, 290.0, 310.0],
         "SAN.MC": [5.0, 5.5, 6.0],
         "ODD.XX": [1.0, 1.0, 1.0],
     }
@@ -161,25 +162,30 @@ def ask(client, symbol="ESTC", **params):
     )
 
 
-def test_nothing_asked_draws_the_three_indices(client):
+def test_nothing_asked_draws_the_index_the_sector_and_rivals(client):
     body = ask(client).json()
     assert [(line["ticker"], line["role"]) for line in body["lines"]] == [
         ("ESTC", "subject"),
         ("SPY", "index"),
-        ("QQQ", "index"),
-        ("EEM", "index"),
+        ("XLK", "sector"),
+        ("MDB", "peer"),
     ]
     assert body["dates"] == DAYS and body["base"] == "EUR"
     assert body["lines"][0]["points"] == pytest.approx([0.0, 0.1, 0.2])
     assert body["lines"][0]["name"] == "Elastic N.V."
 
 
+def test_the_opening_lines_take_a_few_rivals_not_every_chip(client, monkeypatch):
+    many = tuple(f"P{i}" for i in range(9))
+    monkeypatch.setattr(loaders, "related", lambda t: many)
+    body = ask(client).json()
+    assert body["missing"] == list(many[: compare.OPENING_PEERS])
+
+
 def test_the_picker_offers_the_sector_etf_and_related_names_but_no_coins(client):
     offered = [(o["ticker"], o["role"]) for o in ask(client).json()["offered"]]
     assert offered == [
         ("SPY", "index"),
-        ("QQQ", "index"),
-        ("EEM", "index"),
         ("XLK", "sector"),
         ("MDB", "peer"),
     ]
@@ -294,12 +300,12 @@ def returns_offline(monkeypatch):
     monkeypatch.setattr(
         loaders, "bar_closes", lambda t, label: pd.Series(1.0, index=sessions)
     )
-    # Oldest window first: 2y, 1y, 6m, 1m, then the last session.
+    # Oldest first: 2y, the trail's 18m step, 1y, 6m, 1m, the last session.
     closes = {
-        "ESTC": [100.0, 100.0, 100.0, 100.0, 130.0],
-        "SPY": [100.0, 100.0, 100.0, 100.0, 110.0],
-        "XLK": [100.0, 100.0, 100.0, 100.0, 120.0],
-        "SAN.MC": [5.0, 5.0, 5.0, 5.0, 6.0],
+        "ESTC": [100.0, 65.0, 100.0, 100.0, 100.0, 130.0],
+        "SPY": [100.0, 100.0, 100.0, 100.0, 100.0, 110.0],
+        "XLK": [100.0, 100.0, 100.0, 100.0, 100.0, 120.0],
+        "SAN.MC": [5.0, 5.0, 5.0, 5.0, 5.0, 6.0],
     }
     monkeypatch.setattr(
         loaders,
@@ -324,6 +330,17 @@ def returns_offline(monkeypatch):
             "currency": None,
         },
     )
+    monkeypatch.setattr(review_route, "_metrics", lambda s: TRAIL_METRICS.get(s))
+    monkeypatch.setattr(review_route, "_history", lambda s: [])
+
+
+# A mature name the engine scores on both axes.
+TRAIL_METRICS = {
+    "ESTC": {
+        "pe_fwd": 32.0, "fcf_yield": 0.03, "ev_ebitda": 26.0, "ev": 3e10,
+        "market_cap": 2.8e10, "roic": 0.25, "op_margin": 0.2, "moat": 70.0,
+    },
+}
 
 
 def ask_returns(client, names):
@@ -349,3 +366,59 @@ def test_each_name_comes_with_the_index_and_its_sectors_etf(client, returns_offl
 
 def test_a_name_that_is_not_a_ticker_is_refused(client, returns_offline):
     assert ask_returns(client, "ESTC,../etc").status_code == 422
+
+
+def test_a_name_comes_with_where_it_sat_on_the_map_a_window_ago(client, returns_offline):
+    """ESTC is up 30% over every window: the same business at the lower
+    price it had then read cheaper, and the benchmarks carry no trail."""
+    from stocks.analysis import review
+
+    body = ask_returns(client, "ESTC,SAN.MC").json()
+    rows = {row["ticker"]: row for row in body["names"]}
+    now = review.score(TRAIL_METRICS["ESTC"])
+    then = rows["ESTC"]["then"]
+    assert set(then) == {"1m", "6m", "1y", "18m", "2y"}
+    assert then["1y"]["source"] == "price"
+    assert then["1y"]["cheapness"] > now.cheapness
+    assert rows["SAN.MC"]["then"] == {}  # no KPIs, no place on the map
+    assert all(b["then"] == {} for b in body["benchmarks"])
+
+
+def test_the_trail_steps_half_a_year_but_the_columns_do_not(client, returns_offline):
+    """ESTC doubled from its 18m step: that step reads cheaper than the 2y
+    window it sits inside, and no return column is cut at 18 months."""
+    row = ask_returns(client, "ESTC").json()["names"][0]
+    assert set(row["returns"]) == {"1m", "6m", "1y", "2y"}
+    assert row["then"]["18m"]["cheapness"] > row["then"]["2y"]["cheapness"]
+
+
+def test_a_recorded_score_beats_the_price_replay(client, returns_offline):
+    from datetime import date
+
+    from stocks.data import score_history
+
+    score_history.record({"ESTC": (40.0, 80.0)}, date(2025, 10, 14))
+    then = ask_returns(client, "ESTC").json()["names"][0]["then"]
+    assert then["1y"] == {"quality": 40.0, "cheapness": 80.0, "source": "record"}
+    assert then["6m"]["source"] == "price"
+
+
+def test_a_past_filing_places_the_name_on_its_business_then(
+    client, returns_offline, monkeypatch
+):
+    """A year ago ESTC's last filing showed a weaker business: the 1y point
+    moves today's score by what that filing at that price reads against
+    today's filings, and a window older than every filing keeps the replay."""
+    from stocks.analysis import review
+    from stocks.api.routes import review as review_route
+
+    weaker = {**TRAIL_METRICS["ESTC"], "roic": 0.08, "op_margin": 0.05}
+    entry = {"filed": "2025-06-01", "then": weaker, "base": TRAIL_METRICS["ESTC"]}
+    monkeypatch.setattr(review_route, "_history", lambda s: [entry])
+    then = ask_returns(client, "ESTC").json()["names"][0]["then"]
+    now = review.score(TRAIL_METRICS["ESTC"])
+    past = review.score(review.at_price(weaker, 1 / 1.3))
+    assert then["1y"]["source"] == "filings"
+    assert then["1y"]["quality"] == pytest.approx(round(past.quality, 1), abs=0.1)
+    assert then["1y"]["quality"] < now.quality
+    assert then["2y"]["source"] == "price"

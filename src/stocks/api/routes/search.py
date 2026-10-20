@@ -35,11 +35,18 @@ def find(
     account: Account,
     q: Annotated[str, Query(description="Symbol, company name or tag group.")] = "",
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    world: Annotated[
+        bool, Query(description="Ask Yahoo too; false answers from local tiers.")
+    ] = True,
 ) -> SearchResults:
     """Every tier for `q`, deduped and already in the order to draw.
 
     An empty query answers with no matches rather than the whole watchlist:
     the box is a search, and a client that wants the list has `/watchlist`.
+
+    `world=false` leaves out the one tier that can be a network round-trip, so
+    a box can draw the local rows in milliseconds while the full answer is on
+    its way. Its "analyze" row is a guess the worldwide tier may contradict.
     """
     rows = search.ranked(
         q,
@@ -47,7 +54,7 @@ def find(
         crypto=loaders.coin_matches,
         funds=loaders.fund_matches,
         sec=loaders.sec_matches,
-        world=loaders.world_matches,
+        world=loaders.world_matches if world else lambda _q: [],
         limit=limit,
     )
     return SearchResults(
@@ -119,7 +126,17 @@ def remember(
     under cookie auth: a cross-site form post cannot set
     `Content-Type: application/json`, and a cross-site `fetch` that does gets
     preflighted — and nothing here answers a preflight.
+
+    A symbol that does not exist is not kept: the "analyze" row hands on
+    whatever was typed, and a typo should not sit in the history to be
+    clicked again. Only a nameless pick is checked — a row with a name came
+    from a source that already knew it.
     """
+    symbol = ticker.strip().upper()
+    if not name and loaders.missing(
+        symbol, str(account.db), loaders.company_name(symbol, str(account.watchlist))
+    ):
+        return _recents(account, accounts.load_recent_searches(account.prefs))
     return _recents(
         account, accounts.push_recent_search(account.prefs, ticker, name=name)
     )
