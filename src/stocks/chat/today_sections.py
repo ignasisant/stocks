@@ -31,10 +31,14 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, timedelta
+from typing import TYPE_CHECKING
 
 from stocks import obs
 from stocks.chat import signals
 from stocks.formatting import finite, fmt_num
+
+if TYPE_CHECKING:
+    from stocks.data.earnings import EarningsResult
 
 # What kind of book the sections are chosen for.
 EMPTY = "empty"
@@ -414,11 +418,11 @@ def print_line(ticker: str, data: dict, topics: list[str], tr, lang: str) -> str
     return tr(key, ticker=ticker, parts=", ".join(parts), topics=", ".join(topics))
 
 
-def _printed(results, names: list[str], day: date) -> dict[str, object]:
+def _printed(results, names: list[str], day: date) -> dict[str, EarningsResult]:
     """{ticker: its newest print over `FILING_DAYS`} among `names`, off the
     calendar's results."""
     cutoff = day - timedelta(days=FILING_DAYS)
-    out: dict[str, object] = {}
+    out: dict[str, EarningsResult] = {}
     for result in results or []:
         ticker = str(getattr(result, "ticker", "") or "")
         when = getattr(result, "date", None)
@@ -431,7 +435,8 @@ def _printed(results, names: list[str], day: date) -> dict[str, object]:
     return out
 
 
-def print_rows(rows: list[dict], printed: dict[str, object], sources: dict[str, dict],
+def print_rows(rows: list[dict], printed: dict[str, EarningsResult],
+               sources: dict[str, dict],
                closes: dict, day: date, tr, lang: str) -> list[dict]:
     """`rows` with every results row carrying its print's figures and a
     results row for each print in `printed` that filed no 8-K the rows know
@@ -480,7 +485,7 @@ def print_rows(rows: list[dict], printed: dict[str, object], sources: dict[str, 
     return sorted(out, key=lambda r: r.get("kind") != "results")
 
 
-def _print_day(rows: list[dict], printed: dict[str, object]) -> dict[str, str]:
+def _print_day(rows: list[dict], printed: dict[str, EarningsResult]) -> dict[str, str]:
     """{ticker: the ISO day its print is read as} for every name with a
     results row or a calendar print — what `Sources.print` is asked for."""
     out = {t: r.date.isoformat() for t, r in printed.items()}
