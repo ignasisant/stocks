@@ -530,6 +530,13 @@ def _reporting(owned: set[str], entries) -> tuple[str, ...]:
     )
 
 
+def _printed(paths) -> list:
+    """The followed names' prints the calendar knows — the same cached pass
+    the card's own earnings line reads (`build_facts`), so the Today page's
+    results rows cost no download of their own."""
+    return list(loaders.earnings_calendar(_followed(paths))[1])
+
+
 def _followed(paths) -> tuple[str, ...]:
     """`_reporting` for an account, read again on the job's thread: a
     routine about "my companies' results" means these. () when unreadable."""
@@ -643,6 +650,12 @@ def gather_today(paths, prefs: dict, facts: dict, lang: str, day: date, stored,
         filings = loaders.current_reports
     else:
         obs.warn_once("today.edgar_no_ua")
+
+    def print_source(ticker: str, iso: str) -> dict:
+        # The release is read only where EDGAR can be asked at all.
+        return _print_source({"ticker": ticker, "date": iso},
+                             release=filings is not None)
+
     return today_sections.gather(
         weights,
         profile=auth.load_profile(prefs),
@@ -657,6 +670,8 @@ def gather_today(paths, prefs: dict, facts: dict, lang: str, day: date, stored,
             eu_insiders=loaders.eu_insiders,
             verdicts=verdicts,
             closes=closes,
+            results=lambda: _printed(paths),
+            print=print_source,
         ),
     )
 
@@ -906,9 +921,11 @@ def _release(ticker: str, iso: str) -> str | None:
     return edgar.earnings_release(ticker, date.fromisoformat(iso))
 
 
-def _print_source(action: dict) -> dict:
+def _print_source(action: dict, release: bool = True) -> dict:
     """What a print's paragraph can quote beyond EPS: the quarter's revenue
-    and margin, and the company's own press release (US filers)."""
+    and margin, and the company's own press release (US filers). `release`
+    False leaves the release unread — a caller without `EDGAR_USER_AGENT`
+    would only cache the refusal as "no release" (`edgar.earnings_release`)."""
     from stocks.data.earnings import match_quarter, pct_change, year_ago
 
     ticker = str(action.get("ticker") or "")
@@ -937,10 +954,10 @@ def _print_source(action: dict) -> dict:
         }
         if quarter.operating_margin is not None:
             source["operating_margin_pct"] = round(quarter.operating_margin * 100, 1)
-    release = _release(ticker, day.isoformat())
-    if release:
-        source["release"] = release
-        source["release_figures"] = daily.figures(release)
+    text = _release(ticker, day.isoformat()) if release else None
+    if text:
+        source["release"] = text
+        source["release_figures"] = daily.figures(text)
     return source
 
 

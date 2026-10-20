@@ -1,10 +1,12 @@
 """The Today page's personal sections: news, insiders, comparisons.
 
 Every row here is computed — a headline as Yahoo printed it, an 8-K's items,
-an insider tally, a holding's month, half-year and year against its sector
-ETF and the index with the Review page's verdict beside it. The model writes at most one
-note per section (`daily.prompt`), never a row, so a day the free chain is
-down still has the whole page.
+a print's EPS against the estimate with the quarter's revenue, the release's
+outlook and the price's move across it, an insider tally, a holding's month,
+half-year and year against its sector ETF and the index with the Review
+page's verdict beside it. The model writes at most one note per section
+(`daily.prompt`), never a row, so a day the free chain is down still has
+the whole page.
 
 Which sections a book gets depends on what it holds (`shape`): a book of
 index funds has no company to read news or insiders for, and a book that is
@@ -80,6 +82,21 @@ INDEX = "SPY"
 CRYPTO_KIND = "crypto"  # asset_kind.CRYPTO, unimported at module load
 INDEX_NAME = "S&P 500"
 RESULTS_ITEM = "2.02"
+# A print's own figures (`Sources.print`) are fetched after the feeds, for the
+# names that printed: their own budget, so a slow statement never costs the
+# news, and a slow feed never costs the print its revenue.
+PRINT_BUDGET_S = 10.0
+# A calendar print this close to the 8-K's filing day is the same print.
+PRINT_SLACK_DAYS = 3
+GUIDANCE_CHARS = 160
+_GUIDE_RE = re.compile(
+    r"\b(outlook|guidance|expects?|expected|anticipates?|forecasts?|projects?|"
+    r"fiscal (?:year )?20\d\d|full[- ]year|next quarter|"
+    r"(?:first|second|third|fourth)[- ]quarter)\b", re.I)
+_NOT_GUIDE_RE = re.compile(
+    r"conference call|webcast|forward-looking|safe harbor|press release|"
+    r"reconciliation|investor relations", re.I)
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z“\"(])")
 # The 8-K items a row can name, each with a `today.item_<code>` label.
 ITEM_TOPICS = ("1.01", "1.02", "1.03", "1.05", "2.01", "2.02", "2.03", "2.04", "2.05",
                "2.06", "3.01", "3.02", "3.03", "4.01", "4.02", "5.01", "5.02", "5.03",
@@ -94,7 +111,15 @@ class Sources:
 
     `verdicts` is the Review page's held rows, {ticker: {"verdict", "sector",
     "quality", "cheapness", "weight"}}; `closes` the held names' closes with
-    the index and the sector ETFs beside them."""
+    the index and the sector ETFs beside them.
+
+    `results` is the prints the earnings calendar knows for the followed
+    names (`data.earnings.EarningsResult`: reported EPS, the estimate, the
+    surprise); `print(ticker, iso_day)` what one print's row quotes beyond
+    EPS — the quarter's `revenue` and `revenue_yoy_pct` in `currency`, and
+    the `release` text the outlook is read from (`api.briefing._print_source`).
+    Neither is a section's source: without them a results row still stands,
+    with fewer figures."""
 
     news: Callable[[str], list] | None = None
     filings: Callable[[str], list] | None = None
@@ -102,6 +127,8 @@ class Sources:
     eu_insiders: Callable[[str], list] | None = None
     verdicts: Callable[[], dict[str, dict]] | None = None
     closes: Callable[[], dict] | None = None
+    results: Callable[[], list] | None = None
+    print: Callable[[str, str], dict] | None = None
 
 
 # ------------------------------------------------------------------- shape
@@ -265,6 +292,204 @@ def _http(url) -> str:
     return text if text.startswith("https://") else ""
 
 
+# ------------------------------------------------------------------- prints
+
+
+def guidance_of(text: str) -> str:
+    """The first sentence of a release that looks ahead — a figure for the
+    next quarter or the year — cut to `GUIDANCE_CHARS` at a word; "" when
+    none. The call's logistics and the safe-harbour boilerplate, which name
+    the future too, are skipped."""
+    for sentence in _SENTENCE_RE.split(" ".join(str(text or "").split())):
+        line = sentence.strip()
+        if (len(line) < 30 or not _GUIDE_RE.search(line) or _NOT_GUIDE_RE.search(line)
+                or not re.search(r"\d", line)):
+            continue
+        if len(line) > GUIDANCE_CHARS:
+            cut = line[: GUIDANCE_CHARS - 1].rsplit(" ", 1)[0].rstrip(",;:-–— ")
+            line = f"{cut}…"
+        return line
+    return ""
+
+
+def reaction(series, when: date) -> float | None:
+    """% move across the print: the last close before `when` to the first
+    after it. The print's hour is unknown (before the open, after the close),
+    so the window spans the day itself; None until a session after it exists.
+    """
+    if series is None:
+        return None
+    closes: dict[date, float] = {}
+    try:
+        for idx, value in series.dropna().items():
+            day = idx.date() if hasattr(idx, "date") else idx
+            if isinstance(day, date) and finite(value) is not None:
+                closes[day] = float(value)
+    except Exception:  # noqa: BLE001 — not a series of closes
+        return None
+    before = [d for d in closes if d < when]
+    after = [d for d in closes if d > when]
+    if not before or not after or not closes[max(before)]:
+        return None
+    return (closes[min(after)] / closes[max(before)] - 1) * 100
+
+
+def print_data(result, source: dict | None, series, when: date) -> dict:
+    """The figures a print's row carries: EPS against the estimate (`result`,
+    the calendar's), the quarter's revenue and the release's outlook
+    (`source`, `Sources.print`) and the price's move across the print
+    (`series`). Only what is known is there."""
+    data: dict = {"date": when.isoformat()}
+    if result is not None:
+        eps = finite(getattr(result, "reported_eps", None))
+        estimate = finite(getattr(result, "eps_estimate", None))
+        surprise = finite(getattr(result, "surprise_pct", None))
+        if surprise is None and eps is not None and estimate:
+            surprise = (eps / estimate - 1) * 100 if estimate > 0 else None
+        if eps is not None:
+            data["reported_eps"] = round(eps, 2)
+        if estimate is not None:
+            data["eps_estimate"] = round(estimate, 2)
+        if surprise is not None:
+            data["surprise_pct"] = round(surprise, 1)
+        if eps is not None and estimate is not None:
+            data["beat"] = eps >= estimate
+    source = source or {}
+    if (revenue := finite(source.get("revenue"))) is not None:
+        data["revenue"] = round(revenue, 2)
+        data["currency"] = str(source.get("currency") or "USD")
+        if (yoy := finite(source.get("revenue_yoy_pct"))) is not None:
+            data["revenue_yoy_pct"] = round(yoy, 1)
+    if guidance := guidance_of(str(source.get("release") or "")):
+        data["guidance"] = guidance
+    if (move := reaction(series, when)) is not None:
+        data["reaction_pct"] = round(move, 1)
+    return data
+
+
+def _money(value: float, sign: str, tr, lang: str) -> str:
+    """Millions as millions in the reader's language: "$314,6 M" reads,
+    "$314.582.260" is counted."""
+    value = abs(value)
+    for div, key in ((1e9, "today.billions"), (1e6, "today.millions")):
+        if value >= div:
+            return tr(key, value=f"{sign}{fmt_num(value / div, 1, lang)}")
+    return f"{sign}{fmt_num(value, 0, lang)}"
+
+
+def print_line(ticker: str, data: dict, topics: list[str], tr, lang: str) -> str:
+    """A print row's line from its figures — EPS against the estimate, the
+    revenue and its year, the move across the print, whichever are known;
+    "" when none is, so the caller keeps the filing's own line."""
+    from stocks.config import currency_symbol
+
+    def pct(value) -> str:
+        return f"{fmt_num(float(value), 1, lang, signed=True)}%"
+
+    parts: list[str] = []
+    eps, estimate = data.get("reported_eps"), data.get("eps_estimate")
+    if eps is not None:
+        if estimate is not None and data.get("surprise_pct") is not None:
+            parts.append(tr("today.print_eps_vs", eps=fmt_num(float(eps), 2, lang),
+                            estimate=fmt_num(float(estimate), 2, lang),
+                            surprise=pct(data["surprise_pct"])))
+        elif estimate is not None:
+            parts.append(tr("today.print_eps_plain", eps=fmt_num(float(eps), 2, lang),
+                            estimate=fmt_num(float(estimate), 2, lang)))
+        else:
+            parts.append(tr("today.print_eps", eps=fmt_num(float(eps), 2, lang)))
+    if data.get("revenue") is not None:
+        revenue = _money(float(data["revenue"]),
+                         currency_symbol(str(data.get("currency") or "USD")), tr, lang)
+        if data.get("revenue_yoy_pct") is not None:
+            parts.append(tr("today.print_revenue_yoy", revenue=revenue,
+                            yoy=pct(data["revenue_yoy_pct"])))
+        else:
+            parts.append(tr("today.print_revenue", revenue=revenue))
+    if data.get("reaction_pct") is not None:
+        parts.append(tr("today.print_reaction", move=pct(data["reaction_pct"])))
+    if not parts:
+        return ""
+    key = "today.print_row_more" if topics else "today.print_row"
+    return tr(key, ticker=ticker, parts=", ".join(parts), topics=", ".join(topics))
+
+
+def _printed(results, names: list[str], day: date) -> dict[str, object]:
+    """{ticker: its newest print over `FILING_DAYS`} among `names`, off the
+    calendar's results."""
+    cutoff = day - timedelta(days=FILING_DAYS)
+    out: dict[str, object] = {}
+    for result in results or []:
+        ticker = str(getattr(result, "ticker", "") or "")
+        when = getattr(result, "date", None)
+        if (ticker not in names or not isinstance(when, date) or when < cutoff
+                or when > day):
+            continue
+        held = out.get(ticker)
+        if held is None or when > held.date:
+            out[ticker] = result
+    return out
+
+
+def print_rows(rows: list[dict], printed: dict[str, object], sources: dict[str, dict],
+               closes: dict, day: date, tr, lang: str) -> list[dict]:
+    """`rows` with every results row carrying its print's figures and a
+    results row for each print in `printed` that filed no 8-K the rows know
+    (a name outside the SEC), prints first: they are the day's most material
+    rows and the cap on the section must not cost them."""
+    out: list[dict] = []
+    covered: set[str] = set()
+    for row in rows:
+        if row.get("kind") != "results":
+            out.append(row)
+            continue
+        ticker = str(row["tickers"][0])
+        covered.add(ticker)
+        filed = date.fromisoformat(row["date"])
+        result = printed.get(ticker)
+        when = filed
+        if result is not None:
+            if abs((result.date - filed).days) <= PRINT_SLACK_DAYS:
+                when = result.date
+            else:
+                result = None
+        data = print_data(result, sources.get(ticker), closes.get(ticker), when)
+        items = str(row["data"].get("items") or "")
+        topics = [tr(f"today.item_{i.replace('.', '_')}") for i in items.split(",")
+                  if i and i != RESULTS_ITEM]
+        line = print_line(ticker, data, topics, tr, lang)
+        out.append(row | {"line": line or row["line"],
+                          "data": {**row["data"], **data}})
+    for ticker, result in printed.items():
+        if ticker in covered:
+            continue
+        data = print_data(result, sources.get(ticker), closes.get(ticker), result.date)
+        line = print_line(ticker, data, [], tr, lang)
+        if not line:
+            continue
+        out.append({
+            "key": f"print:{ticker}:{result.date.isoformat()}",
+            "kind": "results",
+            "line": line,
+            "tickers": [ticker],
+            "source": "earnings",
+            "url": "",
+            "date": result.date.isoformat(),
+            "data": data,
+        })
+    return sorted(out, key=lambda r: r.get("kind") != "results")
+
+
+def _print_day(rows: list[dict], printed: dict[str, object]) -> dict[str, str]:
+    """{ticker: the ISO day its print is read as} for every name with a
+    results row or a calendar print — what `Sources.print` is asked for."""
+    out = {t: r.date.isoformat() for t, r in printed.items()}
+    for row in rows:
+        if row.get("kind") == "results":
+            out.setdefault(str(row["tickers"][0]), str(row["date"]))
+    return out
+
+
 # ---------------------------------------------------------------- insiders
 
 
@@ -291,12 +516,7 @@ def insider_row(ticker: str, txs: list, day: date, tr, lang: str,
     sign = currency_symbol(ccy)
 
     def money(v: float) -> str:
-        # Millions as millions: "$314,6 M" reads, "$314.582.260" is counted.
-        v = abs(v)
-        for div, key in ((1e9, "today.billions"), (1e6, "today.millions")):
-            if v >= div:
-                return tr(key, value=f"{sign}{fmt_num(v / div, 1, lang)}")
-        return f"{sign}{fmt_num(v, 0, lang)}"
+        return _money(v, sign, tr, lang)
 
     def who(key: str, n: int) -> str:
         return f"{key}_one" if n == 1 else key
@@ -444,8 +664,10 @@ def notable(row: dict) -> bool:
 
 def _memory_kind(row: dict) -> str | None:
     kind = row.get("kind")
-    if kind in ("news", "filing", "results"):
+    if kind in ("news", "filing"):
         return signals.NEWS
+    if kind == "results":
+        return signals.RESULTS
     if kind == "insider":
         return signals.INSIDER
     return None
@@ -477,6 +699,34 @@ def _listed(found: dict[str, object], key: str) -> list:
     """A source's answer when it came back as a list, else nothing."""
     value = found.get(key)
     return value if isinstance(value, list) else []
+
+
+def _print_sources(get, days: dict[str, str],
+                   budget_s: float | None = None) -> dict[str, dict]:
+    """{ticker: what its print's row quotes beyond EPS} for the names in
+    `days`, all at once under `PRINT_BUDGET_S`; a name whose source failed
+    or ran late is left out, and its row stands on the calendar's figures."""
+    if get is None or not days:
+        return {}
+    budget_s = PRINT_BUDGET_S if budget_s is None else budget_s
+    out: dict[str, dict] = {}
+    begun = time.monotonic()
+    pool = ThreadPoolExecutor(max_workers=min(len(days), WORKERS))
+    try:
+        futures = {t: pool.submit(get, t, iso) for t, iso in days.items()}
+        for ticker, future in futures.items():
+            try:
+                left = max(0.0, begun + budget_s - time.monotonic())
+                found = future.result(timeout=left)
+            except Exception as exc:  # noqa: BLE001 — one print, not the page
+                obs.warn("today.source_failed", source="print",
+                         error_type=type(exc).__name__)
+                continue
+            if isinstance(found, dict):
+                out[ticker] = found
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    return out
 
 
 def gather(
@@ -537,6 +787,8 @@ def gather(
                 tasks[f"filing:{t}"] = lambda t=t, get=filings: get(t)
         else:
             missing[NEWS].append("edgar")
+        if sources.results is not None:
+            tasks["results"] = sources.results
     if INSIDERS in wanted:
         if (insiders := sources.insiders) is None:
             missing[INSIDERS].append("sec")
@@ -584,6 +836,11 @@ def gather(
             for t in news_names:
                 rows += news_rows(t, _listed(found, f"news:{t}"),
                                   _listed(found, f"filing:{t}"), day, tr)
+            printed = _printed(_listed(found, "results"), companies, day)
+            closes = found.get("closes")
+            rows = print_rows(rows, printed, _print_sources(
+                sources.print, _print_day(rows, printed)),
+                closes if isinstance(closes, dict) else {}, day, tr, lang)
             rows = [r for r in rows if _fresh(r, shown, day)][:NEWS_ROWS]
             missing[sid] += [s for src, s in (("news", "yahoo"), ("filing", "edgar"))
                              if src in failed]

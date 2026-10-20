@@ -1,0 +1,461 @@
+{
+ "at": "2026-10-20T20:13:36+00:00",
+ "cases": {
+  "app-figure": {
+   "detail": [
+    {
+     "broke": [],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 18.5,
+     "tokens": 8613,
+     "tools": [
+      "lookup_knowledge",
+      "lookup_knowledge",
+      "lookup_knowledge"
+     ],
+     "usd": 0.0
+    }
+   ],
+   "id": "app-figure",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "regression",
+   "passes": 1,
+   "runs": 1,
+   "seconds": 18.5,
+   "tokens": 8613,
+   "usd": 0.0
+  },
+  "app-howto": {
+   "detail": [
+    {
+     "broke": [],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 11.6,
+     "tokens": 5845,
+     "tools": [
+      "lookup_knowledge"
+     ],
+     "usd": 0.0
+    }
+   ],
+   "id": "app-howto",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "regression",
+   "passes": 1,
+   "runs": 1,
+   "seconds": 11.6,
+   "tokens": 5845,
+   "usd": 0.0
+  },
+  "arithmetic": {
+   "detail": [
+    {
+     "broke": [],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 12.7,
+     "tokens": 2689,
+     "tools": [],
+     "usd": 0.0
+    }
+   ],
+   "id": "arithmetic",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "regression",
+   "passes": 1,
+   "runs": 1,
+   "seconds": 12.7,
+   "tokens": 2689,
+   "usd": 0.0
+  },
+  "biggest-position": {
+   "detail": [
+    {
+     "broke": [],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 73.8,
+     "tokens": 5549,
+     "tools": [
+      "portfolio_snapshot"
+     ],
+     "usd": 0.0
+    }
+   ],
+   "id": "biggest-position",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "regression",
+   "passes": 1,
+   "runs": 1,
+   "seconds": 73.8,
+   "tokens": 5549,
+   "usd": 0.0
+  },
+  "compare": {
+   "detail": [
+    {
+     "broke": [],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 66.9,
+     "tokens": 38616,
+     "tools": [
+      "get_quotes",
+      "search_web",
+      "search_web",
+      "search_web",
+      "search_web",
+      "search_web",
+      "search_web",
+      "search_web",
+      "read_page",
+      "read_page",
+      "search_web"
+     ],
+     "usd": 0.0
+    }
+   ],
+   "id": "compare",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "regression",
+   "passes": 1,
+   "runs": 1,
+   "seconds": 66.9,
+   "tokens": 38616,
+   "usd": 0.0
+  },
+  "compare-vs": {
+   "detail": [
+    {
+     "broke": [],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 35.1,
+     "tokens": 39352,
+     "tools": [
+      "get_quotes",
+      "search_web",
+      "search_web",
+      "search_web",
+      "search_web",
+      "read_page",
+      "read_page",
+      "search_web",
+      "search_web",
+      "read_page",
+      "read_page",
+      "search_web",
+      "get_quotes"
+     ],
+     "usd": 0.0
+    }
+   ],
+   "id": "compare-vs",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "regression",
+   "passes": 1,
+   "runs": 1,
+   "seconds": 35.1,
+   "tokens": 39352,
+   "usd": 0.0
+  },
+  "definition": {
+   "detail": [
+    {
+     "broke": [],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 7.8,
+     "tokens": 2959,
+     "tools": [],
+     "usd": 0.0
+    }
+   ],
+   "id": "definition",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "regression",
+   "passes": 1,
+   "runs": 1,
+   "seconds": 7.8,
+   "tokens": 2959,
+   "usd": 0.0
+  },
+  "in-depth": {
+   "detail": [
+    {
+     "broke": [],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 38.9,
+     "tokens": 34526,
+     "tools": [
+      "get_quotes",
+      "search_web",
+      "search_web",
+      "search_web",
+      "search_web",
+      "search_web",
+      "search_web",
+      "read_page",
+      "read_page",
+      "search_web",
+      "read_page",
+      "search_web",
+      "search_web"
+     ],
+     "usd": 0.0
+    }
+   ],
+   "id": "in-depth",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "regression",
+   "passes": 1,
+   "runs": 1,
+   "seconds": 38.9,
+   "tokens": 34526,
+   "usd": 0.0
+  },
+  "lots-bought": {
+   "detail": [
+    {
+     "broke": [],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 10.4,
+     "tokens": 6044,
+     "tools": [
+      "trade_history"
+     ],
+     "usd": 0.0
+    }
+   ],
+   "id": "lots-bought",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "regression",
+   "passes": 1,
+   "runs": 1,
+   "seconds": 10.4,
+   "tokens": 6044,
+   "usd": 0.0
+  },
+  "past-proposals": {
+   "detail": [
+    {
+     "broke": [],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 7.8,
+     "tokens": 5673,
+     "tools": [
+      "decisions"
+     ],
+     "usd": 0.0
+    }
+   ],
+   "id": "past-proposals",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "regression",
+   "passes": 1,
+   "runs": 1,
+   "seconds": 7.8,
+   "tokens": 5673,
+   "usd": 0.0
+  },
+  "price-to-watch": {
+   "detail": [
+    {
+     "broke": [
+      "did not call propose_action"
+     ],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 9.7,
+     "tokens": 12098,
+     "tools": [
+      "search_web",
+      "search_web",
+      "get_quotes",
+      "search_web"
+     ],
+     "usd": 0.0
+    }
+   ],
+   "id": "price-to-watch",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "capability",
+   "passes": 0,
+   "runs": 1,
+   "seconds": 9.7,
+   "tokens": 12098,
+   "usd": 0.0
+  },
+  "price-to-watch-en": {
+   "detail": [
+    {
+     "broke": [
+      "did not call propose_action"
+     ],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 14.9,
+     "tokens": 12177,
+     "tools": [
+      "search_web",
+      "search_web",
+      "get_quotes",
+      "search_web"
+     ],
+     "usd": 0.0
+    }
+   ],
+   "id": "price-to-watch-en",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "capability",
+   "passes": 0,
+   "runs": 1,
+   "seconds": 14.9,
+   "tokens": 12177,
+   "usd": 0.0
+  },
+  "quote": {
+   "detail": [
+    {
+     "broke": [],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 8.0,
+     "tokens": 5518,
+     "tools": [
+      "get_quotes"
+     ],
+     "usd": 0.0
+    }
+   ],
+   "id": "quote",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "regression",
+   "passes": 1,
+   "runs": 1,
+   "seconds": 8.0,
+   "tokens": 5518,
+   "usd": 0.0
+  },
+  "small-talk": {
+   "detail": [
+    {
+     "broke": [],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 6.9,
+     "tokens": 2658,
+     "tools": [],
+     "usd": 0.0
+    }
+   ],
+   "id": "small-talk",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "regression",
+   "passes": 1,
+   "runs": 1,
+   "seconds": 6.9,
+   "tokens": 2658,
+   "usd": 0.0
+  },
+  "why-it-moved": {
+   "detail": [
+    {
+     "broke": [],
+     "judge_tokens": 0,
+     "judge_usd": 0.0,
+     "models": [
+      "nvidia/nemotron-3-ultra-550b-a55b:free"
+     ],
+     "seconds": 9.9,
+     "tokens": 8671,
+     "tools": [
+      "search_web",
+      "search_web",
+      "search_web"
+     ],
+     "usd": 0.0
+    }
+   ],
+   "id": "why-it-moved",
+   "judge_tokens": 0,
+   "judge_usd": 0.0,
+   "kind": "regression",
+   "passes": 1,
+   "runs": 1,
+   "seconds": 9.9,
+   "tokens": 8671,
+   "usd": 0.0
+  }
+ },
+ "complete": false,
+ "dead": 8,
+ "model": "",
+ "prompt": "73cf275e",
+ "provider": "free",
+ "repeat": 1,
+ "sha": "be3d4f2",
+ "stopped": "",
+ "timeout": 90.0
+}
