@@ -64,6 +64,14 @@ Kind = Literal[
     # A name the review page could not price on its cash flow: an FCF yield
     # too high to be a price, or an enterprise value at or under zero.
     "metric_suspect",
+    # A buy priced far from its day's close on a scale no split explains —
+    # pence booked as pounds, the wrong name under a symbol, a typo. Found
+    # where the split check already fetched the close (corporate).
+    "price_off_market",
+    # A quote whose price and previous close sit a multiple apart no session
+    # produces: the feed mixed units or currencies, or kept a stale close
+    # across a split. Past `QUOTE_JUMP_DROPPED` the day move is not shown.
+    "quote_jump",
 ]
 KINDS: tuple[Kind, ...] = get_args(Kind)
 
@@ -124,3 +132,32 @@ def ratio(part: float, whole: float) -> float | None:
     if not whole:
         return None
     return round(part / whole, 3)
+
+
+# A price this many times its previous close, either way, is not a session's
+# move. Said from 3x: real ones exist (a biotech on a trial result) but are
+# rare enough to look at. Dropped from 10x: no continuing listing prints one,
+# and the feed's own slips land there — pence against pounds (100x), a close
+# left unadjusted across a 20:1 split (20x), a currency mixed in a row.
+QUOTE_JUMP_SAID = 3.0
+QUOTE_JUMP_DROPPED = 10.0
+
+
+def day_move(
+    price: float | None, prev: float | None, *, ticker: str = "", source: Source = "feed"
+) -> float | None:
+    """`price / prev - 1`, or None when the two cannot be one session apart.
+
+    The one place a day move is measured from a quote — the portfolio's
+    session snapshot and the chat's live block both come here — so a feed
+    glitch is said once and shown nowhere, instead of landing on a card as
+    "+9,900 % today". None as well when either side is missing or zero.
+    """
+    if not price or not prev or price < 0 or prev < 0:
+        return None
+    off = price / prev
+    if off >= QUOTE_JUMP_SAID or off <= 1 / QUOTE_JUMP_SAID:
+        report("quote_jump", source=source, ticker=ticker, off=round(off, 3))
+        if off >= QUOTE_JUMP_DROPPED or off <= 1 / QUOTE_JUMP_DROPPED:
+            return None
+    return off - 1

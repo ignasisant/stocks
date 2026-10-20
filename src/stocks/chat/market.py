@@ -31,6 +31,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from stocks.formatting import bound
+from stocks.portfolio import consistency
 
 MAX_TICKERS = 3  # quotes fetched per message
 LOOKUP_TIMEOUT = 8.0  # seconds for the whole quote batch
@@ -92,9 +93,10 @@ class Quote:
 
     @property
     def day_pct(self) -> float | None:
-        if self.price is None or not self.prev_close:
-            return None
-        return self.price / self.prev_close - 1
+        """Today's move, or None without a close — or when the two cannot be
+        one session apart (`consistency.day_move`), so the model is never
+        told a name moved 9,900 % because the feed mixed its units."""
+        return consistency.day_move(self.price, self.prev_close, ticker=self.ticker)
 
     def line(self, lang: str = "en") -> str:
         """The prompt line for this quote — figures only, no interpretation."""

@@ -146,3 +146,32 @@ def test_every_doctor_kind_has_a_logged_name():
 def test_the_kinds_are_the_literal():
     assert consistency.KINDS == get_args(consistency.Kind)
     assert len(set(consistency.KINDS)) == len(consistency.KINDS)
+
+
+# ------------------------------------------------------------ a quote's day move
+
+
+def test_a_day_move_is_measured_from_the_close(lines):
+    assert consistency.day_move(110.0, 100.0) == pytest.approx(0.10)
+    # A biotech's trial day: big, real, and under the bar.
+    assert consistency.day_move(250.0, 100.0) == pytest.approx(1.5)
+    assert lines == []
+
+
+def test_a_jump_no_session_produces_is_said_and_past_ten_times_dropped(lines):
+    # Three times the close: said, still shown — one happens now and then.
+    assert consistency.day_move(300.0, 100.0, ticker="ACME") == pytest.approx(2.0)
+    # Pence against pounds: said, and not shown as a day.
+    assert consistency.day_move(12.5, 1250.0, ticker="VOD.L") is None
+    assert [(ln["kind"], ln["ticker"], ln["source"], ln["off"]) for ln in lines] == [
+        ("quote_jump", "ACME", "feed", 3.0),
+        ("quote_jump", "VOD.L", "feed", 0.01),
+    ]
+    assert not any(PRIVATE & set(ln) for ln in lines)
+
+
+def test_a_day_move_needs_both_sides(lines):
+    assert consistency.day_move(None, 100.0) is None
+    assert consistency.day_move(100.0, None) is None
+    assert consistency.day_move(100.0, 0.0) is None
+    assert lines == []

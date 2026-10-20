@@ -5,10 +5,13 @@ bought on 2022-05-24 at $2050, Amazon's 20:1 split on 2022-06-06, and a
 statement that printed the trade and not the split.
 """
 
+# ruff: noqa: F811 — `lines` is imported by name, as the other modules
+# sharing a fixture file do.
 import pytest
 
 from stocks.portfolio.corporate import missing_splits, own_fills
 from stocks.portfolio.ledger import Transaction
+from tests.test_consistency import lines  # noqa: F401 — fixture by name
 
 AMZN_SPLITS = [
     ("1998-06-02", 2.0),
@@ -151,6 +154,46 @@ def test_splits_that_cancel_out_are_not_evidence():
         close_on=_closes({("XYZ", "2020-01-02"): 50.0}),
     )
     assert not found
+
+
+def test_a_buy_off_its_market_on_a_scale_no_split_explains_is_said(lines):
+    """Three times the day's close, and the one split after it is a 2:1:
+    pence booked as pounds, or another name under the symbol. Not a split
+    to propose — and not left quiet either, under the split check's own
+    close, with the ratio and never the price."""
+    ledger = [_buy("2020-01-02", 10.0, 150.0, ticker="XYZ")]
+    found = missing_splits(
+        ledger,
+        splits=_splits([("2021-01-04", 2.0)]),
+        close_on=_closes({("XYZ", "2020-01-02"): 50.0}),
+        source="page",
+    )
+    assert not found
+    [line] = lines
+    assert (line["kind"], line["source"], line["ticker"], line["traded"]) == (
+        "price_off_market", "page", "XYZ", "2020-01-02"
+    )
+    assert line["off"] == 3.0
+    assert "price" not in line
+
+
+def test_a_volatile_day_is_not_a_price_off_its_market(lines):
+    """30 % over the close fits no split either; it is a day's range, not a
+    scale, and says nothing."""
+    ledger = [_buy("2020-01-02", 10.0, 65.0, ticker="XYZ")]
+    found = missing_splits(
+        ledger,
+        splits=_splits([("2021-01-04", 2.0)]),
+        close_on=_closes({("XYZ", "2020-01-02"): 50.0}),
+    )
+    assert not found
+    assert lines == []
+
+
+def test_the_amazon_row_is_a_split_to_propose_not_a_price_off_its_market(lines):
+    found = missing_splits(RAW_LEDGER, splits=_splits(AMZN_SPLITS), close_on=RAW_CLOSES)
+    assert [m.tx.date for m in found] == ["2022-06-06"]
+    assert [line["kind"] for line in lines] == ["split_missing"]
 
 
 def test_two_missing_splits_compound():
