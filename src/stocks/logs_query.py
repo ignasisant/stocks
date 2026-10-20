@@ -355,6 +355,13 @@ def funnel(entries: Iterable[dict]) -> dict:
     (the locked assistant, a page's banner, the rail; `oidc._wall`) — which
     says which ask converts where `src` says which post brought the visitor.
 
+    The import step is the *activation*: an account's first real import, the
+    one that replaces the demo book, counted once per account. The import
+    routes say which commit that was (`first` on the event); a second
+    statement, or a wipe and re-import, is use, not conversion. Events from
+    before the flag are deduplicated by account slug instead, so the oldest
+    import an account shows in the range is the one that counts.
+
     `retention` closes the loop: of the signups old enough to tell, how many
     were seen again RETURN_DAYS later (`_retention`).
     """
@@ -363,6 +370,7 @@ def funnel(entries: Iterable[dict]) -> dict:
     sources: dict[str, dict] = {}
     signups: dict[str, str] = {}  # account slug -> day it signed up
     seen: dict[str, set[str]] = {}  # account slug -> days with any event
+    activated: set[str] = set()  # slugs whose first import is already counted
     last = ""
     totals = dict.fromkeys(("views", "ctas", "signups", "imports"), 0)
     step_of = {
@@ -386,6 +394,13 @@ def funnel(entries: Iterable[dict]) -> dict:
             continue
         if step == "signups" and user and user != "-":
             signups.setdefault(user, day)
+        if step == "imports":
+            if body.get("first") is False:
+                continue
+            if user and user != "-":
+                if user in activated:
+                    continue
+                activated.add(user)
         src = str(body.get("src") or "-")
         for bucket, key in ((days, day), (sources, src)):
             row = bucket.setdefault(
@@ -433,7 +448,8 @@ def render_funnel(summary: dict) -> str:
     lines.append(
         f"\ntotal: {t['views']} views -> {t['ctas']} entries "
         f"({_rate(t['ctas'], t['views'])}) -> {t['signups']} signups "
-        f"({_rate(t['signups'], t['ctas'])}) -> {t['imports']} imports"
+        f"({_rate(t['signups'], t['ctas'])}) -> {t['imports']} first imports "
+        f"({_rate(t['imports'], t['signups'])})"
     )
     r = summary.get("retention") or {}
     if r.get("eligible"):

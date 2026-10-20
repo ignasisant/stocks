@@ -484,3 +484,19 @@ def test_a_mapping_missing_a_required_column_reads_nothing(
 def test_a_file_a_parser_owns_has_no_mapping_to_show(client, account, signed_in):
     payload = signed_in.post("/v1/chat/attachments", json=attach()).json()
     assert payload["surface"] is None
+
+
+def test_the_chat_commit_flags_the_activation_too(
+    client, account, signed_in, monkeypatch
+):
+    from stocks import obs
+
+    seen: list[tuple[str, dict]] = []
+    monkeypatch.setattr(obs, "event", lambda name, **f: seen.append((name, f)))
+    more = "date,ticker,action,quantity,price,currency,fee,note\n" \
+        "2024-03-01,NVDA,buy,1,800.00,EUR,1.00,revolut Nvidia\n"
+    for text in (CLEAN, more):
+        preview = signed_in.post("/v1/chat/attachments", json=attach(text)).json()
+        signed_in.post("/v1/chat/attachments/commit", json=committed(preview))
+    flags = [f["first"] for name, f in seen if name == "import.committed"]
+    assert flags == [True, False]

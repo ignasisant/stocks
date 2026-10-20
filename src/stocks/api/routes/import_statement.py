@@ -1165,6 +1165,9 @@ def commit(
             detail="this statement names no broker — send one as `broker`",
         )
 
+    # Activation, read before anything is written: the account's first real
+    # import is the one the funnel counts, and a wipe-and-reimport is not it.
+    first = not demo.has_real(account.db)
     if body.wipe:
         # Past the last refusal: the statement is going in, so the book it
         # replaces can go. `clear` takes the demo rows with it.
@@ -1195,6 +1198,7 @@ def commit(
         broker=origin,
         n=len(ids),
         wiped=body.wipe,
+        first=first,
         via="api",
     )
     return ImportResult(

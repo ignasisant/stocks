@@ -359,3 +359,38 @@ def test_the_funnel_counts_who_came_back_a_week_after_signing_up():
     assert summary["retention"] == {"days": 7, "eligible": 2, "returned": 1}
     text = logs_query.render_funnel(summary)
     assert "came back after 7d: 1 of 2 signups (50.0%)" in text
+
+
+def test_the_funnel_counts_an_account_s_first_import_once():
+    """Activation is one per account: the import routes flag the commit that
+    replaced the demo book, and a second statement or a wipe-and-reimport is
+    use, not conversion."""
+    summary = logs_query.funnel([
+        _entry("2026-09-20", "import.committed", user="ann", first=True),
+        _entry("2026-09-21", "import.committed", user="ann", first=False),
+        _entry("2026-09-22", "import.committed", user="ann", first=False, wiped=True),
+        _entry("2026-09-22", "import.committed", user="bob", first=True),
+    ])
+    assert summary["totals"]["imports"] == 2
+    assert [(d["day"], d["imports"]) for d in summary["days"]] == [
+        ("2026-09-20", 1), ("2026-09-22", 1),
+    ]
+    assert "-> 2 first imports" in logs_query.render_funnel(summary)
+
+
+def test_imports_logged_before_the_flag_count_once_per_account():
+    summary = logs_query.funnel([
+        _entry("2026-09-20", "import.committed", user="ann"),
+        _entry("2026-09-21", "import.committed", user="ann"),
+        _entry("2026-09-21", "import.committed"),  # no account on the line
+    ])
+    assert summary["totals"]["imports"] == 2
+
+
+def test_the_readout_rates_activation_against_signups():
+    text = logs_query.render_funnel(logs_query.funnel([
+        _entry("2026-09-20", "auth.signup", user="ann"),
+        _entry("2026-09-20", "auth.signup", user="bob"),
+        _entry("2026-09-21", "import.committed", user="ann", first=True),
+    ]))
+    assert "-> 1 first imports (50.0%)" in text

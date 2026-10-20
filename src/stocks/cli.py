@@ -1657,7 +1657,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_use.set_defaults(since="7d", limit=5000)
     p_fun = logs_sub.add_parser(
         "funnel",
-        help="landing view -> app entry -> signup -> import, by day and source")
+        help="landing view -> app entry -> signup -> first import, by day and source")
     _common(p_fun, with_output=False)
     p_fun.set_defaults(since="14d", limit=20000)
     p_exp = logs_sub.add_parser(
