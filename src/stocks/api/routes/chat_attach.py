@@ -514,6 +514,7 @@ def commit(body: CommitRows, paths: Writer) -> Committed:
     _file_at(paths, body.conversation)
     lang = _lang(paths, body.lang)
 
+    first = not demo.has_real(paths.db)  # activation; read before the write
     demo.clear(paths.db)
     ids = add_many(txs, paths.db)
     if ids:
@@ -536,6 +537,7 @@ def commit(body: CommitRows, paths: Writer) -> Committed:
         broker=origin,
         n=len(ids),
         wiped=False,
+        first=first,
         via="chat-api",
     )
     note = i18n.translate("chat.import_done", lang, n=len(ids), total=total)

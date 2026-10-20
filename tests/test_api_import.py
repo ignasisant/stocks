@@ -1590,3 +1590,24 @@ def test_a_failure_report_needs_a_session(client, account):
     )
     assert token.status_code == 403
     assert _filed() == []
+
+
+def test_only_the_first_real_import_is_flagged_as_the_activation(
+    client, account, signed_in, monkeypatch
+):
+    """The funnel counts one import per account: the one that replaced the
+    demo book. A later statement, and a wipe-and-reimport, say `first=False`."""
+    from stocks import obs
+    from stocks.portfolio import demo
+
+    seen: list[tuple[str, dict]] = []
+    monkeypatch.setattr(obs, "event", lambda name, **f: seen.append((name, f)))
+    demo.seed(account.db)
+    signed_in.post("/v1/import/commit", json=body())
+    longer = CLEAN + "2024-03-01,NVDA,buy,1,800.00,EUR,1.00,revolut Nvidia\n"
+    signed_in.post("/v1/import/commit", json=body(longer))
+    signed_in.post(
+        "/v1/import/commit", json=body(wipe=True, wipe_confirm=EMAIL)
+    )
+    flags = [f["first"] for name, f in seen if name == "import.committed"]
+    assert flags == [True, False, False]
