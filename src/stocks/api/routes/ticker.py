@@ -571,21 +571,9 @@ def _split_gaps(db, ticker: str) -> list:
 
 def _declined(db, ticker: str) -> set[str]:
     """Split days of this name the reader has written and then undone."""
-    from stocks.portfolio import edits
+    from stocks.portfolio import split_sweep
 
-    days: set[str] = set()
-    for change in edits.history(db, limit=500):
-        if not change.undone_at:
-            continue
-        for row in change.changes:
-            after = row.after or {}
-            if (
-                row.before is None
-                and after.get("action") == "split"
-                and str(after.get("ticker", "")).upper() == ticker
-            ):
-                days.add(str(after.get("date", "")))
-    return days
+    return {day for _, day in split_sweep.declined(db, ticker)}
 
 
 def _split(gap, declined: set[str] | None = None) -> TickerSplit:

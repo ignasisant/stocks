@@ -67,7 +67,7 @@ Kind = Literal[
 ]
 KINDS: tuple[Kind, ...] = get_args(Kind)
 
-Source = Literal["import", "page", "doctor", "replay", "feed", "review"]
+Source = Literal["import", "page", "doctor", "replay", "feed", "review", "sweep"]
 SOURCES: tuple[Source, ...] = get_args(Source)
 
 # (kind, account, ticker, key) -> monotonic time it was last said. A book is
