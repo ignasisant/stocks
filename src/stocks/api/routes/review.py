@@ -676,18 +676,16 @@ def _filed_point(
         return None
     then = engine.score(engine.at_price(entry["then"], factor))
     base = engine.score(entry["base"])
-    parts = (then.quality, then.cheapness, base.quality, base.cheapness)
-    if any(part is None for part in parts):
-        return None
-
-    def moved(today: float, past: float, ref: float) -> float:
+    def moved(today: float | None, past: float | None, ref: float | None) -> float | None:
+        if today is None or past is None or ref is None:
+            return None
         return round(min(100.0, max(0.0, today + past - ref)), 1)
 
-    return ScorePoint(
-        quality=moved(now.quality, then.quality, base.quality),
-        cheapness=moved(now.cheapness, then.cheapness, base.cheapness),
-        source="filings",
-    )
+    quality = moved(now.quality, then.quality, base.quality)
+    cheapness = moved(now.cheapness, then.cheapness, base.cheapness)
+    if quality is None or cheapness is None:
+        return None
+    return ScorePoint(quality=quality, cheapness=cheapness, source="filings")
 
 
 def _parse_names(raw: str) -> list[str]:
