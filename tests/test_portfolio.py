@@ -901,6 +901,33 @@ def test_session_quote_prices_the_premarket_move(monkeypatch):
     assert abs(quote["pct"] - (435.0 / 500.0 - 1)) < 1e-9
 
 
+def test_session_quote_keeps_the_price_and_drops_a_move_no_session_makes(monkeypatch):
+    """A previous close in pence against a price in pounds: the card keeps the
+    price, shows no day move, and the feed's slip is one logged contradiction
+    (`consistency.day_move`) rather than a -99 % day."""
+    from stocks import obs
+    from stocks.portfolio import consistency
+
+    said = []
+    monkeypatch.setattr(
+        obs, "warn",
+        lambda name, **fields: said.append(fields) if name == consistency.EVENT else None,
+    )
+    _patch_quote(
+        monkeypatch,
+        {
+            "marketState": "CLOSED",
+            "regularMarketPrice": 12.5,
+            "regularMarketPreviousClose": 1250.0,
+        },
+    )
+    quote = session_quote("PENCE.L")
+    assert quote["price"] == 12.5
+    assert quote["pct"] is None
+    [line] = said
+    assert (line["kind"], line["ticker"], line["off"]) == ("quote_jump", "PENCE.L", 0.01)
+
+
 def test_session_quote_labels_after_hours_but_not_a_shut_market(monkeypatch):
     info = {
         "marketState": "POST",

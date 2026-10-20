@@ -1,5 +1,7 @@
 """chat/market: ticker resolution, quote batching, prompt block."""
 
+import pytest
+
 from stocks.chat import market
 from stocks.chat.market import Quote, augment, mentioned, named, quotes
 
@@ -169,6 +171,15 @@ def test_partial_quotes_still_render():
 def test_day_pct_needs_a_previous_close():
     assert Quote("XYZ", price=3.0).day_pct is None
     assert Quote("XYZ", price=3.0, prev_close=0).day_pct is None
+
+
+def test_day_pct_drops_a_move_no_session_produces():
+    """A close in pence against a price in pounds is the feed's slip, not a
+    +9,900 % day the model should be told about; the price itself stays."""
+    pence = Quote("VOD.L", price=12.5, prev_close=1250.0)
+    assert pence.day_pct is None
+    assert pence.line() == "- VOD.L: last 12.50"
+    assert Quote("XYZ", price=6.0, prev_close=3.0).day_pct == pytest.approx(1.0)
 
 
 def test_augment_appends_the_block():

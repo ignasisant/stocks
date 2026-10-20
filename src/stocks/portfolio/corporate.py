@@ -101,7 +101,7 @@ def missing_splits(
 
     found: list[MissingSplit] = []
     for ticker, rows in sorted(by_ticker.items()):
-        found += _ticker_gaps(ticker, rows, splits, close_on)
+        found += _ticker_gaps(ticker, rows, splits, close_on, source=source)
     found.sort(key=lambda m: (m.tx.date, m.ticker))
     for gap in found:
         consistency.report(
@@ -121,6 +121,8 @@ def _ticker_gaps(
     rows: list[Transaction],
     splits: SplitLookup,
     close_on: CloseLookup,
+    *,
+    source: consistency.Source = "import",
 ) -> list[MissingSplit]:
     try:
         events = [
@@ -154,7 +156,23 @@ def _ticker_gaps(
         close = _close(close_on, ticker, buy.date)
         if close is None or close <= 0 or buy.price <= 0:
             continue
-        unadjusted = _unadjusted_splits(buy.price / close, events, buy.date)
+        quotient = buy.price / close
+        unadjusted = _unadjusted_splits(quotient, events, buy.date)
+        if unadjusted is None:
+            # No split explains the row's scale. A split's worth away from
+            # its day's close — pence booked as pounds, another name under
+            # the symbol, a typo — is a contradiction worth a line; closer
+            # than that is a volatile day, which is not.
+            if quotient >= _MIN_RATIO or quotient <= 1 / _MIN_RATIO:
+                consistency.report(
+                    "price_off_market",
+                    source=source,
+                    ticker=ticker,
+                    key=buy.date,
+                    traded=buy.date,
+                    off=consistency.ratio(buy.price, close),
+                )
+            continue
         if not any(d == day for d, _ in unadjusted):
             continue
         applied.append((day, ratio))
@@ -183,7 +201,7 @@ def _believable(ratio: float) -> bool:
 
 def _unadjusted_splits(
     quotient: float, events: list[tuple[str, float]], bought: str
-) -> list[tuple[str, float]]:
+) -> list[tuple[str, float]] | None:
     """Which splits after `bought` a price of `quotient` x the adjusted close
     has NOT been restated for.
 
@@ -194,8 +212,9 @@ def _unadjusted_splits(
     the tolerance), so the quotient names exactly one of them — including the
     empty suffix, which is a row already on today's scale and needs no split
     at all. A forward and a reverse split can cancel (2:1 then 1:2), and a
-    quotient two suffixes fit is ambiguous. That, or a quotient that fits
-    none of them, is not evidence of anything and returns none.
+    quotient two suffixes fit is ambiguous: no evidence, an empty list. A
+    quotient that fits none of them is None — the row's price is off its
+    market on a scale no split explains, which the caller may say.
     """
     after = [(d, r) for d, r in events if d > bought]
     fits = []
@@ -204,6 +223,8 @@ def _unadjusted_splits(
         product = math.prod(r for _, r in suffix)
         if abs(quotient - product) <= _PRICE_TOLERANCE * product:
             fits.append(suffix)
+    if not fits:
+        return None
     return fits[0] if len(fits) == 1 else []
 
 

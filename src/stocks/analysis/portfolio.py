@@ -2094,8 +2094,13 @@ def _snapshot(quote: dict) -> dict | None:
     whatever window is open — the close a daily bar would print, which is what
     `loaders._overlay_live` lays over a book's last bar. Extended hours are a
     move, not a close.
+
+    `pct` is None, the price kept, when the quote and the close it is measured
+    from cannot be one session apart (`consistency.day_move`): a feed that
+    mixed pence with pounds is a logged contradiction, not a +9,900 % day.
     """
     with obs.swallow("quote.session"):
+        symbol = str(quote.get("symbol") or "")
         state = str(quote.get("marketState") or "")
         regular = quote.get("regularMarketPrice")
         prev = quote.get("regularMarketPreviousClose")
@@ -2109,7 +2114,7 @@ def _snapshot(quote: dict) -> dict | None:
             price = float(pre)
             return {
                 "price": price,
-                "pct": price / float(regular) - 1,
+                "pct": consistency.day_move(price, float(regular), ticker=symbol),
                 "session": "pre",
                 "as_of": _quote_date(quote, today=True),
                 **session,
@@ -2118,7 +2123,7 @@ def _snapshot(quote: dict) -> dict | None:
             price = float(post)
             return {
                 "price": price,
-                "pct": price / float(prev) - 1,
+                "pct": consistency.day_move(price, float(prev), ticker=symbol),
                 "session": "post" if state.startswith("POST") else None,
                 "as_of": _quote_date(quote),
                 **session,
@@ -2127,7 +2132,7 @@ def _snapshot(quote: dict) -> dict | None:
             price = float(regular)
             return {
                 "price": price,
-                "pct": price / float(prev) - 1,
+                "pct": consistency.day_move(price, float(prev), ticker=symbol),
                 "session": None,
                 "as_of": _quote_date(quote),
                 **session,
