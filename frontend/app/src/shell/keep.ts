@@ -116,13 +116,20 @@ export async function recall(url: string): Promise<Kept | undefined> {
 }
 
 /**
- * Empty the shelf before this device stops being signed in, then go to `to`.
+ * Sign this device out: empty the shelf, end the session, land on the home
+ * page as a guest.
  *
- * The next `/me` would empty it anyway, but only on the next visit: until
- * then a shared computer keeps the last account's book on disk. Bounded, so a
- * slow or broken IndexedDB never holds a sign-out hostage.
+ * The shelf first. The next `/me` would empty it anyway, but only on the next
+ * visit: until then a shared computer keeps the last account's book on disk.
+ * Bounded, so a slow or broken IndexedDB never holds a sign-out hostage.
+ *
+ * Then a POST to `to` (`/auth/logout` unless the server named another path).
+ * A GET there only asks — a sign-out that a GET performed could be aimed from
+ * any page on the web — so the app sends the POST itself and then navigates.
+ * When the POST cannot be sent at all, the GET page is where the reader can
+ * still confirm by hand.
  */
-export async function leave(to: string): Promise<void> {
+export async function signOut(to = "/auth/logout"): Promise<void> {
   const s = shelf;
   ready = null;
   if (s) {
@@ -131,7 +138,16 @@ export async function leave(to: string): Promise<void> {
       new Promise((resolve) => setTimeout(resolve, 600)),
     ]);
   }
-  window.location.assign(to);
+  try {
+    await fetch(to, {
+      method: "POST",
+      credentials: "same-origin",
+      redirect: "manual",
+    });
+    window.location.assign("/");
+  } catch {
+    window.location.assign(to);
+  }
 }
 
 function identity(body: unknown): string {

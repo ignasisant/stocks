@@ -353,7 +353,7 @@ def test_a_cancelled_sign_in_comes_back_quietly_signed_out(client, google):
 
 
 def test_signing_out_clears_the_session_and_the_flow(client, google):
-    response = client.get(session.LOGOUT_PATH)
+    response = client.post(session.LOGOUT_PATH)
     set_by = cookies_set(response)
     assert response.status_code == 302
     for name in (session.COOKIE, session.FLOW_COOKIE):
@@ -363,15 +363,91 @@ def test_signing_out_clears_the_session_and_the_flow(client, google):
 def test_signing_out_leaves_the_returning_visitor_cookie_alone(client, google):
     """`ts_app` is not a session and not a login: clearing it would send a
     signed-out reader to the marketing landing instead of the app."""
-    response = client.get(session.LOGOUT_PATH)
+    response = client.post(session.LOGOUT_PATH)
     assert "ts_app" not in cookies_set(response)
 
 
 def test_signing_out_does_not_send_the_reader_to_google(client, google):
     """We keep no token, so there is nothing to revoke — and Google's global
     sign-out would sign them out of Gmail."""
-    response = client.get(session.LOGOUT_PATH)
+    response = client.post(session.LOGOUT_PATH)
     assert response.headers["location"] == "/"
+
+
+def test_a_get_on_logout_asks_and_ends_nothing(client, google):
+    """A GET that signed out could be aimed from any page on the web — an
+    `<img src>` is enough — so it only shows the question, in the reader's
+    language, and the form underneath is what acts."""
+    google.install()
+    client.get(session.LOGIN_PATH)
+    client.get(f"{session.CALLBACK_PATH}?state=st-1&code=c")
+    response = client.get(
+        session.LOGOUT_PATH, headers={"Accept-Language": "es-ES,es;q=0.9"}
+    )
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert "Set-Cookie" not in response.headers
+    body = response.text
+    assert f'<form method="post" action="{session.LOGOUT_PATH}">' in body
+    assert "Cerrar sesión" in body
+    assert '<html lang="es">' in body
+    # Still signed in.
+    assert session.signed_in_email(client.cookies) is not None
+
+
+def test_a_get_on_logout_sends_a_guest_home(client, google):
+    """Nobody signed in has nothing to confirm."""
+    response = client.get(session.LOGOUT_PATH)
+    assert response.status_code == 302
+    assert response.headers["location"] == "/"
+    assert "Set-Cookie" not in response.headers
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Sec-Fetch-Site": "cross-site"},
+        {"Sec-Fetch-Site": "same-site"},
+        {"Origin": "https://elsewhere.example"},
+        {"Referer": "https://elsewhere.example/page"},
+    ],
+    ids=["sec-fetch-cross", "sec-fetch-same-site", "origin", "referer"],
+)
+def test_a_cross_site_post_cannot_sign_the_reader_out(client, google, headers):
+    """The cookie is SameSite=Lax, so such a POST would arrive without it and
+    end nothing anyway; this turns that quiet no-op into a refusal that the
+    logs can see."""
+    google.install()
+    client.get(session.LOGIN_PATH)
+    client.get(f"{session.CALLBACK_PATH}?state=st-1&code=c")
+    response = client.post(
+        session.LOGOUT_PATH, headers={"Host": "topstocks.test", **headers}
+    )
+    assert response.status_code == 403
+    assert "Set-Cookie" not in response.headers
+    assert session.signed_in_email(client.cookies) is not None
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Sec-Fetch-Site": "same-origin"},
+        {"Sec-Fetch-Site": "none"},
+        {"Origin": "https://topstocks.test"},
+        {"Referer": "https://topstocks.test/profile"},
+        {},
+    ],
+    ids=["sec-fetch-same-origin", "sec-fetch-none", "origin", "referer", "bare"],
+)
+def test_our_own_post_signs_the_reader_out(client, google, headers):
+    google.install()
+    client.get(session.LOGIN_PATH)
+    client.get(f"{session.CALLBACK_PATH}?state=st-1&code=c")
+    response = client.post(
+        session.LOGOUT_PATH, headers={"Host": "topstocks.test", **headers}
+    )
+    assert response.status_code == 302
+    assert "Max-Age=0" in cookies_set(response)[session.COOKIE]
 
 
 # ------------------------------------------------------------------- the flags

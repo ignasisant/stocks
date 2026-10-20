@@ -15,7 +15,7 @@ import { useState } from "react";
 import { get } from "../../shell/api";
 import { useT } from "../../shell/i18n";
 import { Tabs } from "../../ui/Tabs";
-import { leave } from "../../shell/keep";
+import { signOut } from "../../shell/keep";
 import { useRoute } from "../../shell/router";
 import { useAccount, useGuest } from "../../shell/session";
 import { useApi } from "../../shell/useApi";
@@ -142,9 +142,10 @@ function Settings() {
             className="pr-signout"
             href="/auth/logout"
             onClick={(event) => {
-              // Same link, after the answers kept on this device are gone.
+              // The href is the no-JavaScript road: a page that asks before
+              // it acts. With JavaScript the app signs out itself.
               event.preventDefault();
-              void leave("/auth/logout");
+              void signOut();
             }}
           >
             {t("common.log_out")}
