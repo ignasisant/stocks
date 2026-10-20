@@ -157,6 +157,18 @@ def cmd_weekly(args: argparse.Namespace) -> None:
     print("weekly review sent")
 
 
+def cmd_nudge(args: argparse.Namespace) -> None:
+    """Remind the Telegram-linked accounts that went quiet (notify/nudge.py)."""
+    from stocks.notify.nudge import run_nudge_fanout
+
+    status = run_nudge_fanout(dry_run=args.dry_run)
+    if not status:
+        print("no Telegram-linked accounts")
+        return
+    for label, result in status.items():
+        print(f"{label}: {result}")
+
+
 def cmd_notify_test(args: argparse.Namespace) -> None:
     """Send a test message down the real notification paths.
 
@@ -1373,6 +1385,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="print what would be sent and to whom; send nothing",
     )
     p_ntest.set_defaults(func=cmd_notify_test)
+
+    p_nudge = sub.add_parser(
+        "nudge",
+        help="remind Telegram-linked accounts quiet for a week (two at most)",
+    )
+    p_nudge.add_argument(
+        "--dry-run", action="store_true",
+        help="print the reminder(s) and who is due one; send nothing",
+    )
+    p_nudge.set_defaults(func=cmd_nudge)
 
     p_tg = sub.add_parser(
         "telegram-chat",
