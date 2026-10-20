@@ -85,6 +85,20 @@ The reader asked to be told at a price. Once the material gives you the level, c
   }
  },
  {
+  "description": "The user's recorded trades of one ticker — date, buy or sell, shares, price, fee — and the lots still open under their tax rule, each with its purchase date and cost. Use for 'when did I buy', 'at what price', 'how many lots', the cost of one purchase, or any question about a past trade; never estimate those. Without a ticker: the whole book's latest trades.",
+  "name": "trade_history",
+  "schema": {
+   "properties": {
+    "ticker": {
+     "description": "A held symbol, e.g. NVDA; omit for the whole book.",
+     "type": "string"
+    }
+   },
+   "required": [],
+   "type": "object"
+  }
+ },
+ {
   "description": "Search everything the user has discussed with you before, across all past conversations. Use when the question refers to earlier reasoning — what they decided, why they bought something, what you concluded last time — or when knowing their history would change the answer. The current conversation is already in front of you and is not searched.",
   "name": "recall",
   "schema": {

@@ -545,6 +545,9 @@ class Where(BaseModel):
 
     view: str = Field(default="", max_length=40)
     focus: str = Field(default="", max_length=40)
+    # The page's open `?tab=`, when it has tabs: "what is this column?" on
+    # the Fees tab is about fees. Kept only when the page lists it.
+    tab: str = Field(default="", max_length=40)
 
 
 class Forwarded(BaseModel):
@@ -659,15 +662,17 @@ def session_keys(provider: str | None, key: str | None) -> dict[str, str]:
     return {pid: held}
 
 
-def _view(view: str, focus: str, lang: str) -> tuple[str, str]:
+def _view(view: str, focus: str, lang: str, tab: str = "") -> tuple[str, str]:
     """(the prompt's "Current view" sentence, the clean focused symbol)."""
     from stocks.web.i18n import translate
 
     slug = (view or "").strip().lower()
     label = _VIEW_LABELS.get(slug)
     page = translate(label, lang) if label else ""
+    tab_key = navigate.tab_label(slug, tab) if page else ""
+    tab_name = translate(tab_key, lang) if tab_key else ""
     sym = engine.clean_focus(focus)
-    return engine.view_context(page, sym), sym
+    return engine.view_context(page, sym, tab_name), sym
 
 
 def _turn(raw: dict, lang: str = "en") -> Message:
@@ -1676,7 +1681,7 @@ def ask(
         )
 
     where = body.where
-    view, focus = _view(where.view, where.focus, lang)
+    view, focus = _view(where.view, where.focus, lang, where.tab)
     # The engine writes the active thread, so that is the one to test: a turn
     # lands on the walkthrough's thread exactly when it is the active one.
     guided = guide_ai.owns(auth.active_conversation(paths.chat)["id"], prefs)

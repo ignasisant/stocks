@@ -54,6 +54,15 @@ DEFAULT_FIXTURES: dict[str, str] = {
     "portfolio_snapshot": ("Value 98,400 EUR. Positions: NVDA 24% (+61%), "
                            "ASML 18% (-4%), MELI 12% (+22%), VWCE 30%, "
                            "cash 16%."),
+    "trade_history": ("Recorded trades of NVDA (2), oldest first:\n"
+                      "- 2024-03-11 buy 20 NVDA @ 88.40 USD, fee 1.00 USD\n"
+                      "- 2025-06-02 buy 10 NVDA @ 136.10 USD, fee 1.00 USD\n"
+                      "Open lots under FIFO (ES), in the order the next sale "
+                      "takes them:\n"
+                      "- NVDA bought 2024-03-11: 20 shares, cost 1,769.00 USD = "
+                      "1,632.40 EUR (81.62 each, fee included)\n"
+                      "- NVDA bought 2025-06-02: 10 shares, cost 1,362.00 USD = "
+                      "1,196.80 EUR (119.68 each, fee included)"),
     "recall": "2026-10-02: you said you would trim NVDA above 25% weight.",
     "decisions": "2026-10-09 proposal: trim ASML 10% — state: shown.",
     "lookup_knowledge": ("[importing] DEGIRO: export Account statement as "

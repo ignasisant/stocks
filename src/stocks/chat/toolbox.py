@@ -199,6 +199,93 @@ def _portfolio(args: dict, ctx: Context) -> str:
         return "The portfolio snapshot could not be read."
 
 
+# The trades a `trade_history` answer lists at most: the newest, since "when
+# did I buy" is about the ones the reader remembers least well.
+MAX_TRADES = 40
+
+
+def _shares(value: float) -> str:
+    return f"{value:.6f}".rstrip("0").rstrip(".") or "0"
+
+
+def _amount(value: float) -> str:
+    return f"{value:,.2f}" if abs(value) >= 1 else f"{value:,.4f}"
+
+
+def _trade_history(args: dict, ctx: Context) -> str:
+    """The reader's recorded trades, and the parcels a sale would take next.
+
+    The snapshot (`portfolio_snapshot`) says what is held and at what average
+    cost; this says how it got there — each buy and sell as the book records
+    it, then the open lots under the account's own matching rule, so "when
+    did I buy ASML and at what price" is answered off the ledger and never
+    estimated. Averaged jurisdictions have no parcels, and the answer says so
+    rather than inventing some.
+    """
+    from stocks.data.fx import converter, prefetch
+    from stocks.portfolio import tax, transfers
+    from stocks.portfolio.ledger import all_transactions
+    from stocks.portfolio.positions import (
+        MATCH_FIFO,
+        MATCH_LIFO,
+        build,
+        open_lots,
+    )
+    from stocks.portfolio.tax import prefs as tax_prefs
+
+    if (ledger := _ledger(ctx)) is None:
+        return _NO_LEDGER
+    db, prefs_path = ledger
+    txs = transfers.normalize(all_transactions(db)) if db.exists() else []
+    if not txs:
+        return _NO_LEDGER
+    symbol = _held_symbol(args, ctx)
+    shown = [t for t in txs if t.ticker == symbol] if symbol else txs
+    if not shown:
+        return f"No recorded trade of {symbol}."
+    code, _how = tax_prefs.resolve(tax_prefs.load(prefs_path))
+    jur = tax.get(code)
+    lines = [f"Recorded trades{f' of {symbol}' if symbol else ''} "
+             f"({len(shown)}), oldest first:"]
+    if len(shown) > MAX_TRADES:
+        lines.append(f"  ({len(shown) - MAX_TRADES} earlier trades left out)")
+        shown = shown[-MAX_TRADES:]
+    for t in shown:
+        fee = f", fee {_amount(t.fee)} {t.currency}" if t.fee else ""
+        lines.append(f"- {t.date} {t.action} {_shares(t.quantity)} {t.ticker} @ "
+                     f"{_amount(t.price)} {t.currency}{fee}")
+    prefetch(((t.date, t.currency) for t in txs), quote=jur.currency)
+    to_base = converter(jur.currency)
+    if jur.matching in (MATCH_FIFO, MATCH_LIFO):
+        lots = [lot for lot in open_lots(txs, to_base, jur.matching)
+                if not symbol or lot.ticker == symbol]
+        lines.append(
+            f"Open lots under {jur.matching.upper()} ({code}), in the order "
+            f"the next sale takes them:" if lots else
+            f"No open lot{f' of {symbol}' if symbol else ''}: nothing held.")
+        for lot in lots:
+            each = lot.cost_native / lot.quantity if lot.quantity else 0.0
+            base = (f" = {_amount(lot.cost)} {jur.currency}"
+                    if lot.currency != jur.currency else "")
+            lines.append(f"- {lot.ticker} bought {lot.date}: {_shares(lot.quantity)} "
+                         f"shares, cost {_amount(lot.cost_native)} {lot.currency}"
+                         f"{base} ({_amount(each)} each, fee included)")
+    else:
+        positions, _ = build(txs, to_base, base=jur.currency, matching=jur.matching)
+        held = [p for p in positions if not symbol or p.ticker == symbol]
+        lines.append(
+            f"Holdings under {jur.matching} cost ({code}): one averaged cost per "
+            f"position, no parcels." if held else
+            f"No open position{f' in {symbol}' if symbol else ''}: nothing held.")
+        for p in held:
+            base = (f" = {_amount(p.cost)} {jur.currency}"
+                    if p.currency != jur.currency else "")
+            lines.append(f"- {p.ticker}: {_shares(p.quantity)} shares, cost "
+                         f"{_amount(p.cost_native)} {p.currency}{base} "
+                         f"({_amount(p.avg_cost_native)} each)")
+    return _cap("\n".join(lines))
+
+
 # The app's own engines — the tax replay, the book's weights — as tools. The
 # engine already runs each of them as a single-shot detector when the message
 # matches its keywords, and draws the result; offered here, the model can also
@@ -417,6 +504,20 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
             {"type": "object", "properties": {}},
         ), _portfolio),
         (ToolSpec(
+            "trade_history",
+            "The user's recorded trades of one ticker — date, buy or sell, "
+            "shares, price, fee — and the lots still open under their tax "
+            "rule, each with its purchase date and cost. Use for 'when did I "
+            "buy', 'at what price', 'how many lots', the cost of one purchase, "
+            "or any question about a past trade; never estimate those. "
+            "Without a ticker: the whole book's latest trades.",
+            {"type": "object",
+             "properties": {"ticker": {"type": "string",
+                                       "description": "A held symbol, e.g. NVDA; "
+                                                      "omit for the whole book."}},
+             "required": []},
+        ), _trade_history),
+        (ToolSpec(
             "recall",
             "Search everything the user has discussed with you before, across "
             "all past conversations. Use when the question refers to earlier "
@@ -582,8 +683,9 @@ def specs(ctx: Context | None = None, *, engines: bool = False) -> list[ToolSpec
     `decisions` are there at all — a deploy without the memory dependencies,
     without the knowledge files, or a turn with no account, must not be
     offered a tool that can only answer "nothing available", which reads to
-    the model as a failure worth retrying. The same rule keeps the `ENGINES`
-    out of a turn with no ledger to replay, and out unless `engines`."""
+    the model as a failure worth retrying. The same rule keeps `trade_history`
+    out of a turn with no ledger to read, and the `ENGINES` out of one with no
+    ledger to replay, and out unless `engines`."""
     from stocks.chat import knowledge, memory
 
     has_book = bool(ctx and ctx.db is not None and ctx.db.exists()
@@ -591,6 +693,8 @@ def specs(ctx: Context | None = None, *, engines: bool = False) -> list[ToolSpec
     out = []
     for spec, _ in TOOLS.values():
         if spec.name in ENGINES and not (engines and has_book):
+            continue
+        if spec.name == "trade_history" and not has_book:
             continue
         if spec.name == "recall" and not (
                 ctx and ctx.memory_db is not None and memory.available()):

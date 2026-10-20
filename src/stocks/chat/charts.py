@@ -65,7 +65,7 @@ DEFAULT = "1y"
 # on purpose, like the what-if gate: a false hit costs one cached download
 # and no model call.
 _WANTS_RE = re.compile(
-    r"\bgrafic[oa]s?\b|\bcharts?\b|\bplot(?:s|ted)?\b|\bgraphs?\b|"
+    r"\bgrafic[oa](?:s|me|lo|la)?\b|\bcharts?\b|\bplot(?:s|ted)?\b|\bgraphs?\b|"
     r"\bevolucion\b|\bevolution\b|\bevolved\b|\bprice history\b|"
     r"\bhistoric[oa]\b|\btrayectoria\b|\bdibuj|\bpintame\b",
     re.IGNORECASE,
@@ -162,7 +162,23 @@ _NOT_NAMES = frozenset({
     "ano", "anos", "year", "years", "mes", "meses", "month", "months", "semana",
     "week", "mis", "my", "mi", "tu", "your", "todo", "toda", "siempre", "cambio",
     "valor", "value", "rentabilidad", "performance", "comparacion", "comparison",
+    "tendencia", "tendencias", "trend", "trends", "prediccion", "prediction",
+    "proyeccion", "projection", "pronostico", "forecast", "futuro", "future",
 })
+
+# What the model is told about charts on a surface that draws them (the
+# drawer): the request is read here, before the model speaks, and the chart
+# goes under the answer whether or not the model mentions it. Without this a
+# small model asked for one says it cannot draw, which is false on this
+# surface and sends the reader away from a chart that is already there.
+PROMPT = (
+    "\n\nCharts: when the user asks for a chart, a graph or how a price or "
+    "their portfolio evolved, the app itself draws the price chart under your "
+    "answer, so never say you cannot draw or show charts; give the figures "
+    "and let the chart stand. It draws the past only: a prediction or "
+    "projection of a price or of the portfolio's value is not drawn, so say "
+    "so and point to the Portfolio page's Projection tab instead.\n\n"
+)
 _COMPARE_RE = re.compile(r"\bcompar|\bvs\.?\b|\bversus\b|\bfrente a\b|\bcontra\b|"
                          r"\bagainst\b", re.IGNORECASE)
 # The reader's own book, and the questions that measure it against something.
