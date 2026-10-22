@@ -21,7 +21,8 @@ telegram_bot_token = ""
 # Optional — the app's public origin, so notifications can link back into it
 app_public_url = "" # e.g. https://topstocks.example
 
-# Optional — price warm-up cron (warm.yml); must equal the app's [api] token
+# Optional — price warm-up (Cloud Scheduler, cron.tf; warm.yml by hand); must
+# equal the app's [api] token
 api_token = ""
 
 # Optional — digest highlight LLM chain
@@ -29,3 +30,6 @@ chat_enc_key        = "" # must equal the app's [chat] enc_key
 free_llm_groq       = ""
 free_llm_cerebras   = ""
 free_llm_openrouter = ""
+
+# Google Cloud needs no variable: project, region and names default to prod
+# (variables.tf) and credentials come from gcloud — see README.

@@ -24,9 +24,9 @@ finishes on the first request's CPU, joined by its loaders rather than
 duplicated.
 
 The service that does scale to zero — production — is warmed from outside
-instead: a GitHub Actions cron (`.github/workflows/warm.yml`) calls
-`POST /v1/warm` with the API token before the European open, after the US
-open and after each close. The request is the CPU: the warm runs on its
+instead: a Cloud Scheduler job (infra/cron.tf; `.github/workflows/warm.yml`
+by hand) calls `POST /v1/warm` with the API token before the European open,
+after the US open and after each close. The request is the CPU: the warm runs on its
 thread, one account at a time, every stale memo refreshed in place
 (`cache.SYNC`) rather than handed to a background thread. The first of the
 day is also the one that pays each book's daily chart month

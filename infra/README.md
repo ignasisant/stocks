@@ -6,6 +6,8 @@ Manages the parts of the deployment that have Terraform providers:
 |---|---|---|
 | Cloudflare R2 bucket | yes | persistent storage behind `stocks.storage` |
 | GitHub Actions secrets | yes | everything `.github/workflows/notify.yml` reads; replaces `scripts/setup_notify_secrets.sh` |
+| Cloud Run job `topstocks-cron` + Cloud Scheduler | yes | `cron.tf`: the Today page's market read (06:30 UTC, Tue–Sat) and the price warm-up (four ticks a trading day, New York time). The job runs the service's image and environment; `scripts/deploy.sh` moves it with each promotion |
+| Cloud Run service | no | `scripts/deploy.sh`; `cron.tf` only reads it (image, environment, identity) |
 | App secrets on the VM | no | no API — the app reads `deploy/secrets.toml`, see `deploy_secrets_reminder` output |
 | Telegram bot | no | @BotFather; never set a webhook (Profile linking polls `getUpdates`) |
 | Google OIDC client | no | Google Cloud console, OAuth consent screen |
@@ -29,10 +31,20 @@ terraform import cloudflare_r2_bucket.stocks <account_id>/<bucket_name>/default
 Existing repo secrets need no import — `terraform apply` overwrites them
 idempotently.
 
+The Google side takes no variable: the provider uses Application Default
+Credentials (`gcloud auth application-default login`), or the gcloud user's
+own token for a one-off run:
+
 ```sh
 terraform plan
 terraform apply
+# or, with no ADC file on the machine:
+GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token) terraform apply
 ```
+
+The first apply enables the Cloud Scheduler API; if the scheduler jobs fail
+on that run with a permission error on the new service account, the API's
+service agent was still being created — apply again.
 
 After apply, print the block for the deploy's `secrets.toml`:
 

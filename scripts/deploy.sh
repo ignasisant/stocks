@@ -356,6 +356,25 @@ if [ "$CANARY" = 1 ]; then
         --region "$REGION" --remove-tags candidate >/dev/null
 fi
 
+# The Cloud Run job behind the Today page's market read (infra/cron.tf) runs
+# this same image, started by Cloud Scheduler each morning: move it to the
+# image just promoted, and to the secret version when this deploy pinned
+# one, so the read never runs a build behind the service. Staging has no job.
+JOB="${STOCKS_GCP_JOB:-topstocks-cron}"
+if [ "$ENV" = prod ] && gcloud run jobs describe "$JOB" --project "$PROJECT" \
+        --region "$REGION" --format 'value(name)' >/dev/null 2>&1; then
+    IMAGE="$(gcloud run revisions describe "$REVISION" --project "$PROJECT" \
+        --region "$REGION" --format 'value(spec.containers[0].image)')"
+    JOB_ARGS=(run jobs update "$JOB" --project "$PROJECT" --region "$REGION" \
+        --image "$IMAGE")
+    if [ -n "$SECRET" ]; then
+        JOB_ARGS+=(--update-secrets "STREAMLIT_SECRETS_TOML=$SECRET")
+    fi
+    echo
+    echo "Moving job $JOB to the same image"
+    gcloud "${JOB_ARGS[@]}" >/dev/null
+fi
+
 echo
 echo "$URL"
 echo "Serving: $REVISION"

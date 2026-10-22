@@ -2,8 +2,9 @@
 
 Macro, rates, the central banks, sector rotation, the risk-appetite regime and
 crypto sentiment are the same for every reader, so they are written once a
-morning rather than once per account: a GitHub Actions cron
-(`stocks today-market`, `.github/workflows/today.yml`) reads the figures off
+morning rather than once per account: a Cloud Run job started by Cloud
+Scheduler (`stocks today-market`, infra/cron.tf; `.github/workflows/today.yml`
+is the fallback by hand) reads the figures off
 the same loaders the Pulse page uses, asks the free chain for a headline and a
 few lines per language, audits every figure in them against the facts, and
 stores one file (`data/today_market.json`, mirrored to the bucket like the

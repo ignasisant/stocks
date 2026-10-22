@@ -27,6 +27,15 @@ def test_filter_excludes_the_access_log_by_default():
     assert 'logName!="projects/p/logs/run.googleapis.com%2Frequests"' in f
 
 
+def test_filter_reads_the_cron_job_beside_the_service():
+    # The morning market read runs as a Cloud Run job (infra/cron.tf) and logs
+    # under its own resource type; a view of the app's lines includes it.
+    f = lq.build_filter(service="svc", job="svc-cron")
+    app = 'resource.type="cloud_run_revision" AND resource.labels.service_name="svc"'
+    cron = 'resource.type="cloud_run_job" AND resource.labels.job_name="svc-cron"'
+    assert f"(({app}) OR ({cron}))" in f
+
+
 def test_admin_audit_entries_are_excluded_from_the_app_view():
     # A 403 on a console API call is logged against the same resource at ERROR;
     # it is not the app failing.
