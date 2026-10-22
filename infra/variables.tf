@@ -43,6 +43,32 @@ variable "r2_location" {
   default     = "WEUR"
 }
 
+# --- Google Cloud: the scheduled jobs beside the Cloud Run service ---------------
+
+variable "gcp_project" {
+  description = "Google Cloud project of the Cloud Run service (scripts/deploy.sh's STOCKS_GCP_PROJECT)."
+  type        = string
+  default     = "topstocks-507209"
+}
+
+variable "gcp_region" {
+  description = "Region of the service, the cron job and the Cloud Scheduler jobs."
+  type        = string
+  default     = "europe-west1"
+}
+
+variable "cloud_run_service" {
+  description = "Name of the production Cloud Run service; the cron job runs its image, environment and identity."
+  type        = string
+  default     = "topstocks"
+}
+
+variable "cron_job" {
+  description = "Name of the Cloud Run job that writes the Today page's market read. scripts/deploy.sh and `stocks logs` know it by this name (STOCKS_GCP_JOB)."
+  type        = string
+  default     = "topstocks-cron"
+}
+
 # --- Notification secrets --------------------------------------------------------
 
 variable "telegram_bot_token" {
@@ -58,7 +84,7 @@ variable "app_public_url" {
 }
 
 variable "api_token" {
-  description = "Optional. Must equal the app's [api] token — lets warm.yml POST /api/v1/warm (needs app_public_url too). Empty = secret not created, no warm-up."
+  description = "Optional. Must equal the app's [api] token — lets the warm-up (the Cloud Scheduler job in cron.tf, and warm.yml by hand) POST /api/v1/warm; needs app_public_url too. Empty = no warm-up."
   type        = string
   sensitive   = true
   default     = ""

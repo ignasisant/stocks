@@ -13,6 +13,19 @@ output "github_secrets_set" {
   value       = sort(keys(github_actions_secret.notify))
 }
 
+output "cron_job" {
+  description = "Cloud Run job behind the Today page's market read. By hand: gcloud run jobs execute <name> --region <region> --wait"
+  value       = google_cloud_run_v2_job.cron.name
+}
+
+output "scheduler_jobs" {
+  description = "Cloud Scheduler jobs and when they fire."
+  value = {
+    for j in concat([google_cloud_scheduler_job.today_market], google_cloud_scheduler_job.warm) :
+    j.name => "${j.schedule} (${j.time_zone})"
+  }
+}
+
 # The app reads secrets from a file on the VM (deploy/secrets.toml, bind-mounted
 # to /app/.streamlit/secrets.toml) — nothing to manage via a provider.
 # This block mirrors what the app needs (see .streamlit/secrets.toml).

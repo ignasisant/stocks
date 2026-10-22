@@ -1,6 +1,8 @@
 #!/bin/sh
 # Container boot: materialize the secrets file from the environment, then
-# serve the app (stocks.web.server).
+# serve the app (stocks.web.server) — or, given arguments, run those instead
+# of the server: the Cloud Run job behind the Today page's market read
+# (infra/cron.tf) starts this same image with `.venv/bin/stocks today-market`.
 #
 # STREAMLIT_SECRETS_TOML — full contents of .streamlit/secrets.toml ([auth],
 # [app], [storage], [chat], [free_llm], [telegram]). Container hosts inject
@@ -16,6 +18,11 @@ if [ -n "${STREAMLIT_SECRETS_TOML:-}" ]; then
     umask 077
     printf '%s\n' "$STREAMLIT_SECRETS_TOML" > .streamlit/secrets.toml
     umask 022
+fi
+
+# A command of its own, with the secrets file already in place.
+if [ $# -gt 0 ]; then
+    exec "$@"
 fi
 
 # stocks.web.server is the ASGI entry point: the landing, the React shell at

@@ -1,4 +1,13 @@
 # Morning market read for the Today page — the part every account shares.
+# Manual fallback only.
+#
+# The scheduled run lives on Google Cloud: Cloud Scheduler starts the
+# `topstocks-cron` Cloud Run job (infra/cron.tf) at 06:30 UTC Tuesday to
+# Saturday, so each run reads the session that closed the evening before
+# (Saturday's reads Friday's). It left GitHub because a `schedule:` here runs
+# when a runner is free, which was two to five hours late every day — the page
+# had no shared layer all morning. This workflow stays for the day the job is
+# down or a read has to be rewritten by hand: run it from the Actions tab.
 #
 # One file (data/today_market.json in the R2 bucket): the risk-appetite
 # regime, trend breadth, sector rotation against the S&P 500, US rates and
@@ -6,20 +15,9 @@
 # inflation and crypto Fear & Greed, plus a headline and a few lines per
 # language written by the keyless free chain and audited against those
 # figures (computed lines when no model answers). No user data.
-#
-# Why a runner and not the app: the app rebuilds the file itself when it
-# finds it missing or a session behind, but on the first reader's request —
-# here it is ready before anyone opens the page, and the downloads leave the
-# shared Cloud Run egress alone.
-#
-# Timing: 06:30 UTC Tuesday to Saturday, so each run reads the session that
-# closed the evening before (Saturday's reads Friday's). FRED posts the
-# previous day's yields overnight; the crypto scan (03:30) is already done.
 name: today
 
 on:
-  schedule:
-    - cron: "30 6 * * 2-6"
   workflow_dispatch:
 
 concurrency:

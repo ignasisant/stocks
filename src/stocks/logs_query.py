@@ -29,6 +29,10 @@ from stocks.config import DATA_DIR
 
 PROJECT = os.getenv("STOCKS_GCP_PROJECT", "topstocks-507209")
 SERVICE = os.getenv("STOCKS_GCP_SERVICE", "topstocks")
+# The Cloud Run job that writes the Today page's market read each morning
+# (infra/cron.tf). It runs the service's image and logs the same way, under a
+# resource of its own; its lines belong in every app view here.
+JOB = os.getenv("STOCKS_GCP_JOB", "topstocks-cron")
 LOGS_DIR = DATA_DIR / "logs"
 
 # The per-request access log. It is one entry per HTTP call — health checks
@@ -47,6 +51,7 @@ class LogsError(RuntimeError):
 def build_filter(
     *,
     service: str = SERVICE,
+    job: str = JOB,
     project: str = PROJECT,
     level: str | None = None,
     event: str | None = None,
@@ -57,10 +62,12 @@ def build_filter(
     extra: str | None = None,
 ) -> str:
     """Assemble a Cloud Logging filter string from the CLI's options."""
-    parts = [
-        'resource.type="cloud_run_revision"',
-        f'resource.labels.service_name="{service}"',
-    ]
+    app = (
+        'resource.type="cloud_run_revision"'
+        f' AND resource.labels.service_name="{service}"'
+    )
+    cron = f'resource.type="cloud_run_job" AND resource.labels.job_name="{job}"'
+    parts = [f"(({app}) OR ({cron}))"]
     if http:
         parts.append(f'logName="projects/{project}/logs/{_REQUEST_LOG}"')
     else:

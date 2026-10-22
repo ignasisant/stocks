@@ -10,6 +10,10 @@ terraform {
       source  = "integrations/github"
       version = "~> 6.0"
     }
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 8.0"
+    }
   }
 }
 
@@ -20,6 +24,13 @@ provider "cloudflare" {
 provider "github" {
   token = var.github_token
   owner = var.github_owner
+}
+
+# No credentials in variables: Application Default Credentials, or
+# GOOGLE_OAUTH_ACCESS_TOKEN from `gcloud auth print-access-token` (README).
+provider "google" {
+  project = var.gcp_project
+  region  = var.gcp_region
 }
 
 # --- Cloudflare R2: persistent storage behind stocks.storage ------------------
@@ -72,7 +83,8 @@ locals {
 # Mirrors scripts/setup_notify_secrets.sh: required storage/Telegram secrets
 # plus optional LLM keys. Empty optional values are skipped (not created),
 # matching the script's "skipped (empty)" behavior — notify.yml treats them
-# as optional. APP_PUBLIC_URL + API_TOKEN also feed warm.yml's price warm-up.
+# as optional. APP_PUBLIC_URL + API_TOKEN also feed warm.yml, the manual
+# fallback of the price warm-up (its schedule is Cloud Scheduler's, cron.tf).
 
 locals {
   required_secrets = {

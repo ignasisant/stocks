@@ -1,26 +1,24 @@
 # Price warm-up — refreshes the books read lately before anyone opens them.
+# Manual fallback only.
 #
 # One POST to the app's own /api/v1/warm (api/warm.py): the app refreshes, on
 # the request's thread, the memos a page reads for every account seen in the
-# last days, most recent first, within a 240 s budget. The 07:00 tick is the
-# one that pays the day's chart rebase (dividend-adjusted closes), with Yahoo
-# quiet and nobody waiting; the others extend the books by one spark request
-# per twenty names.
+# last days, most recent first, within a 240 s budget.
 #
-# Timing (UTC, weekdays): 07:00 before the EU open, 13:35 after the US open,
-# 16:05 after the EU close, 20:15 after the US close.
+# The scheduled ticks live on Google Cloud: a Cloud Scheduler job
+# (infra/cron.tf) makes this same call at 00:35, 09:35, 12:35 and 16:35 New
+# York time on weekdays — before the European open (the tick that pays the
+# day's chart rebase, with Yahoo quiet), after the US open, after the
+# European close, after the US close. They left GitHub because a `schedule:`
+# here runs when a runner is free, two to five hours late most days. This
+# workflow stays for a warm by hand: run it from the Actions tab.
 #
-# Why a runner and not the app: Cloud Run throttles CPU between requests and
-# scales to zero, so the app cannot schedule its own work. Nothing is checked
-# out — the step is one curl.
+# Why not the app itself: Cloud Run throttles CPU between requests and scales
+# to zero, so the app cannot schedule its own work. Nothing is checked out —
+# the step is one curl.
 name: warm
 
 on:
-  schedule:
-    - cron: "0 7 * * 1-5"
-    - cron: "35 13 * * 1-5"
-    - cron: "5 16 * * 1-5"
-    - cron: "15 20 * * 1-5"
   workflow_dispatch:
 
 concurrency:

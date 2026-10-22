@@ -234,8 +234,8 @@ _SETTLE = pd.Timedelta(days=31)
 # a dividend rewrites every earlier `Adj Close`, a split every earlier price.
 _AGREE = ("Close", "Adj Close")
 # How old a book's last chart month may grow before a refresh asks for one
-# again instead of spark's closes. Under a day, so the warm-up cron's
-# pre-market run (`.github/workflows/warm.yml`) is the one that pays it.
+# again instead of spark's closes. Under a day, so the warm-up's pre-market
+# tick (Cloud Scheduler, infra/cron.tf) is the one that pays it.
 _REBASE_S = 20 * 3600.0
 
 
