@@ -445,6 +445,19 @@ def test_previous_headlines_are_shown_to_the_next_call(providers):
     assert "Yesterday's line" in providers["free"].systems[0]
 
 
+def test_the_journal_history_is_read_before_proposing_again(providers):
+    # What the app proposed about today's names before, and what the reader
+    # did with it (`journal.history_for`): a move they declined is not pressed
+    # again in the same words.
+    daily.generate({}, {}, facts(), "en", DAY,
+                   history=["NVDA: trim (daily, 2026-08-20) · the user declined"])
+    system = providers["free"].systems[0]
+    assert "- NVDA: trim (daily, 2026-08-20) · the user declined" in system
+    assert "not proposed again in the same words" in system
+    daily.generate({}, {}, facts(), "en", DAY)
+    assert "proposed again" not in providers["free"].systems[1]
+
+
 def test_remembered_chains_the_last_headlines():
     stored = daily.DailyAction(
         day="2026-09-02", headline="older", bullets=["b"], recent=["older", "oldest"]

@@ -1103,6 +1103,10 @@ def _judge(account, background: BackgroundTasks, ccy: str, add: str) -> Review:
         today,
         judged=journal.judged_in_review(shown),
     )
+    # A name sold since the page said to sell it: the book is the answer,
+    # and the entry reads followed rather than lapsing for want of a verdict.
+    background.add_task(journal.safely, journal.settle_from_db, account.journal,
+                        account.db, today)
 
     taxes = [r.tax for r in held_rows if r.tax is not None]
     unpriced = int(table["value"].isna().sum()) if not table.empty else 0

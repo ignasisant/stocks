@@ -13,9 +13,10 @@ is always empty because nothing is recorded for the guest directory.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel
 
 from stocks.api.deps import Account
@@ -52,6 +53,20 @@ class JournalEntry(BaseModel):
     times: int
     links: list[str]
     updated: str
+    # "chat" when the reader answered a card, "ledger:<date>" when a trade
+    # in the book settled it, "" when the app set the state on its own.
+    settled: str = ""
+
+
+class Record(BaseModel):
+    """What became of the proposals, counted (`journal.track_record`)."""
+
+    proposed: int
+    open: int
+    followed: int
+    declined: int
+    lapsed: int
+    by_source: dict[str, dict[str, int]]
 
 
 class Journal(BaseModel):
@@ -60,6 +75,8 @@ class Journal(BaseModel):
     # the tab's state chips count what each would show.
     total: int
     states: dict[str, int]
+    # Over the whole journal, whatever the filters: the tab's one-line record.
+    record: Record
 
 
 @router.get("", response_model=Journal, summary="The decision journal")
@@ -85,4 +102,28 @@ def entries(
         entries=[JournalEntry(**e.as_dict()) for e in hits[:limit]],
         total=len(hits),
         states=states,
+        record=Record(**journal.track_record(saved)),
+    )
+
+
+@router.get(
+    ".md",
+    response_class=Response,
+    responses={200: {"content": {"text/markdown": {}},
+                     "description": "The whole journal as one Markdown file."}},
+    summary="The decision journal as a file",
+)
+def export(paths: Account) -> Response:
+    """The journal whole, as a notes app reads it: Obsidian block ids and
+    wikilinks between the entries that replaced each other, tags per ticker,
+    state and source (`journal.to_markdown`). Always on offer — an empty
+    journal exports as its heading — since the tab shows the link from the
+    first visit."""
+    today = date.today()
+    body = journal.to_markdown(journal.load(paths.journal), today)
+    return Response(
+        content=body,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition":
+                 f'attachment; filename="decisions-{today:%Y-%m-%d}.md"'},
     )

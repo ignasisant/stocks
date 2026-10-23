@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -255,3 +256,183 @@ def test_the_chat_tool_reads_it_and_is_offered_only_with_an_account(book):
     assert "decisions" in {s.name for s in toolbox.specs(ctx)}
     assert "decisions" not in {s.name for s in toolbox.specs(toolbox.Context())}
     assert "Nothing" in handler({"ticker": "NVDA"}, ctx)
+
+
+# ------------------------------------------------------------- the ledger
+
+
+def _trade(day, ticker, action, qty=10.0, price=100.0):
+    from stocks.portfolio.ledger import Transaction
+
+    return Transaction(date=day.isoformat(), ticker=ticker, action=action,
+                       quantity=qty, price=price)
+
+
+def test_a_sale_in_the_book_settles_a_sell_proposal(path):
+    # The reader is never asked whether they took a proposal: the book says.
+    journal.record(path, [_shown(action="sell"),
+                          _shown(subject="review:ADBE", ticker="ADBE", action="add"),
+                          _shown(subject="review:SNAP", ticker="SNAP", action="trim")],
+                   DAY)
+    trades = [
+        _trade(DAY + timedelta(days=5), "AMD", "sell"),      # takes the sell
+        _trade(DAY + timedelta(days=2), "ADBE", "sell"),     # wrong side for an add
+        _trade(DAY - timedelta(days=1), "SNAP", "sell"),     # before it was proposed
+    ]
+    assert journal.settle_from_ledger(path, trades, DAY + timedelta(days=6)) == 1
+    by = {e.ticker: e for e in journal.load(path)}
+    assert by["AMD"].state == "followed" and by["AMD"].settled == "ledger:2026-10-06"
+    assert by["ADBE"].state == "open" and by["SNAP"].state == "open"
+    # The same trades again change nothing: followed stands.
+    assert journal.settle_from_ledger(path, trades, DAY + timedelta(days=6)) == 0
+
+
+def test_a_trade_too_long_after_the_last_showing_does_not_count(path):
+    journal.record(path, [_shown(action="sell")], DAY)
+    late = DAY + timedelta(days=journal.SETTLE_DAYS + 1)
+    assert journal.settle_from_ledger(path, [_trade(late, "AMD", "sell")], late) == 0
+    assert journal.load(path)[0].state == "open"
+
+
+def test_a_lapsed_proposal_settles_and_names_match_across_venues(path):
+    # A name sold is never judged again, so its sell lapses before anyone
+    # looks; the sale still answers it. ASML on screen, ASML.AS in the book.
+    journal.record(path, [_shown(subject="review:ASML", ticker="ASML", action="sell")],
+                   DAY)
+    journal.record(path, [], DAY + timedelta(days=journal.LAPSE_DAYS + 1))
+    assert journal.load(path)[0].state == "lapsed"
+    sale = _trade(DAY + timedelta(days=3), "ASML.AS", "sell")
+    assert journal.settle_from_ledger(path, [sale], DAY + timedelta(days=40)) == 1
+    assert journal.load(path)[0].state == "followed"
+
+
+def test_a_declined_proposal_is_not_reopened_by_a_trade(path):
+    journal.settle(path, _shown(source="chat", subject="p1", action="unwatch"),
+                   "declined", DAY)
+    journal.settle(path, _shown(source="chat", subject="p2", action="buy"),
+                   "declined", DAY)
+    bought = _trade(DAY + timedelta(days=1), "AMD", "buy")
+    assert journal.settle_from_ledger(path, [bought], DAY + timedelta(days=2)) == 0
+    assert {e.state for e in journal.load(path)} == {"declined"}
+    assert {e.settled for e in journal.load(path)} == {"chat"}
+
+
+def test_settle_from_db_reads_the_book_only_when_something_could_settle(
+        monkeypatch, path, tmp_path):
+    from stocks.portfolio import ledger
+
+    db = tmp_path / "portfolio.db"
+    ledger.add(_trade(DAY + timedelta(days=2), "AMD", "sell"), path=db)
+    reads: list[Path] = []
+    real = ledger.all_transactions
+    monkeypatch.setattr(ledger, "all_transactions",
+                        lambda p: reads.append(p) or real(p))
+    # An alert has no trade that would mean "done": the book is not opened.
+    journal.record(path, [_shown(source="daily", subject="alert_hit:AMD",
+                                 action="alert")], DAY)
+    assert journal.settle_from_db(path, db, DAY + timedelta(days=3)) == 0
+    assert reads == []
+    journal.record(path, [_shown(action="sell")], DAY)
+    assert journal.settle_from_db(path, db, DAY + timedelta(days=3)) == 1
+    assert reads == [db]
+    assert journal.settle_from_db(path, tmp_path / "missing.db", DAY) == 0
+
+
+# ------------------------------------------------------------- the record
+
+
+def test_track_record_counts_what_became_of_the_proposals(path):
+    journal.record(path, [_shown(action="sell"),
+                          _shown(subject="review:SNAP", ticker="SNAP", action="trim"),
+                          journal.stay_in_review(1000.0, "EUR")], DAY)
+    journal.settle(path, _shown(source="chat", subject="p1", action="watch"),
+                   "declined", DAY)
+    journal.settle_from_ledger(path, [_trade(DAY + timedelta(days=1), "AMD", "sell")],
+                               DAY + timedelta(days=1))
+    record = journal.track_record(journal.load(path))
+    # The stay is advice to do nothing, not a move made.
+    assert {k: record[k] for k in ("proposed", "open", "followed", "declined",
+                                   "lapsed")} == {
+        "proposed": 3, "open": 1, "followed": 1, "declined": 1, "lapsed": 0}
+    assert record["by_source"]["review"]["proposed"] == 2
+    assert record["by_source"]["chat"]["declined"] == 1
+
+
+def test_history_lines_say_what_was_proposed_and_what_came_of_it(path):
+    journal.record(path, [_shown(action="sell"),
+                          _shown(subject="review:SNAP", ticker="SNAP", action="trim")],
+                   DAY)
+    journal.settle_from_ledger(path, [_trade(DAY + timedelta(days=4), "AMD.US", "sell")],
+                               DAY + timedelta(days=4))
+    journal.settle(path, journal.Shown(source="chat", subject="p9", action="watch",
+                                       ticker="NVDA"),
+                   "declined", DAY + timedelta(days=2))
+    # Shown for the first time today: not history yet.
+    journal.record(path, [_shown(subject="review:ADBE", ticker="ADBE", action="add")],
+                   DAY + timedelta(days=5))
+    lines = journal.history_for(path, ["amd", "NVDA", "ADBE.DE", "SNAP"],
+                                DAY + timedelta(days=5))
+    # Newest showing first; ADBE is shown for the first time today.
+    assert lines == [
+        "NVDA: watch (chat, 2026-10-03) · the user declined",
+        "AMD: sell (review, 2026-10-01) · the user did it (trade on 2026-10-05)",
+        "SNAP: trim (review, 2026-10-01) · still open",
+    ]
+    assert journal.history_for(path, [], DAY) == []
+    # Older than HISTORY_DAYS is forgotten.
+    assert journal.history_for(path, ["AMD"],
+                               DAY + timedelta(days=journal.HISTORY_DAYS + 10)) == []
+
+
+def test_the_chat_proposal_tool_reads_what_was_proposed_before(path):
+    journal.settle(path, journal.Shown(source="chat", subject="p1", action="watch",
+                                       ticker="ASML"), "declined", DAY)
+    note = toolbox._proposed_before(toolbox.Context(journal=path), "ASML.AS")
+    assert "ASML: watch (chat, 2026-10-01) · the user declined" in note
+    assert "not pressed again" in note
+    assert toolbox._proposed_before(toolbox.Context(), "ASML") == ""
+    assert toolbox._proposed_before(toolbox.Context(journal=path), "NVDA") == ""
+
+
+# ------------------------------------------------------------- the export
+
+
+def test_to_markdown_is_one_obsidian_file(path):
+    journal.record(path, [_shown(action="trim")], DAY)
+    journal.record(path, [_shown(action="sell", line="Sell AMD: margins keep falling.",
+                                 reasons=("weak_quality",),
+                                 snapshot={"quality": 40.0, "cheapness": 20.0})],
+                   DAY + timedelta(days=1))
+    journal.attach(path, "review", "review:AMD", "Margins fell two quarters running.")
+    journal.settle_from_ledger(path, [_trade(DAY + timedelta(days=3), "AMD", "sell")],
+                               DAY + timedelta(days=3))
+    sell, trim = journal.load(path)[1], journal.load(path)[0]
+    text = journal.to_markdown(journal.load(path), DAY + timedelta(days=4))
+    assert text.startswith("---\ntitle: Decision journal\nexported: 2026-10-05\n"
+                           "entries: 2\n---\n")
+    # One sale answers both the trim and the sell that replaced it.
+    assert "Proposed 2 · followed 2 · declined 0 · lapsed 0 · open 0" in text
+    assert "> Sell AMD: margins keep falling." in text
+    # Newest first; each entry a section with its block id, tags and links.
+    assert text.index(f"^{sell.id}") < text.index(f"^{trim.id}")
+    assert "## 2026-10-02 · review · sell AMD · followed" in text
+    assert "#ticker/AMD #state/followed #source/review #move/sell" in text
+    assert "- **State:** followed (trade on 2026-10-04)" in text
+    assert "- **Why:** weak_quality" in text
+    assert "- **Figures then:** quality 40.0, cheapness 20.0" in text
+    assert "- **Analysis:** Margins fell two quarters running." in text
+    assert f"- **Linked:** [[decisions#^{trim.id}]]" in text
+    assert journal.to_markdown([], DAY).endswith("open 0\n")
+
+
+def test_the_route_exports_the_file_and_counts_the_record(book):
+    client = TestClient(fastapi_app)
+    body = client.get("/v1/journal", params={"account": EMAIL}, headers=AUTH).json()
+    assert body["record"]["proposed"] == 3 and body["record"]["lapsed"] == 1
+    assert body["entries"][0]["settled"] == ""
+    got = client.get("/v1/journal.md", params={"account": EMAIL}, headers=AUTH)
+    assert got.status_code == 200
+    assert got.headers["content-type"].startswith("text/markdown")
+    disposition = got.headers["content-disposition"]
+    assert disposition.startswith('attachment; filename="decisions-')
+    assert "## 2026-10-02 · review · sell AMD · open" in got.text

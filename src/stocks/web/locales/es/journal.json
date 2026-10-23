@@ -80,5 +80,10 @@
   "journal.fact_sell_date": "Vendida",
   "journal.fact_clear_date": "Libre desde",
   "journal.fact_above": "Por encima de",
-  "journal.fact_below": "Por debajo de"
+  "journal.fact_below": "Por debajo de",
+  "journal.record": "**{n}** movimientos propuestos hasta hoy: seguiste **{followed}**, rechazaste **{declined}**, dejaste caducar **{lapsed}** y tienes **{open}** abiertos. Una venta o una compra en tu cartera cuenta como seguirlo; no se pregunta nada.",
+  "journal.settled_ledger": "Una operación en tu cartera el {date} lo cerró.",
+  "journal.export": "Llévatelo",
+  "journal.export_help": "Un archivo Markdown que una app de notas como Obsidian lee entero: las entradas, los enlaces entre ellas, etiquetas por ticker y estado.",
+  "journal.export_button": "Descargar Markdown"
 }
