@@ -69,6 +69,7 @@ import { Segmented } from "../ui/Segmented";
 import { Status } from "../ui/Status";
 import type { ChatState, SettingsPatch, SkillsMode } from "./types";
 import { canRecord, dictate, join, VoiceFailed, type Dictation } from "./voice";
+import { useAssistantFills } from "../shell/assistant";
 import { takeDraft } from "./draft";
 
 const MODES: SkillsMode[] = ["auto", "manual", "off"];
@@ -353,12 +354,16 @@ export function Composer({
   // A question asked as a guest, kept across the sign-in (`draft.ts`): put in
   // the field, caret at its end, and left for the reader to send — sending it
   // would spend the daily allowance on a press made before there was one.
-  useEffect(() => {
+  const takeKept = () => {
     const kept = takeDraft();
     if (!kept) return;
     setText(kept);
     setCaret(true);
-  }, []);
+  };
+  useEffect(takeKept, []);
+  // A page's "type it instead" (`shell/assistant.ts`) while the drawer is
+  // already open: the same slot, told to be read now rather than on mount.
+  useAssistantFills(takeKept);
 
   useEffect(() => {
     if (!caret) return;

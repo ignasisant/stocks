@@ -28,7 +28,7 @@
   "tour.welcome_title": "Welcome to TopStocks",
   "tour.welcome_body": "TopStocks turns your broker statements into your real numbers: returns, risk and tax, in your own currency. This tour shows each feature and takes you to it.",
   "tour.import_title": "Import your transactions",
-  "tour.import_body": "Drop a statement from Revolut, DEGIRO, Trading 212, IBKR, Saxo or any crypto exchange. You see every row before it is saved, and re-importing never duplicates. No file yet? **Use demo transactions**.",
+  "tour.import_body": "Drop a statement from Revolut, DEGIRO, Trading 212, IBKR, Saxo or any crypto exchange. You see every row before it is saved, and re-importing never duplicates. No file? **Type your trades** in the chat.",
   "tour.import_cta": "Open Import",
   "tour.positions_title": "Positions and custody",
   "tour.positions_body": "Your holdings with live prices, value and weight, and which broker holds each one.",

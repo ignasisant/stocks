@@ -28,7 +28,7 @@
   "tour.welcome_title": "Te damos la bienvenida a TopStocks",
   "tour.welcome_body": "TopStocks convierte los extractos de tu bróker en tus cifras reales: rentabilidad, riesgo e impuestos, en tu moneda. Este tutorial te enseña cada función y te lleva a ella.",
   "tour.import_title": "Importa tus movimientos",
-  "tour.import_body": "Sube un extracto de Revolut, DEGIRO, Trading 212, IBKR, Saxo o cualquier exchange cripto. Ves cada fila antes de guardarla y reimportar nunca duplica. ¿Sin extracto? **Usar transacciones de prueba**.",
+  "tour.import_body": "Sube un extracto de Revolut, DEGIRO, Trading 212, IBKR, Saxo o cualquier exchange cripto. Ves cada fila antes de guardarla y reimportar nunca duplica. ¿Sin extracto? **Escribe tus operaciones** en el chat.",
   "tour.import_cta": "Abrir Importar",
   "tour.positions_title": "Posiciones y custodia",
   "tour.positions_body": "Tus posiciones con precio en vivo, valor y peso, y en qué bróker está cada una.",

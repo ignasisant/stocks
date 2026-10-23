@@ -31,6 +31,7 @@ import { useT } from "../../shell/i18n";
 import { Link, useRoute } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
 import { Status } from "../../ui/Status";
+import { TypeInstead } from "../../ui/TypeInstead";
 import type { Query } from "../../shell/useApi";
 import {
   MAX_BYTES,
@@ -469,6 +470,15 @@ function Importer({
             onPicked={(name, blob) => void stage(name, blob)}
             platform={platform}
           />
+        )}
+
+        {/* No importer for this broker: tell the chat the trades instead. Shown
+            while the book holds nothing real (empty or demo), never mid-review. */}
+        {!staged && !result && nothingReal && (
+          <section aria-label={t("import.type_title")} className="im-card im-empty">
+            <p className="im-fine">{t("import.type_caption")}</p>
+            <TypeInstead className="im-btn im-btn-outline" />
+          </section>
         )}
       </div>
 
