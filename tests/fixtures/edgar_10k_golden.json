@@ -1,0 +1,359 @@
+{
+ "_readme": "Figures copied from each company's 10-K via SEC EDGAR XBRL companyfacts (https://data.sec.gov/api/xbrl/companyfacts/CIK##########.json). Re-check: open the filing by accession number, or find the `tag` in the companyfacts JSON with the same `accn` and period. Values are in the unit given (USD whole dollars, shares). `assumed` entries are NOT from a 10-K: a market price the tests need.",
+ "lenses": {
+  "standard": {
+   "ticker": "MSFT",
+   "cik": 789019,
+   "accession": "0000950170-24-087843",
+   "fiscal_year": "FY2024 (ended 2024-06-30)",
+   "industry": "Software - Infrastructure",
+   "facts": {
+    "revenue_2024": {
+     "tag": "RevenueFromContractWithCustomerExcludingAssessedTax",
+     "period": "2023-07-01/2024-06-30",
+     "value": 245122000000,
+     "unit": "USD"
+    },
+    "net_income_2024": {
+     "tag": "NetIncomeLoss",
+     "period": "2023-07-01/2024-06-30",
+     "value": 88136000000,
+     "unit": "USD"
+    },
+    "net_income_2023": {
+     "tag": "NetIncomeLoss",
+     "period": "2022-07-01/2023-06-30",
+     "value": 72361000000,
+     "unit": "USD"
+    },
+    "net_income_2022": {
+     "tag": "NetIncomeLoss",
+     "period": "2021-07-01/2022-06-30",
+     "value": 72738000000,
+     "unit": "USD"
+    },
+    "cfo_2024": {
+     "tag": "NetCashProvidedByUsedInOperatingActivities",
+     "period": "2023-07-01/2024-06-30",
+     "value": 118548000000,
+     "unit": "USD"
+    },
+    "cfo_2023": {
+     "tag": "NetCashProvidedByUsedInOperatingActivities",
+     "period": "2022-07-01/2023-06-30",
+     "value": 87582000000,
+     "unit": "USD"
+    },
+    "cfo_2022": {
+     "tag": "NetCashProvidedByUsedInOperatingActivities",
+     "period": "2021-07-01/2022-06-30",
+     "value": 89035000000,
+     "unit": "USD"
+    },
+    "capex_2024": {
+     "tag": "PaymentsToAcquirePropertyPlantAndEquipment",
+     "period": "2023-07-01/2024-06-30",
+     "value": 44477000000,
+     "unit": "USD"
+    },
+    "sbc_2024": {
+     "tag": "ShareBasedCompensation",
+     "period": "2023-07-01/2024-06-30",
+     "value": 10734000000,
+     "unit": "USD"
+    },
+    "diluted_shares_2024": {
+     "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+     "period": "2023-07-01/2024-06-30",
+     "value": 7469000000,
+     "unit": "shares"
+    },
+    "diluted_shares_2023": {
+     "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+     "period": "2022-07-01/2023-06-30",
+     "value": 7472000000,
+     "unit": "shares"
+    },
+    "diluted_shares_2022": {
+     "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+     "period": "2021-07-01/2022-06-30",
+     "value": 7540000000,
+     "unit": "shares"
+    },
+    "total_assets_2024": {
+     "tag": "Assets",
+     "period": "2024-06-30",
+     "value": 512163000000,
+     "unit": "USD"
+    },
+    "cover_shares": {
+     "tag": "EntityCommonStockSharesOutstanding",
+     "period": "2024-07-25",
+     "value": 7433038381,
+     "unit": "shares"
+    },
+    "price": {
+     "assumed": true,
+     "value": 400.0,
+     "note": "round price for the arithmetic; not a 10-K figure"
+    }
+   }
+  },
+  "financial": {
+   "ticker": "CFR",
+   "cik": 39263,
+   "accession": "0000039263-23-000008",
+   "fiscal_year": "FY2022 (ended 2022-12-31)",
+   "industry": "Banks - Regional",
+   "facts": {
+    "equity_2022": {
+     "tag": "StockholdersEquity",
+     "period": "2022-12-31",
+     "value": 3137228000,
+     "unit": "USD"
+    },
+    "preferred_2022": {
+     "tag": "PreferredStockValue",
+     "period": "2022-12-31",
+     "value": 145452000,
+     "unit": "USD"
+    },
+    "goodwill_2022": {
+     "tag": "Goodwill",
+     "period": "2022-12-31",
+     "value": 654952000,
+     "unit": "USD"
+    },
+    "intangibles_2022": {
+     "tag": "FiniteLivedIntangibleAssetsNet",
+     "period": "2022-12-31",
+     "value": 386000,
+     "unit": "USD"
+    },
+    "net_income_2022": {
+     "tag": "NetIncomeLoss",
+     "period": "2022-01-01/2022-12-31",
+     "value": 579150000,
+     "unit": "USD"
+    },
+    "preferred_dividends_2022": {
+     "tag": "PaymentsOfDividendsPreferredStockAndPreferenceStock",
+     "period": "2022-01-01/2022-12-31",
+     "value": 6675000,
+     "unit": "USD"
+    },
+    "diluted_shares_2022": {
+     "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+     "period": "2022-01-01/2022-12-31",
+     "value": 64520518,
+     "unit": "shares"
+    },
+    "diluted_shares_2021": {
+     "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+     "period": "2021-01-01/2021-12-31",
+     "value": 64102120,
+     "unit": "shares"
+    },
+    "diluted_shares_2020": {
+     "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+     "period": "2020-01-01/2020-12-31",
+     "value": 63003837,
+     "unit": "shares"
+    },
+    "cover_shares": {
+     "tag": "EntityCommonStockSharesOutstanding",
+     "period": "2023-01-25",
+     "value": 64360313,
+     "unit": "shares"
+    },
+    "price": {
+     "assumed": true,
+     "value": 100.0,
+     "note": "round price for the arithmetic; not a 10-K figure"
+    }
+   }
+  },
+  "real_estate": {
+   "ticker": "O",
+   "cik": 726728,
+   "accession": "0000726728-24-000047",
+   "fiscal_year": "FY2023 (ended 2023-12-31)",
+   "industry": "REIT - Retail",
+   "facts": {
+    "net_income_2023": {
+     "tag": "NetIncomeLoss",
+     "period": "2023-01-01/2023-12-31",
+     "value": 872309000,
+     "unit": "USD"
+    },
+    "interest_expense_2023": {
+     "tag": "InterestExpense",
+     "period": "2023-01-01/2023-12-31",
+     "value": 730423000,
+     "unit": "USD"
+    },
+    "income_tax_2023": {
+     "tag": "IncomeTaxExpenseBenefit",
+     "period": "2023-01-01/2023-12-31",
+     "value": 52021000,
+     "unit": "USD"
+    },
+    "depreciation_amortization_2023": {
+     "tag": "DepreciationDepletionAndAmortization",
+     "period": "2023-01-01/2023-12-31",
+     "value": 1895177000,
+     "unit": "USD"
+    },
+    "notes_payable_2023": {
+     "tag": "NotesPayable",
+     "period": "2023-12-31",
+     "value": 18602319000,
+     "unit": "USD"
+    },
+    "cash_2023": {
+     "tag": "CashAndCashEquivalentsAtCarryingValue",
+     "period": "2023-12-31",
+     "value": 232923000,
+     "unit": "USD"
+    },
+    "cfo_2023": {
+     "tag": "NetCashProvidedByUsedInOperatingActivities",
+     "period": "2023-01-01/2023-12-31",
+     "value": 2958769000,
+     "unit": "USD"
+    },
+    "cfo_2022": {
+     "tag": "NetCashProvidedByUsedInOperatingActivities",
+     "period": "2022-01-01/2022-12-31",
+     "value": 2563856000,
+     "unit": "USD"
+    },
+    "dividends_paid_2023": {
+     "tag": "PaymentsOfDividendsCommonStock",
+     "period": "2023-01-01/2023-12-31",
+     "value": 2111793000,
+     "unit": "USD"
+    },
+    "dividends_paid_2022": {
+     "tag": "PaymentsOfDividendsCommonStock",
+     "period": "2022-01-01/2022-12-31",
+     "value": 1813431000,
+     "unit": "USD"
+    },
+    "dividend_per_share_2023": {
+     "tag": "CommonStockDividendsPerShareCashPaid",
+     "period": "2023-01-01/2023-12-31",
+     "value": 3.051,
+     "unit": "USD/shares"
+    },
+    "diluted_shares_2023": {
+     "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+     "period": "2023-01-01/2023-12-31",
+     "value": 693024000,
+     "unit": "shares"
+    },
+    "diluted_shares_2022": {
+     "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+     "period": "2022-01-01/2022-12-31",
+     "value": 612181000,
+     "unit": "shares"
+    },
+    "cover_shares": {
+     "tag": "EntityCommonStockSharesOutstanding",
+     "period": "2024-02-15",
+     "value": 861123757,
+     "unit": "shares"
+    },
+    "price": {
+     "assumed": true,
+     "value": 55.0,
+     "note": "round price for the arithmetic; not a 10-K figure"
+    }
+   },
+   "derivations": {
+    "ebitda_2023": "NetIncomeLoss + InterestExpense + IncomeTaxExpenseBenefit + DepreciationDepletionAndAmortization = 3,549,930,000",
+    "net_debt_2023": "NotesPayable - CashAndCashEquivalentsAtCarryingValue = 18,369,396,000",
+    "free_cash_flow": "Realty Income reports no PaymentsToAcquirePropertyPlantAndEquipment: capex line is nil, FCF = operating cash flow"
+   }
+  },
+  "utility": {
+   "ticker": "ED",
+   "cik": 1047862,
+   "accession": "0001047862-24-000012",
+   "fiscal_year": "FY2023 (ended 2023-12-31)",
+   "industry": "Utilities - Regulated Electric",
+   "facts": {
+    "operating_income_2023": {
+     "tag": "OperatingIncomeLoss",
+     "period": "2023-01-01/2023-12-31",
+     "value": 3196000000,
+     "unit": "USD"
+    },
+    "depreciation_amortization_2023": {
+     "tag": "DepreciationAndAmortization",
+     "period": "2023-01-01/2023-12-31",
+     "value": 2031000000,
+     "unit": "USD"
+    },
+    "long_term_debt_2023": {
+     "tag": "LongTermDebt",
+     "period": "2023-12-31",
+     "value": 22240000000,
+     "unit": "USD"
+    },
+    "cash_2023": {
+     "tag": "CashAndCashEquivalentsAtCarryingValue",
+     "period": "2023-12-31",
+     "value": 1189000000,
+     "unit": "USD"
+    },
+    "cfo_2023": {
+     "tag": "NetCashProvidedByUsedInOperatingActivities",
+     "period": "2023-01-01/2023-12-31",
+     "value": 2156000000,
+     "unit": "USD"
+    },
+    "utility_capex_2023": {
+     "tag": "PaymentsForConstructionInProcess",
+     "period": "2023-01-01/2023-12-31",
+     "value": 4353000000,
+     "unit": "USD"
+    },
+    "dividends_paid_2023": {
+     "tag": "PaymentsOfDividendsCommonStock",
+     "period": "2023-01-01/2023-12-31",
+     "value": 1096000000,
+     "unit": "USD"
+    },
+    "diluted_shares_2023": {
+     "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+     "period": "2023-01-01/2023-12-31",
+     "value": 349300000,
+     "unit": "shares"
+    },
+    "diluted_shares_2022": {
+     "tag": "WeightedAverageNumberOfDilutedSharesOutstanding",
+     "period": "2022-01-01/2022-12-31",
+     "value": 355800000,
+     "unit": "shares"
+    },
+    "cover_shares": {
+     "tag": "EntityCommonStockSharesOutstanding",
+     "period": "2024-01-31",
+     "value": 345510031,
+     "unit": "shares"
+    },
+    "price": {
+     "assumed": true,
+     "value": 90.0,
+     "note": "round price for the arithmetic; not a 10-K figure"
+    }
+   },
+   "derivations": {
+    "ebitda_2023": "OperatingIncomeLoss + DepreciationAndAmortization = 5,227,000,000",
+    "net_debt_2023": "LongTermDebt - CashAndCashEquivalentsAtCarryingValue = 21,051,000,000",
+    "free_cash_flow": "cfo - utility construction expenditure = -2,197,000,000"
+   }
+  }
+ }
+}
