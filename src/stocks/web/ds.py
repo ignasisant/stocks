@@ -324,5 +324,10 @@ def ds_vars_css() -> str:
     `landing_static` inlines it into the plain HTML documents, and the server
     into the pages it renders itself.
     """
+    return f"<style>{ds_vars_text()}</style>"
+
+
+def ds_vars_text() -> str:
+    """The rule inside `ds_vars_css`'s `<style>`: what a CSP hashes."""
     body = "".join(f"--ag-{k}:{v};" for k, v in tokens().items())
-    return f"<style>:root{{{body}}}</style>"
+    return f":root{{{body}}}"

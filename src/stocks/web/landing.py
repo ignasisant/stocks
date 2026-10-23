@@ -621,6 +621,16 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   font-size: 9.5px; color: var(--ag-brand-accent); line-height: 1.35;
 }
 .ag-l-tl-lab.faint { color: var(--ag-text-faint); }
+/* Weights and positions of the two diagrams: classes, not style attributes,
+   so the page's CSP can refuse inline styles. */
+.ag-l-f5 { flex: 5; }
+.ag-l-f7 { flex: 7; }
+.ag-l-f8 { flex: 8; }
+.ag-l-f10 { flex: 10; }
+.ag-l-f12 { flex: 12; }
+.ag-l-at8 { left: 8%; }
+.ag-l-at72 { left: 72%; }
+.ag-l-at96 { left: 96%; }
 .ag-l-compare { display: flex; gap: 10px; flex-wrap: wrap; }
 .ag-l-compare div {
   flex: 1; min-width: 140px; border-radius: var(--ag-radius-sm);
@@ -1205,7 +1215,7 @@ _MOBILE_RULES = """
 
 /* --- FIFO lots stack --- */
 .ag-l-lots { flex-direction: column; }
-.ag-l-lots > * { flex: none !important; }  /* beats the inline flex weights */
+.ag-l-lots > * { flex: none !important; }  /* beats the .ag-l-f* flex weights */
 
 /* --- FX timeline becomes a list --- */
 .ag-l-tl { height: auto; display: flex; flex-direction: column; gap: 8px; }
@@ -1518,17 +1528,17 @@ def _gap() -> str:
 <div class="ag-l-diagram">
   <span class="ag-l-mono ag-l-eyebrow-sm">{esc(tr("landing.fifo_label"))}</span>
   <div class="ag-l-lots">
-    <div class="ag-l-lot sold" style="flex:10">
+    <div class="ag-l-lot sold ag-l-f10">
       <b>{esc(tr("landing.fifo_lot", n=1, year=2022))}</b>
       <i class="ag-l-mono">{esc(tr("landing.fifo_sold", n=10))}</i></div>
-    <div class="ag-l-lotpair" style="flex:12">
-      <div class="ag-l-lot sold" style="flex:5">
+    <div class="ag-l-lotpair ag-l-f12">
+      <div class="ag-l-lot sold ag-l-f5">
         <b>{esc(tr("landing.fifo_lot", n=2, year=2023))}</b>
         <i class="ag-l-mono">{esc(tr("landing.fifo_sold", n=5))}</i></div>
-      <div class="ag-l-lot held" style="flex:7"><b>&nbsp;</b>
+      <div class="ag-l-lot held ag-l-f7"><b>&nbsp;</b>
         <i class="ag-l-mono">{esc(tr("landing.fifo_held", n=7))}</i></div>
     </div>
-    <div class="ag-l-lot held" style="flex:8">
+    <div class="ag-l-lot held ag-l-f8">
       <b>{esc(tr("landing.fifo_lot", n=3, year=2025))}</b>
       <i class="ag-l-mono">{esc(tr("landing.fifo_held", n=8))}</i></div>
   </div>
@@ -1544,14 +1554,14 @@ def _gap() -> str:
   <span class="ag-l-mono ag-l-eyebrow-sm">{esc(tr("landing.fx_label"))}</span>
   <div class="ag-l-tl">
     <div class="ag-l-tl-rail"></div>
-    <div class="ag-l-tl-tick" style="left:8%"></div>
-    <div class="ag-l-tl-lab ag-l-mono" style="left:8%">
+    <div class="ag-l-tl-tick ag-l-at8"></div>
+    <div class="ag-l-tl-lab ag-l-mono ag-l-at8">
       {buy} 03·2022<br>{rate_lo} $/€</div>
-    <div class="ag-l-tl-tick" style="left:72%"></div>
-    <div class="ag-l-tl-lab ag-l-mono" style="left:72%">
+    <div class="ag-l-tl-tick ag-l-at72"></div>
+    <div class="ag-l-tl-lab ag-l-mono ag-l-at72">
       {sell} 05·2025<br>{rate_hi} $/€</div>
-    <div class="ag-l-tl-tick faint" style="left:96%"></div>
-    <div class="ag-l-tl-lab ag-l-mono faint" style="left:96%">
+    <div class="ag-l-tl-tick faint ag-l-at96"></div>
+    <div class="ag-l-tl-lab ag-l-mono faint ag-l-at96">
       {esc(tr("landing.fx_today"))}<br>{esc(tr("landing.fx_spot"))}</div>
   </div>
   <div class="ag-l-compare">

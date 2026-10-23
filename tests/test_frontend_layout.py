@@ -87,8 +87,8 @@ _TOUCH_TARGETS = [
     ("ui/ui.css", ".ag-seg-opt", r"min-height\s*:\s*44px"),
     ("ui/ui.css", ".ag-kpi-help::before", r"inset\s*:\s*-15px"),
     ("pages/sector/sector.css", ".ag-sec-controls > summary", r"min-height\s*:\s*44px"),
-    ("pages/profile/styles.ts", ".pr-signout", r"min-height\s*:\s*44px"),
-    ("pages/profile/styles.ts", ".pr-more > summary", r"min-height\s*:\s*44px"),
+    ("pages/profile/profile.css", ".pr-signout", r"min-height\s*:\s*44px"),
+    ("pages/profile/profile.css", ".pr-more > summary", r"min-height\s*:\s*44px"),
     ("chat/chat.css", ".ag-chat-thumb", r"min-height\s*:\s*44px"),
     ("chat/chat.css", ".ag-chat-why-chips .ag-chat-chip", r"min-height\s*:\s*44px"),
     ("ui/journal.css", ".ag-jr-chip", r"min-height\s*:\s*44px"),
@@ -140,9 +140,8 @@ def test_shell_respects_phone_chrome():
 
 
 def _stylesheets():
-    """Every stylesheet the app ships, comments stripped: the .css files and
-    the profile page's CSS-in-TS."""
-    files = sorted(APP.rglob("*.css")) + [APP / "pages/profile/styles.ts"]
+    """Every stylesheet the app ships, comments stripped."""
+    files = sorted(APP.rglob("*.css"))
     for path in files:
         yield (
             path.relative_to(APP),

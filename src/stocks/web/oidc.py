@@ -32,7 +32,7 @@ from starlette.routing import Route
 
 from stocks import accounts, devices, obs, session
 from stocks.secrets_env import secret
-from stocks.web import attribution
+from stocks.web import attribution, csp
 
 #: Google signs with RS256 today. The metadata says which algorithms it offers,
 #: and we intersect that list with this one rather than trusting it: a document
@@ -371,7 +371,9 @@ async def logout_page(request: Request) -> Response:
         "</main></body></html>"
     )
     return Response(html, media_type="text/html; charset=utf-8",
-                    headers={"Cache-Control": "no-store"})
+                    headers={"Cache-Control": "no-store",
+                             "Content-Security-Policy": csp.policy(
+                                 styles=[csp.source(_SIGN_OUT_CSS)], fonts=False)})
 
 
 _SIGN_OUT_CSS = """

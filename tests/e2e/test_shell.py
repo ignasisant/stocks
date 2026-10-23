@@ -147,3 +147,32 @@ def test_a_phone_reaches_the_other_pages_through_more(browser, base_url: str):
         expect(pulse).to_be_hidden()
     finally:
         context.close()
+
+
+_WATCH_CSP = """
+window.__csp = [];
+document.addEventListener("securitypolicyviolation", (e) =>
+  window.__csp.push(`${e.violatedDirective} ${e.blockedURI} ${e.sample || ""}`));
+"""
+
+
+@pytest.mark.parametrize("path", ["", "es/", "legal/privacy", "no-such-page"])
+def test_the_public_documents_break_none_of_their_own_policy(page: Page, path: str):
+    """The landing, the legal pages and the 404 run under a policy that
+    refuses inline styles and scripts: the browser, not a parser, says whether
+    what they carry is allowed."""
+    page.add_init_script(_WATCH_CSP)
+    page.goto(f"/{path}")
+    page.wait_for_load_state("networkidle")
+    assert page.evaluate("window.__csp") == []
+
+
+@pytest.mark.parametrize("path", PAGES)
+def test_every_shell_page_breaks_none_of_its_own_policy(
+    page: Page, sign_in, path: str
+):
+    sign_in()
+    page.add_init_script(_WATCH_CSP)
+    page.goto(f"/{path}")
+    page.wait_for_load_state("networkidle")
+    assert page.evaluate("window.__csp") == []

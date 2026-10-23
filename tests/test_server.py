@@ -467,8 +467,8 @@ def test_every_response_carries_the_baseline_headers(client):
     for path in ("/", "/portfolio", "/legal/privacy", "/no-such-page"):
         h = client.get(path).headers
         assert h["x-content-type-options"] == "nosniff"
-        assert h["x-frame-options"] == "SAMEORIGIN"
-        assert h["content-security-policy"] == "frame-ancestors 'self'"
+        assert h["x-frame-options"] == "DENY"
+        assert "frame-ancestors 'none'" in h["content-security-policy"]
         assert h["referrer-policy"] == "strict-origin-when-cross-origin"
         assert "camera=()" in h["permissions-policy"]
 

@@ -216,16 +216,24 @@ def json_ld(lang: str, base_url: str, jurisdiction: str | None = None) -> str:
     return f'<script type="application/ld+json">{body}</script>'
 
 
+FONTS_FLIP_JS = (
+    'var l=document.getElementById("ag-fonts");'
+    'if(l){var a=function(){l.media="all"};'
+    'if(l.sheet)a();else l.addEventListener("load",a)}'
+)
+
+
 def _font_links() -> str:
     """The webfont stylesheet, loaded without blocking the first paint.
 
     A plain `<link rel="stylesheet">` to a second origin sits directly on the
     LCP path: nothing paints until that request resolves, and `preconnect` only
     shortens the handshake, it does not remove the block. Loading it as
-    `media="print"` makes it non-render-blocking, and the onload flip applies it
-    the moment it lands; `preload` keeps it at the front of the queue so that is
-    early. The families already carry `display=swap`, so text paints in the
-    fallback face immediately and swaps in place.
+    `media="print"` makes it non-render-blocking, and a hashed script (not an
+    `onload=` attribute, which the CSP refuses) applies it the moment it lands;
+    `preload` keeps it at the front of the queue so that is early. The
+    families already carry `display=swap`, so text paints in the fallback face
+    immediately and swaps in place.
 
     The `<noscript>` copy is the blocking version, for the (rare, and
     crawler-shaped) client that runs no JavaScript.
@@ -233,8 +241,10 @@ def _font_links() -> str:
     href = esc(FONTS_HREF)
     return (
         f'<link rel="preload" as="style" href="{href}">'
-        f'<link rel="stylesheet" href="{href}" media="print" '
-        'onload="this.media=\'all\';this.onload=null">'
+        f'<link rel="stylesheet" href="{href}" media="print" id="ag-fonts">'
+        # An inline `onload=` attribute is an event-handler the page's CSP
+        # refuses; a hashed script does the same flip.
+        f"<script>{FONTS_FLIP_JS}</script>"
         f'<noscript><link rel="stylesheet" href="{href}"></noscript>'
     )
 

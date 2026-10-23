@@ -69,6 +69,7 @@ from stocks.connector.server import door as connector_door
 from stocks.secrets_env import secret
 from stocks.web import (
     attribution,
+    csp,
     landing,
     landing_static,
     legal,
@@ -239,6 +240,12 @@ def _gzipped(lang: str, origin: str, jurisdiction: str) -> bytes:
     return gzip.compress(body, compresslevel=9, mtime=0)
 
 
+@lru_cache(maxsize=16)
+def _landing_csp(lang: str, origin: str, jurisdiction: str) -> str:
+    """The landing's policy: its inline blocks, by hash (see `web.csp`)."""
+    return csp.for_document(landing_static.document(lang, origin, jurisdiction))
+
+
 def landing_response(
     request: Request, lang: str, jurisdiction: str | None = None
 ) -> Response:
@@ -254,7 +261,10 @@ def landing_response(
     jur = jurisdiction or landing.jurisdiction_for(lang)
     root = request.url.path == PATH_EN
 
-    headers = {"Vary": "Accept-Encoding" + (", Cookie" if root else "")}
+    headers = {
+        "Vary": "Accept-Encoding" + (", Cookie" if root else ""),
+        "Content-Security-Policy": _landing_csp(lang, origin, jur),
+    }
     if root:
         # `/` answers with two different documents depending on the cookie, so
         # it must be revalidated rather than reused from the browser cache —
@@ -363,6 +373,14 @@ def _is_known_path(path: str) -> bool:
     return any(path.startswith(pre) or path + "/" == pre for pre in seo.APP_PREFIXES)
 
 
+_NOT_FOUND_CSS = (
+    f"body{{background:{seo.THEME_COLOR};color:#fff;font:16px/1.6 "
+    "system-ui,sans-serif;display:grid;place-content:center;height:100vh;"
+    "margin:0;text-align:center}a{color:#fff}"
+)
+_NOT_FOUND_POLICY = csp.policy(styles=[csp.source(_NOT_FOUND_CSS)], fonts=False)
+
+
 def not_found(request: Request) -> Response:
     """A real 404, with just enough page to be worth landing on."""
     home = PATH_ES if request.url.path.startswith(PATH_ES) else PATH_EN
@@ -370,14 +388,13 @@ def not_found(request: Request) -> Response:
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
         '<meta name="robots" content="noindex">'
         "<title>404 — TopStocks</title>"
-        f'<style>body{{background:{seo.THEME_COLOR};color:#fff;font:16px/1.6 '
-        "system-ui,sans-serif;display:grid;place-content:center;height:100vh;"
-        "margin:0;text-align:center}a{color:#fff}</style></head><body>"
+        f"<style>{_NOT_FOUND_CSS}</style></head><body>"
         f'<h1>404</h1><p>Nothing at this address. <a href="{home}">TopStocks</a></p>'
         "</body></html>"
     )
     return Response(body, status_code=404, media_type=_HTML,
-                    headers={"X-Robots-Tag": "noindex"})
+                    headers={"X-Robots-Tag": "noindex",
+                             "Content-Security-Policy": _NOT_FOUND_POLICY})
 
 
 # Requests one client may make per window before it is turned away. Counted
@@ -508,14 +525,13 @@ class ClientThrottle(BaseHTTPMiddleware):
 class SecurityHeaders(BaseHTTPMiddleware):
     """Baseline hardening headers on every response, marketing and app alike.
 
-    Not a full Content-Security-Policy: that is a source allowlist written
-    against the landing and the shell as they are (inline design tokens,
-    Google Fonts), a change of its own. What is set here is the
-    uncontroversial floor:
+    The full Content-Security-Policy is per document (`web.csp`: the landing,
+    the shell, legal, 404, sign-out, the consent page), because its inline
+    allowances differ. What is set here for every other response:
 
     * `nosniff` — responses execute as their declared type only.
-    * `frame-ancestors 'self'` (+ the legacy X-Frame-Options) — nobody frames
-      the app on another origin to clickjack a logged-in session.
+    * `frame-ancestors 'none'` (+ the legacy X-Frame-Options) — nobody frames
+      the app to clickjack a logged-in session.
     * a tight Referrer-Policy — app URLs can carry tickers and view state;
       other origins get the origin, not the path.
     * HSTS, only when the request already arrived on TLS (Cloud Run
@@ -527,8 +543,10 @@ class SecurityHeaders(BaseHTTPMiddleware):
         response = await call_next(request)
         h = response.headers
         h.setdefault("X-Content-Type-Options", "nosniff")
-        h.setdefault("X-Frame-Options", "SAMEORIGIN")
-        h.setdefault("Content-Security-Policy", "frame-ancestors 'self'")
+        h.setdefault("X-Frame-Options", "DENY")
+        # Documents carry their own, full policy (`web.csp`); this is the
+        # floor for everything else (JSON, files, redirects).
+        h.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
         h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         h.setdefault("Permissions-Policy",
                      "camera=(), microphone=(self), geolocation=()")
@@ -790,7 +808,11 @@ async def legal_page(request: Request) -> Response:
     return Response(
         legal.document(doc, lang),
         media_type=_HTML,
-        headers={"Cache-Control": "public, max-age=3600", "Vary": "Accept-Encoding"},
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Vary": "Accept-Encoding",
+            "Content-Security-Policy": legal.POLICY,
+        },
     )
 
 
@@ -806,6 +828,13 @@ def _app_document(mtime: float) -> bytes:  # noqa: ARG001 — mtime keys the cac
     landing's own mark is.
     """
     return _filled((_APP_BUILD / "index.html").read_text(encoding="utf-8"))
+
+
+@lru_cache(maxsize=1)
+def _app_policy(mtime: float) -> str:
+    """The shell's policy, hashed from the document before any request's
+    values (a ticker's link card) are written into it."""
+    return csp.for_document(_app_document(mtime).decode("utf-8"), app=True)
 
 
 def _filled(html: str) -> bytes:
@@ -922,12 +951,16 @@ async def app_shell(request: Request) -> Response:
         # (the bundle is committed and checked), so this is a local run.
         return Response("The app is not built: cd frontend/app && npm run build\n",
                         status_code=503, media_type="text/plain")
+    mtime = index.stat().st_mtime
     return Response(
-        _with_card(request, _app_document(index.stat().st_mtime)),
+        _with_card(request, _app_document(mtime)),
         media_type=_HTML,
         # A shell over somebody's book, with the tokens inlined into it: never
         # a cacheable file.
-        headers={"Cache-Control": "no-store"},
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": _app_policy(mtime),
+        },
     )
 
 

@@ -19,6 +19,7 @@ from starlette.testclient import TestClient
 
 from stocks import accounts, session, storage
 from stocks.web import oidc
+from tests import csp_check
 from tests.conftest import AUTH_COOKIE_SECRET
 
 CLIENT_ID = "our-client-id.apps.googleusercontent.com"
@@ -391,6 +392,7 @@ def test_a_get_on_logout_asks_and_ends_nothing(client, google):
     assert f'<form method="post" action="{session.LOGOUT_PATH}">' in body
     assert "Cerrar sesión" in body
     assert '<html lang="es">' in body
+    csp_check.assert_enforced(response)
     # Still signed in.
     assert session.signed_in_email(client.cookies) is not None
 

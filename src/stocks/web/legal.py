@@ -13,6 +13,7 @@ in full.
 
 from __future__ import annotations
 
+from stocks.web import csp
 from stocks.web.i18n import DEFAULT_LANG, LANGUAGES
 from stocks.web.landing import GITHUB_URL
 from stocks.web.markup import esc
@@ -324,6 +325,9 @@ a:focus-visible { outline: 2px solid #9AD1FF; outline-offset: 2px; }
   nav a { display: inline-flex; align-items: center; min-height: 44px; }
 }
 """
+
+
+POLICY = csp.policy(styles=[csp.source(_CSS)], fonts=False)
 
 
 def _linkify(text: str) -> str:
