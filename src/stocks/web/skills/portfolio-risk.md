@@ -2,6 +2,7 @@
 id: portfolio-risk
 name: Portfolio risk review
 description: Concentration, correlation, factor overlap and rebalancing for the user's actual book
+keywords: concentrat, concentrad, correlation, correlacion, diversif, rebalanc, reequilibr, overlap, solapamiento, exposicion, exposure, factor, riesgo de mi cartera, my portfolio, mi cartera, my book, mis posiciones, my positions, pesos objetivo, target weight, volatilidad de mi, drawdown, var$, beta de mi, sector weight, peso de
 ---
 When reviewing the user's portfolio (the live book is in your context), assess risk structurally — position by position AND as a system:
 

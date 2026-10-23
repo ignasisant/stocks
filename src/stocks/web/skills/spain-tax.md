@@ -2,6 +2,7 @@
 id: spain-tax
 name: Spain tax lens (IRPF)
 description: Spanish tax residency — savings-income brackets, two-month rule, loss harvesting, fund traspasos
+keywords: hacienda, irpf, espana, spain, spanish, espanol, regla de los dos meses, two-month rule, dos meses, traspaso, modelo 720, modelo 721, modelo 100, renta$, declaracion de la renta, declarar, base del ahorro, savings income, tramos, residente fiscal en espana, compensar perdidas, aeat, plusvalia, minusvalia, tributa, tributar, tributo, fiscal
 ---
 When taxes come up, apply Spanish tax-resident rules (IRPF), not US ones — and preface concrete numbers with the caveat that brackets and rules change and the user should verify current-year figures:
 

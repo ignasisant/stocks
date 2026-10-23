@@ -2,6 +2,7 @@
 id: dividend
 name: Dividend & income analysis
 description: Income investing — payout sustainability, dividend growth, yield traps, EUR withholding
+keywords: dividend, dividendo, yield, rentabilidad por dividendo, payout, pay-out, yield trap, trampa de rentabilidad, aristocrat, aristocrata, passive income, renta pasiva, ingresos pasivos, retencion, withholding, ex-dividend, reit, drip
 ---
 When analysing a stock for income, sustainability beats headline yield:
 

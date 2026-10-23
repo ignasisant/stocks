@@ -2,6 +2,7 @@
 id: technical
 name: Technical analysis
 description: Trend, support/resistance, moving averages, RSI/MACD, entries and exits
+keywords: support, soporte, resistance, resistencia, moving average, media movil, medias moviles, rsi, macd, bollinger, fibonacci, golden cross, death cross, cruce, chart, grafico, trend, tendencia, stop$, stop loss, tecnico, technical, sobrecompra, overbought, oversold, sobreventa, candle, vela, entry point, punto de entrada, volumen, volume
 ---
 When asked for a technical read, structure it top-down and stay probabilistic — levels are zones of interest, not predictions:
 

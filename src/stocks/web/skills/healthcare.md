@@ -2,6 +2,7 @@
 id: healthcare
 name: Healthcare & biotech analysis
 description: Pharma, biotech and medtech — pipeline phases, FDA catalysts, patent cliffs, cash runway
+keywords: fda, pharma, farma, biotech, medtech, pipeline, patent cliff, acantilado de patentes, ensayo, clinical, clinico, trial, phase 1, phase 2, phase 3, fase 1, fase 2, fase 3, drug, farmaco, medicament, runway de caja, cash runway, vaccine, vacuna, salud, healthcare, health care
 ---
 When analysing a healthcare name, split the analysis by type — diversified pharma, single-asset biotech, medtech, payer/provider — the risk profiles barely overlap:
 

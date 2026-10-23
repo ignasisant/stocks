@@ -2,6 +2,7 @@
 id: us-tax
 name: US tax lens (IRS)
 description: US tax residency — short vs long-term rates, wash sales, loss limits, foreign-asset reporting
+keywords: wash sale, irs$, 1099, 8949, schedule d, form 8938, fbar, fatca, short-term capital, long-term capital, us tax, us resident, us tax resident, residente fiscal americano, ee. uu., eeuu, estados unidos, ordinary income, capital loss, 1040, roth, 401k, ira$, w-8ben, w8ben, foreign-asset, foreign account, foreign brokerage
 ---
 When taxes come up, apply US federal tax-resident rules (IRS), not Spanish ones — and preface concrete numbers with the caveat that brackets and rules change and the user should verify current-year figures:
 

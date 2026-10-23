@@ -2,6 +2,7 @@
 id: earnings-review
 name: Earnings review
 description: Reading a quarterly report — beat/miss vs consensus, guidance change, market reaction
+keywords: earnings, resultados, quarterly, trimestral, beat, miss, consensus, consenso, guidance, guia, supero, superaron, report, informe, eps$, 10-q, 10q, results, conference call, after earnings, tras resultados, publicado resultados
 ---
 When reviewing an earnings report or preparing for one, the stock trades on the delta vs expectations, not on absolute results:
 

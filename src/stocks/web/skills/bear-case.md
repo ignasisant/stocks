@@ -2,6 +2,7 @@
 id: bear-case
 name: Bear case & red flags
 description: Counter-thesis construction — accounting red flags, dilution, insider selling, thesis-breakers
+keywords: bear case, caso bajista, caso en contra, contra tesis, counter-thesis, counter thesis, red flag, bandera roja, accounting, contabil, dilut, dilucion, insider sell, venden los directivos, thesis-breaker, thesis breaker, devil, abogado del diablo, what could go wrong, que podria salir mal, que puede salir mal, short thesis, short seller, vendedor en corto, what would make me wrong, equivocado, short squeeze, fraud, fraude, burbuja, bubble
 ---
 When asked to stress-test a position or idea, argue the strongest honest bear case — the goal is the best counter-argument, not reflexive negativity:
 

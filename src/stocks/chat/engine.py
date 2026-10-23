@@ -1140,7 +1140,8 @@ def resolve_skills(prefs: dict, provider: Provider, api_key: str,
     """Skill ids to apply to the pending answer, per the saved mode.
 
     Auto routes the message through the provider's cheapest model. When the
-    router call itself fails it falls back to the previous answer's skills —
+    router call itself fails it reads the message by keyword
+    (`chat_skills.heuristic`), else falls back to the previous answer's skills —
     the answer always proceeds, and an unchanged skill set keeps the system
     prompt byte-identical, which keeps provider prompt caches warm."""
     mode = prefs.get("chat_skills_mode", "auto")
@@ -1157,7 +1158,10 @@ def resolve_skills(prefs: dict, provider: Provider, api_key: str,
     if prior:
         ctx += "\nEarlier user messages (topic continuity): " + " | ".join(prior)
     ids = chat_skills.classify(provider, api_key, history[-1]["content"], ctx)
-    if ids is None:  # router failed — reuse the previous turn's lens
+    if ids is None:  # router failed — read the message by keyword, else
+        # reuse the previous turn's lens
+        if picked := chat_skills.heuristic(history[-1]["content"]):
+            return picked
         prev = [m for m in history if m["role"] == "assistant" and m.get("skills")]
         return prev[-1]["skills"] if prev else []
     return ids

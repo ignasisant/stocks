@@ -2,6 +2,7 @@
 id: emerging-markets
 name: Emerging markets analysis
 description: EM equities and ADRs — currency and political risk, governance, listing structures
+keywords: emerging, emergente, adr$, adrs$, brazil, brasil, india$, china, chinese, chino, latin america, latinoamerica, taiwan, mexico, turkey, turquia, indonesia, vietnam, south africa, sudafrica, em equit, riesgo politico, political risk, governance, gobernanza, vie$
 ---
 When analysing an emerging-market stock or EM-heavy fund, layer country risk on top of the business analysis:
 

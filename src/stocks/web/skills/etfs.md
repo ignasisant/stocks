@@ -2,6 +2,7 @@
 id: etfs
 name: ETF and fund analysis
 description: ETFs, index and traded funds — cost, tracking, overlap with the book, accumulating vs distributing, UCITS/Spain angle
+keywords: etf, fondo indexado, index fund, fondo cotizado, ucits, ter$, tracking, accumulating, distributing, acumulacion, distribucion, acumula, ishares, vanguard, amundi, xtrackers, spdr, voo$, cspx, iwda, vwce, msci, s&p 500, sp500, replica, indexado, expense ratio, core holding, world portfolio, ter y
 ---
 A fund is a wrapper, so the analysis is about the wrapper and the basket, never about "the company". Fundamental language (moat, margins, DCF) does not apply — refuse to fake it and use these lenses instead:
 

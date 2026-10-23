@@ -2,6 +2,7 @@
 id: tech
 name: Tech & growth stock analysis
 description: Technology and growth companies — SaaS metrics, moats, unit economics, valuation vs growth
+keywords: saas, software, moat, foso, rule of 40, regla del 40, net revenue retention, retencion neta, unit economics, cloud, nube, semiconductor, chip$, ai$, ia$, inteligencia artificial, artificial intelligence, azure, platform, plataforma, tech$, tecnolog, ev/sales, ev/ventas, sbc, stock-based, crecimiento, growth stock, nasdaq
 ---
 When analysing a technology or growth company, work through:
 

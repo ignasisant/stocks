@@ -364,6 +364,17 @@ def test_resolve_skills_auto_falls_back_to_previous(providers):
     assert engine.resolve_skills({}, p, "", history) == ["macro"]
 
 
+def test_resolve_skills_router_down_reads_keywords_first(providers):
+    p = providers["free"]
+    p.fail = True
+    history = [
+        {"role": "user", "content": "q1"},
+        {"role": "assistant", "content": "a1", "skills": ["macro"]},
+        {"role": "user", "content": "¿Es segura la retención del dividendo?"},
+    ]
+    assert engine.resolve_skills({}, p, "", history) == ["dividend"]
+
+
 # ------------------------------------------------------------ thread titles
 
 
