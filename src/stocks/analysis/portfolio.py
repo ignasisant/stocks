@@ -1952,29 +1952,73 @@ _EXCHANGE_HOURS: dict[str, tuple[str, tuple[int, int], tuple[int, int]]] = {
 }
 
 
+_NEW_YORK = "America/New_York"
+
+
+def _closure(venue: str | None, tz_name: str, now_utc: datetime | None) -> str | None:
+    """The calendar's mark on `venue`'s local day — "closed", "early" — or None."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from stocks.data import market_holidays
+
+    if venue is None:
+        return None
+    local = (now_utc or datetime.now(UTC)).astimezone(ZoneInfo(tz_name)).date()
+    return market_holidays.DAYS.get(venue, {}).get(local)
+
+
 def _session_open(
     tz_name: str,
     open_hm: tuple[int, int],
     close_hm: tuple[int, int],
     now_utc: datetime | None = None,
+    venue: str | None = None,
 ) -> bool:
     """Whether `now` is inside a Mon–Fri open→close window in `tz_name`.
 
-    Time-based only — ignores exchange holidays (a holiday reads as "open"),
-    fine for a soft display cue. `now_utc` is injectable for tests."""
+    With `venue` (a `market_holidays` calendar) a day it marks closed reads
+    as shut, and a half session ends at the venue's early close. Without one
+    it is time alone — a soft display cue. `now_utc` is injectable for tests.
+    """
     from datetime import datetime, time
     from zoneinfo import ZoneInfo
+
+    from stocks.data import market_holidays
 
     now = (now_utc or datetime.now(UTC)).astimezone(ZoneInfo(tz_name))
     if now.weekday() >= 5:  # Sat/Sun
         return False
+    closure = _closure(venue, tz_name, now_utc)
+    if closure == market_holidays.CLOSED:
+        return False
+    if closure == market_holidays.EARLY and venue in market_holidays.EARLY_CLOSE:
+        close_hm = min(close_hm, market_holidays.EARLY_CLOSE[venue])
     return time(*open_hm) <= now.time() < time(*close_hm)
+
+
+def _us_live() -> dict | None:
+    """Finnhub's word on the US session — `{open, session, holiday}` — when
+    a key is set and an answer has landed (`finnhub.us_session`, a minute
+    old at most, refreshed off this thread); None otherwise, and the
+    time-table clock decides."""
+    from stocks.data import finnhub
+
+    return finnhub.us_session()
 
 
 def us_market_open(now_utc: datetime | None = None) -> bool:
     """Whether the US equity regular session (Mon–Fri, 09:30–16:00 America/
-    New_York) is open right now. See `_session_open` for the holiday caveat."""
-    return _session_open("America/New_York", (9, 30), (16, 0), now_utc)
+    New_York, less the NYSE calendar's closures) is open right now.
+
+    On the live clock the exchange's own status wins when Finnhub has it;
+    an injected `now_utc` is always the time table, so a test reads the
+    same answer with or without a key."""
+    from stocks.data import market_holidays
+
+    if now_utc is None and (live := _us_live()) is not None:
+        return live["open"]
+    return _session_open(_NEW_YORK, (9, 30), (16, 0), now_utc, market_holidays.US)
 
 
 def market_live(ticker: str, now_utc: datetime | None = None) -> bool:
@@ -1985,6 +2029,7 @@ def market_live(ticker: str, now_utc: datetime | None = None) -> bool:
     unsuffixed or unknown symbol falls back to US hours. Exchange-local, so a
     European stock reads open during CET hours even while US premarket is closed.
     """
+    from stocks.data import market_holidays
     from stocks.data.crypto import is_crypto
     from stocks.data.fetch import resolve
 
@@ -1993,18 +2038,35 @@ def market_live(ticker: str, now_utc: datetime | None = None) -> bool:
     symbol = resolve(ticker)
     suffix = symbol.rsplit(".", 1)[1].upper() if "." in symbol else ""
     hours = _EXCHANGE_HOURS.get(suffix)
-    return _session_open(*hours, now_utc) if hours else us_market_open(now_utc)
+    if hours is None:
+        return us_market_open(now_utc)
+    # The calendar knows Xetra, Madrid and London; any other venue is time alone.
+    return _session_open(*hours, now_utc, market_holidays.venue(symbol))
 
 
 def us_extended_session(now_utc: datetime | None = None) -> str | None:
     """ "pre" / "post" while a US extended-hours window is open, else None.
 
     Yahoo quotes those windows (04:00-09:30 and 16:00-20:00 America/New_York),
-    so the day change keeps moving outside the regular session. Time-based, no
-    network, same holiday caveat as `_session_open`."""
-    if _session_open("America/New_York", (4, 0), (9, 30), now_utc):
+    so the day change keeps moving outside the regular session. On the live
+    clock Finnhub's session wins when it has one (`_us_live`); otherwise the
+    time table, with no window on a day the calendar closes and the post
+    window opening at the early close on a half day."""
+    from stocks.data import market_holidays
+
+    if now_utc is None and (live := _us_live()) is not None:
+        return live["session"] if live["session"] in ("pre", "post") else None
+    closure = _closure(market_holidays.US, _NEW_YORK, now_utc)
+    if closure == market_holidays.CLOSED:
+        return None
+    close = (
+        market_holidays.EARLY_CLOSE[market_holidays.US]
+        if closure == market_holidays.EARLY
+        else (16, 0)
+    )
+    if _session_open(_NEW_YORK, (4, 0), (9, 30), now_utc):
         return "pre"
-    if _session_open("America/New_York", (16, 0), (20, 0), now_utc):
+    if _session_open(_NEW_YORK, close, (20, 0), now_utc):
         return "post"
     return None
 
@@ -2105,10 +2167,16 @@ def _snapshot(quote: dict) -> dict | None:
         regular = quote.get("regularMarketPrice")
         prev = quote.get("regularMarketPreviousClose")
         pre, post = quote.get("preMarketPrice"), quote.get("postMarketPrice")
+        high, low = quote.get("fiftyTwoWeekHigh"), quote.get("fiftyTwoWeekLow")
         session = {
             "currency": quote.get("currency"),
             "regular": float(regular) if regular else None,
             "regular_as_of": _quote_date(quote) if regular else None,
+            # The year's extremes ride the same row: the price card's range
+            # tile reads them here rather than paying a second fetch. Absent
+            # on a Finnhub fallback row, which carries no year.
+            "high_52w": float(high) if high else None,
+            "low_52w": float(low) if low else None,
         }
         if state.startswith("PRE") and pre and regular:
             price = float(pre)

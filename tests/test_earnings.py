@@ -222,3 +222,102 @@ def test_a_fund_held_under_its_broker_code_is_not_asked_for_earnings(monkeypatch
     monkeypatch.setattr(yf, "Ticker", lambda symbol: asked.append(symbol))
     assert earnings.fetch_earnings("IE00BFMXXD54") == ([], [])
     assert asked == []
+
+
+# ---------------------------------------------------------- Finnhub's window
+# One whole-market read answers every US name; Yahoo stays for the rest.
+import pytest  # noqa: E402
+
+from stocks.config import Holding  # noqa: E402
+from stocks.data import finnhub  # noqa: E402
+
+
+def _row(symbol, day, estimate=1.0, actual=None):
+    return {
+        "symbol": symbol,
+        "date": day.isoformat(),
+        "epsEstimate": estimate,
+        "epsActual": actual,
+    }
+
+
+def test_from_window_reads_dates_and_reported_prints():
+    rows = [
+        _row("AAPL", date(2026, 7, 30)),  # ahead: a date, no result
+        _row("AAPL", date(2026, 4, 30), estimate=1.5, actual=1.8),
+        _row("AAPL", date(2026, 1, 29), estimate=0.0, actual=2.0),  # nothing to beat
+        {"symbol": "AAPL", "date": None},  # undated: skipped
+    ]
+    from stocks.data.earnings import from_window
+
+    dates, results = from_window("AAPL", rows)
+    assert dates == [date(2026, 1, 29), date(2026, 4, 30), date(2026, 7, 30)]
+    assert [r.date for r in results] == [date(2026, 1, 29), date(2026, 4, 30)]
+    assert results[1].reported_eps == 1.8 and results[1].eps_estimate == 1.5
+    assert abs(results[1].surprise_pct - 20.0) < 1e-9
+    assert results[0].surprise_pct is None
+
+
+@pytest.fixture
+def two_sources(monkeypatch):
+    """Finnhub's window as given, and a Yahoo that logs what it is asked."""
+    from stocks.data import earnings
+
+    asked: list[str] = []
+    monkeypatch.setattr(earnings, "resolve", lambda t: t)
+    monkeypatch.setattr(
+        earnings,
+        "fetch_earnings",
+        lambda t: asked.append(t) or ([date(2026, 8, 1)], []),
+    )
+
+    def install(window):
+        monkeypatch.setattr(finnhub, "earnings_window", lambda ref: window)
+
+    return asked, install
+
+
+def test_us_names_the_window_lists_ahead_are_not_asked_of_yahoo(two_sources):
+    from stocks.data.earnings import calendar_events
+
+    asked, install = two_sources
+    install(
+        {
+            "AAPL": [
+                _row("AAPL", date(2026, 7, 30)),
+                _row("AAPL", date(2026, 4, 30), estimate=1.5, actual=1.8),
+            ],
+            "BRK.B": [_row("BRK.B", date(2026, 8, 3))],
+            "PAST": [_row("PAST", date(2026, 5, 1), actual=1.0)],  # nothing ahead
+        }
+    )
+    holdings = [Holding(t) for t in ("AAPL", "BRK-B", "PAST", "SAN.MC", "NEW", "BTC-EUR")]
+    events, results = calendar_events(holdings, ref=REF)
+    # The window answered the two it lists ahead — in Finnhub's spelling for
+    # the share class — and Yahoo the rest: the foreign listing, the unlisted
+    # name, the name whose next date the window does not have, the crypto pair.
+    assert asked == ["PAST", "SAN.MC", "NEW", "BTC-EUR"]
+    by_ticker = {e.ticker: e.date for e in events}
+    assert by_ticker["AAPL"] == date(2026, 7, 30)
+    assert by_ticker["BRK-B"] == date(2026, 8, 3)
+    assert by_ticker["SAN.MC"] == date(2026, 8, 1)
+    assert [(r.ticker, r.date) for r in results] == [("AAPL", date(2026, 4, 30))]
+
+
+def test_upcoming_reads_the_window_too(two_sources):
+    from stocks.data.earnings import upcoming
+
+    asked, install = two_sources
+    install({"AAPL": [_row("AAPL", date(2026, 7, 30))]})
+    events = upcoming([Holding("AAPL")], within_days=30, ref=REF)
+    assert [(e.ticker, e.days_until) for e in events] == [("AAPL", 6)]
+    assert asked == []
+
+
+def test_without_a_window_every_name_goes_to_yahoo(two_sources):
+    from stocks.data.earnings import calendar_events
+
+    asked, install = two_sources
+    install(None)  # keyless, or a read that failed
+    calendar_events([Holding("AAPL"), Holding("SAN.MC")], ref=REF)
+    assert asked == ["AAPL", "SAN.MC"]

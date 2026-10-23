@@ -2,6 +2,8 @@
 
 from datetime import date
 
+import pytest
+
 from stocks.data.insiders import (
     InsiderTx,
     parse_form4,
@@ -171,3 +173,107 @@ def test_form4_documents_are_fetched_once_and_read_back_from_the_memo(
     assert insiders.insider_transactions("EXPL") == first
     assert calls == ["https://data.sec.gov/submissions/CIK0000001234.json"]
     insiders.clear_form4_cache()
+
+
+# ----------------------------------------------------------- Finnhub's feed
+# The same Form 4 lines, one request for the year instead of a document per
+# filing. EDGAR is read when Finnhub has nothing for the name.
+FINNHUB_ROWS = [
+    {
+        "name": "Cook Jane D",
+        "share": 9000,
+        "change": -1000,
+        "filingDate": "2026-07-03",
+        "transactionDate": "2026-07-01",
+        "transactionCode": "S",
+        "transactionPrice": 200.0,
+        "isDerivative": False,
+    },
+    {
+        "name": "Doe John",
+        "share": 500,
+        "change": 500,
+        "filingDate": "2026-06-20",
+        "transactionDate": "2026-06-18",
+        "transactionCode": "P",
+        "transactionPrice": 150.0,
+        "isDerivative": False,
+    },
+    {  # an option line: not a share trade
+        "name": "Doe John",
+        "change": 10000,
+        "transactionDate": "2026-07-02",
+        "transactionCode": "M",
+        "transactionPrice": 0,
+        "isDerivative": True,
+    },
+    {  # a holding line, no trade on it
+        "name": "Roe Sam",
+        "change": 0,
+        "transactionDate": "2026-07-02",
+        "transactionCode": "",
+        "isDerivative": False,
+    },
+    {  # a grant with no price
+        "name": "Roe Sam",
+        "change": 300,
+        "transactionDate": "2026-05-05",
+        "transactionCode": "A",
+        "transactionPrice": 0,
+        "isDerivative": False,
+    },
+]
+
+
+def test_from_finnhub_maps_the_share_lines_newest_first():
+    from stocks.data.insiders import from_finnhub
+
+    txs = from_finnhub("EXPL", FINNHUB_ROWS)
+    assert [(t.date, t.insider, t.code, t.acquired, t.shares, t.price) for t in txs] == [
+        (date(2026, 7, 1), "Cook Jane D", "S", False, 1000.0, 200.0),
+        (date(2026, 6, 18), "Doe John", "P", True, 500.0, 150.0),
+        (date(2026, 5, 5), "Roe Sam", "A", True, 300.0, None),
+    ]
+    assert all(t.ticker == "EXPL" and t.source == "SEC" for t in txs)
+    assert all(t.relationship == "" for t in txs)  # no role on the feed
+    # They feed the same signal the filings do.
+    assert summarize(txs, ref=REF).sell_count == 1
+
+
+def test_a_us_name_is_read_from_finnhub_and_edgar_is_left_alone(monkeypatch):
+    from stocks.data import finnhub, insiders
+
+    monkeypatch.setattr(finnhub, "api_key", lambda: "test-key")
+    asked = []
+    monkeypatch.setattr(
+        finnhub,
+        "insider_transactions",
+        lambda symbol, start, end, **k: asked.append((symbol, (end - start).days))
+        or FINNHUB_ROWS,
+    )
+    monkeypatch.setattr(insiders, "cik_for", lambda t: pytest.fail("read EDGAR"))
+    txs = insiders.insider_transactions("BRK-B")
+    assert len(txs) == 3
+    assert asked == [("BRK.B", insiders.FINNHUB_LOOKBACK_DAYS)]
+
+
+def test_edgar_is_read_when_finnhub_has_nothing(monkeypatch):
+    from stocks.data import finnhub, insiders
+
+    monkeypatch.setattr(finnhub, "api_key", lambda: "test-key")
+    monkeypatch.setattr(finnhub, "insider_transactions", lambda *a, **k: [])
+    asked = []
+    monkeypatch.setattr(insiders, "cik_for", lambda t: asked.append(t) or None)
+    assert insiders.insider_transactions("EXPL") == []
+    assert asked == ["EXPL"]
+
+
+def test_a_foreign_listing_is_not_asked_of_finnhub(monkeypatch):
+    from stocks.data import finnhub, insiders
+
+    monkeypatch.setattr(finnhub, "api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        finnhub, "insider_transactions", lambda *a, **k: pytest.fail("asked")
+    )
+    monkeypatch.setattr(insiders, "cik_for", lambda t: None)
+    assert insiders.insider_transactions("SAN.MC") == []

@@ -1212,3 +1212,64 @@ def test_sleeve_stats_reads_each_blocks_own_compound_growth_over_a_year():
     )
     assert growth["stocks"] == pytest.approx(2**0.5 - 1, abs=0.01)
     assert growth["crypto"] == pytest.approx(0.5**0.5 - 1, abs=0.01)
+
+
+# ------------------------------------------------- the clock knows the calendar
+from stocks.analysis import portfolio as _pf  # noqa: E402
+from stocks.analysis.portfolio import us_market_open  # noqa: E402
+
+
+def _on(year: int, month: int, day: int, hour: int, minute: int = 0) -> datetime:
+    return datetime(year, month, day, hour, minute, tzinfo=UTC)
+
+
+def test_a_closed_day_reads_shut_all_day():
+    # Thanksgiving 2026, 10:00 ET (EST = UTC-5): the hours say open.
+    thanksgiving = _on(2026, 11, 26, 15)
+    assert not us_market_open(thanksgiving)
+    assert us_extended_session(thanksgiving) is None  # no extended feed either
+    assert not market_active("AAPL", thanksgiving)
+    assert us_market_open(_on(2026, 11, 30, 15))  # the Monday after
+
+
+def test_a_half_day_ends_at_the_early_close():
+    # Black Friday 2026: New York closes at 13:00.
+    assert us_market_open(_on(2026, 11, 27, 17, 30))  # 12:30 ET
+    assert not us_market_open(_on(2026, 11, 27, 18, 30))  # 13:30 ET
+    assert us_extended_session(_on(2026, 11, 27, 18, 30)) == "post"
+    assert market_active("AAPL", _on(2026, 11, 27, 18, 30))
+
+
+def test_foreign_venues_follow_their_own_calendars():
+    # Xetra is shut on Christmas Eve; Madrid closes at 14:00 that day.
+    assert market_live("SAP.DE", _on(2026, 12, 23, 10))
+    assert not market_live("SAP.DE", _on(2026, 12, 24, 10))
+    assert market_live("SAN.MC", _on(2026, 12, 24, 12, 30))  # 13:30 CET
+    assert not market_live("SAN.MC", _on(2026, 12, 24, 13, 30))  # 14:30 CET
+
+
+def test_the_live_clock_takes_the_exchanges_word(monkeypatch):
+    monkeypatch.setattr(
+        _pf, "_us_live", lambda: {"open": False, "session": "pre", "holiday": None}
+    )
+    assert not us_market_open()
+    assert us_extended_session() == "pre"
+    monkeypatch.setattr(
+        _pf, "_us_live", lambda: {"open": True, "session": "regular", "holiday": None}
+    )
+    assert us_market_open()
+    assert us_extended_session() is None
+    monkeypatch.setattr(
+        _pf, "_us_live", lambda: {"open": False, "session": None, "holiday": "Christmas"}
+    )
+    assert not us_market_open()
+    assert us_extended_session() is None
+
+
+def test_an_injected_clock_is_the_time_table_alone(monkeypatch):
+    """A test's instant reads the same with or without a Finnhub key."""
+    monkeypatch.setattr(
+        _pf, "_us_live", lambda: pytest.fail("asked Finnhub for an injected instant")
+    )
+    assert not us_market_open(_utc(1, 6, 12))  # Saturday
+    assert us_extended_session(_utc(1, 3, 22)) == "post"
