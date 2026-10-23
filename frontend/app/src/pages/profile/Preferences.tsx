@@ -23,6 +23,7 @@ import {
 } from "./data";
 import type { Jurisdictions } from "./data";
 import { ConnectorCard } from "./ConnectorCard";
+import { Sessions } from "./Sessions";
 import { DeleteAccount } from "./DeleteAccount";
 import type { Settings } from "./prefs";
 import { MemoryCard } from "./MemoryCard";
@@ -405,6 +406,9 @@ export function Preferences({
               {t("profile.export_all_button")}
             </a>
           </Row>
+          {/* Which browsers are signed in, each endable; draws nothing until
+              the list answers. */}
+          <Sessions />
           {/* The other half of the promise the privacy policy makes: the data
               can be taken out, and it can be erased. Never offered to the
               owner: that "account" is the repo-root files the CLI shares, and

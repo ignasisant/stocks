@@ -196,5 +196,13 @@
   "profile.connector_used": "último uso el {date}",
   "profile.connector_never_used": "sin usar todavía",
   "profile.connector_revoke": "Revocar",
-  "profile.connector_revoke_failed": "No se ha podido revocar — inténtalo de nuevo."
+  "profile.connector_revoke_failed": "No se ha podido revocar — inténtalo de nuevo.",
+  "profile.sessions_title": "Dispositivos con sesión",
+  "profile.sessions_help": "Navegadores con sesión iniciada en esta cuenta. Cierra los que no reconozcas.",
+  "profile.sessions_this": "Este dispositivo",
+  "profile.sessions_unknown": "Navegador desconocido",
+  "profile.sessions_active": "Activo {when}",
+  "profile.sessions_end": "Cerrar sesión",
+  "profile.sessions_end_others": "Cerrar sesión en los demás",
+  "profile.sessions_failed": "No se ha podido cerrar — inténtalo de nuevo."
 }

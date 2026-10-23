@@ -214,10 +214,26 @@ def signed_in_email(cookies: Mapping[str, str]) -> str | None:
     the email claim, so an address the provider did not verify must never
     resolve to a data directory.
     """
+    payload = verified_claims(cookies)
+    if not payload:
+        return None
+    return str(payload.get("email") or "").strip().lower() or None
+
+
+def verified_claims(cookies: Mapping[str, str]) -> dict | None:
+    """The session payload when it names a verified address, else None."""
     payload = claims(cookies)
     if not payload or not verified(payload.get("email_verified")):
         return None
-    return str(payload.get("email") or "").strip().lower() or None
+    if not str(payload.get("email") or "").strip():
+        return None
+    return payload
+
+
+def expiry(payload: Mapping[str, object]) -> float:
+    """When this session's cookie stops being trusted on its own."""
+    iat = payload.get("iat")
+    return float(iat if isinstance(iat, int) else time.time()) + MAX_AGE
 
 
 def seal(purpose: str, payload: dict) -> str | None:

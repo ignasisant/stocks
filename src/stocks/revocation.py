@@ -89,6 +89,22 @@ def revoke_session(sid: str, expires: float, max_age: int) -> None:
         _save(state, max_age)
 
 
+def sid_key(sid: str) -> str:
+    return hashlib.sha256(f"session:{sid}".encode()).hexdigest()[:32]
+
+
+def revoke_hash(key: str, expires: float, max_age: int) -> None:
+    """End the session whose `devices.sid_hash` is `key` — what the account's
+    session list holds, since it never keeps the `sid` itself."""
+    revoke_session(key, expires, max_age)
+
+
+def session_revoked(key: str) -> bool:
+    """Whether the session with this `devices.sid_hash` has been ended."""
+    with _lock:
+        return key in _load()["sid"]
+
+
 def revoke_email(email: str, max_age: int) -> None:
     """End every session of `email` minted up to now."""
     if not email.strip():
@@ -105,7 +121,7 @@ def revoked(payload: dict) -> bool:
         with _lock:
             state = _load()
             sid = str(payload.get("sid") or "")
-            if sid and sid in state["sid"]:
+            if sid and (sid in state["sid"] or sid_key(sid) in state["sid"]):
                 return True
             before = state["before"].get(_digest(str(payload.get("email") or "")))
         return before is not None and float(payload.get("iat") or 0) <= before

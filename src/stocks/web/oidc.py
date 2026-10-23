@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hmac
 import re
+import time
 from functools import lru_cache
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
@@ -29,7 +30,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 from starlette.routing import Route
 
-from stocks import accounts, obs, session
+from stocks import accounts, devices, obs, session
 from stocks.secrets_env import secret
 from stocks.web import attribution
 
@@ -222,11 +223,35 @@ async def callback(request: Request) -> Response:
     if cookie is None:
         return response
     if session.verified(claims.get("email_verified")):
+        email = str(claims["email"]).strip().lower()
+        await run_in_threadpool(_provision, email, source, wall)
         await run_in_threadpool(
-            _provision, str(claims["email"]).strip().lower(), source, wall
+            _record_device, cookie, email, request.headers.get("user-agent", "")
         )
     _set(response, session.COOKIE, cookie, session.MAX_AGE, request)
     return response
+
+
+def _record_device(cookie: str, email: str, user_agent: str) -> None:
+    """Add this sign-in to the account's list of live sessions (Profile).
+
+    Never a reason to refuse the sign-in: the list also heals on the session's
+    first API request (`api.deps.account`).
+    """
+    payload = session.verified_claims({session.COOKIE: cookie})
+    if not payload:
+        return
+    try:
+        paths = accounts.paths_for(email, accounts.configured_owner())
+        devices.record(
+            paths.devices,
+            str(payload.get("sid") or ""),
+            user_agent=user_agent,
+            created=float(payload.get("iat") or time.time()),
+            expires=session.expiry(payload),
+        )
+    except Exception as exc:  # noqa: BLE001 — see the docstring
+        obs.warn("session.devices_record_failed", error_type=type(exc).__name__)
 
 
 def _source(target: str) -> str:
