@@ -4,7 +4,7 @@
   "sector.as_of": "Grupo y precios a {date}",
   "sector.cohort_caption": "{n} empresas — la cesta de {etf}, ampliada con cotizadas de fuera de EE. UU.",
   "sector.empty_title": "Todavía no hay escaneo sectorial",
-  "sector.empty_body": "Cada noche la app arma un grupo comparable para cada uno de los once sectores y lo ordena por valoración y calidad. Aún no se ha escaneado nada — actualiza un sector para armarlo ahora.",
+  "sector.empty_body": "Cada noche la app ordena los once sectores por valoración y calidad. Aún no hay ningún escaneo: actualiza un sector para generarlo ahora.",
   "sector.refresh": "Actualizar este sector",
   "sector.refreshing": "Escaneando {sector} — esto pide a Yahoo cada empresa del grupo.",
   "sector.podium_title": "Las tres mejores de este cribado",
@@ -34,5 +34,5 @@
   "sector.fb_headline": "{top} encabeza el cribado de {sector} entre {cohort} empresas.",
   "sector.held_badge": "En cartera",
   "sector.fb_held": "Ya en tu cartera: {tickers}.",
-  "sector.fb_empty": "No hay datos comparables suficientes en {sector} para armar un podio."
+  "sector.fb_empty": "No hay datos comparables suficientes en {sector} para elegir los tres mejores."
 }

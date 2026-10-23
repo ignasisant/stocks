@@ -94,7 +94,7 @@
   "home.at_52w_low": "en mínimo 52s",
   "home.from_52w_low": "{pct} desde mínimo 52s",
   "home.empty_watchlist_title": "Tu lista de seguimiento está vacía",
-  "home.empty_watchlist_body": "La lista de seguimiento es lo que leen este panel, el Filtro y el calendario de Resultados. Añade los valores que sigues y el resto de la aplicación tendrá con qué trabajar.",
+  "home.empty_watchlist_body": "Añade los valores que sigues y se rellenan Inicio, el cribado por sectores y el calendario de resultados.",
   "home.favorites": "Favoritos",
   "home.watchlist": "Lista de seguimiento",
   "home.watchlist_caption": "Último cierre frente al cierre anterior (yfinance, en caché 15 min). Haz clic en un valor para ver precio, fundamentales, insiders y comparables; márcalo con estrella o etiquétalo desde la barra lateral para agruparlo aquí.",

@@ -94,7 +94,7 @@
   "home.at_52w_low": "at 52w low",
   "home.from_52w_low": "{pct} from 52w low",
   "home.empty_watchlist_title": "Your watchlist is empty",
-  "home.empty_watchlist_body": "The watchlist is what this dashboard, the Screener and the Earnings calendar all read. Add the tickers you follow and the rest of the app has something to work with.",
+  "home.empty_watchlist_body": "Add the tickers you follow and Home, the sector screen and the earnings calendar fill in.",
   "home.favorites": "Favorites",
   "home.watchlist": "Watchlist",
   "home.watchlist_caption": "Last close vs previous close (yfinance, cached 15 min). Click a ticker for price, fundamentals, insiders and comps; star or tag it from the sidebar to group it here.",

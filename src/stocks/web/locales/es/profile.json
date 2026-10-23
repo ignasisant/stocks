@@ -8,7 +8,7 @@
   "profile.currency_caption": "La app calcula en esta moneda: cada apunte al tipo de su propia fecha, no una conversión al final.",
   "profile.watchlist": "Lista de seguimiento",
   "profile.empty_watchlist_title": "La lista de seguimiento está vacía",
-  "profile.empty_watchlist_body": "Busca un valor abajo — por símbolo o por nombre de empresa — y elígelo. Entra con su nombre real, y Resumen, Filtro y Resultados se activan en cuanto haya un valor.",
+  "profile.empty_watchlist_body": "Busca por símbolo o nombre de empresa y elige un valor. Inicio, el cribado por sectores y Resultados se rellenan en cuanto añadas uno.",
   "profile.iv_section": "Perfil de inversor",
   "profile.iv_caption": "Le dice al asistente de IA a quién asesora, para que su análisis se ajuste a ti en vez de a un perfil genérico.",
   "profile.iv_privacy": "Se guarda de forma privada en tu cuenta y se envía al asistente como contexto. Nada de esto sale de tu cuenta.",

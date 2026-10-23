@@ -72,7 +72,7 @@
   "today.market_stale": "Mercado al cierre del {date}; la lectura nueva está en camino.",
   "today.failed": "No se ha podido cargar Hoy.",
   "today.retry": "Reintentar",
-  "today.empty": "Añade posiciones o una watchlist y aquí verás tus alertas, noticias y comparativas.",
+  "today.empty": "Añade posiciones o una lista de seguimiento y aquí verás tus alertas, noticias y comparativas.",
   "today.guest_wall": "Entra para ver tus alertas, noticias, insiders y comparativas de cada día.",
   "today.tab_all": "Todo",
   "today.tab_alerts": "Alertas",
