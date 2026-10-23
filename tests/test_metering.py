@@ -111,3 +111,10 @@ def test_a_generator_stepped_on_fresh_threads_keeps_its_meter():
         t.join()
     assert got == ["a", "b", None]
     assert [(u.step, u.tokens) for u in m.uses] == [("answer", 1), ("answer", 1)]
+
+
+def test_the_meter_totals_cache_reads_and_writes_for_the_turn_log():
+    meter = metering.Meter()
+    meter.add(metering.Use("m", "answer", input=10, cached=900, cache_write=50))
+    meter.add(metering.Use("m", "gather", input=5, cached=100))
+    assert meter.cached() == 1000 and meter.cache_write() == 50

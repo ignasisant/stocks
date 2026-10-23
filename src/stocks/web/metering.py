@@ -121,6 +121,14 @@ class Meter:
             total += cost
         return round(total, 6)
 
+    def cached(self) -> int:
+        """Input tokens the providers read from their prompt caches."""
+        return sum(u.cached for u in self._snapshot(None))
+
+    def cache_write(self) -> int:
+        """Input tokens written to a cache (Anthropic bills these at 1.25x)."""
+        return sum(u.cache_write for u in self._snapshot(None))
+
     def by_step(self) -> dict[str, int]:
         out: dict[str, int] = {}
         for u in self._snapshot(None):
