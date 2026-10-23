@@ -906,7 +906,16 @@ def _crypto_usd_fallback(
         converted.index.name = "Date"
         start = converted.index.min().date().isoformat()
         end = converted.index.max().date().isoformat()
-        fx = rates_range(start, end, "USD", quote)
+        # The rate feed is a second network dependency inside a Yahoo
+        # download. When it is down the pair stays unpriced (held at cost
+        # downstream, like any other gap) instead of the whole download
+        # failing for the shares that were fetched fine beside it.
+        try:
+            fx = rates_range(start, end, "USD", quote)
+        except Exception as exc:
+            obs.warn("yahoo.crypto_fx_failed", ticker=t, via=f"{coin}-USD",
+                     error=str(exc))
+            continue
         if not fx:
             continue
         rate = pd.Series(fx)
