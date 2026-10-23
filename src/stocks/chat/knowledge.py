@@ -73,7 +73,7 @@ my of on or the this to was what when where which who why with you your
 
 _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.S)
 _SECTION = re.compile(r"^## +(.+)$", re.M)
-_SENTENCE = re.compile(r"(?<=[.!?:])\s+(?=[A-Z¿¡*\"“(])")
+_SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z¿¡*\"“(]|- )")
 # A tour step is a `<key>_title` with a `<key>_body` beside it. News cards are
 # release notes ("new: …"), not a description of the app as it stands: the
 # step they point at already says it in the present tense.
@@ -93,6 +93,21 @@ HEADER = (
 # 0.45), but with no keyword hit the right answers sat under 0.40 ("como veo
 # los dividendos") and the noise above 0.53 (Tesla, iPhone, "hello").
 _NEAR = 0.5
+
+# A question whose own words are mostly absent from the whole knowledge base is
+# about something it does not hold ("Bizum", "Apple Watch", "a short squeeze").
+# The keyword half still matches the one word that does exist ("import",
+# "score", "tax") and the semantic half always has a nearest neighbour, so such
+# a question came back with four confident-looking passages. Measured
+# 2026-10-23 over the golden set: no in-scope question has more than one word
+# the index lacks (a verb form, a brand), so "half or more of the content
+# words unknown", or two or more and at least 40%, is out of scope.
+_UNKNOWN_SHARE = 0.5
+_UNKNOWN_SHARE_PAIR = 0.4
+# ...unless the question is semantically close to a passage anyway ("como veo
+# los dividendos": "veo" is nowhere, the dividends step sits at 0.34). The
+# out-of-scope questions measured sit at 0.42 and above.
+_UNKNOWN_BUT_CLOSE = 0.4
 
 
 # Words only Spanish has, among the ones a question is made of.
@@ -139,22 +154,34 @@ class Passage:
 def _cut(text: str, limit: int = MAX_CHARS) -> list[str]:
     """`text` in pieces of at most `limit` characters, split between sentences.
 
-    A sentence longer than the limit stands alone rather than being cut in
-    half: an overlong passage costs some result room, a sentence missing its
-    end costs the meaning."""
+    The pieces are balanced: a section a little over the limit is cut in two
+    halves, not into a full passage and a stub. A stub ("Losses carry forward
+    five years only if you opt for englobamento.") has lost the country it was
+    about, and ranks as if it were an answer. A sentence longer than the limit
+    stands alone rather than being cut in half: an overlong passage costs some
+    result room, a sentence missing its end costs the meaning."""
     text = " ".join(text.split())
     if len(text) <= limit:
         return [text] if text else []
-    pieces, current = [], ""
+    groups: list[list[str]] = [[]]
     for sentence in _SENTENCE.split(text):
-        if current and len(current) + 1 + len(sentence) > limit:
-            pieces.append(current)
-            current = sentence
-        else:
-            current = f"{current} {sentence}".strip()
-    if current:
-        pieces.append(current)
-    return pieces
+        size = sum(map(len, groups[-1])) + len(groups[-1])
+        if groups[-1] and size + len(sentence) > limit:
+            groups.append([])
+        groups[-1].append(sentence)
+    # Greedy packing leaves the last piece with whatever is over. Re-split the
+    # last two where they are most even.
+    if len(groups) > 1:
+        both = groups[-2] + groups[-1]
+        best = None
+        for i in range(1, len(both)):
+            a, b = len(" ".join(both[:i])), len(" ".join(both[i:]))
+            if max(a, b) <= limit or i == 1 or i == len(both) - 1:
+                if best is None or abs(a - b) < best[0]:
+                    best = (abs(a - b), i)
+        if best:
+            groups[-2:] = [both[:best[1]], both[best[1]:]]
+    return [" ".join(g) for g in groups]
 
 
 def _meta(block: str) -> dict[str, str]:
@@ -296,6 +323,20 @@ class _Index:
             f"SELECT rowid FROM {_TABLE}_fts WHERE {_TABLE}_fts MATCH ?"
             f" ORDER BY bm25({_TABLE}_fts, {_RANK}) LIMIT ?", (match, depth))]
 
+    def out_of_scope(self, query: str) -> bool:
+        """Whether too many of the question's content words appear nowhere in
+        the knowledge base for any passage to be an answer to it."""
+        terms = {w.lower() for w in hybrid._WORD_RE.findall(query)} - _STOP
+        if not terms:
+            return False
+        unknown = sum(
+            1 for t in terms if not self.db.execute(
+                f"SELECT 1 FROM {_TABLE}_fts WHERE {_TABLE}_fts MATCH ? LIMIT 1",
+                (hybrid._stem(t),)).fetchone())
+        share = unknown / len(terms)
+        return share >= _UNKNOWN_SHARE or (
+            unknown >= 2 and share >= _UNKNOWN_SHARE_PAIR)
+
     def search(self, query: str, depth: int) -> list[int]:
         """Row ids, best first — none when nothing is near enough to answer.
 
@@ -304,6 +345,9 @@ class _Index:
         "documentation", that passage reads as an answer. So when no word of
         the question matched anything, only a close semantic hit counts."""
         with self.lock:
+            if self.out_of_scope(query) and not self._semantic(
+                    query, 1, within=_UNKNOWN_BUT_CLOSE):
+                return []
             lexical = self._lexical(query, depth)
             semantic = self._semantic(query, depth,
                                       within=None if lexical else _NEAR)
