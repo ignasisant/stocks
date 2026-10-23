@@ -905,21 +905,21 @@
     padding-top: 3.4rem;
   }
 
-  .pf-scrub > .pf-tip.pf-tip-x > :not(.pf-tip-title, .pf-tip-row) {
+  .pf-scrub > .pf-tip.pf-tip-x > :not(.ag-tip-title, .ag-tip-row) {
     display: none;
   }
 
-  .pf-scrub > .pf-tip.pf-tip-x .pf-tip-title {
+  .pf-scrub > .pf-tip.pf-tip-x .ag-tip-title {
     color: var(--ag-text-secondary, var(--ag-text-primary));
     font-weight: 600;
   }
 
-  .pf-scrub > .pf-tip.pf-tip-x .pf-tip-row {
+  .pf-scrub > .pf-tip.pf-tip-x .ag-tip-row {
     min-width: 0;
     max-width: 100%;
   }
 
-  .pf-scrub > .pf-tip.pf-tip-x .pf-tip-row strong {
+  .pf-scrub > .pf-tip.pf-tip-x .ag-tip-row strong {
     margin-left: 0;
     padding-left: 0;
   }
@@ -934,58 +934,9 @@
   stroke-linejoin: round;
 }
 
-/* A line's name at its right end: its own colour, a step heavier than the
-   axis labels, haloed by `pf-halo` where it sits over the plot. */
-.pf-end {
-  font-size: 11px;
-  font-weight: 600;
-}
-
-/* Plotly's unified hover label: date on top, one row per series with its
-   swatch, name muted and figure bold. Never takes the pointer. */
-.pf-tip {
-  position: absolute;
-  top: 8px;
-  transform: translateX(8px);
-  z-index: 5;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  /* Sized by its text, not by the room left to the right of its anchor: an
-     absolute box shrinks to that room, and near the plot's right edge it went
-     a thin column. The flip keeps it on the card. */
-  width: max-content;
-  min-width: 9rem;
-  max-width: min(280px, 90%);
-  padding: 8px 10px;
-  background: var(--ag-surface-page);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm, 8px);
-  box-shadow: var(--ag-shadow-overlay);
-  font-size: var(--ag-fs-xs, 0.6875rem);
-  line-height: 1.45;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Past the middle the box opens to the pointer's left, so it stays in the card. */
-.pf-tip-flip {
-  transform: translateX(calc(-100% - 8px));
-}
-
-/* Low in a donut the box opens above the pointer, over the ring. */
-.pf-tip-up {
-  transform: translate(8px, -100%);
-}
-
-.pf-tip-flip.pf-tip-up {
-  transform: translate(calc(-100% - 8px), -100%);
-}
-
-.pf-tip-wide {
-  min-width: min(13rem, 100%);
-  max-width: min(300px, 100%);
-}
+/* The hover box itself is the shared `Tip` (ui/chart/chart.css); what follows
+   is what only the portfolio's boxes carry: holdings under a donut slice, the
+   money chart's per-line grid. */
 
 /* A slice's holdings under its figures: symbol, value, P/L. */
 .pf-tip-holdings {
@@ -1017,42 +968,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.pf-tip-title {
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs, 0.6875rem);
-}
-
-.pf-tip-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--ag-text-primary);
-  white-space: nowrap;
-}
-
-/* A label longer than the box leaves is cut, not let out past its edge: the
-   box is capped, and a row wider than it overhung the plot — on a phone, the
-   page. The figure is never the part cut. */
-.pf-tip-row .pf-muted {
-  overflow: hidden;
-  min-width: 0;
-  text-overflow: ellipsis;
-}
-
-.pf-tip-row strong {
-  flex: none;
-  margin-left: auto;
-  padding-left: 8px;
-  font-weight: 600;
-}
-
-.pf-tip-swatch {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  flex: none;
 }
 
 /* The correlation colour scale, −1 to +1, under the grid. */

@@ -28,12 +28,13 @@ import {
 import { createPortal } from "react-dom";
 import { useT } from "../../shell/i18n";
 import { token } from "../../shell/theme";
-import { Spoken, useKeyWalk } from "../../shell/useKeyWalk";
-import { spreadLabels } from "../ticker/plot";
+import { EndLabels } from "../ticker/plot";
 import { TickerCell } from "../../shell/tickers";
 import { useTabStrip } from "../../shell/useTabStrip";
 import { useSpan } from "../../shell/useSpan";
-import { useTouchHold } from "../../shell/useTouchHold";
+import { Tip, TipRows, tipAt } from "../../ui/chart/Tip";
+import { Spoken, useScrub } from "../../ui/chart/useScrub";
+import { BASELINE_DASH, DOT, LINE } from "../../ui/chart/marks";
 import { useWidth } from "../../shell/useWidth";
 import type { TaxPeriod } from "./api";
 
@@ -246,60 +247,22 @@ function ChartTip({
   /** One more class on the box, for a layout of its own. */
   className?: string;
 }) {
-  const left = (x / width) * 100;
-  const box = useRef<HTMLDivElement>(null);
-  // Measured on every render, after the pointer moved it: set on the element
-  // rather than through state, so the measurement is never of its own nudge.
-  // On `left` rather than a transform, which would still leave the untouched
-  // box counted in the page's width.
-  useLayoutEffect(() => {
-    const tip = box.current;
-    const plot = tip?.parentElement;
-    if (!tip || !plot) return;
-    tip.style.left = `${left}%`;
-    const at = tip.getBoundingClientRect();
-    const frame = plot.getBoundingClientRect();
-    const over = at.right - frame.right;
-    const under = frame.left - at.left;
-    const nudge = over > 0 ? -over : under > 0 ? under : 0;
-    if (nudge) tip.style.left = `calc(${left}% + ${nudge}px)`;
-  });
-  const classes = ["pf-tip"];
   // A box that follows only the pointer's x sits at the top of the plot, which
   // is where a finger scrubbing it is; the stylesheet lifts it out of the plot
   // on a touch screen. One placed both ways (a donut's) already dodges.
-  if (top === undefined) classes.push("pf-tip-x");
-  if (left > 55) classes.push("pf-tip-flip");
-  if (up) classes.push("pf-tip-up");
-  if (wide) classes.push("pf-tip-wide");
-  if (className) classes.push(className);
+  const place = ["pf-tip", top === undefined ? "pf-tip-x" : "", className ?? ""];
   return (
-    <div
-      ref={box}
-      className={classes.join(" ")}
-      style={{ left: `${left}%`, ...(top === undefined ? {} : { top }) }}
+    <Tip
+      at={tipAt(x, width)}
+      title={title}
+      items={rows}
+      top={top}
+      up={up}
+      wide={wide}
+      className={place.filter(Boolean).join(" ")}
     >
-      <span className="pf-tip-title">{title}</span>
-      {rows.map((row) => (
-        <span className="pf-tip-row" key={row.label}>
-          {row.color ? (
-            <span
-              className={
-                row.mark === "dashed"
-                  ? "pf-tip-swatch pf-swatch-dashed"
-                  : row.mark === "line"
-                    ? "pf-tip-swatch pf-swatch-line"
-                    : "pf-tip-swatch"
-              }
-              style={{ background: row.color }}
-            />
-          ) : null}
-          <span className="pf-muted">{row.label}</span>
-          <strong>{row.value}</strong>
-        </span>
-      ))}
       {children}
-    </div>
+    </Tip>
   );
 }
 
@@ -656,15 +619,7 @@ export function Donut({
             </button>
           </div>
           <div className="pf-donut-detail-figures">
-            {sliceTip(open, detail).map((row) => (
-              <span className="pf-tip-row" key={row.label}>
-                {row.color ? (
-                  <span className="pf-tip-swatch" style={{ background: row.color }} />
-                ) : null}
-                <span className="pf-muted">{row.label}</span>
-                <strong>{row.value}</strong>
-              </span>
-            ))}
+            <TipRows items={sliceTip(open, detail)} />
           </div>
           {open.includes?.length && detail.labels.includes ? (
             <p className="pf-donut-note">
@@ -1134,7 +1089,7 @@ function HeatTip({ rect, children }: { rect: DOMRect; children: ReactNode }) {
     tip.style.visibility = "visible";
   });
   return createPortal(
-    <div ref={box} className="pf-tip pf-heat-tip">
+    <div ref={box} className="ag-tip pf-heat-tip">
       {children}
     </div>,
     document.body,
@@ -1232,8 +1187,14 @@ function PeriodBarsPlot({
   const [hover, setHover] = useState<number | null>(null);
   const [frame, width] = useWidth(BARS.fallback);
   const svg = useRef<SVGSVGElement>(null);
-  useTouchHold(svg, hover !== null, setHover);
-  const walk = useKeyWalk({ at: hover, last: periods.length - 1, set: setHover });
+  const walk = useScrub({
+    plot: svg,
+    at: hover,
+    last: periods.length - 1,
+    set: setHover,
+    held: hover !== null,
+    drop: setHover,
+  });
   // On touch the first tap on a bar reads it and only a second, on the same
   // bar, picks it: one tap would otherwise open the box and navigate at once.
   const armed = useRef(false);
@@ -1557,8 +1518,14 @@ function WaterfallPlot({
   const [hover, setHover] = useState<number | null>(null);
   const [frame, width] = useWidth(BARS.fallback);
   const svg = useRef<SVGSVGElement>(null);
-  useTouchHold(svg, hover !== null, setHover);
-  const walk = useKeyWalk({ at: hover, last: bars.length - 1, set: setHover });
+  const walk = useScrub({
+    plot: svg,
+    at: hover,
+    last: bars.length - 1,
+    set: setHover,
+    held: hover !== null,
+    drop: setHover,
+  });
 
   const up = token("candle-up");
   const down = token("candle-down");
@@ -1944,14 +1911,16 @@ export function ReturnLines({
   const [near, setNear] = useState<string | null>(null);
   const [frame, width] = useWidth(RETURN.fallback);
   const svg = useRef<SVGSVGElement>(null);
-  useTouchHold(svg, pointer !== null, setHover);
-  const walk = useKeyWalk({
+  const walk = useScrub({
+    plot: svg,
     at: pointer,
     last: dates.length - 1,
     set: (index) => {
       setHover(index);
       if (index === null) setNear(null);
     },
+    held: pointer !== null,
+    drop: setHover,
   });
   const drawn = series.filter((one) => one.points.some((v) => v !== null));
   if (dates.length < 2 || !drawn.length) return null;
@@ -2123,12 +2092,6 @@ export function ReturnLines({
         }),
       ]
     : [];
-  const endAt = spreadLabels(
-    endNames.map((one) => one.y - 6),
-    13,
-    RETURN.top + 10,
-    RETURN.top + plotH - 4,
-  );
   // The day the legend's figures are read on: the pointer's, else the last
   // day with money in.
   let shown = hover;
@@ -2284,10 +2247,16 @@ export function ReturnLines({
                   d={d}
                   fill="none"
                   stroke={one.color}
-                  strokeWidth={one.label === active ? 2.5 : one.focal ? 2 : 1.5}
+                  strokeWidth={
+                    one.label === active
+                      ? LINE.primary + LINE.lift
+                      : one.focal
+                        ? LINE.primary
+                        : LINE.secondary
+                  }
                   strokeLinejoin="round"
                   strokeLinecap="round"
-                  strokeDasharray={one.dashed ? "4 3" : undefined}
+                  strokeDasharray={one.dashed ? BASELINE_DASH : undefined}
                   style={{ strokeOpacity: opacity(one) }}
                 />
               )),
@@ -2302,27 +2271,18 @@ export function ReturnLines({
                   className="pf-line"
                   cx={x(last)}
                   cy={y(end)}
-                  r="4"
+                  r={DOT.r}
                   fill={one.color}
                   stroke={ring}
-                  strokeWidth="2"
+                  strokeWidth={DOT.ring}
                   style={{ opacity: opacity(one) }}
                 />
               );
             })}
-            {endNames.map((one, at) => (
-              <text
-                key={one.text}
-                className="pf-halo pf-end"
-                x={right}
-                y={endAt[at]}
-                textAnchor="end"
-                fill={one.color}
-                pointerEvents="none"
-              >
-                {one.text}
-              </text>
-            ))}
+            <EndLabels
+              edge={{ right, top: RETURN.top + 10, bottom: RETURN.top + plotH - 4 }}
+              items={endNames}
+            />
           </g>
           {/* Plotly's `hovermode="x"`: the whole plot answers, nearest day by
             the pointer's x, with a crosshair and a dot on every line there. */}
@@ -2333,8 +2293,7 @@ export function ReturnLines({
                 x2={x(hover)}
                 y1={RETURN.top}
                 y2={RETURN.top + plotH}
-                stroke={token("text-muted")}
-                strokeDasharray="2 2"
+                className="ag-cross"
               />
               {colored.map((one) => {
                 const value = one.at[hover];
@@ -2343,10 +2302,10 @@ export function ReturnLines({
                     key={one.label}
                     cx={x(hover)}
                     cy={y(value)}
-                    r="4"
+                    r={DOT.r}
                     fill={one.color}
                     stroke={ring}
-                    strokeWidth="2"
+                    strokeWidth={DOT.ring}
                     opacity={opacity(one)}
                   />
                 );
@@ -2482,7 +2441,7 @@ function MoneyRows({
 function LineName({ one }: { one: ReturnSeries & { color: string } }) {
   return (
     <span className="pf-tip-name">
-      <span className="pf-tip-swatch" style={{ background: one.color }} />
+      <span className="ag-tip-sw" style={{ background: one.color }} />
       <span>{one.label}</span>
     </span>
   );
@@ -2660,7 +2619,6 @@ function BookHistoryPlot({
     setHover(null);
     setMeasure(null);
   }, []);
-  useTouchHold(svg, hover !== null || measure !== null, drop);
   // A new window from the server is a new series: yesterday's zoom indexes
   // into days that are no longer the same days.
   const first = all[0]?.date;
@@ -2673,7 +2631,14 @@ function BookHistoryPlot({
   }, [first, last, all.length]);
 
   const days = zoom ? all.slice(zoom.from, zoom.to + 1) : all;
-  const walk = useKeyWalk({ at: hover, last: days.length - 1, set: setHover });
+  const walk = useScrub({
+    plot: svg,
+    at: hover,
+    last: days.length - 1,
+    set: setHover,
+    held: hover !== null || measure !== null,
+    drop,
+  });
   const narrow = width < NARROW;
   const height = plotHeightFor(width, PLOT.height);
   const left = narrow ? NARROW_PAD : PLOT.left;
@@ -2845,8 +2810,8 @@ function BookHistoryPlot({
               points={line((day) => day.injected)}
               fill="none"
               stroke={token("text-muted")}
-              strokeWidth="1.5"
-              strokeDasharray="4 3"
+              strokeWidth={LINE.rule}
+              strokeDasharray={BASELINE_DASH}
             />
             {bands.map((band, index) => (
               <polyline
@@ -2854,7 +2819,7 @@ function BookHistoryPlot({
                 points={band.value}
                 fill="none"
                 stroke={band.gain ? upColor : downColor}
-                strokeWidth="2"
+                strokeWidth={LINE.primary}
               />
             ))}
           </g>
@@ -2886,8 +2851,7 @@ function BookHistoryPlot({
                 x2={x(hover)}
                 y1={PLOT.top}
                 y2={PLOT.top + plotH}
-                stroke={token("text-muted")}
-                strokeDasharray="2 2"
+                className="ag-cross"
               />
               <circle
                 cx={x(hover)}
@@ -3104,11 +3068,17 @@ function BookAndRatesPlot({
     setHover(null);
     setMeasure(null);
   }, []);
-  useTouchHold(svg, pointer !== null || measure !== null, drop);
   // A shorter window can arrive under a pointer still resting on the old one,
   // or under a comparison drawn on it.
   const hover = pointer !== null && pointer < book.length && !measure ? pointer : null;
-  const walk = useKeyWalk({ at: hover, last: book.length - 1, set: setHover });
+  const walk = useScrub({
+    plot: svg,
+    at: hover,
+    last: book.length - 1,
+    set: setHover,
+    held: pointer !== null || measure !== null,
+    drop,
+  });
   const compared = measure && measure.to < book.length ? measure : null;
 
   const narrow = width < NARROW;
@@ -3249,12 +3219,6 @@ function BookAndRatesPlot({
             ? []
             : [{ text: one.label, y: yRate(end), at, color: one.color }];
         });
-  const endAt = spreadLabels(
-    endNames.map((one) => one.y - 6),
-    13,
-    ratesTop + 10,
-    bottom - 4,
-  );
 
   return (
     <div className="pf-chart">
@@ -3360,8 +3324,8 @@ function BookAndRatesPlot({
                 .join(" ")}
               fill="none"
               stroke={token("text-muted")}
-              strokeWidth="1.5"
-              strokeDasharray="4 3"
+              strokeWidth={LINE.rule}
+              strokeDasharray={BASELINE_DASH}
             />
             {bands.map((band, index) => (
               <polyline
@@ -3369,7 +3333,7 @@ function BookAndRatesPlot({
                 points={band.value}
                 fill="none"
                 stroke={band.gain ? upColor : downColor}
-                strokeWidth="2"
+                strokeWidth={LINE.primary}
               />
             ))}
 
@@ -3433,24 +3397,15 @@ function BookAndRatesPlot({
                   d={d}
                   fill="none"
                   stroke={one.color}
-                  strokeWidth="1.5"
-                  strokeDasharray={one.dashed ? "4 3" : undefined}
+                  strokeWidth={LINE.secondary}
+                  strokeDasharray={one.dashed ? BASELINE_DASH : undefined}
                 />
               )),
             )}
-            {endNames.map((one, at) => (
-              <text
-                key={one.text}
-                className="pf-halo pf-end"
-                x={x(one.at)}
-                y={endAt[at]}
-                textAnchor="end"
-                fill={one.color}
-                pointerEvents="none"
-              >
-                {one.text}
-              </text>
-            ))}
+            <EndLabels
+              edge={{ right: 0, top: ratesTop + 10, bottom: bottom - 4 }}
+              items={endNames.map((one) => ({ ...one, x: x(one.at) }))}
+            />
           </g>
 
           {compared ? (
@@ -3475,8 +3430,7 @@ function BookAndRatesPlot({
                 x2={x(hover)}
                 y1={moneyTop}
                 y2={bottom}
-                stroke={token("text-muted")}
-                strokeDasharray="2 2"
+                className="ag-cross"
               />
               <circle
                 cx={x(hover)}

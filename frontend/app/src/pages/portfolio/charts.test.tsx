@@ -642,7 +642,7 @@ describe("ReturnLines", () => {
     const out = render();
     const order = [...out.matchAll(/data-series="([^"]+)"/g)].map((m) => m[1]);
     expect(order.at(-1)).toBe("Mine");
-    expect(out).toMatch(/data-series="Mine"[^>]*stroke-width="2"/);
+    expect(out).toMatch(/data-series="Mine"[^>]*stroke-width="2.25"/);
     expect(out).toMatch(/data-series="SPY"[^>]*stroke-width="1.5"/);
     expect(out.match(/<circle/g)).toHaveLength(1);
   });

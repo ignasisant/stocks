@@ -720,34 +720,15 @@
   stroke-width: 1;
 }
 
-/* Plotly's unified hover label, redrawn: date on top, one row per line with
-   its figure bold and the value row coloured by gain or loss. Never takes the
-   pointer, so it never fights the wrap's own pointermove. */
+/* The hover box is the shared `Tip` (ui/chart/chart.css); this is only where
+   it sits on a 56px plot: tighter than the full-size box, and never taking
+   the pointer, so it never fights the wrap's own pointermove. */
 .hm-spark-tip {
-  position: absolute;
   top: 4px;
-  transform: translateX(8px);
-  z-index: 5;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  /* Sized by its text, not by the room right of the pointer (see `.tk-tip`). */
-  width: max-content;
   max-width: min(240px, 90%);
   padding: 6px 8px;
-  background: var(--ag-surface-page);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm, 8px);
-  box-shadow: var(--ag-shadow-overlay);
   font-size: var(--ag-fs-2xs, 0.6875rem);
   line-height: 1.4;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Past the middle the box opens to the pointer's left, so it stays on the card. */
-.hm-spark-tip-flip {
-  transform: translateX(calc(-100% - 8px));
 }
 
 /* Where nothing hovers the 56px plot is entirely under the fingertip, and so
@@ -757,31 +738,6 @@
     top: auto;
     bottom: calc(100% + 6px);
   }
-}
-
-.hm-spark-tip-title {
-  color: var(--ag-text-muted);
-}
-
-.hm-spark-tip-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--ag-text-primary);
-  white-space: nowrap;
-}
-
-.hm-spark-tip-row strong {
-  margin-left: auto;
-  padding-left: 8px;
-  font-weight: 600;
-}
-
-.hm-spark-tip-swatch {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  flex: none;
 }
 
 /* ------------------------------------------------------------ the start card */
