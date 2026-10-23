@@ -30,6 +30,7 @@ import { useLang, useT } from "../shell/i18n";
 import { Glyph } from "./icons";
 import { href, Markdown } from "./markdown";
 import { Status } from "../ui/Status";
+import { toast } from "../ui/toast";
 import { addMemory, dropMemory, editMemory, rateTurn } from "./api";
 import {
   capMessage,
@@ -292,7 +293,7 @@ function Recalled({
   );
 }
 
-type Undo = "idle" | "working" | "undone" | "gone" | "full" | "failed";
+type Undo = "idle" | "working" | "undone";
 
 /** The memory screen's write that takes `change` back. */
 export function undoMemory(change: Learned): Promise<unknown> {
@@ -333,9 +334,14 @@ function Change({
       await undoMemory(change);
       setUndo("undone");
     } catch (failure) {
-      if (failure instanceof ApiError && failure.status === 404) setUndo("gone");
-      else if (failure instanceof ApiError && failure.status === 409) setUndo("full");
-      else setUndo("failed");
+      // Said as a toast and the line goes back to offering the undo where it
+      // can still be tried: a memory already gone or a list full is not.
+      setUndo("idle");
+      if (failure instanceof ApiError && failure.status === 404)
+        toast.warn(t("chat.mem_undo_gone"));
+      else if (failure instanceof ApiError && failure.status === 409)
+        toast.warn(t("chat.mem_full_note"));
+      else toast.bad(t("chat.api_error"));
     }
   };
 
@@ -376,7 +382,7 @@ function Change({
         <Status label={t("chat.mem_undoing")} />
       ) : (
         <span className="ag-chat-memo-acts">
-          {(undo === "idle" || undo === "failed") && (
+          {undo === "idle" && (
             <button
               type="button"
               className="ag-chat-meta-btn"
@@ -392,9 +398,6 @@ function Change({
           )}
         </span>
       )}
-      {undo === "gone" && <p className="ag-chat-hint">{t("chat.mem_undo_gone")}</p>}
-      {undo === "full" && <p className="ag-chat-hint">{t("chat.mem_full_note")}</p>}
-      {undo === "failed" && <p className="ag-chat-hint">{t("chat.api_error")}</p>}
     </div>
   );
 }

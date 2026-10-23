@@ -18,6 +18,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "sonner": "^2.0.8",
     "use-stick-to-bottom": "^1.1.6"
   },
   "devDependencies": {

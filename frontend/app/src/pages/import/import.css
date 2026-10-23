@@ -170,18 +170,12 @@
   color: var(--ag-candle-down);
 }
 
-/* One-line outcomes: a toast that stays, and a line in a tier's colour. */
-.im-ok,
+/* A one-line failure in a tier's colour (outcomes that fade are toasts). */
 .im-bad {
   margin: 0;
   padding: 8px 10px;
   border-radius: var(--ag-radius-sm);
   font-size: var(--ag-fs-sm);
-}
-
-.im-ok {
-  background: var(--ag-success-fill);
-  color: var(--ag-up);
 }
 
 .im-bad {

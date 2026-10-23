@@ -58,31 +58,6 @@
   font-size: var(--ag-fs-sm, 0.75rem);
 }
 
-/* The three outcomes of a round trip, told apart by colour as well as by the
-   sentence: connected, nothing happened, something failed. */
-.bk-notice {
-  margin: 0;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-md, 12px);
-  font-size: var(--ag-fs-md, 0.8125rem);
-}
-
-.bk-ok {
-  border-color: var(--ag-up);
-  color: var(--ag-up);
-}
-
-.bk-warn.bk-notice,
-.bk-notice.bk-warn {
-  border-color: var(--ag-warn);
-}
-
-.bk-bad {
-  border-color: var(--ag-down);
-  color: var(--ag-down);
-}
-
 .bk-account {
   display: flex;
   flex-direction: column;

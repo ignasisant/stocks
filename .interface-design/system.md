@@ -399,6 +399,19 @@ no Tailwind.
 - **AI rim** (`.ag-ai`, chat FAB) is still at rest; it turns only on hover,
   focus-visible or `[data-busy]`, paused (not reset) so it resumes in place.
 
+- **Toasts** (`ui/toast.ts`, mounted once by `ui/Toaster.tsx` in the shell;
+  sonner underneath, never imported by a page): the only transient notice.
+  `toast.ok / warn / bad` fade (4 / 6 / 8s; 8s with a button), `busy` and
+  `promise` turn loading into the outcome in one slot, `stay` has no timer and
+  a close button. One action at most, Undo being the usual (replaces a
+  "hidden, undo" line). Bottom right, lifted over the phone's tab bar
+  (`--dock`) and out of the open chat drawer (`--toast-right`); 44px
+  buttons on coarse pointers, `:focus-visible` ring, hover pauses. Enter and
+  leave are interruptible (a new toast restacks mid-move). Reduced motion: no
+  slide, an opacity fade only. Never the only copy of a figure, and never for
+  a persistent state (empty card, stale banner, failed load, a field's own
+  validation): those stay on the page.
+
 ## Accessibility media
 
 - `prefers-reduced-motion: reduce`: no animation, no transition, no exit wait.

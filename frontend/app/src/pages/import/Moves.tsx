@@ -22,6 +22,7 @@
 import { useState } from "react";
 import { ApiError } from "../../shell/api";
 import { useT } from "../../shell/i18n";
+import { toast } from "../../ui/toast";
 import { TickerCell } from "../../shell/tickers";
 import { useApi } from "../../shell/useApi";
 import { Status } from "../../ui/Status";
@@ -85,17 +86,13 @@ export function MoveList({
       <div className="im-repair-head">
         <h3 className="im-h3">{t("import.moves_title")}</h3>
       </div>
-      {applied > 0 && (
-        <p className="im-ok">
-          {t("import.toast_moves_applied", { n: vocab.num(applied, 0) })}
-        </p>
-      )}
       {moves.length > 0 && (
         <Found
           moves={moves}
           onApplied={(n) => {
             // No re-scan here: whoever asked the question asks it again.
             setApplied(n);
+            toast.ok(t("import.toast_moves_applied", { n: vocab.num(n, 0) }));
             onApplied();
           }}
           onStale={onStale}
@@ -118,7 +115,6 @@ function Found({
   const vocab = useVocabulary();
   const { on, picked, toggle } = useSelection(moves.map(moveKey));
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
 
   const chosen = moves.filter((move) => picked.includes(moveKey(move)));
 
@@ -140,14 +136,13 @@ function Found({
 
   const write = async () => {
     setBusy(true);
-    setFailed(false);
     try {
       const done = await applyMoves(
         chosen.map((move) => ({ out_ids: move.out_ids, in_id: move.in_id })),
       );
       onApplied(done.applied);
     } catch (error) {
-      setFailed(true);
+      toast.bad(t("common.failed"));
       // 409 means these rows are not a move this ledger proposes any more.
       // Nothing was written; the fresh proposal replaces the stale one.
       if (error instanceof ApiError && error.status === 409) onStale();
@@ -196,7 +191,6 @@ function Found({
           );
         })}
       </div>
-      {failed && <p className="im-bad">{t("common.failed")}</p>}
       <button
         className="im-btn im-btn-primary im-btn-block"
         disabled={busy || chosen.length === 0}
