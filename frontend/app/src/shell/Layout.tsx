@@ -27,7 +27,7 @@ import { Drawer } from "../chat/Drawer";
 import { LockedDrawer } from "../chat/Locked";
 import { useT } from "./i18n";
 import { Feedback } from "./Feedback";
-import { openAssistant } from "./assistant";
+import { openAssistant, useAssistantWorking } from "./assistant";
 import { Search } from "./Search";
 import { ProfilePrompt } from "./ProfilePrompt";
 import { Tour } from "./Tour";
@@ -89,6 +89,7 @@ function Back() {
 }
 
 function Nav() {
+  const working = useAssistantWorking();
   const t = useT();
   const { page } = useRoute();
   const guest = useGuest();
@@ -290,10 +291,13 @@ function Nav() {
       <button
         type="button"
         className="ag-nav-item ag-nav-ask"
+        data-busy={working || undefined}
+        aria-busy={working || undefined}
         onClick={() => openAssistant()}
       >
         <Icon name="spark" />
         <span className="ag-nav-label">{t("chat.title")}</span>
+        {working ? <span className="ag-sr">{t("chat.tab_working")}</span> : null}
       </button>
       {/* Phones only: the bar holds `BOTTOM`, and this is the way to the rest
           — the drawer the DS spec keeps behind the bar. */}

@@ -523,5 +523,6 @@
   "chat.import_tab_skipped": "Omitidas · {n}",
   "chat.import_select_all": "Seleccionar todas las filas",
   "chat.import_select_row": "Incluir la fila {n}",
-  "chat.import_selected": "{n} de {total} filas nuevas seleccionadas"
+  "chat.import_selected": "{n} de {total} filas nuevas seleccionadas",
+  "chat.tab_working": "trabajando"
 }

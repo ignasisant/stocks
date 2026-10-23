@@ -19,7 +19,11 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { send } from "../shell/api";
 import { useT } from "../shell/i18n";
-import { useAssistantAsks, useAssistantThreads } from "../shell/assistant";
+import {
+  setAssistantWorking,
+  useAssistantAsks,
+  useAssistantThreads,
+} from "../shell/assistant";
 import { useSession } from "../shell/session";
 import { Glyph } from "./icons";
 import { useRoute } from "../shell/router";
@@ -130,6 +134,11 @@ export function Drawer() {
   useAssistantThreads(onThread);
 
   const { state, busy, send: ask, create } = chat;
+  // The phone tab bar's Assistant item shows it while the drawer is shut.
+  useEffect(() => {
+    setAssistantWorking(busy && !open);
+    return () => setAssistantWorking(false);
+  }, [busy, open]);
   useEffect(() => {
     if (!queued || !open || !state) return;
     if (queued.fresh) {

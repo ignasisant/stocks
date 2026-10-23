@@ -1230,6 +1230,23 @@ body {
   }
 }
 
+/* The assistant is writing while its drawer is shut: the tab's glyph takes the
+   brand colour and breathes, the way the floating button's rim turned. */
+.ag-nav-ask[data-busy] .ag-icon,
+.ag-nav-ask[data-busy] svg {
+  color: var(--ag-brand-accent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ag-nav-ask[data-busy] svg {
+    animation: ag-ask-breathe 1.6s ease-in-out infinite;
+  }
+}
+@keyframes ag-ask-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+
 /* A popover grows out of what opened it: `transform-origin` on each one sits
    at its trigger, so it reads as coming from there, not from nowhere. `scale`
    rather than `transform`, which a popover may already use to stay on screen.

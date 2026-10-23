@@ -523,5 +523,6 @@
   "chat.import_tab_skipped": "Skipped · {n}",
   "chat.import_select_all": "Select all rows",
   "chat.import_select_row": "Include row {n}",
-  "chat.import_selected": "{n} of {total} new rows selected"
+  "chat.import_selected": "{n} of {total} new rows selected",
+  "chat.tab_working": "working"
 }
