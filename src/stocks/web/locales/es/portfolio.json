@@ -573,7 +573,7 @@
   "portfolio.demo_offer_caption": "¿Aún no quieres importar? Rellena esta página con una cartera de prueba: siete valores conocidos, precios reales, operaciones inventadas.",
   "portfolio.demo_offer_button": "Usar transacciones de prueba",
   "portfolio.demo_seeded_toast": "Transacciones de prueba añadidas: todas las pestañas se han rellenado con ellas.",
-  "portfolio.demo_banner": "Son transacciones de prueba, no las tuyas. Tu primera importación real las borra.",
+  "portfolio.demo_banner": "Son transacciones de prueba, no las tuyas. Tu primera importación u operación escrita las borra.",
   "portfolio.guest_demo_banner": "Son transacciones de prueba de una cuenta de ejemplo compartida, no las tuyas: precios reales, operaciones inventadas. Inicia sesión para importar tu extracto y ver aquí tu cartera real.",
   "portfolio.demo_remove": "Quitar los datos de prueba",
   "portfolio.hist_pnl": "P/L",

@@ -206,7 +206,7 @@
   "home.daily_pending": "El asistente sigue escribiendo — esta tarjeta se actualizará sola.",
   "home.daily_computed_wait": "Cifras directas de tu cartera mientras el asistente escribe.",
   "home.daily_regen_title": "Reescribiendo la acción de hoy…",
-  "home.demo_caption": "Transacciones de prueba, no las tuyas. Tu primera importación real las borra.",
+  "home.demo_caption": "Transacciones de prueba, no las tuyas. Tu primera importación u operación escrita las borra.",
   "home.daily_act_earnings_watched": "{ticker} (watchlist) publica {when} ({date}) — el resultado puede abrir o cerrar tu caso de entrada.",
   "home.daily_act_earnings_result": "{ticker} publicó el {date}: BPA de {eps} frente a {est} esperado ({surprise}, {verdict}) — revisa si cambia tu tesis.",
   "home.daily_act_earnings_result_plain": "{ticker} publicó el {date}: BPA de {eps} — revisa si cambia tu tesis.",

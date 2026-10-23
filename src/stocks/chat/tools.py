@@ -65,7 +65,11 @@ _GATE_RE = re.compile(
     # Closing a position: "ya no tengo X, ciérrala", "I sold all my X".
     r"cierr|ci[eé]rr|\bclose (?:it|out|my|the|that|this)\b|"
     r"ya no (?:la |lo )?tengo|no longer (?:hold|own|have)|"
-    r"\bvend[ií]|\bsold\b",
+    r"\bvend[ií]|\bsold\b|"
+    # Opening one: "I hold: 10 NVDA at 120, bought 2024-03-01", the line the
+    # import page's "type your positions" puts in the composer.
+    r"\bbought\b|\bcompr[eé]\b|\bcomprad[oa]s?\b|\bI (?:hold|own)\b|"
+    r"\btengo\s*:",
     re.IGNORECASE,
 )
 

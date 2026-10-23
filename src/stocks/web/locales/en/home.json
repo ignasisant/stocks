@@ -206,7 +206,7 @@
   "home.daily_pending": "The assistant is still writing — this card updates on its own.",
   "home.daily_computed_wait": "Today's figures straight from your book while the assistant writes.",
   "home.daily_regen_title": "Rewriting today's action…",
-  "home.demo_caption": "Demo transactions — not yours. Your first real import removes them.",
+  "home.demo_caption": "Demo transactions — not yours. Your first import or typed trade removes them.",
   "home.daily_act_earnings_watched": "{ticker} (watchlist) reports {when} ({date}) — the print can open or close your entry case.",
   "home.daily_act_earnings_result": "{ticker} reported on {date}: EPS {eps} against {est} expected ({surprise}, {verdict}) — check whether it changes your thesis.",
   "home.daily_act_earnings_result_plain": "{ticker} reported on {date}: EPS {eps} — check whether it changes your thesis.",

@@ -573,7 +573,7 @@
   "portfolio.demo_offer_caption": "Not ready to import? Fill this page with a demo book — seven well-known stocks, real prices, made up trades.",
   "portfolio.demo_offer_button": "Use demo transactions",
   "portfolio.demo_seeded_toast": "Demo transactions added — every tab is filled with them.",
-  "portfolio.demo_banner": "These are demo transactions, not yours. Your first real import removes them.",
+  "portfolio.demo_banner": "These are demo transactions, not yours. Your first import or typed trade removes them.",
   "portfolio.guest_demo_banner": "These are demo transactions on a shared example account, not yours — real prices, invented trades. Sign in to import your own statement and see your real portfolio here.",
   "portfolio.demo_remove": "Remove demo data",
   "portfolio.hist_pnl": "P/L",
