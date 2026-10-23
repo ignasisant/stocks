@@ -83,3 +83,25 @@ def test_deploy_moves_the_job_to_the_promoted_image_and_secret():
     after = script.split("run jobs update", 1)[1]
     assert '--image "$IMAGE"' in after
     assert "STREAMLIT_SECRETS_TOML=$SECRET" in after
+
+
+def test_the_usage_digest_fires_monday_morning_as_the_same_job_with_other_words():
+    assert re.search(r'schedule\s*=\s*"0 7 \* \* 1"', CRON_TF)
+    block = CRON_TF.split('resource "google_cloud_scheduler_job" "usage_digest"', 1)[1]
+    assert "google_cloud_run_v2_job.cron.name}:run" in block
+    assert "base64encode(jsonencode(" in block
+    assert "containerOverrides" in block
+    assert '"Content-Type" = "application/json"' in block
+    m = re.search(r"args\s*=\s*\[([^\]]*)\]", block)
+    assert m
+    words = re.findall(r'"([^"]+)"', m.group(1))
+    assert words == ["/app/.venv/bin/stocks", "usage-digest"]
+    assert '"usage-digest"' in (ROOT / "src" / "stocks" / "cli.py").read_text()
+
+
+def test_the_service_identity_may_read_the_logs_the_digest_rolls_up():
+    assert re.search(
+        r'resource "google_project_iam_member" "app_logs_viewer"[^}]*'
+        r'role\s*=\s*"roles/logging.viewer"',
+        CRON_TF,
+    )

@@ -989,6 +989,12 @@ crawlers, scripts and the bundle's assets are dropped before counting.
 Offline, pass both snapshots: `--file app.jsonl --file http.jsonl` (the
 second from `export --http`).
 
+The same rollup, with the landing funnel, reaches the owner's Telegram every
+Monday morning: `stocks usage-digest` runs as the Cloud Run job
+(`infra/cron.tf`), reading the logs through the service's own identity since
+GitHub Actions holds no Google credentials. `--dry-run` prints the message;
+`--file` renders it from snapshots.
+
 ### Accounts
 
 Logs are kept 30 days, so they cannot answer *how many accounts exist* — an

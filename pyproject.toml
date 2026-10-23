@@ -24,6 +24,11 @@ dependencies = [
     "cryptography>=43",
     "ddgs>=9.15.0",
     "fastapi>=0.120",
+    # Application Default Credentials for the Logging API (logs_query.read_api):
+    # the weekly usage digest reads the logs from inside the service's own
+    # image, where there is no gcloud. google-genai brings it; named so the
+    # import does not hang on that.
+    "google-auth>=2.40",
     "google-genai>=1.0",
     # uvicorn's `--http auto` parses with httptools when it is installed and
     # falls back to pure-Python h11 when it is not. Streamlit used to bring it;

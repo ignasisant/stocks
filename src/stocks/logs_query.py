@@ -21,12 +21,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from collections.abc import Iterable, Sequence
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
+
+import httpx
 
 from stocks.config import DATA_DIR
 from stocks.web.attribution import is_bot
@@ -108,12 +111,10 @@ def read(
     freshness: str = "1h",
     limit: int = 100,
 ) -> list[dict]:
-    """Run `gcloud logging read` and return the entries, newest first."""
+    """The entries, newest first: through `gcloud` where it is installed,
+    else straight from the Logging API (`read_api`)."""
     if shutil.which("gcloud") is None:
-        raise LogsError(
-            "gcloud not found — install the Google Cloud CLI and run "
-            "`gcloud auth login` to read production logs."
-        )
+        return read_api(log_filter, project=project, freshness=freshness, limit=limit)
     cmd = [
         "gcloud", "logging", "read", log_filter,
         "--project", project,
@@ -126,6 +127,75 @@ def read(
     if proc.returncode != 0:
         raise LogsError((proc.stderr or proc.stdout).strip()[:2000])
     return json.loads(proc.stdout or "[]")
+
+
+# The Logging API, for where `gcloud` is not: the service's own image. The
+# weekly usage digest runs as the Cloud Run job (infra/cron.tf) under the
+# service's identity, which Application Default Credentials find on the
+# metadata server; `gcloud auth application-default login` fills the same
+# role on a laptop without the CLI. Entries come back in the shape `gcloud
+# logging read --format json` prints, so nothing downstream can tell.
+_ENTRIES_LIST = "https://logging.googleapis.com/v2/entries:list"
+_LOGGING_SCOPE = "https://www.googleapis.com/auth/logging.read"
+_PAGE_SIZE = 1000
+
+
+def _span(freshness: str) -> timedelta:
+    """gcloud's freshness spelling (30m, 6h, 7d) as a timedelta."""
+    m = re.fullmatch(r"\s*(\d+)\s*([smhd])\s*", freshness or "")
+    if not m:
+        raise LogsError(f"unreadable --since {freshness!r}: use 30m, 6h or 7d")
+    unit = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}[m.group(2)]
+    return timedelta(**{unit: int(m.group(1))})
+
+
+def _access_token() -> str:
+    """A bearer token from Application Default Credentials."""
+    import google.auth
+    from google.auth.exceptions import GoogleAuthError
+    from google.auth.transport.requests import Request
+
+    try:
+        creds, _ = google.auth.default(scopes=[_LOGGING_SCOPE])
+        creds.refresh(Request())
+    except GoogleAuthError as exc:
+        raise LogsError(
+            "no Google credentials — install the Google Cloud CLI and run "
+            "`gcloud auth login` to read production logs, or run this inside "
+            f"the service's own image ({exc})"
+        ) from exc
+    return str(creds.token)
+
+
+def read_api(
+    log_filter: str,
+    *,
+    project: str = PROJECT,
+    freshness: str = "1h",
+    limit: int = 100,
+) -> list[dict]:
+    """`entries:list` with Application Default Credentials, newest first."""
+    since = (datetime.now(UTC) - _span(freshness)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    body: dict = {
+        "resourceNames": [f"projects/{project}"],
+        "filter": f'({log_filter}) AND timestamp>="{since}"',
+        "orderBy": "timestamp desc",
+        "pageSize": max(1, min(_PAGE_SIZE, limit)),
+    }
+    headers = {"Authorization": f"Bearer {_access_token()}"}
+    out: list[dict] = []
+    with httpx.Client(timeout=60) as client:
+        while len(out) < limit:
+            resp = client.post(_ENTRIES_LIST, json=body, headers=headers)
+            if resp.status_code != 200:
+                raise LogsError(f"Logging API {resp.status_code}: {resp.text[:500]}")
+            data = resp.json()
+            out.extend(data.get("entries") or [])
+            token = data.get("nextPageToken")
+            if not token:
+                break
+            body["pageToken"] = token
+    return out[:limit]
 
 
 def read_file(path: Path) -> list[dict]:
@@ -308,6 +378,27 @@ _PAGE_PREFIXES: tuple[tuple[str, str], ...] = (
     ("chat/", "chat"),
 )
 _API = "/api/v1/"
+
+
+def usage_entries(
+    *,
+    project: str = PROJECT,
+    service: str = SERVICE,
+    freshness: str = "7d",
+    limit: int = 20000,
+) -> list[dict]:
+    """Both streams `usage` reads: the app's events, then the access log
+    without the probe and the assets."""
+    app = read(
+        build_filter(service=service, project=project),
+        project=project, freshness=freshness, limit=limit,
+    )
+    web = read(
+        build_filter(service=service, project=project, http=True,
+                     extra=USAGE_HTTP_EXTRA),
+        project=project, freshness=freshness, limit=limit,
+    )
+    return app + web
 
 
 def page_of(url: str) -> str | None:
