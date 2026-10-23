@@ -1002,26 +1002,34 @@ def cmd_logs(args: argparse.Namespace) -> None:
     """Read, summarize or snapshot the production logs (see stocks.logs_query)."""
     from stocks import logs_query as lq
 
-    src = Path(args.file) if getattr(args, "file", None) else None
+    files = [Path(f) for f in (getattr(args, "file", None) or [])]
     level = getattr(args, "level", None)
     if args.logs_command == "errors":
         level = level or "ERROR"
 
-    def fetch(limit: int) -> list[dict]:
-        if src is not None:
-            return lq.read_file(src)
+    def fetch(limit: int, *, http: bool | None = None,
+              extra: str | None = None) -> list[dict]:
+        if files:
+            return [e for f in files for e in lq.read_file(f)]
         return lq.read(
             lq.build_filter(
                 service=args.service, project=args.project, level=level,
                 event=getattr(args, "event", None), user=getattr(args, "user", None),
-                grep=getattr(args, "grep", None), http=getattr(args, "http", False),
-                revision=getattr(args, "revision", None),
+                grep=getattr(args, "grep", None),
+                http=getattr(args, "http", False) if http is None else http,
+                revision=getattr(args, "revision", None), extra=extra,
             ),
             project=args.project, freshness=args.since, limit=limit,
         )
 
     try:
-        entries = fetch(args.limit)
+        if args.logs_command == "usage" and not files:
+            # Who (the app's events) and what (the access log, minus the
+            # probe and the assets) — the rollup reads both streams.
+            entries = fetch(args.limit, http=False)
+            entries += fetch(args.limit, http=True, extra=lq.USAGE_HTTP_EXTRA)
+        else:
+            entries = fetch(args.limit)
     except lq.LogsError as exc:
         sys.exit(f"logs: {exc}")
 
@@ -1631,7 +1639,8 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--revision", help="only this Cloud Run revision")
         sp.add_argument("--http", action="store_true",
                         help="read the HTTP access log instead of app output")
-        sp.add_argument("--file", help="read an exported JSONL snapshot, not GCP")
+        sp.add_argument("--file", action="append",
+                        help="read an exported JSONL snapshot, not GCP (repeatable)")
         sp.add_argument("--service", default=lq.SERVICE)
         sp.add_argument("--project", default=lq.PROJECT)
         if with_output:
@@ -1651,10 +1660,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_stats.add_argument("--by", default="event",
                          help="jsonPayload field to group by (event, user, page...)")
     p_use = logs_sub.add_parser(
-        "usage", help="product usage per day (users, page runs, chat, feedback)")
+        "usage",
+        help="product usage per day (accounts, visitors, page views, chat, "
+             "logins, imports, feedback) from the app log and the access log")
     _common(p_use, with_output=False)
     p_use.add_argument("--level", help="minimum severity (INFO/WARNING/ERROR)")
-    p_use.set_defaults(since="7d", limit=5000)
+    p_use.set_defaults(since="7d", limit=20000)
     p_fun = logs_sub.add_parser(
         "funnel",
         help="landing view -> app entry -> signup -> first import, by day and source")

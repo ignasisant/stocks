@@ -144,8 +144,9 @@ backfilling.
 1. Cloud Console → Billing → Reports, group by SKU. The usual suspects:
    Cloud Run instance time (did `min-instances` change? traffic spike?) and
    egress.
-2. `uv run stocks logs usage --since 7d` — real users, or a crawler/abuser?
-   A single hammering IP shows up in `--http` access logs.
+2. `uv run stocks logs usage --since 7d` — real people, or a crawler/abuser?
+   Accounts and browser addresses per day, next to the page views they made;
+   a single hammering IP shows up in `logs tail --http`.
 3. Prod should already run with `--min-instances 0` (the default): check
    `gcloud run services describe topstocks --format='value(spec.template.metadata.annotations)'`
    for `minScale`. A redeploy with plain `./scripts/deploy.sh prod` puts it

@@ -4,9 +4,11 @@ Cloud Run ships the container's stdout/stderr to Cloud Logging, where it is
 kept for 30 days in the _Default bucket. This module is the read side: it
 builds a Logging filter, shells out to `gcloud logging read`, and renders the
 entries as one compact line each — plus `stats` (counts and latency
-percentiles per event), `funnel` (landing view to signup, by day and by
-campaign source) and `export` (a JSONL snapshot on disk, for keeping a bad day
-past the retention window or grinding through it offline).
+percentiles per event), `usage` (accounts, visitors and page views per day,
+out of the app's events and the access log together), `funnel` (landing
+view to signup, by day and by campaign source) and `export` (a JSONL
+snapshot on disk, for keeping a bad day past the retention window or
+grinding through it offline).
 
 `gcloud` does the auth, so there is no key to manage: whoever is logged in with
 `gcloud auth login` and can read the project's logs can run these.
@@ -24,8 +26,10 @@ import subprocess
 from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from stocks.config import DATA_DIR
+from stocks.web.attribution import is_bot
 
 PROJECT = os.getenv("STOCKS_GCP_PROJECT", "topstocks-507209")
 SERVICE = os.getenv("STOCKS_GCP_SERVICE", "topstocks")
@@ -255,59 +259,189 @@ def stats(entries: Iterable[dict], *, by: str = "event") -> list[dict]:
     return sorted(out, key=lambda g: g["count"], reverse=True)
 
 
-def usage(entries: Iterable[dict]) -> dict:
-    """Product-usage rollup out of the ops log — who used what, per day.
+# ----------------------------------------------------------------------- usage
 
-    Counts on the events the app already emits (no extra tracking): a
-    "user" is any entry carrying the pseudonymous account slug, a "run" is
-    one page render, a chat turn is one chat.request, feedback is the
-    sidebar widget. Guests show up under the "guest"/"-" slugs like
-    everywhere else in the logs.
+# What `usage` reads beside the app's own events: the per-request access log,
+# minus the lines nobody typed — the uptime probe, the bundle's assets, the
+# landing's icons. Cloud Logging's `:` is a substring match.
+USAGE_HTTP_EXTRA = (
+    'NOT httpRequest.requestUrl:"/livez"'
+    ' AND NOT httpRequest.requestUrl:"/next-assets/"'
+    ' AND NOT httpRequest.requestUrl:"/app/static/"'
+    ' AND NOT httpRequest.requestUrl:"/lp/"'
+)
+
+# Two calls from one address to one page closer together than this are one
+# view: the shell fans a page out into half a dozen API calls, a stale
+# countdown retries, and a reload is not a second visit.
+VIEW_WINDOW_S = 300
+
+# `jsonPayload.user` when the request carried no account — the middleware's
+# stand-ins (api/app.py `_log_user`) and the kinds `security.visitor` names.
+_NOBODY = frozenset({"", "-", "?", "anon", "guest", "session", "token"})
+
+# The shell's routes (frontend/app/src/shell/pages.ts): a top-level hit on one
+# is the page loading cold.
+_SHELL_PAGES = frozenset({
+    "home", "today", "portfolio", "review", "import", "ticker", "sentiment",
+    "sector", "earnings", "profile", "bank",
+})
+
+# What each page asks `/api/v1/` for, by prefix; the first match wins, so a
+# longer prefix sits before the shorter one it extends. Calls that every page
+# makes (`me`, `prefs`, `i18n/*`, `progress`, `market/*`...) match nothing
+# and count for no page.
+_PAGE_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("home/", "home"), ("movers", "home"), ("extremes", "home"),
+    ("daily", "home"), ("watchlist/", "ticker"), ("watchlist", "home"),
+    ("today", "today"),
+    ("portfolio/", "portfolio"),
+    ("review", "review"),
+    ("import/", "import"),
+    ("ticker/", "ticker"),
+    ("pulse", "sentiment"),
+    ("sector", "sector"),
+    ("earnings", "earnings"),
+    ("profile", "profile"),
+    ("bank", "bank"), ("connections", "bank"),
+    ("journal", "profile"),  # the decision journal lives on the profile page
+    ("chat/", "chat"),
+)
+_API = "/api/v1/"
+
+
+def page_of(url: str) -> str | None:
+    """The page a request belongs to, or None when it is not someone using one."""
+    path = urlsplit(url).path if "://" in url else url.split("?", 1)[0]
+    if path.startswith(_API):
+        rest = path[len(_API):]
+        for prefix, page in _PAGE_PREFIXES:
+            if rest.startswith(prefix):
+                return page
+        return None
+    slug = path.strip("/").split("/", 1)[0]
+    return slug if slug in _SHELL_PAGES else None
+
+
+def _is_person(user_agent: str | None) -> bool:
+    """A browser, as against the probe, the scheduler, a script or a crawler."""
+    agent = user_agent or ""
+    return agent.startswith("Mozilla/") and not is_bot(agent)
+
+
+def _epoch(ts: str) -> float:
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    except (ValueError, TypeError, AttributeError):
+        return 0.0
+
+
+_USAGE_COUNTS = ("views", "chat", "logins", "signups", "imports", "first_imports",
+                 "feedback")
+
+
+def usage(entries: Iterable[dict]) -> dict:
+    """Product-usage rollup out of the logs the app already writes — per day.
+
+    Two streams, read together. The app's events say who: a "user" is an
+    account slug on any line that day (the request middleware stamps every
+    event with it), a chat turn is `chat.answered`, a login `auth.login`, a
+    signup `auth.signup`, an import `import.committed` (`first` marks the one
+    that replaced the demo book), feedback the widget. The access log says
+    what was looked at: a "visitor" is an address that called a page's API
+    from a browser (`page_of`, `_is_person`), and a "view" is one address on
+    one page, counted again only after `VIEW_WINDOW_S` of silence.
+
+    Guests and token callers (the warm-up, the MCP) carry no slug and count as
+    visitors only. Entries without a timestamp are skipped.
     """
     days: dict[str, dict] = {}
     pages: dict[str, int] = {}
     all_users: set[str] = set()
-    for entry in entries:
-        body = payload(entry)
-        day = str(entry.get("timestamp", ""))[:10] or "-"
-        d = days.setdefault(
-            day, {"day": day, "users": set(), "runs": 0, "chat": 0, "feedback": 0}
+    all_visitors: set[str] = set()
+    last_view: dict[tuple[str, str], float] = {}
+
+    def row(day: str) -> dict:
+        return days.setdefault(
+            day, {"day": day, "users": set(), "visitors": set(),
+                  **dict.fromkeys(_USAGE_COUNTS, 0)},
         )
+
+    for entry in sorted(entries, key=lambda e: str(e.get("timestamp") or "")):
+        stamp = str(entry.get("timestamp") or "")
+        day = stamp[:10]
+        if not day:
+            continue
+        req = entry.get("httpRequest")
+        if req and "jsonPayload" not in entry and "textPayload" not in entry:
+            page = page_of(str(req.get("requestUrl") or ""))
+            if page is None or not _is_person(req.get("userAgent")):
+                continue
+            ip = str(req.get("remoteIp") or "?")
+            d = row(day)
+            d["visitors"].add(ip)
+            all_visitors.add(ip)
+            at = _epoch(stamp)
+            if at - last_view.get((ip, page), float("-inf")) >= VIEW_WINDOW_S:
+                last_view[(ip, page)] = at
+                d["views"] += 1
+                pages[page] = pages.get(page, 0) + 1
+            continue
+        body = payload(entry)
+        d = row(day)
         user = str(body.get("user") or "")
-        if user and user != "-":
+        if user not in _NOBODY:
             d["users"].add(user)
             all_users.add(user)
-        event = body.get("event")
-        if event == "page.render":
-            d["runs"] += 1
-            page = str(body.get("page") or "-")
-            pages[page] = pages.get(page, 0) + 1
-        elif event == "chat.request":
+        event = str(body.get("event") or "")
+        if event == "chat.answered":
             d["chat"] += 1
+        elif event == "auth.login":
+            d["logins"] += 1
+        elif event == "auth.signup":
+            d["signups"] += 1
+        elif event == "import.committed":
+            d["imports"] += 1
+            if body.get("first"):
+                d["first_imports"] += 1
         elif event == "feedback":
             d["feedback"] += 1
     rows = [
-        {**d, "users": len(d["users"])}
+        {**d, "users": len(d["users"]), "visitors": len(d["visitors"])}
         for _, d in sorted(days.items())
-        if d["day"] != "-" or d["runs"] or d["chat"]
     ]
-    top_pages = sorted(pages.items(), key=lambda kv: kv[1], reverse=True)
-    return {"days": rows, "pages": top_pages, "total_users": len(all_users)}
+    return {
+        "days": rows,
+        "pages": sorted(pages.items(), key=lambda kv: (-kv[1], kv[0])),
+        "total_users": len(all_users),
+        "total_visitors": len(all_visitors),
+    }
 
 
 def render_usage(summary: dict) -> str:
     if not summary["days"]:
         return "(no entries in range)"
-    head = f"{'day':<12} {'users':>6} {'page runs':>10} {'chat':>6} {'feedback':>9}"
+    cols = (("day", 12), ("users", 6), ("visitors", 9), ("views", 6), ("chat", 5),
+            ("logins", 7), ("signups", 8), ("imports", 8), ("feedback", 9))
+    head = " ".join(
+        f"{name:<{width}}" if name == "day" else f"{name:>{width}}"
+        for name, width in cols
+    )
     lines = [head, "-" * len(head)]
     for d in summary["days"]:
-        lines.append(
-            f"{d['day']:<12} {d['users']:>6} {d['runs']:>10} "
-            f"{d['chat']:>6} {d['feedback']:>9}"
-        )
-    lines.append(f"\nunique users in range: {summary['total_users']}")
+        lines.append(" ".join(
+            f"{d[name]:<{width}}" if name == "day" else f"{d[name]:>{width}}"
+            for name, width in cols
+        ))
+    first = sum(d["first_imports"] for d in summary["days"])
+    imports = sum(d["imports"] for d in summary["days"])
+    lines.append(
+        f"\nin range: {summary['total_users']} accounts, "
+        f"{summary['total_visitors']} addresses; "
+        f"{first} of {imports} imports were an account's first"
+    )
     if summary["pages"]:
-        lines.append("\npage runs:")
+        lines.append("\nviews by page:")
         for page, count in summary["pages"]:
             lines.append(f"  {page:<28} {count:>6}")
     return "\n".join(lines)

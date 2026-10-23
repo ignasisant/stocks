@@ -959,6 +959,7 @@ uv run stocks logs tail --user a_b_c_1f2e3d4c --since 2h   # one account's timel
 uv run stocks logs tail --http --since 15m       # the HTTP access log instead
 uv run stocks logs stats --since 24h             # count/errors/p50/p95 per event
 uv run stocks logs stats --since 24h --by page   # ...or per page, per user, ...
+uv run stocks logs usage --since 7d              # accounts, visitors, views per day
 uv run stocks logs export --since 7d --level ERROR   # JSONL snapshot in data/logs/
 ```
 
@@ -974,12 +975,19 @@ crashes collapse into one issue with a count instead of scrolling past.
 
 ### Product usage
 
-`stocks logs usage` (default: last 7 days) rolls the same structured events up
-into users / page runs / chat turns / feedback per day, plus per-page totals —
-product analytics with no tracker: everything comes from the logs the app
-already writes. Sign-ins show up event-by-event too: the first run of a
-session emits `auth.login`, or `auth.signup` when that run created the
-account.
+`stocks logs usage` (default: last 7 days) is product analytics with no
+tracker: everything comes from logs the app already writes. It reads two
+streams and lines them up per day. The app's events say *who*: accounts
+(the slug the request middleware stamps on every line), chat turns
+(`chat.answered`), sign-ins (`auth.login`, or `auth.signup` when that run
+created the account), imports (`import.committed`, with the account's first
+one told apart) and feedback. The access log says *what*: visitors are
+browser addresses that called a page's API, and a view is one address on one
+page, counted again only after five minutes of silence — the shell fans a
+page out into several calls, and a reload is not a second visit. Probes,
+crawlers, scripts and the bundle's assets are dropped before counting.
+Offline, pass both snapshots: `--file app.jsonl --file http.jsonl` (the
+second from `export --http`).
 
 ### Accounts
 
