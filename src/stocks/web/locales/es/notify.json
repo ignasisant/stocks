@@ -56,5 +56,16 @@
   "notify.concentration": "Top {n} = {pct}% de la cartera",
   "notify.drift": "({pts} pt esta semana)",
   "notify.effective": "se comporta como {n} posiciones iguales",
-  "notify.tax_deadlines": "Plazos fiscales, próximos 30 días"
+  "notify.tax_deadlines": "Plazos fiscales, próximos 30 días",
+  "notify.usage_title": "TopStocks — la semana en cifras",
+  "notify.usage_empty": "Sin registros en el periodo.",
+  "notify.usage_col_day": "día",
+  "notify.usage_col_accounts": "ctas",
+  "notify.usage_col_visitors": "dirs",
+  "notify.usage_col_views": "vistas",
+  "notify.usage_col_chat": "chat",
+  "notify.usage_totals": "{accounts} cuentas · {addresses} direcciones · {logins} inicios de sesión · {signups} altas · {imports} importaciones ({first} primeras) · {chat} turnos de chat",
+  "notify.usage_pages": "Páginas",
+  "notify.usage_funnel": "Embudo: {views} vistas de la landing → {entries} entradas → {signups} altas → {imports} primeras importaciones",
+  "notify.usage_retention": "Retención: {returned} de {eligible} altas vistas de nuevo a los {days} días"
 }

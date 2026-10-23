@@ -169,6 +169,25 @@ def cmd_nudge(args: argparse.Namespace) -> None:
         print(f"{label}: {result}")
 
 
+def cmd_usage_digest(args: argparse.Namespace) -> None:
+    """Send the owner the week's usage and funnel (notify/usage_digest.py)."""
+    from stocks import logs_query as lq
+    from stocks.notify import usage_digest
+
+    files = [Path(f) for f in (args.file or [])]
+    entries = [e for f in files for e in lq.read_file(f)] if files else None
+    try:
+        status, text = usage_digest.run(
+            since=args.since, dry_run=args.dry_run, entries=entries,
+            lang=args.lang, project=args.project, service=args.service,
+        )
+    except lq.LogsError as exc:
+        raise SystemExit(f"usage-digest: {exc}") from exc
+    if args.dry_run or status != "sent":
+        print(text)
+    print(f"-- {status}")
+
+
 def cmd_notify_test(args: argparse.Namespace) -> None:
     """Send a test message down the real notification paths.
 
@@ -1403,6 +1422,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="print the reminder(s) and who is due one; send nothing",
     )
     p_nudge.set_defaults(func=cmd_nudge)
+
+    p_digest = sub.add_parser(
+        "usage-digest",
+        help="Telegram the owner the week's usage and funnel from the prod logs",
+    )
+    p_digest.add_argument(
+        "--since", default="7d", metavar="SPAN",
+        help="how far back to read (30m, 6h, 7d); default 7d",
+    )
+    p_digest.add_argument(
+        "--dry-run", action="store_true",
+        help="print the message; send nothing",
+    )
+    p_digest.add_argument(
+        "--file", action="append", metavar="PATH",
+        help="read an exported snapshot (stocks logs export) instead of the "
+             "logs; repeat for the app log and the access log",
+    )
+    p_digest.add_argument("--lang", choices=("en", "es"),
+                          help="override the owner's language")
+    p_digest.add_argument("--project", default=None, help=argparse.SUPPRESS)
+    p_digest.add_argument("--service", default=None, help=argparse.SUPPRESS)
+    p_digest.set_defaults(func=cmd_usage_digest)
 
     p_tg = sub.add_parser(
         "telegram-chat",

@@ -167,10 +167,109 @@ def test_read_surfaces_gcloud_failures_as_logs_error(monkeypatch):
         lq.read("filter")
 
 
-def test_read_without_gcloud_explains_how_to_get_it(monkeypatch):
+def test_read_without_gcloud_or_credentials_explains_how_to_get_them(monkeypatch):
+    import google.auth
+    from google.auth.exceptions import DefaultCredentialsError
+
     monkeypatch.setattr(lq.shutil, "which", lambda _: None)
+
+    def no_creds(**_):
+        raise DefaultCredentialsError("nothing here")
+
+    monkeypatch.setattr(google.auth, "default", no_creds)
     with pytest.raises(lq.LogsError, match="gcloud auth login"):
         lq.read("filter")
+
+
+def test_span_reads_gclouds_freshness_spelling():
+    assert lq._span("30m") == lq.timedelta(minutes=30)
+    assert lq._span("7d") == lq.timedelta(days=7)
+    with pytest.raises(lq.LogsError, match="unreadable"):
+        lq._span("last week")
+
+
+class _Resp:
+    def __init__(self, payload: dict, status: int = 200):
+        self._payload, self.status_code = payload, status
+        self.text = str(payload)
+
+    def json(self) -> dict:
+        return self._payload
+
+
+def test_read_without_gcloud_pages_through_the_logging_api(monkeypatch):
+    monkeypatch.setattr(lq.shutil, "which", lambda _: None)
+    monkeypatch.setattr(lq, "_access_token", lambda: "tok")
+    calls: list[dict] = []
+    pages = [
+        {"entries": [{"n": 1}, {"n": 2}], "nextPageToken": "p2"},
+        {"entries": [{"n": 3}]},
+    ]
+
+    class Client:
+        def __init__(self, **_):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, *, json, headers):
+            calls.append({"url": url, "json": dict(json), "headers": headers})
+            return _Resp(pages[len(calls) - 1])
+
+    monkeypatch.setattr(lq.httpx, "Client", Client)
+    out = lq.read("severity>=ERROR", project="p", freshness="2d", limit=10)
+    assert out == [{"n": 1}, {"n": 2}, {"n": 3}]
+    assert len(calls) == 2
+    first = calls[0]["json"]
+    assert first["resourceNames"] == ["projects/p"]
+    assert first["filter"].startswith("(severity>=ERROR) AND timestamp>=")
+    assert first["orderBy"] == "timestamp desc"
+    assert first["pageSize"] == 10
+    assert "pageToken" not in first
+    assert calls[1]["json"]["pageToken"] == "p2"
+    assert calls[0]["headers"] == {"Authorization": "Bearer tok"}
+
+
+def test_the_logging_api_refusal_is_a_logs_error(monkeypatch):
+    monkeypatch.setattr(lq.shutil, "which", lambda _: None)
+    monkeypatch.setattr(lq, "_access_token", lambda: "tok")
+
+    class Client:
+        def __init__(self, **_):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, *a, **k):
+            return _Resp({"error": "PERMISSION_DENIED"}, status=403)
+
+    monkeypatch.setattr(lq.httpx, "Client", Client)
+    with pytest.raises(lq.LogsError, match="403"):
+        lq.read("filter")
+
+
+def test_usage_entries_reads_the_app_log_then_the_access_log(monkeypatch):
+    filters: list[str] = []
+
+    def fake_read(log_filter, *, project, freshness, limit):
+        filters.append(log_filter)
+        return [{"f": len(filters)}]
+
+    monkeypatch.setattr(lq, "read", fake_read)
+    out = lq.usage_entries(project="p", service="s", freshness="7d", limit=5)
+    assert out == [{"f": 1}, {"f": 2}]
+    access = '"projects/p/logs/run.googleapis.com%2Frequests"'
+    assert f"logName!={access}" in filters[0]
+    assert f"logName={access}" in filters[1]
+    assert "/livez" in filters[1]
 
 
 def test_read_parses_the_gcloud_json_output(monkeypatch):

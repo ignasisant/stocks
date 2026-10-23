@@ -56,5 +56,16 @@
   "notify.concentration": "Top {n} = {pct}% of the book",
   "notify.drift": "({pts} pt this week)",
   "notify.effective": "behaves like {n} equal-sized names",
-  "notify.tax_deadlines": "Tax deadlines, next 30 days"
+  "notify.tax_deadlines": "Tax deadlines, next 30 days",
+  "notify.usage_title": "TopStocks — the week in numbers",
+  "notify.usage_empty": "No entries in the range.",
+  "notify.usage_col_day": "day",
+  "notify.usage_col_accounts": "acc",
+  "notify.usage_col_visitors": "vis",
+  "notify.usage_col_views": "views",
+  "notify.usage_col_chat": "chat",
+  "notify.usage_totals": "{accounts} accounts · {addresses} addresses · {logins} sign-ins · {signups} signups · {imports} imports ({first} first) · {chat} chat turns",
+  "notify.usage_pages": "Pages",
+  "notify.usage_funnel": "Funnel: {views} landing views → {entries} entries → {signups} signups → {imports} first imports",
+  "notify.usage_retention": "Retention: {returned} of {eligible} signups seen again after {days} days"
 }
