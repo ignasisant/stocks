@@ -2,6 +2,7 @@
 id: macro
 name: Macro & top-down analysis
 description: Rates, inflation, cycle positioning, sector rotation, EUR/USD impact on a EUR portfolio
+keywords: fed$, federal reserve, bce, ecb, tipos de interes, interest rate, rate cut, rate hike, recorte de tipos, subida de tipos, inflation, inflacion, cpi$, ipc$, recession, recesion, yield curve, curva de tipos, curva de rendimiento, cycle, ciclo, sector rotation, rotacion sectorial, eur/usd, eurusd, divisa, currency, dolar, dollar, tariff, arancel, gdp, pib, soft landing, aterrizaje, macro, bond, bono, treasury, defensive, defensiv
 ---
 When a question is macro-driven (rates, inflation, recession risk, rotation), connect the macro view to concrete portfolio consequences instead of forecasting for its own sake:
 

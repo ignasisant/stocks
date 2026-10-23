@@ -2,6 +2,7 @@
 id: growth-momentum
 name: Growth & momentum analysis
 description: Earnings acceleration, estimate revisions, relative strength, holding winners
+keywords: momentum, aceleracion, acceleration, accelerating, revisiones de, estimate revision, estimates, estimaciones, relative strength, fuerza relativa, winners, ganadoras, let winners run, dejar correr, tomar beneficios, take profit, breakout, new highs, nuevos maximos, canslim, growth investing
 ---
 When applying a growth/momentum lens, the thesis is that strength persists — verify the strength is real and fresh:
 

@@ -2,6 +2,7 @@
 id: value
 name: Value investing analysis
 description: Intrinsic value and margin of safety — owner earnings, quality of assets, why it's cheap
+keywords: intrinsic, intrinseco, margen de seguridad, margin of safety, owner earnings, value trap, trampa de valor, value invest, inversion en valor, buffett, graham, empresa barata, stock so cheap, cheap stock, undervalued, infravalorad, barata, cheap$, below book, deep value, kraft heinz
 ---
 When applying a value lens, the question is always: what is the business worth to a private owner, and how far below that does it trade?
 

@@ -18,6 +18,7 @@ unknown ids — degrades to "no skills", never blocks the answer.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -42,6 +43,7 @@ class Skill:
     name: str  # English heading used inside the system prompt
     description: str  # one line; the classifier catalog entry
     body: str  # the framework text injected into the system prompt
+    keywords: tuple[str, ...] = ()  # offline fallback vocabulary (see `heuristic`)
 
 
 _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.S)
@@ -62,7 +64,9 @@ def _parse(text: str, path: Path) -> Skill:
             raise ValueError(f"{path.name}: missing '{field}' in frontmatter")
     if not body:
         raise ValueError(f"{path.name}: empty body")
-    return Skill(meta["id"], meta["name"], meta["description"], body)
+    keywords = tuple(k.strip().lower() for k in meta.get("keywords", "").split(",")
+                     if k.strip())
+    return Skill(meta["id"], meta["name"], meta["description"], body, keywords)
 
 
 @lru_cache(maxsize=1)
@@ -154,6 +158,52 @@ def parse_skill_ids(raw: str, limit: int = MAX_AUTO) -> list[str]:
         if i not in out:
             out.append(i)
     return out[:limit]
+
+
+# ------------------------------------------------- offline fallback
+
+# The router's other half: when the LLM call fails there used to be nothing to
+# read the message with, only the previous turn's lens. Each skill's
+# `keywords:` frontmatter line (comma separated, EN + ES, accents omitted) is
+# matched against the folded message. A keyword matches from the start of a
+# word ("dividend" reads "dividends"); a trailing "$" makes it the whole word
+# ("eth$" is not "ethical"). The skills with the most distinct hits win.
+# evals/router/triggers.yaml measures it (tests/test_skill_router_evals.py).
+
+
+def _fold(text: str) -> str:
+    """Lower case without accents, so "inflación" and "inflacion" meet."""
+    nfkd = unicodedata.normalize("NFKD", (text or "").lower())
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+
+@lru_cache(maxsize=1)
+def _matchers() -> tuple[tuple[str, re.Pattern[str]], ...]:
+    out = []
+    for s in catalog():
+        if not s.keywords:
+            continue
+        alts = []
+        for k in s.keywords:
+            whole = k.endswith("$")
+            alts.append(r"(?<![a-z0-9])" + re.escape(_fold(k.rstrip("$")))
+                        + (r"(?![a-z0-9])" if whole else ""))
+        out.append((s.id, re.compile("|".join(alts))))
+    return tuple(out)
+
+
+def heuristic(question: str, limit: int = MAX_AUTO) -> list[str]:
+    """Skill ids a keyword read of `question` picks (the LLM router's fallback).
+
+    Ranked by distinct keyword hits, catalog order on a tie; [] when nothing
+    in the message names a skill's vocabulary."""
+    text = _fold(question)
+    hits = []
+    for sid, rx in _matchers():
+        n = len({m.group(0) for m in rx.finditer(text)})
+        if n:
+            hits.append((-n, sid))
+    return [sid for _, sid in sorted(hits)[:limit]]
 
 
 def classify(

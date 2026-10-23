@@ -2,6 +2,7 @@
 id: energy
 name: Energy sector analysis
 description: Oil & gas, utilities and renewables — commodity cycles, reserves, capex discipline, transition risk
+keywords: oil, petroleo, crudo, brent, wti, gas natural, natural gas, lng, gnl, utilities, electrica, renewable, renovable, eolic, wind, solar, offshore, shell$, bp$, reservas, reserves, upstream, refin, oilfield, energia, energy
 ---
 When analysing an energy company, first place it on the value chain (upstream E&P, midstream, downstream/refining, integrated major, utility, renewables developer) — the framework differs by segment:
 

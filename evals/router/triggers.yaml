@@ -1,0 +1,234 @@
+# Trigger evals for the chat's skill auto-router (src/stocks/web/chat_skills.py).
+#
+# One block per skill in src/stocks/web/skills/. `should` are questions the
+# router must pick the skill for (EN + ES, the way an investor types them);
+# `near_miss` sound adjacent but belong to another skill or to none, so the
+# skill must NOT be picked for them. Every question is read on its own.
+#
+#   uv run pytest tests/test_skill_router_evals.py          # keyword fallback, offline (CI)
+#   uv run python scripts/eval_router.py [--provider free]  # the live LLM router, opt-in
+#
+# The offline test pins per-skill recall and the near-miss false-positive rate
+# (tests/test_skill_router_evals.py); the live script prints the hit rate of the
+# real router over the same questions. Adding a skill = adding its block here.
+
+tech:
+  should:
+    - "Is Palantir's valuation justified by its revenue growth?"
+    - "¿Qué opinas de Snowflake? Su net revenue retention está cayendo"
+    - "Does Salesforce still have a moat against AI-native SaaS startups?"
+    - "Analiza Microsoft: crecimiento de Azure, márgenes y dilución por SBC"
+    - "Is the Rule of 40 a good way to judge Datadog?"
+    - "¿Está cara Nvidia respecto a su crecimiento? Mira EV/ventas"
+  near_miss:
+    - "How is Exxon's reserve replacement looking?"
+    - "¿Cuánto tributo por vender mis acciones de Apple en España?"
+    - "Is the 50-day average above the 200-day on QQQ?"
+
+energy:
+  should:
+    - "Is Exxon's dividend safe if oil falls to $60?"
+    - "¿Qué te parece Repsol con el petróleo a estos precios?"
+    - "How are the renewables utilities like Iberdrola handling capex?"
+    - "¿Cómo afecta el gas natural a las eléctricas europeas?"
+    - "Compare Chevron and Shell on reserves and capex discipline"
+    - "Is Orsted a buy after the offshore wind writedowns?"
+  near_miss:
+    - "What will the Fed do with interest rates in December?"
+    - "Is Nvidia's data-center growth sustainable?"
+    - "¿Qué ETF barato replica el S&P 500?"
+
+value:
+  should:
+    - "Is Berkshire Hathaway trading below intrinsic value?"
+    - "¿Qué margen de seguridad tiene Intel a este precio?"
+    - "Why is this stock so cheap, is it a value trap?"
+    - "¿Es una buena empresa barata? Calcula los owner earnings de Kraft Heinz"
+    - "Would Buffett buy Coca-Cola at today's price?"
+    - "¿Cuál es el valor intrínseco de Inditex?"
+  near_miss:
+    - "Is Tesla's RSI overbought on the daily chart?"
+    - "¿Cuánto dividendo paga Iberdrola al año?"
+    - "Which stocks have the best earnings revisions this month?"
+
+financials:
+  should:
+    - "Is Santander's net interest margin going to shrink if rates drop?"
+    - "¿Cómo ves a BBVA? Mira la morosidad y el CET1"
+    - "Does JPMorgan trade at a fair price to tangible book?"
+    - "¿Qué riesgo de crédito tiene Allianz o los seguros en general?"
+    - "Is Block a fintech worth owning versus Visa?"
+    - "Explícame el capital regulatorio de los bancos europeos"
+  near_miss:
+    - "How do I report my broker's interest income to the Spanish tax office?"
+    - "What did the Fed say about inflation?"
+    - "Is the oil price going to recover?"
+
+healthcare:
+  should:
+    - "When is the FDA decision for Novo Nordisk's new drug?"
+    - "¿Qué te parece Moderna? Tienen poca caja y el pipeline está en fase 2"
+    - "How bad is the patent cliff for Pfizer?"
+    - "Analiza Vertex: ensayos clínicos y catalizadores"
+    - "Is Intuitive Surgical a good medtech name for the long term?"
+    - "¿Cuánto runway de caja tiene esta biotech?"
+  near_miss:
+    - "Is the cloud software market slowing down?"
+    - "¿Cómo reparto mi cartera entre sectores?"
+    - "Did Johnson & Johnson beat earnings last quarter?"
+
+crypto:
+  should:
+    - "Should I buy more bitcoin now or wait for a dip?"
+    - "¿Qué pasa con ether después del halving?"
+    - "Where's the safest place to keep my crypto, exchange or hardware wallet?"
+    - "¿Cuánto de mi cartera debería ir a criptomonedas?"
+    - "Is Solana a good bet compared with ETH?"
+    - "Dónde está BTC en el ciclo del bitcoin, ¿cerca del techo?"
+  near_miss:
+    - "Is MicroStrategy's balance sheet a risk for its shareholders?"
+    - "¿Cuántos impuestos pago por vender acciones con beneficios?"
+    - "What's the best broker app for ETFs?"
+
+emerging-markets:
+  should:
+    - "Is Alibaba too risky given the Chinese government's grip on tech?"
+    - "¿Merece la pena invertir en India o Brasil ahora mismo?"
+    - "What is the currency risk of holding Brazilian stocks as a euro investor?"
+    - "¿Qué diferencia hay entre una ADR y las acciones locales de TSMC?"
+    - "Is MercadoLibre's governance and political risk in Latin America a concern?"
+    - "How much of my portfolio should be in emerging markets?"
+  near_miss:
+    - "Is Apple's iPhone growth slowing?"
+    - "¿Qué hace el BCE con los tipos de interés?"
+    - "Should I buy a Europe ETF with a low fee?"
+
+dividend:
+  should:
+    - "Is Coca-Cola's dividend safe, what's the payout ratio?"
+    - "¿Qué acciones dan buen dividendo y lo van subiendo cada año?"
+    - "Is this 9% yield a yield trap?"
+    - "¿Cuánta retención me aplican por los dividendos de acciones americanas?"
+    - "I want passive income from dividends, where do I start?"
+    - "¿Cuándo paga dividendo Telefónica y cuánto es la rentabilidad por dividendo?"
+  near_miss:
+    - "How much capital gains tax do I owe on selling shares?"
+    - "¿Cómo va Nvidia, está cerca de máximos?"
+    - "Is Microsoft overvalued?"
+
+growth-momentum:
+  should:
+    - "Which stocks have accelerating earnings and rising estimates?"
+    - "¿Debería aguantar mis ganadoras o vender y tomar beneficios?"
+    - "Show me names with strong relative strength this quarter"
+    - "¿Qué empresas tienen revisiones de estimaciones al alza?"
+    - "Is momentum investing still working, should I let winners run?"
+    - "How is the earnings acceleration at Uber compared with last year?"
+  near_miss:
+    - "Which cheap stocks have a big margin of safety?"
+    - "¿Cuál es el soporte de Tesla ahora mismo?"
+    - "What are the dividend aristocrats?"
+
+technical:
+  should:
+    - "Where is the support and resistance on the S&P 500?"
+    - "¿Qué dice el RSI y el MACD de Apple?"
+    - "Is the 50-day moving average about to cross the 200-day on Tesla?"
+    - "¿Es buen momento técnico para entrar en Amazon?"
+    - "Where should I put my stop and my exit on this breakout?"
+    - "Analiza el gráfico de Bitcoin: tendencia y soportes"
+  near_miss:
+    - "What does Amazon's free cash flow look like?"
+    - "¿Qué impuestos pago por esta venta?"
+    - "How concentrated is my portfolio?"
+
+macro:
+  should:
+    - "How would a Fed rate cut affect my portfolio?"
+    - "¿Cómo me afecta la inflación y los tipos del BCE?"
+    - "Is it time for sector rotation out of tech into defensives?"
+    - "¿Qué impacto tiene el EUR/USD en mi cartera en euros?"
+    - "Are we heading for a recession, what does the yield curve say?"
+    - "Where are we in the economic cycle and what should I own?"
+  near_miss:
+    - "Is Nvidia expensive compared with AMD?"
+    - "¿Cuántos bitcoins debería tener?"
+    - "How do I declare foreign accounts in Spain?"
+
+earnings-review:
+  should:
+    - "Did Meta beat estimates this quarter and what was the guidance?"
+    - "¿Cómo han ido los resultados trimestrales de Inditex?"
+    - "Break down Apple's earnings report and the stock's reaction"
+    - "Han publicado resultados: ¿superaron consenso y cambiaron la guía?"
+    - "Why did the stock fall after earnings despite a beat?"
+    - "Resume el último informe trimestral de Amazon"
+  near_miss:
+    - "When is Nvidia reporting next quarter?"
+    - "Is Amazon cheap on a long-term basis?"
+    - "¿Qué impuestos paga una empresa de dividendos?"
+
+portfolio-risk:
+  should:
+    - "Is my portfolio too concentrated in a few names?"
+    - "¿Qué correlación hay entre mis posiciones? ¿Debería reequilibrar?"
+    - "How diversified am I really, do my funds overlap?"
+    - "¿Cuánto riesgo tiene mi cartera? ¿Estoy muy expuesto a tecnológicas?"
+    - "Should I rebalance my book back to my target weights?"
+    - "What's my factor exposure, am I too much growth?"
+  near_miss:
+    - "How is Nvidia doing today?"
+    - "¿Cuál es el mejor ETF del S&P 500?"
+    - "What's the tax on my crypto gains?"
+
+spain-tax:
+  should:
+    - "¿Cuánto pago a Hacienda por mis ganancias en bolsa en España?"
+    - "What is the two-month rule for losses in Spain?"
+    - "¿Puedo compensar pérdidas vendiendo antes de fin de año? Regla de los dos meses"
+    - "¿Cómo funciona el traspaso entre fondos y tributa?"
+    - "What are the Spanish savings-income tax brackets?"
+    - "Soy residente fiscal en España, ¿tengo que declarar el Modelo 720?"
+  near_miss:
+    - "What are the wash-sale rules in the US?"
+    - "¿Cuál es la rentabilidad por dividendo de Santander?"
+    - "How do I read a company's tax rate in its earnings?"
+
+us-tax:
+  should:
+    - "What's the difference between short-term and long-term capital gains in the US?"
+    - "Does the wash sale rule apply if I rebuy the same ETF?"
+    - "I'm a US tax resident, how do I report my foreign brokerage account?"
+    - "¿Qué es la regla wash sale de Estados Unidos?"
+    - "Can I deduct capital losses against ordinary income on my IRS return?"
+    - "¿Cómo tributa en EE. UU. un residente fiscal americano con acciones europeas?"
+  near_miss:
+    - "How much tax do I pay in Spain on my stock gains?"
+    - "Is Wall Street going to rally this year?"
+    - "¿Qué retención se aplica al dividendo de Apple?"
+
+bear-case:
+  should:
+    - "What's the bear case for Tesla?"
+    - "Dame el caso en contra de Palantir: ¿qué podría salir mal?"
+    - "Are there accounting red flags at this company?"
+    - "¿Está diluyendo a los accionistas? ¿Venden los directivos?"
+    - "Play devil's advocate on my NVDA position"
+    - "What would make me wrong about this thesis, what are the thesis-breakers?"
+  near_miss:
+    - "What's the bull case for Amazon?"
+    - "¿Cuándo presenta resultados Tesla?"
+    - "Is the market overvalued overall?"
+
+etfs:
+  should:
+    - "Which S&P 500 ETF is cheapest, VOO or CSPX?"
+    - "¿Qué ETF UCITS me conviene para invertir desde España?"
+    - "Accumulating or distributing ETF, which is better?"
+    - "¿Cuál es el TER y el tracking error de este fondo indexado?"
+    - "Does my new ETF overlap with what I already hold?"
+    - "Is IWDA a good core holding for a world portfolio?"
+  near_miss:
+    - "Is Apple a good stock to hold for ten years?"
+    - "¿Cómo tributa vender un fondo de inversión?"
+    - "What is the Fed going to do?"

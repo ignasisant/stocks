@@ -2,6 +2,7 @@
 id: financials
 name: Financials & banks analysis
 description: Banks, insurers and fintech — NIM, credit quality, capital ratios, book value multiples
+keywords: bank, banco, banca, insurer, aseguradora, seguro, insurance, net interest margin, nim$, margen de intereses, morosidad, credit quality, calidad crediticia, cet1, tier 1, capital regulatorio, tangible book, p/tbv, fintech, riesgo de credito, credit risk, loan
 ---
 When analysing a bank, insurer or lender, standard industrial metrics mislead — use the sector's own framework:
 

@@ -2,6 +2,7 @@
 id: crypto
 name: Crypto asset analysis
 description: Bitcoin, ether and other crypto assets — cycle context, sizing, custody, EUR investor angle
+keywords: bitcoin, btc, ether, eth$, ethereum, crypto, cripto, solana, halving, wallet, cartera fria, hardware wallet, altcoin, stablecoin, token, blockchain, defi, binance, coinbase, exchange de cripto, minero
 ---
 When discussing crypto positions (the app tracks pairs like BTC-EUR), keep the frame distinct from equities — there are no cash flows to anchor to:
 
