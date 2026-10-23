@@ -1,0 +1,50 @@
+{
+  "note": "Shared by tests/test_dcf.py and dcfmath.test.ts: the Python and TypeScript value_per_share must agree on every row. Row 1 is hand-computed: growth = wacc makes each of the five flows worth 100 today, 500 in all; the terminal value is 100 * 1.02 / 0.08 = 1275 today; (1775 - 50) / 10 = 172.5.",
+  "cases": [
+    {
+      "fcf": 100,
+      "growth": 0.1,
+      "wacc": 0.1,
+      "terminal": 0.02,
+      "net_debt": 50,
+      "shares": 10,
+      "value": 172.5
+    },
+    {
+      "fcf": 80,
+      "growth": 0.05,
+      "wacc": 0.09,
+      "terminal": 0.025,
+      "net_debt": -20,
+      "shares": 4,
+      "value": 356.1249932129458
+    },
+    {
+      "fcf": 60,
+      "growth": 0,
+      "wacc": 0.08,
+      "terminal": 0.03,
+      "net_debt": 0,
+      "shares": 3,
+      "value": 360.2544779194679
+    },
+    {
+      "fcf": 100,
+      "growth": 0.05,
+      "wacc": 0.03,
+      "terminal": 0.03,
+      "net_debt": 0,
+      "shares": 10,
+      "value": null
+    },
+    {
+      "fcf": -5,
+      "growth": 0.05,
+      "wacc": 0.09,
+      "terminal": 0.02,
+      "net_debt": 0,
+      "shares": 10,
+      "value": null
+    }
+  ]
+}

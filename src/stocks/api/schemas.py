@@ -916,6 +916,42 @@ class Valuation(BaseModel):
     windows: list[ValuationWindow] = Field(default_factory=list)
 
 
+class Dcf(BaseModel):
+    ticker: str
+    reason: str | None = Field(
+        default=None,
+        description=(
+            "Why there is no value: `negative_fcf`, `lens` (a bank, insurer, "
+            "REIT or utility), `not_equity` or `no_data`. Null when valued."
+        ),
+    )
+    currency: str | None = None
+    price: float | None = None
+    fcf: float | None = Field(
+        default=None,
+        description="Base-year free cash flow to the firm, in the quote currency.",
+    )
+    net_debt: float | None = None
+    shares: float | None = Field(default=None, description="Diluted shares.")
+    growth: float | None = Field(
+        default=None, description="Explicit five-year growth the value starts from."
+    )
+    growth_source: str | None = Field(
+        default=None, description="`fcf_cagr`, `revenue_cagr` or `fallback`."
+    )
+    wacc: float
+    terminal: float
+    value: float | None = None
+    upside: float | None = Field(default=None, description="value / price - 1.")
+    waccs: list[float] = Field(default_factory=list)
+    terminals: list[float] = Field(default_factory=list)
+    grid: list[list[float | None]] = Field(
+        default_factory=list,
+        description="Per-share value, one row per WACC, one column per terminal "
+        "growth; null where terminal growth >= WACC.",
+    )
+
+
 class MoatPillar(BaseModel):
     """One pillar, with its English words and the keys to word it otherwise.
 

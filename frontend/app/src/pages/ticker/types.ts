@@ -392,6 +392,27 @@ export type MoatPillar = {
   facts: Record<string, number>;
 };
 
+/** The five-year DCF (`/ticker/{symbol}/dcf`): inputs, value and sensitivity. */
+export type Dcf = {
+  ticker: string;
+  /** negative_fcf | lens | not_equity | no_data; null when valued. */
+  reason: string | null;
+  currency: string | null;
+  price: number | null;
+  fcf: number | null;
+  net_debt: number | null;
+  shares: number | null;
+  growth: number | null;
+  growth_source: string | null;
+  wacc: number;
+  terminal: number;
+  value: number | null;
+  upside: number | null;
+  waccs: number[];
+  terminals: number[];
+  grid: (number | null)[][];
+};
+
 export type Moat = {
   ticker: string;
   score: number | null;

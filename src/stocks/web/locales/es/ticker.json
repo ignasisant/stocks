@@ -450,5 +450,22 @@
   "ticker.verdict_no_moat": "Sin foso",
   "ticker.verdict_narrow": "Estrecho",
   "ticker.verdict_wide": "Amplio",
-  "ticker.verdict_loss": "Pérdidas"
+  "ticker.verdict_loss": "Pérdidas",
+  "ticker.dcf": "Valor por flujos de caja (DCF)",
+  "ticker.dcf_help": "Flujo de caja libre de la empresa, 5 años al crecimiento indicado y valor terminal de Gordon; menos deuda neta, por acción diluida. No es consejo.",
+  "ticker.dcf_reason_negative_fcf": "Sin DCF: el flujo de caja libre del último año no fue positivo.",
+  "ticker.dcf_reason_lens": "Sin DCF: en bancos, aseguradoras, socimis y utilities el flujo de caja libre no es caja del accionista.",
+  "ticker.dcf_reason_not_equity": "Sin DCF: solo para acciones de empresas.",
+  "ticker.dcf_reason_no_data": "Sin DCF: faltan en las cuentas las acciones, la deuda neta o el tipo de cambio.",
+  "ticker.dcf_value": "Valor por acción",
+  "ticker.dcf_vs_price": "{pct} frente al precio {price}",
+  "ticker.dcf_refused": "Sin valor: el crecimiento terminal debe quedar bajo el WACC.",
+  "ticker.dcf_growth": "Crecimiento, 5 años",
+  "ticker.dcf_wacc": "WACC",
+  "ticker.dcf_terminal": "Crecimiento terminal",
+  "ticker.dcf_reset": "Restablecer",
+  "ticker.dcf_grid": "Valor por acción según WACC (filas) y crecimiento terminal (columnas)",
+  "ticker.dcf_growth_fcf_cagr": "El crecimiento parte del ritmo anual del flujo de caja libre declarado ({growth} %), entre 0 y 15 %.",
+  "ticker.dcf_growth_revenue_cagr": "El crecimiento parte del ritmo anual de las ventas declaradas ({growth} %), entre 0 y 15 %.",
+  "ticker.dcf_growth_fallback": "Sin histórico útil: el crecimiento parte de un tranquilo {growth} %."
 }

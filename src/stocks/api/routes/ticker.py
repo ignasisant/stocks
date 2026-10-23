@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Path, Query, status
 
 from stocks import obs
 from stocks.analysis import crypto_market, review
+from stocks.analysis import dcf as dcf_model
 from stocks.analysis.compare import (
     INDICES,
     OFFERED_PEERS,
@@ -70,6 +71,7 @@ from stocks.api.schemas import (
     Comparison,
     Custodian,
     CycleEvent,
+    Dcf,
     EarningsEvent,
     EpsRevisionRow,
     Financials,
@@ -1102,6 +1104,38 @@ def valuation(symbol: Symbol) -> Valuation:
         else [],
         pe=[_num(v) for v in series] if series is not None and not series.empty else [],
         windows=windows,
+    )
+
+
+@router.get("/{symbol}/dcf", response_model=Dcf, summary="Discounted cash flow")
+def dcf(symbol: Symbol) -> Dcf:
+    """A plain five-year DCF on the firm's free cash flow, and its sensitivity.
+
+    Not a price target: every input rides along so the page can show and edit
+    them. A business with no positive trailing FCF, or one judged on a lens
+    where FCF is not owner cash (banks, REITs, utilities), comes back with a
+    `reason` and no number.
+    """
+    ticker = symbol.strip().upper()
+    raw = loaders.fundamentals(ticker)
+    out = dcf_model.compute(raw, compute_metrics(raw))
+    return Dcf(
+        ticker=ticker,
+        reason=out.reason,
+        currency=out.currency,
+        price=_num(out.price),
+        fcf=_num(out.fcf),
+        net_debt=_num(out.net_debt),
+        shares=_num(out.shares),
+        growth=_num(out.growth),
+        growth_source=out.growth_source,
+        wacc=out.wacc,
+        terminal=out.terminal,
+        value=_num(out.value),
+        upside=_num(out.upside),
+        waccs=list(out.waccs),
+        terminals=list(out.terminals),
+        grid=[[_num(v) for v in row] for row in out.grid],
     )
 
 

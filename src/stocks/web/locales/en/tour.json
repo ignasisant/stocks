@@ -52,7 +52,7 @@
   "tour.pulse_body": "Market mood as a 0–100 **risk appetite** score, what drives it and what it means for your portfolio. The detail tables sit below.",
   "tour.pulse_cta": "Open Pulse",
   "tour.market_title": "Any ticker, with its sources",
-  "tour.market_body": "Any stock, fund or coin: chart, financials, analysts, insiders and news, each figure with its source. **Analyze with AI** hands it to the assistant.",
+  "tour.market_body": "Any stock, fund or coin: chart, financials, analysts, insiders and news, each figure with its source. A simple **DCF** with editable inputs. **Analyze with AI** hands it to the assistant.",
   "tour.market_cta": "Open a ticker",
   "tour.sector_title": "Sector screen and earnings calendar",
   "tour.sector_body": "Pick a sector and see its best three companies, by quality and by momentum. The calendar shows your earnings, dividends, tax deadlines, trades and market holidays.",
