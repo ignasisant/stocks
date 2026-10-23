@@ -2088,6 +2088,7 @@ def health(account: Account) -> BookHealth:
                 fix=f.fix,
                 detail=f.detail,
                 weight=_num(f.weight) or 0.0,
+                cause=f.cause,
             )
             for f in doctor.scan(rows, resolve=loaders.display_symbol)
         ]
