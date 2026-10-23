@@ -29,6 +29,7 @@ import type {
   Fund,
   Insiders,
   Metrics,
+  Dcf,
   Moat,
   Peer,
   PriceEvents,
@@ -97,6 +98,8 @@ export const getFinancials = (ticker: string) =>
 
 export const getValuation = (ticker: string) =>
   get<Valuation>(`${at(ticker)}/valuation`);
+
+export const getDcf = (ticker: string) => get<Dcf>(`${at(ticker)}/dcf`);
 
 export const getMoat = (ticker: string) => get<Moat>(`${at(ticker)}/moat`);
 

@@ -450,5 +450,22 @@
   "ticker.verdict_no_moat": "No moat",
   "ticker.verdict_narrow": "Narrow",
   "ticker.verdict_wide": "Wide",
-  "ticker.verdict_loss": "Loss"
+  "ticker.verdict_loss": "Loss",
+  "ticker.dcf": "Cash-flow value (DCF)",
+  "ticker.dcf_help": "Free cash flow to the firm, 5 years at the growth shown, then Gordon terminal value; less net debt, per diluted share. Not advice.",
+  "ticker.dcf_reason_negative_fcf": "No DCF: free cash flow over the last year was not positive.",
+  "ticker.dcf_reason_lens": "No DCF: free cash flow is not owner cash for banks, insurers, REITs or utilities.",
+  "ticker.dcf_reason_not_equity": "No DCF: only for company shares.",
+  "ticker.dcf_reason_no_data": "No DCF: the filings lack the share count, net debt or a currency rate.",
+  "ticker.dcf_value": "Value per share",
+  "ticker.dcf_vs_price": "{pct} vs price {price}",
+  "ticker.dcf_refused": "No value: terminal growth must stay under WACC.",
+  "ticker.dcf_growth": "Growth, 5 years",
+  "ticker.dcf_wacc": "WACC",
+  "ticker.dcf_terminal": "Terminal growth",
+  "ticker.dcf_reset": "Reset",
+  "ticker.dcf_grid": "Value per share by WACC (rows) and terminal growth (columns)",
+  "ticker.dcf_growth_fcf_cagr": "Growth starts at the filed free cash flow's yearly rate ({growth} %), kept between 0 and 15 %.",
+  "ticker.dcf_growth_revenue_cagr": "Growth starts at the filed sales' yearly rate ({growth} %), kept between 0 and 15 %.",
+  "ticker.dcf_growth_fallback": "No usable history: growth starts at a quiet {growth} %."
 }

@@ -1618,3 +1618,117 @@
   align-items: center;
   gap: 4px;
 }
+
+/* ---------------------------------------------------------------------- dcf */
+
+.tk-dcf-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.tk-dcf-value {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tk-dcf-value strong {
+  font-size: var(--ag-fs-lg);
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-primary);
+}
+
+.tk-dcf-label,
+.tk-dcf-vs,
+.tk-dcf-cap {
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-muted);
+}
+
+.tk-dcf-cap {
+  caption-side: top;
+  text-align: left;
+  padding-bottom: 6px;
+}
+
+.tk-dcf-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.tk-dcf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+}
+
+.tk-dcf-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ag-text-muted);
+}
+
+.tk-dcf-input input {
+  width: 5.5rem;
+  min-height: 32px;
+  padding: 4px 8px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-primary);
+  background: var(--ag-surface-sunken);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+}
+
+.tk-dcf-reset {
+  min-height: 32px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+  background: transparent;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  cursor: pointer;
+}
+
+.tk-dcf-grid td {
+  text-align: right;
+  padding-right: 12px;
+}
+
+.tk-dcf-grid thead th:not(:first-child) {
+  text-align: right;
+  padding-right: 12px;
+}
+
+.tk-dcf-grid td.tk-dcf-now {
+  background: var(--ag-surface-hover);
+  color: var(--ag-text-primary);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 2px var(--ag-brand-accent);
+}
+
+@container ag-main (max-width: 30rem) {
+  .tk-dcf-inputs {
+    width: 100%;
+  }
+  .tk-dcf-input input {
+    width: 4.5rem;
+  }
+}
+
+@media (pointer: coarse) {
+  .tk-dcf-input input,
+  .tk-dcf-reset {
+    min-height: 44px;
+  }
+}

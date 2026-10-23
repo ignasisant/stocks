@@ -37,6 +37,7 @@ import { Actions } from "./Actions";
 import { SignIn, SignedInOnly } from "../../shell/guest";
 import { AnalystsSection } from "./Analysts";
 import { FinancialsChart, ValuationChart } from "./Charts";
+import { DcfSection } from "./Dcf";
 import {
   getAnalysts,
   getBars,
@@ -50,6 +51,7 @@ import {
   getFund,
   getInsiders,
   getMetrics,
+  getDcf,
   getMoat,
   getPosition,
   getProfile,
@@ -289,6 +291,10 @@ export default function Page() {
     () => (ticker && company ? getValuation(ticker) : Promise.resolve(null)),
     [ticker, company],
   );
+  const dcf = useApi(
+    () => (ticker && company ? getDcf(ticker) : Promise.resolve(null)),
+    [ticker, company],
+  );
   const moat = useApi(
     () => (ticker && company ? getMoat(ticker) : Promise.resolve(null)),
     [ticker, company],
@@ -500,6 +506,10 @@ export default function Page() {
               fundamentalPe={gridPe}
               trades={held?.trades ?? []}
             />
+          ) : null}
+
+          {dcf.state === "loaded" && dcf.data ? (
+            <DcfSection key={ticker} dcf={dcf.data} />
           ) : null}
 
           {/* What the street makes of it, right after what it is priced at. */}
