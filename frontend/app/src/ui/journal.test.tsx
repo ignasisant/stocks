@@ -10,7 +10,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { type JournalEntry, JournalList, factRows, settledOn } from "./Journal";
+import {
+  type JournalEntry,
+  JournalList,
+  factRows,
+  priceMarks,
+  settledOn,
+} from "./Journal";
 
 beforeEach(() => {
   vi.stubGlobal("window", {
@@ -119,5 +125,23 @@ describe("how it was settled", () => {
   it("names nothing for a button press or an older entry", () => {
     expect(settledOn(entry({ state: "declined", settled: "chat" }))).toBeNull();
     expect(settledOn(entry())).toBeNull();
+  });
+});
+
+describe("the price since", () => {
+  it("prints each mark read, signed, in day order", () => {
+    const marked = entry({ outcome: { then: 100, d90: 20, d30: -12 } });
+    expect(priceMarks(marked, "en")).toEqual([
+      { days: 30, shown: "-12 %" },
+      { days: 90, shown: "+20 %" },
+    ]);
+    expect(priceMarks(entry({ outcome: { then: 100, d30: 3.25 } }), "es")).toEqual([
+      { days: 30, shown: "+3,3 %" },
+    ]);
+  });
+
+  it("prints nothing before the first mark", () => {
+    expect(priceMarks(entry(), "en")).toEqual([]);
+    expect(priceMarks(entry({ outcome: { then: 100 } }), "en")).toEqual([]);
   });
 });

@@ -33,7 +33,7 @@ from __future__ import annotations
 import json
 import secrets
 import threading
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -125,6 +125,10 @@ class Entry:
     # reader pressed, "ledger:<date>" for a trade found in the book. "" for
     # the states the app sets on its own (open, lapsed).
     settled: str = ""
+    # The price read back after the fact (`mark_outcomes`): "then", the
+    # close on the first day shown, and "d30"/"d90", the % move from it a
+    # month and a quarter on. Empty until a mark is due.
+    outcome: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         out = asdict(self)
@@ -206,8 +210,17 @@ def load(path: Path) -> list[Entry]:
             links=tuple(str(x) for x in item.get("links") or ()),
             updated=str(item.get("updated") or ""),
             settled=str(item.get("settled") or ""),
+            outcome=_outcome(item.get("outcome")),
         ))
     return out
+
+
+def _outcome(raw) -> dict:
+    if not isinstance(raw, dict):
+        return {}
+    return {k: float(v) for k, v in raw.items()
+            if k in OUTCOME_KEYS and isinstance(v, int | float)
+            and not isinstance(v, bool)}
 
 
 def writable(path: Path) -> bool:
@@ -452,21 +465,122 @@ def settle_from_db(path: Path, db: Path | None, day: date) -> int:
                               day)
 
 
+# ------------------------------------------------------------- the outcome
+# A month and a quarter after a move was first shown, its price is read back:
+# did the name go the way the move bet on? A sell, trim or harvest bets on
+# it falling (or at least not rising), an add, buy or rebuy on it rising.
+# Read for every sided proposal whatever the reader did with it — a declined
+# sale that then fell 20 % is the record too.
+
+MARKS = (30, 90)
+OUTCOME_KEYS = ("then", *(f"d{m}" for m in MARKS))
+# Names priced per pass: each is one cached download, and the card job that
+# runs this should never wait on dozens of them. The rest are due next pass.
+MAX_MARKED = 12
+
+# (ticker, [day, ...]) -> the close on or before each day, None where the
+# listing had no price yet — `api.briefing._closes_on`, off `window_closes`.
+ClosesOn = Callable[[str, list[date]], list[float | None]]
+
+
+def _due(e: Entry, day: date) -> list[int]:
+    """The marks `e` has reached on `day` and not yet been read at."""
+    if (e.type != "proposal" or not e.ticker or not side_of(e.action)
+            or not e.day):
+        return []
+    try:
+        first = date.fromisoformat(e.day)
+    except ValueError:
+        return []
+    return [m for m in MARKS
+            if f"d{m}" not in e.outcome and first + timedelta(days=m) <= day]
+
+
+def mark_outcomes(path: Path, closes: ClosesOn, day: date) -> int:
+    """Read the price back for every sided proposal a mark has come due on.
+
+    Prices are fetched outside the lock — a download can take seconds — and
+    written back under it onto the entries as they are then. A name whose
+    price cannot be read keeps its mark due for the next pass. Returns how
+    many entries gained a mark."""
+    due = {e.id: (e, marks) for e in load(path) if (marks := _due(e, day))}
+    if not due:
+        return 0
+    names = list(dict.fromkeys(e.ticker for e, _ in due.values()))[:MAX_MARKED]
+    found: dict[str, dict] = {}
+    for entry_id, (e, marks) in due.items():
+        if e.ticker not in names:
+            continue
+        first = date.fromisoformat(e.day)
+        try:
+            got = closes(e.ticker, [first, *(first + timedelta(days=m) for m in marks)])
+        except Exception as exc:  # noqa: BLE001 — due again next pass
+            obs.warn("journal.outcome_failed", ticker=e.ticker,
+                     error_type=type(exc).__name__)
+            continue
+        then = e.outcome.get("then") or (got[0] if got else None)
+        if not then or then <= 0:
+            continue
+        marked = {f"d{m}": round((px / then - 1) * 100, 1)
+                  for m, px in zip(marks, got[1:], strict=False) if px and px > 0}
+        if marked:
+            found[entry_id] = {"then": round(then, 4), **marked}
+    if not found:
+        return 0
+    with _LOCK:
+        entries = load(path)
+        for i, e in enumerate(entries):
+            if e.id in found:
+                entries[i] = replace(e, outcome={**e.outcome, **found[e.id]})
+        _save(path, entries)
+    obs.event("journal.outcomes_marked", n=len(found))
+    return len(found)
+
+
+def latest_mark(entry: Entry) -> tuple[int, float] | None:
+    """(days, % move) at the furthest mark read, or None before the first."""
+    for m in reversed(MARKS):
+        if (pct := entry.outcome.get(f"d{m}")) is not None:
+            return m, pct
+    return None
+
+
+def went_its_way(entry: Entry) -> bool | None:
+    """Whether the name moved the way the move bet on, at its latest mark:
+    down after a sell-side move, up after a buy-side one. None unmarked."""
+    mark = latest_mark(entry)
+    side = side_of(entry.action)
+    if mark is None or not side:
+        return None
+    return mark[1] < 0 if side == "sell" else mark[1] > 0
+
+
+def since_line(entry: Entry) -> str:
+    """"−12.0 % 30 days on, +3.1 % 90 days on", or "" before the first mark."""
+    parts = [f"{entry.outcome[f'd{m}']:+.1f} % {m} days on"
+             for m in MARKS if f"d{m}" in entry.outcome]
+    return ", ".join(parts).replace("-", "−")
+
+
 # -------------------------------------------------------------- the record
 
 
 def track_record(entries: Iterable[Entry]) -> dict:
     """What became of the proposals, counted: made, followed, declined,
     lapsed, still open — over the journal and per source. A stay is advice
-    to do nothing and is left out of "made". The record says what the reader
-    did with the advice, not whether the advice paid: that needs a price
-    after the fact, and is not kept here."""
+    to do nothing and is left out of "made". `marked` counts the moves whose
+    price has been read back (`mark_outcomes`) and `its_way` those that went
+    the way the move bet on, at their latest mark."""
     rows = [e for e in entries if e.type == "proposal" and e.action != REVIEW_STAY]
 
     def count(scope: list[Entry]) -> dict:
-        out = {"proposed": len(scope), **{s: 0 for s in STATES}}
+        out = {"proposed": len(scope), **{s: 0 for s in STATES},
+               "marked": 0, "its_way": 0}
         for e in scope:
             out[e.state] = out.get(e.state, 0) + 1
+            if (way := went_its_way(e)) is not None:
+                out["marked"] += 1
+                out["its_way"] += int(way)
         return out
 
     return {**count(rows),
@@ -508,6 +622,8 @@ def history_line(entry: Entry) -> str:
     }.get(entry.state, entry.state)
     if entry.settled.startswith("ledger:"):
         fate += f" (trade on {entry.settled[7:]})"
+    if since := since_line(entry):
+        fate += f" · price {since}"
     return f"{entry.ticker}: {entry.action} ({entry.source}, {when}{shown}) · {fate}"
 
 
@@ -536,7 +652,9 @@ def to_markdown(entries: Iterable[Entry], day: date, *, name: str = "decisions")
         "",
         f"Proposed {record['proposed']} · followed {record['followed']} · "
         f"declined {record['declined']} · lapsed {record['lapsed']} · "
-        f"open {record['open']}",
+        f"open {record['open']}"
+        + (f" · went its way {record['its_way']} of {record['marked']} priced"
+           if record["marked"] else ""),
         "",
     ]
     for e in rows:
@@ -566,6 +684,9 @@ def to_markdown(entries: Iterable[Entry], day: date, *, name: str = "decisions")
         figures = ", ".join(f"{k} {v}" for k, v in e.snapshot.items() if v is not None)
         if figures:
             out.append(f"- **Figures then:** {figures}")
+        if since := since_line(e):
+            out.append(f"- **Price since:** {since} (close {e.outcome['then']:g} "
+                       f"on {e.day})")
         if e.evidence:
             out.append(f"- **Analysis:** {e.evidence}")
         if e.links:
@@ -723,6 +844,8 @@ def line_for(entry: Entry) -> str:
     figures = ", ".join(f"{k}={v}" for k, v in entry.snapshot.items() if v is not None)
     if figures:
         parts.append(f"  figures then: {figures}")
+    if since := since_line(entry):
+        parts.append(f"  price since: {since}")
     if entry.evidence:
         parts.append(f"  analysis: {entry.evidence}")
     if entry.links:

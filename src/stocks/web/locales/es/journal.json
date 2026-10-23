@@ -85,5 +85,8 @@
   "journal.settled_ledger": "Una operación en tu cartera el {date} lo cerró.",
   "journal.export": "Llévatelo",
   "journal.export_help": "Un archivo Markdown que una app de notas como Obsidian lee entero: las entradas, los enlaces entre ellas, etiquetas por ticker y estado.",
-  "journal.export_button": "Descargar Markdown"
+  "journal.export_button": "Descargar Markdown",
+  "journal.since": "Precio desde entonces",
+  "journal.since_days": "A los {days} días",
+  "journal.record_marked": "De los **{n}** con precio a un mes o más, **{way}** fueron en la dirección que apostaba el movimiento."
 }

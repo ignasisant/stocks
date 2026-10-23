@@ -85,5 +85,8 @@
   "journal.settled_ledger": "A trade in your book on {date} settled it.",
   "journal.export": "Take it with you",
   "journal.export_help": "One Markdown file a notes app such as Obsidian reads whole: the entries, the links between them, tags per ticker and state.",
-  "journal.export_button": "Download Markdown"
+  "journal.export_button": "Download Markdown",
+  "journal.since": "Price since",
+  "journal.since_days": "{days} days on",
+  "journal.record_marked": "Of the **{n}** priced a month or more on, **{way}** went the way the move bet on."
 }

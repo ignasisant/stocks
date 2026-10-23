@@ -56,6 +56,9 @@ class JournalEntry(BaseModel):
     # "chat" when the reader answered a card, "ledger:<date>" when a trade
     # in the book settled it, "" when the app set the state on its own.
     settled: str = ""
+    # The price read back after the fact: "then" (close on the first day
+    # shown), "d30"/"d90" (% move since). Empty until a mark is due.
+    outcome: dict[str, float] = {}
 
 
 class Record(BaseModel):
@@ -66,6 +69,10 @@ class Record(BaseModel):
     followed: int
     declined: int
     lapsed: int
+    # Moves whose price has been read back, and those that went the way
+    # the move bet on at their latest mark.
+    marked: int = 0
+    its_way: int = 0
     by_source: dict[str, dict[str, int]]
 
 

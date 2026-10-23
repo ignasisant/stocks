@@ -49,6 +49,9 @@ export type JournalEntry = {
   updated: string;
   /** "chat" for a card answered, "ledger:<date>" for a trade that settled it. */
   settled?: string;
+  /** The price read back: "then" (close on the first day shown), "d30" and
+   * "d90" (% move since). Absent until a mark is due. */
+  outcome?: Record<string, number>;
 };
 
 /** What became of the proposals, counted over the whole journal. */
@@ -58,6 +61,9 @@ export type JournalRecord = {
   followed: number;
   declined: number;
   lapsed: number;
+  /** Moves whose price has been read back, and those that went their way. */
+  marked?: number;
+  its_way?: number;
   by_source: Record<string, Record<string, number>>;
 };
 
@@ -174,6 +180,42 @@ function figure(
     default:
       return String(value);
   }
+}
+
+/** The marks the price was read back at, in day order, signed as they print. */
+export function priceMarks(
+  entry: JournalEntry,
+  lang: string,
+): { days: number; shown: string }[] {
+  const outcome = entry.outcome ?? {};
+  return [30, 90].flatMap((days) => {
+    const pct = outcome[`d${days}`];
+    if (typeof pct !== "number" || !Number.isFinite(pct)) return [];
+    const shown = formatter(lang, {
+      maximumFractionDigits: 1,
+      signDisplay: "exceptZero",
+    }).format(pct);
+    return [{ days, shown: `${shown} %` }];
+  });
+}
+
+function PriceSince({ entry }: { entry: JournalEntry }) {
+  const t = useT();
+  const marks = priceMarks(entry, useLang());
+  if (!marks.length) return null;
+  return (
+    <div className="ag-jr-group">
+      <h3 className="ag-jr-h">{t("journal.since")}</h3>
+      <dl className="ag-jr-facts">
+        {marks.map(({ days, shown }) => (
+          <div key={days} className="ag-jr-fact">
+            <dt>{t("journal.since_days", { days })}</dt>
+            <dd>{shown}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
 }
 
 /**
@@ -326,6 +368,7 @@ function Row({
             </div>
           ) : null}
           <Figures entry={entry} />
+          <PriceSince entry={entry} />
           {entry.evidence ? (
             <div className="ag-jr-group">
               <h3 className="ag-jr-h">{t("journal.evidence")}</h3>

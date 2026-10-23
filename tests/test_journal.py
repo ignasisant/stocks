@@ -436,3 +436,118 @@ def test_the_route_exports_the_file_and_counts_the_record(book):
     disposition = got.headers["content-disposition"]
     assert disposition.startswith('attachment; filename="decisions-')
     assert "## 2026-10-02 · review · sell AMD · open" in got.text
+
+
+# ------------------------------------------------------------- the outcome
+
+
+class _Closes:
+    """`journal.ClosesOn` off a table of {day: close}; logs every ask."""
+
+    def __init__(self, table: dict[date, float], fail: bool = False):
+        self.table, self.fail, self.asked = table, fail, []
+
+    def __call__(self, ticker: str, days: list[date]) -> list[float | None]:
+        self.asked.append((ticker, list(days)))
+        if self.fail:
+            raise TimeoutError("throttled")
+        return [self.table.get(d) for d in days]
+
+
+def test_the_price_is_read_back_a_month_and_a_quarter_on(path):
+    journal.record(path, [_shown(action="sell"),
+                          _shown(source="daily", subject="alert_hit:AMD",
+                                 action="alert")], DAY)
+    closes = _Closes({DAY: 100.0, DAY + timedelta(days=30): 88.0,
+                      DAY + timedelta(days=90): 120.0})
+    # Not due yet: nothing is fetched.
+    assert journal.mark_outcomes(path, closes, DAY + timedelta(days=29)) == 0
+    assert closes.asked == []
+    assert journal.mark_outcomes(path, closes, DAY + timedelta(days=31)) == 1
+    sell = journal.load(path)[0]
+    assert sell.outcome == {"then": 100.0, "d30": -12.0}
+    assert journal.went_its_way(sell) is True
+    # An alert bets on no direction and is never priced.
+    assert journal.load(path)[1].outcome == {}
+    # The quarter mark asks for the quarter only, from the close kept.
+    assert journal.mark_outcomes(path, closes, DAY + timedelta(days=95)) == 1
+    assert closes.asked[-1] == ("AMD", [DAY, DAY + timedelta(days=90)])
+    sell = journal.load(path)[0]
+    assert sell.outcome == {"then": 100.0, "d30": -12.0, "d90": 20.0}
+    assert journal.went_its_way(sell) is False
+    assert journal.since_line(sell) == "−12.0 % 30 days on, +20.0 % 90 days on"
+    assert journal.mark_outcomes(path, closes, DAY + timedelta(days=200)) == 0
+
+
+def test_a_price_that_cannot_be_read_stays_due(path):
+    journal.record(path, [_shown(subject="review:ADBE", ticker="ADBE", action="add")],
+                   DAY)
+    later = DAY + timedelta(days=31)
+    assert journal.mark_outcomes(path, _Closes({}, fail=True), later) == 0
+    assert journal.mark_outcomes(path, _Closes({}), later) == 0  # no close yet
+    assert journal.load(path)[0].outcome == {}
+    closes = _Closes({DAY: 50.0, DAY + timedelta(days=30): 55.0})
+    assert journal.mark_outcomes(path, closes, later) == 1
+    add = journal.load(path)[0]
+    assert add.outcome == {"then": 50.0, "d30": 10.0}
+    assert journal.went_its_way(add) is True
+
+
+def test_one_pass_prices_a_bounded_number_of_names(path, monkeypatch):
+    monkeypatch.setattr(journal, "MAX_MARKED", 2)
+    journal.record(path, [_shown(subject=f"review:T{i}", ticker=f"T{i}", action="sell")
+                          for i in range(4)], DAY)
+    closes = _Closes({DAY: 10.0, DAY + timedelta(days=30): 9.0})
+    assert journal.mark_outcomes(path, closes, DAY + timedelta(days=31)) == 2
+    assert journal.mark_outcomes(path, closes, DAY + timedelta(days=31)) == 2
+    assert all(e.outcome for e in journal.load(path))
+
+
+def test_the_record_and_the_lines_carry_the_price_since(path):
+    journal.record(path, [_shown(action="sell"),
+                          _shown(subject="review:SNAP", ticker="SNAP", action="trim"),
+                          _shown(subject="review:ADBE", ticker="ADBE", action="add")],
+                   DAY)
+    month = DAY + timedelta(days=30)
+    table = {"AMD": {DAY: 100.0, month: 90.0}, "SNAP": {DAY: 10.0, month: 11.0}}
+
+    def closes(ticker, days):
+        return [table.get(ticker, {}).get(d) for d in days]
+
+    journal.mark_outcomes(path, closes, DAY + timedelta(days=31))
+    record = journal.track_record(journal.load(path))
+    # AMD fell after a sell, SNAP rose after a trim, ADBE has no price yet.
+    assert (record["marked"], record["its_way"]) == (2, 1)
+    assert record["by_source"]["review"]["marked"] == 2
+    amd = journal.load(path)[0]
+    assert journal.history_line(amd).endswith("· still open · price −10.0 % 30 days on")
+    assert "  price since: −10.0 % 30 days on" in journal.line_for(amd)
+    text = journal.to_markdown(journal.load(path), DAY + timedelta(days=31))
+    assert "· went its way 1 of 2 priced" in text
+    assert "- **Price since:** −10.0 % 30 days on (close 100 on 2026-10-01)" in text
+
+
+def test_the_route_returns_the_outcome(book):
+    client = TestClient(fastapi_app)
+    body = client.get("/v1/journal", params={"account": EMAIL}, headers=AUTH).json()
+    assert body["entries"][0]["outcome"] == {}
+    assert body["record"]["marked"] == 0 and body["record"]["its_way"] == 0
+
+
+def test_the_card_job_reads_closes_off_the_window_download(monkeypatch):
+    import pandas as pd
+
+    from stocks.api import briefing, loaders
+
+    asked = []
+
+    def window(ticker, days):
+        asked.append((ticker, days))
+        return pd.Series([float("nan"), 12.5], index=pd.DatetimeIndex(days.split(",")))
+
+    monkeypatch.setattr(loaders, "window_closes", window)
+    got = briefing._closes_on("AMD", [DAY, DAY + timedelta(days=30)])
+    assert got == [None, 12.5]
+    assert asked == [("AMD", "2026-10-01,2026-10-31")]
+    monkeypatch.setattr(loaders, "window_closes", lambda t, d: pd.Series(dtype=float))
+    assert briefing._closes_on("AMD", [DAY]) == [None]

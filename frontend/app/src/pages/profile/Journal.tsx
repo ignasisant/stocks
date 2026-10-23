@@ -101,6 +101,17 @@ function Record({ record }: { record: JournalRecord }) {
             open: record.open,
           })}
         />
+        {record.marked ? (
+          <>
+            {" "}
+            <Inline
+              text={t("journal.record_marked", {
+                n: record.marked,
+                way: record.its_way ?? 0,
+              })}
+            />
+          </>
+        ) : null}
       </p>
     </div>
   );
