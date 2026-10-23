@@ -187,12 +187,19 @@ def test_robots_allows_the_landing_and_disallows_the_app():
 
 def _robots_group(agent: str) -> list[str]:
     """The rules a crawler calling itself `agent` would apply."""
-    out, active = [], False
+    # Consecutive User-agent lines share one group of rules (RFC 9309).
+    out, active, in_agents = [], False, False
     for line in seo.robots_txt(BASE).splitlines():
         if line.lower().startswith("user-agent:"):
-            active = line.split(":", 1)[1].strip() == agent
-        elif active and line.strip():
-            out.append(line.strip())
+            name = line.split(":", 1)[1].strip()
+            active = (active and in_agents) or name == agent
+            in_agents = True
+        elif line.strip():
+            in_agents = False
+            if active:
+                out.append(line.strip())
+        else:
+            active, in_agents = False, False
     return out
 
 

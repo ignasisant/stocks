@@ -94,11 +94,23 @@ APP_PREFIXES = (
     "/app/static/",
     "/auth/",
     "/api/",
+    "/oauth/",
+    "/next/",
+    "/next-assets/",
 )
 
 # Exact paths answered outside the page list: the OIDC return (ours, see
-# `web/oidc.py`).
-APP_PATHS = ("/oauth2callback",)
+# `web/oidc.py`), the MCP connector's endpoints and the retired `/next` entry.
+# JSON for machines, never documents.
+APP_PATHS = (
+    "/oauth2callback",
+    "/mcp",
+    "/authorize",
+    "/token",
+    "/register",
+    "/revoke",
+    "/next",
+)
 
 
 def app_page_paths() -> tuple[str, ...]:
@@ -392,6 +404,22 @@ AI_CRAWLERS = (
 )
 
 
+# Link-preview fetchers. Slack, X, Facebook, LinkedIn, WhatsApp, Telegram and
+# Discord read robots.txt before they unfurl a pasted link, and `/ticker` is
+# disallowed for search crawlers, so without a group of their own the ticker
+# card (`ticker_head`) would never show. They may fetch `/ticker`; the response
+# is still `X-Robots-Tag: noindex`, so allowing the fetch indexes nothing.
+PREVIEW_BOTS = (
+    "Slackbot",
+    "Twitterbot",
+    "facebookexternalhit",
+    "LinkedInBot",
+    "WhatsApp",
+    "TelegramBot",
+    "Discordbot",
+)
+
+
 def robots_txt(base_url: str) -> str:
     """`/robots.txt` — the two landing pages are public, the app is not.
 
@@ -408,11 +436,15 @@ def robots_txt(base_url: str) -> str:
     lines = []
     for agent in AI_CRAWLERS:
         lines += [f"User-agent: {agent}", "Disallow: /", ""]
-    lines += ["User-agent: *", "Allow: /$"]
-    lines += [f"Allow: {p}" for p in LANDING_PATHS if p != PATH_EN]
-    lines += [f"Allow: {ASSET_BASE}"]
-    # The OIDC return is the only exact path worth naming.
-    disallow = app_page_paths() + ("/oauth2callback",) + APP_PREFIXES
+    allow = ["/$", *(p for p in LANDING_PATHS if p != PATH_EN), ASSET_BASE]
+    disallow = app_page_paths() + APP_PATHS + APP_PREFIXES
+    # A group never inherits from `*`, so the preview bots repeat it with
+    # the ticker page taken out of the disallow list.
+    lines += [f"User-agent: {agent}" for agent in PREVIEW_BOTS]
+    lines += [f"Allow: {p}" for p in [*allow, TICKER_PATH]]
+    lines += [f"Disallow: {p}" for p in disallow if p != TICKER_PATH]
+    lines += ["", "User-agent: *"]
+    lines += [f"Allow: {p}" for p in allow]
     lines += [f"Disallow: {p}" for p in disallow]
     lines += ["", f"Sitemap: {_abs(base_url, '/sitemap.xml')}", ""]
     return "\n".join(lines)
