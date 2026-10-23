@@ -113,9 +113,10 @@ def test_a_phone_gets_a_bottom_tab_bar_and_no_sideways_scroll(
         assert box["y"] + box["height"] == pytest.approx(844, abs=1), (
             "the menu is not pinned to the bottom of the screen"
         )
-        # The DS bar: four destinations and "More" (`navigation.BOTTOM_NAV`).
+        # The DS bar: four destinations (`navigation.BOTTOM_NAV`), the
+        # assistant and "More".
         tabs = nav.locator(".ag-nav-item:visible")
-        expect(tabs).to_have_count(len(navigation.BOTTOM_NAV) + 1)
+        expect(tabs).to_have_count(len(navigation.BOTTOM_NAV) + 2)
         page.wait_for_load_state("networkidle")
         overflow = page.evaluate(
             "document.documentElement.scrollWidth - window.innerWidth"
