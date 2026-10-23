@@ -73,6 +73,34 @@ def test_a_doc_without_frontmatter_is_refused():
         knowledge.parse_doc("---\nid: x\ntitle: X\n---\nno date")
 
 
+def test_no_passage_is_a_stub_or_a_giant():
+    # A tail of one short sentence has lost what it was about ("Losses carry
+    # forward five years only if you opt for englobamento" — which country?).
+    # Methodology passages measured 2026-10-23 after balancing: 155..896 chars,
+    # median 576. The tour's own step bodies are short by nature.
+    sizes = [len(p.text) for p in knowledge.passages()
+             if not p.doc.startswith("tour:")]
+    assert min(sizes) >= 150, min(sizes)
+    assert max(sizes) <= knowledge.MAX_CHARS
+
+
+def test_the_last_two_pieces_are_balanced_not_a_stub():
+    text = " ".join(f"Sentence number {i} says something." for i in range(26))
+    pieces = knowledge._cut(text, 500)
+    assert len(pieces) == 2
+    assert abs(len(pieces[0]) - len(pieces[1])) < 40
+
+
+def test_a_list_is_cut_between_items_not_after_its_lead_in():
+    text = "Export from: " + " ".join(
+        f"- Broker {i}: choose the activity report and export it as CSV."
+        for i in range(30))
+    pieces = knowledge._cut(text, 300)
+    assert len(pieces) > 1
+    assert all(not p.endswith(":") for p in pieces)
+    assert all(p.startswith(("Export", "- Broker")) for p in pieces)
+
+
 def test_long_text_is_cut_between_sentences():
     text = " ".join(f"Sentence number {i} says something." for i in range(60))
     pieces = knowledge._cut(text, 200)
@@ -179,6 +207,86 @@ OFF_TOPIC = [
 @pytest.mark.parametrize("question", OFF_TOPIC)
 def test_a_question_nothing_answers_finds_nothing(question):
     assert knowledge.lookup(question) == []
+
+
+# Out-of-scope questions that do share words with the knowledge base ("import",
+# "score", "tax", "plan") but ask something it does not answer: another app's
+# feature, a payment method, a topic no document covers. The keyword half
+# matches the shared word and the semantic half always has a nearest passage, so
+# before the unknown-word gate each of these came back as four passages of
+# "documentation". Must abstain.
+MUST_ABSTAIN = [
+    "does the app have a mobile widget like Robinhood",
+    "¿puedo pagar la suscripción premium con Bizum?",
+    "¿tiene la app modo oscuro para Apple Watch?",
+    "¿qué es el interés compuesto?",
+    "what is a dividend aristocrat",
+    "¿cuánto es el IVA en España?",
+    "what is the tax rate on lottery winnings in Spain",
+    "how is my pizza delivery score computed",
+    "what does the quality score of my wine collection mean",
+    "¿cómo importo contactos del móvil?",
+    "what's the pulse rate of a healthy adult",
+    "how do I reset my password",
+]
+
+# Still answered with passages today, and documented rather than pinned: the
+# question is made of words the knowledge base does have ("share", "tax",
+# "import"), so only reading the passages shows they do not answer it. The
+# tool's own text tells the model to judge, not to quote.
+KNOWN_NOT_ABSTAINED = [
+    "how do I export my portfolio to Google Sheets like in Sharesight",
+    "what is the capital gains tax in Japan",
+    "how do I import a Python module",
+    "how does a short squeeze work",
+]
+
+# In-scope controls, phrased the way the out-of-scope ones are: each shares a
+# word with its neighbours above and must still find its document.
+CONTROLS = [
+    ("how do I import my DEGIRO account", {"importing"}),
+    ("what is the tax rate on savings income in Spain", {"tax-spain"}),
+    ("what does the quality score of a holding mean", {"review-scoring"}),
+    ("how is the pulse score read", {"pulse-risk-appetite", "tour:pulse"}),
+    ("how do I reset my Telegram alerts", {"tour:notify"}),
+    ("¿cómo importo mi extracto de Revolut?", {"importing", "tour:import"}),
+    ("does the app support Trading 212 imports", {"importing"}),
+]
+
+
+@pytest.fixture(params=["hybrid", "keywords"])
+def index(request, monkeypatch):
+    """The knowledge index with and without the embedding model: the
+    out-of-scope gate is lexical first, so it must hold in both."""
+    if request.param == "keywords":
+        monkeypatch.setattr(hybrid, "available", lambda: False)
+    elif not hybrid.available():
+        pytest.skip("the hybrid index needs the embedding model")
+    return knowledge._Index(knowledge.passages())
+
+
+@pytest.mark.parametrize("question", MUST_ABSTAIN)
+def test_an_out_of_scope_question_sharing_words_abstains(index, question):
+    assert index.out_of_scope(question)
+    assert index.search(question, 12) == []
+
+
+@pytest.mark.parametrize(("question", "expected"), CONTROLS)
+def test_in_scope_controls_still_find_their_document(index, question, expected):
+    got = [index.items[i].doc for i in index.search(question, 12)[:4]]
+    assert expected & set(got), f"{question!r} -> {got}"
+
+
+@pytest.mark.parametrize("question", KNOWN_NOT_ABSTAINED)
+def test_the_gate_is_not_a_judge_of_answers(index, question):
+    # Pins the limit: if a better gate makes these abstain, move them up.
+    assert not index.out_of_scope(question)
+
+
+def test_the_unknown_word_gate_counts_words_the_index_lacks(index):
+    assert not index.out_of_scope("how do I import my DEGIRO account")
+    assert index.out_of_scope("Bizum")
+    assert not index.out_of_scope("¿y?")  # nothing left after the stop words
 
 
 @pytest.mark.skipif(not hybrid.available(),
