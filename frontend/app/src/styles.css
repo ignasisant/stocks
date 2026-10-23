@@ -1117,6 +1117,7 @@ body {
 }
 
 /* "More" and its sheet are the phone bar's; a desktop rail shows everything. */
+.ag-nav-ask,
 .ag-nav-more,
 .ag-nav-sheet,
 .ag-nav-scrim {
@@ -1158,16 +1159,17 @@ body {
     padding: 0.4rem 0.2rem calc(0.4rem + env(safe-area-inset-bottom));
     z-index: 20;
   }
-  /* Glyph over a short word: five bare icons are a guess on a first visit.
-     The longest label ("Asignación") fits a fifth of a 360px row at the 11px
+  /* Glyph over a short word: six bare icons are a guess on a first visit.
+     The longest label ("Asignación") fits a sixth of a 360px row at the 11px
      floor, and the item stays 44px tall. Above the folded rail's rule, which
      the bar does not follow. */
   .ag-nav > .ag-nav-group > .ag-nav-item,
+  .ag-nav > .ag-nav-ask,
   .ag-nav > .ag-nav-more {
     flex-direction: column;
     gap: 2px;
     min-width: 0;
-    padding: 0.3rem 0.4rem;
+    padding: 0.3rem 0.15rem;
   }
   :root .ag-nav .ag-nav-label {
     display: block;
@@ -1181,6 +1183,7 @@ body {
   .ag-nav-foot {
     display: none;
   }
+  .ag-nav-ask,
   .ag-nav-more {
     display: flex;
     border: none;
@@ -1188,7 +1191,8 @@ body {
     font: inherit;
     cursor: pointer;
   }
-  .ag-nav-more.ag-nav-on {
+  .ag-nav-more.ag-nav-on,
+  :root[data-chat] .ag-nav-ask {
     background: var(--ag-surface-sunken);
   }
   .ag-nav-scrim {
@@ -1223,6 +1227,23 @@ body {
   }
   .ag-nav-sheet[data-leaving][data-swiped] {
     transform: translate3d(0, 100%, 0);
+  }
+}
+
+/* The assistant is writing while its drawer is shut: the tab's glyph takes the
+   brand colour and breathes, the way the floating button's rim turned. */
+.ag-nav-ask[data-busy] .ag-icon,
+.ag-nav-ask[data-busy] svg {
+  color: var(--ag-brand-accent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ag-nav-ask[data-busy] svg {
+    animation: ag-ask-breathe 1.6s ease-in-out infinite;
+  }
+}
+@keyframes ag-ask-breathe {
+  50% {
+    opacity: 0.45;
   }
 }
 

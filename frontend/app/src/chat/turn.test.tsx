@@ -279,6 +279,12 @@ describe("the import card", () => {
     expect(out).toContain("chat.work_importing");
   });
 
+  it("offers the full-width review, shut until it is asked for", () => {
+    const out = drawCard(false);
+    expect(out).toContain("chat.import_review");
+    expect(out).not.toContain('role="dialog"');
+  });
+
   it("draws no status while it waits on the reader", () => {
     expect(drawCard(false)).not.toContain('role="status"');
   });

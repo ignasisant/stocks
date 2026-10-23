@@ -13,7 +13,7 @@
  * would not do.
  */
 
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { keepDraft } from "../chat/draft";
 
 /**
@@ -109,4 +109,30 @@ export function useAssistantAsks(handler: Listener): void {
       listeners.delete(handler);
     };
   }, [handler]);
+}
+
+let working = false;
+const busyListeners = new Set<() => void>();
+
+/**
+ * The drawer says whether it is writing an answer (or following a detached
+ * run) while it is shut, so the phone tab bar's Assistant item can show what
+ * the floating button used to: the assistant is at it. Same state source as
+ * that button — the drawer's own `busy`.
+ */
+export function setAssistantWorking(next: boolean): void {
+  if (working === next) return;
+  working = next;
+  for (const listener of busyListeners) listener();
+}
+
+export function useAssistantWorking(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      busyListeners.add(listener);
+      return () => busyListeners.delete(listener);
+    },
+    () => working,
+    () => false,
+  );
 }

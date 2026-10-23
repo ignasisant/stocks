@@ -22,13 +22,15 @@
  */
 
 import { Surface } from "./a2ui";
-import { useId, useState } from "react";
+import { createPortal } from "react-dom";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useT } from "../shell/i18n";
 import { TickerCell } from "../shell/tickers";
 import { Glyph } from "./icons";
 import { Status } from "../ui/Status";
 import type { ImportRow, Preview } from "./types";
 import { calendarDay } from "../shell/dates";
+import { useDialog } from "../shell/useDialog";
 
 /** Money and share counts, in the reader's own locale. */
 function figure(value: number | string, digits: number): string {
@@ -120,6 +122,214 @@ function Tier({
   );
 }
 
+type Tab = "fresh" | "flagged" | "rejected" | "duplicates" | "skipped";
+
+/**
+ * The same statement at the width a table wants: tabs over the one dataset
+ * (new, warnings, rejected, already held, skipped) and a table whose rows can
+ * be ticked. The drawer's card shows the summary; this is where a long file is
+ * actually read. Nothing here writes — it edits the card's selection, and the
+ * card's own button (repeated in the footer) still does the writing.
+ */
+function Review({
+  preview,
+  off,
+  picked,
+  onToggleFresh,
+  onToggleDupe,
+  onAllFresh,
+  onAllDupes,
+  footer,
+  onClose,
+}: {
+  preview: Preview;
+  off: Set<number>;
+  picked: Set<number>;
+  onToggleFresh: (i: number) => void;
+  onToggleDupe: (i: number) => void;
+  onAllFresh: (on: boolean) => void;
+  onAllDupes: (on: boolean) => void;
+  footer: ReactNode;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const uid = useId();
+  const dialog = useRef<HTMLDivElement>(null);
+  const close = useRef<HTMLButtonElement>(null);
+  useDialog(dialog, { initial: close });
+  const tabs: { id: Tab; label: string; n: number }[] = (
+    [
+      { id: "fresh", label: "chat.import_tab_new", n: preview.fresh.length },
+      { id: "flagged", label: "chat.import_tab_warnings", n: preview.flagged.length },
+      { id: "rejected", label: "chat.import_tab_rejected", n: preview.rejected.length },
+      { id: "duplicates", label: "chat.import_tab_held", n: preview.duplicates.length },
+      { id: "skipped", label: "chat.import_tab_skipped", n: preview.skipped.length },
+    ] as const
+  ).filter((tab) => tab.n > 0 || tab.id === "fresh");
+  const [tab, setTab] = useState<Tab>(tabs[0]!.id);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const rows =
+    tab === "fresh"
+      ? preview.fresh
+      : tab === "flagged"
+        ? preview.flagged
+        : tab === "rejected"
+          ? preview.rejected
+          : tab === "duplicates"
+            ? preview.duplicates
+            : [];
+  const choosable = tab === "fresh" || tab === "duplicates";
+  const on = (i: number) => (tab === "fresh" ? !off.has(i) : picked.has(i));
+  const all = rows.length > 0 && rows.every((_, i) => on(i));
+  const flip = tab === "fresh" ? onToggleFresh : onToggleDupe;
+  const verb = (action: string) => {
+    const key = `import.action_${action}`;
+    const label = t(key);
+    return label === key ? action : label;
+  };
+  const move = (event: React.KeyboardEvent, at: number) => {
+    const next =
+      event.key === "ArrowRight" ? at + 1 : event.key === "ArrowLeft" ? at - 1 : null;
+    if (next === null) return;
+    event.preventDefault();
+    const to = tabs[(next + tabs.length) % tabs.length]!;
+    setTab(to.id);
+    document.getElementById(`${uid}-${to.id}`)?.focus();
+  };
+
+  return createPortal(
+    <div
+      ref={dialog}
+      className="ag-chat-review"
+      role="dialog"
+      aria-modal="true"
+      aria-label={preview.filename}
+      tabIndex={-1}
+    >
+      <header className="ag-chat-review-head">
+        <p className="ag-chat-review-title">
+          {t("chat.import_preview", {
+            filename: preview.filename,
+            label: preview.label,
+          })}
+        </p>
+        <button type="button" className="ag-chat-btn" ref={close} onClick={onClose}>
+          {t("chat.import_review_close")}
+        </button>
+      </header>
+      <div className="ag-chat-review-tabs" role="tablist">
+        {tabs.map((item, at) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            id={`${uid}-${item.id}`}
+            aria-selected={tab === item.id}
+            aria-controls={`${uid}-panel`}
+            tabIndex={tab === item.id ? 0 : -1}
+            className="ag-chat-review-tab"
+            onClick={() => setTab(item.id)}
+            onKeyDown={(event) => move(event, at)}
+          >
+            {t(item.label, { n: item.n })}
+          </button>
+        ))}
+      </div>
+      <div
+        className="ag-chat-review-body"
+        role="tabpanel"
+        id={`${uid}-panel`}
+        aria-labelledby={`${uid}-${tab}`}
+      >
+        {tab === "skipped" ? (
+          <ul className="ag-chat-skipped">
+            {preview.skipped.map((line, i) => (
+              <li key={i}>
+                <b>{line.row}</b> {line.reason}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <table className="ag-chat-rows ag-chat-review-rows">
+            <thead>
+              <tr>
+                {choosable && (
+                  <th className="ag-chat-pick">
+                    <input
+                      type="checkbox"
+                      checked={all}
+                      aria-label={t("chat.import_select_all")}
+                      onChange={(event) =>
+                        (tab === "fresh" ? onAllFresh : onAllDupes)(
+                          event.target.checked,
+                        )
+                      }
+                    />
+                  </th>
+                )}
+                <th>{t("import.col_date")}</th>
+                <th>{t("import.col_ticker")}</th>
+                <th>{t("import.col_action")}</th>
+                <th className="ag-chat-num">{t("import.col_quantity")}</th>
+                <th className="ag-chat-num">{t("import.col_price")}</th>
+                <th className="ag-chat-num">{t("chat.import_col_fee")}</th>
+                <th>{t("chat.import_col_note")}</th>
+                {tab !== "fresh" && <th>{t("import.col_why")}</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <tr
+                  key={`${row.date}-${row.ticker}-${i}`}
+                  data-off={choosable && !on(i) ? "" : undefined}
+                >
+                  {choosable && (
+                    <td className="ag-chat-pick">
+                      <input
+                        type="checkbox"
+                        checked={on(i)}
+                        aria-label={t("chat.import_select_row", { n: i + 1 })}
+                        onChange={() => flip(i)}
+                      />
+                    </td>
+                  )}
+                  <td>{calendarDay(row.date)}</td>
+                  <td>
+                    {tab === "rejected" ? (
+                      row.ticker
+                    ) : (
+                      <TickerCell ticker={row.ticker} />
+                    )}
+                  </td>
+                  <td>{verb(row.action)}</td>
+                  <td className="ag-chat-num">{figure(row.quantity, 4)}</td>
+                  <td className="ag-chat-num">
+                    {figure(row.price, 2)} {row.currency}
+                  </td>
+                  <td className="ag-chat-num">
+                    {row.fee === "" ? "" : figure(row.fee, 2)}
+                  </td>
+                  <td>{row.note}</td>
+                  {tab !== "fresh" && <td>{row.why}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <footer className="ag-chat-review-foot">{footer}</footer>
+    </div>,
+    document.body,
+  );
+}
+
 export function Attachment({
   preview,
   busy,
@@ -133,7 +343,7 @@ export function Attachment({
   busy: boolean;
   /** This card's rows are the ones being written. */
   importing?: boolean;
-  onImport: (broker: string, duplicates: ImportRow[]) => void;
+  onImport: (broker: string, fresh: ImportRow[], duplicates: ImportRow[]) => void;
   onDiscard: () => void;
   /** Read the file again with a corrected column mapping. */
   onRemap?: (mapping: Record<string, unknown>) => void;
@@ -142,11 +352,88 @@ export function Attachment({
   const uid = useId();
   const [broker, setBroker] = useState(preview.broker);
   const [typed, setTyped] = useState("");
-  const [withDupes, setWithDupes] = useState(false);
+  // What the reader ticked: the new rows left out, and the held-back ones let
+  // back in. The drawer's card only ever flips the second as a whole; the
+  // full-width review does it row by row.
+  const [off, setOff] = useState<Set<number>>(new Set());
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [full, setFull] = useState(false);
 
   const dupes = preview.duplicates;
+  const withDupes = dupes.length > 0 && picked.size === dupes.length;
   const origin = (broker === "other" && typed.trim() ? typed.trim() : broker).trim();
-  const count = preview.fresh.length + (withDupes ? dupes.length : 0);
+  const count = preview.fresh.length - off.size + picked.size;
+  const flip = (set: Set<number>, i: number) => {
+    const next = new Set(set);
+    if (!next.delete(i)) next.add(i);
+    return next;
+  };
+  const write = () =>
+    onImport(
+      origin,
+      preview.fresh.filter((_, i) => !off.has(i)),
+      dupes.filter((_, i) => picked.has(i)),
+    );
+
+  const brokerBlock = (
+    <>
+      {preview.needs_broker ? (
+        <div className="ag-chat-broker">
+          <label htmlFor={`${uid}-broker`}>{t("chat.import_broker")}</label>
+          <select
+            id={`${uid}-broker`}
+            value={broker}
+            onChange={(event) => setBroker(event.target.value)}
+          >
+            <option value="">{t("chat.import_broker_pick")}</option>
+            {preview.brokers.map((b) => (
+              <option key={b.key} value={b.key}>
+                {b.label}
+              </option>
+            ))}
+          </select>
+          {/* The roster only holds brokers with a parser, so "other" takes the
+          real name rather than filing the batch under a shrug. */}
+          {broker === "other" && (
+            <input
+              type="text"
+              value={typed}
+              aria-label={t("chat.import_broker")}
+              placeholder={t("chat.import_broker_pick")}
+              onChange={(event) => setTyped(event.target.value)}
+            />
+          )}
+          <p className="ag-chat-hint">{t("chat.import_broker_help")}</p>
+        </div>
+      ) : (
+        preview.broker && (
+          <p className="ag-chat-hint">
+            {t("chat.import_broker_known", {
+              // The roster carries the display names; the row carries the key.
+              broker:
+                preview.brokers.find((b) => b.key === preview.broker)?.label ??
+                preview.broker,
+            })}
+          </p>
+        )
+      )}
+    </>
+  );
+  const acts = (
+    <div className="ag-chat-import-acts">
+      <button
+        type="button"
+        className="ag-chat-btn ag-chat-btn-on"
+        disabled={busy || !origin || !count}
+        onClick={write}
+      >
+        {t("chat.import_button", { n: count })}
+      </button>
+      <button type="button" className="ag-chat-btn" disabled={busy} onClick={onDiscard}>
+        {t("chat.import_cancel")}
+      </button>
+    </div>
+  );
 
   return (
     <section className="ag-chat-import" aria-label={preview.filename}>
@@ -197,7 +484,9 @@ export function Attachment({
             <input
               type="checkbox"
               checked={withDupes}
-              onChange={(event) => setWithDupes(event.target.checked)}
+              onChange={(event) =>
+                setPicked(new Set(event.target.checked ? dupes.map((_, i) => i) : []))
+              }
             />
             {t("chat.import_duplicates_anyway")}
           </label>
@@ -217,65 +506,41 @@ export function Attachment({
         </details>
       )}
 
-      {preview.needs_broker ? (
-        <div className="ag-chat-broker">
-          <label htmlFor={`${uid}-broker`}>{t("chat.import_broker")}</label>
-          <select
-            id={`${uid}-broker`}
-            value={broker}
-            onChange={(event) => setBroker(event.target.value)}
-          >
-            <option value="">{t("chat.import_broker_pick")}</option>
-            {preview.brokers.map((b) => (
-              <option key={b.key} value={b.key}>
-                {b.label}
-              </option>
-            ))}
-          </select>
-          {/* The roster only holds brokers with a parser, so "other" takes the
-              real name rather than filing the batch under a shrug. */}
-          {broker === "other" && (
-            <input
-              type="text"
-              value={typed}
-              aria-label={t("chat.import_broker")}
-              placeholder={t("chat.import_broker_pick")}
-              onChange={(event) => setTyped(event.target.value)}
-            />
-          )}
-          <p className="ag-chat-hint">{t("chat.import_broker_help")}</p>
-        </div>
-      ) : (
-        preview.broker && (
-          <p className="ag-chat-hint">
-            {t("chat.import_broker_known", {
-              // The roster carries the display names; the row carries the key.
-              broker:
-                preview.brokers.find((b) => b.key === preview.broker)?.label ??
-                preview.broker,
-            })}
-          </p>
-        )
+      {full ? null : brokerBlock}
+      {acts}
+      {preview.fresh.length + dupes.length + preview.flagged.length > 0 && (
+        <button
+          type="button"
+          className="ag-chat-btn ag-chat-review-open"
+          onClick={() => setFull(true)}
+        >
+          {t("chat.import_review")}
+        </button>
       )}
-
-      <div className="ag-chat-import-acts">
-        <button
-          type="button"
-          className="ag-chat-btn ag-chat-btn-on"
-          disabled={busy || !origin || !count}
-          onClick={() => onImport(origin, withDupes ? dupes : [])}
-        >
-          {t("chat.import_button", { n: count })}
-        </button>
-        <button
-          type="button"
-          className="ag-chat-btn"
-          disabled={busy}
-          onClick={onDiscard}
-        >
-          {t("chat.import_cancel")}
-        </button>
-      </div>
+      {full && (
+        <Review
+          preview={preview}
+          off={off}
+          picked={picked}
+          onToggleFresh={(i) => setOff((set) => flip(set, i))}
+          onToggleDupe={(i) => setPicked((set) => flip(set, i))}
+          onAllFresh={(on) => setOff(new Set(on ? [] : preview.fresh.map((_, i) => i)))}
+          onAllDupes={(on) => setPicked(new Set(on ? dupes.map((_, i) => i) : []))}
+          footer={
+            <>
+              {brokerBlock}
+              <p className="ag-chat-hint">
+                {t("chat.import_selected", {
+                  n: preview.fresh.length - off.size,
+                  total: preview.fresh.length,
+                })}
+              </p>
+              {acts}
+            </>
+          }
+          onClose={() => setFull(false)}
+        />
+      )}
       {/* Beside the buttons that just went grey, which is where the eye is
           after pressing one: a batch of a few hundred rows is a few seconds
           of prices and dedupe, and nothing else on the card moves. */}

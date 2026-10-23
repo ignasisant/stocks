@@ -1277,6 +1277,123 @@
   gap: 8px;
 }
 
+/* The statement at full width: tabs over the one dataset and a table whose
+   rows can be ticked. A modal over drawer and page alike — a long file is read
+   here, the card in the drawer only summarises it. */
+.ag-chat-review {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  background: var(--ag-surface-page);
+  color: var(--ag-text-primary);
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+.ag-chat-review:focus {
+  outline: none;
+}
+.ag-chat-review-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ag-border);
+}
+.ag-chat-review-title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ag-chat-review-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--ag-border);
+}
+.ag-chat-review-tab {
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ag-chat-review-tab[aria-selected="true"] {
+  border-bottom-color: var(--ag-brand-accent);
+  color: var(--ag-text-primary);
+}
+.ag-chat-review-tab:focus-visible,
+.ag-chat-review .ag-chat-pick input:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+.ag-chat-review-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 16px;
+}
+.ag-chat-review-rows {
+  font-size: 13px;
+}
+.ag-chat-review-rows th {
+  position: sticky;
+  top: 0;
+  background: var(--ag-surface-page);
+}
+.ag-chat-review-rows th,
+.ag-chat-review-rows td {
+  padding: 8px 12px 8px 0;
+}
+.ag-chat-review-rows tr[data-off] td:not(.ag-chat-pick) {
+  opacity: 0.45;
+}
+.ag-chat-pick {
+  width: 1%;
+}
+.ag-chat-pick input {
+  margin: 0;
+  accent-color: var(--ag-brand-cta);
+}
+.ag-chat-review-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--ag-border);
+}
+.ag-chat-review-foot .ag-chat-broker {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ag-chat-review-open {
+  align-self: flex-start;
+}
+@media (pointer: coarse) {
+  .ag-chat-review-tab,
+  .ag-chat-review .ag-chat-btn {
+    min-height: 44px;
+  }
+  .ag-chat-pick input {
+    width: 22px;
+    height: 22px;
+  }
+}
+
 .ag-chat-wall {
   display: flex;
   flex-direction: column;
@@ -2094,7 +2211,10 @@ a.ag-chat-btn {
        taking room from the thread's own name. */
     display: none;
   }
-  .ag-chat-fab,
+  .ag-chat-fab {
+    /* The assistant is a tab of the bottom bar here (`.ag-nav-ask`). */
+    display: none;
+  }
   .ag-guide-strip {
     /* Clear of the bottom tab bar, which is fixed at the same corner, and of
        the home indicator under it. */

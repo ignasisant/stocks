@@ -63,6 +63,42 @@ import type {
 import { Badge } from "../ui/Badge";
 
 /** The line that ticks while the answer is being built, naming what it is doing. */
+/** Longest wait worth counting down on screen; a longer one is left to Retry. */
+const AUTO_MAX = 60;
+/** When the countdown last asked again, so a wall that keeps refusing is not
+ *  hammered in a loop: one automatic try a minute, the reader's Retry always. */
+let lastAuto = 0;
+
+/**
+ * The burst wall's refusal, counted down: "try again in 12s" that actually
+ * ticks, and asks the question again by itself when it reaches zero. Retry
+ * stays on the bubble, for a reader who does not want to wait.
+ */
+function Countdown({
+  error,
+  wait,
+  onRetry,
+}: {
+  error: string;
+  wait: number;
+  onRetry: () => void;
+}) {
+  const t = useT();
+  const auto = wait > 0 && wait <= AUTO_MAX && Date.now() - lastAuto > 60_000;
+  const [left, setLeft] = useState(wait);
+  useEffect(() => {
+    if (!auto) return;
+    const timer = window.setInterval(() => setLeft((n) => n - 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [auto]);
+  useEffect(() => {
+    if (!auto || left > 0) return;
+    lastAuto = Date.now();
+    onRetry();
+  }, [auto, left, onRetry]);
+  return <>{t(error, { seconds: Math.max(left, 0) })}</>;
+}
+
 function Working({ phase }: { phase?: string }) {
   const t = useT();
   // The server names the phase by its key; an unknown one (a newer server)
@@ -823,9 +859,11 @@ export function Turn({
       <div className="ag-chat-turn ag-chat-assistant">
         <div className="ag-chat-bubble ag-chat-bad">
           <p className="ag-chat-p">
-            {turn.wait !== undefined
-              ? t(turn.error, { seconds: turn.wait })
-              : capMessage(t, turn.error, cap)}
+            {turn.wait !== undefined ? (
+              <Countdown error={turn.error} wait={turn.wait} onRetry={onRetry} />
+            ) : (
+              capMessage(t, turn.error, cap)
+            )}
           </p>
           {/* A memory command before the question was carried out whether
               or not the question was answered, so the refusal still says

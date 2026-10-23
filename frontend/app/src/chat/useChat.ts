@@ -1048,19 +1048,19 @@ export function useChat(live: boolean) {
 
   /** Write the rows on the card, plus whichever duplicates were opted in. */
   const commitImport = useCallback(
-    async (broker: string, duplicates: ImportRow[] = []) => {
+    async (broker: string, fresh: ImportRow[], duplicates: ImportRow[] = []) => {
       if (!preview || reading) return;
       setWork({
         kind: "importing",
         filename: preview.filename,
-        n: preview.fresh.length + duplicates.length,
+        n: fresh.length + duplicates.length,
       });
       try {
         const done = await commitAttachment({
           filename: preview.filename,
           platform: preview.platform,
           broker,
-          rows: [...preview.fresh, ...duplicates],
+          rows: [...fresh, ...duplicates],
           conversation: activeId ?? undefined,
           lang,
         });

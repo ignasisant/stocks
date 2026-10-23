@@ -517,7 +517,9 @@ export default function Panel({
                     preview={chat.preview}
                     busy={chat.reading}
                     importing={chat.work?.kind === "importing"}
-                    onImport={(broker, dupes) => void chat.commitImport(broker, dupes)}
+                    onImport={(broker, fresh, dupes) =>
+                      void chat.commitImport(broker, fresh, dupes)
+                    }
                     onDiscard={chat.discardImport}
                     onRemap={chat.remap}
                   />

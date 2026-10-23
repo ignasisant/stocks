@@ -513,5 +513,16 @@
   "chat.guest_a": "Tres cosas:\n\n- **Un solo sector.** Las siete son tecnológicas de EE. UU.: suelen caer juntas.\n- **Un nombre manda.** NVIDIA pesa más que cualquier otra.\n- **Todo en dólares.** Si sube el euro, pierdes aunque las acciones no bajen.",
   "chat.guest_lock": "Entra y la IA lee tu cartera y te responde.",
   "chat.guest_asked": "Entra y la IA te responde a esto, con tu cartera.",
-  "chat.import_nudge": "Importa tu cartera y la IA la leerá"
+  "chat.import_nudge": "Importa tu cartera y la IA la leerá",
+  "chat.import_review": "Revisar a pantalla completa",
+  "chat.import_review_close": "Volver al chat",
+  "chat.import_tab_new": "Nuevas · {n}",
+  "chat.import_tab_warnings": "Avisos · {n}",
+  "chat.import_tab_rejected": "Rechazadas · {n}",
+  "chat.import_tab_held": "Ya en tu cartera · {n}",
+  "chat.import_tab_skipped": "Omitidas · {n}",
+  "chat.import_select_all": "Seleccionar todas las filas",
+  "chat.import_select_row": "Incluir la fila {n}",
+  "chat.import_selected": "{n} de {total} filas nuevas seleccionadas",
+  "chat.tab_working": "trabajando"
 }
