@@ -167,3 +167,269 @@ def test_the_caller_gets_its_own_code_back(monkeypatch, keyed):
     out = q.quotes(["BERKSHIRE"])
     assert list(out) == ["BERKSHIRE"]
     assert keyed == ["BRK.B"]
+
+
+# ------------------------------------------------------------- the calendar
+# Everything below `quotes` rides on `_get`: patched here the way `_fetch` is
+# above, so the slicing, the memo and the cooldowns are the real ones.
+def _d(day: int):
+    from datetime import date
+
+    return date(2026, 10, day)
+
+
+@pytest.fixture
+def keyed_get(monkeypatch):
+    """A key, and `install(answer)` to make `_get` answer `answer(path, params)`
+    while logging every ask as (path, params)."""
+    asked = []
+    monkeypatch.setattr(finnhub, "api_key", lambda: "test-key")
+
+    def install(answer):
+        def fake(path, params, key, timeout):
+            assert key == "test-key"
+            asked.append((path, dict(params)))
+            return answer(path, params)
+
+        monkeypatch.setattr(finnhub, "_get", fake)
+
+    return asked, install
+
+
+def _rows(symbol, *days, actual=None):
+    return [
+        {"symbol": symbol, "date": d.isoformat(), "epsEstimate": 1.0, "epsActual": actual}
+        for d in days
+    ]
+
+
+def test_the_calendar_is_keyed_by_symbol_in_finnhubs_spelling(keyed_get):
+    asked, install = keyed_get
+    install(
+        lambda path, params: {
+            "earningsCalendar": _rows("AAPL", _d(5))
+            + _rows("BRK.B", _d(6))
+            + _rows("AAPL", _d(7))
+        }
+    )
+    out = finnhub.earnings_calendar(_d(1), _d(9))
+    assert sorted(out) == ["AAPL", "BRK.B"]
+    assert [r["date"] for r in out["AAPL"]] == ["2026-10-05", "2026-10-07"]
+    assert asked == [("calendar/earnings", {"from": "2026-10-01", "to": "2026-10-09"})]
+
+
+def test_a_span_goes_out_in_slices(keyed_get):
+    asked, install = keyed_get
+    install(lambda path, params: {"earningsCalendar": []})
+    assert finnhub.earnings_calendar(_d(1), _d(25)) == {}
+    spans = sorted((p["from"], p["to"]) for _, p in asked)
+    assert spans == [
+        ("2026-10-01", "2026-10-10"),
+        ("2026-10-11", "2026-10-20"),
+        ("2026-10-21", "2026-10-25"),
+    ]
+
+
+def test_a_capped_slice_is_halved_down_to_a_day(monkeypatch, keyed_get):
+    """A slice answering the page's 1500 rows was cut short: its rows are
+    dropped and both halves asked, until a day answers under the page."""
+    from datetime import date
+
+    asked, install = keyed_get
+    monkeypatch.setattr(finnhub, "CALENDAR_CHUNK_DAYS", 4)
+
+    def answer(path, params):
+        a, b = date.fromisoformat(params["from"]), date.fromisoformat(params["to"])
+        if a < b:
+            # Over the page, and a symbol that must never reach the answer.
+            return {"earningsCalendar": _rows("CUT", a) * finnhub.CALENDAR_PAGE}
+        return {"earningsCalendar": _rows(f"DAY{a.day}", a)}
+
+    install(answer)
+    out = finnhub.earnings_calendar(_d(1), _d(4))
+    assert sorted(out) == ["DAY1", "DAY2", "DAY3", "DAY4"]
+    # The slice, its two halves, then the four days.
+    assert len(asked) == 7
+
+
+def test_a_single_day_over_the_page_is_kept_with_a_warning(monkeypatch, keyed_get):
+    asked, install = keyed_get
+    warned = []
+    monkeypatch.setattr(finnhub.obs, "warn", lambda name, **f: warned.append(name))
+    install(lambda path, params: {"earningsCalendar": _rows("BUSY", _d(1)) * 1500})
+    out = finnhub.earnings_calendar(_d(1), _d(1))
+    assert len(out["BUSY"]) == 1500
+    assert warned == ["finnhub.earnings_page"]
+
+
+def test_an_unanswered_slice_voids_the_whole_window(monkeypatch, keyed_get):
+    """A window with a hole would read as "no print" for every name in the
+    missing days; better no window, and Yahoo as before."""
+    asked, install = keyed_get
+    monkeypatch.setattr(finnhub, "WORKERS", 1)
+
+    def answer(path, params):
+        if params["from"] == "2026-10-11":
+            raise TimeoutError
+        return {"earningsCalendar": _rows("AAPL", _d(5))}
+
+    install(answer)
+    assert finnhub.earnings_calendar(_d(1), _d(25)) is None
+
+
+def test_without_a_key_the_calendar_is_not_asked(monkeypatch):
+    monkeypatch.setattr(finnhub, "_get", lambda *a: pytest.fail("asked"))
+    assert finnhub.earnings_calendar(_d(1), _d(9)) is None
+    assert finnhub.earnings_window(_d(1)) is None
+
+
+def test_the_window_is_read_once_per_day_and_shared(keyed_get):
+    asked, install = keyed_get
+    install(
+        lambda path, params: {
+            "earningsCalendar": _rows("AAPL", _d(5))
+            if params["from"] <= "2026-10-05" <= params["to"]
+            else []
+        }
+    )
+    first = finnhub.earnings_window(_d(1))
+    assert first == {"AAPL": _rows("AAPL", _d(5))}
+    requests = len(asked)
+    assert requests > 1  # the span went out in slices
+    assert finnhub.earnings_window(_d(1)) is first
+    assert len(asked) == requests
+    finnhub.earnings_window(_d(2))  # another day is another read
+    assert len(asked) == 2 * requests
+
+
+def test_a_failed_window_is_asked_again_after_the_pause(monkeypatch, keyed_get):
+    asked, install = keyed_get
+    monkeypatch.setattr(finnhub, "WORKERS", 1)
+    monkeypatch.setattr(finnhub, "WINDOW_RETRY_S", 10_000.0)
+
+    def boom(path, params):
+        raise TimeoutError
+
+    install(boom)
+    assert finnhub.earnings_window(_d(1)) is None
+    asked.clear()
+    assert finnhub.earnings_window(_d(1)) is None  # inside the pause: not asked
+    assert asked == []
+    monkeypatch.setattr(finnhub, "WINDOW_RETRY_S", 0.0)
+    install(lambda path, params: {"earningsCalendar": []})
+    assert finnhub.earnings_window(_d(1)) == {}
+    assert asked
+
+
+# ------------------------------------------------------------ the market clock
+@pytest.mark.parametrize(
+    "body, expected",
+    [
+        (
+            {"exchange": "US", "holiday": None, "isOpen": True, "session": "regular"},
+            {"open": True, "session": "regular", "holiday": None},
+        ),
+        (
+            {"exchange": "US", "holiday": None, "isOpen": False, "session": "pre-market"},
+            {"open": False, "session": "pre", "holiday": None},
+        ),
+        (
+            {"holiday": None, "isOpen": False, "session": "post-market"},
+            {"open": False, "session": "post", "holiday": None},
+        ),
+        (
+            {"holiday": "Thanksgiving", "isOpen": False, "session": None},
+            {"open": False, "session": None, "holiday": "Thanksgiving"},
+        ),
+    ],
+)
+def test_us_session_reads_the_exchanges_own_clock(keyed_get, body, expected):
+    asked, install = keyed_get
+    install(lambda path, params: body)
+    assert finnhub.us_session(sync=True) == expected
+    assert asked == [("stock/market-status", {"exchange": "US"})]
+
+
+def test_us_session_is_none_without_a_key(monkeypatch):
+    monkeypatch.setattr(finnhub, "_get", lambda *a: pytest.fail("asked"))
+    assert finnhub.us_session(sync=True) is None
+
+
+def test_us_session_is_a_memo_for_a_minute(keyed_get):
+    asked, install = keyed_get
+    install(lambda path, params: {"isOpen": True, "session": "regular"})
+    finnhub.us_session(sync=True)
+    assert finnhub.us_session(sync=True)["open"] is True
+    assert len(asked) == 1
+
+
+def test_us_session_keeps_the_last_answer_through_a_failed_read(monkeypatch, keyed_get):
+    asked, install = keyed_get
+    install(lambda path, params: {"isOpen": True, "session": "regular"})
+    assert finnhub.us_session(sync=True)["open"] is True
+
+    def boom(path, params):
+        raise TimeoutError
+
+    install(boom)
+    monkeypatch.setattr(finnhub, "STATUS_TTL_S", 0.0)
+    assert finnhub.us_session(sync=True)["open"] is True  # kept
+    monkeypatch.setattr(finnhub, "STATUS_KEEP_S", 0.0)
+    assert finnhub.us_session(sync=True) is None  # too old to vouch for
+
+
+def test_us_session_never_holds_the_caller(monkeypatch, keyed_get):
+    """Past the minute the caller gets the last answer at once; the read
+    happens on another thread."""
+    import threading
+
+    asked, install = keyed_get
+    started = threading.Event()
+
+    def slow(timeout):
+        started.set()
+
+    monkeypatch.setattr(finnhub, "_refresh_status", slow)
+    assert finnhub.us_session() is None  # nothing has landed yet
+    assert started.wait(2)
+    assert finnhub.us_session() is None  # the read is in flight: not asked twice
+
+
+# ------------------------------------------------------------------ insiders
+def test_insider_rows_come_back_as_finnhub_gives_them(keyed_get):
+    asked, install = keyed_get
+    rows = [{"name": "Cook Tim", "change": -1000, "transactionCode": "S"}]
+    install(lambda path, params: {"symbol": "AAPL", "data": rows})
+    assert finnhub.insider_transactions("AAPL", _d(1), _d(9)) == rows
+    assert asked == [
+        (
+            "stock/insider-transactions",
+            {"symbol": "AAPL", "from": "2026-10-01", "to": "2026-10-09"},
+        )
+    ]
+
+
+def test_insider_rows_are_none_when_unanswered(keyed_get):
+    asked, install = keyed_get
+
+    def boom(path, params):
+        raise TimeoutError
+
+    install(boom)
+    assert finnhub.insider_transactions("AAPL", _d(1), _d(9)) is None
+    install(lambda path, params: {"symbol": "AAPL"})
+    assert finnhub.insider_transactions("AAPL", _d(1), _d(9)) is None
+
+
+def test_a_refused_side_read_opens_the_cooldown_for_every_read(monkeypatch, keyed_get):
+    asked, install = keyed_get
+
+    def refuse(path, params):
+        raise _http_error(429)
+
+    install(refuse)
+    assert finnhub.us_session(sync=True) is None
+    install(lambda path, params: pytest.fail("asked through the cooldown"))
+    assert finnhub.insider_transactions("AAPL", _d(1), _d(9)) is None
+    monkeypatch.setattr(finnhub, "_fetch", lambda *a: pytest.fail("asked in cooldown"))
+    assert finnhub.quotes(["AAPL"], timeout=1) == {}

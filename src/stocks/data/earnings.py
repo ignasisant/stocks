@@ -5,6 +5,14 @@ before earnings — plus the rear-view mirror: past prints with reported vs
 estimated EPS, so the calendar shows how recent quarters landed. Date selection
 (next_after / build_events) is pure and tested; only fetch_earnings /
 price_reaction touch yfinance.
+
+Two sources, read in this order. Finnhub's whole-market calendar
+(`finnhub.earnings_window`) is one read for every US name on every list in
+the process: the next dates and the last quarter's print, a few requests
+every six hours. Yahoo is a request or two per name, so it is kept for what
+the window cannot say — a listing outside the US, a name the window has no
+upcoming date for, a process without a Finnhub key — and for the deeper
+history the ticker page draws (`fetch_earnings`, twelve prints back).
 """
 
 from __future__ import annotations
@@ -20,6 +28,7 @@ import pandas as pd
 
 from stocks import obs
 from stocks.config import Holding, load_watchlist
+from stocks.data import finnhub
 from stocks.data.fetch import resolve
 
 
@@ -200,6 +209,78 @@ def earnings_dates(ticker: str) -> list[date]:
     return fetch_earnings(ticker)[0]
 
 
+def from_window(ticker: str, rows: list[dict]) -> tuple[list[date], list[EarningsResult]]:
+    """One symbol's rows of Finnhub's calendar as (dates, reported results).
+
+    Pure. Every dated row is a date; a row with an `epsActual` is a result,
+    its surprise computed against the estimate the way Yahoo's column is
+    (none when there was no estimate to beat).
+    """
+    found: set[date] = set()
+    results: dict[date, EarningsResult] = {}
+    for row in rows:
+        if (dd := _to_date(row.get("date"))) is None:
+            continue
+        found.add(dd)
+        reported = _to_float(row.get("epsActual"))
+        if reported is None:
+            continue
+        estimate = _to_float(row.get("epsEstimate"))
+        results[dd] = EarningsResult(
+            ticker,
+            dd,
+            eps_estimate=estimate,
+            reported_eps=reported,
+            surprise_pct=(
+                (reported - estimate) / abs(estimate) * 100 if estimate else None
+            ),
+        )
+    return sorted(found), sorted(results.values(), key=lambda r: r.date)
+
+
+def _window_symbol(ticker: str) -> str | None:
+    """`ticker` in the spelling Finnhub's window keys, or None when it is
+    not a US listing — a suffixed, indexed or crypto name is Yahoo's alone."""
+    try:
+        symbol = resolve(ticker)
+    except Exception:
+        return None
+    return finnhub.spelling(symbol) if finnhub.covers(symbol) else None
+
+
+def _gather(
+    tickers: list[str], ref: date, max_workers: int
+) -> list[tuple[list[date], list[EarningsResult]]]:
+    """(dates, results) per ticker, in the order given.
+
+    The US names Finnhub's window lists with a date on or after `ref` are
+    answered from it without a request of their own; everything else goes to
+    Yahoo in parallel, one `fetch_earnings` each. A name the window carries
+    but holds no upcoming date for is not taken as "no date": Yahoo may still
+    know one, and asking costs what it always cost.
+    """
+    from stocks.data.crypto import is_crypto
+    from stocks.data.funds import is_fund
+
+    answers: dict[str, tuple[list[date], list[EarningsResult]]] = {}
+    window = finnhub.earnings_window(ref)
+    if window:
+        for ticker in dict.fromkeys(tickers):
+            if is_crypto(ticker) or is_fund(ticker, fetch=False):
+                continue
+            symbol = _window_symbol(ticker)
+            rows = window.get(symbol) if symbol else None
+            if rows and any(
+                (dd := _to_date(r.get("date"))) is not None and dd >= ref for r in rows
+            ):
+                answers[ticker] = from_window(ticker, rows)
+    rest = list(dict.fromkeys(t for t in tickers if t not in answers))
+    if rest:
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            answers.update(zip(rest, pool.map(fetch_earnings, rest), strict=True))
+    return [answers[t] for t in tickers]
+
+
 def price_reaction(ticker: str, event_date: date) -> float | None:
     """% move across the print: last close before the date vs first close after.
 
@@ -237,8 +318,8 @@ def upcoming(
     holdings = holdings if holdings is not None else load_watchlist()
     ref = ref or date.today()
     tickers = [h.ticker for h in holdings]
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        dated = dict(zip(tickers, pool.map(earnings_dates, tickers), strict=True))
+    fetched = _gather(tickers, ref, max_workers)
+    dated = {t: dates for t, (dates, _) in zip(tickers, fetched, strict=True)}
     return build_events(dated, ref, within_days)
 
 
@@ -249,15 +330,16 @@ def calendar_events(
 ) -> tuple[list[EarningsEvent], list[EarningsResult]]:
     """(upcoming events, past reported results) for the watchlist, one fetch.
 
-    Same network cost as upcoming(): fetch_earnings already pulls the result
-    columns, so past prints ride along for free. Results are strictly before
-    `ref` (a same-day print still counts as upcoming) sorted newest-first.
+    Same network cost as upcoming(): both sources carry the result columns,
+    so past prints ride along for free. Results are strictly before `ref` (a
+    same-day print still counts as upcoming) sorted newest-first. From the
+    window they reach `finnhub.WINDOW_BACK_DAYS` back; from Yahoo, twelve
+    prints.
     """
     holdings = holdings if holdings is not None else load_watchlist()
     ref = ref or date.today()
     tickers = [h.ticker for h in holdings]
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        fetched = list(pool.map(fetch_earnings, tickers))
+    fetched = _gather(tickers, ref, max_workers)
     dated = {t: dates for t, (dates, _) in zip(tickers, fetched, strict=True)}
     results = [r for _, rs in fetched for r in rs if r.date < ref]
     events = build_events(dated, ref, within_days=None)

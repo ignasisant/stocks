@@ -310,6 +310,53 @@ def install_upstream() -> None:
     funds.sector_weights = lambda t: _hit("funds.sector_weights", {})
     funds.fetch_profile = lambda t, info=None: None
 
+    # Finnhub, keyed: the earnings window, the market clock and the insider
+    # feed answer locally and count themselves, so a page's Yahoo count is
+    # what it would be in a keyed deployment (prod has a key).
+    from stocks.data import finnhub
+    from stocks.portfolio import demo
+
+    finnhub.api_key = lambda: "bench"
+    finnhub.clear()
+    us_names = [
+        finnhub.spelling(t)
+        for t in dict.fromkeys([*demo.TICKERS, *WATCHLIST_EXTRA])
+        if finnhub.covers(t)
+    ]
+
+    def _finnhub_get(path, params, key, timeout):
+        COUNTS[f"finnhub.{path}"] += 1
+        if path == "calendar/earnings":
+            a, b = date.fromisoformat(params["from"]), date.fromisoformat(params["to"])
+            rows = []
+            for symbol in us_names:
+                # One print ahead and one a quarter behind it, spread over
+                # the next few weeks so the calendar has something to draw.
+                spread = int(hashlib.md5(symbol.encode()).hexdigest()[:4], 16) % 25
+                ahead = date.today() + timedelta(days=3 + spread)
+                for day, actual in ((ahead, None), (ahead - timedelta(days=91), 1.1)):
+                    if a <= day <= b:
+                        rows.append({
+                            "symbol": symbol, "date": day.isoformat(), "hour": "amc",
+                            "epsEstimate": 1.0, "epsActual": actual,
+                            "revenueEstimate": 1e9, "revenueActual": None,
+                            "quarter": 1, "year": day.year,
+                        })
+            return {"earningsCalendar": rows}
+        if path == "stock/market-status":
+            return {
+                "exchange": "US", "holiday": None, "isOpen": False, "session": None,
+                "t": int(time.time()), "timezone": "America/New_York",
+            }
+        if path == "stock/insider-transactions":
+            return {"symbol": params.get("symbol"), "data": []}
+        return {}
+
+    finnhub._get = _finnhub_get
+    finnhub._fetch = lambda symbol, key, timeout: _hit(
+        "finnhub.quote", {"c": 100.0, "pc": 99.0, "t": int(time.time())}
+    )
+
     from stocks.data import http as shttp
     def _get_bytes(*a, **kw):
         COUNTS["http.get_bytes"] += 1

@@ -44,3 +44,9 @@ def test_no_closure_falls_on_a_weekend():
 )
 def test_a_listing_reads_its_venue_off_the_suffix(ticker, venue):
     assert mh.venue(ticker) == venue
+
+
+def test_every_venue_with_a_half_day_has_an_early_close():
+    for venue, days in mh.DAYS.items():
+        if mh.EARLY in days.values():
+            assert venue in mh.EARLY_CLOSE, venue

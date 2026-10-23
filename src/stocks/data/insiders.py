@@ -6,10 +6,15 @@ the open market) is one of the few insider signals with any predictive value;
 routine option-grant/tax-withholding noise is not, so `summarize` separates
 open-market purchases (code P) and sales (code S) from the rest.
 
-Source is EDGAR, matching the verification hierarchy (SEC primary). Non-US
-filers have no CIK and degrade to an empty frame, exactly like the fundamentals
-fallbacks. Parsing (`parse_form4`) and aggregation (`summarize`) are pure and
-tested offline; only `insider_transactions` touches the network.
+The filings are EDGAR's, matching the verification hierarchy (SEC primary),
+and they are read two ways. With a Finnhub key a US listing's year of lines
+comes back in one request (`finnhub.insider_transactions`, Finnhub's copy of
+the same Form 4s); EDGAR itself — the submissions index, then a document per
+filing — is what a keyless process reads, and the fallback when Finnhub has
+nothing for the name. Non-US filers have no CIK and degrade to an empty
+frame, exactly like the fundamentals fallbacks. Parsing (`parse_form4`,
+`from_finnhub`) and aggregation (`summarize`) are pure and tested offline;
+only `insider_transactions` touches the network.
 """
 
 from __future__ import annotations
@@ -25,8 +30,13 @@ import pandas as pd
 
 from stocks import atomic, obs
 from stocks.config import DATA_DIR
+from stocks.data import finnhub
 from stocks.data.edgar import _user_agent, cik_for
 from stocks.data.http import get_bytes
+
+# How far back Finnhub's feed is read. A year covers the trailing window
+# `summarize` scores (180 days) with room for the table's older rows.
+FINNHUB_LOOKBACK_DAYS = 365
 
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 ARCHIVE_DOC_URL = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{doc}"
@@ -371,16 +381,78 @@ def _remember_form4(parsed: dict[str, list[InsiderTx]]) -> None:
             storage.persist(FORM4_CACHE)
 
 
-def insider_transactions(ticker: str, limit: int = 40) -> list[InsiderTx]:
-    """Recent Form 4 transactions for a ticker, newest filing first.
+def _finnhub_float(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
+
+def from_finnhub(ticker: str, rows: list[dict]) -> list[InsiderTx]:
+    """Finnhub's insider rows as transactions, newest first. Pure.
+
+    The same lines `parse_form4` reads off the filing, one row each:
+    `change` is the signed share count, so its sign is the acquired/disposed
+    code. Derivative lines are skipped as they are there, and a row with no
+    code or no shares is a holding line, not a trade. Finnhub carries no
+    role, so `relationship` is blank — the table's Role column reads empty
+    for these rows rather than guessing one.
+    """
+    out: list[InsiderTx] = []
+    for row in rows:
+        if row.get("isDerivative"):
+            continue
+        code = str(row.get("transactionCode") or "").strip()
+        change = _finnhub_float(row.get("change"))
+        if not code or not change:
+            continue
+        when = row.get("transactionDate") or row.get("filingDate")
+        try:
+            tx_date = date.fromisoformat(str(when)[:10]) if when else None
+        except ValueError:
+            tx_date = None
+        price = _finnhub_float(row.get("transactionPrice"))
+        out.append(
+            InsiderTx(
+                date=tx_date,
+                insider=str(row.get("name") or "Unknown"),
+                relationship="",
+                code=code,
+                acquired=change > 0,
+                shares=abs(change),
+                price=price if price else None,
+                ticker=ticker,
+            )
+        )
+    return sorted(out, key=lambda t: t.date or date.min, reverse=True)
+
+
+def _from_finnhub(ticker: str) -> list[InsiderTx]:
+    """The year's lines from Finnhub for a US listing; [] when it has none,
+    was not asked (no key, a suffixed symbol) or did not answer."""
+    if not finnhub.covers(ticker) or not finnhub.has_key():
+        return []
+    today = date.today()
+    rows = finnhub.insider_transactions(
+        finnhub.spelling(ticker), today - timedelta(days=FINNHUB_LOOKBACK_DAYS), today
+    )
+    return from_finnhub(ticker, rows) if rows else []
+
+
+def insider_transactions(ticker: str, limit: int = 40) -> list[InsiderTx]:
+    """Recent Form 4 transactions for a ticker, newest first.
+
+    Finnhub's feed first when there is a key (`_from_finnhub`: one request,
+    answered in well under a second), EDGAR when it has nothing to say.
     Best-effort: non-US filers (no CIK) and any network/parse failure yield an
     empty list rather than raising, matching the rest of the data layer. `limit`
-    caps how many Form 4 filings are read; only the ones the on-disk memo has
-    not seen are fetched (one HTTP request each, in sequence — the SEC's
-    fair-access limit is ten a second, and a parallel burst would earn a block
-    rather than a faster page).
+    caps how many Form 4 filings EDGAR is read for; only the ones the on-disk
+    memo has not seen are fetched (one HTTP request each, in sequence — the
+    SEC's fair-access limit is ten a second, and a parallel burst would earn a
+    block rather than a faster page).
     """
+    if fast := _from_finnhub(ticker):
+        return fast
     try:
         cik = cik_for(ticker)
     except (urllib.error.URLError, TimeoutError):

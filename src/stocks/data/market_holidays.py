@@ -121,3 +121,8 @@ def last_day(venue_: str) -> date | None:
     """The latest day the venue's calendar covers — the test's horizon."""
     days = DAYS.get(venue_)
     return max(days) if days else None
+
+
+# When a half session ends, exchange-local: New York 13:00, London 12:30,
+# Madrid 14:00. Xetra has no half sessions (its eves are closed days).
+EARLY_CLOSE: dict[str, tuple[int, int]] = {US: (13, 0), LSE: (12, 30), BME: (14, 0)}

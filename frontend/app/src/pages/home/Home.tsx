@@ -21,6 +21,14 @@
  * The one exception is the glance and the movers, which read the same book
  * (`useBook`, called here) and fail together on purpose.
  *
+ * Nor does a card below the fold ask for anything until the reader scrolls
+ * towards it (`LazySlot`, on `useInView`): the page's first requests go to
+ * what is on screen, and the rest follow the scroll. The lead card is drawn
+ * at once — it is on screen on arrival — and the page-level reads (the book
+ * behind the glance and the movers, the extremes) wait for their cards the
+ * same way. The ledger is the exception: one small read three cards share,
+ * cheaper to have than to time.
+ *
  * The start card opens the page, above the briefing: a line of icons, each a
  * door into the section that switches it on, is the first thing a new account
  * needs and the last thing a settled one reads — which is why it is gone once
@@ -55,6 +63,7 @@ import { useGuest, useSession } from "../../shell/session";
 import { Skeleton } from "../../shell/Layout";
 import { Link } from "../../shell/router";
 import { Icon } from "../../shell/Icon";
+import { useInView } from "../../shell/useInView";
 import { Daily } from "./Daily";
 import { SetupCard } from "./Setup";
 import { Glance, MoversSlot, useBook } from "./Glance";
@@ -100,6 +109,41 @@ const GUEST_PERKS = [
   "home.guest_perk_telegram",
   "home.guest_perk_watchlist",
 ];
+
+/**
+ * One slot of the grid, drawing its card only once the slot nears the
+ * viewport. Until then a skeleton holds the room — a slot has to take room
+ * to come into view at all, and `.hm-slot:empty` would hide one that took
+ * none. The slot is the element watched, so a card that then renders nothing
+ * still leaves it empty and collapsed, as before. `lead` is the control that
+ * sits in the first slot's heading line, drawn whether or not the card is.
+ */
+function LazySlot({
+  id,
+  className,
+  eager,
+  lead,
+  onSeen,
+  children,
+}: {
+  id: CardId;
+  className: string;
+  eager: boolean;
+  lead?: ReactNode;
+  onSeen: (id: CardId) => void;
+  children: ReactNode;
+}) {
+  const [ref, seen] = useInView<HTMLDivElement>(eager);
+  useEffect(() => {
+    if (seen) onSeen(id);
+  }, [seen, id, onSeen]);
+  return (
+    <div ref={ref} className={className} data-card={id}>
+      {lead}
+      {seen ? children : <Skeleton rows={4} />}
+    </div>
+  );
+}
 
 export default function Page() {
   const t = useT();
@@ -147,11 +191,20 @@ export default function Page() {
 
   const cards = visibleCards(layout, guest);
   const shown = new Set<CardId>(cards.map((card) => card.id));
-  // One read behind the glance and the movers, and none when neither is on
-  // the page.
-  const book = useBook(nonce, !guest && (shown.has("glance") || shown.has("movers")));
+  // The cards whose slots have come into view. A latch like the slots' own:
+  // a card seen once keeps its figures while the reader scrolls on.
+  const [seen, setSeen] = useState<ReadonlySet<CardId>>(() => new Set());
+  const onSeen = useCallback((id: CardId) => {
+    setSeen((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+  }, []);
+  // On the page AND in view: a card put away in the editor after it was seen
+  // stops asking.
+  const wanted = (id: CardId) => shown.has(id) && seen.has(id);
+  // One read behind the glance and the movers, and none until one of them is
+  // in view.
+  const book = useBook(nonce, !guest && (wanted("glance") || wanted("movers")));
   // Read here rather than in its card: the movers beside it match its rows.
-  const extremes = useExtremes(nonce, shown.has("extremes"));
+  const extremes = useExtremes(nonce, wanted("extremes"));
 
   const draw = (id: CardId): ReactNode => {
     switch (id) {
@@ -266,14 +319,16 @@ export default function Page() {
           ) : null}
           <div className="hm-grid">
             {cards.map((card, i) => (
-              <div
+              <LazySlot
                 key={card.id}
+                id={card.id}
                 className={`hm-slot hm-slot-${card.span}${i === 0 ? " hm-slot-lead" : ""}`}
-                data-card={card.id}
+                eager={i === 0}
+                lead={i === 0 ? customize : undefined}
+                onSeen={onSeen}
               >
-                {i === 0 ? customize : null}
                 {draw(card.id)}
-              </div>
+              </LazySlot>
             ))}
           </div>
         </>

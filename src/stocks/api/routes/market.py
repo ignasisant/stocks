@@ -202,9 +202,12 @@ def status_(
     name is live at 10:00 CET while New York is hours from opening, and crypto
     is live always.
 
-    No account and no fetch: exchange hours are a table and a clock. Holidays
-    are NOT modelled, so a closed holiday reads as open — a soft display cue,
-    never a trading gate, exactly as the pages treat it.
+    No account and nothing fetched on this request: exchange hours are a
+    table, a clock and the NYSE / Xetra / BME / LSE closure calendars
+    (`data.market_holidays`); with a Finnhub key the US block reads the
+    exchange's own status, a minute old at most and refreshed off the request
+    (`finnhub.us_session`). A soft display cue, never a trading gate, exactly
+    as the pages treat it.
     """
     open_now = us_market_open()
     extended = None if open_now else us_extended_session()
