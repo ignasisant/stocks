@@ -579,6 +579,16 @@ def _sources(paths, prefs: dict, facts: dict) -> daily_routines.Sources:
     )
 
 
+def _closes_on(ticker: str, days: list[date]) -> list[float | None]:
+    """The close on or before each of `days` (`journal.ClosesOn`), off the
+    cached window download the Review's return columns use."""
+    import math
+
+    series = loaders.window_closes(ticker, ",".join(d.isoformat() for d in days))
+    values = [float(v) for v in series.tolist()] if len(series) == len(days) else []
+    return [None if math.isnan(v) else v for v in values] or [None] * len(days)
+
+
 def _fund(ticker: str) -> bool:
     """Cache-only fund check — funds do not report earnings."""
     from stocks.data.funds import is_fund
@@ -874,6 +884,10 @@ def start(
             finally:
                 # Last, so a poll that sees `done` also sees the stored file.
                 job.done = True
+            # After the card is out, so no reader waits on it: the price read
+            # back on the moves proposed a month and a quarter ago.
+            journal.safely(journal.mark_outcomes, journal.path_for(paths.chat),
+                           _closes_on, day)
 
     thread = threading.Thread(target=work, name="daily-action", daemon=True)
     thread.start()
