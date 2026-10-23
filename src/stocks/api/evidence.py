@@ -65,6 +65,8 @@ TICKER_KINDS = frozenset(
         signals.CONCENTRATION,
         signals.ALERT_HIT,
         signals.ALERT_NEAR,
+        signals.CRITERION_HIT,
+        signals.CRITERION_NEAR,
         signals.LOW_52W,
         signals.EARNINGS,
         signals.EARNINGS_RESULT,

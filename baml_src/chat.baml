@@ -29,6 +29,15 @@ class AlertRule {
   price (float | string)?
 }
 
+// The same rules for an exit rule (journal criteria): `rule` is text and
+// `level` a figure or text; chat/journal.py clean_rules drops what it cannot
+// read.
+class CriterionRule {
+  rule string? @description("below, drawdown_cost, drawdown_high, weight_above, revenue_growth_below, gross_margin_below, operating_margin_below, ceo_change, guidance_cut or dividend_cut")
+  level (float | string)? @description("a price for below, a percent for the price and fundamental rules, null for ceo_change, guidance_cut and dividend_cut")
+  quarters int? @description("fundamental rules only: how many quarters in a row, 1 to 4")
+}
+
 // One field per argument any tool in chat/tools.py TOOLS reads. A new tool
 // with a new argument adds it here too (tests/test_baml_contracts.py checks).
 class ActionCall {
@@ -36,6 +45,8 @@ class ActionCall {
   ticker string? @description("the symbol the action targets")
   tickers string[]? @description("every symbol, when the action targets several")
   alerts AlertRule[]?
+  criteria CriterionRule[]?
+  thesis string? @description("why the user holds it, in their words")
   tags string[]?
   name string?
   shares (float | string)? @description("a plain number")

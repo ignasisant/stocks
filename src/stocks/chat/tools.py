@@ -266,6 +266,19 @@ def _parse_position(data: dict) -> dict | None:
     return out or None
 
 
+def _parse_criteria(data: dict) -> dict | None:
+    """Exit rules: each a known measure with a level (journal.clean_rules),
+    and the optional thesis behind them. Rejects when no rule survives — a
+    thesis with nothing to check is a note, not a rule."""
+    from stocks.chat import journal
+
+    rules = journal.clean_rules(data.get("criteria") or [])
+    if not rules:
+        return None
+    thesis = " ".join(str(data.get("thesis") or "").split())[:journal.MAX_THESIS]
+    return {"criteria": rules, **({"thesis": thesis} if thesis else {})}
+
+
 # ------------------------------------------------------------------ runners
 # Applied to the account's own watchlist. Alerts and tags are additive: the
 # entry's existing values are read back and merged, because auth.set_* replace.
@@ -333,6 +346,17 @@ def _run_set_position(act: Action, path: Path) -> None:
     )
 
 
+def _run_set_criteria(act: Action, path: Path) -> None:
+    """Write the rules into the account's decision journal (`path` is the
+    journal: the tool's `target`)."""
+    from datetime import date
+
+    from stocks.chat import journal
+
+    journal.add_criteria(path, act.ticker, act.args.get("criteria") or [],
+                         date.today(), act.args.get("thesis") or "")
+
+
 # ----------------------------------------------------------------- registry
 
 
@@ -347,6 +371,9 @@ class Tool:
     # reads `<reply_key>_many`. Alerts and positions carry figures that belong
     # to one symbol, so they stay one.
     many: bool = False
+    # The file `run` is handed: the account's watchlist, or its decision
+    # journal (the exit rules live there, beside what the app proposed).
+    target: str = "watchlist"
 
 
 TOOLS: dict[str, Tool] = {
@@ -402,6 +429,22 @@ TOOLS: dict[str, Tool] = {
             'and/or "cost" (average buy price per share) with numbers; omit '
             "the one the user didn't state, and use 0 to clear it.",
             _parse_position, _run_set_position, "chat.action_position_set",
+        ),
+        Tool(
+            "set_criteria",
+            "exit rules (kill criteria) for one ticker: the conditions under "
+            'which the user would sell or rethink it. Fill "criteria": '
+            '[{"rule": <rule>, "level": <number>}] — below: a closing price; '
+            "drawdown_cost: a % loss from their own cost; drawdown_high: a % "
+            "fall from the 52-week high; weight_above: a % of the portfolio; "
+            "revenue_growth_below, gross_margin_below, operating_margin_below: "
+            'a % the quarter\'s figure falls under, with "quarters" 1-4 when '
+            "they say for how many quarters running; ceo_change, guidance_cut, "
+            "dividend_cut: an event, no level. "
+            'Optionally "thesis": why they hold it, in their words. "stop", '
+            '"vendo si", "salgo si", "kill criteria", "regla de salida" -> this.',
+            _parse_criteria, _run_set_criteria, "chat.action_criteria_set",
+            target="journal",
         ),
     )
 }
@@ -667,7 +710,7 @@ def _action_from(data: dict) -> Action | None:
 # (toolbox `propose_action`): things that add to what the app watches. A
 # removal, a figure on a position or a ledger edit is the reader's to ask for,
 # never a suggestion that arrives under an answer.
-PROPOSABLE = ("add_ticker", "favorite", "set_alerts", "tag")
+PROPOSABLE = ("add_ticker", "favorite", "set_alerts", "tag", "set_criteria")
 
 
 def proposed(data: dict) -> Action | None:
@@ -743,11 +786,19 @@ def detect(
     return None
 
 
-def execute(action: Action, path: Path) -> None:
-    """Apply an Action to the account's watchlist, once per symbol it names."""
-    run = TOOLS[action.kind].run
+def execute(action: Action, path: Path, *, journal_path: Path | None = None) -> None:
+    """Apply an Action to the account's watchlist (`path`), once per symbol
+    it names — or to its decision journal, for a tool that writes there.
+    The journal's path is not derivable from the watchlist's (the owner's
+    list sits at the repo root, their chat under data/), so it is passed."""
+    tool = TOOLS[action.kind]
+    target = path
+    if tool.target == "journal":
+        if journal_path is None:
+            raise ValueError(f"{action.kind} needs the account's journal")
+        target = journal_path
     for ticker in action.tickers:
-        run(Action(action.kind, ticker, action.args), path)
+        tool.run(Action(action.kind, ticker, action.args), target)
 
 
 def _slots(action: Action, translate: Callable[..., str]) -> dict[str, str]:
@@ -758,6 +809,9 @@ def _slots(action: Action, translate: Callable[..., str]) -> dict[str, str]:
             for a in action.alerts
         )
         return {"ticker": action.ticker, "rules": rules}
+    if action.kind == "set_criteria":
+        return {"ticker": action.ticker, "rules": ", ".join(
+            _rule_words(c, translate) for c in action.args.get("criteria") or [])}
     if action.kind in ("tag", "untag"):
         return {"ticker": ", ".join(action.tickers),
                 "groups": ", ".join(action.tags)}
@@ -769,6 +823,16 @@ def _slots(action: Action, translate: Callable[..., str]) -> dict[str, str]:
         ]
         return {"ticker": action.ticker, "details": " · ".join(parts)}
     return {"ticker": ", ".join(action.tickers)}
+
+
+def _rule_words(rule: dict, translate: Callable[..., str]) -> str:
+    """One exit rule as the confirmation line says it."""
+    level = rule.get("level")
+    text = translate(f"chat.action_crit_{rule['rule']}",
+                     level=f"{level:g}" if isinstance(level, int | float) else "")
+    if int(rule.get("quarters") or 1) > 1:
+        text = translate("chat.action_crit_run", rule=text, n=int(rule["quarters"]))
+    return text
 
 
 def _reply_key(action: Action) -> str:
@@ -828,19 +892,59 @@ FORMS: dict[str, tuple[str, ...]] = {
     "tag": ("tags",),
     "untag": ("tags",),
     "add_ticker": ("name",),
+    "set_criteria": ("crit_below", "crit_drawdown_cost", "crit_drawdown_high",
+                     "crit_weight_above", "crit_revenue_growth_below",
+                     "crit_gross_margin_below", "crit_operating_margin_below",
+                     "crit_quarters", "crit_ceo_change", "crit_guidance_cut",
+                     "crit_dividend_cut", "thesis"),
 }
-NUMERIC_FIELDS = frozenset({"shares", "cost", "above", "below"})
+_CRIT = "crit_"
+# The exit-rule fields a set_criteria card shows only when its proposal
+# carries one of them: the price rules are the common case, and eleven
+# boxes under one card are a form nobody reads.
+_CRIT_FUNDAMENTAL = ("crit_revenue_growth_below", "crit_gross_margin_below",
+                     "crit_operating_margin_below")
+CHECK_FIELDS = frozenset({"crit_ceo_change", "crit_guidance_cut",
+                          "crit_dividend_cut"})
+NUMERIC_FIELDS = frozenset({"shares", "cost", "above", "below", "crit_below",
+                            "crit_drawdown_cost", "crit_drawdown_high",
+                            "crit_weight_above", *_CRIT_FUNDAMENTAL,
+                            "crit_quarters"})
+
+
+def form_names(action: Action) -> tuple[str, ...]:
+    """The fields `action`'s card shows: its tool's, less a set_criteria
+    card's fundamental and event fields its proposal does not use."""
+    names = FORMS.get(action.kind, ())
+    if action.kind != "set_criteria":
+        return names
+    used = {f"{_CRIT}{c['rule']}" for c in action.args.get("criteria") or []}
+    fundamental = bool(used & set(_CRIT_FUNDAMENTAL))
+    return tuple(
+        n for n in names
+        if not (n in _CRIT_FUNDAMENTAL or n in CHECK_FIELDS) or n in used
+        if n != "crit_quarters" or fundamental)
 
 
 def _figure(value) -> str:
     return format(value, ".12g") if isinstance(value, (int, float)) else ""
 
 
-def form_of(action: Action) -> dict[str, str]:
+def form_of(action: Action) -> dict[str, str | bool]:
     """The proposal as its card's fields hold it."""
     form = {"ticker": ", ".join(action.tickers)}
-    for name in FORMS.get(action.kind, ()):
-        if name in ("above", "below"):
+    criteria = action.args.get("criteria") or []
+    for name in form_names(action):
+        if name == "crit_quarters":
+            form[name] = _figure(max((int(c.get("quarters") or 1)
+                                      for c in criteria if "quarters" in c),
+                                     default=1))
+        elif name in CHECK_FIELDS:
+            form[name] = any(c["rule"] == name[len(_CRIT):] for c in criteria)
+        elif name.startswith(_CRIT):
+            rule = next((c for c in criteria if c["rule"] == name[len(_CRIT):]), None)
+            form[name] = _figure(rule.get("level")) if rule else ""
+        elif name in ("above", "below"):
             rule = next((a for a in action.alerts if a["type"] == name), None)
             form[name] = _figure(rule["price"]) if rule else ""
         elif name == "tags":
@@ -874,6 +978,21 @@ def args_from_form(kind: str, form: dict) -> dict:
         return {"tags": [t.strip() for t in text("tags").split(",") if t.strip()]}
     if kind == "add_ticker":
         return {"name": text("name")}
+    if kind == "set_criteria":
+        quarters = figure("crit_quarters")
+        rules: list[dict] = []
+        for name in FORMS[kind]:
+            if not name.startswith(_CRIT) or name == "crit_quarters":
+                continue
+            rule = name[len(_CRIT):]
+            if name in CHECK_FIELDS:
+                if form.get(name) in (True, "true", "1", "on"):
+                    rules.append({"rule": rule})
+            elif (v := figure(name)) is not None:
+                rules.append({"rule": rule, "level": v,
+                              **({"quarters": quarters} if name in _CRIT_FUNDAMENTAL
+                                 and quarters is not None else {})})
+        return {"criteria": rules, "thesis": text("thesis")}
     return {}
 
 

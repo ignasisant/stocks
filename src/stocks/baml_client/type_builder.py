@@ -20,7 +20,7 @@ from .globals import DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIM
 class TypeBuilder(type_builder.TypeBuilder):
     def __init__(self):
         super().__init__(classes=set(
-          ["ActionCall","AlertRule","AnalysisPoint","AnalysisReply","AnswerJudged","BriefSection","CardLine","CardReply","ColumnMap","Columns","CryptoColumns","CryptoMap","GoalJudged","LessonOp","LessonOps","MarketNote","MarketReply","PeerPicks","QueryPlan","RoutineAnswer","RoutinePlan","RoutinePlans","ScopeVerdict","ScoreJudged","SectionNote","SkillPick","StatementPage","StatementRow",]
+          ["ActionCall","AlertRule","AnalysisPoint","AnalysisReply","AnswerJudged","BriefSection","CardLine","CardReply","ColumnMap","Columns","CriterionRule","CryptoColumns","CryptoMap","ExitEventVerdict","GoalJudged","LessonOp","LessonOps","MarketNote","MarketReply","PeerPicks","QueryPlan","RoutineAnswer","RoutinePlan","RoutinePlans","ScopeVerdict","ScoreJudged","SectionNote","SkillPick","StatementPage","StatementRow",]
         ), enums=set(
           ["AssetClass","CryptoLayout","DocumentKind",]
         ), runtime=DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIME)
@@ -43,7 +43,7 @@ class TypeBuilder(type_builder.TypeBuilder):
 
 
     # #########################################################################
-    # Generated classes 28
+    # Generated classes 30
     # #########################################################################
 
     @property
@@ -87,12 +87,20 @@ class TypeBuilder(type_builder.TypeBuilder):
         return ColumnsViewer(self)
 
     @property
+    def CriterionRule(self) -> "CriterionRuleViewer":
+        return CriterionRuleViewer(self)
+
+    @property
     def CryptoColumns(self) -> "CryptoColumnsViewer":
         return CryptoColumnsViewer(self)
 
     @property
     def CryptoMap(self) -> "CryptoMapViewer":
         return CryptoMapViewer(self)
+
+    @property
+    def ExitEventVerdict(self) -> "ExitEventVerdictViewer":
+        return ExitEventVerdictViewer(self)
 
     @property
     def GoalJudged(self) -> "GoalJudgedViewer":
@@ -300,14 +308,14 @@ class DocumentKindValues:
 
 
 # #########################################################################
-# Generated classes 28
+# Generated classes 30
 # #########################################################################
 
 class ActionCallAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
         self._bldr = _tb.class_("ActionCall")
-        self._properties: typing.Set[str] = set([  "action",  "ticker",  "tickers",  "alerts",  "tags",  "name",  "shares",  "cost",  "broker",  "to_broker",  "date",  "since",  "until",  "trade",  "quantity",  "price",  "fee",  "currency",  "to",  "ids",  "new_date",  "new_quantity",  "new_price",  "new_fee",  ])
+        self._properties: typing.Set[str] = set([  "action",  "ticker",  "tickers",  "alerts",  "criteria",  "thesis",  "tags",  "name",  "shares",  "cost",  "broker",  "to_broker",  "date",  "since",  "until",  "trade",  "quantity",  "price",  "fee",  "currency",  "to",  "ids",  "new_date",  "new_quantity",  "new_price",  "new_fee",  ])
         self._props = ActionCallProperties(self._bldr, self._properties)
 
     def type(self) -> baml_py.FieldType:
@@ -350,6 +358,14 @@ class ActionCallProperties:
     @property
     def alerts(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("alerts"))
+    
+    @property
+    def criteria(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("criteria"))
+    
+    @property
+    def thesis(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("thesis"))
     
     @property
     def tags(self) -> type_builder.ClassPropertyViewer:
@@ -889,6 +905,53 @@ class ColumnsProperties:
     
 
 
+class CriterionRuleAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("CriterionRule")
+        self._properties: typing.Set[str] = set([  "rule",  "level",  "quarters",  ])
+        self._props = CriterionRuleProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "CriterionRuleProperties":
+        return self._props
+
+
+class CriterionRuleViewer(CriterionRuleAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class CriterionRuleProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def rule(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("rule"))
+    
+    @property
+    def level(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("level"))
+    
+    @property
+    def quarters(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("quarters"))
+    
+    
+
+
 class CryptoColumnsAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
@@ -1071,6 +1134,53 @@ class CryptoMapProperties:
     @property
     def type_map(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("type_map"))
+    
+    
+
+
+class ExitEventVerdictAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("ExitEventVerdict")
+        self._properties: typing.Set[str] = set([  "met",  "item",  "quote",  ])
+        self._props = ExitEventVerdictProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "ExitEventVerdictProperties":
+        return self._props
+
+
+class ExitEventVerdictViewer(ExitEventVerdictAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class ExitEventVerdictProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def met(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("met"))
+    
+    @property
+    def item(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("item"))
+    
+    @property
+    def quote(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("quote"))
     
     
 

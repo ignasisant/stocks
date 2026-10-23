@@ -46,11 +46,17 @@ type_map = {
     "types.Columns": types.Columns,
     "stream_types.Columns": stream_types.Columns,
 
+    "types.CriterionRule": types.CriterionRule,
+    "stream_types.CriterionRule": stream_types.CriterionRule,
+
     "types.CryptoColumns": types.CryptoColumns,
     "stream_types.CryptoColumns": stream_types.CryptoColumns,
 
     "types.CryptoMap": types.CryptoMap,
     "stream_types.CryptoMap": stream_types.CryptoMap,
+
+    "types.ExitEventVerdict": types.ExitEventVerdict,
+    "stream_types.ExitEventVerdict": stream_types.ExitEventVerdict,
 
     "types.GoalJudged": types.GoalJudged,
     "stream_types.GoalJudged": stream_types.GoalJudged,

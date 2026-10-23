@@ -718,3 +718,55 @@ def test_a_figure_the_facts_do_not_round_to_is_still_rejected(line, figure):
 
 def test_a_unicode_minus_keeps_its_sign():
     assert daily.audit(["NVDA cae un −1,48 % hoy"], {"pct": 1.48}) == "−1,48 %"
+
+
+@pytest.mark.parametrize("lang", ["en", "es"])
+@pytest.mark.parametrize("kind", ["criterion_hit", "criterion_near"])
+@pytest.mark.parametrize(
+    "rule,level,value,gap",
+    [("below", 95.0, 90.0, -5.26), ("drawdown_cost", 30.0, -32.0, -2.0),
+     ("drawdown_high", 20.0, -18.5, 1.5), ("weight_above", 25.0, 24.0, 1.0)],
+)
+def test_every_exit_rule_has_a_line_in_both_languages(kind, rule, level, value, gap,
+                                                      lang):
+    action = {"kind": kind, "ticker": "AMD", "rule": rule, "level": level,
+              "value": value, "gap_pct": gap}
+    for line in (daily._action_line(action, lang, "EUR"),
+                 daily._detail_line(action, {}, lang, "EUR")):
+        assert line and "{" not in line and "home.daily" not in line
+        assert "AMD" in line
+
+
+def test_a_met_exit_rule_is_filed_under_alerts():
+    assert daily.section_of({"kind": "criterion_hit"}) == daily.ALERTS
+    assert daily.section_of({"kind": "criterion_near"}) == daily.WATCH
+
+
+@pytest.mark.parametrize("lang", ["en", "es"])
+@pytest.mark.parametrize(
+    "rule,level,value,gap,quarters",
+    [("revenue_growth_below", 10.0, 5.3, -4.7, 1),
+     ("gross_margin_below", 40.0, 38.0, -2.0, 2),
+     ("operating_margin_below", 15.0, 16.5, 1.5, 3)],
+)
+def test_every_fundamental_rule_has_a_line_in_both_languages(rule, level, value, gap,
+                                                             quarters, lang):
+    for kind in ("criterion_hit", "criterion_near"):
+        action = {"kind": kind, "ticker": "AMD", "rule": rule, "level": level,
+                  "value": value, "gap_pct": gap,
+                  **({"quarters": quarters} if quarters > 1 else {})}
+        for line in (daily._action_line(action, lang, "EUR"),
+                     daily._detail_line(action, {}, lang, "EUR")):
+            assert line and "{" not in line and "home.daily" not in line
+            assert "AMD" in line
+
+
+@pytest.mark.parametrize("lang", ["en", "es"])
+@pytest.mark.parametrize("rule", ["ceo_change", "guidance_cut", "dividend_cut"])
+def test_a_met_event_rule_quotes_where_it_was_read(rule, lang):
+    action = {"kind": "criterion_hit", "ticker": "AMD", "rule": rule,
+              "level": None, "value": None, "gap_pct": 0.0,
+              "quote": "AMD cuts its outlook", "source": "8-K (2.02)"}
+    line = daily._action_line(action, lang, "EUR")
+    assert "AMD cuts its outlook" in line and "8-K (2.02)" in line
+    assert "{" not in line and "home.daily" not in line and "None" not in line

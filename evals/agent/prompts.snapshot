@@ -115,7 +115,7 @@ The reader asked to be told at a price. Once the material gives you the level, c
   }
  },
  {
-  "description": "The decision journal: every move the app proposed to this user and they saw — daily-card lines (fired alerts, loss harvesting, trims, rebalances), Review-page sells/trims/adds/buys, and alert or watchlist changes offered in chat — with the figures it was made on, the reasons, and what became of it (open, followed, declined, lapsed). Use for 'what did you propose about X', 'why did you say to sell Y', 'what is still open'. It records the app's proposals, not the user's own reasons for past trades.",
+  "description": "The decision journal: every move the app proposed to this user and they saw — daily-card lines (fired alerts, loss harvesting, trims, rebalances), Review-page sells/trims/adds/buys, and alert or watchlist changes offered in chat — with the figures it was made on, the reasons, and what became of it (open, followed, declined, lapsed) — plus the exit rules the user saved per holding, with the thesis they gave (open, hit, retired). Use for 'what did you propose about X', 'why did you say to sell Y', 'what is still open', 'what were my exit rules'. Past trades' own reasons are not in it.",
   "name": "decisions",
   "schema": {
    "properties": {
@@ -132,7 +132,9 @@ The reader asked to be told at a price. Once the material gives you the level, c
       "open",
       "followed",
       "declined",
-      "lapsed"
+      "lapsed",
+      "hit",
+      "retired"
      ],
      "type": "string"
     },
@@ -236,7 +238,7 @@ The reader asked to be told at a price. Once the material gives you the level, c
   }
  },
  {
-  "description": "Draft one change to what the app watches, shown as a card the user approves or dismisses under the answer: add_ticker (start tracking it), favorite, set_alerts (the price level you found, as above/below) or tag (put it in a group). Only for something the user asked for in this conversation — to watch, track or be told at a price — and only on a ticker they named; never because a ticker came up in a page. Call it after the lookups that give it its figure. Calling it changes nothing.",
+  "description": "Draft one change to what the app watches, shown as a card the user approves or dismisses under the answer: add_ticker (start tracking it), favorite, set_alerts (the price level you found, as above/below), tag (put it in a group) or set_criteria (exit rules for a holding: the price, loss or weight at which the user said they would sell, plus their thesis in their words). Only for something the user asked for in this conversation — to watch, track, be told at a price, or write their exit rules — and only on a ticker they named; never because a ticker came up in a page. Call it after the lookups that give it its figure. Calling it changes nothing.",
   "name": "propose_action",
   "schema": {
    "properties": {
@@ -245,7 +247,8 @@ The reader asked to be told at a price. Once the material gives you the level, c
       "add_ticker",
       "favorite",
       "set_alerts",
-      "tag"
+      "tag",
+      "set_criteria"
      ],
      "type": "string"
     },
@@ -272,12 +275,51 @@ The reader asked to be told at a price. Once the material gives you the level, c
      },
      "type": "array"
     },
+    "criteria": {
+     "description": "set_criteria only. below: a price in the quote currency; drawdown_cost, drawdown_high, weight_above and the fundamental *_below rules: percent (a growth or margin may be 0 or negative), with quarters 1-4 running for the fundamental ones; ceo_change, guidance_cut, dividend_cut: no level.",
+     "items": {
+      "properties": {
+       "level": {
+        "type": "number"
+       },
+       "quarters": {
+        "maximum": 4,
+        "minimum": 1,
+        "type": "integer"
+       },
+       "rule": {
+        "enum": [
+         "below",
+         "drawdown_cost",
+         "drawdown_high",
+         "weight_above",
+         "revenue_growth_below",
+         "gross_margin_below",
+         "operating_margin_below",
+         "ceo_change",
+         "guidance_cut",
+         "dividend_cut"
+        ],
+        "type": "string"
+       }
+      },
+      "required": [
+       "rule"
+      ],
+      "type": "object"
+     },
+     "type": "array"
+    },
     "tags": {
      "description": "tag only: the group names.",
      "items": {
       "type": "string"
      },
      "type": "array"
+    },
+    "thesis": {
+     "description": "set_criteria only: why they hold it, in their words.",
+     "type": "string"
     },
     "ticker": {
      "description": "e.g. ASML.AS.",

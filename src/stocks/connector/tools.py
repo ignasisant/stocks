@@ -545,7 +545,8 @@ async def investor_context() -> CallToolResult:
 async def decision_journal(
     ticker: Annotated[str | None, Field(
         description="Only this ticker, e.g. NVDA.")] = None,
-    state: Literal["open", "followed", "declined", "lapsed"] | None = None,
+    state: Literal["open", "followed", "declined", "lapsed", "hit",
+                   "retired"] | None = None,
     since: Annotated[str | None, Field(
         description="ISO date; entries shown on or after it.")] = None,
     limit: Annotated[int, Field(ge=1, le=100)] = 30,

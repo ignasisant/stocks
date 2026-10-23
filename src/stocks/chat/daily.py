@@ -71,7 +71,8 @@ CUTOFF_HOUR = 9
 
 MIN_BULLETS = 1
 MAX_BULLETS = 4  # "To watch" lines; the day's alerts are listed on their own
-ALERTS_MAX = 3  # signals caps the alert family at three a day
+# signals caps the alert family at three a day, and the exit rules at three
+ALERTS_MAX = 6
 HEADLINE_CHARS = 90
 BULLET_CHARS = 120  # what the prompt asks a line to fit in
 # What a line is cut at: only a runaway one. A line the model wrote a little
@@ -90,6 +91,8 @@ TITLE_CHARS = 48
 # The sections a line is filed under (`section_of`).
 ALERTS: Final = "alerts"
 WATCH: Final = "watch"
+# The kinds filed under today's alerts: the reader's own triggers, fired.
+_FIRED: Final = (signals.CRITERION_HIT, signals.ALERT_HIT)
 # Where a brief stands on a card (`DailyAction.brief`): "" no brief; pending,
 # its data still being fetched; written, its sections on the card; missed, no
 # model wrote it and the default card stands in.
@@ -376,8 +379,9 @@ def _today(raw) -> list[dict]:
 
 
 def section_of(item: dict) -> Literal["alerts", "watch"]:
-    """The section a line is filed under: an alert that fired, or the rest."""
-    return ALERTS if item.get("kind") == signals.ALERT_HIT else WATCH
+    """The section a line is filed under: an alert or an exit rule that
+    fired, or the rest."""
+    return ALERTS if item.get("kind") in _FIRED else WATCH
 
 
 def _items(raw) -> list[dict]:
@@ -645,6 +649,23 @@ _KINDS = (
     "data, and each carries a `key` naming it. None of them was on an earlier "
     "card unchanged: each is new, or its figure or its date moved since. "
     "Their meanings:\n"
+    "- criterion_hit: an exit rule THE USER wrote for that ticker was met "
+    "(`rule` below: the close at or under `level`, `value` the close; "
+    "drawdown_cost: down `level`% or more from cost, `value` the loss in %; "
+    "drawdown_high: `level`% or more under the 52-week high, `value` that "
+    "fall in %; weight_above: `value`% of the book, past `level`%; "
+    "revenue_growth_below, gross_margin_below, operating_margin_below: the "
+    "latest quarter's revenue growth on a year back or margin, `value` in %, "
+    "under `level`% for the last `quarters` quarters; ceo_change, "
+    "guidance_cut, dividend_cut: the event read in the filing or headline "
+    "`source`, whose words are `quote` — quote it, and say it was read off "
+    "that source, not confirmed) on `hit_day`. Their own line in the sand, "
+    "written before the fact: the most important line of the day. The app "
+    "lists every one under today's alerts; say it plainly — it is their "
+    "rule, so the question is whether anything has changed that would make "
+    "them break it — and never decide for them.\n"
+    "- criterion_near: the same kind of rule is `gap_pct` from being met "
+    "(percent of price for below, points for the rest).\n"
     "- alert_hit: the price alert THE USER set on that ticker fired today: "
     "the latest session took the price past it (rule/level/price). Their own "
     "exit or entry level, reached. The app lists every one under today's "
@@ -775,8 +796,16 @@ _BRIEF_DATA = (
     "say the date and never present them as this week's flows), `exits` "
     "(the user's own exit levels: `alerts` — `type` above or "
     "below a `price`, or a percentage rule — with the price `now` and "
-    "`distance_pct` to it, and `notes` — decisions, goals and limits they "
-    "saved in their own words) and `missing` (sources that could not be "
+    "`distance_pct` to it, `notes` — decisions, goals and limits they "
+    "saved in their own words — and `rules`, the exit rules they wrote: "
+    "`rule` below (a close at or under `level`, quote currency), "
+    "drawdown_cost (down `level` % from cost), drawdown_high (down `level` % "
+    "from the 52-week high), weight_above (`level` % of the book), "
+    "revenue_growth_below / gross_margin_below / operating_margin_below "
+    "(the quarter's figure under `level` % for `quarters` quarters running) "
+    "or ceo_change / guidance_cut / dividend_cut (an event, no level), with "
+    "`state` open or hit and the `thesis` behind it) and `missing` (sources "
+    "that could not be "
     "read today)."
 )
 
@@ -940,7 +969,7 @@ def _brief_rows(facts: dict) -> list[dict]:
         *(brief.get("holders") or []),
         *(earnings.get("reported") or []), *(earnings.get("upcoming") or []),
         *(events.get("earnings") or []), *(events.get("ex_dividends") or []),
-        *(exits.get("alerts") or []),
+        *(exits.get("alerts") or []), *(exits.get("rules") or []),
     ]
     rows += [{"ticker": t} for note in exits.get("notes") or []
              for t in note.get("tickers") or []]
@@ -1337,20 +1366,23 @@ def _today_notes(data: dict, facts: dict, lang: str, *, audited: bool) -> list[d
 
 
 def _alert_items(facts: dict, lang: str, have: set[str]) -> list[dict]:
-    """The computed line of every alert that fired and is not in `have`."""
+    """The computed line of every alert and exit rule that fired and is not
+    in `have`, the reader's own rules first."""
     out = []
     ccy = str(facts.get("currency") or "EUR")
-    for key, action in keyed_actions(facts).items():
-        if action.get("kind") != signals.ALERT_HIT or key in have:
-            continue
-        line = _action_line(action, lang, ccy)
-        if not line:
-            continue
-        ticker = str(action.get("ticker") or "")
-        out.append({
-            "key": key, "kind": signals.ALERT_HIT, "line": line,
-            "tickers": [ticker] if ticker else [],
-        })
+    actions = keyed_actions(facts).items()
+    for kind in _FIRED:
+        for key, action in actions:
+            if action.get("kind") != kind or key in have:
+                continue
+            line = _action_line(action, lang, ccy)
+            if not line:
+                continue
+            ticker = str(action.get("ticker") or "")
+            out.append({
+                "key": key, "kind": kind, "line": line,
+                "tickers": [ticker] if ticker else [],
+            })
     return out[:ALERTS_MAX]
 
 
@@ -1362,6 +1394,8 @@ def _sourced(facts: dict) -> dict:
     brief = facts.get("brief") or {}
     words = [a.get("ask") or "" for a in brief.get("asks") or []]
     words += [n.get("text") or "" for n in (brief.get("exits") or {}).get("notes") or []]
+    words += [r.get("thesis") or ""
+              for r in (brief.get("exits") or {}).get("rules") or []]
     words += [h.get("title") or "" for row in brief.get("news") or []
               if isinstance(row, dict) for h in row.get("headlines") or []]
     return {**facts, "asked": figures(" \n ".join(words)),
@@ -1627,6 +1661,41 @@ def _summary(labels: list[str]) -> str:
     return out[:1].upper() + out[1:]
 
 
+def _criterion_slots(action: dict, lang: str) -> dict:
+    """The placeholders of an exit-rule line: the rule in words, the figure
+    it reads today and how far it still is (or how far past)."""
+    from stocks.web.i18n import translate
+
+    rule = str(action.get("rule") or "below")
+    price = rule == "below"
+    level = float(action.get("level") or 0)
+    value = float(action.get("value") or 0)
+    text = translate(f"home.daily_crit_{rule}", lang,
+                     level=fmt_num(level, 2 if price else
+                                   0 if level.is_integer() else 1, lang))
+    if int(action.get("quarters") or 1) > 1:
+        text = translate("home.daily_crit_run", lang, rule=text,
+                         n=int(action["quarters"]))
+    return {
+        "ticker": str(action.get("ticker") or ""),
+        "rule": text,
+        "value": fmt_num(value, 2, lang) if price
+        else f"{fmt_num(value, 1, lang)}%",
+        "gap": f"{fmt_num(float(action.get('gap_pct') or 0), 1, lang)}"
+        + ("%" if price else " pp"),
+        # An event rule reads a passage, not a figure (`chat/exit_judge.py`).
+        "quote": str(action.get("quote") or ""),
+        "source": str(action.get("source") or ""),
+    }
+
+
+def _criterion_key(key: str, action: dict) -> str:
+    """An event rule's line quotes what it was met on instead of a figure."""
+    from stocks.chat import journal
+
+    return f"{key}_event" if action.get("rule") in journal.EVENT_RULES else key
+
+
 def _action_line(action: dict, lang: str, ccy: str) -> str:
     """One computed action as a sentence. Empty for a kind with no template."""
     from stocks.web.i18n import translate
@@ -1640,6 +1709,9 @@ def _action_line(action: dict, lang: str, ccy: str) -> str:
         in front of a loss reads as the opposite of what it is."""
         return _money(abs(float(value or 0.0)), ccy, lang).replace("+", "")
 
+    if kind in (signals.CRITERION_HIT, signals.CRITERION_NEAR):
+        return translate(_criterion_key(key, action), lang,
+                         **_criterion_slots(action, lang))
     if kind in (signals.ALERT_HIT, signals.ALERT_NEAR):
         rule = translate(f"home.daily_rule_{action.get('rule') or 'below'}", lang)
         return translate(
@@ -2309,6 +2381,9 @@ def _detail_line(action: dict, source: dict, lang: str, ccy: str) -> str:
     def num(name: str, spec: str = ",.2f") -> str:
         return format(float(action.get(name) or 0.0), spec)
 
+    if kind in (signals.CRITERION_HIT, signals.CRITERION_NEAR):
+        return translate(_criterion_key(key, action), lang,
+                         **_criterion_slots(action, lang))
     if kind in (signals.ALERT_HIT, signals.ALERT_NEAR):
         return translate(
             key, lang, ticker=ticker,

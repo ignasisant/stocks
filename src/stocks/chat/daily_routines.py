@@ -105,7 +105,8 @@ class Sources:
 
     `held` is the reader's positions, largest first; `followed` their
     reporting names (held and followed); `entries` the watchlist's holdings,
-    whose `alerts` are the exits; `notes` their saved decisions and goals."""
+    whose `alerts` are the exits; `notes` their saved decisions and goals;
+    `criteria` the exit rules they wrote with the chat (journal.criteria)."""
 
     calendar: Calendar | None = None
     insiders: Callable[[str], list] | None = None
@@ -119,6 +120,7 @@ class Sources:
     followed: tuple[str, ...] = ()
     entries: tuple = ()
     notes: tuple = ()
+    criteria: tuple = ()
 
 
 def load(prefs: dict, chat_path) -> list[learnings.Learning]:
@@ -501,7 +503,19 @@ def exits_fact(sources: Sources) -> dict:
         {"kind": n.kind, "text": learnings.one_line(n.text), "tickers": list(n.tickers)}
         for n in sources.notes if n.kind in NOTE_KINDS
     ][:MAX_NOTES]
-    return {"alerts": alerts, "notes": notes}
+    rules = [
+        {"ticker": c.ticker, "rule": c.snapshot.get("rule") or c.action,
+         "level": c.snapshot.get("level"), "state": c.state,
+         **({"hit_day": c.snapshot["hit_day"]} if c.snapshot.get("hit_day") else {}),
+         **{k: c.snapshot[k] for k in ("quarters", "value", "quote", "source")
+            if c.snapshot.get(k) not in (None, "")},
+         **({"thesis": c.evidence} if c.evidence else {})}
+        for c in sources.criteria
+    ][:MAX_ALERTS]
+    out = {"alerts": alerts, "notes": notes}
+    if rules:
+        out["rules"] = rules
+    return out
 
 
 def gather(

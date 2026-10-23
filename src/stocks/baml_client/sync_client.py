@@ -164,6 +164,20 @@ class BamlSyncClient:
                 "instructions": instructions,"input": input,
             })
             return typing.cast(types.AnswerJudged, __result__.cast_to(types, types, stream_types, False, __runtime__))
+    def JudgeExitEvent(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> types.ExitEventVerdict:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            __stream__ = self.stream.JudgeExitEvent(instructions=instructions,input=input,
+                baml_options=baml_options)
+            return __stream__.get_final_response()
+        else:
+            # Original non-streaming code
+            __result__ = self.__options.merge_options(baml_options).call_function_sync(function_name="JudgeExitEvent", args={
+                "instructions": instructions,"input": input,
+            })
+            return typing.cast(types.ExitEventVerdict, __result__.cast_to(types, types, stream_types, False, __runtime__))
     def MapColumns(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> types.ColumnMap:
@@ -373,6 +387,18 @@ class BamlStreamClient:
           lambda x: typing.cast(types.AnswerJudged, x.cast_to(types, types, stream_types, False, __runtime__)),
           __ctx__,
         )
+    def JudgeExitEvent(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlSyncStream[stream_types.ExitEventVerdict, types.ExitEventVerdict]:
+        __ctx__, __result__ = self.__options.merge_options(baml_options).create_sync_stream(function_name="JudgeExitEvent", args={
+            "instructions": instructions,"input": input,
+        })
+        return baml_py.BamlSyncStream[stream_types.ExitEventVerdict, types.ExitEventVerdict](
+          __result__,
+          lambda x: typing.cast(stream_types.ExitEventVerdict, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.ExitEventVerdict, x.cast_to(types, types, stream_types, False, __runtime__)),
+          __ctx__,
+        )
     def MapColumns(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlSyncStream[stream_types.ColumnMap, types.ColumnMap]:
@@ -536,6 +562,13 @@ class BamlHttpRequestClient:
             "instructions": instructions,"input": input,
         }, mode="request")
         return __result__
+    def JudgeExitEvent(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = self.__options.merge_options(baml_options).create_http_request_sync(function_name="JudgeExitEvent", args={
+            "instructions": instructions,"input": input,
+        }, mode="request")
+        return __result__
     def MapColumns(self, instructions: str,input: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
@@ -646,6 +679,13 @@ class BamlHttpStreamRequestClient:
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         __result__ = self.__options.merge_options(baml_options).create_http_request_sync(function_name="JudgeAnswer", args={
+            "instructions": instructions,"input": input,
+        }, mode="stream")
+        return __result__
+    def JudgeExitEvent(self, instructions: str,input: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        __result__ = self.__options.merge_options(baml_options).create_http_request_sync(function_name="JudgeExitEvent", args={
             "instructions": instructions,"input": input,
         }, mode="stream")
         return __result__

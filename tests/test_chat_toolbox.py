@@ -485,3 +485,45 @@ def test_every_offered_tool_may_say_why_and_the_tool_never_hears_it(monkeypatch)
                         (spec, lambda args, ctx: heard.append(args) or "ok"))
     _run("get_quotes", {"tickers": ["NVDA"], "reason": "Precio de NVDA"})
     assert heard == [{"tickers": ["NVDA"]}]
+
+
+def test_exit_rules_need_the_reader_to_have_asked_and_a_journal(tmp_path, no_lookup):
+    def ctx(*asked, journal=tmp_path / "journal.json"):
+        return Context(watchlist=tmp_path / "watchlist.yaml", proposes=True,
+                       asked=asked, journal=journal)
+
+    rules = {"action": "set_criteria", "ticker": "AMD",
+             "criteria": [{"rule": "drawdown_cost", "level": 30}]}
+    assert _propose(ctx("how is AMD doing?"), **rules) == (
+        toolbox._NOT_PROPOSED["not_asked_rules"])
+    assert _propose(ctx("¿cuándo debería vender AMD?", journal=None), **rules) == (
+        toolbox._NOT_PROPOSED["no_journal"])
+    assert _propose(ctx("¿cuándo debería vender AMD?"), **rules).startswith(
+        toolbox.DRAFTED)
+
+
+@pytest.mark.parametrize("text, asks", [
+    ("ayúdame con los kill criteria de AMD", True),
+    ("¿cuándo debería vender NVDA?", True),
+    ("pon un stop a ASML", True),
+    ("what's my exit rule for MELI?", True),
+    ("¿qué tal va AMD hoy?", False),
+])
+def test_asks_criteria(text, asks):
+    assert toolbox.asks_criteria(text) is asks
+
+
+def test_the_proposal_schema_offers_exit_rules():
+    spec, _ = toolbox.TOOLS["propose_action"]
+    props = spec.schema["properties"]
+    assert "set_criteria" in props["action"]["enum"]
+    rule = props["criteria"]["items"]["properties"]["rule"]
+    assert set(rule["enum"]) == {"below", "drawdown_cost", "drawdown_high",
+                                 "weight_above", "revenue_growth_below",
+                                 "gross_margin_below", "operating_margin_below",
+                                 "ceo_change", "guidance_cut", "dividend_cut"}
+    item = props["criteria"]["items"]
+    # An event rule has no level, and only a fundamental one a quarters run.
+    assert item["required"] == ["rule"]
+    assert item["properties"]["quarters"] == {"type": "integer", "minimum": 1,
+                                              "maximum": 4}
