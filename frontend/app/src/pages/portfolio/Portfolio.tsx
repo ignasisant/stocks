@@ -14,6 +14,7 @@
  * that do not need it.
  */
 
+import { TypeInstead } from "../../ui/TypeInstead";
 import { useState } from "react";
 
 import { get, send } from "../../shell/api";
@@ -87,6 +88,7 @@ function DemoBook({ book, onChange }: { book: Transactions; onChange: () => void
         >
           {t("portfolio.demo_remove")}
         </button>
+        <TypeInstead />
       </div>
     );
   }
@@ -102,6 +104,7 @@ function DemoBook({ book, onChange }: { book: Transactions; onChange: () => void
       >
         {t("portfolio.demo_offer_button")}
       </button>
+      <TypeInstead />
     </div>
   );
 }

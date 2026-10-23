@@ -14,6 +14,7 @@
  */
 
 import { useEffect } from "react";
+import { keepDraft } from "../chat/draft";
 
 /**
  * `null` is "just open it" — the drawer opens and asks nothing. `fresh` asks
@@ -46,6 +47,36 @@ export function askAssistant(prompt: string, { fresh = false } = {}): void {
  */
 export function openAssistant(): void {
   for (const listener of listeners) listener(null);
+}
+
+const fillListeners = new Set<() => void>();
+
+/**
+ * Open the assistant with words already in its field — written, never sent.
+ *
+ * The prompt is a stem the reader finishes ("I hold: 10 NVDA at 120…"), so
+ * sending it would book somebody else's example and spend an answer on it.
+ * It goes through the same one-shot slot a guest's question rides across the
+ * sign-in (`chat/draft.ts`): a composer that mounts later takes it on mount,
+ * one already on screen is told to. Nothing listening (no drawer) loses it,
+ * like the others.
+ */
+export function fillAssistant(text: string): void {
+  const stem = text.trim();
+  if (!stem) return;
+  keepDraft(stem);
+  openAssistant();
+  for (const listener of fillListeners) listener();
+}
+
+/** Subscribe to those fills. The composer is the only caller. */
+export function useAssistantFills(handler: () => void): void {
+  useEffect(() => {
+    fillListeners.add(handler);
+    return () => {
+      fillListeners.delete(handler);
+    };
+  }, [handler]);
 }
 
 const threadListeners = new Set<(cid: string) => void>();

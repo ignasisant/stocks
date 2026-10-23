@@ -1,6 +1,7 @@
 """chat tools: gate, defensive parsing, detection plumbing, execution."""
 
 import json
+from pathlib import Path
 
 import yaml
 
@@ -27,6 +28,21 @@ def test_gate_hits_the_watchlist_and_position_vocabulary():
     assert maybe_action("stop tracking MSFT, remove it")
     assert maybe_action("I hold 12 shares of NVDA")
     assert maybe_action("tengo 30 acciones de SAN a precio medio 4,10")
+
+
+def test_gate_hits_a_bought_position():
+    assert maybe_action("bought 5 ASML at 640 last March")
+    assert maybe_action("compré 20 SAN a 4,10")
+    assert maybe_action("10 ITX compradas el 2024-03-01 a 38")
+
+
+def test_gate_hits_the_type_your_positions_prompt():
+    """The line the import page puts in the composer must reach the
+    classifier, or the first trade it invites is never proposed."""
+    locales = Path(__file__).parents[1] / "src/stocks/web/locales"
+    for lang in ("en", "es"):
+        strings = json.loads((locales / lang / "import.json").read_text())
+        assert maybe_action(strings["import.type_prompt"]), lang
 
 
 def test_gate_skips_plain_questions():

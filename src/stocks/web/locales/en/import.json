@@ -306,5 +306,9 @@
   "import.hint_generic": "Any broker: a CSV with header date,ticker,action,quantity,price,currency,fee,note (action: buy, sell, dividend, fee or split; currency, fee and note optional).",
   "import.book_count": "{n} transactions",
   "import.book_count_one": "{n} transaction",
-  "import.danger_zone": "Danger zone"
+  "import.danger_zone": "Danger zone",
+  "import.type_title": "Type your positions",
+  "import.type_caption": "Broker not listed? Tell the chat what you hold, in your own words, and it books the trades.",
+  "import.type_button": "Type your positions instead",
+  "import.type_prompt": "I hold: 10 NVDA at 120, bought 2024-03-01"
 }

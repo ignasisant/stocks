@@ -28,6 +28,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from stocks import obs
 from stocks.chat import clock
 from stocks.chat.tools import Action
 from stocks.portfolio import demo, doctor, edits, ledger, positions, transfers
@@ -548,6 +549,8 @@ def apply(offer: dict, *, db: Path, source: str, translate: Translate) -> str:
         except (LookupError, edits.EditError) as err:
             raise Refused("chat.action_gone", str(err)) from err
         return translate("chat.book_undone", summary=book.get("summary", ""))
+    added = sum(1 for op in book["ops"] if op.get("op") == "add")
+    first = bool(added) and not demo.has_real(db)  # read before the write
     try:
         done = edits.commit(book["ops"], book["token"], source=source,
                             summary=book.get("summary", ""), path=db)
@@ -556,7 +559,22 @@ def apply(offer: dict, *, db: Path, source: str, translate: Translate) -> str:
     except edits.EditError as err:
         raise Refused("chat.action_invalid", str(err)) from err
     book["change"] = done.id
+    if added:
+        _brought(db, added, first)
     return translate("chat.book_done", summary=book.get("summary", ""))
+
+
+def _brought(db: Path, added: int, first: bool) -> None:
+    """A typed trade is a row the reader brought, like an import's.
+
+    The demo book was borrowed for looking: an invented cost basis must not
+    stay mixed with a real one, so the first typed trade clears it (after the
+    commit, which was planned against the book as it stood). The funnel counts
+    it as the import it is, `first` marking the account's first.
+    """
+    demo.clear(db)
+    obs.event("import.committed", platform="chat", broker="manual", n=added,
+              wiped=False, first=first, via="chat-book")
 
 
 def undo(offer: dict, *, db: Path, translate: Translate) -> str:
