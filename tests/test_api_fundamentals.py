@@ -488,6 +488,31 @@ def test_a_german_issuer_falls_through_to_bafin(client, monkeypatch):
     assert body["trades"][0]["currency"] == "EUR"
 
 
+def test_a_spanish_issuer_falls_through_to_the_cnmv(client, monkeypatch):
+    """A .MC listing is read from the CNMV's register, never sent to BaFin."""
+    monkeypatch.setattr(loaders, "insiders", lambda t: [])
+    monkeypatch.setattr("stocks.api.routes.ticker._sec_filer", lambda t: False)
+    monkeypatch.setattr(
+        loaders,
+        "fundamentals",
+        lambda t: FakeRaw(info={"longName": "Banco Santander, S.A."}),
+    )
+
+    def never(*a, **k):
+        raise AssertionError("BaFin asked about a Spanish issuer")
+
+    monkeypatch.setattr("stocks.api.routes.ticker.bafin_transactions", never)
+    monkeypatch.setattr(
+        "stocks.api.routes.ticker.cnmv_transactions",
+        lambda ticker, issuer: [
+            FakeTx(date(2026, 9, 16), "holder", "Director", "S", False, 10.0, 12.7, "EUR")
+        ],
+    )
+    body = client.get("/v1/ticker/SAN.MC/insiders", headers=AUTH).json()
+    assert body["source"] == "CNMV"
+    assert body["trades"][0]["currency"] == "EUR"
+
+
 def test_a_quiet_us_filer_is_not_sent_to_bafin(client, monkeypatch):
     """BaFin is asked only when the SEC map has no CIK. A US filer whose
     insiders did not trade this quarter is an empty Form 4 list, not a German

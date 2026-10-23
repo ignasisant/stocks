@@ -1105,7 +1105,7 @@ def insiders(ticker: str):
     """Recent Form 4 lines, newest filing first; [] when the feed says nothing.
 
     US filers only through this path. The EU regulators publishing the same
-    disclosure are `data.bafin`, which the route folds in separately.
+    disclosure are `data.bafin` and `data.cnmv`, which the route folds in separately.
     """
     from stocks.data.insiders import insider_transactions
 
@@ -1143,17 +1143,59 @@ def issuer_name(ticker: str) -> str | None:
 
 
 @ttl_cache(_EVENTS_TTL, max_entries=32)
-def eu_insiders(ticker: str):
-    """BaFin's Art. 19 MAR notifications for a German issuer, searched by the
-    company's name; [] for any other listing, a name not found or a failed
-    search (the register's reader never raises)."""
-    from stocks.data.bafin import german_listing
-    from stocks.data.bafin import insider_transactions as bafin_transactions
+def _bafin_insiders(ticker: str):
+    from stocks.data.bafin import insider_transactions
 
-    if not german_listing(ticker):
-        return []
     issuer = issuer_name(ticker)
-    return bafin_transactions(ticker, issuer=issuer) if issuer else []
+    return insider_transactions(ticker, issuer=issuer) if issuer else []
+
+
+# CNMV reads PDFs in the background and report whether they all got read: a
+# complete list is kept like any event feed, a partial one only briefly so the
+# next load picks up what the workers have memoised since.
+_CNMV_PARTIAL_TTL = 60.0
+_CNMV_MAX = 32
+_cnmv_cache: dict[str, tuple[float, list]] = {}
+_cnmv_lock = threading.Lock()
+
+
+def _cnmv_insiders(ticker: str):
+    from stocks.data import cnmv
+
+    key = ticker.upper()
+    now = time.monotonic()
+    with _cnmv_lock:
+        hit = _cnmv_cache.get(key)
+        if hit and hit[0] > now:
+            return hit[1]
+    issuer = issuer_name(ticker)
+    rows, complete = cnmv.read(ticker, issuer=issuer) if issuer else ([], True)
+    ttl = _EVENTS_TTL if complete else _CNMV_PARTIAL_TTL
+    with _cnmv_lock:
+        if len(_cnmv_cache) >= _CNMV_MAX:
+            _cnmv_cache.pop(min(_cnmv_cache, key=lambda k: _cnmv_cache[k][0]))
+        _cnmv_cache[key] = (time.monotonic() + ttl, rows)
+    return rows
+
+
+def eu_insiders(ticker: str):
+    """Art. 19 MAR notifications for a German (BaFin) or Spanish (CNMV) issuer,
+    searched by the company's name; [] for any other listing, a name not found
+    or a failed search (the registers' readers never raise)."""
+    from stocks.data.bafin import german_listing
+    from stocks.data.cnmv import spanish_listing
+
+    if german_listing(ticker):
+        return _bafin_insiders(ticker)
+    if spanish_listing(ticker):
+        return _cnmv_insiders(ticker)
+    return []
+
+
+def _clear_eu_insiders() -> None:
+    getattr(_bafin_insiders, "cache_clear", lambda: None)()
+    with _cnmv_lock:
+        _cnmv_cache.clear()
 
 
 @ttl_cache(3600.0, max_entries=64)

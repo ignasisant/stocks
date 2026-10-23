@@ -503,6 +503,13 @@ def _name(text) -> str:
     return re.sub(r"[^A-Za-zÀ-ÿ .'-]", "", str(text or "")).strip()[:40]
 
 
+def _eu_register(ticker: str) -> str:
+    """The regulator whose Art. 19 MAR register speaks for a European listing."""
+    from stocks.data.cnmv import spanish_listing
+
+    return "cnmv" if spanish_listing(ticker) else "bafin"
+
+
 def insider_row(ticker: str, txs: list, day: date, tr, lang: str,
                 source: str = "sec") -> dict | None:
     """One name's open-market insider trades over `INSIDER_DAYS`, as a row;
@@ -774,8 +781,10 @@ def gather(
     us = [t for t in companies if "." not in t and "-" not in t][:INSIDER_US]
     try:
         from stocks.data.bafin import german_listing
+        from stocks.data.cnmv import spanish_listing
 
-        german = [t for t in companies if german_listing(t)][:INSIDER_EU]
+        german = [t for t in companies
+                  if german_listing(t) or spanish_listing(t)][:INSIDER_EU]
     except Exception:  # noqa: BLE001
         german = []
 
@@ -855,14 +864,17 @@ def gather(
                     rows.append(row)
             for t in german:
                 if row := insider_row(t, _listed(found, f"eu_insider:{t}"), day, tr,
-                                      lang, source="bafin"):
+                                      lang, source=_eu_register(t)):
                     rows.append(row)
             # Clusters first, then by the money that changed hands.
             rows.sort(key=lambda r: (not r["data"]["cluster_buy"],
                                      -abs(r["data"]["net_value"])))
             rows = [r for r in rows if _fresh(r, shown, day)]
-            missing[sid] += [s for src, s in (("insider", "sec"), ("eu_insider", "bafin"))
+            missing[sid] += [s for src, s in (("insider", "sec"), ("eu_insider", "eu"))
                              if src in failed]
+            if "eu" in missing[sid]:
+                missing[sid].remove("eu")
+                missing[sid] += sorted({_eu_register(t) for t in german})
         elif sid == COMPARE:
             closes = found.get("closes")
             verdicts = found.get("verdicts")

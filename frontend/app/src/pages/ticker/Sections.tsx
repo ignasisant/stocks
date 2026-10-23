@@ -339,7 +339,9 @@ export function InsidersSection({ insiders }: { insiders: Insiders }) {
       note={t(
         insiders.source === "BaFin"
           ? "ticker.insider_caption_bafin"
-          : "ticker.insider_caption",
+          : insiders.source === "CNMV"
+            ? "ticker.insider_caption_cnmv"
+            : "ticker.insider_caption",
       )}
     >
       {summary ? (

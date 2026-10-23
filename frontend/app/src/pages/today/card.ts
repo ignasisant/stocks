@@ -346,6 +346,8 @@ export function sourceKey(row: Pick<TodayRow, "kind" | "source">): string | null
       return "today.src_sec";
     case "bafin":
       return "today.src_bafin";
+    case "cnmv":
+      return "today.src_cnmv";
     default:
       return null;
   }
@@ -356,6 +358,7 @@ const MISSING: Record<string, string> = {
   edgar: "today.src_edgar",
   sec: "today.src_sec",
   bafin: "today.src_bafin",
+  cnmv: "today.src_cnmv",
   prices: "today.src_prices",
   review: "today.src_review",
 };

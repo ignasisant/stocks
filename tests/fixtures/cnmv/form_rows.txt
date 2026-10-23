@@ -1,0 +1,389 @@
+Formulario
+MODELO DE NOTIFICACIÓN DE LAS
+OPERACIONES DE LAS PERSONAS CON
+RESPONSABILIDADES DE DIRECCIÓN Y
+DE LAS PERSONAS ESTRECHAMENTE
+VINCULADAS CON ELLAS
+
+Standard Form
+
+STANDARD FORM FOR NOTIFICATION
+AND PUBLIC DISCLOSURE OF
+TRANSACTIONS BY PERSONS
+DISCHARGING MANAGERIAL
+RESPONSABILITIES AND PERSONS
+CLOSELY ASSOCIATED WITH THEM
+
+1. DATOS DE LA PERSONA CON RESPONSABILIDAD DE DIRECCIÓN - PERSONA ESTRECHAMENTE VINCULADA   |  DETAILS
+
+OF THE PERSON DISCHARGING MANAGERIAL RESPONSABILITIES (PDMR) - PERSON CLOSELY ASSOCIATED
+
+a) Nombre y apellidos - Razón social  |  Name and surname - Company name
+
+JOSE MARIA LINARES PEROU
+
+2. MOTIVO DE LA NOTIFICACIÓN   |  REASON FOR THE NOTIFICACTION
+
+[ √ ]    Persona con responsabilidad de dirección  |  Person discharging managerial responsibilities (PDMR)
+
+[    ]    Persona estrechamente vinculada  |  Person closely associated
+
+a) Cargo - posición  |  Job title
+
+GROUP SENIOR EXECUTIVE VICE-PRESIDENT
+
+b) Notiﬁcación inicial - Modiﬁcación  |  Initial Notiﬁcation - Amendment
+
+Inicial
+
+3. DATOS DEL EMISOR, EL PARTICIPANTE DEL MERCADO DE DERECHOS DE EMISIÓN, LA PLATAFORMA DE SUBASTA, EL
+
+SUBASTADOR O LA ENTIDAD SUPERVISORA DE LAS SUBASTAS  |  DETAILS OF THE ISSUER, EMISSION ALLOWANCE MARKET
+
+PARTICIPANT, AUNCTION PLATFORM, AUCTIONEER OR AUCTION MONITOR
+
+a) Identiﬁcación  |  Name:
+
+BANCO SANTANDER, S.A.
+
+b) LEI:
+
+5493006QMFDDMYWIAM13
+
+1 / 3
+
+Formulario
+
+Standard form
+
+4. DATOS DE LA OPERACIÓN O LAS OPERACIONES (El siguiente cuadro se repetirá para: i) cada tipo de instrumento
+
+ﬁnanciero; ii) cada tipo de operación; iii) cada fecha, y iv) cada lugar en que se hayan realizado operaciones)  |  DETAILS OF THE
+
+TRANSACTIONS (Table to be repeated for (i) each type of instrument; (ii) each type of transaction; (iii) each date; and (iv) each
+
+place where transactions have been conducted)
+
+Código de
+Identiﬁcación
+del instrumento
+ﬁnanciero
+...
+Identiﬁcation
+code of the
+ﬁnancial
+instrument
+4.a)
+
+Naturaleza del
+instrumento
+ﬁnanciero
+...
+Nature of
+the ﬁnancial
+instrument
+4.b)
+
+Naturaleza de
+la operación
+...
+Nature of the
+transaction
+4.c)
+
+Fecha
+...
+Date
+4.d)
+
+Lugar de la operación
+...
+Place of the
+transaction
+4.e)
+
+Volumen
+...
+Volume
+4.f)
+
+Precio Unitario
+...
+Unit Price
+4.g)
+
+Divisa
+...
+Currency
+4.h)
+
+ES0113900J37
+
+Acción
+
+Venta
+
+16/09/2026
+
+AQEU
+
+72101,00
+
+12,75
+
+EUR
+
+Total Agregado
+...
+Aggregated information
+5)
+
+72101,00
+
+12,75
+
+Código de
+Identiﬁcación
+del instrumento
+ﬁnanciero
+...
+Identiﬁcation
+code of the
+ﬁnancial
+instrument
+4.a)
+
+Naturaleza del
+instrumento
+ﬁnanciero
+...
+Nature of
+the ﬁnancial
+instrument
+4.b)
+
+Naturaleza de
+la operación
+...
+Nature of the
+transaction
+4.c)
+
+Fecha
+...
+Date
+4.d)
+
+Lugar de la operación
+...
+Place of the
+transaction
+4.e)
+
+Volumen
+...
+Volume
+4.f)
+
+Precio Unitario
+...
+Unit Price
+4.g)
+
+Divisa
+...
+Currency
+4.h)
+
+ES0113900J37
+
+Acción
+
+Venta
+
+16/09/2026
+
+CEUX
+
+272315,00
+
+12,76
+
+EUR
+
+Total Agregado
+...
+Aggregated information
+5)
+
+272315,00
+
+12,76
+
+Código de
+Identiﬁcación
+del instrumento
+ﬁnanciero
+...
+Identiﬁcation
+code of the
+ﬁnancial
+instrument
+4.a)
+
+Naturaleza del
+instrumento
+ﬁnanciero
+...
+Nature of
+the ﬁnancial
+instrument
+4.b)
+
+Naturaleza de
+la operación
+...
+Nature of the
+transaction
+4.c)
+
+Fecha
+...
+Date
+4.d)
+
+Lugar de la operación
+...
+Place of the
+transaction
+4.e)
+
+Volumen
+...
+Volume
+4.f)
+
+Precio Unitario
+...
+Unit Price
+4.g)
+
+Divisa
+...
+Currency
+4.h)
+
+ES0113900J37
+
+Acción
+
+Venta
+
+16/09/2026
+
+TQEX
+
+34359,00
+
+12,75
+
+EUR
+
+Total Agregado
+...
+Aggregated information
+5)
+
+34359,00
+
+12,75
+
+2 / 3
+
+Formulario
+
+Standard form
+
+Código de
+Identiﬁcación
+del instrumento
+ﬁnanciero
+...
+Identiﬁcation
+code of the
+ﬁnancial
+instrument
+4.a)
+
+Naturaleza del
+instrumento
+ﬁnanciero
+...
+Nature of
+the ﬁnancial
+instrument
+4.b)
+
+Naturaleza de
+la operación
+...
+Nature of the
+transaction
+4.c)
+
+Fecha
+...
+Date
+4.d)
+
+Lugar de la operación
+...
+Place of the
+transaction
+4.e)
+
+Volumen
+...
+Volume
+4.f)
+
+Precio Unitario
+...
+Unit Price
+4.g)
+
+Divisa
+...
+Currency
+4.h)
+
+ES0113900J37
+
+Acción
+
+Venta
+
+16/09/2026
+
+XMAD
+
+221225,00
+
+12,77
+
+EUR
+
+Total Agregado
+...
+Aggregated information
+5)
+
+221225,00
+
+12,77
+
+Otra información | Additional information
+
+3 / 3
+
+
