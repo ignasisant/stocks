@@ -54,7 +54,7 @@ from stocks.chat import (
 )
 from stocks.config import DATA_DIR, currency_symbol
 from stocks.secrets_env import secret
-from stocks.web import chat_skills, chat_web, metering
+from stocks.web import chat_skills, chat_web, llm, metering
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -341,7 +341,6 @@ def attempts(prefs: dict, session_keys: dict[str, str] | None = None,
     that dict would be written to disk in the clear by the first free unit it
     charged — the exact promise a session-only key exists to keep.
     """
-    from stocks.web import llm
 
     held = session_keys or {}
     seen = []
@@ -1047,15 +1046,20 @@ def language_rule(lang: str | None) -> str:
 
 def system_prompt(profile: dict, context: str,
                   skill_ids: list[str] | None = None,
-                  lang: str | None = None, memories: str = "") -> str:
-    """Persona + the user's saved memories + the caller's context block (view
-    + book snapshot) + the analysis frameworks chosen for this turn + the
-    answer's language.
+                  lang: str | None = None, memories: str = "",
+                  book: str = "") -> llm.Prompt:
+    """Persona + the user's saved memories + the book + the caller's context
+    block (the view, what the surface draws) + the analysis frameworks chosen
+    for this turn + the answer's language.
 
-    `memories` (`learnings.block`) sits between the fixed paragraphs and the
-    context: it changes when the user edits it, the context on every turn, so
-    this order keeps the longest prefix a provider can cache."""
-    return (
+    Ordered most stable first, and handed over as an `llm.Prompt` whose parts
+    are the cache breakpoints: the fixed paragraphs with `memories`
+    (`learnings.block`, which changes when the user teaches something), then
+    `book` (the snapshot, which changes when prices do), then the rest, which
+    changes with the page the question was asked on and the skills the router
+    picked. A turn that only moved page rereads the first two parts from the
+    provider's cache instead of rewriting the whole prompt."""
+    head = (
         "You are a concise investing assistant embedded in a personal stock "
         "tracker. " + persona(profile) + "You are not a licensed financial "
         "advisor: give analysis and trade-offs, not directives, and flag when "
@@ -1089,11 +1093,15 @@ def system_prompt(profile: dict, context: str,
         "never reaches you as text — if the conversation does not already "
         "show its parsed result, you have not seen its contents and must say "
         "so. Asked to import with nothing attached, say what to attach.\n\n"
-        f"{memories}{context}"
+        f"{memories}"
+    )
+    tail = (
+        context
         + chat_skills.skills_block(skill_ids or [])
         + RULES
         + language_rule(lang)
     )
+    return llm.Prompt(head, book, tail)
 
 
 # What a daily card's thread opens with, as far as the model is concerned. The
@@ -2601,7 +2609,6 @@ def answerable(prefs: dict, atts: list[tuple[Provider, str, str]],
     here, not charged: those calls are the cost of a turn the cap already
     priced, and the reader who is out today makes none of them.
     """
-    from stocks.web import llm
 
     # A key the provider refused minutes ago goes to the back rather than out:
     # the research runs on the head of this list, and leading with a dead key
@@ -2933,14 +2940,16 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
     recalled_notes, recalled = earlier(prefs, chat_path, message)
     system = system_prompt(
         auth.load_profile(prefs),
-        # In this order: where the reader is, what they hold, what the surface
-        # draws for them, and — on the walkthrough's thread only — the fence.
-        context + view
-        + portfolio_context(watchlist, db, reporting_currency(prefs))
-        + tax_rules(prefs) + (charts.PROMPT if draws else "") + fence,
+        # The turn's own part: where the reader is, what the surface draws
+        # for them, and — on the walkthrough's thread only — the fence.
+        context + view + (charts.PROMPT if draws else "") + fence,
         skills,
         lang,
         memories=memory_block(prefs, chat_path) + card_block(chat_path),
+        # What they hold and how it is taxed: its own cache part, since it
+        # changes when prices do and the view changes when the reader moves.
+        book=portfolio_context(watchlist, db, reporting_currency(prefs))
+        + tax_rules(prefs),
     )
     # Everything fetched rides on the outgoing copy of the user turn, not the
     # system prompt — the stored history keeps the user's own text.
@@ -3121,7 +3130,6 @@ def _provider_failed(exc: Exception, provider: Provider, model: str,
     reason for a dead chain (retired model, free tier gone paid) is
     unrecoverable. A refused key is also remembered (`llm.note_failure`), so
     the next turn's research skips it."""
-    from stocks.web import llm
 
     llm.note_failure(provider, key, exc)
     obs.warn("chat.provider_failed", provider=provider.id, model=model,
@@ -3242,6 +3250,7 @@ def _log_cost(meter: metering.Meter, turn: Turn | None) -> None:
         return
     obs.event("chat.cost", profile=turn.profile if turn else "",
               models=meter.models(), tokens=meter.tokens(),
+              cached=meter.cached(), cache_write=meter.cache_write(),
               steps=meter.by_step(), usd=meter.usd())
 
 

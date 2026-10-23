@@ -252,7 +252,38 @@ class Provider:
                            messages, tools, execute, max_rounds, stop=stop)
 
 
+class Prompt(str):
+    """A system prompt that remembers where its stable parts end.
+
+    The string is the whole prompt — every provider, counter and log reads it
+    as one — and `blocks` are its parts in order, most stable first: the fixed
+    persona with the user's memories, the book snapshot, then what changes
+    with the turn (the current view, the skills, the rules). A provider that
+    caches by explicit breakpoint (Anthropic) marks each part, so a turn that
+    changed only the view still reads the persona and the book from the cache
+    instead of rewriting the whole prompt; providers that cache by prefix on
+    their own get the same gain from the order alone."""
+
+    blocks: tuple[str, ...]
+
+    def __new__(cls, *blocks: str) -> Prompt:
+        self = super().__new__(cls, "".join(blocks))
+        self.blocks = tuple(b for b in blocks if b)
+        return self
+
+
 # ------------------------------------------------------------- Claude (Anthropic)
+
+
+def _system_blocks(system: str) -> list[dict]:
+    """The system prompt as Anthropic content blocks, one cache breakpoint on
+    each part (`Prompt.blocks`; a plain string is one part). The lookup takes
+    the longest cached prefix of parts, so a change in a later part costs
+    only the parts after it. Four breakpoints are allowed per request: three
+    parts here plus the one on the last message."""
+    parts = getattr(system, "blocks", None) or (str(system),)
+    return [{"type": "text", "text": part, "cache_control": {"type": "ephemeral"}}
+            for part in parts[:3] if part]
 
 
 def _with_cache_breakpoint(messages: list[dict]) -> list[dict]:
@@ -278,16 +309,14 @@ def _anthropic_stream(api_key, model, system, messages):
     import anthropic
 
     client = anthropic.Anthropic(api_key=api_key)
-    # Cache the frozen persona + book snapshot (system) and the conversation
-    # prefix. Within a session these repeat verbatim, so caching turns the
-    # resend-everything-every-turn cost into cheap cache reads. A miss (e.g. the
-    # book snapshot changed, or the prefix is below the model's min) just re-
-    # writes — no error, no behaviour change.
-    system_blocks = [
-        {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
-    ]
+    # Cache the system prompt part by part (persona + memories, book, the
+    # turn's own context) and the conversation prefix. Within a session the
+    # first parts repeat verbatim while the view and the skills move, so the
+    # resend-everything-every-turn cost becomes cheap cache reads of the
+    # parts that held. A miss (the book repriced, a prefix below the model's
+    # minimum) just rewrites — no error, no behaviour change.
     with client.messages.stream(
-        model=model, max_tokens=MAX_TOKENS, system=cast(Any, system_blocks),
+        model=model, max_tokens=MAX_TOKENS, system=cast(Any, _system_blocks(system)),
         messages=cast(Any, _with_cache_breakpoint(messages)),
     ) as stream:
         yield from stream.text_stream
@@ -313,13 +342,16 @@ def _anthropic_tools(api_key, model, system, messages, tools, execute, rounds,
     client = anthropic.Anthropic(api_key=api_key)
     schema = [{"name": t.name, "description": t.description,
                "input_schema": t.schema} for t in tools]
-    convo = list(messages)
+    # The loop resends the system prompt and the thread every round; marked,
+    # they are cache reads from the second round on (and from the answer's
+    # own call after, which sends the same parts).
+    convo = _with_cache_breakpoint(list(messages))
     calls: list[ToolCall] = []
     text = ""
     for _ in range(max(1, rounds)):
         resp = client.messages.create(
-            model=model, max_tokens=MAX_TOKENS, system=system,
-            messages=convo, tools=cast(Any, schema),
+            model=model, max_tokens=MAX_TOKENS, system=cast(Any, _system_blocks(system)),
+            messages=cast(Any, convo), tools=cast(Any, schema),
         )
         metering.note_anthropic(model, getattr(resp, "usage", None))
         text = "".join(b.text for b in resp.content if b.type == "text")

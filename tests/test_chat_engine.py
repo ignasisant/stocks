@@ -1233,3 +1233,39 @@ def test_a_pasted_review_opens_no_trade_card(providers, paths, monkeypatch):
     engine.answer(prefs=dict(BASE_PREFS), lang="es", message="baja FISV al 5%",
                   **paths)
     assert cards("baja FISV al 5%") == ["_harvest", "_rebalance", "_simulate_sale"]
+
+
+# ------------------------------------------------------- prompt cache parts
+
+
+def test_the_prompt_is_one_string_in_three_cache_parts():
+    got = engine.system_prompt({"set": False}, "VIEW", ["tech"],
+                               memories="MEMORIES\n\n", book="BOOK\n\n")
+    assert isinstance(got, str) and isinstance(got, engine.llm.Prompt)
+    assert "".join(got.blocks) == got
+    head, book, tail = got.blocks
+    assert head.endswith("MEMORIES\n\n") and "concise investing assistant" in head
+    assert book == "BOOK\n\n"
+    assert tail.startswith("VIEW") and "Apply these analysis frameworks" in tail
+    assert "RULES — these hold" in tail
+    # The order the string reads in is the order of the parts.
+    assert got.index("MEMORIES") < got.index("BOOK") < got.index("VIEW")
+
+
+def test_a_moved_page_or_other_skills_keep_the_first_parts_byte_identical():
+    base = dict(memories="MEMORIES\n\n", book="BOOK\n\n")
+    one = engine.system_prompt({"set": False}, "on Home", ["tech"], "es", **base)
+    moved = engine.system_prompt({"set": False}, "on Portfolio", ["tech"], "es", **base)
+    reskilled = engine.system_prompt({"set": False}, "on Portfolio", ["dividend"],
+                                     "es", **base)
+    assert one.blocks[:2] == moved.blocks[:2] == reskilled.blocks[:2]
+    assert one.blocks[2] != moved.blocks[2] != reskilled.blocks[2]
+    # A repriced book costs the book part only, never the persona.
+    repriced = engine.system_prompt({"set": False}, "on Home", ["tech"], "es",
+                                    memories="MEMORIES\n\n", book="BOOK v2\n\n")
+    assert repriced.blocks[0] == one.blocks[0] and repriced.blocks[2] == one.blocks[2]
+
+
+def test_an_empty_part_is_dropped_so_the_breakpoints_stay_within_four():
+    got = engine.system_prompt({"set": False}, "x", [])
+    assert len(got.blocks) == 2
