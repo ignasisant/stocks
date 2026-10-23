@@ -2,8 +2,13 @@
 
 Linking is a four-step dance — press Connect, get a one-time code, press Start
 in Telegram, wait for the chat id to come back. The code is a secret in
-prefs.json, the return trip is the Actions chat job writing `telegram_chat_id`
-into the bucket, and the waiting is polling a file.
+prefs.json, and the waiting is polling this route. The return trip has two
+roads: with the webhook Worker deployed, the Actions chat job matches
+"/start <code>" and writes `telegram_chat_id` into the bucket; without it
+(no webhook set, Telegram keeps the updates for getUpdates) this route reads
+the bot's recent updates itself on each poll and completes the link here.
+Each road is a no-op while the other is live — getUpdates answers 409, read
+as nothing, whenever a webhook is set.
 
 The code is session-scoped and random. That matters: an attacker sending
 "/start <guess>" from their own Telegram can only ever match a code somebody
@@ -18,7 +23,7 @@ import time
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from stocks import accounts, storage
+from stocks import accounts, obs, storage
 from stocks.api.deps import Account, Writer
 from stocks.notify import telegram
 
@@ -101,14 +106,57 @@ def _state(prefs: dict) -> Telegram:
     )
 
 
+def _complete_from_updates(account, prefs: dict) -> dict:
+    """Finish a pending link from the bot's own updates, when nothing else will.
+
+    Without the webhook Worker no job ever reads "/start <code>", and the
+    reader watches a spinner that cannot stop. getUpdates is read without an
+    offset, so nothing is consumed: two readers linking at once still each
+    find their own message, and the Worker road, once deployed, sees the
+    same updates. Any failure leaves the state as it was for the next poll.
+    """
+    code = str(prefs.get("tg_link_code") or "")
+    if not code or prefs.get("telegram_chat_id") or not telegram.configured():
+        return prefs
+    chat = None
+    with obs.swallow("telegram.link_poll"):
+        chat = telegram.match_start(telegram.get_updates(), code)
+    if not chat:
+        return prefs
+    stored = accounts.update_prefs(
+        account.prefs,
+        {
+            "telegram_chat_id": chat["id"],
+            "telegram_username": chat.get("username") or "",
+            "telegram_linked_at": int(time.time()),
+            "tg_link_code": None,
+            "tg_link_ts": None,
+        },
+    )
+    obs.event("telegram.linked", via="poll")
+    from stocks.web.i18n import translate
+
+    with obs.swallow("telegram.link_welcome"):
+        telegram.send_message(
+            translate("notify.tg_linked_alerts", prefs.get("language") or "en"),
+            chat["id"],
+            parse_mode=None,
+        )
+    return stored
+
+
 @router.get("", response_model=Telegram, summary="Is a chat linked yet")
 def state(account: Account) -> Telegram:
     """Whether this account has Telegram, and whether it is mid-link.
 
     This is the polling endpoint: a client presses Connect, opens Telegram, and
-    asks this until `linked` turns true.
+    asks this until `linked` turns true. While a code is pending each poll
+    also looks for its "/start" in the bot's updates.
     """
-    return _state(_restore(account))
+    prefs = _restore(account)
+    if _state(prefs).pending:
+        prefs = _complete_from_updates(account, prefs)
+    return _state(prefs)
 
 
 @router.post("", response_model=Link, summary="Start linking a chat")
@@ -152,7 +200,7 @@ def test(account: Writer) -> Telegram:
             detail="no telegram chat is linked to this account",
         )
     try:
-        telegram.send_message(str(chat_id), "✅ TopStocks")
+        telegram.send_message("✅ TopStocks", str(chat_id), parse_mode=None)
     except Exception as exc:  # noqa: BLE001 — the reason is the answer here
         # The provider's own words and nothing else: the client already has a
         # sentence to frame this with, and prefixing it here made the reader
