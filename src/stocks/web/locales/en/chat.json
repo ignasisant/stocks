@@ -513,5 +513,15 @@
   "chat.guest_a": "Three things:\n\n- **One sector.** All seven are US tech: they tend to fall together.\n- **One name leads.** NVIDIA weighs more than any other.\n- **All in dollars.** If the euro rises, you lose even when the shares don't.",
   "chat.guest_lock": "Sign in and the AI reads your portfolio and answers.",
   "chat.guest_asked": "Sign in and the AI answers this, with your portfolio.",
-  "chat.import_nudge": "Import your portfolio and the AI will read it"
+  "chat.import_nudge": "Import your portfolio and the AI will read it",
+  "chat.import_review": "Review full screen",
+  "chat.import_review_close": "Back to chat",
+  "chat.import_tab_new": "New · {n}",
+  "chat.import_tab_warnings": "Warnings · {n}",
+  "chat.import_tab_rejected": "Rejected · {n}",
+  "chat.import_tab_held": "Already held · {n}",
+  "chat.import_tab_skipped": "Skipped · {n}",
+  "chat.import_select_all": "Select all rows",
+  "chat.import_select_row": "Include row {n}",
+  "chat.import_selected": "{n} of {total} new rows selected"
 }
