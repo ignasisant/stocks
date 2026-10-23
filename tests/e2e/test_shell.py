@@ -155,12 +155,23 @@ document.addEventListener("securitypolicyviolation", (e) =>
   window.__csp.push(`${e.violatedDirective} ${e.blockedURI} ${e.sample || ""}`));
 """
 
+# Other hosts answer empty here. The browser judges a request against the
+# policy before it leaves, so a refused one still reports; an allowed one (the
+# fonts, a Google favicon behind a missing broker logo) no longer waits on a
+# network the runner may not reach, which kept `networkidle` from ever coming.
+_ELSEWHERE = re.compile(r"^https?://(?!127\.0\.0\.1[:/])")
+
+
+def _offline(page: Page) -> None:
+    page.route(_ELSEWHERE, lambda route: route.fulfill(status=204))
+
 
 @pytest.mark.parametrize("path", ["", "es/", "legal/privacy", "no-such-page"])
 def test_the_public_documents_break_none_of_their_own_policy(page: Page, path: str):
     """The landing, the legal pages and the 404 run under a policy that
     refuses inline styles and scripts: the browser, not a parser, says whether
     what they carry is allowed."""
+    _offline(page)
     page.add_init_script(_WATCH_CSP)
     page.goto(f"/{path}")
     page.wait_for_load_state("networkidle")
@@ -168,10 +179,9 @@ def test_the_public_documents_break_none_of_their_own_policy(page: Page, path: s
 
 
 @pytest.mark.parametrize("path", PAGES)
-def test_every_shell_page_breaks_none_of_its_own_policy(
-    page: Page, sign_in, path: str
-):
+def test_every_shell_page_breaks_none_of_its_own_policy(page: Page, sign_in, path: str):
     sign_in()
+    _offline(page)
     page.add_init_script(_WATCH_CSP)
     page.goto(f"/{path}")
     page.wait_for_load_state("networkidle")
