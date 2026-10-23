@@ -80,6 +80,7 @@ OPEN: frozenset[tuple[str, str]] = frozenset(
         ("/v1/portfolio/dividends", "GET"),
         ("/v1/portfolio/tax", "GET"),
         ("/v1/portfolio/risk", "GET"),
+        ("/v1/portfolio/attribution", "GET"),
         # The positions tab's day / week / month columns, over the same book.
         ("/v1/movers", "GET"),
         # --- Ticker, minus favourites, tags, alerts and the assistant -----
