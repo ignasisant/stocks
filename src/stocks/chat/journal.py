@@ -121,6 +121,10 @@ class Entry:
     times: int = 1
     links: tuple[str, ...] = ()
     updated: str = ""
+    # How a followed or declined entry got there: "chat" for a button the
+    # reader pressed, "ledger:<date>" for a trade found in the book. "" for
+    # the states the app sets on its own (open, lapsed).
+    settled: str = ""
 
     def as_dict(self) -> dict:
         out = asdict(self)
@@ -201,6 +205,7 @@ def load(path: Path) -> list[Entry]:
             times=int(item.get("times") or 1),
             links=tuple(str(x) for x in item.get("links") or ()),
             updated=str(item.get("updated") or ""),
+            settled=str(item.get("settled") or ""),
         ))
     return out
 
@@ -316,7 +321,7 @@ def settle(path: Path, shown: Shown, state: str, day: date) -> Entry | None:
         entries = load(path)
         for i, e in enumerate(entries):
             if e.source == shown.source and e.subject == shown.subject:
-                entries[i] = replace(e, state=state, updated=now)
+                entries[i] = replace(e, state=state, settled="chat", updated=now)
                 _save(path, entries)
                 return entries[i]
         entry = Entry(
@@ -324,7 +329,7 @@ def settle(path: Path, shown: Shown, state: str, day: date) -> Entry | None:
             action=shown.action, subject=shown.subject, ticker=shown.ticker,
             line=_text(shown.line, MAX_LINE),
             reasons=tuple(_text(r, 80) for r in shown.reasons[:MAX_REASONS]),
-            snapshot=_scalars(shown.snapshot), state=state,
+            snapshot=_scalars(shown.snapshot), state=state, settled="chat",
             day=day.isoformat(), last=day.isoformat(), updated=now,
         )
         entries.append(entry)
@@ -364,6 +369,209 @@ def safely(fn, *args, **kwargs):
         obs.warn("journal.write_failed", op=getattr(fn, "__name__", "?"),
                  error_type=type(exc).__name__, error=str(exc)[:200])
         return None
+
+
+# -------------------------------------------------------------- the ledger
+
+# What a recorded trade settles. A proposal to let go of a name is answered
+# by a sale of it; one to take more, by a buy. The rest — an alert, a look,
+# a stay — has no trade that would mean "done".
+SELL_SIDE = frozenset({"sell", "trim", "harvest"})
+BUY_SIDE = frozenset({"add", "buy", "rebuy"})
+# A trade this long after the proposal was last on screen still counts as
+# taking it: the same window after which an unshown proposal lapses.
+SETTLE_DAYS = LAPSE_DAYS
+
+
+def side_of(action: str) -> str:
+    """The ledger action that would mean `action` was taken, or ""."""
+    if action in SELL_SIDE:
+        return "sell"
+    return "buy" if action in BUY_SIDE else ""
+
+
+def same_name(a: str, b: str) -> bool:
+    """ASML and ASML.AS are one company; the journal writes what the surface
+    showed, the ledger what the statement said."""
+    a, b = a.strip().upper(), b.strip().upper()
+    return bool(a) and bool(b) and (a == b or a.split(".")[0] == b.split(".")[0])
+
+
+def settle_from_ledger(path: Path, trades: Iterable, day: date) -> int:
+    """Mark followed the proposals the reader acted on, read off the ledger.
+
+    The reader is never asked whether they took a proposal: a sale of a name
+    the app said to sell, trim or harvest — a buy of one it said to add or
+    buy back — dated from the proposal's first day to SETTLE_DAYS after its
+    last showing, is the answer. Open and lapsed entries settle this way (a
+    name sold is never judged again, so its sell proposal lapses before
+    anyone looks); followed and declined ones stand. `trades` are ledger
+    rows (`date`, `ticker`, `action`, `quantity`, `price`), as
+    `transfers.normalize` leaves them. Returns how many entries changed.
+    """
+    rows = [(str(t.date)[:10], str(t.ticker), str(t.action).lower(), t)
+            for t in trades if str(t.action).lower() in ("buy", "sell")]
+    if not rows:
+        return 0
+    now = _now()
+    with _LOCK:
+        entries = load(path)
+        changed = 0
+        for i, e in enumerate(entries):
+            side = side_of(e.action)
+            if not side or not e.ticker or e.state not in ("open", "lapsed"):
+                continue
+            until = (date.fromisoformat(e.last) + timedelta(days=SETTLE_DAYS)
+                     ).isoformat() if e.last else ""
+            hit = next((t for when, ticker, action, t in rows
+                        if action == side and same_name(ticker, e.ticker)
+                        and e.day <= when <= until), None)
+            if hit is None:
+                continue
+            entries[i] = replace(e, state="followed", updated=now,
+                                 settled=f"ledger:{str(hit.date)[:10]}")
+            changed += 1
+        if changed:
+            _save(path, entries)
+            obs.event("journal.settled_from_ledger", n=changed)
+        return changed
+
+
+def settle_from_db(path: Path, db: Path | None, day: date) -> int:
+    """`settle_from_ledger` over the account's book. Nothing is read from the
+    book when no entry could settle, which is most accounts most days."""
+    if db is None or not Path(db).exists():
+        return 0
+    if not any(side_of(e.action) and e.state in ("open", "lapsed")
+               for e in load(path)):
+        return 0
+    from stocks.portfolio import transfers
+    from stocks.portfolio.ledger import all_transactions
+
+    return settle_from_ledger(path, transfers.normalize(all_transactions(Path(db))),
+                              day)
+
+
+# -------------------------------------------------------------- the record
+
+
+def track_record(entries: Iterable[Entry]) -> dict:
+    """What became of the proposals, counted: made, followed, declined,
+    lapsed, still open — over the journal and per source. A stay is advice
+    to do nothing and is left out of "made". The record says what the reader
+    did with the advice, not whether the advice paid: that needs a price
+    after the fact, and is not kept here."""
+    rows = [e for e in entries if e.type == "proposal" and e.action != REVIEW_STAY]
+
+    def count(scope: list[Entry]) -> dict:
+        out = {"proposed": len(scope), **{s: 0 for s in STATES}}
+        for e in scope:
+            out[e.state] = out.get(e.state, 0) + 1
+        return out
+
+    return {**count(rows),
+            "by_source": {s: count([e for e in rows if e.source == s])
+                          for s in SOURCES}}
+
+
+HISTORY_DAYS = 90  # how far back a surface looks before proposing again
+HISTORY_LINES = 8
+
+
+def history_for(path: Path, tickers: Iterable[str], day: date, *,
+                limit: int = HISTORY_LINES) -> list[str]:
+    """What was proposed about `tickers` lately and what came of it, one
+    plain line each, newest first — for a surface to read before it
+    proposes again. A move the reader declined or let lapse is not worth
+    the same words twice; one they followed is done."""
+    want = [t for t in dict.fromkeys(str(t).strip().upper() for t in tickers) if t]
+    if not want:
+        return []
+    since = (day - timedelta(days=HISTORY_DAYS)).isoformat()
+    hits = [e for e in load(path)
+            if e.type == "proposal" and e.ticker and e.last >= since
+            and e.day < day.isoformat()
+            and any(same_name(e.ticker, t) for t in want)]
+    hits.sort(key=lambda e: (e.last, e.updated), reverse=True)
+    return [history_line(e) for e in hits[:limit]]
+
+
+def history_line(entry: Entry) -> str:
+    """`history_for`'s line: name, move, where and when, and the outcome."""
+    when = entry.day if entry.last == entry.day else f"{entry.day} to {entry.last}"
+    shown = f", shown {entry.times} days" if entry.times > 1 else ""
+    fate = {
+        "followed": "the user did it",
+        "declined": "the user declined",
+        "lapsed": "it lapsed",
+        "open": "still open",
+    }.get(entry.state, entry.state)
+    if entry.settled.startswith("ledger:"):
+        fate += f" (trade on {entry.settled[7:]})"
+    return f"{entry.ticker}: {entry.action} ({entry.source}, {when}{shown}) · {fate}"
+
+
+# -------------------------------------------------------------- the export
+
+
+def to_markdown(entries: Iterable[Entry], day: date, *, name: str = "decisions") -> str:
+    """The journal as one Markdown file a notes app reads whole: frontmatter,
+    the record, then an entry per section with Obsidian's block id (`^id`)
+    so the links between entries resolve (`[[name#^id]]`), and tags for its
+    ticker, state and source so a notes app's search filters it the way
+    the Diario tab does."""
+    rows = sorted(entries, key=lambda e: (e.last, e.updated), reverse=True)
+    record = track_record(rows)
+    out = [
+        "---",
+        "title: Decision journal",
+        f"exported: {day.isoformat()}",
+        f"entries: {len(rows)}",
+        "---",
+        "",
+        "# Decision journal",
+        "",
+        "What the app proposed and showed, with the figures each was made on "
+        "and what became of it. Written by the app, never by hand.",
+        "",
+        f"Proposed {record['proposed']} · followed {record['followed']} · "
+        f"declined {record['declined']} · lapsed {record['lapsed']} · "
+        f"open {record['open']}",
+        "",
+    ]
+    for e in rows:
+        head = f"## {e.day} · {e.source} · {e.action}"
+        if e.ticker:
+            head += f" {e.ticker}"
+        out.append(f"{head} · {e.state}")
+        out.append("")
+        tags = [f"#state/{e.state}", f"#source/{e.source}", f"#move/{e.action}"]
+        if e.ticker:
+            tags.insert(0, f"#ticker/{e.ticker.replace('.', '-')}")
+        out.append(" ".join(tags) + f" ^{e.id}")
+        out.append("")
+        if e.line:
+            out.append(f"> {e.line}")
+            out.append("")
+        when = e.day if e.last == e.day else f"{e.day} → {e.last}"
+        out.append(f"- **Shown:** {when}" + (f", {e.times} days" if e.times > 1 else ""))
+        fate = e.state
+        if e.settled == "chat":
+            fate += " (answered in the chat)"
+        elif e.settled.startswith("ledger:"):
+            fate += f" (trade on {e.settled[7:]})"
+        out.append(f"- **State:** {fate}")
+        if e.reasons:
+            out.append("- **Why:** " + ", ".join(e.reasons))
+        figures = ", ".join(f"{k} {v}" for k, v in e.snapshot.items() if v is not None)
+        if figures:
+            out.append(f"- **Figures then:** {figures}")
+        if e.evidence:
+            out.append(f"- **Analysis:** {e.evidence}")
+        if e.links:
+            out.append("- **Linked:** " + ", ".join(f"[[{name}#^{x}]]" for x in e.links))
+        out.append("")
+    return "\n".join(out)
 
 
 # ------------------------------------------------------------ the surfaces
@@ -503,6 +711,8 @@ def line_for(entry: Entry) -> str:
     if entry.ticker:
         head += f" {entry.ticker}"
     head += f" · {entry.state}"
+    if entry.settled.startswith("ledger:"):
+        head += f" (trade on {entry.settled[7:]})"
     if entry.times > 1:
         head += f" (shown {entry.times} days)"
     parts = [head]

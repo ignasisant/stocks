@@ -829,6 +829,14 @@ def start(
         try:
             _gather_brief()
             _gather_today()
+            # What the card proposed about today's names before, and what
+            # came of it: a move the reader declined or let lapse is not
+            # worth the same words again. Settled off the ledger first, so
+            # a sale made yesterday reads as followed today.
+            decisions = journal.path_for(paths.chat)
+            journal.safely(journal.settle_from_db, decisions, paths.db, day)
+            history = journal.safely(journal.history_for, decisions,
+                                     daily.talked_names(facts), day) or []
             job.action = daily.with_today(daily.dressed(
                 daily.generate(
                     prefs,
@@ -838,6 +846,7 @@ def start(
                     day,
                     recent=stored.recent if stored else [],
                     past=stored.past if stored else [],
+                    history=history,
                     spend_free=spend,
                     chat_path=paths.chat,
                 ),

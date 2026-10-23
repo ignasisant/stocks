@@ -61,7 +61,7 @@
   "tour.assistant_body": "A chat on every page that knows your portfolio; ask by voice too. Free with a daily limit, or unlimited with your own AI key. It remembers what you tell it and asks before changing anything.",
   "tour.assistant_cta": "Open the assistant",
   "tour.journal_title": "Decision journal",
-  "tour.journal_body": "Every move the app proposed and showed you, with the figures it was made on and what came of it. Read it all in **Profile → Journal**, or one name from the chip on its ticker page.",
+  "tour.journal_body": "Every move the app proposed and showed you, with the figures behind it and what came of it; a trade in your book counts as taking one. Read it in **Profile → Journal**, or one name from its ticker chip.",
   "tour.journal_cta": "Open the journal",
   "tour.notify_title": "Telegram notifications",
   "tour.notify_body": "An evening summary and price alerts on Telegram. Link your account once in Profile → Notifications.",

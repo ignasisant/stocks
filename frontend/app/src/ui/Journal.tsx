@@ -47,13 +47,32 @@ export type JournalEntry = {
   times: number;
   links: string[];
   updated: string;
+  /** "chat" for a card answered, "ledger:<date>" for a trade that settled it. */
+  settled?: string;
+};
+
+/** What became of the proposals, counted over the whole journal. */
+export type JournalRecord = {
+  proposed: number;
+  open: number;
+  followed: number;
+  declined: number;
+  lapsed: number;
+  by_source: Record<string, Record<string, number>>;
 };
 
 export type Journal = {
   entries: JournalEntry[];
   total: number;
   states: Record<string, number>;
+  record: JournalRecord;
 };
+
+/** The day a trade in the book settled the entry, or null. */
+export function settledOn(entry: JournalEntry): string | null {
+  const settled = entry.settled ?? "";
+  return settled.startsWith("ledger:") ? settled.slice("ledger:".length) : null;
+}
 
 export const STATES: JournalState[] = ["open", "followed", "declined", "lapsed"];
 export const SOURCES: JournalSource[] = ["daily", "review", "chat"];
@@ -318,7 +337,9 @@ function Row({
               ? t("journal.span", { from: entry.day, to: entry.last })
               : entry.day}
             {" · "}
-            {t(`journal.state_${entry.state}_help`)}
+            {settledOn(entry)
+              ? t("journal.settled_ledger", { date: settledOn(entry) ?? "" })
+              : t(`journal.state_${entry.state}_help`)}
           </p>
           {linked.length ? (
             <ul className="ag-jr-links">

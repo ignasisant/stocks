@@ -10,7 +10,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { type JournalEntry, JournalList, factRows } from "./Journal";
+import { type JournalEntry, JournalList, factRows, settledOn } from "./Journal";
 
 beforeEach(() => {
   vi.stubGlobal("window", {
@@ -106,5 +106,18 @@ describe("a folded row", () => {
       <JournalList entries={[entry()]} showTicker={false} />,
     );
     expect(out).not.toContain("ag-tick");
+  });
+});
+
+describe("how it was settled", () => {
+  it("names the trade day when the book settled it", () => {
+    expect(settledOn(entry({ state: "followed", settled: "ledger:2026-10-04" }))).toBe(
+      "2026-10-04",
+    );
+  });
+
+  it("names nothing for a button press or an older entry", () => {
+    expect(settledOn(entry({ state: "declined", settled: "chat" }))).toBeNull();
+    expect(settledOn(entry())).toBeNull();
   });
 });

@@ -80,5 +80,10 @@
   "journal.fact_sell_date": "Sold",
   "journal.fact_clear_date": "Clear from",
   "journal.fact_above": "Above",
-  "journal.fact_below": "Below"
+  "journal.fact_below": "Below",
+  "journal.record": "**{n}** moves proposed so far: you took **{followed}**, turned down **{declined}**, let **{lapsed}** lapse and have **{open}** open. A sale or a buy in your book counts as taking one; nothing is asked.",
+  "journal.settled_ledger": "A trade in your book on {date} settled it.",
+  "journal.export": "Take it with you",
+  "journal.export_help": "One Markdown file a notes app such as Obsidian reads whole: the entries, the links between them, tags per ticker and state.",
+  "journal.export_button": "Download Markdown"
 }

@@ -15,6 +15,7 @@ import { Link } from "../../shell/router";
 import { useApi } from "../../shell/useApi";
 import {
   type JournalEntry,
+  type JournalRecord,
   type JournalSource,
   type JournalState,
   JournalList,
@@ -52,7 +53,17 @@ export function Journal() {
       >
         {(journal) =>
           journal.entries.length ? (
-            <Filtered entries={journal.entries} />
+            <>
+              <Record record={journal.record} />
+              <Filtered entries={journal.entries} />
+              {/* The same file a notes app reads whole: block ids, links
+                  between entries, tags per ticker, state and source. */}
+              <Row label={t("journal.export")} help={t("journal.export_help")}>
+                <a className="pr-download" href="/api/v1/journal.md">
+                  {t("journal.export_button")}
+                </a>
+              </Row>
+            </>
           ) : (
             <div className="pr-cardbody">
               <p className="pr-hint">
@@ -67,6 +78,31 @@ export function Journal() {
         }
       </Loaded>
     </Card>
+  );
+}
+
+/**
+ * One line on what the reader did with the advice: how many moves were
+ * proposed and how many they took, turned down, let lapse or still have
+ * open. Counts, not a verdict on whether taking them paid.
+ */
+function Record({ record }: { record: JournalRecord }) {
+  const t = useT();
+  if (!record.proposed) return null;
+  return (
+    <div className="pr-cardbody">
+      <p className="pr-hint">
+        <Inline
+          text={t("journal.record", {
+            n: record.proposed,
+            followed: record.followed,
+            declined: record.declined,
+            lapsed: record.lapsed,
+            open: record.open,
+          })}
+        />
+      </p>
+    </div>
   );
 }
 

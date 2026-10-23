@@ -968,6 +968,7 @@ def prompt(
     *,
     memories: str = "",
     talk: list | None = None,
+    history: list[str] | None = None,
 ) -> tuple[str, list[dict]]:
     """(system, messages) for one card. Pure — no network, no clock.
 
@@ -981,6 +982,11 @@ def prompt(
     about this user, so the card heads where the conversations did. Neither
     reaches the facts either, for the same reason as `past`; the transcript
     rides on the user turn, quoted, the way the chat staples it.
+
+    `history` (`journal.history_for`) is what the app proposed about today's
+    names before and what the reader did with it — the decision journal's
+    lines, not the card's — so a move they declined is not pressed again
+    in the same words.
     """
     if facts.get("brief"):
         system = (
@@ -1016,6 +1022,14 @@ def prompt(
                 f"- {p['day']} · {p.get('key') or '-'} · {p['line']}"
                 for p in earlier[:PAST_SHOWN]
             )
+        )
+    if history:
+        system += (
+            "\n\nWhat the app proposed about these names before, and what the "
+            "user did with it. A move they declined or let lapse is not "
+            "proposed again in the same words: say what is new since, or "
+            "leave it out. One they did is done; do not ask for it again.\n"
+            + "\n".join(f"- {line}" for line in history)
         )
     # The Today rows are not the card's to write: they reach the model as
     # their own shaped block (`_today_facts`), never raw, and only when there
@@ -1974,6 +1988,7 @@ def generate(
     *,
     recent: list[str] | None = None,
     past: list[dict] | None = None,
+    history: list[str] | None = None,
     timeout_s: float = TIMEOUT_S,
     spend_free=None,
     chat_path=None,
@@ -1999,7 +2014,8 @@ def generate(
             prefs, chat_path, talked_names(facts), routines=False
         )
         system, messages = prompt(facts, profile, lang, recent or [], past or [],
-                                  memories=memories, talk=talk)
+                                  memories=memories, talk=talk,
+                                  history=history or [])
     except Exception:
         return None
     spend = spend_free or engine.spend_free_quota

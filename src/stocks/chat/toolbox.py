@@ -405,7 +405,29 @@ def _propose(args: dict, ctx: Context) -> str:
     said = tools.proposal(act, lambda k, **kw: translate(k, "en", **kw))
     return (f"{DRAFTED} {said} The reader gets a card under your answer to "
             "approve it. Mention it as a proposal; it has not been done. One "
-            "proposal per answer: the first one drafted is the one shown.")
+            "proposal per answer: the first one drafted is the one shown."
+            + _proposed_before(ctx, act.ticker))
+
+
+def _proposed_before(ctx: Context, ticker: str) -> str:
+    """What the journal says was proposed about `ticker` lately, for the
+    model to read before it presses the same move again. Empty when there
+    is no journal or nothing in it about the name."""
+    from datetime import date
+
+    from stocks.chat import journal
+
+    if ctx.journal is None or not ticker:
+        return ""
+    try:
+        lines = journal.history_for(ctx.journal, [ticker], date.today(), limit=4)
+    except Exception:  # noqa: BLE001 — the draft stands without its history
+        return ""
+    if not lines:
+        return ""
+    return (" Proposed about this name before — a move the reader declined "
+            "is not pressed again in the same words:\n"
+            + "\n".join(f"- {line}" for line in lines))
 
 
 # How a drafted proposal's result starts: `engine._proposed` files a card only
