@@ -41,6 +41,7 @@ from stocks.api import loaders
 from stocks.api.cache import carried, ttl_cache
 from stocks.api.deps import Account, Base, Writer, reporting_currency
 from stocks.api.jsonsafe import num as _num
+from stocks.api.paging import Page, page
 from stocks.api.schemas import (
     AllocationHolding,
     AllocationSlice,
@@ -338,8 +339,7 @@ def summary(account: Account, base: Base = None) -> Summary:
 @router.get("/transactions", response_model=Transactions, summary="Ledger rows")
 def transactions(
     account: Account,
-    limit: Annotated[int, Query(ge=1, le=1000)] = 200,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    paging: Annotated[Page, page(200, 1000)],
     base: Base = None,
     ticker: Annotated[
         str,
@@ -379,7 +379,7 @@ def transactions(
     if not wanted.empty():
         txs = edits.select(txs, wanted)
     ordered = sorted(txs, key=lambda t: (t.date, t.id or 0), reverse=True)
-    page = ordered[offset : offset + limit]
+    rows = paging.apply(ordered)
     return Transactions(
         total=len(txs),
         base=ccy,
@@ -397,7 +397,7 @@ def transactions(
                 note=t.note,
                 amount=_cash_in(t, ccy),
             )
-            for t in page
+            for t in rows
         ],
     )
 
