@@ -163,7 +163,9 @@ def test_the_guest_list_is_not_silently_growing():
     # off Yahoo for the rows the guest's review already drew.
     # 60: `GET /progress` — the corner banner's view of a slow load: the demo
     # book's own download step and count, nothing else; no write, no spend.
-    assert len(guest.OPEN) == 60
+    # 61: `GET /ticker/{symbol}/dcf` — the valuation card's DCF: computed off
+    # cached fundamentals like `/valuation`, no account goes into it.
+    assert len(guest.OPEN) == 61
 
 
 def test_every_route_a_guest_may_read_is_a_read():

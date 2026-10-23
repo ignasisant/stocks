@@ -6,7 +6,7 @@
  * every row, to 1e-9.
  */
 
-export const YEARS = 5;
+const YEARS = 5;
 
 /**
  * Equity value per share: `years` flows grown at `growth`, then the Gordon
