@@ -32,6 +32,7 @@
   "notify.nudge_last": "Last reminder of this kind; the digests go on as usual.",
   "notify.test_message": "👋 Test message from TopStocks — notifications are working.",
   "notify.tg_linked": "✅ Telegram linked to TopStocks. Digests, alerts — and you can chat with the assistant right here. Send /help to see what it can do.",
+  "notify.tg_linked_alerts": "✅ Telegram linked to TopStocks. Your digests and price alerts will arrive here.",
   "notify.chat_not_linked": "This Telegram account isn't linked to TopStocks yet. Open the app → Profile → Notifications → Connect Telegram.",
   "notify.link_failed": "That link code is invalid or expired — generate a new one from the Profile page and tap the link again.",
   "notify.chat_help": "Ask me about your portfolio or the markets: same assistant and thread as the app's chat. Replies can take a minute. /clear resets, /help shows this.",

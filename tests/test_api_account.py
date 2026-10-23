@@ -212,6 +212,90 @@ def test_every_user_file_is_bundled_or_deliberately_left_out(account):
 # ----------------------------------------------------------------- telegram
 
 
+@pytest.fixture(autouse=True)
+def _no_bot_updates(monkeypatch):
+    """A pending code makes the polling route read the bot's updates; never
+    from the network here."""
+    monkeypatch.setattr(telegram, "get_updates", lambda timeout=0: [])
+
+
+def _start(code: str, chat_id: int = 777, username: str = "ada") -> dict:
+    return {
+        "update_id": 1,
+        "message": {
+            "text": f"/start {code}",
+            "chat": {"id": chat_id, "username": username},
+        },
+    }
+
+
+def test_a_poll_completes_the_link_from_the_bots_updates(
+    client, account, signed_in, monkeypatch
+):
+    """No webhook Worker is deployed, so no job ever reads "/start <code>":
+    the polling route has to find it itself or the spinner never stops."""
+    monkeypatch.setattr(telegram, "configured", lambda: True)
+    monkeypatch.setattr(telegram, "bot_username", lambda: "topstocksbot")
+    monkeypatch.setattr(telegram, "deep_link", lambda code: f"https://t.me/b?start={code}")
+    sent: list[tuple] = []
+    monkeypatch.setattr(
+        telegram, "send_message", lambda text, chat_id, **kw: sent.append((text, chat_id))
+    )
+    code = signed_in.post("/v1/notify/telegram").json()["code"]
+    updates = [_start("someone-else", 1), _start(code)]
+    monkeypatch.setattr(telegram, "get_updates", lambda timeout=0: updates)
+    body = signed_in.get("/v1/notify/telegram").json()
+    assert (body["linked"], body["pending"], body["username"]) == (True, False, "ada")
+    stored = prefs_of(account)
+    assert stored["telegram_chat_id"] == 777
+    assert stored.get("tg_link_code") is None
+    # The welcome promises what this road delivers — no chat without the Worker.
+    assert len(sent) == 1 and sent[0][1] == 777
+    assert "/help" not in sent[0][0]
+
+
+def test_a_poll_without_its_start_stays_pending(client, account, signed_in, monkeypatch):
+    monkeypatch.setattr(telegram, "configured", lambda: True)
+    monkeypatch.setattr(telegram, "bot_username", lambda: "topstocksbot")
+    monkeypatch.setattr(telegram, "deep_link", lambda code: f"https://t.me/b?start={code}")
+    signed_in.post("/v1/notify/telegram")
+    monkeypatch.setattr(telegram, "get_updates", lambda timeout=0: [_start("other")])
+    body = signed_in.get("/v1/notify/telegram").json()
+    assert (body["linked"], body["pending"]) == (False, True)
+
+
+def test_a_failing_update_read_leaves_the_poll_pending(
+    client, account, signed_in, monkeypatch
+):
+    monkeypatch.setattr(telegram, "configured", lambda: True)
+    monkeypatch.setattr(telegram, "bot_username", lambda: "topstocksbot")
+    monkeypatch.setattr(telegram, "deep_link", lambda code: f"https://t.me/b?start={code}")
+    signed_in.post("/v1/notify/telegram")
+
+    def down(timeout=0):
+        raise RuntimeError("telegram getUpdates failed")
+
+    monkeypatch.setattr(telegram, "get_updates", down)
+    response = signed_in.get("/v1/notify/telegram")
+    assert response.status_code == 200
+    assert response.json()["pending"] is True
+
+
+def test_the_test_message_goes_to_the_linked_chat(
+    client, account, signed_in, monkeypatch
+):
+    """send_message takes the text first: the chat id went in as the text
+    and the text as the chat id, so every test send failed "chat not found"."""
+    monkeypatch.setattr(telegram, "configured", lambda: True)
+    accounts.update_prefs(account.prefs, {"telegram_chat_id": 42})
+    sent: list[tuple] = []
+    monkeypatch.setattr(
+        telegram, "send_message", lambda text, chat_id, **kw: sent.append((text, chat_id))
+    )
+    assert signed_in.post("/v1/notify/telegram/test").status_code == 200
+    assert sent == [("✅ TopStocks", "42")]
+
+
 def test_an_unconfigured_deployment_says_so_rather_than_failing(
     client, account, signed_in, monkeypatch
 ):
@@ -287,7 +371,7 @@ def test_a_provider_that_refuses_the_message_is_not_a_500(
     monkeypatch.setattr(telegram, "configured", lambda: True)
     accounts.update_prefs(account.prefs, {"telegram_chat_id": 42})
 
-    def boom(chat_id, text, **kw):
+    def boom(text, chat_id, **kw):
         raise RuntimeError("chat not found")
 
     monkeypatch.setattr(telegram, "send_message", boom)

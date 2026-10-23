@@ -7,9 +7,10 @@ user's chat id lives in their prefs.json after the deep-link `/start` flow.
 Inbound messages arrive via a webhook (set_webhook): Telegram POSTs each
 update to the Cloudflare Worker in workers/telegram-webhook/, which queues it
 in the bucket and wakes the GitHub Actions chat job (stocks/chat/bot.py).
-While the webhook is set Telegram rejects getUpdates — get_updates and
-match_start below are kept only for the rollback path (delete_webhook
-restores polling and the pre-webhook Profile linking flow).
+While the webhook is set Telegram rejects getUpdates. Until the Worker is
+deployed no webhook is set, and get_updates + match_start below are how the
+Profile's polling route (api/routes/notify.py) completes a link on its own;
+delete_webhook restores that state after a rollback.
 """
 
 from __future__ import annotations
@@ -177,8 +178,8 @@ def delete_webhook(drop_pending: bool = False) -> None:
 def get_updates(timeout: int = 0) -> list[dict]:
     """Recent updates, without an offset so nothing is consumed.
 
-    Rollback path only: while a webhook is set (the normal state now)
-    Telegram rejects getUpdates with a 409, which returns [].
+    Read by the Profile's link poll. While a webhook is set Telegram rejects
+    getUpdates with a 409, which returns [].
 
     Unconfirmed updates expire server-side after 24h; leaving them pending
     means two users linking at the same moment can't eat each other's /start.
