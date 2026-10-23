@@ -20,9 +20,10 @@ import { useCallback, useRef, useState } from "react";
 import { useT, useLang } from "../../shell/i18n";
 import { useCurrency } from "../../shell/session";
 import { token } from "../../shell/theme";
-import { Spoken, useKeyWalk } from "../../shell/useKeyWalk";
 import { useSpan } from "../../shell/useSpan";
-import { useTouchHold } from "../../shell/useTouchHold";
+import { BASELINE_DASH, LINE } from "../../ui/chart/marks";
+import { Tip } from "../../ui/chart/Tip";
+import { Spoken, useScrub } from "../../ui/chart/useScrub";
 import { money, monthDay, percent } from "./format";
 import { Kpi, chipFor } from "../../ui/Kpi";
 import { Segmented } from "../../ui/Segmented";
@@ -99,7 +100,6 @@ export function Spark({ history }: { history: History | null }) {
     setHoverIndex(null);
     setMeasure(null);
   }, []);
-  useTouchHold(wrap, hoverIndex !== null || measure !== null, drop);
   const spanned = useSpan((pair) => {
     if (!pair) return setMeasure(null);
     setHoverIndex(null);
@@ -114,13 +114,16 @@ export function Spark({ history }: { history: History | null }) {
       days.push({ date: point.date, injected: point.injected, value: point.value });
     }
   }
-  const walk = useKeyWalk({
+  const walk = useScrub({
+    plot: wrap,
     at: hoverIndex,
     last: days.length - 1,
     set: (index) => {
       setMeasure(null);
       setHoverIndex(index);
     },
+    held: hoverIndex !== null || measure !== null,
+    drop,
   });
   // The history failed, or has not landed: the plot's box stays reserved, so
   // the card is the height it will be and nothing below it shifts when the
@@ -404,15 +407,15 @@ export function Spark({ history }: { history: History | null }) {
                 points={line((day) => day.injected)}
                 fill="none"
                 stroke={token("text-muted")}
-                strokeWidth="1"
-                strokeDasharray="3 2"
+                strokeWidth={LINE.rule}
+                strokeDasharray={BASELINE_DASH}
                 vectorEffect="non-scaling-stroke"
               />
               <polyline
                 points={line((day) => day.value)}
                 fill="none"
                 stroke={token("brand-accent")}
-                strokeWidth="1.5"
+                strokeWidth={LINE.compact}
                 vectorEffect="non-scaling-stroke"
               />
               <line
@@ -456,8 +459,7 @@ export function Spark({ history }: { history: History | null }) {
                   x2={x(hoverIndex)}
                   y1={0}
                   y2={HEIGHT}
-                  stroke={token("text-muted")}
-                  strokeDasharray="2 2"
+                  className="ag-cross"
                   vectorEffect="non-scaling-stroke"
                   pointerEvents="none"
                 />
@@ -470,27 +472,12 @@ export function Spark({ history }: { history: History | null }) {
             native `<title>` — which only answered on the day under the
             cursor's own thin column, after its own OS delay. */}
           {rows && tipTitle ? (
-            <div
-              className={
-                tipLeft > 55 ? "hm-spark-tip hm-spark-tip-flip" : "hm-spark-tip"
-              }
-              style={{ left: `${tipLeft}%` }}
-              role="status"
-            >
-              <span className="hm-spark-tip-title">{tipTitle}</span>
-              {rows.map((row, index) => (
-                <span className="hm-spark-tip-row" key={index}>
-                  {row.color ? (
-                    <span
-                      className="hm-spark-tip-swatch"
-                      style={{ background: row.color }}
-                    />
-                  ) : null}
-                  {row.label ? <span>{row.label}</span> : null}
-                  <strong>{row.value}</strong>
-                </span>
-              ))}
-            </div>
+            <Tip
+              at={tipLeft}
+              title={tipTitle}
+              items={rows.map((row) => ({ ...row, value: row.value ?? "—" }))}
+              className="hm-spark-tip"
+            />
           ) : null}
           <Spoken text={walk.keyed ? sentence : null} />
         </div>

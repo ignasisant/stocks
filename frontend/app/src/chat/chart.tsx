@@ -48,6 +48,7 @@ import { money } from "../pages/home/format";
 import { useLang, useT } from "../shell/i18n";
 import { chart as palette } from "../shell/theme";
 import { useWidth } from "../shell/useWidth";
+import { DOT, LINE } from "../ui/chart/marks";
 import { num } from "../shell/numbers";
 
 export type Line = {
@@ -401,7 +402,7 @@ export function LineChart({
               className="tk-line"
               points={points(at)}
               stroke={hues[at % hues.length]}
-              strokeWidth={byTime ? 1.6 : 2}
+              strokeWidth={lines.length > 1 ? LINE.secondary : LINE.primary}
               strokeDasharray={dashes[at % dashes.length]}
             />
           ))}
@@ -412,8 +413,10 @@ export function LineChart({
                 key={`end-${line.symbol}`}
                 cx={(xs[at] as number[])[end]}
                 cy={y(line.ys[end] as number)}
-                r={3}
+                r={DOT.r}
                 fill={hues[at % hues.length]}
+                stroke={colors.surfaceCard}
+                strokeWidth={DOT.ring}
               />
             );
           })}
@@ -455,7 +458,7 @@ export function LineChart({
         {picked && !measured ? (
           <g>
             <line
-              className="tk-cross"
+              className={area ? "ag-cross ag-cross-area" : "ag-cross"}
               x1={(xs[0] as number[])[lead]}
               x2={(xs[0] as number[])[lead]}
               y1={box.top}
@@ -468,10 +471,10 @@ export function LineChart({
                   key={`at-${line.symbol}`}
                   cx={(xs[at] as number[])[i]}
                   cy={y(line.ys[i] as number)}
-                  r={3.5}
+                  r={DOT.r}
                   fill={colors.surfacePage}
                   stroke={hues[at % hues.length]}
-                  strokeWidth={2}
+                  strokeWidth={LINE.primary}
                 />
               );
             })}

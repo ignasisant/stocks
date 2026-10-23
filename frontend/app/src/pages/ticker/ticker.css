@@ -333,19 +333,11 @@
 
 /* Labels inside the plot (phone): a halo in the card colour keeps them
    legible where a series runs under them. */
-.tk-grid-in text,
-.tk-end text {
+.tk-grid-in text {
   paint-order: stroke;
   stroke: var(--ag-surface-card);
   stroke-width: 3px;
   stroke-linejoin: round;
-}
-
-/* A line's name at its right end (`EndLabels`): the line's own colour, a
-   step heavier than the axis so it reads as a label, not a tick. */
-.tk-end text {
-  font-size: 11px;
-  font-weight: 600;
 }
 
 /* Per-bar YoY on the results chart: secondary text, never the bar's colour —
@@ -395,14 +387,6 @@
   font-weight: 600;
 }
 
-/* Secondary, a step over the events' dotted faint verticals: the crosshair is
-   the one vertical the reader is moving, and beside a results date the two
-   read as a pair when they share a weight. */
-.tk-cross {
-  stroke: var(--ag-text-secondary);
-  stroke-width: 1;
-}
-
 .tk-brush {
   fill: var(--ag-accent-band);
   stroke: var(--ag-brand-accent);
@@ -434,36 +418,6 @@
   display: none;
 }
 
-.tk-tip {
-  position: absolute;
-  top: 8px;
-  transform: translateX(8px);
-  z-index: 5;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  /* Sized by its text, not by the room left to the right of its anchor: an
-     absolute box shrinks to that room, and at the plot's edge it went a thin
-     column. The clamp keeps it inside the frame; the flip keeps it on it. */
-  width: max-content;
-  min-width: 9rem;
-  max-width: min(280px, 90%);
-  padding: 8px 10px;
-  background: var(--ag-surface-page);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius-sm);
-  box-shadow: var(--ag-shadow-overlay);
-  font-size: var(--ag-fs-xs);
-  line-height: 1.45;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Flipped once the cursor passes the middle, so the box never leaves the card. */
-.tk-tip-flip {
-  transform: translateX(calc(-100% - 8px));
-}
-
 /* Where nothing hovers, a finger drives the crosshair and the hand covers the
    plot: a box beside the crosshair sat under the fingertip, and one floated
    above the card covered the tiles over it and clipped at the screen's edge.
@@ -479,7 +433,7 @@
 }
 
 .tk-plot-strip .tk-tip,
-.tk-plot-strip .tk-tip-flip {
+.tk-plot-strip .ag-tip-flip {
   top: 0;
   left: 0 !important;
   right: 0;
@@ -507,15 +461,15 @@
   box-shadow: var(--ag-shadow-overlay);
 }
 
-.tk-plot-strip .tk-tip-t,
-.tk-plot-strip .tk-tip-l {
+.tk-plot-strip .ag-tip-title,
+.tk-plot-strip .ag-tip-row {
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.tk-plot-strip .tk-tip-t {
+.tk-plot-strip .ag-tip-title {
   flex-basis: 100%;
 }
 
@@ -551,7 +505,7 @@
     background: var(--ag-surface-sunken);
   }
 
-  .tk-plot .tk-tip-flip {
+  .tk-plot .ag-tip-flip {
     transform: none;
   }
 
@@ -567,48 +521,17 @@
     box-shadow: var(--ag-shadow-overlay);
   }
 
-  .tk-tip-t,
-  .tk-tip-l {
+  .tk-plot .ag-tip-title,
+  .tk-plot .ag-tip-row {
     max-width: 100%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .tk-tip-t {
+  .tk-plot .ag-tip-title {
     flex-basis: 100%;
   }
-}
-
-.tk-tip-t {
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-2xs);
-}
-
-.tk-tip-l {
-  color: var(--ag-text-primary);
-  /* The catalog's double space is the gap between a label and its value, as
-     in the Plotly box; collapsed, "Price 187.40" reads as one phrase. */
-  white-space: pre-wrap;
-}
-
-/* The DS tooltip row: label muted, value bold, and the series' swatch ahead of
-   it — Plotly's unified box ties each row to its trace the same way. */
-.tk-tip-b {
-  font-weight: 600;
-}
-
-.tk-tip .tk-is-dim {
-  color: var(--ag-text-muted);
-}
-
-.tk-tip-sw {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-right: 6px;
-  border-radius: 2px;
-  vertical-align: baseline;
 }
 
 .tk-legend {

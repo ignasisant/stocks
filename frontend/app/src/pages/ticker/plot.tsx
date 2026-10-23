@@ -14,9 +14,9 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
-import { Spoken, useKeyWalk } from "../../shell/useKeyWalk";
 import { type Span, useSpan } from "../../shell/useSpan";
-import { useTouchHold } from "../../shell/useTouchHold";
+import { Tip, tipAt } from "../../ui/chart/Tip";
+import { Spoken, useScrub } from "../../ui/chart/useScrub";
 
 /**
  * A chart's box, in viewBox units.
@@ -177,10 +177,13 @@ export function Chart({
     setHeld(false);
     onLeave?.();
   }, [onLeave]);
-  useTouchHold(node, held, drop);
-
   const span = useSpan(onSpan);
-  const keys = useKeyWalk(walk ?? { at: null, last: -1, set: () => {} });
+  const keys = useScrub({
+    plot: node,
+    held,
+    drop,
+    ...(walk ?? { at: null, last: -1, set: () => {} }),
+  });
 
   const at = useCallback(
     (event: { clientX: number; clientY: number }): [number, number] => {
@@ -284,7 +287,7 @@ export function tickDigits(lo: number, hi: number, count = 4): number {
  * overlap: each as near its line's last value as `gap` allows, inside
  * `top..bottom`. Input order is kept in the output.
  */
-export function spreadLabels(
+function spreadLabels(
   ys: number[],
   gap: number,
   top: number,
@@ -314,25 +317,39 @@ export function spreadLabels(
  */
 export function EndLabels({
   frame: f,
+  edge,
   items,
 }: {
-  frame: Frame;
-  /** Each line's last drawn y (viewBox units), its name and its colour. */
-  items: { y: number; text: string; color: string }[];
+  /** The chart's frame: labels sit at its right edge, inside its plot. */
+  frame?: Frame;
+  /** Or the edge and vertical room by hand, for a chart with no `Frame`. */
+  edge?: { right: number; top: number; bottom: number };
+  /** Each line's last drawn y (viewBox units), its name, its colour, and an x of its own. */
+  items: { y: number; text: string; color: string; x?: number }[];
 }) {
   if (items.length === 0) return null;
+  const room =
+    edge ??
+    (f
+      ? {
+          right: f.width - f.right - 2,
+          top: f.top + 9,
+          bottom: f.height - f.bottom - 3,
+        }
+      : null);
+  if (!room) return null;
   const ys = spreadLabels(
     items.map((item) => item.y - 5),
     12,
-    f.top + 9,
-    f.height - f.bottom - 3,
+    room.top,
+    room.bottom,
   );
   return (
-    <g className="tk-end" aria-hidden="true">
+    <g className="ag-end" aria-hidden="true">
       {items.map((item, index) => (
         <text
           key={item.text}
-          x={f.width - f.right - 2}
+          x={item.x ?? room.right}
           y={ys[index]}
           textAnchor="end"
           fill={item.color}
@@ -503,41 +520,13 @@ export function Tooltip({
    */
   more?: boolean;
 }) {
-  const left = (x / f.width) * 100;
-  const flip = left > 55;
   return (
-    <div
-      className={["tk-tip", flip ? "tk-tip-flip" : "", more ? "tk-tip-more" : ""]
-        .filter(Boolean)
-        .join(" ")}
-      style={{ left: `${left}%` }}
-    >
-      <span className="tk-tip-t">{title}</span>
-      {lines.map((line, index) => (
-        <span
-          key={`${line.text}-${index}`}
-          className={line.tone ? `tk-tip-l tk-is-${line.tone}` : "tk-tip-l"}
-        >
-          {line.swatch ? (
-            <span className="tk-tip-sw" style={{ background: line.swatch }} />
-          ) : null}
-          {line.parts
-            ? line.parts.map((part, at) => (
-                <span
-                  key={at}
-                  className={
-                    [part.bold ? "tk-tip-b" : "", part.tone ? `tk-is-${part.tone}` : ""]
-                      .filter(Boolean)
-                      .join(" ") || undefined
-                  }
-                >
-                  {part.text}
-                </span>
-              ))
-            : line.text}
-        </span>
-      ))}
-    </div>
+    <Tip
+      at={tipAt(x, f.width)}
+      title={title}
+      items={lines.map(({ swatch, ...line }) => ({ ...line, color: swatch }))}
+      className={more ? "tk-tip tk-tip-more" : "tk-tip"}
+    />
   );
 }
 

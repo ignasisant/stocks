@@ -43,6 +43,7 @@ import {
 } from "./plot";
 import { Banner, Card, Empty, Note, Segmented, Subhead, useMobile } from "./ui";
 import { Kpi, KpiGrid, bandTone } from "../../ui/Kpi";
+import { LINE } from "../../ui/chart/marks";
 import type { Financials, Fund, Insiders, Trade, Valuation } from "./types";
 import { placeFills } from "./hover";
 import { num } from "../../shell/numbers";
@@ -317,7 +318,7 @@ function Annual({ data }: { data: Financials }) {
                 className="tk-line"
                 points={run.map((i) => `${xOf(i)},${yEps(eps[i] as number)}`).join(" ")}
                 stroke={colors.brandAccent}
-                strokeWidth={2}
+                strokeWidth={LINE.primary}
                 strokeDasharray={
                   (run[run.length - 1] ?? 0) >= years.length ? "5 4" : undefined
                 }
@@ -521,7 +522,7 @@ function Quarterly({ data }: { data: Financials }) {
             className="tk-line"
             points={run.map((i) => `${xOf(i)},${y(values[i] as number)}`).join(" ")}
             stroke={colors.brandAccent}
-            strokeWidth={2}
+            strokeWidth={LINE.primary}
             strokeDasharray="3 3"
           />
         ))}
@@ -833,7 +834,7 @@ export function ValuationChart({
                     .map((i) => `${xOf(i)},${y(values[i] as number)}`)
                     .join(" ")}
                   stroke={colors.brandAccent}
-                  strokeWidth={1.8}
+                  strokeWidth={LINE.primary}
                 />
               ))}
               {/* The reader's fills, drawn as on the price chart. */}
@@ -852,7 +853,7 @@ export function ValuationChart({
               ))}
               {hover !== null ? (
                 <line
-                  className="tk-cross"
+                  className="ag-cross ag-cross-area"
                   x1={xOf(hover)}
                   x2={xOf(hover)}
                   y1={box.top}

@@ -19,6 +19,7 @@ import {
   type CorrelationPair,
 } from "./charts";
 import { TickerCell } from "../../shell/tickers";
+import { TipRows } from "../../ui/chart/Tip";
 import { decimal, percent } from "./format";
 import { Caption, Card, Chip, Kpis, Lede } from "./ui";
 
@@ -56,7 +57,7 @@ export function CorrelationCard({ data }: { data: Risk }) {
       const story = riskStory(row);
       return (
         <>
-          <span className="pf-tip-title">{row}</span>
+          <span className="ag-tip-title">{row}</span>
           <span className="pf-heat-tip-story">
             {t("portfolio.corr_self_story", { a: row })}
             {story ? ` ${story}` : ""}
@@ -82,7 +83,7 @@ export function CorrelationCard({ data }: { data: Risk }) {
     const combined = (data.weights[row] ?? 0) + (data.weights[column] ?? 0);
     return (
       <>
-        <span className="pf-tip-title">
+        <span className="ag-tip-title">
           {row} × {column}
         </span>
         {value === undefined ? (
@@ -300,14 +301,5 @@ export function CorrelationCard({ data }: { data: Risk }) {
 
 /** Label-figure rows, as the chart hover boxes print them. */
 function Rows({ rows }: { rows: [string, string][] }) {
-  return (
-    <>
-      {rows.map(([label, value]) => (
-        <span className="pf-tip-row" key={label}>
-          <span className="pf-muted">{label}</span>
-          <strong>{value}</strong>
-        </span>
-      ))}
-    </>
-  );
+  return <TipRows items={rows.map(([label, value]) => ({ label, value }))} />;
 }

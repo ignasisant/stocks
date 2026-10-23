@@ -37,6 +37,7 @@ import {
   type Fill,
 } from "./hover";
 import { Skeleton } from "../../shell/Layout";
+import { AREA, DOT, LINE } from "../../ui/chart/marks";
 import {
   Chart,
   EndLabels,
@@ -668,7 +669,7 @@ export function PriceChart({
           .map((i) => `${xOf(i).toFixed(1)},${y(series[i] as number).toFixed(1)}`)
           .join(" ")}
         stroke={color}
-        strokeWidth={1.25}
+        strokeWidth={LINE.overlay}
       />
     ));
   });
@@ -843,8 +844,8 @@ export function PriceChart({
                 averages run through it. */}
               <defs>
                 <linearGradient id={fadeId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" stopColor={lineColor} stopOpacity={0.14} />
-                  <stop offset="1" stopColor={lineColor} stopOpacity={0} />
+                  <stop offset="0" stopColor={lineColor} stopOpacity={AREA.top} />
+                  <stop offset="1" stopColor={lineColor} stopOpacity={AREA.bottom} />
                 </linearGradient>
               </defs>
               <path d={area} fill={`url(#${fadeId})`} stroke="none" />
@@ -864,7 +865,7 @@ export function PriceChart({
                       )
                       .join(" ")}
                     stroke={lineColor}
-                    strokeWidth={2.25}
+                    strokeWidth={LINE.primary}
                   />
                 );
               })}
@@ -874,10 +875,10 @@ export function PriceChart({
                   className="tk-last"
                   cx={xOf(lastAt)}
                   cy={y(close[lastAt] as number)}
-                  r={3.5}
+                  r={DOT.r}
                   fill={lineColor}
                   stroke={colors.surfaceCard}
-                  strokeWidth={1.5}
+                  strokeWidth={DOT.ring}
                 />
               ) : null}
             </g>
@@ -956,7 +957,7 @@ export function PriceChart({
 
         {hover !== null && !measure ? (
           <line
-            className="tk-cross"
+            className="ag-cross ag-cross-area"
             x1={xOf(hover)}
             x2={xOf(hover)}
             y1={box.top}
