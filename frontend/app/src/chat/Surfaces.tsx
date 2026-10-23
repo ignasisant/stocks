@@ -11,6 +11,7 @@
 import { useState } from "react";
 import { useT } from "../shell/i18n";
 import { Status } from "../ui/Status";
+import { toast } from "../ui/toast";
 import { Surface, type A2uiAction } from "./a2ui";
 import type { Activity } from "./types";
 
@@ -23,7 +24,6 @@ function One({
 }) {
   const t = useT();
   const [waiting, setWaiting] = useState(false);
-  const [failed, setFailed] = useState(false);
   return (
     <div className="ag-chat-surface">
       <Surface
@@ -33,18 +33,14 @@ function One({
           onPress &&
           ((action) => {
             setWaiting(true);
-            setFailed(false);
             void onPress(shown.id, action).then((went) => {
               setWaiting(false);
-              setFailed(!went);
+              if (!went) toast.bad(t("chat.api_error"));
             });
           })
         }
       />
       {waiting && <Status label={t("chat.surface_working")} />}
-      {failed && (
-        <p className="ag-chat-hint ag-chat-act-error">{t("chat.api_error")}</p>
-      )}
     </div>
   );
 }

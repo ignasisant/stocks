@@ -40,6 +40,7 @@ import { useBank, useGuest } from "./session";
 import type { Query } from "./useApi";
 import { ActivityBanner, Skeleton, StaleNotice, WaitingFor } from "./Loading";
 import { AmbientLight } from "./ambient";
+import { Toaster } from "../ui/Toaster";
 import { usePresence, useSwipeDismiss } from "./useSheet";
 
 /**
@@ -419,6 +420,7 @@ export function Layout({ children }: { children: ReactNode }) {
       {!guest ? <Drawer /> : GUEST_CHROME.chat === "locked" ? <LockedDrawer /> : null}
       {!guest || GUEST_CHROME.profilePrompt ? <ProfilePrompt /> : null}
       <ActivityBanner />
+      <Toaster />
     </div>
   );
 }

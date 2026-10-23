@@ -1,0 +1,184 @@
+/*
+ * The toast (`toast.ts`, `Toaster.tsx`): sonner's behaviour — stacking, swipe,
+ * hover to pause, the live region — in this app's skin. Sonner is mounted
+ * `unstyled`, so everything visible is a token here. `:root:root` beats the
+ * stylesheet sonner injects at runtime.
+ */
+
+/* Where it sits: the corner the old "sent" note used, lifted over the phone's
+   tab bar (`--dock`, which already carries the home indicator's inset) and
+   moved out of the open chat drawer's way (`--toast-right`, set in
+   chat.css). */
+:root:root [data-sonner-toaster] {
+  --offset-right: var(--toast-right, max(20px, env(safe-area-inset-right)));
+  --offset-bottom: calc(var(--dock, 0px) + max(20px, env(safe-area-inset-bottom)));
+  --mobile-offset-right: max(16px, env(safe-area-inset-right));
+  --mobile-offset-left: max(16px, env(safe-area-inset-left));
+  --mobile-offset-bottom: calc(
+    var(--dock, 0px) + max(16px, env(safe-area-inset-bottom))
+  );
+  --width: min(380px, calc(100vw - 40px));
+
+  z-index: 95;
+  font-family: inherit;
+}
+
+:root:root .ag-toast {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-overlay);
+  color: var(--ag-text-primary);
+  font-size: var(--ag-fs-sm);
+  line-height: 1.4;
+}
+
+/* Kind is the border's colour and the glyph's, never the whole card: a red
+   slab over the page is louder than a failed save deserves. */
+:root:root .ag-toast[data-type="success"] {
+  border-color: var(--ag-success-fill);
+}
+
+:root:root .ag-toast[data-type="warning"] {
+  border-color: var(--ag-warn);
+}
+
+:root:root .ag-toast[data-type="error"] {
+  border-color: var(--ag-down);
+}
+
+:root:root .ag-toast-icon {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--ag-text-muted);
+}
+
+:root:root .ag-toast[data-type="success"] .ag-toast-icon {
+  color: var(--ag-up);
+}
+
+:root:root .ag-toast[data-type="warning"] .ag-toast-icon {
+  color: var(--ag-warn);
+}
+
+:root:root .ag-toast[data-type="error"] .ag-toast-icon {
+  color: var(--ag-down);
+}
+
+:root:root .ag-toast-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Sonner wraps title + detail in its own `[data-content]`. */
+:root:root .ag-toast [data-content] {
+  flex: 1;
+  min-width: 0;
+}
+
+:root:root .ag-toast-title {
+  font-weight: 500;
+}
+
+:root:root .ag-toast-detail {
+  margin-top: 2px;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-sm);
+}
+
+/* The one button: a quiet text action, the same as "Undo" has always been. */
+:root:root .ag-toast-action,
+:root:root .ag-toast-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-sm);
+  cursor: pointer;
+  transition:
+    background-color var(--ag-dur-hover) var(--ag-ease-out),
+    scale var(--ag-dur-press) var(--ag-ease-out);
+}
+
+:root:root .ag-toast-action:active,
+:root:root .ag-toast-close:active {
+  scale: 0.97;
+}
+
+/* Sonner pins its close button to the card's corner; here it is a plain
+   button at the end of the row. */
+:root:root .ag-toast-close {
+  position: static;
+  width: auto;
+  order: 3;
+  transform: none;
+}
+
+@media (hover: hover) {
+  :root:root .ag-toast-action:hover,
+  :root:root .ag-toast-close:hover {
+    background: var(--ag-surface-hover);
+  }
+}
+
+:root:root .ag-toast-action:focus-visible,
+:root:root .ag-toast-close:focus-visible,
+:root:root .ag-toast:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  :root:root .ag-toast-action,
+  :root:root .ag-toast-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* No slide: the toast arrives and leaves in place, fading. Sonner's own
+   reduced-motion rule turns every transition off, which would make it snap;
+   a short opacity fade says "something appeared" without moving anything. */
+@media (prefers-reduced-motion: reduce) {
+  :root:root [data-sonner-toast],
+  :root:root [data-sonner-toast][data-mounted="false"],
+  :root:root [data-sonner-toast][data-removed="true"] {
+    --y: translateY(0);
+    transition: opacity var(--ag-dur-press) linear !important;
+  }
+
+  :root:root [data-sonner-toast][data-removed="true"] {
+    opacity: 0;
+  }
+
+  :root:root .ag-toast-action,
+  :root:root .ag-toast-close {
+    transition: none;
+  }
+
+  :root:root .ag-toast-action:active,
+  :root:root .ag-toast-close:active {
+    scale: 1;
+  }
+}
+
+@media (forced-colors: active) {
+  :root:root .ag-toast {
+    border-color: CanvasText;
+  }
+}

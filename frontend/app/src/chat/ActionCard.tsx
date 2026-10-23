@@ -34,6 +34,7 @@ import { useRef, useState } from "react";
 import { useT } from "../shell/i18n";
 import { Badge } from "../ui/Badge";
 import { Status } from "../ui/Status";
+import { toast } from "../ui/toast";
 import { Surface, type A2uiMessage } from "./a2ui";
 import type { Edits, ToolCall } from "./types";
 
@@ -70,7 +71,6 @@ export function ActionCard({
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   // What the form holds now, read on Confirm rather than kept in state: the
   // surface owns the typing, this card only needs the last value of it.
   const typed = useRef<Record<string, string> | null>(null);
@@ -83,14 +83,12 @@ export function ActionCard({
     if (!book?.change || !onUndo) return <Badge>{t("chat.action_done")}</Badge>;
     const takeBack = async () => {
       setSaving(true);
-      setError(null);
       const refused = await onUndo(call.id);
       setSaving(false);
-      setError(refused);
+      if (refused) toast.bad(t(refused));
     };
     return (
       <div className="ag-chat-act">
-        {error && <p className="ag-chat-hint ag-chat-act-error">{t(error)}</p>}
         {saving ? (
           <Status label={t("chat.action_working")} />
         ) : (
@@ -113,14 +111,13 @@ export function ActionCard({
 
   const answer = async (approved: boolean) => {
     setSaving(true);
-    setError(null);
     const edits =
       approved && (editing || filling) && typed.current
         ? { form: typed.current }
         : undefined;
     const refused = await onDecide(call.id, approved, edits);
     setSaving(false);
-    setError(refused);
+    if (refused) toast.bad(t(refused));
   };
 
   return (
@@ -135,7 +132,6 @@ export function ActionCard({
           }}
         />
       )}
-      {error && <p className="ag-chat-hint ag-chat-act-error">{t(error)}</p>}
       {saving ? (
         <Status label={t("chat.action_working")} />
       ) : (

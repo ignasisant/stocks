@@ -360,3 +360,19 @@ def test_the_app_is_installable_and_finds_its_way_back():
     assert re.search(r"display\s*:\s*none", _block(css, ".ag-back"))
     standalone = css[css.index("@media (display-mode: standalone)") :]
     assert ".ag-back" in standalone[: standalone.index("}") + 1]
+
+
+def test_toasts_clear_the_tab_bar_and_hold_still_under_reduced_motion():
+    """One toaster, lifted over the phone's tab bar, out of the chat drawer's
+    way, 44px to press on touch, fading (never sliding) under reduced motion."""
+    css = (APP / "ui/toast.css").read_text()
+    assert "var(--dock, 0px)" in css
+    assert "--toast-right" in css
+    assert "--toast-right" in (APP / "chat/chat.css").read_text()
+    assert re.search(r"pointer: coarse\)[\s\S]*min-height: 44px", css)
+    assert ":focus-visible" in css
+    reduced = css[css.index("@media (prefers-reduced-motion: reduce)") :]
+    assert "--y: translateY(0)" in reduced
+    assert re.search(r"transition: opacity var\(--ag-dur-press\) linear", reduced)
+    # No raw durations or easings in the skin.
+    assert not re.search(r"\d+ms|cubic-bezier", css)

@@ -1866,19 +1866,6 @@ button.ag-welcome-row {
   }
 }
 
-.ag-fb-sent {
-  position: fixed;
-  z-index: 95;
-  right: max(20px, env(safe-area-inset-right));
-  bottom: calc(var(--dock, 0px) + max(20px, env(safe-area-inset-bottom)));
-  margin: 0;
-  padding: 8px 14px;
-  border: 1px solid var(--ag-success-fill);
-  border-radius: var(--ag-radius-pill);
-  background: var(--ag-surface-card);
-  font-size: var(--ag-fs-sm);
-}
-
 .ag-fb-scrim {
   position: fixed;
   z-index: 95;

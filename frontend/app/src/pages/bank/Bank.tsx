@@ -36,6 +36,7 @@ import { useApi } from "../../shell/useApi";
 import type { BankAuth, BankChoice, BankConnection, BankState } from "./types";
 import "./bank.css";
 import { Badge } from "../../ui/Badge";
+import { toast } from "../../ui/toast";
 import { formatter } from "../../shell/numbers";
 import { calendarDay } from "../../shell/dates";
 
@@ -82,8 +83,13 @@ function bankName(name: string): string {
   );
 }
 
-/** A message the page shows above everything: what just happened. */
+/** What just happened, as a toast: told apart by tone as well as by sentence. */
 type Notice = { tone: "ok" | "warn" | "bad"; text: string };
+
+/** `null` clears: the next press starts a fresh round trip, nothing to unsay. */
+function notify(notice: Notice | null) {
+  if (notice) toast[notice.tone](notice.text);
+}
 
 /**
  * The bank's own failures, as the sentence each one deserves.
@@ -393,7 +399,6 @@ export default function Page() {
 function Bank() {
   const t = useT();
   const { params, setParams } = useRoute();
-  const [notice, setNotice] = useState<Notice | null>(null);
   const [nonce, setNonce] = useState(0);
   const state = useApi(() => get<BankState>("/bank"), [nonce]);
   // The redirect's code is single use, and StrictMode mounts twice. A ref
@@ -408,7 +413,7 @@ function Bank() {
     if (landed.current) return;
     if (declined) {
       landed.current = true;
-      setNotice({ tone: "warn", text: t("bank.auth_declined") });
+      notify({ tone: "warn", text: t("bank.auth_declined") });
       setParams({ error: undefined, code: undefined, state: undefined });
       return;
     }
@@ -417,14 +422,14 @@ function Bank() {
     void send<BankState>("POST", "/bank/session", { code, state: returned })
       .then((answer) => {
         const bank = answer.connections.at(-1)?.name ?? "";
-        setNotice({ tone: "ok", text: t("bank.connected_toast", { bank }) });
+        notify({ tone: "ok", text: t("bank.connected_toast", { bank }) });
         setNonce((n) => n + 1);
       })
       .catch((error: unknown) => {
         // A `state` the server cannot match is its own sentence: it is the
         // one failure that is not the bank's fault and not ours either — an
         // authorisation that expired, or one that belongs elsewhere.
-        setNotice(
+        notify(
           error instanceof ApiError && error.status === 404
             ? { tone: "bad", text: t("bank.state_mismatch") }
             : failure(error, t, "bank.connect_failed"),
@@ -438,8 +443,6 @@ function Bank() {
   return (
     <div className="bk-page">
       <h1 className="bk-title">{t("bank.title")}</h1>
-
-      {notice && <p className={`bk-notice bk-${notice.tone}`}>{notice.text}</p>}
 
       <Loaded query={state}>
         {(data, reload) =>
@@ -457,7 +460,7 @@ function Bank() {
                     key={connection.session_id}
                     connection={connection}
                     onChanged={reload}
-                    onNotice={setNotice}
+                    onNotice={notify}
                   />
                 ))
               )}
@@ -465,7 +468,7 @@ function Bank() {
               <AddBank
                 redirect={data.redirect_url}
                 onConnected={reload}
-                onNotice={setNotice}
+                onNotice={notify}
               />
 
               <p className="bk-note">{t("bank.privacy_caption")}</p>

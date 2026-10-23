@@ -147,11 +147,10 @@
    `Drawer.tsx`): then the root is marked "overlay" instead, no rule here
    matches it, and the drawer covers the page as it does on a phone. */
 
-/* The one fixed thing the page has left: the "thanks, sent" toast. It would
-   otherwise appear under the panel, which is where a confirmation is worth
-   nothing. */
-:root[data-chat="open"] .ag-fb-sent {
-  right: calc(min(var(--chat-w, 420px), 100vw) + 20px);
+/* The one fixed thing the page has left: the toasts. They would otherwise
+   appear under the panel, which is where a confirmation is worth nothing. */
+:root[data-chat="open"] {
+  --toast-right: calc(min(var(--chat-w, 420px), 100vw) + 20px);
 }
 
 /* The page's own dialogs sit under the open drawer (65 < 70) so the chat
@@ -2085,10 +2084,10 @@ a.ag-chat-btn {
     /* The panel covers them anyway; a dialog with no width is worse. */
     right: 0;
   }
-  :root[data-chat="open"] .ag-fb-sent {
+  :root[data-chat="open"] {
     /* Same reason, and here the offset would push the toast off the screen
        entirely rather than merely behind the panel. */
-    right: 20px;
+    --toast-right: 20px;
   }
   .ag-chat-widths {
     /* Three buttons that all mean "the whole screen" on a screen this size,
@@ -2127,10 +2126,6 @@ a.ag-chat-btn {
   flex-direction: column;
   gap: 8px;
   margin-top: 6px;
-}
-
-.ag-chat-act-error {
-  color: var(--ag-critical-fill);
 }
 
 /* The research under a pending answer (`Turn.Live`): the trace's own lines,

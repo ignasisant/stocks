@@ -21,6 +21,7 @@
 import { useEffect, useState } from "react";
 import { ApiError } from "../../shell/api";
 import { useT } from "../../shell/i18n";
+import { toast } from "../../ui/toast";
 import { Loaded } from "../../shell/Layout";
 import { TickerCell } from "../../shell/tickers";
 import { Status } from "../../ui/Status";
@@ -46,7 +47,6 @@ export function Splits({
   // 0 is "not asked yet", and the state the page returns to after writing: the
   // findings were spent, and re-scanning is another round-trip per holding.
   const [asked, setAsked] = useState(0);
-  const [applied, setApplied] = useState(0);
   const scan = useApi(async () => (asked === 0 ? null : await scanSplits()), [asked]);
   const scanning = asked > 0 && scan.state === "loading";
   const gaps =
@@ -70,12 +70,6 @@ export function Splits({
 
       {gaps === 0 && <p className="im-fine">{t("import.splits_note")}</p>}
 
-      {applied > 0 && (
-        <p className="im-ok">
-          {t("import.toast_splits_applied", { n: vocab.num(applied, 0) })}
-        </p>
-      )}
-
       {asked > 0 && (
         <Loaded query={scan} skeleton={<Status label={t("import.work_scanning")} />}>
           {(found) =>
@@ -92,7 +86,7 @@ export function Splits({
               <Found
                 gaps={found.splits}
                 onApplied={(n) => {
-                  setApplied(n);
+                  toast.ok(t("import.toast_splits_applied", { n: vocab.num(n, 0) }));
                   setAsked(0);
                   onApplied();
                 }}
@@ -108,7 +102,6 @@ export function Splits({
           className="im-btn im-btn-outline im-btn-block"
           disabled={scanning}
           onClick={() => {
-            setApplied(0);
             setAsked((n) => n + 1);
           }}
           type="button"
@@ -133,7 +126,6 @@ function Found({
   const vocab = useVocabulary();
   const { on, picked, toggle } = useSelection(gaps.map(splitKey));
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
 
   const chosen = gaps.filter((gap) => picked.includes(splitKey(gap)));
 
@@ -152,14 +144,13 @@ function Found({
 
   const write = async () => {
     setBusy(true);
-    setFailed(false);
     try {
       const done = await applySplits(
         chosen.map((gap) => ({ ticker: gap.ticker, date: gap.date })),
       );
       onApplied(done.applied);
     } catch (error) {
-      setFailed(true);
+      toast.bad(t("common.failed"));
       // 409 is "this ledger is not missing that any more" — somebody applied it
       // elsewhere, or the book moved. Nothing was written, and the honest answer
       // is the current scan rather than the one on screen.
@@ -204,7 +195,6 @@ function Found({
           );
         })}
       </div>
-      {failed && <p className="im-bad">{t("common.failed")}</p>}
       <button
         className="im-btn im-btn-primary im-btn-block"
         disabled={busy || chosen.length === 0}

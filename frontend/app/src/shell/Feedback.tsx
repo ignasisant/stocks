@@ -38,6 +38,7 @@ import { useDialog } from "./useDialog";
 import { capture, fromFile, ShotFailed, type Shot } from "./screenshot";
 import { useGuest } from "./session";
 import { Box, Mic } from "../ui/Mic";
+import { toast } from "../ui/toast";
 import { ToggleChip, ToggleRow } from "../ui/Toggle";
 
 const KINDS = ["bug", "idea", "other"] as const;
@@ -54,7 +55,7 @@ const PAGE_MAX = 120;
  * and on a phone the "More" sheet it lives in — rather than the screen being
  * reported. Left out of a capture: a picture of the menu says nothing.
  */
-const CHROME = ["ag-fb-scrim", "ag-fb-sent", "ag-nav-sheet", "ag-nav-scrim"];
+const CHROME = ["ag-fb-scrim", "ag-toast", "ag-nav-sheet", "ag-nav-scrim"];
 const chrome = (element: Element) =>
   CHROME.some((name) => element.classList?.contains(name));
 
@@ -71,7 +72,6 @@ export function Feedback() {
   const [kind, setKind] = useState<Kind>("bug");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
 
   const [shot, setShot] = useState<Shot | null>(null);
   const [shooting, setShooting] = useState(false);
@@ -202,12 +202,10 @@ export function Feedback() {
       ...(shot ? { shot: shot.base64 } : {}),
     })
       .then(() => {
-        setSent(true);
+        toast.ok(t("feedback.sent"));
         setText("");
         setShot(null);
         setOpen(false);
-        // Long enough to read, short enough not to sit over the page.
-        window.setTimeout(() => setSent(false), 4000);
       })
       .catch((error: unknown) =>
         setFailed(
@@ -231,12 +229,6 @@ export function Feedback() {
       >
         {t("feedback.button")}
       </button>
-      {sent
-        ? createPortal(
-            <p className="ag-fb-sent">{t("feedback.sent")}</p>,
-            document.body,
-          )
-        : null}
       {open
         ? createPortal(
             <div className="ag-fb-scrim" role="presentation" onClick={close}>

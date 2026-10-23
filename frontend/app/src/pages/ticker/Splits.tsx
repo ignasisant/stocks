@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useApi } from "../../shell/useApi";
 import { useGuest } from "../../shell/session";
 import { useT } from "../../shell/i18n";
+import { toast } from "../../ui/toast";
 import { ratioLabel } from "../import/repairs";
 import { applySplits, getSplits, undoChange } from "./data";
 import { money, shares } from "./format";
@@ -70,6 +71,15 @@ export function SplitRepair({
             changeId: written.change_id,
             splits: written.splits,
           });
+          // The repair was nobody's request, so it says what it did, and the
+          // way back stays one press away for as long as an action toast does.
+          toast.ok(written.splits.map((split) => applied(t, split)).join(" "), {
+            action: {
+              label: t("ticker.split_undo"),
+              // eslint-disable-next-line @typescript-eslint/no-use-before-define
+              onClick: () => undo(written.change_id, written.splits),
+            },
+          });
           onChanged();
         },
         () => setDone({ kind: "failed", splits }),
@@ -85,7 +95,7 @@ export function SplitRepair({
           setDone({ kind: "undone", splits });
           onChanged();
         },
-        () => undefined,
+        () => toast.bad(t("common.failed")),
       )
       .finally(() => setBusy(false));
   };
@@ -104,20 +114,8 @@ export function SplitRepair({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [found, ticker]);
 
-  if (done?.kind === "applied") {
-    return (
-      <Line text={done.splits.map((split) => applied(t, split)).join(" ")}>
-        <button
-          type="button"
-          className="ag-btn"
-          disabled={busy}
-          onClick={() => undo(done.changeId, done.splits)}
-        >
-          {t("ticker.split_undo")}
-        </button>
-      </Line>
-    );
-  }
+  // Applied: the toast said so, and the position above shows the result.
+  if (done?.kind === "applied") return null;
   const pending = offered(done, found);
   if (pending.length === 0) return null;
   const why =

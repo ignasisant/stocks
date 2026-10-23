@@ -815,17 +815,6 @@
 
 /* An action that is not the thing the card is asking for: readable, and never
    competing with the node that still needs doing. */
-/* What is left of the start card for a few seconds after it is put away: the
-   way back from a press that was a slip. */
-.hm-start-undo {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin: 0;
-  color: var(--ag-text-muted);
-  font-size: var(--ag-fs-sm);
-}
-
 .hm-quiet {
   padding: 0;
   border: none;

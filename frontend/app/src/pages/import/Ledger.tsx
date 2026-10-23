@@ -19,6 +19,7 @@
 
 import { useState } from "react";
 import { useT } from "../../shell/i18n";
+import { toast } from "../../ui/toast";
 import { Loaded, Skeleton } from "../../shell/Layout";
 import { useAccount, useCurrency } from "../../shell/session";
 import { useApi } from "../../shell/useApi";
@@ -49,7 +50,6 @@ export function Ledger({
   const vocab = useVocabulary();
   const me = useAccount();
   const base = useCurrency();
-  const [cleared, setCleared] = useState(false);
   const [clearing, setClearing] = useState(false);
   const standing = useApi(() => standingOf(base), [base, nonce]);
   const paid = useApi(() => paidOf(base), [base, nonce]);
@@ -77,7 +77,6 @@ export function Ledger({
 
   return (
     <Fold id="im-book" summary={summary} title={t("import.book_now")}>
-      {cleared && <p className="im-ok">{t("import.toast_cleared")}</p>}
       <Loaded query={book} skeleton={<Skeleton rows={2} />}>
         {(held) => (
           <>
@@ -139,7 +138,7 @@ export function Ledger({
                 onCancel={() => setClearing(false)}
                 onWiped={() => {
                   setClearing(false);
-                  setCleared(true);
+                  toast.ok(t("import.toast_cleared"));
                   onWiped();
                 }}
                 total={held.total}

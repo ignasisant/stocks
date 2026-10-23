@@ -20,7 +20,7 @@
  * any of it, and nothing here reads prefs. Everything done, the card is gone.
  */
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { get, send } from "../../shell/api";
 import { useT } from "../../shell/i18n";
@@ -31,6 +31,7 @@ import { signInHref } from "../../shell/guest";
 import { useRoute } from "../../shell/router";
 import { useSession, useSignIn } from "../../shell/session";
 import { useApi } from "../../shell/useApi";
+import { toast } from "../../ui/toast";
 import { EXPLORE, SETUP, target, type Row } from "./checks";
 import type { Onboarding, TourStep } from "./types";
 import { Card } from "./ui";
@@ -42,9 +43,6 @@ import { Card } from "./ui";
  */
 
 type Entry = { row: Row; on: boolean };
-
-/** How long "Undo" stays offered after the card is put away. */
-const UNDO_FOR = 8000;
 
 /**
  * One row as a control: a link, a button, or plain text when there is
@@ -123,20 +121,18 @@ export function SetupCard() {
   const { prefs, reload } = session;
   const { setParams } = useRoute();
   const [dismissed, setDismissed] = useState(prefs.setup_card_dismissed);
-  // Put away by a press in this visit: the one moment an undo is owed. A card
-  // dismissed on another day stays gone without a word.
-  const [justHidden, setJustHidden] = useState(false);
-  useEffect(() => {
-    if (!justHidden) return;
-    const timer = window.setTimeout(() => setJustHidden(false), UNDO_FOR);
-    return () => window.clearTimeout(timer);
-  }, [justHidden]);
   // Shown or hidden first, saved after: the press is the decision, and a
   // failed write is worth one card coming back, not an error in front of
   // somebody tidying their screen.
   const keep = (hidden: boolean) => {
     setDismissed(hidden);
-    setJustHidden(hidden);
+    // Put away by a press in this visit: the one moment an undo is owed. A
+    // card dismissed on another day stays gone without a word.
+    if (hidden) {
+      toast.ok(t("home.setup_hidden"), {
+        action: { label: t("home.setup_undo"), onClick: () => keep(false) },
+      });
+    }
     void send("PATCH", "/prefs", { setup_card_dismissed: hidden })
       .then(reload)
       .catch(() => undefined);
@@ -146,16 +142,7 @@ export function SetupCard() {
   // nothing: an error where an invitation goes is worse than a blank nobody
   // would have noticed. The skeleton is only so the page below does not jump
   // when it lands.
-  if (dismissed) {
-    return justHidden ? (
-      <p className="hm-start-undo" role="status">
-        {t("home.setup_hidden")}
-        <button type="button" className="hm-quiet" onClick={() => keep(false)}>
-          {t("home.setup_undo")}
-        </button>
-      </p>
-    ) : null;
-  }
+  if (dismissed) return null;
   if (query.state === "loading") return <Skeleton rows={2} />;
   if (query.state !== "loaded") return null;
 
