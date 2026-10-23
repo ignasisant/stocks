@@ -196,5 +196,13 @@
   "profile.connector_used": "last used {date}",
   "profile.connector_never_used": "not used yet",
   "profile.connector_revoke": "Revoke",
-  "profile.connector_revoke_failed": "Couldn't revoke it — try again."
+  "profile.connector_revoke_failed": "Couldn't revoke it — try again.",
+  "profile.sessions_title": "Signed-in devices",
+  "profile.sessions_help": "Browsers signed in to this account. Sign out any you don't recognise.",
+  "profile.sessions_this": "This device",
+  "profile.sessions_unknown": "Unknown browser",
+  "profile.sessions_active": "Active {when}",
+  "profile.sessions_end": "Sign out",
+  "profile.sessions_end_others": "Sign out everywhere else",
+  "profile.sessions_failed": "Couldn't sign it out — try again."
 }

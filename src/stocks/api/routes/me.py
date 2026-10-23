@@ -16,12 +16,13 @@ signature alone).
 
 from __future__ import annotations
 
+import time
 from typing import Literal
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from stocks import accounts, session
+from stocks import accounts, devices, session
 from stocks.api.security import Who
 from stocks.bank import access
 from stocks.config import PROJECT_ROOT
@@ -102,7 +103,22 @@ def me(who: Who, request: Request) -> Me:
     # resolving (let alone provisioning) an account belongs to the routes that
     # read one.
     try:
-        root = accounts.paths_for(who.email, accounts.configured_owner()).root
+        paths = accounts.paths_for(who.email, accounts.configured_owner())
+        root = paths.root
+        # The session list's "last active" (`stocks.devices`), stamped here
+        # and not in `deps.account`: this is the call every page load makes, a
+        # preview or any other read must stay a read, and the write is
+        # throttled to once per few minutes. Never into an account that does
+        # not exist yet — sign-in recorded the session already.
+        if root.exists():
+            minted = float(who.iat or time.time())
+            devices.touch(
+                paths.devices,
+                who.sid,
+                user_agent=request.headers.get("user-agent", ""),
+                created=minted,
+                expires=minted + session.MAX_AGE,
+            )
     except Exception:  # noqa: BLE001 — the owner flag, not the identity
         root = None
     return Me(

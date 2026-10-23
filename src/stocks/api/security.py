@@ -53,6 +53,10 @@ class Caller:
 
     kind: Literal["session", "token", "guest"]
     email: str | None = None
+    # The session's own handle and mint time (never the cookie); "" / 0 for the
+    # other kinds. `stocks.devices` keys the account's session list on them.
+    sid: str = ""
+    iat: int = 0
 
 
 def configured_token() -> str:
@@ -113,8 +117,14 @@ def visitor(
     a request has exactly one answer to "who is this" and no two dependencies
     can disagree about it.
     """
-    if email := session.signed_in_email(request.cookies):
-        return Caller(kind="session", email=email)
+    if payload := session.verified_claims(request.cookies):
+        iat = payload.get("iat")
+        return Caller(
+            kind="session",
+            email=str(payload["email"]).strip().lower(),
+            sid=str(payload.get("sid") or ""),
+            iat=iat if isinstance(iat, int) else 0,
+        )
     if _token_matches(authorization):
         return Caller(kind="token")
     return Caller(kind="guest")

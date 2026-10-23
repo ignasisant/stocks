@@ -16,12 +16,13 @@ next.
 
 from __future__ import annotations
 
+import time
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 
-from stocks import obs, session
+from stocks import devices, obs, session
 from stocks.api.deps import Writer
 from stocks.api.security import Authed
 
@@ -132,3 +133,69 @@ def export(account: Writer) -> Response:
             )
         },
     )
+
+
+class SessionRow(BaseModel):
+    id: str = Field(description="Opaque handle of the session (a hash, not the cookie).")
+    device: str = Field(description='Browser and system, e.g. "Chrome · macOS".')
+    created: float = Field(description="When it signed in, epoch seconds.")
+    seen: float = Field(description="Last activity, epoch seconds (coarse, minutes).")
+    current: bool = Field(description="True for the session making this request.")
+
+
+class SessionList(BaseModel):
+    sessions: list[SessionRow]
+
+
+class Ended(BaseModel):
+    ended: int
+
+
+@router.get(
+    "/account/sessions",
+    response_model=SessionList,
+    summary="The browsers signed in to this account",
+)
+def sessions(request: Request, caller: Authed, account: Writer) -> SessionList:
+    """Live sessions, most recently active first, the caller's own marked.
+
+    A session only (`Writer`): a token names no session and no device.
+    """
+    minted = float(caller.iat or time.time())
+    devices.touch(
+        account.devices, caller.sid, user_agent=request.headers.get("user-agent", ""),
+        created=minted, expires=minted + session.MAX_AGE,
+    )
+    return SessionList(
+        sessions=[SessionRow(**r) for r in devices.listing(account.devices, caller.sid)]
+    )
+
+
+@router.delete(
+    "/account/sessions/others",
+    response_model=Ended,
+    summary="Sign out everywhere else",
+)
+def end_others(caller: Authed, account: Writer) -> Ended:
+    """End every session of this account but the one asking. Like every write
+    it is a JSON-era DELETE behind a SameSite=Lax cookie (`api/security.py`)."""
+    n = devices.end_others(account.devices, caller.sid)
+    obs.event("session.ended_others", count=n)
+    return Ended(ended=n)
+
+
+@router.delete(
+    "/account/sessions/{session_id}",
+    response_model=Ended,
+    summary="Sign one session out",
+)
+def end_session(session_id: str, caller: Authed, account: Writer) -> Ended:
+    """End one session of this account; its cookie stops working on the next
+    request. Only this account's own list is searched, so another account's
+    handle is a 404."""
+    if not devices.end(account.devices, session_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="unknown session"
+        )
+    obs.event("session.ended_remote", own=session_id == devices.sid_hash(caller.sid))
+    return Ended(ended=1)

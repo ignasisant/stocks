@@ -44,7 +44,7 @@ GUEST_DIR = USERS_DIR / "_guest"
 USER_FILES = (
     "watchlist.yaml", "portfolio.db", "last_import.json", "prefs.json", "chat.json",
     "bank.json", "daily_action.json", "sector_verdict.json", memory.FILE,
-    learnings.FILE, journal.FILE,
+    learnings.FILE, journal.FILE, "devices.json",
 )
 
 
@@ -84,6 +84,12 @@ class UserPaths:
     def memory_index(self) -> Path:
         """The chat's conversation index (chat/memory.py), beside chat.json."""
         return memory.path_for(self.chat.parent)
+
+    @property
+    def devices(self) -> Path:
+        """The browsers signed in to this account (stocks/devices.py), beside
+        the daily card like `verdicts`."""
+        return self.action.with_name("devices.json")
 
     @property
     def learnings(self) -> Path:

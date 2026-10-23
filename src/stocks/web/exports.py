@@ -210,6 +210,7 @@ _ABOUT = {
     "sector_verdict.json": "the last sector reads",
     "last_import.json": "the last statement import",
     "bank.json": "the bank connection, without credentials",
+    "devices.json": "the browsers signed in (ids are hashes, no addresses)",
 }
 
 
@@ -221,7 +222,7 @@ def bundled(paths: UserPaths) -> dict[str, Path]:
     """
     files = (
         paths.watchlist, paths.prefs, paths.chat, paths.learnings, paths.journal,
-        paths.action, paths.verdicts, paths.last_import, paths.bank,
+        paths.action, paths.verdicts, paths.last_import, paths.bank, paths.devices,
     )
     return {path.name: path for path in files}
 

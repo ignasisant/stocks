@@ -206,6 +206,7 @@ def test_every_user_file_is_bundled_or_deliberately_left_out(account):
     from stocks.web import exports
 
     assert set(exports.bundled(account)) | exports.NOT_BUNDLED == set(accounts.USER_FILES)
+    assert "devices.json" in exports.bundled(account)
     assert exports.NOT_BUNDLED == {"portfolio.db", memory.FILE}
 
 

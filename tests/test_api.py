@@ -790,6 +790,9 @@ WRITES = {
     # Erasing the account. The most destructive route here, and the clearest
     # case for the session-only rule: a token names any account it likes.
     ("/v1/account", "delete"),
+    # Ending a browser's sign-in from Profile, one or all the others.
+    ("/v1/account/sessions/{session_id}", "delete"),
+    ("/v1/account/sessions/others", "delete"),
     # A provider key of your own, which is what lifts the free chain's daily
     # cap. Stored encrypted; a token must not be able to plant or remove one.
     ("/v1/chat/keys/{provider}", "put"),
@@ -852,6 +855,7 @@ def test_no_write_will_answer_a_bearer_token(client, token, account):
             .replace("{symbol}", "AAPL")
             .replace("{tag}", "Tech")
             .replace("{change_id}", "1")
+            .replace("{session_id}", "abc")
         )
         # `request` rather than the per-verb helpers: DELETE carries a body on
         # the one route that demands a typed confirmation, and httpx's
