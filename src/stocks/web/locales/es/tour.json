@@ -34,7 +34,7 @@
   "tour.positions_body": "Tus posiciones con precio en vivo, valor y peso, y en qué bróker está cada una.",
   "tour.positions_cta": "Abrir Posiciones",
   "tour.risk_title": "Rendimiento real y riesgo",
-  "tour.risk_body": "**Rendimiento real** es lo que de verdad ha ganado tu cartera, sin contar aportaciones. **Riesgo** es lo que tienes hoy: por sector, país, divisa y bróker.",
+  "tour.risk_body": "**Rendimiento real** es lo que ha ganado tu cartera, sin aportaciones, y qué lo movió: precios, divisa, dividendos. **Riesgo** es lo que tienes hoy: por sector, país, divisa y bróker.",
   "tour.risk_cta": "Abrir Asignación y riesgo",
   "tour.projection_title": "Proyección a cinco años",
   "tour.projection_body": "Un rango, no una predicción: dónde podría estar tu cartera de 1 a 10 años. Añade una aportación mensual o un objetivo y mira la probabilidad de llegar.",

@@ -228,6 +228,71 @@ class Transactions(BaseModel):
     )
 
 
+class AttributionMover(BaseModel):
+    ticker: str
+    amount: float = Field(
+        description=(
+            "What this holding added over the window in `base`: price, currency, "
+            "income and commissions, contributions left out."
+        )
+    )
+
+
+class Attribution(BaseModel):
+    """Where the change in the book's value came from, bar by bar."""
+
+    base: str
+    window: str = Field(
+        default="inception",
+        description="Same windows as `/portfolio/performance`.",
+    )
+    start: str | None = None
+    end: str | None = None
+    start_value: float | None = Field(
+        default=None,
+        description="Book value at the window's first close (0 from inception).",
+    )
+    contributions: float = Field(
+        default=0.0,
+        description="Net cash put in: buys incl. commission minus sale proceeds.",
+    )
+    price: float = Field(
+        default=0.0,
+        description="Each holding's own-currency move, valued at the prior day's rate.",
+    )
+    fx: float = Field(
+        default=0.0, description="The same holdings' move from the exchange rate alone."
+    )
+    dividends: float = Field(
+        default=0.0,
+        description=(
+            "Gross dividends booked in the window. The value path is built from "
+            "adjusted closes, so they are taken out of `price`, not added on top."
+        ),
+    )
+    fees: float = Field(default=0.0, description="Trade commissions (<= 0).")
+    other: float = Field(
+        default=0.0,
+        description=(
+            "What no bar above can place, e.g. a name carried at cost. Zero "
+            "unless beyond rounding."
+        ),
+    )
+    end_value: float | None = Field(
+        default=None,
+        description=(
+            "start_value + every bar, exactly. The last day of the same value "
+            "path, so it can differ from the live `value` on `/performance`."
+        ),
+    )
+    contributors: list[AttributionMover] = Field(default_factory=list)
+    detractors: list[AttributionMover] = Field(default_factory=list)
+    missing: list[str] = Field(
+        default_factory=list,
+        description="Names with no usable price: carried at cost at both ends.",
+    )
+
+
 class Performance(BaseModel):
     base: str
     window: str = Field(

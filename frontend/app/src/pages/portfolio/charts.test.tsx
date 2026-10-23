@@ -14,6 +14,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { TaxPeriod } from "./api";
+import { waterfallBars } from "./Attribution";
 import {
   AxisLabel,
   BookAndRates,
@@ -21,6 +22,8 @@ import {
   Donut,
   Heatmap,
   PeriodBars,
+  Waterfall,
+  type WaterfallBar,
   ReturnLines,
   bookRatesTip,
   bookSpanTip,
@@ -746,5 +749,74 @@ describe("narrow plots", () => {
     expect(out).toContain('class="pf-plot pf-scrub"');
     // Drawn 1:1 at the measured width (the fallback, here): no scaled frame.
     expect(out).toContain('viewBox="0 0 720 240"');
+  });
+});
+
+describe("Waterfall", () => {
+  const money = (v: number, signed = false) =>
+    `${signed && v > 0 ? "+" : ""}${Math.round(v)} €`;
+  const bars: WaterfallBar[] = [
+    { key: "start", label: "Start", kind: "total", amount: 1000 },
+    { key: "contributions", label: "Deposits", kind: "step", amount: 500 },
+    { key: "price", label: "Prices", kind: "step", amount: -200 },
+    { key: "end", label: "End", kind: "total", amount: 1300 },
+  ];
+
+  it("draws one labelled bar per entry, steps signed, totals plain", () => {
+    const html = renderToStaticMarkup(
+      <Waterfall bars={bars} money={money} summary="what moved" />,
+    );
+    for (const label of ["Start", "Deposits", "Prices", "End"]) {
+      expect(html).toContain(`>${label}<`);
+    }
+    expect(html).toContain("+500 €");
+    expect(html).toContain("-200 €");
+    expect(html).toContain("1300 €");
+    expect(html).toContain('aria-label="what moved"');
+  });
+
+  it("is nothing when there are no bars", () => {
+    expect(renderToStaticMarkup(<Waterfall bars={[]} money={money} summary="" />)).toBe(
+      "",
+    );
+  });
+});
+
+describe("waterfallBars", () => {
+  const data = {
+    base: "EUR",
+    window: "1y",
+    start: "2025-01-01",
+    end: "2026-01-01",
+    start_value: 1000,
+    contributions: 500,
+    price: -200,
+    fx: 0,
+    dividends: 0,
+    fees: -5,
+    other: 0,
+    end_value: 1295,
+    contributors: [],
+    detractors: [],
+    missing: [],
+  };
+
+  it("adds up to the end value and drops the steps that are zero", () => {
+    const out = waterfallBars(
+      data,
+      (k) => k,
+      (k) => k,
+    );
+    expect(out.map((b) => b.key)).toEqual([
+      "start",
+      "contributions",
+      "price",
+      "fees",
+      "end",
+    ]);
+    const steps = out
+      .filter((b) => b.kind === "step")
+      .reduce((a, b) => a + b.amount, 0);
+    expect(out[0]!.amount + steps).toBe(out[out.length - 1]!.amount);
   });
 });

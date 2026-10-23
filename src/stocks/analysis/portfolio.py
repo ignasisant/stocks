@@ -517,6 +517,36 @@ def plausible_closes(
     return out
 
 
+@dataclass(frozen=True)
+class Leg:
+    """One ticker's share of the value path, kept for `attribution`.
+
+    `px` is the close in its ISO currency (pence already scaled), `rate` the
+    daily rate into `base`, both None when the name never had a usable series
+    (carried at cost throughout). `marked` is True on days both exist.
+    """
+
+    shares: pd.Series
+    value: pd.Series
+    px: pd.Series | None
+    rate: pd.Series | None
+    marked: pd.Series
+
+
+class Legs(dict):
+    """ticker -> Leg, riding in `DataFrame.attrs`.
+
+    pandas deep-copies `attrs` on every slice; the legs are read-only, so the
+    copy hands back the same object instead of cloning every series.
+    """
+
+    def __deepcopy__(self, memo):
+        return self
+
+    def __copy__(self):
+        return self
+
+
 def injected_vs_value(
     transactions,
     closes: dict[str, pd.Series],
@@ -567,9 +597,11 @@ def injected_vs_value(
 
     value = pd.Series(0.0, index=idx)
     carried: list[str] = []
+    legs: dict[str, Leg] = {}
     for ticker in shares.columns:
         held = shares[ticker] > 0
         mtm = None
+        leg_px = leg_rate = None
         px = closes.get(ticker)
         if px is not None and not px.empty:
             px = px.copy()
@@ -587,8 +619,10 @@ def injected_vs_value(
                     rate.index = pd.to_datetime(rate.index)
                     rate = rate.reindex(idx).ffill().bfill()
                     mtm = shares[ticker] * px * rate
+                    leg_px, leg_rate = px, rate
         # Held days with no quote fall back to cost, never below zero.
         gap = held if mtm is None else (mtm.isna() & held)
+        part = pd.Series(0.0, index=idx)
         if gap.any():
             proxy = (
                 injected_series(
@@ -598,10 +632,22 @@ def injected_vs_value(
                 .ffill()
                 .fillna(0.0)
             )
-            value += proxy.where(gap, 0.0).clip(lower=0.0)
+            part += proxy.where(gap, 0.0).clip(lower=0.0)
             carried.append(ticker)
         if mtm is not None:
-            value += mtm.fillna(0.0)
+            part += mtm.fillna(0.0)
+        value += part
+        legs[ticker] = Leg(
+            shares=shares[ticker],
+            value=part,
+            px=leg_px,
+            rate=leg_rate,
+            marked=(
+                mtm.notna() & leg_px.notna() & leg_rate.notna()
+                if mtm is not None and leg_px is not None and leg_rate is not None
+                else pd.Series(False, index=idx)
+            ),
+        )
 
     injected = (
         injected_series(transactions, to_base, base).reindex(idx).ffill().fillna(0.0)
@@ -611,6 +657,7 @@ def injected_vs_value(
     pct[mask] = value[mask] / injected[mask] - 1
     df = pd.DataFrame({"injected": injected, "value": value, "pnl_pct": pct})
     df.attrs["carried_at_cost"] = carried
+    df.attrs["legs"] = Legs(legs)
     return df
 
 
