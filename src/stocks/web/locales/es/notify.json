@@ -68,5 +68,12 @@
   "notify.usage_totals": "{accounts} cuentas · {addresses} direcciones · {logins} inicios de sesión · {signups} altas · {imports} importaciones ({first} primeras) · {chat} turnos de chat",
   "notify.usage_pages": "Páginas",
   "notify.usage_funnel": "Embudo: {views} vistas de la landing → {entries} entradas → {signups} altas → {imports} primeras importaciones",
-  "notify.usage_retention": "Retención: {returned} de {eligible} altas vistas de nuevo a los {days} días"
+  "notify.usage_retention": "Retención: {returned} de {eligible} altas vistas de nuevo a los {days} días",
+  "notify.usage_skills_title": "Skills del chat por coste",
+  "notify.usage_skill_col_skill": "skill",
+  "notify.usage_skill_col_n": "n",
+  "notify.usage_skill_col_mean": "$/resp",
+  "notify.usage_skill_col_up": "+",
+  "notify.usage_skill_col_down": "-",
+  "notify.usage_skills_total": "{answers} respuestas · {usd} $ en total"
 }

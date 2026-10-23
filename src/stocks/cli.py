@@ -1065,6 +1065,12 @@ def cmd_logs(args: argparse.Namespace) -> None:
     if args.logs_command == "funnel":
         print(lq.render_funnel(lq.funnel(entries)))
         return
+    if args.logs_command == "skills":
+        from stocks.web import feedback
+
+        ratings = feedback.latest_ratings(feedback.stored())
+        print(lq.render_skills(lq.skills(entries, ratings)))
+        return
     if getattr(args, "json", False):
         for e in entries[::-1]:
             print(json.dumps(e))
@@ -1171,18 +1177,7 @@ def cmd_feedback(args: argparse.Namespace) -> None:
     if not items:
         print("(no feedback yet)")
         return
-    # A thumbs-down is sent on the press and again with its reason, and a
-    # reader may change their mind: a conversation is rated once, so its last
-    # rating is its verdict (one stored before ratings named their thread
-    # falls back to its answer).
-    def rated(it):
-        return (it.get("user"), it.get("thread") or it.get("turn"))
-
-    last = {rated(it): i for i, it in enumerate(items)
-            if it.get("kind") == "rating" and it.get("turn")}
-    items = [it for i, it in enumerate(items)
-             if it.get("kind") != "rating" or not it.get("turn")
-             or last[rated(it)] == i]
+    items = feedback.latest_ratings(items)
     for it in items:
         head = f"{it.get('ts', '?')}  [{it.get('kind', '?'):<5}]"
         head += f"  {it.get('user', '?')}  ({it.get('page', '-')})"
@@ -1713,6 +1708,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="landing view -> app entry -> signup -> first import, by day and source")
     _common(p_fun, with_output=False)
     p_fun.set_defaults(since="14d", limit=20000)
+    p_skl = logs_sub.add_parser(
+        "skills",
+        help="per chat skill: answers, total and mean cost, thumbs up/down "
+             "(chat.cost crossed with the stored ratings)")
+    _common(p_skl, with_output=False)
+    p_skl.set_defaults(since="7d", limit=20000, event="chat.cost")
     p_exp = logs_sub.add_parser(
         "export", help="snapshot entries to JSONL (survives the 30d retention)")
     _common(p_exp, with_output=False)
