@@ -448,26 +448,39 @@ def _read_pdf(item: dict) -> None:
 def insider_transactions(
     ticker: str = "", *, issuer: str | None = None, nif: str | None = None
 ) -> list[InsiderTx]:
+    """`read` without the completeness flag."""
+    return read(ticker, issuer=issuer, nif=nif)[0]
+
+
+def read(
+    ticker: str = "", *, issuer: str | None = None, nif: str | None = None
+) -> tuple[list[InsiderTx], bool]:
     """Art. 19 MAR notifications for one Spanish issuer, newest first.
 
     Best-effort like BaFin's: an unknown or ambiguous name, a network failure
     or a portal redesign yields an empty list rather than raising. Bounded: at
     most `MAX_PAGES` list pages and `MAX_PDFS` unseen PDFs per call, inside
     `BUDGET_S`; whatever was read is memoised, so the next call goes further.
+
+    Returns `(rows, complete)`. `complete` is False when PDFs were left unread
+    (cap, time budget, still pending) or the fetch failed: callers should not
+    keep such a result for long, the memo will be fuller on the next call.
     """
     if not (issuer or nif):
-        return []
+        return [], True
+    complete = True
     started = time.monotonic()
     try:
         nif = nif or _resolve_nif(issuer or "")
         if not nif:
-            return []
+            return [], True
         cutoff = date.today() - timedelta(days=LOOKBACK_DAYS)
         pdfs = _memory()["pdf"]
         items: list[dict] = []
         budget = MAX_PDFS
         for page in range(MAX_PAGES):
             if time.monotonic() - started > BUDGET_S:
+                complete = False
                 break
             batch = _list_page(nif, page)
             if not batch:
@@ -479,6 +492,7 @@ def insider_transactions(
                     break
                 if item["token"] not in pdfs:
                     if budget <= 0:
+                        complete = False
                         stop = True
                         break
                     budget -= 1
@@ -491,13 +505,14 @@ def insider_transactions(
             pool = ThreadPoolExecutor(PDF_WORKERS)
             futures = [pool.submit(_read_pdf, i) for i in todo]
             left = max(BUDGET_S - (time.monotonic() - started), 1.0)
-            wait(futures, timeout=left)
+            _, pending = wait(futures, timeout=left)
+            complete = complete and not pending
             # Whatever is still running finishes into the memo on its own.
             pool.shutdown(wait=False, cancel_futures=True)
             _persist()
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         obs.warn("cnmv.failed", error_type=type(exc).__name__, error=str(exc)[:200])
-        return []
+        return [], False
 
     entries = [pdfs[i["token"]] for i in items if i["token"] in pdfs]
     # An amendment replaces the notification it corrects.
@@ -511,4 +526,4 @@ def insider_transactions(
     ]
     out = [replace(t, ticker=ticker.upper()) for t in out]
     out.sort(key=lambda t: (t.date is not None, t.date or date.min), reverse=True)
-    return out
+    return out, complete

@@ -6,6 +6,8 @@ table split over four venues, an amendment, and a multi-row table that
 pdfminer emits column by column).
 """
 
+import threading
+import time
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -208,3 +210,65 @@ def test_one_bad_pdf_does_not_cost_the_rest(register, monkeypatch):
     monkeypatch.setattr(cnmv, "pdf_text", flaky)
     txs = cnmv.insider_transactions("SAN.MC", issuer="Banco Santander")
     assert [t.shares for t in txs] == [6494.0]
+
+
+@pytest.fixture
+def slow_site(register, monkeypatch):
+    """Two of the PDFs hang until released; the wait is cut to its floor."""
+    gate = threading.Event()
+    fast = cnmv._get
+
+    def gated(url, timeout=20):
+        if url.rsplit("e=", 1)[1] in {"t-amend", "t-orig"}:
+            gate.wait(10)
+        return fast(url, timeout)
+
+    monkeypatch.setattr(cnmv, "_get", gated)
+    monkeypatch.setattr(cnmv, "BUDGET_S", 0.5)  # the PDF wait floors at 1 s
+    return gate
+
+
+def _workers_done(timeout=10):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if {"t-sell", "t-amend", "t-orig"} <= set(cnmv._memory()["pdf"]):
+            return
+        time.sleep(0.02)
+    raise AssertionError("workers did not finish")
+
+
+def test_a_partial_read_says_so_and_the_next_one_is_fuller(slow_site):
+    rows, complete = cnmv.read("SAN.MC", issuer="Banco Santander")
+    assert not complete
+    assert [t.shares for t in rows] == [600000.0]
+
+    slow_site.set()
+    _workers_done()
+    rows, complete = cnmv.read("SAN.MC", issuer="Banco Santander")
+    assert complete
+    assert [t.shares for t in rows] == [600000.0, 6494.0]
+
+
+def test_the_loader_does_not_freeze_a_partial_read(slow_site, monkeypatch):
+    from stocks.api import loaders
+
+    monkeypatch.setattr(loaders, "issuer_name", lambda t: "Banco Santander")
+    loaders._clear_eu_insiders()
+    try:
+        first = loaders.eu_insiders("SAN.MC")
+        assert [t.shares for t in first] == [600000.0]
+        # Kept for the short TTL only, not the hour a complete list gets.
+        expires = loaders._cnmv_cache["SAN.MC"][0]
+        assert expires - time.monotonic() <= loaders._CNMV_PARTIAL_TTL
+
+        slow_site.set()
+        _workers_done()
+        monkeypatch.setattr(loaders, "_CNMV_PARTIAL_TTL", 0.0)
+        loaders._cnmv_cache["SAN.MC"] = (0.0, first)  # the 60 s have passed
+        assert [t.shares for t in loaders.eu_insiders("SAN.MC")] == [600000.0, 6494.0]
+
+        # Now complete: kept for the long TTL.
+        expires = loaders._cnmv_cache["SAN.MC"][0]
+        assert expires - time.monotonic() > loaders._CNMV_PARTIAL_TTL
+    finally:
+        loaders._clear_eu_insiders()
