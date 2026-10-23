@@ -9,7 +9,7 @@ EXPECTED_IDS = {
     "tech", "energy", "value", "financials", "healthcare", "crypto",
     "emerging-markets", "dividend", "growth-momentum", "technical", "macro",
     "earnings-review", "portfolio-risk", "spain-tax", "us-tax", "bear-case",
-    "etfs",
+    "etfs", "tax",
 }
 
 

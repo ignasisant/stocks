@@ -1635,7 +1635,7 @@ def _how() -> str:
 _LENSES = (
     "bear-case", "crypto", "dividend", "earnings-review", "emerging-markets",
     "energy", "etfs", "financials", "growth-momentum", "healthcare", "macro",
-    "portfolio-risk", "spain-tax", "tech", "technical", "us-tax", "value",
+    "portfolio-risk", "spain-tax", "tax", "tech", "technical", "us-tax", "value",
 )
 
 # App operations the assistant performs on its own (chat/tools.py). Only the
