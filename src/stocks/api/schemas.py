@@ -3495,6 +3495,14 @@ class BookFinding(BaseModel):
     weight: float = Field(
         description="What it is worth fixing, in the security's own currency."
     )
+    cause: Literal["fee", "split", "transfer", "duplicate", "unexplained"] | None = Field(
+        default=None,
+        description=(
+            "Why the book disagrees with itself, traced from the rows: a fee paid "
+            "in units, an unrecorded split, a broker move, a trade imported twice, "
+            "or `unexplained`. Null for a finding that is not a break."
+        ),
+    )
 
 
 class BookHealth(BaseModel):

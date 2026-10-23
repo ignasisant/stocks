@@ -685,7 +685,22 @@ def _finding_line(f: doctor.Finding, ctx: _Ctx) -> str:
     if f.kind == "duplicate":
         return ctx.tr("chat.book_finding_duplicate", ticker=f.ticker, date=d["date"],
                       broker=d["broker_dropped"])
-    return ctx.tr("chat.book_finding_oversold", ticker=f.ticker)
+    line = ctx.tr("chat.book_finding_oversold", ticker=f.ticker)
+    if f.cause:
+        line += " " + ctx.tr(f"chat.book_cause_{f.cause}", **_cause_args(f))
+    return line
+
+
+def _cause_args(f: doctor.Finding) -> dict:
+    """The facts a cause's one-line reason names."""
+    d = f.detail
+    return {
+        "date": d.get("date", ""),
+        "quantity": _n(d.get("short", 0.0)),
+        "factor": d.get("factor", ""),
+        "from": d.get("broker_from", ""),
+        "to": d.get("broker_to", ""),
+    }
 
 
 def _finding_summary(f: doctor.Finding, ctx: _Ctx) -> str:

@@ -29,8 +29,12 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from stocks.portfolio import consistency, edits, revolut_crypto, transfers
+from stocks.portfolio import consistency, edits, positions, revolut_crypto, transfers
 from stocks.portfolio.ledger import Transaction
+
+# Why a book does not add up, as far as the ledger alone can tell. `unexplained`
+# is an answer too: nothing in the rows accounts for it.
+Cause = Literal["fee", "split", "transfer", "duplicate", "unexplained"]
 
 Kind = Literal["transfer", "two_labels", "oversold", "duplicate", "fee_in_coins"]
 KINDS: tuple[Kind, ...] = (
@@ -58,6 +62,7 @@ class Finding:
     fix: list[dict] = field(default_factory=list)  # edits ops; [] = ask the reader
     detail: dict[str, Any] = field(default_factory=dict)  # the facts, for the copy
     weight: float = 0.0  # what it is worth fixing, in the security's currency
+    cause: Cause | None = None  # why the book disagrees; None when not a break
 
     @property
     def key(self) -> str:
@@ -132,6 +137,7 @@ def _transfers(
                     "currency": m.currency,
                 },
                 weight=abs(m.phantom_gain),
+                cause="transfer",
             )
         )
     return out
@@ -201,21 +207,111 @@ def _oversold(rows: list[Transaction], joined: set[tuple[str, str]]) -> list[Fin
     the sale belongs to another security."""
     shown = transfers.relabel(rows)
     ids: dict[tuple[str, str], list[int]] = defaultdict(list)
+    group: dict[tuple[str, str], list[Transaction]] = defaultdict(list)
     for tx, label in zip(rows, shown, strict=True):
         ids[(label.ticker, tx.currency)].append(tx.id or 0)
+        group[(label.ticker, tx.currency)].append(tx)
     out = []
     for (label, currency), state in edits._replay(rows).items():
         if not state.broken or (label, currency) in joined:
             continue
+        cause, facts = trace_break(group[(label, currency)])
         out.append(
             Finding(
                 kind="oversold",
                 ticker=label,
                 ids=tuple(ids[(label, currency)]),
-                detail={"message": state.broken, "currency": currency},
+                detail={"message": state.broken, "currency": currency,
+                        "cause": cause, **facts},
+                cause=cause,
             )
         )
     return out
+
+
+# ------------------------------------------------------------- the break trace
+
+# Ratios a company actually splits by; a sale this many times what the book
+# holds reads as a split the book never recorded.
+SPLIT_FACTORS = (2, 3, 4, 5, 6, 8, 10, 15, 20, 25, 50)
+_TOL = 0.02  # relative slack for matching a shortfall to a fee or a ratio
+
+
+def _buyish(tx: Transaction) -> bool:
+    return tx.action in ("buy", "transfer_in")
+
+
+def trace_break(txs: list[Transaction]) -> tuple[Cause, dict[str, Any]]:
+    """Why one security's rows sell shares the book never saw arrive.
+
+    Walks the rows the way every replay does to the first sale that exceeds
+    what is held, then asks what the shortfall is, cheapest explanation first:
+
+    - `duplicate`: another row has the same date, side, quantity and price
+      (the same fill printed twice), so one of them is the extra.
+    - `fee`: the shortfall is a fee paid in units, a row's fee over its price.
+    - `split`: the sale is a clean split factor times what is held, so a
+      split the book has no row for (`known`: it has one, dated after the sale).
+    - `transfer`: an earlier sale or transfer-out at another broker is exactly
+      the shortfall's size: the same shares left there and were sold here, and
+      no arrival was ever imported to join the two.
+    - `unexplained` otherwise.
+
+    The facts come back for the copy; nothing is decided here.
+    """
+    order = sorted(
+        (t for t in txs
+         if t.action in ("buy", "sell", "transfer_in", "transfer_out", "split")),
+        key=positions.replay_order,
+    )
+    held = 0.0
+    for i, tx in enumerate(order):
+        if tx.action == "split":
+            if tx.quantity > 0:
+                held *= tx.quantity
+            continue
+        sign = 1 if _buyish(tx) else -1
+        if sign < 0 and tx.quantity > held + 1e-9:
+            return _classify(tx, tx.quantity - held, held, order, i)
+        held += sign * tx.quantity
+    return "unexplained", {}
+
+
+def _classify(
+    sale: Transaction,
+    short: float,
+    held: float,
+    order: list[Transaction],
+    at: int,
+) -> tuple[Cause, dict[str, Any]]:
+    base = {"date": sale.date, "quantity": sale.quantity, "short": round(short, 8)}
+    for other in order[:at] + order[at + 1 :]:
+        if (other.action == sale.action and other.date == sale.date
+                and abs(other.quantity - sale.quantity) <= 1e-6
+                and abs(other.price - sale.price)
+                <= _SAME_PRICE * max(other.price, sale.price, 1e-12)):
+            return "duplicate", {**base, "id": other.id}
+    for tx in order:
+        if tx.fee > 0 and tx.price > 0:
+            units = tx.fee / tx.price
+            if abs(units - short) <= _TOL * short + 1e-9:
+                return "fee", {**base, "fee": tx.fee, "id": tx.id}
+    if held > 1e-9:
+        ratio = sale.quantity / held
+        for k in SPLIT_FACTORS:
+            if abs(ratio - k) <= _TOL * k:
+                known = any(
+                    t.action == "split" and t.date > sale.date for t in order
+                )
+                return "split", {**base, "factor": k, "known": known}
+    broker = transfers._broker(sale)
+    for tx in order[:at]:
+        if (tx.action in ("sell", "transfer_out")
+                and transfers._broker(tx) != broker
+                and abs(tx.quantity - short) <= _TOL * short + 1e-9):
+            return "transfer", {
+                **base, "broker_from": transfers._broker(tx), "broker_to": broker}
+    return "unexplained", base
 
 
 def _duplicates(rows: list[Transaction]) -> list[Finding]:
@@ -259,6 +355,7 @@ def _duplicates(rows: list[Transaction]) -> list[Finding]:
                             "broker_dropped": transfers._broker(drop),
                         },
                         weight=keep.quantity * keep.price,
+                        cause="duplicate",
                     )
                 )
     return out
@@ -351,6 +448,7 @@ def _fee_in_coins(rows: list[Transaction]) -> list[Finding]:
             detail={"coins": removed, "closed": closed, "buys": len(fix),
                     "fees": round(fees, 2)},
             weight=fees,
+            cause="fee",
         )
     ]
 

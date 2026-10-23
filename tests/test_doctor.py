@@ -186,3 +186,78 @@ def test_a_partial_sale_is_not_read_as_emptying_the_position():
 
 def test_other_brokers_crypto_is_left_alone():
     assert doctor.scan(_ledger(*(replace(t, note="kraken CAT") for t in CAT))) == []
+
+
+# ------------------------------------------------------------ the break trace
+
+
+def _oversold(*txs):
+    [finding] = doctor.scan(_ledger(*txs), resolve)
+    assert finding.kind == "oversold"
+    return finding
+
+
+def test_a_sale_twice_over_is_traced_to_a_duplicate_import():
+    f = _oversold(
+        Transaction("2025-01-02", "AAPL", "buy", 10, 100.0, "USD", 0, "revolut"),
+        Transaction("2025-03-02", "AAPL", "sell", 10, 120.0, "USD", 0, "revolut"),
+        Transaction("2025-03-02", "AAPL", "sell", 10, 120.0, "USD", 0, "revolut"),
+    )
+    assert f.cause == "duplicate" and f.detail["cause"] == "duplicate"
+
+
+def test_a_gap_equal_to_a_fee_in_units_is_traced_to_the_fee():
+    # 10 bought, fee 1.0 at 100.0 = 0.01 shares; the broker sold all 10.01.
+    f = _oversold(
+        Transaction("2025-01-02", "AAPL", "buy", 10, 100.0, "USD", 1.0, "ibkr"),
+        Transaction("2025-03-02", "AAPL", "sell", 10.01, 120.0, "USD", 0, "ibkr"),
+    )
+    assert f.cause == "fee" and f.detail["fee"] == 1.0
+
+
+def test_a_sale_a_clean_factor_over_the_holding_is_traced_to_a_split():
+    f = _oversold(
+        Transaction("2025-01-02", "NVDA", "buy", 10, 100.0, "USD", 0, "ibkr"),
+        Transaction("2025-03-02", "NVDA", "sell", 40, 30.0, "USD", 0, "ibkr"),
+    )
+    assert f.cause == "split"
+    assert f.detail["factor"] == 4 and f.detail["known"] is False
+
+
+def test_a_split_row_dated_after_the_sale_is_a_known_split():
+    f = _oversold(
+        Transaction("2025-01-02", "NVDA", "buy", 10, 100.0, "USD", 0, "ibkr"),
+        Transaction("2025-03-02", "NVDA", "sell", 100, 30.0, "USD", 0, "ibkr"),
+        Transaction("2025-03-09", "NVDA", "split", 10, 0, "USD", 0, "ibkr"),
+    )
+    assert f.cause == "split" and f.detail["known"] is True
+
+
+def test_shares_sold_at_another_broker_are_traced_to_a_move():
+    f = _oversold(
+        Transaction("2025-01-02", "AAPL", "buy", 10, 100.0, "USD", 0, "degiro"),
+        Transaction("2025-03-02", "AAPL", "sell", 10, 120.0, "USD", 0, "degiro"),
+        Transaction("2025-04-02", "AAPL", "sell", 10, 125.0, "USD", 0, "ibkr"),
+    )
+    assert f.cause == "transfer"
+    assert f.detail["broker_from"] == "degiro" and f.detail["broker_to"] == "ibkr"
+
+
+def test_a_gap_nothing_accounts_for_is_unexplained():
+    f = _oversold(
+        Transaction("2025-01-02", "AAPL", "buy", 10, 100.0, "USD", 0, "ibkr"),
+        Transaction("2025-03-02", "AAPL", "sell", 17, 120.0, "USD", 0, "ibkr"),
+    )
+    assert f.cause == "unexplained" and f.detail["short"] == 7
+
+
+def test_the_other_findings_carry_the_cause_they_already_are():
+    rows = _ledger(GRF_BUY, GRF_SOLD, GRF_IN)
+    [finding] = doctor.scan(rows, resolve)
+    assert finding.cause == "transfer"
+    dup = _ledger(
+        Transaction("2025-03-02", "AAPL", "buy", 5, 100.0, "USD", 0, "revolut"),
+        Transaction("2025-03-02", "AAPL", "buy", 5, 100.0, "USD", 0, "ibkr"),
+    )
+    [finding] = doctor.scan(dup, resolve)
+    assert finding.cause == "duplicate"
