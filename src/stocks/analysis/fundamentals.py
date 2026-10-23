@@ -272,7 +272,7 @@ KPI_SOURCES: dict[str, KpiSource] = {
         "ROTCE",
         "pct",
         "derived",
-        "net income / Tangible Book Value (yfinance statements)",
+        "net income to common / Tangible Book Value (yfinance statements)",
         "EDGAR NI / tangible equity",
         desc="Return on tangible common equity: what a bank earns on the capital "
         "it could lose. Over 15% is a strong lender.",
@@ -754,16 +754,25 @@ def compute_metrics(raw: RawFundamentals) -> dict[str, float | str | None]:
     # goodwill and intangibles a crisis writes off first), what is paid for
     # it, and what it earns. Book and profit in the filing currency, the cap
     # in the quote's.
+    # Tangible *common* equity: the preferred stock is the preferred holders'
+    # claim, not the common owners' book (CFR's 145M, JPM's 27B).
     tangible = _latest(raw.balance, "Tangible Book Value")
-    if tangible is None and equity_now is not None:
-        intangible = _latest(raw.balance, "Goodwill And Other Intangible Assets")
-        tangible = equity_now - (intangible or 0.0)
+    if tangible is None:
+        common = _latest(raw.balance, "Common Stock Equity")
+        common = common if common is not None else equity_now
+        if common is not None:
+            intangible = _latest(raw.balance, "Goodwill And Other Intangible Assets")
+            tangible = common - (intangible or 0.0)
     has_tangible = tangible is not None and tangible > 0
     m["ptbv"] = (
         cap / (tangible * rate) if has_tangible and cap and rate else None
     )
+    # ...earned for the common owners: after the preferred dividends.
+    earned_common = _latest(raw.income, "Net Income Common Stockholders")
+    if earned_common is None:
+        earned_common = net_income
     m["rotce"] = (
-        net_income / tangible if has_tangible and net_income is not None else None
+        earned_common / tangible if has_tangible and earned_common is not None else None
     )
     m["sbc_revenue"] = (
         sbc / revenue if sbc and sbc > 0 and revenue and revenue > 0 else None
