@@ -26,6 +26,12 @@ def hit(url: str, *, ip: str, at: str) -> dict:
     }
 
 
+@pytest.fixture(autouse=True)
+def no_ratings(monkeypatch):
+    """`run` reads the stored thumbs; tests never reach the feedback store."""
+    monkeypatch.setattr(ud, "_ratings", lambda: [])
+
+
 WEEK = [
     hit("/api/v1/home/summary", ip="1.1.1.1", at="2026-10-19T08:00:00Z"),
     hit("/api/v1/portfolio/kpis", ip="1.1.1.1", at="2026-10-19T08:01:00Z"),
@@ -117,3 +123,39 @@ def test_run_reads_both_streams_when_no_entries_are_given(monkeypatch):
     status, _ = ud.run(since="3d", dry_run=True)
     assert status == "dry-run"
     assert asked == {"project": lq.PROJECT, "service": lq.SERVICE, "freshness": "3d"}
+
+
+def test_the_digest_names_the_dearest_skills_with_their_thumbs():
+    entries = [
+        *WEEK,
+        app("chat.cost", "2026-10-19T08:05:00Z", turn="t1", skills=["tech"], usd=0.04),
+        app("chat.cost", "2026-10-19T09:05:00Z", turn="t2", skills=["tech"], usd=0.02),
+        app("chat.cost", "2026-10-20T09:05:00Z", turn="t3", skills=["value"], usd=0.01),
+    ]
+    ratings = [
+        {"kind": "rating", "turn": "t1", "vote": "up", "question": "secret"},
+        {"kind": "rating", "turn": "t2", "vote": "down"},
+    ]
+    text = ud.render(ud.summarise(entries, ratings), "en")
+    block = text.split("Chat skills by cost</b>\n", 1)[1]
+    pre = block.split("<pre>", 1)[1].split("</pre>", 1)[0].splitlines()
+    assert pre[0].split() == ["skill", "n", "$/ans", "up", "down"]
+    assert pre[1].split() == ["tech", "2", "0.0300", "1", "1"]
+    assert pre[2].split() == ["value", "1", "0.0100", "0", "0"]
+    assert all(len(r) <= 35 for r in pre)
+    assert "3 answers · $0.07 in all" in text
+    assert "secret" not in text
+    assert text.count("<") == text.count(">") == 8
+
+
+def test_the_digest_without_chat_cost_has_no_skills_block():
+    assert "Chat skills" not in ud.render(ud.summarise(WEEK), "en")
+    assert "Skills del chat" in ud.render(
+        ud.summarise(
+            [
+                app("chat.cost", "2026-10-19T08:05:00Z", turn="t", skills=["x"], usd=1.0),
+                *WEEK,
+            ]
+        ),
+        "es",
+    )

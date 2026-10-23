@@ -705,6 +705,121 @@ def render_funnel(summary: dict) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------- skills
+
+#: Row labels for turns that loaded no skill, and for turns logged before
+#: `chat.cost` named its skills (and never rated, so no thumbs says either).
+NO_SKILL = "(none)"
+UNKNOWN_SKILL = "(unknown)"
+
+
+def skills(entries: Iterable[dict], ratings: Iterable[dict] = ()) -> dict:
+    """Per chat skill: answers, what they cost and what the thumbs said.
+
+    `entries` are the app log (one `chat.cost` per turn: `turn`, `skills`,
+    `usd`); `ratings` the stored thumbs (`feedback.latest_ratings`), crossed
+    with the turns by their turn id. A turn that loaded several skills counts
+    in each of them in full, so the rows overlap and do not sum to the totals;
+    `answers` and `usd` in the result are the distinct turns. A turn on an
+    unpriced model has no cost (`priced` counts the ones that do), so the mean
+    is over the priced turns only. Ratings of turns outside the log range are
+    counted in `unmatched`, not in a row. Only skill names, ids and numbers
+    are read: no message text, no account.
+    """
+    turns: dict[str, dict] = {}
+    for entry in entries:
+        body = payload(entry)
+        if body.get("event") != "chat.cost":
+            continue
+        usd = body.get("usd")
+        names = body.get("skills")
+        turns[str(body.get("turn") or id(entry))] = {
+            "skills": ([str(x) for x in names] or [NO_SKILL])
+            if isinstance(names, list)
+            else [UNKNOWN_SKILL],
+            "usd": float(usd) if isinstance(usd, (int, float)) else None,
+            "vote": None,
+        }
+    unmatched = 0
+    for rating in ratings:
+        vote = rating.get("vote")
+        turn = turns.get(str(rating.get("turn") or ""))
+        if rating.get("kind") != "rating" or vote not in ("up", "down"):
+            continue
+        if turn is None:
+            unmatched += 1
+            continue
+        turn["vote"] = vote
+        if turn["skills"] == [UNKNOWN_SKILL] and rating.get("skills"):
+            turn["skills"] = [str(x) for x in rating["skills"]]
+    rows: dict[str, dict] = {}
+    for turn in turns.values():
+        for name in turn["skills"]:
+            r = rows.setdefault(
+                name,
+                {
+                    "skill": name,
+                    "answers": 0,
+                    "priced": 0,
+                    "usd": 0.0,
+                    "up": 0,
+                    "down": 0,
+                },
+            )
+            r["answers"] += 1
+            if turn["usd"] is not None:
+                r["priced"] += 1
+                r["usd"] += turn["usd"]
+            if turn["vote"]:
+                r[turn["vote"]] += 1
+    out: list[dict] = []
+    for r in rows.values():
+        voted = r["up"] + r["down"]
+        out.append(
+            {
+                **r,
+                "usd": round(r["usd"], 6),
+                "mean_usd": r["usd"] / r["priced"] if r["priced"] else None,
+                "share_up": r["up"] / voted if voted else None,
+            }
+        )
+    out.sort(key=lambda r: (-float(r["usd"]), -int(r["answers"]), r["skill"]))
+    priced = [t["usd"] for t in turns.values() if t["usd"] is not None]
+    return {
+        "rows": out,
+        "answers": len(turns),
+        "usd": round(sum(priced), 6),
+        "unmatched": unmatched,
+    }
+
+
+def render_skills(summary: dict) -> str:
+    """The `skills` table, dearest skill first."""
+    rows = summary["rows"]
+    if not rows:
+        return "(no chat.cost entries in range)"
+    width = max(5, *(len(r["skill"]) for r in rows))
+    head = (
+        f"{'skill':<{width}}  {'answers':>7}  {'total $':>9}  {'mean $':>8}"
+        f"  {'up':>4}  {'down':>4}  {'up %':>5}"
+    )
+    lines = [head, "-" * len(head)]
+    for r in rows:
+        mean = f"{r['mean_usd']:.4f}" if r["mean_usd"] is not None else "-"
+        share = f"{r['share_up'] * 100:.0f}%" if r["share_up"] is not None else "-"
+        lines.append(
+            f"{r['skill']:<{width}}  {r['answers']:>7}  {r['usd']:>9.4f}"
+            f"  {mean:>8}  {r['up']:>4}  {r['down']:>4}  {share:>5}"
+        )
+    lines.append(
+        f"{summary['answers']} answers, ${summary['usd']:.4f} in all; a "
+        "turn counts in every skill it loaded"
+    )
+    if summary["unmatched"]:
+        lines.append(f"{summary['unmatched']} ratings of answers outside the range")
+    return "\n".join(lines)
+
+
 def render_stats(rows: Sequence[dict], *, by: str = "event") -> str:
     if not rows:
         return "(no entries in range)"

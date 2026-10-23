@@ -67,5 +67,12 @@
   "notify.usage_totals": "{accounts} accounts · {addresses} addresses · {logins} sign-ins · {signups} signups · {imports} imports ({first} first) · {chat} chat turns",
   "notify.usage_pages": "Pages",
   "notify.usage_funnel": "Funnel: {views} landing views → {entries} entries → {signups} signups → {imports} first imports",
-  "notify.usage_retention": "Retention: {returned} of {eligible} signups seen again after {days} days"
+  "notify.usage_retention": "Retention: {returned} of {eligible} signups seen again after {days} days",
+  "notify.usage_skills_title": "Chat skills by cost",
+  "notify.usage_skill_col_skill": "skill",
+  "notify.usage_skill_col_n": "n",
+  "notify.usage_skill_col_mean": "$/ans",
+  "notify.usage_skill_col_up": "up",
+  "notify.usage_skill_col_down": "down",
+  "notify.usage_skills_total": "{answers} answers · ${usd} in all"
 }

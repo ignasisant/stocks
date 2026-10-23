@@ -454,3 +454,71 @@ def test_several_snapshots_are_read_together(tmp_path, capsys):
     cli.cmd_logs(args)
     assert "in range: 1 accounts, 1 addresses" in capsys.readouterr().out
 
+
+# ---------------------------------------------------------------------- skills
+
+
+def _cost(turn, skills, usd, **extra):
+    body = {"event": "chat.cost", "turn": turn, "usd": usd}
+    if skills is not None:
+        body["skills"] = skills
+    return {"timestamp": "2026-10-20T10:00:00Z", "jsonPayload": {**body, **extra}}
+
+
+def _vote(turn, vote, **extra):
+    return {
+        "kind": "rating",
+        "turn": turn,
+        "vote": vote,
+        "user": "a@b.c",
+        "question": "never read",
+        **extra,
+    }
+
+
+def test_skills_crosses_cost_with_thumbs_by_skill():
+    entries = [
+        _cost("t1", ["tech"], 0.04),
+        _cost("t2", ["tech", "value"], 0.02),
+        _cost("t3", ["value"], 0.0),
+        _cost("t4", [], 0.01),
+        _cost("t5", ["tech"], None),  # unpriced model
+        {"timestamp": "x", "jsonPayload": {"event": "chat.answered"}},
+    ]
+    ratings = [
+        _vote("t1", "up"),
+        _vote("t2", "down"),
+        _vote("t3", "up"),
+        _vote("gone", "up"),
+        {"kind": "bug", "turn": "t1", "vote": "up"},
+    ]
+    out = lq.skills(entries, ratings)
+    rows = {r["skill"]: r for r in out["rows"]}
+    tech = rows["tech"]
+    assert (tech["answers"], tech["priced"], tech["up"], tech["down"]) == (3, 2, 1, 1)
+    assert tech["usd"] == pytest.approx(0.06)
+    assert tech["mean_usd"] == pytest.approx(0.03)
+    assert tech["share_up"] == 0.5
+    assert rows["value"]["share_up"] == 0.5 and rows["value"]["usd"] == 0.02
+    assert rows[lq.NO_SKILL]["answers"] == 1 and rows[lq.NO_SKILL]["share_up"] is None
+    assert [r["skill"] for r in out["rows"]][0] == "tech"  # dearest first
+    assert out["answers"] == 5 and out["usd"] == pytest.approx(0.07)
+    assert out["unmatched"] == 1
+
+
+def test_skills_reads_the_names_off_a_rating_for_turns_logged_before_they_were():
+    out = lq.skills(
+        [_cost("t1", None, 0.01), _cost("t2", None, 0.01)],
+        [_vote("t1", "down", skills=["macro"])],
+    )
+    rows = {r["skill"]: r for r in out["rows"]}
+    assert rows["macro"]["down"] == 1
+    assert rows[lq.UNKNOWN_SKILL]["answers"] == 1
+
+
+def test_render_skills_is_a_table_with_no_text_of_anyone():
+    out = lq.skills([_cost("t1", ["tech"], 0.04)], [_vote("t1", "up")])
+    text = lq.render_skills(out)
+    assert "tech" in text and "0.0400" in text and "100%" in text
+    assert "never read" not in text and "a@b.c" not in text
+    assert lq.render_skills(lq.skills([])) == "(no chat.cost entries in range)"

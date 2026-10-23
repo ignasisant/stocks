@@ -3253,10 +3253,13 @@ def _log_cost(meter: metering.Meter, turn: Turn | None) -> None:
     """One line per turn with what its model calls spent: tokens by step and
     dollars (None when a model on it is unpriced). The question it answers is
     what a deep turn costs against a fast one:
-        stocks logs stats --event chat.cost --by profile"""
+        stocks logs stats --event chat.cost --by profile
+    and, with the skills the turn loaded (names only), `stocks logs skills`
+    crosses it with the thumbs: which skill costs and which one is liked."""
     if not meter.uses:
         return
     obs.event("chat.cost", profile=turn.profile if turn else "",
+              skills=list(turn.skills) if turn else [],
               models=meter.models(), tokens=meter.tokens(),
               cached=meter.cached(), cache_write=meter.cache_write(),
               steps=meter.by_step(), usd=meter.usd())
