@@ -67,13 +67,15 @@ def test_the_only_external_request_is_the_font_stylesheet():
 def test_the_font_stylesheet_does_not_block_the_first_paint():
     """A blocking link to a second origin holds the whole page hostage.
 
-    `media="print"` takes it off the critical path and the onload flip applies
+    `media="print"` takes it off the critical path and a script flip applies
     it as soon as it lands; the noscript copy is the blocking fallback.
     """
     html = landing_static.document("en", BASE)
     href = escape(seo.FONTS_HREF, quote=True)
     assert f'<link rel="preload" as="style" href="{href}">' in html
-    assert f'href="{href}" media="print" onload=' in html
+    assert f'href="{href}" media="print" id="ag-fonts">' in html
+    assert "onload=" not in html  # an inline handler is what the CSP refuses
+    assert f"<script>{seo.FONTS_FLIP_JS}</script>" in html
     assert f'<noscript><link rel="stylesheet" href="{href}"></noscript>' in html
     # Every blocking stylesheet in the document must be an inline <style>.
     blocking = re.findall(r'<link rel="stylesheet"(?![^>]*media="print")[^>]*>', html)

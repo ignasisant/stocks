@@ -81,18 +81,13 @@ def _origin_of(url: str) -> str:
 
 
 def _headers(form_target: str | None = None) -> dict[str, str]:
-    from stocks.web.seo import FONTS_HREF
+    from stocks.web import csp
+    from stocks.web.ds import ds_vars_text
 
-    fonts = _origin_of(FONTS_HREF)
-    action = "'self'" + (f" {form_target}" if form_target else "")
     return {
-        "Content-Security-Policy": (
-            "default-src 'none'; "
-            f"style-src 'unsafe-inline' {fonts}; "
-            "font-src https://fonts.gstatic.com; "
-            "img-src 'self'; "
-            f"form-action {action}; "
-            "frame-ancestors 'none'; base-uri 'none'"
+        "Content-Security-Policy": csp.policy(
+            styles=[csp.source(ds_vars_text()), csp.source(_STYLE)],
+            form_action=form_target or "",
         ),
         "Cache-Control": "no-store",
         # Not `no-referrer`: under it a browser sends `Origin: null` on the

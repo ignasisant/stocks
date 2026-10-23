@@ -33,6 +33,7 @@ from stocks import accounts
 from stocks.api import loaders
 from stocks.connector import oauth, store
 from stocks.connector.server import Door
+from tests import csp_check
 
 ORIGIN = "https://testserver"
 RESOURCE = f"{ORIGIN}/mcp"
@@ -296,8 +297,18 @@ def test_the_consent_page_names_the_client_and_where_it_returns(site, sign_in):
     assert "Evil &lt;b&gt;Corp&lt;/b&gt;" in page.text
     assert "127.0.0.1" in page.text
     assert EMAIL in page.text
-    assert "default-src 'none'" in page.headers["content-security-policy"]
+    csp_check.assert_enforced(page)
+    # The decision is posted here, and its answer redirects to the client's origin.
+    policy = page.headers["content-security-policy"]
+    assert "form-action 'self' http://127.0.0.1" in policy
     assert page.headers["x-frame-options"] == "DENY"
+
+
+def test_the_consent_error_page_is_enforced_too(site, sign_in):
+    sign_in(site, EMAIL)
+    page = site.get(f"{oauth.CONSENT_PATH}?req=garbage")
+    assert page.status_code == 400
+    csp_check.assert_enforced(page)
 
 
 def test_the_consent_page_lets_its_own_post_carry_an_origin(site, sign_in):

@@ -25,7 +25,7 @@ import { Investor } from "./Investor";
 import { Journal } from "./Journal";
 import { Preferences } from "./Preferences";
 import { useSettings } from "./prefs";
-import { CSS } from "./styles";
+import "./profile.css";
 import { Watchlist } from "./Watchlist";
 import type { Listing } from "./Watchlist";
 import { Card } from "./ui";
@@ -96,11 +96,6 @@ function Settings() {
 
   return (
     <>
-      {/* React hoists this into the head and keeps one copy of it. */}
-      <style href="ag-profile" precedence="default">
-        {CSS}
-      </style>
-
       <header className="pr-head">
         <h1 className="pr-title">{t("nav.profile")}</h1>
         {/* Nothing on this page has a Save button, so the page has to say so. */}

@@ -16,3 +16,9 @@ declare module "*.svg?url" {
  * ambient module for these even though nothing is bound to a name.
  */
 declare module "*.css";
+
+/** `?raw` imports: the file's text (the sonner CSP guard reads its build). */
+declare module "*?raw" {
+  const text: string;
+  export default text;
+}

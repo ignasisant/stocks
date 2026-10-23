@@ -1,5 +1,7 @@
+/// <reference types="vitest/config" />
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type Plugin } from "vite";
+import { sonnerNoRuntimeCss } from "./vite.sonner";
 
 // `server.py` inlines `ds_vars_css()` in place of the <!--AG-TOKENS--> marker
 // before the document goes out; `npm run dev` serves index.html untouched, so
@@ -34,7 +36,9 @@ function devTokens(): Plugin {
 // frontend/README.md for why, and `npm run build` is the only thing that
 // should ever change it.
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), devTokens()],
+  // vitest drops css by default; sonner-csp.test.ts reads sonner's file
+  test: { css: { include: [/sonner\/dist\/styles\.css/] } },
+  plugins: [sonnerNoRuntimeCss(), react(), devTokens()],
   base: "/next-assets/",
   build: {
     outDir: "../../src/stocks/web/static/app",

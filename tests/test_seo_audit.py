@@ -223,7 +223,9 @@ def test_nothing_in_the_head_blocks_rendering_except_inline_css(variant, path):
             # The only external sheet is the webfont one, and only as the
             # non-blocking media="print" swap.
             assert a.get("href") == seo.FONTS_HREF
-            assert a.get("media") == "print" and "onload" in a
+            # No inline handler: the page's CSP refuses one, a hashed script
+            # flips the media instead.
+            assert a.get("media") == "print" and "onload" not in a
     # And nothing outside the head pulls an external script or sheet either.
     assert not [a for t, a in doc.tags if t == "script" and a.get("src")]
     # The no-JavaScript fallback is the blocking copy, kept for crawlers.

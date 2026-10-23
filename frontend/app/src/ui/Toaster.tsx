@@ -5,6 +5,9 @@
  */
 
 import { Toaster as Sonner } from "sonner";
+// Sonner's own rules, as a file: its build would otherwise inject them as a
+// <style> element at runtime, which the CSP refuses (see vite.sonner.ts).
+import "sonner/dist/styles.css";
 import "./toast.css";
 
 export function Toaster() {
