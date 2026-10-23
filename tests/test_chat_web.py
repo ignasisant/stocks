@@ -411,3 +411,81 @@ def test_relevant_drops_hits_that_share_no_word_with_the_query():
 def test_relevant_keeps_everything_when_the_query_has_no_usable_word():
     hits = [Result("Anything", "https://example.com", "x")]
     assert chat_web.relevant(hits, ["stock news 2026"]) == hits
+
+
+# ------------------------------------------------------------- front doors
+
+
+def test_front_doors_are_known_by_their_address():
+    # The four addresses a reader was shown as the sources on Booking's
+    # quarter (2026-10 feedback): nothing on any of them answers a question.
+    for url in ("https://www.booking.com/",
+                "https://www.booking.com/index.en-gb.html",
+                "https://packages.booking.com/vacationpackages/",
+                "https://partner.booking.com/en-gb/help/growing-your-business",
+                "https://www.nvidia.com/en-us/",
+                "https://www.asml.com/es",
+                "https://www.apple.com/es/home.html"):
+        assert chat_web.front_door(url), url
+
+
+def test_pages_with_a_path_of_their_own_are_not_front_doors():
+    for url in ("https://www.booking.com/news/q3-2026-results.html",
+                "https://ir.bookingholdings.com/news-releases/2026/q3",
+                "https://en.wikipedia.org/wiki/Booking_Holdings",
+                "https://www.reuters.com/business/booking-q3-2026-10-29/",
+                "https://news.example.org/fed",
+                "https://example.com/hodo",
+                "not a url"):
+        assert not chat_web.front_door(url), url
+
+
+class _FakeDDG:
+    hits: list[dict] = []
+
+    def __init__(self, *a, **kw):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def text(self, q, max_results=0):
+        return self.hits
+
+
+def test_search_drops_front_doors_before_reading_anything(monkeypatch):
+    import sys
+    import types
+
+    _FakeDDG.hits = [
+        {"title": "Booking.com | Official site", "href": "https://www.booking.com/",
+         "body": "The best hotels"},
+        {"title": "Booking.com", "href": "https://www.booking.com/index.en-gb.html",
+         "body": "Hotels, flights"},
+        {"title": "Partner Hub", "href": "https://partner.booking.com/en-gb/home",
+         "body": "Booking partners"},
+        {"title": "Booking Holdings Q3 results",
+         "href": "https://www.reuters.com/business/booking-q3/",
+         "body": "Booking Holdings beat on bookings"},
+    ]
+    monkeypatch.setitem(sys.modules, "ddgs", types.SimpleNamespace(DDGS=_FakeDDG))
+    monkeypatch.setattr(chat_web, "available", lambda: True)
+    opened: list[str] = []
+    monkeypatch.setattr(chat_web, "read_page",
+                        lambda url, timeout=0: opened.append(url) or "article")
+    got = chat_web.search(["booking holdings results"])
+    assert [r.url for r in got] == ["https://www.reuters.com/business/booking-q3/"]
+    assert opened == ["https://www.reuters.com/business/booking-q3/"]
+
+
+def test_a_pasted_front_door_is_still_read(monkeypatch):
+    # The filter is for what the search found; a link the user pasted is a
+    # page they asked about, whatever its shape.
+    monkeypatch.setattr(chat_web, "read_page", lambda url, timeout=0: "body")
+    monkeypatch.setattr(chat_web, "search", lambda queries, read_limit=0: [])
+    got = chat_web.collect([], "mira https://www.booking.com/")
+    assert [r.url for r in got] == ["https://www.booking.com/"]
+    assert got[0].text == "body"

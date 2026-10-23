@@ -283,6 +283,10 @@ def search(queries: list[str], read_limit: int = READ_PAGES) -> list[Result]:
         obs.warn("chat.web.search_failed", error_type=type(exc).__name__,
                  error=str(exc)[:300])
         # keep whatever was collected before the failure
+    doors = [r for r in out if front_door(r.url)]
+    if doors:
+        obs.event("chat.web.front_doors_dropped", n=len(doors))
+        out = [r for r in out if r not in doors]
     out = relevant(out, queries)[:MAX_RESULTS]
     return read_pages(out, read_limit) if read_limit > 0 else out
 
@@ -302,6 +306,46 @@ def _terms(queries: list[str]) -> set[str]:
     """What the queries are about: their words minus filler and years."""
     return {w for q in queries for w in _WORD.findall(q.lower())
             if w not in _FILLER and not w.isdigit()}
+
+
+# A company's own front doors. DuckDuckGo ranks them first for a company
+# name, and each says nothing a search was for: the home page, a locale's
+# copy of it ("/index.en-gb.html", "/es/"), the marketing subdomains
+# ("partner.", "packages.", "careers."). A reader asked about Booking's
+# quarter was shown four of them as the sources (2026-10 feedback). The
+# shape of the address is enough to know one; nothing is opened to decide.
+_FRONT_SUBDOMAINS = frozenset(
+    "partner partners packages careers jobs shop store support help account "
+    "login signin join affiliate affiliates business developer developers "
+    "apps app community".split()
+)
+_LOCALE_SEG = re.compile(r"^[a-z]{2}(?:[-_][a-zA-Z]{2})?$")
+_INDEX_FILE = re.compile(
+    r"^(?:index|home|default)(?:\.[a-z]{2}(?:[-_][a-zA-Z]{2})?)?"
+    r"\.(?:html?|php|aspx?|jsp)$", re.I)
+
+
+def front_door(url: str) -> bool:
+    """True for a site's front door — a page with nothing to quote.
+
+    The bare domain ("https://www.booking.com/"), a locale's home
+    ("/index.en-gb.html", "/en-us/", "/es/home.html") or any page on a
+    marketing subdomain ("partner.booking.com/…"). Links the user pasted
+    never pass through here (`collect` reads them whatever they are)."""
+    try:
+        parts = urllib.parse.urlsplit(url.strip())
+    except ValueError:
+        return False
+    labels = (parts.hostname or "").lower().split(".")
+    if len(labels) > 2 and labels[0] in _FRONT_SUBDOMAINS:
+        return True
+    segs = [s for s in parts.path.split("/") if s]
+    if not segs:
+        return True
+    *dirs, last = segs
+    if not all(_LOCALE_SEG.match(s) for s in dirs):
+        return False
+    return bool(_LOCALE_SEG.match(last) or _INDEX_FILE.match(last))
 
 
 def relevant(results: list[Result], queries: list[str]) -> list[Result]:
