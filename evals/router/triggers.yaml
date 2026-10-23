@@ -207,6 +207,19 @@ us-tax:
     - "Is Wall Street going to rally this year?"
     - "¿Qué retención se aplica al dividendo de Apple?"
 
+tax:
+  should:
+    - "Which lots does my broker sell first, FIFO or LIFO, and how does it change my gain?"
+    - "How does the UK Section 104 pool work with same-day and 30-day bed and breakfast matching?"
+    - "¿Qué método de lotes se aplica en Francia: coste medio o FIFO?"
+    - "If I sell my NVDA today, what would the tax bill be?"
+    - "¿Cuánto tributaría la venta de mis acciones de Inditex y qué plusvalía realizada tendría?"
+    - "How does double taxation on foreign dividends work, and what withholding can I credit?"
+  near_miss:
+    - "How is my portfolio performing against the S&P this year?"
+    - "¿Qué peso tiene cada sector en mi cartera?"
+    - "What is the P/E ratio of Microsoft?"
+
 bear-case:
   should:
     - "What's the bear case for Tesla?"

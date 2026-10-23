@@ -168,6 +168,7 @@
   "chat.skill.portfolio-risk": "Riesgo de cartera",
   "chat.skill.spain-tax": "Fiscalidad España (IRPF)",
   "chat.skill.us-tax": "Fiscalidad EE. UU. (IRS)",
+  "chat.skill.tax": "Motor fiscal y métodos de lotes",
   "chat.skill.bear-case": "Tesis bajista y red flags",
   "chat.rate_limited": "Demasiados mensajes seguidos — vuelve a intentarlo en unos {seconds}s.",
   "chat.skill.etfs": "ETFs y fondos",
