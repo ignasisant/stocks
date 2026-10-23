@@ -104,6 +104,8 @@ from stocks.api.schemas import (
 from stocks.config import CURRENCIES
 from stocks.data.asset_kind import BOND_FUND, CRYPTO, FUND_KINDS, MONEY_MARKET
 from stocks.data.bafin import insider_transactions as bafin_transactions
+from stocks.data.cnmv import insider_transactions as cnmv_transactions
+from stocks.data.cnmv import spanish_listing
 from stocks.data.crypto import COIN_CATEGORY, CYCLE_EVENTS, is_crypto, split_pair
 from stocks.data.estimates import (
     MIN_COVERAGE,
@@ -1241,8 +1243,9 @@ def _quote_currency(ticker: str) -> str | None:
 def insiders(symbol: Symbol) -> Insiders:
     """Who inside the company has been buying or selling, and on what scale.
 
-    SEC Form 4 where the name files there; BaFin's Art. 19 MAR notifications
-    for a German issuer, which publish the same disclosure in EUR. `source`
+    SEC Form 4 where the name files there; Art. 19 MAR notifications for a
+    German (BaFin) or Spanish (CNMV) issuer, which publish the same disclosure
+    in EUR. `source`
     says which, and is null when neither covers the name — an empty list on its
     own would read as "no insider has traded", which is a different claim.
     """
@@ -1257,7 +1260,10 @@ def insiders(symbol: Symbol) -> Insiders:
     # name happens to overlap.
     if not trades and filer is False:
         issuer = _issuer_name(ticker)
-        if issuer:
+        if issuer and spanish_listing(ticker):
+            trades = cnmv_transactions(ticker, issuer=issuer)
+            source = "CNMV" if trades else None
+        elif issuer:
             trades = bafin_transactions(ticker, issuer=issuer)
             source = "BaFin" if trades else None
 
@@ -1297,7 +1303,8 @@ def insiders(symbol: Symbol) -> Insiders:
 
 
 def _issuer_name(ticker: str) -> str | None:
-    """The company name BaFin's register is searched by (`loaders.issuer_name`)."""
+    """The company name BaFin's and the CNMV's registers are searched by
+    (`loaders.issuer_name`)."""
     return loaders.issuer_name(ticker)
 
 

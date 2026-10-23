@@ -601,9 +601,9 @@ def test_gather_reads_the_press_the_sec_and_the_big_investors(monkeypatch):
     )
     # The brief's own names first, then the book; no coins or indices.
     assert asked["news"] == ["AMD", "NVDA", "SAP.DE", "SAN.MC"]
-    # The SEC speaks for US listings, BaFin for German ones.
+    # The SEC speaks for US listings, BaFin for German ones, the CNMV for Spanish.
     assert sorted(asked["filings"]) == ["AMD", "NVDA"] == sorted(asked["holders"])
-    assert asked["eu"] == ["SAP.DE"]
+    assert asked["eu"] == ["SAP.DE", "SAN.MC"]
     assert facts["news"][1] == {"ticker": "NVDA", "headlines": [
         {"date": TODAY.isoformat(), "publisher": "Wire",
          "title": "Nvidia unveils a chip"}]}

@@ -1105,7 +1105,7 @@ def insiders(ticker: str):
     """Recent Form 4 lines, newest filing first; [] when the feed says nothing.
 
     US filers only through this path. The EU regulators publishing the same
-    disclosure are `data.bafin`, which the route folds in separately.
+    disclosure are `data.bafin` and `data.cnmv`, which the route folds in separately.
     """
     from stocks.data.insiders import insider_transactions
 
@@ -1144,16 +1144,22 @@ def issuer_name(ticker: str) -> str | None:
 
 @ttl_cache(_EVENTS_TTL, max_entries=32)
 def eu_insiders(ticker: str):
-    """BaFin's Art. 19 MAR notifications for a German issuer, searched by the
-    company's name; [] for any other listing, a name not found or a failed
-    search (the register's reader never raises)."""
+    """Art. 19 MAR notifications for a German (BaFin) or Spanish (CNMV) issuer,
+    searched by the company's name; [] for any other listing, a name not found
+    or a failed search (the registers' readers never raise)."""
     from stocks.data.bafin import german_listing
     from stocks.data.bafin import insider_transactions as bafin_transactions
+    from stocks.data.cnmv import insider_transactions as cnmv_transactions
+    from stocks.data.cnmv import spanish_listing
 
-    if not german_listing(ticker):
+    if german_listing(ticker):
+        read = bafin_transactions
+    elif spanish_listing(ticker):
+        read = cnmv_transactions
+    else:
         return []
     issuer = issuer_name(ticker)
-    return bafin_transactions(ticker, issuer=issuer) if issuer else []
+    return read(ticker, issuer=issuer) if issuer else []
 
 
 @ttl_cache(3600.0, max_entries=64)

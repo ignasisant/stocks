@@ -45,6 +45,7 @@ dependencies = [
     "openai>=1.60",
     "openpyxl>=3.1",
     "pandas>=3.0.5",
+    "pdfminer-six>=20260107",
     "pdfplumber>=0.11.10",
     # pandas 3 stores the default `str` dtype in Arrow when pyarrow is there and
     # falls back to Python objects when it is not — slower, and a different

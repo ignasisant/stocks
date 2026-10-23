@@ -18,7 +18,7 @@ module fetches it before the model writes a word, into `facts["brief"]`:
   calendar's deadlines;
 - `insiders`: open-market trades by the insiders of the reader's largest US
   positions (SEC Form 4), INSIDER_DAYS back, and of their German ones off
-  BaFin's register;
+  BaFin's or the CNMV's register;
 - `news`: the last days' headlines naming the companies the brief names or
   the reader holds most of — third-party titles, data for the card to
   report, never to follow;
@@ -71,7 +71,7 @@ MAX_PRINTS = 6
 MAX_INSIDER_NAMES = 6
 INSIDER_DAYS = 30
 INSIDER_TRADES = 3
-# German positions BaFin is asked about: one register search each.
+# German and Spanish positions BaFin or the CNMV is asked about: one register search each.
 MAX_EU_INSIDER_NAMES = 3
 # Headlines: one Yahoo search per name, a few titles each.
 MAX_NEWS_NAMES = 5
@@ -399,8 +399,10 @@ def _sec_names(held, cap: int = MAX_INSIDER_NAMES) -> list[str]:
 
 def _german_names(held) -> list[str]:
     from stocks.data.bafin import german_listing
+    from stocks.data.cnmv import spanish_listing
 
-    return [t for t in _companies(held) if german_listing(t)][:MAX_EU_INSIDER_NAMES]
+    return [t for t in _companies(held)
+            if german_listing(t) or spanish_listing(t)][:MAX_EU_INSIDER_NAMES]
 
 
 def news_fact(ticker: str, headlines: list) -> dict:
@@ -556,7 +558,8 @@ def gather(
     if "insiders" in recipe.topics and (eu_insiders := sources.eu_insiders) is not None:
         per_name.append(("insiders", "eu_insider", _german_names(sources.held),
                          lambda t: {**insider_fact(t, eu_insiders(t) or [], day),
-                                    "source": "BaFin"}))
+                                    "source": ("CNMV" if t.upper().endswith(".MC")
+                                               else "BaFin")}))
     if "news" in recipe.topics and (news := sources.news) is not None:
         per_name.append(("news", "news", named[:MAX_NEWS_NAMES],
                          lambda t: news_fact(t, news(t) or [])))

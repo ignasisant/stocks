@@ -1021,7 +1021,7 @@ class InsiderTrade(BaseModel):
 class Insiders(BaseModel):
     ticker: str
     source: str | None = Field(
-        default=None, description="SEC | BaFin | null when neither covers this name."
+        default=None, description="SEC | BaFin | CNMV | null when none covers this name."
     )
     summary: InsiderSummary | None = Field(
         default=None,
