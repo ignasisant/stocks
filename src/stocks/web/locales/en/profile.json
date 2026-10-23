@@ -8,7 +8,7 @@
   "profile.currency_caption": "The app reckons in this currency: every leg at its own trade-date rate, not a conversion at the end.",
   "profile.watchlist": "Watchlist",
   "profile.empty_watchlist_title": "Watchlist is empty",
-  "profile.empty_watchlist_body": "Search for a ticker below — by symbol or by company name — and pick it. It lands with its real name, and Overview, Screener and Earnings come alive as soon as one ticker is in.",
+  "profile.empty_watchlist_body": "Search by symbol or company name and pick a ticker. Home, the sector screen and Earnings fill in as soon as one is added.",
   "profile.iv_section": "Investor profile",
   "profile.iv_caption": "Tells the AI assistant who it's advising, so its analysis fits you instead of a generic default.",
   "profile.iv_privacy": "Stored privately with your account and sent to the assistant as context. Nothing here leaves your account.",
