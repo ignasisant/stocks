@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse
 from yfinance.exceptions import YFRateLimitError
 
 from stocks import accounts, loadtest, memstat, obs
-from stocks.api import cache, guest, guestbook, holds, security, warm
+from stocks.api import cache, errors, guest, guestbook, holds, security, warm
 from stocks.api.routes import (
     account,
     bank,
@@ -122,6 +122,11 @@ app = FastAPI(
     openapi_url="/openapi.json" if _PUBLISH_DOCS else None,
     lifespan=_lifespan,
 )
+
+
+# One error envelope for every 4xx/5xx, including the ones no route raises
+# (unknown path, bad body, a bug): see `api/errors.py` and docs/API.md.
+errors.install(app)
 
 
 # ------------------------------------------------------ when the data is old
@@ -251,9 +256,10 @@ _UPSTREAM = {
 
 def _unavailable(request: Request, reason: str) -> JSONResponse:
     obs.warn("api.upstream_unavailable", reason=reason, path=request.url.path)
-    return JSONResponse(
-        status_code=503,
-        content={"detail": _UPSTREAM[reason], "reason": reason},
+    return errors.respond(
+        503,
+        _UPSTREAM[reason],
+        reason=reason,
         # Advisory only, and deliberately short: `fetch.retry` has already
         # backed off by the time this is raised, so the next attempt is not
         # far away.

@@ -388,10 +388,11 @@ async def list_transactions(
                                   description="ISO date, inclusive.")] = "",
 ) -> CallToolResult:
     def work(paths: UserPaths) -> dict:
+        from stocks.api.paging import Page
         from stocks.api.routes import portfolio
 
         page = portfolio.transactions(
-            paths, limit, offset, base, ticker=ticker.strip(),
+            paths, Page(limit, offset), base, ticker=ticker.strip(),
             broker=broker.strip().lower(), action=action.strip().lower(),
             since=date_from.strip(), until=date_to.strip(),
         )
