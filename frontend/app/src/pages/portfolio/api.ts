@@ -144,6 +144,28 @@ export type Performance = {
   missing: string[];
 };
 
+export type AttributionMover = { ticker: string; amount: number };
+
+/** What moved the book over a window: bars that add up to `end_value`. */
+export type Attribution = {
+  base: string;
+  window: string;
+  start: string | null;
+  end: string | null;
+  start_value: number | null;
+  contributions: number;
+  price: number;
+  fx: number;
+  dividends: number;
+  fees: number;
+  /** Zero unless something could not be placed (a name carried at cost). */
+  other: number;
+  end_value: number | null;
+  contributors: AttributionMover[];
+  detractors: AttributionMover[];
+  missing: string[];
+};
+
 type AllocationSlice = {
   label: string;
   weight: number;

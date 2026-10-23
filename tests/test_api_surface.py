@@ -165,7 +165,9 @@ def test_the_guest_list_is_not_silently_growing():
     # book's own download step and count, nothing else; no write, no spend.
     # 61: `GET /ticker/{symbol}/dcf` — the valuation card's DCF: computed off
     # cached fundamentals like `/valuation`, no account goes into it.
-    assert len(guest.OPEN) == 61
+    # 62: `GET /portfolio/attribution` — the Risk tab's waterfall over the
+    # demo book, computed from the same history as `/risk`; no write, no spend.
+    assert len(guest.OPEN) == 62
 
 
 def test_every_route_a_guest_may_read_is_a_read():

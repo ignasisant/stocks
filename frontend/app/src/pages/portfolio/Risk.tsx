@@ -35,6 +35,7 @@ import {
 } from "./api";
 import { brokerName, compactMoneyIn, decimal, moneyIn, percent } from "./format";
 import { Donut, ReturnLines, type LineMoney, type SliceDetail } from "./charts";
+import AttributionCard from "./Attribution";
 import { CorrelationCard } from "./Correlation";
 import { Caption, Card, Chip, Empty, Hero, Lede, MissingPrices, Segmented } from "./ui";
 import { maybe, sectorKey } from "../sentiment/format";
@@ -332,6 +333,8 @@ export default function Risk() {
           }}
         </Loaded>
       </Card>
+
+      <AttributionCard period={period} />
 
       <Loaded query={risk} skeleton={<Skeleton rows={10} />}>
         {(data) => {

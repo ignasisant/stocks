@@ -1367,3 +1367,45 @@ def test_an_empty_book_has_no_tax_file(client, book):
         "/v1/portfolio/tax.csv", params={"account": EMAIL}, headers=AUTH
     )
     assert response.status_code == 404
+
+
+def test_attribution_splits_the_window_and_adds_up(client, book, monkeypatch):
+    """/portfolio/attribution: bars off the same frame /performance reads."""
+    from stocks.analysis.portfolio import injected_vs_value
+
+    txs = [Transaction("2024-01-02", "AAPL", "buy", 10, 100.0, "EUR", 0.0)]
+    book(txs)
+    idx = pd.to_datetime(["2024-01-02", "2024-01-03"])
+    hist = injected_vs_value(
+        txs, {"AAPL": pd.Series([100.0, 110.0], index=idx)}, to_base=lambda a, c, d: a
+    )
+    monkeypatch.setattr(
+        loaders,
+        "history",
+        lambda db, mtime, base="EUR": (hist, pd.Series(dtype=float), []),
+    )
+    body = client.get(
+        "/v1/portfolio/attribution", params={"account": EMAIL}, headers=AUTH
+    ).json()
+    assert body["contributions"] == pytest.approx(1000.0)
+    assert body["price"] == pytest.approx(100.0)
+    assert body["start_value"] == 0
+    assert body["end_value"] == pytest.approx(
+        body["start_value"]
+        + sum(
+            body[k]
+            for k in ("contributions", "price", "fx", "dividends", "fees", "other")
+        )
+    )
+    assert [m["ticker"] for m in body["contributors"]] == ["AAPL"]
+    assert body["detractors"] == []
+
+
+def test_an_attribution_window_nobody_defined_is_refused(client, book):
+    book(trades())
+    response = client.get(
+        "/v1/portfolio/attribution",
+        params={"account": EMAIL, "window": "3w"},
+        headers=AUTH,
+    )
+    assert response.status_code == 422

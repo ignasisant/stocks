@@ -37,6 +37,7 @@ from stocks.analysis.portfolio import (
     top_n_weight,
     value_weights,
 )
+from stocks.analysis.return_attribution import attribution as decompose
 from stocks.api import loaders
 from stocks.api.cache import carried, ttl_cache
 from stocks.api.deps import Account, Base, Writer, reporting_currency
@@ -45,6 +46,8 @@ from stocks.api.paging import Page, page
 from stocks.api.schemas import (
     AllocationHolding,
     AllocationSlice,
+    Attribution,
+    AttributionMover,
     BookFinding,
     BookHealth,
     BrokerCost,
@@ -538,6 +541,67 @@ def performance(
         ],
         irr=_num(irr),
         irr_annualised=annual,
+        missing=missing,
+    )
+
+
+@router.get("/attribution", response_model=Attribution, summary="What moved the book")
+def attribution(
+    account: Account,
+    base: Base = None,
+    window: Annotated[
+        str,
+        Query(description=f"One of {', '.join(_PERFORMANCE_WINDOWS)}."),
+    ] = "inception",
+) -> Attribution:
+    """The window's change in value, split into bars that add up exactly.
+
+    Start value, net contributions, price, currency, dividends, commissions,
+    and an `other` bar that is zero unless something could not be placed. The
+    window opens where `/performance` opens it, so the two cards describe the
+    same days. Taken off the very frame `/performance` reads, with no fetch of
+    its own.
+    """
+    if window not in _PERFORMANCE_WINDOWS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"window must be one of {', '.join(_PERFORMANCE_WINDOWS)}",
+        )
+    ccy = reporting_currency(account, base)
+    db = str(account.db)
+    mtime = loaders.db_mtime(db)
+    hist, _, missing = loaders.history(db, mtime, ccy)
+    if hist.empty:
+        return Attribution(base=ccy, window=window, missing=missing)
+    start = (
+        pd.Timestamp(date.today()) - pd.Timedelta(days=_PERFORMANCE_DAYS[window])
+        if window in _PERFORMANCE_DAYS
+        else None
+    )
+    txs = loaders.ledger_state(db, mtime, ccy)[0]
+    parts = decompose(hist, txs, start=start, base=ccy)  # ty: ignore[invalid-argument-type]
+    if parts is None:
+        return Attribution(base=ccy, window=window, missing=missing)
+    ranked = sorted(parts.movers.items(), key=lambda kv: kv[1])
+    return Attribution(
+        base=ccy,
+        window=window,
+        start=parts.start,
+        end=parts.end,
+        start_value=_num(parts.start_value),
+        contributions=_num(parts.contributions) or 0.0,
+        price=_num(parts.price) or 0.0,
+        fx=_num(parts.fx) or 0.0,
+        dividends=_num(parts.dividends) or 0.0,
+        fees=_num(parts.fees) or 0.0,
+        other=_num(parts.other) or 0.0,
+        end_value=_num(parts.end_value),
+        contributors=[
+            AttributionMover(ticker=t, amount=a)
+            for t, a in reversed(ranked[-3:])
+            if a > 0
+        ],
+        detractors=[AttributionMover(ticker=t, amount=a) for t, a in ranked[:3] if a < 0],
         missing=missing,
     )
 
