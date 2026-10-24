@@ -324,6 +324,22 @@ no Tailwind.
   is sized to `visualViewport` (`useKeyboardFit`). Launched from a home screen
   (`display-mode: standalone`) the shell shows its own Back once the visit
   has gone somewhere.
+- **Chat on a phone:** the header is title + a "provider · quota" sub line,
+  one ⋮ menu (new, settings, width) and close; a grab handle drags it down.
+  Another tab-bar item or a route change closes it.
+- **A failed chat turn** is a neutral bubble (`.ag-chat-bad`, focus border);
+  yellow (`data-tone="wait"`, inset rim) only while a wait is counting down.
+  One sentence, then a mono cause line (provider · error · when), then at
+  most two buttons, the first filled: the way out (retry, try another model,
+  add a key) before Drop.
+- **Import card:** counts first (ready, flagged in warn tone, held,
+  rejected), then rows. On a phone every row is a 44px touch row (checkbox,
+  verb + ticker cell × units, mono date · price, amount, "!" that opens the
+  fix inline). On a desktop a three-row sample and "Open wide": the review
+  fills the chat panel (`.ag-chat-wide`, borrowing the full width without
+  storing it), tabs by tier plus a summary side panel; Back or Esc returns to
+  the drawer at its old width. A wide markdown table (more than three
+  columns) offers "see wide" under the answer.
 
 ## Focus, forms & states
 

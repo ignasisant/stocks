@@ -250,12 +250,95 @@
   color: var(--ag-text-muted);
 }
 
-/* The status row's counter, repeated in the header for a phone (below). */
-.ag-chat-head-quota {
+/* The thread's name, and on a phone the status row folded under it. */
+.ag-chat-head-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.ag-chat-head-title {
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
+.ag-chat-head-sub {
   display: none;
-  flex: none;
-  font-size: var(--ag-fs-xs);
-  white-space: nowrap;
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--ag-text-muted);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-2xs);
+  font-style: normal;
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+
+/* The phone header's ⋮ (`HeadMenu`) and the handle under the header: a
+   phone's, not drawn on a desktop, whose header lays the same out as icons. */
+.ag-chat-menu,
+.ag-chat-handle {
+  display: none;
+}
+
+.ag-chat-menu {
+  position: relative;
+}
+
+.ag-chat-menu-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 3;
+  display: flex;
+  min-width: 200px;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-md);
+  background: var(--ag-surface-card);
+  box-shadow: var(--ag-shadow-overlay);
+  transform-origin: top right;
+  animation: ag-pop-in var(--ag-dur-move) var(--ag-ease-out);
+}
+
+.ag-chat-menu-item {
+  display: flex;
+  min-height: 44px;
+  gap: 10px;
+  align-items: center;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--ag-radius-sm);
+  background: none;
+  color: var(--ag-text-primary);
+  font: inherit;
+  font-size: var(--ag-fs-base);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ag-chat-menu-item:focus-visible {
+  outline: 2px solid var(--ag-brand-accent);
+  outline-offset: -2px;
+}
+
+@media (hover: hover) {
+  .ag-chat-menu-item:hover {
+    background: var(--ag-surface-hover);
+  }
+}
+
+.ag-chat-handle {
+  width: 44px;
+  height: 4px;
+  margin: 6px auto 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ag-text-muted) 45%, transparent);
+  touch-action: none;
 }
 
 .ag-chat-body {
@@ -463,9 +546,36 @@
   border: 1px solid var(--ag-border);
 }
 
-.ag-chat-bad .ag-chat-bubble {
-  border-color: var(--ag-warn-edge);
-  background: var(--ag-warn-fill-soft);
+/* A turn that failed keeps the answer's card, edged darker: red and green
+   are the prices'. Only a wait (the burst wall, the free allowance) takes the
+   one status colour, as a bar down its start edge. */
+.ag-chat-assistant .ag-chat-bad {
+  border-color: var(--ag-border-focus);
+}
+
+.ag-chat-assistant .ag-chat-bad[data-tone="wait"] {
+  box-shadow: inset 3px 0 0 var(--ag-warn);
+}
+
+.ag-chat-fail-title {
+  margin: 0 0 2px;
+  color: var(--ag-text-primary);
+  font-weight: 600;
+}
+
+/* The technical cause, for whoever reports it: provider · slug · time. */
+.ag-chat-fail-cause {
+  margin: 6px 0 8px;
+  color: var(--ag-text-muted);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-2xs);
+  overflow-wrap: anywhere;
+}
+
+@media (pointer: coarse) {
+  .ag-chat-fail-acts .ag-chat-btn {
+    min-height: 44px;
+  }
 }
 
 .ag-chat-foot {
@@ -1230,11 +1340,21 @@
 
 .ag-chat-import-head {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-  margin: 0;
+  justify-content: space-between;
   color: var(--ag-text-secondary);
   font-size: 12px;
+}
+.ag-chat-import-head p {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ag-chat-rows {
@@ -1313,39 +1433,67 @@
   gap: 8px;
 }
 
-/* The statement at full width: tabs over the one dataset and a table whose
-   rows can be ticked. A modal over drawer and page alike — a long file is read
-   here, the card in the drawer only summarises it. */
-.ag-chat-review {
-  position: fixed;
+/* The statement at the window's width: the panel itself, borrowed wide
+   (`borrowWidth`), with the review laid over its conversation — never a modal
+   over the page. Tabs and a table on the left, what the ticked rows add up to
+   and the buttons on the right. */
+.ag-chat-wide {
+  position: absolute;
   inset: 0;
-  z-index: 80;
+  z-index: 5;
   display: flex;
   flex-direction: column;
   background: var(--ag-surface-page);
   color: var(--ag-text-primary);
   padding-top: env(safe-area-inset-top);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+  animation: ag-chat-fade-in var(--ag-dur-move) var(--ag-ease-out);
 }
-.ag-chat-review:focus {
+.ag-chat-wide:focus {
   outline: none;
 }
-.ag-chat-review-head {
+.ag-chat-wide-head {
   display: flex;
   gap: 12px;
   align-items: center;
-  justify-content: space-between;
   padding: 12px 16px;
   border-bottom: 1px solid var(--ag-border);
 }
-.ag-chat-review-title {
+.ag-chat-wide-title {
+  display: flex;
+  gap: 6px;
+  align-items: center;
   margin: 0;
   min-width: 0;
   overflow: hidden;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.ag-chat-wide-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+}
+.ag-chat-wide-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.ag-chat-wide-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  overflow: auto;
+  border-left: 1px solid var(--ag-border);
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+.ag-chat-wide-op {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
 }
 .ag-chat-review-tabs {
   display: flex;
@@ -1370,7 +1518,11 @@
   color: var(--ag-text-primary);
 }
 .ag-chat-review-tab:focus-visible,
-.ag-chat-review .ag-chat-pick input:focus-visible {
+.ag-chat-pick input:focus-visible,
+.ag-chat-op-pick input:focus-visible,
+.ag-chat-op-mark:focus-visible,
+.ag-chat-link:focus-visible,
+.ag-chat-fix select:focus-visible {
   outline: 2px solid var(--ag-brand-accent);
   outline-offset: 2px;
 }
@@ -1381,6 +1533,7 @@
   padding: 0 16px;
 }
 .ag-chat-review-rows {
+  display: table;
   font-size: 13px;
 }
 .ag-chat-review-rows th {
@@ -1391,42 +1544,265 @@
 .ag-chat-review-rows th,
 .ag-chat-review-rows td {
   padding: 8px 12px 8px 0;
+  vertical-align: top;
 }
 .ag-chat-review-rows tr[data-off] td:not(.ag-chat-pick) {
   opacity: 0.45;
 }
+.ag-chat-review-rows .ag-chat-why {
+  white-space: normal;
+  min-width: 220px;
+}
 .ag-chat-pick {
   width: 1%;
 }
-.ag-chat-pick input {
+.ag-chat-pick input,
+.ag-chat-op-pick input {
   margin: 0;
   accent-color: var(--ag-brand-cta);
 }
-.ag-chat-review-foot {
+
+/* The warned row's mark: the one status colour, as a small filled disc. */
+.ag-chat-mark,
+.ag-chat-op-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ag-warn);
+  color: var(--ag-surface-page);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* What the ticked rows add up to: four small figures, mono where they count. */
+.ag-chat-sum h3 {
+  margin: 0 0 8px;
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ag-chat-sum dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+.ag-chat-sum dl > div {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  font-size: var(--ag-fs-sm);
+}
+.ag-chat-sum dt {
+  color: var(--ag-text-secondary);
+}
+.ag-chat-sum dd {
+  margin: 0;
+  font-family: var(--ag-font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.ag-chat-wide-side .ag-chat-import-acts {
+  flex-direction: column;
+  align-items: stretch;
+}
+.ag-chat-wide-side .ag-chat-btn {
+  justify-content: center;
+  min-height: 36px;
+}
+
+/* The card's three counts: ready, warned, already held. A warned count wears
+   the status colour; a zero steps back. */
+.ag-chat-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.ag-chat-counts > div {
+  padding: 6px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+}
+.ag-chat-counts > div[data-tone="warn"] {
+  box-shadow: inset 3px 0 0 var(--ag-warn);
+}
+.ag-chat-counts > div[data-zero] {
+  opacity: 0.55;
+}
+.ag-chat-counts dt {
+  color: var(--ag-text-muted);
+  font-size: var(--ag-fs-2xs);
+}
+.ag-chat-counts dd {
+  margin: 0;
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-fs-base);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ag-chat-sample {
+  display: table;
+}
+.ag-chat-import-warn {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 3px solid var(--ag-warn);
+  color: var(--ag-text-secondary);
+  font-size: 12px;
+}
+
+/* A button that reads as a link: "see all rows", "see it wide". */
+.ag-chat-link {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ag-brand-accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+@media (hover: hover) {
+  .ag-chat-link:hover {
+    text-decoration: underline;
+  }
+}
+
+/* The phone's list: one operation a row, sized for a thumb. */
+.ag-chat-ops {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ag-chat-op {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 4px;
+  min-height: 52px;
+  border-bottom: 1px solid var(--ag-border);
+}
+.ag-chat-op[data-off] .ag-chat-op-text,
+.ag-chat-op[data-off] .ag-chat-op-amt {
+  opacity: 0.45;
+}
+.ag-chat-op-pick {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+}
+.ag-chat-op-pick input {
+  width: 20px;
+  height: 20px;
+}
+.ag-chat-op-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.ag-chat-op-title {
+  overflow: hidden;
+  font-size: var(--ag-fs-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ag-chat-op-sub {
+  overflow: hidden;
+  color: var(--ag-text-muted);
+  font-family: var(--ag-font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ag-chat-import .ag-chat-hint {
+  margin: 0;
+}
+.ag-chat-op-amt {
+  font-family: var(--ag-font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+button.ag-chat-op-mark {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  position: relative;
+  color: transparent;
+}
+button.ag-chat-op-mark::before {
+  content: "!";
+  display: grid;
+  place-items: center;
+  position: absolute;
+  inset: 13px;
+  border-radius: 50%;
+  background: var(--ag-warn);
+  color: var(--ag-surface-page);
+}
+.ag-chat-op .ag-chat-fix {
+  grid-column: 2 / -1;
+  padding: 0 0 10px;
+}
+
+/* A warned row's reason, and the currency it can be moved to. */
+.ag-chat-fix {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 6px;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--ag-border);
+  font-size: 12px;
 }
-.ag-chat-review-foot .ag-chat-broker {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
+.ag-chat-fix p {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--ag-text-secondary);
 }
-.ag-chat-review-open {
-  align-self: flex-start;
+.ag-chat-fix label {
+  color: var(--ag-text-muted);
 }
+.ag-chat-fix select {
+  padding: 4px 6px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-card);
+  color: var(--ag-text-primary);
+  font: inherit;
+}
+
 @media (pointer: coarse) {
   .ag-chat-review-tab,
-  .ag-chat-review .ag-chat-btn {
+  .ag-chat-wide .ag-chat-btn,
+  .ag-chat-link,
+  .ag-chat-fix select,
+  .ag-chat-import-acts .ag-chat-btn {
     min-height: 44px;
   }
   .ag-chat-pick input {
     width: 22px;
     height: 22px;
+  }
+}
+
+/* "Wide" is 720px: under 1100px of window it is most of the screen anyway,
+   and the drawer offers normal and full only. */
+@media (max-width: 1099px) {
+  .ag-chat-width-wide {
+    display: none;
   }
 }
 
@@ -1666,7 +2042,7 @@ a.ag-chat-btn {
 .ag-chat-fail-acts {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
 }
 
 /* Send turned Stop while an answer streams: the same place, a quieter colour,
@@ -2268,10 +2644,30 @@ a.ag-chat-btn {
 
 @media (max-width: 640px) {
   .ag-chat-panel {
-    /* The whole viewport: 420px of drawer over a 360px phone would be the
+    /* The whole width: 420px of drawer over a 360px phone would be the
        page, minus a sliver that only serves to make the layout look broken.
-       A stored width does not apply here — every preset is already this. */
+       A stored width does not apply here — every preset is already this.
+       And not the whole height: the assistant is one of the tab bar's
+       destinations here, so it stops where the bar starts (`--dock`, which
+       carries the home indicator's inset) and the bar stays usable. */
+    bottom: var(--dock, 0);
     width: 100vw;
+    border-left: 0;
+    box-shadow: none;
+    padding-bottom: 0;
+  }
+  /* A focused field hides the bar (`:root[data-kbd]`, shell.css): the panel
+     takes its place, and `useKeyboardFit` pins it above the keys. */
+  :root[data-kbd] .ag-chat-panel {
+    bottom: 0;
+  }
+  /* The assistant is the tab that is on while it is open, not the page under
+     it. */
+  :root[data-chat] .ag-nav .ag-nav-group .ag-nav-on {
+    box-shadow: none;
+  }
+  :root[data-chat] .ag-nav .ag-nav-ask {
+    box-shadow: inset 0 3px 0 var(--ag-brand-accent);
   }
   .ag-chat-grip {
     /* Nothing to drag when the panel is already the viewport. */
@@ -2309,15 +2705,44 @@ a.ag-chat-btn {
      on a phone there is little to take from. The header tightens, the
      status row goes — its counter moves up into the header, the provider's
      name is in Settings — and the composer loses its spare padding. */
+  /* The header is the thread's name over its status, then ⋮ and Close at
+     44px: no "Assistant" — the lit tab already says where this is. */
   .ag-chat-head {
     gap: 4px;
-    padding: 4px 6px;
+    padding: 4px 4px 0 6px;
+    border-bottom: 0;
+  }
+  .ag-chat-head .ag-chat-thread-btn {
+    max-width: none;
+    flex: 1;
+    min-height: 44px;
+  }
+  .ag-chat-head-title {
+    font-size: var(--ag-fs-base);
+    font-weight: 600;
+  }
+  .ag-chat-head-sub,
+  .ag-chat-menu {
+    display: block;
+  }
+  .ag-chat-head .ag-chat-icon {
+    display: inline-grid;
+    width: 44px;
+    height: 44px;
+    place-items: center;
+  }
+  /* After the icon rule, which would draw them again: new and settings live
+     in the ⋮ menu on a phone. */
+  .ag-chat-head > .ag-chat-thread-btn > svg,
+  .ag-chat-head .ag-chat-head-wide {
+    display: none;
+  }
+  .ag-chat-handle {
+    display: block;
+    border-bottom: 0;
   }
   .ag-chat-status {
     display: none;
-  }
-  .ag-chat-head-quota {
-    display: inline;
   }
   .ag-chat-composer {
     padding: 6px 8px 8px;
@@ -2583,6 +3008,34 @@ a.ag-chat-btn {
   }
 }
 
+/* A phone's drawer rises out of the tab bar and goes back down into it, the
+   way it is pulled (`useSwipeDismiss` on "y"). */
+@media (max-width: 640px) {
+  .ag-chat-panel {
+    animation-name: ag-chat-panel-up;
+  }
+
+  .ag-chat-panel[data-leaving] {
+    transform: translate3d(0, 24px, 0);
+  }
+
+  .ag-chat-panel[data-leaving][data-swiped] {
+    transform: translate3d(0, 100%, 0);
+  }
+
+  .ag-chat-head,
+  .ag-chat-handle {
+    touch-action: none;
+  }
+}
+
+@keyframes ag-chat-panel-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 24px, 0);
+  }
+}
+
 /* The exchange being asked (`fresh` in `Panel`): the question rises into
    place, and the answer fades in where the working line stood. */
 .ag-chat-turn-in {
@@ -2655,6 +3108,7 @@ a.ag-chat-btn {
   .ag-chat-panel,
   .ag-chat-turn-in,
   .ag-chat-turn-in [aria-live] > :first-child,
+  .ag-chat-wide,
   .ag-chat-fab {
     animation: none;
   }

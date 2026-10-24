@@ -800,6 +800,142 @@ function Folded({ text }: { text: string }) {
   );
 }
 
+/**
+ * An answer holding a table of more than three columns: the width a 380px
+ * column cuts into a sideways scroll. Read off the markdown's header rule.
+ */
+export function wideTable(text: string): boolean {
+  return text
+    .split("\n")
+    .some(
+      (line) =>
+        /^\s*\|?\s*:?-{3,}/.test(line) &&
+        line.split("|").filter((c) => c.trim()).length > 3,
+    );
+}
+
+/** Refusals about today's free allowance: the way past them is a key. */
+const QUOTA = new Set([
+  "chat.free_cap",
+  "chat.free_cap_global",
+  "chat.free_cap_trial",
+  "chat.free_exhausted",
+  "chat.free_ineligible",
+]);
+
+/** Refusals from the provider itself: the way on is another AI. */
+const PROVIDER = new Set(["chat.invalid_key", "chat.no_credits", "chat.provider_busy"]);
+
+/**
+ * A turn that did not get its answer, in the answer's place.
+ *
+ * One anatomy for every way it fails: a neutral bubble (red and green are the
+ * prices'), a sentence on what happened to the question, a mono line with the
+ * technical cause for whoever reports it, and two buttons at most — the
+ * obvious way on, and the way out. Yellow is the one status colour, for the
+ * two that are waits rather than failures: the burst wall and the allowance.
+ */
+function Failed({
+  turn,
+  cap,
+  when,
+  provider,
+  onRetry,
+  onDrop,
+  switchTo,
+  onSwitch,
+  onPickAi,
+  onMemory,
+}: {
+  turn: Stored;
+  cap: number | null;
+  when: string;
+  provider?: string;
+  onRetry: () => void;
+  onDrop?: () => void;
+  switchTo: { id: string; label: string }[];
+  onSwitch?: (provider: string) => void;
+  onPickAi?: () => void;
+  onMemory?: () => void;
+}) {
+  const t = useT();
+  const error = turn.error ?? "";
+  const quota = QUOTA.has(error);
+  const waiting = turn.wait !== undefined;
+  const cause = [provider, error.replace(/^chat\./, ""), when]
+    .filter(Boolean)
+    .join(" · ");
+  const acts: { key: string; label: string; run: () => void }[] = [];
+  const drop = onDrop
+    ? { key: "drop", label: t("chat.error_drop"), run: onDrop }
+    : null;
+  // A failed attachment has no question to ask again — Retry would re-send
+  // the exchange above it, which was answered. Its way on is attaching the
+  // file again, so it only offers the way out.
+  if (turn.action === "import") {
+    if (drop) acts.push(drop);
+  } else if (quota) {
+    if (onPickAi)
+      acts.push({ key: "key", label: t("chat.free_add_key"), run: onPickAi });
+    if (drop) acts.push(drop);
+  } else {
+    acts.push({
+      key: "retry",
+      label: t(waiting ? "chat.retry_now" : "chat.retry"),
+      run: onRetry,
+    });
+    // Another provider that could answer this minute beats discarding: the
+    // one that failed may stay down a while. Only on the newest turn, the one
+    // the panel lets the reader act on.
+    const other = onDrop && onSwitch ? switchTo[0] : undefined;
+    if (other && !waiting) {
+      acts.push({
+        key: "switch",
+        label: t("chat.try_with", { provider: other.label }),
+        run: () => onSwitch?.(other.id),
+      });
+    } else if (PROVIDER.has(error) && onPickAi) {
+      acts.push({ key: "pick", label: t("chat.pick_ai"), run: onPickAi });
+    } else if (drop) acts.push(drop);
+  }
+  return (
+    <div className="ag-chat-turn ag-chat-assistant">
+      <div
+        className="ag-chat-bubble ag-chat-bad"
+        data-tone={quota || waiting ? "wait" : undefined}
+      >
+        {quota && <p className="ag-chat-fail-title">{t("chat.quota_title")}</p>}
+        <p className="ag-chat-p">
+          {waiting ? (
+            <Countdown error={error} wait={turn.wait ?? 0} onRetry={onRetry} />
+          ) : (
+            capMessage(t, error, cap)
+          )}
+        </p>
+        {/* A memory command before the question was carried out whether or
+            not the question was answered, so the refusal still says what was
+            saved. */}
+        <Changes turn={turn} onMemory={onMemory} />
+        {cause && <p className="ag-chat-fail-cause">{cause}</p>}
+        {acts.length > 0 && (
+          <div className="ag-chat-fail-acts">
+            {acts.map((act, i) => (
+              <button
+                key={act.key}
+                type="button"
+                className={i === 0 ? "ag-chat-btn ag-chat-btn-on" : "ag-chat-btn"}
+                onClick={act.run}
+              >
+                {act.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Turn({
   turn,
   skills,
@@ -810,6 +946,7 @@ export function Turn({
   switchTo = [],
   onSwitch,
   onPickAi,
+  onWiden,
   onDecide,
   onUndo,
   onLeave,
@@ -842,6 +979,8 @@ export function Turn({
   onSwitch?: (provider: string) => void;
   /** Open the settings screen, for a model or a key not offered here. */
   onPickAi?: () => void;
+  /** Widen the drawer for a table it is too narrow for. Absent: wide enough. */
+  onWiden?: () => void;
   /** Answer a proposal card. Absent: its buttons are not drawn. */
   onDecide?: (id: string, approved: boolean, edits?: Edits) => Promise<string | null>;
   /** Take back a ledger edit a card made. Absent: no Undo is drawn. */
@@ -898,57 +1037,18 @@ export function Turn({
 
   if (turn.error) {
     return (
-      <div className="ag-chat-turn ag-chat-assistant">
-        <div className="ag-chat-bubble ag-chat-bad">
-          <p className="ag-chat-p">
-            {turn.wait !== undefined ? (
-              <Countdown error={turn.error} wait={turn.wait} onRetry={onRetry} />
-            ) : (
-              capMessage(t, turn.error, cap)
-            )}
-          </p>
-          {/* A memory command before the question was carried out whether
-              or not the question was answered, so the refusal still says
-              what was saved. */}
-          <Changes turn={turn} onMemory={onMemory} />
-          <div className="ag-chat-fail-acts">
-            {/* A failed attachment has no question to ask again — Retry would
-                re-send the exchange above it, which was answered. Its way
-                forward is attaching the file again, so it only offers the
-                way out. */}
-            {turn.action !== "import" && (
-              <button type="button" className="ag-chat-retry" onClick={onRetry}>
-                {t("chat.retry")}
-              </button>
-            )}
-            {onDrop && (
-              <button type="button" className="ag-chat-retry" onClick={onDrop}>
-                {t("chat.error_drop")}
-              </button>
-            )}
-          </div>
-          {turn.action !== "import" && onDrop && (onSwitch || onPickAi) && (
-            <div className="ag-chat-fail-acts">
-              {onSwitch &&
-                switchTo.slice(0, 2).map((provider) => (
-                  <button
-                    key={provider.id}
-                    type="button"
-                    className="ag-chat-retry"
-                    onClick={() => onSwitch(provider.id)}
-                  >
-                    {t("chat.try_with", { provider: provider.label })}
-                  </button>
-                ))}
-              {onPickAi && (
-                <button type="button" className="ag-chat-retry" onClick={onPickAi}>
-                  {t("chat.pick_ai")}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+      <Failed
+        turn={turn}
+        cap={cap}
+        when={when}
+        provider={turn.chose ?? turn.by}
+        onRetry={onRetry}
+        onDrop={onDrop}
+        switchTo={switchTo}
+        onSwitch={onSwitch}
+        onPickAi={onPickAi}
+        onMemory={onMemory}
+      />
     );
   }
 
@@ -1067,6 +1167,11 @@ export function Turn({
               beside it only says when. */}
           {!mine && !turn.pending && <Trace steps={turn.steps ?? []} spent={spent} />}
           {when && <span className="ag-chat-clock">{when}</span>}
+          {onWiden && copyable && wideTable(turn.content) && (
+            <button type="button" className="ag-chat-link" onClick={onWiden}>
+              {t("chat.see_wide")}
+            </button>
+          )}
           {(copyable || rateable) && (
             <span className="ag-chat-thumbs">
               {copyable && <CopyAnswer text={turn.content} />}

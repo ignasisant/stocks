@@ -24,6 +24,7 @@ import { Skeleton } from "../shell/Layout";
 import { Moves } from "../pages/import/Moves";
 import "../pages/import/import.css";
 import { Attachment } from "./Attachment";
+import { usePhone } from "./phone";
 import { Composer } from "./Composer";
 import { Empty } from "./Empty";
 import { Glyph, ProviderMark } from "./icons";
@@ -117,6 +118,107 @@ function Grip({ onWidth }: { onWidth: (key: WidthKey | null) => void }) {
   );
 }
 
+/**
+ * The phone header's ⋮: what the desktop header lays out as icons, in a list
+ * that opens under the button. Pointerdown outside closes it, Esc hands the
+ * focus back to the button, and the arrows walk it (`AiAsk`'s menu).
+ */
+function HeadMenu({
+  onNew,
+  onThreads,
+  onSettings,
+}: {
+  onNew: () => void;
+  onThreads: () => void;
+  onSettings: () => void;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const items = useRef<(HTMLButtonElement | null)[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: PointerEvent) => {
+      if (!box.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", away);
+    items.current[0]?.focus();
+    return () => document.removeEventListener("pointerdown", away);
+  }, [open]);
+  const walk = (event: ReactKeyboardEvent) => {
+    const list = items.current.filter(Boolean) as HTMLButtonElement[];
+    const at = list.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === "Escape" || event.key === "Tab") {
+      setOpen(false);
+      if (event.key === "Escape") {
+        // The drawer's own Esc would close it too: one press, one step back.
+        event.stopPropagation();
+        event.nativeEvent.stopImmediatePropagation();
+        toggle.current?.focus();
+      }
+      return;
+    }
+    const next =
+      event.key === "ArrowDown"
+        ? (at + 1) % list.length
+        : event.key === "ArrowUp"
+          ? (at - 1 + list.length) % list.length
+          : null;
+    if (next === null) return;
+    event.preventDefault();
+    list[next]?.focus();
+  };
+  const entries: { key: string; glyph: string; run: () => void }[] = [
+    { key: "chat.new", glyph: "add", run: onNew },
+    { key: "chat.threads_title", glyph: "forum", run: onThreads },
+    { key: "chat.settings_short", glyph: "settings", run: onSettings },
+  ];
+  return (
+    <div className="ag-chat-menu" ref={box}>
+      <button
+        ref={toggle}
+        type="button"
+        className="ag-chat-icon"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={t("chat.menu")}
+        aria-label={t("chat.menu")}
+        onClick={() => setOpen((was) => !was)}
+      >
+        <Glyph name="more" size={18} />
+      </button>
+      {open && (
+        <div
+          className="ag-chat-menu-list"
+          role="menu"
+          aria-label={t("chat.menu")}
+          onKeyDown={walk}
+        >
+          {entries.map((entry, n) => (
+            <button
+              key={entry.key}
+              ref={(el) => {
+                items.current[n] = el;
+              }}
+              type="button"
+              role="menuitem"
+              className="ag-chat-menu-item"
+              onClick={() => {
+                setOpen(false);
+                entry.run();
+              }}
+            >
+              <Glyph name={entry.glyph} size={16} />
+              {t(entry.key)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Panel({
   chat,
   connect = null,
@@ -188,6 +290,13 @@ export default function Panel({
   // A file is being dragged over the conversation. The counter is what makes
   // the overlay survive the pointer crossing a bubble on its way in.
   const [overDrop, setOverDrop] = useState(false);
+  // A file dropped on a desktop panel is a file the reader wants to read:
+  // its preview opens wide as it lands. Spent once the card has mounted.
+  const [dropWide, setDropWide] = useState(false);
+  const phone = usePhone();
+  useEffect(() => {
+    if (chat.preview) setDropWide(false);
+  }, [chat.preview]);
   const dragging = useRef(0);
 
   // The width lives on the document, which a reload clears; the choice lives
@@ -271,13 +380,26 @@ export default function Panel({
               aria-hidden="true"
             />
           )}
-          <span className={named ? "" : "ag-chat-untitled"}>
-            {named || t("chat.untitled")}
+          <span className="ag-chat-head-text">
+            <span
+              className={
+                named ? "ag-chat-head-title" : "ag-chat-head-title ag-chat-untitled"
+              }
+            >
+              {named || t("chat.untitled")}
+            </span>
+            {/* A phone's second line: the status row folded under the title,
+                since that row is hidden there to keep the thread's height. */}
+            {provider && (
+              <span className="ag-chat-head-sub">
+                {quota ? `${provider.label} · ${quota}` : provider.label}
+              </span>
+            )}
           </span>
         </button>
         <button
           type="button"
-          className="ag-chat-icon"
+          className="ag-chat-icon ag-chat-head-wide"
           title={t("chat.new")}
           aria-label={t("chat.new")}
           onClick={() => {
@@ -287,16 +409,6 @@ export default function Panel({
         >
           <Glyph name="add" size={18} />
         </button>
-        {/* The status row's counter, drawn here only on a phone, where that
-            row is hidden so the conversation keeps its height (chat.css). */}
-        {provider && quota && (
-          <span
-            className="ag-chat-quota ag-chat-head-quota"
-            title={t("chat.free_left_label")}
-          >
-            {quota}
-          </span>
-        )}
         {/* Three widths, because a table or a set of sources is unreadable in
             a 380px column, and an import review wants the screen. Hidden on a
             phone, where the panel is already the whole viewport. */}
@@ -305,9 +417,7 @@ export default function Panel({
             <button
               key={key}
               type="button"
-              className={
-                key === width ? "ag-chat-icon ag-chat-width-on" : "ag-chat-icon"
-              }
+              className={`ag-chat-icon ag-chat-width-${key}${key === width ? " ag-chat-width-on" : ""}`}
               title={t(`chat.width_${key}`)}
               aria-label={t(`chat.width_${key}`)}
               aria-pressed={key === width}
@@ -319,7 +429,7 @@ export default function Panel({
         </div>
         <button
           type="button"
-          className="ag-chat-icon"
+          className="ag-chat-icon ag-chat-head-wide"
           title={t("chat.settings_short")}
           aria-label={t("chat.settings_short")}
           aria-pressed={view === "settings" || view === "memory"}
@@ -329,6 +439,16 @@ export default function Panel({
         >
           <Glyph name="settings" size={18} />
         </button>
+        {/* A phone keeps two controls in the header, at 44px: this menu
+            (new conversation, the list, settings) and Close. */}
+        <HeadMenu
+          onNew={() => {
+            setView("thread");
+            void chat.create();
+          }}
+          onThreads={() => setView("threads")}
+          onSettings={() => setView("settings")}
+        />
         <button
           type="button"
           className="ag-chat-icon"
@@ -339,6 +459,9 @@ export default function Panel({
           <Glyph name="close" size={18} />
         </button>
       </header>
+      {/* The handle a finger pulls the phone's drawer down by (`Drawer`'s
+          swipe); nothing to drag on a desktop, where it is not drawn. */}
+      <div className="ag-chat-handle" aria-hidden="true" />
 
       {provider && (
         <div className="ag-chat-status">
@@ -429,7 +552,10 @@ export default function Panel({
               const dropped = event.dataTransfer.files?.[0];
               // One file: an attachment is a preview somebody confirms, and a
               // second would queue a second card behind the first.
-              if (dropped && !chat.busy && !chat.reading) void chat.attach(dropped);
+              if (dropped && !chat.busy && !chat.reading) {
+                setDropWide(true);
+                void chat.attach(dropped);
+              }
             }}
           >
             {overDrop && (
@@ -481,6 +607,13 @@ export default function Panel({
                       )}
                       onSwitch={(provider) => void chat.retryWith(provider)}
                       onPickAi={() => setView("settings")}
+                      // A table wider than the column it landed in: one press
+                      // to the next width that holds it.
+                      onWiden={
+                        phone || width === "wide" || width === "full"
+                          ? undefined
+                          : () => resize(window.innerWidth >= 1100 ? "wide" : "full")
+                      }
                       onDecide={chat.decide}
                       onUndo={chat.undo}
                       onLeave={onPark ?? onClose}
@@ -531,6 +664,7 @@ export default function Panel({
                     preview={chat.preview}
                     busy={chat.reading}
                     importing={chat.work?.kind === "importing"}
+                    wide={dropWide}
                     onImport={(broker, fresh, dupes) =>
                       void chat.commitImport(broker, fresh, dupes)
                     }

@@ -3,7 +3,8 @@
  * is still being written.
  *
  * A refusal carries Retry *and* Discard, because a question the reader has
- * given up on should not sit at the bottom of the thread forever. A failed
+ * given up on should not sit at the bottom of the thread forever — or Retry
+ * and another AI where one could answer, never more than two buttons. A failed
  * attachment carries only Discard: it has no question of its own to ask
  * again. And while an answer streams, Send is Stop.
  *
@@ -21,7 +22,7 @@ vi.mock("../shell/api", async (original) => ({
 
 import { Attachment } from "./Attachment";
 import { Composer } from "./Composer";
-import { rateAt, Turn, undoMemory } from "./Turn";
+import { rateAt, Turn, undoMemory, wideTable } from "./Turn";
 import type { ChatState, Preview, Turn as Stored } from "./types";
 
 beforeEach(() => {
@@ -95,14 +96,27 @@ describe("switching AI on a refusal", () => {
       />,
     );
 
-  it("offers two other providers and the settings screen", () => {
+  it("offers Retry and the next provider, two buttons at most", () => {
     const out = draw(refused(), () => {});
-    expect(out.match(/chat\.try_with/g)).toHaveLength(2);
-    expect(out).toContain("chat.pick_ai");
+    expect(out.match(/chat\.try_with/g)).toHaveLength(1);
+    expect(out).toContain("chat.retry");
+    expect(out.match(/<button/g)).toHaveLength(2);
   });
 
   it("is only on the newest refusal", () => {
     expect(draw(refused())).not.toContain("chat.try_with");
+  });
+
+  it("offers a key, not Retry, once the free allowance is spent", () => {
+    const out = draw(refused({ error: "chat.free_cap" }), () => {});
+    expect(out).toContain("chat.free_add_key");
+    expect(out).not.toContain("chat.retry");
+    expect(out).toContain("chat.quota_title");
+  });
+
+  it("names the cause in a line of its own", () => {
+    const out = draw(refused({ error: "chat.provider_busy", chose: "groq" }), () => {});
+    expect(out).toContain("groq · provider_busy");
   });
 
   it("is not offered under a failed attachment", () => {
@@ -283,6 +297,27 @@ describe("the import card", () => {
     const out = drawCard(false);
     expect(out).toContain("chat.import_review");
     expect(out).not.toContain('role="dialog"');
+  });
+
+  it("counts what is ready and says nothing is saved yet", () => {
+    const out = drawCard(false);
+    expect(out).toContain("chat.import_count_ready");
+    expect(out).toContain("chat.import_safe");
+    expect(out).not.toContain("chat.import_warn_line");
+  });
+
+  it("matches a warning back to the row that carries it", () => {
+    const row = preview.fresh[0]!;
+    const out = renderToStaticMarkup(
+      <Attachment
+        preview={{ ...preview, flagged: [{ ...row, why: "Price far from the close" }] }}
+        busy={false}
+        onImport={() => {}}
+        onDiscard={() => {}}
+      />,
+    );
+    expect(out).toContain("chat.import_warn_line");
+    expect(out).toContain('data-tone="warn"');
   });
 
   it("draws no status while it waits on the reader", () => {
@@ -860,5 +895,15 @@ describe("an answer's sources", () => {
     );
     expect(html).toContain('href="/import_transactions">');
     expect(html).toContain("<li><span>What each part of TopStocks does</span></li>");
+  });
+});
+
+describe("a table too wide for the drawer", () => {
+  it("is one of more than three columns", () => {
+    expect(wideTable("| a | b | c | d |\n|---|---|---|---|\n| 1 | 2 | 3 | 4 |")).toBe(
+      true,
+    );
+    expect(wideTable("| a | b | c |\n|---|:-:|---|")).toBe(false);
+    expect(wideTable("text\n\n---\n\nmore")).toBe(false);
   });
 });
