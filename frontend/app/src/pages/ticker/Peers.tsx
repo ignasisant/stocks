@@ -1,8 +1,10 @@
 /**
  * Who to compare this company against.
  *
- * Three sources, in this order: names already on the watchlist, Yahoo's
- * "people also follow" suggestions, and a free symbol search for the competitor
+ * Four sources, in this order: names already on the watchlist, the sector
+ * screen's same-industry rivals, the same-industry names Yahoo readers also
+ * watch (two rows, so co-viewed never reads as "competes with"), and a free
+ * symbol search for the competitor
  * the account never followed — which is routinely a foreign listing, and used
  * to have to be known by heart.
  *
@@ -109,7 +111,7 @@ export function PeerPicker({
     return entry.ticker.includes(needle) || entry.name.toUpperCase().includes(needle);
   });
 
-  // Yahoo's suggestions minus anything the watchlist group already offers.
+  // The server's suggestions minus anything the watchlist group already offers.
   // The same name as a chip in two groups reads as two different things to
   // compare, and the watchlist copy is the one that carries the reader's own
   // name for it.
@@ -188,22 +190,18 @@ export function PeerPicker({
         </div>
       ) : null}
 
-      {suggested.length > 0 ? (
-        <div className="tk-peers-group">
-          <span className="tk-peers-label" title={t("ticker.related_help")}>
-            {t("ticker.related_tickers")}
-          </span>
-          <div className="tk-chips">
-            {suggested.map((peer) => (
-              <ToggleChip key={peer.ticker} on={false} onClick={() => add(peer.ticker)}>
-                <ChipMark ticker={peer.ticker} />
-                {peer.ticker}
-                {peer.name ? <span className="tk-chip-name">{peer.name}</span> : null}
-              </ToggleChip>
-            ))}
-          </div>
-        </div>
-      ) : null}
+      <Suggested
+        label={t("ticker.related_rivals")}
+        help={t("ticker.related_rivals_help")}
+        peers={suggested.filter((peer) => peer.source !== "watched")}
+        onAdd={add}
+      />
+      <Suggested
+        label={t("ticker.related_watched")}
+        help={t("ticker.related_watched_help")}
+        peers={suggested.filter((peer) => peer.source === "watched")}
+        onAdd={add}
+      />
 
       <div className="tk-peers-group">
         <label className="tk-peers-label" htmlFor="tk-peer-search">
@@ -236,6 +234,37 @@ export function PeerPicker({
         {trimmed !== "" && hits !== null && offers.length === 0 ? (
           <Note>{t("ticker.extra_none")}</Note>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** One labelled row of suggested peers; nothing when the row is empty. */
+function Suggested({
+  label,
+  help,
+  peers,
+  onAdd,
+}: {
+  label: string;
+  help: string;
+  peers: Peer[];
+  onAdd: (ticker: string) => void;
+}) {
+  if (peers.length === 0) return null;
+  return (
+    <div className="tk-peers-group">
+      <span className="tk-peers-label" title={help}>
+        {label}
+      </span>
+      <div className="tk-chips">
+        {peers.map((peer) => (
+          <ToggleChip key={peer.ticker} on={false} onClick={() => onAdd(peer.ticker)}>
+            <ChipMark ticker={peer.ticker} />
+            {peer.ticker}
+            {peer.name ? <span className="tk-chip-name">{peer.name}</span> : null}
+          </ToggleChip>
+        ))}
       </div>
     </div>
   );
