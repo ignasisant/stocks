@@ -1668,6 +1668,13 @@ class Profile(BaseModel):
 class Peer(BaseModel):
     ticker: str
     name: str = ""
+    source: Literal["rival", "watched"] = Field(
+        "rival",
+        description=(
+            "rival: the sector screen's same-industry cohort. watched: Yahoo's "
+            "people-also-watch list, kept only where it shares the industry."
+        ),
+    )
 
 
 class Peers(BaseModel):
@@ -1675,8 +1682,9 @@ class Peers(BaseModel):
     related: list[Peer] = Field(
         default_factory=list,
         description=(
-            "Yahoo's related symbols, minus the name itself. Suggestions for "
-            "the comps picker — nothing is compared until a caller picks."
+            "Rivals, then same-industry names Yahoo readers also watch, minus "
+            "the name itself. Suggestions for the comps picker — nothing is "
+            "compared until a caller picks."
         ),
     )
 

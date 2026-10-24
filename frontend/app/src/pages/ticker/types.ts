@@ -637,7 +637,8 @@ export type Comparables = {
   outliers: Record<string, number[]>;
 };
 
-export type Peer = { ticker: string; name: string };
+/** rival: same-industry cohort; watched: same-industry names Yahoo readers co-view. */
+export type Peer = { ticker: string; name: string; source: "rival" | "watched" };
 
 export type WatchlistEntry = {
   ticker: string;

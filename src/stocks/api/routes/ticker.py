@@ -1082,11 +1082,24 @@ def peers(symbol: Symbol) -> Peers:
     round-trip per suggestion, and not "7974.T" where Nintendo was meant.
     """
     ticker = symbol.strip().upper()
-    others = [other for other in loaders.related(ticker) if not is_crypto(other)]
-    named = loaders.listing_names(others)
+    rivals, watched = loaders.peer_groups(ticker)
+    groups: tuple[tuple[tuple[str, ...], Literal["rival", "watched"]], ...] = (
+        (rivals, "rival"),
+        (watched, "watched"),
+    )
+    tagged = [
+        (other, source)
+        for group, source in groups
+        for other in group
+        if not is_crypto(other)
+    ]
+    named = loaders.listing_names([other for other, _ in tagged])
     return Peers(
         ticker=ticker,
-        related=[Peer(ticker=other, name=named.get(other, "")) for other in others],
+        related=[
+            Peer(ticker=other, name=named.get(other, ""), source=source)
+            for other, source in tagged
+        ],
     )
 
 

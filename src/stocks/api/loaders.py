@@ -1507,15 +1507,26 @@ def fund_matches(query: str) -> list[tuple[str, str]]:
         return []
 
 
-@ttl_cache(86400.0, max_entries=128)
 def related(ticker: str) -> tuple[str, ...]:
-    """Rivals for the comps picker and Compare: the sector screen's cohort in
-    the same industry first, then the names Yahoo says people also watch.
+    """Rivals for Compare and the evidence pack: both `peer_groups`, rivals
+    first, as one list."""
+    rivals, watched = peer_groups(ticker)
+    return (*rivals, *watched)
 
-    The cohort's names are double-checked (`analysis.sectors`); Yahoo's list
-    is what readers co-view, which mixes in funds, other industries and the
-    stock of the month. A day's ttl and empty on any failure: a suggestion
-    nobody asked for must never be the thing that fails the page.
+
+@ttl_cache(86400.0, max_entries=128)
+def peer_groups(ticker: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """(rivals, also watched) for the comps picker.
+
+    Rivals are the sector screen's cohort in the same industry, double-checked
+    (`analysis.sectors`). Also watched is Yahoo's "people also watch" list,
+    which is what readers co-view: next to Adobe it had PayPal, Visa and
+    Broadcom. Only the names filed under the subject's own industry are kept —
+    a name whose industry cannot be told is dropped, never vouched for. A
+    subject with no industry (a fund) keeps the list as Yahoo sent it.
+
+    A day's ttl and empty on any failure: a suggestion nobody asked for must
+    never be the thing that fails the page.
     """
     from stocks.analysis.sectors import industry_rivals
     from stocks.data.related import related_tickers
@@ -1526,17 +1537,50 @@ def related(ticker: str) -> tuple[str, ...]:
         yahoo = []
     try:
         scans = sector_scans()
-        rivals = industry_rivals(scans, ticker)
-        if not rivals and scans:
-            from stocks.data.fetch import info
-
-            rivals = industry_rivals(scans, ticker, info(ticker).get("industry"))
+    except Exception:
+        scans = {}
+    industry = _industry(ticker, scans)
+    try:
+        rivals = industry_rivals(scans, ticker) or (
+            industry_rivals(scans, ticker, industry) if industry else []
+        )
     except Exception:
         rivals = []
     # Another class of the same company (GOOG beside GOOGL) is no rival.
     own = sec_title(ticker)
     rivals = [r for r in rivals if not own or sec_title(r) != own]
-    return tuple(dict.fromkeys([*rivals, *yahoo]))
+    watched = [s for s in dict.fromkeys(yahoo) if s not in rivals]
+    if industry and watched:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=min(len(watched), 4)) as pool:
+            filed = list(pool.map(lambda s: _industry(s, scans), watched))
+        watched = [s for s, i in zip(watched, filed, strict=True) if i == industry]
+    return tuple(rivals), tuple(watched)
+
+
+def _industry(ticker: str, scans: dict) -> str | None:
+    """Yahoo's industry for `ticker`: the nightly scan, the profile memo, then
+    `info` — None when none of them can say."""
+    from stocks.data import profiles
+    from stocks.data.fetch import info, resolve
+
+    subject = ticker.upper()
+    for scan in scans.values():
+        for m in scan.metrics:
+            if str(m.get("ticker", "")).upper() == subject and m.get("industry"):
+                return str(m["industry"])
+    stored = profiles.known(resolve(ticker)) or {}
+    if stored.get("industry"):
+        return stored["industry"]
+    # A fund files under no industry. An equity without one is a memo written
+    # before the field was kept, so `info` is asked (and fills it in).
+    if stored.get("quoteType", "EQUITY") != "EQUITY":
+        return None
+    try:
+        return info(ticker).get("industry") or None
+    except Exception:
+        return None
 
 
 # ------------------------------------------------------------------- identity

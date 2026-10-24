@@ -698,16 +698,16 @@ def test_peers_are_suggestions_with_names_where_the_sec_map_has_them(
 ):
     from stocks.data import spark
 
-    monkeypatch.setattr(loaders, "related", lambda t: ("MSFT", "NOKIA.HE"))
+    monkeypatch.setattr(loaders, "peer_groups", lambda t: (("MSFT", "NOKIA.HE"), ()))
     monkeypatch.setattr(
         loaders, "sec_title", lambda t: "Microsoft Corp" if t == "MSFT" else None
     )
     monkeypatch.setattr(spark, "names", lambda symbols: {})
     body = client.get("/v1/ticker/AAPL/peers", headers=AUTH).json()
     assert body["related"] == [
-        {"ticker": "MSFT", "name": "Microsoft Corp"},
+        {"ticker": "MSFT", "name": "Microsoft Corp", "source": "rival"},
         # Not a US filer and Yahoo would not say: a bare symbol, never a guess.
-        {"ticker": "NOKIA.HE", "name": ""},
+        {"ticker": "NOKIA.HE", "name": "", "source": "rival"},
     ]
 
 
@@ -722,15 +722,17 @@ def test_a_peer_only_yahoo_names_is_named_in_one_request(client, monkeypatch):
         asked.append(list(symbols))
         return {"7974.T": "Nintendo Co., Ltd.", "8306.T": "Mitsubishi UFJ"}
 
-    monkeypatch.setattr(loaders, "related", lambda t: ("7974.T", "8306.T", "ZZ.T"))
+    monkeypatch.setattr(
+        loaders, "peer_groups", lambda t: (("7974.T",), ("8306.T", "ZZ.T"))
+    )
     monkeypatch.setattr(loaders, "sec_title", lambda t: None)
     monkeypatch.setattr(profiles, "known", lambda t: None)
     monkeypatch.setattr(spark, "names", names)
     body = client.get("/v1/ticker/6758.T/peers", headers=AUTH).json()
     assert body["related"] == [
-        {"ticker": "7974.T", "name": "Nintendo Co., Ltd."},
-        {"ticker": "8306.T", "name": "Mitsubishi UFJ"},
-        {"ticker": "ZZ.T", "name": ""},
+        {"ticker": "7974.T", "name": "Nintendo Co., Ltd.", "source": "rival"},
+        {"ticker": "8306.T", "name": "Mitsubishi UFJ", "source": "watched"},
+        {"ticker": "ZZ.T", "name": "", "source": "watched"},
     ]
     assert asked == [["7974.T", "8306.T", "ZZ.T"]]
     # Learned once: asked again, only the one nobody named goes back out.
@@ -741,14 +743,14 @@ def test_a_peer_only_yahoo_names_is_named_in_one_request(client, monkeypatch):
 
 def test_a_coin_is_never_suggested_as_a_comparable(client, monkeypatch):
     """The comps table ranks on KPIs a coin has none of."""
-    monkeypatch.setattr(loaders, "related", lambda t: ("BTC-EUR", "MSFT"))
+    monkeypatch.setattr(loaders, "peer_groups", lambda t: ((), ("BTC-EUR", "MSFT")))
     monkeypatch.setattr(loaders, "sec_title", lambda t: None)
     body = client.get("/v1/ticker/AAPL/peers", headers=AUTH).json()
     assert [p["ticker"] for p in body["related"]] == ["MSFT"]
 
 
 def test_no_suggestions_is_an_empty_list_not_a_failure(client, monkeypatch):
-    monkeypatch.setattr(loaders, "related", lambda t: ())
+    monkeypatch.setattr(loaders, "peer_groups", lambda t: ((), ()))
     assert client.get("/v1/ticker/ZZQQ/peers", headers=AUTH).json()["related"] == []
 
 
