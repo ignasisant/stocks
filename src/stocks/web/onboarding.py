@@ -497,6 +497,17 @@ RELEASES: tuple[Release, ...] = (
             News(slug="criteria", icon="flag", step="journal"),
         ),
     ),
+    Release(
+        version="2026.10.9",
+        date="2026-10",
+        items=(
+            # A screen rebuilt under the user: the statement preview in the
+            # chat (counts, touch rows with an inline fix, "Open wide" on a
+            # computer). The phone header and the failed-turn notice are
+            # sentences in the assistant's app-features section, not cards.
+            News(slug="chatimport", icon="upload_file", step="assistant"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

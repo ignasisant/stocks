@@ -30,6 +30,7 @@ import { useSession } from "../shell/session";
 import { Glyph } from "./icons";
 import { useRoute } from "../shell/router";
 import { useKeyboardFit, usePresence, useSwipeDismiss } from "../shell/useSheet";
+import { usePhone } from "./phone";
 import { ChatAurora } from "../shell/ambient";
 import { autoSeen, markAutoSeen, readGuide, type GuideState } from "./guide";
 import { useChat } from "./useChat";
@@ -204,7 +205,7 @@ export function Drawer() {
   // `?guide=<step>` opens it on request, which spends nothing, and is read
   // once and taken off the URL so the next navigation does not reopen what
   // was just closed.
-  const { params, setParams } = useRoute();
+  const { page, params, setParams } = useRoute();
   const [guideAsk, setGuideAsk] = useState<{ step?: string; auto: boolean } | null>(
     null,
   );
@@ -321,6 +322,28 @@ export function Drawer() {
     };
   }, [open]);
 
+  // On a phone the assistant is one of the tab bar's destinations, so the
+  // bar's other items leave it the way they leave any page: a press on one
+  // closes the drawer before it navigates (the same page included, which
+  // changes no route), and so does any route change — a ticker named in an
+  // answer is a page to look at, not something to open behind the drawer.
+  const small = usePhone();
+  const seenPage = useRef(page);
+  useEffect(() => {
+    if (!open || !small) return;
+    const away = (event: MouseEvent) => {
+      const item = (event.target as Element | null)?.closest(".ag-nav-item");
+      if (item && !item.classList.contains("ag-nav-ask")) show(false);
+    };
+    document.addEventListener("click", away, { capture: true });
+    return () => document.removeEventListener("click", away, { capture: true });
+  }, [open, small, show]);
+  useEffect(() => {
+    if (seenPage.current === page) return;
+    seenPage.current = page;
+    if (open && small) show(false);
+  }, [page]);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -345,8 +368,11 @@ export function Drawer() {
   // header can throw it off to the right — the header only, since the
   // conversation under it has tables and code that scroll sideways.
   const presence = usePresence(open);
-  useSwipeDismiss(panel, "x", () => show(false), {
-    handle: ".ag-chat-head",
+  // On a phone the drawer rises out of the tab bar and is pulled back down
+  // into it, by the header or the handle under it; elsewhere it is thrown off
+  // to the right, where it came from.
+  useSwipeDismiss(panel, small ? "y" : "x", () => show(false), {
+    handle: small ? ".ag-chat-head, .ag-chat-handle" : ".ag-chat-head",
     enabled: presence.mounted,
   });
   useKeyboardFit(panel, presence.mounted);

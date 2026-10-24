@@ -142,3 +142,18 @@ export function restoreWidth(): void {
   if (css === raw) document.documentElement.style.setProperty("--chat-w", css);
   else put(css);
 }
+
+/**
+ * Take the panel to a width for a while — the import review at the window's
+ * full width — without touching what this browser remembers. Returns the way
+ * back: the width the document had before, or none if it had none.
+ */
+export function borrowWidth(css: string): () => void {
+  const style = document.documentElement.style;
+  const before = style.getPropertyValue("--chat-w");
+  style.setProperty("--chat-w", css);
+  return () => {
+    if (before) style.setProperty("--chat-w", before);
+    else style.removeProperty("--chat-w");
+  };
+}
