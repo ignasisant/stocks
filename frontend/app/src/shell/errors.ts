@@ -31,6 +31,49 @@ const OFFLINE = [
 /** Benign by spec: the browser deferred a resize notification. */
 const NOISE = ["ResizeObserver loop"];
 
+/**
+ * What a lazy page says when its chunk is gone, per browser. A tab opened
+ * before a deploy still asks for the old hashed file, which the new build no
+ * longer serves: the cure is the new `index.html`, not a bug report.
+ */
+const STALE_CHUNK = [
+  "Failed to fetch dynamically imported module",
+  "Importing a module script failed",
+  "error loading dynamically imported module",
+  "Unable to preload CSS",
+];
+
+/** sessionStorage slot: when this tab last reloaded for a stale chunk. */
+const RELOADED = "ts.staleChunkReload";
+
+/** A reload that did not cure it within this long is not a stale chunk. */
+const RELOAD_GUARD_MS = 60_000;
+
+/** Set once a reload is under way: what breaks while the page unloads is moot. */
+let reloading = false;
+
+export function staleChunk(message: string): boolean {
+  return STALE_CHUNK.some((text) => message.startsWith(text));
+}
+
+/**
+ * Reload once to pick up the new build. False when this tab already tried in
+ * the last minute (the chunk is really missing, so report it), or when
+ * storage is unavailable and the guard cannot be kept.
+ */
+export function reloadForNewBuild(now = Date.now()): boolean {
+  try {
+    const last = Number(window.sessionStorage.getItem(RELOADED) ?? 0);
+    if (now - last < RELOAD_GUARD_MS) return false;
+    window.sessionStorage.setItem(RELOADED, String(now));
+  } catch {
+    return false;
+  }
+  reloading = true;
+  window.location.reload();
+  return true;
+}
+
 function described(error: unknown): { name: string; message: string; stack: string } {
   if (error instanceof Error) {
     return { name: error.name, message: error.message, stack: error.stack ?? "" };
@@ -71,7 +114,8 @@ function where(): string {
 /** Send one error, unless it is ignored, already sent, or one too many. */
 export function report(kind: CrashKind, error: unknown, component = ""): void {
   const { name, message, stack } = described(error);
-  if (ignored(error, message)) return;
+  if (reloading || ignored(error, message)) return;
+  if (staleChunk(message) && reloadForNewBuild()) return;
   const src = topFrame(stack);
   const key = `${name}|${message}|${src}`;
   if (seen.has(key) || seen.size >= MAX_PER_LOAD) return;
@@ -111,9 +155,15 @@ export function listen(): void {
   window.addEventListener("unhandledrejection", (event) => {
     report("rejection", event.reason);
   });
+  // Vite's own signal that a lazy chunk or its CSS failed to load; handled
+  // here, the import never rejects into a page's error boundary.
+  window.addEventListener("vite:preloadError", (event) => {
+    if (reloadForNewBuild()) event.preventDefault();
+  });
 }
 
-/** Tests only: forget what was sent. */
+/** Tests only: forget what was sent, and any reload under way. */
 export function _reset(): void {
   seen.clear();
+  reloading = false;
 }

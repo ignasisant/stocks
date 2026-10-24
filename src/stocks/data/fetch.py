@@ -584,6 +584,26 @@ def info(ticker: str) -> dict:
 _splits_memo: dict[str, list[tuple[str, float]]] = {}
 _splits_lock = threading.Lock()
 
+# Lookups below Yahoo left without an answer: throttled, failed, or no bars at
+# all. yfinance does not raise on every refusal (a 401 crumb, an empty body):
+# it logs and hands back an empty frame, which `.splits` reads as "never
+# split". A caller that stamps its result (`portfolio.split_sweep`) compares
+# this count before and after, and does not stamp a scan Yahoo left blank.
+_unanswered = 0
+_unanswered_lock = threading.Lock()
+
+
+def _not_answered() -> None:
+    global _unanswered
+    with _unanswered_lock:
+        _unanswered += 1
+
+
+def unanswered() -> int:
+    """How many `splits` / `close_on` lookups this process could not answer."""
+    with _unanswered_lock:
+        return _unanswered
+
 
 def splits(ticker: str) -> list[tuple[str, float]]:
     """[(YYYY-MM-DD, ratio), …] for `ticker`, oldest first; [] when unknown.
@@ -596,20 +616,32 @@ def splits(ticker: str) -> list[tuple[str, float]]:
         hit = _splits_memo.get(key)
     if hit is not None:
         return hit
-    if throttle_remaining() or retired(key):
+    if retired(key):
+        return []
+    if throttle_remaining():
+        _not_answered()
         return []
     try:
-        series = yf.Ticker(key).splits
+        # What `Ticker.splits` reads, but with the bars in hand: a listed name
+        # always has some, so none at all is a refusal, not "never split".
+        bars = yf.Ticker(key).history(period="max", interval="1d", auto_adjust=False)
     except YFRateLimitError:
         trip_throttle()
+        _not_answered()
         obs.warn("yahoo.splits_rate_limited", ticker=key)
         return []
     except Exception as exc:
+        _not_answered()
         obs.warn("yahoo.splits_failed", ticker=key, error=str(exc))
         return []
+    if bars is None or bars.empty:
+        _not_answered()
+        obs.warn("yahoo.splits_blank", ticker=key)
+        return []  # not cached: a blank is not an answer
+    series = bars["Stock Splits"] if "Stock Splits" in bars else pd.Series(dtype=float)
     events = [
-        (str(pd.Timestamp(when).date()), float(ratio))
-        for when, ratio in getattr(series, "items", lambda: [])()
+        (str(when.date()), float(ratio))
+        for when, ratio in zip(pd.DatetimeIndex(series.index), series, strict=True)
         if ratio and float(ratio) > 0
     ]
     events.sort()
@@ -641,6 +673,7 @@ def close_on(ticker: str, day: str) -> float | None:
     if retired(key[0]):
         return None
     if throttle_remaining():
+        _not_answered()
         return None  # not cached: a throttle is temporary, an answer is forever
     start = (pd.Timestamp(day) - pd.Timedelta(days=10)).date().isoformat()
     end = (pd.Timestamp(day) + pd.Timedelta(days=1)).date().isoformat()
@@ -652,13 +685,19 @@ def close_on(ticker: str, day: str) -> float | None:
         )
     except YFRateLimitError:
         trip_throttle()
+        _not_answered()
         obs.warn("yahoo.close_on_rate_limited", ticker=key[0])
         return None
     except Exception as exc:
+        _not_answered()
         obs.warn("yahoo.close_on_failed", ticker=key[0], error=str(exc))
         return None
+    if df is None or df.empty:
+        _not_answered()
+        obs.warn("yahoo.close_on_blank", ticker=key[0])
+        return None  # not cached, as above
     close = None
-    if df is not None and not df.empty and "Close" in df:
+    if "Close" in df:
         series = df["Close"].dropna()
         series = series[series.index.map(lambda ts: str(pd.Timestamp(ts).date()) <= day)]
         if not series.empty:

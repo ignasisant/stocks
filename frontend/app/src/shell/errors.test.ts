@@ -4,7 +4,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, Cancelled } from "./api";
-import { _reset, ignored, report, topFrame } from "./errors";
+import {
+  _reset,
+  ignored,
+  reloadForNewBuild,
+  report,
+  staleChunk,
+  topFrame,
+} from "./errors";
 
 describe("crash reports", () => {
   const fetch = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
@@ -69,5 +76,51 @@ describe("crash reports", () => {
 
   it("finds no frame in a stack without one", () => {
     expect(topFrame("Error: x\n    at <anonymous>")).toBe("");
+  });
+  describe("a chunk gone after a deploy", () => {
+    const store = new Map<string, string>();
+    const reload = vi.fn();
+
+    beforeEach(() => {
+      store.clear();
+      reload.mockClear();
+      vi.stubGlobal("window", {
+        location: { pathname: "/ticker", search: "", reload },
+        sessionStorage: {
+          getItem: (k: string) => store.get(k) ?? null,
+          setItem: (k: string, v: string) => void store.set(k, v),
+        },
+      });
+    });
+
+    it("knows the message of each browser", () => {
+      expect(
+        staleChunk(
+          "Failed to fetch dynamically imported module: https://h/next-assets/Ticker-A1.js",
+        ),
+      ).toBe(true);
+      expect(staleChunk("Importing a module script failed.")).toBe(true);
+      expect(staleChunk("error loading dynamically imported module: x")).toBe(true);
+      expect(staleChunk("a is null")).toBe(false);
+    });
+
+    it("reloads instead of reporting, once a minute at most", () => {
+      const error = new TypeError("Importing a module script failed.");
+      report("render", error);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(fetch).not.toHaveBeenCalled();
+
+      // The new page still cannot load it: a real missing file, reported.
+      _reset();
+      report("render", error);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("tries again after the guard has passed", () => {
+      expect(reloadForNewBuild(1_000_000)).toBe(true);
+      expect(reloadForNewBuild(1_030_000)).toBe(false);
+      expect(reloadForNewBuild(1_070_000)).toBe(true);
+    });
   });
 });

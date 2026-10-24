@@ -69,7 +69,9 @@ def test_fred_parses_and_drops_blank_observations(calls):
     # 2026-09-02 is blank in the fixture: FRED's "no observation" for a market
     # holiday, which must not become a zero or a forward-filled duplicate.
     assert list(series.index.strftime("%Y-%m-%d")) == [
-        "2026-08-31", "2026-09-01", "2026-09-03"
+        "2026-08-31",
+        "2026-09-01",
+        "2026-09-03",
     ]
     assert series.iloc[-1] == pytest.approx(4.81)
     assert series.name == "DGS10"
@@ -107,6 +109,37 @@ def test_fred_failure_is_an_empty_series(calls):
 def test_fred_garbage_body_is_an_empty_series(calls):
     calls.replies["id=DGS10"] = b"observation_date,DGS10\n"
     assert macro.fred("DGS10").empty
+
+
+FRED_HTML = (
+    b"<!DOCTYPE html>\n"
+    b'<link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600"'
+    b' rel="stylesheet">\n'
+)
+
+
+def test_fred_html_reply_is_never_cached(calls):
+    """FRED's 200-with-HTML error page used to be stored and crash the parse."""
+    calls.replies["id=DGS10"] = FRED_HTML
+    assert macro.fred("DGS10").empty
+    assert list(macro.CACHE_DIR.glob("*.cache")) == []
+
+
+def test_fred_html_reply_serves_the_stale_copy(calls):
+    calls.replies["id=DGS10"] = FRED_CSV
+    fresh = macro.fred("DGS10")
+    path = next(macro.CACHE_DIR.glob("fred_DGS10_3y.cache"))
+    os.utime(path, (time.time() - 10 * macro.TTL_S,) * 2)
+    calls.replies["id=DGS10"] = FRED_HTML
+    pd.testing.assert_series_equal(macro.fred("DGS10"), fresh)
+
+
+def test_fred_html_already_on_disk_is_an_empty_series(calls):
+    """A page cached before the check must not raise a DateParseError."""
+    macro.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    (macro.CACHE_DIR / "fred_DGS10_3y.cache").write_bytes(FRED_HTML)
+    assert macro.fred("DGS10").empty
+    assert calls.log == []
 
 
 def test_fred_many_returns_one_entry_per_id(calls):
@@ -184,11 +217,7 @@ def _cube(values: dict[str, float]) -> dict:
             "unit": {"category": {"index": {"RCH_A": 0}}},
             "coicop18": {"category": {"index": {"TOTAL": 0}}},
             "geo": {"category": {"index": {"EA": 0, "ES": 1}}},
-            "time": {
-                "category": {
-                    "index": {"2026-06": 0, "2026-07": 1, "2026-08": 2}
-                }
-            },
+            "time": {"category": {"index": {"2026-06": 0, "2026-07": 1, "2026-08": 2}}},
         },
         "value": values,
     }
@@ -283,9 +312,11 @@ def test_inflation_keeps_each_area_on_its_own_reference_month(calls):
     core = json.dumps(
         _cube({"0": 2.2, "1": 2.3, "2": 2.4, "3": 3.3, "4": 3.4, "5": 3.5})
     ).encode()
-    us_levels = b"observation_date,CPIAUCNS\n" + b"".join(
-        f"2025-{m:02d}-01,{100 + m}\n".encode() for m in range(1, 13)
-    ) + b"2026-01-01,115\n2026-02-01,116\n"
+    us_levels = (
+        b"observation_date,CPIAUCNS\n"
+        + b"".join(f"2025-{m:02d}-01,{100 + m}\n".encode() for m in range(1, 13))
+        + b"2026-01-01,115\n2026-02-01,116\n"
+    )
 
     calls.replies[macro.HICP_CORE] = core
     calls.replies[f"coicop18={macro.HICP_HEADLINE}"] = headline

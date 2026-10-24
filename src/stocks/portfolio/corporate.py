@@ -37,6 +37,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from stocks import obs
 from stocks.portfolio import consistency
 from stocks.portfolio.ledger import Transaction
 
@@ -152,9 +153,11 @@ def _ticker_gaps(
             continue
         buy = _last_buy_before(rows, day)
         if buy is None:
+            _unproven(ticker, day, "no_buy", source)
             continue
         close = _close(close_on, ticker, buy.date)
         if close is None or close <= 0 or buy.price <= 0:
+            _unproven(ticker, day, "no_close", source)
             continue
         quotient = buy.price / close
         unadjusted = _unadjusted_splits(quotient, events, buy.date)
@@ -174,6 +177,8 @@ def _ticker_gaps(
                 )
             continue
         if not any(d == day for d, _ in unadjusted):
+            # The row already carries this split, or two readings fit it.
+            _unproven(ticker, day, "restated", source)
             continue
         applied.append((day, ratio))
         out.append(
@@ -193,6 +198,17 @@ def _ticker_gaps(
             )
         )
     return out
+
+
+def _unproven(ticker: str, day: str, why: str, source: consistency.Source) -> None:
+    """Say why a split on shares the ledger held proposed nothing.
+
+    Silence here hid a book's BYND 1:30 for days (triage 2026-10-24, ERR-05):
+    the scan ran, wrote nothing, and nothing said which rule stopped it.
+    """
+    obs.event(
+        "portfolio.split_unproven", ticker=ticker, split=day, why=why, source=source
+    )
 
 
 def _believable(ratio: float) -> bool:

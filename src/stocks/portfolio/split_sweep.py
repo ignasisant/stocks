@@ -11,8 +11,8 @@ reader's Undo takes it back, and a split taken back is never written again.
 A scan asks Yahoo once per name, so it runs only when the book changed since
 the last one (row count and highest id), or a week after it. The stamp lives
 next to the ledger and in the bucket, because the warm wakes a cold instance.
-A scan Yahoo throttled is not stamped: the names it skipped proposed nothing
-and must be asked again.
+A scan Yahoo throttled or left blank is not stamped: the names it skipped
+proposed nothing and must be asked again.
 """
 
 from __future__ import annotations
@@ -88,7 +88,8 @@ def repair(
     """Write the book's missing, never-declined splits as one undoable edit.
 
     Returns how many it wrote. A book unchanged since its last scan asks
-    nobody. `throttled()` true after the scan leaves it unstamped.
+    nobody. `throttled()` true after the scan (Yahoo refused or answered
+    blank) leaves it unstamped.
     """
     db = Path(db)
     if not db.exists():

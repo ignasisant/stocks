@@ -109,12 +109,15 @@ def repair_splits(db: str) -> None:
     from stocks.data import fetch
     from stocks.portfolio import split_sweep
 
+    asked = fetch.unanswered()
     try:
         split_sweep.repair(
             db,
             splits=fetch.splits,
             close_on=fetch.close_on,
-            throttled=lambda: fetch.throttle_remaining() > 0,
+            throttled=lambda: (
+                fetch.throttle_remaining() > 0 or fetch.unanswered() > asked
+            ),
         )
     except Exception as exc:  # noqa: BLE001 — see above
         obs.warn("api.warm_splits_failed", error_type=type(exc).__name__)

@@ -28,7 +28,7 @@ import hashlib
 import re
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
@@ -75,11 +75,17 @@ COMPARE_NAMES = 8
 NOTABLE_PP = 5.0
 
 BUDGET_S = 15.0
+# Each source's budget runs from when a worker picks it up, not from when the
+# pool opened: up to ~20 reads share WORKERS, and the insiders, queued behind
+# the news and filings, timed out having waited most of their 15 s for a
+# thread (prod 10-22 → 10-23). The pool as a whole stops at twice the budget.
 # The Review rows are a whole Review computed, not one feed read: its p90 in
 # prod is ~21s and a cold book reaches ~43s (2026-10-20 triage, ERR-01), so on
 # the shared budget the first card of the day lost its comparisons. It gets
-# its own, and starts first so the feeds cannot queue it behind them.
-VERDICTS_BUDGET_S = 45.0
+# its own, and starts first so the feeds cannot queue it behind them. 45 s
+# still lost it on a cold instance (2026-10-24 triage, ERR-04: right after a
+# deploy, and at night); nobody waits on it, the card is a background job.
+VERDICTS_BUDGET_S = 60.0
 WORKERS = 8
 
 INDEX = "SPY"
@@ -713,6 +719,37 @@ def _listed(found: dict[str, object], key: str) -> list:
     return value if isinstance(value, list) else []
 
 
+def _await(future, started: dict[str, float], name: str, budget_s: float,
+           ceiling: float):
+    """`future`'s result once it has run `budget_s` from its own start, or
+    TimeoutError; past `ceiling` (monotonic) it is late whether it started
+    or not. `started[name]` is set by the task itself when a worker runs it."""
+    while not future.done():
+        now = time.monotonic()
+        begun = started.get(name)
+        end = ceiling if begun is None else min(ceiling, begun + budget_s)
+        if now >= end:
+            raise TimeoutError
+        # Still queued: look again shortly, its clock may start meanwhile.
+        wait([future], timeout=end - now if begun is not None
+             else min(end - now, 0.25))
+    return future.result()
+
+
+def _timed(started: dict[str, float], name: str, fn: Callable[[], object]):
+    def run():
+        started[name] = time.monotonic()
+        return fn()
+    return run
+
+
+def _late(started: dict[str, float], name: str, begun: float) -> dict:
+    """How long a late source waited for a worker, for its warning: the next
+    triage can tell a slow upstream from a full queue."""
+    at = started.get(name)
+    return {"queued_ms": None if at is None else round((at - begun) * 1000)}
+
+
 def _print_sources(get, days: dict[str, str],
                    budget_s: float | None = None) -> dict[str, dict]:
     """{ticker: what its print's row quotes beyond EPS} for the names in
@@ -723,21 +760,28 @@ def _print_sources(get, days: dict[str, str],
     budget_s = PRINT_BUDGET_S if budget_s is None else budget_s
     out: dict[str, dict] = {}
     begun = time.monotonic()
+    started: dict[str, float] = {}
+    errors: list[str] = []
     pool = ThreadPoolExecutor(max_workers=min(len(days), WORKERS))
     try:
-        futures = {t: pool.submit(get, t, iso) for t, iso in days.items()}
+        futures = {t: pool.submit(_timed(started, t, lambda t=t, iso=iso: get(t, iso)))
+                   for t, iso in days.items()}
         for ticker, future in futures.items():
             try:
-                left = max(0.0, begun + budget_s - time.monotonic())
-                found = future.result(timeout=left)
+                found = _await(future, started, ticker, budget_s,
+                               begun + 2 * budget_s)
             except Exception as exc:  # noqa: BLE001 — one print, not the page
-                obs.warn("today.source_failed", source="print",
-                         error_type=type(exc).__name__)
+                errors.append(type(exc).__name__)
                 continue
             if isinstance(found, dict):
                 out[ticker] = found
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
+    if errors:
+        # One line per book, not per name: the names of one book share the
+        # pool, and a slow statement host makes them all late together.
+        obs.warn("today.source_failed", source="print", error_type=errors[0],
+                 count=len(errors), of=len(days))
     return out
 
 
@@ -826,19 +870,21 @@ def gather(
     failed: set[str] = set()
     if tasks:
         begun = time.monotonic()
+        ran: dict[str, float] = {}
         pool = ThreadPoolExecutor(max_workers=min(len(tasks), WORKERS))
         try:
-            futures = {name: pool.submit(tasks[name])
+            futures = {name: pool.submit(_timed(ran, name, tasks[name]))
                        for name in sorted(tasks, key=lambda n: n != "verdicts")}
             for name, future in futures.items():
-                deadline = begun + (max(budget_s, verdicts_budget_s)
-                                    if name == "verdicts" else budget_s)
+                own = (max(budget_s, verdicts_budget_s) if name == "verdicts"
+                       else budget_s)
+                ceiling = begun + max(own, 2 * budget_s)
                 try:
-                    found[name] = future.result(
-                        timeout=max(0.0, deadline - time.monotonic()))
+                    found[name] = _await(future, ran, name, own, ceiling)
                 except Exception as exc:  # noqa: BLE001 — one source, not the page
                     obs.warn("today.source_failed", source=name.split(":")[0],
-                             error_type=type(exc).__name__)
+                             error_type=type(exc).__name__,
+                             **_late(ran, name, begun))
                     failed.add(name.split(":")[0])
         finally:
             pool.shutdown(wait=False, cancel_futures=True)

@@ -545,3 +545,14 @@ def test_component_then_is_nan_without_enough_history():
     result = sm.pulse(closes, min_periods=60)
     assert result.components
     assert all(np.isnan(c.then) for c in result.components)
+
+
+def test_rolling_correlation_raises_no_pandas_warning():
+    import warnings
+
+    # Interleaved calendars: the joined index has to be sorted.
+    a = ramp(240).iloc[[i for i in range(240) if i % 2 == 0 or i % 3 == 0]]
+    b = ramp(240).iloc[[i for i in range(240) if i % 2 == 1 or i % 3 == 0]]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        sm.rolling_correlation(a, b, window=60)

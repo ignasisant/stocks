@@ -360,6 +360,59 @@ def test_the_review_rows_get_their_own_budget():
     assert "review" not in compare["missing"]
 
 
+def test_a_queued_source_keeps_its_own_budget(monkeypatch):
+    """Prod (ERR-04): the insiders waited behind the news and filings for a
+    worker and timed out before their own read had begun."""
+    monkeypatch.setattr(today_sections, "WORKERS", 1)  # one queue, in order
+
+    def slow_news(t):
+        time.sleep(0.15)
+        return []
+
+    def slow_filings(t):
+        time.sleep(0.15)
+        return []
+
+    sources = _sources(news=slow_news, filings=slow_filings,
+                       insiders=lambda t: [], verdicts=None)
+    out = _gather({"AAPL": 1.0}, sources=sources, budget_s=0.2)
+    insiders = next(s for s in out["sections"] if s["id"] == "insiders")
+    assert "sec" not in insiders["missing"]
+
+
+def test_a_late_source_says_how_long_it_queued(monkeypatch):
+    warned = []
+    monkeypatch.setattr(today_sections.obs, "warn",
+                        lambda event, **f: warned.append((event, f)))
+
+    def slow(t):
+        time.sleep(1)
+        return []
+
+    _gather({"AAPL": 1.0}, sources=_sources(news=slow), budget_s=0.1)
+    late = [f for e, f in warned if e == "today.source_failed"]
+    assert late and late[0]["source"] == "news"
+    assert isinstance(late[0]["queued_ms"], int)
+
+
+def test_late_prints_are_one_warning_per_book(monkeypatch):
+    monkeypatch.setattr(today_sections, "PRINT_BUDGET_S", 0.1)
+    warned = []
+    monkeypatch.setattr(today_sections.obs, "warn",
+                        lambda event, **f: warned.append((event, f)))
+
+    def slow(ticker, iso):
+        time.sleep(1.0)
+        return {}
+
+    got = today_sections._print_sources(
+        slow, {"AAPL": "2026-10-22", "MSFT": "2026-10-22", "NVDA": "2026-10-22"})
+    assert got == {}
+    late = [f for e, f in warned if e == "today.source_failed"]
+    assert late == [{"source": "print", "error_type": "TimeoutError",
+                     "count": 3, "of": 3}]
+
+
 def test_the_review_rows_start_before_the_feeds(monkeypatch):
     monkeypatch.setattr(today_sections, "WORKERS", 1)  # one queue, in order
     order = []

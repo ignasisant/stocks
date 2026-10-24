@@ -123,3 +123,24 @@ def test_a_failing_scan_never_stops_the_warm(monkeypatch, db):
 
     monkeypatch.setattr(split_sweep, "repair", boom)
     warm.repair_splits(str(db))  # no raise
+
+
+def test_a_scan_yahoo_left_blank_is_asked_again(monkeypatch, db, yahoo):
+    """ERR-05 (triage 2026-10-24): Yahoo answering with no bars at all is not
+    "no splits". The warm stamped a book after one such answer, and a split
+    it never saw stayed missing for a week."""
+    from stocks.data import fetch
+
+    _, splits, close_on = yahoo
+
+    def blank(ticker):
+        fetch._not_answered()  # what fetch.splits does on a blank answer
+        return []
+
+    monkeypatch.setattr("stocks.data.fetch.splits", blank)
+    monkeypatch.setattr("stocks.data.fetch.close_on", close_on)
+    warm.repair_splits(str(db))
+    assert split_rows(db) == []
+    monkeypatch.setattr("stocks.data.fetch.splits", splits)
+    warm.repair_splits(str(db))
+    assert split_rows(db) == [("AMZN", "2022-06-06", 20.0)]

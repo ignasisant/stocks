@@ -822,6 +822,7 @@ def rolling_correlation(
             naive_index(second).pct_change().rename("b"),
         ],
         axis=1,
+        sort=True,
     ).dropna()
     if len(frame) < window:
         return pd.Series(dtype=float)
@@ -884,6 +885,7 @@ def rolling_beta(
     frame = pd.concat(
         [naive_index(asset).rename("a"), naive_index(benchmark).rename("b")],
         axis=1,
+        sort=True,
     ).dropna()
     if len(frame) < window:
         return pd.Series(dtype=float)

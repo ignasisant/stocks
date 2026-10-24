@@ -770,3 +770,18 @@ def test_a_met_event_rule_quotes_where_it_was_read(rule, lang):
     line = daily._action_line(action, lang, "EUR")
     assert "AMD cuts its outlook" in line and "8-K (2.02)" in line
     assert "{" not in line and "home.daily" not in line and "None" not in line
+
+
+def test_each_provider_gets_a_background_job_s_time(monkeypatch):
+    """The card is written off the request: a 25 s cap cut both providers off
+    mid-answer in prod, and the computed card stood in. The free chain's
+    answers landed 88–163 s in, so the cap has to clear that."""
+    seen = []
+
+    def attempts(prefs, system, messages, timeout_s, **kw):
+        seen.append(timeout_s)
+        return None
+
+    monkeypatch.setattr(daily.engine, "complete_attempts", attempts)
+    daily.generate({}, {}, facts(), "en", DAY)
+    assert seen and seen[0] >= 165
