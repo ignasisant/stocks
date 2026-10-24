@@ -150,7 +150,7 @@ def annualized_return(returns: pd.Series, periods: float | None = None) -> float
 
 def beta(asset: pd.Series, benchmark: pd.Series) -> float:
     """Population beta of asset vs benchmark on their common dates."""
-    df = pd.concat([asset, benchmark], axis=1).dropna()
+    df = pd.concat([asset, benchmark], axis=1, sort=True).dropna()
     if len(df) < 2:
         return float("nan")
     a, b = df.iloc[:, 0], df.iloc[:, 1]
@@ -234,7 +234,7 @@ def risk_shares(
     for name, weight in weights.items():
         if not weight or name not in returns:
             continue
-        pair = pd.concat([returns[name], port], axis=1).dropna()
+        pair = pd.concat([returns[name], port], axis=1, sort=True).dropna()
         if len(pair) < 2:
             continue
         cov = float(pair.cov(ddof=0).iloc[0, 1])
@@ -917,7 +917,7 @@ def sleeve_stats(
     corr = None
     if len(weekly) >= 2:
         a, b = list(weekly.values())[:2]
-        both = pd.concat([a, b], axis=1).dropna()
+        both = pd.concat([a, b], axis=1, sort=True).dropna()
         if len(both) >= 10:
             corr = float(both.corr().iloc[0, 1])
     return vols, corr, growth

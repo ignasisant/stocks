@@ -358,7 +358,7 @@ def sectors(closes: dict[str, pd.Series], against: str | None = None) -> list[di
         row = {"etf": etf, "sector": name, **perf(series)}
         if base_returns is not None and series is not None and etf != against:
             joined = pd.concat(
-                [base_returns, series.dropna().pct_change().tail(252)], axis=1
+                [base_returns, series.dropna().pct_change().tail(252)], axis=1, sort=True
             ).dropna()
             if len(joined) > 60:
                 row["corr_1y"] = _r(joined.iloc[:, 0].corr(joined.iloc[:, 1]), 2)
