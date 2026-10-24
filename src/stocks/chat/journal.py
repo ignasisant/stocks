@@ -55,6 +55,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import SupportsFloat
 
 from stocks import atomic, obs, storage
 
@@ -889,10 +890,10 @@ def criterion_subject(ticker: str, rule: str) -> str:
 
 
 def _finite(value: object) -> float | None:
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (SupportsFloat, str)):
         return None
     try:
-        out = float(value)  # type: ignore[arg-type]
+        out = float(value)
     except (TypeError, ValueError):
         return None
     return out if out == out and out not in (float("inf"), float("-inf")) else None
@@ -1075,12 +1076,13 @@ def measure_fundamental(rule: str, level: float, n: int,
     ordered = sorted(quarters or (), key=lambda q: q.end, reverse=True)
     if len(ordered) < n:
         return None
-    figures = [quarter_figure(rule, ordered, q) for q in ordered[:n]]
-    if any(f is None for f in figures):
+    figures = [f for q in ordered[:n]
+               if (f := quarter_figure(rule, ordered, q)) is not None]
+    if len(figures) < n:
         return None
-    value = round(float(figures[0]), 2)  # type: ignore[arg-type]
+    value = round(figures[0], 2)
     return {"value": value, "gap": round(value - level, 2),
-            "met": all(f < level for f in figures),  # type: ignore[operator]
+            "met": all(f < level for f in figures),
             "quarter_end": ordered[0].end.isoformat()}
 
 

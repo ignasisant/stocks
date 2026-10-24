@@ -94,7 +94,7 @@ export const STATES: JournalState[] = [
 ];
 
 /** The exit rules a criterion entry can carry (`journal.CRITERION_RULES`). */
-export const RULES = [
+const RULES = [
   "below",
   "drawdown_cost",
   "drawdown_high",
@@ -116,7 +116,7 @@ export function getJournal(params: { ticker?: string } = {}): Promise<Journal> {
 }
 
 /** Take down one exit rule; it stays in the journal as retired. */
-export function retireRule(id: string): Promise<void> {
+function retireRule(id: string): Promise<void> {
   return send<void>("DELETE", `/journal/criteria/${encodeURIComponent(id)}`);
 }
 
