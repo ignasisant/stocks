@@ -27,7 +27,7 @@ import { Drawer } from "../chat/Drawer";
 import { LockedDrawer } from "../chat/Locked";
 import { useT } from "./i18n";
 import { Feedback } from "./Feedback";
-import { openAssistant, useAssistantWorking } from "./assistant";
+import { openAssistant, useAssistantUnread, useAssistantWorking } from "./assistant";
 import { Search } from "./Search";
 import { ProfilePrompt } from "./ProfilePrompt";
 import { Tour } from "./Tour";
@@ -90,6 +90,7 @@ function Back() {
 
 function Nav() {
   const working = useAssistantWorking();
+  const unread = useAssistantUnread();
   const t = useT();
   const { page } = useRoute();
   const guest = useGuest();
@@ -296,8 +297,10 @@ function Nav() {
         onClick={() => openAssistant()}
       >
         <Icon name="spark" />
+        {unread ? <span className="ag-nav-ask-dot" aria-hidden="true" /> : null}
         <span className="ag-nav-label">{t("chat.title")}</span>
         {working ? <span className="ag-sr">{t("chat.tab_working")}</span> : null}
+        {unread ? <span className="ag-sr">{t("chat.tab_unread")}</span> : null}
       </button>
       {/* Phones only: the bar holds `BOTTOM`, and this is the way to the rest
           — the drawer the DS spec keeps behind the bar. */}

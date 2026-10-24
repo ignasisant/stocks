@@ -21,6 +21,7 @@ import { send } from "../shell/api";
 import { useT } from "../shell/i18n";
 import {
   type Brief,
+  setAssistantUnread,
   setAssistantWorking,
   useAssistantAsks,
   useAssistantThreads,
@@ -32,6 +33,7 @@ import { useKeyboardFit, usePresence, useSwipeDismiss } from "../shell/useSheet"
 import { ChatAurora } from "../shell/ambient";
 import { autoSeen, markAutoSeen, readGuide, type GuideState } from "./guide";
 import { useChat } from "./useChat";
+import { toast } from "../ui/toast";
 import { hasDraft } from "./draft";
 import type { ConnectAsk } from "./connect";
 import "./chat.css";
@@ -83,6 +85,9 @@ function GuideStrip({
     </div>
   );
 }
+
+/** The one toast that says an answer landed elsewhere (`landed.ts`). */
+const LANDED_TOAST = "chat-landed";
 
 export function Drawer() {
   const t = useT();
@@ -140,11 +145,42 @@ export function Drawer() {
   useAssistantThreads(onThread);
 
   const { state, busy, send: ask, create } = chat;
-  // The phone tab bar's Assistant item shows it while the drawer is shut.
+  // At it on any thread — the one on screen, or one the reader left to be
+  // answered while they moved to another.
+  const working = busy || !!chat.threads?.some((c) => c.answering);
+  const unread = chat.unread.size > 0;
+  // The phone tab bar's Assistant item shows both while the drawer is shut.
   useEffect(() => {
-    setAssistantWorking(busy && !open);
+    setAssistantWorking(working && !open);
     return () => setAssistantWorking(false);
-  }, [busy, open]);
+  }, [working, open]);
+  useEffect(() => {
+    setAssistantUnread(unread && !open);
+    return () => setAssistantUnread(false);
+  }, [unread, open]);
+  // An answer landed on a thread the reader is not on (`landed.ts`): one
+  // toast, replaced by the next landing rather than stacked, and gone once
+  // that thread is opened some other way. The thread's dot outlives it.
+  const { notice, dismissNotice } = chat;
+  useEffect(() => {
+    if (!notice) {
+      toast.dismiss(LANDED_TOAST);
+      return;
+    }
+    const name = (notice.title || "").trim() || t("chat.untitled");
+    const title = name.length <= 40 ? name : `${name.slice(0, 39)}…`;
+    const say = notice.ok ? toast.ok : toast.warn;
+    say(t(notice.ok ? "chat.landed" : "chat.landed_failed", { title }), {
+      id: LANDED_TOAST,
+      action: {
+        label: t("chat.landed_open"),
+        onClick: () => {
+          dismissNotice();
+          onThread(notice.id);
+        },
+      },
+    });
+  }, [notice, dismissNotice, onThread, t]);
   useEffect(() => {
     if (!queued || !open || !state) return;
     if (queued.fresh) {
@@ -347,12 +383,17 @@ export function Drawer() {
           className="ag-ai ag-chat-fab"
           // An answer still being written while the drawer is shut turns the
           // rim, so the reader sees the assistant is at it.
-          data-busy={busy || undefined}
+          data-busy={working || undefined}
           title={t("chat.title")}
-          aria-label={t("chat.title")}
+          aria-label={
+            unread ? `${t("chat.title")} · ${t("chat.unread_any")}` : t("chat.title")
+          }
           onClick={() => show(true)}
         >
           <Glyph name="spark" size={22} />
+          {unread && (
+            <span className="ag-chat-dot ag-chat-fab-dot" data-state="unread" />
+          )}
         </button>
       )}
       {presence.mounted && (

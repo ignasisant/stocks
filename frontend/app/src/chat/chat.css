@@ -2046,6 +2046,55 @@ a.ag-chat-btn {
   font-size: var(--ag-fs-2xs);
 }
 
+/* A thread answered while the reader was on another (`landed.ts`): a dot for
+   the scan down the list, the words on the meta line for anyone who does not
+   read colour. Accent for "new", muted and breathing for "still writing". */
+.ag-chat-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ag-brand-accent);
+  vertical-align: middle;
+}
+
+.ag-chat-dot[data-state="answering"] {
+  background: var(--ag-text-muted);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ag-chat-dot[data-state="answering"] {
+    animation: ag-ask-breathe 1.6s ease-in-out infinite;
+  }
+}
+
+.ag-chat-card-title > .ag-chat-dot {
+  margin: -2px 6px 0 0;
+}
+
+.ag-chat-card-new {
+  color: var(--ag-brand-accent);
+  font-weight: 500;
+}
+
+/* On the launcher: a badge on its rim, ringed in the page colour so it
+   reads as sitting on top of the button rather than bleeding into it. */
+.ag-chat-fab-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 10px;
+  height: 10px;
+  box-shadow: 0 0 0 2px var(--ag-surface-page);
+}
+
+@media (forced-colors: active) {
+  .ag-chat-dot {
+    background: CanvasText;
+  }
+}
+
 /* Renaming and deleting take over the row, so the row stops being one. */
 .ag-chat-editing {
   display: flex;

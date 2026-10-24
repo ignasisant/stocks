@@ -50,6 +50,7 @@ import {
   syncGuide,
   type GuideState,
 } from "./guide";
+import { useLanded } from "./landed";
 import { nameOf, reportUnreadable } from "../pages/import/api";
 import type { A2uiAction } from "./a2ui";
 import type {
@@ -245,6 +246,13 @@ export function useChat(live: boolean) {
     return list;
   }, []);
 
+  // Another thread still being answered: the list is read again until it
+  // lands, and the thread is marked unread (`landed.ts`).
+  const poll = useCallback(() => {
+    readThreads().then(setThreads, () => {});
+  }, []);
+  const { unread, notice, dismiss: dismissNotice } = useLanded(threads, activeId, poll);
+
   // Where the walkthrough is, read once when the drawer first opens — it moves
   // only when the reader moves it, and every move answers with the new state.
   // Beside the opening read, never in its way: an account the route refuses
@@ -288,6 +296,13 @@ export function useChat(live: boolean) {
    */
   const detach = useCallback(() => {
     if (!flight.current) return;
+    // Marked here rather than left to the next read of the list, so the row
+    // says it at once and the watch for its landing starts now.
+    const left = activeRef.current;
+    if (left)
+      setThreads((list) =>
+        list ? list.map((c) => (c.id === left ? { ...c, answering: true } : c)) : list,
+      );
     generation.current += 1;
     flight.current.abort();
     flight.current = null;
@@ -1225,5 +1240,8 @@ export function useChat(live: boolean) {
     remap,
     commitImport,
     discardImport,
+    unread,
+    notice,
+    dismissNotice,
   };
 }

@@ -1237,6 +1237,21 @@ body {
 .ag-nav-ask[data-busy] svg {
   color: var(--ag-brand-accent);
 }
+/* An answer landed on a thread the reader left (`chat/landed.ts`), drawer
+   shut: a badge on the tab's icon, the same as the launcher's. */
+.ag-nav-ask {
+  position: relative;
+}
+.ag-nav-ask-dot {
+  position: absolute;
+  top: 4px;
+  left: calc(50% + 6px);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ag-brand-accent);
+  box-shadow: 0 0 0 2px var(--ag-surface-page);
+}
 @media (prefers-reduced-motion: no-preference) {
   .ag-nav-ask[data-busy] svg {
     animation: ag-ask-breathe 1.6s ease-in-out infinite;
