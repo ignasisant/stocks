@@ -23,7 +23,7 @@ class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
     value: StreamStateValueT
     state: typing_extensions.Literal["Pending", "Incomplete", "Complete"]
 # #########################################################################
-# Generated classes (28)
+# Generated classes (30)
 # #########################################################################
 
 class ActionCall(BaseModel):
@@ -31,6 +31,8 @@ class ActionCall(BaseModel):
     ticker: typing.Optional[str] = Field(default=None, description='the symbol the action targets')
     tickers: typing.Optional[typing.List[str]] = Field(default=None, description='every symbol, when the action targets several')
     alerts: typing.Optional[typing.List["AlertRule"]] = None
+    criteria: typing.Optional[typing.List["CriterionRule"]] = None
+    thesis: typing.Optional[str] = Field(default=None, description='why the user holds it, in their words')
     tags: typing.Optional[typing.List[str]] = None
     name: typing.Optional[str] = None
     shares: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a plain number')
@@ -105,6 +107,11 @@ class Columns(BaseModel):
     fee: typing.Optional[int] = None
     note: typing.Optional[int] = None
 
+class CriterionRule(BaseModel):
+    rule: typing.Optional[str] = Field(default=None, description='below, drawdown_cost, drawdown_high, weight_above, revenue_growth_below, gross_margin_below, operating_margin_below, ceo_change, guidance_cut or dividend_cut')
+    level: typing.Optional[typing.Union[float, str]] = Field(default=None, description='a price for below, a percent for the price and fundamental rules, null for ceo_change, guidance_cut and dividend_cut')
+    quarters: typing.Optional[int] = Field(default=None, description='fundamental rules only: how many quarters in a row, 1 to 4')
+
 class CryptoColumns(BaseModel):
     date: typing.Optional[int] = None
     type: typing.Optional[int] = None
@@ -137,6 +144,11 @@ class CryptoMap(BaseModel):
     decimal: typing.Optional[str] = Field(default=None, description='the decimal separator, \'.\' or \',\'')
     thousands: typing.Optional[str] = Field(default=None, description='the thousands separator, or an empty string')
     type_map: typing.Optional[typing.Dict[str, str]] = Field(default=None, description='the exact text in the type column -> buy, sell, trade, convert, reward, receive, send, move, fee or ignore')
+
+class ExitEventVerdict(BaseModel):
+    met: typing.Optional[bool] = Field(default=None, description='true only when a passage plainly says the event happened')
+    item: typing.Optional[int] = Field(default=None, description='the number of the passage that says so')
+    quote: typing.Optional[str] = Field(default=None, description='the words of that passage that say so, copied exactly')
 
 class GoalJudged(BaseModel):
     n: typing.Optional[int] = Field(default=None, description='the goal\'s number')
@@ -216,7 +228,7 @@ class StatementRow(BaseModel):
 
 
 # #########################################################################
-# Model rebuilds (28)
+# Model rebuilds (30)
 # #########################################################################
 # Resolve string forward references now that every model above is defined so
 # class declaration order never breaks Pydantic construction (issue #793).
@@ -232,8 +244,10 @@ CardLine.model_rebuild()
 CardReply.model_rebuild()
 ColumnMap.model_rebuild()
 Columns.model_rebuild()
+CriterionRule.model_rebuild()
 CryptoColumns.model_rebuild()
 CryptoMap.model_rebuild()
+ExitEventVerdict.model_rebuild()
 GoalJudged.model_rebuild()
 LessonOp.model_rebuild()
 LessonOps.model_rebuild()

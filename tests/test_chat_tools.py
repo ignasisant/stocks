@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 from stocks.chat import tools
@@ -467,3 +468,118 @@ def test_book_snapshot_survives_a_book_with_no_price_at_all(tmp_path):
     watchlist.write_text("watchlist: []\n")
     assert "- CAT: 3 sh" in engine.book_snapshot(tbl, watchlist)
 
+
+
+# ----------------------------------------------------------------- exit rules
+
+
+def _criteria_action() -> Action:
+    return parse_action(json.dumps({
+        "action": "set_criteria", "ticker": "AMD",
+        "criteria": [{"rule": "below", "level": "95,5"},
+                     {"rule": "drawdown_cost", "level": 30},
+                     {"rule": "moon", "level": 1}],
+        "thesis": "  Data-centre   share gains ",
+    }))
+
+
+def test_exit_rules_parse_to_known_measures_with_their_thesis():
+    act = _criteria_action()
+    assert act.kind == "set_criteria" and act.ticker == "AMD"
+    assert act.args == {"criteria": [{"rule": "below", "level": 95.5},
+                                     {"rule": "drawdown_cost", "level": 30.0}],
+                        "thesis": "Data-centre share gains"}
+    # A thesis with no rule to check is a note, not an exit rule.
+    assert parse_action(json.dumps({"action": "set_criteria", "ticker": "AMD",
+                                    "thesis": "long term"})) is None
+
+
+def test_exit_rules_are_written_to_the_journal_never_the_watchlist(tmp_path):
+    from stocks.chat import journal
+
+    act = _criteria_action()
+    watchlist = tmp_path / "watchlist.yaml"
+    with pytest.raises(ValueError):
+        execute(act, watchlist)
+    execute(act, watchlist, journal_path=tmp_path / "journal.json")
+    assert not watchlist.exists()
+    rules = journal.criteria(journal.load(tmp_path / "journal.json"))
+    assert {(r.ticker, r.snapshot["rule"]) for r in rules} == {
+        ("AMD", "below"), ("AMD", "drawdown_cost")}
+    assert all(r.evidence == "Data-centre share gains" for r in rules)
+
+
+def test_the_exit_rule_card_round_trips_its_fields():
+    act = _criteria_action()
+    form = tools.form_of(act)
+    assert form["crit_below"] == "95.5" and form["crit_drawdown_cost"] == "30"
+    assert form["crit_weight_above"] == "" and form["thesis"] == "Data-centre share gains"
+    edited = {**form, "crit_below": "", "crit_weight_above": "20"}
+    revised = tools.revise(act, "AMD", tools.args_from_form("set_criteria", edited))
+    assert revised.args == {
+        "criteria": [{"rule": "drawdown_cost", "level": 30.0},
+                     {"rule": "weight_above", "level": 20.0}],
+        "thesis": "Data-centre share gains"}
+    # Every box emptied leaves nothing to check: not a usable edit.
+    blank = {k: "" for k in form if k.startswith("crit_")}
+    assert tools.revise(act, "AMD", tools.args_from_form(
+        "set_criteria", {**form, **blank})) is None
+
+
+def test_the_exit_rule_confirmation_names_each_rule():
+    from stocks.web.i18n import translate
+
+    act = _criteria_action()
+    for lang in ("en", "es"):
+        def tr(key, lang=lang, **kw):
+            return translate(key, lang, **kw)
+
+        line = tools.reply(act, tr)
+        assert "AMD" in line and "95.5" in line and "30" in line and "{" not in line
+        asked = tools.proposal(act, tr)
+        assert "AMD" in asked and "chat." not in asked
+
+
+def _slow_criteria_action() -> Action:
+    return parse_action(json.dumps({
+        "action": "set_criteria", "ticker": "AMD",
+        "criteria": [{"rule": "operating_margin_below", "level": 15, "quarters": 2},
+                     {"rule": "ceo_change"}],
+    }))
+
+
+def test_a_card_shows_only_the_slow_rules_its_proposal_uses():
+    assert "crit_ceo_change" not in tools.form_names(_criteria_action())
+    assert "crit_quarters" not in tools.form_names(_criteria_action())
+    names = tools.form_names(_slow_criteria_action())
+    assert {"crit_operating_margin_below", "crit_quarters",
+            "crit_ceo_change"} <= set(names)
+    assert "crit_gross_margin_below" not in names and "crit_dividend_cut" not in names
+    assert "crit_below" in names  # the price rules are always offered
+
+
+def test_slow_rules_round_trip_the_card_with_their_run_and_boxes():
+    act = _slow_criteria_action()
+    form = tools.form_of(act)
+    assert form["crit_operating_margin_below"] == "15" and form["crit_quarters"] == "2"
+    assert form["crit_ceo_change"] is True
+    edited = {**form, "crit_quarters": "3", "crit_ceo_change": False}
+    revised = tools.revise(act, "AMD", tools.args_from_form("set_criteria", edited))
+    assert revised.args["criteria"] == [
+        {"rule": "operating_margin_below", "level": 15.0, "quarters": 3}]
+    # The A2UI renderer posts a ticked box back as a string.
+    ticked = {**form, "crit_ceo_change": "true"}
+    back = tools.args_from_form("set_criteria", ticked)
+    assert {"rule": "ceo_change"} in back["criteria"]
+
+
+def test_slow_rules_read_in_the_confirmation():
+    from stocks.web.i18n import translate
+
+    act = _slow_criteria_action()
+    for lang in ("en", "es"):
+        def tr(key, lang=lang, **kw):
+            return translate(key, lang, **kw)
+
+        line = tools.reply(act, tr)
+        assert "15" in line and "CEO" in line and "{" not in line and "chat." not in line

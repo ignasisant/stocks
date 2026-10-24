@@ -133,6 +133,11 @@ FX_SHARE_PCT = 25.0
 # alert is the user's own trigger going off today; a concentration drift has
 # been true for weeks and will still be true tomorrow.
 ALERT_HIT = "alert_hit"
+# The reader's own exit rules (chat/journal.py criteria): one met today is
+# the most urgent line the card can carry — they wrote down, in a calm
+# moment, that this is when they would act.
+CRITERION_HIT = "criterion_hit"
+CRITERION_NEAR = "criterion_near"
 HARVEST = "harvest"
 EARNINGS = "earnings"
 EARNINGS_RESULT = "earnings_result"
@@ -159,12 +164,14 @@ INSIDER = "insider"
 RESULTS = "results"
 
 _URGENCY = {
+    CRITERION_HIT: 92,
     ALERT_HIT: 90,
     HARVEST: 75,
     EARNINGS_RESULT: 72,
     EARNINGS: 70,
     MACRO_RESULT: 66,
     TAX_DEADLINE: 62,
+    CRITERION_NEAR: 61,
     ALERT_NEAR: 60,
     MARKET: 58,
     MACRO_EVENT: 57,
@@ -188,6 +195,8 @@ WATCHED_DISCOUNT = 22
 # five losing positions and a booked gain produced five harvest candidates,
 # which outranked everything else and made every card the same card.
 _CAP = {
+    CRITERION_HIT: 3,
+    CRITERION_NEAR: 2,
     ALERT_HIT: 3,
     ALERT_NEAR: 2,
     EARNINGS: 2,
@@ -202,6 +211,8 @@ _CAP_DEFAULT = 1
 # bill — a card spending all its lines on either is the monotony `_CAP` exists
 # to prevent, one level up.
 _FAMILY = {
+    CRITERION_HIT: "criterion",
+    CRITERION_NEAR: "criterion",
     ALERT_HIT: "alert",
     ALERT_NEAR: "alert",
     EARNINGS: "earnings",
@@ -215,7 +226,7 @@ _FAMILY = {
     TAX_BRACKET: "tax",
     REPURCHASE_CLEAR: "tax",
 }
-_FAMILY_CAP = {"alert": 3, "earnings": 3, "macro": 2, "tax": 2}
+_FAMILY_CAP = {"criterion": 3, "alert": 3, "earnings": 3, "macro": 2, "tax": 2}
 
 # The kinds a reader would see word for word again tomorrow, and so the ones
 # `decay()` sinks. Left out on purpose: events (an alert crossing, a print, a
@@ -224,7 +235,7 @@ _FAMILY_CAP = {"alert": 3, "earnings": 3, "macro": 2, "tax": 2}
 _STANDING = frozenset(
     {
         HARVEST, DRAWDOWN, CONCENTRATION, LOW_52W, SECTOR_TILT, FX, ALERT_NEAR,
-        TAX_BRACKET,
+        TAX_BRACKET, CRITERION_NEAR,
     }
 )
 # Urgency lost per consecutive day already offered, and the floor it stops at.
@@ -255,6 +266,9 @@ class _Rel:
 # new phase, a new date, a different sector. An event's phase ("week", "soon",
 # "now") is how a print is allowed back onto the card as it gets closer.
 _MATERIAL: dict[str, dict] = {
+    # A rule fires once, on its hit day; a new level is a new rule.
+    CRITERION_HIT: {"rule": None, "level": None, "hit_day": None},
+    CRITERION_NEAR: {"rule": None, "level": None, "gap_pct": 1.5},
     ALERT_HIT: {"rule": None, "level": None},
     ALERT_NEAR: {"rule": None, "level": None, "gap_pct": 1.5},
     HARVEST: {"offset": _Rel(0.25)},
@@ -282,6 +296,8 @@ _MATERIAL: dict[str, dict] = {
 # Days after which an unchanged trigger may come back as a reminder. None is
 # never: an event is said once per phase, and its next phase is its reminder.
 _COOLDOWN: dict[str, int | None] = {
+    CRITERION_HIT: None,
+    CRITERION_NEAR: 7,
     ALERT_HIT: None,
     ALERT_NEAR: 7,
     HARVEST: 7,
@@ -336,6 +352,9 @@ class Signal:
 
 def key_of(kind: str, data: dict) -> str:
     """`Signal.key` from a kind and its dict — what a stored action carries."""
+    if kind in (CRITERION_HIT, CRITERION_NEAR):
+        # A ticker can carry several rules; each is its own trigger.
+        return f"{kind}:{data.get('ticker') or ''}:{data.get('rule') or ''}"
     subject = (
         data.get("ticker")
         or data.get("sector")
@@ -409,6 +428,50 @@ def _alert_signals(holdings, closes: dict, held: set[str]) -> list[Signal]:
                     out.append(Signal(ALERT_HIT, h.ticker, _URGENCY[ALERT_HIT], data))
             elif abs(gap_pct) <= NEAR_PCT:
                 out.append(Signal(ALERT_NEAR, h.ticker, _URGENCY[ALERT_NEAR], data))
+    return out
+
+
+def _criterion_signals(criteria, held: set[str], today: date) -> list[Signal]:
+    """The reader's exit rules, already measured (`journal.measured`, after
+    `journal.mark_hit`): one hit in the last few days, and one armed rule
+    within CRITERION_NEAR of its level.
+
+    A hit rule stays hit in the journal until the reader retires it; the card
+    says so once (`_MATERIAL` keys it on the hit day, with no cooldown), and
+    only while the hit is fresh, so a rule that fired while the card was not
+    written still reaches the next one."""
+    from datetime import timedelta
+
+    from stocks.chat import journal
+
+    fresh = (today - timedelta(days=journal.CRITERION_FRESH_DAYS)).isoformat()
+    out: list[Signal] = []
+    for row in criteria or ():
+        if not isinstance(row, dict) or not row.get("ticker") or not row.get("rule"):
+            continue
+        data = {
+            "id": str(row.get("id") or ""),
+            "rule": str(row["rule"]),
+            "level": _round(row.get("level")),
+            "value": _round(row.get("value")),
+            "gap_pct": _round(abs(finite(row.get("gap_pct")) or 0.0)),
+            "held": str(row["ticker"]) in held,
+            "hit_day": str(row.get("hit_day") or ""),
+            # A fundamental rule's run, an event rule's passage.
+            **({"quarters": int(row["quarters"])}
+               if int(row.get("quarters") or 1) > 1 else {}),
+            **{k: str(row[k])[:200] for k in ("quote", "source") if row.get(k)},
+        }
+        if row.get("state") == "hit":
+            if data["hit_day"] and data["hit_day"] >= fresh:
+                out.append(Signal(CRITERION_HIT, str(row["ticker"]),
+                                  _URGENCY[CRITERION_HIT], data))
+            continue
+        gap = finite(row.get("gap_pct"))
+        if row.get("state") == "open" and gap is not None \
+                and 0 < gap <= journal.CRITERION_NEAR:
+            out.append(Signal(CRITERION_NEAR, str(row["ticker"]),
+                              _URGENCY[CRITERION_NEAR], data))
     return out
 
 
@@ -1229,6 +1292,7 @@ def candidates(
     today: date | None = None,
     limit: int = 8,
     year_net: float | None = None,
+    criteria=(),
 ) -> list[Signal]:
     """Every action the book currently justifies and the card has not already
     said, most urgent first.
@@ -1244,11 +1308,13 @@ def candidates(
     `market` and `macro` are the lists `market_candidates()` and
     `macro_candidates()` built, passed in rather than computed here because
     they are the parts with a download behind them. `results` is the
-    calendar's past prints (EarningsResult), newest first.
+    calendar's past prints (EarningsResult), newest first. `criteria` is the
+    reader's exit rules as `journal.measured` read them this morning.
     """
     day = today or date.today()
     held = set(tbl.index.astype(str)) if tbl is not None and not tbl.empty else set()
     out = [
+        *_criterion_signals(criteria, held, day),
         *_alert_signals(holdings, closes or {}, held),
         *_harvest_signals(tbl, realized, jurisdiction, currency, today, year_net),
         *_earnings_signals(earnings, held),

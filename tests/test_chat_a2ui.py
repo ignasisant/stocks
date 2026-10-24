@@ -109,3 +109,20 @@ def test_a_trade_form_presets_what_was_said(said):
     # Unsaid, the side starts blank: never a sale booked as a buy by default.
     assert side["options"][0]["value"] == ("buy" if said else "")
     assert data["position"] == {"lots": []}
+
+
+def test_an_exit_rule_form_ticks_its_events_and_hides_the_rules_it_does_not_use():
+    act = tools.Action("set_criteria", "AMD", {"criteria": [
+        {"rule": "operating_margin_below", "level": 15.0, "quarters": 2},
+        {"rule": "ceo_change"}]})
+    offer = {"id": "act_1", "kind": act.kind, "ticker": act.ticker, "args": act.args}
+    messages = a2ui.proposal_form(offer, _say)
+    a2ui.check(messages)
+    comps = {c["id"]: c["component"]
+             for c in messages[1]["updateComponents"]["components"]}
+    assert comps["f_crit_ceo_change"] == "CheckBox"
+    assert comps["f_crit_quarters"] == comps["f_crit_below"] == "TextField"
+    assert "f_crit_dividend_cut" not in comps and "f_crit_gross_margin_below" not in comps
+    form = messages[-1]["updateDataModel"]["value"]["form"]
+    assert form["crit_ceo_change"] is True
+    assert tools.revise(act, "AMD", tools.args_from_form(act.kind, form)) == act

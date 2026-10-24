@@ -1757,7 +1757,7 @@ class ProposalError(Exception):
 def _apply(offer: dict, approve: bool, *, watchlist: Path, lang: str,
            ticker: str | None = None, args: dict | None = None,
            form: dict | None = None, db: Path | None = None,
-           source: str = "chat") -> str:
+           source: str = "chat", journal_path: Path | None = None) -> str:
     """Run (or drop) one proposal in place; return the line that says so.
 
     Mutates `offer` — its state, and on approval the symbol and fields the
@@ -1802,7 +1802,7 @@ def _apply(offer: dict, approve: bool, *, watchlist: Path, lang: str,
     if act is None:
         raise ProposalError("chat.action_invalid")
     try:
-        tools.execute(act, watchlist)
+        tools.execute(act, watchlist, journal_path=journal_path)
     except Exception as exc:
         obs.warn("chat.engine.action_failed", action=act.kind,
                  error_type=type(exc).__name__, error=str(exc)[:300])
@@ -1888,7 +1888,8 @@ def settle_proposal(*, chat_path: Path, watchlist: Path, proposal_id: str,
         raise ProposalError("chat.action_gone")
     asked = str(entry.get("content") or "")
     note = _apply(offer, approve, watchlist=watchlist, lang=lang,
-                  ticker=ticker, args=args, form=form, db=db)
+                  ticker=ticker, args=args, form=form, db=db,
+                  journal_path=journal.path_for(chat_path))
     _journal(offer, chat_path, asked)
     # A card under an answer (`_proposed`): the answer stays, and the outcome
     # is its last line. Every other card was only the question, so its words
@@ -1917,7 +1918,7 @@ def _typed_verdict(history: list[dict], index: int, approve: bool, *,
     offer = history[index]["proposal"]
     try:
         note = _apply(offer, approve, watchlist=watchlist, lang=lang, db=db,
-                      source=source)
+                      source=source, journal_path=journal.path_for(chat_path))
     except ProposalError as exc:
         return Reply(error=exc.code)
     _journal(offer, chat_path, str(history[index].get("content") or ""))
@@ -2161,6 +2162,35 @@ def card_block(chat_path: Path, today: date | None = None) -> str:
         f"for {card.day}{session}. When they ask about \"the card\" or "
         f"today's action, this is it; for any current figure, the context "
         f"below wins.\n{text}\n\n"
+    )
+
+
+_CRITERIA_LINES = 30  # live rules in the prompt, newest first
+
+
+def criteria_block(chat_path: Path) -> str:
+    """The exit rules the user saved per holding (chat/journal.py), for the
+    chat's prompt — "" when there are none.
+
+    Their own words, kept so an answer about selling or holding one of those
+    tickers starts from the line they drew, not from a fresh opinion. Every
+    live rule rides along, not only the ones the message names: there are a
+    handful, they change when the user writes one, and a block that did not
+    vary per message keeps the cached prompt prefix intact."""
+    rows = journal.criteria(journal.load(journal.path_for(chat_path)))
+    live = rows[::-1][:_CRITERIA_LINES]
+    if not live:
+        return ""
+    lines = "\n".join(journal.line_for(e) for e in live)
+    return (
+        "The user's own exit rules, saved per holding with their thesis. "
+        "When an answer is about selling, trimming or holding one of these "
+        "tickers, start from the rule: say whether it is met and hold them "
+        "to it, or ask what changed. A hit rule is one already met: by the "
+        "price, by the latest quarter's figures, or by an event the app read "
+        "in a filing or a headline (quoted on its line). Offer set_criteria "
+        "to change one only when they ask.\n"
+        f"{lines}\n\n"
     )
 
 
@@ -2818,7 +2848,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
                                  proposal=dict(offer), turn_id=tid))
         if act is not None:
             try:
-                tools.execute(act, watchlist)
+                tools.execute(act, watchlist,
+                              journal_path=journal.path_for(chat_path))
             except Exception as exc:
                 obs.warn("chat.engine.action_failed", action=act.kind,
                          error_type=type(exc).__name__, error=str(exc)[:300])
@@ -2957,7 +2988,8 @@ def prepare(*, prefs: dict, prefs_path: Path, chat_path: Path, watchlist: Path,
         context + view + (charts.PROMPT if draws else "") + fence,
         skills,
         lang,
-        memories=memory_block(prefs, chat_path) + card_block(chat_path),
+        memories=memory_block(prefs, chat_path) + card_block(chat_path)
+        + criteria_block(chat_path),
         # What they hold and how it is taxed: its own cache part, since it
         # changes when prices do and the view changes when the reader moves.
         book=portfolio_context(watchlist, db, reporting_currency(prefs))

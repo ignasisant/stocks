@@ -100,3 +100,17 @@ function WriteMarketDay(instructions: string, input: string) -> MarketReply {
   client Wire
   prompt #"{{ Frame(instructions, input) }}"#
 }
+
+// Whether one of the reader's event exit rules was met (chat/journal.py
+// check_slow): asked only about passages a keyword sieve let through, and
+// held in Python to a passage that exists and a quote it holds.
+class ExitEventVerdict {
+  met bool? @description("true only when a passage plainly says the event happened")
+  item int? @description("the number of the passage that says so")
+  quote string? @description("the words of that passage that say so, copied exactly")
+}
+
+function JudgeExitEvent(instructions: string, input: string) -> ExitEventVerdict {
+  client Wire
+  prompt #"{{ Frame(instructions, input) }}"#
+}

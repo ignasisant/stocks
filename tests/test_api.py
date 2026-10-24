@@ -816,6 +816,10 @@ WRITES = {
     # what could not be allowed here: the global one is never a grant, and if
     # it could revoke grants it could cut off any account's Claude.
     ("/v1/connections/{grant}", "delete"),
+    # Retiring one of the reader's exit rules in the decision journal: the
+    # only journal entries that are theirs. Written by the chat (set_criteria,
+    # after a confirm), taken down from the ticker page's journal panel.
+    ("/v1/journal/criteria/{entry_id}", "delete"),
 }
 
 

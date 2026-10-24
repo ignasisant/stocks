@@ -57,6 +57,7 @@ from stocks.chat import (
     daily_book,
     daily_routines,
     engine,
+    exit_judge,
     journal,
     routine_plan,
     signals,
@@ -428,6 +429,10 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
     except Exception:  # noqa: BLE001
         pass
 
+    # The reader's exit rules, measured on the same closes and positions, and
+    # any met today marked hit before the card ranks them.
+    rules = journal.safely(_criteria, paths.journal, closes, tbl, day) or []
+
     return daily.build_facts(
         tbl,
         hist,
@@ -455,8 +460,16 @@ def build_facts(paths, prefs: dict, day: date, stored) -> dict | None:
             currency=ccy,
             today=day,
             year_net=_tax_year_net(paths, prefs, ccy, day),
+            criteria=rules,
         ),
     )
+
+
+def _criteria(path, closes: dict, tbl, day: date) -> list[dict]:
+    """`journal.measured` for the card, with today's hits written back. A
+    guest (whose journal `safely` skips) has no rules to read either."""
+    rows = journal.measured(journal.load(path), closes, tbl)
+    return journal.mark_hit(path, rows, day)
 
 
 def _money(db: str, mtime: float, ccy: str) -> pd.DataFrame | None:
@@ -576,6 +589,7 @@ def _sources(paths, prefs: dict, facts: dict) -> daily_routines.Sources:
         followed=_followed(paths),
         entries=tuple(home.holdings(paths)),
         notes=notes,
+        criteria=tuple(journal.safely(_live_criteria, paths.journal) or ()),
     )
 
 
@@ -587,6 +601,81 @@ def _closes_on(ticker: str, days: list[date]) -> list[float | None]:
     series = loaders.window_closes(ticker, ",".join(d.isoformat() for d in days))
     values = [float(v) for v in series.tolist()] if len(series) == len(days) else []
     return [None if math.isnan(v) else v for v in values] or [None] * len(days)
+
+
+def _live_criteria(path) -> list:
+    return journal.criteria(journal.load(path))
+
+
+# How long the card's job may spend on the slow exit rules before it writes
+# the card anyway: what is left is checked on the next one.
+SLOW_RULES_BUDGET_S = 25.0
+# The 8-K items whose own document an event rule reads: an officer leaving,
+# and the results release (where a guidance or dividend cut is announced).
+_RULE_ITEMS = ("5.02", "2.02", "7.01", "8.01")
+
+
+def _passages(ticker: str, since: date) -> list[dict]:
+    """What an event rule is judged on: `ticker`'s 8-Ks since `since` that
+    report an officer change or results (the filing's own words, or the
+    release's), and its last days' headlines. A source that cannot be read
+    is left out; both failing raises, so the rule waits for the next check."""
+    from stocks.data import edgar
+
+    out: list[dict] = []
+    failed = 0
+    try:
+        reports = loaders.current_reports(ticker) or []
+    except Exception:  # noqa: BLE001 — the headlines may still say it
+        reports, failed = [], failed + 1
+    for r in reports:
+        if r.filed < since or not set(r.items) & set(_RULE_ITEMS):
+            continue
+        text = (edgar.earnings_release(ticker, r.filed) if "2.02" in r.items
+                else None) or edgar.current_report_text(r.url)
+        if text:
+            items = ", ".join(r.topics)
+            out.append({"source": f"{r.form} ({items})", "day": r.filed.isoformat(),
+                        "text": text})
+    try:
+        news = loaders.headlines(ticker) or []
+    except Exception:  # noqa: BLE001
+        news, failed = [], failed + 1
+    if failed == 2:
+        raise RuntimeError("no source could be read")
+    out.extend({"source": h.publisher or "news", "day": h.published.isoformat(),
+                "text": h.title} for h in news if h.published >= since)
+    return out
+
+
+def _held(paths) -> set[str]:
+    """The account's open positions' symbols, re-read on the job's thread."""
+    try:
+        db = str(paths.db)
+        _, positions, _ = loaders.ledger_state(
+            db, loaders.db_mtime(db), reporting_currency(paths))
+        return {p.ticker for p in positions}
+    except Exception:  # noqa: BLE001 — "watched" wording, not a lost line
+        return set()
+
+
+def with_fired(actions: list[dict], fired: list[dict], held: set[str],
+               day: date) -> list[dict]:
+    """The card's candidate actions with the exit rules the job found met
+    today put first, the family's cap kept (`signals._FAMILY_CAP`): the
+    reader's own rule outranks anything the app computed."""
+    new = [s.to_dict() for s in signals._criterion_signals(fired, held, day)]
+    keys = {a["key"] for a in new}
+    rest = [a for a in actions if a.get("key") not in keys]
+    cap = signals._FAMILY_CAP["criterion"]
+    out, crit = [], 0
+    for a in [*new, *rest]:
+        if a.get("kind") in (signals.CRITERION_HIT, signals.CRITERION_NEAR):
+            crit += 1
+            if crit > cap:
+                continue
+        out.append(a)
+    return out
 
 
 def _fund(ticker: str) -> bool:
@@ -614,10 +703,12 @@ def _review_rows(paths) -> list:
 
 
 def _alerted(facts: dict) -> list[str]:
-    """Names whose alert fired or nearly fired today — their news comes first."""
+    """Names whose alert or exit rule fired or nearly fired today — their
+    news comes first."""
     return [str(a["ticker"]) for a in facts.get("actions") or []
             if isinstance(a, dict) and a.get("ticker")
-            and a.get("kind") in (signals.ALERT_HIT, signals.ALERT_NEAR)]
+            and a.get("kind") in (signals.CRITERION_HIT, signals.CRITERION_NEAR,
+                                  signals.ALERT_HIT, signals.ALERT_NEAR)]
 
 
 def gather_today(paths, prefs: dict, facts: dict, lang: str, day: date, stored,
@@ -752,6 +843,15 @@ def _store(paths, job: Job, prefs: dict, facts: dict, stored, spent: bool,
                    judged=journal.judged_in_review(shown_rows))
 
 
+def spend_for_judge(prefs: dict, spend) -> bool:
+    """Charge one exit-rule judgement to the free chain through `spend`, but
+    only out of what the card cannot use: the rules are checked before the
+    card is written, and a reader on the allowance keeps its FREE_UNITS."""
+    if engine.free_left(prefs) <= daily.FREE_UNITS:
+        return False
+    return spend(prefs)
+
+
 def start(
     paths,
     prefs: dict,
@@ -835,10 +935,27 @@ def start(
             # Stamped all the same, so the card is not rewritten for them.
             facts["today"] = {"shape": today_sections.UNREAD, "sections": []}
 
+    def _check_rules() -> None:
+        """The reader's fundamental and event exit rules, checked on the
+        job's thread (a statement, the filings, the news and maybe a model
+        call), and any met today put on this very card."""
+        fired = journal.safely(
+            journal.check_slow, paths.journal, day,
+            quarters_of=lambda t: _quarters(t)[0],
+            passages_of=_passages,
+            judge=exit_judge.make_judge(
+                prefs, spend_free=lambda p: spend_for_judge(p, spend)),
+            budget_s=SLOW_RULES_BUDGET_S,
+        ) or []
+        if fired:
+            facts["actions"] = with_fired(facts.get("actions") or [], fired,
+                                          _held(paths), day)
+
     def work() -> None:
         try:
             _gather_brief()
             _gather_today()
+            _check_rules()
             # What the card proposed about today's names before, and what
             # came of it: a move the reader declined or let lapse is not
             # worth the same words again. Settled off the ledger first, so

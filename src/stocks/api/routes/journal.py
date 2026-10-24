@@ -3,30 +3,32 @@
 What the app proposed and showed — card lines, Review verdicts, chat offers —
 with the figures each was made on and what became of it (`chat/journal.py`).
 The Perfil "Diario" tab lists it whole with filters; the ticker page's chip
-asks for one ticker's entries. Read-only: the journal is written by the
-surfaces that showed the proposals, never edited by hand — a record the
-reader could rewrite would stop being a record of what the app said.
+asks for one ticker's entries. The proposals are read-only: they are written
+by the surfaces that showed them, never edited by hand — a record the reader
+could rewrite would stop being a record of what the app said. The one write
+is retiring an exit rule, which is the reader's own (written through chat).
 
-`Account`, not `Writer`: a guest reads the shared demo book's journal, which
-is always empty because nothing is recorded for the guest directory.
+`Account`, not `Writer`, for the reads: a guest reads the shared demo book's
+journal, which is always empty because nothing is recorded for the guest
+directory.
 """
 
 from __future__ import annotations
 
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, HTTPException, Path, Query, Response, status
 from pydantic import BaseModel
 
-from stocks.api.deps import Account
+from stocks.api.deps import Account, Writer
 from stocks.chat import journal
 
 router = APIRouter(prefix="/journal", tags=["journal"])
 
 Kind = Literal["proposal", "criterion", "event"]
 Source = Literal["daily", "review", "chat"]
-State = Literal["open", "followed", "declined", "lapsed"]
+State = Literal["open", "followed", "declined", "lapsed", "hit", "retired"]
 
 
 class JournalEntry(BaseModel):
@@ -134,3 +136,17 @@ def export(paths: Account) -> Response:
         headers={"Content-Disposition":
                  f'attachment; filename="decisions-{today:%Y-%m-%d}.md"'},
     )
+
+
+EntryId = Annotated[str, Path(min_length=1, max_length=32,
+                              pattern=r"^[A-Za-z0-9_-]+$")]
+
+
+@router.delete("/criteria/{entry_id}", status_code=status.HTTP_204_NO_CONTENT,
+               summary="Retire one exit rule")
+def retire(entry_id: EntryId, paths: Writer) -> None:
+    """Take down one of the reader's exit rules. It stays in the journal as
+    retired — the rule was theirs and they may drop it, but the record that
+    it existed is kept. 404 on an id that is not a live rule."""
+    if journal.retire(paths.journal, entry_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such exit rule")

@@ -239,7 +239,8 @@ def test_the_route_lists_newest_first_with_state_counts(book):
                       headers=AUTH).json()
     assert [(e["action"], e["state"]) for e in body["entries"]] == [
         ("sell", "open"), ("trim", "lapsed")]
-    assert body["states"] == {"open": 1, "followed": 0, "declined": 0, "lapsed": 1}
+    assert body["states"] == {"open": 1, "followed": 0, "declined": 0, "lapsed": 1,
+                              "hit": 0, "retired": 0}
     only = client.get("/v1/journal", params={"account": EMAIL, "state": "open"},
                       headers=AUTH).json()
     assert only["total"] == 2
@@ -551,3 +552,336 @@ def test_the_card_job_reads_closes_off_the_window_download(monkeypatch):
     assert asked == [("AMD", "2026-10-01,2026-10-31")]
     monkeypatch.setattr(loaders, "window_closes", lambda t, d: pd.Series(dtype=float))
     assert briefing._closes_on("AMD", [DAY]) == [None]
+
+
+# ----------------------------------------------------------------- criteria
+
+
+def test_rules_are_cleaned_before_they_are_kept():
+    assert journal.clean_rules([
+        {"rule": "below", "level": "95,5"},
+        {"rule": "drawdown_cost", "level": "30%"},
+        {"rule": "drawdown_cost", "level": 25},   # the last one per rule wins
+        {"rule": "weight_above", "level": 120},   # no weight past 100 %
+        {"rule": "below", "level": -3},           # overwritten by nothing: dropped
+        {"rule": "moon", "level": 5},
+        "not a rule",
+    ]) == [{"rule": "below", "level": 95.5}, {"rule": "drawdown_cost", "level": 25.0}]
+
+
+def test_a_new_rule_retires_the_old_one_and_links_both(path):
+    [old] = journal.add_criteria(path, "nvda", [{"rule": "below", "level": 100}],
+                                 DAY, thesis="AI capex leader")
+    [new] = journal.add_criteria(path, "NVDA", [{"rule": "below", "level": 90}],
+                                 DAY + timedelta(days=1))
+    saved = {e.id: e for e in journal.load(path)}
+    assert saved[old.id].state == "retired" and new.id in saved[old.id].links
+    assert saved[new.id].state == "open" and old.id in saved[new.id].links
+    assert old.evidence == "AI capex leader" and old.ticker == "NVDA"
+    assert [e.id for e in journal.criteria(journal.load(path))] == [new.id]
+    assert journal.add_criteria(path, "NVDA", [{"rule": "moon", "level": 1}], DAY) == []
+
+
+def test_criteria_never_lapse_and_survive_the_proposal_bookkeeping(path):
+    [rule] = journal.add_criteria(path, "AMD", [{"rule": "drawdown_cost", "level": 30}],
+                                  DAY)
+    # A Review run that no longer names AMD lapses its proposals, never a rule.
+    journal.record(path, [_shown(subject="review:SNAP", ticker="SNAP")],
+                   DAY + timedelta(days=60))
+    assert {e.id: e.state for e in journal.load(path)}[rule.id] == "open"
+
+
+def test_each_rule_reads_its_own_figure():
+    import pandas as pd
+
+    tbl = pd.DataFrame({"pnl_pct": [-0.32], "weight": [0.21]}, index=["AMD"])
+    row = journal._row(tbl, "AMD")
+    prices = [100.0, 120.0, 90.0]
+    assert journal.measure_rule("below", 95, prices, row) == (90.0, -5.26, True)
+    assert journal.measure_rule("drawdown_high", 20, prices, row) == (-25.0, -5.0, True)
+    assert journal.measure_rule("drawdown_cost", 40, prices, row) == (-32.0, 8.0, False)
+    assert journal.measure_rule("weight_above", 20, prices, row) == (21.0, -1.0, True)
+    # A figure missing today is not judged at all.
+    assert journal.measure_rule("drawdown_cost", 40, prices, None) is None
+    assert journal.measure_rule("below", 95, [], row) is None
+
+
+def test_a_met_rule_is_marked_hit_once_and_keeps_its_first_day(path):
+    journal.add_criteria(path, "AMD", [{"rule": "below", "level": 95}], DAY)
+    closes = {"AMD": [100.0, 90.0]}
+    rows = journal.mark_hit(path, journal.measured(journal.load(path), closes, None),
+                            DAY + timedelta(days=1))
+    assert rows[0]["state"] == "hit" and rows[0]["hit_day"] == "2026-10-02"
+    later = journal.mark_hit(path, journal.measured(journal.load(path), closes, None),
+                             DAY + timedelta(days=5))
+    assert later[0]["hit_day"] == "2026-10-02"
+    [entry] = journal.load(path)
+    assert entry.state == "hit" and entry.snapshot["hit_value"] == 90.0
+
+
+def test_retire_takes_down_only_a_live_rule(path):
+    [rule] = journal.add_criteria(path, "AMD", [{"rule": "below", "level": 95}], DAY)
+    journal.record(path, [_shown()], DAY)
+    proposal = next(e for e in journal.load(path) if e.type == "proposal")
+    assert journal.retire(path, proposal.id) is None
+    assert journal.retire(path, rule.id).state == "retired"
+    assert journal.retire(path, rule.id) is None
+    assert journal.criteria(journal.load(path)) == []
+
+
+def test_a_rule_reads_as_a_journal_line(path):
+    [rule] = journal.add_criteria(path, "AMD", [{"rule": "drawdown_high", "level": 25}],
+                                  DAY, thesis="Data-centre share gains")
+    line = journal.line_for(rule)
+    assert "exit rule AMD" in line and "25%" in line and "Data-centre" in line
+
+
+def test_the_route_retires_a_rule_for_a_writer(book, sign_in):
+    [rule] = journal.add_criteria(book.journal, "AMD", [{"rule": "below", "level": 95}],
+                                  DAY)
+    url = f"/v1/journal/criteria/{rule.id}"
+    # A token reads the journal but never writes it.
+    refused = TestClient(fastapi_app).delete(url, params={"account": EMAIL}, headers=AUTH)
+    assert refused.status_code == 403
+    session = sign_in(TestClient(fastapi_app), EMAIL)
+    assert session.delete(url).status_code == 204
+    assert session.delete(url).status_code == 404
+    assert session.delete("/v1/journal/criteria/not a path").status_code in (404, 422)
+    body = TestClient(fastapi_app).get(
+        "/v1/journal", params={"account": EMAIL, "state": "retired"}, headers=AUTH).json()
+    assert [e["id"] for e in body["entries"]] == [rule.id]
+
+
+def test_the_chat_prompt_carries_the_live_rules(tmp_path):
+    from stocks.chat import engine
+
+    chat = tmp_path / "chat.json"
+    assert engine.criteria_block(chat) == ""
+    journal.add_criteria(journal.path_for(chat), "AMD",
+                         [{"rule": "below", "level": 95}], DAY, thesis="Share gains")
+    block = engine.criteria_block(chat)
+    assert "exit rules" in block and "AMD" in block and "Share gains" in block
+
+
+# ---------------------------------------------------------------- slow rules
+
+
+def _quarters(*rows):
+    """Quarters newest first from (end, revenue, gross_profit, operating_income)."""
+    from stocks.data.earnings import Quarter
+
+    return [Quarter(end=date.fromisoformat(end), revenue=rev, gross_profit=gp,
+                    operating_income=op) for end, rev, gp, op in rows]
+
+
+BOOK = _quarters(
+    ("2026-09-30", 100.0, 38.0, 12.0),
+    ("2026-06-30", 100.0, 39.0, 14.0),
+    ("2026-03-31", 100.0, 45.0, 20.0),
+    ("2025-12-31", 100.0, 45.0, 20.0),
+    ("2025-09-30", 95.0, 44.0, 19.0),
+)
+
+
+def test_fundamental_and_event_rules_are_cleaned_too():
+    assert journal.clean_rules([
+        {"rule": "operating_margin_below", "level": "15", "quarters": 9},
+        {"rule": "revenue_growth_below", "level": -5},        # shrinking is a level
+        {"rule": "gross_margin_below", "level": 140},         # no margin past 100 %
+        {"rule": "ceo_change", "level": 3},                   # an event has no level
+    ]) == [
+        {"rule": "operating_margin_below", "level": 15.0, "quarters": 4},
+        {"rule": "revenue_growth_below", "level": -5.0, "quarters": 1},
+        {"rule": "ceo_change"},
+    ]
+
+
+def test_a_fundamental_rule_needs_every_quarter_of_its_run_under_the_line():
+    one = journal.measure_fundamental("gross_margin_below", 40, 1, BOOK)
+    assert one == {"value": 38.0, "gap": -2.0, "met": True, "quarter_end": "2026-09-30"}
+    assert journal.measure_fundamental("gross_margin_below", 40, 2, BOOK)["met"]
+    assert not journal.measure_fundamental("gross_margin_below", 40, 3, BOOK)["met"]
+    growth = journal.measure_fundamental("revenue_growth_below", 10, 1, BOOK)
+    assert growth["value"] == pytest.approx(5.26, abs=0.01) and growth["met"]
+    # A quarter without its year-ago twin cannot be judged at all.
+    assert journal.measure_fundamental("revenue_growth_below", 10, 2, BOOK) is None
+    assert journal.measure_fundamental("gross_margin_below", 40, 9, BOOK) is None
+
+
+def _no_passages(ticker, since):
+    raise AssertionError("no event rule here")
+
+
+def _no_judge(rule, ticker, passages):
+    raise AssertionError("nothing to judge")
+
+
+def test_a_fundamental_rule_is_read_once_per_new_quarter(path):
+    [rule] = journal.add_criteria(
+        path, "AMD", [{"rule": "operating_margin_below", "level": 15, "quarters": 2}],
+        DAY)
+    asked = []
+
+    def quarters_of(ticker):
+        asked.append(ticker)
+        return BOOK
+
+    day = date(2026, 10, 30)
+    fired = journal.check_slow(path, day, quarters_of=quarters_of,
+                               passages_of=_no_passages, judge=_no_judge)
+    assert [(r["id"], r["value"], r["quarters"]) for r in fired] == [(rule.id, 12.0, 2)]
+    [entry] = journal.load(path)
+    assert entry.state == "hit" and entry.snapshot["hit_value"] == 12.0
+    assert entry.snapshot["quarter_end"] == "2026-09-30"
+    # Met once: never read again, and the card reads it back from the snapshot.
+    assert journal.check_slow(path, day + timedelta(days=100), quarters_of=quarters_of,
+                              passages_of=_no_passages, judge=_no_judge) == []
+    assert asked == ["AMD"]
+    [row] = journal.measured(journal.load(path), {}, None)
+    assert row["met"] and row["value"] == 12.0
+
+
+def test_an_open_fundamental_rule_waits_for_the_next_quarter(path):
+    journal.add_criteria(path, "AMD", [{"rule": "gross_margin_below", "level": 30}], DAY)
+    asked = []
+
+    def quarters_of(ticker):
+        asked.append(ticker)
+        return BOOK
+
+    day = date(2026, 10, 30)
+    for later in (0, 1, 30):
+        assert journal.check_slow(path, day + timedelta(days=later),
+                                  quarters_of=quarters_of, passages_of=_no_passages,
+                                  judge=_no_judge) == []
+    assert asked == ["AMD"]  # the 2026-09-30 quarter is read, the next one not out
+    assert journal.fundamental_due(journal.load(path)[0], date(2026, 12, 20))
+    [row] = journal.measured(journal.load(path), {}, None)
+    assert row["state"] == "open" and row["gap_pct"] == 8.0
+
+
+def _passage(text, day="2026-10-20", source="8-K (5.02)"):
+    return {"source": source, "day": day, "text": text}
+
+
+def test_an_event_rule_is_met_only_on_a_quote_its_passage_holds(path):
+    [rule] = journal.add_criteria(path, "AMD", [{"rule": "ceo_change"}], DAY)
+    passages = [
+        _passage("Dividend declared.", day="2026-10-02"),               # no keyword
+        _passage("Old news: the CEO resigned.", day="2026-09-01"),      # before the rule
+        _passage("Lisa Su will step down as CEO on December 1."),
+    ]
+    calls = []
+
+    def judge(rule_, ticker, shown):
+        calls.append([p["text"] for p in shown])
+        return {"met": True, "item": 0, "quote": "Lisa Su will  step down as CEO"}
+
+    fired = journal.check_slow(path, date(2026, 10, 21), quarters_of=list,
+                               passages_of=lambda t, since: passages, judge=judge)
+    assert calls == [["Lisa Su will step down as CEO on December 1."]]
+    assert fired[0]["id"] == rule.id
+    assert fired[0]["quote"] == "Lisa Su will step down as CEO"
+    assert fired[0]["source"] == "8-K (5.02)" and fired[0]["source_day"] == "2026-10-20"
+    assert "8-K (5.02)" in journal.line_for(journal.load(path)[0])
+
+
+def test_an_invented_quote_or_a_silent_model_fires_nothing(path):
+    journal.add_criteria(path, "AMD", [{"rule": "dividend_cut"}], DAY)
+    passages = [_passage("AMD suspends its dividend.", source="Reuters")]
+    day = date(2026, 10, 21)
+
+    def silent(rule, ticker, shown):
+        return None
+
+    assert journal.check_slow(path, day, quarters_of=list,
+                              passages_of=lambda t, s: passages, judge=silent) == []
+    # Nobody answered: nothing was stamped, the passage is judged next time.
+    assert "checked" not in journal.load(path)[0].snapshot
+
+    def invents(rule, ticker, shown):
+        return {"met": True, "item": 0, "quote": "AMD cuts its dividend by half"}
+
+    assert journal.check_slow(path, day, quarters_of=list,
+                              passages_of=lambda t, s: passages, judge=invents) == []
+    [entry] = journal.load(path)
+    assert entry.state == "open" and len(entry.snapshot["seen"]) == 1
+    # A passage judged once is not shown to the model again.
+    assert journal.check_slow(path, day + timedelta(days=1), quarters_of=list,
+                              passages_of=lambda t, s: passages, judge=_no_judge) == []
+
+
+def test_a_failed_fetch_leaves_the_rule_for_the_next_card(path):
+    journal.add_criteria(path, "AMD", [{"rule": "guidance_cut"},
+                                       {"rule": "gross_margin_below", "level": 40}], DAY)
+
+    def down(*args):
+        raise TimeoutError("throttled")
+
+    assert journal.check_slow(path, date(2026, 10, 21), quarters_of=down,
+                              passages_of=down, judge=_no_judge) == []
+    assert all("checked" not in e.snapshot for e in journal.load(path))
+
+
+def test_slow_rules_read_as_words(path):
+    journal.add_criteria(path, "AMD", [
+        {"rule": "operating_margin_below", "level": 15, "quarters": 2},
+        {"rule": "ceo_change"}], DAY)
+    margin, ceo = journal.load(path)
+    assert "2 quarters running" in journal.criterion_text(margin)
+    assert "CEO" in journal.criterion_text(ceo)
+
+
+def test_the_judge_reads_its_contract_and_asks_one_question_per_event(monkeypatch):
+    from stocks.chat import engine, exit_judge
+
+    assert exit_judge.parse('{"met": true, "item": 1, "quote": "steps down"}') == {
+        "met": True, "item": 1, "quote": "steps down"}
+    assert exit_judge.parse("the CEO left") is None
+    assert set(exit_judge.QUESTIONS) == set(journal.EVENT_RULES)
+    asked = {}
+
+    def complete(prefs, system, messages, timeout_s, *, spend_free, accept):
+        asked.update(system=system, text=messages[-1]["content"])
+        return accept('{"met": false}')
+
+    monkeypatch.setattr(engine, "complete_attempts", complete)
+    judge = exit_judge.make_judge({}, spend_free=lambda prefs: True)
+    verdict = judge("dividend_cut", "AMD", [_passage("AMD suspends its dividend.")])
+    assert verdict == {"met": False, "item": None, "quote": ""}
+    assert "AMD" in asked["system"] and "[0] 8-K (5.02) 2026-10-20" in asked["text"]
+    assert judge("moon", "AMD", [_passage("x")]) is None
+
+
+def test_a_long_release_is_judged_on_the_stretch_that_says_it(path):
+    journal.add_criteria(path, "AMD", [{"rule": "guidance_cut"}], DAY)
+    # The words far apart are not a guidance cut; together, pages in, they are.
+    scattered = "We reaffirm our guidance. " + "Filler. " * 200 + "Costs were lower."
+    release = "Results. " * 600 + "We now lower our full-year guidance to 30 billion."
+    shown = []
+
+    def judge(rule, ticker, passages):
+        shown.extend(passages)
+        return {"met": False}
+
+    journal.check_slow(path, date(2026, 10, 21), quarters_of=list,
+                       passages_of=lambda t, s: [_passage(scattered),
+                                                 _passage(release, source="8-K (2.02)")],
+                       judge=judge)
+    [passage] = shown
+    assert passage["source"] == "8-K (2.02)"
+    assert len(passage["text"]) == journal.EXCERPT_CHARS
+    assert "lower our full-year guidance" in passage["text"]
+
+
+@pytest.mark.parametrize(("left", "charged"), [(5, True), (3, True), (2, False),
+                                               (0, False)])
+def test_the_judge_never_takes_the_cards_free_units(monkeypatch, left, charged):
+    from stocks.api import briefing
+    from stocks.chat import daily, engine
+
+    assert daily.FREE_UNITS == 2
+    monkeypatch.setattr(engine, "free_left", lambda prefs: left)
+    calls = []
+    assert briefing.spend_for_judge({}, lambda p: calls.append(p) or True) is charged
+    assert len(calls) == int(charged)

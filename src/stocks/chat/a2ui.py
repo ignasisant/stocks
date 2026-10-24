@@ -155,9 +155,13 @@ def proposal_form(offer: dict, translate) -> list[dict]:
     act = tools.Action(str(offer["kind"]), str(offer["ticker"]),
                        dict(offer.get("args") or {}))
     sid = f"form_{offer['id']}"
-    names = ("ticker", *tools.FORMS.get(act.kind, ()))
+    names = ("ticker", *tools.form_names(act))
     fields = [
         component(
+            f"f_{name}", "CheckBox",
+            label=translate(f"chat.action_field_{name}"),
+            value=path(f"/form/{name}"),
+        ) if name in tools.CHECK_FIELDS else component(
             f"f_{name}", "TextField",
             label=translate(f"chat.action_field_{name}"),
             value=path(f"/form/{name}"),

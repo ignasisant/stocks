@@ -779,3 +779,16 @@ def test_the_whole_book_is_drawn_from_its_first_day_with_the_money_put_in(monkey
     # 10 units, then 1 000 more at 102 the day it went in.
     assert index["values"] == pytest.approx([1000.0, 1010.0, 2020.0, 2020.0], abs=0.01)
 
+
+
+def test_the_exits_fact_carries_the_written_rules(tmp_path):
+    from stocks.chat import journal
+
+    path = tmp_path / "journal.json"
+    assert "rules" not in daily_routines.exits_fact(daily_routines.Sources())
+    journal.add_criteria(path, "AMD", [{"rule": "drawdown_cost", "level": 30}],
+                         TODAY, thesis="Share gains")
+    sources = daily_routines.Sources(criteria=tuple(journal.criteria(journal.load(path))))
+    assert daily_routines.exits_fact(sources)["rules"] == [
+        {"ticker": "AMD", "rule": "drawdown_cost", "level": 30.0, "state": "open",
+         "thesis": "Share gains"}]

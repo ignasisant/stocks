@@ -486,6 +486,17 @@ RELEASES: tuple[Release, ...] = (
             News(slug="compare", icon="show_chart", step="market"),
         ),
     ),
+    Release(
+        version="2026.10.8",
+        date="2026-10",
+        items=(
+            # Something the reader could not do at all: write down, per
+            # holding, where they would sell — and have the daily card hold
+            # them to it. The panel, the chat card and the card's lines are
+            # this card's step body, not cards of their own.
+            News(slug="criteria", icon="flag", step="journal"),
+        ),
+    ),
 )
 
 CURRENT_VERSION = RELEASES[-1].version

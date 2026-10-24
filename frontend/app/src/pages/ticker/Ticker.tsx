@@ -379,7 +379,7 @@ export default function Page() {
             reads in a side panel, so the page's own figures keep the column. */}
         {ticker && !absent ? (
           <SignedInOnly>
-            <JournalChip ticker={ticker} />
+            <JournalChip ticker={ticker} held={!!held?.held} />
           </SignedInOnly>
         ) : null}
         {/* Drawn for a guest too: it opens the locked assistant

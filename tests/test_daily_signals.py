@@ -468,3 +468,73 @@ def test_the_engine_net_replaces_the_raw_sum_when_given():
     )
     gains = {s.data["gain_ytd"] for s in net if s.kind == signals.HARVEST}
     assert gains == {2324.0}
+
+
+# ------------------------------------------------------------ exit rules
+
+
+def _rule(state="open", **over) -> dict:
+    row = {"id": "r1", "ticker": "ASML", "rule": "below", "level": 300.0,
+           "value": 280.0, "gap_pct": -6.67, "state": state}
+    row.update(over)
+    return row
+
+
+def test_a_met_exit_rule_outranks_a_fired_alert():
+    holdings = [Holding("ASML", alerts=[Alert("below", price=300.0)])]
+    out = signals.candidates(
+        holdings=holdings, closes={"ASML": [305.0, 280.0]}, today=TODAY,
+        criteria=[_rule("hit", hit_day="2026-09-03")],
+    )
+    assert [s.kind for s in out] == [signals.CRITERION_HIT, signals.ALERT_HIT]
+    assert out[0].data["rule"] == "below" and out[0].data["level"] == 300.0
+
+
+def test_a_stale_hit_is_not_said_again():
+    out = signals.candidates(today=TODAY,
+                             criteria=[_rule("hit", hit_day="2026-08-01")])
+    assert out == []
+
+
+def test_an_armed_rule_within_reach_is_a_near_line():
+    near = _rule(value=306.0, gap_pct=2.0)
+    far = _rule(id="r2", rule="drawdown_cost", level=40.0, value=-30.0, gap_pct=10.0)
+    retired = _rule(id="r3", state="retired", gap_pct=1.0)
+    out = signals.candidates(today=TODAY, criteria=[near, far, retired])
+    assert [s.kind for s in out] == [signals.CRITERION_NEAR]
+    assert out[0].data["gap_pct"] == pytest.approx(2.0)
+
+
+def test_each_rule_on_a_ticker_is_its_own_trigger():
+    a = signals.key_of(signals.CRITERION_HIT, {"ticker": "ASML", "rule": "below"})
+    b = signals.key_of(signals.CRITERION_HIT, {"ticker": "ASML", "rule": "weight_above"})
+    assert a != b and a.startswith("criterion_hit:ASML:")
+
+
+def test_a_slow_rule_carries_its_run_and_its_passage_to_the_card():
+    margin = _rule(rule="operating_margin_below", level=15.0, value=12.0, gap_pct=-3.0,
+                   quarters=2, hit_day="2026-09-03", state="hit")
+    event = _rule(id="r2", rule="ceo_change", level=None, value=None, gap_pct=None,
+                  state="hit", hit_day="2026-09-03", quote="x" * 300,
+                  source="8-K (5.02)")
+    out = signals.candidates(today=TODAY, criteria=[margin, event])
+    data = {s.data["rule"]: s.data for s in out}
+    assert data["operating_margin_below"]["quarters"] == 2
+    assert "quote" not in data["operating_margin_below"]
+    assert len(data["ceo_change"]["quote"]) == 200
+    assert data["ceo_change"]["source"] == "8-K (5.02)"
+    assert "quarters" not in data["ceo_change"]
+
+
+def test_the_rules_met_on_the_card_s_job_go_first_within_the_cap():
+    from stocks.api.briefing import with_fired
+
+    near = [{"kind": signals.CRITERION_NEAR, "key": f"criterion_near:T{i}:below"}
+            for i in range(3)]
+    other = {"kind": "alert_hit", "key": "alert_hit:ASML:below"}
+    fired = [_rule("hit", rule="ceo_change", level=None, value=None, gap_pct=None,
+                   hit_day=TODAY.isoformat(), quote="steps down", source="8-K")]
+    out = with_fired([*near, other], fired, {"ASML"}, TODAY)
+    assert out[0]["kind"] == signals.CRITERION_HIT and out[0]["ticker"] == "ASML"
+    assert [a["kind"] for a in out].count(signals.CRITERION_NEAR) == 2
+    assert other in out

@@ -30,6 +30,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from stocks import obs
+from stocks.chat.journal import CRITERION_RULES
 from stocks.web.llm import ToolSpec
 
 MAX_RESULT_CHARS = 4000  # per tool result, before the model ever sees it
@@ -439,6 +440,10 @@ _NOT_PROPOSED = {
                "Propose only what they asked about."),
     "not_asked": ("Not proposed: the reader did not ask to be told at a "
                   "price. Give the figure in the answer instead."),
+    "not_asked_rules": ("Not proposed: the reader did not ask for exit "
+                        "rules. Suggest them in the answer instead."),
+    "no_journal": ("Not proposed: this account keeps no decision journal, "
+                   "so exit rules cannot be saved."),
 }
 
 # Asking to be told, to watch or to track a price, in Spanish and English like
@@ -452,6 +457,19 @@ _ALERT_ASK_RE = re.compile(
 def asks_alert(text: str) -> bool:
     """Whether `text` asks to be told, to watch or to track a price."""
     return bool(_ALERT_ASK_RE.search(text or ""))
+
+
+# Asking for exit rules or naming where they would sell: "criterios de
+# salida", "kill criteria", "vendería si cae un 30 %", "my stop", "tesis".
+_CRITERIA_ASK_RE = re.compile(
+    r"\bcriteri|\bkill\b|\bsalida|\bexit\b|\bvend[eií]|\bsell\b|\bstop\b"
+    r"|\bl[ií]mite|\btesis\b|\bthesis\b|\bregla|\brule",
+    re.IGNORECASE)
+
+
+def asks_criteria(text: str) -> bool:
+    """Whether `text` asks for exit rules or says where they would sell."""
+    return bool(_CRITERIA_ASK_RE.search(text or ""))
 
 
 def _base(ticker: str) -> str:
@@ -477,6 +495,11 @@ def _unwarranted(act, ctx: Context) -> str:
         return "ticker"
     if act.kind == "set_alerts" and not any(asks_alert(t) for t in ctx.asked):
         return "not_asked"
+    if act.kind == "set_criteria" and not any(
+            asks_criteria(t) for t in ctx.asked):
+        return "not_asked_rules"
+    if act.kind == "set_criteria" and ctx.journal is None:
+        return "no_journal"
     return ""
 
 
@@ -560,15 +583,18 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
             "trims, rebalances), Review-page sells/trims/adds/buys, and alert or "
             "watchlist changes offered in chat — with the figures it was made "
             "on, the reasons, and what became of it (open, followed, declined, "
-            "lapsed). Use for 'what did you propose about X', 'why did you say "
-            "to sell Y', 'what is still open'. It records the app's proposals, "
-            "not the user's own reasons for past trades.",
+            "lapsed) — plus the exit rules the user saved per holding, with "
+            "the thesis they gave (open, hit, retired). Use for 'what did you "
+            "propose about X', 'why did you say to sell Y', 'what is still "
+            "open', 'what were my exit rules'. Past trades' own reasons are "
+            "not in it.",
             {"type": "object",
              "properties": {
                  "ticker": {"type": "string",
                             "description": "Only this ticker, e.g. NVDA."},
                  "state": {"type": "string",
-                           "enum": ["open", "followed", "declined", "lapsed"]},
+                           "enum": ["open", "followed", "declined", "lapsed",
+                                    "hit", "retired"]},
                  "since": {"type": "string",
                            "description": "ISO date; entries shown since."},
                  "limit": {"type": "integer",
@@ -648,16 +674,19 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
             "Draft one change to what the app watches, shown as a card the "
             "user approves or dismisses under the answer: add_ticker (start "
             "tracking it), favorite, set_alerts (the price level you found, "
-            "as above/below) or tag (put it in a group). Only for something "
-            "the user asked for in this conversation — to watch, track or be "
-            "told at a price — and only on a ticker they named; never because "
-            "a ticker came up in a page. Call it after the lookups that give "
-            "it its figure. Calling it changes nothing.",
+            "as above/below), tag (put it in a group) or set_criteria (exit "
+            "rules for a holding: the price, loss or weight at which the "
+            "user said they would sell, plus their thesis in their words). "
+            "Only for something the user asked for in this conversation — to "
+            "watch, track, be told at a price, or write their exit rules — "
+            "and only on a ticker they named; never because a ticker came up "
+            "in a page. Call it after the lookups that give it its figure. "
+            "Calling it changes nothing.",
             {"type": "object",
              "properties": {
                  "action": {"type": "string",
                             "enum": ["add_ticker", "favorite", "set_alerts",
-                                     "tag"]},
+                                     "tag", "set_criteria"]},
                  "ticker": {"type": "string", "description": "e.g. ASML.AS."},
                  "alerts": {"type": "array",
                             "description": "set_alerts only.",
@@ -668,7 +697,28 @@ TOOLS: dict[str, tuple[ToolSpec, Handler]] = {
                                           "price": {"type": "number"}},
                                       "required": ["type", "price"]}},
                  "tags": {"type": "array", "items": {"type": "string"},
-                          "description": "tag only: the group names."}},
+                          "description": "tag only: the group names."},
+                 "criteria": {
+                     "type": "array",
+                     "description": "set_criteria only. below: a price in "
+                                    "the quote currency; drawdown_cost, "
+                                    "drawdown_high, weight_above and the "
+                                    "fundamental *_below rules: percent "
+                                    "(a growth or margin may be 0 or "
+                                    "negative), with quarters 1-4 running "
+                                    "for the fundamental ones; ceo_change, "
+                                    "guidance_cut, dividend_cut: no level.",
+                     "items": {"type": "object",
+                               "properties": {
+                                   "rule": {"type": "string",
+                                            "enum": list(CRITERION_RULES)},
+                                   "level": {"type": "number"},
+                                   "quarters": {"type": "integer",
+                                                "minimum": 1, "maximum": 4}},
+                               "required": ["rule"]}},
+                 "thesis": {"type": "string",
+                            "description": "set_criteria only: why they "
+                                           "hold it, in their words."}},
              "required": ["action", "ticker"]},
         ), _propose),
     )

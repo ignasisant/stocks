@@ -134,6 +134,17 @@
   border-style: dashed;
 }
 
+/* An exit rule the price reached: the one state that asks for a decision. */
+.ag-jr-state-hit {
+  border-color: transparent;
+  background: var(--ag-loss-band);
+  color: var(--ag-down);
+}
+
+.ag-jr-state-retired {
+  border-style: dashed;
+}
+
 /* ------------------------------------------------------------------- fold */
 
 .ag-jr-fold {
@@ -334,10 +345,93 @@
   }
 }
 
-.ag-jr-panel > .ag-jr-list {
+.ag-jr-panel-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* -------------------------------------------------------------- exit rules */
+
+.ag-jr-rules {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.25rem 0 0.9rem;
+  margin-bottom: 0.25rem;
+  border-bottom: 1px solid var(--ag-rule-soft);
+}
+
+.ag-jr-rules .ag-jr-h {
+  margin: 0;
+}
+
+.ag-jr-rule-list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ag-jr-rule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.ag-jr-rule-text {
+  flex: 1 1 14ch;
+  min-width: 0;
+  font-size: var(--ag-fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-primary);
+  text-wrap: pretty;
+}
+
+.ag-jr-rules-empty,
+.ag-jr-rules-error {
+  max-width: 40ch;
+  margin: 0;
+  font-size: var(--ag-fs-sm);
+  color: var(--ag-text-secondary);
+  text-wrap: pretty;
+}
+
+.ag-jr-rules-error {
+  color: var(--ag-down);
+}
+
+.ag-jr-retire,
+.ag-jr-propose {
+  flex: none;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
+  color: var(--ag-text-secondary);
+  font: inherit;
+  font-size: var(--ag-fs-xs);
+  cursor: pointer;
+}
+
+/* The second press: says what it does, in the colour of what it does. */
+.ag-jr-retire-confirm {
+  border-color: var(--ag-down);
+  color: var(--ag-down);
+}
+
+.ag-jr-retire:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ag-jr-propose {
+  justify-self: start;
+  border-color: var(--ag-brand-accent);
+  color: var(--ag-brand-accent);
 }
 
 .ag-jr-panel-head {
@@ -386,7 +480,9 @@
 .ag-jr-fold:focus-visible,
 .ag-jr-close:focus-visible,
 .ag-jr-link:focus-visible,
-.ag-jr-all:focus-visible {
+.ag-jr-all:focus-visible,
+.ag-jr-retire:focus-visible,
+.ag-jr-propose:focus-visible {
   outline: 2px solid var(--ag-brand-accent);
   outline-offset: 1px;
 }
@@ -394,8 +490,13 @@
 @media (hover: hover) {
   .ag-jr-chip:hover,
   .ag-jr-close:hover,
+  .ag-jr-retire:not(:disabled, .ag-jr-retire-confirm):hover,
   .ag-jr-fold:hover {
     color: var(--ag-text-primary);
+  }
+
+  .ag-jr-propose:hover {
+    background: color-mix(in srgb, var(--ag-brand-accent) 10%, transparent);
   }
 
   .ag-jr-fold:hover {
@@ -412,7 +513,9 @@
 @media (pointer: coarse) {
   .ag-jr-chip,
   .ag-jr-close,
-  .ag-jr-link {
+  .ag-jr-link,
+  .ag-jr-retire,
+  .ag-jr-propose {
     min-height: 44px;
   }
 

@@ -439,6 +439,28 @@ def parse_current_reports(cik: str, subs: dict, since: date) -> list[CurrentRepo
     return sorted(out, key=lambda r: r.filed, reverse=True)
 
 
+def current_report_text(url: str) -> str | None:
+    """The opening of one 8-K's own document (its narrative, before the
+    tables), or None — no document, a refused request. Cached on disk like
+    a release, a miss included: a filed 8-K does not change. Never raises."""
+    import hashlib
+
+    if not url.startswith("https://www.sec.gov/"):
+        return None
+    RELEASE_DIR.mkdir(parents=True, exist_ok=True)
+    cached = RELEASE_DIR / f"8k_{hashlib.sha1(url.encode()).hexdigest()[:16]}.txt"
+    if cached.exists():
+        return cached.read_text() or None
+    try:
+        from stocks.data.http import get_bytes
+
+        text = _release_text(get_bytes(url, user_agent=_user_agent(), timeout=20))
+    except Exception:  # noqa: BLE001 — the rule waits for the next check
+        return None
+    cached.write_text(text)
+    return text or None
+
+
 def current_reports(ticker: str, since: date) -> list[CurrentReport]:
     """`ticker`'s 8-Ks filed since `since`; empty for a name that files no
     8-Ks with the SEC. Raises on a refused request, so a caller can tell
