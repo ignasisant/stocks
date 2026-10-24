@@ -146,7 +146,8 @@ def test_finnhub_fills_in_when_yahoo_fails(monkeypatch, keyed):
 def test_a_name_yahoo_answered_for_is_not_asked_again(monkeypatch, keyed):
     # Yahoo answered the chunk and left ORGN out: delisted, not throttled.
     monkeypatch.setattr(
-        q, "_fetch",
+        q,
+        "_fetch",
         lambda symbols, timeout: [{"symbol": "AAPL", "regularMarketPrice": 1.0}],
     )
     out = q.quotes(["AAPL", "ORGN"])
@@ -443,3 +444,40 @@ def test_a_refused_side_read_opens_the_cooldown_for_every_read(monkeypatch, keye
     assert finnhub.insider_transactions("AAPL", _d(1), _d(9)) is None
     monkeypatch.setattr(finnhub, "_fetch", lambda *a: pytest.fail("asked in cooldown"))
     assert finnhub.quotes(["AAPL"], timeout=1) == {}
+
+
+def test_a_rejected_side_read_closes_only_its_own_path(monkeypatch, keyed_get):
+    """Prod: one 401 on a side read used to stop every quote for an hour."""
+    asked, install = keyed_get
+    warned = []
+    monkeypatch.setattr(finnhub.obs, "warn", lambda event, **f: warned.append((event, f)))
+
+    def refuse(path, params):
+        raise _http_error(401)
+
+    install(refuse)
+    assert finnhub.us_session(sync=True) is None
+    assert warned == [
+        ("finnhub.rejected", {"status": 401, "path": "stock/market-status"})
+    ]
+
+    # The same path stays closed; the others and the quotes still go out.
+    install(lambda path, params: pytest.fail("asked through the path's cooldown"))
+    assert finnhub.us_session(sync=True) is None
+    rows = [{"name": "Cook Tim", "change": -1000, "transactionCode": "S"}]
+    install(lambda path, params: {"symbol": "AAPL", "data": rows})
+    assert finnhub.insider_transactions("AAPL", _d(1), _d(9)) == rows
+    monkeypatch.setattr(finnhub, "_fetch", lambda *a: {"c": 10.0, "pc": 9.0, "t": 1})
+    assert "AAPL" in finnhub.quotes(["AAPL"], timeout=1)
+
+
+def test_a_rejected_quote_still_closes_everything(monkeypatch, keyed_get):
+    asked, install = keyed_get
+
+    def refuse(*a):
+        raise _http_error(401)
+
+    monkeypatch.setattr(finnhub, "_fetch", refuse)
+    assert finnhub.quotes(["AAPL"], timeout=1) == {}
+    install(lambda path, params: pytest.fail("asked with a rejected key"))
+    assert finnhub.insider_transactions("AAPL", _d(1), _d(9)) is None

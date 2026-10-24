@@ -45,7 +45,8 @@ from stocks.data.http import get_json
 from stocks.secrets_env import secret
 
 API_ROOT = "https://finnhub.io/api/v1"
-QUOTE_URL = API_ROOT + "/quote?symbol={symbol}"
+QUOTE_PATH = "quote"
+QUOTE_URL = API_ROOT + "/" + QUOTE_PATH + "?symbol={symbol}"
 
 # The free plan allows 60 a minute; a few spare so a second process (the cron
 # job, a staging candidate) sharing the key does not tip us into 429.
@@ -56,7 +57,9 @@ PER_MINUTE = 55
 WORKERS = 8
 
 # Cooldowns after Finnhub refuses us: a 429 clears within the minute; a 401/403
-# means the key is wrong, and asking again every render will not fix it.
+# means the key is wrong, and asking again every render will not fix it. A
+# refusal on a side read (the calendar, the market clock, insiders) closes
+# only that path: one bad answer there must not cost the quotes for an hour.
 THROTTLED_S = 60.0
 REJECTED_S = 3600.0
 
@@ -92,6 +95,8 @@ _US_SYMBOL = re.compile(r"[A-Z]{1,5}(-[A-Z]{1,2})?")
 _lock = threading.Lock()
 _sent: deque[float] = deque()
 _blocked_until = 0.0
+# Path → monotonic end of its own cooldown, for refusals on a side read.
+_path_blocked: dict[str, float] = {}
 
 # (monotonic when read, the day it was read for, the answer or None).
 _window: tuple[float, date | None, dict[str, list[dict]] | None] = (0.0, None, None)
@@ -130,6 +135,7 @@ def clear() -> None:
     with _lock:
         _sent.clear()
         _blocked_until = 0.0
+        _path_blocked.clear()
     with _window_lock:
         _window = (0.0, None, None)
     with _status_lock:
@@ -157,15 +163,25 @@ def _take() -> bool:
         return True
 
 
-def _refused(code: int) -> None:
+def _closed(path: str) -> bool:
+    """Whether `path` is in a cooldown of its own."""
+    with _lock:
+        return time.monotonic() < _path_blocked.get(path, 0.0)
+
+
+def _refused(code: int, path: str = QUOTE_PATH) -> None:
     """Open the cooldown a refusal calls for. Any other status is one
     request's loss and nothing to remember."""
     if code == 429:
         _block(THROTTLED_S)
-        obs.warn("finnhub.throttled")
+        obs.warn("finnhub.throttled", path=path)
     elif code in (401, 403):
-        _block(REJECTED_S)
-        obs.warn("finnhub.rejected", status=code)
+        if path == QUOTE_PATH:
+            _block(REJECTED_S)
+        else:
+            with _lock:
+                _path_blocked[path] = time.monotonic() + REJECTED_S
+        obs.warn("finnhub.rejected", status=code, path=path)
 
 
 def _fetch(symbol: str, key: str, timeout: float) -> dict:
@@ -195,12 +211,12 @@ def _ask(
     allowance or a cooldown, or when Finnhub did not answer (a refusal opens
     the cooldown the way a quote's does)."""
     key = api_key()
-    if key is None or not _take():
+    if key is None or _closed(path) or not _take():
         return None
     try:
         body = _get(path, params, key, timeout)
     except urllib.error.HTTPError as exc:
-        _refused(exc.code)
+        _refused(exc.code, path)
         return None
     except Exception as exc:  # noqa: BLE001 — a side read is never fatal
         obs.event(f"finnhub.{what}_failed", error=type(exc).__name__)
