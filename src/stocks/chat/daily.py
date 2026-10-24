@@ -106,10 +106,12 @@ BRIEF_STATES: Final = ("", BRIEF_PENDING, BRIEF_WRITTEN, BRIEF_MISSED)
 # chat's. A provider the account brought its own key for is not counted.
 FREE_UNITS = 2
 UNITS_KEY = "daily_units"
-# How long the page will wait for the briefing. Generation happens at the very
-# bottom of the Home script (deferred-slot pattern), so this is dead time on a
-# page that is otherwise painted — short, and once a day.
-TIMEOUT_S = 25.0
+# How long each provider gets to write the card. Nobody waits on it: the job
+# runs on its own thread (`api/briefing.py`) while Home shows the stand-in and
+# polls. A ~12k-token prompt asking for the whole card as JSON ran past the
+# old 25 s on both providers tried (prod, 10-20 → 10-24), and the card fell
+# back to the computed one.
+TIMEOUT_S = 90.0
 # Past headlines kept with the card, shown to the next day's call so it does
 # not re-emit yesterday's line with new numbers (the trick notify/narrative.py
 # uses for the digest highlight).
