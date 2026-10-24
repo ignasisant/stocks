@@ -1555,7 +1555,7 @@ def peer_groups(ticker: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
 
         with ThreadPoolExecutor(max_workers=min(len(watched), 4)) as pool:
             filed = list(pool.map(lambda s: _industry(s, scans), watched))
-        watched = [s for s, i in zip(watched, filed) if i == industry]
+        watched = [s for s, i in zip(watched, filed, strict=True) if i == industry]
     return tuple(rivals), tuple(watched)
 
 

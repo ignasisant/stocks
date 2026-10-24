@@ -1083,9 +1083,13 @@ def peers(symbol: Symbol) -> Peers:
     """
     ticker = symbol.strip().upper()
     rivals, watched = loaders.peer_groups(ticker)
+    groups: tuple[tuple[tuple[str, ...], Literal["rival", "watched"]], ...] = (
+        (rivals, "rival"),
+        (watched, "watched"),
+    )
     tagged = [
         (other, source)
-        for group, source in ((rivals, "rival"), (watched, "watched"))
+        for group, source in groups
         for other in group
         if not is_crypto(other)
     ]
