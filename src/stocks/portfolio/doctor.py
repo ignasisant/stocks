@@ -96,8 +96,16 @@ def scan(
     order = {k: i for i, k in enumerate(KINDS)}
     found.sort(key=lambda f: (-f.weight, order[f.kind]))
     for f in found:
+        # The cause says why the book does not balance (`trace_break`), so
+        # `--by cause` tells a missing fee from an unexplained gap.
+        why = {"cause": f.cause} if f.cause else {}
         consistency.report(
-            _LOGGED[f.kind], source="doctor", ticker=f.ticker, key=f.key, rows=len(f.ids)
+            _LOGGED[f.kind],
+            source="doctor",
+            ticker=f.ticker,
+            key=f.key,
+            rows=len(f.ids),
+            **why,
         )
     return found
 

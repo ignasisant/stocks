@@ -165,10 +165,13 @@ def _ticker_gaps(
             # No split explains the row's scale. A split's worth away from
             # its day's close — pence booked as pounds, another name under
             # the symbol, a typo — is a contradiction worth a line; closer
-            # than that is a volatile day, which is not.
+            # than that is a volatile day, which is not. About a hundred off
+            # is the minor-unit slip, counted apart since a scale fixes it.
             if quotient >= _MIN_RATIO or quotient <= 1 / _MIN_RATIO:
                 consistency.report(
-                    "price_off_market",
+                    "currency_off"
+                    if consistency.unit_slip(quotient)
+                    else "price_off_market",
                     source=source,
                     ticker=ticker,
                     key=buy.date,

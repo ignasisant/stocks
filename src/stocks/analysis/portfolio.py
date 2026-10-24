@@ -435,10 +435,30 @@ def _close_matches_trades(px: pd.Series, ticker: str, ccy: str, transactions) ->
     2026-10-16). A split the book lacks still fails, as it should — its share
     count is off by the same factor.
     """
+    ratios = [off for _, off in _fill_ratios(px, ticker, ccy, transactions)]
+    return _plausible_ratio(ratios)
+
+
+def _plausible_ratio(ratios: list[float]) -> bool:
+    """Whether the median close/fill ratio is within an order of magnitude."""
+    if not ratios:
+        return True
+    ratios = sorted(ratios)
+    return 0.1 <= ratios[len(ratios) // 2] <= 10.0
+
+
+def _fill_ratios(
+    px: pd.Series, ticker: str, ccy: str, transactions
+) -> list[tuple[str, float]]:
+    """(date, close / price) for each of `ticker`'s fills in `ccy`.
+
+    The close is the last one on or before the fill's day, the price the fill
+    restated across the book's own split rows (`_close_matches_trades`).
+    """
     from stocks.portfolio.corporate import on_market_scale, split_factors
 
     factors = split_factors(transactions)
-    ratios = []
+    out = []
     for t in transactions:
         if t.ticker != ticker or t.action not in ("buy", "sell"):
             continue
@@ -448,11 +468,37 @@ def _close_matches_trades(px: pd.Series, ticker: str, ccy: str, transactions) ->
         if near.empty:
             continue
         price, _ = on_market_scale(t, factors)
-        ratios.append(float(near.iloc[-1]) / price)
-    if not ratios:
-        return True
-    ratios.sort()
-    return 0.1 <= ratios[len(ratios) // 2] <= 10.0
+        out.append((t.date, float(near.iloc[-1]) / price))
+    return out
+
+
+def _off_calendar(px: pd.Series, ticker: str, transactions) -> list[str]:
+    """Days `ticker` was bought or sold on which its market printed no bar.
+
+    Only inside the series' own span: before the first bar is history the
+    feed does not carry, not a holiday. A Saturday fill counts on Friday's
+    bar, since a US after-hours fill is stamped the next day in UTC; a market
+    open every day — crypto — never lands here.
+    """
+    from datetime import date, timedelta
+
+    bars = px.dropna().index
+    if bars.empty:
+        return []
+    have = {d.date() for d in bars}
+    first, last = min(have), max(have)
+    out = []
+    for t in transactions:
+        if t.ticker != ticker or t.action not in ("buy", "sell"):
+            continue
+        day = date.fromisoformat(t.date[:10])
+        if not first <= day <= last:
+            continue
+        if day.weekday() == 5:
+            day -= timedelta(days=1)
+        if day not in have:
+            out.append(t.date)
+    return sorted(out)
 
 
 def complete_download(
@@ -510,11 +556,54 @@ def plausible_closes(
         ccy, scale = units.get(ticker) or (ccy_of.get(ticker) or "", 1.0)
         px = s.copy()
         px.index = naive_dates(px.index)
-        if _close_matches_trades(px * scale, ticker, ccy.upper(), transactions):
+        fills = _fill_ratios(px * scale, ticker, ccy.upper(), transactions)
+        if _plausible_ratio([off for _, off in fills]):
             out[ticker] = s
+            _audit_fills(px, ticker, fills, transactions)
         else:
             obs.warn_once("portfolio.price_ticker_mismatch", ticker, ticker=ticker)
+            offs = sorted(off for _, off in fills)
+            median = offs[len(offs) // 2]
+            if consistency.unit_slip(median):
+                # The whole series a hundred off the fills: the feed quotes
+                # this name in minor units and `price_units` does not know.
+                consistency.report(
+                    "currency_off",
+                    source="replay",
+                    ticker=ticker,
+                    key="series",
+                    off=round(median, 3),
+                    n=len(offs),
+                )
     return out
+
+
+def _audit_fills(px: pd.Series, ticker: str, fills, transactions) -> None:
+    """Say what a kept series' fills contradict: their unit, their calendar.
+
+    The series matched the book as a whole; a few fills a hundred off it are
+    pence booked as pounds (or the reverse), and a fill on a day the market
+    printed nothing is a date a parser shifted. One line per name for each.
+    """
+    slips = sorted(day for day, off in fills if consistency.unit_slip(off))
+    if slips:
+        consistency.report(
+            "currency_off",
+            source="replay",
+            ticker=ticker,
+            key="fills",
+            n=len(slips),
+            first=slips[0],
+        )
+    if off_days := _off_calendar(px, ticker, transactions):
+        consistency.report(
+            "trade_off_calendar",
+            source="replay",
+            ticker=ticker,
+            key="fills",
+            n=len(off_days),
+            first=off_days[0],
+        )
 
 
 @dataclass(frozen=True)
@@ -1126,6 +1215,7 @@ def book_history(
         # No ticker filter on the flows: unpriced names are carried at cost in
         # the value path, so their buys and sells must offset those value jumps.
         twr = time_weighted_returns(hist["value"], flow_series(ledger, base=base))
+        _audit_twr(twr)
     unpriced = sorted({t for t in tickers if t not in closes})
     if unpriced:
         # Every render says "sin histórico" to the reader and nothing to us —
@@ -1142,6 +1232,35 @@ def book_history(
         | set(hist.attrs.get("carried_at_cost", []) if not hist.empty else [])
     )
     return hist, twr, missing
+
+
+def _audit_twr(twr: pd.Series) -> None:
+    """Say a book whose value path jumps further in a day than a book moves.
+
+    A diversified book does not triple or lose two thirds net of its flows in
+    one session; when its path does, a price slipped or a flow never reached
+    the ledger, and the chart and every return read off it carry the step.
+    One line per book: how many such days, the worst, and the days the TWR
+    already dropped as below -100 %.
+    """
+    said = consistency.QUOTE_JUMP_SAID
+    offs = 1 + twr
+    jumps = offs[(offs >= said) | (offs <= 1 / said)]
+    dropped = twr.attrs.get("dropped_days", [])
+    if jumps.empty and not dropped:
+        return
+    worst = None
+    if not jumps.empty:
+        worst = max(jumps.index, key=lambda d: max(jumps[d], 1 / jumps[d]))
+    consistency.report(
+        "twr_jump",
+        source="replay",
+        key="book",
+        n=len(jumps),
+        dropped=len(dropped),
+        day=(worst if worst is not None else min(dropped)).date().isoformat(),
+        off=round(float(jumps[worst]), 3) if worst is not None else None,
+    )
 
 
 def _profile(ticker: str) -> dict:
